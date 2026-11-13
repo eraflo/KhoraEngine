@@ -20,7 +20,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use super::{
-    size_cap, FileKind, Layer, QuarantineKey, Refusals, SecurityReason, SecurityRefusal, Trust,
+    size_cap, FileKind, QuarantineKey, Refusals, SecurityReason, SecurityRefusal, Trust, TrustLayer,
 };
 
 /// Reads the files under one root, refusing what leaves it, what is over its
@@ -147,7 +147,7 @@ impl FileGuard {
                 return Err(ReadError::Refused(SecurityRefusal {
                     path: named,
                     trust,
-                    layer: Layer::File,
+                    layer: TrustLayer::File,
                     reason: SecurityReason::Quarantined,
                 }));
             }
@@ -175,7 +175,7 @@ impl FileGuard {
         let refusal = SecurityRefusal {
             path,
             trust,
-            layer: Layer::File,
+            layer: TrustLayer::File,
             reason,
         };
         self.refusals.refuse(refusal.clone(), key);

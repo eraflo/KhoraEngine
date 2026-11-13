@@ -21,7 +21,7 @@ use super::decide::{bid, round};
 use super::*;
 use crate::gorna::arbiter::{Arbiter, Greedy, Proposal, Proposer, Refusal, Shield};
 use crate::gorna::decide::Plan;
-use khora_core::agent::gorna::protocol::{Binding, DecidedBy, Rejected, Trigger};
+use khora_core::agent::gorna::protocol::{BindingConstraint, DecidedBy, Rejected, Trigger};
 use khora_core::lane::cost::Device;
 
 use AgentImportance::{Critical, Important, Optional};
@@ -166,7 +166,7 @@ fn floors_that_do_not_fit_are_decided_by_the_floors() {
     assert_eq!(decision.why.trigger, Trigger::Safety, "{:?}", decision.why);
     assert_eq!(
         decision.why.binding,
-        Some(Binding::Time(Device::Cpu)),
+        Some(BindingConstraint::Time(Device::Cpu)),
         "6 + 5 ms exceed 10 ms on the host"
     );
     assert!(decision.why.rejected.is_empty(), "{:?}", decision.why);
@@ -200,7 +200,7 @@ fn floors_that_do_not_fit_are_decided_by_the_floors() {
     assert_eq!(decision.why.trigger, Trigger::Safety, "{:?}", decision.why);
     assert_eq!(
         decision.why.binding,
-        Some(Binding::Memory(Device::Gpu)),
+        Some(BindingConstraint::Memory(Device::Gpu)),
         "7 + 5 MB exceed the 10 MB the graphics processor has"
     );
 
@@ -247,7 +247,7 @@ fn the_why_names_the_constraint_that_stopped_an_upgrade() {
     assert_eq!(decision.why.by, DecidedBy::Greedy, "{:?}", decision.why);
     assert_eq!(
         decision.why.binding,
-        Some(Binding::Time(Device::Gpu)),
+        Some(BindingConstraint::Time(Device::Gpu)),
         "12 ms exceed 10 ms on the graphics processor"
     );
     assert_eq!(
@@ -255,7 +255,7 @@ fn the_why_names_the_constraint_that_stopped_an_upgrade() {
         vec![Rejected {
             agent: AgentId::new("ash"),
             row: HighPerformance,
-            over: Binding::Time(Device::Gpu),
+            over: BindingConstraint::Time(Device::Gpu),
         }]
     );
     let ash = lent_to(&decision.allocation, "ash");
@@ -301,7 +301,7 @@ fn the_shield_refuses_a_proposal_over_the_target() {
     let decision = Arbiter::with(vec![over]).decide(&round);
     assert_eq!(
         said(&verdicts),
-        vec![Err(Refusal::Breach(Binding::Time(Device::Cpu)))],
+        vec![Err(Refusal::Breach(BindingConstraint::Time(Device::Cpu)))],
         "9 + 2 ms exceed 10 ms on the host"
     );
     assert_eq!(decision.why.by, DecidedBy::Floors, "{:?}", decision.why);
@@ -312,7 +312,7 @@ fn the_shield_refuses_a_proposal_over_the_target() {
     let decision = Arbiter::with(vec![over, Box::new(Greedy)]).decide(&round);
     assert_eq!(
         said(&verdicts),
-        vec![Err(Refusal::Breach(Binding::Time(Device::Cpu)))]
+        vec![Err(Refusal::Breach(BindingConstraint::Time(Device::Cpu)))]
     );
     assert_eq!(decision.why.by, DecidedBy::Greedy, "{:?}", decision.why);
     assert_eq!(decision.allocation, decide(&round));
@@ -570,13 +570,13 @@ fn a_stable_ceiling_is_not_named_as_the_frames_time() {
             .why
             .rejected
             .iter()
-            .all(|rejected| rejected.over != Binding::Time(Device::Cpu)),
+            .all(|rejected| rejected.over != BindingConstraint::Time(Device::Cpu)),
         "1 ms of a 100 ms frame breaks no time on the host: {:?}",
         decision.why
     );
     assert_ne!(
         decision.why.binding,
-        Some(Binding::Time(Device::Cpu)),
+        Some(BindingConstraint::Time(Device::Cpu)),
         "1 ms of a 100 ms frame breaks no time on the host: {:?}",
         decision.why
     );

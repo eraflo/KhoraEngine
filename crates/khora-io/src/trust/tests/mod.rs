@@ -152,7 +152,7 @@ fn a_path_escaping_its_root_is_refused() {
     ] {
         let refusal = refused(guard.read(&escaping));
         assert_eq!(refusal.reason, SecurityReason::Escape, "{escaping:?}");
-        assert_eq!(refusal.layer, Layer::File, "{escaping:?}");
+        assert_eq!(refusal.layer, TrustLayer::File, "{escaping:?}");
         assert_eq!(refusal.trust, Trust::Project, "{escaping:?}");
     }
 
@@ -211,7 +211,7 @@ fn a_file_over_its_cap_is_refused_before_it_is_read() {
             },
             "{trust:?}: a texture's strict cap"
         );
-        assert_eq!(refusal.layer, Layer::File);
+        assert_eq!(refusal.layer, TrustLayer::File);
         assert_eq!(refusal.trust, trust);
 
         let edge = guard.read("scripts/edge.erg").unwrap_or_else(|error| {
@@ -380,7 +380,7 @@ fn a_refused_file_is_quarantined_and_reported() {
     let wrong_type = SecurityRefusal {
         path: liar.clone(),
         trust: Trust::Project,
-        layer: Layer::Decoder,
+        layer: TrustLayer::Decoder,
         reason: SecurityReason::WrongType {
             expected: "texture".to_owned(),
         },
@@ -417,7 +417,7 @@ fn a_refused_file_is_quarantined_and_reported() {
         SecurityRefusal {
             path: huge.clone(),
             trust: Trust::Project,
-            layer: Layer::File,
+            layer: TrustLayer::File,
             reason: SecurityReason::TooLarge {
                 size: 300 * MIB,
                 cap: 256 * MIB,
@@ -429,7 +429,7 @@ fn a_refused_file_is_quarantined_and_reported() {
     let escape = SecurityRefusal {
         path: PathBuf::from("assets/../../secret.png"),
         trust: Trust::Project,
-        layer: Layer::File,
+        layer: TrustLayer::File,
         reason: SecurityReason::Escape,
     };
     refusals.refuse(escape.clone(), Some(QuarantineKey::Content([9; 32])));
@@ -485,7 +485,7 @@ fn a_quarantined_file_is_read_again_once_it_changes() {
         SecurityRefusal {
             path: file.clone(),
             trust: Trust::Project,
-            layer: Layer::Decoder,
+            layer: TrustLayer::Decoder,
             reason: SecurityReason::WrongType {
                 expected: "texture".to_owned(),
             },
@@ -826,7 +826,7 @@ fn two_runs_sharing_a_store_keep_each_others_quarantine() {
     let refusal_of = |name: &str| SecurityRefusal {
         path: dir.path().join("assets").join(name),
         trust: Trust::Project,
-        layer: Layer::Decoder,
+        layer: TrustLayer::Decoder,
         reason: SecurityReason::WrongType {
             expected: "texture".to_owned(),
         },
@@ -912,7 +912,7 @@ fn a_quarantined_file_is_refused_through_another_spelling_of_its_root() {
         SecurityRefusal {
             path: at.root.join("textures").join("inside.png"),
             trust: Trust::Project,
-            layer: Layer::Decoder,
+            layer: TrustLayer::Decoder,
             reason: SecurityReason::WrongType {
                 expected: "texture".to_owned(),
             },
@@ -938,7 +938,7 @@ fn wrong_type_at(dir: &Path, name: &str) -> SecurityRefusal {
     SecurityRefusal {
         path: dir.join("assets").join(name),
         trust: Trust::Project,
-        layer: Layer::Decoder,
+        layer: TrustLayer::Decoder,
         reason: SecurityReason::WrongType {
             expected: "texture".to_owned(),
         },
@@ -1014,7 +1014,7 @@ fn a_file_read_with_another_content_is_no_longer_reported() {
         SecurityRefusal {
             path: file.clone(),
             trust: Trust::Project,
-            layer: Layer::Decoder,
+            layer: TrustLayer::Decoder,
             reason: SecurityReason::WrongType {
                 expected: "texture".to_owned(),
             },
@@ -1055,7 +1055,7 @@ fn refusals_handed_over_keep_a_file_that_reads_again_unreported() {
         SecurityRefusal {
             path: file.clone(),
             trust: Trust::Project,
-            layer: Layer::Decoder,
+            layer: TrustLayer::Decoder,
             reason: SecurityReason::WrongType {
                 expected: "texture".to_owned(),
             },
@@ -1254,7 +1254,7 @@ fn a_hand_over_back_to_refusals_handed_over_to_is_ignored() {
         SecurityRefusal {
             path: file.clone(),
             trust: Trust::Project,
-            layer: Layer::Decoder,
+            layer: TrustLayer::Decoder,
             reason: SecurityReason::WrongType {
                 expected: "texture".to_owned(),
             },

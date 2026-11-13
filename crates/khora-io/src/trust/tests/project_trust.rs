@@ -371,7 +371,7 @@ fn refusal(dir: &Path, name: &str, trust: Trust, reason: SecurityReason) -> Secu
     SecurityRefusal {
         path: dir.join("assets").join(name),
         trust,
-        layer: Layer::Decoder,
+        layer: TrustLayer::Decoder,
         reason,
     }
 }

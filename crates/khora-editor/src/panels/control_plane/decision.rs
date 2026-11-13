@@ -18,7 +18,9 @@
 use std::time::Duration;
 
 use khora_sdk::editor_ui::*;
-use khora_sdk::khora_core::agent::gorna::protocol::{Binding, DecidedBy, Envelope, Trigger};
+use khora_sdk::khora_core::agent::gorna::protocol::{
+    BindingConstraint, DecidedBy, Envelope, Trigger,
+};
 use khora_sdk::khora_core::agent::gorna::DecisionView;
 use khora_sdk::khora_core::lane::cost::Device;
 use khora_sdk::StrategyId;
@@ -327,7 +329,7 @@ fn paint_refusal(
     card: Card,
     y: f32,
     row: StrategyId,
-    over: Binding,
+    over: BindingConstraint,
     theme: &UiTheme,
 ) -> f32 {
     let (x, w) = (card.inner_x(), card.inner_w());
@@ -532,21 +534,23 @@ fn device_name(device: Device) -> &'static str {
 }
 
 /// The constraint that bound the frame, in words.
-fn binding_name(binding: Binding) -> String {
+fn binding_name(binding: BindingConstraint) -> String {
     match binding {
-        Binding::Time(Device::Cpu) => "Host time".to_owned(),
-        Binding::Memory(Device::Cpu) => "Host memory".to_owned(),
-        Binding::Time(device) => format!("{} time", device_name(device)),
-        Binding::Memory(device) => format!("{} memory", device_name(device)),
-        Binding::Ceiling(device) => format!("Stable ceiling, {}", device_name(device)),
+        BindingConstraint::Time(Device::Cpu) => "Host time".to_owned(),
+        BindingConstraint::Memory(Device::Cpu) => "Host memory".to_owned(),
+        BindingConstraint::Time(device) => format!("{} time", device_name(device)),
+        BindingConstraint::Memory(device) => format!("{} memory", device_name(device)),
+        BindingConstraint::Ceiling(device) => format!("Stable ceiling, {}", device_name(device)),
     }
 }
 
 /// What a refused upgrade broke, in words.
-fn broke(over: Binding) -> String {
+fn broke(over: BindingConstraint) -> String {
     match over {
-        Binding::Time(device) => format!("over the frame, {}", device_name(device)),
-        Binding::Memory(device) => format!("over {} memory", device_name(device)),
-        Binding::Ceiling(device) => format!("over its Stable ceiling, {}", device_name(device)),
+        BindingConstraint::Time(device) => format!("over the frame, {}", device_name(device)),
+        BindingConstraint::Memory(device) => format!("over {} memory", device_name(device)),
+        BindingConstraint::Ceiling(device) => {
+            format!("over its Stable ceiling, {}", device_name(device))
+        }
     }
 }

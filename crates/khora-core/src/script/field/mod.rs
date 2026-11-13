@@ -486,28 +486,28 @@ pub mod probe {
     }
 
     /// How a field reads, writes and is spelled.
-    pub type Reader<T> = fn(&T) -> ScriptValue;
+    pub type FieldReader<T> = fn(&T) -> ScriptValue;
     /// How a field takes a script's value.
-    pub type Writer<T> = fn(&ScriptValue) -> Result<T, FieldValueError>;
+    pub type FieldWriter<T> = fn(&ScriptValue) -> Result<T, FieldValueError>;
 
     /// The answer for a [`ScriptField`].
     pub trait ViaScriptField<T> {
         /// Its Ergon type.
         fn ergon_of(&self) -> Option<ErgonType>;
         /// How it reads.
-        fn reader(&self) -> Option<Reader<T>>;
+        fn reader(&self) -> Option<FieldReader<T>>;
         /// How it is written.
-        fn writer(&self) -> Option<Writer<T>>;
+        fn writer(&self) -> Option<FieldWriter<T>>;
     }
 
     impl<T: ScriptField> ViaScriptField<T> for &Probe<T> {
         fn ergon_of(&self) -> Option<ErgonType> {
             Some(T::ergon())
         }
-        fn reader(&self) -> Option<Reader<T>> {
+        fn reader(&self) -> Option<FieldReader<T>> {
             Some(T::to_script)
         }
-        fn writer(&self) -> Option<Writer<T>> {
+        fn writer(&self) -> Option<FieldWriter<T>> {
             Some(T::from_script)
         }
     }
@@ -517,19 +517,19 @@ pub mod probe {
         /// None.
         fn ergon_of(&self) -> Option<ErgonType>;
         /// None.
-        fn reader(&self) -> Option<Reader<T>>;
+        fn reader(&self) -> Option<FieldReader<T>>;
         /// None.
-        fn writer(&self) -> Option<Writer<T>>;
+        fn writer(&self) -> Option<FieldWriter<T>>;
     }
 
     impl<T> ViaNothing<T> for Probe<T> {
         fn ergon_of(&self) -> Option<ErgonType> {
             None
         }
-        fn reader(&self) -> Option<Reader<T>> {
+        fn reader(&self) -> Option<FieldReader<T>> {
             None
         }
-        fn writer(&self) -> Option<Writer<T>> {
+        fn writer(&self) -> Option<FieldWriter<T>> {
             None
         }
     }

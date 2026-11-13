@@ -30,7 +30,7 @@ use super::Rect;
 
 /// One answer a [`Dialog`] offers.
 #[derive(Debug, Clone, Copy)]
-pub struct Choice<'a> {
+pub struct DialogChoice<'a> {
     /// What the button says.
     pub label: &'a str,
     /// How it is drawn: the one answer the dialog leads to is `Primary`.
@@ -53,7 +53,7 @@ pub struct Dialog<'a> {
     /// A line under the rows.
     pub note: &'a str,
     /// The answers, right-aligned, in order.
-    pub choices: &'a [Choice<'a>],
+    pub choices: &'a [DialogChoice<'a>],
 }
 
 /// Paints `spec` in place over `rect` — a dimmed backdrop and the dialog's
@@ -297,16 +297,16 @@ mod tests {
         crate::khora_dark()
     }
 
-    const CHOICES: [Choice<'static>; 3] = [
-        Choice {
+    const CHOICES: [DialogChoice<'static>; 3] = [
+        DialogChoice {
             label: "Close project",
             kind: ButtonKind::Ghost,
         },
-        Choice {
+        DialogChoice {
             label: "Open restricted",
             kind: ButtonKind::Ghost,
         },
-        Choice {
+        DialogChoice {
             label: "Trust and open",
             kind: ButtonKind::Primary,
         },

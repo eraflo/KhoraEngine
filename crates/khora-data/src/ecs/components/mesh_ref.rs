@@ -174,10 +174,10 @@ fn mesh_ref_schema() -> (u64, bool) {
 fn stage_mesh_ref(
     record: &crate::scene::record::Record,
     references: &mut dyn crate::scene::record::ReferenceReader,
-) -> Result<crate::scene::Staged, crate::scene::record::RecordError> {
+) -> Result<crate::scene::StagedComponent, crate::scene::record::RecordError> {
     let (on_disk, report) =
         crate::scene::record::resolve::<SerializableMeshRef>(record, references)?;
-    Ok(crate::scene::Staged {
+    Ok(crate::scene::StagedComponent {
         component: Box::new(crate::scene::StagedValue(MeshRef::from(on_disk))),
         report,
     })
@@ -235,7 +235,7 @@ inventory::submit! {
             let on_disk = crate::scene::positional::from_positional::<SerializableMeshRef>(
                 bytes, references,
             )?;
-            Ok(crate::scene::Staged {
+            Ok(crate::scene::StagedComponent {
                 component: Box::new(crate::scene::StagedValue(MeshRef::from(on_disk))),
                 report: Vec::new(),
             })

@@ -90,7 +90,7 @@ pub struct ComponentRegistration {
     /// Reads the component back from a record, its references through
     /// `references`, without touching any world: what the load would add,
     /// and what reading it adapted.
-    pub stage: fn(&Record, &mut dyn ReferenceReader) -> Result<Staged, RecordError>,
+    pub stage: fn(&Record, &mut dyn ReferenceReader) -> Result<StagedComponent, RecordError>,
 
     /// The fingerprint of the schema this component is written in by a
     /// snapshot — the canonical trace of its mirror's serde format, hashed.
@@ -108,7 +108,7 @@ pub struct ComponentRegistration {
 
     /// Reads the component back from the bytes a snapshot holds for it, which
     /// must be consumed exactly, its references through `references`.
-    pub stage_snapshot: fn(&[u8], &mut dyn ReferenceReader) -> Result<Staged, RecordError>,
+    pub stage_snapshot: fn(&[u8], &mut dyn ReferenceReader) -> Result<StagedComponent, RecordError>,
 
     /// Creates a default instance of this component and adds it to the entity.
     /// Used by the editor's "Add Component" UI.
@@ -150,15 +150,15 @@ inventory::collect!(ComponentRegistration);
 ///
 /// A load reads every component before it adds any, so that one that cannot
 /// be read leaves the world as it was. This is what it holds in between.
-pub struct Staged {
+pub struct StagedComponent {
     /// The component, ready to add.
-    pub component: Box<dyn StagedComponent>,
+    pub component: Box<dyn PendingComponent>,
     /// What reading it adapted — paths only; the load names the entity.
     pub report: Vec<ReportEntry>,
 }
 
 /// A component value waiting to be added to an entity.
-pub trait StagedComponent: Send {
+pub trait PendingComponent: Send {
     /// Appends the value as a new row of its page column — how a load builds
     /// a page, a row at a time, without migrating the entity.
     fn push_into(self: Box<Self>, column: &mut dyn AnyVec);
@@ -170,7 +170,7 @@ pub trait StagedComponent: Send {
 /// A typed component waiting to be added.
 pub struct StagedValue<T>(pub T);
 
-impl<T: crate::ecs::Component> StagedComponent for StagedValue<T> {
+impl<T: crate::ecs::Component> PendingComponent for StagedValue<T> {
     fn push_into(self: Box<Self>, column: &mut dyn AnyVec) {
         self.0.push_into_column(column);
     }

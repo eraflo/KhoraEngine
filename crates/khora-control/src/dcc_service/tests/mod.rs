@@ -33,7 +33,7 @@ use super::forecast::forecast_frame_ms;
 use super::*;
 use crate::cost_model::CostModel;
 use khora_core::agent::gorna::protocol::{
-    Allocation, Confidence, Envelope, Epoch, FrameReport, Offer, OfferRequest, OfferRow, Report,
+    Allocation, CostBasis, Envelope, Epoch, FrameReport, Offer, OfferRequest, OfferRow, Report,
     Trigger,
 };
 use khora_core::agent::gorna::{AgentId, EpochRecord, StrategyId};
@@ -296,7 +296,7 @@ impl Speaker {
                 ..Cost::default()
             },
             quality: 0.4,
-            confidence: Confidence::Quoted,
+            confidence: CostBasis::Quoted,
         }
     }
 
@@ -314,7 +314,7 @@ impl Speaker {
                     ..Cost::default()
                 },
                 quality: 1.0,
-                confidence: Confidence::Quoted,
+                confidence: CostBasis::Quoted,
             });
         }
         rows
@@ -885,7 +885,7 @@ fn fewer_frame_reports_than_the_dcc_waits_for_move_nothing() {
 fn unpressured_setpoint_ms() -> f32 {
     crate::analysis::HeuristicEngine
         .analyze(
-            &crate::dcc_context::Context::default(),
+            &crate::dcc_context::DccContext::default(),
             &crate::metrics::MetricStore::new(),
         )
         .suggested_latency_ms

@@ -35,14 +35,14 @@ pub use khora_script::toolchain::{CompileDone, CompileRequest, CompileTicket};
 
 /// What a compile filed by ticket came to: how many modules compiled, or why
 /// it did not land.
-pub type CompileOutcome = Result<usize, String>;
+pub type CompileTicketOutcome = Result<usize, String>;
 
 /// The tickets filed and not landed, each with the root it compiles, and the
 /// outcomes landed and not taken.
 #[derive(Default)]
 struct CompileTickets {
     pending: BTreeMap<CompileTicket, PathBuf>,
-    landed: HashMap<CompileTicket, CompileOutcome>,
+    landed: HashMap<CompileTicket, CompileTicketOutcome>,
 }
 
 /// The script compiles filed by ticket: the requests sent, and the outcomes
@@ -104,7 +104,7 @@ impl CompileHub {
 
     /// Takes the outcome of the compile filed as `ticket`, once it landed:
     /// `None` while it is in flight, and once taken.
-    pub fn take_outcome(&self, ticket: CompileTicket) -> Option<CompileOutcome> {
+    pub fn take_outcome(&self, ticket: CompileTicket) -> Option<CompileTicketOutcome> {
         self.tickets().landed.remove(&ticket)
     }
 
@@ -131,7 +131,7 @@ impl CompileHub {
 
     /// Files `outcome` under `ticket`: the compile landed. A ticket no longer
     /// in flight — withdrawn meanwhile — keeps the outcome it landed with.
-    pub(crate) fn land(&self, ticket: CompileTicket, outcome: CompileOutcome) {
+    pub(crate) fn land(&self, ticket: CompileTicket, outcome: CompileTicketOutcome) {
         let mut tickets = self.tickets();
         if tickets.pending.remove(&ticket).is_some() {
             tickets.landed.insert(ticket, outcome);

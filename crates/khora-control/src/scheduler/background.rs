@@ -36,7 +36,7 @@ use std::time::Instant;
 
 use khora_core::agent::gorna::protocol::Report;
 use khora_core::agent::gorna::AgentId;
-use khora_core::agent::{CheckedOut, ExecutionPhase, LayerRun, Place, Preparation, Prepared};
+use khora_core::agent::{CheckedOut, ExecutionPhase, LayerRun, Place, Preparation, PreparedLayer};
 use khora_core::event::{Mailbox, Reader};
 use khora_core::lane::{LaneBus, OutputDeck, Reserve, Staging};
 use khora_core::{EngineContext, Runtime};
@@ -59,7 +59,7 @@ struct Finished {
 struct Ready {
     id: AgentId,
     place: Arc<std::sync::Mutex<Place>>,
-    prepared: Prepared,
+    prepared: PreparedLayer,
 }
 
 /// The runs of the families at the background and the preparations of their
@@ -260,7 +260,7 @@ fn run_preparation(
     };
     let prepared = match prepared {
         Some(prepared) if ran => prepared,
-        _ => Prepared::failed(row, format!("the preparation of `{id}`'s layer panicked")),
+        _ => PreparedLayer::failed(row, format!("the preparation of `{id}`'s layer panicked")),
     };
     let _ = ready.send(Ready {
         id,

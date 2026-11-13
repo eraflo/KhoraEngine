@@ -61,7 +61,7 @@ mod ecs {
 mod scene {
     pub use khora_data::scene::{inspector_json, positional, record, schema};
     pub use khora_data::scene::{
-        ComponentRegistration, ComponentShape, FieldSchema, Staged, StagedValue,
+        ComponentRegistration, ComponentShape, FieldSchema, StagedComponent, StagedValue,
     };
 }
 

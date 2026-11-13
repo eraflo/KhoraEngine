@@ -39,7 +39,7 @@ use khora_io::asset::{
     AssetContainer, AssetDecoder, AssetService, FileLoader, IndexBuilder, SubAssetEntry,
     SubAssetListerRegistration,
 };
-use khora_io::trust::{FileGuard, Layer, Refusals, SecurityReason, SecurityRefusal, Trust};
+use khora_io::trust::{FileGuard, Refusals, SecurityReason, SecurityRefusal, Trust, TrustLayer};
 use khora_telemetry::MetricsRegistry;
 
 const MIB: u64 = 1 << 20;
@@ -215,7 +215,7 @@ fn an_image_announcing_huge_dimensions_is_refused_before_decoding() {
         "refused over a limit, not: {:?}",
         refusal.reason
     );
-    assert_eq!(refusal.layer, Layer::Decoder);
+    assert_eq!(refusal.layer, TrustLayer::Decoder);
     assert_eq!(refusal.trust, Trust::Project);
     assert!(
         reported(&served.problems, "huge.png").is_some(),
@@ -260,7 +260,7 @@ fn an_image_wider_than_the_strict_dimension_is_refused_only_in_a_restricted_read
         }
         other => panic!("refused over a limit, not: {other:?}"),
     }
-    assert_eq!(refusal.layer, Layer::Decoder);
+    assert_eq!(refusal.layer, TrustLayer::Decoder);
     assert_eq!(refusal.trust, Trust::Restricted);
 }
 
@@ -312,7 +312,7 @@ fn a_restricted_read_has_the_strict_limits() {
                 cap: 16 * MIB
             }
         );
-        assert_eq!(refusal.layer, Layer::Decoder);
+        assert_eq!(refusal.layer, TrustLayer::Decoder);
     }
 }
 
@@ -370,7 +370,7 @@ fn panic_refused(refusals: &Refusals, problems: &Problems, name: &str) -> String
             refusals.quarantined()
         )
     });
-    assert_eq!(refusal.layer, Layer::Decoder, "{name}");
+    assert_eq!(refusal.layer, TrustLayer::Decoder, "{name}");
     assert!(
         reported(problems, name).is_some(),
         "{name}: the refusal is reported under Security"
@@ -686,7 +686,7 @@ fn an_image_bomb_inside_a_gltf_is_refused_over_its_limit() {
         "refused over a limit, not: {:?}",
         refusal.reason
     );
-    assert_eq!(refusal.layer, Layer::Decoder);
+    assert_eq!(refusal.layer, TrustLayer::Decoder);
     assert!(
         reported(&served.problems, "bomb.gltf").is_some(),
         "the refusal is reported under Security"

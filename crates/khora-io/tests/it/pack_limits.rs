@@ -32,7 +32,7 @@ use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::renderer::api::shader::CpuShaderSource;
 use khora_io::asset::signing::{PackSigner, SignedManifest};
 use khora_io::asset::{AssetService, PackBuilder, PackLoader, PackManifest, PackOutput};
-use khora_io::trust::{Layer, Refusals, SecurityReason};
+use khora_io::trust::{Refusals, SecurityReason, TrustLayer};
 use khora_telemetry::MetricsRegistry;
 
 const MIB: u64 = 1 << 20;
@@ -191,7 +191,7 @@ fn assert_refused_at_the_pack(problems: &Problems, refusals: &Refusals, size: u6
         .find(|refusal| refusal.path.ends_with("notes.wgsl"))
     {
         assert_eq!(refusal.reason, SecurityReason::TooLarge { size, cap });
-        assert_eq!(refusal.layer, Layer::Pack);
+        assert_eq!(refusal.layer, TrustLayer::Pack);
     }
 }
 

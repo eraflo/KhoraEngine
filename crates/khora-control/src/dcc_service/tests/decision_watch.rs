@@ -17,7 +17,7 @@
 //! journal records.
 
 use super::*;
-use khora_core::agent::gorna::protocol::{Binding, DecidedBy, Rejected, Why};
+use khora_core::agent::gorna::protocol::{BindingConstraint, DecidedBy, Rejected, Why};
 use khora_core::agent::gorna::{Correction, DecisionView, Planning};
 use khora_core::lane::cost::Device;
 
@@ -111,11 +111,11 @@ fn a_recorded_epoch(epoch: u64, renderer_us: u64) -> EpochRecord {
     recorded.why = Why {
         by: DecidedBy::Exact,
         trigger: Trigger::Overruns,
-        binding: Some(Binding::Time(Device::Gpu)),
+        binding: Some(BindingConstraint::Time(Device::Gpu)),
         rejected: vec![Rejected {
             agent: renderer,
             row: StrategyId::HighPerformance,
-            over: Binding::Time(Device::Gpu),
+            over: BindingConstraint::Time(Device::Gpu),
         }],
     };
     recorded.corrections = vec![(

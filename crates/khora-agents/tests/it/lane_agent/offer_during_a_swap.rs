@@ -17,7 +17,7 @@
 //! the one its last report measured.
 
 use khora_agents::lane_agent::lane_agent;
-use khora_core::agent::gorna::protocol::{Confidence, Epoch};
+use khora_core::agent::gorna::protocol::{CostBasis, Epoch};
 use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::Agent;
 use khora_core::gpu::DeviceCaps;
@@ -54,7 +54,7 @@ fn while_a_layer_is_staged_the_offer_names_the_running_row() {
     let offer = agent.offer(&offer_request(2));
 
     let measured: Vec<StrategyId> = (offer.rows.iter())
-        .filter(|row| row.confidence == Confidence::Measured)
+        .filter(|row| row.confidence == CostBasis::Measured)
         .map(|row| row.id)
         .collect();
     assert_eq!(measured, vec![StrategyId::Balanced], "the row that ran");

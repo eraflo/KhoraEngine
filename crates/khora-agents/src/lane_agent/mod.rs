@@ -34,7 +34,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use khora_core::agent::gorna::protocol::{
-    Confidence, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
+    CostBasis, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
 };
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::AgentRegistration;
@@ -321,8 +321,8 @@ impl Agent for LaneAgent {
             })
             .map(|(index, ((row, quote), level))| {
                 let (cost, confidence) = match quote {
-                    Some(cost) if Some(index) == ran => (*cost, Confidence::Measured),
-                    Some(cost) => (*cost, Confidence::Quoted),
+                    Some(cost) if Some(index) == ran => (*cost, CostBasis::Measured),
+                    Some(cost) => (*cost, CostBasis::Quoted),
                     None => (
                         Cost {
                             memory: PerDevice {
@@ -331,7 +331,7 @@ impl Agent for LaneAgent {
                             },
                             ..Cost::default()
                         },
-                        Confidence::Assumed,
+                        CostBasis::Assumed,
                     ),
                 };
                 OfferRow {

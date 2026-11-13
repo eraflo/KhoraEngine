@@ -19,8 +19,8 @@ use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::{EditorShell, PanelLocation, QuarantinedAsset, TrustSummary};
 use khora_sdk::trust::{
-    Layer, ProjectTrust, ProjectTrustState, QuarantineKey, Refusals, SecurityReason,
-    SecurityRefusal, Trust,
+    ProjectTrust, ProjectTrustState, QuarantineKey, Refusals, SecurityReason, SecurityRefusal,
+    Trust, TrustLayer,
 };
 use khora_sdk::Runtime;
 
@@ -287,10 +287,10 @@ fn refused_by(refusal: &SecurityRefusal) -> &'static str {
         return "type check";
     }
     match refusal.layer {
-        Layer::File => "file guard",
-        Layer::Decoder => "decoder",
-        Layer::Content => "type check",
-        Layer::Pack => "pack",
+        TrustLayer::File => "file guard",
+        TrustLayer::Decoder => "decoder",
+        TrustLayer::Content => "type check",
+        TrustLayer::Pack => "pack",
     }
 }
 

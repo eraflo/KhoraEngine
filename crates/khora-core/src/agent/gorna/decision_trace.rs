@@ -20,8 +20,8 @@ use std::time::Duration;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::protocol::{
-    Allocation, Binding, DecidedBy, Envelope, Epoch, Offer, OfferRow, Rejected, Report, Trigger,
-    Why,
+    Allocation, BindingConstraint, DecidedBy, Envelope, Epoch, Offer, OfferRow, Rejected, Report,
+    Trigger, Why,
 };
 use super::{AdaptationMode, AgentHints, AgentId, Correction, Planning, StrategyId};
 use crate::agent::AgentImportance;
@@ -234,8 +234,8 @@ struct WrittenPlanning {
 struct WrittenWhy {
     by: DecidedBy,
     trigger: Trigger,
-    binding: Option<Binding>,
-    rejected: Vec<(Named, StrategyId, Binding)>,
+    binding: Option<BindingConstraint>,
+    rejected: Vec<(Named, StrategyId, BindingConstraint)>,
 }
 
 #[derive(Serialize, Deserialize)]

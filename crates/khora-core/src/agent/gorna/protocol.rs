@@ -72,7 +72,7 @@ pub struct OfferRequest {
 
 /// How far an offered cost can be trusted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum Confidence {
+pub enum CostBasis {
     /// Measured on a run of the row.
     Measured,
     /// Quoted by the lane on this frame's inputs.
@@ -91,7 +91,7 @@ pub struct OfferRow {
     /// What the row's result is worth, from `0.0` to `1.0`.
     pub quality: f32,
     /// How far `cost` can be trusted.
-    pub confidence: Confidence,
+    pub confidence: CostBasis,
 }
 
 /// An agent's answer to an [`OfferRequest`].
@@ -178,7 +178,7 @@ pub struct Why {
     /// The constraint that refused the last upgrade tried; `None` when every
     /// agent reached its best allowed row, or the round opened as
     /// `Trigger::Safety`.
-    pub binding: Option<Binding>,
+    pub binding: Option<BindingConstraint>,
     /// The upgrades found not to fit, each with the constraint it broke.
     pub rejected: Vec<Rejected>,
 }
@@ -213,7 +213,7 @@ pub enum DecidedBy {
 
 /// A constraint a plan can break.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum Binding {
+pub enum BindingConstraint {
     /// The critical path's time on a device, over the frame's target.
     Time(Device),
     /// The memory held on a device, over what it has.
@@ -231,7 +231,7 @@ pub struct Rejected {
     /// The row it would have moved to.
     pub row: StrategyId,
     /// The constraint it broke.
-    pub over: Binding,
+    pub over: BindingConstraint,
 }
 
 /// What an agent ran on its last frame.

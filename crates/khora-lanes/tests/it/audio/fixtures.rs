@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex};
 use khora_core::asset::AssetHandle;
 use khora_core::audio::{AudioMixBus, StreamInfo};
 use khora_core::gpu::GpuSetup;
-use khora_core::lane::erased::{AnyLane, Erased, Run, RunOutcome};
+use khora_core::lane::erased::{AnyLane, Erased, LaneRun, RunOutcome};
 use khora_core::lane::io::{FrameId, InputSource, OutputSink};
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::math::Vec3;
@@ -231,7 +231,7 @@ impl AudioMixBus for CapturedMix {
 /// What one record gave back.
 pub struct Mixed {
     /// The run as the agent sees it.
-    pub run: Run,
+    pub run: LaneRun,
     /// The block pushed to the mix bus during the run; empty when none was.
     pub block: Vec<f32>,
     /// How many blocks the run pushed.

@@ -32,7 +32,7 @@ use khora_core::script::{ComponentName, ScriptReads};
 use khora_core::Runtime;
 use khora_io::script::mounted::MountedScripts;
 use khora_io::script::project_compiler::ProjectCompiler;
-use khora_script::toolchain::{CompileRequest, Compiled, ScriptCompiler};
+use khora_script::toolchain::{CompileRequest, Recompiled, ScriptCompiler};
 
 /// An assets root holding `scripts/<module>` for each of `files`.
 fn project(files: &[(&str, &str)]) -> tempfile::TempDir {
@@ -62,7 +62,7 @@ fn set(modules: &[&str]) -> BTreeSet<String> {
 }
 
 /// The modules `compiled` holds a program for.
-fn recompiled(compiled: &Compiled) -> BTreeSet<String> {
+fn recompiled(compiled: &Recompiled) -> BTreeSet<String> {
     compiled
         .reloads
         .iter()
@@ -72,7 +72,7 @@ fn recompiled(compiled: &Compiled) -> BTreeSet<String> {
 }
 
 /// The modules `compiled` withdraws.
-fn withdrawn(compiled: &Compiled) -> BTreeSet<String> {
+fn withdrawn(compiled: &Recompiled) -> BTreeSet<String> {
     compiled
         .reloads
         .iter()
@@ -362,7 +362,7 @@ fn an_edited_module_hands_on_what_it_declares_now_and_is_recorded() {
     write(assets.path(), "game/health.erg", "fn void Nothing() { }");
     let second = compiler.compile(&request(assets.path(), &["game/health.erg"]));
 
-    let declared = |compiled: &Compiled| -> Vec<(String, Vec<String>)> {
+    let declared = |compiled: &Recompiled| -> Vec<(String, Vec<String>)> {
         compiled
             .declarations
             .iter()
@@ -501,7 +501,7 @@ fn an_empty_script_folder_compiles_nothing_and_does_not_fail() {
 
     let compiled = ProjectCompiler::default().compile_all(&scripts(assets.path()));
 
-    assert_eq!(compiled, Compiled::default());
+    assert_eq!(compiled, Recompiled::default());
 }
 
 // ─── A root unmounted while it compiles ─────────────────────────────────────

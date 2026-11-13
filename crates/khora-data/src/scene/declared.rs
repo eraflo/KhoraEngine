@@ -38,7 +38,7 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::script::{ErgonType, ScriptValue};
 
 use super::asset_kinds::{kinds_conflict, value_holds_asset};
-use super::component_registration::{registration_named, Kept, Staged, StagedComponent};
+use super::component_registration::{registration_named, Kept, PendingComponent, StagedComponent};
 use super::load_catalog::LoadCatalog;
 use super::record::{
     from_record, to_record, EntityRef, Record, RecordError, ReferenceReader, ReferenceWriter,
@@ -516,7 +516,7 @@ impl DeclaredLoad {
         &self,
         record: &Record,
         references: &mut dyn ReferenceReader,
-    ) -> Result<Staged, RecordError> {
+    ) -> Result<StagedComponent, RecordError> {
         let mut values = Vec::new();
         let mut read = |field: &str, value: &Record| -> Result<(), RecordError> {
             let value = decode(value, references)
@@ -548,7 +548,7 @@ impl DeclaredLoad {
 
     /// One row of the component from its fields' values, in the file's
     /// declaration order — what a snapshot holds.
-    pub(crate) fn stage_values(&self, values: Vec<ScriptValue>) -> Staged {
+    pub(crate) fn stage_values(&self, values: Vec<ScriptValue>) -> StagedComponent {
         let named = self.file_fields.iter().cloned().zip(values).collect();
         self.staged(named)
     }
@@ -557,7 +557,7 @@ impl DeclaredLoad {
     /// reading it adapted: a field the row lacks takes its default, a value
     /// no field takes is dropped, an `int` for a `float` field is converted
     /// where it converts exactly.
-    fn staged(&self, values: Vec<(String, ScriptValue)>) -> Staged {
+    fn staged(&self, values: Vec<(String, ScriptValue)>) -> StagedComponent {
         let mut report: Vec<ReportEntry> = Vec::new();
         let entry = |report: &mut Vec<ReportEntry>, path: &str, kind: ReportKind| {
             report.push(ReportEntry {
@@ -594,7 +594,7 @@ impl DeclaredLoad {
                 entry(&mut report, &field.name, ReportKind::Defaulted);
             }
         }
-        Staged {
+        StagedComponent {
             component: Box::new(StagedDeclared {
                 key: self.key,
                 values: kept,
@@ -618,7 +618,7 @@ struct StagedDeclared {
     values: Vec<(String, ScriptValue)>,
 }
 
-impl StagedComponent for StagedDeclared {
+impl PendingComponent for StagedDeclared {
     fn push_into(self: Box<Self>, column: &mut dyn AnyVec) {
         let Some(column) = column.as_any_mut().downcast_mut::<PackedColumn>() else {
             log::error!("a declared component's row met a column that is not packed");

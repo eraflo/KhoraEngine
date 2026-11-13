@@ -31,7 +31,7 @@ mod wake;
 mod tests;
 
 pub use place::{CheckedOut, LastRun, Place, Terms, KEEP_EPOCHS};
-pub use preparation::{Preparation, Prepared};
+pub use preparation::{Preparation, PreparedLayer};
 pub use wake::Wake;
 
 use std::time::Duration;

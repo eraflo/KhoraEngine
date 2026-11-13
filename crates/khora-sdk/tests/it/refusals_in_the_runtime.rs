@@ -19,7 +19,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use khora_io::trust::{Layer, Refusals, SecurityReason, SecurityRefusal, Trust};
+use khora_io::trust::{Refusals, SecurityReason, SecurityRefusal, Trust, TrustLayer};
 use khora_sdk::khora_core::problems::{ProblemSeverity, ProblemSource, Problems};
 use khora_sdk::{
     EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider, Runtime, WindowConfig,
@@ -67,7 +67,7 @@ fn the_engine_puts_the_refusals_in_the_runtime() {
         SecurityRefusal {
             path: PathBuf::from("assets/../../secret.png"),
             trust: Trust::Project,
-            layer: Layer::File,
+            layer: TrustLayer::File,
             reason: SecurityReason::Escape,
         },
         None,

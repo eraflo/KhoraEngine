@@ -23,14 +23,14 @@ use super::ScriptDeclarations;
 /// gone — and what each module recompiled declares now. A module that does
 /// not compile is in neither: what it ran before keeps running.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct Compiled {
+pub struct Recompiled {
     /// The modules recompiled or withdrawn.
     pub reloads: Vec<ScriptReload>,
     /// What the modules declare now, one set per declaring module.
     pub declarations: Vec<ScriptDeclarations>,
 }
 
-impl Compiled {
+impl Recompiled {
     /// How many modules compiled to a program: a withdrawal, or a module
     /// that did not compile, is not counted.
     pub fn programs(&self) -> usize {

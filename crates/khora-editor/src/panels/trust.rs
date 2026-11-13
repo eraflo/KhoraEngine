@@ -29,7 +29,7 @@
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::{EditorPanel, EditorState, Icon, TrustSummary, UiBuilder, UiTheme};
-use khora_tool_ui::widgets::{dialog, ButtonKind, Choice, Dialog};
+use khora_tool_ui::widgets::{dialog, ButtonKind, Dialog, DialogChoice};
 
 /// The trust prompt and the trust confirmation.
 pub struct TrustPanel {
@@ -107,15 +107,15 @@ impl TrustPanel {
                        its files are read with stricter limits. Khora remembers your answer for \
                        this folder; you can trust it later.",
                 choices: &[
-                    Choice {
+                    DialogChoice {
                         label: "Close project",
                         kind: ButtonKind::Ghost,
                     },
-                    Choice {
+                    DialogChoice {
                         label: "Open restricted",
                         kind: ButtonKind::Ghost,
                     },
-                    Choice {
+                    DialogChoice {
                         label: "Trust and open",
                         kind: ButtonKind::Primary,
                     },
@@ -176,11 +176,11 @@ impl TrustPanel {
                 note: "The project reopens. A file refused for what it holds, or downloaded from \
                        the internet, stays refused.",
                 choices: &[
-                    Choice {
+                    DialogChoice {
                         label: "Keep restricted",
                         kind: ButtonKind::Ghost,
                     },
-                    Choice {
+                    DialogChoice {
                         label: "Trust and reopen",
                         kind: ButtonKind::Primary,
                     },

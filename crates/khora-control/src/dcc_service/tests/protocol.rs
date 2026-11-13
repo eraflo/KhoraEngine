@@ -891,7 +891,7 @@ impl Ranked {
                 ..Cost::default()
             },
             quality: 0.5,
-            confidence: Confidence::Quoted,
+            confidence: CostBasis::Quoted,
         }
     }
 }

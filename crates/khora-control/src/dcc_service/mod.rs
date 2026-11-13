@@ -15,7 +15,7 @@
 //! Central service for the Dynamic Context Core.
 
 use crate::budget_channel::BudgetChannel;
-use crate::dcc_context::Context;
+use crate::dcc_context::DccContext;
 use crossbeam_channel::{Receiver, Sender};
 use khora_core::agent::Agent;
 use khora_core::platform::HardwareMonitor;
@@ -55,7 +55,7 @@ const MULTIPLIER_EPSILON: f32 = 1e-4;
 /// Manages the cold-path analysis loop, GORNA arbitration, and agent coordination.
 pub struct DccService {
     config: DccConfig,
-    context: Arc<std::sync::RwLock<Context>>,
+    context: Arc<std::sync::RwLock<DccContext>>,
     registry: Arc<std::sync::Mutex<AgentRegistry>>,
     /// The scheduler's channel, shared with the decision thread: connected
     /// before or after the thread starts, it is the one the next allocation is
@@ -103,7 +103,7 @@ impl DccService {
         let (tx, rx) = crossbeam_channel::bounded(config.telemetry_buffer_size);
         let service = Self {
             config,
-            context: Arc::new(std::sync::RwLock::new(Context::default())),
+            context: Arc::new(std::sync::RwLock::new(DccContext::default())),
             registry: Arc::new(std::sync::Mutex::new(AgentRegistry::new())),
             budget_channel: Arc::new(std::sync::RwLock::new(None)),
             running: Arc::new(AtomicBool::new(false)),
@@ -332,7 +332,7 @@ impl DccService {
     }
 
     /// Returns the current context.
-    pub fn get_context(&self) -> Context {
+    pub fn get_context(&self) -> DccContext {
         self.context
             .read()
             .unwrap_or_else(|e| e.into_inner())
@@ -344,7 +344,7 @@ impl DccService {
     /// Used by observers (e.g. the editor's Control Plane workspace) that
     /// want to read up-to-date hardware state, mode, and budget multiplier
     /// each frame without going through `get_context()`'s clone.
-    pub fn context_handle(&self) -> Arc<std::sync::RwLock<Context>> {
+    pub fn context_handle(&self) -> Arc<std::sync::RwLock<DccContext>> {
         Arc::clone(&self.context)
     }
 

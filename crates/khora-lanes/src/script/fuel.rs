@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use super::frame::FUEL_PER_BEHAVIOR;
-use super::runtime::{Demand, Instance, ScriptRuntime, RATE_BLEND, UNKNOWN_TURN};
+use super::runtime::{FuelDemand, Instance, ScriptRuntime, RATE_BLEND, UNKNOWN_TURN};
 use super::turn::Outcome;
 
 impl ScriptRuntime {
@@ -76,7 +76,7 @@ impl ScriptRuntime {
     /// runs nothing and costs nothing. A rate-limited instance counts for the
     /// share of frames it runs, as in
     /// [`weighted_instances`](Self::weighted_instances).
-    pub fn demand(&self, frame: f32) -> Demand {
+    pub fn demand(&self, frame: f32) -> FuelDemand {
         let unknown = UNKNOWN_TURN.as_secs_f64() * 1_000.0 * self.rate;
         let known = self.known_turns();
         // The entities mail waits for: a turn that had nothing to do cost
@@ -127,7 +127,7 @@ impl ScriptRuntime {
                 critical += fuel;
             }
         }
-        Demand {
+        FuelDemand {
             all: all.round() as u64,
             critical: critical.round() as u64,
         }

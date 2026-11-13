@@ -585,7 +585,9 @@ fn a_run_that_never_shuts_down_keeps_what_it_learnt() {
 /// home, and lists it.
 #[test]
 fn the_engines_these_tests_boot_write_no_quarantine_to_the_home_folder() {
-    use khora_io::trust::{Layer, QuarantineKey, Refusals, SecurityReason, SecurityRefusal, Trust};
+    use khora_io::trust::{
+        QuarantineKey, Refusals, SecurityReason, SecurityRefusal, Trust, TrustLayer,
+    };
     use khora_io::user_dirs::{data_dir, home_dir, quarantine_path};
 
     let env = |key: &str| std::env::var_os(key);
@@ -631,7 +633,7 @@ fn the_engines_these_tests_boot_write_no_quarantine_to_the_home_folder() {
         SecurityRefusal {
             path: refused.clone(),
             trust: Trust::Project,
-            layer: Layer::Decoder,
+            layer: TrustLayer::Decoder,
             reason: SecurityReason::WrongType {
                 expected: "texture".to_owned(),
             },

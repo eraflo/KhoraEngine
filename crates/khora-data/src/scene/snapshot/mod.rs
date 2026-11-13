@@ -285,7 +285,7 @@ fn prepare_parsed(
 }
 
 /// A declared component's row, from the values the snapshot holds.
-fn stage_declared(load: &DeclaredLoad, values: Vec<ScriptValue>) -> super::Staged {
+fn stage_declared(load: &DeclaredLoad, values: Vec<ScriptValue>) -> super::StagedComponent {
     load.stage_values(values)
 }
 

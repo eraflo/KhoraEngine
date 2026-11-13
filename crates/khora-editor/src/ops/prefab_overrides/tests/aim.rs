@@ -26,8 +26,8 @@ use khora_sdk::khora_data::ecs::{
     Component, ComponentDomainRegistration, ComponentProvenance, SemanticDomain, World,
 };
 use khora_sdk::khora_data::scene::{
-    positional, record, schema, ComponentRegistration, ComponentShape, FieldSchema, Staged,
-    StagedValue,
+    positional, record, schema, ComponentRegistration, ComponentShape, FieldSchema,
+    StagedComponent, StagedValue,
 };
 use serde::{Deserialize, Serialize};
 
@@ -75,7 +75,7 @@ inventory::submit! {
         },
         stage: |saved, references| {
             let (aim, report) = record::resolve::<Aim>(saved, references)?;
-            Ok(Staged {
+            Ok(StagedComponent {
                 component: Box::new(StagedValue(aim)),
                 report,
             })
@@ -91,7 +91,7 @@ inventory::submit! {
         },
         stage_snapshot: |bytes, references| {
             let aim = positional::from_positional::<Aim>(bytes, references)?;
-            Ok(Staged {
+            Ok(StagedComponent {
                 component: Box::new(StagedValue(aim)),
                 report: Vec::new(),
             })

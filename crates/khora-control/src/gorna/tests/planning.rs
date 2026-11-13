@@ -25,7 +25,7 @@ use crate::cost_model::ComplexityClass;
 use crate::gorna::arbiter::{Arbiter, Proposal, Refusal, Shield};
 use crate::gorna::decide::{admit, Admission, Plan};
 use crate::gorna::planning::{growth, margin, z_of, Planner, PlanningConfig};
-use khora_core::agent::gorna::protocol::{Binding, Trigger};
+use khora_core::agent::gorna::protocol::{BindingConstraint, Trigger};
 use khora_core::agent::gorna::Planning;
 use khora_core::agent::KEEP_EPOCHS;
 use khora_core::lane::cost::Device;
@@ -745,7 +745,7 @@ fn the_shield_checks_the_planned_target() {
             &base,
             &proposing(&admitted_bids, &[("oak", HighPerformance)])
         ),
-        Err(Refusal::Breach(Binding::Time(Device::Cpu))),
+        Err(Refusal::Breach(BindingConstraint::Time(Device::Cpu))),
         "7 + 2 ms are over 10 − 2 ms"
     );
     assert_eq!(
@@ -793,7 +793,7 @@ fn the_shield_checks_the_planned_target() {
             &grown_base,
             &proposing(&grown_bids, &[("oak", HighPerformance)])
         ),
-        Err(Refusal::Breach(Binding::Time(Device::Cpu))),
+        Err(Refusal::Breach(BindingConstraint::Time(Device::Cpu))),
         "7 × 1.5 + 2 ms are over 11 ms"
     );
     assert_eq!(

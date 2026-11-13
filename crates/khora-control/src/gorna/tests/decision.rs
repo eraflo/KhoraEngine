@@ -17,7 +17,7 @@
 //! own reasons rather than the last live round's.
 
 use super::*;
-use khora_core::agent::gorna::protocol::{Binding, DecidedBy, Rejected, Trigger};
+use khora_core::agent::gorna::protocol::{BindingConstraint, DecidedBy, Rejected, Trigger};
 use khora_core::lane::cost::Device;
 
 use StrategyId::{Balanced, HighPerformance, LowPower};
@@ -128,11 +128,11 @@ fn a_recorded_epoch() -> EpochRecord {
         why: Why {
             by: DecidedBy::Exact,
             trigger: Trigger::Overruns,
-            binding: Some(Binding::Time(Device::Gpu)),
+            binding: Some(BindingConstraint::Time(Device::Gpu)),
             rejected: vec![Rejected {
                 agent: ELM,
                 row: Balanced,
-                over: Binding::Time(Device::Gpu),
+                over: BindingConstraint::Time(Device::Gpu),
             }],
         },
         importance: Vec::new(),

@@ -33,7 +33,7 @@ use khora_io::script::declarations::{DeclaredComponents, ScriptDeclarations};
 use khora_io::script::hot_reload::{module_names, request_channel};
 use khora_io::script::layout::script_dir;
 use khora_io::script::project_compiler::{
-    CompileRequest, Compiled, ProjectCompiler, ScriptCompiler, ScriptReload,
+    CompileRequest, ProjectCompiler, Recompiled, ScriptCompiler, ScriptReload,
 };
 
 /// The module the engine serves its components as: a script imports it, and
@@ -55,7 +55,7 @@ pub fn is_engine_name(name: &str) -> bool {
             .any(|event| event.name == name)
 }
 
-pub use khora_io::script::compile_hub::{CompileHub, CompileOutcome, CompileTicket};
+pub use khora_io::script::compile_hub::{CompileHub, CompileTicket, CompileTicketOutcome};
 pub use khora_io::script::layout::{is_script_file, module_of, SCRIPT_DIR};
 pub use khora_io::script::mounted::MountedScripts;
 
@@ -214,7 +214,7 @@ pub fn mount(runtime: &Runtime, assets_root: &Path) -> Option<CompileTicket> {
 /// The outcome of the mount filed as `ticket`, once it landed — how many
 /// modules compiled, or why it did not land — taken: `None` while it is in
 /// flight, and once taken.
-pub fn outcome(runtime: &Runtime, ticket: CompileTicket) -> Option<CompileOutcome> {
+pub fn outcome(runtime: &Runtime, ticket: CompileTicket) -> Option<CompileTicketOutcome> {
     runtime
         .resources
         .get::<Arc<CompileHub>>()?
@@ -223,7 +223,7 @@ pub fn outcome(runtime: &Runtime, ticket: CompileTicket) -> Option<CompileOutcom
 
 /// Stages `compiled` from the host in `reserve`: it lands at a frame start
 /// once every compile under way now has ended, for the boundary to apply.
-fn stage(reserve: &Reserve, compiled: Compiled) {
+fn stage(reserve: &Reserve, compiled: Recompiled) {
     let mut staging = khora_core::lane::Staging::new();
     staging.stage(compiled.declarations);
     staging.stage(compiled.reloads);
@@ -311,7 +311,7 @@ pub fn unmount(runtime: &Runtime, assets_root: &Path) {
     if let Some(reserve) = runtime.resources.get::<Reserve>() {
         stage(
             reserve,
-            Compiled {
+            Recompiled {
                 declarations: modules
                     .iter()
                     .map(|module| ScriptDeclarations {

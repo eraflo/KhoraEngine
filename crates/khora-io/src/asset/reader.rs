@@ -28,8 +28,8 @@ use super::io::AssetIo;
 use super::manifest::PackManifest;
 use super::AssetIndex;
 use crate::trust::{
-    FileKind, Layer, LimitExceeded, Limits, QuarantineKey, Refusals, SecurityReason,
-    SecurityRefusal, Trust,
+    FileKind, LimitExceeded, Limits, QuarantineKey, Refusals, SecurityReason, SecurityRefusal,
+    Trust, TrustLayer,
 };
 
 /// How many of a file's first bytes its decoder is shown to recognise it.
@@ -250,7 +250,7 @@ impl AssetReader {
         let reason = SecurityReason::WrongType {
             expected: metadata.asset_type_name.clone(),
         };
-        Err(self.refuse(metadata, Content::Bytes(bytes), Layer::Decoder, reason))
+        Err(self.refuse(metadata, Content::Bytes(bytes), TrustLayer::Decoder, reason))
     }
 
     /// What opens the container file `container`.
@@ -347,7 +347,7 @@ impl AssetReader {
             cap,
         };
         // Nothing is read for it: the declared size is what is refused.
-        Err(self.refuse(metadata, Content::Unread, Layer::Pack, reason))
+        Err(self.refuse(metadata, Content::Unread, TrustLayer::Pack, reason))
     }
 
     /// Refuses `bytes` over their type's byte limit, before they are decoded.
@@ -360,7 +360,7 @@ impl AssetReader {
             size,
             cap: limits.max_bytes,
         };
-        Err(self.refuse(metadata, Content::Bytes(bytes), Layer::Decoder, reason))
+        Err(self.refuse(metadata, Content::Bytes(bytes), TrustLayer::Decoder, reason))
     }
 
     /// Runs a decoder's work on the file of `metadata`: a limit that stopped
@@ -385,7 +385,7 @@ impl AssetReader {
                             what: limit.what,
                             limit: limit.limit,
                         };
-                        let refusal = self.refuse(metadata, content, Layer::Decoder, reason);
+                        let refusal = self.refuse(metadata, content, TrustLayer::Decoder, reason);
                         Err(error.context(refusal))
                     }
                     None => Err(error),
@@ -394,7 +394,7 @@ impl AssetReader {
             Err(payload) => {
                 let message = panic_message(payload.as_ref());
                 let reason = SecurityReason::DecoderPanic { message };
-                Err(self.refuse(metadata, content, Layer::Decoder, reason))
+                Err(self.refuse(metadata, content, TrustLayer::Decoder, reason))
             }
         }
     }
@@ -405,7 +405,7 @@ impl AssetReader {
         &self,
         metadata: &AssetMetadata,
         content: Content<'_>,
-        layer: Layer,
+        layer: TrustLayer,
         reason: SecurityReason,
     ) -> anyhow::Error {
         let path = (metadata.variants.get("default"))

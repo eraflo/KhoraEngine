@@ -31,7 +31,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use khora_agents::lane_agent::{lane_agent, LaneAgent};
-use khora_core::agent::gorna::protocol::{Confidence, Envelope, Epoch};
+use khora_core::agent::gorna::protocol::{CostBasis, Envelope, Epoch};
 use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
@@ -563,7 +563,7 @@ fn a_row_fallen_back_to_after_a_failure_is_offered_as_quoted() {
         .expect("the middle level is offered");
     assert_eq!(
         middle.confidence,
-        Confidence::Quoted,
+        CostBasis::Quoted,
         "the middle level never ran: its price is quoted"
     );
 }

@@ -41,7 +41,7 @@ mod waves;
 mod world_clock;
 
 use khora_core::agent::gorna::protocol::{
-    Confidence, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
+    CostBasis, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
 };
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::{Agent, Contention, ExecutionTiming, Layer, LayerRun, Place, Terms};
@@ -61,7 +61,7 @@ fn offer_of(agent: AgentId, request: &OfferRequest, row: StrategyId) -> Offer {
             id: row,
             cost: Cost::default(),
             quality: 1.0,
-            confidence: Confidence::Assumed,
+            confidence: CostBasis::Assumed,
         }],
         floor: row,
         current: row,

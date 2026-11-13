@@ -18,8 +18,8 @@
 use std::time::Duration;
 
 use super::protocol::{
-    Allocation, Binding, Confidence, DecidedBy, Envelope, Epoch, FrameReport, Offer, OfferRow,
-    Rejected, Report, Trigger, Why,
+    Allocation, BindingConstraint, CostBasis, DecidedBy, Envelope, Epoch, FrameReport, Offer,
+    OfferRow, Rejected, Report, Trigger, Why,
 };
 use super::{
     AdaptationMode, AgentHints, AgentId, Correction, DecisionTrace, EpochRecord, FrameSummary,
@@ -120,7 +120,7 @@ fn epoch_record(epoch: u64) -> EpochRecord {
                     ..Cost::default()
                 },
                 quality: 0.4,
-                confidence: Confidence::Assumed,
+                confidence: CostBasis::Assumed,
             },
         ],
         floor: StrategyId::Custom(3),
@@ -157,8 +157,8 @@ fn epoch_record(epoch: u64) -> EpochRecord {
         },
         target: Duration::from_micros(16_667),
         offers: vec![
-            offer(ALPHA, Confidence::Measured),
-            offer(BETA, Confidence::Quoted),
+            offer(ALPHA, CostBasis::Measured),
+            offer(BETA, CostBasis::Quoted),
         ],
         reports: vec![report(ALPHA), report(BETA)],
         waves: vec![vec![ALPHA, BETA]],
@@ -364,17 +364,17 @@ fn a_greedy_why() -> Why {
     Why {
         by: DecidedBy::Greedy,
         trigger: Trigger::Overruns,
-        binding: Some(Binding::Time(Device::Gpu)),
+        binding: Some(BindingConstraint::Time(Device::Gpu)),
         rejected: vec![
             Rejected {
                 agent: ALPHA,
                 row: StrategyId::HighPerformance,
-                over: Binding::Time(Device::Gpu),
+                over: BindingConstraint::Time(Device::Gpu),
             },
             Rejected {
                 agent: BETA,
                 row: StrategyId::Custom(9),
-                over: Binding::Memory(Device::Gpu),
+                over: BindingConstraint::Memory(Device::Gpu),
             },
         ],
     }

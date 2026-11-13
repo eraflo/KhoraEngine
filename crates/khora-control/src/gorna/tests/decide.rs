@@ -397,7 +397,7 @@ fn an_unpriced_row_is_never_planned() {
         id: HighPerformance,
         cost: Cost::default(),
         quality: 1.0,
-        confidence: Confidence::Assumed,
+        confidence: CostBasis::Assumed,
     };
     let bids = [
         bid(
@@ -589,7 +589,7 @@ fn envelopes_sum_within_the_target_on_the_critical_path() {
                         ..Cost::default()
                     },
                     quality: 0.4,
-                    confidence: Confidence::Quoted,
+                    confidence: CostBasis::Quoted,
                 };
                 let mut rows = vec![floor];
                 for (index, quality) in [0.7_f32, 1.0].into_iter().enumerate() {

@@ -15,12 +15,12 @@
 use super::*;
 use crate::metrics::MetricStore;
 
-fn default_context() -> Context {
-    Context::default()
+fn default_context() -> DccContext {
+    DccContext::default()
 }
 
-fn simulation_context() -> Context {
-    Context::default()
+fn simulation_context() -> DccContext {
+    DccContext::default()
 }
 
 // ── Phase Heuristics ─────────────────────────────────────────────

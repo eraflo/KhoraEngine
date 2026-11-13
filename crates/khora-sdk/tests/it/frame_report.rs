@@ -17,7 +17,7 @@
 
 use crate::protocol::{register_after_boot, report_of, Hand, Work};
 use khora_sdk::khora_core::agent::gorna::protocol::{
-    Confidence, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
+    CostBasis, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
 };
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -85,7 +85,7 @@ fn graded_rows() -> Vec<OfferRow> {
             ..Cost::default()
         },
         quality: 1.0,
-        confidence: Confidence::Quoted,
+        confidence: CostBasis::Quoted,
     };
     vec![row(StrategyId::LowPower, 1), row(StrategyId::Balanced, 4)]
 }

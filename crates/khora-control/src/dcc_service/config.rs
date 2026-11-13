@@ -30,7 +30,7 @@ pub struct DccConfig {
     /// If an agent lock cannot be acquired within this time, the agent is skipped.
     pub agent_lock_timeout_ms: u64,
     /// Optional system-RAM budget in bytes. When set, the DCC derives
-    /// [`Context::memory_pressure`](crate::dcc_context::Context::memory_pressure)
+    /// [`DccContext::memory_pressure`](crate::dcc_context::DccContext::memory_pressure)
     /// from the tracking allocator's live usage and degrades frame budgets as
     /// the ceiling approaches. `None` disables the signal — chiefly useful on
     /// memory-constrained targets.
@@ -42,7 +42,7 @@ pub struct DccConfig {
     /// for the budget.
     pub vram_budget_bytes: Option<u64>,
     /// Tuning for the frame governor that drives
-    /// [`Context::global_budget_multiplier`](crate::dcc_context::Context::global_budget_multiplier).
+    /// [`DccContext::global_budget_multiplier`](crate::dcc_context::DccContext::global_budget_multiplier).
     pub frame_governor: GovernorConfig,
     /// The fewest ticks an epoch lasts before another trigger opens the next
     /// one; a trigger raised sooner waits for it. `Safety` never waits.

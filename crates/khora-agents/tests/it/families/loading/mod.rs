@@ -60,7 +60,7 @@ use khora_lanes::loading::LOADING;
 use khora_lanes::loading::{LoadingFamily, PacedLane, RushLane};
 use khora_script::reload::ScriptReload;
 use khora_script::toolchain::{
-    CompileDone, CompileRequest, Compiled, ScriptCompiler, ScriptDeclarations,
+    CompileDone, CompileRequest, Recompiled, ScriptCompiler, ScriptDeclarations,
 };
 use khora_script::vm::Program;
 
@@ -138,9 +138,9 @@ struct EchoCompiler {
 }
 
 impl ScriptCompiler for EchoCompiler {
-    fn compile(&self, request: &CompileRequest) -> Compiled {
+    fn compile(&self, request: &CompileRequest) -> Recompiled {
         self.threads.note();
-        Compiled {
+        Recompiled {
             reloads: request
                 .modules
                 .iter()

@@ -46,7 +46,7 @@ use crate::trust::{FileGuard, ProjectTrustState, Refusals, Trust};
 // reaches them through the compiler it installs, without a dependency on
 // `khora-script` of its own.
 pub use khora_script::reload::ScriptReload;
-pub use khora_script::toolchain::{CompileRequest, Compiled, ScriptCompiler};
+pub use khora_script::toolchain::{CompileRequest, Recompiled, ScriptCompiler};
 
 /// The engine's [`ScriptCompiler`]: reads a project's script folder from
 /// disk, with the engine's prelude, reporting to the runtime's problems,
@@ -105,9 +105,9 @@ impl ProjectCompiler {
     /// each declaring module declares (once, however many import it), what
     /// each reads announced, what each compile found reported. A module that
     /// does not compile is reported and left out.
-    pub fn compile_all(&self, script_root: &Path) -> Compiled {
+    pub fn compile_all(&self, script_root: &Path) -> Recompiled {
         let loader = self.loader(script_root);
-        let mut compiled = Compiled::default();
+        let mut compiled = Recompiled::default();
         let mut declared = BTreeSet::new();
         for module in modules_under(script_root, self.refusals.as_ref(), self.trust()).into_keys() {
             let outcome = compile_module(&loader, &module);
@@ -152,7 +152,7 @@ impl ProjectCompiler {
 impl ScriptCompiler for ProjectCompiler {
     /// Recompiles the modules `request` names and every module importing one
     /// of them; withdraws those whose file is gone.
-    fn compile(&self, request: &CompileRequest) -> Compiled {
+    fn compile(&self, request: &CompileRequest) -> Recompiled {
         self.compile_leased(request).0
     }
 
@@ -161,7 +161,7 @@ impl ScriptCompiler for ProjectCompiler {
     /// abandoned, however late in the run the unmount came. What a request
     /// for a root already unmounted hands on — withdrawals, or modules
     /// compiled from another root — holds to nothing.
-    fn compile_leased(&self, request: &CompileRequest) -> (Compiled, Option<Lease>) {
+    fn compile_leased(&self, request: &CompileRequest) -> (Recompiled, Option<Lease>) {
         // A root unmounted since the request was filed is no project's any
         // more: its modules are withdrawn, never compiled back in.
         if !self.is_mounted(&request.root) {
@@ -200,8 +200,8 @@ impl ProjectCompiler {
     /// another mounted root still provides by the same name compiled from that
     /// root — it is that root's now — and every other one withdrawn, its
     /// declarations emptied, its announced reads and its problems taken back.
-    fn unmounted(&self, request: &CompileRequest) -> Compiled {
-        let mut compiled = Compiled::default();
+    fn unmounted(&self, request: &CompileRequest) -> Recompiled {
+        let mut compiled = Recompiled::default();
         let mut elsewhere: BTreeMap<std::path::PathBuf, BTreeSet<String>> = BTreeMap::new();
         for module in &request.modules {
             let provider = self.mounted.as_ref().and_then(|mounted| {
@@ -248,7 +248,7 @@ impl ProjectCompiler {
     /// Recompiles the modules `request` names in its root, mounted, and every
     /// module importing one of them; withdraws those whose file is gone.
     /// Returns what came out, and every module it went through.
-    fn compile_mounted(&self, request: &CompileRequest) -> (Compiled, BTreeSet<String>) {
+    fn compile_mounted(&self, request: &CompileRequest) -> (Recompiled, BTreeSet<String>) {
         let root = request.root.as_path();
         let changed = &request.modules;
         let script_root = root.join(SCRIPT_DIR);
@@ -260,7 +260,7 @@ impl ProjectCompiler {
         let affected = importers_of(&on_disk, changed);
         let touched = affected.clone();
         let loader = self.loader(&script_root);
-        let mut compiled = Compiled::default();
+        let mut compiled = Recompiled::default();
         let mut declared = BTreeSet::new();
 
         // A deleted file declares nothing any more: what it declared is
@@ -342,7 +342,7 @@ impl ProjectCompiler {
 
 /// Hands on, once per module, the components `program` says that module
 /// declares, skipping the modules already in `declared`.
-fn declare_through(program: &Program, compiled: &mut Compiled, declared: &mut BTreeSet<String>) {
+fn declare_through(program: &Program, compiled: &mut Recompiled, declared: &mut BTreeSet<String>) {
     let mut by_module: BTreeMap<&str, Vec<_>> = BTreeMap::new();
     for component in &program.declared {
         by_module

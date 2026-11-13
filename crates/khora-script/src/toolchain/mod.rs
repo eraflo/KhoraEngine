@@ -14,7 +14,7 @@
 
 //! The script toolchain, as the engine drives it off the frame: what a
 //! compile is asked ([`CompileRequest`]), who answers it
-//! ([`ScriptCompiler`]), and what it hands back ([`Compiled`]) — the
+//! ([`ScriptCompiler`]), and what it hands back ([`Recompiled`]) — the
 //! recompiled programs and what their modules declare
 //! ([`ScriptDeclarations`]), both staged for a frame's boundary.
 //!
@@ -33,7 +33,7 @@ mod script_declarations;
 pub use compile_done::CompileDone;
 pub use compile_request::CompileRequest;
 pub use compile_ticket::CompileTicket;
-pub use compiled::Compiled;
+pub use compiled::Recompiled;
 pub use script_compiler::ScriptCompiler;
 pub use script_declarations::ScriptDeclarations;
 

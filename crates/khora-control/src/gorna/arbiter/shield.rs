@@ -14,7 +14,7 @@
 
 //! The shield: what every proposal must satisfy before the arbiter keeps it.
 
-use khora_core::agent::gorna::protocol::Binding;
+use khora_core::agent::gorna::protocol::BindingConstraint;
 use khora_core::agent::gorna::{AgentId, StrategyId};
 
 use super::super::decide::{breach, fits_envelope, Bid, Plan, Round};
@@ -25,7 +25,7 @@ use super::{planned, Proposal};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Refusal {
     /// The proposal breaks a constraint of the frame.
-    Breach(Binding),
+    Breach(BindingConstraint),
     /// The proposal plans a row the agent's policies rule out.
     RuledOut {
         /// The agent.

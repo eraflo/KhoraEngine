@@ -37,7 +37,7 @@ use std::time::Duration;
 
 use khora_agents::lane_agent::{lane_agent, LaneAgent, QUOTE_MAX_AGE};
 use khora_core::agent::gorna::protocol::Envelope;
-use khora_core::agent::gorna::protocol::{Confidence, OfferRow};
+use khora_core::agent::gorna::protocol::{CostBasis, OfferRow};
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
@@ -371,7 +371,7 @@ fn time_of(row: &OfferRow) -> Duration {
 fn offered_time(agent: &mut LaneAgent, strategy: StrategyId) -> Option<Duration> {
     offered_rows(agent)
         .iter()
-        .find(|row| row.id == strategy && row.confidence != Confidence::Assumed)
+        .find(|row| row.id == strategy && row.confidence != CostBasis::Assumed)
         .map(time_of)
 }
 
@@ -688,7 +688,7 @@ fn after_a_full_quote_a_row_without_a_quote_is_offered_without_a_price() {
 
     let priced: Vec<StrategyId> = offered_rows(&mut agent)
         .iter()
-        .filter(|row| row.confidence != Confidence::Assumed)
+        .filter(|row| row.confidence != CostBasis::Assumed)
         .map(|row| row.id)
         .collect();
     assert_eq!(

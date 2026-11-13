@@ -38,7 +38,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use khora_core::asset::{AssetHandle, AssetUUID};
 use khora_core::gpu::GpuSetup;
-use khora_core::lane::erased::{AnyLane, Erased, Run, RunOutcome};
+use khora_core::lane::erased::{AnyLane, Erased, LaneRun, RunOutcome};
 use khora_core::lane::io::{FrameId, InputSource, OutputSink, PassSlot, Target, TargetKey};
 use khora_core::lane::Lane;
 use khora_core::lane::{LaneBus, OutputDeck};
@@ -1127,7 +1127,7 @@ impl ClosedPass {
 /// What one record gave back.
 pub struct Recorded {
     /// The run as the agent sees it.
-    pub run: Run,
+    pub run: LaneRun,
     /// The committed pass; `None` when the slot holds none.
     pub pass: Option<ClosedPass>,
 }

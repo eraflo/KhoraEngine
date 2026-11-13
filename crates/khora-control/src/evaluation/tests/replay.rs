@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use super::*;
 use crate::{DccConfig, DccService};
 use khora_core::agent::gorna::protocol::{
-    Allocation, Confidence, DecidedBy, Envelope, Epoch, FrameReport, Offer, OfferRequest, OfferRow,
+    Allocation, CostBasis, DecidedBy, Envelope, Epoch, FrameReport, Offer, OfferRequest, OfferRow,
     Report, Trigger, Why,
 };
 use khora_core::agent::gorna::{
@@ -58,7 +58,7 @@ fn row(id: StrategyId, cpu_us: u64, quality: f32) -> OfferRow {
             ..Cost::default()
         },
         quality,
-        confidence: Confidence::Measured,
+        confidence: CostBasis::Measured,
     }
 }
 

@@ -853,3 +853,35 @@ mod paths_used_by_other_crates {
     use khora_io::script::project_compiler::ProjectCompiler as _; // khora-agents, khora-sdk
     use khora_io::serialization::SerializationService as _; // khora-sdk
 }
+
+/// Where a refusal was decided is a `TrustLayer` — the file, the decoder, the
+/// pack or the content — at `khora_io::trust`, and a refusal names it; the
+/// name `Layer` stays with the agent's layer trait
+/// (`khora_core::agent::Layer`).
+#[test]
+fn where_a_refusal_was_decided_has_a_name_of_its_own() {
+    use khora_io::trust::TrustLayer;
+    fn is_hash<T: std::hash::Hash>() {}
+    fn trust_layer_variants(x: &TrustLayer) {
+        match x {
+            TrustLayer::File => {}
+            TrustLayer::Decoder => {}
+            TrustLayer::Pack => {}
+            TrustLayer::Content => {}
+        }
+    }
+    fn refusal_layer(x: &khora_io::trust::SecurityRefusal) -> &TrustLayer {
+        &x.layer
+    }
+    let _ = type_name::<TrustLayer>();
+    let _ = trust_layer_variants as fn(&TrustLayer);
+    let _ = refusal_layer as fn(&khora_io::trust::SecurityRefusal) -> &TrustLayer;
+    is_debug::<TrustLayer>();
+    is_clone::<TrustLayer>();
+    is_copy::<TrustLayer>();
+    is_partial_eq::<TrustLayer>();
+    is_eq::<TrustLayer>();
+    is_hash::<TrustLayer>();
+    is_serialize::<TrustLayer>();
+    is_deserialize_owned::<TrustLayer>();
+}

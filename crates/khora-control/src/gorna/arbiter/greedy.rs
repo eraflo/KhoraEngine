@@ -15,7 +15,7 @@
 //! The Q-RAM pass as a proposer.
 
 use khora_core::agent::gorna::protocol::Envelope;
-use khora_core::agent::gorna::protocol::{Binding, DecidedBy, Rejected};
+use khora_core::agent::gorna::protocol::{BindingConstraint, DecidedBy, Rejected};
 use khora_core::lane::cost::{Cost, Device};
 
 use super::super::decide::{breach, busiest, fits_envelope, micros, weight, Bid, Plan, Round};
@@ -97,7 +97,7 @@ impl Proposer for Greedy {
 
 /// What a `Stable` ceiling refuses of `cost`: the ceiling on the first
 /// device whose time or memory it is over.
-pub(super) fn over_ceiling(cost: &Cost, ceiling: &Envelope) -> Binding {
+pub(super) fn over_ceiling(cost: &Cost, ceiling: &Envelope) -> BindingConstraint {
     let device = Device::ALL
         .into_iter()
         .find(|device| {
@@ -105,7 +105,7 @@ pub(super) fn over_ceiling(cost: &Cost, ceiling: &Envelope) -> Binding {
                 || device.get(&cost.memory) > device.get(&ceiling.memory)
         })
         .unwrap_or(Device::Cpu);
-    Binding::Ceiling(device)
+    BindingConstraint::Ceiling(device)
 }
 
 /// One candidate upgrade: an agent, the row it moves to, and what it gains.

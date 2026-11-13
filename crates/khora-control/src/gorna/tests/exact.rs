@@ -24,7 +24,7 @@ use super::decide::{bid, round};
 use super::*;
 use crate::gorna::arbiter::{planned, Arbiter, Exact, Greedy, Proposal, Proposer, Shield};
 use crate::gorna::decide::{admit, weight, Admission, Plan};
-use khora_core::agent::gorna::protocol::{Binding, DecidedBy, Rejected, Trigger};
+use khora_core::agent::gorna::protocol::{BindingConstraint, DecidedBy, Rejected, Trigger};
 use khora_core::lane::cost::{Device, PerLink};
 
 use AgentImportance::{Critical, Important, Optional};
@@ -216,7 +216,7 @@ fn generate(rng: &mut Rng, max_agents: usize, max_rows: usize) -> Case {
             }
             offered.cost.memory.gpu = rng.below(8) * MIB;
             if index > 0 && rng.chance(8) {
-                offered.confidence = Confidence::Assumed;
+                offered.confidence = CostBasis::Assumed;
             }
             rows.push(offered);
         }
@@ -640,7 +640,7 @@ fn generate_wide(rng: &mut Rng, max_agents: usize, max_rows: usize) -> WideCase 
                 offered.cost.transfer.gpu_to_cpu = rng.below(4) * MIB;
             }
             if index > 0 && rng.chance(8) {
-                offered.confidence = Confidence::Assumed;
+                offered.confidence = CostBasis::Assumed;
             }
             rows.push(offered);
         }
@@ -1075,12 +1075,12 @@ fn the_exact_why_names_what_stops_each_agent_growing() {
     let pine = Rejected {
         agent: AgentId::new("pine"),
         row: HighPerformance,
-        over: Binding::Time(Device::Cpu),
+        over: BindingConstraint::Time(Device::Cpu),
     };
     let fir = Rejected {
         agent: AgentId::new("fir"),
         row: HighPerformance,
-        over: Binding::Memory(Device::Gpu),
+        over: BindingConstraint::Memory(Device::Gpu),
     };
     let rejected = &decision.why.rejected;
     assert_eq!(
@@ -1151,7 +1151,7 @@ fn the_exact_why_names_a_stable_ceiling_that_stops_an_agent() {
     let ceiling = Rejected {
         agent: AgentId::new("ash"),
         row: HighPerformance,
-        over: Binding::Ceiling(Device::Cpu),
+        over: BindingConstraint::Ceiling(Device::Cpu),
     };
 
     let greedy = Arbiter::with(vec![Box::new(Greedy)]).decide(&round);

@@ -49,5 +49,5 @@ pub use frame::run_behaviors;
 pub use intake::take_in;
 pub use lane::*;
 pub use report::{Resumed, ScriptRunReport, Slow};
-pub use runtime::{Body, Demand, Instance, Pending, ReloadReport, ScriptRuntime};
+pub use runtime::{Body, FuelDemand, Instance, Pending, ReloadReport, ScriptRuntime};
 pub use watchdog::{WATCHDOG_FAULT, WATCHDOG_WARN};

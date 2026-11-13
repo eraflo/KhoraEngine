@@ -25,7 +25,7 @@
 //! `Trigger::Safety`: every agent is lent its floor.
 
 use crate::analysis::AnalysisReport;
-use crate::dcc_context::Context;
+use crate::dcc_context::DccContext;
 use khora_core::agent::gorna::protocol::{
     Allocation, Envelope, Epoch, Offer, OfferRequest, Trigger, Why,
 };
@@ -289,7 +289,7 @@ impl GornaArbitrator {
     /// stalled, or when the floors do not fit.
     pub fn allocate(
         &mut self,
-        context: &Context,
+        context: &DccContext,
         report: &AnalysisReport,
         trigger: Trigger,
         agents: &[Arc<Mutex<dyn Agent>>],

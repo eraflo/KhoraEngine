@@ -157,7 +157,7 @@ impl Default for AgentRegistry {
 mod tests {
     use super::*;
     use khora_core::agent::gorna::protocol::{
-        Confidence, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
+        CostBasis, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
     };
     use khora_core::agent::gorna::StrategyId;
     use khora_core::agent::Place;
@@ -190,7 +190,7 @@ mod tests {
                     id: StrategyId::Balanced,
                     cost: Cost::default(),
                     quality: 1.0,
-                    confidence: Confidence::Assumed,
+                    confidence: CostBasis::Assumed,
                 }],
                 floor: StrategyId::Balanced,
                 current: StrategyId::Balanced,

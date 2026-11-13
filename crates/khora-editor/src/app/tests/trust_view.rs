@@ -34,8 +34,8 @@ use khora_sdk::editor_ui::{
 use khora_sdk::khora_core::problems::{Problem, ProblemSeverity, ProblemSource, Problems};
 use khora_sdk::khora_core::ui::UiTheme;
 use khora_sdk::trust::{
-    Layer, ProjectTrust, ProjectTrustState, QuarantineKey, Refusals, SecurityReason,
-    SecurityRefusal, Trust, TrustStore,
+    ProjectTrust, ProjectTrustState, QuarantineKey, Refusals, SecurityReason, SecurityRefusal,
+    Trust, TrustLayer, TrustStore,
 };
 use khora_sdk::EngineApp;
 
@@ -146,7 +146,7 @@ fn too_large(path: PathBuf, trust: Trust) -> SecurityRefusal {
     SecurityRefusal {
         path,
         trust,
-        layer: Layer::File,
+        layer: TrustLayer::File,
         reason: SecurityReason::TooLarge {
             size: 80 << 20,
             cap: 64 << 20,
@@ -158,7 +158,7 @@ fn over_limit(path: PathBuf) -> SecurityRefusal {
     SecurityRefusal {
         path,
         trust: Trust::Restricted,
-        layer: Layer::Decoder,
+        layer: TrustLayer::Decoder,
         reason: SecurityReason::OverLimit {
             what: "image width of 16384 pixels".to_owned(),
             limit: 8192,
@@ -170,7 +170,7 @@ fn wrong_type(path: PathBuf) -> SecurityRefusal {
     SecurityRefusal {
         path,
         trust: Trust::Project,
-        layer: Layer::Decoder,
+        layer: TrustLayer::Decoder,
         reason: SecurityReason::WrongType {
             expected: "texture".to_owned(),
         },

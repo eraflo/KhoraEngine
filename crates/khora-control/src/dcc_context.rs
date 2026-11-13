@@ -44,7 +44,7 @@ pub struct HardwareState {
 
 /// The complete context model used for strategic decision making.
 #[derive(Debug, Clone)]
-pub struct Context {
+pub struct DccContext {
     /// Observed hardware state.
     pub hardware: HardwareState,
     /// The families off in the state in force, as the last
@@ -71,7 +71,7 @@ pub struct Context {
     pub memory_pressure: f32,
 }
 
-impl Default for Context {
+impl Default for DccContext {
     fn default() -> Self {
         Self {
             hardware: HardwareState::default(),
@@ -86,8 +86,8 @@ impl Default for Context {
 /// hard safety ceiling, regardless of where the frame governor currently sits.
 pub const MEMORY_PRESSURE_CRITICAL: f32 = 0.95;
 
-impl Context {
-    /// Recomputes [`Context::memory_pressure`] from the current RAM usage versus
+impl DccContext {
+    /// Recomputes [`DccContext::memory_pressure`] from the current RAM usage versus
     /// the developer-set budget.
     ///
     /// Pressure is `current_ram_bytes / memory_budget_bytes`, clamped to `[0, 1]`.
@@ -115,7 +115,7 @@ impl Context {
 /// demand an immediate cap that does not wait for the loop to converge. This is
 /// the feedforward / safety half of the controller: it can only ever *lower* the
 /// multiplier, never raise it.
-pub fn safety_ceiling(ctx: &Context) -> f32 {
+pub fn safety_ceiling(ctx: &DccContext) -> f32 {
     let mut ceiling = 1.0_f32;
     if ctx.hardware.thermal == ThermalStatus::Critical {
         ceiling = ceiling.min(0.4);
@@ -135,14 +135,14 @@ mod tests {
 
     #[test]
     fn test_default_context_full_budget() {
-        let ctx = Context::default();
+        let ctx = DccContext::default();
         assert_eq!(ctx.global_budget_multiplier, 1.0);
         assert!(ctx.inactive.is_empty(), "every family on");
     }
 
     #[test]
     fn test_memory_pressure_from_budget() {
-        let mut ctx = Context::default();
+        let mut ctx = DccContext::default();
         ctx.hardware.current_ram_bytes = Some(960);
         ctx.hardware.memory_budget_bytes = Some(1000);
         ctx.refresh_memory_pressure();
@@ -151,7 +151,7 @@ mod tests {
 
     #[test]
     fn test_memory_pressure_zero_without_budget() {
-        let mut ctx = Context::default();
+        let mut ctx = DccContext::default();
         ctx.hardware.current_ram_bytes = Some(10_000_000);
         ctx.hardware.memory_budget_bytes = None;
         ctx.refresh_memory_pressure();
@@ -160,27 +160,27 @@ mod tests {
 
     #[test]
     fn test_safety_ceiling_open_when_healthy() {
-        let ctx = Context::default();
+        let ctx = DccContext::default();
         assert_eq!(safety_ceiling(&ctx), 1.0);
     }
 
     #[test]
     fn test_safety_ceiling_critical_thermal() {
-        let mut ctx = Context::default();
+        let mut ctx = DccContext::default();
         ctx.hardware.thermal = ThermalStatus::Critical;
         assert!((safety_ceiling(&ctx) - 0.4).abs() < 0.001);
     }
 
     #[test]
     fn test_safety_ceiling_critical_battery() {
-        let mut ctx = Context::default();
+        let mut ctx = DccContext::default();
         ctx.hardware.battery = BatteryLevel::Critical;
         assert!((safety_ceiling(&ctx) - 0.5).abs() < 0.001);
     }
 
     #[test]
     fn test_safety_ceiling_high_memory_pressure() {
-        let ctx = Context {
+        let ctx = DccContext {
             memory_pressure: 0.96,
             ..Default::default()
         };
@@ -189,7 +189,7 @@ mod tests {
 
     #[test]
     fn test_safety_ceiling_takes_minimum() {
-        let mut ctx = Context::default();
+        let mut ctx = DccContext::default();
         ctx.hardware.thermal = ThermalStatus::Critical; // 0.4
         ctx.hardware.battery = BatteryLevel::Critical; // 0.5
                                                        // Most restrictive wins.
@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn test_non_critical_states_leave_ceiling_open() {
-        let mut ctx = Context::default();
+        let mut ctx = DccContext::default();
         ctx.hardware.thermal = ThermalStatus::Throttling;
         ctx.hardware.battery = BatteryLevel::Low;
         // Throttling / Low now shape the setpoint, not a hard clamp.

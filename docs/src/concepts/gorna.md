@@ -146,7 +146,7 @@ tells that part of the story.
 - **An agent that arrives or leaves** — a family switched on or off, as the editor
   does with scripts, physics and audio at Play and Stop — opens an epoch
   (`AgentsChanged`). The switch lands at a frame boundary, and the DCC hears of it as
-  `TelemetryEvent::ActivationChanged`: it keeps the families off in `Context.inactive`
+  `TelemetryEvent::ActivationChanged`: it keeps the families off in `DccContext.inactive`
   and clears its run reports. Only the active families are asked for offers and given
   envelopes.
 - **An emergency** (heat, memory and overruns together: the *death spiral*) is an

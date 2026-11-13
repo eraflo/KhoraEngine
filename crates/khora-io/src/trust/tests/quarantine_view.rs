@@ -20,7 +20,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
-use crate::trust::{Layer, QuarantineKey, Refusals, SecurityReason, SecurityRefusal, Trust};
+use crate::trust::{QuarantineKey, Refusals, SecurityReason, SecurityRefusal, Trust, TrustLayer};
 
 /// A folder under the temp folder, removed when dropped.
 struct Folder(PathBuf);
@@ -56,7 +56,7 @@ fn too_large(path: PathBuf) -> SecurityRefusal {
     SecurityRefusal {
         path,
         trust: Trust::Restricted,
-        layer: Layer::File,
+        layer: TrustLayer::File,
         reason: SecurityReason::TooLarge {
             size: 80 << 20,
             cap: 64 << 20,
@@ -68,7 +68,7 @@ fn wrong_type(path: PathBuf) -> SecurityRefusal {
     SecurityRefusal {
         path,
         trust: Trust::Project,
-        layer: Layer::Decoder,
+        layer: TrustLayer::Decoder,
         reason: SecurityReason::WrongType {
             expected: "texture".to_owned(),
         },
@@ -99,7 +99,7 @@ fn the_quarantine_lists_each_refusal_with_its_key() {
         SecurityRefusal {
             path: folder.0.join("..").join("outside.png"),
             trust: Trust::Project,
-            layer: Layer::File,
+            layer: TrustLayer::File,
             reason: SecurityReason::Escape,
         },
         Some(QuarantineKey::Content([1; 32])),

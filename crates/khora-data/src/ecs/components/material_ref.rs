@@ -155,7 +155,7 @@ fn material_ref_to_record(
 fn stage_material_ref(
     record: &Record,
     references: &mut dyn ReferenceReader,
-) -> Result<crate::scene::Staged, RecordError> {
+) -> Result<crate::scene::StagedComponent, RecordError> {
     let (variant, carried): (&str, Record) = match record {
         Record::Variant {
             variant, payload, ..
@@ -233,7 +233,7 @@ fn stage_material_ref(
             )))
         }
     };
-    Ok(crate::scene::Staged {
+    Ok(crate::scene::StagedComponent {
         component: Box::new(crate::scene::StagedValue(mref)),
         report,
     })
@@ -297,7 +297,7 @@ fn material_ref_to_snapshot(
 fn stage_material_ref_snapshot(
     bytes: &[u8],
     references: &mut dyn ReferenceReader,
-) -> Result<crate::scene::Staged, RecordError> {
+) -> Result<crate::scene::StagedComponent, RecordError> {
     let mref = match crate::scene::positional::from_positional::<MaterialRefSnapshot>(
         bytes, references,
     )? {
@@ -309,7 +309,7 @@ fn stage_material_ref_snapshot(
         )?),
         MaterialRefSnapshot::Asset(uuid) => MaterialRef::Asset(uuid),
     };
-    Ok(crate::scene::Staged {
+    Ok(crate::scene::StagedComponent {
         component: Box::new(crate::scene::StagedValue(mref)),
         report: Vec::new(),
     })

@@ -35,7 +35,7 @@ use khora_sdk::{
 };
 
 use khora_io::script::declarations::ScriptDeclarations;
-use khora_io::script::project_compiler::{Compiled, ProjectCompiler};
+use khora_io::script::project_compiler::{ProjectCompiler, Recompiled};
 use khora_sdk::khora_core::lane::{Reserve, Staging};
 
 const MODULE: &str = "mover.erg";
@@ -79,7 +79,7 @@ impl EngineApp for AttachingMover {
 
 /// Stages `compiled` into `reserve`, as a frame start hands a compile run's
 /// staging over.
-fn stage(reserve: &Reserve, compiled: Compiled) {
+fn stage(reserve: &Reserve, compiled: Recompiled) {
     let mut staging = Staging::new();
     staging.stage(compiled.reloads);
     staging.stage(compiled.declarations);

@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use khora_agents::lane_agent::{lane_agent, LaneAgent};
-use khora_core::agent::gorna::protocol::{Confidence, Epoch, Offer, OfferRow};
+use khora_core::agent::gorna::protocol::{CostBasis, Epoch, Offer, OfferRow};
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
@@ -241,19 +241,19 @@ fn an_offer_names_the_floor_and_each_rows_confidence() {
     let dear = row_of(&offer, StrategyId::HighPerformance);
     assert_ne!(
         dear.confidence,
-        Confidence::Assumed,
+        CostBasis::Assumed,
         "the dear row is priced"
     );
     assert_eq!(dear.cost.time.cpu, Duration::from_micros(100));
     assert_eq!(dear.quality, 1.0, "no impact");
 
     let cheap = row_of(&offer, StrategyId::LowPower);
-    assert_eq!(cheap.confidence, Confidence::Quoted, "quoted, never run");
+    assert_eq!(cheap.confidence, CostBasis::Quoted, "quoted, never run");
     assert_eq!(cheap.cost.time.cpu, Duration::from_micros(50));
     assert_eq!(cheap.quality, 0.4, "a major impact");
 
     let locked = row_of(&offer, StrategyId::Balanced);
-    assert_eq!(locked.confidence, Confidence::Assumed, "never priced");
+    assert_eq!(locked.confidence, CostBasis::Assumed, "never priced");
     assert_eq!(
         locked.cost.time,
         PerDevice::default(),
@@ -296,7 +296,7 @@ fn a_locking_lane_whose_lock_is_free_is_offered_at_its_quote() {
     let offer = agent.offer(&offer_request(2));
 
     let locked = row_of(&offer, StrategyId::Balanced);
-    assert_eq!(locked.confidence, Confidence::Quoted, "quoted, never run");
+    assert_eq!(locked.confidence, CostBasis::Quoted, "quoted, never run");
     assert_eq!(locked.cost.time.cpu, Duration::from_micros(10));
     assert_eq!(offer.floor, StrategyId::Balanced, "the cheapest priced row");
 }
@@ -311,11 +311,9 @@ fn before_any_run_every_row_is_assumed_and_the_floor_is_the_default_level() {
 
     assert_eq!(offer.rows.len(), 3);
     assert!(
-        offer
-            .rows
-            .iter()
-            .all(|row| row.confidence == Confidence::Assumed
-                && row.cost.time == PerDevice::default()),
+        offer.rows.iter().all(
+            |row| row.confidence == CostBasis::Assumed && row.cost.time == PerDevice::default()
+        ),
         "nothing priced: every row assumed, at no time: {:?}",
         offer.rows
     );

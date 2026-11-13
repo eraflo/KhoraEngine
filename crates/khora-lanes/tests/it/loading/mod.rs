@@ -54,7 +54,7 @@ use khora_data::scene::NoPrefabs;
 use khora_lanes::loading::{PacedLane, RushLane};
 use khora_script::reload::ScriptReload;
 use khora_script::toolchain::{
-    CompileDone, CompileRequest, CompileTicket, Compiled, ScriptCompiler, ScriptDeclarations,
+    CompileDone, CompileRequest, CompileTicket, Recompiled, ScriptCompiler, ScriptDeclarations,
 };
 use khora_script::vm::Program;
 
@@ -138,7 +138,7 @@ impl AssetDecoding for FakeDecoding {
 /// and remembers the requests, in the order it was asked.
 #[derive(Default)]
 struct FakeCompiler {
-    answer: Option<Compiled>,
+    answer: Option<Recompiled>,
     asked: Mutex<Vec<CompileRequest>>,
 }
 
@@ -147,7 +147,7 @@ impl FakeCompiler {
         Arc::new(Self::default())
     }
 
-    fn answering(answer: Compiled) -> Arc<Self> {
+    fn answering(answer: Recompiled) -> Arc<Self> {
         Arc::new(Self {
             answer: Some(answer),
             asked: Mutex::new(Vec::new()),
@@ -163,14 +163,14 @@ impl FakeCompiler {
 }
 
 impl ScriptCompiler for FakeCompiler {
-    fn compile(&self, request: &CompileRequest) -> Compiled {
+    fn compile(&self, request: &CompileRequest) -> Recompiled {
         self.asked
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .push(request.clone());
         match &self.answer {
             Some(answer) => answer.clone(),
-            None => Compiled {
+            None => Recompiled {
                 reloads: request.modules.iter().map(|m| reload(m)).collect(),
                 declarations: request.modules.iter().map(|m| declarations(m)).collect(),
             },
@@ -679,7 +679,7 @@ fn a_decode_whose_asset_changed_while_it_waited_is_abandoned_and_only_it() {
 fn rush_stages_what_the_compiler_returns() {
     let filed = Filed::new(
         &[],
-        FakeCompiler::answering(Compiled {
+        FakeCompiler::answering(Recompiled {
             reloads: vec![reload("ai/guard.erg")],
             declarations: vec![declarations("ai/guard.erg")],
         }),
@@ -735,7 +735,7 @@ fn rush_compiles_the_requests_of_one_root_once_with_their_modules_merged() {
 fn what_every_compile_of_a_run_returns_is_staged() {
     let filed = Filed::new(
         &[],
-        FakeCompiler::answering(Compiled {
+        FakeCompiler::answering(Recompiled {
             reloads: vec![reload("shared.erg")],
             declarations: Vec::new(),
         }),
@@ -1234,11 +1234,11 @@ fn a_decoder_that_panics_loses_no_scene_load_taken_beside_it() {
 struct PanickingOnOneRoot;
 
 impl ScriptCompiler for PanickingOnOneRoot {
-    fn compile(&self, request: &CompileRequest) -> Compiled {
+    fn compile(&self, request: &CompileRequest) -> Recompiled {
         if request.root == std::path::Path::new("broken") {
             panic!("the compiler of {} panicked", request.root.display());
         }
-        Compiled {
+        Recompiled {
             reloads: request.modules.iter().map(|m| reload(m)).collect(),
             declarations: request.modules.iter().map(|m| declarations(m)).collect(),
         }
@@ -1652,14 +1652,14 @@ impl LeasingCompiler {
 }
 
 impl ScriptCompiler for LeasingCompiler {
-    fn compile(&self, request: &CompileRequest) -> Compiled {
-        Compiled {
+    fn compile(&self, request: &CompileRequest) -> Recompiled {
+        Recompiled {
             reloads: request.modules.iter().map(|m| reload(m)).collect(),
             declarations: request.modules.iter().map(|m| declarations(m)).collect(),
         }
     }
 
-    fn compile_leased(&self, request: &CompileRequest) -> (Compiled, Option<Lease>) {
+    fn compile_leased(&self, request: &CompileRequest) -> (Recompiled, Option<Lease>) {
         let mounted = self.flag(&request.root);
         (
             self.compile(request),

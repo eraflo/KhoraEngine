@@ -399,7 +399,7 @@ impl Place {
     /// one wanted is staged, with the time its preparation took; one whose
     /// row no longer is is kept ready. A preparation that gave no layer
     /// raises [`Wake::PrepareFailed`] for its row.
-    pub fn prepared(&mut self, prepared: super::Prepared) {
+    pub fn prepared(&mut self, prepared: super::PreparedLayer) {
         let row = prepared.row();
         if self.under_way == Some(row) {
             self.under_way = None;

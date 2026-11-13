@@ -37,7 +37,8 @@ pub use contention::Contention;
 pub use dependency::{AgentDependency, DependencyKind};
 pub use execution_phase::ExecutionPhase;
 pub use layer::{
-    CheckedOut, LastRun, Layer, LayerRun, Place, Preparation, Prepared, Terms, Wake, KEEP_EPOCHS,
+    CheckedOut, LastRun, Layer, LayerRun, Place, Preparation, PreparedLayer, Terms, Wake,
+    KEEP_EPOCHS,
 };
 pub use registration::{
     check_registrations, registered_agents, AgentRegistration, BootError, RegisteredAgent,

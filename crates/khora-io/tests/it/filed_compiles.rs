@@ -24,7 +24,7 @@ use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, SystemContext, Tick, World};
 use khora_io::script::project_compiler::ProjectCompiler;
 use khora_script::reload::ScriptReload;
-use khora_script::toolchain::{CompileRequest, Compiled, ScriptCompiler, ScriptDeclarations};
+use khora_script::toolchain::{CompileRequest, Recompiled, ScriptCompiler, ScriptDeclarations};
 
 /// Puts in `runtime` what the pump files into and what the compile stages
 /// into: the request channel and the reserve.
@@ -90,7 +90,7 @@ pub fn compile_filed(runtime: &Runtime) -> usize {
 }
 
 /// Stages `compiled` into the runtime's reserve.
-pub fn stage(runtime: &Runtime, compiled: Compiled) {
+pub fn stage(runtime: &Runtime, compiled: Recompiled) {
     let reserve = runtime
         .resources
         .get::<Reserve>()
@@ -100,7 +100,7 @@ pub fn stage(runtime: &Runtime, compiled: Compiled) {
 
 /// Stages `compiled` into `reserve`, as a frame start hands a compile run's
 /// staging over.
-pub fn stage_into(reserve: &Reserve, compiled: Compiled) {
+pub fn stage_into(reserve: &Reserve, compiled: Recompiled) {
     let mut staging = Staging::new();
     staging.stage(compiled.reloads);
     staging.stage(compiled.declarations);

@@ -108,7 +108,7 @@ fn tick_until(engine: &mut EngineCore<Tool>, mut done: impl FnMut(&mut EngineCor
 fn tick_until_landed(
     engine: &mut EngineCore<Tool>,
     ticket: khora_sdk::scripts::CompileTicket,
-) -> Option<khora_sdk::scripts::CompileOutcome> {
+) -> Option<khora_sdk::scripts::CompileTicketOutcome> {
     let mut landed = None;
     tick_until(engine, |engine| {
         landed = khora_sdk::scripts::outcome(engine.runtime(), ticket);

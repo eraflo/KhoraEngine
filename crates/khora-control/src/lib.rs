@@ -54,7 +54,7 @@ pub mod worker_pool;
 
 pub use agent_registry::AgentRegistry;
 pub use analysis::AnalysisReport;
-pub use dcc_context::{BatteryLevel, Context, HardwareState, ThermalStatus};
+pub use dcc_context::{BatteryLevel, DccContext, HardwareState, ThermalStatus};
 pub use dcc_service::{DccConfig, DccService};
 pub use gorna::GornaArbitrator;
 pub use scheduler::ExecutionScheduler;

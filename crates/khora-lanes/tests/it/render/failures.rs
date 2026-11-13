@@ -23,7 +23,7 @@ use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use khora_core::gpu::GpuSetup;
-use khora_core::lane::erased::{AnyLane, Run, RunOutcome};
+use khora_core::lane::erased::{AnyLane, LaneRun, RunOutcome};
 use khora_core::lane::io::{FrameId, InputSource, OutputSink};
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::math::dimension::{Extent3D, Origin3D};
@@ -267,7 +267,7 @@ impl PipelineSystem for Picky {
 
 /// What one frame gave back: the run, and the draws of its scene pass.
 struct Frame {
-    run: Run,
+    run: LaneRun,
     scene_pass: Option<CommandBufferId>,
 }
 

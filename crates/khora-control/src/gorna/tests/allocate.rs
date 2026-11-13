@@ -25,7 +25,7 @@ use StrategyId::{Balanced, Custom, HighPerformance, LowPower};
 /// One live round in `context`, for a frame of `latency_ms`.
 fn allocate(
     arbitrator: &mut GornaArbitrator,
-    context: &Context,
+    context: &DccContext,
     latency_ms: f32,
     trigger: Trigger,
     agents: &[Arc<Mutex<dyn Agent>>],
@@ -81,7 +81,7 @@ fn fits_in_time(cost: &Cost, envelope: &Envelope) -> bool {
 fn a_round_asks_each_agent_once_and_lends_nothing_itself() {
     let (bidder, agent) = shared(Bidder::single("ash", 2_000));
     let mut arbitrator = arbitrator();
-    let context = Context {
+    let context = DccContext {
         global_budget_multiplier: 0.5,
         ..Default::default()
     };

@@ -29,8 +29,8 @@ use khora_sdk::editor_ui::EditorState;
 use khora_sdk::khora_core::asset::IndexRequest;
 use khora_sdk::khora_core::event::Channel;
 use khora_sdk::trust::{
-    Layer, ProjectTrust, ProjectTrustState, QuarantineKey, Refusals, SecurityReason,
-    SecurityRefusal, Trust, TrustStore,
+    ProjectTrust, ProjectTrustState, QuarantineKey, Refusals, SecurityReason, SecurityRefusal,
+    Trust, TrustLayer, TrustStore,
 };
 use khora_sdk::{IndexKind, ReadinessHold};
 
@@ -296,7 +296,7 @@ fn granting_trust_lifts_the_restricted_mode() {
     let too_large = SecurityRefusal {
         path: root.join("assets").join("huge.png"),
         trust: Trust::Restricted,
-        layer: Layer::File,
+        layer: TrustLayer::File,
         reason: SecurityReason::TooLarge {
             size: 80 << 20,
             cap: 64 << 20,
@@ -305,7 +305,7 @@ fn granting_trust_lifts_the_restricted_mode() {
     let wrong_type = SecurityRefusal {
         path: root.join("assets").join("liar.png"),
         trust: Trust::Restricted,
-        layer: Layer::Decoder,
+        layer: TrustLayer::Decoder,
         reason: SecurityReason::WrongType {
             expected: "texture".to_owned(),
         },
@@ -369,7 +369,7 @@ fn trusting_a_project_keeps_another_projects_restricted_refusals() {
     let others = SecurityRefusal {
         path: other.join("assets").join("wide.png"),
         trust: Trust::Restricted,
-        layer: Layer::Decoder,
+        layer: TrustLayer::Decoder,
         reason: SecurityReason::OverLimit {
             what: "image width of 16384 pixels".to_owned(),
             limit: 8192,

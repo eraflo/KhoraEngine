@@ -36,7 +36,7 @@ use khora_core::ecs::PersistentId;
 use khora_core::ecs::ReservationHold;
 
 use super::component_registration::{
-    registration_named, ComponentRegistration, Kept, Staged, StagedComponent,
+    registration_named, ComponentRegistration, Kept, PendingComponent, StagedComponent,
 };
 use super::declared::{plan, DeclaredLoad};
 use super::load_catalog::LoadCatalog;
@@ -109,7 +109,7 @@ pub struct Prepared {
     /// Values of components declared while the engine runs that this world
     /// keeps in another domain than the file did: attached once the pages
     /// are placed, each into its entity's page of the world's domain.
-    pub(super) moved: Vec<(EntityId, ComponentKey, Box<dyn StagedComponent>)>,
+    pub(super) moved: Vec<(EntityId, ComponentKey, Box<dyn PendingComponent>)>,
     /// The hierarchy the record brings: each loaded child and its loaded
     /// parent, checked for cycles. A `Parent` naming anything else — gone,
     /// outside the record — is not kept.
@@ -148,7 +148,7 @@ pub(super) struct PreparedPage {
 }
 
 /// One row's values, staged: a value per component of its page.
-pub(super) type StagedRow = Vec<(ComponentKey, Box<dyn StagedComponent>)>;
+pub(super) type StagedRow = Vec<(ComponentKey, Box<dyn PendingComponent>)>;
 
 /// A component a load reads: a Rust one, through its registration, or one
 /// declared while the engine runs, through the file's declaration.
@@ -459,7 +459,7 @@ pub(super) fn prepare_pages(
         usize,
         usize,
         &mut dyn ReferenceReader,
-    ) -> Result<Staged, RecordError>,
+    ) -> Result<StagedComponent, RecordError>,
 ) -> Result<Prepared, LoadFailure> {
     let mut known = HashSet::new();
     for id in entities {

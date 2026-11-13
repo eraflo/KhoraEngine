@@ -122,7 +122,7 @@ fn tick_until(
 fn tick_until_landed(
     engine: &mut EngineCore<Tool>,
     ticket: khora_sdk::scripts::CompileTicket,
-) -> khora_sdk::scripts::CompileOutcome {
+) -> khora_sdk::scripts::CompileTicketOutcome {
     let mut landed = None;
     tick_until(engine, "the mount to land", |engine| {
         landed = khora_sdk::scripts::outcome(engine.runtime(), ticket);

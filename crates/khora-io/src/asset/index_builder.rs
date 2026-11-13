@@ -945,7 +945,7 @@ mod tests {
             }
         );
         assert_eq!(refused[0].trust, crate::trust::Trust::Restricted);
-        assert_eq!(refused[0].layer, crate::trust::Layer::File);
+        assert_eq!(refused[0].layer, crate::trust::TrustLayer::File);
         assert!(
             refused_named(&refusals, "small.kmat").is_empty(),
             "the material under its cap is not refused"

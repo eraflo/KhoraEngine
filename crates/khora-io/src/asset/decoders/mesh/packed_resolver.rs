@@ -22,7 +22,9 @@ use khora_core::asset::{asset_key, AssetSource, AssetUUID, CompressionKind};
 
 use super::GltfResourceResolver;
 use crate::asset::{AssetIndex, AssetIo, PackManifest};
-use crate::trust::{FileKind, Layer, Limits, Refusals, SecurityReason, SecurityRefusal, Trust};
+use crate::trust::{
+    FileKind, Limits, Refusals, SecurityReason, SecurityRefusal, Trust, TrustLayer,
+};
 
 /// Resolves a glTF's buffers and images inside a pack: a URI, relative to
 /// the assets root once the glTF's folder is joined to it, is found by its
@@ -105,7 +107,7 @@ impl PackedResolver {
         let refusal = SecurityRefusal {
             path: std::path::PathBuf::from(uri),
             trust: self.trust,
-            layer: Layer::Pack,
+            layer: TrustLayer::Pack,
             reason: SecurityReason::TooLarge {
                 size: declared,
                 cap,

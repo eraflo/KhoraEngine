@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 
 use khora_control::gorna::{decide, Bid, Round};
 use khora_core::agent::gorna::protocol::{
-    Confidence, Epoch, Offer, OfferRequest, OfferRow, Trigger,
+    CostBasis, Epoch, Offer, OfferRequest, OfferRow, Trigger,
 };
 use khora_core::agent::gorna::{AdaptationMode, AgentHints, AgentId, Planning, StrategyId};
 use khora_core::agent::{Agent, AgentImportance};
@@ -193,7 +193,7 @@ fn on_cpu(id: StrategyId, micros: u64, quality: f32) -> OfferRow {
             ..Cost::default()
         },
         quality,
-        confidence: Confidence::Measured,
+        confidence: CostBasis::Measured,
     }
 }
 
@@ -230,7 +230,7 @@ fn with_free_frame_time_gorna_lends_the_script_family_its_whole_level() {
     );
     assert_eq!(
         (floor.confidence, whole.confidence),
-        (Confidence::Measured, Confidence::Quoted),
+        (CostBasis::Measured, CostBasis::Quoted),
         "the level that ran is measured, the other quoted"
     );
     let renderer = Offer {

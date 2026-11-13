@@ -620,7 +620,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                     )?;
                     let value = <#name>::from(s);
                     #stage_check
-                    Ok(crate::scene::Staged {
+                    Ok(crate::scene::StagedComponent {
                         component: Box::new(crate::scene::StagedValue(value)),
                         report,
                     })
@@ -653,7 +653,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                     let s = crate::scene::positional::from_positional::<#serializable_name>(
                         bytes, references,
                     )?;
-                    Ok(crate::scene::Staged {
+                    Ok(crate::scene::StagedComponent {
                         component: Box::new(crate::scene::StagedValue(<#name>::from(s))),
                         report: Vec::new(),
                     })

@@ -24,7 +24,7 @@ use std::time::Duration;
 use khora_core::asset::{Decoded, IndexedAssets};
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::LaneReport;
-use khora_script::toolchain::{CompileDone, CompileRequest, Compiled};
+use khora_script::toolchain::{CompileDone, CompileRequest, Recompiled};
 
 use super::{LoadingInputs, LoadingOutputs};
 
@@ -254,7 +254,7 @@ pub(super) fn load(
                         request.root.display()
                     );
                     let why = format!("compiling the scripts panicked: {why}");
-                    (Compiled::default(), None, Err(why))
+                    (Recompiled::default(), None, Err(why))
                 }
             };
         // What the hosts waiting on this root are told, under the same lease:

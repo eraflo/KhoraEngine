@@ -381,7 +381,7 @@ fn module_crate_root_paths_still_resolve() {
     let _ = type_name::<khora_sdk::DccContext>();
     same_type(
         PhantomData::<khora_sdk::DccContext>,
-        PhantomData::<khora_control::Context>,
+        PhantomData::<khora_control::DccContext>,
     );
     let _ = type_name::<khora_sdk::DccService>();
     same_type(

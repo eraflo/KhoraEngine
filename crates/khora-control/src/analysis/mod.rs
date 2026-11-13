@@ -19,7 +19,7 @@
 //! decide whether a GORNA renegotiation is necessary and what the global
 //! performance target should be.
 
-use crate::dcc_context::Context;
+use crate::dcc_context::DccContext;
 use crate::metrics::MetricStore;
 use khora_core::platform::{BatteryLevel, ThermalStatus};
 use khora_core::telemetry::MetricId;
@@ -65,7 +65,7 @@ impl HeuristicEngine {
     /// 5. **Stutter analysis**: Detect high frame time variance.
     /// 6. **Trend analysis**: Preempt worsening performance via slope detection.
     /// 7. **CPU/GPU pressure**: Detect resource saturation.
-    pub fn analyze(&self, context: &Context, store: &MetricStore) -> AnalysisReport {
+    pub fn analyze(&self, context: &DccContext, store: &MetricStore) -> AnalysisReport {
         let mut report = AnalysisReport::default();
         let mut pressure_count: u32 = 0;
 

@@ -22,7 +22,7 @@ use std::any::TypeId;
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::gpu::GpuSetup;
 use khora_core::lane::cost::Cost;
-use khora_core::lane::erased::{AnyLane, Erased, Run, RunOutcome};
+use khora_core::lane::erased::{AnyLane, Erased, LaneRun, RunOutcome};
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::guard::{OutputRefusal, Reason, SinkKind};
 use khora_core::lane::io::{FrameId, InputSource, LaneOutputs, OutputSink, Pass, PassSlot};
@@ -130,7 +130,7 @@ impl Lane for DrawLane {
 }
 
 /// Runs `lane` once into `deck`, its passes opening on `device`.
-fn run_on(device: &EncoderLedger, lane: DrawLane, deck: &mut OutputDeck) -> Run {
+fn run_on(device: &EncoderLedger, lane: DrawLane, deck: &mut OutputDeck) -> LaneRun {
     let bus = LaneBus::new();
     let runtime = Runtime::new();
     let mut inputs = InputSource::new(FrameId(0), &bus, &runtime);

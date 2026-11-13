@@ -2832,3 +2832,33 @@ fn role_and_flow_context_paths_are_public() {
         scope: None,
     };
 }
+
+/// A component read from a save, not yet in any world, is a
+/// `StagedComponent` — what a registration's `stage` gives — at
+/// `khora_data::scene` and its `component_registration` module; the name
+/// `Staged` stays with the lane's reserve trait (`khora_core::lane::Staged`),
+/// and `Prepared` with a prepared scene load.
+#[test]
+fn a_staged_component_has_a_name_of_its_own() {
+    use khora_data::scene::StagedComponent;
+    fn staged_component_fields(x: &StagedComponent) {
+        let _ = &x.component;
+        let _: &Vec<khora_data::scene::record::ReportEntry> = &x.report;
+    }
+    let _ = type_name::<StagedComponent>();
+    let _ = staged_component_fields as fn(&StagedComponent);
+    same_type(
+        PhantomData::<khora_data::scene::StagedComponent>,
+        PhantomData::<khora_data::scene::component_registration::StagedComponent>,
+    );
+    type Stage = fn(
+        &khora_data::scene::record::Record,
+        &mut dyn khora_data::scene::record::ReferenceReader,
+    ) -> Result<StagedComponent, khora_data::scene::record::RecordError>;
+    fn stage_of(x: &khora_data::scene::ComponentRegistration) -> Stage {
+        x.stage
+    }
+    let _ = stage_of as fn(&khora_data::scene::ComponentRegistration) -> Stage;
+
+    let _ = type_name::<khora_data::scene::Prepared>();
+}

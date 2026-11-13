@@ -3886,3 +3886,475 @@ fn built() {
 ";
     assert_eq!(runtime_field_reads(code), vec![2, 7, 11]);
 }
+
+// ---------------------------------------------------------------------------
+// Public type names
+// ---------------------------------------------------------------------------
+
+/// Members of `crates/` whose type names are not the engine's: the example
+/// game, whose types are a game's own.
+const TYPE_NAMES_NOT_SCANNED: &[&str] = &["sandbox"];
+
+/// Public type names two items may share, each with why (a type re-declared
+/// per backend, say). An entry with no reason, or whose name is no longer
+/// declared twice, fails the check.
+const TYPE_NAMES_SHARED: &[(&str, &str)] = &[
+    ("UiBorder", "khora-data's UI component mirrors khora-core's UI value type of the same name, converted with `From`"),
+    ("UiColor", "khora-data's UI component mirrors khora-core's UI value type of the same name, converted with `From`"),
+    ("UiImage", "khora-data's UI component mirrors khora-core's UI value type of the same name, converted with `From`"),
+    ("UiNode", "khora-data's UI component mirrors khora-core's UI value type of the same name, converted with `From`"),
+    ("UiText", "khora-data's UI component mirrors khora-core's UI value type of the same name, converted with `From`"),
+    ("UiTransform", "khora-data's UI component mirrors khora-core's UI value type of the same name, converted with `From`"),
+];
+
+/// A public type name means one thing. Across the non-test code of the
+/// workspace's crates (`crates/*/src`, the example game `sandbox` aside), a
+/// `pub struct`, `pub enum`, `pub union`, `pub trait` (`pub unsafe trait`
+/// too) or `pub type` declares each name once, at any indentation; comments
+/// do not count. Not counted either:
+///
+/// - `pub(crate)`, `pub(super)` and `pub(in …)` items;
+/// - test code: a `tests.rs`, a file under a `tests/` folder, a file carrying
+///   `#![cfg(test)]` or declared by `#[cfg(test)] mod` (a folder module with
+///   all it holds), the inline test module and what follows it, and an item
+///   under `#[cfg(test)]`;
+/// - what sits beside `src/` (`tests/`, `benches/`, `examples/`) and `xtask`;
+/// - a name a macro builds (`pub struct $name`).
+///
+/// Strict: a name two items share on purpose goes in `TYPE_NAMES_SHARED`
+/// with why.
+#[test]
+fn no_public_type_name_is_declared_twice() {
+    let root = repo_root();
+    let problems = type_name_problems(&root, TYPE_NAMES_SHARED);
+    assert!(
+        problems.is_empty(),
+        "public type names declared more than once in the workspace's non-test code \
+         (rename one side, or list the name in TYPE_NAMES_SHARED with why):\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+/// The public type names declared more than once under `root/crates/*/src`
+/// and not in `shared`, each as `<Name>: declared <n> times: <path>:<line>, …`
+/// (paths relative to `root`), and every `shared` entry with no reason or no
+/// longer declared twice. Sorted.
+fn type_name_problems(root: &Path, shared: &[(&str, &str)]) -> Vec<String> {
+    let mut sites: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for member in child_dirs(&root.join("crates")) {
+        if TYPE_NAMES_NOT_SCANNED.contains(&file_name(&member).as_str()) {
+            continue;
+        }
+        let src = member.join("src");
+        if !src.is_dir() {
+            continue;
+        }
+        for (path, text) in non_test_rust_files(&src) {
+            for (line, name) in public_type_declarations(&text) {
+                sites
+                    .entry(name)
+                    .or_default()
+                    .push(format!("{}:{line}", rel(root, &path)));
+            }
+        }
+    }
+    let mut problems = Vec::new();
+    for (name, reason) in shared {
+        if reason.trim().is_empty() {
+            problems.push(format!("{name}: listed as shared without a reason"));
+        }
+        let count = sites.get(*name).map_or(0, Vec::len);
+        if count < 2 {
+            problems.push(format!(
+                "{name}: listed as shared, but declared {count} time(s): remove it from the list"
+            ));
+        }
+    }
+    for (name, places) in &mut sites {
+        if places.len() > 1 && !shared.iter().any(|(listed, _)| listed == name) {
+            places.sort();
+            problems.push(format!(
+                "{name}: declared {} times: {}",
+                places.len(),
+                places.join(", ")
+            ));
+        }
+    }
+    problems.sort();
+    problems
+}
+
+/// The `.rs` files under `src` that are not test code, with their text:
+/// neither `tests.rs`, nor under a `tests/` folder, nor `#![cfg(test)]`, nor
+/// declared by a `#[cfg(test)] mod` (a folder module, with all it holds).
+fn non_test_rust_files(src: &Path) -> Vec<(PathBuf, String)> {
+    let files: Vec<(PathBuf, String)> = walk_files(src)
+        .into_iter()
+        .filter(|path| has_extension(path, "rs"))
+        .map(|path| {
+            let text = read_text(&path);
+            (normalize(&path), text)
+        })
+        .collect();
+    let mut test_files = BTreeSet::new();
+    let mut test_folders = Vec::new();
+    for (path, text) in &files {
+        for decl in mod_decls(text).iter().filter(|decl| decl.cfg_test) {
+            for target in decl_targets(path, decl) {
+                if file_name(&target) == "mod.rs" {
+                    if let Some(folder) = target.parent() {
+                        test_folders.push(folder.to_path_buf());
+                    }
+                }
+                test_files.insert(target);
+            }
+        }
+    }
+    files
+        .into_iter()
+        .filter(|(path, text)| {
+            file_name(path) != "tests.rs"
+                && !under_tests_dir(src, path)
+                && !has_inner_cfg_test(text)
+                && !test_files.contains(path)
+                && !test_folders.iter().any(|folder| path.starts_with(folder))
+        })
+        .collect()
+}
+
+/// The public types `text` declares outside its tests, each as its 1-based
+/// line and its name: a `pub struct`, `pub enum`, `pub union`, `pub trait`
+/// (`pub unsafe trait`) or `pub type`, at any indentation. Comments are
+/// excluded, the inline test module and what follows it too, and an item
+/// whose attributes (spread over lines or not) hold `#[cfg(test)]`.
+fn public_type_declarations(text: &str) -> Vec<(usize, String)> {
+    let code = strip_rust_comments(text);
+    let mut found = Vec::new();
+    // The attributes stacked above the next item, and the brackets still open
+    // in one that spans lines.
+    let mut attrs = String::new();
+    let mut open = 0usize;
+    let in_tests = inline_test_module_lines(&code);
+    for (index, raw) in code.lines().enumerate() {
+        if in_tests.contains(&index) {
+            attrs.clear();
+            continue;
+        }
+        let mut rest = raw.trim();
+        loop {
+            if open > 0 {
+                let mut consumed = rest.len();
+                for (at, ch) in rest.char_indices() {
+                    match ch {
+                        '[' => open += 1,
+                        ']' => {
+                            open -= 1;
+                            if open == 0 {
+                                consumed = at + 1;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                attrs.push_str(&rest[..consumed]);
+                rest = rest[consumed..].trim_start();
+                if open > 0 {
+                    break;
+                }
+            } else if let Some(after) = rest.strip_prefix("#[") {
+                attrs.push_str("#[");
+                open = 1;
+                rest = after;
+            } else {
+                break;
+            }
+        }
+        if open > 0 || rest.is_empty() {
+            continue;
+        }
+        let compact: String = attrs.chars().filter(|ch| !ch.is_whitespace()).collect();
+        let under_cfg_test =
+            compact.contains("#[cfg(test)]") || compact.contains("#[cfg(all(test,");
+        attrs.clear();
+        if under_cfg_test {
+            continue;
+        }
+        if let Some(name) = public_type_name(rest) {
+            found.push((index + 1, name));
+        }
+    }
+    found
+}
+
+/// The 0-based lines of `code` (comments already blanked) inside an inline
+/// test module: from a `mod name {` under `#[cfg(test)]` to the brace that
+/// closes it. What follows the module is code again. Braces in string and
+/// character literals are not counted.
+fn inline_test_module_lines(code: &str) -> BTreeSet<usize> {
+    let mut lines = BTreeSet::new();
+    let mut cfg_test = false;
+    // The brace depth inside the test module being skipped.
+    let mut depth: Option<usize> = None;
+    for (index, raw) in code.lines().enumerate() {
+        let line = raw.trim();
+        if depth.is_none() {
+            let compact: String = line.chars().filter(|ch| !ch.is_whitespace()).collect();
+            if compact.starts_with("#[cfg(test)]") || compact.starts_with("#[cfg(all(test,") {
+                cfg_test = true;
+            }
+            let item = line
+                .rsplit_once(']')
+                .map_or(line, |(_, after)| after)
+                .trim_start();
+            let item = item.strip_prefix("pub ").unwrap_or(item).trim_start();
+            if cfg_test && item.starts_with("mod ") && item.contains('{') {
+                depth = Some(0);
+            } else if !line.is_empty() && !line.starts_with("#[") {
+                cfg_test = false;
+            }
+        }
+        let Some(open) = depth.as_mut() else {
+            continue;
+        };
+        lines.insert(index);
+        let mut in_string = false;
+        let mut chars = line.chars().peekable();
+        while let Some(ch) = chars.next() {
+            match ch {
+                '\\' if in_string => {
+                    chars.next();
+                }
+                '"' => in_string = !in_string,
+                '\'' if !in_string => {
+                    // A character literal (`'{'`, `'\''`), not a lifetime.
+                    let mut ahead = chars.clone();
+                    let first = ahead.next();
+                    let closes = if first == Some('\\') {
+                        ahead.next();
+                        ahead.next() == Some('\'')
+                    } else {
+                        ahead.next() == Some('\'')
+                    };
+                    if closes {
+                        chars = ahead;
+                    }
+                }
+                '{' if !in_string => *open += 1,
+                '}' if !in_string => {
+                    *open -= 1;
+                    if *open == 0 {
+                        depth = None;
+                        cfg_test = false;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    lines
+}
+
+/// The name an item declares when it is a `pub` (not `pub(…)`) `struct`,
+/// `enum`, `union`, `trait` (`unsafe trait` too) or `type`; `None` for any
+/// other item, and for a name a macro builds (`$name`).
+fn public_type_name(item: &str) -> Option<String> {
+    let after_pub = item.strip_prefix("pub")?;
+    if !after_pub.starts_with(char::is_whitespace) {
+        return None;
+    }
+    let mut rest = after_pub.trim_start();
+    if let Some(after) = rest.strip_prefix("unsafe") {
+        if after.starts_with(char::is_whitespace) {
+            rest = after.trim_start();
+        }
+    }
+    for keyword in ["struct", "enum", "union", "trait", "type"] {
+        let Some(after) = rest.strip_prefix(keyword) else {
+            continue;
+        };
+        if !after.starts_with(char::is_whitespace) {
+            continue;
+        }
+        let name: String = after
+            .trim_start()
+            .chars()
+            .take_while(|ch| is_ident_char(*ch))
+            .collect();
+        return (!name.is_empty() && !name.starts_with(|ch: char| ch.is_ascii_digit()))
+            .then_some(name);
+    }
+    None
+}
+
+/// The type-name check names each public type name declared twice across
+/// crates, with every site, and reads past what is not a public declaration
+/// in non-test code: a comment, a string, a `pub(crate)` or `pub(super)`
+/// item, an item under `#[cfg(test)]` (its attributes spread over lines or
+/// not), the inline test module, a `tests.rs`, a `tests/` folder, a
+/// `#![cfg(test)]` file, a `#[cfg(test)] mod` folder, what sits beside `src/`,
+/// the example game, a macro's `$name`. A shared name listed with a reason
+/// passes; one listed without a reason, or declared once, is named.
+#[test]
+fn type_name_check_names_each_public_name_declared_twice() {
+    let dir = std::env::temp_dir().join(format!(
+        "khora-layout-type-names-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    const ALPHA_LIB: &str = "\
+//! Alpha: `pub struct Commented;`
+pub struct Shared;
+pub(crate) struct Private;
+/* pub struct Commented; */
+#[cfg(test)]
+pub struct OnlyInTests;
+#[derive(
+    Debug,
+    Clone,
+)]
+pub enum Run {
+    A,
+}
+const NOTE: &str = \"a pub struct in a string\";
+#[cfg(test)]
+#[derive(
+    Debug,
+)]
+pub struct OnlyInTests;
+#[cfg(not(test))]
+pub struct NotInTests;
+macro_rules! make {
+    ($name:ident) => {
+        pub struct $name;
+    };
+}
+pub unsafe trait Unsafe {}
+#[cfg(test)]
+mod fixtures;
+#[cfg(test)]
+mod tests {
+    pub struct Shared;
+    pub struct OnlyInTests;
+}
+";
+    const BETA_LIB: &str = "\
+pub struct Shared;
+pub(super) enum Private {}
+pub mod inner {
+    pub type Run = u8;
+}
+pub struct NotInTests;
+pub struct Lonely;
+";
+    let files: &[(&str, &str)] = &[
+        ("crates/alpha/src/lib.rs", ALPHA_LIB),
+        (
+            "crates/alpha/src/shared.rs",
+            "pub struct Allowed;\npub struct Twin;\n",
+        ),
+        ("crates/alpha/src/tests.rs", "pub struct Shared;\n"),
+        ("crates/alpha/src/fixtures/mod.rs", "pub struct Shared;\n"),
+        ("crates/alpha/src/fixtures/more.rs", "pub struct Shared;\n"),
+        ("crates/beta/src/lib.rs", BETA_LIB),
+        (
+            "crates/beta/src/more.rs",
+            "pub trait Unsafe {}\npub struct Allowed;\npub struct Twin;\n",
+        ),
+        ("crates/beta/src/tests/mod.rs", "pub struct Shared;\n"),
+        (
+            "crates/beta/src/generated.rs",
+            "#![cfg(test)]\npub struct Shared;\n",
+        ),
+        ("crates/beta/tests/it.rs", "pub struct Shared;\n"),
+        ("crates/beta/benches/bench.rs", "pub struct Shared;\n"),
+        ("crates/sandbox/src/main.rs", "pub struct Shared;\n"),
+    ];
+    let setup = (|| -> std::io::Result<()> {
+        for (file, text) in files {
+            let path = dir.join(file);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(path, text)?;
+        }
+        Ok(())
+    })();
+    let shared: &[(&str, &str)] = &[
+        ("Allowed", "re-declared per backend"),
+        ("Twin", ""),
+        ("Lonely", "was declared twice"),
+    ];
+    let problems = type_name_problems(&dir, shared);
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+
+    assert_eq!(
+        problems,
+        vec![
+            "Lonely: listed as shared, but declared 1 time(s): remove it from the list".to_owned(),
+            "NotInTests: declared 2 times: crates/alpha/src/lib.rs:21, crates/beta/src/lib.rs:6"
+                .to_owned(),
+            "Run: declared 2 times: crates/alpha/src/lib.rs:11, crates/beta/src/lib.rs:4"
+                .to_owned(),
+            "Shared: declared 2 times: crates/alpha/src/lib.rs:2, crates/beta/src/lib.rs:1"
+                .to_owned(),
+            "Twin: listed as shared without a reason".to_owned(),
+            "Unsafe: declared 2 times: crates/alpha/src/lib.rs:27, crates/beta/src/more.rs:1"
+                .to_owned(),
+        ]
+    );
+}
+
+/// Code after an inline test module is still the crate's code: a public type
+/// declared below `#[cfg(test)] mod … { … }` counts like one above it.
+/// `khora-core`'s `resource/texture.rs` declares `TextureId`,
+/// `TextureViewId` and `SamplerId` below its `cpu_texture_tests` module.
+#[test]
+fn type_name_check_reads_the_code_after_an_inline_test_module() {
+    let dir = std::env::temp_dir().join(format!(
+        "khora-layout-type-names-after-tests-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    const ALPHA_LIB: &str = "\
+pub struct Above;
+#[cfg(test)]
+mod cpu_texture_tests {
+    pub struct InTests;
+}
+impl Above {}
+pub struct Twin;
+";
+    let files: &[(&str, &str)] = &[
+        ("crates/alpha/src/lib.rs", ALPHA_LIB),
+        (
+            "crates/beta/src/lib.rs",
+            "pub struct Twin;\npub struct InTests;\n",
+        ),
+    ];
+    let setup = (|| -> std::io::Result<()> {
+        for (file, text) in files {
+            let path = dir.join(file);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(path, text)?;
+        }
+        Ok(())
+    })();
+    let problems = type_name_problems(&dir, &[]);
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+
+    assert_eq!(
+        problems,
+        vec![
+            "Twin: declared 2 times: crates/alpha/src/lib.rs:7, crates/beta/src/lib.rs:1"
+                .to_owned()
+        ]
+    );
+}

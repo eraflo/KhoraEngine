@@ -20,7 +20,7 @@
 //! rather than preparing the new row inline. The scheduler takes it
 //! ([`Place::take_preparation`](super::Place::take_preparation)), runs it on
 //! the background pool under its own contention, and hands what it gave —
-//! a [`Prepared`] — back to the place at the next frame start
+//! a [`PreparedLayer`] — back to the place at the next frame start
 //! ([`Place::prepared`](super::Place::prepared)).
 
 use std::time::{Duration, Instant};
@@ -83,10 +83,10 @@ impl Preparation {
 
     /// Runs the job on `context`, measuring the time it took: what the
     /// place stages as the layer's switch time.
-    pub fn run(self, context: &mut EngineContext<'_>) -> Prepared {
+    pub fn run(self, context: &mut EngineContext<'_>) -> PreparedLayer {
         let started = Instant::now();
         let outcome = (self.job)(context).map(|layer| (layer, started.elapsed()));
-        Prepared {
+        PreparedLayer {
             row: self.row,
             outcome,
         }
@@ -95,12 +95,12 @@ impl Preparation {
 
 /// What a [`Preparation`] gave: the layer it prepared and the time it took,
 /// or why it failed — for the place to take back.
-pub struct Prepared {
+pub struct PreparedLayer {
     row: StrategyId,
     outcome: Result<(Box<dyn Layer>, Duration), String>,
 }
 
-impl std::fmt::Debug for Prepared {
+impl std::fmt::Debug for PreparedLayer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Prepared")
             .field("row", &self.row)
@@ -109,7 +109,7 @@ impl std::fmt::Debug for Prepared {
     }
 }
 
-impl Prepared {
+impl PreparedLayer {
     /// A preparation of `row` that gave no layer, for `message`: one that
     /// panicked, which its runner hands back in its place.
     pub fn failed(row: StrategyId, message: impl Into<String>) -> Self {

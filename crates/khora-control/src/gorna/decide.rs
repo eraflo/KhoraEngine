@@ -22,7 +22,7 @@
 use std::time::Duration;
 
 use khora_core::agent::gorna::protocol::{
-    Allocation, Binding, Confidence, Envelope, Epoch, Offer, OfferRow, Trigger,
+    Allocation, BindingConstraint, CostBasis, Envelope, Epoch, Offer, OfferRow, Trigger,
 };
 use khora_core::agent::gorna::{AdaptationMode, AgentHints, AgentId, Planning, StrategyId};
 use khora_core::agent::AgentImportance;
@@ -105,7 +105,7 @@ pub fn decide(round: &Round<'_>) -> Allocation {
 pub(crate) enum Admission<'r> {
     /// The floors do not fit, or the round opened as `Safety`: every agent is
     /// lent its floor, and the breach the floors made, if they made one.
-    Safety(Allocation, Option<Binding>),
+    Safety(Allocation, Option<BindingConstraint>),
     /// Every floor fits.
     Admitted {
         /// The bids, ordered by agent.
@@ -420,7 +420,7 @@ impl Plan {
                 rows.iter()
                     .enumerate()
                     .filter(|(_, row)| {
-                        within(row.id, min, max) && row.confidence != Confidence::Assumed
+                        within(row.id, min, max) && row.confidence != CostBasis::Assumed
                     })
                     .min_by_key(|(_, row)| busiest(&row.cost.time))
                     .map(|(index, _)| index)
@@ -431,7 +431,7 @@ impl Plan {
             .iter()
             .map(|row| {
                 pinned.is_some()
-                    || row.confidence == Confidence::Assumed
+                    || row.confidence == CostBasis::Assumed
                     || match bid.mode {
                         AdaptationMode::Bounded { min, max } => !within(row.id, min, max),
                         _ => false,
@@ -479,14 +479,18 @@ impl Plan {
 /// What the plans break, if anything: the first device whose critical path
 /// is over the target, else the first whose memory held is over what is
 /// known of it. `None` when they fit the frame.
-pub(crate) fn breach(round: &Round<'_>, bids: &[&Bid], plans: &[Plan]) -> Option<Binding> {
+pub(crate) fn breach(
+    round: &Round<'_>,
+    bids: &[&Bid],
+    plans: &[Plan],
+) -> Option<BindingConstraint> {
     let target = micros(round.target);
     let paths = critical_paths(round, bids, plans);
     if let Some(device) = Device::ALL
         .into_iter()
         .find(|device| device.get(&paths) > target)
     {
-        return Some(Binding::Time(device));
+        return Some(BindingConstraint::Time(device));
     }
     let held = held(bids, plans);
     Device::ALL
@@ -496,7 +500,7 @@ pub(crate) fn breach(round: &Round<'_>, bids: &[&Bid], plans: &[Plan]) -> Option
                 .get(&round.memory)
                 .is_some_and(|limit| device.get(&held) > limit)
         })
-        .map(Binding::Memory)
+        .map(BindingConstraint::Memory)
 }
 
 /// How much `bid` weighs: its `Prioritize` hint, else its importance —

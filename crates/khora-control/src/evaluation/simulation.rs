@@ -19,7 +19,7 @@
 use std::time::{Duration, Instant};
 
 use khora_core::agent::gorna::protocol::{
-    Allocation, Confidence, Epoch, Offer, OfferRow, Report, Trigger,
+    Allocation, CostBasis, Epoch, Offer, OfferRow, Report, Trigger,
 };
 use khora_core::agent::gorna::{AdaptationMode, AgentHints, AgentId, StrategyId};
 use khora_core::agent::AgentImportance;
@@ -521,7 +521,7 @@ impl SimAgent {
                             ..Cost::default()
                         },
                         quality,
-                        confidence: Confidence::Measured,
+                        confidence: CostBasis::Measured,
                     })
                     .collect(),
                 floor: self.rows[0].0,

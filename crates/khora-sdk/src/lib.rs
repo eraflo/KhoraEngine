@@ -121,7 +121,7 @@ pub use khora_core::agent::Activation;
 // `BudgetChannel`) stays internal — the SDK is a façade
 // for game code, not for engine internals.
 pub use khora_control::agent_registry::AgentRegistry;
-pub use khora_control::Context as DccContext;
+pub use khora_control::DccContext;
 
 // Core types
 pub use khora_core::agent::gorna::{AgentHints, AgentId, EngineHint, StrategyId};

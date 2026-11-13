@@ -200,7 +200,7 @@ pub enum Body {
 
 /// The fuel a frame's due instances need.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Demand {
+pub struct FuelDemand {
     /// Every due instance's.
     pub all: u64,
     /// The `[Critical]` behaviors' instances' alone.

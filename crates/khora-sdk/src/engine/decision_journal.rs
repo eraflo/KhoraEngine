@@ -51,7 +51,7 @@ mod tests {
     use std::time::Duration;
 
     use khora_core::agent::gorna::protocol::{
-        Allocation, Confidence, DecidedBy, Envelope, Epoch, Offer, OfferRow, Report, Trigger, Why,
+        Allocation, CostBasis, DecidedBy, Envelope, Epoch, Offer, OfferRow, Report, Trigger, Why,
     };
     use khora_core::agent::gorna::{AgentId, Correction, EpochRecord, FrameSummary, StrategyId};
     use khora_core::agent::AgentImportance;
@@ -139,7 +139,7 @@ mod tests {
                             ..Cost::default()
                         },
                         quality: 0.4,
-                        confidence: Confidence::Measured,
+                        confidence: CostBasis::Measured,
                     },
                     OfferRow {
                         id: StrategyId::HighPerformance,
@@ -148,7 +148,7 @@ mod tests {
                             ..Cost::default()
                         },
                         quality: 1.0,
-                        confidence: Confidence::Quoted,
+                        confidence: CostBasis::Quoted,
                     },
                 ],
                 floor: StrategyId::LowPower,

@@ -22,7 +22,7 @@
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::gpu::GpuSetup;
 use khora_core::lane::cost::Cost;
-use khora_core::lane::erased::{AnyLane, Erased, Run, RunOutcome};
+use khora_core::lane::erased::{AnyLane, Erased, LaneRun, RunOutcome};
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::io::{FrameId, InputSource, OutputSink, Pass, PassSlot};
 use khora_core::lane::level::Level;
@@ -196,7 +196,7 @@ fn run_two_passes(
     device: &EncoderLedger,
     pipelines: Option<&dyn PipelineSystem>,
     deck: &mut OutputDeck,
-) -> Run {
+) -> LaneRun {
     let bus = LaneBus::new();
     let runtime = Runtime::new();
     let mut inputs = InputSource::new(FrameId(0), &bus, &runtime);

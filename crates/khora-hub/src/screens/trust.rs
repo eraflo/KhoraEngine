@@ -17,7 +17,7 @@
 
 use khora_sdk::tool_ui::{Icon, UiBuilder};
 use khora_sdk::trust::ProjectTrust;
-use khora_tool_ui::widgets::{ButtonKind, Choice, Dialog, dialog};
+use khora_tool_ui::widgets::{ButtonKind, Dialog, DialogChoice, dialog};
 
 use crate::app::HubApp;
 
@@ -52,15 +52,15 @@ pub(super) fn show_trust_prompt(app: &mut HubApp, ui: &mut dyn UiBuilder) {
                    files are read with stricter limits. Khora remembers your answer for this \
                    folder; you can change it from the project's menu.",
             choices: &[
-                Choice {
+                DialogChoice {
                     label: "Cancel",
                     kind: ButtonKind::Ghost,
                 },
-                Choice {
+                DialogChoice {
                     label: "Open restricted",
                     kind: ButtonKind::Ghost,
                 },
-                Choice {
+                DialogChoice {
                     label: "Trust and open",
                     kind: ButtonKind::Primary,
                 },
@@ -99,11 +99,11 @@ pub(super) fn show_trust_confirm(app: &mut HubApp, ui: &mut dyn UiBuilder) {
             note: "A file refused for what it holds, or downloaded from the internet, stays \
                    refused.",
             choices: &[
-                Choice {
+                DialogChoice {
                     label: "Keep restricted",
                     kind: ButtonKind::Ghost,
                 },
-                Choice {
+                DialogChoice {
                     label: "Trust",
                     kind: ButtonKind::Primary,
                 },

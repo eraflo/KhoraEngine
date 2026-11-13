@@ -21,7 +21,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use super::{Preparation, Prepared};
+use super::{Preparation, PreparedLayer};
 use crate::agent::contention::Contention;
 use crate::agent::gorna::protocol::{Epoch, Report};
 use crate::agent::gorna::{AgentId, StrategyId};
@@ -141,7 +141,7 @@ fn preparing(
 }
 
 /// Runs `preparation` world-free, on its own contention, as its runner does.
-fn run_preparation(preparation: Preparation) -> Prepared {
+fn run_preparation(preparation: Preparation) -> PreparedLayer {
     let bus = LaneBus::new();
     let mut deck = OutputDeck::new();
     let permit = preparation.contention();
@@ -431,7 +431,7 @@ fn a_preparation_handed_back_as_failed_raises_prepare_failed() {
     let row = taken.row();
     drop(taken);
 
-    place.prepared(Prepared::failed(row, "the preparation panicked"));
+    place.prepared(PreparedLayer::failed(row, "the preparation panicked"));
 
     assert_eq!(place.wakes(), &[Wake::PrepareFailed(StrategyId::LowPower)]);
     assert_eq!(place.installed_row(), Some(StrategyId::HighPerformance));

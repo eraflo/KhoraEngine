@@ -32,7 +32,7 @@ use khora_sdk::khora_core::problems::Problems;
 use khora_sdk::khora_core::projection::Interest;
 use khora_sdk::khora_core::script::{ComponentName, ScriptReads};
 use khora_sdk::prelude::ecs::Transform;
-use khora_sdk::scripts::{CompileOutcome, CompileTicket};
+use khora_sdk::scripts::{CompileTicket, CompileTicketOutcome};
 use khora_sdk::{
     EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider, Runtime, WindowConfig,
 };
@@ -159,7 +159,7 @@ fn queued<A: EngineApp>(engine: &EngineCore<A>) -> Vec<String> {
 fn tick_until_landed<A: EngineApp>(
     engine: &mut EngineCore<A>,
     ticket: CompileTicket,
-) -> CompileOutcome {
+) -> CompileTicketOutcome {
     let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline {
         engine.tick();
@@ -329,7 +329,7 @@ fn a_root_with_nothing_to_compile_gets_no_ticket() {
 struct Lit {
     ticket: Option<CompileTicket>,
     /// What `setup` read of the mount.
-    landed: Option<CompileOutcome>,
+    landed: Option<CompileTicketOutcome>,
     /// Whether `setup` attached `Lantern`.
     attached: Option<bool>,
 }

@@ -88,7 +88,7 @@ fn hardware_state_fields(h: &khora_control::dcc_context::HardwareState) {
     );
 }
 
-fn context_fields(c: &khora_control::dcc_context::Context) {
+fn context_fields(c: &khora_control::dcc_context::DccContext) {
     let _ = (
         &c.hardware,
         &c.inactive,
@@ -173,7 +173,7 @@ fn every_public_path_of_khora_control_still_resolves() {
     // --- crate root: `pub use` re-exports, and that each points at its item.
     let _ = type_name::<khora_control::AnalysisReport>();
     let _ = type_name::<khora_control::BatteryLevel>();
-    let _ = type_name::<khora_control::Context>();
+    let _ = type_name::<khora_control::DccContext>();
     let _ = type_name::<khora_control::HardwareState>();
     let _ = type_name::<khora_control::ThermalStatus>();
     let _ = type_name::<khora_control::GornaArbitrator>();
@@ -190,8 +190,8 @@ fn every_public_path_of_khora_control_still_resolves() {
         PhantomData::<khora_control::dcc_context::BatteryLevel>,
     );
     same_type(
-        PhantomData::<khora_control::Context>,
-        PhantomData::<khora_control::dcc_context::Context>,
+        PhantomData::<khora_control::DccContext>,
+        PhantomData::<khora_control::dcc_context::DccContext>,
     );
     same_type(
         PhantomData::<khora_control::HardwareState>,
@@ -244,7 +244,7 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = type_name::<khora_control::dcc_context::BatteryLevel>();
     let _ = type_name::<khora_control::dcc_context::ThermalStatus>();
     let _ = type_name::<khora_control::dcc_context::HardwareState>();
-    let _ = type_name::<khora_control::dcc_context::Context>();
+    let _ = type_name::<khora_control::dcc_context::DccContext>();
     same_type(
         PhantomData::<khora_control::dcc_context::BatteryLevel>,
         PhantomData::<khora_core::platform::BatteryLevel>,
@@ -254,14 +254,14 @@ fn every_public_path_of_khora_control_still_resolves() {
         PhantomData::<khora_core::platform::ThermalStatus>,
     );
     let _ = hardware_state_fields as fn(&khora_control::dcc_context::HardwareState);
-    let _ = context_fields as fn(&khora_control::dcc_context::Context);
+    let _ = context_fields as fn(&khora_control::dcc_context::DccContext);
     is_default::<khora_control::dcc_context::HardwareState>();
     is_clone::<khora_control::dcc_context::HardwareState>();
     is_debug::<khora_control::dcc_context::HardwareState>();
-    is_default::<khora_control::dcc_context::Context>();
-    is_clone::<khora_control::dcc_context::Context>();
-    is_debug::<khora_control::dcc_context::Context>();
-    let _ = khora_control::dcc_context::Context::refresh_memory_pressure;
+    is_default::<khora_control::dcc_context::DccContext>();
+    is_clone::<khora_control::dcc_context::DccContext>();
+    is_debug::<khora_control::dcc_context::DccContext>();
+    let _ = khora_control::dcc_context::DccContext::refresh_memory_pressure;
     let _ = khora_control::dcc_context::MEMORY_PRESSURE_CRITICAL;
     let _ = khora_control::dcc_context::safety_ceiling;
 
@@ -463,8 +463,8 @@ fn every_public_path_of_khora_control_still_resolves() {
 use khora_control::{substrate, DccConfig, DccService};
 // khora-sdk/src/lib.rs
 use khora_control::agent_registry::AgentRegistry;
-use khora_control::Context as DccContext;
-use khora_control::Context as EngineContext;
+use khora_control::DccContext;
+use khora_control::DccContext as EngineContext;
 
 #[test]
 fn paths_used_by_other_crates_still_resolve() {
@@ -473,7 +473,7 @@ fn paths_used_by_other_crates_still_resolve() {
     // `Context { hardware: HardwareState::default(), .. }`.
     let _ = substrate::run_data_systems;
     let _ = type_name::<khora_control::ExecutionScheduler>();
-    let _ = type_name::<khora_control::Context>();
+    let _ = type_name::<khora_control::DccContext>();
     let _ = type_name::<khora_control::HardwareState>();
     let _ = type_name::<DccConfig>();
     let _ = type_name::<DccService>();

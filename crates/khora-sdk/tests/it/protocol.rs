@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use khora_sdk::khora_core::agent::gorna::protocol::{
-    Confidence, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
+    CostBasis, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
 };
 use khora_sdk::khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_sdk::khora_core::agent::{Agent, Contention, Layer, LayerRun, Place, Terms};
@@ -72,7 +72,7 @@ pub fn offer_of(agent: AgentId, request: &OfferRequest, row: StrategyId) -> Offe
             id: row,
             cost: Cost::default(),
             quality: 1.0,
-            confidence: Confidence::Assumed,
+            confidence: CostBasis::Assumed,
         }],
         floor: row,
         current: row,

@@ -22,7 +22,7 @@ use std::time::Duration;
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::gpu::GpuSetup;
 use khora_core::lane::cost::{Cost, PerDevice};
-use khora_core::lane::erased::{AnyLane, Erased, Run, RunOutcome};
+use khora_core::lane::erased::{AnyLane, Erased, LaneRun, RunOutcome};
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::guard::{InputRefusal, Reason, SourceKind};
 use khora_core::lane::io::{FrameId, InputSource, OutputSink, Target, TargetKey};
@@ -165,7 +165,7 @@ fn run_into(
     level: usize,
     target: Target,
     deck: &mut OutputDeck,
-) -> Run {
+) -> LaneRun {
     let bus = LaneBus::new();
     let runtime = Runtime::new();
     let mut source = InputSource::new(FrameId(1), &bus, &runtime)

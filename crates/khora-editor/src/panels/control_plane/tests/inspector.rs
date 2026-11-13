@@ -27,7 +27,8 @@ use std::time::Duration;
 
 use khora_sdk::editor_ui::{EditorPanel, EditorState, UiTheme};
 use khora_sdk::khora_core::agent::gorna::protocol::{
-    Binding, DecidedBy, Envelope, Epoch, Offer, OfferRequest, Rejected, Report, Trigger, Why,
+    BindingConstraint, DecidedBy, Envelope, Epoch, Offer, OfferRequest, Rejected, Report, Trigger,
+    Why,
 };
 use khora_sdk::khora_core::agent::gorna::{Correction, DecisionView, DecisionWatch, Planning};
 use khora_sdk::khora_core::agent::{Agent, Place};
@@ -179,22 +180,22 @@ fn decision() -> DecisionView {
         why: Why {
             by: DecidedBy::Exact,
             trigger: Trigger::FrameGovernor,
-            binding: Some(Binding::Time(Device::Gpu)),
+            binding: Some(BindingConstraint::Time(Device::Gpu)),
             rejected: vec![
                 Rejected {
                     agent: probe(),
                     row: StrategyId::HighPerformance,
-                    over: Binding::Time(Device::Gpu),
+                    over: BindingConstraint::Time(Device::Gpu),
                 },
                 Rejected {
                     agent: other(),
                     row: StrategyId::Balanced,
-                    over: Binding::Memory(Device::Cpu),
+                    over: BindingConstraint::Memory(Device::Cpu),
                 },
                 Rejected {
                     agent: probe(),
                     row: StrategyId::Custom(7),
-                    over: Binding::Ceiling(Device::Cpu),
+                    over: BindingConstraint::Ceiling(Device::Cpu),
                 },
             ],
         },
@@ -1038,7 +1039,7 @@ fn the_learnt_card_says_when_no_row_was_measured() {
 
 /// **Every trigger, decider and constraint is named in words.** Each
 /// `Trigger` opens the round under its name, each `DecidedBy` decides it
-/// under its name, each `Binding` bounds the frame under its name and, on a
+/// under its name, each `BindingConstraint` bounds the frame under its name and, on a
 /// refused upgrade, says what it broke.
 #[test]
 fn every_trigger_decider_and_constraint_is_named_in_words() {
@@ -1085,32 +1086,32 @@ fn every_trigger_decider_and_constraint_is_named_in_words() {
 
     for (binding, bound, broke) in [
         (
-            Binding::Time(Device::Cpu),
+            BindingConstraint::Time(Device::Cpu),
             "Host time",
             "over the frame, host",
         ),
         (
-            Binding::Time(Device::Gpu),
+            BindingConstraint::Time(Device::Gpu),
             "GPU time",
             "over the frame, GPU",
         ),
         (
-            Binding::Memory(Device::Cpu),
+            BindingConstraint::Memory(Device::Cpu),
             "Host memory",
             "over host memory",
         ),
         (
-            Binding::Memory(Device::Gpu),
+            BindingConstraint::Memory(Device::Gpu),
             "GPU memory",
             "over GPU memory",
         ),
         (
-            Binding::Ceiling(Device::Cpu),
+            BindingConstraint::Ceiling(Device::Cpu),
             "Stable ceiling, host",
             "over its Stable ceiling, host",
         ),
         (
-            Binding::Ceiling(Device::Gpu),
+            BindingConstraint::Ceiling(Device::Gpu),
             "Stable ceiling, GPU",
             "over its Stable ceiling, GPU",
         ),

@@ -417,11 +417,11 @@ fn decided_by_variants(x: &khora_core::agent::gorna::protocol::DecidedBy) {
     }
 }
 
-fn binding_variants(x: &khora_core::agent::gorna::protocol::Binding) {
+fn binding_variants(x: &khora_core::agent::gorna::protocol::BindingConstraint) {
     match x {
-        khora_core::agent::gorna::protocol::Binding::Time(..) => {}
-        khora_core::agent::gorna::protocol::Binding::Memory(..) => {}
-        khora_core::agent::gorna::protocol::Binding::Ceiling(..) => {}
+        khora_core::agent::gorna::protocol::BindingConstraint::Time(..) => {}
+        khora_core::agent::gorna::protocol::BindingConstraint::Memory(..) => {}
+        khora_core::agent::gorna::protocol::BindingConstraint::Ceiling(..) => {}
     }
 }
 
@@ -1871,16 +1871,16 @@ fn module_agent_gorna_paths_still_resolve() {
     is_hash::<khora_core::agent::gorna::protocol::DecidedBy>();
     is_serialize::<khora_core::agent::gorna::protocol::DecidedBy>();
     is_deserialize_owned::<khora_core::agent::gorna::protocol::DecidedBy>();
-    let _ = type_name::<khora_core::agent::gorna::protocol::Binding>();
-    let _ = binding_variants as fn(&khora_core::agent::gorna::protocol::Binding);
-    is_debug::<khora_core::agent::gorna::protocol::Binding>();
-    is_clone::<khora_core::agent::gorna::protocol::Binding>();
-    is_copy::<khora_core::agent::gorna::protocol::Binding>();
-    is_partial_eq::<khora_core::agent::gorna::protocol::Binding>();
-    is_eq::<khora_core::agent::gorna::protocol::Binding>();
-    is_hash::<khora_core::agent::gorna::protocol::Binding>();
-    is_serialize::<khora_core::agent::gorna::protocol::Binding>();
-    is_deserialize_owned::<khora_core::agent::gorna::protocol::Binding>();
+    let _ = type_name::<khora_core::agent::gorna::protocol::BindingConstraint>();
+    let _ = binding_variants as fn(&khora_core::agent::gorna::protocol::BindingConstraint);
+    is_debug::<khora_core::agent::gorna::protocol::BindingConstraint>();
+    is_clone::<khora_core::agent::gorna::protocol::BindingConstraint>();
+    is_copy::<khora_core::agent::gorna::protocol::BindingConstraint>();
+    is_partial_eq::<khora_core::agent::gorna::protocol::BindingConstraint>();
+    is_eq::<khora_core::agent::gorna::protocol::BindingConstraint>();
+    is_hash::<khora_core::agent::gorna::protocol::BindingConstraint>();
+    is_serialize::<khora_core::agent::gorna::protocol::BindingConstraint>();
+    is_deserialize_owned::<khora_core::agent::gorna::protocol::BindingConstraint>();
     let _ = type_name::<khora_core::agent::gorna::protocol::Rejected>();
     let _ = rejected_fields as fn(&khora_core::agent::gorna::protocol::Rejected);
     is_debug::<khora_core::agent::gorna::protocol::Rejected>();
@@ -2125,7 +2125,7 @@ fn every_lane_module_path_names_its_items() {
     let _ = type_name::<khora_core::lane::level::Impact>();
     let _ = type_name::<khora_core::lane::level::Level>();
     let _ = type_name::<khora_core::lane::erased::RunOutcome>();
-    let _ = type_name::<khora_core::lane::erased::Run>();
+    let _ = type_name::<khora_core::lane::erased::LaneRun>();
     let _ = type_name::<khora_core::lane::erased::NotPrepared>();
     let _ = type_name::<khora_core::lane::guard::SourceKind>();
     let _ = type_name::<khora_core::lane::guard::SinkKind>();
@@ -2188,6 +2188,72 @@ fn lane_root_reexports_are_the_module_items() {
     fn bounded_by_root_path<T: khora_core::lane::Staged>() {
         needs_module_staged::<T>();
     }
+}
+
+/// How far an offered cost can be trusted is a `CostBasis` — measured,
+/// quoted or assumed — at `khora_core::agent::gorna::protocol`; the name
+/// `Confidence` stays with the lane's cost newtype.
+#[test]
+fn an_offers_cost_basis_has_a_name_of_its_own() {
+    use khora_core::agent::gorna::protocol::CostBasis;
+    fn cost_basis_variants(x: &CostBasis) {
+        match x {
+            CostBasis::Measured => {}
+            CostBasis::Quoted => {}
+            CostBasis::Assumed => {}
+        }
+    }
+    let _ = type_name::<CostBasis>();
+    let _ = cost_basis_variants as fn(&CostBasis);
+    is_debug::<CostBasis>();
+    is_clone::<CostBasis>();
+    is_copy::<CostBasis>();
+    is_partial_eq::<CostBasis>();
+    is_eq::<CostBasis>();
+    is_hash::<CostBasis>();
+    is_serialize::<CostBasis>();
+    is_deserialize_owned::<CostBasis>();
+
+    let _: khora_core::lane::cost::Confidence = khora_core::lane::cost::Confidence(0.5);
+}
+
+/// What one run of a lane gave back to its agent is a `LaneRun`, under both
+/// paths of the `erased` module; the name `Run` stays with the script VM.
+#[test]
+fn a_lane_run_has_a_name_of_its_own() {
+    use khora_core::lane::erased::LaneRun;
+    fn lane_run_fields(x: &LaneRun) {
+        let _: &khora_core::lane::erased::RunOutcome = &x.outcome;
+        let _: &Vec<khora_core::lane::cost::Cost> = &x.costs;
+        let _: &Vec<khora_core::lane::guard::InputWarning> = &x.warnings;
+    }
+    let _ = type_name::<LaneRun>();
+    let _ = lane_run_fields as fn(&LaneRun);
+    is_debug::<LaneRun>();
+    same_type(
+        PhantomData::<khora_core::lane::erased::LaneRun>,
+        PhantomData::<khora_core::lane::contract::erased::LaneRun>,
+    );
+}
+
+/// What a `Preparation` gives back is a `PreparedLayer`, re-exported at
+/// `khora_core::agent`; the name `Prepared` stays with a prepared scene load
+/// (`khora_data::scene::Prepared`), and `Layer` with the agent's layer trait.
+#[test]
+fn a_prepared_layer_has_a_name_of_its_own() {
+    use khora_core::agent::layer::{Preparation, PreparedLayer};
+    let _ = type_name::<PreparedLayer>();
+    is_debug::<PreparedLayer>();
+    same_type(
+        PhantomData::<khora_core::agent::layer::PreparedLayer>,
+        PhantomData::<khora_core::agent::PreparedLayer>,
+    );
+    let _ =
+        Preparation::run as fn(Preparation, &mut khora_core::EngineContext<'_>) -> PreparedLayer;
+    let _ = PreparedLayer::row as fn(&PreparedLayer) -> khora_core::agent::gorna::StrategyId;
+
+    #[allow(dead_code)]
+    fn layer_is_the_agent_trait<T: khora_core::agent::layer::Layer>() {}
 }
 
 /// The agent registration collection lives in `khora_core`: the newtype a
@@ -3205,7 +3271,7 @@ mod paths_used_by_other_crates {
     use khora_core::agent::completion::CompletionOutcome as _; // khora-control
     use khora_core::agent::dependency::AgentDependency as _; // khora-control
     use khora_core::agent::dependency::DependencyKind as _; // khora-control
-    use khora_core::agent::gorna::protocol::Binding as _; // khora-control
+    use khora_core::agent::gorna::protocol::BindingConstraint as _; // khora-control
     use khora_core::agent::gorna::protocol::DecidedBy as _; // khora-control
     use khora_core::agent::gorna::protocol::Rejected as _; // khora-control
     use khora_core::agent::gorna::protocol::Why as _; // khora-control

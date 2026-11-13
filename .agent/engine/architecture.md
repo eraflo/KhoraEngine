@@ -98,7 +98,7 @@ Dependencies flow downward only. `khora-core` is the foundation. `khora-editor`,
 | `khora-core` | Foundation | Traits (`Lane`, `Agent`, `RenderSystem`, `PhysicsProvider`, `AudioDevice`, `LayoutSystem`, `Asset`, VFS), math (`Vec2/3/4`, `Mat3/4`, `Quaternion`, `Aabb`, `LinearRgba`, `simd`), GORNA types, error hierarchy, `Runtime` (services / backends / resources), `EngineContext`, `register_agent!`, `Place`/`Layer`, the memory counters. |
 | `khora-macros` | Foundation | Proc macros: `#[derive(Component)]`, the lane derives `#[derive(LaneInputs)]` / `#[derive(LaneOutputs)]`, `#[ergon_fn]`. Path crate (not a workspace member). |
 | `khora-data` | Data | CRPECS ECS (`World`, storage, query, `SemanticDomain`, `ComponentProvenance`), SoA/AGDF layout (`LayoutAdvisor`, `Ucb1`), `Assets<T>`, UI components, Flows, `EcsMaintenance`, and **persistence** (`scene/`: `SceneRecord`, encodings text/compact/msgpack, schema-bound snapshot, prefab links, game `SaveRecord`, atomic `apply`, `LoadReport`). |
-| `khora-control` | Control | `DccService` (agent lifecycle), `GornaArbitrator` (budget fitting + replay), cost model, frame governor, Substrate dispatcher, situational `Context` (thermal/battery/phase). |
+| `khora-control` | Control | `DccService` (agent lifecycle), `GornaArbitrator` (budget fitting + replay), cost model, frame governor, Substrate dispatcher, situational `DccContext` (thermal/battery/phase). |
 | `khora-telemetry` | Infra | `TelemetryService`, `MetricsRegistry`, `MonitorRegistry`, telemetry event storage. |
 | `khora-lanes` | Lanes | The typed lanes and their `LaneFamily`s: render (`SimpleUnlitLane`, `LitForwardLane`, `ForwardPlusLane`), `ShadowsLane`, overlays (`GridLane`, `WireframeLane`, `GizmoLane`), `SkyboxLane`, `UiLane`, `StandardPhysicsLane`, `SpatialMixingLane`, `BudgetedScriptLane`, loading (`RushLane`, `PacedLane`). |
 | `khora-infra` | Infra | Default backends: `WgpuRenderSystem`/`WgpuDevice`, `WinitWindow` + input, Rapier3D physics, CPAL audio, Taffy layout, GPU/Memory/Vram monitors, `SaaTrackingAllocator`, `DefaultMixBus`. Each implements a `khora-core` trait and is swappable. |
@@ -187,7 +187,7 @@ at bootstrap (`khora-sdk/src/engine/bootstrap.rs`), knowing every registered fam
 family is refused (`UnknownFamily`). `run_app_update` (`khora-sdk/src/engine/frame.rs`) opens with
 `settle()`, after `before_frame` and before the first DataSystem phase, so every phase, Flow, the
 scheduler and the DCC see one state; a later request counts from the next frame. On a change the SDK
-sends `TelemetryEvent::ActivationChanged(inactive)`: the DCC keeps it in `Context.inactive`, clears its
+sends `TelemetryEvent::ActivationChanged(inactive)`: the DCC keeps it in `DccContext.inactive`, clears its
 run reports, and opens an epoch (`AgentsChanged`); only active families are asked to offer and are lent.
 DataSystems and Flows declare a `Role` (`khora-data/src/ecs/role.rs`): `Upkeep` runs every frame,
 `Serves(φ)` is skipped while φ is off and resumes with `SystemContext.resumed` /

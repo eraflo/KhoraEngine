@@ -38,9 +38,9 @@ mod stalls;
 
 use super::*;
 use crate::analysis::AnalysisReport;
-use crate::dcc_context::Context;
+use crate::dcc_context::DccContext;
 use khora_core::agent::gorna::protocol::{
-    Confidence, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
+    CostBasis, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
 };
 use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::{Agent, AgentImportance, ExecutionTiming, Place};
@@ -75,7 +75,7 @@ fn row(id: StrategyId, cpu_us: u64, quality: f32) -> OfferRow {
         id,
         cost: cpu_cost(cpu_us),
         quality,
-        confidence: Confidence::Quoted,
+        confidence: CostBasis::Quoted,
     }
 }
 
@@ -165,8 +165,8 @@ fn frame_of(latency_ms: f32) -> AnalysisReport {
 }
 
 /// Playing, at the full budget, on a machine that says nothing of its memory.
-fn playing() -> Context {
-    Context {
+fn playing() -> DccContext {
+    DccContext {
         global_budget_multiplier: 1.0,
         ..Default::default()
     }

@@ -131,7 +131,7 @@ pub fn looks_like_text(head: &[u8]) -> bool {
 
 /// Where a refusal was decided.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum Layer {
+pub enum TrustLayer {
     /// Reading the file.
     File,
     /// Decoding it.
@@ -183,7 +183,7 @@ pub struct SecurityRefusal {
     /// How much it was trusted.
     pub trust: Trust,
     /// Where it was refused.
-    pub layer: Layer,
+    pub layer: TrustLayer,
     /// Why.
     pub reason: SecurityReason,
 }

@@ -41,7 +41,7 @@ pub enum RunOutcome {
 
 /// What one run of a lane gave back to its agent.
 #[derive(Debug)]
-pub struct Run {
+pub struct LaneRun {
     /// How it ended.
     pub outcome: RunOutcome,
     /// The cost of every level on this frame's inputs, in level order; empty
@@ -87,7 +87,7 @@ pub trait AnyLane: Send {
         inputs: &mut InputSource<'_>,
         outputs: &mut OutputSink<'_>,
         gpu: &mut GpuSetup<'_>,
-    ) -> Run;
+    ) -> LaneRun;
 
     /// The cost of every level on this frame's inputs, in level order,
     /// without running the lane: the inputs are fetched and each level is
@@ -163,9 +163,9 @@ impl<L: Lane> AnyLane for Erased<L> {
         inputs: &mut InputSource<'_>,
         outputs: &mut OutputSink<'_>,
         gpu: &mut GpuSetup<'_>,
-    ) -> Run {
+    ) -> LaneRun {
         let (outcome, costs) = self.record(level, inputs, outputs, gpu);
-        Run {
+        LaneRun {
             outcome,
             costs,
             warnings: inputs.warnings().to_vec(),
