@@ -15,26 +15,24 @@
 //! Assembling the engine: services, agents, lanes and the scheduler, once,
 //! before the first frame.
 
-use khora_agents::lane_agent::{set_fixed_step, LaneAgent};
-use khora_agents::registered_agent::{lane_agents_in, registered_agents};
+use khora_agents::lane_agent::LaneAgent;
 use khora_control::{DccConfig, DccService};
-use khora_core::agent::{Agent, ExecutionPhase};
+use khora_core::agent::ExecutionPhase;
+use khora_core::event::Channel;
+use khora_core::telemetry::TelemetryEvent;
 use khora_core::Runtime;
-use khora_data::render::{FrameGraph, SharedFrameGraph};
 use khora_telemetry::TelemetryService;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use khora_core::event::Channel;
-use khora_core::telemetry::TelemetryEvent;
-
+use super::phase_order::phase_order;
+use super::scheduler_boot::{build_scheduler, refuse_stranded_agents, register_lane_agents};
 use super::EngineCore;
-use crate::InputEvent;
+use crate::traits::EngineApp;
+use crate::{GameWorld, InputEvent};
 
 /// The DCC's telemetry receiver, handed to [`DccService::start`].
 type EventReceiver = crossbeam_channel::Receiver<TelemetryEvent>;
-use crate::traits::EngineApp;
-use crate::GameWorld;
 
 /// [`EngineCore::bootstrap`] taken apart into its stages.
 ///
@@ -205,6 +203,19 @@ fn populate(
     runtime: &mut Runtime,
     input_events: &Channel<InputEvent>,
 ) -> (DccService, EventReceiver, TelemetryService, GameWorld) {
+    let (dcc, dcc_rx, telemetry) = start_dcc_and_telemetry(runtime);
+    super::defaults::install_defaults(runtime);
+    super::runtime_entries::install_engine_resources(runtime, input_events);
+    super::runtime_entries::install_scripting_and_loading(runtime);
+    let mut game_world = create_game_world(runtime);
+    land_boot_work(runtime, &mut game_world);
+    (dcc, dcc_rx, telemetry, game_world)
+}
+
+/// Creates the DCC and the telemetry service, registers their monitors —
+/// the engine's and the ones the host handed over in `runtime` — and
+/// exposes their observable handles in `runtime`'s resources.
+fn start_dcc_and_telemetry(runtime: &mut Runtime) -> (DccService, EventReceiver, TelemetryService) {
     // Create DCC + telemetry
     let (dcc, dcc_rx) = DccService::new(DccConfig::default());
     let telemetry =
@@ -249,242 +260,12 @@ fn populate(
     // The DCC's last decision: what it lent each agent, and why.
     runtime.resources.insert(dcc.decision_watch());
 
-    // ── Overlay channels (gizmo + grid) ──────────────────────────────────
-    // Shared resources the host application (editor, debug tooling)
-    // writes into each frame; the overlay families' lanes read them in
-    // the OUTPUT phase. The engine only provides the slots — it never
-    // produces the data itself, keeping the editor a pure consumer
-    // of engine APIs (no engine-internal `EditorAgent`).
-    //
-    // Inserted BEFORE `app.setup` (like the observable handles above)
-    // so an app can configure them during setup — e.g. the editor
-    // enables the grid via `GridConfig` there. They are standalone
-    // `Arc<Mutex<Default>>` with no dependency on later-created
-    // resources, so exposing them this early is safe.
-    // Each overlay starts with its empty View: no gizmo line, the grid and
-    // the wireframe off. The editor opts in by setting them again.
-    // The audio family mixes into the shared bus every frame. An application
-    // that opens an audio device installs the bus it hands the device; without
-    // one, the engine keeps a bus of its own, which nothing drains.
-    if !runtime
-        .resources
-        .contains::<Arc<dyn khora_core::audio::AudioMixBus>>()
-    {
-        let mix_bus: Arc<dyn khora_core::audio::AudioMixBus> =
-            Arc::new(khora_infra::DefaultMixBus::new(
-                khora_core::audio::StreamInfo {
-                    channels: 2,
-                    sample_rate: 48_000,
-                },
-                8192,
-            ));
-        runtime.resources.insert(mix_bus);
-    }
+    (dcc, dcc_rx, telemetry)
+}
 
-    // Texts are shaped by `ui_text_layout` through the shaper, and their
-    // glyphs rasterised by `glyphs_on_gpu` through the rasteriser. An
-    // application that brings either keeps its own; the engine's are Parley
-    // and swash, which share the built-in font.
-    if !runtime
-        .backends
-        .contains::<Arc<dyn khora_core::ui::text::TextShaper>>()
-    {
-        let shaper: Arc<dyn khora_core::ui::text::TextShaper> =
-            Arc::new(khora_infra::ParleyShaper::new());
-        runtime.backends.insert(shaper);
-    }
-    if !runtime
-        .backends
-        .contains::<Arc<dyn khora_core::ui::text::GlyphRasterizer>>()
-    {
-        let rasterizer: Arc<dyn khora_core::ui::text::GlyphRasterizer> =
-            Arc::new(khora_infra::SwashRasterizer::new());
-        runtime.backends.insert(rasterizer);
-    }
-
-    // The physics family steps the provider every fixed sub-step, at the
-    // game's `physics.step`. An application that brings neither gets the
-    // engine's own: Rapier, at the default step.
-    if runtime
-        .look_up::<Arc<Mutex<Box<dyn khora_core::physics::PhysicsProvider>>>>()
-        .is_none()
-    {
-        let physics: Box<dyn khora_core::physics::PhysicsProvider> =
-            Box::new(khora_infra::physics::rapier::RapierPhysicsWorld::default());
-        runtime.backends.insert(Arc::new(Mutex::new(physics)));
-    }
-    if !runtime
-        .resources
-        .contains::<khora_core::physics::PhysicsSettings>()
-    {
-        runtime
-            .resources
-            .insert(khora_core::physics::PhysicsSettings::default());
-    }
-
-    let host_views = khora_core::lane::HostViews::new();
-    host_views.set(khora_data::render::GizmoView::default());
-    host_views.set(khora_data::render::GridView::default());
-    host_views.set(khora_data::render::WireframeView::default());
-    runtime.resources.insert(Arc::new(host_views));
-
-    // ── Data-layer GPU resources ─────────────────────────────────────
-    // AssetStore: the single engine-wide store of projected GPU assets
-    // (Assets<GpuMesh> / GpuMaterial / CpuTexture sub-stores, created on
-    // demand). The SDK/app fills the CpuTexture sub-store (it owns the
-    // AssetService); the data-layer projection (ProjectionRegistry, runs
-    // sync_all/sync_materials once per frame in PreExtract) only uploads
-    // from it (khora-data must not depend on khora-io).
-    //
-    // Inserted BEFORE `app.setup` so an app can register assets (e.g.
-    // decoded textures) into the store during setup. Neither needs a
-    // graphics device at construction, so this is safe this early.
-    let asset_store = khora_data::AssetStore::new();
-    let proj_registry = khora_data::ProjectionRegistry::new(asset_store.clone());
-    runtime.resources.insert(asset_store);
-    runtime.resources.insert(proj_registry);
-
-    // IBL bake service — projects the scene environment (procedural sky
-    // for now) into the GPU cubes/LUT image-based lighting samples. Baked
-    // once by the `ibl_bake` DataSystem on the first frame a device is
-    // available; the lit lanes read the result at group 3.
-    runtime.resources.insert(khora_data::IblBaker::new());
-
-    // InputMap — engine-wide action / binding map. Inserted BEFORE
-    // `app.setup` so apps can bind actions and cache the handle during
-    // setup (e.g. the sandbox's PlayerController). The `input_map_update`
-    // data system derives it from the channel below, once per frame in
-    // `PreSimulation`.
-    runtime
-        .resources
-        .insert(Arc::new(Mutex::new(khora_core::platform::InputMap::new())));
-
-    // The raw stream `InputMap` is derived from, published so the descent
-    // can reach it. `InputMap` answers "is jump held"; a consumer that
-    // needs the order of two clicks, a double-tap, or the cursor's motion
-    // needs the events, which the map's three `HashSet`s cannot express.
-    // The engine's own handle is a clone of this one.
-    runtime.resources.insert(input_events.clone());
-
-    // Where the physics lane's contacts land, for anything that listens.
-    // Inserted whether or not a consumer exists yet: a channel somebody has
-    // to create before writing to it is a channel somebody forgets to
-    // create, and the dispatch would then drop a frame of contacts with
-    // nothing to say about it.
-    runtime
-        .resources
-        .insert(khora_core::physics::collision_channel());
-
-    // Frame graph — per-frame collection of render passes recorded by
-    // agents during OUTPUT; `tick_with_services()` drains + submits it.
-    let frame_graph: SharedFrameGraph = Arc::new(Mutex::new(FrameGraph::new()));
-    runtime.resources.insert(frame_graph);
-
-    // Shader/pipeline composition is owned by the `PipelineSystem` backend
-    // (`WgpuPipelineSystem`), injected into `runtime.resources` by the app
-    // bootstrap; render lanes resolve their layouts + pipelines through it.
-
-    // EcsMaintenance — fetched + ticked each frame by the `ecs_maintenance`
-    // DataSystem (Maintenance phase).
-    runtime
-        .resources
-        .insert(Arc::new(Mutex::new(khora_data::ecs::EcsMaintenance::new())));
-
-    // AssetEviction — fetched + ticked each frame by the `asset_eviction`
-    // DataSystem (Maintenance phase). Reclaims orphaned GPU meshes/materials
-    // (from despawns and inline material edits) that the insert-only
-    // projection would otherwise leak, freeing their wgpu resources.
-    runtime
-        .resources
-        .insert(Arc::new(Mutex::new(khora_data::AssetEviction::new())));
-
-    // Time — the engine's per-frame clock. The scheduler publishes the
-    // real frame delta + fixed step + render-interpolation alpha into it
-    // each frame; Flows and game `update` read it (replacing hardcoded
-    // deltas). Shared behind RwLock so the scheduler (holding Arc<Runtime>)
-    // writes while readers borrow `&Runtime`. Inserted before `app.setup`
-    // so apps can read it during setup.
-    let time: khora_core::time::SharedTime =
-        Arc::new(std::sync::RwLock::new(khora_core::time::Time::default()));
-    runtime.resources.insert(time);
-
-    // The reserve: what the families at the background staged, kept across
-    // frames until a frame's `Boundary` systems take it.
-    // Kept when the host installed one already: a mount before the bootstrap
-    // staged into it.
-    if runtime
-        .resources
-        .get::<khora_core::lane::Reserve>()
-        .is_none()
-    {
-        runtime.resources.insert(khora_core::lane::Reserve::new());
-    }
-
-    // Which families run, known from setup on.
-    runtime
-        .resources
-        .insert(super::families::engine_activation());
-
-    // TransformInterpolation — engine-owned per-entity "previous pose" store
-    // the capture pass fills and the render projection blends by the
-    // interpolation alpha. A resource, not an ECS component, so it never
-    // appears in the editor or scene files (interpolation is render-only).
-    let transform_interpolation: khora_core::interpolation::SharedTransformInterpolation = Arc::new(
-        std::sync::RwLock::new(khora_core::interpolation::TransformInterpolation::new()),
-    );
-    runtime.resources.insert(transform_interpolation);
-
-    // UiImageAtlas — `AssetUUID → AtlasRect` mapping for UI images; the GPU
-    // atlas itself is allocated by the `image_on_gpu` residency, once an
-    // image is wanted.
-    runtime
-        .resources
-        .insert(Arc::new(khora_data::ui::UiImageAtlas::new()));
-    // GlyphAtlas — the glyphs of the UI's texts, placed by `glyphs_on_gpu`
-    // and drawn by the UI lane; its two textures are made on first need.
-    runtime
-        .resources
-        .insert(Arc::new(khora_data::ui::GlyphAtlas::default()));
-
-    // The scripting world — compiled programs, live behavior instances, the
-    // mail behaviors owe each other. Registered here rather than owned by
-    // the script family's agent for the same reason the physics provider
-    // is: an agent chooses a lane against a budget, and a subsystem's state
-    // is not strategy state. It also means anything that legitimately needs to see
-    // live behaviors — an inspector, a debugger — can, without going
-    // through the agent.
-    let script_runtime: Arc<Mutex<khora_lanes::script::ScriptRuntime>> =
-        Arc::new(Mutex::new(khora_lanes::script::ScriptRuntime::new()));
-    runtime.services.insert(script_runtime);
-
-    // What scripting needs — the engine's `AssetWatch`, the queues that
-    // feed the scripting world, the catalog — for **every** application
-    // rather than by one binary's launcher. A windowing driver installs
-    // them before the application's own bootstrap closure, which may mount
-    // its scripts there; this finds them in place and replaces nothing, so
-    // no program compiled at startup is dropped. Filling them is the
-    // application's job — `khora_sdk::scripts::mount`.
-    crate::scripts::install(runtime);
-
-    // What the `loading` family reads: the asset service's request channel and
-    // its decoding, or stand-ins for an engine without one.
-    khora_io::asset::install_decoding(runtime);
-    // What the `loading` family reads: the hub hosts file project indexes with.
-    khora_io::asset::install_indexing(runtime);
-    // What the `loading` family reads: the hub hosts file scene loads with.
-    khora_io::scene_loads::install_scene_loading(runtime);
-    // What a tool's startup waits on — the tickets it files with the hubs
-    // above — settled at every frame's boundary.
-    if runtime
-        .resources
-        .get::<Arc<super::readiness::Readiness>>()
-        .is_none()
-    {
-        runtime
-            .resources
-            .insert(Arc::new(super::readiness::Readiness::new()));
-    }
-
+/// Creates the game world, given the scene loads hub and the shipped
+/// prefabs where `runtime` holds them.
+fn create_game_world(runtime: &mut Runtime) -> GameWorld {
     // Create the game world — reading the shipped prefabs, where the app
     // ships an asset service, so a game saved over a level holding prefab
     // instances compares against the level expanded.
@@ -505,8 +286,13 @@ fn populate(
         )));
         crate::prefabs::install(runtime, assets);
     }
+    game_world
+}
 
-    // What the scripts mounted above declare, registered before `setup`:
+/// Compiles the scripts filed before the boot, lands what the host staged,
+/// and registers into `game_world` what the mounted scripts declare.
+fn land_boot_work(runtime: &mut Runtime, game_world: &mut GameWorld) {
+    // What the scripts mounted at boot declare, registered before `setup`:
     // they were compiled as they were mounted, so a game attaches its
     // behaviors from its first entities. The frame boundary then finds
     // nothing pending, and registers nothing twice.
@@ -518,212 +304,4 @@ fn populate(
         reserve.land_from_host();
     }
     khora_io::script::declarations::register_pending(game_world.inner_world_mut(), runtime);
-
-    (dcc, dcc_rx, telemetry, game_world)
-}
-
-/// The order the scheduler runs the phases in: the built-in ones, the app's
-/// own phases after `OUTPUT` and before `FINALIZE` in the order it declared
-/// them, without the phases it removed. A phase declared twice runs once.
-fn phase_order(custom: &[ExecutionPhase], removed: &[ExecutionPhase]) -> Vec<ExecutionPhase> {
-    let mut order = ExecutionPhase::DEFAULT_ORDER.to_vec();
-    let mut at = order
-        .iter()
-        .position(|p| *p == ExecutionPhase::OUTPUT)
-        .map_or(order.len(), |output| output + 1);
-    for phase in custom {
-        if !order.contains(phase) {
-            order.insert(at, *phase);
-            at += 1;
-        }
-    }
-    order.retain(|phase| !removed.contains(phase));
-    order
-}
-
-/// Refuses the boot when a registered agent runs in no phase of `order`: it
-/// would be registered and budgeted, yet never run. The families are checked
-/// at registration; this catches an agent an application put in the runtime's
-/// registry itself.
-fn refuse_stranded_agents(dcc: &DccService, order: &[ExecutionPhase]) {
-    let registry = dcc
-        .agent_registry()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    for agent in registry.iter() {
-        let agent = agent
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let phases = agent.execution_timing().allowed_phases;
-        // The background runs off the frame: no phase order holds it.
-        let runs =
-            |phase: &ExecutionPhase| *phase == ExecutionPhase::BACKGROUND || order.contains(phase);
-        if !phases.iter().any(runs) {
-            panic!(
-                "the engine cannot boot: the agent {:?} runs only in {phases:?}, which the app removed",
-                agent.id()
-            );
-        }
-    }
-}
-
-/// One `LaneAgent` per family registration linked into the binary, each
-/// registered with `dcc` for its registration's modes.
-///
-/// The registrations are checked together first, against the runtime and the
-/// device. They are fixed when the program is built, so a refused set is a
-/// build defect no frame could recover from: the engine refuses to boot.
-fn register_lane_agents(
-    dcc: &DccService,
-    runtime: &Runtime,
-    phase_order: &[ExecutionPhase],
-) -> Vec<Arc<Mutex<LaneAgent>>> {
-    let registrations = registered_agents();
-    // What the installed graphics device can do decides which lanes stay on
-    // their family's menu; without a device, nothing optional is assumed.
-    let caps = runtime
-        .look_up::<Arc<dyn khora_core::renderer::GraphicsDevice>>()
-        .map(|device| device.caps())
-        .unwrap_or_default();
-    let mut agents = match lane_agents_in(&registrations, runtime, &caps, phase_order) {
-        Ok(agents) => agents,
-        Err(refusal) => panic!("the engine cannot boot its lane agents: {refusal}"),
-    };
-    // The physics step is the game's setting, not the registration's default
-    // and never a budget's: the physics family runs at `physics.step`.
-    let physics = runtime
-        .resources
-        .get::<khora_core::physics::PhysicsSettings>()
-        .copied()
-        .unwrap_or_default();
-    for (registration, agent) in registrations.iter().zip(agents.iter_mut()) {
-        if registration.agent
-            == <khora_lanes::physics::PhysicsFamily as khora_core::lane::family::LaneFamily>::AGENT
-        {
-            set_fixed_step(agent, physics.step);
-        }
-    }
-    // An application can reach the registry through the runtime before the
-    // families are registered: a family's name it took would leave the
-    // family never running.
-    let taken = dcc
-        .agent_registry()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .all_ids();
-    if let Some(registration) = registrations
-        .iter()
-        .find(|registration| taken.contains(&registration.agent))
-    {
-        panic!(
-            "the engine cannot boot its lane agents: the family `{}` negotiates as {:?}, which another agent already is",
-            registration.family_name, registration.agent
-        );
-    }
-    registrations
-        .iter()
-        .zip(agents)
-        .map(|(registration, agent)| {
-            let agent = Arc::new(Mutex::new(agent));
-            dcc.register_agent(agent.clone() as Arc<Mutex<dyn Agent>>, 1.0);
-            dcc.agent_registry()
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .set_origin(registration.agent, registration.module);
-            agent
-        })
-        .collect()
-}
-
-/// The execution scheduler over `dcc`'s agents, running `phase_order`.
-fn build_scheduler(
-    phase_order: &[ExecutionPhase],
-    dcc: &mut DccService,
-) -> khora_control::ExecutionScheduler {
-    // Every registered agent gets a budget: the built-in ones and the ones the
-    // application registered before them.
-    let registry = dcc.agent_registry().clone();
-    let mut scheduler = khora_control::ExecutionScheduler::from_registry(registry);
-
-    // Connect the read-only observation tunnel: the scheduler publishes
-    // per-agent cost samples + per-component access snapshots the DCC's
-    // cost model and layout advisor consume.
-    scheduler.set_telemetry_sender(dcc.event_sender());
-
-    // Run phases in concurrent waves: agents whose contentions are disjoint
-    // run at once within a phase. Pass submission stays deterministic
-    // (fixed scene→ui→overlay fold).
-    scheduler.set_parallel_execution(true);
-
-    // The app's own phases, in the order the lane agents were checked against.
-    scheduler.set_phase_order(phase_order);
-
-    let budget_channel = scheduler.budget_channel().clone();
-    dcc.connect_budget_channel(budget_channel);
-    scheduler
-}
-
-#[cfg(test)]
-mod tests {
-    use super::phase_order;
-    use khora_core::agent::ExecutionPhase;
-
-    const FIRST: ExecutionPhase = ExecutionPhase::custom(6);
-    const SECOND: ExecutionPhase = ExecutionPhase::custom(7);
-
-    /// A game's own phases run after `OUTPUT` and before `FINALIZE`, in the
-    /// order the game declared them.
-    #[test]
-    fn a_games_phases_run_in_the_order_it_declared_them() {
-        let order = phase_order(&[FIRST, SECOND], &[]);
-
-        assert_eq!(
-            order,
-            vec![
-                ExecutionPhase::INIT,
-                ExecutionPhase::OBSERVE,
-                ExecutionPhase::TRANSFORM,
-                ExecutionPhase::MUTATE,
-                ExecutionPhase::OUTPUT,
-                FIRST,
-                SECOND,
-                ExecutionPhase::FINALIZE,
-            ]
-        );
-    }
-
-    /// A removed phase is not in the order, a built-in one or the game's own.
-    #[test]
-    fn a_removed_phase_leaves_the_order() {
-        let order = phase_order(&[FIRST, SECOND], &[ExecutionPhase::OBSERVE, FIRST]);
-
-        assert!(!order.contains(&ExecutionPhase::OBSERVE));
-        assert!(!order.contains(&FIRST));
-        assert_eq!(
-            order,
-            vec![
-                ExecutionPhase::INIT,
-                ExecutionPhase::TRANSFORM,
-                ExecutionPhase::MUTATE,
-                ExecutionPhase::OUTPUT,
-                SECOND,
-                ExecutionPhase::FINALIZE,
-            ]
-        );
-    }
-
-    /// A phase declared twice, or a built-in phase declared again, runs once.
-    #[test]
-    fn a_phase_declared_twice_runs_once() {
-        let order = phase_order(&[FIRST, FIRST, ExecutionPhase::OBSERVE], &[]);
-
-        assert_eq!(order.iter().filter(|p| **p == FIRST).count(), 1);
-        assert_eq!(
-            order
-                .iter()
-                .filter(|p| **p == ExecutionPhase::OBSERVE)
-                .count(),
-            1
-        );
-    }
 }

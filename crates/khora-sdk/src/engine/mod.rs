@@ -29,14 +29,20 @@ use std::sync::Arc;
 use crate::traits::EngineApp;
 use crate::{GameWorld, InputEvent};
 
+mod app_update;
 mod bootstrap;
 mod decision_journal;
+mod defaults;
 mod families;
 mod frame;
 mod frame_clock;
+mod phase_order;
 pub(crate) mod profiles;
 pub(crate) mod readiness;
 pub(crate) mod refusals;
+mod render_frame;
+mod runtime_entries;
+mod scheduler_boot;
 
 pub use bootstrap::EngineBootstrap;
 pub use readiness::{Readiness, ReadinessHold, ReadinessProgress, ReadinessState, ReadinessTicket};
