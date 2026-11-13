@@ -8,6 +8,17 @@
 [test-groups]
 trybuild = { max-threads = 1 }
 
+# A test that drives a GPU device holds `exclusive_gpu`, but that lock lives in
+# one process and nextest runs each test in its own: across processes, every
+# GPU test would drive its device at once. Under the full suite's load that
+# stretches their waits past wgpu's own (the queue gives up on its last
+# submission after a few seconds). Two at a time keep them within it.
+gpu = { max-threads = 2 }
+
 [[profile.default.overrides]]
 filter = 'package(khora-core) & binary(lane_contract) & test(/^compile_fail::/)'
 test-group = 'trybuild'
+
+[[profile.default.overrides]]
+filter = 'package(khora-infra) & (test(/device::tests::(concurrency|vram|caps)::/) | test(/wgpu::profiler::tests::/) | test(/^(light_culling_gpu|light_culling_edge_cases|spot_attenuation_gpu)::/))'
+test-group = 'gpu'

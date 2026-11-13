@@ -427,38 +427,131 @@ fn an_unmount_withdraws_a_mount_whose_modules_another_root_brings_in() {
     );
 }
 
+/// The engine's compiler, holding each result it made until the test lets it
+/// go: the compile stays out, its lease held, for as long as the test needs,
+/// whatever the machine's load.
+struct HeldCompiler {
+    /// The engine's own compiler, made once the engine booted.
+    inner: std::sync::OnceLock<Arc<dyn khora_io::script::project_compiler::ScriptCompiler>>,
+    state: std::sync::Mutex<Held>,
+    changed: std::sync::Condvar,
+}
+
+/// Whether a compile came back from the engine's compiler, and whether the
+/// test let it go.
+#[derive(Default)]
+struct Held {
+    compiled: bool,
+    released: bool,
+}
+
+impl HeldCompiler {
+    /// Waits, at most `secs` seconds, until a compile came back held.
+    fn wait_compiled(&self, secs: u64) -> bool {
+        let state = self.state.lock().expect("the held state");
+        let (state, _) = self
+            .changed
+            .wait_timeout_while(state, Duration::from_secs(secs), |held| !held.compiled)
+            .expect("the held state");
+        state.compiled
+    }
+
+    /// Lets every held compile go.
+    fn release(&self) {
+        self.state.lock().expect("the held state").released = true;
+        self.changed.notify_all();
+    }
+}
+
+impl khora_io::script::project_compiler::ScriptCompiler for HeldCompiler {
+    fn compile(
+        &self,
+        request: &khora_io::script::project_compiler::CompileRequest,
+    ) -> khora_io::script::project_compiler::Recompiled {
+        self.compile_leased(request).0
+    }
+
+    fn compile_leased(
+        &self,
+        request: &khora_io::script::project_compiler::CompileRequest,
+    ) -> (
+        khora_io::script::project_compiler::Recompiled,
+        Option<khora_sdk::khora_core::lane::Lease>,
+    ) {
+        let compiled = self
+            .inner
+            .get()
+            .expect("the engine's compiler is made at setup")
+            .compile_leased(request);
+        let mut state = self.state.lock().expect("the held state");
+        state.compiled = true;
+        self.changed.notify_all();
+        // Bounded, so a test that fails before releasing never hangs the run.
+        let (_state, _) = self
+            .changed
+            .wait_timeout_while(state, Duration::from_secs(30), |held| !held.released)
+            .expect("the held state");
+        compiled
+    }
+}
+
+/// A tool, editing, whose `loading` family compiles through a
+/// [`HeldCompiler`].
+struct HeldTool {
+    held: Arc<HeldCompiler>,
+}
+
+impl PhaseProvider for HeldTool {}
+impl EngineApp for HeldTool {
+    fn window_config() -> WindowConfig {
+        WindowConfig::default()
+    }
+    fn new() -> Self {
+        HeldTool {
+            held: Arc::new(HeldCompiler {
+                inner: std::sync::OnceLock::new(),
+                state: std::sync::Mutex::new(Held::default()),
+                changed: std::sync::Condvar::new(),
+            }),
+        }
+    }
+    fn provide(&self, runtime: &mut Runtime) {
+        let compiler: Arc<dyn khora_io::script::project_compiler::ScriptCompiler> =
+            self.held.clone();
+        runtime.resources.insert(compiler);
+    }
+    fn setup(&mut self, world: &mut GameWorld, runtime: &Runtime) {
+        let _ = self.held.inner.set(Arc::new(
+            khora_io::script::project_compiler::ProjectCompiler::from_runtime(runtime),
+        ));
+        Tool.setup(world, runtime);
+    }
+    fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
+}
+
 /// **A mount whose compile is out when its root is unmounted still lands.**
 /// The compile of a root with an empty script folder is taken by the
-/// `loading` family; before its result is taken in, the root is unmounted:
-/// the result is abandoned with its lease, so the unmount must have answered
-/// the ticket — it lands, `Err("unmounted")`, rather than wait forever.
+/// `loading` family and held out, its lease held; the root is unmounted
+/// before its result is taken in: the result is abandoned with its lease, so
+/// the unmount must have answered the ticket — it lands, `Err("unmounted")`,
+/// rather than wait forever.
 #[test]
 fn a_mount_whose_compile_is_out_when_unmounted_still_lands() {
-    use khora_io::script::project_compiler::CompileRequest;
-    use khora_sdk::khora_core::event::Channel;
-
     let assets = Assets::with("out-when-unmounted", &[]);
-    let mut engine = tool_engine();
+    let app = HeldTool::new();
+    let held = Arc::clone(&app.held);
+    let mut engine = EngineCore::<HeldTool>::new();
+    engine.bootstrap(app, Runtime::new());
     let ticket = khora_sdk::scripts::mount(engine.runtime(), assets.path()).expect("a ticket");
 
-    // Until the family took the request: its compile is out, or staged and
-    // not taken in yet.
+    // Until the family compiled the request: its result is held out.
     let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        engine.tick();
-        let waiting = engine
-            .runtime()
-            .resources
-            .get::<Channel<CompileRequest>>()
-            .expect("the engine holds the request channel")
-            .len();
-        if waiting == 0 {
-            break;
-        }
+    while !held.wait_compiled(0) {
         assert!(
             Instant::now() < deadline,
-            "the family never took the request"
+            "the family never compiled the request"
         );
+        engine.tick();
         std::thread::sleep(Duration::from_millis(5));
     }
     assert!(
@@ -472,15 +565,14 @@ fn a_mount_whose_compile_is_out_when_unmounted_still_lands() {
     );
 
     khora_sdk::scripts::unmount(engine.runtime(), assets.path());
+    held.release();
 
+    let deadline = Instant::now() + Duration::from_secs(10);
     let mut landed = khora_sdk::scripts::outcome(engine.runtime(), ticket);
-    for _ in 0..30 {
-        if landed.is_some() {
-            break;
-        }
+    while landed.is_none() && Instant::now() < deadline {
         engine.tick();
         landed = khora_sdk::scripts::outcome(engine.runtime(), ticket);
-        std::thread::sleep(Duration::from_millis(10));
+        std::thread::sleep(Duration::from_millis(5));
     }
     assert!(landed.is_some(), "the ticket never landed");
 }

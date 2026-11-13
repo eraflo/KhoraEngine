@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! One test at a time owns a GPU device.
+//! One test at a time owns a GPU device, on one backend.
 //!
 //! Several devices driven at once from several threads crash the Khronos
 //! Vulkan validation layer (seen with SDK 1.3.283 on Windows: access
@@ -33,4 +33,35 @@ static GPU: Mutex<()> = Mutex::new(());
 /// while holding it gives it back as it unwinds: the turn is still good.
 pub(crate) fn exclusive_gpu() -> MutexGuard<'static, ()> {
     GPU.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// The backend a GPU test runs on: the platform's own.
+const NATIVE: wgpu::Backends = if cfg!(target_os = "macos") {
+    wgpu::Backends::METAL
+} else {
+    wgpu::Backends::VULKAN
+};
+
+/// An adapter for a GPU test, or `None` without any: the platform's own
+/// backend (Vulkan; Metal on macOS), its software adapter, else WARP on DX12.
+///
+/// Each instance asks for one backend. An instance on every backend loads
+/// drivers no test uses — the D3D12 debug layer, the OpenGL driver — and,
+/// with several test processes driving the GPU at once, one of them crashes
+/// the process as it exits, after its tests passed (`0xc0000409`).
+pub(crate) fn test_adapter() -> Option<wgpu::Adapter> {
+    let request = |backends: wgpu::Backends, force_fallback_adapter: bool| {
+        let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+        descriptor.backends = backends;
+        let instance = wgpu::Instance::new(descriptor);
+        pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::default(),
+            compatible_surface: None,
+            force_fallback_adapter,
+        }))
+        .ok()
+    };
+    request(NATIVE, false)
+        .or_else(|| request(NATIVE, true))
+        .or_else(|| request(wgpu::Backends::DX12, true))
 }

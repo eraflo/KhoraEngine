@@ -318,17 +318,7 @@ fn probe() -> Option<&'static Probe> {
 }
 
 fn create_probe() -> Option<Probe> {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-    let adapter = [false, true]
-        .into_iter()
-        .find_map(|force_fallback_adapter| {
-            pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
-                compatible_surface: None,
-                force_fallback_adapter,
-            }))
-            .ok()
-        });
+    let adapter = crate::gpu_test::test_adapter();
     let Some(adapter) = adapter else {
         log::warn!("spot_attenuation_gpu: no wgpu adapter, GPU spot falloff tests skipped");
         return None;

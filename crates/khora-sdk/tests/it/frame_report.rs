@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use khora_sdk::khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_sdk::khora_core::agent::{Agent, Contention, Place};
+use khora_sdk::khora_core::agent::{Agent, Contention, ExecutionPhase, Place};
 use khora_sdk::khora_core::lane::cost::{Cost, PerDevice};
 use khora_sdk::khora_core::math::Extent2D;
 use khora_sdk::khora_core::platform::window::KhoraWindow;
@@ -424,8 +424,8 @@ fn the_present_wait_is_not_counted_in_the_frame() {
 /// How long the slow agent works each time it runs.
 const SLOW_AGENT: Duration = Duration::from_millis(30);
 
-/// An agent whose layer works [`SLOW_AGENT`] each time the scheduler runs
-/// it, and counts its runs.
+/// An agent whose layer works [`SLOW_AGENT`] once a frame, in the `OUTPUT`
+/// phase, and counts its runs.
 fn slow_agent(runs: &Arc<AtomicUsize>) -> Arc<Mutex<dyn Agent>> {
     let runs = Arc::clone(runs);
     let layer = Work::new(Contention::none(), move |_: &mut EngineContext<'_>| {
@@ -434,7 +434,11 @@ fn slow_agent(runs: &Arc<AtomicUsize>) -> Arc<Mutex<dyn Agent>> {
     });
     Hand::new(
         AgentId::new("slow_agent"),
-        ExecutionTiming::default(),
+        // One phase: an agent allowed every phase runs in each of them.
+        ExecutionTiming {
+            allowed_phases: vec![ExecutionPhase::OUTPUT],
+            ..ExecutionTiming::default()
+        },
         layer,
     )
     .shared()
@@ -461,21 +465,41 @@ impl EngineApp for SlowScheduled {
 }
 
 /// **The agents' work is the frame's.** A fast `update`, but an agent working
-/// 30 ms in the scheduler: the frame closes after the scheduler ran, so each
-/// frame reports the host busy at least that long and the DCC pulls the
-/// multiplier below 1.0.
+/// 30 ms in the scheduler: the frame closes after the scheduler ran, so the
+/// frames the DCC reads last at least that long. What the governor makes of
+/// such frames is pinned by khora-control's governor tests; this one reads
+/// what the DCC was told, which load can only lengthen.
 #[test]
-fn a_slow_agent_pulls_the_multiplier_down() {
+fn a_slow_agents_work_is_in_the_frames_the_dcc_reads() {
     let app = SlowScheduled::new();
     let runs = Arc::clone(&app.runs);
     let mut engine = EngineCore::<SlowScheduled>::new();
     engine.bootstrap(app, Runtime::new());
     register_after_boot(&engine, slow_agent(&runs), 0.5);
-    // Its work is the frame's, but no row of its own is a lever: the
-    // governor lowers the multiplier through this one's.
-    register_after_boot(&engine, Graded::shared(), 0.5);
+    engine
+        .dcc()
+        .expect("the bootstrap starts the DCC")
+        .start_decision_recording();
 
-    let dropped = tick_until_below(&mut engine, 1.0, 10);
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let summary = loop {
+        engine.tick();
+        let read = engine
+            .dcc()
+            .expect("the bootstrap starts the DCC")
+            .recorded_decisions()
+            .epochs
+            .iter()
+            .map(|epoch| epoch.frames)
+            .find(|frames| frames.count > 0);
+        if let Some(frames) = read {
+            break frames;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the DCC opened no epoch over frames that ran"
+        );
+    };
     engine.shutdown();
 
     assert!(
@@ -483,8 +507,8 @@ fn a_slow_agent_pulls_the_multiplier_down() {
         "the scheduler runs the agent"
     );
     assert!(
-        dropped.is_some(),
-        "frames whose agent works 30 ms pull the multiplier below 1.0, still {}",
-        multiplier(&engine)
+        summary.mean >= SLOW_AGENT,
+        "frames whose agent works {SLOW_AGENT:?} last at least that long, read {:?}",
+        summary.mean
     );
 }

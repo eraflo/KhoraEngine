@@ -268,10 +268,7 @@ mod tests {
     // Helper function to create a wgpu Device and Queue for testing purposes.
     // Returns None if a suitable adapter cannot be found.
     fn create_test_device() -> Option<(wgpu::Device, wgpu::Queue, wgpu::Features)> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-        let adapter =
-            pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
-                .ok()?;
+        let adapter = crate::graphics::wgpu::tests::gpu::test_adapter()?;
 
         let features = adapter.features();
         let required_features = features & wgpu::Features::TIMESTAMP_QUERY;

@@ -30,12 +30,7 @@ use crate::graphics::wgpu::resilience::GpuHealth;
 #[test]
 fn the_wgpu_device_reports_storage_buffers() {
     let _turn = crate::graphics::wgpu::tests::gpu::exclusive_gpu();
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-    let Ok(adapter) = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        power_preference: wgpu::PowerPreference::default(),
-        compatible_surface: None,
-        force_fallback_adapter: false,
-    })) else {
+    let Some(adapter) = crate::graphics::wgpu::tests::gpu::test_adapter() else {
         log::warn!("the_wgpu_device_reports_storage_buffers: no wgpu adapter, skipped");
         return;
     };
@@ -82,12 +77,7 @@ fn the_wgpu_device_reports_storage_buffers() {
 #[test]
 fn the_wgpu_device_reports_compute() {
     let _turn = crate::graphics::wgpu::tests::gpu::exclusive_gpu();
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-    let Ok(adapter) = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        power_preference: wgpu::PowerPreference::default(),
-        compatible_surface: None,
-        force_fallback_adapter: false,
-    })) else {
+    let Some(adapter) = crate::graphics::wgpu::tests::gpu::test_adapter() else {
         log::warn!("the_wgpu_device_reports_compute: no wgpu adapter, skipped");
         return;
     };

@@ -233,17 +233,7 @@ pub(crate) fn culler() -> Option<&'static Culler> {
 }
 
 fn create_culler() -> Option<Culler> {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-    let adapter = [false, true]
-        .into_iter()
-        .find_map(|force_fallback_adapter| {
-            pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
-                compatible_surface: None,
-                force_fallback_adapter,
-            }))
-            .ok()
-        });
+    let adapter = crate::gpu_test::test_adapter();
     let Some(adapter) = adapter else {
         log::warn!("light_culling_gpu: no wgpu adapter, GPU culling tests skipped");
         return None;

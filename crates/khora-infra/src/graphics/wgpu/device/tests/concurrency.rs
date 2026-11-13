@@ -98,6 +98,20 @@ struct Gpu {
     _turn: std::sync::MutexGuard<'static, ()>,
 }
 
+impl Drop for Gpu {
+    /// Waits for the work still queued: the queue must never be dropped with
+    /// work in flight, as wgpu panics there after a few seconds, and a panic
+    /// while a failed test unwinds aborts the process.
+    fn drop(&mut self) {
+        if let Err(e) = self.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: Some(std::time::Duration::from_secs(60)),
+        }) {
+            log::warn!("the test device's queued work did not finish: {e:?}");
+        }
+    }
+}
+
 impl Gpu {
     /// The validation and internal errors wgpu reported, if any.
     fn reported_errors(&self) -> Vec<String> {
@@ -111,17 +125,7 @@ impl Gpu {
 /// A device of its own for `test`, or `None` (logged) without any adapter.
 fn gpu(test: &str) -> Option<Gpu> {
     let turn = crate::graphics::wgpu::tests::gpu::exclusive_gpu();
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-    let adapter = [false, true]
-        .into_iter()
-        .find_map(|force_fallback_adapter| {
-            pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
-                compatible_surface: None,
-                force_fallback_adapter,
-            }))
-            .ok()
-        });
+    let adapter = crate::graphics::wgpu::tests::gpu::test_adapter();
     let Some(adapter) = adapter else {
         log::warn!("{test}: no wgpu adapter, skipped");
         return None;
