@@ -21,9 +21,15 @@
 //! - [`EguiFrameRenderState`] — per-frame GPU state passed to the overlay.
 
 pub mod app;
+mod convert;
+mod dnd;
+mod editors;
 mod fonts;
 mod gradient_fill;
+mod inset_panels;
+mod menus;
 pub mod overlay;
+mod paint;
 pub mod renderer;
 pub mod shell;
 pub mod theme;

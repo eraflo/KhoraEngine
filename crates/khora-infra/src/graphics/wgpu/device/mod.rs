@@ -35,9 +35,13 @@ use khora_core::renderer::api::resource::buffer::{self as api_buf};
 use khora_core::renderer::api::resource::texture::{self as api_tex};
 use khora_core::renderer::api::shader::ShaderModuleId;
 
+mod bind_groups;
+mod buffers;
 mod entries;
 mod graphics_device;
 mod map_async;
+mod pipelines;
+mod textures;
 pub mod vram_probe;
 
 /// Build the wgpu descriptor for an empty buffer.
