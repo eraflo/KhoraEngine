@@ -910,6 +910,119 @@ fn cited_family_test_paths_name_where_the_tests_live() {
     );
 }
 
+/// The files the mesh and material residencies left when they moved under
+/// `crates/khora-data/src/residency/`: their DataSystems in `ecs/systems/`.
+/// Each run fn and registration now sits in its residency's file
+/// (`mesh_on_gpu.rs`, `material_on_gpu.rs`); the DataSystems keep their
+/// names, `gpu_mesh_sync` and `gpu_material_sync`.
+const RETIRED_RESIDENCY_FILES: &[&str] = &[
+    "crates/khora-data/src/ecs/systems/gpu_mesh_sync.rs",
+    "crates/khora-data/src/ecs/systems/gpu_material_sync.rs",
+];
+
+/// Those homes as module paths and as source paths. Each is matched as a whole
+/// name (`names_whole`), so the DataSystem names alone (`"gpu_mesh_sync"`),
+/// and a longer name that starts like one (`gpu_mesh_sync_system`), never
+/// match.
+const RETIRED_RESIDENCY_HOMES: &[&str] = &[
+    "systems::gpu_mesh_sync",
+    "systems::gpu_material_sync",
+    "systems/gpu_mesh_sync",
+    "systems/gpu_material_sync",
+    "gpu_mesh_sync.rs",
+    "gpu_material_sync.rs",
+];
+
+/// A residency is named where it lives: the mesh and material DataSystems'
+/// files under `crates/khora-data/src/ecs/systems/` are gone, and nothing in
+/// code, docs or the installer scripts names them, by module path
+/// (`khora_data::ecs::systems::gpu_mesh_sync`) or by source path. Read: the
+/// files `family_home_scanned_files` reads, and the build tool's tests but
+/// this file, which names the old homes to forbid them. The DataSystem names
+/// `gpu_mesh_sync` and `gpu_material_sync` stay.
+#[test]
+fn nothing_names_the_old_home_of_a_residency() {
+    let root = repo_root();
+    let mut hits = Vec::new();
+    for retired in RETIRED_RESIDENCY_FILES {
+        if root.join(retired).exists() {
+            hits.push(format!("{retired} still exists"));
+        }
+    }
+    let mut files = family_home_scanned_files(&root);
+    let mut xtask_tests = Vec::new();
+    walk(&root.join("xtask/tests"), &mut xtask_tests);
+    xtask_tests.retain(|path| {
+        rel(&root, path) != "xtask/tests/retired_paths.rs"
+            && path.extension().and_then(|e| e.to_str()) == Some("rs")
+    });
+    files.extend(xtask_tests);
+    files.sort();
+    files.dedup();
+    for file in files {
+        let Ok(text) = fs::read_to_string(&file) else {
+            continue;
+        };
+        for (number, line) in text.lines().enumerate() {
+            for retired in RETIRED_RESIDENCY_HOMES {
+                if names_whole(line, retired) {
+                    hits.push(format!("{}:{}: `{retired}`", rel(&root, &file), number + 1));
+                }
+            }
+        }
+    }
+    assert!(
+        hits.is_empty(),
+        "the old homes of the residencies are still named (they live in \
+         `crates/khora-data/src/residency/`):\n  {}",
+        hits.join("\n  ")
+    );
+}
+
+/// The old residency homes are told from the DataSystem names they kept:
+/// every spelling of the old module and source paths is caught, and the
+/// names `gpu_mesh_sync` and `gpu_material_sync`, the run fns and the new
+/// homes never are.
+#[test]
+fn the_old_residency_homes_are_told_from_the_datasystem_names() {
+    let old = [
+        "use khora_data::ecs::systems::gpu_mesh_sync as _;",
+        "use khora_data::ecs::systems::gpu_material_sync as _;",
+        "use crate::ecs::systems::gpu_mesh_sync;",
+        "see `crates/khora-data/src/ecs/systems/gpu_material_sync.rs`",
+        "`khora-data/src/ecs/systems/gpu_mesh_sync.rs`",
+        "`ecs/systems/gpu_material_sync`",
+        "the run fn in `gpu_mesh_sync.rs`",
+    ];
+    for line in old {
+        assert!(
+            RETIRED_RESIDENCY_HOMES
+                .iter()
+                .any(|retired| names_whole(line, retired)),
+            "not caught: {line}"
+        );
+    }
+    let new = [
+        "crate::register_residency!(name = \"gpu_material_sync\", run = run, after = [\"gpu_mesh_sync\"]);",
+        "    for name in [\"image_on_gpu\", \"gpu_mesh_sync\", \"gpu_material_sync\"] {",
+        "//! system runs before both `gpu_material_sync` and `gpu_mesh_sync`, so a",
+        "    const NAME: &'static str = \"gpu_mesh_sync\";",
+        "fn gpu_mesh_sync_system(",
+        "use crate::ecs::systems::gpu_mesh_sync_system;",
+        "use crate::residency::MeshOnGpu;",
+        "see `crates/khora-data/src/residency/mesh_on_gpu.rs`",
+        "`crates/khora-data/src/residency/material_on_gpu.rs`",
+    ];
+    for line in new {
+        assert!(
+            !RETIRED_RESIDENCY_HOMES
+                .iter()
+                .any(|retired| names_whole(line, retired)),
+            "caught by mistake: {line}"
+        );
+    }
+}
+
 /// Dead items whose names are too common to forbid everywhere: the file or
 /// directory they lived in, the text that declared them, and what they were.
 /// The `allow(dead_code)` that hid them goes with them.

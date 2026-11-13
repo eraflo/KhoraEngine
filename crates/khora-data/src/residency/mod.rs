@@ -24,6 +24,7 @@
 //! A residency registers with [`register_residency!`](crate::register_residency).
 
 mod image_on_gpu;
+mod material_on_gpu;
 mod mesh_on_gpu;
 
 pub use image_on_gpu::{AtlasTarget, ImageOnGpu};

@@ -29,8 +29,6 @@ pub mod collision_to_script;
 pub mod component_checks;
 pub mod ecs_maintenance;
 pub mod ensure_global_transform;
-pub mod gpu_material_sync;
-pub mod gpu_mesh_sync;
 pub mod ibl_bake;
 pub mod input_map_update;
 pub mod physics_debug_extraction;

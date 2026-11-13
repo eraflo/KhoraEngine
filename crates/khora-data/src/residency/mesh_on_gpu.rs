@@ -15,16 +15,25 @@
 //! `MeshOnGpu` — a CPU mesh as vertex and index buffers.
 //!
 //! Its DataSystem is `gpu_mesh_sync`
-//! ([`ProjectionRegistry::sync_all`](crate::ProjectionRegistry::sync_all)): the
+//! ([`ProjectionRegistry::sync_all`](crate::ProjectionRegistry::sync_all)),
+//! at `TickPhase::PreExtract` after the asset reload and the resolver, so it
+//! lands before `RenderFlow` projects the world. The
 //! residents live in the `AssetStore`'s `Assets<GpuMesh>`, which the render
 //! lanes read, and the asset reload retires a changed mesh's entry so it is
 //! made again.
 
+use std::sync::Arc;
+
 use khora_core::asset::AssetHandle;
+use khora_core::lane::OutputDeck;
 use khora_core::renderer::api::gpu_scene::{GpuMesh, Mesh};
 use khora_core::renderer::api::resource::{BufferDescriptor, BufferUsage, IndexFormat};
 use khora_core::renderer::GraphicsDevice;
 use khora_core::residency::{DeviceClass, Residency, ResidencyError};
+use khora_core::Runtime;
+
+use crate::ecs::{SystemContext, World};
+use crate::ProjectionRegistry;
 
 /// A mesh, as GPU buffers.
 pub struct MeshOnGpu;
@@ -113,3 +122,20 @@ impl Residency for MeshOnGpu {
         }
     }
 }
+
+fn gpu_mesh_sync_system(
+    world: &mut World,
+    runtime: &Runtime,
+    _deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
+    let Some(proj) = runtime.resources.get::<ProjectionRegistry>() else {
+        return;
+    };
+    let Some(device) = runtime.backends.get::<Arc<dyn GraphicsDevice>>() else {
+        return;
+    };
+    proj.sync_all(world, device.as_ref());
+}
+
+crate::register_residency!(name = MeshOnGpu::NAME, run = gpu_mesh_sync_system);

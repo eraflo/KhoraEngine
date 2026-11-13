@@ -48,6 +48,32 @@ fn residency_runs_before_agents() {
     }
 }
 
+/// **Materials are made resident after meshes.** `gpu_material_sync` orders
+/// after `gpu_mesh_sync`, so every entity it projects already carries its
+/// `HandleComponent<GpuMesh>`; both order after the resolver, which binds
+/// this frame's asset handles.
+#[test]
+fn the_material_residency_runs_after_the_mesh_residency() {
+    let Some(materials) = data_system("gpu_material_sync") else {
+        panic!("the `gpu_material_sync` residency is not registered");
+    };
+    assert!(
+        materials.runs_after.contains(&"gpu_mesh_sync"),
+        "`gpu_material_sync` orders after gpu_mesh_sync; it runs after {:?}",
+        materials.runs_after
+    );
+    for name in ["gpu_mesh_sync", "gpu_material_sync"] {
+        let Some(residency) = data_system(name) else {
+            panic!("the `{name}` residency is not registered");
+        };
+        assert!(
+            residency.runs_after.contains(&"asset_resolver"),
+            "`{name}` orders after asset_resolver; it runs after {:?}",
+            residency.runs_after
+        );
+    }
+}
+
 mod mesh_on_gpu {
     //! What the mesh residency does with a device that refuses its buffers.
 

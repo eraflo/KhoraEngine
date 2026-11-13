@@ -74,8 +74,6 @@ mod every_pub_mod {
     use khora_data::ecs::systems::collision_to_script as _;
     use khora_data::ecs::systems::ecs_maintenance as _;
     use khora_data::ecs::systems::ensure_global_transform as _;
-    use khora_data::ecs::systems::gpu_material_sync as _;
-    use khora_data::ecs::systems::gpu_mesh_sync as _;
     use khora_data::ecs::systems::ibl_bake as _;
     use khora_data::ecs::systems::input_map_update as _;
     use khora_data::ecs::systems::physics_debug_extraction as _;

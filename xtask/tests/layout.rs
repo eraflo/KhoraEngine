@@ -3205,6 +3205,470 @@ fn the_overlay_families_are_read_by_their_own_names() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Residencies
+// ---------------------------------------------------------------------------
+
+/// The source tree of khora-data.
+const KHORA_DATA_SRC: &str = "crates/khora-data/src";
+
+/// The folder under `KHORA_DATA_SRC` that holds every residency.
+const RESIDENCY: &str = "residency";
+
+/// What `residency/` holds besides the residencies: its module, which defines
+/// `register_residency!`, and the tests of the residencies.
+const RESIDENCY_FOLDER_FILES: &[&str] = &["mod.rs", "tests.rs"];
+
+/// The residencies the engine ships, one file each under `residency/`.
+const RESIDENCY_FILES: &[&str] = &["image_on_gpu.rs", "mesh_on_gpu.rs", "material_on_gpu.rs"];
+
+/// A residency is read in one folder. In khora-data's production code, a
+/// `register_residency!` call and an `impl … Residency for …` (comments do
+/// not count) appear only in a file under `crates/khora-data/src/residency/`,
+/// whose `mod.rs` also defines the macro. Test files and inline test modules
+/// may build residencies of their own. Strict: not in the ratchet.
+#[test]
+fn residencies_live_in_residency() {
+    let root = repo_root();
+    let problems = residency_site_problems(&root.join(KHORA_DATA_SRC));
+    assert!(
+        problems.is_empty(),
+        "residencies made outside {KHORA_DATA_SRC}/{RESIDENCY}/ (a `register_residency!` \
+         call or an `impl Residency for`):\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+/// One file per residency. `crates/khora-data/src/residency/` holds `mod.rs`,
+/// `tests.rs`, and otherwise only files named for a residency,
+/// `<what>_on_<device>.rs`, each registering exactly one (one
+/// `register_residency!` call outside comments and tests). The engine's
+/// three — `image_on_gpu.rs`, `mesh_on_gpu.rs` and `material_on_gpu.rs` — are
+/// among them. A new residency adds its file; no helper and no sub-folder sits
+/// beside them. Strict: not in the ratchet.
+#[test]
+fn the_residency_folder_holds_one_file_per_residency() {
+    let root = repo_root();
+    let problems = residency_folder_problems(&root.join(KHORA_DATA_SRC).join(RESIDENCY));
+    assert!(
+        problems.is_empty(),
+        "{KHORA_DATA_SRC}/{RESIDENCY}/ does not hold one file per residency:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+/// What the material projection is made of, each as the text that declares
+/// it: it moved out of `gpu/projection.rs` into the material residency.
+const MATERIAL_PROJECTION_ITEMS: &[&str] = &[
+    "fn sync_materials",
+    "fn sampler",
+    "struct MaterialProjector",
+    "fn alpha_mask_cutoff",
+    "fn material_textures_ready",
+    "fn material_variant",
+];
+
+/// The names of the material projection, which `gpu/projection.rs` no longer
+/// spells in code, its tests included: the material tests moved with them.
+const MATERIAL_PROJECTION_NAMES: &[&str] = &[
+    "sync_materials",
+    "MaterialProjector",
+    "alpha_mask_cutoff",
+    "material_textures_ready",
+    "material_variant",
+];
+
+/// The material residency holds the material projection. Its file,
+/// `crates/khora-data/src/residency/material_on_gpu.rs`, declares
+/// `ProjectionRegistry::sync_materials` and `sampler`, `MaterialProjector`,
+/// `alpha_mask_cutoff`, `material_textures_ready` and `material_variant`;
+/// `crates/khora-data/src/gpu/projection.rs` keeps the registry and the mesh
+/// half, and spells none of them in code (comments do not count), tests
+/// included.
+#[test]
+fn the_material_projection_lives_in_its_residency() {
+    let root = repo_root();
+    let data_src = root.join(KHORA_DATA_SRC);
+    let mut problems = Vec::new();
+    let residency = data_src.join(RESIDENCY).join("material_on_gpu.rs");
+    if residency.is_file() {
+        let code = strip_rust_comments(&read_text(&residency));
+        for item in MATERIAL_PROJECTION_ITEMS {
+            if !code.lines().any(|line| names_word(line, item)) {
+                problems.push(format!(
+                    "{RESIDENCY}/material_on_gpu.rs: does not declare `{item}`"
+                ));
+            }
+        }
+    } else {
+        problems.push(format!("{RESIDENCY}/material_on_gpu.rs: missing"));
+    }
+    let projection = data_src.join("gpu/projection.rs");
+    if projection.is_file() {
+        let code = strip_rust_comments(&read_text(&projection));
+        for (index, line) in code.lines().enumerate() {
+            for name in MATERIAL_PROJECTION_NAMES {
+                if names_word(line, name) {
+                    problems.push(format!("gpu/projection.rs:{}: `{name}`", index + 1));
+                }
+            }
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "the material projection is not in its residency \
+         ({KHORA_DATA_SRC}/{RESIDENCY}/material_on_gpu.rs):\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+/// The production residency sites under `data_src` outside its `residency/`
+/// folder, each as `<path relative to data_src>:<line>`, sorted.
+fn residency_site_problems(data_src: &Path) -> Vec<String> {
+    let home = data_src.join(RESIDENCY);
+    let mut problems = Vec::new();
+    for path in walk_files(data_src) {
+        if !has_extension(&path, "rs")
+            || path.starts_with(&home)
+            || file_name(&path) == "tests.rs"
+            || under_tests_dir(data_src, &path)
+        {
+            continue;
+        }
+        let text = read_text(&path);
+        if has_inner_cfg_test(&text) {
+            continue;
+        }
+        for line in residency_sites(&text) {
+            problems.push(format!("{}:{line}", rel(data_src, &path)));
+        }
+    }
+    problems.sort();
+    problems
+}
+
+/// What keeps `dir`, a `residency/` folder, from holding one file per
+/// residency, sorted. Each line names the entry relative to `dir`.
+fn residency_folder_problems(dir: &Path) -> Vec<String> {
+    if !dir.is_dir() {
+        return vec![format!("{}: no such folder", dir.display())];
+    }
+    let entries = folder_entries(dir);
+    let mut problems = Vec::new();
+    for required in RESIDENCY_FOLDER_FILES.iter().chain(RESIDENCY_FILES) {
+        if !entries.contains(*required) {
+            problems.push(format!("{required}: missing"));
+        }
+    }
+    for entry in &entries {
+        if RESIDENCY_FOLDER_FILES.contains(&entry.as_str()) {
+            continue;
+        }
+        let named_for_a_residency = entry
+            .strip_suffix(".rs")
+            .and_then(|stem| stem.split_once("_on_"))
+            .is_some_and(|(what, device)| !what.is_empty() && !device.is_empty());
+        if !named_for_a_residency {
+            problems.push(format!(
+                "{entry}: not a residency (`<what>_on_<device>.rs`) nor one of {}",
+                RESIDENCY_FOLDER_FILES.join(", ")
+            ));
+            continue;
+        }
+        let calls = register_residency_calls(&read_text(&dir.join(entry))).len();
+        if calls != 1 {
+            problems.push(format!(
+                "{entry}: {calls} `register_residency!` calls; a residency registers one"
+            ));
+        }
+    }
+    problems.sort();
+    problems
+}
+
+/// The 1-based lines of `text` that make a residency: a `register_residency!`
+/// call or an `impl` of the `Residency` trait. Comments are excluded, and the
+/// inline test module (from its `#[cfg(test)]` on) too.
+fn residency_sites(text: &str) -> Vec<usize> {
+    let code = strip_rust_comments(text);
+    let lines: Vec<&str> = code.lines().take(non_test_lines(text)).collect();
+    // An impl header rustfmt wraps (`for` or the bound on the next line) is
+    // read whole: from its line up to the one that opens its body.
+    let header = |start: usize| {
+        let mut joined = String::new();
+        for line in &lines[start..] {
+            joined.push(' ');
+            joined.push_str(line.trim());
+            if line.contains('{') || line.contains(';') {
+                break;
+            }
+        }
+        joined
+    };
+    let impls = (0..lines.len())
+        .filter(|&index| {
+            lines[index]
+                .split(|c: char| !is_ident_char(c))
+                .any(|word| word == "impl")
+                && implements_residency(&header(index))
+        })
+        .map(|index| index + 1);
+    let mut lines: Vec<usize> = register_residency_calls(text)
+        .into_iter()
+        .chain(impls)
+        .collect();
+    lines.sort_unstable();
+    lines.dedup();
+    lines
+}
+
+/// The 1-based lines of `text` that call `register_residency!` — the name,
+/// not the tail of a longer one, then, past any whitespace, `(`, `{` or `[` —
+/// comments excluded and the inline test module (from its `#[cfg(test)]` on)
+/// too. A mention in prose or a comment is not a call.
+fn register_residency_calls(text: &str) -> Vec<usize> {
+    const MACRO: &str = "register_residency!";
+    strip_rust_comments(text)
+        .lines()
+        .take(non_test_lines(text))
+        .enumerate()
+        .filter(|(_, line)| {
+            line.match_indices(MACRO).any(|(at, _)| {
+                !line[..at].chars().next_back().is_some_and(is_ident_char)
+                    && line[at + MACRO.len()..]
+                        .trim_start()
+                        .starts_with(['(', '{', '['])
+            })
+        })
+        .map(|(index, _)| index + 1)
+        .collect()
+}
+
+/// Whether `line` implements the `Residency` trait: the word `impl`, then the
+/// whole word `Residency` (bare or by path) followed by the word `for`.
+/// `impl ResidencyError for …` and `impl Display for ResidencyReport` do not.
+fn implements_residency(line: &str) -> bool {
+    let Some(start) = line.match_indices("impl").find_map(|(at, word)| {
+        let before = line[..at].chars().next_back();
+        let after = line[at + word.len()..].chars().next();
+        (!before.is_some_and(is_ident_char) && !after.is_some_and(is_ident_char)).then_some(at)
+    }) else {
+        return false;
+    };
+    let rest = &line[start..];
+    rest.match_indices("Residency").any(|(at, word)| {
+        let before = rest[..at].chars().next_back();
+        let after = &rest[at + word.len()..];
+        !before.is_some_and(is_ident_char)
+            && after.starts_with(char::is_whitespace)
+            && after
+                .trim_start()
+                .strip_prefix("for")
+                .is_some_and(|tail| !tail.chars().next().is_some_and(is_ident_char))
+    })
+}
+
+/// The residency-site check accepts residencies made under `residency/`, the
+/// macro's definition and its doc example, test files and inline test
+/// modules, prose and other traits; it names each file outside `residency/`
+/// that registers or implements a residency, with its line.
+#[test]
+fn residency_check_names_a_residency_made_outside_its_folder() {
+    let dir = std::env::temp_dir().join(format!(
+        "khora-layout-residency-sites-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    const MACRO_DEFINITION: &str = "\
+/// ```ignore
+/// register_residency!(name = ImageOnGpu::NAME, run = image_on_gpu_system);
+/// ```
+#[macro_export]
+macro_rules! register_residency {
+    (name = $name:expr, run = $run:path $(,)?) => {
+        $crate::register_residency!(name = $name, run = $run, after = []);
+    };
+}
+";
+    let write_tree = |base: &Path, files: &[(&str, &str)]| -> std::io::Result<()> {
+        for (file, text) in files {
+            let path = base.join(file);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(path, text)?;
+        }
+        Ok(())
+    };
+    let good: &[(&str, &str)] = &[
+        ("residency/mod.rs", MACRO_DEFINITION),
+        (
+            "residency/mesh_on_gpu.rs",
+            "impl Residency for MeshOnGpu {}\nfn run() {}\ncrate::register_residency!(name = MeshOnGpu::NAME, run = run);\n",
+        ),
+        (
+            "residency/material_on_gpu.rs",
+            "crate::register_residency!(\n    name = \"gpu_material_sync\",\n    run = run,\n    after = [\"gpu_mesh_sync\"],\n);\n",
+        ),
+        (
+            "ecs/systems/mod.rs",
+            "//! Residencies register with `register_residency!(…)`.\n\
+             /* register_residency!(name = A, run = b); impl Residency for A {} */\n\
+             const HELP: &str = \"see `register_residency!`\";\n\
+             pub struct ResidencyReport;\n\
+             impl Display for ResidencyReport {}\n\
+             impl ResidencyError for Refusal {}\n\
+             fn implements_residency() {}\n",
+        ),
+        (
+            "ui/tests.rs",
+            "impl Residency for Fake {}\nregister_residency!(name = \"fake\", run = run);\n",
+        ),
+        (
+            "gpu/projection.rs",
+            "pub struct ProjectionRegistry;\n#[cfg(test)]\nmod tests {\n    impl Residency for Fake {}\n    register_residency!(name = \"fake\", run = run);\n}\n",
+        ),
+        ("ecs/tests/fixture.rs", "impl Residency for Fixture {}\n"),
+    ];
+    let bad: &[(&str, &str)] = &[
+        ("residency/mod.rs", MACRO_DEFINITION),
+        (
+            "ecs/systems/mesh_upload.rs",
+            "use x;\ncrate::register_residency!(name = MeshOnGpu::NAME, run = run);\n",
+        ),
+        (
+            "gpu/projection.rs",
+            "pub struct ProjectionRegistry;\nimpl<'a> khora_core::residency::Residency for MaterialOnGpu<'a> {}\n",
+        ),
+        ("ui/atlas.rs", "pub struct Atlas;\n\nimpl Residency for Atlas {\n}\n"),
+    ];
+    let setup = || -> std::io::Result<()> {
+        write_tree(&dir.join("good"), good)?;
+        write_tree(&dir.join("bad"), bad)?;
+        Ok(())
+    };
+    let setup = setup();
+    let good_problems = residency_site_problems(&dir.join("good"));
+    let bad_problems = residency_site_problems(&dir.join("bad"));
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+
+    assert!(good_problems.is_empty(), "{good_problems:#?}");
+    assert_eq!(
+        bad_problems,
+        vec![
+            "ecs/systems/mesh_upload.rs:2".to_owned(),
+            "gpu/projection.rs:2".to_owned(),
+            "ui/atlas.rs:3".to_owned(),
+        ]
+    );
+}
+
+/// An `impl` of `Residency` whose header is longer than a line is written by
+/// rustfmt with `for` on the next line; the residency-site check still names
+/// it, on the line of its `impl`.
+#[test]
+fn residency_check_names_an_impl_whose_header_rustfmt_splits() {
+    let dir = std::env::temp_dir().join(format!(
+        "khora-layout-residency-split-impl-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    let setup = (|| -> std::io::Result<()> {
+        fs::create_dir_all(dir.join("residency"))?;
+        fs::create_dir_all(dir.join("gpu"))?;
+        fs::write(dir.join("residency/mod.rs"), "mod mesh_on_gpu;\n")?;
+        fs::write(
+            dir.join("gpu/projection.rs"),
+            "pub struct ProjectionRegistry;\n\
+             impl<'a> khora_core::residency::Residency\n    \
+             for MaterialProjectionOnTheGraphicsDevice<'a, SomeParameter>\n\
+             {\n}\n",
+        )
+    })();
+    let problems = residency_site_problems(&dir);
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+
+    assert_eq!(problems, vec!["gpu/projection.rs:2".to_owned()]);
+}
+
+/// The residency-folder check accepts the engine's residencies and a new one,
+/// and names a residency missing, a residency file that registers none or two,
+/// a helper file and a sub-folder.
+#[test]
+fn residency_folder_check_names_what_is_not_one_file_per_residency() {
+    let dir = std::env::temp_dir().join(format!(
+        "khora-layout-residency-folder-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    const ONE: &str =
+        "impl Residency for X {}\ncrate::register_residency!(name = X::NAME, run = run);\n";
+    const TWO: &str = "crate::register_residency!(name = \"a\", run = a);\ncrate::register_residency!(name = \"b\", run = b);\n";
+    const NONE: &str =
+        "//! Registers with `register_residency!`.\nimpl Residency for MeshOnGpu {}\n";
+    const MODULE: &str = "macro_rules! register_residency {\n    () => { $crate::register_residency!(name = n, run = r); };\n}\n";
+    let write_tree = |base: &Path, files: &[(&str, &str)]| -> std::io::Result<()> {
+        for (file, text) in files {
+            let path = base.join(file);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(path, text)?;
+        }
+        Ok(())
+    };
+    let good: &[(&str, &str)] = &[
+        ("mod.rs", MODULE),
+        (
+            "tests.rs",
+            "register_residency!(name = \"fake\", run = run);\n",
+        ),
+        ("image_on_gpu.rs", ONE),
+        ("mesh_on_gpu.rs", ONE),
+        ("material_on_gpu.rs", ONE),
+        ("clip_on_cpu.rs", ONE),
+    ];
+    let bad: &[(&str, &str)] = &[
+        ("mod.rs", MODULE),
+        ("tests.rs", ""),
+        ("image_on_gpu.rs", ONE),
+        ("mesh_on_gpu.rs", NONE),
+        ("atlas_on_gpu.rs", TWO),
+        ("helpers.rs", ""),
+        ("material/mod.rs", ONE),
+    ];
+    let setup = || -> std::io::Result<()> {
+        write_tree(&dir.join("good"), good)?;
+        write_tree(&dir.join("bad"), bad)?;
+        Ok(())
+    };
+    let setup = setup();
+    let good_problems = residency_folder_problems(&dir.join("good"));
+    let bad_problems = residency_folder_problems(&dir.join("bad"));
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+
+    assert!(good_problems.is_empty(), "{good_problems:#?}");
+    for expected in [
+        "atlas_on_gpu.rs: 2 `register_residency!` calls",
+        "helpers.rs: not a residency",
+        "material/: not a residency",
+        "material_on_gpu.rs: missing",
+        "mesh_on_gpu.rs: 0 `register_residency!` calls",
+    ] {
+        assert!(
+            bad_problems.iter().any(|p| p.starts_with(expected)),
+            "expected a problem starting `{expected}`:\n{bad_problems:#?}"
+        );
+    }
+    assert_eq!(bad_problems.len(), 5, "{bad_problems:#?}");
+}
+
 /// `text` with every `//` and `/* */` comment blanked out (doc comments
 /// included), keeping string and character literals and every newline, so
 /// line numbers survive.

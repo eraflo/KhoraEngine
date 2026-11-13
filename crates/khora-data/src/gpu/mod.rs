@@ -12,20 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! GPU resource management — CPU→GPU projection.
+//! GPU resource management.
 //!
-//! This module provides:
-//! - [`ProjectionRegistry`]: drives CPU→GPU mesh upload before agents run,
-//!   into the engine-wide [`AssetStore`](crate::assets::AssetStore).
-//!
-//! Both are registered into the [`ServiceRegistry`] during bootstrap and
-//! must not be held as local fields inside agents.
+//! - [`ProjectionRegistry`]: what the GPU holds for the world's meshes and
+//!   materials, in the engine-wide [`AssetStore`](crate::assets::AssetStore);
+//!   the residencies (`crate::residency`) fill it.
+//! - [`AssetEviction`]: frees what the GPU holds for assets no longer used.
+//! - [`ibl`]: image-based lighting bakes.
 
 pub mod eviction;
 pub mod ibl;
 pub mod projection;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 pub use eviction::AssetEviction;
 pub use ibl::{EnvironmentMap, IblBaker, IblSource};
