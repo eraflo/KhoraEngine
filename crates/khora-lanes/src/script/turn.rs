@@ -26,315 +26,33 @@
 //! behavior does one thing at a time, so a cut ends the turn; the next turn
 //! picks the body up before anything new starts.
 
-use khora_core::script::EventQueue;
-use khora_script::dispatch::{
-    count_down, count_rearm, deliver, finish_timer, rearm_after_fault, tick_timers, NotDelivered,
-};
+use khora_script::dispatch::{count_down, count_rearm, tick_timers};
 use khora_script::lifecycle;
 use khora_script::native::Host;
-use khora_script::vm::{Machine, Program, Run, StrRef, Suspension, Value};
+use khora_script::vm::{StrRef, Value};
 
+use super::advance::advance;
+use super::delivery::deliver_events;
 use super::hooks::{call_hook, Hook};
+use super::park::leave_part_way;
+use super::progress::finish_load;
+use super::runtime::Body;
 
-use super::runtime::{Body, Pending};
+pub(super) use super::outcome::Outcome;
+pub(super) use super::park::{kept, park};
+pub(super) use super::progress::{Invocation, Progress};
 
-/// What running one behavior did.
-pub(super) enum Outcome {
-    /// A body stopped part-way and is kept in [`Progress::pending`] for a
-    /// later turn.
-    Busy {
-        spent: u64,
-        /// How many of this instance's events it got through first.
-        delivered: usize,
-        /// Whether it stopped because the budget ran out, rather than on an
-        /// `await`. A starved turn is budget pressure the DCC must see; a
-        /// waiting one is a script doing what it says.
-        starved: bool,
-    },
-    Completed {
-        spent: u64,
-    },
-    Deferred {
-        spent: u64,
-        /// How many of this instance's events were handled before the fuel ran
-        /// out.
-        ///
-        /// The rest were never seen, and the frame puts them back. Counting
-        /// rather than returning them keeps `Outcome` free of a borrow, and
-        /// counting rather than putting *all* of them back is the difference
-        /// between a `Damaged` arriving late and arriving twice.
-        delivered: usize,
-    },
-    Faulted {
-        spent: u64,
-        reason: String,
-    },
-}
-
-impl Outcome {
-    /// A fault, with what had been spent when it happened.
-    ///
-    /// Most of the ways a turn can fault format the same `Fault` the same way,
-    /// and each one has to remember to carry `spent` — a turn whose cost is
-    /// dropped is fuel the frame never accounts for and the DCC never sees.
-    fn faulted(spent: u64, fault: impl std::fmt::Debug) -> Self {
-        Self::Faulted {
-            spent,
-            reason: format!("{fault:?}"),
-        }
-    }
-
-    /// What it cost, however it ended.
-    pub(super) fn spent(&self) -> u64 {
-        match self {
-            Self::Completed { spent }
-            | Self::Deferred { spent, .. }
-            | Self::Busy { spent, .. }
-            | Self::Faulted { spent, .. } => *spent,
-        }
-    }
-}
-
-/// Everything one behavior's turn reads, other than the host it runs against.
-///
-/// Grouped rather than passed loose: they describe a single invocation and
-/// always travel together, so a call site cannot get two of them out of order.
-pub(super) struct Invocation<'a> {
-    pub(super) program: &'a Program,
-    pub(super) behavior: &'a str,
-    pub(super) entity: khora_core::ecs::entity::EntityId,
-    pub(super) events: &'a EventQueue,
-    pub(super) fuel: u64,
-    /// The seconds since the instance's last turn — the frame's, or more
-    /// when a rate or the fuel kept it out of some: what its countdowns and
-    /// waits count down, before anything runs.
-    pub(super) delta: f32,
-    /// What its `Update` is given: `delta`, and whatever earlier turns that
-    /// stopped before their `Update` left owed to it.
-    pub(super) update_delta: f32,
-    /// The seconds since the previous frame: what the watchdog counts a body
-    /// as running, whatever it was owed.
-    pub(super) frame_delta: f32,
-}
-
-/// Where an instance has got to — what a turn advances.
-///
-/// The frame lends it to the turn and writes it back whatever happened, so a
-/// turn that stops early cannot lose a body part-way through.
-pub(super) struct Progress {
-    /// Whether it has announced itself through `OnSpawn`.
-    pub(super) spawned: bool,
-    /// The body part-way through, if there is one.
-    pub(super) pending: Option<Pending>,
-    /// Whether `OnLoad` is owed or part-way.
-    pub(super) loading: bool,
-    /// The body a load restored, waiting behind `OnLoad`.
-    pub(super) after_load: Option<Pending>,
-    /// The members of bodies an edit left nothing of, each owed
-    /// `OnResumeFailed`, oldest first.
-    pub(super) resume_failed: Vec<String>,
-    /// A body this turn found running past the watchdog's first limit: its
-    /// member and where it stands.
-    pub(super) slow: Option<(String, String)>,
-    /// The events this turn dropped, a payload their handler could not take:
-    /// each event and why.
-    pub(super) dropped: Vec<(String, String)>,
-    /// The fixed steps this turn is to call `FixedUpdate` for and has not,
-    /// each the step it was taken at: what it hands back, owed to the next
-    /// turn.
-    pub(super) fixed_left: Vec<f32>,
-    /// The time its `Update` is owed and has not been handed this turn —
-    /// `Invocation::update_delta` until `Update` is called: what it keeps,
-    /// owed to the next turn, when the turn stops before it.
-    pub(super) update_left: f32,
-}
-
-/// `OnLoad` has finished: the body the load restored is the one owed next.
-fn finish_load(progress: &mut Progress) {
-    progress.loading = false;
-    progress.pending = progress.after_load.take();
-}
-
-/// A hook in front of a restored body has finished — or been abandoned: that
-/// body is owed next.
-fn finish_hook(progress: &mut Progress, body: &Body) {
-    match body {
-        Body::Load => finish_load(progress),
-        Body::Spawn => {
-            if let Some(restored) = progress.after_load.take() {
-                progress.pending = Some(restored);
-            }
-        }
-        Body::Sequence | Body::Update | Body::Timer { .. } => {}
-    }
-}
-
-/// Carries a body part-way through on, as far as this turn goes. `None` once
-/// it has finished — what finishing it completes is done — or been abandoned;
-/// otherwise the outcome that ends the turn with it still part-way.
-fn advance(
-    mut pending: Pending,
-    call: &Invocation<'_>,
-    progress: &mut Progress,
-    host: &mut Host,
-    spent: &mut u64,
-) -> Option<Outcome> {
-    let Invocation {
-        program,
-        behavior,
-        fuel,
-        frame_delta,
-        ..
-    } = *call;
-    // Counted down at the start of the turn, with every countdown.
-    if pending.remaining > 0.0 {
-        // Still waiting. Nothing else runs either: the behavior is busy — so
-        // nothing addressed to it this frame was delivered, and the frame
-        // keeps all of it for the turn that will listen.
-        progress.pending = Some(pending);
-        return Some(Outcome::Busy {
-            spent: *spent,
-            delivered: 0,
-            starved: false,
-        });
-    }
-
-    if pending.fingerprint != program.fingerprint() {
-        // A machine from other code. A reload that changes the program
-        // abandons it already, and so does a load; this is the last guard, so
-        // that no path resumes a position into code it does not name. Nothing
-        // is rearmed: a timer index from other code names some other schedule.
-        log::warn!(
-            "script `{behavior}`: a sequence was abandoned — the script was edited \
-             while it was part-way through"
-        );
-        finish_hook(progress, &pending.body);
-        return None;
-    }
-
-    let left = fuel.saturating_sub(*spent);
-    // With nothing left of the turn — a hook in front of it spent it — it is
-    // not run, so it has not run this frame either.
-    if left == 0 {
-        progress.pending = Some(pending);
-        return Some(Outcome::Busy {
-            spent: *spent,
-            delivered: 0,
-            starved: true,
-        });
-    }
-    let (run, cost) = pending.machine.run_counting(program, host, left);
-    *spent += cost;
-    match run {
-        Run::Completed => {
-            if let Body::Timer { index, rearm } = pending.body {
-                finish_timer(program, behavior, host, index, rearm);
-            } else {
-                finish_hook(progress, &pending.body);
-            }
-            None
-        }
-        Run::Suspended(why) => {
-            match host.awaiting.take() {
-                // Waiting is not running: the count starts again after it.
-                Some(wait) => {
-                    pending.remaining = wait;
-                    pending.running = 0.0;
-                }
-                None => {
-                    pending.remaining = 0.0;
-                    let machine = &pending.machine;
-                    let site = || machine.standing(program);
-                    match super::watchdog::watch(&mut pending.running, frame_delta, site) {
-                        super::watchdog::Watch::Quiet => {}
-                        super::watchdog::Watch::Slow => {
-                            progress.slow = Some((
-                                super::runtime::member_of(&pending, program),
-                                pending.machine.standing(program),
-                            ));
-                        }
-                        super::watchdog::Watch::Fault(reason) => {
-                            let member = super::runtime::member_of(&pending, program);
-                            release(progress, pending, program, behavior, host);
-                            return Some(Outcome::Faulted {
-                                spent: *spent,
-                                reason: format!("`{member}` {reason}"),
-                            });
-                        }
-                    }
-                }
-            }
-            progress.pending = Some(pending);
-            Some(Outcome::Busy {
-                spent: *spent,
-                delivered: 0,
-                starved: why == Suspension::OutOfFuel,
-            })
-        }
-        Run::Faulted(fault) => {
-            release(progress, pending, program, behavior, host);
-            Some(Outcome::faulted(*spent, fault))
-        }
-    }
-}
-
-/// What a body part-way through that faulted leaves owed: its timer waits its
-/// interval again, as one whose body faulted at once does; a hook in front of
-/// a restored body hands its place to that body, which an edit re-enabling
-/// the instance resumes.
-fn release(
-    progress: &mut Progress,
-    pending: Pending,
-    program: &Program,
-    behavior: &str,
-    host: &mut Host,
-) {
-    match pending.body {
-        Body::Timer { index, rearm } => {
-            let rearm = rearm_after_fault(program, behavior, index, rearm);
-            finish_timer(program, behavior, host, index, rearm);
-        }
-        body => finish_hook(progress, &body),
-    }
-}
-
+/// Runs one behavior's turn as far as its fuel goes, in the order the module
+/// states: the outcome says how it ended and what it cost.
 pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut Host) -> Outcome {
-    let Invocation {
-        program,
-        behavior,
-        entity,
-        events,
-        fuel,
-        delta,
-        update_delta,
-        frame_delta,
-    } = call;
     let call = &call;
     let mut spent = 0;
 
     // The time first, before any code: every countdown — the waits of the
     // bodies part-way, the timers — counts the turn's seconds here, where no
     // fuel cut can come before it. What runs after only fires what is due.
-    if delta > 0.0 {
-        let mut held = Vec::new();
-        for waiting in [progress.pending.as_mut(), progress.after_load.as_mut()]
-            .into_iter()
-            .flatten()
-        {
-            // A timer whose body is part-way counts on the body's rearm —
-            // unless the body is still waiting on its `await` after this
-            // turn: an `every`'s interval runs from the end of its body, and
-            // the body's own wait is not a cut.
-            let awaiting = waiting.remaining > delta;
-            if let Body::Timer { index, rearm } = &mut waiting.body {
-                held.push(*index);
-                if !awaiting {
-                    count_rearm(rearm, delta);
-                }
-            }
-            waiting.remaining -= delta;
-        }
-        count_down(program, behavior, host, delta, &held);
+    if call.delta > 0.0 {
+        count_time(call, progress, host);
     }
 
     // A load announces itself first: `OnLoad` runs once the restored state is
@@ -342,42 +60,8 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
     // the timers, the events — can observe the instance. That body waits
     // behind it.
     if progress.loading {
-        match progress.pending.take() {
-            Some(load) if load.body == Body::Load => {
-                if let Some(outcome) = advance(load, call, progress, host, &mut spent) {
-                    return outcome;
-                }
-            }
-            other => {
-                progress.pending = other;
-                let left = fuel.saturating_sub(spent);
-                match call_hook(program, behavior, &lifecycle::ON_LOAD, &[], host, left) {
-                    Hook::Ran(cost) => {
-                        spent += cost;
-                        finish_load(progress);
-                    }
-                    Hook::Absent => finish_load(progress),
-                    Hook::Faulted { cost, reason } => {
-                        return Outcome::Faulted {
-                            spent: spent + cost,
-                            reason,
-                        }
-                    }
-                    Hook::Suspended { cost, machine, why } => {
-                        let pending = kept(machine, Body::Load, program, host, frame_delta);
-                        return park(
-                            progress,
-                            pending,
-                            (program, behavior, host),
-                            Outcome::Busy {
-                                spent: spent + cost,
-                                delivered: 0,
-                                starved: why == Suspension::OutOfFuel,
-                            },
-                        );
-                    }
-                }
-            }
+        if let Some(outcome) = announce_load(call, progress, host, &mut spent) {
+            return outcome;
         }
     }
 
@@ -387,39 +71,13 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
     // number.
     // A system's entity is the engine's: it never spawns as an instance does,
     // so no farewell is ever owed to it, whatever the name becomes.
-    let system = program.layout(behavior).is_some_and(|layout| layout.system);
+    let system = call
+        .program
+        .layout(call.behavior)
+        .is_some_and(|layout| layout.system);
     if !progress.spawned && !system {
-        // Marked before it runs: a cut `OnSpawn` finishes through `pending`,
-        // and must not be called a second time.
-        progress.spawned = true;
-        let left = fuel.saturating_sub(spent);
-        match call_hook(program, behavior, &lifecycle::ON_SPAWN, &[], host, left) {
-            Hook::Ran(cost) => spent += cost,
-            Hook::Absent => {}
-            Hook::Faulted { cost, reason } => {
-                return Outcome::Faulted {
-                    spent: spent + cost,
-                    reason,
-                }
-            }
-            Hook::Suspended { cost, machine, why } => {
-                // A body the save restored waits behind it, as behind
-                // `OnLoad`: one slot is the body under way, not a queue.
-                if let Some(restored) = progress.pending.take() {
-                    progress.after_load = Some(restored);
-                }
-                let pending = kept(machine, Body::Spawn, program, host, frame_delta);
-                return park(
-                    progress,
-                    pending,
-                    (program, behavior, host),
-                    Outcome::Busy {
-                        spent: spent + cost,
-                        delivered: 0,
-                        starved: why == Suspension::OutOfFuel,
-                    },
-                );
-            }
+        if let Some(outcome) = announce_spawn(call, progress, host, &mut spent) {
+            return outcome;
         }
     }
 
@@ -433,47 +91,8 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
         None
     };
     if let Some(member) = owed {
-        let left = fuel.saturating_sub(spent);
-        let name = host.arena.alloc(khora_script::arena::Object::Str(member));
-        match name {
-            Ok(name) => {
-                let args = [Value::Str(StrRef::Arena(name))];
-                match call_hook(
-                    program,
-                    behavior,
-                    &lifecycle::ON_RESUME_FAILED,
-                    &args,
-                    host,
-                    left,
-                ) {
-                    Hook::Ran(cost) => spent += cost,
-                    Hook::Absent => {}
-                    Hook::Faulted { cost, reason } => {
-                        return Outcome::Faulted {
-                            spent: spent + cost,
-                            reason,
-                        }
-                    }
-                    // Finishing it owes nothing.
-                    Hook::Suspended { cost, machine, why } => {
-                        let pending = kept(machine, Body::Sequence, program, host, frame_delta);
-                        return park(
-                            progress,
-                            pending,
-                            (program, behavior, host),
-                            Outcome::Busy {
-                                spent: spent + cost,
-                                delivered: 0,
-                                starved: why == Suspension::OutOfFuel,
-                            },
-                        );
-                    }
-                }
-            }
-            Err(error) => log::error!(
-                "script `{behavior}`: `OnResumeFailed` could not be called: {}",
-                error.message()
-            ),
+        if let Some(outcome) = answer_resume_failed(member, call, progress, host, &mut spent) {
+            return outcome;
         }
     }
 
@@ -491,31 +110,8 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
     // Before the events, so a `become` a timer performs decides which state
     // hears what arrives this frame — the schedule is what the behavior does on
     // its own, and an event is what happens to it.
-    {
-        let left = fuel.saturating_sub(spent);
-        // Counted down already: only what is due runs.
-        let ticked = tick_timers(program, behavior, host, 0.0, left);
-        spent += ticked.spent;
-        if let Some(fault) = ticked.fault {
-            return Outcome::faulted(spent, fault);
-        }
-        if let Some(cut) = ticked.suspended {
-            let body = Body::Timer {
-                index: cut.index,
-                rearm: cut.rearm,
-            };
-            let pending = kept(cut.machine, body, program, host, frame_delta);
-            return park(
-                progress,
-                pending,
-                (program, behavior, host),
-                Outcome::Busy {
-                    spent,
-                    delivered: 0,
-                    starved: cut.why == Suspension::OutOfFuel,
-                },
-            );
-        }
+    if let Some(outcome) = run_due_timers(call, progress, host, &mut spent) {
+        return outcome;
     }
 
     // Its fixed steps, after its own schedule and before what happens to it.
@@ -523,178 +119,236 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
         return outcome;
     }
 
-    // What this instance has been told, so the frame can put back what it has
-    // not. Incremented **after** an event is done with, so a handler the budget
-    // never reached is offered again next frame rather than skipped.
-    let mut delivered = 0;
-    for event in events.for_entity(entity) {
-        let left = fuel.saturating_sub(spent);
-        if left == 0 {
-            return Outcome::Deferred { spent, delivered };
-        }
-
-        match deliver(program, behavior, event, host, left, |_| true) {
-            Ok(done) => {
-                spent += done.spent;
-                match done.outcome {
-                    Run::Completed => delivered += 1,
-                    Run::Suspended(why) => {
-                        // The handler is kept and resumes next — when the wait
-                        // elapses, or next frame if it ran out of fuel. The
-                        // event now lives in that machine, so it counts as
-                        // delivered: putting it back as well would run its
-                        // handler a second time once the first one finishes.
-                        let busy = |delivered| Outcome::Busy {
-                            spent,
-                            delivered,
-                            starved: why == Suspension::OutOfFuel,
-                        };
-                        if let Some(machine) = done.suspended {
-                            let pending = kept(machine, Body::Sequence, program, host, frame_delta);
-                            return park(
-                                progress,
-                                pending,
-                                (program, behavior, host),
-                                busy(delivered + 1),
-                            );
-                        }
-                        return busy(delivered);
-                    }
-                    Run::Faulted(fault) => return Outcome::faulted(spent, fault),
-                }
-            }
-            // A behavior that does not handle this event is the normal case,
-            // not a mistake — a guard hears `Damaged` and ignores `Opened`.
-            // Delivered all the same: it was offered and declined, and putting
-            // it back would offer it again every frame forever.
-            Err(NotDelivered::NoHandler { .. }) => delivered += 1,
-            // A payload its handler cannot take came from the engine, or was
-            // queued before a reload changed the event: the receiver did
-            // nothing wrong. Dropped and reported; it keeps running.
-            Err(
-                why @ (NotDelivered::Mismatch { .. }
-                | NotDelivered::WrongArity { .. }
-                | NotDelivered::UnsupportedArgument { .. }),
-            ) => {
-                progress.dropped.push((event.name.clone(), why.to_string()));
-                delivered += 1;
-            }
-            Err(other) => {
-                return Outcome::Faulted {
-                    spent,
-                    reason: other.to_string(),
-                }
-            }
-        }
-    }
+    let delivered = match deliver_events(call, progress, host, &mut spent) {
+        Ok(delivered) => delivered,
+        Err(outcome) => return outcome,
+    };
 
     // Last, so it sees this frame's consequences rather than predicting them: a
     // guard that was hurt and then thinks should think with the health it now
     // has, and a `become` an event performed should decide which state's
     // `Update` runs.
-    let left = fuel.saturating_sub(spent);
-    if left == 0 {
-        // Every event was offered; only `Update` is owed, and deferring it
-        // costs the frame nothing to put back.
-        return Outcome::Deferred { spent, delivered };
-    }
-    // Handed its time whatever the call does: a suspended `Update` keeps the
-    // `dt` it was called with.
-    progress.update_left = 0.0;
-    match call_hook(
-        program,
-        behavior,
-        &lifecycle::UPDATE,
-        &[Value::Float(update_delta)],
-        host,
-        left,
-    ) {
-        Hook::Ran(cost) => spent += cost,
-        Hook::Absent => {}
-        Hook::Faulted { cost, reason } => {
-            return Outcome::Faulted {
-                spent: spent + cost,
-                reason,
-            }
-        }
-        Hook::Suspended { cost, machine, why } => {
-            let pending = kept(machine, Body::Update, program, host, frame_delta);
-            return park(
-                progress,
-                pending,
-                (program, behavior, host),
-                Outcome::Busy {
-                    spent: spent + cost,
-                    delivered,
-                    starved: why == Suspension::OutOfFuel,
-                },
-            );
-        }
+    if let Some(outcome) = run_update(call, progress, host, &mut spent, delivered) {
+        return outcome;
     }
 
     Outcome::Completed { spent }
 }
 
-/// Leaves a body that has just stopped part-way for the next turn, once the
-/// watchdog has counted the frame it ran — the frame it started in counts as
-/// any other — and ends the turn with `busy`; or, past the watchdog's last
-/// limit already, with the fault.
-pub(super) fn park(
-    progress: &mut Progress,
-    mut pending: Pending,
-    (program, behavior, host): (&Program, &str, &mut Host),
-    busy: Outcome,
-) -> Outcome {
-    let ran = std::mem::take(&mut pending.running);
-    if ran > 0.0 {
-        let machine = &pending.machine;
-        let site = || machine.standing(program);
-        match super::watchdog::watch(&mut pending.running, ran, site) {
-            super::watchdog::Watch::Quiet => {}
-            super::watchdog::Watch::Slow => {
-                progress.slow = Some((
-                    super::runtime::member_of(&pending, program),
-                    pending.machine.standing(program),
-                ));
-            }
-            super::watchdog::Watch::Fault(reason) => {
-                let member = super::runtime::member_of(&pending, program);
-                release(progress, pending, program, behavior, host);
-                return Outcome::Faulted {
-                    spent: busy.spent(),
-                    reason: format!("`{member}` {reason}"),
-                };
+/// Counts the turn's seconds down on every countdown: the waits of the bodies
+/// part-way, and the timers.
+fn count_time(call: &Invocation<'_>, progress: &mut Progress, host: &mut Host) {
+    let delta = call.delta;
+    let mut held = Vec::new();
+    for waiting in [progress.pending.as_mut(), progress.after_load.as_mut()]
+        .into_iter()
+        .flatten()
+    {
+        // A timer whose body is part-way counts on the body's rearm —
+        // unless the body is still waiting on its `await` after this
+        // turn: an `every`'s interval runs from the end of its body, and
+        // the body's own wait is not a cut.
+        let awaiting = waiting.remaining > delta;
+        if let Body::Timer { index, rearm } = &mut waiting.body {
+            held.push(*index);
+            if !awaiting {
+                count_rearm(rearm, delta);
             }
         }
+        waiting.remaining -= delta;
     }
-    progress.pending = Some(pending);
-    busy
+    count_down(call.program, call.behavior, host, delta, &held);
 }
 
-/// Packages a body that has just stopped part-way, with what it asked to wait
-/// and the program it stopped in.
-///
-/// A body stopped with no stated wait resumes next frame: it stopped for fuel,
-/// not for time, and the budget is the thing that will have changed.
-///
-/// A body cut by the fuel has run this frame: the watchdog counts it from
-/// there. One stopped at an `await` has run nothing the wait counts.
-pub(super) fn kept(
-    machine: Machine,
-    body: Body,
-    program: &Program,
+/// `OnLoad`, resumed when it stopped part-way, or called; the outcome that
+/// ends the turn early, if one does.
+fn announce_load(
+    call: &Invocation<'_>,
+    progress: &mut Progress,
     host: &mut Host,
-    frame_delta: f32,
-) -> Pending {
-    let (remaining, running) = match host.awaiting.take() {
-        Some(wait) => (wait, 0.0),
-        None => (0.0, frame_delta.max(0.0)),
+    spent: &mut u64,
+) -> Option<Outcome> {
+    match progress.pending.take() {
+        Some(load) if load.body == Body::Load => advance(load, call, progress, host, spent),
+        other => {
+            progress.pending = other;
+            let left = call.fuel.saturating_sub(*spent);
+            let hook = call_hook(
+                call.program,
+                call.behavior,
+                &lifecycle::ON_LOAD,
+                &[],
+                host,
+                left,
+            );
+            let outcome = settle(hook, Body::Load, call, progress, host, spent);
+            if outcome.is_none() {
+                finish_load(progress);
+            }
+            outcome
+        }
+    }
+}
+
+/// `OnSpawn`, once per instance; the outcome that ends the turn early, if one
+/// does.
+fn announce_spawn(
+    call: &Invocation<'_>,
+    progress: &mut Progress,
+    host: &mut Host,
+    spent: &mut u64,
+) -> Option<Outcome> {
+    // Marked before it runs: a cut `OnSpawn` finishes through `pending`,
+    // and must not be called a second time.
+    progress.spawned = true;
+    let left = call.fuel.saturating_sub(*spent);
+    match call_hook(
+        call.program,
+        call.behavior,
+        &lifecycle::ON_SPAWN,
+        &[],
+        host,
+        left,
+    ) {
+        Hook::Suspended { cost, machine, why } => {
+            // A body the save restored waits behind it, as behind
+            // `OnLoad`: one slot is the body under way, not a queue.
+            if let Some(restored) = progress.pending.take() {
+                progress.after_load = Some(restored);
+            }
+            let stopped = (machine, Body::Spawn, why);
+            let busy = (*spent + cost, 0);
+            Some(leave_part_way(stopped, busy, call, progress, host))
+        }
+        hook => settle(hook, Body::Spawn, call, progress, host, spent),
+    }
+}
+
+/// `OnResumeFailed`, told the `member` an edit left nothing of; the outcome
+/// that ends the turn early, if one does.
+fn answer_resume_failed(
+    member: String,
+    call: &Invocation<'_>,
+    progress: &mut Progress,
+    host: &mut Host,
+    spent: &mut u64,
+) -> Option<Outcome> {
+    let left = call.fuel.saturating_sub(*spent);
+    let name = host.arena.alloc(khora_script::arena::Object::Str(member));
+    match name {
+        Ok(name) => {
+            let args = [Value::Str(StrRef::Arena(name))];
+            let hook = call_hook(
+                call.program,
+                call.behavior,
+                &lifecycle::ON_RESUME_FAILED,
+                &args,
+                host,
+                left,
+            );
+            // Finishing it owes nothing.
+            settle(hook, Body::Sequence, call, progress, host, spent)
+        }
+        Err(error) => {
+            log::error!(
+                "script `{}`: `OnResumeFailed` could not be called: {}",
+                call.behavior,
+                error.message()
+            );
+            None
+        }
+    }
+}
+
+/// The timers that are due, counted down already; the outcome that ends the
+/// turn early, if one does.
+fn run_due_timers(
+    call: &Invocation<'_>,
+    progress: &mut Progress,
+    host: &mut Host,
+    spent: &mut u64,
+) -> Option<Outcome> {
+    let left = call.fuel.saturating_sub(*spent);
+    // Counted down already: only what is due runs.
+    let ticked = tick_timers(call.program, call.behavior, host, 0.0, left);
+    *spent += ticked.spent;
+    if let Some(fault) = ticked.fault {
+        return Some(Outcome::faulted(*spent, fault));
+    }
+    let cut = ticked.suspended?;
+    let body = Body::Timer {
+        index: cut.index,
+        rearm: cut.rearm,
     };
-    Pending {
-        machine,
-        remaining,
-        body,
-        fingerprint: program.fingerprint(),
-        running,
+    let stopped = (cut.machine, body, cut.why);
+    Some(leave_part_way(stopped, (*spent, 0), call, progress, host))
+}
+
+/// `Update`, handed the time it is owed, once `delivered` of the instance's
+/// events were; the outcome that ends the turn early, if one does.
+fn run_update(
+    call: &Invocation<'_>,
+    progress: &mut Progress,
+    host: &mut Host,
+    spent: &mut u64,
+    delivered: usize,
+) -> Option<Outcome> {
+    let left = call.fuel.saturating_sub(*spent);
+    if left == 0 {
+        // Every event was offered; only `Update` is owed, and deferring it
+        // costs the frame nothing to put back.
+        return Some(Outcome::Deferred {
+            spent: *spent,
+            delivered,
+        });
+    }
+    // Handed its time whatever the call does: a suspended `Update` keeps the
+    // `dt` it was called with.
+    progress.update_left = 0.0;
+    let hook = call_hook(
+        call.program,
+        call.behavior,
+        &lifecycle::UPDATE,
+        &[Value::Float(call.update_delta)],
+        host,
+        left,
+    );
+    match hook {
+        Hook::Suspended { cost, machine, why } => {
+            let stopped = (machine, Body::Update, why);
+            let busy = (*spent + cost, delivered);
+            Some(leave_part_way(stopped, busy, call, progress, host))
+        }
+        hook => settle(hook, Body::Update, call, progress, host, spent),
+    }
+}
+
+/// What a lifecycle hook's call leaves of the turn: nothing when it ran or is
+/// absent — what it cost is spent — otherwise the outcome that ends the turn,
+/// its fault, or the hook stopped part-way and kept as `body`, before any of
+/// the instance's events were delivered.
+fn settle(
+    hook: Hook,
+    body: Body,
+    call: &Invocation<'_>,
+    progress: &mut Progress,
+    host: &mut Host,
+    spent: &mut u64,
+) -> Option<Outcome> {
+    match hook {
+        Hook::Ran(cost) => {
+            *spent += cost;
+            None
+        }
+        Hook::Absent => None,
+        Hook::Faulted { cost, reason } => Some(Outcome::Faulted {
+            spent: *spent + cost,
+            reason,
+        }),
+        Hook::Suspended { cost, machine, why } => {
+            let stopped = (machine, body, why);
+            let busy = (*spent + cost, 0);
+            Some(leave_part_way(stopped, busy, call, progress, host))
+        }
     }
 }

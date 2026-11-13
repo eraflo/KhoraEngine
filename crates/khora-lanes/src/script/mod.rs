@@ -15,9 +15,11 @@
 //! The script family: its lane, which runs the behaviours of the frame's
 //! entities within their fuel, the scripting runtime it locks, and its registration.
 
+mod advance;
 mod arrival;
 mod attached;
 mod carry;
+mod delivery;
 mod departure;
 mod family;
 mod fixed_step;
@@ -28,8 +30,11 @@ pub mod intake;
 mod lane;
 mod levels;
 mod mail;
+mod outcome;
+mod park;
 pub mod persistence;
 mod problems;
+mod progress;
 mod rate;
 mod registration;
 mod reload;
