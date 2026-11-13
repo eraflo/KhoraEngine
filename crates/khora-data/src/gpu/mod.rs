@@ -23,9 +23,10 @@
 pub mod eviction;
 pub mod ibl;
 pub mod projection;
-#[cfg(test)]
-pub(crate) mod tests;
 
 pub use eviction::AssetEviction;
 pub use ibl::{EnvironmentMap, IblBaker, IblSource};
 pub use projection::ProjectionRegistry;
+
+#[cfg(test)]
+pub(crate) mod tests;

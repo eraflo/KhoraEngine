@@ -39,9 +39,6 @@ pub mod loader;
 pub mod path;
 pub mod schedule;
 
-#[cfg(test)]
-mod tests;
-
 pub use loader::{MemoryLoader, SourceLoader};
 pub use path::{normalise, PathError, EXTENSION};
 
@@ -292,3 +289,6 @@ pub fn report_name_clashes(resolved: &Resolved) -> Vec<Diagnostic> {
     }
     clashes
 }
+
+#[cfg(test)]
+mod tests;

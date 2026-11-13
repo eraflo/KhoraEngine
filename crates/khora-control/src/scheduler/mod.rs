@@ -40,9 +40,6 @@ mod known;
 mod sim_steps;
 mod waves;
 
-#[cfg(test)]
-mod tests;
-
 /// How often (in frames) the scheduler samples per-component access stats for
 /// the layout advisor. Per-frame would flood the telemetry channel for data
 /// that changes slowly; ~once a second at 60 FPS is plenty.
@@ -436,3 +433,6 @@ fn are_hard_dependencies_completed(
     }
     true
 }
+
+#[cfg(test)]
+mod tests;

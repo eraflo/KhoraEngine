@@ -69,10 +69,24 @@ fn asset_intake_system(
     take_in_decoded(runtime);
 }
 
+// At the frame boundary, whatever families are on: an editor editing a
+// scene shows the meshes and textures it loads.
+inventory::submit! {
+    DataSystemRegistration {
+        name: "asset_intake",
+        phase: TickPhase::Boundary,
+        run: asset_intake_system,
+        order_hint: 0,
+        runs_after: &[],
+        observes: &[],
+        role: khora_data::ecs::Role::Upkeep,
+    }
+}
+
 /// The `loading` family's work, played by hand for the tests of the systems that
 /// ask for assets.
 #[cfg(test)]
-pub(crate) mod test_support {
+pub(crate) mod tests {
     use std::sync::{Arc, Mutex};
 
     use khora_core::asset::AssetDecoding;
@@ -146,19 +160,5 @@ pub(crate) mod test_support {
             }
         }
         panic!("the asset systems still file decodes after {SETTLE_FRAMES} frames");
-    }
-}
-
-// At the frame boundary, whatever families are on: an editor editing a
-// scene shows the meshes and textures it loads.
-inventory::submit! {
-    DataSystemRegistration {
-        name: "asset_intake",
-        phase: TickPhase::Boundary,
-        run: asset_intake_system,
-        order_hint: 0,
-        runs_after: &[],
-        observes: &[],
-        role: khora_data::ecs::Role::Upkeep,
     }
 }

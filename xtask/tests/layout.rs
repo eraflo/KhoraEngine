@@ -28,8 +28,8 @@
 //! Every check is a **ratchet**. A check reports its violations keyed by a
 //! stable repo-relative path; `xtask/tests/layout_allow.txt` lists the known
 //! ones, one per line: `<check-name> <repo-relative path>  # reason`, where the
-//! reason names the batch that removes the entry (`B0`–`B6`, or an Ergon
-//! spec). A check fails when
+//! reason names the batch that removes the entry (`B0`–`B6`, `P7`, or an
+//! Ergon spec). A check fails when
 //!
 //! - a violation's path is not listed (no new debt),
 //! - a listed path no longer violates the check (stale: remove the line in the
@@ -85,6 +85,8 @@ const RATCHETED_CHECKS: &[&str] = &[
     "docs_pages_are_kebab_case",
     "no_stuttering_file_names",
     "retired_file_names",
+    "constants_come_before_the_code",
+    "private_helpers_come_after_the_primary_type_impls",
 ];
 
 /// Module names too generic to say what a file holds: each is shared by
@@ -177,7 +179,7 @@ const RETIRED_FILE_NAMES: &[(&str, &str)] = &[
 
 /// Words one of which an allowlist reason must contain: the batch that
 /// removes the entry.
-const BATCH_WORDS: &[&str] = &["B0", "B1", "B2", "B3", "B4", "B5", "B6", "Ergon"];
+const BATCH_WORDS: &[&str] = &["B0", "B1", "B2", "B3", "B4", "B5", "B6", "P7", "Ergon"];
 
 /// Repository-relative path of the ratchet allowlist.
 const ALLOWLIST: &str = "xtask/tests/layout_allow.txt";
@@ -1179,10 +1181,34 @@ fn mod_item(item: &str) -> Option<(String, bool)> {
     Some((name, after.starts_with(';')))
 }
 
-/// `#[cfg(test)]` or `#[cfg(all(test, …))]`.
+/// `#[cfg(test)]`, or `#[cfg(all(…))]` with `test` among its terms, in any
+/// place.
 fn is_cfg_test(attr: &str) -> bool {
     let compact: String = attr.chars().filter(|ch| !ch.is_whitespace()).collect();
-    compact == "#[cfg(test)]" || compact.starts_with("#[cfg(all(test,")
+    if compact == "#[cfg(test)]" {
+        return true;
+    }
+    let Some(terms) = compact
+        .strip_prefix("#[cfg(all(")
+        .and_then(|rest| rest.strip_suffix("))]"))
+    else {
+        return false;
+    };
+    let mut depth = 0usize;
+    let mut start = 0;
+    let mut found = false;
+    for (at, ch) in terms.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                found |= &terms[start..at] == "test";
+                start = at + 1;
+            }
+            _ => {}
+        }
+    }
+    found || &terms[start..] == "test"
 }
 
 /// The string of a `#[path = "…"]` attribute.
@@ -4356,5 +4382,1123 @@ pub struct Twin;
             "Twin: declared 2 times: crates/alpha/src/lib.rs:7, crates/beta/src/lib.rs:1"
                 .to_owned()
         ]
+    );
+}
+
+// ---------------------------------------------------------------------------
+// In-file order
+// ---------------------------------------------------------------------------
+//
+// A file reads in one order: module doc, imports, constants, the primary
+// type, its impls, private helpers, tests. The checks below read a file's
+// top-level items (`top_level_items`) and name what is out of that order.
+// They scan the non-test files of every Rust `src/` tree (`crates/*/src`,
+// `examples/*/src`, `xtask/src`): a `tests.rs`, a file under a `tests/`
+// folder, a `#![cfg(test)]` file and a file declared by `#[cfg(test)] mod`
+// are test code, and are not read.
+
+/// What a top-level item is, as far as the in-file order checks need.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ItemKind {
+    /// `use`, and `extern crate`.
+    Use,
+    Const,
+    Static,
+    /// `type Name = …;`
+    TypeAlias,
+    Struct,
+    Enum,
+    Union,
+    Trait,
+    Impl,
+    Fn,
+    Mod,
+    /// A macro call (`inventory::submit! { … }`) or a `macro_rules!`.
+    Macro,
+    /// Anything else (an `extern "C" { … }` block).
+    Other,
+}
+
+impl ItemKind {
+    /// The keyword a report names the item by.
+    fn word(self) -> &'static str {
+        match self {
+            ItemKind::Use => "use",
+            ItemKind::Const => "const",
+            ItemKind::Static => "static",
+            ItemKind::TypeAlias => "type",
+            ItemKind::Struct => "struct",
+            ItemKind::Enum => "enum",
+            ItemKind::Union => "union",
+            ItemKind::Trait => "trait",
+            ItemKind::Impl => "impl",
+            ItemKind::Fn => "fn",
+            ItemKind::Mod => "mod",
+            ItemKind::Macro => "macro",
+            ItemKind::Other => "item",
+        }
+    }
+}
+
+/// A top-level item of a Rust file.
+#[derive(Debug)]
+struct TopItem {
+    /// 1-based line of the item itself, below its attributes.
+    line: usize,
+    kind: ItemKind,
+    /// The name the item declares; for an `impl`, the name of the type it is
+    /// for (`impl<T> Trait for Foo<T>` → `Foo`); `_` for `const _`; empty when
+    /// the item names nothing (`use`, a macro call).
+    name: String,
+    /// No visibility at all: not `pub`, nor `pub(crate)`, `pub(super)`, ….
+    private: bool,
+    /// Under `#[cfg(test)]` or `#[cfg(all(test, …))]`.
+    cfg_test: bool,
+    /// A `mod` whose body is written in place (`mod x { … }`), not in a file
+    /// of its own (`mod x;`).
+    inline: bool,
+}
+
+impl TopItem {
+    /// `fn name`, `struct Name`, `impl Name`, … as a report shows it.
+    fn label(&self) -> String {
+        if self.name.is_empty() {
+            self.kind.word().to_owned()
+        } else {
+            format!("{} {}", self.kind.word(), self.name)
+        }
+    }
+
+    /// A test module: an inline `#[cfg(test)] mod x { … }`, or the
+    /// declaration `#[cfg(test)] mod tests;` of the file holding the tests.
+    fn is_test_module(&self) -> bool {
+        self.kind == ItemKind::Mod && self.cfg_test && (self.inline || self.name == "tests")
+    }
+
+    /// An inline `#[cfg(test)] mod x { … }`.
+    fn is_inline_test_module(&self) -> bool {
+        self.kind == ItemKind::Mod && self.cfg_test && self.inline
+    }
+}
+
+/// Each non-test Rust file of `root`'s Rust `src/` trees, as its path
+/// relative to `root` and its top-level items. Sorted by path.
+fn order_scanned_files(root: &Path) -> Vec<(String, Vec<TopItem>)> {
+    let mut files = Vec::new();
+    for src in rust_src_roots(root) {
+        for (path, text) in non_test_rust_files(&src) {
+            files.push((rel(root, &path), top_level_items(&text)));
+        }
+    }
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    files
+}
+
+/// The top-level items of a Rust file, in order.
+///
+/// Comments and the contents of string and character literals are blanked
+/// first, so a brace, a `;` or a line at column 0 inside one is not read as
+/// code. An item runs from its first token to the `;` that ends it at bracket
+/// depth 0 or, for an item with a body (`fn`, `impl`, `struct … { }`,
+/// `mod … { }`, a macro call in braces), to the brace that closes that body.
+/// A `const`, `static`, `type` or `use` always runs to its `;`, so
+/// `const X: Foo = Foo { … };` is one item. Inner attributes (`#![…]`) are
+/// skipped; outer attributes belong to the item below them.
+fn top_level_items(text: &str) -> Vec<TopItem> {
+    let code = blank_literals(&strip_rust_comments(text));
+    let chars: Vec<char> = code.chars().collect();
+    let newlines = |range: &[char]| range.iter().filter(|&&ch| ch == '\n').count();
+    let mut items = Vec::new();
+    let mut attrs: Vec<String> = Vec::new();
+    let mut line = 1usize;
+    let mut i = 0usize;
+    while i < chars.len() {
+        let c = chars[i];
+        if c.is_whitespace() || c == ';' {
+            if c == '\n' {
+                line += 1;
+            }
+            i += 1;
+            continue;
+        }
+        if c == '#' {
+            let inner = chars.get(i + 1) == Some(&'!');
+            let open = if inner { i + 2 } else { i + 1 };
+            if chars.get(open) == Some(&'[') {
+                let end = closing_bracket(&chars, open);
+                line += newlines(&chars[i..end]);
+                if !inner {
+                    attrs.push(chars[i..end].iter().collect());
+                }
+                i = end;
+                continue;
+            }
+        }
+
+        // An item starts here. Its header runs to the first `{` or `;` outside
+        // parentheses and brackets.
+        let mut depth = 0usize;
+        let mut stop = chars.len();
+        for (j, &ch) in chars.iter().enumerate().skip(i) {
+            match ch {
+                '(' | '[' => depth += 1,
+                ')' | ']' => depth = depth.saturating_sub(1),
+                '{' | ';' if depth == 0 => {
+                    stop = j;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        let header: String = chars[i..stop].iter().collect();
+        let (kind, name, private) = classify_item(&header);
+        let to_semicolon = matches!(
+            kind,
+            ItemKind::Const | ItemKind::Static | ItemKind::TypeAlias | ItemKind::Use
+        );
+        let mut depth = 0usize;
+        let mut end = chars.len();
+        for (j, &ch) in chars.iter().enumerate().skip(i) {
+            match ch {
+                '(' | '[' | '{' => depth += 1,
+                ')' | ']' | '}' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 && ch == '}' && !to_semicolon {
+                        end = j + 1;
+                        break;
+                    }
+                }
+                ';' if depth == 0 => {
+                    end = j + 1;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        items.push(TopItem {
+            line,
+            kind,
+            name,
+            private,
+            cfg_test: attrs.iter().any(|attr| is_cfg_test(attr)),
+            inline: kind == ItemKind::Mod && chars.get(stop) == Some(&'{'),
+        });
+        attrs.clear();
+        line += newlines(&chars[i..end]);
+        i = end;
+    }
+    items
+}
+
+/// The index just past the `]` closing the `[` at `open`, or the end.
+fn closing_bracket(chars: &[char], open: usize) -> usize {
+    let mut depth = 0usize;
+    for (at, &ch) in chars.iter().enumerate().skip(open) {
+        match ch {
+            '[' => depth += 1,
+            ']' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return at + 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    chars.len()
+}
+
+/// `code` (comments already blanked) with the contents of every string
+/// literal (`"…"`, `r#"…"#`, `b"…"`, `br"…"`) and character literal blanked,
+/// quotes and newlines kept, so line numbers survive.
+fn blank_literals(code: &str) -> String {
+    let chars: Vec<char> = code.chars().collect();
+    let mut out = String::with_capacity(code.len());
+    let blank = |ch: char| if ch == '\n' { '\n' } else { ' ' };
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        let after_ident = i > 0 && is_ident_char(chars[i - 1]);
+        let raw_quote_search = match (c, chars.get(i + 1)) {
+            ('r', _) if !after_ident => Some(i + 1),
+            ('b', Some('r')) if !after_ident => Some(i + 2),
+            _ => None,
+        };
+        if let Some(mut j) = raw_quote_search {
+            let mut hashes = 0;
+            while chars.get(j) == Some(&'#') {
+                hashes += 1;
+                j += 1;
+            }
+            if chars.get(j) == Some(&'"') {
+                out.extend(&chars[i..=j]);
+                let mut k = j + 1;
+                while k < chars.len()
+                    && !(chars[k] == '"' && (1..=hashes).all(|h| chars.get(k + h) == Some(&'#')))
+                {
+                    out.push(blank(chars[k]));
+                    k += 1;
+                }
+                let end = (k + 1 + hashes).min(chars.len());
+                out.extend(&chars[k.min(chars.len())..end]);
+                i = end;
+                continue;
+            }
+        }
+        if c == '"' {
+            out.push('"');
+            i += 1;
+            while i < chars.len() && chars[i] != '"' {
+                if chars[i] == '\\' && i + 1 < chars.len() {
+                    out.push(' ');
+                    out.push(blank(chars[i + 1]));
+                    i += 2;
+                    continue;
+                }
+                out.push(blank(chars[i]));
+                i += 1;
+            }
+            if i < chars.len() {
+                out.push('"');
+                i += 1;
+            }
+            continue;
+        }
+        if c == '\'' {
+            // A character literal ('x', '\n', '\''); otherwise a lifetime.
+            let end = match (chars.get(i + 1), chars.get(i + 2)) {
+                (Some('\\'), _) => chars
+                    .get(i + 3..)
+                    .and_then(|rest| rest.iter().position(|&ch| ch == '\''))
+                    .map(|at| i + 3 + at + 1),
+                (Some(_), Some('\'')) => Some(i + 3),
+                _ => None,
+            };
+            if let Some(end) = end.filter(|&end| end <= chars.len()) {
+                out.push('\'');
+                out.extend(std::iter::repeat_n(' ', end - i - 2));
+                out.push('\'');
+                i = end;
+                continue;
+            }
+        }
+        out.push(c);
+        i += 1;
+    }
+    out
+}
+
+/// The leading identifier of `text` (empty when it starts otherwise).
+fn leading_ident(text: &str) -> &str {
+    let len = text
+        .char_indices()
+        .find(|&(_, ch)| !is_ident_char(ch))
+        .map_or(text.len(), |(at, _)| at);
+    &text[..len]
+}
+
+/// What an item's header (its text up to its body or its `;`) declares: its
+/// kind, its name, and whether it has no visibility at all.
+fn classify_item(header: &str) -> (ItemKind, String, bool) {
+    let header = header.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut rest = header.as_str();
+    let private = leading_ident(rest) != "pub";
+    if !private {
+        rest = rest["pub".len()..].trim_start();
+        if rest.starts_with('(') {
+            rest = rest.find(')').map_or("", |at| &rest[at + 1..]).trim_start();
+        }
+    }
+    loop {
+        let word = leading_ident(rest);
+        let after = rest[word.len()..].trim_start();
+        let next = leading_ident(after);
+        let kind = match word {
+            "default" | "async" | "unsafe" | "safe" => {
+                rest = after;
+                continue;
+            }
+            "const" if matches!(next, "fn" | "unsafe" | "async" | "extern") => {
+                rest = after;
+                continue;
+            }
+            "extern" if next == "crate" => return (ItemKind::Use, String::new(), private),
+            "extern" => {
+                // `extern "C" fn …` is a function; `extern "C" { … }` a block.
+                let after_abi = match after.strip_prefix('"') {
+                    Some(abi) => abi.find('"').map_or("", |at| &abi[at + 1..]).trim_start(),
+                    None => after,
+                };
+                if leading_ident(after_abi).is_empty() {
+                    return (ItemKind::Other, String::new(), private);
+                }
+                rest = after_abi;
+                continue;
+            }
+            "impl" => return (ItemKind::Impl, impl_self_type(after), private),
+            "const" => ItemKind::Const,
+            "static" => ItemKind::Static,
+            "type" => ItemKind::TypeAlias,
+            "struct" => ItemKind::Struct,
+            "enum" => ItemKind::Enum,
+            "union" => ItemKind::Union,
+            "trait" => ItemKind::Trait,
+            "fn" => ItemKind::Fn,
+            "mod" => ItemKind::Mod,
+            "use" => return (ItemKind::Use, String::new(), private),
+            "macro_rules" => return (ItemKind::Macro, String::new(), private),
+            _ if !word.is_empty() && (after.starts_with('!') || after.starts_with("::")) => {
+                return (ItemKind::Macro, String::new(), private);
+            }
+            _ => return (ItemKind::Other, String::new(), private),
+        };
+        let name = if kind == ItemKind::Static && next == "mut" {
+            leading_ident(after["mut".len()..].trim_start())
+        } else {
+            next
+        };
+        return (kind, name.to_owned(), private);
+    }
+}
+
+/// The name of the type an `impl` is for, from the header text after `impl`:
+/// `<T> Trait for Foo<T>` → `Foo`, `Foo` → `Foo`, `<T> Trait for &mut
+/// a::Bar` → `Bar`.
+fn impl_self_type(after_impl: &str) -> String {
+    let mut rest = after_impl.trim_start();
+    // Skip the impl's own generics; `->` inside them is no closing angle.
+    if rest.starts_with('<') {
+        let mut depth = 0i32;
+        for (at, ch) in rest.char_indices() {
+            match ch {
+                '<' => depth += 1,
+                '>' if !rest[..at].ends_with('-') => depth -= 1,
+                _ => {}
+            }
+            if depth == 0 {
+                rest = &rest[at + 1..];
+                break;
+            }
+        }
+    }
+    // The type after ` for ` at angle depth 0, if this is a trait impl.
+    let mut depth = 0i32;
+    for (at, ch) in rest.char_indices() {
+        match ch {
+            '<' => depth += 1,
+            '>' if !rest[..at].ends_with('-') => depth -= 1,
+            _ => {}
+        }
+        if depth == 0 && rest[at..].starts_with(" where ") {
+            rest = &rest[..at];
+            break;
+        }
+        if depth == 0 && rest[at..].starts_with(" for ") {
+            rest = &rest[at + " for ".len()..];
+            break;
+        }
+    }
+    let mut ty = rest.trim_start();
+    loop {
+        let before = ty;
+        ty = ty.trim_start_matches(['&', '!']).trim_start();
+        if let Some(lifetime) = ty.strip_prefix('\'') {
+            ty = lifetime[leading_ident(lifetime).len()..].trim_start();
+        }
+        for word in ["mut", "dyn"] {
+            if leading_ident(ty) == word {
+                ty = ty[word.len()..].trim_start();
+            }
+        }
+        if ty == before {
+            break;
+        }
+    }
+    let path: String = ty
+        .chars()
+        .take_while(|&ch| is_ident_char(ch) || ch == ':')
+        .collect();
+    path.rsplit("::").next().unwrap_or_default().to_owned()
+}
+
+/// Every non-test file under `root` in which a top-level item follows the
+/// test module (an inline `#[cfg(test)] mod x { … }`, or the declaration
+/// `#[cfg(test)] mod tests;`), each as `<path>: …`. Sorted.
+fn tests_last_problems(root: &Path) -> Vec<String> {
+    let mut problems = Vec::new();
+    for (path, items) in order_scanned_files(root) {
+        let Some(at) = items.iter().position(TopItem::is_test_module) else {
+            continue;
+        };
+        let after: Vec<String> = items[at + 1..]
+            .iter()
+            .map(|item| format!("`{}` (line {})", item.label(), item.line))
+            .collect();
+        if !after.is_empty() {
+            problems.push(format!(
+                "{path}: {} after the test module `{}` (line {}): {}",
+                after.len(),
+                items[at].name,
+                items[at].line,
+                after.join(", ")
+            ));
+        }
+    }
+    problems
+}
+
+/// Every non-test file under `root` holding more than one inline test module
+/// (`#[cfg(test)] mod x { … }` at the top level), or one not named `tests`,
+/// each as `<path>: …`. A `#[cfg(test)] mod x;` declaration names a file of
+/// its own and is not counted. Sorted.
+fn inline_test_module_problems(root: &Path) -> Vec<String> {
+    let mut problems = Vec::new();
+    for (path, items) in order_scanned_files(root) {
+        let inline: Vec<&TopItem> = items
+            .iter()
+            .filter(|item| item.is_inline_test_module())
+            .collect();
+        let mut found = Vec::new();
+        if inline.len() > 1 {
+            let lines: Vec<String> = inline.iter().map(|item| item.line.to_string()).collect();
+            found.push(format!(
+                "{} inline test modules (lines {})",
+                inline.len(),
+                lines.join(", ")
+            ));
+        }
+        for item in inline.iter().filter(|item| item.name != "tests") {
+            found.push(format!(
+                "inline test module `{}` (line {}) is not named `tests`",
+                item.name, item.line
+            ));
+        }
+        if !found.is_empty() {
+            problems.push(format!("{path}: {}", found.join("; ")));
+        }
+    }
+    problems
+}
+
+/// Every non-test folder `mod.rs` under `root` holding an inline test module,
+/// each as `<path>: …`. Sorted.
+fn mod_rs_inline_test_problems(root: &Path) -> Vec<String> {
+    let mut problems = Vec::new();
+    for (path, items) in order_scanned_files(root) {
+        if !path.ends_with("/mod.rs") {
+            continue;
+        }
+        let inline: Vec<String> = items
+            .iter()
+            .filter(|item| item.is_inline_test_module())
+            .map(|item| format!("`{}` (line {})", item.name, item.line))
+            .collect();
+        if !inline.is_empty() {
+            problems.push(format!(
+                "{path}: inline test module {} (move it to `tests.rs`, declared \
+                 `#[cfg(test)] mod tests;`)",
+                inline.join(", ")
+            ));
+        }
+    }
+    problems
+}
+
+/// Per non-test file under `root`: each `const` or `static` declared after
+/// the file's first type, `impl` or function (`struct`, `enum`, `union`,
+/// `trait`, `impl`, `fn`). Items under `#[cfg(test)]` are not read; neither
+/// is `const _` (a compile-time assertion about the type above it). A `type`
+/// alias is neither code nor a constant here.
+fn constants_first_violations(root: &Path) -> Violations {
+    let mut violations = Violations::new();
+    for (path, items) in order_scanned_files(root) {
+        let items: Vec<&TopItem> = items.iter().filter(|item| !item.cfg_test).collect();
+        let Some(first) = items.iter().position(|item| {
+            matches!(
+                item.kind,
+                ItemKind::Struct
+                    | ItemKind::Enum
+                    | ItemKind::Union
+                    | ItemKind::Trait
+                    | ItemKind::Impl
+                    | ItemKind::Fn
+            )
+        }) else {
+            continue;
+        };
+        for item in &items[first + 1..] {
+            if matches!(item.kind, ItemKind::Const | ItemKind::Static) && item.name != "_" {
+                add(
+                    &mut violations,
+                    path.clone(),
+                    format!(
+                        "line {}: `{}` after `{}` (line {})",
+                        item.line,
+                        item.label(),
+                        items[first].label(),
+                        items[first].line
+                    ),
+                );
+            }
+        }
+    }
+    violations
+}
+
+/// Per non-test file under `root`: each private free function (no `pub` of
+/// any kind) declared between the file's first `struct` or `enum` (taken as
+/// its primary type) and the last `impl` of that type (`impl Foo`,
+/// `impl Trait for Foo`, generics aside). Items under `#[cfg(test)]` are not
+/// read. A file whose first type has no `impl` has nothing to check.
+fn helpers_after_impls_violations(root: &Path) -> Violations {
+    let mut violations = Violations::new();
+    for (path, items) in order_scanned_files(root) {
+        let items: Vec<&TopItem> = items.iter().filter(|item| !item.cfg_test).collect();
+        let Some(primary) = items
+            .iter()
+            .position(|item| matches!(item.kind, ItemKind::Struct | ItemKind::Enum))
+        else {
+            continue;
+        };
+        let name = &items[primary].name;
+        let Some(last_impl) = items
+            .iter()
+            .rposition(|item| item.kind == ItemKind::Impl && &item.name == name)
+        else {
+            continue;
+        };
+        for item in items.iter().take(last_impl).skip(primary + 1) {
+            if item.kind == ItemKind::Fn && item.private {
+                add(
+                    &mut violations,
+                    path.clone(),
+                    format!(
+                        "line {}: `{}` between `{}` (line {}) and its last impl (line {})",
+                        item.line,
+                        item.label(),
+                        items[primary].label(),
+                        items[primary].line,
+                        items[last_impl].line
+                    ),
+                );
+            }
+        }
+    }
+    violations
+}
+
+/// Tests come last in a file: after the test module — an inline
+/// `#[cfg(test)] mod tests { … }`, or `#[cfg(test)] mod tests;` declaring the
+/// file that holds them — nothing but blank lines and comments. Strict.
+#[test]
+fn tests_come_last_in_a_file() {
+    let problems = tests_last_problems(&repo_root());
+    assert!(
+        problems.is_empty(),
+        "{} files hold code after their test module (move the code above it):\n  {}",
+        problems.len(),
+        problems.join("\n  ")
+    );
+}
+
+/// A file holds at most one inline test module, named `tests`. A
+/// `#[cfg(test)] mod <name>;` declaration is not an inline module: it points
+/// at a file of its own, which `test_files_follow_convention` governs.
+/// Strict.
+#[test]
+fn a_file_holds_at_most_one_inline_test_module_named_tests() {
+    let problems = inline_test_module_problems(&repo_root());
+    assert!(
+        problems.is_empty(),
+        "{} files hold several inline test modules, or one not named `tests`:\n  {}",
+        problems.len(),
+        problems.join("\n  ")
+    );
+}
+
+/// A folder `mod.rs` holds no inline test module: its tests go in the
+/// folder's `tests.rs` (or `tests/`), declared `#[cfg(test)] mod tests;`.
+/// Strict.
+#[test]
+fn a_folder_mod_rs_holds_no_inline_test_module() {
+    let problems = mod_rs_inline_test_problems(&repo_root());
+    assert!(
+        problems.is_empty(),
+        "{} folder `mod.rs` files hold an inline test module:\n  {}",
+        problems.len(),
+        problems.join("\n  ")
+    );
+}
+
+/// Constants come before the code: no top-level `const` or `static` after
+/// the file's first `struct`, `enum`, `union`, `trait`, `impl` or `fn`
+/// (`const _` and items under `#[cfg(test)]` aside). Keyed by the file.
+#[test]
+fn constants_come_before_the_code() {
+    ratchet(
+        "constants_come_before_the_code",
+        "constants declared after the code (move them above the first type, impl or function)",
+        &constants_first_violations(&repo_root()),
+    );
+}
+
+/// Private helpers come after the primary type's impls: no private free
+/// function between the file's first `struct` or `enum` and the last `impl`
+/// of that type. Keyed by the file.
+#[test]
+fn private_helpers_come_after_the_primary_type_impls() {
+    ratchet(
+        "private_helpers_come_after_the_primary_type_impls",
+        "private helpers between the primary type and its impls (move them below the last impl)",
+        &helpers_after_impls_violations(&repo_root()),
+    );
+}
+
+/// Writes `files` (paths relative to `base`) under `base`.
+fn write_order_tree(base: &Path, files: &[(&str, &str)]) -> std::io::Result<()> {
+    for (file, text) in files {
+        let path = base.join(file);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(path, text)?;
+    }
+    Ok(())
+}
+
+/// A fresh, empty directory under the system temp folder for one self-test.
+fn order_temp_dir(label: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "khora-layout-order-{label}-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    dir
+}
+
+/// A violation map as `(path, details)` pairs, for comparing in a test.
+fn violation_list(violations: Violations) -> Vec<(String, Vec<String>)> {
+    violations
+        .into_iter()
+        .map(|(path, details)| (path, details.into_iter().collect()))
+        .collect()
+}
+
+/// The item reader keeps a file's top-level items whole: a body with
+/// braces, a `const` whose value is a struct literal, a multi-line attribute,
+/// a raw string holding a column-0 `fn` and a brace, a char literal brace, a
+/// `where` clause, a macro call, an `extern` block; it names an `impl`'s type
+/// and tells an inline module from a declared one.
+#[test]
+fn top_level_items_reads_whole_items() {
+    const TEXT: &str = "\
+//! Doc `fn hidden() {}`.
+#![allow(dead_code)]
+use std::fmt;
+
+pub(crate) const A: Foo = Foo { a: '{' };
+static mut B: u8 = 0;
+const _: () = ();
+#[derive(
+    Debug,
+)]
+pub struct Foo {
+    a: char,
+}
+const RAW: &str = r#\"
+fn not_an_item() {
+\"#;
+impl<T: Fn() -> u8> fmt::Display for &'static Foo<T>
+where
+    T: Copy,
+{
+    fn fmt(&self) {}
+}
+inventory::submit! { Foo { a: '}' } }
+pub const unsafe fn helper() {}
+extern \"C\" {
+    fn ext();
+}
+#[cfg(test)]
+mod fixtures;
+#[cfg(all(test, unix))]
+pub mod tests {
+    fn inner() {}
+}
+";
+    let seen: Vec<(usize, ItemKind, String, bool, bool, bool)> = top_level_items(TEXT)
+        .into_iter()
+        .map(|item| {
+            (
+                item.line,
+                item.kind,
+                item.name,
+                item.private,
+                item.cfg_test,
+                item.inline,
+            )
+        })
+        .collect();
+    let expected: Vec<(usize, ItemKind, String, bool, bool, bool)> = [
+        (3, ItemKind::Use, "", true, false, false),
+        (5, ItemKind::Const, "A", false, false, false),
+        (6, ItemKind::Static, "B", true, false, false),
+        (7, ItemKind::Const, "_", true, false, false),
+        (11, ItemKind::Struct, "Foo", false, false, false),
+        (14, ItemKind::Const, "RAW", true, false, false),
+        (17, ItemKind::Impl, "Foo", true, false, false),
+        (23, ItemKind::Macro, "", true, false, false),
+        (24, ItemKind::Fn, "helper", false, false, false),
+        (25, ItemKind::Other, "", true, false, false),
+        (29, ItemKind::Mod, "fixtures", true, true, false),
+        (31, ItemKind::Mod, "tests", false, true, true),
+    ]
+    .into_iter()
+    .map(|(line, kind, name, private, cfg_test, inline)| {
+        (line, kind, name.to_owned(), private, cfg_test, inline)
+    })
+    .collect();
+    assert_eq!(seen, expected);
+
+    assert_eq!(impl_self_type("Foo"), "Foo");
+    assert_eq!(impl_self_type("<T> a::b::Bar<T> where T: X"), "Bar");
+    assert_eq!(
+        impl_self_type("<F> X for F where F: for<'a> Fn(&'a u8)"),
+        "F"
+    );
+    assert_eq!(impl_self_type("<'a> From<&'a str> for &'a mut Baz"), "Baz");
+}
+
+/// The tests-last check names a file with code after its test module,
+/// inline or declared `mod tests;`, and passes a file whose test module is
+/// last (a comment may follow), a file declaring a test file of another name
+/// (`#[cfg(test)] mod fixtures;`) above its code, and a test file.
+#[test]
+fn tests_last_check_names_code_after_the_test_module() {
+    let dir = order_temp_dir("tests-last");
+    let files: &[(&str, &str)] = &[
+        (
+            "crates/alpha/src/lib.rs",
+            "mod good;\nmod late;\nmod declared;\nmod fixture_decl;\n#[cfg(test)]\nmod tests;\n",
+        ),
+        ("crates/alpha/src/tests.rs", "#[test]\nfn t() {}\n"),
+        (
+            "crates/alpha/src/good.rs",
+            "pub struct Good;\n#[cfg(test)]\nmod tests {\n    fn t() {}\n}\n// trailing comment\n",
+        ),
+        (
+            "crates/alpha/src/late.rs",
+            "pub struct Late;\n#[cfg(test)]\nmod tests {\n    fn t() {}\n}\nimpl Late {}\n\
+             pub fn after() {}\n",
+        ),
+        (
+            "crates/alpha/src/declared.rs",
+            "#[cfg(test)]\nmod tests;\npub struct Declared;\n",
+        ),
+        ("crates/alpha/src/declared/tests.rs", "fn t() {}\n"),
+        (
+            "crates/alpha/src/fixture_decl.rs",
+            "#[cfg(test)]\nmod fixtures;\npub struct Fixtured;\n",
+        ),
+        (
+            "crates/alpha/src/fixture_decl/fixtures.rs",
+            "pub fn fixture() {}\nimpl X {}\n#[cfg(test)]\nmod tests {\n}\nfn after() {}\n",
+        ),
+    ];
+    let setup = write_order_tree(&dir, files);
+    let problems = tests_last_problems(&dir);
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+
+    assert_eq!(
+        problems,
+        vec![
+            "crates/alpha/src/declared.rs: 1 after the test module `tests` (line 2): \
+             `struct Declared` (line 3)"
+                .to_owned(),
+            "crates/alpha/src/late.rs: 2 after the test module `tests` (line 3): \
+             `impl Late` (line 6), `fn after` (line 7)"
+                .to_owned(),
+        ]
+    );
+}
+
+/// The inline-test-module check names a file with two inline test modules
+/// and a file whose one inline test module is not named `tests`; it passes a
+/// file with `mod tests { … }` beside `#[cfg(test)] mod fixtures;`, a
+/// non-test inline module, and an inline module inside a test file.
+#[test]
+fn inline_test_module_check_names_extra_and_misnamed_modules() {
+    let dir = order_temp_dir("inline-tests");
+    let files: &[(&str, &str)] = &[
+        (
+            "crates/alpha/src/lib.rs",
+            "mod one;\nmod two;\nmod misnamed;\n#[cfg(test)]\nmod tests;\n",
+        ),
+        (
+            "crates/alpha/src/tests.rs",
+            "#[cfg(test)]\nmod nested_in_a_test_file {}\n#[cfg(test)]\nmod again {}\n",
+        ),
+        (
+            "crates/alpha/src/one.rs",
+            "pub mod inner {\n    pub fn f() {}\n}\n#[cfg(test)]\nmod fixtures;\n#[cfg(test)]\n\
+             mod tests {\n}\n",
+        ),
+        (
+            "crates/alpha/src/one/fixtures.rs",
+            "#[cfg(test)]\nmod a {}\n#[cfg(test)]\nmod b {}\n",
+        ),
+        (
+            "crates/alpha/src/two.rs",
+            "pub struct Two;\n#[cfg(test)]\nmod tests {\n}\n#[cfg(test)]\nmod more_tests {\n}\n",
+        ),
+        (
+            "crates/alpha/src/misnamed.rs",
+            "pub struct Misnamed;\n#[cfg(test)]\nmod misnamed_tests {\n    #[test]\n    fn t() {}\n}\n",
+        ),
+    ];
+    let setup = write_order_tree(&dir, files);
+    let problems = inline_test_module_problems(&dir);
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+
+    assert_eq!(
+        problems,
+        vec![
+            "crates/alpha/src/misnamed.rs: inline test module `misnamed_tests` (line 3) is not \
+             named `tests`"
+                .to_owned(),
+            "crates/alpha/src/two.rs: 2 inline test modules (lines 3, 6); inline test module \
+             `more_tests` (line 6) is not named `tests`"
+                .to_owned(),
+        ]
+    );
+}
+
+/// The folder-`mod.rs` check names a `mod.rs` holding `mod tests { … }`; it
+/// passes a `mod.rs` declaring `#[cfg(test)] mod tests;`, a file module with
+/// inline tests, and a `mod.rs` under a `tests/` folder.
+#[test]
+fn mod_rs_check_names_an_inline_test_module_in_a_folder_module() {
+    let dir = order_temp_dir("mod-rs-tests");
+    let files: &[(&str, &str)] = &[
+        (
+            "crates/alpha/src/lib.rs",
+            "mod inline;\nmod declared;\nmod file;\n#[cfg(test)]\nmod tests;\n",
+        ),
+        (
+            "crates/alpha/src/tests/mod.rs",
+            "#[cfg(test)]\nmod tests {\n}\n",
+        ),
+        (
+            "crates/alpha/src/inline/mod.rs",
+            "pub struct Inline;\n#[cfg(test)]\nmod tests {\n    fn t() {}\n}\n",
+        ),
+        (
+            "crates/alpha/src/declared/mod.rs",
+            "pub struct Declared;\n#[cfg(test)]\nmod tests;\n",
+        ),
+        ("crates/alpha/src/declared/tests.rs", "fn t() {}\n"),
+        (
+            "crates/alpha/src/file.rs",
+            "pub struct File;\n#[cfg(test)]\nmod tests {\n}\n",
+        ),
+    ];
+    let setup = write_order_tree(&dir, files);
+    let problems = mod_rs_inline_test_problems(&dir);
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+
+    assert_eq!(
+        problems,
+        vec![
+            "crates/alpha/src/inline/mod.rs: inline test module `tests` (line 3) (move it to \
+             `tests.rs`, declared `#[cfg(test)] mod tests;`)"
+                .to_owned()
+        ]
+    );
+}
+
+/// A test module is one whatever the place of `test` in its `cfg(all(…))`:
+/// `#[cfg(all(not(miri), test))]` compiles only under test as
+/// `#[cfg(all(test, not(miri)))]` does, so code after it is named, and a
+/// folder `mod.rs` holding it inline is named.
+#[test]
+fn a_test_module_is_read_whatever_the_place_of_test_in_its_cfg_all() {
+    let dir = order_temp_dir("cfg-all-order");
+    let files: &[(&str, &str)] = &[
+        ("crates/alpha/src/lib.rs", "mod late;\nmod folder;\n"),
+        (
+            "crates/alpha/src/late.rs",
+            "pub struct Late;\n#[cfg(all(not(miri), test))]\nmod tests {\n    fn t() {}\n}\n\
+             pub fn after() {}\n",
+        ),
+        (
+            "crates/alpha/src/folder/mod.rs",
+            "pub struct Folder;\n#[cfg(all(unix, test))]\nmod tests {\n    fn t() {}\n}\n",
+        ),
+    ];
+    let setup = write_order_tree(&dir, files);
+    let last = tests_last_problems(&dir);
+    let mod_rs = mod_rs_inline_test_problems(&dir);
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+
+    assert_eq!(
+        last,
+        vec![
+            "crates/alpha/src/late.rs: 1 after the test module `tests` (line 3): \
+             `fn after` (line 6)"
+                .to_owned()
+        ]
+    );
+    assert_eq!(mod_rs.len(), 1, "{mod_rs:#?}");
+}
+
+/// The constants check names a `const` and a `static` declared after the
+/// first type, `impl` or function; it passes constants above the code,
+/// `const _`, a `const` under `#[cfg(test)]`, a `const fn`, a `type` alias,
+/// a constant inside an `impl` or a test module, and a file of constants and
+/// macros only.
+#[test]
+fn constants_check_names_a_constant_after_the_code() {
+    let dir = order_temp_dir("constants");
+    const GOOD: &str = "\
+use std::fmt;
+const A: u8 = 1;
+pub static B: u8 = 2;
+type Alias = u8;
+pub struct Good;
+impl Good {
+    const C: u8 = 3;
+}
+const _: () = ();
+pub const fn make() -> u8 {
+    1
+}
+type Late = u8;
+#[cfg(test)]
+const T: u8 = 4;
+#[cfg(test)]
+mod tests {
+    const D: u8 = 5;
+}
+";
+    let files: &[(&str, &str)] = &[
+        (
+            "crates/alpha/src/lib.rs",
+            "mod good;\nmod bad;\nmod helper_first;\nmod only_consts;\n",
+        ),
+        ("crates/alpha/src/good.rs", GOOD),
+        (
+            "crates/alpha/src/bad.rs",
+            "pub struct Bad;\nimpl Bad {}\npub const LATE: u8 = 1;\nstatic mut COUNT: u8 = 0;\n",
+        ),
+        (
+            "crates/alpha/src/helper_first.rs",
+            "fn helper() {}\nconst AFTER: u8 = 1;\n",
+        ),
+        (
+            "crates/alpha/src/only_consts.rs",
+            "inventory::submit! { X }\nconst A: u8 = 1;\nmacro_rules! m {\n    () => {};\n}\n\
+             static B: u8 = 2;\n",
+        ),
+    ];
+    let setup = write_order_tree(&dir, files);
+    let violations = constants_first_violations(&dir);
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+
+    assert_eq!(
+        violation_list(violations),
+        vec![
+            (
+                "crates/alpha/src/bad.rs".to_owned(),
+                vec![
+                    "line 3: `const LATE` after `struct Bad` (line 1)".to_owned(),
+                    "line 4: `static COUNT` after `struct Bad` (line 1)".to_owned(),
+                ]
+            ),
+            (
+                "crates/alpha/src/helper_first.rs".to_owned(),
+                vec!["line 2: `const AFTER` after `fn helper` (line 1)".to_owned()]
+            ),
+        ]
+    );
+}
+
+/// The helpers check names a private free function (a `const fn` too)
+/// between the primary type and its last `impl`, inherent or trait, generic
+/// or not; it passes a helper below the last impl, a `pub` or `pub(crate)`
+/// function between, a helper between a second type's impls, a
+/// `#[cfg(test)]` helper, and a file whose primary type has no impl.
+#[test]
+fn helpers_check_names_a_helper_between_the_type_and_its_impls() {
+    let dir = order_temp_dir("helpers");
+    const GOOD: &str = "\
+pub struct Good<T>(T);
+impl<T> Good<T> {}
+pub fn api() {}
+pub(crate) fn shared() {}
+#[cfg(test)]
+fn test_helper() {}
+impl<T: Clone> Clone for Good<T> {
+    fn clone(&self) -> Self {
+        todo!()
+    }
+}
+struct Other;
+impl Other {}
+fn between_others() {}
+impl Default for Other {
+    fn default() -> Self {
+        Other
+    }
+}
+fn helper() {}
+";
+    const BAD: &str = "\
+pub enum Bad {
+    A,
+}
+fn early() {}
+impl Bad {}
+const fn also() {}
+impl std::fmt::Debug for Bad {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
+}
+fn after() {}
+";
+    let files: &[(&str, &str)] = &[
+        (
+            "crates/alpha/src/lib.rs",
+            "mod good;\nmod bad;\nmod no_impl;\n",
+        ),
+        ("crates/alpha/src/good.rs", GOOD),
+        ("crates/alpha/src/bad.rs", BAD),
+        (
+            "crates/alpha/src/no_impl.rs",
+            "pub struct NoImpl;\nfn helper() {}\nimpl Other {}\n",
+        ),
+    ];
+    let setup = write_order_tree(&dir, files);
+    let violations = helpers_after_impls_violations(&dir);
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+
+    assert_eq!(
+        violation_list(violations),
+        vec![(
+            "crates/alpha/src/bad.rs".to_owned(),
+            vec![
+                "line 4: `fn early` between `enum Bad` (line 1) and its last impl (line 7)"
+                    .to_owned(),
+                "line 6: `fn also` between `enum Bad` (line 1) and its last impl (line 7)"
+                    .to_owned(),
+            ]
+        )]
     );
 }

@@ -21,8 +21,6 @@ use crate::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
 use super::ScriptValue;
 
 mod hints;
-#[cfg(test)]
-mod tests;
 
 pub use hints::{FieldHints, FieldRange};
 
@@ -534,3 +532,6 @@ pub mod probe {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

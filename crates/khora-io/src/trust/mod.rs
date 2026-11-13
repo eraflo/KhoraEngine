@@ -31,9 +31,6 @@ pub use project::ProjectTrustState;
 pub use quarantine::{QuarantineKey, Refusals};
 pub use store::{ProjectTrust, TrustStore};
 
-#[cfg(test)]
-mod tests;
-
 /// How much a file is trusted, from the most to the least.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Trust {
@@ -257,3 +254,6 @@ pub(crate) mod magic {
         head.starts_with(b"ID3") || (head.len() >= 2 && head[0] == 0xFF && head[1] & 0xE0 == 0xE0)
     }
 }
+
+#[cfg(test)]
+mod tests;

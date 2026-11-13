@@ -25,10 +25,11 @@
 
 mod channel;
 pub mod mailbox;
-#[cfg(test)]
-mod tests;
 
 pub use self::channel::{Channel, Cursor, Restore, Supersedes, WhenFull};
 pub use self::mailbox::{
     discard_mail_of, discard_mail_of_inactive, BetweenSessions, Mailbox, Reader,
 };
+
+#[cfg(test)]
+mod tests;

@@ -51,9 +51,6 @@ mod ser;
 mod value;
 mod watch;
 
-#[cfg(test)]
-mod tests;
-
 pub use de::{from_record, ReferenceReader};
 pub(crate) use diff::same;
 pub use diff::{diff, patch};
@@ -97,3 +94,6 @@ impl serde::de::Error for RecordError {
         Self(message.to_string())
     }
 }
+
+#[cfg(test)]
+mod tests;

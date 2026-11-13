@@ -233,36 +233,6 @@ pub enum SampleCount {
     X64,
 }
 
-#[cfg(test)]
-mod cpu_texture_tests {
-    use super::*;
-
-    #[test]
-    fn from_rgba32f_packs_to_half_float() {
-        let rgba = vec![1.0f32; 2 * 2 * 4];
-        let tex = CpuTexture::from_rgba32f(2, 2, &rgba).expect("valid pixel count");
-        assert_eq!(tex.format, TextureFormat::Rgba16Float);
-        // 4 channels x 2 bytes per half.
-        assert_eq!(tex.pixels.len(), 2 * 2 * 4 * 2);
-        assert_eq!(tex.row_size(), 2 * 8);
-    }
-
-    #[test]
-    fn from_rgba32f_preserves_values_above_one() {
-        // HDR is the whole reason this constructor exists: an 8-bit path would
-        // clip this to white.
-        let rgba = vec![8.0f32, 0.5, 0.25, 1.0];
-        let tex = CpuTexture::from_rgba32f(1, 1, &rgba).expect("valid pixel count");
-        let red = u16::from_le_bytes([tex.pixels[0], tex.pixels[1]]);
-        assert_eq!(red, crate::renderer::api::util::f32_to_f16_bits(8.0));
-    }
-
-    #[test]
-    fn from_rgba32f_rejects_a_mismatched_pixel_count() {
-        assert!(CpuTexture::from_rgba32f(2, 2, &[0.0; 4]).is_none());
-    }
-}
-
 impl CpuTexture {
     /// Builds an HDR texture from linear `f32` RGBA channels, packed to
     /// `Rgba16Float`.
@@ -330,3 +300,33 @@ pub struct TextureViewId(pub usize);
 /// An opaque handle to a GPU sampler resource.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SamplerId(pub usize);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_rgba32f_packs_to_half_float() {
+        let rgba = vec![1.0f32; 2 * 2 * 4];
+        let tex = CpuTexture::from_rgba32f(2, 2, &rgba).expect("valid pixel count");
+        assert_eq!(tex.format, TextureFormat::Rgba16Float);
+        // 4 channels x 2 bytes per half.
+        assert_eq!(tex.pixels.len(), 2 * 2 * 4 * 2);
+        assert_eq!(tex.row_size(), 2 * 8);
+    }
+
+    #[test]
+    fn from_rgba32f_preserves_values_above_one() {
+        // HDR is the whole reason this constructor exists: an 8-bit path would
+        // clip this to white.
+        let rgba = vec![8.0f32, 0.5, 0.25, 1.0];
+        let tex = CpuTexture::from_rgba32f(1, 1, &rgba).expect("valid pixel count");
+        let red = u16::from_le_bytes([tex.pixels[0], tex.pixels[1]]);
+        assert_eq!(red, crate::renderer::api::util::f32_to_f16_bits(8.0));
+    }
+
+    #[test]
+    fn from_rgba32f_rejects_a_mismatched_pixel_count() {
+        assert!(CpuTexture::from_rgba32f(2, 2, &[0.0; 4]).is_none());
+    }
+}

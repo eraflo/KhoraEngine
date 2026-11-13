@@ -66,9 +66,6 @@ mod structs;
 
 pub(crate) use structs::constant;
 
-#[cfg(test)]
-mod tests;
-
 pub use registers::Registers;
 
 use std::collections::HashMap;
@@ -664,3 +661,6 @@ fn member_body(member: &BehaviorMember) -> Option<(&[crate::ast::Param], &crate:
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests;

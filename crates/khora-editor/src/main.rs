@@ -50,10 +50,11 @@ mod project_physics;
 mod project_scripts;
 mod project_vfs;
 mod scene_io;
-#[cfg(test)]
-mod tests;
 mod widgets;
 
 fn main() -> anyhow::Result<()> {
     bootstrap::run()
 }
+
+#[cfg(test)]
+mod tests;

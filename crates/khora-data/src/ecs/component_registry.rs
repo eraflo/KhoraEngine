@@ -575,7 +575,7 @@ fn move_generation(generation: &mut u64, published: &std::sync::atomic::AtomicU6
 }
 
 #[cfg(test)]
-mod provenance_tests {
+mod tests {
     use super::ComponentProvenance;
     use super::ComponentProvenance::*;
 

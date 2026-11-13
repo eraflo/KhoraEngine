@@ -80,5 +80,6 @@ inventory::submit! {
 
 mod attached;
 mod order;
+
 #[cfg(test)]
 mod tests;

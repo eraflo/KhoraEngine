@@ -24,9 +24,6 @@
 use khora_core::script::value_serde::{from_value, to_value, ValueSerdeError};
 use khora_core::script::{InstanceLifecycle, ScriptSnapshot, ScriptValue};
 
-#[cfg(test)]
-mod tests;
-
 /// The companion's fields, by name, in its layout's order, recording
 /// `snapshot`'s state, state data, countdowns, suspended sequence and
 /// lifecycle. The snapshot's `fields` are the behavior's component's, and are
@@ -147,3 +144,6 @@ pub fn companion_snapshot(
     };
     Ok(snapshot)
 }
+
+#[cfg(test)]
+mod tests;

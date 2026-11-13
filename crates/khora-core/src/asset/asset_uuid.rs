@@ -130,117 +130,118 @@ pub fn asset_key(relative: &std::path::Path) -> String {
 }
 
 #[cfg(test)]
-mod asset_key_tests {
-    use super::*;
-    use std::path::Path;
+mod tests {
+    mod asset_key_tests {
+        use super::super::*;
+        use std::path::Path;
 
-    /// The convention itself. If this changes, every asset in every existing
-    /// project gets a new identity and every scene reference breaks — so it is
-    /// pinned here rather than left to five call sites to agree on.
-    #[test]
-    fn nested_paths_join_with_forward_slashes() {
-        assert_eq!(
-            asset_key(
-                Path::new("textures")
-                    .join("walls")
-                    .join("brick.png")
-                    .as_path()
-            ),
-            "textures/walls/brick.png"
-        );
-    }
-
-    #[test]
-    fn a_single_component_is_itself() {
-        assert_eq!(asset_key(Path::new("scene.kscene")), "scene.kscene");
-    }
-
-    #[test]
-    fn an_empty_relative_path_is_the_empty_key() {
-        assert_eq!(asset_key(Path::new("")), "");
-    }
-
-    /// **The bug this exists to prevent.** A Windows-separated relative path
-    /// and a Unix-separated one name the same asset, so they must hash to the
-    /// same UUID. Five hand-written copies each had their own chance to get
-    /// this wrong on one platform only.
-    #[test]
-    fn separators_do_not_change_an_asset_s_identity() {
-        let windows_style = Path::new(r"textures\walls\brick.png");
-        let unix_style = Path::new("textures/walls/brick.png");
-
-        // On Windows both parse to the same components; elsewhere the
-        // backslash string is a single component and must not silently become
-        // a different asset than the one the editor indexed.
-        let key = asset_key(unix_style);
-        assert_eq!(key, "textures/walls/brick.png");
-        assert_eq!(
-            AssetUUID::new_v5(&key),
-            AssetUUID::new_v5("textures/walls/brick.png")
-        );
-
-        if cfg!(windows) {
-            assert_eq!(asset_key(windows_style), key);
+        /// The convention itself. If this changes, every asset in every existing
+        /// project gets a new identity and every scene reference breaks — so it is
+        /// pinned here rather than left to five call sites to agree on.
+        #[test]
+        fn nested_paths_join_with_forward_slashes() {
             assert_eq!(
-                AssetUUID::new_v5(&asset_key(windows_style)),
-                AssetUUID::new_v5(&key)
+                asset_key(
+                    Path::new("textures")
+                        .join("walls")
+                        .join("brick.png")
+                        .as_path()
+                ),
+                "textures/walls/brick.png"
             );
         }
-    }
-}
 
-#[cfg(test)]
-mod sub_asset_uuid_tests {
-    use super::*;
+        #[test]
+        fn a_single_component_is_itself() {
+            assert_eq!(asset_key(Path::new("scene.kscene")), "scene.kscene");
+        }
 
-    #[test]
-    fn sub_is_deterministic() {
-        let container = AssetUUID::new_v5("meshes/hero.glb");
-        assert_eq!(
-            AssetUUID::sub_asset(container, "mesh/Body"),
-            AssetUUID::sub_asset(container, "mesh/Body")
-        );
-    }
+        #[test]
+        fn an_empty_relative_path_is_the_empty_key() {
+            assert_eq!(asset_key(Path::new("")), "");
+        }
 
-    #[test]
-    fn sub_differs_per_label() {
-        let container = AssetUUID::new_v5("meshes/hero.glb");
-        assert_ne!(
-            AssetUUID::sub_asset(container, "mesh/Body"),
-            AssetUUID::sub_asset(container, "mesh/Head")
-        );
-        assert_ne!(
-            AssetUUID::sub_asset(container, "mesh/Body"),
-            AssetUUID::sub_asset(container, "")
-        );
-    }
+        /// **The bug this exists to prevent.** A Windows-separated relative path
+        /// and a Unix-separated one name the same asset, so they must hash to the
+        /// same UUID. Five hand-written copies each had their own chance to get
+        /// this wrong on one platform only.
+        #[test]
+        fn separators_do_not_change_an_asset_s_identity() {
+            let windows_style = Path::new(r"textures\walls\brick.png");
+            let unix_style = Path::new("textures/walls/brick.png");
 
-    #[test]
-    fn sub_differs_per_container() {
-        let hero = AssetUUID::new_v5("meshes/hero.glb");
-        let villain = AssetUUID::new_v5("meshes/villain.glb");
-        assert_ne!(
-            AssetUUID::sub_asset(hero, "mesh/Body"),
-            AssetUUID::sub_asset(villain, "mesh/Body")
-        );
-    }
+            // On Windows both parse to the same components; elsewhere the
+            // backslash string is a single component and must not silently become
+            // a different asset than the one the editor indexed.
+            let key = asset_key(unix_style);
+            assert_eq!(key, "textures/walls/brick.png");
+            assert_eq!(
+                AssetUUID::new_v5(&key),
+                AssetUUID::new_v5("textures/walls/brick.png")
+            );
 
-    /// A sub uuid lives in its own namespace: it never collides with the
-    /// path-derived uuid of a file whose key happens to be the same text.
-    #[test]
-    fn sub_differs_from_the_path_uuid_of_the_same_text() {
-        let container = AssetUUID::new_v5("meshes/hero.glb");
-        let label = "mesh/Body";
-        let sub = AssetUUID::sub_asset(container, label);
-        assert_ne!(sub, AssetUUID::new_v5(label));
-        assert_ne!(sub, AssetUUID::new_v5(&format!("{container}{label}")));
-        assert_ne!(sub, AssetUUID::new_v5(&format!("{container}/{label}")));
-        assert_ne!(sub, container);
+            if cfg!(windows) {
+                assert_eq!(asset_key(windows_style), key);
+                assert_eq!(
+                    AssetUUID::new_v5(&asset_key(windows_style)),
+                    AssetUUID::new_v5(&key)
+                );
+            }
+        }
     }
 
-    #[test]
-    fn sub_is_a_version_5_uuid() {
-        let sub = AssetUUID::sub_asset(AssetUUID::new_v5("meshes/hero.glb"), "mesh/Body");
-        assert_eq!(sub.as_bytes()[6] >> 4, 5, "the version nibble must be 5");
+    mod sub_asset_uuid_tests {
+        use super::super::*;
+
+        #[test]
+        fn sub_is_deterministic() {
+            let container = AssetUUID::new_v5("meshes/hero.glb");
+            assert_eq!(
+                AssetUUID::sub_asset(container, "mesh/Body"),
+                AssetUUID::sub_asset(container, "mesh/Body")
+            );
+        }
+
+        #[test]
+        fn sub_differs_per_label() {
+            let container = AssetUUID::new_v5("meshes/hero.glb");
+            assert_ne!(
+                AssetUUID::sub_asset(container, "mesh/Body"),
+                AssetUUID::sub_asset(container, "mesh/Head")
+            );
+            assert_ne!(
+                AssetUUID::sub_asset(container, "mesh/Body"),
+                AssetUUID::sub_asset(container, "")
+            );
+        }
+
+        #[test]
+        fn sub_differs_per_container() {
+            let hero = AssetUUID::new_v5("meshes/hero.glb");
+            let villain = AssetUUID::new_v5("meshes/villain.glb");
+            assert_ne!(
+                AssetUUID::sub_asset(hero, "mesh/Body"),
+                AssetUUID::sub_asset(villain, "mesh/Body")
+            );
+        }
+
+        /// A sub uuid lives in its own namespace: it never collides with the
+        /// path-derived uuid of a file whose key happens to be the same text.
+        #[test]
+        fn sub_differs_from_the_path_uuid_of_the_same_text() {
+            let container = AssetUUID::new_v5("meshes/hero.glb");
+            let label = "mesh/Body";
+            let sub = AssetUUID::sub_asset(container, label);
+            assert_ne!(sub, AssetUUID::new_v5(label));
+            assert_ne!(sub, AssetUUID::new_v5(&format!("{container}{label}")));
+            assert_ne!(sub, AssetUUID::new_v5(&format!("{container}/{label}")));
+            assert_ne!(sub, container);
+        }
+
+        #[test]
+        fn sub_is_a_version_5_uuid() {
+            let sub = AssetUUID::sub_asset(AssetUUID::new_v5("meshes/hero.glb"), "mesh/Body");
+            assert_eq!(sub.as_bytes()[6] >> 4, 5, "the version nibble must be 5");
+        }
     }
 }

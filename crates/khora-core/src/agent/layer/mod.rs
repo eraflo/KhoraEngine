@@ -27,9 +27,6 @@ mod place;
 mod preparation;
 mod wake;
 
-#[cfg(test)]
-mod tests;
-
 pub use place::{CheckedOut, LastRun, Place, Terms, KEEP_EPOCHS};
 pub use preparation::{Preparation, PreparedLayer};
 pub use wake::Wake;
@@ -109,3 +106,6 @@ pub struct LayerRun {
     /// wrong; empty when it said nothing. The run's report carries it.
     pub message: String,
 }
+
+#[cfg(test)]
+mod tests;

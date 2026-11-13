@@ -40,9 +40,6 @@ mod graphics_device;
 mod map_async;
 pub mod vram_probe;
 
-#[cfg(test)]
-mod tests;
-
 /// Build the wgpu descriptor for an empty buffer.
 ///
 /// A free function rather than three lines inside `create_buffer`, and that is
@@ -562,3 +559,6 @@ impl VramProvider for WgpuDevice {
         None
     }
 }
+
+#[cfg(test)]
+mod tests;

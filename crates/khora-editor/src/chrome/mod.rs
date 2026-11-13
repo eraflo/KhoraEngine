@@ -39,10 +39,10 @@ pub mod spine;
 pub mod status_bar;
 pub mod title_bar;
 
-#[cfg(test)]
-mod tests;
-
 pub use restricted_bar::RestrictedBarPanel;
 pub use spine::SpinePanel;
 pub use status_bar::StatusBarPanel;
 pub use title_bar::TitleBarPanel;
+
+#[cfg(test)]
+mod tests;

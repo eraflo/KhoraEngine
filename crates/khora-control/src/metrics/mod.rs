@@ -74,21 +74,4 @@ impl MetricStore {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_metric_store_variance_and_extremes() {
-        let mut store = MetricStore::new();
-        let id = MetricId::new("test", "values");
-        store.push(id.clone(), 5.0);
-        store.push(id.clone(), 15.0);
-        store.push(id.clone(), 5.0);
-        store.push(id.clone(), 15.0);
-
-        assert!((store.get_variance(&id) - 25.0).abs() < 0.01);
-        assert_eq!(store.get_min(&id), 5.0);
-        assert_eq!(store.get_max(&id), 15.0);
-        assert_eq!(store.get_sample_count(&id), 4);
-    }
-}
+mod tests;

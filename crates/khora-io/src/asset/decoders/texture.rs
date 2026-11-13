@@ -154,6 +154,15 @@ fn check_header(bytes: &[u8], limits: &Limits) -> Result<(), LimitExceeded> {
     Ok(())
 }
 
+inventory::submit! {
+    DecoderRegistration {
+        type_name: "texture",
+        register: |svc| {
+            svc.register_decoder::<CpuTexture>("texture", TextureDecoder);
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -369,14 +378,5 @@ mod tests {
         let limit =
             exceeded(&*refused).unwrap_or_else(|| panic!("a LimitExceeded, not: {refused}"));
         assert_eq!(limit.limit, 8192);
-    }
-}
-
-inventory::submit! {
-    DecoderRegistration {
-        type_name: "texture",
-        register: |svc| {
-            svc.register_decoder::<CpuTexture>("texture", TextureDecoder);
-        },
     }
 }

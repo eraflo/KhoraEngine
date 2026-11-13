@@ -241,108 +241,107 @@ mod tests {
         assert!(extract_dependencies("scene", "a/b.dat", b"(entities: [])").is_empty());
         assert!(extract_dependencies("mesh", "a/b.dat", b"glTF binary").is_empty());
     }
-}
 
-#[cfg(test)]
-mod script_tests {
-    use super::*;
+    mod script_tests {
+        use super::super::*;
 
-    #[test]
-    fn a_script_is_a_type_with_an_extractor() {
-        assert!(type_has_dependency_extractor("script"));
-        assert!(!type_has_dependency_extractor("texture"));
-    }
-
-    /// **The edge hot-reload walks backwards.** Without it a script would be
-    /// reloaded when its own file changed and left stale when the file it
-    /// depends on did.
-    #[test]
-    fn an_import_becomes_the_uuid_of_the_file_it_names() {
-        let source = br#"import "combat/damage.erg";
-                         fn void Main() { }"#;
-        let deps = extract_dependencies("script", "scripts/ai/guard.erg", source);
-
-        assert_eq!(deps, vec![AssetUUID::new_v5("scripts/combat/damage.erg")]);
-    }
-
-    /// An import means the same thing wherever it is written, which is what
-    /// lets a file be moved without rewriting the files that import it.
-    #[test]
-    fn an_import_is_relative_to_the_root_not_to_the_importing_file() {
-        let source = br#"import "shared.erg"; fn void Main() { }"#;
-
-        let shallow = extract_dependencies("script", "scripts/a.erg", source);
-        let deep = extract_dependencies("script", "scripts/very/deep/b.erg", source);
-
-        assert_eq!(shallow, deep, "the same import names the same module");
-        assert_eq!(shallow, vec![AssetUUID::new_v5("scripts/shared.erg")]);
-    }
-
-    /// **A file at the top of the assets is no script**: it is never compiled,
-    /// so what it imports is no edge for hot-reload to walk.
-    #[test]
-    fn an_erg_at_the_top_level_has_no_edges() {
-        let source = br#"import "helper.erg"; fn void Main() { }"#;
-        let deps = extract_dependencies("script", "guard.erg", source);
-
-        assert!(deps.is_empty(), "{deps:?}");
-    }
-
-    /// **An `.erg` outside `scripts/` has no edges** — under another folder,
-    /// under a script folder spelled in another case, or under a `scripts`
-    /// folder below another one.
-    #[test]
-    fn an_erg_outside_the_script_folder_has_no_edges() {
-        let source = br#"import "helper.erg"; fn void Main() { }"#;
-
-        for path in [
-            "props/x.erg",
-            "Scripts/x.erg",
-            "scriptsextra/x.erg",
-            "props/scripts/x.erg",
-        ] {
-            let deps = extract_dependencies("script", path, source);
-            assert!(deps.is_empty(), "{path}: {deps:?}");
+        #[test]
+        fn a_script_is_a_type_with_an_extractor() {
+            assert!(type_has_dependency_extractor("script"));
+            assert!(!type_has_dependency_extractor("texture"));
         }
-    }
 
-    /// A module's extension is `.erg` in lower case: a file in place spelled
-    /// `.ERG` is no module — nothing compiles it — and imports nothing.
-    #[test]
-    fn a_file_in_place_with_a_capital_extension_has_no_edges() {
-        let source = br#"import "combat/damage.erg"; fn void Main() { }"#;
-        let deps = extract_dependencies("script", "scripts/ai/Guard.ERG", source);
+        /// **The edge hot-reload walks backwards.** Without it a script would be
+        /// reloaded when its own file changed and left stale when the file it
+        /// depends on did.
+        #[test]
+        fn an_import_becomes_the_uuid_of_the_file_it_names() {
+            let source = br#"import "combat/damage.erg";
+                             fn void Main() { }"#;
+            let deps = extract_dependencies("script", "scripts/ai/guard.erg", source);
 
-        assert!(deps.is_empty(), "{deps:?}");
-    }
+            assert_eq!(deps, vec![AssetUUID::new_v5("scripts/combat/damage.erg")]);
+        }
 
-    #[test]
-    fn a_script_with_no_imports_has_no_dependencies() {
-        let deps = extract_dependencies("script", "scripts/leaf.erg", b"fn void Main() { }");
-        assert!(deps.is_empty());
-    }
+        /// An import means the same thing wherever it is written, which is what
+        /// lets a file be moved without rewriting the files that import it.
+        #[test]
+        fn an_import_is_relative_to_the_root_not_to_the_importing_file() {
+            let source = br#"import "shared.erg"; fn void Main() { }"#;
 
-    /// Deduplicated and sorted, like every other extractor — the index
-    /// builder's contract is byte-determinism.
-    #[test]
-    fn dependencies_come_back_sorted_and_deduplicated() {
-        let source = br#"import "b.erg";
-                         import "a.erg";
-                         import "b.erg";
-                         fn void Main() { }"#;
-        let deps = extract_dependencies("script", "scripts/main.erg", source);
+            let shallow = extract_dependencies("script", "scripts/a.erg", source);
+            let deep = extract_dependencies("script", "scripts/very/deep/b.erg", source);
 
-        assert_eq!(deps.len(), 2);
-        let mut sorted = deps.clone();
-        sorted.sort();
-        assert_eq!(deps, sorted);
-    }
+            assert_eq!(shallow, deep, "the same import names the same module");
+            assert_eq!(shallow, vec![AssetUUID::new_v5("scripts/shared.erg")]);
+        }
 
-    /// Reported once, by the decoder — putting the same message in the log
-    /// twice for one mistake helps nobody.
-    #[test]
-    fn bytes_that_are_not_text_contribute_nothing() {
-        let deps = extract_dependencies("script", "scripts/broken.erg", &[0xff, 0xfe]);
-        assert!(deps.is_empty());
+        /// **A file at the top of the assets is no script**: it is never compiled,
+        /// so what it imports is no edge for hot-reload to walk.
+        #[test]
+        fn an_erg_at_the_top_level_has_no_edges() {
+            let source = br#"import "helper.erg"; fn void Main() { }"#;
+            let deps = extract_dependencies("script", "guard.erg", source);
+
+            assert!(deps.is_empty(), "{deps:?}");
+        }
+
+        /// **An `.erg` outside `scripts/` has no edges** — under another folder,
+        /// under a script folder spelled in another case, or under a `scripts`
+        /// folder below another one.
+        #[test]
+        fn an_erg_outside_the_script_folder_has_no_edges() {
+            let source = br#"import "helper.erg"; fn void Main() { }"#;
+
+            for path in [
+                "props/x.erg",
+                "Scripts/x.erg",
+                "scriptsextra/x.erg",
+                "props/scripts/x.erg",
+            ] {
+                let deps = extract_dependencies("script", path, source);
+                assert!(deps.is_empty(), "{path}: {deps:?}");
+            }
+        }
+
+        /// A module's extension is `.erg` in lower case: a file in place spelled
+        /// `.ERG` is no module — nothing compiles it — and imports nothing.
+        #[test]
+        fn a_file_in_place_with_a_capital_extension_has_no_edges() {
+            let source = br#"import "combat/damage.erg"; fn void Main() { }"#;
+            let deps = extract_dependencies("script", "scripts/ai/Guard.ERG", source);
+
+            assert!(deps.is_empty(), "{deps:?}");
+        }
+
+        #[test]
+        fn a_script_with_no_imports_has_no_dependencies() {
+            let deps = extract_dependencies("script", "scripts/leaf.erg", b"fn void Main() { }");
+            assert!(deps.is_empty());
+        }
+
+        /// Deduplicated and sorted, like every other extractor — the index
+        /// builder's contract is byte-determinism.
+        #[test]
+        fn dependencies_come_back_sorted_and_deduplicated() {
+            let source = br#"import "b.erg";
+                             import "a.erg";
+                             import "b.erg";
+                             fn void Main() { }"#;
+            let deps = extract_dependencies("script", "scripts/main.erg", source);
+
+            assert_eq!(deps.len(), 2);
+            let mut sorted = deps.clone();
+            sorted.sort();
+            assert_eq!(deps, sorted);
+        }
+
+        /// Reported once, by the decoder — putting the same message in the log
+        /// twice for one mistake helps nobody.
+        #[test]
+        fn bytes_that_are_not_text_contribute_nothing() {
+            let deps = extract_dependencies("script", "scripts/broken.erg", &[0xff, 0xfe]);
+            assert!(deps.is_empty());
+        }
     }
 }

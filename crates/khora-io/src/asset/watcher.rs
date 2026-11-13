@@ -432,192 +432,190 @@ mod tests {
             events
         );
     }
-}
 
-#[cfg(test)]
-mod repeat_tests {
-    use super::*;
+    mod repeat_tests {
+        use super::super::*;
 
-    fn event(kind: AssetChangeKind, path: &str) -> AssetChangeEvent {
-        AssetChangeEvent {
-            kind,
-            root: Arc::from(Path::new("assets")),
-            rel_path: path.to_owned(),
+        fn event(kind: AssetChangeKind, path: &str) -> AssetChangeEvent {
+            AssetChangeEvent {
+                kind,
+                root: Arc::from(Path::new("assets")),
+                rel_path: path.to_owned(),
+            }
         }
-    }
 
-    #[test]
-    fn a_save_that_fires_twice_is_reported_once() {
-        let first = event(AssetChangeKind::Modified, "scripts/guard.erg");
-        let again = event(AssetChangeKind::Modified, "scripts/guard.erg");
+        #[test]
+        fn a_save_that_fires_twice_is_reported_once() {
+            let first = event(AssetChangeKind::Modified, "scripts/guard.erg");
+            let again = event(AssetChangeKind::Modified, "scripts/guard.erg");
 
-        assert!(is_immediate_repeat(Some(&first), &again));
-    }
+            assert!(is_immediate_repeat(Some(&first), &again));
+        }
 
-    #[test]
-    fn a_different_path_is_not_a_repeat() {
-        let first = event(AssetChangeKind::Modified, "scripts/guard.erg");
-        let other = event(AssetChangeKind::Modified, "scripts/chest.erg");
+        #[test]
+        fn a_different_path_is_not_a_repeat() {
+            let first = event(AssetChangeKind::Modified, "scripts/guard.erg");
+            let other = event(AssetChangeKind::Modified, "scripts/chest.erg");
 
-        assert!(!is_immediate_repeat(Some(&first), &other));
-    }
+            assert!(!is_immediate_repeat(Some(&first), &other));
+        }
 
-    /// Two `Created` in a row are two files appearing, and a consumer reindexes
-    /// on each — collapsing them would hide one.
-    #[test]
-    fn only_modified_collapses() {
-        let first = event(AssetChangeKind::Created, "scripts/guard.erg");
-        let again = event(AssetChangeKind::Created, "scripts/guard.erg");
+        /// Two `Created` in a row are two files appearing, and a consumer reindexes
+        /// on each — collapsing them would hide one.
+        #[test]
+        fn only_modified_collapses() {
+            let first = event(AssetChangeKind::Created, "scripts/guard.erg");
+            let again = event(AssetChangeKind::Created, "scripts/guard.erg");
 
-        assert!(!is_immediate_repeat(Some(&first), &again));
-    }
+            assert!(!is_immediate_repeat(Some(&first), &again));
+        }
 
-    /// A save right after the file appeared is a real second fact: the
-    /// consumer that reindexed on the create still has to reload the contents.
-    #[test]
-    fn a_save_after_a_create_survives() {
-        let created = event(AssetChangeKind::Created, "scripts/guard.erg");
-        let saved = event(AssetChangeKind::Modified, "scripts/guard.erg");
+        /// A save right after the file appeared is a real second fact: the
+        /// consumer that reindexed on the create still has to reload the contents.
+        #[test]
+        fn a_save_after_a_create_survives() {
+            let created = event(AssetChangeKind::Created, "scripts/guard.erg");
+            let saved = event(AssetChangeKind::Modified, "scripts/guard.erg");
 
-        assert!(!is_immediate_repeat(Some(&created), &saved));
-    }
+            assert!(!is_immediate_repeat(Some(&created), &saved));
+        }
 
-    /// A change reported under the root's real path — macOS names `/var/…`
-    /// by `/private/var/…` — is still under the root, and keeps the root's
-    /// own name.
-    #[test]
-    fn a_change_reported_under_the_real_path_is_under_the_root() {
-        let named: Arc<Path> = Arc::from(Path::new("/var/project/assets"));
-        let real = Path::new("/private/var/project/assets");
-        let change = translate_event(
-            &notify::EventKind::Create(notify::event::CreateKind::File),
-            &real.join("scripts").join("guard.erg"),
-            &named,
-            Some(real),
-        )
-        .expect("a change under the root");
-
-        assert_eq!(change.rel_path, "scripts/guard.erg");
-        assert_eq!(change.root(), &*named);
-    }
-
-    /// A rename that does not say which side a path is on is read from the
-    /// disk: the path that exists is where the file went, the one that does
-    /// not is where it came from.
-    #[test]
-    fn a_rename_without_its_side_is_read_from_the_disk() {
-        let dir = tempfile::tempdir().expect("a temp dir");
-        let root: Arc<Path> = Arc::from(dir.path());
-        std::fs::write(dir.path().join("there.erg"), "behavior B {}").expect("writes");
-        use notify::event::{ModifyKind, RenameMode};
-        let rename = notify::EventKind::Modify(ModifyKind::Name(RenameMode::Any));
-
-        let arrived = translate_event(&rename, &dir.path().join("there.erg"), &root, None)
-            .expect("a change under the root");
-        let left = translate_event(&rename, &dir.path().join("gone.erg"), &root, None)
+        /// A change reported under the root's real path — macOS names `/var/…`
+        /// by `/private/var/…` — is still under the root, and keeps the root's
+        /// own name.
+        #[test]
+        fn a_change_reported_under_the_real_path_is_under_the_root() {
+            let named: Arc<Path> = Arc::from(Path::new("/var/project/assets"));
+            let real = Path::new("/private/var/project/assets");
+            let change = translate_event(
+                &notify::EventKind::Create(notify::event::CreateKind::File),
+                &real.join("scripts").join("guard.erg"),
+                &named,
+                Some(real),
+            )
             .expect("a change under the root");
 
-        assert_eq!(arrived.kind, AssetChangeKind::Created);
-        assert_eq!(left.kind, AssetChangeKind::Removed);
-    }
-
-    /// Under neither name, a path is not a change of this root.
-    #[test]
-    fn a_path_under_neither_name_is_not_a_change() {
-        let named: Arc<Path> = Arc::from(Path::new("/var/project/assets"));
-        let change = translate_event(
-            &notify::EventKind::Create(notify::event::CreateKind::File),
-            Path::new("/elsewhere/guard.erg"),
-            &named,
-            Some(Path::new("/private/var/project/assets")),
-        );
-
-        assert!(change.is_none());
-    }
-
-    #[test]
-    fn the_first_event_is_never_a_repeat() {
-        let first = event(AssetChangeKind::Modified, "scripts/guard.erg");
-
-        assert!(!is_immediate_repeat(None, &first));
-    }
-}
-
-#[cfg(test)]
-mod budget_tests {
-    use super::*;
-    use std::time::{Duration, Instant};
-
-    /// Lets events through at `now` until one is dropped; how many were.
-    fn exhaust(budget: &mut EventBudget, now: Instant) -> usize {
-        let mut admitted = 0;
-        while budget.admit(now) {
-            admitted += 1;
-            assert!(admitted <= 4096, "a budget lets a finite number through");
-        }
-        admitted
-    }
-
-    /// **A flood of watcher events collapses into a rescan**: 512 events in
-    /// a second are let through, the 513th is dropped; no rescan is due while
-    /// the burst lasts nor before it has been quiet a second, then exactly
-    /// one; and the budget lets events through again.
-    #[test]
-    fn a_flood_of_watcher_events_collapses_into_a_rescan() {
-        let start = Instant::now();
-        let mut budget = EventBudget::new(512);
-
-        for event in 0..512 {
-            assert!(budget.admit(start), "event {event} of the first 512");
-        }
-        assert!(!budget.admit(start), "the 513th in the same second");
-
-        assert!(!budget.take_rescan(start), "no rescan while dropping");
-        assert!(
-            !budget.take_rescan(start + Duration::from_millis(999)),
-            "none before the burst has been quiet a second"
-        );
-        assert!(
-            budget.take_rescan(start + Duration::from_millis(1001)),
-            "one rescan once it has"
-        );
-        assert!(
-            !budget.take_rescan(start + Duration::from_millis(1002)),
-            "and only one"
-        );
-        assert!(!budget.take_rescan(start + Duration::from_secs(5)));
-        assert!(
-            budget.admit(start + Duration::from_secs(5)),
-            "a quiet budget lets events through again"
-        );
-    }
-
-    /// Events that never exceed the budget ask for no rescan.
-    #[test]
-    fn events_within_the_budget_ask_for_no_rescan() {
-        let start = Instant::now();
-        let mut budget = EventBudget::new(512);
-        for millis in 0..100 {
-            assert!(budget.admit(start + Duration::from_millis(millis)));
+            assert_eq!(change.rel_path, "scripts/guard.erg");
+            assert_eq!(change.root(), &*named);
         }
 
-        assert!(!budget.take_rescan(start + Duration::from_secs(2)));
+        /// A rename that does not say which side a path is on is read from the
+        /// disk: the path that exists is where the file went, the one that does
+        /// not is where it came from.
+        #[test]
+        fn a_rename_without_its_side_is_read_from_the_disk() {
+            let dir = tempfile::tempdir().expect("a temp dir");
+            let root: Arc<Path> = Arc::from(dir.path());
+            std::fs::write(dir.path().join("there.erg"), "behavior B {}").expect("writes");
+            use notify::event::{ModifyKind, RenameMode};
+            let rename = notify::EventKind::Modify(ModifyKind::Name(RenameMode::Any));
+
+            let arrived = translate_event(&rename, &dir.path().join("there.erg"), &root, None)
+                .expect("a change under the root");
+            let left = translate_event(&rename, &dir.path().join("gone.erg"), &root, None)
+                .expect("a change under the root");
+
+            assert_eq!(arrived.kind, AssetChangeKind::Created);
+            assert_eq!(left.kind, AssetChangeKind::Removed);
+        }
+
+        /// Under neither name, a path is not a change of this root.
+        #[test]
+        fn a_path_under_neither_name_is_not_a_change() {
+            let named: Arc<Path> = Arc::from(Path::new("/var/project/assets"));
+            let change = translate_event(
+                &notify::EventKind::Create(notify::event::CreateKind::File),
+                Path::new("/elsewhere/guard.erg"),
+                &named,
+                Some(Path::new("/private/var/project/assets")),
+            );
+
+            assert!(change.is_none());
+        }
+
+        #[test]
+        fn the_first_event_is_never_a_repeat() {
+            let first = event(AssetChangeKind::Modified, "scripts/guard.erg");
+
+            assert!(!is_immediate_repeat(None, &first));
+        }
     }
 
-    /// An event dropped during the quiet second starts the second again: the
-    /// rescan waits a second after the last drop.
-    #[test]
-    fn a_drop_during_the_quiet_second_delays_the_rescan() {
-        let start = Instant::now();
-        let mut budget = EventBudget::new(512);
-        assert_eq!(exhaust(&mut budget, start), 512);
-        let later = start + Duration::from_millis(500);
-        exhaust(&mut budget, later);
+    mod budget_tests {
+        use super::super::*;
+        use std::time::{Duration, Instant};
 
-        assert!(
-            !budget.take_rescan(start + Duration::from_millis(1001)),
-            "a drop half a second in"
-        );
-        assert!(budget.take_rescan(later + Duration::from_millis(1001)));
+        /// Lets events through at `now` until one is dropped; how many were.
+        fn exhaust(budget: &mut EventBudget, now: Instant) -> usize {
+            let mut admitted = 0;
+            while budget.admit(now) {
+                admitted += 1;
+                assert!(admitted <= 4096, "a budget lets a finite number through");
+            }
+            admitted
+        }
+
+        /// **A flood of watcher events collapses into a rescan**: 512 events in
+        /// a second are let through, the 513th is dropped; no rescan is due while
+        /// the burst lasts nor before it has been quiet a second, then exactly
+        /// one; and the budget lets events through again.
+        #[test]
+        fn a_flood_of_watcher_events_collapses_into_a_rescan() {
+            let start = Instant::now();
+            let mut budget = EventBudget::new(512);
+
+            for event in 0..512 {
+                assert!(budget.admit(start), "event {event} of the first 512");
+            }
+            assert!(!budget.admit(start), "the 513th in the same second");
+
+            assert!(!budget.take_rescan(start), "no rescan while dropping");
+            assert!(
+                !budget.take_rescan(start + Duration::from_millis(999)),
+                "none before the burst has been quiet a second"
+            );
+            assert!(
+                budget.take_rescan(start + Duration::from_millis(1001)),
+                "one rescan once it has"
+            );
+            assert!(
+                !budget.take_rescan(start + Duration::from_millis(1002)),
+                "and only one"
+            );
+            assert!(!budget.take_rescan(start + Duration::from_secs(5)));
+            assert!(
+                budget.admit(start + Duration::from_secs(5)),
+                "a quiet budget lets events through again"
+            );
+        }
+
+        /// Events that never exceed the budget ask for no rescan.
+        #[test]
+        fn events_within_the_budget_ask_for_no_rescan() {
+            let start = Instant::now();
+            let mut budget = EventBudget::new(512);
+            for millis in 0..100 {
+                assert!(budget.admit(start + Duration::from_millis(millis)));
+            }
+
+            assert!(!budget.take_rescan(start + Duration::from_secs(2)));
+        }
+
+        /// An event dropped during the quiet second starts the second again: the
+        /// rescan waits a second after the last drop.
+        #[test]
+        fn a_drop_during_the_quiet_second_delays_the_rescan() {
+            let start = Instant::now();
+            let mut budget = EventBudget::new(512);
+            assert_eq!(exhaust(&mut budget, start), 512);
+            let later = start + Duration::from_millis(500);
+            exhaust(&mut budget, later);
+
+            assert!(
+                !budget.take_rescan(start + Duration::from_millis(1001)),
+                "a drop half a second in"
+            );
+            assert!(budget.take_rescan(later + Duration::from_millis(1001)));
+        }
     }
 }

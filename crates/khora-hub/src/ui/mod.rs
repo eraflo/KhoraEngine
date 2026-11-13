@@ -28,14 +28,4 @@ pub fn theme() -> UiTheme {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use khora_sdk::tool_ui::ColorScheme;
-
-    /// The hub is the editor's negative: a light field, where the editor
-    /// stays dark.
-    #[test]
-    fn hub_theme_is_light() {
-        assert_eq!(theme().scheme, ColorScheme::Light);
-    }
-}
+mod tests;

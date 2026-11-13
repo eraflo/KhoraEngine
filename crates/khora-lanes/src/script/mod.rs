@@ -41,9 +41,6 @@ mod state_update;
 mod turn;
 pub mod watchdog;
 
-#[cfg(test)]
-mod tests;
-
 pub use family::{ScriptFamily, ScriptOutputs};
 pub use frame::run_behaviors;
 pub use intake::take_in;
@@ -51,3 +48,6 @@ pub use lane::*;
 pub use report::{Resumed, ScriptRunReport, Slow};
 pub use runtime::{Body, FuelDemand, Instance, Pending, ReloadReport, ScriptRuntime};
 pub use watchdog::{WATCHDOG_FAULT, WATCHDOG_WARN};
+
+#[cfg(test)]
+mod tests;

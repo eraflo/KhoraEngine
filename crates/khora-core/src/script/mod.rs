@@ -46,9 +46,6 @@ pub mod value;
 pub mod value_serde;
 pub mod writeback;
 
-#[cfg(test)]
-mod tests;
-
 pub use batch::{BatchShapeError, ColumnBatch};
 pub use buffer::{CommandBuffer, Conflict};
 pub use catalog::{CatalogData, ScriptCatalog};
@@ -69,3 +66,6 @@ pub use writeback::{BehaviorUpdate, BehaviorWriteback};
 /// The scripting family: the agent that runs the scene's behaviors, and what
 /// switches them on and off ([`Activation`](crate::agent::Activation)).
 pub const SCRIPT: crate::agent::gorna::AgentId = crate::agent::gorna::AgentId::new("script");
+
+#[cfg(test)]
+mod tests;

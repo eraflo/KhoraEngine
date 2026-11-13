@@ -27,9 +27,6 @@ use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[cfg(test)]
-mod tests;
-
 /// Where the landing's sources are, from the repository root.
 const SOURCES: &str = "docs/landing";
 
@@ -158,3 +155,6 @@ fn copy_dir(from: &Path, to: &Path) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

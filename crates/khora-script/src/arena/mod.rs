@@ -44,9 +44,6 @@
 pub mod owned;
 pub mod persistent;
 
-#[cfg(test)]
-mod tests;
-
 pub use owned::Owned;
 pub use persistent::{Persisted, PersistentStore};
 
@@ -277,3 +274,6 @@ impl Arena {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

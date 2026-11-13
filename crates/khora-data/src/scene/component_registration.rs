@@ -341,126 +341,6 @@ pub fn provenance_of(type_name: &str) -> Option<ComponentProvenance> {
 }
 
 #[cfg(test)]
-mod provenance_tests {
-    use super::*;
-
-    /// Locks the classification of the components whose provenance is not the
-    /// default. Each of these was previously encoded in a hand-maintained list
-    /// somewhere else in the workspace; if one silently reverts to `Authored`
-    /// it would reappear in "Add Component" and be copied on duplicate.
-    #[test]
-    fn engine_written_components_are_classified() {
-        // Recomputed by `transform_propagation` from Transform + Parent.
-        assert_eq!(
-            provenance_of("GlobalTransform"),
-            Some(ComponentProvenance::Derived)
-        );
-        // Inverse index of `Parent`, maintained by `World::set_parent`.
-        // Copying it would make a duplicate claim the original's children.
-        assert_eq!(
-            provenance_of("Children"),
-            Some(ComponentProvenance::Derived)
-        );
-        // Set by dragging in the scene tree; persists and must survive a
-        // duplicate, but adding an empty one by hand is meaningless.
-        assert_eq!(
-            provenance_of("Parent"),
-            Some(ComponentProvenance::ToolAuthored)
-        );
-        // Debug output of the physics writeback.
-        assert_eq!(
-            provenance_of("PhysicsDebugData"),
-            Some(ComponentProvenance::Runtime)
-        );
-    }
-
-    /// No Rust component is resumable: what a game save resumes a behavior
-    /// from is its state companion, a declared component. Marking one is a
-    /// decision about how its domain reads it back on load, not a flag to set
-    /// in passing.
-    #[test]
-    fn no_rust_component_is_resumed() {
-        let resumed: Vec<&str> = inventory::iter::<ComponentRegistration>
-            .into_iter()
-            .filter(|reg| reg.is_resumed())
-            .map(|reg| reg.type_name)
-            .collect();
-        assert!(resumed.is_empty(), "{resumed:?}");
-    }
-
-    /// Resumable is about what the engine wrote: no component an author or a
-    /// tool writes is also resumed, so a save never holds a value twice.
-    #[test]
-    fn a_resumed_component_is_never_also_saved() {
-        for reg in inventory::iter::<ComponentRegistration> {
-            assert!(
-                !(reg.is_saved() && reg.is_resumed()),
-                "{} is both saved and resumed",
-                reg.type_name
-            );
-        }
-    }
-
-    /// **A marker is a component, and a scene has to record it.**
-    ///
-    /// `ActiveEvents` and `AudioListener` carried
-    /// `#[component(no_serializable)]`, which does not mean "runtime state" —
-    /// it drops the `ComponentRegistration` outright, so no serializer ever
-    /// knew the type existed. Saving a scene and loading it back removed both:
-    /// the collider stopped reporting contacts, and the scene came back deaf.
-    /// `provenance_of` returning `None` is the shape of that bug.
-    #[test]
-    fn a_marker_component_is_registered_and_authored() {
-        for marker in ["ActiveEvents", "AudioListener"] {
-            assert_eq!(
-                provenance_of(marker),
-                Some(ComponentProvenance::Authored),
-                "{marker} must be recorded in a scene — somebody put it there on purpose"
-            );
-        }
-    }
-
-    /// The components a user actually authors keep the default, including the
-    /// two whose registration is hand-written rather than derive-generated.
-    #[test]
-    fn authored_components_keep_the_default() {
-        for name in [
-            "Transform",
-            "Camera",
-            "Light",
-            "Tag",
-            "MeshRef",
-            "MaterialRef",
-        ] {
-            assert_eq!(
-                provenance_of(name),
-                Some(ComponentProvenance::Authored),
-                "{name} should be author-written"
-            );
-        }
-    }
-
-    /// The two halves of the hierarchy edge are classified differently, and
-    /// the asymmetry is the point.
-    ///
-    /// `Parent` is written by the reparent action, so it persists and a
-    /// duplicate keeps it — but nobody adds one from a menu, hence
-    /// `ToolAuthored`. `Children` is merely the inverse index rebuilt from it,
-    /// so it is `Derived` and must never be copied verbatim.
-    #[test]
-    fn parent_and_children_are_classified_asymmetrically() {
-        let parent = provenance_of("Parent").expect("Parent is registered");
-        let children = provenance_of("Children").expect("Children is registered");
-
-        assert!(!parent.is_hand_authorable());
-        assert!(parent.is_copied_on_duplicate());
-
-        assert!(!children.is_hand_authorable());
-        assert!(!children.is_copied_on_duplicate());
-    }
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
     use crate::ecs::component::Component;
@@ -599,6 +479,125 @@ mod tests {
                 "{} did not round-trip through a record",
                 reg.type_name
             );
+        }
+    }
+
+    mod provenance_tests {
+        use super::super::*;
+
+        /// Locks the classification of the components whose provenance is not the
+        /// default. Each of these was previously encoded in a hand-maintained list
+        /// somewhere else in the workspace; if one silently reverts to `Authored`
+        /// it would reappear in "Add Component" and be copied on duplicate.
+        #[test]
+        fn engine_written_components_are_classified() {
+            // Recomputed by `transform_propagation` from Transform + Parent.
+            assert_eq!(
+                provenance_of("GlobalTransform"),
+                Some(ComponentProvenance::Derived)
+            );
+            // Inverse index of `Parent`, maintained by `World::set_parent`.
+            // Copying it would make a duplicate claim the original's children.
+            assert_eq!(
+                provenance_of("Children"),
+                Some(ComponentProvenance::Derived)
+            );
+            // Set by dragging in the scene tree; persists and must survive a
+            // duplicate, but adding an empty one by hand is meaningless.
+            assert_eq!(
+                provenance_of("Parent"),
+                Some(ComponentProvenance::ToolAuthored)
+            );
+            // Debug output of the physics writeback.
+            assert_eq!(
+                provenance_of("PhysicsDebugData"),
+                Some(ComponentProvenance::Runtime)
+            );
+        }
+
+        /// No Rust component is resumable: what a game save resumes a behavior
+        /// from is its state companion, a declared component. Marking one is a
+        /// decision about how its domain reads it back on load, not a flag to set
+        /// in passing.
+        #[test]
+        fn no_rust_component_is_resumed() {
+            let resumed: Vec<&str> = inventory::iter::<ComponentRegistration>
+                .into_iter()
+                .filter(|reg| reg.is_resumed())
+                .map(|reg| reg.type_name)
+                .collect();
+            assert!(resumed.is_empty(), "{resumed:?}");
+        }
+
+        /// Resumable is about what the engine wrote: no component an author or a
+        /// tool writes is also resumed, so a save never holds a value twice.
+        #[test]
+        fn a_resumed_component_is_never_also_saved() {
+            for reg in inventory::iter::<ComponentRegistration> {
+                assert!(
+                    !(reg.is_saved() && reg.is_resumed()),
+                    "{} is both saved and resumed",
+                    reg.type_name
+                );
+            }
+        }
+
+        /// **A marker is a component, and a scene has to record it.**
+        ///
+        /// `ActiveEvents` and `AudioListener` carried
+        /// `#[component(no_serializable)]`, which does not mean "runtime state" —
+        /// it drops the `ComponentRegistration` outright, so no serializer ever
+        /// knew the type existed. Saving a scene and loading it back removed both:
+        /// the collider stopped reporting contacts, and the scene came back deaf.
+        /// `provenance_of` returning `None` is the shape of that bug.
+        #[test]
+        fn a_marker_component_is_registered_and_authored() {
+            for marker in ["ActiveEvents", "AudioListener"] {
+                assert_eq!(
+                    provenance_of(marker),
+                    Some(ComponentProvenance::Authored),
+                    "{marker} must be recorded in a scene — somebody put it there on purpose"
+                );
+            }
+        }
+
+        /// The components a user actually authors keep the default, including the
+        /// two whose registration is hand-written rather than derive-generated.
+        #[test]
+        fn authored_components_keep_the_default() {
+            for name in [
+                "Transform",
+                "Camera",
+                "Light",
+                "Tag",
+                "MeshRef",
+                "MaterialRef",
+            ] {
+                assert_eq!(
+                    provenance_of(name),
+                    Some(ComponentProvenance::Authored),
+                    "{name} should be author-written"
+                );
+            }
+        }
+
+        /// The two halves of the hierarchy edge are classified differently, and
+        /// the asymmetry is the point.
+        ///
+        /// `Parent` is written by the reparent action, so it persists and a
+        /// duplicate keeps it — but nobody adds one from a menu, hence
+        /// `ToolAuthored`. `Children` is merely the inverse index rebuilt from it,
+        /// so it is `Derived` and must never be copied verbatim.
+        #[test]
+        fn parent_and_children_are_classified_asymmetrically() {
+            let parent = provenance_of("Parent").expect("Parent is registered");
+            let children = provenance_of("Children").expect("Children is registered");
+
+            assert!(!parent.is_hand_authorable());
+            assert!(parent.is_copied_on_duplicate());
+
+            assert!(!children.is_hand_authorable());
+            assert!(!children.is_copied_on_duplicate());
         }
     }
 }

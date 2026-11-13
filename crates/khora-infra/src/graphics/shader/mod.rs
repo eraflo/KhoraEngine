@@ -28,12 +28,4 @@
 pub const EGUI_WGSL: &str = include_str!("shaders/standalone/egui.wgsl");
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn egui_shader_valid() {
-        assert!(EGUI_WGSL.contains("@vertex"));
-        assert!(EGUI_WGSL.contains("@fragment"));
-    }
-}
+mod tests;

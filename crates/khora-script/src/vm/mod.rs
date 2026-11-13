@@ -50,9 +50,6 @@ mod rows;
 pub mod site;
 pub mod value;
 
-#[cfg(test)]
-mod tests;
-
 pub use instruction::{Instruction, Reg, WriteMode};
 pub use program::{
     BehaviorLayout, DeclaredComponent, DeclaredField, DeclaredKind, EventSignature, Function,
@@ -1086,3 +1083,6 @@ enum Step {
     /// A frame was popped.
     Returned,
 }
+
+#[cfg(test)]
+mod tests;

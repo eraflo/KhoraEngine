@@ -20,8 +20,6 @@ mod decision_view;
 mod planning;
 mod profile;
 pub mod protocol;
-#[cfg(test)]
-mod tests;
 
 pub use correction::Correction;
 pub use decision_trace::{DecisionTrace, EpochRecord, FrameSummary};
@@ -176,3 +174,6 @@ impl AgentHints {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -26,12 +26,12 @@ pub mod trust;
 pub mod viewport;
 pub mod workbench;
 
-#[cfg(test)]
-mod tests;
-
 pub use asset_browser::AssetBrowserPanel;
 pub use console::ConsolePanel;
 pub use control_plane::ControlPlanePanel;
 pub use properties::PropertiesPanel;
 pub use scene_tree::SceneTreePanel;
 pub use viewport::ViewportPanel;
+
+#[cfg(test)]
+mod tests;

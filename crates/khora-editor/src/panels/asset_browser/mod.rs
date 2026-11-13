@@ -49,8 +49,6 @@ mod naming;
 mod new_script;
 mod panel;
 mod parts;
-#[cfg(test)]
-mod tests;
 
 const HEADER_HEIGHT: f32 = 34.0;
 
@@ -548,3 +546,6 @@ impl AssetBrowserPanel {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

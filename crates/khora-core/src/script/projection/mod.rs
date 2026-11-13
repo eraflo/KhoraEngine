@@ -27,9 +27,6 @@ use crate::ecs::entity::EntityId;
 
 use super::{ComponentName, ScriptValue, WorldCommand};
 
-#[cfg(test)]
-mod tests;
-
 /// A copy of one component column, read row by row as script values.
 pub trait ColumnSnapshot: Send + Sync {
     /// The number of rows.
@@ -472,3 +469,6 @@ fn merged(copy: ScriptValue, patch: &ScriptValue) -> ScriptValue {
     }
     ScriptValue::Struct(fields)
 }
+
+#[cfg(test)]
+mod tests;

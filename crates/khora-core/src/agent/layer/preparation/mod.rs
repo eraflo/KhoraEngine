@@ -31,9 +31,6 @@ use crate::EngineContext;
 
 use super::Layer;
 
-#[cfg(test)]
-mod tests;
-
 /// What a preparation's job runs: given a context, it lends the inputs,
 /// prepares the lane and returns the layer — or says why it could not.
 type Job = Box<dyn FnOnce(&mut EngineContext<'_>) -> Result<Box<dyn Layer>, String> + Send>;
@@ -131,3 +128,6 @@ impl PreparedLayer {
         self.outcome
     }
 }
+
+#[cfg(test)]
+mod tests;

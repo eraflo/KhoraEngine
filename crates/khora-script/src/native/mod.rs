@@ -48,9 +48,6 @@ pub mod operators;
 pub mod ty;
 pub mod world;
 
-#[cfg(test)]
-mod tests;
-
 pub use builtins::builtins;
 pub use convert::ScriptType;
 pub use ty::NativeTy;
@@ -77,3 +74,6 @@ pub use host::Host;
 pub fn accessor_name(engine_type: &str, field: &str) -> String {
     format!("{engine_type}.{field}")
 }
+
+#[cfg(test)]
+mod tests;

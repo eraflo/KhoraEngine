@@ -50,9 +50,6 @@ mod structs;
 pub(crate) use structs::engine_constant;
 pub mod ty;
 
-#[cfg(test)]
-mod tests;
-
 use binding::CallSite;
 pub use binding::{Bound, FnInfo};
 pub use scope::Scopes;
@@ -689,3 +686,6 @@ fn named_component(
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests;

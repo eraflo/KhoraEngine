@@ -22,8 +22,6 @@ use khora_sdk::editor_ui::*;
 use crate::camera::EditorCamera;
 
 mod overlays;
-#[cfg(test)]
-mod tests;
 
 /// The viewport target size, in pixels, for a panel rect `[x, y, w, h]` in
 /// physical pixels: `w` × `h` rounded to the nearest pixel, at least 1 on each
@@ -652,3 +650,6 @@ impl ViewportPanel {
         khora_tool_ui::widgets::sign(ui, &self.theme, [cx, cy], size, 0.05);
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -36,8 +36,6 @@ use super::ScriptValue;
 
 mod de;
 mod ser;
-#[cfg(test)]
-mod tests;
 
 /// The serde name an [`EntityId`](crate::ecs::entity::EntityId) is written
 /// under.
@@ -67,3 +65,6 @@ pub fn to_value<T: Serialize + ?Sized>(value: &T) -> Result<ScriptValue, ValueSe
 pub fn from_value<T: DeserializeOwned>(value: &ScriptValue) -> Result<T, ValueSerdeError> {
     T::deserialize(de::Reader(value))
 }
+
+#[cfg(test)]
+mod tests;

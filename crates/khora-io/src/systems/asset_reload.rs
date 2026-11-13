@@ -541,7 +541,7 @@ mod tests {
         /// resolver — and the frames after it until what they asked for is
         /// decoded off the frame and taken in at a boundary.
         fn tick(&self, world: &mut World) {
-            crate::systems::asset_intake::test_support::settle(&self.runtime, world, |world| {
+            crate::systems::asset_intake::tests::settle(&self.runtime, world, |world| {
                 let mut deck = OutputDeck::default();
                 for name in ["asset_reload", "asset_resolver"] {
                     (data_system(name).run)(
@@ -583,13 +583,13 @@ mod tests {
         /// filed, decoded and received under its lease. Returns how many
         /// requests it took.
         fn decode(&self) -> usize {
-            crate::systems::asset_intake::test_support::decode_filed(&self.runtime)
+            crate::systems::asset_intake::tests::decode_filed(&self.runtime)
         }
 
         /// [`Self::decode`], with `during` done by the host once the decodes
         /// ran and before the frame start receives them.
         fn decode_while(&self, during: impl FnOnce()) -> usize {
-            crate::systems::asset_intake::test_support::decode_filed_while(&self.runtime, during)
+            crate::systems::asset_intake::tests::decode_filed_while(&self.runtime, during)
         }
 
         /// Rewrites the file at `rel` under the assets folder.

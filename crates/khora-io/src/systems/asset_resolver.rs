@@ -451,7 +451,7 @@ mod tests {
     /// frame and taken in at a boundary (the runtime holds the reserve the
     /// `loading` family stages into).
     fn resolve_settled(world: &mut World, runtime: &Runtime) {
-        crate::systems::asset_intake::test_support::settle(runtime, world, |world| {
+        crate::systems::asset_intake::tests::settle(runtime, world, |world| {
             asset_resolver_system(
                 world,
                 runtime,
@@ -1034,7 +1034,7 @@ mod tests {
                     .into_iter()
                     .find(|system| system.name == "asset_reload")
                     .expect("`asset_reload` is registered");
-                crate::systems::asset_intake::test_support::settle(&self.runtime, world, |world| {
+                crate::systems::asset_intake::tests::settle(&self.runtime, world, |world| {
                     let mut deck = OutputDeck::default();
                     (asset_reload.run)(
                         world,

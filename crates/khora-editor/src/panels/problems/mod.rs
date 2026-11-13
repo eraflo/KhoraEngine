@@ -22,9 +22,6 @@
 
 pub(crate) mod view;
 
-#[cfg(test)]
-mod tests;
-
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -374,3 +371,6 @@ impl EditorPanel for ProblemsPanel {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -45,9 +45,6 @@ pub(crate) mod project_open;
 mod startup;
 mod trust_view;
 
-#[cfg(test)]
-mod tests;
-
 pub struct EditorApp {
     camera: Arc<Mutex<EditorCamera>>,
     editor_state: Arc<Mutex<EditorState>>,
@@ -478,3 +475,6 @@ impl khora_sdk::PhaseProvider for EditorApp {
         Vec::new()
     }
 }
+
+#[cfg(test)]
+mod tests;

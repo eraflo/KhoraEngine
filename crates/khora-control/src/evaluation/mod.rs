@@ -19,8 +19,6 @@
 mod replay;
 mod scenarios;
 mod simulation;
-#[cfg(test)]
-mod tests;
 
 use crate::gorna::arbiter::{Arbiter, Greedy};
 
@@ -72,3 +70,6 @@ impl Arbiters {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

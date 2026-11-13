@@ -29,8 +29,8 @@
 mod demand;
 mod interest;
 
-#[cfg(test)]
-mod tests;
-
 pub use demand::Demand;
 pub use interest::Interest;
+
+#[cfg(test)]
+mod tests;

@@ -46,9 +46,6 @@ mod apply;
 mod json;
 mod prefab_spawn;
 
-#[cfg(test)]
-mod tests;
-
 pub use apply::ApplyError;
 
 use crate::ecs::SystemContext;
@@ -218,3 +215,6 @@ fn is_behavior(world: &World, component: &str) -> bool {
                 .is_some()
         })
 }
+
+#[cfg(test)]
+mod tests;
