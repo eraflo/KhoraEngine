@@ -18,7 +18,7 @@ snapshot, atomic loads, game saves and prefab links.
   `schema`/`schema_complete`, snapshot fns, inspector `to_json`/`from_json`) in
   `crates/khora-data/src/scene/component_registration.rs`.
 - Flows / DataSystems: `crates/khora-data/src/flow/`, `crates/khora-data/src/ecs/systems/`.
-- Derive macro: `crates/khora-macros/src/component.rs`.
+- Derive macro: `crates/khora-macros/src/component/` (`mod.rs` the derive, one file per part it builds).
 - Persistence: `crates/khora-data/src/scene/` — `record/` (`Record`, `LoadReport` in `report.rs`),
   `scene_record.rs` (`SceneRecord`, `PageRecord`, `InstanceRecord`), `capture.rs`, `apply.rs`
   (`prepare`/`Prepared`/`Identity`), `encoding/`, `snapshot/`, `save.rs` (`SaveRecord`), `prefab/`,

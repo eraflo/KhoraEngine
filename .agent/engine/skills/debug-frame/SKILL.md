@@ -11,7 +11,7 @@ description: Investigates a per-frame problem or a GORNA budget decision — wro
 2. **Locate** the path with codegraph: `codegraph_trace` from the agent's `execute` to the lane, or from
    `offer → allocate → decide → apply`.
 3. **Inspect the descent**: which row did the agent choose, within which envelope (`Report.over_budget`)?
-   The share is in `crates/khora-control/src/gorna/decide.rs`; cost prediction in `cost_model.rs`;
+   The share is `decide` in `crates/khora-control/src/gorna/decide.rs` (admission, plan, share in its siblings); cost prediction in `cost_model.rs`;
    the multiplier in `crates/khora-control/src/governor/mod.rs`.
 4. **Substrate vs descent**: confirm whether the issue is in Pass A (DataSystems/Flows publishing Views) or
    Pass B (agent → lane). A missing/stale `View` in the `LaneBus` is a common cause of "nothing renders".

@@ -14,9 +14,29 @@
 
 # --- non_test_code_under_700_lines -------------------------------------------
 
-non_test_code_under_700_lines crates/khora-infra/src/graphics/wgpu/device/graphics_device.rs  # one `impl GraphicsDevice for WgpuDevice` block; a trait impl cannot span files, splitting it means delegating to inherent methods — a code change, not a move (B3)
-non_test_code_under_700_lines crates/khora-infra/src/ui/egui/ui_builder.rs  # 959 non-test lines; not itemised in B2 yet
-non_test_code_under_700_lines crates/khora-script/src/vm/mod.rs  # 828 non-test lines; split by the Ergon specs (02, 04, 05, 09)
+
+# --- functions_under_200_lines -----------------------------------------------
+
+functions_under_200_lines crates/khora-control/src/analysis/mod.rs::analyze  # 217 lines; split along what it does after the P7 file splits
+functions_under_200_lines crates/khora-control/src/dcc_service/decision_loop.rs::start  # 561 lines; split along what it does after the P7 file splits
+functions_under_200_lines crates/khora-data/src/scene/apply.rs::prepare_pages  # 201 lines; split along what it does after the P7 file splits
+functions_under_200_lines crates/khora-editor/src/input.rs::process_events  # 253 lines; split along what it does after the P7 file splits
+functions_under_200_lines crates/khora-editor/src/panels/asset_browser/panel.rs::ui  # 631 lines; split along what it does after the P7 file splits
+functions_under_200_lines crates/khora-editor/src/panels/command_palette.rs::ui  # 366 lines; split along what it does after the P7 file splits
+functions_under_200_lines crates/khora-editor/src/panels/console.rs::ui  # 205 lines; split along what it does after the P7 file splits
+functions_under_200_lines crates/khora-editor/src/panels/problems/mod.rs::ui  # 253 lines; split along what it does after the P7 file splits
+functions_under_200_lines crates/khora-editor/src/panels/scene_tree/panel.rs::ui  # 384 lines; split along what it does after the P7 file splits
+functions_under_200_lines crates/khora-editor/src/panels/scene_tree/rows.rs::render_node  # 227 lines; split along what it does after the P7 file splits
+functions_under_200_lines crates/khora-hub/src/screens/new_project.rs::show_new_project  # 284 lines; split along what it does after the P7 file splits
+functions_under_200_lines crates/khora-infra/src/platform/winit/input.rs::map_keycode  # 213 lines; split along what it does after the P7 file splits
+functions_under_200_lines crates/khora-infra/src/ui/egui/shell.rs::show_frame  # 278 lines; split along what it does after the P7 file splits
+functions_under_200_lines crates/khora-lanes/src/render/forward_plus/render.rs::record  # 286 lines; split along what it does after the P7 file splits
+functions_under_200_lines crates/khora-lanes/src/script/frame.rs::run_behaviors  # 624 lines; split along what it does after the P7 file splits
+functions_under_200_lines crates/khora-script/src/bytecode/fingerprint.rs::instruction  # 308 lines; split along what it does after the P7 file splits
+functions_under_200_lines crates/khora-script/src/types/expr.rs::check_expr_kind  # 201 lines; split along what it does after the P7 file splits
+functions_under_200_lines crates/khora-script/src/vm/commands.rs::step_command  # 263 lines; split along what it does after the P7 file splits
+functions_under_200_lines crates/khora-tool-ui/src/widgets/film/door.rs::paint  # 390 lines; split along what it does after the P7 file splits
+functions_under_200_lines crates/khora-tool-ui/src/widgets/film/sign.rs::paint  # 207 lines; split along what it does after the P7 file splits
 
 # --- wgsl_only_in_shader_tree (T9) -------------------------------------------
 
@@ -99,7 +119,6 @@ constants_come_before_the_code crates/khora-script/src/native/builtins.rs  # a c
 constants_come_before_the_code crates/khora-script/src/native/world.rs  # a const or static below the code; moved above it in P7
 constants_come_before_the_code crates/khora-script/src/types/structs.rs  # a const or static below the code; moved above it in P7
 constants_come_before_the_code crates/khora-script/src/types/ty.rs  # a const or static below the code; moved above it in P7
-constants_come_before_the_code crates/khora-script/src/vm/mod.rs  # a const or static below the code; moved above it in P7
 constants_come_before_the_code crates/khora-sdk/src/engine/profiles/mod.rs  # a const or static below the code; moved above it in P7
 constants_come_before_the_code crates/khora-sdk/src/run_default/opening.rs  # a const or static below the code; moved above it in P7
 constants_come_before_the_code crates/khora-sdk/src/runtime_config.rs  # a const or static below the code; moved above it in P7
@@ -123,7 +142,5 @@ private_helpers_come_after_the_primary_type_impls crates/khora-data/src/scene/po
 private_helpers_come_after_the_primary_type_impls crates/khora-data/src/scene/scene_record.rs  # a private helper between the type and its impls; moved below them in P7
 private_helpers_come_after_the_primary_type_impls crates/khora-editor/src/app/mod.rs  # a private helper between the type and its impls; moved below them in P7
 private_helpers_come_after_the_primary_type_impls crates/khora-editor/src/panels/problems/mod.rs  # a private helper between the type and its impls; moved below them in P7
-private_helpers_come_after_the_primary_type_impls crates/khora-infra/src/ui/egui/ui_builder.rs  # a private helper between the type and its impls; moved below them in P7
-private_helpers_come_after_the_primary_type_impls crates/khora-io/src/asset/asset_service.rs  # a private helper between the type and its impls; moved below them in P7
 private_helpers_come_after_the_primary_type_impls crates/khora-sdk/src/run_default/mod.rs  # a private helper between the type and its impls; moved below them in P7
 private_helpers_come_after_the_primary_type_impls crates/khora-sdk/src/runtime_config.rs  # a private helper between the type and its impls; moved below them in P7

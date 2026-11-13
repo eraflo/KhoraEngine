@@ -26,7 +26,8 @@
 //! submodule or nested clone, whose files are another checkout's.
 //!
 //! Every check is a **ratchet**. A check reports its violations keyed by a
-//! stable repo-relative path; `xtask/tests/layout_allow.txt` lists the known
+//! stable repo-relative path (`<path>::<function>` for a function);
+//! `xtask/tests/layout_allow.txt` lists the known
 //! ones, one per line: `<check-name> <repo-relative path>  # reason`, where the
 //! reason names the batch that removes the entry (`B0`–`B6`, `P7`, or an
 //! Ergon spec). A check fails when
@@ -87,6 +88,7 @@ const RATCHETED_CHECKS: &[&str] = &[
     "retired_file_names",
     "constants_come_before_the_code",
     "private_helpers_come_after_the_primary_type_impls",
+    "functions_under_200_lines",
 ];
 
 /// Module names too generic to say what a file holds: each is shared by
@@ -5500,5 +5502,487 @@ fn after() {}
                     .to_owned(),
             ]
         )]
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Function length
+// ---------------------------------------------------------------------------
+//
+// A function reads in one sitting. The check below reads every function with
+// a body — free functions, methods in `impl` and `trait` blocks, functions
+// nested in others — in the non-test files of every Rust `src/` tree, and
+// names those longer than `MAX_FN_LINES`.
+
+/// Largest number of lines a non-test function may span, from its `fn`
+/// keyword to the brace closing its body.
+const MAX_FN_LINES: usize = 200;
+
+/// A function with a body, as the length check reads it.
+#[derive(Debug, PartialEq, Eq)]
+struct FnSpan {
+    /// 1-based line of the `fn` keyword.
+    line: usize,
+    name: String,
+    /// Lines from the `fn` keyword to the brace closing the body, both
+    /// counted.
+    lines: usize,
+}
+
+/// Every function with a body in `text`, in order, at any depth: free
+/// functions, methods of `impl` and `trait` blocks, functions nested in
+/// others. Comments and literal contents are blanked first. Not read: a
+/// function without a body (`fn f();` in a trait), a function type
+/// (`fn(u8) -> u8`), a name a macro builds (`fn $name`, `fn #name`), and
+/// anything inside an item under `#[cfg(test)]` (an inline test module, a
+/// test helper, a test-only `impl`).
+fn function_spans(text: &str) -> Vec<FnSpan> {
+    let code = blank_literals(&strip_rust_comments(text));
+    let chars: Vec<char> = code.chars().collect();
+    let mut line_at = Vec::with_capacity(chars.len());
+    let mut line = 1usize;
+    for &ch in &chars {
+        line_at.push(line);
+        if ch == '\n' {
+            line += 1;
+        }
+    }
+    let tests = cfg_test_item_ranges(&chars);
+    let in_tests = |at: usize| tests.iter().any(|range| range.contains(&at));
+    let mut spans = Vec::new();
+    let mut i = 0usize;
+    while i + 2 < chars.len() {
+        let keyword = chars[i] == 'f'
+            && chars[i + 1] == 'n'
+            && chars[i + 2].is_whitespace()
+            && (i == 0 || !is_ident_char(chars[i - 1]));
+        if !keyword || in_tests(i) {
+            i += 1;
+            continue;
+        }
+        let mut at = i + 2;
+        while chars.get(at).is_some_and(|ch| ch.is_whitespace()) {
+            at += 1;
+        }
+        let name: String = chars[at..]
+            .iter()
+            .take_while(|&&ch| is_ident_char(ch))
+            .collect();
+        if !name.starts_with(|ch: char| ch.is_alphabetic() || ch == '_') {
+            i += 2;
+            continue;
+        }
+        at += name.chars().count();
+        // The body opens at the first `{` outside parentheses and brackets;
+        // a `;` there first means no body.
+        let mut depth = 0usize;
+        let mut open = None;
+        for (j, &ch) in chars.iter().enumerate().skip(at) {
+            match ch {
+                '(' | '[' => depth += 1,
+                ')' | ']' => depth = depth.saturating_sub(1),
+                '{' if depth == 0 => {
+                    open = Some(j);
+                    break;
+                }
+                ';' if depth == 0 => break,
+                _ => {}
+            }
+        }
+        if let Some(open) = open {
+            let mut braces = 0usize;
+            let mut close = chars.len() - 1;
+            for (j, &ch) in chars.iter().enumerate().skip(open) {
+                match ch {
+                    '{' => braces += 1,
+                    '}' => {
+                        braces -= 1;
+                        if braces == 0 {
+                            close = j;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            spans.push(FnSpan {
+                line: line_at[i],
+                name,
+                lines: line_at[close] - line_at[i] + 1,
+            });
+        }
+        i = at;
+    }
+    spans
+}
+
+/// The character ranges of `chars` (comments and literals blanked) held by
+/// an item under `#[cfg(test)]` or `#[cfg(all(test, …))]`, at any depth: from
+/// the attribute to the `;` ending the item or the brace closing its body.
+fn cfg_test_item_ranges(chars: &[char]) -> Vec<std::ops::Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut i = 0usize;
+    while i < chars.len() {
+        if chars[i] != '#' || chars.get(i + 1) != Some(&'[') {
+            i += 1;
+            continue;
+        }
+        let attr_end = closing_bracket(chars, i + 1);
+        let attr: String = chars[i..attr_end].iter().collect();
+        if !is_cfg_test(&attr) {
+            i = attr_end;
+            continue;
+        }
+        let mut depth = 0usize;
+        let mut end = chars.len();
+        for (j, &ch) in chars.iter().enumerate().skip(attr_end) {
+            match ch {
+                '(' | '[' | '{' => depth += 1,
+                ')' | ']' | '}' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 && ch == '}' {
+                        end = j + 1;
+                        break;
+                    }
+                }
+                ';' if depth == 0 => {
+                    end = j + 1;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        ranges.push(i..end);
+        i = end;
+    }
+    ranges
+}
+
+/// Per non-test file under `root`: each function with a body spanning more
+/// than `max` lines (`function_spans`), keyed `<path>::<name>`.
+fn long_function_violations(root: &Path, max: usize) -> Violations {
+    let mut violations = Violations::new();
+    for src in rust_src_roots(root) {
+        for (path, text) in non_test_rust_files(&src) {
+            let path = rel(root, &path);
+            for span in function_spans(&text)
+                .into_iter()
+                .filter(|span| span.lines > max)
+            {
+                add(
+                    &mut violations,
+                    format!("{path}::{}", span.name),
+                    format!(
+                        "line {}: `fn {}` spans {} lines",
+                        span.line, span.name, span.lines
+                    ),
+                );
+            }
+        }
+    }
+    violations
+}
+
+/// A non-test function spans at most `MAX_FN_LINES` lines, from its `fn`
+/// keyword to the brace closing its body: free functions, methods of `impl`
+/// and `trait` blocks, nested functions alike. Keyed by `<file>::<function>`.
+#[test]
+fn functions_under_200_lines() {
+    ratchet(
+        "functions_under_200_lines",
+        &format!("functions over {MAX_FN_LINES} lines (split them along what they do)"),
+        &long_function_violations(&repo_root(), MAX_FN_LINES),
+    );
+}
+
+/// The function reader measures a free function, a method in an `impl`, a
+/// default method in a `trait` and a function nested in another, from the
+/// `fn` line to the closing brace; it skips a declaration without a body, a
+/// function type, a macro-built name, braces in a string, a `;` in an array
+/// type, and every function under `#[cfg(test)]` (a helper, an inline test
+/// module, a test-only `impl`).
+#[test]
+fn function_spans_reads_every_function_with_a_body() {
+    const TEXT: &str = "\
+pub fn free(x: [u8; 4]) -> u8 {
+    let s = \"} not the end {\";
+    x[0]
+}
+pub struct S;
+impl S {
+    pub(crate) fn method(&self) {
+        fn nested() {
+        }
+    }
+}
+pub trait T {
+    fn declared(&self);
+    fn defaulted(&self) -> fn(u8) -> u8 {
+        |x| x
+    }
+}
+macro_rules! make {
+    ($name:ident) => {
+        fn $name() {}
+    };
+}
+#[cfg(test)]
+fn test_helper() {
+}
+#[cfg(test)]
+impl S {
+    fn test_only(&self) {}
+}
+#[cfg(test)]
+mod tests {
+    fn in_tests() {
+    }
+}
+";
+    let spans = function_spans(TEXT);
+    let found: Vec<(usize, &str, usize)> = spans
+        .iter()
+        .map(|span| (span.line, span.name.as_str(), span.lines))
+        .collect();
+    assert_eq!(
+        found,
+        vec![
+            (1, "free", 4),
+            (7, "method", 4),
+            (8, "nested", 2),
+            (14, "defaulted", 3),
+        ]
+    );
+}
+
+/// The function length check names each function longer than the bound in a
+/// non-test file, keyed `<path>::<name>`, a method as well as a free
+/// function; it passes a function at the bound, a long function in a test
+/// file (`tests.rs`, a file under `tests/`, a `#[cfg(test)] mod` file) and a
+/// long test in an inline test module.
+#[test]
+fn function_length_check_names_each_function_over_the_bound() {
+    let dir = std::env::temp_dir().join(format!(
+        "khora-layout-fn-length-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    // Spans 5 lines: over a bound of 4.
+    const LONG: &str = "fn long() {\n    let a = 1;\n    let b = 2;\n    let _ = a + b;\n}\n";
+    // Spans 4 lines: at the bound.
+    const AT_BOUND: &str = "fn at_bound() {\n    let a = 1;\n    let _ = a;\n}\n";
+    let methods =
+        "pub struct Big;\nimpl Big {\n    pub fn grow(&self) {\n        let a = 1;\n        \
+                   let b = 2;\n        let _ = a + b;\n    }\n}\n";
+    let inline_tests = format!("{AT_BOUND}#[cfg(test)]\nmod tests {{\n{LONG}}}\n");
+    let files: Vec<(&str, &str)> = vec![
+        (
+            "crates/alpha/src/lib.rs",
+            "mod free;\nmod methods;\nmod inline;\n#[cfg(test)]\nmod checks;\n",
+        ),
+        ("crates/alpha/src/free.rs", LONG),
+        ("crates/alpha/src/methods.rs", methods),
+        ("crates/alpha/src/inline.rs", &inline_tests),
+        ("crates/alpha/src/checks.rs", LONG),
+        ("crates/alpha/src/free/tests.rs", LONG),
+        ("crates/alpha/src/tests/long.rs", LONG),
+    ];
+    let setup = write_order_tree(&dir, &files);
+    let violations = long_function_violations(&dir, 4);
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+
+    assert_eq!(
+        violation_list(violations),
+        vec![
+            (
+                "crates/alpha/src/free.rs::long".to_owned(),
+                vec!["line 1: `fn long` spans 5 lines".to_owned()]
+            ),
+            (
+                "crates/alpha/src/methods.rs::grow".to_owned(),
+                vec!["line 3: `fn grow` spans 5 lines".to_owned()]
+            ),
+        ]
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The large files of the in-file split
+// ---------------------------------------------------------------------------
+//
+// The files the cleanup splits along their responsibilities, each with the
+// non-test lines it may keep once split. A bound is about what the planned
+// split leaves, with a margin, and below the file's size before the split,
+// so the check fails until the split lands. `non_test_code_under_700_lines`
+// and `functions_under_200_lines` keep the result; this list goes once every
+// file is split.
+//
+// `crates/khora-infra/src/ui/egui/ui_builder.rs` is not listed: it is one
+// `impl UiBuilder for EguiUiBuilder` of about ninety methods, each of which
+// stays in the file as at least a delegating method, so what it keeps cannot
+// be bounded much below `MAX_NON_TEST_LINES`, which already holds it.
+
+/// Each file to split, with the non-test lines it may keep (its folder's
+/// `mod.rs` when it becomes a folder module).
+const LARGE_FILES: &[(&str, usize)] = &[
+    // 1196 lines, one trait impl: its methods delegate to inherent methods in
+    // sibling files (pipelines, buffers, textures, bind groups); about 31
+    // delegating methods and the device queries stay.
+    (
+        "crates/khora-infra/src/graphics/wgpu/device/graphics_device.rs",
+        400,
+    ),
+    // 1088 lines: the fault, the step, the frames and the register file
+    // leave; `Machine`, its run loop and its accessors stay.
+    ("crates/khora-script/src/vm/mod.rs", 500),
+    // 700 lines, one derive: attributes, fields, SoA, mirror, schema and
+    // registration each in their file under `component/`.
+    ("crates/khora-macros/src/component.rs", 400),
+    // 700 lines: the progress, the advance and the park leave.
+    ("crates/khora-lanes/src/script/turn.rs", 400),
+    // 695 lines: the round, the admission, the plan, the share and the units.
+    ("crates/khora-control/src/gorna/decide.rs", 400),
+    // 665 non-test lines: the defaults, the engine resources, the phase
+    // order and the scheduler's boot leave.
+    ("crates/khora-sdk/src/engine/bootstrap.rs", 400),
+    // 529 lines: the lending and the layers leave.
+    ("crates/khora-control/src/scheduler/frame.rs", 400),
+    // 362 lines: the panic guard and the pooled run (about 60 lines) leave.
+    ("crates/khora-control/src/scheduler/execution.rs", 320),
+    // 465 lines: the render frame (about 230 lines) and the app update leave.
+    ("crates/khora-sdk/src/engine/frame.rs", 300),
+    // 697 non-test lines: the type-erased store, the sub-assets and the
+    // invalidation with its announcements leave.
+    ("crates/khora-io/src/asset/asset_service.rs", 450),
+];
+
+/// Files of `LARGE_FILES` whose tests leave them for a `tests.rs` or a
+/// `tests/` folder beside them.
+const LARGE_FILES_WITHOUT_INLINE_TESTS: &[&str] = &["crates/khora-io/src/asset/asset_service.rs"];
+
+/// The file `path` (relative to `root`) is now: itself, or its folder's
+/// `mod.rs` when it became a folder module; `None` when neither exists.
+fn split_file_now(root: &Path, path: &str) -> Option<PathBuf> {
+    let file = root.join(path);
+    if file.is_file() {
+        return Some(file);
+    }
+    let folder_mod = file.with_extension("").join("mod.rs");
+    folder_mod.is_file().then_some(folder_mod)
+}
+
+/// Each file of `files` (relative to `root`) holding more non-test lines
+/// than its bound, and each of `without_inline_tests` still holding an
+/// inline test module, as `<path>: …`. A file gone entirely (neither it nor
+/// its folder's `mod.rs`) is split.
+fn large_file_problems(
+    root: &Path,
+    files: &[(&str, usize)],
+    without_inline_tests: &[&str],
+) -> Vec<String> {
+    let mut problems = Vec::new();
+    for (path, bound) in files {
+        let Some(now) = split_file_now(root, path) else {
+            continue;
+        };
+        let lines = non_test_lines(&read_text(&now));
+        if lines > *bound {
+            problems.push(format!(
+                "{}: {lines} non-test lines, more than {bound} (split it along its \
+                 responsibilities)",
+                rel(root, &now)
+            ));
+        }
+    }
+    for path in without_inline_tests {
+        let Some(now) = split_file_now(root, path) else {
+            continue;
+        };
+        let inline: Vec<String> = top_level_items(&read_text(&now))
+            .iter()
+            .filter(|item| item.is_inline_test_module())
+            .map(|item| format!("`{}` (line {})", item.name, item.line))
+            .collect();
+        if !inline.is_empty() {
+            problems.push(format!(
+                "{}: inline test module {} (move its tests to `tests.rs` or `tests/`)",
+                rel(root, &now),
+                inline.join(", ")
+            ));
+        }
+    }
+    problems.sort();
+    problems
+}
+
+/// The large files are split along their responsibilities: each file of
+/// `LARGE_FILES` (or its folder's `mod.rs`) holds at most its bound of
+/// non-test lines, and the asset service holds no inline test module.
+/// Strict.
+#[test]
+fn the_large_files_are_split() {
+    let problems = large_file_problems(&repo_root(), LARGE_FILES, LARGE_FILES_WITHOUT_INLINE_TESTS);
+    assert!(
+        problems.is_empty(),
+        "{} large files are not split yet:\n  {}",
+        problems.len(),
+        problems.join("\n  ")
+    );
+}
+
+/// The large-file check measures a file, or its folder's `mod.rs` once it is
+/// a folder module, against its bound, counting only the lines above its
+/// inline test module; it names an inline test module in a file that must
+/// hold none, and passes a file gone entirely.
+#[test]
+fn large_file_check_names_a_file_over_its_bound_or_holding_its_tests() {
+    let dir = std::env::temp_dir().join(format!(
+        "khora-layout-large-files-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    let four = "fn a() {}\nfn b() {}\nfn c() {}\nfn d() {}\n";
+    let tested = format!("fn a() {{}}\n#[cfg(test)]\nmod tests {{\n{four}}}\n");
+    let files: Vec<(&str, &str)> = vec![
+        ("crates/alpha/src/big.rs", four),
+        ("crates/alpha/src/folder/mod.rs", four),
+        ("crates/alpha/src/small.rs", "fn a() {}\n"),
+        ("crates/alpha/src/tested.rs", &tested),
+        ("crates/alpha/src/moved_out/mod.rs", "mod tests;\n"),
+    ];
+    let setup = write_order_tree(&dir, &files);
+    let problems = large_file_problems(
+        &dir,
+        &[
+            ("crates/alpha/src/big.rs", 3),
+            ("crates/alpha/src/folder.rs", 3),
+            ("crates/alpha/src/small.rs", 3),
+            ("crates/alpha/src/tested.rs", 3),
+            ("crates/alpha/src/gone.rs", 3),
+        ],
+        &[
+            "crates/alpha/src/tested.rs",
+            "crates/alpha/src/moved_out.rs",
+        ],
+    );
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+
+    assert_eq!(
+        problems,
+        vec![
+            "crates/alpha/src/big.rs: 4 non-test lines, more than 3 (split it along its \
+             responsibilities)"
+                .to_owned(),
+            "crates/alpha/src/folder/mod.rs: 4 non-test lines, more than 3 (split it along its \
+             responsibilities)"
+                .to_owned(),
+            "crates/alpha/src/tested.rs: inline test module `tests` (line 3) (move its tests to \
+             `tests.rs` or `tests/`)"
+                .to_owned(),
+        ]
     );
 }

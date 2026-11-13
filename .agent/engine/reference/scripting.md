@@ -335,7 +335,7 @@ switches it off while editing.
   `host.swept` → `ScriptRunReport.swept_rows`; the agent prices `2 µs × instances + PER_ROW (200 ns) × rows`.
 - **Watchdog.** Constants in `khora-lanes/src/script/watchdog.rs` (re-exported by `script`),
   report entry `report.rs::Slow`. `Pending.running` = game seconds a pending body *ran* without finishing:
-  the frame it starts and is cut (`turn.rs` `kept` + `park`) and every frame it is advanced and cut add `dt`;
+  the frame it starts and is cut (`park.rs` `kept` + `park`) and every frame it is advanced and cut add `dt`;
   a frame its behavior sits out repaying a debt **that body** overdrew is counted as it passes
   (`watchdog::sit_out`, from the starvation path in `frame.rs`, debtor = `FuelShares::debtor`, only when the
   share has fuel — `own > 0`); `await` waits and frames not run for any other reason add nothing; an
@@ -343,7 +343,7 @@ switches it off while editing.
   hot-reload tier; a load forgives the instance's debt (`FuelShares::forgive`). A due timer never starts,
   and a pending body is never resumed, with 0 fuel left. `WATCHDOG_WARN = 10 s`: one `log::warn!` + a
   `Slow` entry as the count crosses it. `WATCHDOG_FAULT = 60 s`: a fault like any (instance disabled,
-  `#state.fault` fingerprint-stamped, re-enabled by an edit); the body is released (`turn.rs` `release`):
+  `#state.fault` fingerprint-stamped, re-enabled by an edit); the body is released (`advance.rs` `release`):
   a timer is rearmed, a hook hands its place to the body restored behind it. Every body kind, behaviors
   and systems.
 
