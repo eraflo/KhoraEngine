@@ -11,13 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//! Pointing the engine at a project's scripts.
-//!
-//! The queues live in the engine for every application ([`install`]). What
-//! only the application knows is **where the scripts are**: a game watches the
-//! `assets/` beside its executable, the editor watches whichever project is
-//! open — and changes it while running — and a packed runtime watches nothing
-//! at all. So mounting and unmounting take the runtime shared, at any frame.
+//! Pointing the engine at a project's scripts, whose place only the application
+//! knows: [`mount`] and [`unmount`] take the runtime shared, at any frame.
 
 use khora_io::systems::shader_hot_reload::OverlaysSeen;
 use std::path::{Path, PathBuf};
@@ -40,11 +35,11 @@ use khora_io::script::project_compiler::{
 /// no project holds it as a file.
 pub const ENGINE_MODULE: &str = khora_io::script::mirror::MIRROR_MODULE;
 
-/// Whether `name` is the engine's, so no script can declare a struct, a
-/// component or a behavior by it: an engine component's — current, former or
-/// retired — an asset kind's (`Prefab`, `Sound`, …), or an event's the engine
-/// raises (`Touched`, …), which every module has in scope. Exact, as Ergon
-/// names are.
+/// Returns whether `name` is the engine's, so no script may declare a type by it.
+///
+/// The engine's names are its components' (current, former or retired), its
+/// asset kinds' (`Prefab`, `Sound`, …) and the events it raises (`Touched`, …),
+/// which every module has in scope. The match is exact, as Ergon names are.
 pub fn is_engine_name(name: &str) -> bool {
     khora_io::script::mirror::engine_component_names()
         .binary_search_by(|known| known.as_str().cmp(name))
@@ -59,19 +54,12 @@ pub use khora_io::script::compile_hub::{CompileHub, CompileTicket, CompileTicket
 pub use khora_io::script::layout::{is_script_file, module_of, SCRIPT_DIR};
 pub use khora_io::script::mounted::MountedScripts;
 
-/// Puts what scripting needs into `runtime`, each only where it is absent:
-/// the engine's [`AssetWatch`], the queues of compiled programs and of
-/// declarations, the engine's event channel, the memory of who declares
-/// what, the [`ScriptCatalog`], the script flow's demand of what scripts read,
-/// and the record of what is mounted — and the
-/// engine's [`Problems`] list, which scripts report to among others (the
-/// components' checks, the scene loads), so it is in place whether or not
-/// the application has scripts.
+/// Puts what scripting needs into `runtime`, each resource only where it is absent.
 ///
-/// For every application, by the engine — before the application's own
-/// bootstrap runs, so it may mount there, and again at the bootstrap, which
-/// finds them in place. An empty queue costs nothing; a missing one makes a
-/// subsystem that looks wired and is not.
+/// The engine runs it for every application, before the application's
+/// bootstrap, which may then mount, and again at boot. An empty queue costs
+/// nothing; a missing one would leave scripting wired in name only. It also
+/// installs the engine's [`Problems`] list, which other sources report to.
 pub fn install(runtime: &mut Runtime) {
     let resources = &mut runtime.resources;
     if resources.get::<Arc<AssetWatch>>().is_none() {
@@ -131,20 +119,16 @@ pub fn install(runtime: &mut Runtime) {
     }
 }
 
-/// Mounts the scripts under `assets_root`, at any frame: arms the root on the
-/// engine's `AssetWatch`, reports every `.erg` outside its [`SCRIPT_DIR`] to
-/// the `Problems` — never compiled — records what the root brings in, then
-/// files the compile of every module under `assets_root/scripts` with the
-/// runtime's [`CompileHub`]. The `loading` family compiles it off the frame;
-/// what it declares registers, and what it compiled to is queued, at a later
-/// frame's boundary, where its outcome is filed under the ticket returned —
-/// read it with [`outcome`]. A mount filed before the boot is compiled by the
-/// boot, before the application's `setup`.
+/// Mounts the scripts under `assets_root`, at any frame, and returns the ticket of their compile.
 ///
-/// Returns `None` when there is nothing to compile — a directory that does
-/// not exist, a root with no script folder, an engine with no reserve. A
-/// project without scripts is not an error, and neither is a packed build
-/// with no source tree.
+/// The root is watched, and each `.erg` outside its [`SCRIPT_DIR`] is reported
+/// to the `Problems`, never compiled. The compile lands at a later frame's
+/// boundary; read it with [`outcome`]. One filed before the boot is compiled
+/// before the application's `setup`.
+///
+/// Returns `None` when there is nothing to compile: no such directory, no
+/// script folder, or scripting not installed. A project without scripts is
+/// not an error.
 pub fn mount(runtime: &Runtime, assets_root: &Path) -> Option<CompileTicket> {
     if !assets_root.is_dir() {
         log::info!(
@@ -170,11 +154,9 @@ pub fn mount(runtime: &Runtime, assets_root: &Path) -> Option<CompileTicket> {
         ),
     }
 
-    // What will not run is said before anything compiles, and whether or not
-    // the root has a script folder at all: a project whose only script sits in
-    // the wrong folder is the one most in need of being told.
-    // Under the name the watch knows the root by — the one its changes carry —
-    // so the pump's rescans replace this list rather than start a second one.
+    // Misplaced scripts are reported first, script folder or not: a project
+    // whose only script sits in the wrong folder most needs telling. Under the
+    // watch's name for the root, so the pump's rescans replace this list.
     let named = watched_name(runtime, assets_root);
     if let Some(problems) = runtime.resources.get::<Arc<Problems>>() {
         khora_io::script::problems::report_misplaced(problems, &named);
@@ -211,9 +193,9 @@ pub fn mount(runtime: &Runtime, assets_root: &Path) -> Option<CompileTicket> {
     Some(ticket)
 }
 
-/// The outcome of the mount filed as `ticket`, once it landed — how many
-/// modules compiled, or why it did not land — taken: `None` while it is in
-/// flight, and once taken.
+/// Takes the outcome of the mount filed as `ticket`: how many modules compiled, or why not.
+///
+/// `None` while it is in flight, and once taken.
 pub fn outcome(runtime: &Runtime, ticket: CompileTicket) -> Option<CompileTicketOutcome> {
     runtime
         .resources
@@ -230,9 +212,9 @@ fn stage(reserve: &Reserve, compiled: Recompiled) {
     reserve.stage_from_host(staging);
 }
 
-/// The name the engine's watch knows `assets_root` by — the root as first
-/// named, whichever spelling of the folder is given now — or `assets_root`
-/// itself when it is not watched.
+/// Returns the name the engine's watch knows `assets_root` by, or `assets_root` when unwatched.
+///
+/// That name is the root as first named, whichever spelling is given now.
 fn watched_name(runtime: &Runtime, assets_root: &Path) -> PathBuf {
     runtime
         .resources
@@ -241,10 +223,11 @@ fn watched_name(runtime: &Runtime, assets_root: &Path) -> PathBuf {
         .unwrap_or_else(|| assets_root.to_path_buf())
 }
 
-/// Unmounts the scripts under `assets_root`, at any frame: disarms the root,
-/// orphans what its modules declared — kept with its data, as for a deleted
-/// file — withdraws their programs, queued or already installed, so none of
-/// them runs again, and forgets what they announced they read.
+/// Unmounts the scripts under `assets_root`, at any frame, so none of them runs again.
+///
+/// The root is no longer watched; what its modules declared is orphaned, kept
+/// with its data as for a deleted file; their programs, queued or installed,
+/// are withdrawn, and what they read is forgotten.
 pub fn unmount(runtime: &Runtime, assets_root: &Path) {
     // Read before the watch forgets it: the name the mount reported under.
     let named = watched_name(runtime, assets_root);

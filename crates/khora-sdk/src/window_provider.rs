@@ -19,21 +19,17 @@ use khora_core::platform::KhoraWindow;
 use crate::InputEvent;
 use crate::WindowConfig;
 
-/// Provides a platform window for the engine to render into.
-///
-/// The engine doesn't know about winit, SDL, or any specific windowing library.
-/// This trait abstracts window creation, event polling, and surface queries.
+/// A platform window the engine renders into, hiding the windowing library from it.
 pub trait WindowProvider: 'static {
-    /// Creates the window.
+    /// Creates the window on the native event loop `native_loop`.
     ///
-    /// The `native_loop` parameter is an opaque handle to the native event loop.
-    /// The implementation must downcast it to the correct type.
-    /// For winit: `native_loop.downcast_ref::<winit::event_loop::ActiveEventLoop>()`.
+    /// `native_loop` is opaque; the implementation downcasts it to its library's
+    /// loop type, `winit::event_loop::ActiveEventLoop` for winit.
     fn create(native_loop: &dyn std::any::Any, config: &WindowConfig) -> Self
     where
         Self: Sized;
 
-    /// Polls for window events and returns them as an iterator of raw event types.
+    /// Asks the platform to redraw the window.
     fn request_redraw(&self);
 
     /// Returns the current inner size of the window in physical pixels.
@@ -42,16 +38,15 @@ pub trait WindowProvider: 'static {
     /// Returns the current DPI scaling factor for the window.
     fn scale_factor(&self) -> f64;
 
-    /// Returns a reference to the window as a `dyn KhoraWindow` for use by the engine and agents.
+    /// Returns the window as the engine's `dyn KhoraWindow`.
     fn as_khora_window(&self) -> &dyn KhoraWindow;
 
-    /// Translates a raw window event (e.g., winit::event::Event) into an engine-agnostic `InputEvent` that can be forwarded to game logic.
+    /// Translates a raw window event into an [`InputEvent`], or `None` when it is not input.
     fn translate_event(&self, raw_event: &dyn std::any::Any) -> Option<InputEvent>;
 
-    /// Clones a long-lived handle to the raw native window as an opaque
-    /// `Arc<dyn Any>`. Used by the winit runner to insert the underlying
-    /// `Arc<winit::window::Window>` into the service registry so that
-    /// editor hooks (e.g., overlay `begin_frame`) can retrieve it without
-    /// the SDK leaking winit types into application code.
+    /// Returns a long-lived handle to the native window, as an opaque `Arc<dyn Any>`.
+    ///
+    /// The winit runner downcasts it and puts the `Arc<winit::window::Window>`
+    /// in the runtime's resources, so no winit type enters the SDK's API.
     fn clone_raw_window_arc(&self) -> std::sync::Arc<dyn std::any::Any + Send + Sync>;
 }

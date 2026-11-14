@@ -24,13 +24,11 @@ use khora_core::agent::gorna::AgentId;
 use khora_core::agent::Activation;
 use khora_core::Runtime;
 
-/// The engine's activation, every family on.
+/// Returns the engine's activation: every family linked into the binary, on.
 ///
-/// The app switches them (an editor switches its scripts, physics and audio
-/// off while it edits), and each request takes effect at the next frame
-/// boundary, so a whole frame sees one state. Known from setup on: every
-/// family linked into the binary ([`admit_families`] checks them against the
-/// registry).
+/// The app switches them from `setup` on; [`admit_families`] checks them
+/// against the registry.
+/// See the book: reference/sdk.md, "Activation — which families run".
 pub(super) fn engine_activation() -> Arc<Activation> {
     let families = registered_agents()
         .into_iter()
@@ -38,9 +36,12 @@ pub(super) fn engine_activation() -> Arc<Activation> {
     Arc::new(Activation::new(families))
 }
 
-/// Makes every agent of `dcc` a family the runtime's activation can switch,
-/// then refuses a `DataSystem` or a `Flow`
-/// serving a family no agent is: it would never be switched.
+/// Makes every agent of `dcc` a family the runtime's activation can switch.
+///
+/// # Panics
+///
+/// Panics when a `DataSystem` or a `Flow` serves a family no agent is: it
+/// would never be switched.
 pub(super) fn admit_families(dcc: &DccService, runtime: &Runtime) {
     let families: BTreeSet<AgentId> = dcc
         .agent_registry()

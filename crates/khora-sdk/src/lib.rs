@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The public-facing Software Development Kit (SDK) for the Khora Engine.
+//! The Khora Engine's Software Development Kit: the one crate a game depends on.
 //!
-//! This is the **only** crate that should be used by game developers.
-//! All internal crates (khora-agents, khora-control, etc.) are implementation details.
+//! The internal crates (`khora-agents`, `khora-control`, …) are implementation
+//! details; what a game needs is re-exported here. See the book:
+//! reference/sdk.md, "SDK re-exports".
 //!
 //! # Examples
 //!
@@ -97,7 +98,6 @@ pub use khora_core::app::GameIdentity;
 pub use vessel::{spawn_cube_at, spawn_plane, spawn_sphere, Vessel};
 pub use winit_adapters::{run_winit, WinitAppRunner};
 
-// Re-export window provider for convenience
 pub use winit_adapters::WinitWindowProvider;
 
 // ─────────────────────────────────────────────────────────────────────
@@ -116,12 +116,9 @@ pub use khora_control::{DccConfig, DccService};
 // Which families run: the application switches them, the frame boundary
 // settles the switch.
 pub use khora_core::agent::Activation;
-// The situational `khora_control::Context`, as `DccContext` for the editor.
-//
-// `AgentRegistry` is exposed as a read-only telemetry surface for the
-// editor's Control Plane panel. The mutating side (`ExecutionScheduler`,
-// `BudgetChannel`) stays internal — the SDK is a façade
-// for game code, not for engine internals.
+// The agent registry is a read-only surface for the editor's Control Plane
+// panel; the scheduler and the budget channel stay internal. `DccContext` is
+// the DCC's situational context, for the editor.
 pub use khora_control::agent_registry::AgentRegistry;
 pub use khora_control::DccContext;
 
@@ -144,8 +141,6 @@ pub use khora_core::{Backends, Resources, Runtime, Services};
 // Telemetry service
 pub use khora_telemetry::MonitorRegistry;
 pub use khora_telemetry::TelemetryService;
-// AgentRegistry is already re-exported above, via
-// `pub use khora_control::agent_registry::AgentRegistry`.
 
 // Infra / monitors
 pub use khora_infra::telemetry::memory_monitor::MemoryMonitor;
@@ -189,7 +184,7 @@ pub use khora_core::renderer::api::gpu_scene::mesh::Mesh;
 // onto the environment cube (absent ⇒ the procedural sky is baked instead).
 pub use khora_data::EnvironmentMap;
 
-/// Renderer sub-modules (used by editor gizmo)
+/// Renderer API modules: the GPU scene, GPU resources and lights.
 pub mod renderer;
 
 // WgpuRenderSystem (used by editor main)
@@ -219,7 +214,7 @@ pub use khora_core::math::Mat4;
 pub use khora_core::renderer::traits::RenderSystem;
 pub use khora_data::ecs::HandleComponent;
 
-// PropertyEdit is in khora_core::ui::editor, already re-exported via editor_ui
+// Scene I/O
 pub use khora_data::scene::ComponentRegistration;
 pub use khora_data::scene::{instantiate_subtree, serialize_subtree};
 

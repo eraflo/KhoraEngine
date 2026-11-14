@@ -12,16 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Vessel abstraction for the Khora SDK.
+//! [`Vessel`], a builder over a freshly spawned entity, and the primitive spawn helpers.
 //!
-//! A Vessel is a high-level wrapper around an ECS entity that provides
-//! a convenient API for common game development tasks. It allows you to
-//! create and manipulate entities without dealing directly with the ECS.
-//!
-//! Every Vessel has both a Transform (local) and GlobalTransform (world)
-//! which are kept in sync automatically.
-//!
-//! # Example
+//! # Examples
 //!
 //! ```rust
 //! use khora_sdk::{GameWorld, Vessel};
@@ -46,15 +39,10 @@ use khora_data::ecs::{GlobalTransform, MeshRef, ProceduralMeshKind, Transform};
 
 use crate::GameWorld;
 
-/// A high-level wrapper around an ECS entity.
+/// A builder over a freshly spawned entity holding a `Transform` and a `GlobalTransform`.
 ///
-/// Vessel provides a builder-pattern API for creating and configuring
-/// game entities. It automatically handles the underlying ECS components
-/// and synchronization between Transform and GlobalTransform.
-///
-/// Every Vessel is guaranteed to have:
-/// - Transform (local position/rotation/scale)
-/// - GlobalTransform (world-space transform for rendering)
+/// Components are added at once; the transform setters take effect at
+/// [`build`](Self::build), which syncs the global transform.
 ///
 /// # Examples
 ///
@@ -82,9 +70,7 @@ pub struct Vessel<'a> {
 }
 
 impl<'a> Vessel<'a> {
-    /// Creates a new Vessel at the origin.
-    ///
-    /// The entity is spawned immediately with Transform and GlobalTransform.
+    /// Spawns an entity at the origin and returns its builder.
     pub fn new(world: &'a mut GameWorld) -> Self {
         let transform = Transform::identity();
         let global = GlobalTransform::new(transform.to_mat4());
@@ -97,7 +83,7 @@ impl<'a> Vessel<'a> {
         }
     }
 
-    /// Creates a new Vessel at the specified position.
+    /// Spawns an entity at `position` and returns its builder.
     pub fn at(world: &'a mut GameWorld, position: Vec3) -> Self {
         let transform = Transform::from_translation(position);
         let global = GlobalTransform::new(transform.to_mat4());
@@ -134,32 +120,24 @@ impl<'a> Vessel<'a> {
         self
     }
 
-    /// Adds a generic component to the entity immediately.
-    ///
-    /// Since the entity is already spawned when the `Vessel` is created,
-    /// we can add the component right away. This avoids needing a field
-    /// on `Vessel` for every possible component type.
+    /// Adds `component` to the entity at once, replacing one of that type.
     pub fn with_component<C: khora_data::ecs::Component>(self, component: C) -> Self {
         self.world.add_component(self.entity, component);
         self
     }
 
-    /// Returns the entity ID.
+    /// Returns the entity being built.
     pub fn entity(&self) -> EntityId {
         self.entity
     }
 
-    /// Builds the Vessel, updating the final transforms.
-    ///
-    /// This finalizes the Vessel creation and returns the entity ID.
+    /// Writes the builder's transform and its global transform to the entity, and returns it.
     pub fn build(self) -> EntityId {
-        // Update transform (entity was spawned with one, so we need to update it)
         if let Some(mut existing_transform) = self.world.get_component_mut::<Transform>(self.entity)
         {
             *existing_transform = self.transform;
         }
 
-        // Sync GlobalTransform
         let global = GlobalTransform::new(self.transform.to_mat4());
         if let Some(mut existing_global) =
             self.world.get_component_mut::<GlobalTransform>(self.entity)
@@ -171,29 +149,26 @@ impl<'a> Vessel<'a> {
     }
 }
 
-/// Creates a Vessel with a plane mesh at the origin.
+/// Spawns an entity with a procedural plane mesh at the origin and returns its builder.
 ///
-/// Attaches an authored [`MeshRef::Procedural`]; the asset resolver rebuilds
-/// the plane geometry and mints the runtime `HandleComponent<Mesh>` before the
-/// GPU mesh projection runs.
+/// The mesh is an authored [`MeshRef::Procedural`], saved by its parameters
+/// and built by the engine.
 pub fn spawn_plane<'a>(world: &'a mut GameWorld, size: f32, y: f32) -> Vessel<'a> {
     let mesh_ref = MeshRef::procedural(ProceduralMeshKind::Plane, [size, y, 0.0, 0.0]);
     Vessel::new(world).with_component(mesh_ref)
 }
 
-/// Creates a Vessel with a cube mesh at a specific position.
+/// Spawns an entity with a procedural cube mesh at `position` and returns its builder.
 ///
-/// Attaches an authored [`MeshRef::Procedural`]; see [`spawn_plane`] for the
-/// resolution flow.
+/// The mesh is an authored [`MeshRef::Procedural`], as for [`spawn_plane`].
 pub fn spawn_cube_at<'a>(world: &'a mut GameWorld, position: Vec3, size: f32) -> Vessel<'a> {
     let mesh_ref = MeshRef::procedural(ProceduralMeshKind::Cube, [size, 0.0, 0.0, 0.0]);
     Vessel::at(world, position).with_component(mesh_ref)
 }
 
-/// Creates a Vessel with a sphere mesh at the origin.
+/// Spawns an entity with a procedural sphere mesh at the origin and returns its builder.
 ///
-/// Attaches an authored [`MeshRef::Procedural`]; see [`spawn_plane`] for the
-/// resolution flow.
+/// The mesh is an authored [`MeshRef::Procedural`], as for [`spawn_plane`].
 pub fn spawn_sphere<'a>(
     world: &'a mut GameWorld,
     radius: f32,

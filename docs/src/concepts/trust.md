@@ -124,8 +124,9 @@ A shipped game reads its assets from a **pack**. Build Game **signs** the pack:
 its manifest — every asset's identity, size and content hash — is signed with
 your key, and your public key is stamped into the game's binary. At launch the
 game checks the signature, then the pack's index against the manifest, and every
-asset it loads against its hash. A pack changed after it was built is refused,
-and the game does not start.
+asset it loads against its hash. A pack whose index or manifest changed after
+it was built is refused, and the game does not start; an asset whose bytes
+changed fails its own load.
 
 Your key lives in `.khora/signing/pack.key` in your home folder, never in a
 project, and is never replaced once made. A game built without a stamped key

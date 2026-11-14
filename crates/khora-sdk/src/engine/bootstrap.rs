@@ -85,6 +85,8 @@ impl<A: EngineApp> EngineBootstrap<A> {
     }
 
     /// Runs the application's [`EngineApp::setup`] over the game world.
+    ///
+    /// Does nothing once [`register`](Self::register) has run.
     pub fn setup(&mut self) {
         if let Some(runtime) = self.runtime.as_ref() {
             // The runtime is now fully populated, so the app can read any
@@ -95,6 +97,14 @@ impl<A: EngineApp> EngineBootstrap<A> {
 
     /// Lets the application install what it needs in the runtime, then
     /// registers the agent of every family linked into the binary.
+    ///
+    /// Does nothing the second time.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the engine cannot boot its families: their registrations
+    /// are refused, another agent already took a family's id, an agent runs in
+    /// a phase the app removed, or a `DataSystem` or `Flow` serves no family.
     pub fn register(&mut self) {
         let Some(mut runtime) = self.runtime.take() else {
             return;
@@ -108,6 +118,10 @@ impl<A: EngineApp> EngineBootstrap<A> {
     }
 
     /// Starts the DCC, builds the scheduler and hands everything to `core`.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the registered render pass slots form a cycle.
     pub fn finish(self, core: &mut EngineCore<A>) {
         let Self {
             app,
@@ -137,8 +151,8 @@ impl<A: EngineApp> EngineBootstrap<A> {
         }
         // What the DCC learnt of this machine on an earlier run seeds it.
         core.profiles = super::profiles::Profiles::begin(&runtime_arc, &dcc, A::keeps_user_files());
-        // Start the DCC background thread AFTER agents are initialized so
-        // GORNA does not run health-checks before agents are ready.
+        // Started once the agents are registered, so GORNA never asks one that
+        // is not ready.
         dcc.start(dcc_rx);
         let scheduler = build_scheduler(&phase_order, &mut dcc);
 
@@ -160,12 +174,16 @@ impl<A: EngineApp> EngineBootstrap<A> {
 }
 
 impl<A: EngineApp> EngineCore<A> {
-    /// Bootstraps the engine: creates DCC, telemetry, scheduler, calls
-    /// `app.setup()` and `app.provide()`, and registers the families' agents.
+    /// Boots the engine over `runtime`, as the driver's bootstrap closure filled it.
     ///
-    /// This method takes ownership of the `runtime` populated
-    /// by the windowing driver's bootstrap closure.  It wraps the runtime
-    /// in an `Arc` once all built-in entries have been inserted.
+    /// Runs `app.setup`, then `app.provide`, and registers every family's
+    /// agent: the [`EngineBootstrap`] stages, in order.
+    /// See the book: concepts/the-frame.md, "Startup, once".
+    ///
+    /// # Panics
+    ///
+    /// Panics when the engine cannot boot, as
+    /// [`EngineBootstrap::register`] and [`EngineBootstrap::finish`] say.
     pub fn bootstrap(&mut self, app: A, runtime: Runtime) {
         let mut stages = EngineBootstrap::begin_with(app, runtime, self.input_events.clone());
         stages.setup();
@@ -174,10 +192,11 @@ impl<A: EngineApp> EngineCore<A> {
     }
 }
 
-/// Puts in `runtime`'s resources the machine the engine runs on — its
-/// graphics device's adapter, when one is in the backends, its CPU and OS —
-/// and the game it runs, `game`: what the engine files what it learns of a
-/// running game under.
+/// Puts in `runtime`'s resources the machine the engine runs on and the `game`
+/// it runs, under which the engine files what it learns.
+///
+/// The machine names the graphics adapter when a device is installed, the CPU
+/// and the OS.
 fn identify(runtime: &mut Runtime, game: khora_core::app::GameIdentity) {
     let gpu = (runtime
         .backends
@@ -212,18 +231,15 @@ fn populate(
     (dcc, dcc_rx, telemetry, game_world)
 }
 
-/// Creates the DCC and the telemetry service, registers their monitors —
-/// the engine's and the ones the host handed over in `runtime` — and
+/// Creates the DCC and telemetry, registers their monitors and the host's, and
 /// exposes their observable handles in `runtime`'s resources.
 fn start_dcc_and_telemetry(runtime: &mut Runtime) -> (DccService, EventReceiver, TelemetryService) {
-    // Create DCC + telemetry
     let (dcc, dcc_rx) = DccService::new(DccConfig::default());
     let telemetry =
         TelemetryService::new(Duration::from_secs(1)).with_dcc_sender(dcc.event_sender());
 
-    // Register the system-RAM monitor so the tracking allocator's live
-    // stats flow through telemetry into the DCC, where they drive memory
-    // pressure + allocation-churn signals (it is no longer write-only).
+    // The tracking allocator's stats reach the DCC through telemetry, as
+    // memory pressure and allocation churn.
     telemetry.monitor_registry().register(std::sync::Arc::new(
         khora_infra::telemetry::memory_monitor::MemoryMonitor::new("System_RAM".to_string()),
     ));
@@ -245,11 +261,8 @@ fn start_dcc_and_telemetry(runtime: &mut Runtime) -> (DccService, EventReceiver,
         }
     }
 
-    // ── Expose observable handles via Resources ─────────────────────
-    // Apps (e.g. the editor) read live engine state (monitors, agent
-    // list, DCC context) through these handles. They're cheap clones of
-    // internal Arc-shared structures, so doing so before `app.setup` is
-    // safe.
+    // Apps such as the editor read live engine state through these handles:
+    // cheap clones of shared structures, safe to expose before `app.setup`.
     runtime
         .resources
         .insert(telemetry.monitor_registry().clone());
@@ -266,9 +279,8 @@ fn start_dcc_and_telemetry(runtime: &mut Runtime) -> (DccService, EventReceiver,
 /// Creates the game world, given the scene loads hub and the shipped
 /// prefabs where `runtime` holds them.
 fn create_game_world(runtime: &mut Runtime) -> GameWorld {
-    // Create the game world — reading the shipped prefabs, where the app
-    // ships an asset service, so a game saved over a level holding prefab
-    // instances compares against the level expanded.
+    // The prefabs are read from the app's asset service, so a game saved over
+    // a level holding prefab instances compares against the level expanded.
     let mut game_world = GameWorld::new();
     if let Some(loads) = runtime
         .resources
@@ -292,13 +304,10 @@ fn create_game_world(runtime: &mut Runtime) -> GameWorld {
 /// Compiles the scripts filed before the boot, lands what the host staged,
 /// and registers into `game_world` what the mounted scripts declare.
 fn land_boot_work(runtime: &mut Runtime, game_world: &mut GameWorld) {
-    // What the scripts mounted at boot declare, registered before `setup`:
-    // they were compiled as they were mounted, so a game attaches its
-    // behaviors from its first entities. The frame boundary then finds
-    // nothing pending, and registers nothing twice.
-    // No frame has started and nothing runs in the background yet: a mount
-    // filed before the boot is compiled now, and what the host staged lands
-    // now, in order.
+    // Nothing runs yet, so the mounts filed before the boot compile now, what
+    // the host staged lands, and their declarations register before `setup`;
+    // the first frame boundary finds none pending.
+    // See the book: concepts/the-frame.md, "Startup, once".
     khora_io::script::compile_hub::compile_filed_now(runtime);
     if let Some(reserve) = runtime.resources.get::<khora_core::lane::Reserve>() {
         reserve.land_from_host();

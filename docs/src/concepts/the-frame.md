@@ -50,9 +50,9 @@ through, and the timing model underneath them.
 Before the first frame, the engine boots through the SDK entry point. It builds
 the window hidden, constructs your app, and runs your bootstrap closure. In that
 closure the app registers what it needs from the engine: the renderer, the
-pipeline system, physics, layout, audio. Then the engine registers its services,
-the DCC and the families, and calls `setup` once so you can spawn initial
-entities and cache service handles. The first frame is painted, then the window
+pipeline system, physics, layout, audio. Then the engine registers its services
+and the DCC, calls `setup` once so you can spawn initial entities and cache
+service handles, then `provide`, and registers the families. The first frame is painted, then the window
 is shown. Nothing in `setup` is ever re-run; after it, the engine enters the
 frame loop and stays there.
 
@@ -90,7 +90,7 @@ engine core, so drivers (the editor's overlay and shell) can interleave hooks
 between them:
 
 ```
-1. drain_inputs        ← Pop queued InputEvents, tick telemetry
+1. drain_inputs        ← Read the queued InputEvents (not taken), tick telemetry
 2. run_app_update      ← Substrate invariants (Pre/Post-Sim, Pre-Extract) around app.update
 3. begin_render_frame  ← RenderSystem::begin_frame, swapchain acquire
 4. run_scheduler       ← Substrate Pass (Flows publish Views) + phase-by-phase layer runs
@@ -101,8 +101,10 @@ between them:
 A few stages reward a closer look, because they are where the architecture's
 discipline shows.
 
-**Stage 2 — `run_app_update`** runs the data layer's invariants *around* your
-game logic: pre-simulation systems (input-driven mutations the app will see),
+**Stage 2 — `run_app_update`** opens with the frame boundary — the families on and
+off settled, the scheduler's frame start, the `Boundary` systems, and `startup_ready`
+the first frame that finds startup over — then runs the data layer's invariants
+*around* your game logic: pre-simulation systems (input-driven mutations the app will see),
 then `app.update`, then post-simulation systems (hierarchy fix-ups such as
 transform propagation), then pre-extract systems (GPU mesh sync). Notice what is
 *not* here: scene projection. That happens in Stage 4.

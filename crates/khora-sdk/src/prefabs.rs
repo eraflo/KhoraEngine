@@ -22,9 +22,11 @@ use khora_data::scene::{PrefabCatalog, PrefabLibrary};
 use khora_io::asset::AssetService;
 use khora_io::serialization::{prefab_catalog, AssetPrefabs};
 
-/// Makes the prefabs `assets` holds the ones scripts spawn: the library the
-/// frame boundary reads, and the catalog filled from the same asset index. A
-/// runtime that already has either keeps it, and its catalog is filled.
+/// Makes the prefabs `assets` holds the ones a running game's scripts spawn.
+///
+/// Installs the library the frame boundary reads and the catalog a script's
+/// `Spawn` is checked against, keeping either the runtime already has, and
+/// fills the catalog from the same asset index.
 pub fn install(runtime: &mut Runtime, assets: Arc<Mutex<AssetService>>) {
     let resources = &mut runtime.resources;
     if resources.get::<PrefabLibrary>().is_none() {
@@ -40,9 +42,10 @@ pub fn install(runtime: &mut Runtime, assets: Arc<Mutex<AssetService>>) {
     }
 }
 
-/// Fills the catalog from the runtime's asset service again — after the
-/// project's assets were indexed anew, so a prefab added since is one a
-/// script may spawn.
+/// Fills the prefab catalog again from the runtime's asset service.
+///
+/// Call it after the project's assets were indexed anew, so a prefab added
+/// since can be spawned.
 pub fn refresh(runtime: &Runtime) {
     if let (Some(catalog), Some(assets)) = (
         runtime.resources.get::<PrefabCatalog>(),
@@ -52,7 +55,7 @@ pub fn refresh(runtime: &Runtime) {
     }
 }
 
-/// `catalog`, made the prefabs `assets` indexes.
+/// Replaces `catalog`'s prefabs with those `assets` indexes; logs a poisoned service.
 fn fill(catalog: &PrefabCatalog, assets: &Mutex<AssetService>) {
     match assets.lock() {
         Ok(assets) => catalog.replace(prefab_catalog(&assets)),

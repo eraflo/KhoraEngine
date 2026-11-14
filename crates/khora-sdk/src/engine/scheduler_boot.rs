@@ -23,10 +23,14 @@ use khora_core::agent::{Agent, ExecutionPhase};
 use khora_core::Runtime;
 use std::sync::{Arc, Mutex};
 
-/// Refuses the boot when a registered agent runs in no phase of `order`: it
-/// would be registered and budgeted, yet never run. The families are checked
-/// at registration; this catches an agent an application put in the runtime's
-/// registry itself.
+/// Refuses the boot when a registered agent runs in no phase of `order`.
+///
+/// Such an agent would be budgeted yet never run. The families are checked at
+/// registration; this catches an agent the application registered itself.
+///
+/// # Panics
+///
+/// Panics on the first such agent.
 pub(super) fn refuse_stranded_agents(dcc: &DccService, order: &[ExecutionPhase]) {
     let registry = dcc
         .agent_registry()
@@ -50,9 +54,13 @@ pub(super) fn refuse_stranded_agents(dcc: &DccService, order: &[ExecutionPhase])
 /// One `LaneAgent` per family registration linked into the binary, each
 /// registered with `dcc` for its registration's modes.
 ///
-/// The registrations are checked together first, against the runtime and the
-/// device. They are fixed when the program is built, so a refused set is a
-/// build defect no frame could recover from: the engine refuses to boot.
+/// The registrations are fixed when the program is built, so a refused set is
+/// a build defect no frame could recover from.
+///
+/// # Panics
+///
+/// Panics when the registrations are refused together, against the runtime and
+/// the device, or when another agent already took a family's id.
 pub(super) fn register_lane_agents(
     dcc: &DccService,
     runtime: &Runtime,
@@ -125,14 +133,12 @@ pub(super) fn build_scheduler(
     let registry = dcc.agent_registry().clone();
     let mut scheduler = khora_control::ExecutionScheduler::from_registry(registry);
 
-    // Connect the read-only observation tunnel: the scheduler publishes
-    // per-agent cost samples + per-component access snapshots the DCC's
-    // cost model and layout advisor consume.
+    // The scheduler publishes per-agent cost samples and per-component access
+    // snapshots, read by the DCC's cost model and layout advisor.
     scheduler.set_telemetry_sender(dcc.event_sender());
 
-    // Run phases in concurrent waves: agents whose contentions are disjoint
-    // run at once within a phase. Pass submission stays deterministic
-    // (fixed scene→ui→overlay fold).
+    // Agents whose contentions are disjoint run at once within a phase; the
+    // passes are still submitted in the slots' registered order.
     scheduler.set_parallel_execution(true);
 
     // The app's own phases, in the order the lane agents were checked against.

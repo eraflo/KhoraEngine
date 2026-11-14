@@ -12,15 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What a tool's startup waits on before it lets its loading film go: the
-//! work it filed by ticket — a project index, a scene load, a script compile
-//! — and the holds it keeps while it files them in steps.
+//! What a tool's startup waits on before its loading film goes: the work it
+//! filed by ticket, and the holds it keeps while it files that work in steps.
 //!
-//! Installed by the engine as `Arc<Readiness>` beside the hubs; the engine
-//! settles it every frame and calls [`EngineApp::startup_ready`] once, on the
-//! first frame it is ready or timed out.
-//!
-//! [`EngineApp::startup_ready`]: crate::EngineApp::startup_ready
+//! See the book: concepts/the-frame.md, "Startup, once".
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -45,10 +40,11 @@ struct Waited {
 /// The work a tool's startup waits on, filed by ticket, and the holds it
 /// keeps while it files that work in steps.
 ///
-/// A ticket counts as landed once its hub no longer holds it pending, so
-/// waiting on a ticket never takes its outcome: the tool still reads it from
-/// the hub. Its lock is a leaf: the tickets are copied out, then the hubs
-/// are asked.
+/// Installed in the runtime as `Arc<Readiness>`; the engine calls
+/// [`EngineApp::startup_ready`](crate::EngineApp::startup_ready) once, on the
+/// first frame it is ready or timed out. A ticket counts as landed once its hub
+/// no longer holds it pending: waiting never takes its outcome, which the tool
+/// still reads from the hub. Its lock is a leaf, never held while a hub is asked.
 pub struct Readiness {
     waited: Mutex<Waited>,
     holds: Arc<AtomicUsize>,
@@ -65,7 +61,7 @@ impl Readiness {
     /// and reports it late.
     pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
 
-    /// Nothing waited on, with the default timeout.
+    /// Creates a readiness waiting on nothing, with the default timeout.
     pub fn new() -> Self {
         Self {
             waited: Mutex::new(Waited {
@@ -90,22 +86,22 @@ impl Readiness {
         }
     }
 
-    /// Waits for the project index filed as `ticket`.
+    /// Makes the startup wait for the project index filed as `ticket`.
     pub fn wait_for_index(&self, ticket: IndexTicket) {
         self.wait_for(ReadinessTicket::Index(ticket));
     }
 
-    /// Waits for the scene load filed as `ticket`.
+    /// Makes the startup wait for the scene load filed as `ticket`.
     pub fn wait_for_scene(&self, ticket: LoadTicket) {
         self.wait_for(ReadinessTicket::Scene(ticket));
     }
 
-    /// Waits for the script compile filed as `ticket`.
+    /// Makes the startup wait for the script compile filed as `ticket`.
     pub fn wait_for_compile(&self, ticket: CompileTicket) {
         self.wait_for(ReadinessTicket::Compile(ticket));
     }
 
-    /// A guard counted as waiting until it is dropped.
+    /// Returns a hold the startup waits on until it is dropped.
     pub fn hold(&self) -> ReadinessHold {
         self.holds.fetch_add(1, Ordering::AcqRel);
         ReadinessHold {
@@ -113,9 +109,10 @@ impl Readiness {
         }
     }
 
-    /// The tickets waited on that `runtime`'s hubs still hold pending. A
-    /// ticket whose hub the runtime does not hold is landed: nothing will
-    /// land it.
+    /// Returns how many tickets are waited on, and those `runtime`'s hubs still
+    /// hold pending.
+    ///
+    /// A ticket whose hub the runtime lacks counts as landed: nothing will land it.
     fn in_flight(&self, runtime: &Runtime) -> (usize, Vec<ReadinessTicket>) {
         let tickets = self.waited().tickets.clone();
         let indexes = runtime.resources.get::<Arc<IndexHub>>();
@@ -137,8 +134,7 @@ impl Readiness {
         (tickets.len(), late)
     }
 
-    /// How many of the tickets waited on have landed, as the hubs of
-    /// `runtime` hold them now.
+    /// Returns how many of the tickets waited on have landed in `runtime`'s hubs.
     pub fn progress(&self, runtime: &Runtime) -> ReadinessProgress {
         let (waited, late) = self.in_flight(runtime);
         ReadinessProgress {
@@ -147,8 +143,9 @@ impl Readiness {
         }
     }
 
-    /// Whether the startup is ready, still waiting, or timed out, at `now`.
-    /// The clock starts at the first poll.
+    /// Returns whether the startup is ready, still waiting or timed out at `now`.
+    ///
+    /// The timeout counts from the first poll.
     pub fn poll(&self, runtime: &Runtime, now: Instant) -> ReadinessState {
         // The holds first: a tool waits on its ticket before it lets its hold
         // go, so once no hold is read, the tickets copied next hold that one.
@@ -176,10 +173,11 @@ impl Readiness {
     }
 }
 
-/// Settles `runtime`'s [`Readiness`] at `now`: `true` once the startup is
-/// over — every ticket landed and no hold kept, or the timeout passed. Each
-/// ticket still in flight at the timeout is reported to the runtime's
-/// [`Problems`] as late.
+/// Settles `runtime`'s [`Readiness`] at `now`; returns `true` once the startup
+/// is over.
+///
+/// Over means every ticket landed and no hold kept, or the timeout passed; each
+/// ticket then still in flight is reported to the runtime's [`Problems`] as late.
 pub(crate) fn settle(runtime: &Runtime, now: Instant) -> bool {
     let Some(readiness) = runtime.resources.get::<Arc<Readiness>>() else {
         return true;
@@ -226,8 +224,9 @@ fn late_problem(ticket: &ReadinessTicket) -> Problem {
     }
 }
 
-/// Counted as waiting until dropped: what a tool holds while it files its
-/// startup's work in steps.
+/// A hold on a tool's startup, kept while it files its work in steps.
+///
+/// The startup waits until every hold is dropped.
 pub struct ReadinessHold {
     holds: Arc<AtomicUsize>,
 }

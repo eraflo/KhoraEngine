@@ -12,12 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Injection traits for the engine framework.
-//!
-//! The engine is a generic framework — the application (e.g. editor, game launcher)
-//! provides concrete implementations of these traits to inject platform-specific
-//! behavior, what it installs in the runtime, custom phases, and application
-//! logic.
+//! The traits an application implements to run on the engine: its lifecycle,
+//! its phases and its window backend.
 
 use khora_core::agent::ExecutionPhase;
 use khora_core::platform::KhoraWindow;
@@ -32,23 +28,18 @@ pub use super::window_provider::WindowProvider;
 // PhaseProvider — inject custom execution phases
 // ─────────────────────────────────────────────────────────────────────
 
-/// Allows the application to add custom execution phases to the scheduler.
+/// The application's changes to the scheduler's execution phases.
 ///
-/// By default, the engine runs the built-in phases in their order:
-/// INIT → OBSERVE → TRANSFORM → MUTATE → OUTPUT → FINALIZE.
-///
-/// An application can add phases of its own, which run after OUTPUT and
-/// before FINALIZE in the order it declares them, and remove phases. Removing
-/// the only phase an agent runs in refuses the boot: the agent would never
-/// execute.
+/// The built-in phases run INIT → OBSERVE → TRANSFORM → MUTATE → OUTPUT →
+/// FINALIZE. Added phases run after OUTPUT and before FINALIZE, in the order
+/// declared. Removing the only phase an agent runs in refuses the boot.
 pub trait PhaseProvider {
-    /// The application's own phases, in the order they run, after OUTPUT and
-    /// before FINALIZE.
+    /// Returns the application's own phases, in the order they run.
     fn custom_phases(&self) -> Vec<ExecutionPhase> {
         Vec::new()
     }
 
-    /// The phases the scheduler does not run.
+    /// Returns the phases the scheduler does not run.
     fn removed_phases(&self) -> Vec<ExecutionPhase> {
         Vec::new()
     }
@@ -58,19 +49,10 @@ pub trait PhaseProvider {
 // EngineApp — composite trait
 // ─────────────────────────────────────────────────────────────────────
 
-/// The single generic bound for the engine's application type.
+/// An application the engine runs: its window, its setup and its per-frame update.
 ///
-/// An application must implement `PhaseProvider`. It installs in the runtime
-/// what it needs from the engine in [`provide`](EngineApp::provide); a new
-/// subsystem of its own is a family, registered with `register_agent!` like
-/// the engine's, never a hand-written agent.
-///
-/// The engine also requires these inherent methods on the app type:
-/// - `window_config() -> WindowConfig`
-/// - `new() -> Self`
-/// - `setup(&mut self, world: &mut GameWorld)`
-/// - `update(&mut self, world: &mut GameWorld, inputs: &[InputEvent])`
-/// - `on_shutdown(&mut self)`
+/// A subsystem of its own is a family registered with `register_agent!`, never
+/// a hand-written agent. See the book: reference/sdk.md, "The application traits".
 ///
 /// # Examples
 ///
@@ -113,11 +95,10 @@ pub trait EngineApp: PhaseProvider + Send + Sync + 'static {
     where
         Self: Sized;
 
-    /// The game this application is, which the engine files what it learns
-    /// of a running game under. Read once at boot and put in the runtime's
-    /// resources as an `Arc<GameIdentity>`.
+    /// Returns the game this application is, under which the engine files what it learns.
     ///
-    /// Default: named by its window's title
+    /// Read once at boot and put in the runtime's resources as an
+    /// `Arc<GameIdentity>`. Default: named by its window's title
     /// ([`window_config`](Self::window_config)), at the engine's version
     /// ([`ENGINE_VERSION`](crate::ENGINE_VERSION)).
     fn game_identity() -> khora_core::app::GameIdentity
@@ -130,14 +111,11 @@ pub trait EngineApp: PhaseProvider + Send + Sync + 'static {
         }
     }
 
-    /// Whether the engine keeps its files in the user's folders from one run
-    /// to the next: what it learns of this machine running this game (a
-    /// profile, read at boot and written as it learns), and the files it
-    /// quarantined. A game, the editor and a sandbox keep them; a tool or a
-    /// test that asks for none touches no folder of the user's
-    /// (`KHORA_PROFILES`, set, keeps a profile whatever the app says).
+    /// Returns whether the engine keeps its files in the user's folders across runs.
     ///
-    /// Default: none kept.
+    /// Those files are this machine's profile for the game and the quarantined
+    /// files. An app that keeps none touches no user folder, unless
+    /// `KHORA_PROFILES` is set, which keeps a profile. Default: none kept.
     fn keeps_user_files() -> bool
     where
         Self: Sized,
@@ -150,29 +128,26 @@ pub trait EngineApp: PhaseProvider + Send + Sync + 'static {
     where
         Self: Sized;
 
-    /// Called once during engine initialization to set up the game world.
+    /// Sets up the game world, once, during engine initialization.
     fn setup(&mut self, world: &mut GameWorld, runtime: &khora_core::Runtime);
 
-    /// Optional: called once at boot, after [`setup`](Self::setup) and before
-    /// the engine's families are built, to install in the runtime what the
-    /// application needs there (its own resources, a shared service). What it
-    /// inserts is in the runtime every family boots with. It never registers
-    /// an agent.
+    /// Installs in the runtime what the application needs there: its resources, a shared service.
     ///
+    /// Called once, after [`setup`](Self::setup) and before the engine's families
+    /// are built, so every family boots with it. It never registers an agent.
     /// Default: install nothing.
     fn provide(&self, _runtime: &mut khora_core::Runtime) {}
 
-    /// Called every frame to update game logic.
+    /// Runs the game logic, once per frame, with the frame's input events.
     fn update(&mut self, world: &mut GameWorld, inputs: &[InputEvent]);
 
-    /// Called during shutdown to clean up application resources.
+    /// Releases the application's resources at shutdown.
     fn on_shutdown(&mut self) {}
 
-    /// Optional: intercept a raw window event before the engine translates it into
-    /// an [`InputEvent`]. Return `true` if the event was consumed (e.g., by an
-    /// egui overlay) and should NOT be forwarded to game logic.
+    /// Returns whether a raw window event is consumed before it becomes an [`InputEvent`].
     ///
-    /// Default: do not intercept.
+    /// A consumed event, such as one an egui overlay took, never reaches game
+    /// logic. Default: none consumed.
     fn intercept_window_event(
         &mut self,
         _event: &dyn std::any::Any,
@@ -181,14 +156,11 @@ pub trait EngineApp: PhaseProvider + Send + Sync + 'static {
         false
     }
 
-    /// Optional: called once per frame BEFORE [`update`](Self::update).
-    /// Use to begin a UI overlay frame (e.g., `egui::Context::begin_frame`) and
-    /// render shell chrome (menus, docks, panels) that produces UI commands.
+    /// Runs once per frame before [`update`](Self::update), before the engine fixes the frame.
     ///
-    /// It is the application's place before the engine fixes the frame: the
-    /// families it switches on or off here
+    /// The place to begin a UI overlay frame. Families switched on or off here
     /// ([`Activation`](khora_core::agent::Activation)) are in force for this
-    /// whole frame. A switch requested later counts from the next frame.
+    /// whole frame; a switch requested later counts from the next frame.
     fn before_frame(
         &mut self,
         _world: &mut GameWorld,
@@ -197,22 +169,21 @@ pub trait EngineApp: PhaseProvider + Send + Sync + 'static {
     ) {
     }
 
-    /// Optional: called after the renderer's `begin_frame` and before the
-    /// scheduler dispatches agents. Use to switch the renderer to an offscreen
-    /// viewport target (e.g., `set_render_to_viewport(true)`).
+    /// Runs after the renderer begins the frame and before the families run.
+    ///
+    /// The place to point the renderer at an offscreen viewport target.
     fn before_agents(&mut self, _world: &mut GameWorld, _runtime: &khora_core::Runtime) {}
 
-    /// Optional: called after agent execution and `submit_frame_graph`, but
-    /// BEFORE the renderer's `end_frame`. Use to render gizmos to the offscreen
-    /// viewport, switch back to the swapchain (`set_render_to_viewport(false)`),
-    /// and present a UI overlay (`render_overlay`).
+    /// Runs after the families' frame graph is submitted and before the renderer ends the frame.
+    ///
+    /// The place to draw gizmos, return to the swapchain and present a UI overlay.
     fn after_agents(&mut self, _world: &mut GameWorld, _runtime: &khora_core::Runtime) {}
 
-    /// Optional: called once, at the boundary of the first frame where the
-    /// startup is over — every ticket the app waited on through the runtime's
-    /// [`Readiness`](crate::Readiness) landed and no hold is kept, or the
-    /// wait timed out (the late ones reported to `Problems`). Use to let a
-    /// loading screen go: one put up in [`setup`](Self::setup) and painted by
-    /// the frame hooks.
+    /// Runs once, at the boundary of the first frame that finds startup over.
+    ///
+    /// Startup is over when every ticket waited on through the runtime's
+    /// [`Readiness`](crate::Readiness) landed and no hold is kept, or the wait
+    /// timed out, the late ones reported to `Problems`. The place to drop a
+    /// loading screen.
     fn startup_ready(&mut self) {}
 }

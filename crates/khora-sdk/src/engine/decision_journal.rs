@@ -26,8 +26,8 @@ use khora_core::agent::gorna::DecisionTrace;
 /// The environment variable naming the journal's file.
 pub(crate) const RECORD_VAR: &str = "KHORA_RECORD_DECISIONS";
 
-/// The journal's file the variable's value names: `None` when unset or
-/// empty.
+/// Returns the journal's file the variable's `value` names; `None` when unset
+/// or empty.
 pub(crate) fn record_path(value: Option<OsString>) -> Option<PathBuf> {
     value.filter(|value| !value.is_empty()).map(PathBuf::from)
 }
@@ -59,9 +59,8 @@ mod tests {
 
     use super::*;
 
-    /// **The record switch names the journal's file.** The variable is
-    /// `KHORA_RECORD_DECISIONS`; unset or empty, it names none and nothing
-    /// is recorded; set, its value is the file, relative or absolute.
+    /// **The record switch names the journal's file.** Unset or empty, it
+    /// names none; set, its value is the file, relative or absolute.
     #[test]
     fn the_record_switch_names_the_journals_file() {
         assert_eq!(RECORD_VAR, "KHORA_RECORD_DECISIONS");
@@ -219,10 +218,8 @@ mod tests {
         std::env::temp_dir().join(format!("khora-{name}-{}-{nanos}.json", std::process::id()))
     }
 
-    /// **A journal written then read is the same.** The JSON written at
-    /// shutdown reads back as the journal recorded, every epoch and what
-    /// its round read. A file that cannot be written or read is an error,
-    /// not a panic.
+    /// **A journal written then read is the same**, every epoch and what its
+    /// round read. A file that cannot be written or read is an error, not a panic.
     #[test]
     fn a_journal_written_then_read_is_the_same() {
         let trace = journal();
@@ -258,13 +255,12 @@ mod tests {
         fn update(&mut self, _world: &mut crate::GameWorld, _inputs: &[crate::InputEvent]) {}
     }
 
-    /// **A journal the engine records is decided again as it was, and reads
-    /// its quotes' error.** A headless engine runs its families for a few
-    /// seconds while the DCC records, its frames overrunning then leaving
-    /// room so the governor opens epochs: every epoch of the journal, decided
-    /// again by the engine's own proposer set, gives back the allocation
-    /// recorded; and the agents' runs, reported under the epochs they were
-    /// lent, meet the quotes those epochs read.
+    /// **A journal the engine records replays, and reads its quotes' error.**
+    ///
+    /// A headless engine records for a few seconds, its frames overrunning then
+    /// leaving room so the governor opens epochs. Each epoch, decided again,
+    /// gives back the allocation recorded; the agents' runs, reported under the
+    /// epochs they were lent, meet the quotes those epochs read.
     #[test]
     fn a_journal_the_engine_records_replays_and_reads_its_quotes_error() {
         use khora_control::evaluation::{replay, Arbiters};

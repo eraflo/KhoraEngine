@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The `runtime.json` schema: what the editor's "Build Game" writes next to
-//! the runtime binary, and what [`crate::run_default`] reads at start-up.
-//! One type for both sides, so the writer and the reader cannot drift.
+//! The `runtime.json` schema, written by the editor's Build Game and read by [`crate::run_default()`].
+//!
+//! One type serves both sides, so the writer and the reader cannot drift.
 
 use khora_core::physics::PhysicsSettings;
 use serde::{Deserialize, Serialize};
@@ -27,10 +27,10 @@ pub const RUNTIME_CONFIG_FILE: &str = "runtime.json";
 /// and the scene the editor creates by default.
 pub const DEFAULT_SCENE_REL_PATH: &str = "scenes/default.kscene";
 
-/// Runtime config the launcher (editor's "Build Game") drops next to the
-/// binary. Read at startup; sensible defaults are used when the file is
-/// missing (typical for engine contributors running the runtime against a
-/// loose `assets/` directory).
+/// The `runtime.json` the editor's Build Game writes next to the runtime binary.
+///
+/// A missing file means the defaults, as when the runtime runs against a
+/// loose `assets/` folder.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeConfig {
     /// Project name, shown in logs and used as the window title by default.
@@ -42,16 +42,14 @@ pub struct RuntimeConfig {
     /// Window title; the project name when absent.
     #[serde(default)]
     pub window_title: Option<String>,
-    /// Build preset label written by the editor (debug/release/shipping).
-    /// Optional for older runtime.json files. Used for diagnostics.
+    /// Build preset label written by the editor (debug/release/shipping), for diagnostics.
     #[serde(default)]
     pub preset: Option<String>,
     /// The game's physics settings (`physics.step`). Written only when the
     /// project sets them; a file without them runs at the defaults.
     #[serde(default, skip_serializing_if = "PhysicsSettings::is_default")]
     pub physics: PhysicsSettings,
-    /// The game's version, written by "Build Game" from the project's
-    /// `project.json`; `0.1.0` for a file written before games had one.
+    /// The game's version, from the project's `project.json`; [`DEFAULT_GAME_VERSION`] when absent.
     #[serde(default = "default_game_version")]
     pub game_version: String,
 }
@@ -109,7 +107,7 @@ impl RuntimeConfig {
         }
     }
 
-    /// The config of a runtime started without `runtime.json`.
+    /// Returns the config of a runtime started without `runtime.json`.
     pub fn defaults() -> Self {
         Self {
             project_name: default_project_name(),
@@ -121,8 +119,7 @@ impl RuntimeConfig {
         }
     }
 
-    /// The game this config runs: named by its `project_name`, at its
-    /// `game_version`.
+    /// Returns the game this config runs: its `project_name` at its `game_version`.
     pub fn game_identity(&self) -> khora_core::app::GameIdentity {
         let version = self.game_version.trim();
         khora_core::app::GameIdentity {
@@ -136,7 +133,7 @@ impl RuntimeConfig {
         }
     }
 
-    /// The window title: the `window_title` field if set, else the project name.
+    /// Returns the window title: `window_title` if set, else the project name.
     pub fn window_title(&self) -> String {
         self.window_title
             .clone()

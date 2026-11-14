@@ -12,20 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! UI surface for standalone Khora tools (the hub, future asset
-//! cookers, …).
+//! The UI runtime of standalone Khora tools such as the hub: they reach egui
+//! only through [`run_native`] and [`AppContext`], never directly.
 //!
-//! These tools depend on `khora-sdk` and reach the egui backend
-//! exclusively through this module — never directly via `egui`
-//! or `eframe`. The day the engine swaps backend, this re-export
-//! list moves to whichever crate provides the new
-//! [`run_native`] + [`AppContext`] implementation.
-//!
-//! This module is the **runtime** seam only. Khora's *look* — the brand
-//! palette and the shared widget vocabulary — is cosmetics and lives in
-//! the separate `khora-tool-ui` crate, which the SDK deliberately does
-//! **not** depend on, so a game built on Khora never compiles the engine
-//! vendor's brand. Tools depend on both.
+//! Khora's look lives in the `khora-tool-ui` crate, which the SDK does not
+//! depend on, so a game never compiles the engine's brand.
 
 pub use khora_core::math::{LinearRgba, Rect2D, Vec2};
 pub use khora_core::ui::editor::{FontFamilyHint, Icon, InlineEditEvent, Interaction, TextAlign};

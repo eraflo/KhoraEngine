@@ -223,6 +223,16 @@ units — its host time over the planned row's correction — so the agent, choo
 own quotes, runs the row the DCC planned. This is the "model proposes, measurement
 disposes" loop, row by row.
 
+### Learnt across runs
+
+What the cost book learns of a machine running a game is kept from one run to the
+next, as a **profile**: read before the DCC starts, written every five seconds while
+the game runs and when it shuts down. A profile is used only by the engine version
+and the game that learnt it; any other is logged and left. A player's first boot,
+with nothing learnt yet, reads the profile the game shipped, if any. Profiles are
+kept only by an app that keeps user files — `KHORA_PROFILES` names a folder for any
+other — so a test never writes the user's folders.
+
 ## The heuristics
 
 The heuristic engine runs a battery of independent heuristics each tick, each one a

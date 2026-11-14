@@ -12,13 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The Khora Engine core — generic engine runtime with injection points.
+//! `EngineCore`, the engine runtime a windowing driver boots and runs frame by frame.
 //!
-//! This module contains `EngineCore`, the winit-agnostic engine core.
-//! Windowing and event-loop integration lives in `winit_adapters.rs`.
-//!
-//! The engine owns: DCC, scheduler, telemetry, runtime containers, frame loop.
-//! The app owns: window, renderer, agents, phases, game logic.
+//! The engine owns the DCC, the scheduler, telemetry and the frame loop; the
+//! app owns its window, renderer, phases and game logic.
 
 use khora_control::DccService;
 use khora_core::event::Channel;
@@ -51,14 +48,11 @@ pub use readiness::{Readiness, ReadinessHold, ReadinessProgress, ReadinessState,
 pub const PRIMARY_VIEWPORT: khora_core::ui::editor::viewport_texture::ViewportTextureHandle =
     khora_core::ui::editor::viewport_texture::ViewportTextureHandle(0);
 
-// ─────────────────────────────────────────────────────────────────────
-// EngineCore — winit-agnostic engine runtime
-// ─────────────────────────────────────────────────────────────────────
-
-/// The core engine state, independent of any windowing backend.
+/// The engine runtime, independent of any windowing backend.
 ///
-/// Created by the windowing driver (e.g. `WinitAppRunner`), then
-/// driven frame-by-frame via [`EngineCore::tick`].
+/// A windowing driver creates it, [`bootstrap`](Self::bootstrap)s it, then runs
+/// each frame through [`tick`](Self::tick) or the staged methods.
+/// See the book: concepts/the-frame.md, "The six-stage descent".
 pub struct EngineCore<A: EngineApp> {
     app: Option<A>,
     game_world: Option<GameWorld>,
@@ -68,10 +62,8 @@ pub struct EngineCore<A: EngineApp> {
     runtime: Arc<Runtime>,
     /// This frame's OS input, and the frames before it that nobody read.
     ///
-    /// A clone of what sits in `runtime.resources`, so a `DataSystem` or an
-    /// agent that declares it reads the same stream the app hook does — each
-    /// from its own position, none taking events from the others. It replaced
-    /// an unbounded `VecDeque` that only this struct could reach.
+    /// A clone of the runtime's channel: the app hook, a `DataSystem` and an
+    /// agent each read it from its own position, none taking the others' events.
     input_events: Channel<InputEvent>,
     /// Every registered pass slot, in the order the frame submits them.
     /// Ordered once at boot, which refuses a cycle in their `after` edges.
@@ -113,24 +105,23 @@ impl<A: EngineApp> EngineCore<A> {
         }
     }
 
-    /// Queues an input event to be processed on the next tick.
+    /// Queues an input event, read by the next frame.
     pub fn feed_input(&mut self, event: InputEvent) {
         self.input_events.send(event);
     }
 
-    /// Mutable accessor for the application instance. Used by the winit
-    /// runner to invoke [`EngineApp`] lifecycle hooks between staged frame
-    /// methods.
+    /// Returns the application, once bootstrapped.
+    ///
+    /// A driver calls the [`EngineApp`] hooks through it between the staged
+    /// frame methods.
     pub fn app_mut(&mut self) -> Option<&mut A> {
         self.app.as_mut()
     }
 
-    /// Invokes a closure with mutable access to BOTH the application and the
-    /// game world simultaneously. Used by the winit runner to call lifecycle
-    /// hooks that need to read/write components (e.g., gizmo collection)
-    /// without re-borrowing `EngineCore` twice.
+    /// Runs `f` over the application and the game world, both borrowed at once.
     ///
-    /// The closure is skipped silently if either is uninitialized.
+    /// For a hook that reads or writes components, such as gizmo collection.
+    /// Does nothing before the bootstrap.
     pub fn with_app_and_world<F>(&mut self, f: F)
     where
         F: FnOnce(&mut A, &mut GameWorld),
@@ -140,7 +131,7 @@ impl<A: EngineApp> EngineCore<A> {
         }
     }
 
-    /// Stores the runtime Arc. Used by the winit runner after bootstrap.
+    /// Replaces the engine-level runtime.
     pub fn set_runtime(&mut self, runtime: Arc<Runtime>) {
         self.runtime = runtime;
     }
@@ -161,9 +152,10 @@ impl<A: EngineApp> EngineCore<A> {
     }
 
     /// Applies a developer [`EngineHint`](khora_core::agent::gorna::EngineHint)
-    /// biasing GORNA arbitration (`Cap` a per-frame budget, `Prioritize` an
-    /// agent) without changing game semantics. No-op if the DCC isn't running.
-    /// Thread-safe; takes effect on the next arbitration tick.
+    /// that biases GORNA arbitration, never game semantics.
+    ///
+    /// Takes effect on the next arbitration tick; does nothing when the DCC is
+    /// not running.
     pub fn set_engine_hint(&self, hint: khora_core::agent::gorna::EngineHint) {
         if let Some(dcc) = &self.dcc {
             dcc.set_hint(hint);
@@ -177,8 +169,8 @@ impl<A: EngineApp> EngineCore<A> {
         }
     }
 
-    /// Read-only snapshot of the accumulated per-agent hints (glass-box), or an
-    /// empty map if the DCC isn't running.
+    /// Returns a snapshot of the hints accumulated per agent; empty when the DCC
+    /// is not running.
     pub fn engine_hints(
         &self,
     ) -> std::collections::HashMap<
@@ -188,10 +180,11 @@ impl<A: EngineApp> EngineCore<A> {
         self.dcc.as_ref().map(|d| d.hints()).unwrap_or_default()
     }
 
-    /// Shuts down the engine, calling `app.on_shutdown()`.
+    /// Stops the engine and calls the application's `on_shutdown`.
     ///
-    /// Note: renderer shutdown is the responsibility of the application,
-    /// since the renderer was created and registered by the app's bootstrap closure.
+    /// Every lane gives back what it built on the device, the DCC stops, and
+    /// the machine profile and decision journal are written when kept. The
+    /// renderer is the application's to shut down: its bootstrap closure made it.
     pub fn shutdown(&mut self) {
         // The work off the frame comes home first, so the lanes it holds are
         // shut down below with the rest.

@@ -12,11 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Editor UI types re-exported from khora_core.
-//!
-//! Includes everything from `khora_core::ui::editor::*` plus the
-//! shared `UiTheme` and font types that live one level up in
-//! `khora_core::ui` (because the hub uses them too).
+//! Editor UI types re-exported from `khora_core`: the editor's own, plus the
+//! theme and font types it shares with the hub.
 pub use khora_core::ui::editor::*;
 pub use khora_core::ui::fonts::{FontHandle, FontPack, NamedFont};
 pub use khora_core::ui::theme::UiTheme;

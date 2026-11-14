@@ -17,9 +17,11 @@
 
 use khora_core::agent::ExecutionPhase;
 
-/// The order the scheduler runs the phases in: the built-in ones, the app's
-/// own phases after `OUTPUT` and before `FINALIZE` in the order it declared
-/// them, without the phases it removed. A phase declared twice runs once.
+/// Returns the order the scheduler runs the phases in: the built-in ones and
+/// the app's own, without those it removed.
+///
+/// The app's phases run after `OUTPUT` and before `FINALIZE`, in the order it
+/// declared them; a phase declared twice runs once.
 pub(super) fn phase_order(
     custom: &[ExecutionPhase],
     removed: &[ExecutionPhase],

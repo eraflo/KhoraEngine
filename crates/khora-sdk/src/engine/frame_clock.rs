@@ -45,8 +45,8 @@ impl FrameClock {
         result
     }
 
-    /// The busy time since [`open`](Self::open), waits excluded, and closes
-    /// the clock; `None` when it was not open.
+    /// Closes the clock and returns the busy time since [`open`](Self::open),
+    /// waits excluded; `None` when it was not open.
     pub(crate) fn close(&mut self) -> Option<Duration> {
         let opened = self.opened.take()?;
         Some(opened.elapsed().saturating_sub(self.waited))
@@ -59,9 +59,8 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
-    /// **A frame's busy time excludes what it waited for.** A frame works
-    /// 20 ms and waits 60 ms for the display: the clock reports at least the
-    /// 20 ms of work and none of the 60 ms waited.
+    /// **A frame's busy time excludes what it waited for**: 20 ms of work and a
+    /// 60 ms wait for the display report the work and none of the wait.
     #[test]
     fn busy_time_excludes_what_the_frame_waited_for() {
         let mut clock = FrameClock::default();
@@ -115,9 +114,8 @@ mod tests {
         assert!(clock.close().is_some());
     }
 
-    /// **A wait outside a frame is not taken from the next one.** 30 ms
-    /// waited before the frame opened, then 10 ms of work: the frame was busy
-    /// at least those 10 ms.
+    /// **A wait outside a frame is not taken from the next one**: 30 ms waited
+    /// before the frame opens leave its 10 ms of work whole.
     #[test]
     fn a_wait_outside_a_frame_is_not_taken_from_the_next() {
         let mut clock = FrameClock::default();
@@ -130,9 +128,8 @@ mod tests {
         assert!(busy >= Duration::from_millis(10), "{busy:?}");
     }
 
-    /// **A second `open` restarts the frame.** 40 ms of work before the
-    /// second `open` belong to no frame: the frame closed right after it was
-    /// reopened is busy less than that.
+    /// **A second `open` restarts the frame**: the 40 ms of work before it
+    /// belong to no frame.
     #[test]
     fn a_second_open_restarts_the_frame() {
         let mut clock = FrameClock::default();

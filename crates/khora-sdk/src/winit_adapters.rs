@@ -12,10 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Winit-specific integration for the Khora Engine.
-//!
-//! This module provides the `run_winit` function that bridges winit's
-//! `ApplicationHandler` with the winit-agnostic `EngineCore`.
+//! Winit integration: [`run_winit`] and the runner that drives the engine from
+//! winit's event loop.
 
 use std::any::Any;
 use std::sync::{Arc, Mutex};
@@ -42,18 +40,18 @@ pub use crate::winit_window_provider::WinitWindowProvider;
 /// resources into the [`khora_core::Runtime`] at window-creation time.
 type BootstrapFn = Box<dyn FnOnce(&dyn KhoraWindow, &mut khora_core::Runtime, &dyn Any)>;
 
-/// Winit-specific application runner.
+/// The winit `ApplicationHandler` that runs an [`EngineCore`] for the app `A`.
 pub struct WinitAppRunner<W: WindowProvider, A: EngineApp> {
     window: Option<W>,
     engine: EngineCore<A>,
     renderer: Option<Arc<Mutex<Box<dyn RenderSystem>>>>,
     bootstrap: Option<BootstrapFn>,
-    /// Per-frame context, recreated each frame.
+    /// The engine's frame context, fetched from the runtime once.
     frame_context: Option<Arc<FrameContext>>,
 }
 
 impl<W: WindowProvider, A: EngineApp> WinitAppRunner<W, A> {
-    /// Creates a new winit app runner with the given bootstrap closure.
+    /// Creates a runner that calls `bootstrap` once its window exists.
     pub fn new(
         bootstrap: impl FnOnce(&dyn KhoraWindow, &mut khora_core::Runtime, &dyn Any) + 'static,
     ) -> Self {
@@ -66,24 +64,19 @@ impl<W: WindowProvider, A: EngineApp> WinitAppRunner<W, A> {
         }
     }
 
-    /// Runs one frame, interleaving the staged engine methods with the
-    /// `EngineApp` lifecycle hooks. Sandbox-style apps (no overrides) get
-    /// the same behavior as the legacy monolithic `tick`.
+    /// Runs one frame: the engine's stages, with the app's hooks between them.
+    ///
+    /// See the book: concepts/the-frame.md, "The six-stage descent".
     fn run_frame(&mut self) {
-        // The engine-level Runtime is immutable per-frame. The
-        // `Arc<FrameContext>` registered at engine init has interior
-        // mutability (its blackboard is a `Mutex<AnyMap>`), so each
-        // frame's writes (`Target`, `ColorTargetSize`, …) overwrite the
-        // previous frame's by replacing entries of the same type.
+        // One `FrameContext` serves every frame: each frame's blackboard
+        // writes replace the previous frame's entries of the same type.
         let runtime_arc = Arc::clone(self.engine.runtime());
         if self.frame_context.is_none() {
             self.frame_context = runtime_arc.resources.get::<Arc<FrameContext>>().cloned();
         }
 
-        // Stage 1: drain inputs (also marks simulation started + ticks telemetry).
         let inputs = self.engine.drain_inputs();
 
-        // Hook: before_frame — overlay.begin_frame + shell.show_frame.
         if let Some(window) = self.window.as_ref() {
             let kwin = window.as_khora_window();
             self.engine.with_app_and_world(|app, world| {
@@ -91,37 +84,28 @@ impl<W: WindowProvider, A: EngineApp> WinitAppRunner<W, A> {
             });
         }
 
-        // Stage 2: app.update + maintenance + extractions.
         self.engine.run_app_update(&inputs);
 
-        // Stage 3: begin_frame on the renderer.
         let presents = self.engine.begin_render_frame(&runtime_arc);
 
-        // Hook: before_agents — render offscreen viewport, set_render_to_viewport(true).
         self.engine.with_app_and_world(|app, world| {
             app.before_agents(world, &runtime_arc);
         });
 
-        // Stage 4: scheduler dispatch.
         self.engine.run_scheduler(&runtime_arc);
 
-        // Stage 5a: submit recorded agent passes. Done BEFORE `after_agents`
-        // so editor overlay rendering (in `after_agents`) paints on top of
-        // the 3D scene rather than getting overwritten by the agent submit.
+        // Submitted before `after_agents`, so an overlay drawn there paints
+        // over the 3D scene instead of under it.
         self.engine.submit_passes(presents);
 
-        // Hook: after_agents — gizmos, set false, render_overlay.
         self.engine.with_app_and_world(|app, world| {
             app.after_agents(world, &runtime_arc);
         });
 
-        // Stage 5b: present.
         self.engine.present_frame(presents);
 
-        // Stage 6: end-of-tick Maintenance (writebacks, ECS compaction,
-        // deferred cleanup). Without this, Maintenance-phase DataSystems
-        // (`audio_playback_writeback`, `physics_world_writeback`,
-        // `ecs_maintenance`) never run in the production winit flow.
+        // The Maintenance-phase DataSystems (write-backs, ECS compaction)
+        // run only here.
         self.engine.run_maintenance();
 
         // Report the frame's busy time to the DCC: the frame ends here.
@@ -140,36 +124,30 @@ impl<W: WindowProvider, A: EngineApp> ApplicationHandler for WinitAppRunner<W, A
         let window_config = A::window_config();
         let window = W::create(event_loop as &dyn Any, &window_config);
 
-        // Build the runtime bundle and pre-populate it with windowing-tier
-        // entries before handing off to the bootstrap closure.
+        // Windowing-tier entries go in first: the bootstrap closure may read them.
         let mut runtime = khora_core::Runtime::new();
 
         // Scripting's resources, before the application's closure: an app
         // mounts its scripts there.
         crate::scripts::install(&mut runtime);
 
-        // PRIMARY_VIEWPORT — engine-wide handle for the primary 3D viewport.
         runtime.resources.insert(PRIMARY_VIEWPORT);
 
-        // Per-engine FrameContext (interior mutability: blackboard reused
-        // across frames).
+        // One FrameContext for the engine's life: its blackboard is reused across frames.
         let fctx = Arc::new(FrameContext::new());
         runtime.resources.insert(Arc::clone(&fctx));
         self.frame_context = Some(fctx);
 
-        // Insert a long-lived clone of the raw window handle so editor hooks
-        // (e.g., overlay `begin_frame`) can retrieve `Arc<winit::window::Window>`
-        // from resources and pass it to the overlay each frame.
+        // The raw window goes in the resources, so the app's hooks can hand
+        // `Arc<winit::window::Window>` to an overlay each frame.
         let raw_window_arc = window.clone_raw_window_arc();
         if let Ok(winit_arc) = raw_window_arc.downcast::<winit::window::Window>() {
             runtime.resources.insert(winit_arc);
         }
 
-        // The application's `first` closure — handed the active event loop
-        // opaquely, so it may build windowing-aware resources (an egui overlay
-        // over `egui_winit::State`) without the SDK knowing — then the engine,
-        // at once: whatever is heavy is filed with the engine's families and
-        // waited on through its `Readiness`, while frames run.
+        // The closure gets the event loop opaquely, to build windowing-aware
+        // resources (an egui overlay) without the SDK knowing. Heavy work is
+        // filed with the engine's families and waited on through `Readiness`.
         let Some(bootstrap) = self.bootstrap.take() else {
             log::error!("WinitAppRunner: no bootstrap to run");
             return;
@@ -206,9 +184,8 @@ impl<W: WindowProvider, A: EngineApp> ApplicationHandler for WinitAppRunner<W, A
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
-        // Give the app a chance to intercept raw events (e.g., forward to an
-        // egui overlay). If consumed, do not forward to game input nor act on
-        // the event further (close / resize / redraw still proceed below).
+        // An event the app consumed (an egui overlay's) never becomes game
+        // input; close, resize and redraw are acted on regardless.
         let app = self.engine.app_mut();
         let consumed_by_app = if let (Some(app), Some(window)) = (app, &self.window) {
             app.intercept_window_event(&event as &dyn Any, window.as_khora_window())
@@ -258,10 +235,10 @@ impl<W: WindowProvider, A: EngineApp> Drop for WinitAppRunner<W, A> {
     }
 }
 
-/// What `resumed` does once the window exists and the runtime is pre-filled:
-/// builds the application first, so a tool's logger catches what `first`
-/// logs, then runs `first` over the runtime, then bootstraps `engine` with
-/// both.
+/// Builds the application, runs `first` over `runtime`, then bootstraps `engine` with both.
+///
+/// The app is built first so a tool's logger, installed by its `new`, catches
+/// what `first` logs.
 pub(crate) fn start_engine<A: EngineApp>(
     engine: &mut EngineCore<A>,
     mut runtime: khora_core::Runtime,
@@ -276,25 +253,22 @@ pub(crate) fn start_engine<A: EngineApp>(
 // run_winit — entry point for winit-based applications
 // ─────────────────────────────────────────────────────────────────────
 
-/// Runs the Khora Engine with a winit event loop.
+/// Runs the app `A` in a window opened through `W`, until the window closes.
 ///
-/// # Arguments
-///
-/// * `bootstrap` — A closure called once during initialization. Receives:
-///   - `&dyn KhoraWindow` — the created window for renderer initialization
-///   - `&mut ServiceRegistry` — the service registry to populate with
-///     renderer, layout system, monitors, etc.
-///   - `&dyn Any` — the active winit event loop, opaque so the SDK does not
-///     leak the winit type. Apps that need it (e.g., egui) downcast to
-///     `&winit::event_loop::ActiveEventLoop`.
-///
-/// This call blocks until the window is closed, so it is the last thing `main`
-/// does.
+/// `bootstrap` runs once, before the engine boots, with the window, the runtime
+/// to install backends into, and the active event loop as `&dyn Any` (downcast
+/// to `winit::event_loop::ActiveEventLoop`). It blocks, so it is the last thing
+/// `main` does. See the book: reference/sdk.md, "`run_winit` — the entry point".
 ///
 /// # Errors
 ///
-/// Returns an error if the winit event loop cannot be created or fails while
-/// running (e.g. the platform refuses to open a window).
+/// When the winit event loop cannot be created, or ends in an error.
+///
+/// # Panics
+///
+/// With [`WinitWindowProvider`], when the platform refuses to open the window;
+/// when the engine cannot boot, as [`EngineCore::bootstrap`](crate::EngineCore::bootstrap) says; and when a frame's passes cannot be submitted, as
+/// [`EngineCore::submit_passes`](crate::EngineCore::submit_passes) says.
 ///
 /// # Examples
 ///
@@ -374,9 +348,10 @@ mod tests {
         fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
     }
 
-    /// **The app is built before `first`**, so a tool's logger, installed by
-    /// its `new`, catches what `first` logs; the engine then boots with what
-    /// `first` put in the runtime, and runs the app's `setup` last.
+    /// **The app is built before `first`, and its `setup` runs last.**
+    ///
+    /// A tool's logger, installed by its `new`, then catches what `first` logs;
+    /// the engine boots with what `first` put in the runtime.
     #[test]
     fn the_app_is_built_before_first() {
         ORDER.with(|order| order.borrow_mut().clear());

@@ -71,12 +71,12 @@ glossary entry.
 
 ```rust
 pub fn run_winit<W: WindowProvider, A: EngineApp>(
-    bootstrap: impl FnOnce(&dyn KhoraWindow, &mut Runtime, &dyn Any) + Send + 'static,
+    bootstrap: impl FnOnce(&dyn KhoraWindow, &mut Runtime, &dyn Any) + 'static,
 ) -> anyhow::Result<()>;
 ```
 
-Opens a window through `W`, initializes the DCC, registers the default engine
-services, runs your `bootstrap` closure, then enters the frame loop. It returns
+Opens a window through `W`, runs your `bootstrap` closure, then boots the engine
+— its services, the DCC, `setup`, the families — and enters the frame loop. It returns
 when the window closes. The bootstrap closure receives:
 
 - `&dyn KhoraWindow` — the platform window (use it to initialize the renderer).
@@ -134,7 +134,9 @@ constructed where it is needed (see [Saving and loading](#saving-and-loading)).
 
 After mutating a `Transform`, call `sync_global_transform(entity)` (or use
 `update_transform`, which mutates and syncs in one call) so the renderer sees the
-updated `GlobalTransform`. Full signatures:
+updated `GlobalTransform`. It copies the entity's own `Transform` and ignores a
+parent: a child's `GlobalTransform` is set right by transform propagation, every
+frame. Full signatures:
 [`GameWorld`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/struct.GameWorld.html).
 
 ## Saving and loading

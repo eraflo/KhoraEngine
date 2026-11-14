@@ -27,9 +27,10 @@ use khora_core::platform::MachineIdentity;
 use khora_core::Runtime;
 use khora_io::profiles::{load, profile_path, save, ProfilePlace, PROFILES_VAR, SHIPPED_PROFILE};
 
-/// The folder a packed game ships the profile it was built with in — the
-/// folder its `runtime.json` sits in. The default runtime puts it in the
-/// runtime's resources beside [`ProfilePlace::Player`]; without it, a
+/// The folder a packed game ships its build-time profile in, beside its
+/// `runtime.json`.
+///
+/// The default runtime installs it with [`ProfilePlace::Player`]; without it, a
 /// player's boot reads no shipped profile.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ShippedProfileDir(pub(crate) PathBuf);
@@ -49,17 +50,15 @@ pub(crate) struct Profiles {
 }
 
 impl Profiles {
-    /// Reads the profile of the machine and game `runtime` names, before the
-    /// DCC starts, and seeds `dcc`'s cost book with it. Kept only when the
-    /// application keeps profiles (`kept`) or `KHORA_PROFILES` names a
-    /// folder: an application that asked for none — a test's — never reads
-    /// nor writes the user's folders. `None` when profiles are not kept, or
-    /// no folder resolves.
+    /// Reads the profile of the machine and game `runtime` names, and seeds
+    /// `dcc`'s cost book with it; call before the DCC starts.
     ///
-    /// The local profile is the one filed under this machine; a player's
-    /// boot with none reads the one its game shipped. A profile is used only
-    /// when it was learnt by this engine version running this game; any
-    /// other, or one that does not read, is logged and left.
+    /// `None` when profiles are not kept (neither `kept` nor `KHORA_PROFILES`
+    /// names a folder) or no folder resolves. This machine's profile comes
+    /// first; a player's boot with none reads the one its game shipped. Only a
+    /// profile this engine version learnt running this game is used; any other,
+    /// or one that does not read, is logged and left.
+    /// See the book: concepts/gorna.md, "Learnt across runs".
     pub(crate) fn begin(runtime: &Runtime, dcc: &DccService, kept: bool) -> Option<Self> {
         let chosen = std::env::var_os(PROFILES_VAR).is_some_and(|folder| !folder.is_empty());
         if !kept && !chosen {
@@ -111,8 +110,9 @@ impl Profiles {
         })
     }
 
-    /// At a frame's end: writes what the DCC learnt, when it learnt
-    /// something since the last write and [`SAVE_EVERY`] has passed.
+    /// Writes what the DCC learnt, when it changed, at most every [`SAVE_EVERY`].
+    ///
+    /// Called at each frame's end.
     pub(crate) fn tick(&mut self, dcc: &DccService) {
         if self.saved_at.elapsed() < SAVE_EVERY {
             return;
@@ -124,7 +124,7 @@ impl Profiles {
         }
     }
 
-    /// At shutdown, the DCC stopped: writes what it learnt last.
+    /// Writes what the DCC learnt last; called at shutdown, once it stopped.
     pub(crate) fn end(mut self, dcc: &DccService) {
         let rows = dcc.learnt_costs();
         if !rows.is_empty() {

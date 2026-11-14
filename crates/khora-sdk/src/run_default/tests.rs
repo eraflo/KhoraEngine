@@ -14,12 +14,9 @@
 
 //! The default runtime: what it reads beside its binary, and how it starts.
 //!
-//! The engine boots first; the runtime then files its heavy work by ticket —
-//! a loose `assets/` directory's open, the default scene, the scripts'
-//! compile — and waits on them through the engine's `Readiness`. These tests
-//! drive the runtime app through `EngineCore::bootstrap` and `tick`, without a
-//! window. Work filed off the frame spans frames, so they wait a bounded
-//! number of frames for it, never assume the frame that lands it.
+//! The tests drive the runtime app through `EngineCore::bootstrap` and `tick`,
+//! without a window. Work filed off the frame spans frames, so they wait a
+//! bounded number of frames for it, never assuming the frame that lands it.
 
 use super::*;
 use crate::khora_core::asset::{AssetUUID, IndexTicket};
@@ -38,15 +35,16 @@ use khora_io::asset::signing::{PackKey, PackSealError, PackSigner};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-/// The `runtime.json` the editor's "Build Game" writes for a project named
-/// "Khora Demo" with the Release preset. The editor's own test compares
-/// what it writes against the same file, so the writer and this reader are
-/// held to one schema.
+/// The `runtime.json` the editor's Build Game writes for "Khora Demo", Release preset.
+///
+/// The editor's own test compares what it writes against the same file, so
+/// the writer and this reader are held to one schema.
 const WRITTEN_BY_THE_EDITOR: &str = include_str!("../../tests/fixtures/runtime.json");
 
-/// One file per asset type the index builder knows. The bytes are not a
-/// valid asset of any kind: the probe only asks whether a decoder is
-/// registered for the type, not whether it accepts the file.
+/// One file per asset type the index builder knows.
+///
+/// The bytes are not a valid asset of any kind: the probe only asks whether a
+/// decoder is registered for the type, not whether it accepts the file.
 const PROBES: &[&str] = &[
     "probe.obj",
     "probe.png",
@@ -65,15 +63,15 @@ const DECODABLE: &[&str] = &[
     "audio", "font", "material", "mesh", "prefab", "script", "shader", "texture",
 ];
 
-/// The most frames a piece of work filed off the frame may take to land: the
-/// background run, the frame start that hands it over, the boundary that
-/// takes it in. Frames are ~10 ms apart here, so this is seconds — a bound,
-/// not the frame that lands it.
+/// The most frames a piece of work filed off the frame may take to land.
+///
+/// It spans the background run, the frame start that hands it over and the
+/// boundary that takes it in. Frames are ~10 ms apart here, so this is seconds.
 const MAX_FRAMES: usize = 500;
 
-/// How many tickets of each hub are looked at when asking whether anything
-/// filed is still in flight. A hub numbers its tickets from 1, and a runtime
-/// files a handful at start-up.
+/// How many tickets of each hub are looked at to tell whether anything is in flight.
+///
+/// A hub numbers its tickets from 1, and a runtime files a handful at start-up.
 const TICKETS: u64 = 16;
 
 /// One triangle, as an `.obj`.
@@ -164,9 +162,9 @@ impl GameDir {
         std::fs::write(path, bytes).expect("the asset is written");
     }
 
-    /// Packs `<dir>/project/assets/` into `<dir>/exe/`, the packed game's
-    /// binary directory, which it returns, signed by [`Self::signer`].
-    /// Nothing loose sits beside it.
+    /// Packs `<dir>/project/assets/` into `<dir>/exe/`, signed by [`Self::signer`].
+    ///
+    /// Returns that binary directory, with nothing loose beside the pack.
     fn packed(&self, files: &[(&str, &[u8])]) -> PathBuf {
         let assets = self.project_assets(files);
         let exe_dir = self.0.join("exe");
@@ -250,10 +248,10 @@ impl Drop for GameDir {
     }
 }
 
-/// The folder the engines these tests boot file their machine profiles in,
-/// one per test process (each test runs in its own): never the profiles of
-/// whoever runs the tests, under their home folder. Removed with the test's
-/// game folders.
+/// The folder the engines these tests boot file their machine profiles in.
+///
+/// One per test process (each test runs in its own), removed with the test's
+/// game folders: never the profiles of whoever runs the tests.
 fn profiles_scratch() -> PathBuf {
     std::env::temp_dir().join(format!(
         "khora-sdk-run-default-profiles-{}",
@@ -261,10 +259,11 @@ fn profiles_scratch() -> PathBuf {
     ))
 }
 
-/// The folder the engines these tests boot keep the user's files in — the
-/// process's home and data folders while they run: the default runtime app
-/// keeps them (its quarantine), and never in the home of whoever runs the
-/// tests. One per test process, removed with the test's game folders.
+/// The folder the engines these tests boot keep the user's files in, such as the quarantine.
+///
+/// It stands for the process's home and data folders while they run, never
+/// the home of whoever runs the tests. One per test process, removed with the
+/// test's game folders.
 fn user_folders_scratch() -> PathBuf {
     std::env::temp_dir().join(format!("khora-sdk-run-default-user-{}", std::process::id()))
 }
@@ -277,11 +276,11 @@ fn opening(scene: &str) -> RuntimeConfig {
     }
 }
 
-/// The engine the runtime binary in `exe_dir` boots: its assets installed as
-/// `first` installs them — a pack verified with the key its build stamped
-/// ([`pack_key_of`]) — then the runtime app set up. Its machine profile
-/// is filed in [`profiles_scratch`], named by `KHORA_PROFILES`; the user's
-/// files it keeps (its quarantine), under [`user_folders_scratch`].
+/// Boots the engine the runtime binary in `exe_dir` boots, running `app`.
+///
+/// Its assets are installed as `first` installs them, a pack verified with the
+/// key its build stamped ([`pack_key_of`]). Its machine profile is filed in
+/// [`profiles_scratch`], its quarantine under [`user_folders_scratch`].
 fn engine_with<A: EngineApp>(exe_dir: &Path, app: A) -> EngineCore<A> {
     std::env::set_var(khora_io::profiles::PROFILES_VAR, profiles_scratch());
     let user = user_folders_scratch();
@@ -517,8 +516,7 @@ fn runtime_json_written_by_the_editor_reads_back_field_for_field() {
     assert_eq!(cfg.preset.as_deref(), Some("release"));
 }
 
-/// A `runtime.json` written before the window title existed still boots,
-/// and the window is titled after the project.
+/// A `runtime.json` without a window title boots, the window titled after the project.
 #[test]
 fn runtime_json_without_a_window_title_titles_the_window_after_the_project() {
     let cfg: RuntimeConfig = serde_json::from_str(
@@ -552,9 +550,10 @@ fn default_scene_path_is_the_one_the_editor_writes() {
 // The asset service a runtime starts on
 // ---------------------------------------------------------------------------
 
-/// **A loose-files runtime starts on an empty service.** Its `assets/` is
-/// walked off the frame once the engine runs, so the service built before
-/// the boot indexes nothing and serves no project yet.
+/// **A loose-files runtime starts on an empty service.**
+///
+/// Its `assets/` is walked off the frame once the engine runs, so the service
+/// built before the boot indexes nothing and serves no project yet.
 #[test]
 fn a_loose_files_runtime_starts_on_an_empty_service() {
     let game = GameDir::new("loose-empty-start");
@@ -594,11 +593,12 @@ fn a_loose_files_runtime_registers_every_decoder() -> Result<()> {
     Ok(())
 }
 
-/// The runtime reads the asset-identity registry the editor writes: a scene
-/// renamed in the editor keeps the UUID every reference to it stored, so a
-/// loose-files runtime, once its directory's open has landed, finds it under
-/// that UUID, not under the one its new path would derive. The registry sits
-/// in `.khora/` beside `assets/`, as in a project.
+/// The runtime reads the asset-identity registry the editor writes.
+///
+/// A scene renamed in the editor keeps the UUID every reference to it stored,
+/// so a loose-files runtime, once its open landed, finds it under that UUID,
+/// not the one its new path derives. The registry sits in `.khora/` beside
+/// `assets/`, as in a project.
 #[test]
 fn a_loose_files_runtime_resolves_the_uuids_the_registry_froze() -> Result<()> {
     let game = GameDir::new("loose-registry");
@@ -633,9 +633,10 @@ fn a_loose_files_runtime_resolves_the_uuids_the_registry_froze() -> Result<()> {
     Ok(())
 }
 
-/// The start-up error a user sees when nothing is next to the binary reads
-/// as one sentence: the source line break is a `\` continuation, not a run
-/// of spaces inside the message.
+/// The start-up error for nothing beside the binary reads as one sentence.
+///
+/// The source line break is a `\` continuation, not a run of spaces inside the
+/// message.
 #[test]
 fn the_nothing_to_load_error_has_no_run_of_spaces() -> Result<()> {
     let dir = scratch_dir("nothing-to-load")?;
@@ -688,9 +689,10 @@ const SEALED: &[(&str, &[u8])] = &[
     ("textures/sealed.png", b"sealed texture bytes"),
 ];
 
-/// **A signed pack starts the runtime**: built with a signer and run with
-/// its key, the service starts on the pack and an asset of it loads, its
-/// bytes as packed.
+/// **A signed pack starts the runtime.**
+///
+/// Built with a signer and run with its key, the service starts on the pack and
+/// an asset of it loads, its bytes as packed.
 #[test]
 fn a_signed_pack_starts_the_runtime() {
     let game = GameDir::new("signed-starts");
@@ -713,10 +715,11 @@ fn a_signed_pack_starts_the_runtime() {
     );
 }
 
-/// **An unsigned pack is refused**: a runtime beside `data.pack` and
-/// `index.bin` does not start when there is no `manifest.bin` (`Missing`),
-/// nor when `manifest.bin` is a bare, unsigned manifest (`Malformed`) —
-/// no more warning and a run unverified.
+/// **An unsigned pack is refused.**
+///
+/// A runtime beside `data.pack` and `index.bin` does not start when there is no
+/// `manifest.bin` (`Missing`), nor when `manifest.bin` is a bare, unsigned
+/// manifest (`Malformed`): never a warning and a run left unverified.
 #[test]
 fn an_unsigned_pack_is_refused() {
     let game = GameDir::new("unsigned-refused");
@@ -754,9 +757,10 @@ fn an_unsigned_pack_is_refused() {
     );
 }
 
-/// **A runtime refuses a pack signed by another key**: the pack verified
-/// with a key other than the one it was signed with does not start the
-/// runtime (`BadSignature`).
+/// **A runtime refuses a pack signed by another key.**
+///
+/// The pack verified with a key other than the one it was signed with does not
+/// start the runtime (`BadSignature`).
 #[test]
 fn a_runtime_refuses_a_pack_signed_by_another_key() {
     let game = GameDir::new("other-key-refused");
@@ -798,9 +802,10 @@ fn a_runtime_with_no_stamped_key_refuses_a_pack() {
     );
 }
 
-/// **A runtime refuses a pack whose index changed**: the `index.bin` of
-/// another pack of the same files, of other sizes, put in place of the one
-/// the manifest was signed over, does not start the runtime
+/// **A runtime refuses a pack whose index changed.**
+///
+/// The `index.bin` of another pack of the same files, of other sizes, put in
+/// place of the one the manifest was signed over, does not start the runtime
 /// (`IndexChanged`).
 #[test]
 fn a_runtime_refuses_a_pack_whose_index_changed() {
@@ -837,11 +842,12 @@ fn a_runtime_refuses_a_pack_whose_index_changed() {
     );
 }
 
-/// **A tampered pack entry fails its load**: one byte of the scene's bytes
-/// in `data.pack` changed after the build; the seal still holds (the
-/// manifest and the index are untouched), so the runtime starts, but the
-/// scene's load is refused against the manifest's hash. The texture,
-/// untouched, loads.
+/// **A tampered pack entry fails its load.**
+///
+/// One byte of the scene's bytes in `data.pack` changed after the build; the
+/// seal still holds (the manifest and the index are untouched), so the runtime
+/// starts, but the scene's load is refused against the manifest's hash. The
+/// texture, untouched, loads.
 #[test]
 fn a_tampered_pack_entry_fails_its_load() {
     let game = GameDir::new("entry-tampered");
@@ -874,12 +880,13 @@ fn a_tampered_pack_entry_fails_its_load() {
     );
 }
 
-/// **A stamped runtime refuses loose assets in place of its pack**: a built
-/// game — its binary stamped with a key, its `data.pack` and `manifest.bin`
-/// still beside it — whose `index.bin` was taken away and an `assets/`
-/// folder put beside it does not start on those loose files, unverified. A
-/// stamped binary is a built game, always packed: the loose run left
-/// unverified is a dev run, whose binary carries no key.
+/// **A stamped runtime refuses loose assets in place of its pack.**
+///
+/// A built game — its binary stamped with a key, its `data.pack` and
+/// `manifest.bin` still beside it — whose `index.bin` was taken away and an
+/// `assets/` folder put beside it does not start on those loose files,
+/// unverified. A stamped binary is a built game, always packed: the loose run
+/// left unverified is a dev run, whose binary carries no key.
 #[test]
 fn a_stamped_runtime_refuses_loose_assets_in_place_of_its_pack() {
     let game = GameDir::new("stamped-loose");
@@ -903,11 +910,12 @@ fn a_stamped_runtime_refuses_loose_assets_in_place_of_its_pack() {
     );
 }
 
-/// **A sealed game compiles no script left beside its pack**: a packed game,
-/// its pack signed and its key stamped, with an `assets/scripts/` folder
-/// holding a script put beside the binary after the build. Nothing the build
-/// did not sign runs: no compile is filed, and the script's behaviour is
-/// never declared.
+/// **A sealed game compiles no script left beside its pack.**
+///
+/// A packed game, its pack signed and its key stamped, with an
+/// `assets/scripts/` folder holding a script put beside the binary after the
+/// build. Nothing the build did not sign runs: no compile is filed, and the
+/// script's behaviour is never declared.
 #[test]
 fn a_sealed_game_compiles_no_script_left_beside_its_pack() {
     let game = GameDir::new("sealed-loose-script");
@@ -956,10 +964,11 @@ fn triangle_buffer(corners: &[[f32; 3]; 3]) -> Vec<u8> {
         .collect()
 }
 
-/// **A packed game reads a glTF's buffers inside its pack**: the runtime
-/// beside a pack holding `models/tri.gltf` and its `models/tri.bin` decodes
-/// the pack's triangle, though a `models/tri.bin` holding another triangle
-/// sits beside the binary — nothing loose beside the binary is read.
+/// **A packed game reads a glTF's buffers inside its pack.**
+///
+/// The runtime beside a pack holding `models/tri.gltf` and its `models/tri.bin`
+/// decodes the pack's triangle, though a `models/tri.bin` holding another
+/// triangle sits beside the binary — nothing loose beside the binary is read.
 #[test]
 fn a_packed_gltf_reads_its_buffers_inside_the_pack() {
     let game = GameDir::new("packed-gltf");
@@ -1008,8 +1017,9 @@ fn a_packed_gltf_reads_its_buffers_inside_the_pack() {
     );
 }
 
-/// **An `index.bin` over its limit is refused before it is read**: the
-/// runtime beside a pack whose `index.bin` is past 256 MiB does not start
+/// **An `index.bin` over its limit is refused before it is read.**
+///
+/// The runtime beside a pack whose `index.bin` is past 256 MiB does not start
 /// on it — the error names the index — rather than reading it whole.
 #[test]
 fn an_index_over_its_limit_is_refused_before_it_is_read() {
@@ -1040,11 +1050,12 @@ fn an_index_over_its_limit_is_refused_before_it_is_read() {
 // Starting by ticket
 // ---------------------------------------------------------------------------
 
-/// **A loose runtime is indexed off the frame.** Once `setup` returned, the
-/// engine serves an empty service and the directory's open is in flight;
-/// the startup waits. Frames later the open lands behind the same handle:
-/// the service serves the directory, its files under the ids the registry
-/// gives them.
+/// **A loose runtime is indexed off the frame.**
+///
+/// Once `setup` returned, the engine serves an empty service and the
+/// directory's open is in flight; the startup waits. Frames later the open
+/// lands behind the same handle: the service serves the directory, its files
+/// under the ids the registry gives them.
 #[test]
 fn a_loose_runtime_is_indexed_off_the_frame() {
     let game = GameDir::new("indexed-off-the-frame");
@@ -1109,10 +1120,11 @@ fn a_loose_runtime_is_indexed_off_the_frame() {
     );
 }
 
-/// **A loose runtime opens its default scene by ticket**, once its
-/// directory's open landed. Once `setup` returned, the world holds no
-/// entity and no scene load is filed yet — the scene is not indexed. Frames
-/// later the scene's entities are in the world.
+/// **A loose runtime opens its default scene by ticket, once its open landed.**
+///
+/// Once `setup` returned, the world holds no entity and no scene load is filed
+/// yet: the scene is not indexed. Frames later the scene's entities are in the
+/// world.
 #[test]
 fn the_runtime_opens_its_default_scene_by_ticket_from_loose_files() {
     let game = GameDir::new("scene-loose");
@@ -1140,8 +1152,9 @@ fn the_runtime_opens_its_default_scene_by_ticket_from_loose_files() {
     });
 }
 
-/// **A packed runtime opens its default scene by ticket**, filed in `setup`:
-/// the pack's index is read before the boot, so nothing is indexed and the
+/// **A packed runtime opens its default scene by ticket, filed in `setup`.**
+///
+/// The pack's index is read before the boot, so nothing is indexed and the
 /// load is in flight once `setup` returned, the world still empty. Frames
 /// later the scene's entities are in the world.
 #[test]
@@ -1166,8 +1179,9 @@ fn the_runtime_opens_its_default_scene_by_ticket_from_a_pack() {
     });
 }
 
-/// **A runtime without its default scene starts empty**, loose or packed:
-/// nothing is filed for the scene, the startup waits on nothing but the
+/// **A runtime without its default scene starts empty, loose or packed.**
+///
+/// Nothing is filed for the scene, the startup waits on nothing but the
 /// directory's open, and is ready with the world empty.
 #[test]
 fn a_runtime_without_its_default_scene_starts_empty() {
@@ -1215,10 +1229,11 @@ fn a_runtime_without_its_default_scene_starts_empty() {
     }
 }
 
-/// **The runtime compiles its scripts by ticket.** Once `setup` returned,
-/// the compile of `assets/scripts/` is in flight. Frames
-/// later it has landed, and the counter of the default scene — loaded with
-/// its declaration before its program — runs.
+/// **The runtime compiles its scripts by ticket.**
+///
+/// Once `setup` returned, the compile of `assets/scripts/` is in flight. Frames
+/// later it has landed, and the counter of the default scene — loaded with its
+/// declaration before its program — runs.
 #[test]
 fn the_runtime_compiles_its_scripts_by_ticket() {
     let game = loose_game_with_a_counter("scripts-by-ticket");
@@ -1247,11 +1262,12 @@ fn the_runtime_compiles_its_scripts_by_ticket() {
     );
 }
 
-/// **The prefabs a loose game's scripts spawn are the ones its directory
-/// holds**, once its open landed: the catalog a script's `Spawn` is checked
-/// against was filled at boot from the asset service as it was then — empty
-/// for loose files — and must follow the service the open swaps in, as it
-/// holds a packed game's prefabs from the start.
+/// **The prefabs a loose game's scripts spawn are those its directory holds.**
+///
+/// The catalog a script's `Spawn` is checked against was filled at boot from
+/// the asset service as it was then, empty for loose files; once the open
+/// landed, it follows the service the open swaps in, as it holds a packed
+/// game's prefabs from the start.
 #[test]
 fn a_loose_runtime_spawns_the_prefabs_its_directory_holds() {
     use crate::khora_data::scene::PrefabCatalog;
@@ -1338,10 +1354,11 @@ fn scene_with_an_instance(prefab: &str, bytes: &[u8]) -> Vec<u8> {
         .to_bytes()
 }
 
-/// **The default scene's prefab instances are read from the game's
-/// prefabs**, loose or packed: a loose game's scene is filed once its open
-/// landed, so its instances are expanded from the directory the open swapped
-/// in, not from the empty service the engine booted with.
+/// **The default scene's prefab instances are read from the game's prefabs.**
+///
+/// Loose or packed: a loose game's scene is filed once its open landed, so its
+/// instances are expanded from the directory the open swapped in, not from the
+/// empty service the engine booted with.
 #[test]
 fn the_default_scene_expands_its_prefab_instances_from_the_games_prefabs() {
     const PREFAB: &str = "prefabs/crate.kprefab";
@@ -1413,12 +1430,13 @@ impl EngineApp for Watched {
     }
 }
 
-/// **The runtime is ready once its scene and its scripts landed.** A loose
-/// game with a default scene and a script: the engine lets its startup go
-/// once, on the frame the last of the three — the directory's open, the
-/// scene load, the compile — has landed, with the scene's entity in the
-/// world and its behaviour known; never before the scene was filed, never
-/// again after.
+/// **The runtime is ready once its scene and its scripts landed.**
+///
+/// A loose game with a default scene and a script: the engine lets its startup
+/// go once, on the frame the last of the three — the directory's open, the
+/// scene load, the compile — has landed, with the scene's entity in the world
+/// and its behaviour known; never before the scene was filed, never again
+/// after.
 #[test]
 fn the_runtime_is_ready_once_its_scene_and_scripts_landed() {
     let game = loose_game_with_a_counter("ready");
@@ -1484,11 +1502,12 @@ fn the_runtime_is_ready_once_its_scene_and_scripts_landed() {
     );
 }
 
-/// **The runtime names its game from its config.** A `runtime.json` written
-/// before games had a version reads `0.1.0`; one that names it keeps it. The
-/// game a config runs is its `project_name` at its `game_version` — and a
-/// runtime started without `runtime.json` is the default config's game, not
-/// its window title at the engine's version.
+/// **The runtime names its game from its config.**
+///
+/// A `runtime.json` with no game version reads `0.1.0`; one that
+/// names it keeps it. The game a config runs is its `project_name` at its
+/// `game_version` — and a runtime started without `runtime.json` is the default
+/// config's game, not its window title at the engine's version.
 #[test]
 fn the_runtime_names_its_game_from_its_config() {
     let older: RuntimeConfig = serde_json::from_str(
@@ -1531,11 +1550,12 @@ fn the_runtime_names_its_game_from_its_config() {
     );
 }
 
-/// **A blank game version in the runtime config is the default one.** A
-/// `runtime.json` whose `game_version` is empty or blank names no version,
-/// as a project's `project.json` with a blank `version` names none: the
-/// game runs at `0.1.0`, the version the editor gives that same project,
-/// never at an empty one.
+/// **A blank game version in the runtime config is the default one.**
+///
+/// A `runtime.json` whose `game_version` is empty or blank names no version, as
+/// a project's `project.json` with a blank `version` names none: the game runs
+/// at `0.1.0`, the version the editor gives that same project, never at an
+/// empty one.
 #[test]
 fn a_blank_game_version_in_the_runtime_config_is_the_default_one() {
     for blank in ["", "   "] {
@@ -1552,15 +1572,15 @@ fn a_blank_game_version_in_the_runtime_config_is_the_default_one() {
 }
 
 /// **The runtime these tests boot reads no profile from the user's home.**
-/// The default runtime app keeps a machine profile, at a developer's path
-/// under the home folder unless `KHORA_PROFILES` names another. Every test
-/// here boots it through [`runtime_engine`]: it must not read, nor file, the
-/// profile of whoever runs the tests. A profile of this machine running the
-/// runtime's game, every family's rows learnt at 7, sits in a home folder of
-/// the test's own (`USERPROFILE`, `HOME`), and `KHORA_PROFILES` is not set
-/// before the boot: the boot helper files the profiles elsewhere. The runtime
-/// booted as the other tests boot it plans its first round at its quotes, not
-/// at 7.
+///
+/// The default runtime app keeps a machine profile, at a developer's path under
+/// the home folder unless `KHORA_PROFILES` names another. Every test here boots
+/// it through [`runtime_engine`]: it must not read, nor file, the profile of
+/// whoever runs the tests. A profile of this machine running the runtime's
+/// game, every family's rows learnt at 7, sits in a home folder of the test's
+/// own (`USERPROFILE`, `HOME`), and `KHORA_PROFILES` is not set before the
+/// boot: the boot helper files the profiles elsewhere. The runtime booted as
+/// the other tests boot it plans its first round at its quotes, not at 7.
 #[test]
 fn the_runtime_these_tests_boot_reads_no_profile_from_the_home_folder() {
     use crate::khora_core::agent::gorna::{CostProfile, ProfileRow, StrategyId};
@@ -1625,14 +1645,15 @@ fn the_runtime_these_tests_boot_reads_no_profile_from_the_home_folder() {
 }
 
 /// **The runtime these tests boot writes no quarantine to the home folder.**
+///
 /// The default runtime app keeps the user's files: the files its run refuses
-/// are quarantined in a list under the home folder, `.khora/quarantine.ron`
-/// for a developer. Every test here boots it through [`runtime_engine`]: none
-/// may write the quarantine of whoever runs the tests. Once booted, the home
-/// and data folders the process names (`USERPROFILE`, `HOME`, `APPDATA`,
+/// are quarantined in a list under the home folder, `.khora/quarantine.ron` for
+/// a developer. Every test here boots it through [`runtime_engine`]: none may
+/// write the quarantine of whoever runs the tests. Once booted, the home and
+/// data folders the process names (`USERPROFILE`, `HOME`, `APPDATA`,
 /// `XDG_DATA_HOME`) are scratch folders of the test's own, under the system's
-/// temporary folder, not the ones it started with — checked before anything
-/// is refused, so a failing run writes nothing there either. The runtime then
+/// temporary folder, not the ones it started with — checked before anything is
+/// refused, so a failing run writes nothing there either. The runtime then
 /// refuses a file: its quarantine lies under the scratch home, and lists it.
 #[test]
 fn the_runtime_these_tests_boot_writes_no_quarantine_to_the_home_folder() {

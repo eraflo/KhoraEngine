@@ -12,16 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A booted engine reads what the DCC learnt of this machine running this
-//! game before its DCC starts, and writes it back when it shuts down: per
-//! machine and game version for a developer, per machine for a player, whose
-//! game may ship a profile to start from.
+//! The machine profiles a booted engine reads before its DCC starts and writes
+//! at shutdown: a developer's per machine and game version, a player's per
+//! machine, its game's shipped one as a start.
 //!
-//! Every test files its profiles under a scratch folder of its own, named by
-//! `KHORA_PROFILES`, and journals the DCC's decisions there
-//! (`KHORA_RECORD_DECISIONS`): the first round's corrections are what the
-//! book was seeded with, before any frame ran. Each test sets these
-//! variables for its own process: the tests run one process each.
+//! Each test names a scratch folder of its own in `KHORA_PROFILES` and
+//! `KHORA_RECORD_DECISIONS`, for its own process: the tests run one process
+//! each. The journal's first round shows what the cost book was seeded with.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -65,12 +62,11 @@ impl EngineApp for Profiled {
     fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
 }
 
-/// A folder of its own under the system's temporary folder — profiles under
-/// `profiles/`, the decisions' journal beside them — named to this process
-/// by `KHORA_PROFILES` and `KHORA_RECORD_DECISIONS`; removed when dropped.
-/// The process's home and data folders are made folders of it too, so an
-/// engine keeping the user's files keeps them there, never in the home of
-/// whoever runs the tests.
+/// A test's own temporary folder of profiles and decisions' journal, named by
+/// `KHORA_PROFILES` and `KHORA_RECORD_DECISIONS`; removed when dropped.
+///
+/// It holds the process's home and data folders too, so an engine keeping the
+/// user's files never writes in the home of whoever runs the tests.
 struct Scratch(PathBuf);
 
 impl Scratch {
@@ -158,7 +154,6 @@ fn learnt_by_every_family(
     }
 }
 
-/// The engine, booted headless over `runtime`.
 /// Names folders under `root` as the process's home (`USERPROFILE`, `HOME`)
 /// and data folder (`APPDATA`, `XDG_DATA_HOME`).
 fn point_user_folders_at(root: &std::path::Path) {
@@ -168,6 +163,7 @@ fn point_user_folders_at(root: &std::path::Path) {
     std::env::set_var("XDG_DATA_HOME", root.join("data"));
 }
 
+/// Boots the engine headless over `runtime`.
 fn boot(runtime: Runtime) -> EngineCore<Profiled> {
     let mut engine = EngineCore::<Profiled>::new();
     engine.bootstrap(Profiled, runtime);

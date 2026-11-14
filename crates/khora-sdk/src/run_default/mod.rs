@@ -12,23 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Default game runtime entry-point shared by `khora-runtime` and any
-//! native-Rust user project that doesn't need a custom `EngineApp`.
-//!
-//! [`run_default`] is the canonical "data-only Khora game" main:
+//! [`run_default`], the entry point of a data-only game: the prebuilt
+//! `khora-runtime`, and any project that needs no `EngineApp` of its own.
 //!
 //! ```ignore
 //! fn main() -> anyhow::Result<()> {
 //!     khora_sdk::run_default()
 //! }
 //! ```
-//!
-//! It auto-detects whether to read assets from a packed archive
-//! (`<exe-dir>/data.pack` + `<exe-dir>/index.bin`) or a loose
-//! `<exe-dir>/assets/` directory, registers every default decoder, loads
-//! the scene named in `<exe-dir>/runtime.json`, and hands control to the
-//! main loop. Users who need custom components / agents / lanes write
-//! their own `EngineApp` impl and call [`crate::run_winit`] directly.
 
 use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
@@ -49,23 +40,15 @@ use khora_io::asset::PackManifest;
 mod opening;
 use opening::{is_packed, GameOpening, GAME_DIR};
 
-/// Runtime config the launcher (editor's "Build Game") drops next to the
-/// binary. Read at startup; sensible defaults are used when the file is
-/// missing (typical for engine contributors running the runtime against a
-/// loose `assets/` directory).
+/// The `runtime.json` [`run_default`] read, for the app's functions that take no `self`.
 static RUNTIME_CONFIG: OnceLock<RuntimeConfig> = OnceLock::new();
 
-/// Builds the [`AssetService`] the game starts with, by auto-detecting the
-/// loader: a pack's, read from its precomputed `index.bin`; an empty one for
-/// a loose `assets/` directory, which the app files to be indexed off the
-/// frame once the engine runs. See module docs for the precedence rules.
+/// Builds the [`AssetService`] the game starts with: a pack's, or an empty one for loose `assets/`.
 ///
-/// A pack is opened only once its `manifest.bin` verifies with `pack_key`,
-/// the key stamped into the runtime binary, over its `index.bin`: a pack
-/// whose manifest is missing, malformed, unsigned, signed by another key or
-/// over another index — or a runtime with no key — is refused, and the
-/// runtime does not start. Each load is then hashed against the manifest.
-/// Loose `assets/` is not a pack: nothing is verified.
+/// Loose assets are indexed off the frame once the engine runs, unverified. A
+/// pack opens only if its seal verifies with `pack_key` ([`read_manifest`]);
+/// each load is then hashed against the manifest. See the book:
+/// concepts/trust.md, "Signed packs".
 fn build_asset_service(
     exe_dir: &Path,
     metrics: Arc<MetricsRegistry>,
@@ -125,10 +108,10 @@ fn build_asset_service(
     Ok(svc)
 }
 
-/// The manifest of the pack beside `exe_dir`: its `manifest.bin`, verified
-/// with `pack_key` over the `index.bin` whose bytes are `index_bytes`. Any
-/// failure is a [`khora_io::asset::signing::PackSealError`], logged, and
-/// refuses the pack.
+/// Returns the pack's `manifest.bin`, verified with `pack_key` over the index bytes `index_bytes`.
+///
+/// A missing, malformed or unsigned manifest, another key, another index, or
+/// no key at all is a [`PackSealError`], logged, which refuses the pack.
 fn read_manifest(
     exe_dir: &Path,
     index_bytes: &[u8],
@@ -154,9 +137,10 @@ fn read_manifest(
     }
 }
 
-/// A stamped runtime is a built game, and a built game runs from its pack:
-/// loose files in place of it — a pack missing a part, `assets/` beside —
-/// are refused. An unstamped runtime (a dev run) runs loose files.
+/// Refuses loose files to a stamped runtime: a built game runs only from its pack.
+///
+/// A pack missing a part, or `assets/` in its place, is refused. An unstamped
+/// runtime (a dev run) runs loose files.
 fn refuse_loose_when_stamped(exe_dir: &Path, pack_key: Option<PackKey>) -> Result<()> {
     if pack_key.is_none() {
         return Ok(());
@@ -193,10 +177,11 @@ fn check_pack_seal(exe_dir: &Path, pack_key: Option<PackKey>) -> Result<()> {
     read_manifest(exe_dir, &bytes, pack_key).map(|_| ())
 }
 
-/// The default `EngineApp` used by [`run_default`]. It opens the game
-/// beside the binary off the frame — its assets, the scene named in
-/// `runtime.json`, its scripts — and ticks idly afterwards: gameplay lives in
-/// the scene's scripts, which the engine runs itself while the game plays.
+/// The [`EngineApp`] of [`run_default`]: it opens the game beside the binary, then idles.
+///
+/// The scene `runtime.json` names is opened off the frame, and so are loose
+/// assets and their scripts; a packed game's index is read before the boot,
+/// and it mounts no script. Gameplay lives in the scene's scripts.
 struct DefaultRuntimeApp {
     exe_dir: PathBuf,
     config: RuntimeConfig,
@@ -205,8 +190,9 @@ struct DefaultRuntimeApp {
 }
 
 impl DefaultRuntimeApp {
-    /// The runtime app of the game beside `exe_dir`, run with `config`.
-    /// [`EngineApp::new`] gives the one of the running binary.
+    /// Returns the app of the game beside `exe_dir`, run with `config`.
+    ///
+    /// [`EngineApp::new`] builds the running binary's.
     fn at(exe_dir: PathBuf, config: RuntimeConfig) -> Self {
         Self {
             exe_dir,
@@ -217,10 +203,10 @@ impl DefaultRuntimeApp {
     }
 }
 
-/// Installs in `runtime` the asset service the game beside `exe_dir` starts
-/// with: a pack's, read from its precomputed `index.bin`; an empty one for a
-/// loose `assets/` directory, whose open the app files once the engine runs;
-/// none, with the error logged, when there is neither.
+/// Installs in `runtime` the asset service of the game beside `exe_dir`.
+///
+/// None is installed, the error logged, when there is neither a pack nor
+/// `assets/`, or the pack is refused.
 fn install_game_assets(runtime: &mut Runtime, exe_dir: &Path, pack_key: Option<PackKey>) {
     let metrics = Arc::new(MetricsRegistry::new());
     let refusals = runtime
@@ -301,15 +287,28 @@ impl PhaseProvider for DefaultRuntimeApp {
     }
 }
 
-/// Boots a Khora game with the default runtime app: auto-detects pack vs
-/// loose assets, registers every default decoder, and loads the scene
-/// named in `runtime.json`. This is what the pre-built `khora-runtime`
-/// binary calls and what a user project's `src/main.rs` should call when
-/// it doesn't need to register custom components/agents/lanes.
+/// Runs the game beside the binary with the default app, until its window closes.
 ///
-/// Returns `Err` only on irrecoverable startup failures (no assets at
-/// all, missing exe path). Per-frame errors are logged and the loop
-/// continues.
+/// It reads `runtime.json`, opens the pack beside the binary or its loose
+/// `assets/`, and loads the scene `runtime.json` names. The prebuilt
+/// `khora-runtime` calls it, as does a project with no components, agents or
+/// lanes of its own. See the book: concepts/trust.md, "Signed packs".
+///
+/// # Errors
+///
+/// - When the binary's own path cannot be read.
+/// - When a stamped runtime finds no complete pack, or the pack's seal does not
+///   verify with the key stamped into the binary.
+/// - When the binary has no stamped key and a pack sits beside it.
+/// - When `index.bin` cannot be read or is over its size limit.
+/// - When the winit event loop cannot be created, or ends in an error.
+///
+/// Errors after start-up are logged, not returned.
+///
+/// # Panics
+///
+/// When the platform refuses to open the window, the renderer cannot start, or
+/// the engine cannot boot, as [`run_winit`] says.
 pub fn run_default() -> Result<()> {
     let exe_dir = std::env::current_exe()
         .context("Failed to query current_exe path")?
@@ -380,9 +379,6 @@ pub fn run_default() -> Result<()> {
             Err(e) => log::error!("audio open failed: {}", e),
         }
 
-        // The game's assets: a pack's index now, loose files indexed once the
-        // engine runs. Its scene and its scripts are filed in `setup`, and
-        // loaded off the frame.
         // A packed game runs on a player's machine: its profile and its
         // quarantine are filed in the player's data folder, and it may ship
         // a profile beside it.
@@ -401,6 +397,8 @@ pub fn run_default() -> Result<()> {
             &DefaultRuntimeApp::game_identity(),
             DefaultRuntimeApp::keeps_user_files(),
         );
+        // A pack's index is read now, loose files indexed once the engine
+        // runs; the scene and scripts are filed in `setup`.
         install_game_assets(runtime, &exe_dir, stamped_pack_key());
     })?;
     Ok(())

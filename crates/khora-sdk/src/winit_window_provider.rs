@@ -31,6 +31,12 @@ pub struct WinitWindowProvider {
 }
 
 impl WindowProvider for WinitWindowProvider {
+    /// Creates the window hidden; it is shown once its first frame is painted.
+    ///
+    /// # Panics
+    ///
+    /// When `native_loop` is not winit's `ActiveEventLoop`, or the platform
+    /// refuses to open the window.
     fn create(native_loop: &dyn Any, config: &WindowConfig) -> Self
     where
         Self: Sized,

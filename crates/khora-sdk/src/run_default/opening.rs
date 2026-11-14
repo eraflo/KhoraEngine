@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! How the default runtime opens its game once the engine runs: its loose
-//! assets indexed, its default scene loaded and its scripts compiled, each
-//! filed by ticket and done off the frame.
+//! How the default runtime opens its game off the frame: loose assets indexed
+//! and their scripts compiled, the default scene loaded, each filed by ticket.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -49,10 +48,11 @@ pub(super) struct GameOpening {
 }
 
 impl GameOpening {
-    /// Starts opening the game beside `exe_dir`, as `setup` does: its scripts
-    /// mounted, then its default `scene` filed at once when the game is
-    /// packed, or its loose `assets/` filed to be indexed first. `None`,
-    /// logged, when the engine holds no asset service or no scene hub.
+    /// Starts opening the game beside `exe_dir`: its scene or index filed, a loose game's scripts mounted.
+    ///
+    /// A packed game's default `scene` is filed at once; loose `assets/` are
+    /// indexed first. Returns `None`, logged, when the engine holds no asset
+    /// service or no scene hub.
     pub(super) fn start(
         exe_dir: &Path,
         scene: String,
@@ -111,9 +111,7 @@ impl GameOpening {
         Some(opening)
     }
 
-    /// Takes in what landed since, as `update` does: once the index landed,
-    /// the scene is filed; once the scene landed, what its load adapted is
-    /// logged.
+    /// Takes in what landed: files the scene once indexed, logs what its load adapted.
     pub(super) fn advance(&mut self, world: &mut GameWorld) {
         if let (Some(ticket), Some(indexes)) = (self.index, &self.indexes) {
             if let Some(outcome) = indexes.take_outcome(ticket) {
@@ -148,9 +146,10 @@ impl GameOpening {
         }
     }
 
-    /// Files the default scene to be loaded off the frame, read through the
-    /// asset service as it is now; nothing, logged, when it holds no such
-    /// scene. Either way, the startup waits on nothing more of this opening.
+    /// Files the default scene to be loaded off the frame, read through the asset service.
+    ///
+    /// Files nothing, logged, when the service holds no such scene. Either way,
+    /// the startup then waits on nothing more of this opening.
     fn file_scene(&mut self, world: &mut GameWorld) {
         let uuid = AssetUUID::new_v5(&self.scene);
         let reader = {

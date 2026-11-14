@@ -28,27 +28,29 @@ use crate::traits::EngineApp;
 use crate::InputEvent;
 
 impl<A: EngineApp> EngineCore<A> {
-    /// Executes one frame: app update, ECS maintenance, scheduler.
+    /// Runs one frame over the engine-level runtime.
     ///
-    /// This method is called by the windowing driver (e.g. winit)
-    /// each time a redraw is requested.
+    /// A driver with per-frame resources, such as a `FrameContext`, calls
+    /// [`tick_with_runtime`](Self::tick_with_runtime) instead.
+    ///
+    /// # Panics
+    ///
+    /// Panics as [`end_render_frame`](Self::end_render_frame) does.
     pub fn tick(&mut self) {
-        // Default tick path: reuse the engine-level Runtime as-is. The
-        // winit driver injects per-frame resources (`FrameContext`,
-        // viewport handle) by calling `tick_with_runtime` directly.
         let frame_runtime_arc = Arc::clone(&self.runtime);
         self.tick_with_runtime(frame_runtime_arc);
     }
 
-    /// Executes one frame with a custom per-frame [`Runtime`] overlay.
+    /// Runs one frame, its scheduler and render stages reading the per-frame
+    /// [`Runtime`] `frame_runtime_arc`, which holds the `FrameContext`.
     ///
-    /// Used by the winit runner to inject a `FrameContext` into the
-    /// per-frame Resources for cross-agent synchronization.
+    /// Runs the staged methods in order with no [`EngineApp`] hook between
+    /// them; a driver that interleaves hooks, as the editor's does, calls them
+    /// itself. See the book: concepts/the-frame.md, "The six-stage descent".
     ///
-    /// This is a convenience wrapper that calls the staged methods in order
-    /// without invoking any [`EngineApp`] lifecycle hooks. Drivers that need
-    /// to interleave hooks (e.g., the editor's overlay/shell) should call the
-    /// staged methods directly via the winit runner.
+    /// # Panics
+    ///
+    /// Panics as [`end_render_frame`](Self::end_render_frame) does.
     pub fn tick_with_runtime(&mut self, frame_runtime_arc: Arc<Runtime>) {
         let inputs = self.drain_inputs();
         self.run_app_update(&inputs);
@@ -62,14 +64,11 @@ impl<A: EngineApp> EngineCore<A> {
         }
     }
 
-    /// Stage 6 — runs the end-of-tick `Maintenance`-phase `DataSystem`s
-    /// against the scheduler's per-frame [`OutputDeck`].
+    /// Runs the `Maintenance` data systems over the frame's
+    /// [`OutputDeck`](khora_core::lane::OutputDeck).
     ///
-    /// The engine is subsystem-agnostic here: it threads the deck through
-    /// the substrate dispatcher and lets each `DataSystem` drain whatever
-    /// typed slot belongs to its domain (audio writeback, physics
-    /// writeback, future subsystems …). No subsystem-specific code lives
-    /// in this method.
+    /// The sixth stage: each system drains its domain's slots of the deck, such
+    /// as the physics and audio write-backs, into the world.
     pub fn run_maintenance(&mut self) {
         let Some(gw) = self.game_world.as_mut() else {
             return;
@@ -84,17 +83,17 @@ impl<A: EngineApp> EngineCore<A> {
                 TickPhase::Maintenance,
             );
         } else {
-            // No scheduler installed — pass a transient empty deck so
-            // `DataSystem`s that read it harmlessly observe an empty slot.
+            // Without a scheduler there is no deck: the systems read an empty one.
             let mut deck = khora_core::lane::OutputDeck::new();
             substrate::run_data_systems(world, &self.runtime, &mut deck, TickPhase::Maintenance);
         }
     }
 
-    /// Stage 1 — drain queued input events. Also ticks the telemetry
-    /// service, and feeds the events into the engine-wide
-    /// [`khora_core::platform::InputMap`] so app code can query actions
-    /// (`is_pressed`, `just_pressed`) from the same frame's inputs.
+    /// Opens the frame and returns the input events queued since the last one.
+    ///
+    /// The first stage; it also ticks the telemetry service. The events are
+    /// read, not taken: the [`InputMap`](khora_core::platform::InputMap) is
+    /// derived from the same events later in the frame.
     pub fn drain_inputs(&mut self) -> Vec<InputEvent> {
         // The frame starts here, in every driver: from now until
         // `close_frame`, what is not a wait for the display is the frame's.
@@ -102,22 +101,16 @@ impl<A: EngineApp> EngineCore<A> {
         if let Some(telemetry) = self.telemetry.as_mut() {
             let _ = telemetry.tick();
         }
-        // Read rather than drained: this is one reader among however many
-        // declare the channel — the `input_map_update` system derives the
-        // action map from the same events — and taking them would leave a
-        // stream that empties itself depending on who ran first.
-        //
-        // Deriving `InputMap` is **not** done here. It is a tick invariant, so
-        // it is a registered `DataSystem` in `PreSimulation`
-        // (`khora_data::ecs::systems::input_map_update`), which is what
-        // `RULES.md` §3 requires of engine-tick wiring and what the phase is
-        // documented for.
+        // Taking the events would leave the channel's other readers, such as
+        // the `input_map_update` system, a stream that depends on who ran first.
         self.input_events.read_for("engine_frame")
     }
 
-    /// Last stage — closes the frame's clock and, when it measured the
-    /// frame, reports to the DCC how long the frame kept the host busy, the
-    /// waits for the display excluded.
+    /// Closes the frame's clock and reports to the DCC how long the frame kept
+    /// the host busy.
+    ///
+    /// The last stage. The waits for the display are excluded; nothing is
+    /// reported when the clock was not open.
     pub fn close_frame(&mut self) {
         let Some(busy) = self.frame_clock.close() else {
             return;

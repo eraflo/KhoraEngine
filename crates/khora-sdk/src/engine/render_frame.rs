@@ -28,14 +28,13 @@ use super::EngineCore;
 use crate::traits::EngineApp;
 
 impl<A: EngineApp> EngineCore<A> {
-    /// Stage 3 — acquire the swapchain via `RenderSystem::begin_frame` and
-    /// populate the per-frame [`FrameContext`] with the frame's `Target`,
-    /// its `ColorTargetSize` and its `ClearColor`.
+    /// Acquires the frame's image and publishes its `Target`, `ColorTargetSize`
+    /// and `ClearColor` in the per-frame `FrameContext`.
     ///
-    /// Returns `true` when a renderer is present and `begin_frame` succeeded
-    /// (driver should later call [`present_frame`](Self::present_frame)).
-    /// Returns `false` only when no renderer is registered or the swapchain
-    /// could not be acquired.
+    /// The third stage. Returns whether the frame presents: `false` when no
+    /// renderer is registered, its lock is poisoned, or no image could be
+    /// acquired. Pass the result to
+    /// [`end_render_frame`](Self::end_render_frame).
     pub fn begin_render_frame(&mut self, frame_runtime_arc: &Arc<Runtime>) -> bool {
         let render_system = self
             .runtime
@@ -97,8 +96,11 @@ impl<A: EngineApp> EngineCore<A> {
         }
     }
 
-    /// Stage 4 — dispatch the scheduler so all registered agents execute
-    /// their phases for this frame.
+    /// Runs the scheduler's frame: the Substrate Pass, then every phase's layers.
+    ///
+    /// The fourth stage. The renderer is prepared with the frame's camera before
+    /// any lane records a pass.
+    /// See the book: concepts/the-frame.md, "The six-stage descent".
     pub fn run_scheduler(&mut self, frame_runtime_arc: &Arc<Runtime>) {
         let Some(gw) = self.game_world.as_mut() else {
             return;
@@ -115,9 +117,16 @@ impl<A: EngineApp> EngineCore<A> {
         }
     }
 
-    /// Stage 5a — submit recorded passes from the [`FrameGraph`](khora_data::render::FrameGraph) to the GPU.
-    /// When `presents` is `false` (render-to-viewport mode), the frame graph
-    /// is discarded instead.
+    /// Submits the passes the lanes recorded to the GPU, through the
+    /// [`FrameGraph`](khora_data::render::FrameGraph).
+    ///
+    /// When `presents` is `false`, the recorded passes are discarded instead.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the frame graph's lock is poisoned and there is something to
+    /// discard (`presents` false) or to submit (`presents` true, a device
+    /// installed).
     pub fn submit_passes(&mut self, presents: bool) {
         let device = self
             .runtime
@@ -130,11 +139,9 @@ impl<A: EngineApp> EngineCore<A> {
             .get::<SharedFrameGraph>()
             .map(|arc| (*arc).clone());
 
-        // Fold the agents' recorded passes (buffered in the scheduler's deck
-        // instead of locking the shared graph) into the FrameGraph in the
-        // order the slots' registrations declare. The topological sort
-        // refines it by the declared read/write edges; insertion order is
-        // the tie-breaker.
+        // The lanes buffered their passes in the deck rather than lock the
+        // shared graph. They join it in the slots' registered order, which the
+        // graph's sort refines by the declared read/write edges.
         if let (Some(graph), Some(scheduler)) = (&frame_graph, self.scheduler.as_mut()) {
             let deck = scheduler.deck_mut();
             let recorded: Vec<_> = self
@@ -162,8 +169,7 @@ impl<A: EngineApp> EngineCore<A> {
         }
     }
 
-    /// Stage 5b — call `RenderSystem::end_frame` to present the swapchain.
-    /// No-op when `presents` is `false`.
+    /// Presents the frame's image; does nothing when `presents` is `false`.
     pub fn present_frame(&mut self, presents: bool) {
         if !presents {
             return;
@@ -187,19 +193,25 @@ impl<A: EngineApp> EngineCore<A> {
         }
     }
 
-    /// Convenience: runs both [`submit_passes`](Self::submit_passes) and
-    /// [`present_frame`](Self::present_frame) in order. Used by the default
-    /// `tick` path; drivers that need to interleave hooks should call the
-    /// staged methods directly.
+    /// Submits the recorded passes, then presents the frame.
+    ///
+    /// The fifth stage: [`submit_passes`](Self::submit_passes) then
+    /// [`present_frame`](Self::present_frame); a driver that interleaves hooks
+    /// between them calls the two itself.
+    ///
+    /// # Panics
+    ///
+    /// Panics as [`submit_passes`](Self::submit_passes) does.
     pub fn end_render_frame(&mut self, presents: bool) {
         self.submit_passes(presents);
         self.present_frame(presents);
     }
 }
 
-/// Prepares the renderer with the frame's camera, from the [`CameraView`] the
-/// camera flow put on the bus: once a frame, before any agent records a pass.
-/// An active camera whose values make no image prepares nothing.
+/// Prepares the renderer with the frame's camera, before any lane records a pass.
+///
+/// Reads the [`CameraView`] the camera flow put on the bus; an active camera
+/// whose values make no image prepares nothing.
 ///
 /// [`CameraView`]: khora_data::flow::CameraView
 fn prepare_frame(
@@ -221,9 +233,9 @@ fn prepare_frame(
     }
 }
 
-/// Takes the frame's targets out of `fctx`, for a frame that acquired none.
-/// The size stays: it is what cameras take their aspect from, and the
-/// window's size has not changed.
+/// Takes the frame's target out of `fctx`, for a frame that acquired none.
+///
+/// The size stays: cameras take their aspect from it, and the window kept its size.
 fn forget_frame_targets(fctx: &khora_core::renderer::api::frame::FrameContext) {
     fctx.remove::<Target>();
 }

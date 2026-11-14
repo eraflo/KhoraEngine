@@ -19,9 +19,8 @@
 use khora_core::Runtime;
 use std::sync::{Arc, Mutex};
 
-/// Installs in `runtime` the engine's own audio bus, text shaper, glyph
-/// rasteriser, physics provider and physics settings, each only where the
-/// application installed none.
+/// Installs the engine's own audio bus, text backends, physics provider and
+/// physics settings, each only where the application installed none.
 pub(super) fn install_defaults(runtime: &mut Runtime) {
     // The audio family mixes into the shared bus every frame. An application
     // that opens an audio device installs the bus it hands the device; without

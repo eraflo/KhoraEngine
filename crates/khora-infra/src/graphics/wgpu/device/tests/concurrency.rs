@@ -822,15 +822,17 @@ impl Resources {
     }
 }
 
-/// A thread that makes shuffled calls on `device` for [`WORK`], then gives
-/// everything back. Fails if one call failed, or if one of [`CALLS`] never
-/// ran (the mix would then test less than it claims).
+/// A thread that makes shuffled calls on `device` for [`WORK`], and until each
+/// of [`CALLS`] ran once, then gives everything back. Fails if one call failed.
+///
+/// A loaded machine may run few calls in [`WORK`]: going on until each ran keeps
+/// the mix whole there, and the [`WATCHDOG`] still bounds a deadlock.
 fn resource_worker(device: Arc<dyn GraphicsDevice>, thread: usize) -> Worker {
     Box::new(move || {
         let mut rng = XorShift::seeded(thread);
         let mut resources = Resources::default();
         let start = Instant::now();
-        while start.elapsed() < WORK {
+        while start.elapsed() < WORK || resources.tally.contains(&0) {
             let which = rng.below(CALLS.len());
             resources.call(device.as_ref(), which, &mut rng)?;
         }
@@ -844,7 +846,7 @@ fn resource_worker(device: Arc<dyn GraphicsDevice>, thread: usize) -> Worker {
         if never.is_empty() {
             Ok(())
         } else {
-            Err(format!("these calls never ran in {WORK:?}: {never:?}"))
+            Err(format!("these calls never ran: {never:?}"))
         }
     })
 }

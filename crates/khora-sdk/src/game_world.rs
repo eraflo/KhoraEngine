@@ -12,12 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The `GameWorld` facade — a safe, typed entry point for managing
-//! the ECS world and asset registry without exposing internal engine types.
-//!
-//! This follows the pattern of every major game engine: users interact with
-//! entities and components through a controlled API, never touching the raw
-//! `World` or `Assets` directly.
+//! [`GameWorld`], the game's typed facade over the ECS world, and its game saves.
 
 use khora_core::asset::{AssetHandle, AssetUUID};
 use khora_core::ecs::entity::EntityId;
@@ -39,20 +34,20 @@ use std::sync::Arc;
 /// Why [`GameWorld::add_declared_component`] attached nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeclaredComponentError {
-    /// No component a script declares now has this name: a Rust component's
-    /// name, a behavior's state companion, a component no script declares
-    /// any more.
+    /// No component a script declares now has this name.
+    ///
+    /// It may name a Rust component, a behavior's state companion, a system's
+    /// component, or a component no script declares any more.
     NotDeclared(String),
     /// The world refused the row: a dead entity, a field that refused its
     /// value, a field the component does not have, a component already held.
     Refused(RowError),
 }
 
-/// A high-level facade over the internal ECS `World` and `Assets` registry.
+/// The game's world: its entities, components and game saves, behind a stable API.
 ///
-/// `GameWorld` is the primary interface for game developers to create and
-/// manage entities, components, and assets. It hides the raw types from
-/// `khora-data` behind a clean, stable API surface.
+/// It wraps the engine's ECS `World`, which [`inner_world`](Self::inner_world)
+/// reaches for low-level work.
 ///
 /// # Examples
 ///
@@ -77,7 +72,6 @@ pub enum DeclaredComponentError {
 /// assert!(world.get_transform(entity).is_some());
 /// ```
 pub struct GameWorld {
-    /// The internal ECS world.
     world: World,
     /// Where the prefabs a scene links to are read from, for game saves.
     prefabs: Option<Arc<dyn PrefabSource + Send + Sync>>,
@@ -98,13 +92,12 @@ impl Default for GameWorld {
 }
 
 impl GameWorld {
-    /// Creates a new `GameWorld` with an empty world and asset registry.
+    /// Creates an empty world.
     pub fn new() -> Self {
         Self::from_world(World::new())
     }
 
-    /// Creates a `GameWorld` from an existing ECS `World`.
-    /// Used for restoring a snapshot in play mode.
+    /// Wraps an existing ECS `World`, such as a snapshot restored for play.
     pub fn from_world(world: World) -> Self {
         Self {
             world,
@@ -115,22 +108,23 @@ impl GameWorld {
         }
     }
 
-    /// Reads the prefabs a scene links to from `source`: a game saved over a
-    /// level holding prefab instances compares against the level expanded.
-    /// The engine sets the shipped game's prefabs on its world.
+    /// Sets where the prefabs a scene links to are read from, for game saves.
+    ///
+    /// A game saved over a level holding prefab instances is compared against
+    /// the level expanded. The engine sets the shipped game's prefabs on its world.
     pub fn set_prefabs(&mut self, source: Arc<dyn PrefabSource + Send + Sync>) {
         self.prefabs = Some(source);
     }
 
-    /// Files the loads of this world with `loads`, the engine's: they are
-    /// prepared off the frame and land at a later frame's boundary. The
-    /// engine sets its hub on the world it runs.
+    /// Files this world's game loads with `loads`, the engine's scene-load hub.
+    ///
+    /// They are then prepared off the frame and land at a later frame's
+    /// boundary. The engine sets its hub on the world it runs.
     pub fn set_scene_loads(&mut self, loads: Arc<SceneLoadHub>) {
         self.loads = Some(loads);
     }
 
-    /// The engine's scene loads this world's loads are filed with: `None`
-    /// for a world no engine runs.
+    /// Returns the hub this world's loads are filed with; `None` when no engine runs it.
     pub fn scene_loads(&self) -> Option<&Arc<SceneLoadHub>> {
         self.loads.as_ref()
     }
@@ -147,9 +141,7 @@ impl GameWorld {
     // Entity Lifecycle
     // ─────────────────────────────────────────────────────────────────────
 
-    /// Spawns a new entity with the given component bundle.
-    ///
-    /// Returns the [`EntityId`] of the newly created entity.
+    /// Spawns an entity holding the components of `bundle` and returns it.
     ///
     /// # Examples
     ///
@@ -165,9 +157,7 @@ impl GameWorld {
         self.world.spawn(bundle)
     }
 
-    /// Removes an entity and all its components from the world.
-    ///
-    /// Returns `true` if the entity existed and was removed.
+    /// Removes `entity` and all its components; returns `true` if it existed.
     pub fn despawn(&mut self, entity: EntityId) -> bool {
         self.world.despawn(entity)
     }
@@ -176,14 +166,7 @@ impl GameWorld {
     // Camera Helpers
     // ─────────────────────────────────────────────────────────────────────
 
-    /// Spawns a camera entity with a [`Camera`] component and an identity
-    /// [`GlobalTransform`].
-    ///
-    /// This is the recommended way to add a camera to the scene. The
-    /// `RenderAgent` will automatically discover cameras during its
-    /// extraction phase.
-    ///
-    /// Returns the [`EntityId`] of the camera entity.
+    /// Spawns a camera entity: `camera` and an identity [`GlobalTransform`].
     pub fn spawn_camera(&mut self, camera: Camera) -> EntityId {
         self.world.spawn((camera, GlobalTransform::identity()))
     }
@@ -192,17 +175,9 @@ impl GameWorld {
     // Asset Management
     // ─────────────────────────────────────────────────────────────────────
 
-    /// Adds a mesh to the asset registry and returns a handle component.
+    /// Returns a handle component holding `mesh` under a fresh asset id.
     ///
-    /// The returned `HandleComponent<Mesh>` can be attached to entities
-    /// to give them a visible mesh. The `RenderAgent` will automatically
-    /// upload the mesh to GPU when the entity is rendered.
-    ///
-    /// # Arguments
-    /// * `mesh` - The CPU-side mesh data.
-    ///
-    /// # Returns
-    /// A `HandleComponent<Mesh>` that references the stored mesh.
+    /// Attach it to an entity to draw that entity with the mesh.
     ///
     /// # Examples
     ///
@@ -225,10 +200,9 @@ impl GameWorld {
     // Component Access
     // ─────────────────────────────────────────────────────────────────────
 
-    /// Adds a component to an existing entity.
+    /// Adds `component` to `entity`, replacing the one of that type it holds.
     ///
-    /// If the entity already has a component of this type, the old value
-    /// is replaced.
+    /// A refusal, such as a dead entity, is logged as a warning and changes nothing.
     pub fn add_component<C: Component>(&mut self, entity: EntityId, component: C) {
         // A component the entity holds is written in place, its change
         // stamped; the world refuses to add a second one.
@@ -245,12 +219,18 @@ impl GameWorld {
         }
     }
 
-    /// Attaches the component a script declares under `name` to `entity`:
-    /// the fields `fields` names take their values, the others the declared
-    /// defaults. Nothing is attached when the world refuses a value.
+    /// Attaches the component a script declares under `name` to `entity`.
     ///
-    /// A Rust component's name is [`DeclaredComponentError::NotDeclared`]: it
-    /// has no declared fields — attach it with [`add_component`](Self::add_component).
+    /// The fields `fields` names take their values, the others the declared
+    /// defaults.
+    ///
+    /// # Errors
+    ///
+    /// - [`DeclaredComponentError::NotDeclared`] when no script declares `name`
+    ///   now, or it names a behavior's state or a system's component. A Rust
+    ///   component is attached with [`add_component`](Self::add_component).
+    /// - [`DeclaredComponentError::Refused`] when the world refuses the row;
+    ///   nothing is attached.
     pub fn add_declared_component(
         &mut self,
         entity: EntityId,
@@ -287,11 +267,9 @@ impl GameWorld {
             .map_err(DeclaredComponentError::Refused)
     }
 
-    /// Removes a single component `C` from `entity`. Other components on
-    /// the same entity (in any domain) are preserved — this is a surgical
-    /// removal, not a domain wipe. Backed by [`World::remove_component`].
+    /// Removes the component `C` from `entity`, keeping its other components.
     ///
-    /// No-op (silently logged) if the entity is dead or doesn't carry `C`.
+    /// Does nothing, logged at trace level, when the entity is dead or does not hold `C`.
     pub fn remove_component<C: Component>(&mut self, entity: EntityId) {
         if let Err(e) = self.world.remove_component::<C>(entity) {
             log::trace!(
@@ -307,7 +285,7 @@ impl GameWorld {
     // Queries
     // ─────────────────────────────────────────────────────────────────────
 
-    /// Creates a read-only query over the world.
+    /// Returns a read-only query over the world.
     ///
     /// # Examples
     ///
@@ -327,7 +305,7 @@ impl GameWorld {
         self.world.query::<Q>()
     }
 
-    /// Creates a mutable query over the world.
+    /// Returns a mutable query over the world.
     ///
     /// # Examples
     ///
@@ -352,45 +330,37 @@ impl GameWorld {
     // Convenience Methods
     // ─────────────────────────────────────────────────────────────────────
 
-    /// Spawns an entity with just a transform component.
-    ///
-    /// Returns the [`EntityId`] of the newly created entity.
+    /// Spawns an entity holding `transform` and a [`GlobalTransform`] at its translation.
     pub fn spawn_entity(&mut self, transform: &Transform) -> EntityId {
         let global = GlobalTransform::at_position(transform.translation);
         self.world.spawn((*transform, global))
     }
 
-    /// Returns an iterator over all entity IDs in the world.
+    /// Returns an iterator over every entity in the world.
     pub fn iter_entities(&self) -> impl Iterator<Item = EntityId> + '_ {
         self.world.iter_entities()
     }
 
-    /// Gets writable access to a transform component: a [`Mut`] guard, which
-    /// notes the write the first time it is written through.
+    /// Returns a write guard on `entity`'s [`Transform`], or `None` if it has none.
     ///
-    /// Returns `None` if the entity doesn't exist or has no transform.
+    /// The [`Mut`] guard records the change the first time it is written through.
     pub fn get_transform_mut(&mut self, entity: EntityId) -> Option<Mut<'_, Transform>> {
         self.world.get_mut::<Transform>(entity)
     }
 
-    /// Gets a reference to a transform component.
-    ///
-    /// Returns `None` if the entity doesn't exist or has no transform.
+    /// Returns `entity`'s [`Transform`], or `None` if it is dead or has none.
     pub fn get_transform(&self, entity: EntityId) -> Option<&Transform> {
         self.world.get::<Transform>(entity)
     }
 
-    /// Gets writable access to any component: a [`Mut`] guard, which notes
-    /// the write the first time it is written through.
+    /// Returns a write guard on `entity`'s component `C`, or `None` if it has none.
     ///
-    /// Returns `None` if the entity doesn't exist or has no such component.
+    /// The [`Mut`] guard records the change the first time it is written through.
     pub fn get_component_mut<C: Component>(&mut self, entity: EntityId) -> Option<Mut<'_, C>> {
         self.world.get_mut::<C>(entity)
     }
 
-    /// Gets a reference to any component.
-    ///
-    /// Returns `None` if the entity doesn't exist or has no such component.
+    /// Returns `entity`'s component `C`, or `None` if it is dead or has none.
     pub fn get_component<C: Component>(&self, entity: EntityId) -> Option<&C> {
         self.world.get::<C>(entity)
     }
@@ -399,13 +369,12 @@ impl GameWorld {
     // Transform Synchronization
     // ─────────────────────────────────────────────────────────────────────
 
-    /// Synchronizes the GlobalTransform component from the Transform component.
+    /// Copies `entity`'s [`Transform`] into its [`GlobalTransform`].
     ///
-    /// This should be called after modifying a Transform to ensure the changes
-    /// are visible to the rendering system. This is a convenience method that
-    /// copies the local transform to the global transform.
+    /// Call it after changing a transform so the renderer sees the new pose.
+    /// The copy ignores any parent: the global pose becomes the local one.
     ///
-    /// # Example
+    /// # Examples
     /// ```rust
     /// use khora_sdk::GameWorld;
     /// use khora_sdk::prelude::ecs::{GlobalTransform, Transform};
@@ -429,12 +398,9 @@ impl GameWorld {
         }
     }
 
-    /// Updates an entity's transform and immediately syncs it to GlobalTransform.
+    /// Applies `f` to `entity`'s [`Transform`], then syncs its [`GlobalTransform`].
     ///
-    /// This is a convenience method that combines getting the transform,
-    /// applying a modification function, and syncing to GlobalTransform.
-    ///
-    /// # Example
+    /// # Examples
     /// ```rust
     /// use khora_sdk::GameWorld;
     /// use khora_sdk::prelude::ecs::{GlobalTransform, Transform};
@@ -457,34 +423,20 @@ impl GameWorld {
         self.sync_global_transform(entity);
     }
 
-    /// Reparents `child` under `new_parent`, or detaches it (root) when
-    /// `new_parent` is `None`.
+    /// Reparents `child` under `new_parent`, or makes it a root when `None`.
     ///
-    /// Maintains both the `Parent` component on `child` and the `Children`
-    /// list on the involved parents. Refuses cycles silently (a no-op).
-    ///
-    /// The edge is written by [`World::set_parent`], which every other route
-    /// into the hierarchy — scene loading, script commands — also takes. Two
-    /// implementations of an invariant stored in two components is two chances
-    /// for them to disagree.
+    /// Keeps `Parent` and `Children` in agreement. A refused edge (a missing
+    /// entity, a cycle) is logged as a warning and changes nothing.
     pub fn set_parent(&mut self, child: EntityId, new_parent: Option<EntityId>) {
         if !self.world.set_parent(child, new_parent) {
             log::warn!("set_parent: refused (child={child:?}, new_parent={new_parent:?})");
         }
     }
 
-    /// Builds an authored, inline material reference to attach to entities.
+    /// Returns an inline [`MaterialRef`](khora_data::ecs::MaterialRef) holding `material`.
     ///
-    /// The returned [`MaterialRef::Inline`](khora_data::ecs::MaterialRef) embeds
-    /// the material value directly in the scene. The resolver turns it into a
-    /// runtime material handle, which the GPU projection uploads. To reference a
-    /// `.kmat` asset instead, attach `MaterialRef::Asset(uuid)`.
-    ///
-    /// # Arguments
-    /// * `material` - The CPU-side material data (e.g., `StandardMaterial`).
-    ///
-    /// # Returns
-    /// A `MaterialRef::Inline` referencing the given material.
+    /// The material is saved inside the scene. To reference a `.kmat` asset
+    /// instead, attach `MaterialRef::Asset(uuid)`.
     pub fn add_material<M: khora_core::asset::Material>(
         &mut self,
         material: M,
@@ -496,9 +448,14 @@ impl GameWorld {
     // Game saves
     // ─────────────────────────────────────────────────────────────────────
 
-    /// Saves the game this world is running: how it differs from the scene
-    /// `base` holds — known as `base_id` — written in the encoding `goal`
-    /// calls for.
+    /// Saves how this world differs from the scene `base`, known as `base_id`.
+    ///
+    /// `goal` picks the encoding; a `FastestLoad` save is written compactly.
+    /// See the book: concepts/saves.md, "What a save holds".
+    ///
+    /// # Errors
+    ///
+    /// When `base` cannot be read or expanded, or the world cannot be written.
     pub fn save_game(
         &self,
         base_id: AssetUUID,
@@ -509,8 +466,15 @@ impl GameWorld {
             .save_game(&self.world, base_id, base, goal)
     }
 
-    /// Loads the game `save` holds, taken against the scene `base` holds —
-    /// or, if it cannot be loaded, leaves this world exactly as it was.
+    /// Replaces this world's contents with the game `save` holds, over the scene `base`.
+    ///
+    /// Returns what the load adapted. See the book: concepts/saves.md,
+    /// "Loading a save: a three-way merge".
+    ///
+    /// # Errors
+    ///
+    /// When `save` or `base` cannot be read or loaded; the world is then
+    /// exactly as it was.
     pub fn load_game(
         &mut self,
         save: &SceneFile,
@@ -520,11 +484,12 @@ impl GameWorld {
         service.load_game(&mut self.world, save, base)
     }
 
-    /// Files the game `save` holds, taken against the scene `base` holds, to
-    /// be loaded off the frame: prepared in the background, and committed at
-    /// a later frame's boundary — or, if it cannot be loaded, leaving this
-    /// world exactly as it was. Its outcome is taken with
-    /// [`take_load_outcome`](Self::take_load_outcome) once it landed.
+    /// Files the game `save` holds, over the scene `base`, to be loaded off the frame.
+    ///
+    /// It lands at a later frame's boundary, or leaves the world as it was if
+    /// it cannot be loaded; read its outcome with
+    /// [`take_load_outcome`](Self::take_load_outcome). A world no engine runs
+    /// loads it at once.
     pub fn file_load_game(&mut self, save: &SceneFile, base: &SceneFile) -> LoadTicket {
         let Some(loads) = self.loads.clone() else {
             // No engine runs this world, so no frame would land the load:
@@ -546,8 +511,7 @@ impl GameWorld {
         loads.file(&mut self.world, kind, prefabs)
     }
 
-    /// The outcome of the load filed as `ticket`, once it landed: `None`
-    /// while it is in flight, and once taken.
+    /// Takes the outcome of the load filed as `ticket`; `None` while in flight or once taken.
     pub fn take_load_outcome(&mut self, ticket: LoadTicket) -> Option<LoadOutcome> {
         match &self.loads {
             Some(loads) => loads.take_outcome(ticket),
@@ -556,21 +520,15 @@ impl GameWorld {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Internal — used by the SDK, not exposed to users
+    // Raw world access
     // ─────────────────────────────────────────────────────────────────────
 
-    /// Returns a shared reference to the underlying ECS [`World`].
-    ///
-    /// Useful for serialization and other low-level operations that need
-    /// direct access to the world outside the `GameWorld` API surface.
+    /// Returns the underlying ECS [`World`], for low-level work such as serialization.
     pub fn inner_world(&self) -> &World {
         &self.world
     }
 
-    /// Returns an exclusive reference to the underlying ECS [`World`].
-    ///
-    /// Useful for serialization and other low-level operations that need
-    /// direct access to the world outside the `GameWorld` API surface.
+    /// Returns the underlying ECS [`World`] mutably, for low-level work such as serialization.
     pub fn inner_world_mut(&mut self) -> &mut World {
         &mut self.world
     }

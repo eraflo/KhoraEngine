@@ -24,19 +24,18 @@ use crate::traits::EngineApp;
 use crate::InputEvent;
 
 impl<A: EngineApp> EngineCore<A> {
-    /// Stage 2 — run `app.update`, ECS maintenance, mesh sync, and scene/UI
-    /// extractions. Called between [`drain_inputs`](Self::drain_inputs) and
-    /// [`begin_render_frame`](Self::begin_render_frame).
+    /// Runs the frame boundary, then the app's `update` amid the data layer's
+    /// invariants.
     ///
-    /// It opens with the frame boundary: the families the app switched on or
-    /// off — in its [`before_frame`](EngineApp::before_frame), or before — are
-    /// settled, so every phase of the frame, the scheduler and the DCC see one
-    /// state. A request made after counts from the next frame.
+    /// The second stage: call between [`drain_inputs`](Self::drain_inputs) and
+    /// [`begin_render_frame`](Self::begin_render_frame). Families switched on or off
+    /// before it, in [`before_frame`](EngineApp::before_frame) or earlier, hold for
+    /// the whole frame; a later request counts from the next one.
+    /// See the book: concepts/the-frame.md, "The six-stage descent".
     pub fn run_app_update(&mut self, inputs: &[InputEvent]) {
         self.settle_activation();
-        // The scheduler's frame start: the allocation lent, the staged layers
-        // swapped in, and what the background runs that ended staged handed
-        // to the reserve — all before the frame's first DataSystem.
+        // The scheduler's frame start comes before the frame's first DataSystem:
+        // it hands the `Boundary` systems what the background runs staged.
         if let Some(scheduler) = self.scheduler.as_mut() {
             scheduler.begin_frame(&self.runtime);
         }
@@ -45,9 +44,8 @@ impl<A: EngineApp> EngineCore<A> {
         };
         let runtime = &self.runtime;
 
-        // Pre-scheduler phases run before the per-frame `OutputDeck` is
-        // built. We pass a transient empty deck so `DataSystem`s that
-        // happen to read it observe an empty slot — they simply no-op.
+        // These phases run before the lanes fill the deck: a system reading it
+        // here finds an empty one.
         let mut deck = khora_core::lane::OutputDeck::new();
 
         // The boundary: what the work that spans frames staged is applied
@@ -66,8 +64,7 @@ impl<A: EngineApp> EngineCore<A> {
             app.startup_ready();
         }
 
-        // Substrate Pass — pre-simulation invariants (input-driven mutations,
-        // scene events that must be visible to agents).
+        // Input-driven mutations and scene events the app's update must see.
         substrate::run_data_systems(
             gw.inner_world_mut(),
             runtime,
@@ -77,9 +74,8 @@ impl<A: EngineApp> EngineCore<A> {
 
         app.update(gw, inputs);
 
-        // Substrate Pass — post-simulation invariants (hierarchy fix-ups
-        // such as transform_propagation, run after app.update mutates Transforms
-        // but before extraction reads GlobalTransform).
+        // Hierarchy fix-ups such as transform propagation: after the update
+        // moves `Transform`s, before extraction reads `GlobalTransform`.
         substrate::run_data_systems(
             gw.inner_world_mut(),
             runtime,
@@ -87,11 +83,8 @@ impl<A: EngineApp> EngineCore<A> {
             TickPhase::PostSimulation,
         );
 
-        // Substrate Pass — pre-extract. Runs:
-        //  - `gpu_mesh_sync` (CPU→GPU mesh upload, replaces former proj.sync_all)
-        //  - any other PreExtract DataSystem registered by users.
-        // RenderFlow + UiFlow then run inside the scheduler's Substrate Pass
-        // and publish their views into the LaneBus.
+        // GPU uploads, such as the meshes'. The Flows project the scene later,
+        // in the scheduler's Substrate Pass.
         substrate::run_data_systems(
             gw.inner_world_mut(),
             &self.runtime,
@@ -100,11 +93,10 @@ impl<A: EngineApp> EngineCore<A> {
         );
     }
 
-    /// The frame boundary: makes the families requested on or off the state
-    /// in force, empties the mail sent to a family while it was off — in the
-    /// frame that ended or for the coming one — and tells the DCC when the
-    /// families off changed, so the arbitration it runs on its own thread
-    /// budgets only the families on.
+    /// Settles the families switched on or off, empties the mail of those off, and
+    /// tells the DCC when that set changed.
+    ///
+    /// See the book: reference/sdk.md, "Activation — which families run".
     fn settle_activation(&mut self) {
         let Some(activation) = self
             .runtime
