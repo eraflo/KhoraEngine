@@ -48,9 +48,10 @@ pub const MAX_PROFILE_BYTES: u64 = 1 << 20;
 /// The profile a built game ships, beside its `runtime.json`.
 pub const SHIPPED_PROFILE: &str = "profile.ron";
 
-/// `name` made safe as one path component: ASCII letters, digits, `-`, `_`
-/// and `.` kept, anything else `_`; no leading `.`; never empty (`_`); at
-/// most 64 characters.
+/// Returns `name` made safe as one path component.
+///
+/// ASCII letters, digits, `-`, `_` and `.` are kept, anything else is `_`; no
+/// leading `.`, no Windows device name; never empty; at most 64 characters.
 pub fn path_safe(name: &str) -> String {
     let mut safe: String = name
         .chars()
@@ -90,8 +91,8 @@ pub fn path_safe(name: &str) -> String {
 /// The longest a [`path_safe`] name is.
 const MAX_NAME: usize = 64;
 
-/// The file a profile of `machine` running `game` is filed in, `env` read for
-/// its folders:
+/// Returns the file a profile of `machine` running `game` is filed in, `env` read for its folders.
+///
 /// - [`ProfilePlace::Developer`]:
 ///   `<root>/<machine key>/<game name>-<game version>.ron`, the root
 ///   `$KHORA_PROFILES`, else `<home>/.khora/profiles`;
@@ -127,9 +128,12 @@ pub fn profile_path(
     }
 }
 
-/// The profile at `path`: `Ok(None)` when there is no file; `Err` when the
-/// file is larger than [`MAX_PROFILE_BYTES`], cannot be read, or is not a
-/// profile (RON).
+/// Returns the profile at `path`, or `Ok(None)` when there is no file.
+///
+/// # Errors
+///
+/// When the file is larger than [`MAX_PROFILE_BYTES`], cannot be read, or is
+/// not a profile (RON).
 pub fn load(path: &Path) -> std::io::Result<Option<CostProfile>> {
     let size = match std::fs::metadata(path) {
         Ok(meta) => meta.len(),
@@ -148,8 +152,11 @@ pub fn load(path: &Path) -> std::io::Result<Option<CostProfile>> {
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
 }
 
-/// Writes `profile` at `path` (RON), atomically: its folder made, a `.tmp`
-/// file beside it written, then renamed over it.
+/// Writes `profile` at `path` (RON), atomically, making its folder.
+///
+/// # Errors
+///
+/// When the folder or the file cannot be written.
 pub fn save(path: &Path, profile: &CostProfile) -> std::io::Result<()> {
     if let Some(folder) = path.parent() {
         std::fs::create_dir_all(folder)?;

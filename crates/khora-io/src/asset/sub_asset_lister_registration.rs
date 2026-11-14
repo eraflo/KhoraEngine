@@ -18,11 +18,9 @@
 /// One sub-asset a container file holds, as its lister reports it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubAssetEntry {
-    /// The sub-asset's name inside its container — hashed with the
-    /// container's uuid into the sub-asset's own uuid.
+    /// The sub-asset's name in its container, hashed with the container's uuid into its own.
     pub label: String,
-    /// The sub-asset's index type (`"mesh"`, `"material"`, `"texture"`,
-    /// `"prefab"`).
+    /// The sub-asset's index type (`"mesh"`, `"material"`, `"texture"`, `"prefab"`).
     pub type_name: String,
 }
 
@@ -48,8 +46,9 @@ pub struct SubAssetListerRegistration {
 
 inventory::collect!(SubAssetListerRegistration);
 
-/// Whether files of index type `type_name` can hold sub-assets: a lister is
-/// registered for the type. Such a file's parts can change with its bytes.
+/// Whether files of index type `type_name` can hold sub-assets: a lister is registered for it.
+///
+/// Such a file's parts can change with its bytes.
 pub fn type_may_hold_sub_assets(type_name: &str) -> bool {
     inventory::iter::<SubAssetListerRegistration>
         .into_iter()

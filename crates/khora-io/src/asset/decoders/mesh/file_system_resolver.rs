@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Resolves a glTF's external resources from the local filesystem, under a
-//! guard.
+//! Resolves a glTF's external resources from the local filesystem, under a guard.
 
 use std::error::Error;
 use std::path::Path;
@@ -22,17 +21,18 @@ use std::sync::Arc;
 use super::resource_resolver::GltfResourceResolver;
 use crate::trust::{FileGuard, Refusals, Trust};
 
-/// Resolves resources from the local filesystem relative to a base path,
-/// through a [`FileGuard`]: a URI leaving the base — by `..`, as an absolute
-/// path, or through a link — is refused, as is a file over its cap.
+/// Resolves a glTF's external files under a base path, through a [`FileGuard`].
+///
+/// A URI leaving the base (by `..`, as an absolute path or through a link) is
+/// refused, as is a file over its cap.
 pub struct FileSystemResolver {
     guard: FileGuard,
 }
 
 impl FileSystemResolver {
-    /// A resolver reading under `base_path` as a trusted project's files,
-    /// its refusals kept in memory. A run resolves through
-    /// [`Self::guarded`].
+    /// Creates a resolver reading under `base_path` as a trusted project's files.
+    ///
+    /// Its refusals stay in memory; a running project resolves through [`Self::guarded`].
     pub fn new(base_path: impl AsRef<Path>) -> Self {
         Self::guarded(FileGuard::new(
             base_path.as_ref(),
@@ -41,7 +41,7 @@ impl FileSystemResolver {
         ))
     }
 
-    /// A resolver reading every file through `guard`.
+    /// Creates a resolver reading every file through `guard`.
     pub fn guarded(guard: FileGuard) -> Self {
         Self { guard }
     }

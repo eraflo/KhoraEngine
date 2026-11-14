@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Universal audio decoder using `symphonia`.
+//! Audio decoder for WAV, Ogg, FLAC and MP3, through `symphonia`.
 
 use anyhow::{anyhow, Result};
 use khora_data::assets::SoundData;
@@ -200,10 +200,8 @@ mod tests {
         }
     }
 
-    /// **A sound decoding past its decoded limit is refused by Symphonia**:
-    /// 8 000 samples decode to more than 1 000 bytes, so the decode stops
-    /// with a `LimitExceeded` naming that limit; within ample limits the
-    /// same file decodes whole.
+    /// **A sound decoding past its decoded limit is refused by Symphonia**,
+    /// and decodes whole within ample limits.
     #[test]
     fn a_sound_decoding_past_its_decoded_limit_is_refused() {
         let file = wav_of(8000);

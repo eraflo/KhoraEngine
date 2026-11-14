@@ -12,20 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Script decoder: `.erg` bytes → [`ScriptModule`].
+//! Script decoder: `.erg` bytes → [`ScriptModule`], its source and imports.
 //!
-//! Reads the text and lists what it imports. It does **not** compile: an
-//! `import` brings in another file's declarations, so compiling needs the whole
-//! reachable set and a decoder sees one file. Compiling here would produce a
-//! program built against whatever happened to be loaded at the time.
-//!
-//! # A file that does not parse still decodes
-//!
-//! Deliberately. A syntax error is the author's to see and fix, and the way they
-//! see it is by the editor reloading the file and reporting where. A decoder
-//! that refused the bytes would leave nothing to report *against* — the asset
-//! would simply be missing, and the message would be about a failed load rather
-//! than about line 12. What is refused here is only what is not text at all.
+//! It does not compile: an `import` needs the whole reachable set, and a
+//! decoder sees one file.
 
 use anyhow::{Context, Result};
 use khora_core::asset::ScriptModule;
@@ -33,6 +23,9 @@ use khora_core::asset::ScriptModule;
 use crate::asset::{AssetDecoder, DecoderRegistration};
 
 /// Decodes a `.erg` file into its source and its import list.
+///
+/// A file that does not parse still decodes, so the editor can report the
+/// syntax error against it; only bytes that are not UTF-8 are refused.
 #[derive(Clone, Default)]
 pub struct ScriptDecoder;
 
@@ -123,9 +116,8 @@ mod tests {
         assert!(module.is_leaf(), "got {:?}", module.imports);
     }
 
-    /// **A syntax error still decodes.** The author sees it because the editor
-    /// reloaded the file and reported line 12 — which needs the file to have
-    /// arrived at all.
+    /// **A syntax error still decodes**, so the editor can report it against
+    /// the file.
     #[test]
     fn a_file_that_does_not_parse_still_decodes() {
         let module = decode(

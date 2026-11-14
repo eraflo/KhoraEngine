@@ -12,25 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Filesystem watcher for hot-reload.
+//! The file system watcher behind hot reload: one root's changes as [`AssetChangeEvent`]s.
 //!
-//! Wraps [`notify::RecommendedWatcher`] (cross-platform — inotify on Linux,
-//! FSEvents on macOS, ReadDirectoryChangesW on Windows) and translates raw
-//! events into [`AssetChangeEvent`]s, each naming the root it happened under.
-//!
-//! Each consumer calls [`AssetWatcher::poll_for`] with its own name and reads
-//! the same stream from its own position — the editor's reindex pump, the
-//! shader pipeline, and the script runtime all watch one directory and must all
-//! see what happened in it.
-//!
-//! # Threading
-//!
-//! `notify` v6 spawns its own internal backend thread for the OS-level event
-//! source (this is unavoidable — that's how kernel APIs deliver events). We
-//! never call `std::thread::spawn` from this crate, so the workspace
-//! convention "no `std::thread::spawn` in user code" is respected. That thread
-//! writes straight into a bounded [`Channel`], and the consumer side is
-//! non-blocking via [`AssetWatcher::poll_for`].
+//! `notify` delivers the OS events on its own thread, into a bounded [`Channel`]
+//! each subscriber reads without blocking.
 
 use anyhow::{Context, Result};
 use khora_core::asset::asset_key;
@@ -42,11 +27,9 @@ use std::time::{Duration, Instant};
 
 use super::index_builder::should_skip_file;
 
-/// What kind of change happened to an asset on disk.
+/// The kind of change that happened to an asset on disk.
 ///
-/// Renames are decomposed into `Removed` + `Created` to keep consumer code
-/// simple — handle two events instead of carrying a `from`/`to` pair through
-/// the pipeline.
+/// A rename is a `Removed` of the old path and a `Created` of the new one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AssetChangeKind {
     /// A new asset file appeared.
@@ -60,9 +43,10 @@ pub enum AssetChangeKind {
     Rescan,
 }
 
-/// How many change events a watched root lets through: a token bucket of
-/// `per_second` events a second. Past it, events are dropped, and once the
-/// burst has been quiet a second one rescan is due.
+/// A token bucket of the change events a watched root lets through each second.
+///
+/// Past it, events are dropped; once the burst has been quiet a second, one
+/// rescan is due.
 #[derive(Debug)]
 pub struct EventBudget {
     per_second: f64,
@@ -81,7 +65,7 @@ const QUIET: Duration = Duration::from_secs(1);
 const EVENTS_PER_SECOND: u32 = 512;
 
 impl EventBudget {
-    /// A budget of `per_second` events a second, full at first.
+    /// Returns a budget of `per_second` events a second, full at first.
     pub fn new(per_second: u32) -> Self {
         let per_second = f64::from(per_second.max(1));
         Self {
@@ -126,36 +110,28 @@ impl EventBudget {
 pub struct AssetChangeEvent {
     /// What happened.
     pub kind: AssetChangeKind,
-    /// The root it happened under: `root.join(&rel_path)` is the file. The
-    /// event stands on its own wherever several roots are watched, rather
-    /// than leaving its reader to guess which base to join against.
+    /// The root it happened under: `root.join(&rel_path)` is the file.
+    ///
+    /// Carried so the event stands on its own where several roots are watched.
     pub root: Arc<Path>,
     /// Path relative to [`root`](Self::root), forward-slash separated.
     pub rel_path: String,
 }
 
 impl AssetChangeEvent {
-    /// The root this change happened under: `root().join(&rel_path)` is the
-    /// file.
+    /// Returns the root this change happened under: `root().join(&rel_path)` is the file.
     pub fn root(&self) -> &Path {
         &self.root
     }
 }
 
-/// Drains filesystem-change events under a project's `assets/` directory.
-///
-/// Holds `notify`'s `RecommendedWatcher` alive — drop the [`AssetWatcher`]
-/// to stop watching.
+/// A watch of the file changes under one assets root; dropping it stops the watch.
 pub struct AssetWatcher {
     // Kept alive for its Drop side-effect (releases the OS handle).
     _watcher: RecommendedWatcher,
     assets_root: PathBuf,
-    /// What `notify` has reported, waiting to be read.
-    ///
-    /// The watcher used to hold a `crossbeam` channel in front of a hand-rolled
-    /// backlog: a bounded window fed by an **unbounded** queue, which grew
-    /// forever if the backlog's lock was ever poisoned — `poll_for` returned
-    /// before draining it. One bounded channel has no in-front.
+    /// What `notify` has reported, waiting to be read. Bounded, with no queue
+    /// in front of it that could grow unread.
     changes: Channel<AssetChangeEvent>,
     /// The root as events name it.
     root: Arc<Path>,
@@ -176,30 +152,23 @@ fn stamp_of(path: &Path) -> Option<Stamp> {
 
 /// How many changes are kept for readers that have not caught up.
 ///
-/// Far more than a frame produces — a project-wide reformat is hundreds — and
-/// small enough that the memory is irrelevant. A backstop against a subscriber
-/// that stops reading, not a tuning knob.
+/// A backstop against a subscriber that stops reading, not a tuning knob: a
+/// project-wide reformat is hundreds.
 const RETAINED: usize = 4096;
 
 impl Supersedes for AssetChangeEvent {
-    // **Deliberately not coalescing**, even though repeated `Modified` on one
-    // path is exactly what a single save produces on Windows. Coalescing in the
-    // channel is a scan of everything queued, run on `notify`'s own thread; a
-    // branch switch reporting thousands of *distinct* paths would make that
-    // quadratic to discover that nothing matches. The burst from one save
-    // arrives consecutively, so the constructor drops an immediate repeat in
-    // `O(1)` instead, and consumers that care de-duplicate what they read —
-    // which both hot-reload pumps and the editor already do.
+    // Not coalescing: the channel would scan everything queued on `notify`'s
+    // thread, quadratic on a branch switch of thousands of distinct paths. One
+    // save's burst arrives consecutively, so the constructor drops an immediate
+    // repeat in O(1); readers de-duplicate the rest.
 }
 
 impl AssetWatcher {
-    /// Starts watching `assets_root` recursively. Future writes / creates /
-    /// removes under that tree produce events read via [`Self::poll_for`].
+    /// Starts watching `assets_root` recursively, its changes read by [`Self::poll_for`].
     ///
-    /// Returns an error if `notify` fails to construct a recommended watcher
-    /// or to register the path (e.g. the path doesn't exist or the OS denies
-    /// the watch). The editor passes a path it has just `create_dir_all`'d,
-    /// so this should be reliable in practice.
+    /// # Errors
+    /// When `notify` cannot build a watcher or watch the path: it does not
+    /// exist, or the OS denies the watch.
     pub fn new(assets_root: impl Into<PathBuf>) -> Result<Self> {
         let assets_root = assets_root.into();
         let changes: Channel<AssetChangeEvent> = Channel::bounded(RETAINED, WhenFull::DropOldest);
@@ -217,11 +186,9 @@ impl AssetWatcher {
         let budget = Arc::new(Mutex::new(EventBudget::new(EVENTS_PER_SECOND)));
         let budget_for_handler = Arc::clone(&budget);
         let root = Arc::clone(&root_for_handler);
-        // One save fires several `Modified` for the same path. Remembering only
-        // the previous one, and the file as it was then, collapses that burst
-        // — they arrive consecutively, the file unchanged between them —
-        // without scanning what is already queued; another save of the file,
-        // however soon, leaves it with another stamp and is a change of its own.
+        // One save fires several `Modified` in a row, the file unchanged between
+        // them: remembering the previous event and its file stamp collapses the
+        // burst. Another save, however soon, leaves another stamp.
         let mut last: Option<(AssetChangeEvent, Option<Stamp>)> = None;
 
         let mut watcher = recommended_watcher(move |res: notify::Result<notify::Event>| {
@@ -279,17 +246,11 @@ impl AssetWatcher {
         &self.assets_root
     }
 
-    /// Everything `subscriber` has not yet seen.
+    /// Returns every change `subscriber` has not yet seen.
     ///
-    /// **Named, because there is more than one reader.** The shader pipeline
-    /// wants `.wgsl` changes and the script runtime wants `.erg` ones, and both
-    /// watch the same directory. A single drained channel gives every event to
-    /// whichever system runs first and nothing to the second — a hot-reload that
-    /// silently never fires, which is worse than one that is absent. Each
-    /// subscriber therefore reads the same stream from its own position.
-    ///
-    /// A name seen for the first time starts at the oldest retained change, so
-    /// a system registered a frame late still hears what happened.
+    /// Each subscriber reads the whole stream from its own position, so one
+    /// reader never takes another's changes. A new name starts at the oldest
+    /// retained change, so a system registered a frame late still hears it.
     pub fn poll_for(&self, subscriber: &'static str) -> Vec<AssetChangeEvent> {
         let rescan = match self.budget.lock() {
             Ok(mut budget) => budget.take_rescan(Instant::now()),
@@ -309,10 +270,7 @@ impl AssetWatcher {
         self.changes.read_for(subscriber)
     }
 
-    /// How many changes were dropped because nobody read them in time.
-    ///
-    /// Readable rather than silent: a subscriber that stopped polling makes the
-    /// window slide past it, and this is what says so.
+    /// Returns how many changes were dropped because a subscriber did not read them in time.
     pub fn dropped(&self) -> u64 {
         self.changes.dropped()
     }
@@ -320,13 +278,8 @@ impl AssetWatcher {
 
 /// Whether `next` says nothing the event just before it did not.
 ///
-/// One save fires several `Modified` for the same path — `notify` v6 does this
-/// on Windows in particular — and they arrive consecutively, so remembering one
-/// event collapses the burst without scanning what is already queued.
-///
-/// Only `Modified` collapses. A `Created` or a `Removed` is a fact about the
-/// tree's shape that a consumer reindexes on, and two of them in a row mean two
-/// different things.
+/// Only `Modified` collapses: one save fires several in a row. Two `Created`
+/// or `Removed` in a row are two facts a consumer reindexes on.
 fn is_immediate_repeat(previous: Option<&AssetChangeEvent>, next: &AssetChangeEvent) -> bool {
     previous.is_some_and(|previous| {
         previous.kind == AssetChangeKind::Modified
@@ -335,10 +288,10 @@ fn is_immediate_repeat(previous: Option<&AssetChangeEvent>, next: &AssetChangeEv
     })
 }
 
-/// Maps a raw `notify::EventKind` + absolute path to one of our
-/// [`AssetChangeEvent`]s. Returns `None` if the path isn't a recognized
-/// asset (filtered via `asset_type_for_extension`) or if the event kind is
-/// uninteresting (Access, Other, Any).
+/// Returns the change a `notify` event says of the absolute path `abs`, if any.
+///
+/// `None` for an access or other uninteresting kind, a skipped scratch file, or
+/// a path under neither the root's name nor its resolved path.
 fn translate_event(
     kind: &notify::EventKind,
     abs: &Path,
@@ -349,17 +302,11 @@ fn translate_event(
     let our_kind = match kind {
         notify::EventKind::Create(_) => AssetChangeKind::Created,
         notify::EventKind::Remove(_) => AssetChangeKind::Removed,
-        // ModifyKind::Name(...) = renames. notify reports them as paired
-        // Remove/Create on Linux but as Modify(Name(...)) on macOS/Windows.
-        // We simplify: rename = Removed-then-Created (or vice versa) by
-        // treating Modify(Name) as Modified — the consumer's reindex pass
-        // will pick up the new path on the subsequent Create event anyway.
+        // A rename: where the file was is removed, where it went is created.
         notify::EventKind::Modify(ModifyKind::Name(RenameMode::From)) => AssetChangeKind::Removed,
         notify::EventKind::Modify(ModifyKind::Name(RenameMode::To)) => AssetChangeKind::Created,
-        // A rename reported without its side — macOS gives `Any` for each
-        // path of a move, Windows may give `Both` with the two paths — is
-        // told apart by what is on disk now: the path still there is where
-        // the file went, the other where it was.
+        // A rename without its side (macOS `Any`, Windows `Both`) is read from
+        // the disk: the path still there is where the file went.
         notify::EventKind::Modify(ModifyKind::Name(_)) => {
             if abs.exists() {
                 AssetChangeKind::Created
@@ -372,10 +319,8 @@ fn translate_event(
         _ => return None,
     };
 
-    // Drop OS scratch files / editor swap files. Anything else is a
-    // legitimate asset under `assets/` and should fire a hot-reload
-    // event — the VFS now tracks every extension so the previous
-    // canonical-allowlist filter no longer makes sense here.
+    // OS scratch and editor swap files are skipped; the VFS tracks every
+    // other extension.
     let file_name = abs.file_name().and_then(|n| n.to_str())?;
     if should_skip_file(file_name) {
         return None;
@@ -398,10 +343,9 @@ mod tests {
     use std::{fs, thread::sleep, time::Duration};
     use tempfile::tempdir;
 
-    /// notify is timing-dependent on every backend; this test allows up to
-    /// `MAX_WAIT` for the watcher's own backend thread to deliver an event.
-    /// Marked `#[ignore]` so CI can opt-in — it's flaky on heavily-loaded
-    /// runners.
+    /// How long the watcher's backend thread has to deliver an event.
+    ///
+    /// `notify` is timing-dependent, so the test using it is ignored by default.
     const MAX_WAIT: Duration = Duration::from_secs(2);
 
     #[test]
@@ -480,9 +424,7 @@ mod tests {
             assert!(!is_immediate_repeat(Some(&created), &saved));
         }
 
-        /// A change reported under the root's real path — macOS names `/var/…`
-        /// by `/private/var/…` — is still under the root, and keeps the root's
-        /// own name.
+        /// A change under the root's real path (macOS `/private/var/…`) keeps the root's name.
         #[test]
         fn a_change_reported_under_the_real_path_is_under_the_root() {
             let named: Arc<Path> = Arc::from(Path::new("/var/project/assets"));
@@ -499,9 +441,7 @@ mod tests {
             assert_eq!(change.root(), &*named);
         }
 
-        /// A rename that does not say which side a path is on is read from the
-        /// disk: the path that exists is where the file went, the one that does
-        /// not is where it came from.
+        /// A rename without its side is read from the disk: the path that exists is where it went.
         #[test]
         fn a_rename_without_its_side_is_read_from_the_disk() {
             let dir = tempfile::tempdir().expect("a temp dir");
@@ -555,10 +495,10 @@ mod tests {
             admitted
         }
 
-        /// **A flood of watcher events collapses into a rescan**: 512 events in
-        /// a second are let through, the 513th is dropped; no rescan is due while
-        /// the burst lasts nor before it has been quiet a second, then exactly
-        /// one; and the budget lets events through again.
+        /// **A flood of watcher events collapses into a rescan.**
+        ///
+        /// 512 events in a second pass, the 513th is dropped; exactly one rescan
+        /// is due once the burst has been quiet a second, then events pass again.
         #[test]
         fn a_flood_of_watcher_events_collapses_into_a_rescan() {
             let start = Instant::now();

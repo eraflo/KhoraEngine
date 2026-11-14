@@ -22,11 +22,11 @@
 
 use std::path::{Component, Path, PathBuf};
 
-/// `path` made absolute against the current directory, its `.` and `..`
-/// folded away by name — without touching the file system, so a root that
-/// does not exist yet, or no longer does, keeps its key. Symbolic links are
-/// not followed: two names of one folder through a link stay two names (the
-/// watch compares roots by their resolved path for that).
+/// Returns `path` made absolute against the current directory, `.` and `..` folded away by name.
+///
+/// The file system is not read, so a missing root keeps its key. Links are not
+/// followed: two names of one folder through a link stay two keys (the watch
+/// compares roots by their resolved path for that).
 pub fn absolute(path: &Path) -> PathBuf {
     let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
     let mut folded = PathBuf::new();

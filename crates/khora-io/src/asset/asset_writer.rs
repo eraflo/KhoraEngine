@@ -17,18 +17,14 @@
 use anyhow::Result;
 use std::path::Path;
 
-/// Sibling trait to [`AssetIo`](crate::asset::AssetIo) for editor-time
-/// *writing* of assets back to storage. Implemented only by
-/// [`crate::asset::FileLoader`] — release builds
-/// (`PackLoader`) are intentionally read-only, which is why `AssetWriter`
-/// lives separately rather than extending `AssetIo`.
+/// Writes assets back to storage, beside [`AssetIo`](crate::asset::AssetIo).
 ///
-/// Used by the editor's `ProjectVfs` to persist scene saves and any other
-/// asset mutation through the same root path the FileLoader reads from.
+/// A separate trait because a pack ([`PackLoader`](crate::asset::PackLoader)) is
+/// read-only: only [`FileLoader`](crate::asset::FileLoader) implements it.
 pub trait AssetWriter: Send + Sync {
-    /// Writes `bytes` to a path **relative to the loader's root**. Creates
-    /// intermediate directories as needed. The relative path is the same
-    /// shape that `AssetSource::Path(rel)` records — `IndexBuilder` will
-    /// see the new file on the next scan and assign it a stable UUID.
+    /// Writes `bytes` at `rel_path`, relative to the loader's root.
+    ///
+    /// Creates the missing directories. The path has the shape an
+    /// `AssetSource::Path` records, so the next index build lists the file.
     fn write_bytes(&self, rel_path: &Path, bytes: &[u8]) -> Result<()>;
 }

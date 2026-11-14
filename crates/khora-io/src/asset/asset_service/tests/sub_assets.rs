@@ -177,10 +177,10 @@ fn invalidating_the_container_drops_its_subs_of_every_type() {
     );
 }
 
-/// A re-export can remove a sub-asset: the rebuilt index no longer lists
-/// it. Invalidating the container afterwards must still drop the sub
-/// extracted from the old container — it is a sub of that container
-/// whatever the new index says — so it is no longer served.
+/// Invalidating a container drops a sub the rebuilt index has dropped.
+///
+/// It is a sub of that container whatever the new index says, so it stops
+/// being served.
 #[test]
 fn invalidating_a_container_after_a_reindex_drops_a_sub_the_new_index_dropped() {
     let (mut svc, _) = container_service(HERO_BYTES, None);

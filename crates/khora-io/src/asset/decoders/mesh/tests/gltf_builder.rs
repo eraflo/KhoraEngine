@@ -12,11 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Builds small glTF documents in memory: `.gltf` JSON with its buffer
-//! embedded as a `data:application/octet-stream;base64,` URI or referenced as
-//! an external file, or a binary `.glb`. Materials, textures, samplers and
-//! images (in a buffer view, a `data:` URI or an external file) are written
-//! as given.
+//! Builds small glTF documents in memory: `.gltf` JSON (its buffer in a `data:`
+//! URI or an external file) or a binary `.glb`, with materials, textures,
+//! samplers and images written as given.
 
 use base64::Engine;
 use serde_json::{json, Map, Value};

@@ -24,7 +24,7 @@ use std::error::Error;
 
 use crate::asset::AssetDecoder;
 
-/// Decoder for OBJ mesh assets.
+/// Decoder for OBJ meshes: the file's first model, triangulated, without materials.
 #[derive(Clone, Default)]
 pub struct ObjDecoder;
 

@@ -12,11 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The modules each mounted root brought in.
-//!
-//! Kept beside the hot-reload pump rather than with the mount alone: a folder
-//! moved out of a script folder, or deleted, reports only itself, and the
-//! modules it held are then known only from what was recorded here.
+//! The modules each mounted root brought in: what the hot-reload pump knows a
+//! gone folder held, since that folder reports only itself.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -25,10 +22,9 @@ use std::sync::Mutex;
 use crate::script::hot_reload::module_names;
 use crate::script::layout::script_dir;
 
-/// The modules each mounted root brought in, by root: what an unmount takes
-/// back, and what a folder gone from a script folder held. And the roots
-/// unmounted since, until mounted again: a compile that finishes for one of
-/// them brings none of its modules back.
+/// The modules each mounted root brought in, and the roots unmounted since.
+///
+/// A compile finishing for an unmounted root brings none of its modules back.
 #[derive(Debug, Default)]
 pub struct MountedScripts(Mutex<Records>);
 
@@ -47,8 +43,9 @@ impl MountedScripts {
         records.by_root.entry(root).or_default().extend(modules);
     }
 
-    /// Forgets `root`, returning the modules it had brought in. The root is
-    /// closed until it is recorded again.
+    /// Forgets `root` and returns the modules it had brought in.
+    ///
+    /// The root is closed until it is recorded again.
     pub fn forget(&self, root: &Path) -> BTreeSet<String> {
         let mut records = self.lock();
         let root = key(root);
@@ -57,9 +54,7 @@ impl MountedScripts {
         modules
     }
 
-    /// Records one module `root` now brings in: one the pump compiled. Not
-    /// into a root closed since: a compile finishing after its root was
-    /// unmounted must not bring it back.
+    /// Records one module the pump compiled for `root`, unless the root is closed.
     pub fn record_module(&self, root: &Path, module: &str) {
         let mut records = self.lock();
         let root = key(root);
@@ -85,12 +80,12 @@ impl MountedScripts {
         }
     }
 
-    /// Every root with a record, as the records key them: made absolute.
+    /// Returns every root with a record, made absolute.
     pub fn roots(&self) -> Vec<PathBuf> {
         self.lock().by_root.keys().cloned().collect()
     }
 
-    /// The modules recorded for `root`.
+    /// Returns the modules recorded for `root`.
     pub fn modules_of(&self, root: &Path) -> BTreeSet<String> {
         self.lock()
             .by_root
@@ -99,8 +94,7 @@ impl MountedScripts {
             .unwrap_or_default()
     }
 
-    /// The modules the roots still mounted bring in — recorded at their mount,
-    /// and on disk now.
+    /// Returns the modules the roots still mounted bring in: recorded, and on disk now.
     pub fn others(&self) -> BTreeSet<String> {
         self.lock()
             .by_root
@@ -123,9 +117,8 @@ impl MountedScripts {
     }
 }
 
-/// `root` as the records key it: made absolute, as the watch reports the root
-/// its changes happened under — so a mount naming the root relatively and the
-/// pump hearing of a change under it read and write one record.
+/// Returns `root` made absolute, as the watch reports it, so a mount and the
+/// pump share one record.
 fn key(root: &Path) -> PathBuf {
     crate::asset::root_path::absolute(root)
 }
@@ -188,10 +181,11 @@ mod tests {
         assert!(mounted.modules_of(Path::new("nowhere")).is_empty());
     }
 
-    /// **A root unmounted is closed until it is mounted again**, and a
-    /// module recorded into a closed root does not bring it back: a compile
-    /// finishing after its root closed leaves no trace of it. A root never
-    /// mounted is not closed.
+    /// **A root unmounted is closed until it is mounted again.**
+    ///
+    /// And a module recorded into a closed root does not bring it back: a
+    /// compile finishing after its root closed leaves no trace of it. A root
+    /// never mounted is not closed.
     #[test]
     fn a_module_recorded_after_its_root_is_forgotten_does_not_bring_it_back() {
         let mounted = MountedScripts::default();

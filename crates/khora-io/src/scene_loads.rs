@@ -12,14 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Scene loads filed by a host, prepared off the frame, landed at a frame's
-//! boundary.
+//! Scene loads filed by a host with a [`LoadTicket`], prepared off the frame
+//! and committed at a frame's boundary, in the order filed.
 //!
-//! A host files a load with [`SceneLoadHub::file`] and keeps its
-//! [`LoadTicket`]. The `loading` family prepares it off the frame through
-//! the hub, which is the runtime's [`SceneLoading`]; the `scene_intake`
-//! DataSystem commits it at a frame's boundary and files its outcome under
-//! the ticket, for [`SceneLoadHub::take_outcome`].
+//! The `loading` family prepares a load; the `scene_intake` DataSystem commits
+//! it and files its outcome under the ticket, for `take_outcome`.
+//!
+//! See the book: concepts/serialization.md, "Atomic loading".
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -43,8 +42,7 @@ use crate::serialization::{SerializationService, SerializationServiceError};
 /// it changed nothing.
 pub type LoadOutcome = Result<LoadReport, SerializationServiceError>;
 
-/// How many loads may wait to be prepared: past it, a load filed fails at
-/// once and says why.
+/// How many loads may wait to be prepared: past it, a load filed fails at once.
 const LOAD_BACKLOG: usize = 64;
 
 /// The world loads are prepared against, as it was at its last boundary.
@@ -90,11 +88,11 @@ impl SceneLoadHub {
         }
     }
 
-    /// Files `kind` to be loaded into `world`, reading the prefabs it links
-    /// to from `prefabs`: prepared off the frame against `world`'s catalogue
-    /// as it is now, its ids held from the slots `world` freed, and
-    /// committed at a later frame's boundary. Returns what its outcome will
-    /// be filed under.
+    /// Files `kind` to be loaded into `world`, and returns the ticket its outcome lands under.
+    ///
+    /// Prepared off the frame against `world`'s catalogue as it is now, its ids
+    /// held from the slots `world` freed; the prefabs it links to are read from
+    /// `prefabs`. A load the backlog refuses lands an error at once.
     pub fn file(
         &self,
         world: &mut World,
@@ -134,9 +132,7 @@ impl SceneLoadHub {
         self.tickets().pending.contains(&ticket)
     }
 
-    /// Withdraws the load filed as `ticket`, while it is in flight: it lands
-    /// nothing, and files no outcome. What a later action that supersedes it
-    /// does — a new scene made while another opens.
+    /// Withdraws the load filed as `ticket`, while in flight: it lands nothing, files no outcome.
     pub fn cancel(&self, ticket: LoadTicket) {
         let withdrawn = {
             let mut tickets = self.tickets();
@@ -153,9 +149,10 @@ impl SceneLoadHub {
         drop(withdrawn);
     }
 
-    /// Takes the loads `prepared` in, and gives back those whose turn came,
-    /// in the order they were filed: each only once every load filed before
-    /// it landed or was withdrawn. A withdrawn load is dropped.
+    /// Takes the loads `prepared` in, and returns those whose turn came, in the order filed.
+    ///
+    /// A load's turn comes once every load filed before it landed or was
+    /// withdrawn. A withdrawn load is dropped.
     pub(crate) fn in_turn(&self, prepared: Vec<PreparedLoad>) -> Vec<PreparedLoad> {
         let mut withdrawn = Vec::new();
         let mut turn = Vec::new();
@@ -182,8 +179,7 @@ impl SceneLoadHub {
         turn
     }
 
-    /// Puts back the loads of `turn` not landed — one filed again stops the
-    /// turn — so they wait for it.
+    /// Puts back the loads of a turn not landed, after one filed again stopped it.
     pub(crate) fn wait_again(&self, loads: impl IntoIterator<Item = PreparedLoad>) {
         let mut tickets = self.tickets();
         for load in loads {
@@ -191,8 +187,9 @@ impl SceneLoadHub {
         }
     }
 
-    /// Publishes `world` as the world loads are prepared against, when its
-    /// components changed since it last was — or it is another world.
+    /// Publishes `world` as the world loads are prepared against.
+    ///
+    /// Nothing is done when it is the same world, its components unchanged.
     pub(crate) fn publish(&self, world: &World) {
         let reserver = world.reserver();
         let generation = world.components().generation();
@@ -275,9 +272,8 @@ impl SceneLoading for SceneLoadHub {
         if let Err(message) = &outcome {
             log::warn!("scene load {}: {message}", ticket.0);
         }
-        // Prepared against the catalogue it read: a change of the world's
-        // components before the boundary turns it down, and it is prepared
-        // again against them.
+        // A change of the world's components before the boundary turns it
+        // down, and it is prepared again against them.
         let prepared_against = target.catalog.generation();
         let generation = Arc::clone(&target.generation);
         let lease = Lease::new(move || generation.load(Ordering::Acquire) == prepared_against);
@@ -291,8 +287,7 @@ impl SceneLoading for SceneLoadHub {
     }
 }
 
-/// What `kind` loads, read and prepared against `catalog`, its ids held by
-/// `hold`.
+/// Reads and prepares what `kind` loads against `catalog`, its ids held by `hold`.
 fn prepare(
     kind: &LoadKind,
     catalog: &LoadCatalog,
@@ -311,8 +306,7 @@ fn prepare(
     }
 }
 
-/// The scene file `source` holds, its bytes fetched when they are not at
-/// hand.
+/// Returns the scene file `source` holds, its bytes fetched when not at hand.
 fn read(source: &SceneSource) -> Result<SceneFile, SerializationServiceError> {
     let fetched;
     let bytes: &[u8] = match source {
@@ -341,9 +335,9 @@ fn failed(message: String) -> LoadFailure {
     }
 }
 
-/// Installs in `runtime` what the `loading` family reads — the request
-/// channel and the [`SceneLoading`], both through one [`SceneLoadHub`],
-/// itself held as `Arc<SceneLoadHub>` for the hosts that file loads.
+/// Installs in `runtime` a [`SceneLoadHub`], its request channel and its [`SceneLoading`].
+///
+/// The hub is held as `Arc<SceneLoadHub>` for the hosts that file loads.
 /// Replaces nothing installed.
 pub fn install_scene_loading(runtime: &mut Runtime) {
     if runtime.resources.get::<Arc<SceneLoadHub>>().is_some() {

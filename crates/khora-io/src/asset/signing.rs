@@ -12,12 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Signed packs: the build signs a pack's `manifest.bin` over its
-//! `index.bin` with the user's key, and the runtime verifies it with the
-//! public key stamped into its binary.
+//! Signed packs: a build signs `manifest.bin` over `index.bin`; the runtime verifies it.
 //!
 //! A pack is sealed against changes, not against someone who rebuilds or
-//! re-stamps the runtime binary.
+//! re-stamps the runtime binary. See the book: concepts/trust.md, "Signed packs".
 
 use std::io::Write;
 use std::path::Path;
@@ -56,9 +54,11 @@ const MAX_MANIFEST_BYTES: usize = 64 << 20;
 const DOMAIN: &[u8] = b"khora pack manifest v1\0";
 
 impl PackSigner {
-    /// The key pair at `<dir>/pack.key`, made with the OS random source and
-    /// written atomically when the file is absent. A file that exists and
-    /// does not read is an error, never replaced: it is the user's key.
+    /// Returns the key pair at `<dir>/pack.key`, made and written atomically when absent.
+    ///
+    /// # Errors
+    /// When an existing file does not read as a key: it is never replaced, being
+    /// the user's key. Also when the key cannot be made or written.
     pub fn load_or_create(dir: &Path) -> Result<PackSigner> {
         let path = dir.join(KEY_FILE);
         if path.exists() {
@@ -96,14 +96,14 @@ impl PackSigner {
         Ok(PackSigner { pair })
     }
 
-    /// The public half of the key pair.
+    /// Returns the public half of the key pair.
     pub fn public_key(&self) -> PackKey {
         let mut key = [0u8; 32];
         key.copy_from_slice(self.pair.public_key().as_ref());
         PackKey(key)
     }
 
-    /// `manifest`, signed over the `index.bin` whose bytes are `index_bytes`.
+    /// Signs `manifest` over the `index.bin` whose bytes are `index_bytes`.
     pub fn sign(&self, manifest: &PackManifest, index_bytes: &[u8]) -> Result<SignedManifest> {
         let manifest = manifest.encode()?;
         let index = *blake3::hash(index_bytes).as_bytes();
@@ -191,8 +191,7 @@ pub struct SignedManifest {
 }
 
 impl SignedManifest {
-    /// The bytes of `manifest.bin`, behind a magic and a version
-    /// (`KH_SIGNED_MANIFEST_V1`).
+    /// Encodes the bytes of `manifest.bin`, behind the magic `KH_SIGNED_MANIFEST_V1`.
     pub fn encode(&self) -> Result<Vec<u8>> {
         let mut bytes = MAGIC.to_vec();
         let body = bincode::serde::encode_to_vec(self, bincode::config::standard())
@@ -201,9 +200,10 @@ impl SignedManifest {
         Ok(bytes)
     }
 
-    /// Reads the `manifest.bin` at `path`: its size checked before it is
-    /// read, then [`decode`](Self::decode)d. Absent, it is
-    /// [`PackSealError::Missing`].
+    /// Reads and [`decode`](Self::decode)s the `manifest.bin` at `path`, its size checked first.
+    ///
+    /// # Errors
+    /// [`PackSealError::Missing`] when absent, else as [`decode`](Self::decode).
     pub fn read(path: &Path) -> Result<SignedManifest, PackSealError> {
         let len = match std::fs::metadata(path) {
             Ok(meta) => meta.len(),
@@ -221,8 +221,10 @@ impl SignedManifest {
         Self::decode(&bytes)
     }
 
-    /// Reads `manifest.bin`, bounded; anything else than a signed manifest
-    /// is [`PackSealError::Malformed`].
+    /// Decodes the bytes of a `manifest.bin`, bounded.
+    ///
+    /// # Errors
+    /// [`PackSealError::Malformed`] for anything but a signed manifest.
     pub fn decode(bytes: &[u8]) -> Result<SignedManifest, PackSealError> {
         if bytes.len() > MAX_MANIFEST_BYTES {
             return Err(PackSealError::Malformed(format!(
@@ -249,8 +251,11 @@ impl SignedManifest {
         Ok(signed)
     }
 
-    /// The manifest, once its signature verifies with `key` over the
-    /// `index.bin` whose bytes are `index_bytes`.
+    /// Returns the manifest once its signature verifies with `key` over `index_bytes`.
+    ///
+    /// # Errors
+    /// [`PackSealError::BadSignature`], [`PackSealError::IndexChanged`], or
+    /// [`PackSealError::Malformed`] for a signed manifest that does not decode.
     pub fn verify(&self, key: &PackKey, index_bytes: &[u8]) -> Result<PackManifest, PackSealError> {
         // The signature first: nothing of an unverified manifest is read.
         UnparsedPublicKey::new(&ED25519, key.0)

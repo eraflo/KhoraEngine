@@ -34,20 +34,19 @@ use super::AssetService;
 use crate::trust::FileGuard;
 
 impl AssetService {
-    /// Walks `inventory::iter::<DecoderRegistration>` and runs each entry's
-    /// `register` fn. Use this once after construction to pull in every
-    /// decoder declared via `inventory::submit!` — currently `texture` and
-    /// `font`. Audio and mesh decoders are intentionally explicit (see
-    /// `decoders/audio` and `decoders/mesh` for the rationale).
+    /// Registers every decoder declared with `inventory::submit!` (a `DecoderRegistration`).
+    ///
+    /// Call once after construction. Audio and mesh decoders are registered
+    /// explicitly; `decoders/audio` and `decoders/mesh` say why.
     pub fn register_inventory_decoders(&mut self) {
         for reg in inventory::iter::<super::decoder_registry::DecoderRegistration> {
             (reg.register)(self);
         }
     }
 
-    /// Opens a service over a project's loose `<project_root>/assets/`
-    /// directory, with every default decoder registered (see
-    /// [`Self::register_default_decoders`]).
+    /// Opens a service over the loose files of `<project_root>/assets/`.
+    ///
+    /// Every default decoder is registered ([`Self::register_default_decoders`]).
     ///
     /// Asset ids come from `registry`: a path it freezes keeps its recorded
     /// UUID, every other path gets its `new_v5` default.
@@ -68,19 +67,12 @@ impl AssetService {
         Ok(svc)
     }
 
-    /// Registers the decoders every Khora application uses: the ones
-    /// declared through `inventory` (see [`Self::register_inventory_decoders`]),
-    /// audio through Symphonia, and meshes through the [`MeshDispatcher`].
+    /// Registers the decoders every Khora application uses, over loose files in `assets_root`.
     ///
-    /// A glTF file's external URIs (`.bin` buffers, images) are resolved
-    /// relative to the glTF file, as glTF specifies, and never outside
-    /// `assets_root`. A glTF file is also a container: its scenes,
-    /// primitives, materials and textures are sub-assets of their own (see
-    /// [`GltfContainer`](super::decoders::mesh::GltfContainer)).
-    ///
-    /// A glTF's files are read through a guard reporting to this service's
-    /// refusals ([`Self::set_refusals`], set before), at a trusted project's
-    /// trust.
+    /// Those of `inventory`, audio through Symphonia, meshes through the
+    /// [`MeshDispatcher`], and glTF as a [`GltfContainer`]. A glTF's external
+    /// files resolve beside it, never outside `assets_root`, through a guard at the
+    /// service's trust reporting to its refusals: call [`Self::set_refusals`] first.
     pub fn register_default_decoders(&mut self, assets_root: &Path) {
         self.register_inventory_decoders();
         self.register_decoder::<SoundData>("audio", SymphoniaDecoder);
@@ -94,10 +86,10 @@ impl AssetService {
         self.register_container("mesh", container);
     }
 
-    /// Registers the decoders every Khora application uses, for a service
-    /// reading a pack: as [`Self::register_default_decoders`], except that a
-    /// glTF's buffers and images resolve inside the pack, by their asset
-    /// key, never beside it.
+    /// Registers the decoders every Khora application uses, for a service reading a pack.
+    ///
+    /// As [`Self::register_default_decoders`], except that a glTF's buffers and
+    /// images resolve inside the pack by their asset key.
     pub fn register_packed_decoders(&mut self) {
         self.register_inventory_decoders();
         self.register_decoder::<SoundData>("audio", SymphoniaDecoder);

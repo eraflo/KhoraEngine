@@ -263,9 +263,11 @@ fn primitives_of_one_mesh_merge_with_offset_indices() {
     assert_eq!(mesh.primitive_type, PrimitiveTopology::TriangleList);
 }
 
-/// glTF requires every attribute accessor of a primitive to hold as many
-/// elements as `POSITION`. A file breaking that is refused, or its normals
-/// stay one per vertex — never shifted onto the next primitive's vertices.
+/// A normal accessor longer or shorter than `POSITION` never shifts normals
+/// onto the next primitive's vertices.
+///
+/// glTF requires every attribute to hold as many elements as `POSITION`: the
+/// file is refused, or its normals stay one per vertex.
 #[test]
 fn normal_count_unlike_the_position_count_does_not_shift_the_next_primitive() {
     let mut b = GltfBuilder::new();
@@ -557,10 +559,11 @@ fn bounding_box_encloses_the_transformed_positions() {
     assert_vec3(mesh.bounding_box.max, Vec3::new(11.0, 1.0, 0.0), "aabb max");
 }
 
-/// A node that is its own descendant (glTF forbids it, a corrupt file can
-/// still say it) is a decode error, not a stack overflow that aborts the
-/// process. The overflow cannot be caught in-process, so the decode runs in a
-/// child test process and the parent checks that it exited normally.
+/// A node that is its own descendant is a decode error, not a stack overflow
+/// aborting the process.
+///
+/// An overflow cannot be caught in-process, so the decode runs in a child test
+/// process and the parent checks that it exited normally.
 #[test]
 fn node_that_is_its_own_descendant_is_refused() {
     const CHILD: &str = "KHORA_GLTF_CYCLE_CHILD";

@@ -20,13 +20,12 @@ use std::sync::{Mutex, MutexGuard};
 
 use khora_core::asset::AssetUUID;
 
-/// When each asset last changed, on one counter: an invalidated asset moves
-/// to the counter's next value, and a new index moves every asset. A decode
-/// filed at one value of the counter is installed only while none of the
-/// files it read changed after it.
+/// The generation each asset last changed at, on one counter.
 ///
-/// Shared between the service and the leases of the decodes in flight. Its
-/// lock is a leaf: held only to read or move a generation.
+/// An invalidated asset moves to the counter's next value; a new index moves
+/// every asset. A decode is installed only while none of the files it read
+/// changed after the value it was filed at. Shared with the leases of the
+/// decodes in flight; its lock is a leaf.
 #[derive(Debug, Default)]
 pub(crate) struct Generations(Mutex<State>);
 
@@ -44,7 +43,7 @@ struct State {
 }
 
 impl Generations {
-    /// The counter now: what a decode filed now is stamped with.
+    /// Returns the counter's current value, the stamp of a decode filed at this point.
     pub(crate) fn now(&self) -> u64 {
         self.lock().counter
     }
@@ -75,8 +74,7 @@ impl Generations {
         self.now() <= filed
     }
 
-    /// The generation of `uuid` now: the counter's value when it last
-    /// changed.
+    /// Returns the generation of `uuid`: the counter's value when it last changed.
     pub(crate) fn of(&self, uuid: &AssetUUID) -> u64 {
         let state = self.lock();
         state

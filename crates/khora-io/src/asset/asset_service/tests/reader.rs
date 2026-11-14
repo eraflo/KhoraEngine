@@ -298,9 +298,9 @@ fn the_reader_taken_after_a_reindex_reads_the_new_index() {
     );
 }
 
-/// The editor's `share_assets` swaps a project's service into the
-/// engine's: the reader the engine's service hands out from then on reads
-/// the swapped-in project.
+/// After a project's service is swapped into the engine's, its reader reads that project.
+///
+/// As the editor's `share_assets` swaps them.
 #[test]
 fn a_service_swapped_in_hands_out_the_reader_of_its_own_project() {
     let mut own = shared_service(shared_files());
@@ -381,9 +381,9 @@ fn a_decoder_registered_while_a_reader_is_held_serves_the_services_loads() {
     );
 }
 
-/// A container file loaded as a type its decoder does not produce fails
-/// before its container is opened: the load records no file read beside
-/// it, so a change to such a file does not announce the container.
+/// A container loaded as a type its decoder does not produce fails before it is opened.
+///
+/// The load records no file beside it, so a change to one does not announce it.
 #[test]
 fn a_container_file_loaded_as_another_type_records_no_file_read_beside_it() {
     let mut svc = AssetService::new(

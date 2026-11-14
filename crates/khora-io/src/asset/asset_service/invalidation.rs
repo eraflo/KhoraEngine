@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Invalidation: dropping a changed asset, the parts it served and the
-//! containers that read it, announcing each on the change channel, and the
-//! last good copies served while a changed asset is decoded again.
+//! Invalidation of changed assets, their parts and the containers that read them,
+//! each announced on the change channel; and the last good copies kept meanwhile.
 
 use std::any::TypeId;
 use std::collections::HashSet;
@@ -28,24 +27,12 @@ use super::AssetService;
 use crate::asset::change::{AssetChanged, CHANGE_BACKLOG};
 
 impl AssetService {
-    /// Drops the cached handle for `uuid` across every typed storage.
-    /// Subsequent `load::<A>()` calls re-run the IO + decoder pipeline.
-    /// Returns `true` if any storage held this UUID.
+    /// Drops the cached copies of `uuid`; returns whether any storage held one.
     ///
-    /// Outstanding clones of the previously-cached `AssetHandle<A>` keep the
-    /// old asset alive until they themselves drop — by design (in-flight
-    /// readers don't see a half-loaded replacement).
-    ///
-    /// Invalidating a container file also drops its opened container and
-    /// every sub-asset extracted from it.
-    ///
-    /// `uuid` and every sub-asset it served are announced on
-    /// [`changes`](Self::changes) whether or not anything was cached: after
-    /// a reload that failed, the service holds nothing while the engine
-    /// still holds the last good copy, which the next change must reach.
-    ///
-    /// A container that reads `uuid`'s file besides its own (a glTF's `.bin`
-    /// or image beside it) is invalidated with it.
+    /// Its sub-assets and the containers reading its file are dropped with it.
+    /// Handles already out keep the old value. Each is announced on
+    /// [`changes`](Self::changes) even when nothing was cached: after a failed
+    /// reload, the engine still holds the last good copy.
     pub fn invalidate(&mut self, uuid: &AssetUUID) -> bool {
         self.failed.clear();
         let mut any = false;
@@ -99,8 +86,7 @@ impl AssetService {
         any
     }
 
-    /// The changed assets whose new value is still being decoded, taken:
-    /// what the `asset_reload` system refreshes once each lands.
+    /// Takes the changed assets whose new value is still being decoded, for `asset_reload`.
     pub(crate) fn take_reloading(&mut self) -> HashSet<AssetUUID> {
         std::mem::take(&mut self.reloading)
     }
@@ -110,12 +96,10 @@ impl AssetService {
         self.reloading.extend(uuids);
     }
 
-    /// Serves `handle` for `uuid` until `uuid` is invalidated again: the
-    /// last good copy of an asset whose current bytes did not decode, so a
-    /// reference resolved meanwhile shows what the engine already shows.
+    /// Serves `handle`, the last good copy of `uuid`, until `uuid` is invalidated again.
     ///
-    /// Refused (returns `false`) for a copy a replaced service served, which
-    /// is no copy of this service's asset.
+    /// For an asset whose current bytes did not decode. Refused (`false`) for a
+    /// copy a replaced service served, no copy of this service's asset.
     pub fn keep<A: Asset>(&mut self, uuid: &AssetUUID, handle: AssetHandle<A>) -> bool {
         if self.inherited_mut().contains(uuid) {
             return false;
@@ -132,12 +116,10 @@ impl AssetService {
         false
     }
 
-    /// Takes every asset announced since the last call, for the engine to
-    /// replace its copies. If the stream overflowed since, the announcements
-    /// it lost cannot be told apart, so every asset this service ever served
-    /// is returned.
+    /// Takes every asset announced since the last call, for the engine to replace its copies.
     ///
-    /// The stream's single consumer is the `asset_reload` DataSystem.
+    /// After an overflow, every asset this service ever served is returned. The
+    /// single consumer is the `asset_reload` DataSystem.
     pub fn take_changes(&self) -> HashSet<AssetUUID> {
         let mut changed: HashSet<AssetUUID> = self
             .changes
@@ -156,21 +138,17 @@ impl AssetService {
         changed
     }
 
-    /// The stream of assets whose bytes changed: every [`invalidate`](Self::invalidate)
-    /// sends the invalidated uuid and each part it served.
+    /// Returns the stream of assets whose bytes changed, sent by [`invalidate`](Self::invalidate).
     ///
     /// Drained by its single consumer, the `asset_reload` DataSystem.
     pub fn changes(&self) -> &Channel<AssetChanged> {
         &self.changes
     }
 
-    /// Announces, on this service's [`changes`](Self::changes), every asset
-    /// `outgoing` ever served: this service replaces it, so the copies the
-    /// engine took from it may be stale.
+    /// Announces every asset `outgoing`, the service this one replaces, ever served.
     ///
-    /// What `outgoing` served (and what it inherited in turn) is inherited:
-    /// a stream overflow still names it, and it is never kept as a last good
-    /// copy of this service's asset.
+    /// The engine's copies of them may be stale. They are inherited: an overflow
+    /// still names them, and none is kept as a last good copy of this service's.
     pub fn announce_replacing(&self, outgoing: &AssetService) {
         let mut replaced: HashSet<AssetUUID> = outgoing.inherited_mut().clone();
         replaced.extend(outgoing.served.iter().copied());
@@ -186,8 +164,7 @@ impl AssetService {
     }
 }
 
-/// Sends `AssetChanged(uuid)` on `changes`, noting in `lost` if the full
-/// stream dropped one to make room.
+/// Sends `AssetChanged(uuid)` on `changes`, noting in `lost` if a full stream dropped one.
 fn announce(changes: &Channel<AssetChanged>, lost: &AtomicBool, uuid: AssetUUID) {
     let dropped = changes.dropped();
     changes.send(AssetChanged(uuid));

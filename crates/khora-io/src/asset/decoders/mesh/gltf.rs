@@ -12,11 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! GLTF mesh decoder with support for both embedded and external resources.
+//! glTF mesh decoder, for embedded and external resources.
 //!
-//! A glTF file decoded as a [`Mesh`] is its default scene as one mesh: every
-//! node's primitives, placed by the node hierarchy, merged into one vertex
-//! and index list.
+//! A glTF decoded as a [`Mesh`] is its default scene merged into one vertex and
+//! index list, every primitive placed by the node hierarchy.
 
 use super::gltf_checks::{check_primitive, ElementCaps};
 use super::gltf_resources::load_buffers;
@@ -76,9 +75,9 @@ impl AssetDecoder<Mesh> for GltfDecoder {
         )
     }
 
-    /// Decodes the glTF at `source_path` within `limits`: its vertices, and
-    /// the elements of an accessor without a buffer view, are capped by
-    /// them.
+    /// Decodes the glTF at `source_path` within `limits`.
+    ///
+    /// They cap its vertices, and the elements of an accessor without a buffer view.
     fn load_limited(
         &self,
         bytes: &[u8],
@@ -137,13 +136,10 @@ impl AssetDecoder<Mesh> for GltfDecoder {
     }
 }
 
-/// Parses and validates a glTF file, binary or JSON, refusing a malformed
-/// one with an error.
+/// Parses and validates a glTF file, binary or JSON, refusing a malformed one.
 ///
-/// `gltf-json`'s validator reads a primitive's `POSITION` accessor by index
-/// without a bounds check, so a file naming an accessor that does not exist
-/// would panic inside it. Those indices are checked here first, and the file
-/// is validated only once they hold.
+/// `gltf-json`'s validator indexes a primitive's `POSITION` accessor without a
+/// bounds check and would panic, so those indices are checked first.
 pub(super) fn parse_gltf(bytes: &[u8]) -> Result<gltf::Gltf, Box<dyn Error + Send + Sync>> {
     // The GLB reader subtracts the 12-byte header from the declared length
     // unchecked.
@@ -178,13 +174,11 @@ pub(super) fn parse_gltf(bytes: &[u8]) -> Result<gltf::Gltf, Box<dyn Error + Sen
     Ok(gltf::Gltf { document, blob })
 }
 
-/// Every mesh the file shows, with the world transform of the node showing
-/// it: the default scene (else the first one), walked depth first; a file
-/// without any scene shows each of its meshes once, untransformed.
+/// Every mesh the file shows, with the world transform of the node showing it.
 ///
-/// glTF requires the node hierarchy to be disjoint trees; a node reached
-/// twice (a cycle, or a node with two parents) fails the decode. The walk is
-/// iterative, so a deep hierarchy cannot overflow the stack.
+/// The default scene (else the first) is walked depth first; a file without a
+/// scene shows each mesh once, untransformed. A node reached twice (a cycle, or
+/// two parents) fails the decode: glTF requires disjoint trees.
 fn placed_meshes(
     document: &gltf::Document,
 ) -> Result<Vec<(gltf::Mesh<'_>, Mat4)>, Box<dyn Error + Send + Sync>> {
@@ -200,6 +194,7 @@ fn placed_meshes(
 
     let mut placed = Vec::new();
     let mut reached = vec![false; document.nodes().len()];
+    // An explicit stack, so a deep hierarchy cannot overflow the thread's.
     // Children are pushed last-first, so they pop in file order.
     let mut pending: Vec<(gltf::Node<'_>, Mat4)> =
         scene.nodes().map(|node| (node, Mat4::IDENTITY)).collect();
@@ -237,10 +232,11 @@ fn local_matrix(node: &gltf::Node<'_>) -> Mat4 {
     )
 }
 
-/// The matrix that carries normals through `world`: the cofactor matrix of
-/// its 3×3 part, i.e. det · M⁻ᵀ, signed so a mirror keeps normals pointing
-/// out. Unlike the inverse it needs no tolerance on the determinant, so a
-/// centimetre-scaled node still rotates its normals.
+/// The matrix carrying normals through `world`: its 3×3 cofactor, det · M⁻ᵀ.
+///
+/// Signed so a mirror keeps normals pointing out. Unlike the inverse it needs
+/// no tolerance on the determinant, so a centimetre-scaled node still rotates
+/// its normals.
 fn normal_matrix(world: &Mat4) -> Mat3 {
     let [a, b, c] = [
         world.cols[0].truncate(),
@@ -421,9 +417,10 @@ fn fan_to_list(fan: &[u32]) -> Vec<u32> {
     }
 }
 
-/// Concatenates primitives of one topology into one mesh. An attribute some
-/// primitives carry and others don't is filled with its default for the
-/// others: UV `(0, 0)`, colour opaque white.
+/// Concatenates primitives of one topology into one mesh.
+///
+/// An attribute only some primitives carry is filled for the others with its
+/// default: UV `(0, 0)`, colour opaque white.
 pub(super) fn merge(primitives: Vec<Primitive>) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
     let topology = primitives
         .first()

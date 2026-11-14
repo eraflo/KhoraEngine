@@ -12,18 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `.wgsl` hot-reload pump.
-//!
-//! A `PreExtract` data system that drains the shader
-//! [`AssetWatch`] each tick, maps every changed `.wgsl` file to its
-//! logical shader name, hands the new source to the
-//! [`PipelineSystem`](khora_core::renderer::traits::PipelineSystem) backend as
-//! an overlay, and recomposes the affected cached pipelines in place. Lanes
-//! re-fetch pipelines by key every frame, so they pick up the rebuilt pipeline
-//! with no lane-side change.
-//!
-//! With no assets directory present, no watcher is registered and the backend
-//! keeps serving its embedded `include_str!` sources — the production path.
+//! The `.wgsl` hot-reload pump: a project's changed shaders handed to the
+//! [`PipelineSystem`] as overlays, never a restricted project's.
 
 use khora_data::ecs::SystemContext;
 use std::sync::Arc;
@@ -36,9 +26,9 @@ use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
 
 use crate::asset::{AssetChangeEvent, AssetChangeKind, AssetWatch};
 
-/// What the shader pump last applied the project's overlays for: the watched
-/// roots and the trust of the project open. A runtime resource, held as
-/// `Arc<OverlaysSeen>`.
+/// What the shader pump last applied the project's overlays for: the watched roots and their trust.
+///
+/// A runtime resource, held as `Arc<OverlaysSeen>`.
 #[derive(Default)]
 pub struct OverlaysSeen {
     /// The watched roots and the trust last applied for; `None` before the
@@ -50,8 +40,7 @@ pub struct OverlaysSeen {
 type WatchedRoot = (std::path::PathBuf, crate::trust::ProjectTrust);
 
 impl OverlaysSeen {
-    /// Records `roots`, each with its trust, as what the overlays are
-    /// applied for; whether they differ from what was recorded before.
+    /// Records `roots`, each with its trust, and returns whether they differ from the last.
     fn moved(&self, roots: Vec<WatchedRoot>) -> bool {
         let mut seen = self
             .seen
@@ -71,12 +60,9 @@ const LOGICAL_ROOT: &str = "khora";
 
 /// Maps a watcher-relative `.wgsl` path to its logical shader module name.
 ///
-/// The shader tree mirrors the logical namespace: `shaders/lib/std/camera.wgsl`
-/// ↔ `khora::std::camera`, `shaders/pipelines/lit_forward.wgsl` ↔
-/// `khora::pipelines::lit_forward`. The mapping strips the `shaders/` root and
-/// the `lib/` grouping segment (libs are namespaced directly under `khora::`),
-/// drops the `.wgsl` extension, replaces `/` with `::`, and prefixes `khora::`.
-/// Returns `None` for paths that are not `.wgsl` under `shaders/`.
+/// `shaders/lib/std/camera.wgsl` is `khora::std::camera`,
+/// `shaders/pipelines/lit_forward.wgsl` is `khora::pipelines::lit_forward`.
+/// `None` for a path that is not `.wgsl` under `shaders/`.
 pub fn logical_name_for_shader_path(rel_path: &str) -> Option<String> {
     let rel = rel_path.replace('\\', "/");
     let stem = rel.strip_suffix(".wgsl")?;
@@ -93,9 +79,10 @@ pub fn logical_name_for_shader_path(rel_path: &str) -> Option<String> {
     Some(format!("{LOGICAL_ROOT}::{namespaced}"))
 }
 
-/// The source of the overlay `rel_path` names under the watched `root`,
-/// read through a [`FileGuard`](crate::trust::FileGuard) that reports its
-/// refusals to `refusals`; `None` when it is refused or cannot be read.
+/// Returns the source of the overlay `rel_path` names under the watched `root`.
+///
+/// Read through a [`FileGuard`](crate::trust::FileGuard) reporting to
+/// `refusals`; `None` when it is refused or cannot be read.
 pub fn overlay_source(
     root: &std::path::Path,
     rel_path: &str,
@@ -115,8 +102,7 @@ pub fn overlay_source(
     }
 }
 
-/// The files `event` says changed, as their root and their path under it: a
-/// rescan names every file under its root.
+/// Returns the files `event` says changed, as root and path: a rescan names every file.
 fn changed_files(event: &AssetChangeEvent) -> Vec<(std::path::PathBuf, String)> {
     let root = event.root().to_path_buf();
     if event.kind != AssetChangeKind::Rescan {
@@ -134,7 +120,7 @@ fn changed_files(event: &AssetChangeEvent) -> Vec<(std::path::PathBuf, String)> 
         .collect()
 }
 
-/// What the restricted mode lists of the overlay at `file`, left unused.
+/// Returns the warning listed for the overlay at `file`, left unused by a restricted project.
 fn ignored(file: &std::path::Path) -> Problem {
     Problem {
         severity: ProblemSeverity::Warning,
@@ -153,9 +139,7 @@ fn ignored(file: &std::path::Path) -> Problem {
     }
 }
 
-/// Lists the overlay at `file` among what the restricted mode left unused,
-/// under [`ProblemSource::Restricted`] — each file once; the list is cleared
-/// when the project is trusted.
+/// Lists the overlay at `file`, once, under [`ProblemSource::Restricted`].
 fn list_ignored(runtime: &Runtime, file: &std::path::Path) {
     let Some(problems) = runtime.resources.get::<Arc<Problems>>() else {
         return;
@@ -169,9 +153,7 @@ fn list_ignored(runtime: &Runtime, file: &std::path::Path) {
     problems.report(ProblemSource::Restricted, listed);
 }
 
-/// Every overlay under `root`, as its root — absolute, as a change under it
-/// names it — and its path under it: what a project holds when it is
-/// opened, trusted or restricted.
+/// Returns every overlay under `root`, as the absolute root and the path under it.
 fn overlays_under(root: &std::path::Path) -> Vec<(std::path::PathBuf, String)> {
     let root = crate::asset::root_path::absolute(root);
     walkdir::WalkDir::new(&root)
@@ -188,10 +170,10 @@ fn overlays_under(root: &std::path::Path) -> Vec<(std::path::PathBuf, String)> {
         .collect()
 }
 
-/// Applies the overlays of the watched `roots` afresh, each root at its
-/// trust: the pipeline system's overlays dropped, then each overlay under a
-/// trusted root replaces its module, and each under a restricted one is
-/// listed under [`ProblemSource::Restricted`], the list replaced.
+/// Applies the overlays of the watched `roots` afresh, each root at its trust.
+///
+/// A trusted root's overlays replace their modules; a restricted root's are
+/// listed under [`ProblemSource::Restricted`], replacing the list.
 fn apply_afresh(
     runtime: &Runtime,
     pipeline_system: &dyn PipelineSystem,
@@ -234,9 +216,8 @@ fn shader_hot_reload_system(
     let Some(device) = runtime.backends.get::<Arc<dyn GraphicsDevice>>() else {
         return;
     };
-    // Each watched root at its own trust: a root outside the project whose
-    // trust is held — the project before, still watched while another
-    // opens — is read restricted.
+    // A root outside the project open, such as the previous one still
+    // watched, is read restricted.
     let roots: Vec<WatchedRoot> = (watch.roots().into_iter())
         .map(|root| {
             let trust = crate::trust::ProjectTrustState::of_path(runtime, &root);
@@ -259,10 +240,9 @@ fn shader_hot_reload_system(
         .get::<Arc<crate::trust::Refusals>>()
         .cloned()
         .unwrap_or_else(|| Arc::new(crate::trust::Refusals::new(None, None)));
-    // An overlay deleted gives its module back: the overlays are applied
-    // afresh, without it — a shader removed, a folder removed or moved out
-    // (a path with no extension), or a rescan, after which a removal may
-    // have been dropped.
+    // An overlay deleted gives its module back, so the overlays are applied
+    // afresh: a shader or a folder (no extension) removed, or a rescan, which
+    // may have dropped a removal.
     let removed = events.iter().any(|event| match event.kind {
         AssetChangeKind::Rescan => true,
         AssetChangeKind::Removed => {

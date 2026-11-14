@@ -12,12 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Reading Ergon modules from disk.
-//!
-//! [`khora_script::compile_module`] resolves and compiles a module and
-//! everything it imports through a [`SourceLoader`]; `khora-script` never opens
-//! a file itself. [`DiskLoader`] is the loader that reads them from a directory,
-//! and it lives here because reading is what this crate does.
+//! Reading Ergon modules from disk, for the [`SourceLoader`] `khora-script`
+//! compiles through: the language never opens a file itself.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -44,8 +40,9 @@ impl std::fmt::Debug for DiskLoader {
 }
 
 impl DiskLoader {
-    /// A loader rooted at `root`, reading as a trusted project's files, its
-    /// refusals kept in memory. A run loads through [`Self::guarded`].
+    /// Creates a loader rooted at `root`, reading as a trusted project's files.
+    ///
+    /// Its refusals are kept in memory only; a run loads through [`Self::guarded`].
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self::guarded(FileGuard::new(
             root,
@@ -54,7 +51,7 @@ impl DiskLoader {
         ))
     }
 
-    /// A loader reading every module through `guard`, under its root.
+    /// Creates a loader reading every module through `guard`, under its root.
     pub fn guarded(guard: FileGuard) -> Self {
         Self {
             guard: Arc::new(guard),

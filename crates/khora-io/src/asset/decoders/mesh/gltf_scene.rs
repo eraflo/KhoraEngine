@@ -15,25 +15,9 @@
 //! A glTF scene as a prefab record: one entity per node under a root, each
 //! showing its primitives' mesh and material sub-assets.
 //!
-//! Placed in a level, the record is a prefab instance: the level keeps the
-//! link and the designer's changes, and every load expands the file as it is
-//! now. A change is kept against the member it was made on, so each member's
-//! identity must survive a re-export. It comes from the node's **path of
-//! names** from the scene's roots — `Body[0]/Wheel[1]` — not from its index:
-//! an exporter reorders nodes freely, while renaming one is the author's act,
-//! and a change whose node was renamed is reported orphaned by the load
-//! instead of landing on another node.
-//!
-//! A path segment is the node's name, escaped, with its ordinal among the
-//! earlier siblings of the same name (`[0]` for the first, so a second
-//! `Wheel` does not change the first one's key); an unnamed node is `#i`, its
-//! place among its siblings. A primitive past the first is a child entity
-//! whose segment is `#prim{p}` — a `#` no escaped name can start with.
-//!
-//! The key of a member is composed from its parent's key and its own
-//! segment ([`member_key`]), so it is a function of the whole path while each
-//! node costs only its own segment: a deep hierarchy costs its size, not its
-//! size times its depth.
+//! A member is keyed by its node's path of names (`Body[0]/Wheel[1]`), not its
+//! index, so its overrides survive a re-export that reorders nodes; a renamed
+//! node orphans them rather than hand them to another.
 
 use std::collections::HashMap;
 
@@ -48,10 +32,10 @@ use khora_data::scene::{capture_subtree, SceneRecord};
 /// What every key of a glTF member starts with, apart from other named ids.
 const KEY_PREFIX: &str = "gltf-node:";
 
-/// How far from perpendicular two axes of a node's `matrix` may be before
-/// the matrix counts as a shear, which an entity's translation, rotation and
-/// scale cannot hold (glTF requires a decomposable matrix). Measured on the
-/// unit axes, so it holds the same at any scale.
+/// How far from perpendicular two axes of a node's `matrix` may be before it is a shear.
+///
+/// A shear fits no translation, rotation and scale (glTF requires a
+/// decomposable matrix). Measured on the unit axes, so it holds at any scale.
 const ORTHOGONALITY_TOLERANCE: f32 = 1e-4;
 
 /// The key of the scene's root.
@@ -61,13 +45,17 @@ pub(super) fn root_key() -> PersistentId {
 
 /// The key of the member whose path segment is `segment`, under the member
 /// keyed `parent`.
+///
+/// Built on the parent's key rather than the whole path, so a deep hierarchy
+/// costs its size, not its size times its depth.
 pub(super) fn member_key(parent: PersistentId, segment: &str) -> PersistentId {
     PersistentId::named(&format!("{KEY_PREFIX}{:016x}/{segment}", parent.to_bits()))
 }
 
-/// The record of scene `scene` of `document` (`None`: the default scene,
-/// else the first, else every mesh once), its sub-assets named under
-/// `container`; the root is named after the scene, else `file_stem`.
+/// The record of scene `scene` of `document`, its sub-assets named under `container`.
+///
+/// `None` is the default scene, else the first, else every mesh once. The root
+/// is named after the scene, else `file_stem`.
 pub(super) fn scene_record(
     document: &gltf::Document,
     scene: Option<usize>,
@@ -200,6 +188,7 @@ impl Builder {
             let shown_on = if primitive.index() == 0 {
                 entity
             } else {
+                // No escaped name starts with `#`, so no node's segment is this.
                 let segment = format!("#prim{}", primitive.index());
                 let child = self.spawn(
                     Name::new(&segment[1..]),
@@ -242,10 +231,10 @@ impl Builder {
         Ok(entity)
     }
 
-    /// Links every member to its parent, deepest first so a parent is not yet
-    /// linked upwards when its children join it: `set_parent`'s cycle guard
-    /// then stops at once instead of walking the whole chain above. The sort
-    /// is stable, so each parent still lists its children in file order.
+    /// Links every member to its parent, deepest first, siblings in file order.
+    ///
+    /// A parent not yet linked upwards stops `set_parent`'s cycle guard at once,
+    /// instead of it walking the whole chain above.
     fn attach(&mut self) -> anyhow::Result<()> {
         let mut edges = std::mem::take(&mut self.edges);
         edges.sort_by_key(|&(_, _, depth)| std::cmp::Reverse(depth));
@@ -260,6 +249,10 @@ impl Builder {
 
 /// Queues `siblings` (children of `parent`, keyed `parent_key`) so they pop
 /// in file order, each with its own path segment.
+///
+/// A segment is the escaped name and its ordinal among earlier siblings of that
+/// name (`Wheel[0]`), so a second `Wheel` leaves the first's key alone; an
+/// unnamed node is `#i`, its place among its siblings.
 fn push_siblings<'a>(
     pending: &mut Vec<Pending<'a>>,
     siblings: Vec<gltf::Node<'a>>,
@@ -303,9 +296,10 @@ fn escape(name: &str) -> String {
     escaped
 }
 
-/// The node's local transform as translation, rotation and scale. A value
-/// that is not a finite number, or a `matrix` that is no translation,
-/// rotation and scale (a shear, a projection), is refused.
+/// The node's local transform as translation, rotation and scale.
+///
+/// A value that is not finite, or a `matrix` that is no translation, rotation
+/// and scale (a shear, a projection), is refused.
 fn node_transform(node: &gltf::Node<'_>) -> anyhow::Result<Transform> {
     let index = node.index();
     match node.transform() {

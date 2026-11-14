@@ -26,18 +26,12 @@ use super::{
 /// Reads the files under one root, refusing what leaves it, what is over its
 /// cap and what is quarantined.
 ///
-/// A read, in order:
-/// - the path stays under the root: no `..` past it, no absolute path, and the
-///   file it resolves to — through any link — is under the root's real
-///   folder (`Escape`);
-/// - a file carrying the system's download mark is read as
-///   [`Trust::Imported`] when that is stricter than the guard's trust;
-/// - its size, from the metadata, is under the cap of its kind at that trust
-///   (`TooLarge`, nothing read), and the read itself stops at the cap;
-/// - a file quarantined as it is now is refused (`Quarantined`).
+/// A file carrying the system's download mark is read as [`Trust::Imported`]
+/// when that is stricter than the guard's trust. Every refusal but
+/// `Quarantined` goes to the [`Refusals`]: a quarantined file was reported
+/// when it was quarantined.
 ///
-/// Every refusal but the last goes to the [`Refusals`]; a quarantined file
-/// was reported when it was quarantined.
+/// See the book: concepts/trust.md, "The guard".
 pub struct FileGuard {
     /// The root as it was given: what refusals and the quarantine name files
     /// by.
@@ -92,7 +86,12 @@ impl FileGuard {
         &self.refusals
     }
 
-    /// The bytes of the file `rel` names under the root.
+    /// Returns the bytes of the file `rel` names under the root.
+    ///
+    /// # Errors
+    ///
+    /// [`ReadError::Refused`] when the guard refuses the file,
+    /// [`ReadError::Io`] when it cannot be read.
     pub fn read(&self, rel: impl AsRef<Path>) -> Result<Vec<u8>, ReadError> {
         let rel = rel.as_ref();
         let named = self.root.join(rel);
@@ -156,7 +155,11 @@ impl FileGuard {
         Ok(bytes)
     }
 
-    /// The text of the file `rel` names under the root.
+    /// Returns the text of the file `rel` names under the root.
+    ///
+    /// # Errors
+    ///
+    /// As [`read`](Self::read), and [`ReadError::Io`] when it is not UTF-8.
     pub fn read_to_string(&self, rel: impl AsRef<Path>) -> Result<String, ReadError> {
         let bytes = self.read(rel)?;
         String::from_utf8(bytes).map_err(|error| {

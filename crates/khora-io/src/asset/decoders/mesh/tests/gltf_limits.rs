@@ -67,9 +67,7 @@ fn exceeded<'a>(error: &'a (dyn Error + 'static)) -> Option<&'a LimitExceeded> {
 }
 
 /// **A glTF past its element limit is refused by the decoder and the
-/// dispatcher**: a triangle's three vertices against `max_elements` 2 stop
-/// the decode with a `LimitExceeded` naming 2; at a trusted project's
-/// limits the same file decodes its three vertices.
+/// dispatcher**, and decodes its three vertices at a trusted project's limits.
 #[test]
 fn a_gltf_past_its_element_limit_is_refused_by_the_decoder() {
     let file = triangle_glb();
@@ -110,11 +108,11 @@ fn a_gltf_past_its_element_limit_is_refused_by_the_decoder() {
     }
 }
 
-/// **A glTF container opened within a limit holds its parts to it**: opened
-/// with `max_elements` 2, the triangle's primitive is refused with a
-/// `LimitExceeded` — when the container opens or when the primitive is
-/// extracted; opened at a trusted project's limits, the primitive extracts
-/// its three vertices.
+/// **A glTF container opened within a limit holds its parts to it**, at the
+/// open or at the extraction.
+///
+/// With `max_elements` 2 the triangle's primitive is refused; at a trusted
+/// project's limits it extracts its three vertices.
 #[test]
 fn a_gltf_container_opened_within_a_limit_holds_its_parts_to_it() {
     let dir = tempfile::tempdir().expect("a temp dir");

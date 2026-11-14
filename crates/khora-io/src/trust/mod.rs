@@ -66,7 +66,7 @@ pub enum FileKind {
 }
 
 impl FileKind {
-    /// The kind of the file at `path`, by its extension.
+    /// Returns the kind of the file at `path`, by its extension.
     pub fn of_path(path: &Path) -> FileKind {
         let Some(extension) = path.extension().and_then(|extension| extension.to_str()) else {
             return FileKind::Other;
@@ -96,9 +96,9 @@ impl Trust {
 /// One mebibyte.
 const MIB: u64 = 1 << 20;
 
-/// The size past which a file of `kind` read at `trust` is refused: the
-/// larger caps for the engine's files and a trusted project's, the strict
-/// ones for a restricted project, an import and a save.
+/// Returns the size, in bytes, past which a file of `kind` read at `trust` is refused.
+///
+/// See the book: concepts/trust.md, "The guard".
 pub fn size_cap(kind: FileKind, trust: Trust) -> u64 {
     let (larger, strict) = match kind {
         FileKind::Texture => (256, 64),
@@ -113,9 +113,9 @@ pub fn size_cap(kind: FileKind, trust: Trust) -> u64 {
     }
 }
 
-/// Whether `head`, the start of a file, reads as text: UTF-8 with no NUL. A
-/// head cut inside its last character is still text — it is the start of a
-/// longer file.
+/// Whether `head`, the start of a file, reads as text: UTF-8 with no NUL.
+///
+/// A head cut inside its last character is still text: it starts a longer file.
 pub fn looks_like_text(head: &[u8]) -> bool {
     if head.contains(&0) {
         return false;

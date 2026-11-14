@@ -21,14 +21,11 @@ use khora_core::Runtime;
 
 use super::ProjectTrust;
 
-/// The trust of the project open, shared in `runtime.resources` as an
-/// `Arc<ProjectTrustState>`.
+/// The trust of the project open, shared in `runtime.resources` as an `Arc<ProjectTrustState>`.
 ///
-/// It is the trust of one project: once a tool names the project it opens
-/// ([`set_for`](Self::set_for)), a folder outside that project — another
-/// project's, still watched while the new one opens — is read as
-/// restricted ([`trust_of`](Self::trust_of)). A game names none: its trust
-/// is the trust of everything it reads.
+/// Once a tool names the project it opens ([`set_for`](Self::set_for)), a
+/// folder outside it, such as the previous project still watched, is read as
+/// restricted. A game names none: its trust is that of everything it reads.
 #[derive(Debug)]
 pub struct ProjectTrustState(RwLock<Held>);
 
@@ -72,9 +69,9 @@ impl ProjectTrustState {
         });
     }
 
-    /// The trust a file or folder at `path` is read at: the trust held when
-    /// it lies in the project held — or when none is named — and
-    /// `Restricted` outside it.
+    /// Returns the trust `path` is read at: the one held inside the project, `Restricted` outside.
+    ///
+    /// With no project named, every path is read at the trust held.
     pub fn trust_of(&self, path: &Path) -> ProjectTrust {
         let (trust, project) = self.read(|held| (held.trust, held.project.clone()));
         let Some((named, resolved)) = project else {
@@ -106,8 +103,9 @@ impl ProjectTrustState {
         }
     }
 
-    /// The trust of the project `runtime` serves: its state's, `Trusted`
-    /// when it holds none (a game, the sandbox, a test).
+    /// Returns the trust of the project `runtime` serves.
+    ///
+    /// `Trusted` when the runtime holds no state: a game, the sandbox, a test.
     pub fn of(runtime: &Runtime) -> ProjectTrust {
         runtime
             .resources
@@ -115,9 +113,9 @@ impl ProjectTrustState {
             .map_or(ProjectTrust::Trusted, |state| state.get())
     }
 
-    /// The trust `path` is read at in the project `runtime` serves: as
-    /// [`trust_of`](Self::trust_of), `Trusted` when the runtime holds no
-    /// state.
+    /// Returns the trust `path` is read at in the project `runtime` serves.
+    ///
+    /// As [`trust_of`](Self::trust_of); `Trusted` when the runtime holds no state.
     pub fn of_path(runtime: &Runtime, path: &Path) -> ProjectTrust {
         runtime
             .resources

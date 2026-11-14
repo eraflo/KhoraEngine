@@ -26,11 +26,10 @@ use crate::trust::{
     FileKind, Limits, Refusals, SecurityReason, SecurityRefusal, Trust, TrustLayer,
 };
 
-/// Resolves a glTF's buffers and images inside a pack: a URI, relative to
-/// the assets root once the glTF's folder is joined to it, is found by its
-/// asset key among the pack's entries and read from the pack — never from a
-/// file beside it. Each read is checked against the pack's manifest when
-/// there is one.
+/// Resolves a glTF's buffers and images inside its pack, never from a file beside it.
+///
+/// A URI, joined to the glTF's folder, is found by its asset key among the
+/// pack's entries. Each read is checked against the pack's manifest, if any.
 pub struct PackedResolver {
     entries: HashMap<String, (AssetUUID, AssetSource)>,
     io: Arc<dyn AssetIo>,
@@ -40,9 +39,9 @@ pub struct PackedResolver {
 }
 
 impl PackedResolver {
-    /// A resolver over the entries `index` lists, read through `io` at
-    /// `trust`, refusing to `refusals` an entry declaring more bytes than
-    /// it may hold.
+    /// Creates a resolver over the packed entries `index` lists, read through `io`.
+    ///
+    /// An entry declaring more bytes than it may hold at `trust` is refused to `refusals`.
     pub fn new(
         index: &AssetIndex,
         io: Arc<dyn AssetIo>,
@@ -71,9 +70,8 @@ impl PackedResolver {
         }
     }
 
-    /// Refuses the entry at `uri` declaring more bytes than its manifest
-    /// recorded, or than its kind may hold at this trust — before anything
-    /// is read or allocated.
+    /// Refuses, before any read, the entry at `uri` if it declares more bytes
+    /// than its manifest records or its kind may hold.
     fn check_declared(
         &self,
         uri: &str,

@@ -22,10 +22,10 @@ use khora_data::scene::{PrefabSource, SceneRecord};
 use crate::asset::{AssetReader, PrefabAsset};
 use crate::serialization::PREFAB;
 
-/// The prefabs of a project, read through a shared [`AssetReader`]: on any
-/// thread, without the [`AssetService`](crate::asset::AssetService)'s lock,
-/// and without its cache — a prefab is decoded from its file each time it is
-/// read.
+/// The prefabs of a project, read through a shared [`AssetReader`] on any thread.
+///
+/// Neither the [`AssetService`](crate::asset::AssetService)'s lock nor its
+/// cache: a prefab is decoded from its file each time it is read.
 pub struct ReaderPrefabs {
     reader: Arc<AssetReader>,
 }

@@ -82,10 +82,11 @@ fn stamp() -> QuarantineKey {
     }
 }
 
-/// **Each quarantined refusal comes with its key**: a file refused for its
-/// content is held by its hash, one refused before it was read by its
-/// stamp. What quarantines nothing — a refusal with no key, an escape — is
-/// not listed, as `quarantined` does not list it.
+/// **Each quarantined refusal comes with its key.**
+///
+/// A file refused for its content is held by its hash, one refused before it
+/// was read by its stamp. What quarantines nothing — a refusal with no key, an
+/// escape — is not listed, as `quarantined` does not list it.
 #[test]
 fn the_quarantine_lists_each_refusal_with_its_key() {
     let folder = Folder::new("keys");

@@ -26,9 +26,9 @@ use khora_core::asset::AssetSource;
 use std::fs;
 use tempfile::tempdir;
 
-/// Mock IO that returns bytes from an in-memory map keyed by rel-path.
-/// Lets the service tests cover invalidate/reindex without touching real
-/// decoders (which need real format-specific bytes).
+/// Mock IO returning bytes from an in-memory map keyed by relative path.
+///
+/// Covers invalidate and reindex without the real decoders' format-specific bytes.
 struct MockIo {
     files: HashMap<std::path::PathBuf, Vec<u8>>,
 }
@@ -287,9 +287,9 @@ impl AssetDecoder<TestNote> for NoteDecoder {
     }
 }
 
-/// A service over the container index plus one plain note, reading its
-/// bytes from `files`, with the counting container and the note decoder
-/// registered.
+/// Returns a service over the container index and one plain note, reading `files`.
+///
+/// The counting container and the note decoder are registered.
 fn shared_service(files: Arc<Mutex<HashMap<std::path::PathBuf, Vec<u8>>>>) -> AssetService {
     let mut note_entry = file_entry(note(), NOTE_PATH);
     note_entry.asset_type_name = NOTE_TYPE.to_string();

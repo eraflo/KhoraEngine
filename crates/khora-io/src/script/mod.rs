@@ -12,11 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Ergon scripts on the I/O side: reading modules from disk ([`compile`]),
-//! mirroring components into Ergon declarations ([`mirror`]), reloading a
-//! changed file ([`hot_reload`]), telling which `.erg` files are scripts
-//! ([`layout`]), and remembering which modules each mounted root brought in
-//! ([`mounted`]).
+//! Ergon scripts on the I/O side: reading, mirroring, compiling and reloading
+//! a project's modules.
 
 pub mod compile;
 pub mod compile_hub;

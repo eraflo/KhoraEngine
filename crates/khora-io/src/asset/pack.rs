@@ -12,13 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Pack-based asset loader for release mode.
+//! The asset loader of a release build, reading entries from a `data.pack`.
 //!
-//! `data.pack` files start with a 16-byte header so the loader can fail
-//! fast on the wrong file (e.g. the user accidentally renamed something to
-//! `data.pack`) and reject pack-format versions it wasn't built against.
-//! See [`PACK_HEADER_SIZE`] and [`PackHeader`] for the byte layout, and
-//! `crates/khora-io/src/asset/pack_builder.rs` for the writer side.
+//! The byte layout is [`PackHeader`]'s; `pack_builder.rs` writes it.
 
 use anyhow::{bail, Context, Result};
 use khora_core::asset::{AssetSource, CompressionKind};
@@ -30,38 +26,27 @@ use std::{
 use super::AssetIo;
 use crate::trust::LimitExceeded;
 
-/// 8-byte magic prefix that identifies a Khora pack archive on disk.
-///
-/// Trailing NUL keeps it printable in `od -c` / hex dumps. Persisted as
-/// raw bytes — endianness-independent.
+/// The 8-byte magic that starts a Khora pack archive.
 pub const PACK_MAGIC: &[u8; 8] = b"KHORAPK\0";
 
-/// Current pack format version. Bumped when the on-disk layout changes in
-/// a non-additive way; older runtimes refuse newer packs by reading the
-/// version from the header.
+/// The pack format version this runtime reads, and refuses any other.
 ///
-/// **v2** — adds 8 bytes to the header (`flags` + reserved) and
-/// per-entry compression (`uncompressed_size`, `compression`) in
-/// `AssetSource::Packed`. Older runtimes refuse v2 packs.
+/// Bumped when the layout changes in a way an older runtime cannot read.
 pub const PACK_FORMAT_VERSION: u32 = 2;
 
-/// Total size in bytes of the leading [`PackHeader`] in `data.pack`.
-/// Asset offsets recorded in `index.bin` are **relative to the start of
-/// the asset region**, not to byte 0 — `PackLoader` adds this constant
-/// when seeking.
+/// The size in bytes of the [`PackHeader`] that starts `data.pack`.
+///
+/// Offsets in `index.bin` are relative to the asset region after it, not to byte 0.
 pub const PACK_HEADER_SIZE: u64 = 24;
 
-/// Bit flag — at least one entry in this pack uses LZ4 compression.
-/// Diagnostics-only: per-entry compression is decided by
-/// `AssetSource::Packed.compression`. The flag is set when the writer
-/// applied LZ4 to any entry, so a quick header scan can tell whether the
-/// pack as a whole is mostly compressed.
+/// Header flag: at least one entry of the pack was written LZ4-compressed.
+///
+/// For diagnostics only: each entry's `AssetSource::Packed::compression` decides.
 pub const PACK_FLAG_LZ4: u32 = 1 << 0;
-/// Bit flag — a `manifest.bin` BLAKE3 sidecar accompanies this pack.
-/// (Set by `PackBuilder` when integrity manifest emission is enabled.)
+/// Header flag: a `manifest.bin` accompanies the pack.
 pub const PACK_FLAG_MANIFEST: u32 = 1 << 1;
 
-/// Decoded form of the 24-byte header at the start of `data.pack`.
+/// The 24-byte header at the start of `data.pack`, decoded.
 ///
 /// Byte layout (all little-endian):
 ///
@@ -70,28 +55,25 @@ pub const PACK_FLAG_MANIFEST: u32 = 1 << 1;
 /// ──────  ────  ─────────────────────────────────────────────────────
 ///      0     8  PACK_MAGIC (b"KHORAPK\0")
 ///      8     4  format_version: u32  — must equal PACK_FORMAT_VERSION
-///     12     4  asset_count:    u32  — sanity check vs. index.bin
+///     12     4  asset_count:    u32  — index.bin's entry count
 ///     16     4  flags:          u32  — bit 0 LZ4, bit 1 manifest
 ///     20     4  reserved:       u32  — zero on writes, ignored on reads
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct PackHeader {
-    /// Format version as written. Equals [`PACK_FORMAT_VERSION`] on a pack
-    /// produced by this engine; loader refuses anything else.
+    /// The format version as written; the loader refuses any but [`PACK_FORMAT_VERSION`].
     pub format_version: u32,
-    /// Number of assets the producer claims to have written into this
-    /// `data.pack`. Cross-checked against `index.bin.len()` at boot to
-    /// catch a mismatched pair (e.g. user shipped only one of the two
-    /// files).
+    /// The number of assets written into the pack.
+    ///
+    /// The entries of `index.bin`, sub-assets included; nothing checks it
+    /// against the index yet.
     pub asset_count: u32,
-    /// Pack-level feature flags (compression, manifest, …). See
-    /// `PACK_FLAG_*` constants.
+    /// Pack-level flags: the `PACK_FLAG_*` constants.
     pub flags: u32,
 }
 
 impl PackHeader {
-    /// Encodes the header into 24 raw bytes ready to be prepended to
-    /// `data.pack`. Used by `PackBuilder`.
+    /// Encodes the header into the 24 bytes that start `data.pack`.
     pub fn to_bytes(&self) -> [u8; PACK_HEADER_SIZE as usize] {
         let mut out = [0u8; PACK_HEADER_SIZE as usize];
         out[0..8].copy_from_slice(PACK_MAGIC);
@@ -102,8 +84,7 @@ impl PackHeader {
         out
     }
 
-    /// Convenience for the writer: build the v2 header for a pack that
-    /// will contain `asset_count` blobs and optional feature flags.
+    /// Returns the current-version header of a pack of `asset_count` entries and `flags`.
     pub fn v2(asset_count: u32, flags: u32) -> Self {
         Self {
             format_version: PACK_FORMAT_VERSION,
@@ -113,11 +94,7 @@ impl PackHeader {
     }
 }
 
-/// Pack-based asset loader for release mode.
-///
-/// Reads assets from a `.pack` archive file by seeking to the recorded
-/// offset (shifted by [`PACK_HEADER_SIZE`]) and reading the specified
-/// number of bytes.
+/// The asset loader of a release build, reading entries from a `data.pack` file.
 #[derive(Debug)]
 pub struct PackLoader {
     pack_file: File,
@@ -125,40 +102,32 @@ pub struct PackLoader {
 }
 
 impl PackLoader {
-    /// Validates the leading header and returns a reader bound to
-    /// `pack_file`.
+    /// Returns a loader reading `pack_file`, once its header is checked.
     ///
-    /// Errors:
-    /// - file shorter than [`PACK_HEADER_SIZE`] or unreadable,
-    /// - magic doesn't match [`PACK_MAGIC`] (file isn't a Khora pack),
-    /// - `format_version` field doesn't match [`PACK_FORMAT_VERSION`]
-    ///   (this runtime can't read this pack — typically an older runtime
-    ///   reading a newer pack).
+    /// # Errors
+    /// When the file is unreadable or shorter than [`PACK_HEADER_SIZE`], its magic
+    /// is not [`PACK_MAGIC`], or its version is not [`PACK_FORMAT_VERSION`].
     pub fn new(mut pack_file: File) -> Result<Self> {
         let header =
             read_and_validate_header(&mut pack_file).context("Pack header validation failed")?;
         Ok(Self { pack_file, header })
     }
 
-    /// Returns a reference to the parsed header. Useful for diagnostics
-    /// and for asserting `header.asset_count == vfs.asset_count()` at
-    /// startup.
+    /// Returns the pack's header, as read.
     pub fn header(&self) -> &PackHeader {
         &self.header
     }
 
-    /// Writes a fresh 24-byte header at the start of `out`. Convenience
-    /// helper for [`crate::asset::PackBuilder`] — keeps all the byte-
-    /// layout knowledge in one module.
+    /// Writes a current-version header of `asset_count` entries and `flags` to `out`.
     pub fn write_header(out: &mut impl Write, asset_count: u32, flags: u32) -> Result<()> {
         let header = PackHeader::v2(asset_count, flags);
         out.write_all(&header.to_bytes())
             .context("Failed to write pack header")
     }
 
-    /// Reads exactly `size` bytes of the pack file starting at byte `at`
-    /// (from the start of the file), without moving a cursor shared with
-    /// other reads: several threads read one loader at once.
+    /// Reads exactly `size` bytes of the pack file from byte `at`, sharing no cursor.
+    ///
+    /// Several threads read one loader at once.
     fn read_at(&self, at: u64, size: u64) -> Result<Vec<u8>> {
         // An entry the file cannot hold is refused before anything is
         // allocated for it: a corrupt index must not ask for more memory
@@ -199,9 +168,9 @@ const LZ4_MAX_RATIO: u64 = 255;
 /// Room for the end of an LZ4 block, which carries a few literals.
 const LZ4_SLACK: u64 = 64;
 
-/// One positioned read of `file` into `buf` at `offset`: what the platform
-/// reads without moving a cursor shared with other readers (Windows moves
-/// the handle's own position, never relied on here).
+/// Reads `file` into `buf` at `offset`, without a cursor shared with other readers.
+///
+/// Windows moves the handle's own position, never relied on here.
 #[cfg(windows)]
 fn read_once(file: &File, buf: &mut [u8], offset: u64) -> std::io::Result<usize> {
     std::os::windows::fs::FileExt::seek_read(file, buf, offset)
@@ -283,10 +252,8 @@ impl AssetIo for PackLoader {
                         }));
                     }
                 }
-                // Asset offsets in `index.bin` are relative to the start
-                // of the asset region (i.e. after the header). We add the
-                // header size here so the index never has to know about
-                // the on-disk header.
+                // Offsets in `index.bin` are relative to the asset region, so
+                // the index never knows of the header.
                 let at = PACK_HEADER_SIZE.checked_add(*offset).ok_or_else(|| {
                     anyhow::anyhow!("Pack entry offset {offset} is past any pack file")
                 })?;
@@ -451,9 +418,7 @@ mod tests {
         assert!(result.is_err(), "a Sub source has no packed bytes");
     }
 
-    /// One loader is shared by every thread decoding assets. Reads of
-    /// different entries at once never mix: each returns its own entry's
-    /// bytes, compressed or not, wherever another thread is reading.
+    /// Reads from many threads at once never mix: each returns its own entry's bytes.
     #[test]
     fn a_pack_read_from_many_threads_at_once_returns_each_entry_exactly() {
         const ENTRIES: usize = 24;
@@ -624,10 +589,10 @@ mod tests {
         }
     }
 
-    /// **A pack entry over 4 GiB uncompressed is refused before anything is
-    /// allocated**, whatever the reader checked before: a raw entry of 4 GiB
-    /// and one byte, and a compressed one claiming as much, are refused with
-    /// a `LimitExceeded` naming the 4 GiB — not read, not decompressed.
+    /// **A pack entry over 4 GiB is refused before anything is allocated.**
+    ///
+    /// A raw entry of 4 GiB and one byte, and a compressed one claiming as much,
+    /// give a `LimitExceeded` naming the 4 GiB, unread.
     #[test]
     fn a_pack_entry_over_four_gib_is_refused_before_allocating() {
         use crate::trust::LimitExceeded;

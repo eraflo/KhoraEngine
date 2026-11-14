@@ -12,31 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Canonical asset index builder.
+//! The asset index builder: a project's `assets/` scanned into a sorted [`AssetMetadata`] list.
 //!
-//! Walks a project's `assets/` directory and produces an [`AssetMetadata`] list
-//! suitable for [`crate::asset::AssetIndex::new`] — used by the editor to
-//! build an in-memory index at boot, and by the pack builder to
-//! produce reproducible release archives.
-//!
-//! # Determinism
-//!
-//! Files are sorted by their **forward-slash relative path** (lexicographic on
-//! the UTF-8 string) so the resulting metadata vector — and therefore the
-//! bincode-encoded index — is byte-identical across invocations. This is what
-//! lets CI compare two pack-builder runs and assert reproducibility.
-//!
-//! # UUID stability
-//!
-//! Each asset's [`AssetUUID`] is resolved through the project's
-//! [`AssetIdRegistry`] when one is supplied via [`IndexBuilder::with_registry`],
-//! and otherwise **defaults** to [`AssetUUID::new_v5`] of the **forward-slash
-//! relative path** (e.g. `"textures/wood.png"`). The registry is authoritative:
-//! once an asset has been renamed/moved in the editor its identity is *frozen*
-//! there, so the same file keeps the same UUID across renames. For any asset
-//! without a registry entry the path-derived default applies, which is what
-//! makes pre-registry projects and the pack builder agree by construction (the
-//! pack builder loads the same registry, so dev and release resolve identically).
+//! See the book: reference/formats.md, "Determinism".
 
 use crate::asset::container::{SubAssetEntry, SubAssetListerRegistration};
 use crate::asset::dependencies::{extract_dependencies, type_has_dependency_extractor};
@@ -50,20 +28,9 @@ use std::{
 
 /// Returns the canonical asset type name for a file extension.
 ///
-/// The well-known set is the **single source of truth** shared by:
-/// - the editor's in-memory index (this module),
-/// - the asset browser's tile categorization,
-/// - the pack builder.
-///
-/// All names are lower-case to match the existing decoder registrations
-/// (`crates/khora-agents/tests/asset_loading_test.rs:162` registers
-/// `"texture"`).
-///
-/// Unknown extensions return `Some(<extension>)` rather than `None` —
-/// the engine tracks **everything** under `assets/` regardless of
-/// whether it has a dedicated decoder yet. New file kinds show up in
-/// the asset browser automatically; adding a decoder only changes how
-/// they're consumed at runtime, not whether they enter the VFS.
+/// The one mapping the index, the asset browser and the pack builder share; names
+/// are lower case, as decoders are registered. An unknown extension is its own
+/// type, lower-cased: every file under `assets/` is indexed, decoder or not.
 pub fn asset_type_for_extension(ext: &str) -> Option<String> {
     let lower = ext.to_ascii_lowercase();
     let canonical: Option<&'static str> = match lower.as_str() {
@@ -91,23 +58,18 @@ pub fn asset_type_for_extension(ext: &str) -> Option<String> {
     Some(canonical.map(|s| s.to_string()).unwrap_or(lower))
 }
 
-/// Asset type assigned to files with no extension at all. These still
-/// enter the VFS so they're visible in the asset browser, but the
-/// engine has no way to dispatch a decoder until the user renames or
-/// re-classifies them.
+/// The asset type of a file with no extension: indexed, but given no decoder.
 pub const EXTENSIONLESS_ASSET_TYPE: &str = "blob";
 
-/// File-name prefixes the scan ignores outright. These are OS / editor
-/// scratch files that should never be part of the project.
+/// The file-name prefixes of OS and editor scratch files, never indexed.
 const SCAN_IGNORE_PREFIXES: &[&str] = &[".", "~"];
 
-/// File-name suffixes the scan ignores outright. Editor swap files,
-/// build-tool temporaries, etc.
+/// The file-name suffixes of swap and temporary files, never indexed.
 const SCAN_IGNORE_SUFFIXES: &[&str] = &[".tmp", ".swp", ".bak", "~"];
 
-/// `true` if a file with the given name should be excluded from the
-/// VFS scan and from hot-reload events. Catches OS scratch files
-/// (`.DS_Store`, `.gitkeep`, …) and editor swap / backup files
+/// Whether a file named `name` is left out of the index and of hot-reload events.
+///
+/// OS scratch files (`.DS_Store`, `.gitkeep`) and swap or backup files
 /// (`*.tmp`, `*.swp`, `*.bak`, `*~`).
 pub fn should_skip_file(name: &str) -> bool {
     if name.is_empty() {
@@ -128,10 +90,9 @@ pub fn should_skip_file(name: &str) -> bool {
     false
 }
 
-/// Recursive scanner that turns a project's `assets/` directory into an
-/// `AssetMetadata` list ready for the VFS.
+/// A recursive scanner of a project's `assets/` directory into the index's `AssetMetadata`.
 ///
-/// See module documentation for determinism and UUID stability guarantees.
+/// Its output is sorted by forward-slash relative path, so byte-deterministic.
 pub struct IndexBuilder<'a> {
     assets_root: &'a Path,
     registry: Option<&'a AssetIdRegistry>,
@@ -139,14 +100,10 @@ pub struct IndexBuilder<'a> {
 }
 
 impl<'a> IndexBuilder<'a> {
-    /// Creates a new builder rooted at `assets_root`.
+    /// Returns a builder over `assets_root`, a project's `assets/` directory.
     ///
-    /// `assets_root` must be the **assets directory of a project**, not the
-    /// project root — the relative paths recorded in `AssetMetadata` (and
-    /// hence the UUIDs) are computed relative to it.
-    ///
-    /// Without [`Self::with_registry`], UUIDs are the path-derived
-    /// `new_v5` default (the pre-registry behaviour).
+    /// Paths, hence UUIDs, are relative to it, not to the project root. Without
+    /// [`Self::with_registry`], each UUID is its path's `new_v5` default.
     pub fn new(assets_root: &'a Path) -> Self {
         Self {
             assets_root,
@@ -155,38 +112,33 @@ impl<'a> IndexBuilder<'a> {
         }
     }
 
-    /// Resolves each asset's UUID through `registry` (frozen identities win;
-    /// unfrozen paths still fall back to `new_v5`). Supply the same registry in
-    /// dev (editor VFS) and release (pack builder) so UUIDs match by
-    /// construction.
+    /// Resolves each asset's UUID through `registry`, frozen or `new_v5` default.
+    ///
+    /// The same registry in development and in the pack builder gives the same UUIDs.
     pub fn with_registry(mut self, registry: &'a AssetIdRegistry) -> Self {
         self.registry = Some(registry);
         self
     }
 
-    /// Reads the bytes the index looks into — a material's for its
-    /// dependencies, a container's for its sub-assets — through `guard`:
-    /// contained under its root, capped by kind and trust, its refusals
-    /// reported and quarantined. Without one, they are read as they are.
+    /// Reads the bytes the index looks into through `guard`; without one, as they are.
+    ///
+    /// Those are a material's, for its dependencies, and a container's, for its
+    /// sub-assets. See the book: concepts/trust.md, "The guard".
     pub fn with_guard(mut self, guard: &'a crate::trust::FileGuard) -> Self {
         self.guard = Some(guard);
         self
     }
 
-    /// Walks the assets root and produces a sorted, deterministic
-    /// `Vec<AssetMetadata>`.
+    /// Returns the metadata of every asset under the root, sorted by forward-slash path.
     ///
-    /// Returns an empty vector if `assets_root` doesn't exist — the editor
-    /// tolerates fresh projects whose `assets/` directory hasn't been
-    /// populated yet.
+    /// Empty when `assets_root` does not exist, as in a fresh project.
     pub fn build_metadata(&self) -> Result<Vec<AssetMetadata>> {
         if !self.assets_root.exists() {
             return Ok(Vec::new());
         }
 
-        // The absolute path is retained alongside the relative one so handled
-        // asset types can have their bytes read for dependency extraction after
-        // sorting. Leaf types are never read (see below).
+        // The absolute path is kept so a type with an extractor can be read
+        // after sorting.
         let mut entries: Vec<(String, PathBuf, PathBuf, String)> = Vec::new();
 
         for entry in walkdir::WalkDir::new(self.assets_root)
@@ -215,21 +167,18 @@ impl<'a> IndexBuilder<'a> {
             entries.push((rel_fwd, rel, abs.to_path_buf(), type_name));
         }
 
-        // Sort by forward-slash relative path for byte-deterministic output.
-        // Dependencies are extracted *after* sorting so the order they are
-        // visited never affects the result.
+        // Sorted before dependencies are extracted, so the visiting order never
+        // affects the result.
         entries.sort_by(|a, b| a.0.cmp(&b.0));
 
         let mut metadata = Vec::with_capacity(entries.len());
         for (rel_fwd, rel_path, abs_path, type_name) in entries {
-            // Registry-frozen identity if present, else the path-derived default.
             let uuid = match self.registry {
                 Some(reg) => reg.resolve(&rel_fwd),
                 None => AssetUUID::new_v5(&rel_fwd),
             };
-            // Only read file contents for types whose references we can parse.
-            // Textures, audio, meshes, etc. are never read — this preserves the
-            // builder's stat-only fast path and avoids a per-file I/O cliff.
+            // Only a type with an extractor is read: a texture or a sound never
+            // is, so the scan stays one stat per file.
             let dependencies = if type_has_dependency_extractor(&type_name) {
                 match read_bytes(self.guard, &rel_path, &abs_path) {
                     Ok(bytes) => extract_dependencies(&type_name, &rel_fwd, &bytes),
@@ -267,8 +216,7 @@ impl<'a> IndexBuilder<'a> {
         Ok(metadata)
     }
 
-    /// Convenience: builds metadata and bincode-encodes it into the byte
-    /// vector that [`crate::asset::AssetIndex::new`] expects.
+    /// Returns the metadata bincode-encoded, as [`crate::asset::AssetIndex::new`] reads it.
     pub fn build_index_bytes(&self) -> Result<Vec<u8>> {
         let metadata = self.build_metadata()?;
         let cfg = bincode::config::standard();
@@ -278,9 +226,7 @@ impl<'a> IndexBuilder<'a> {
     }
 }
 
-/// The bytes of the file at `rel_path` under the assets root (`abs_path`):
-/// through `guard` when there is one — refused, they are reported and
-/// quarantined by it — else as they are.
+/// Reads the file at `rel_path` (`abs_path`) through `guard` if any, else as it is.
 fn read_bytes(
     guard: Option<&crate::trust::FileGuard>,
     rel_path: &Path,
@@ -292,9 +238,10 @@ fn read_bytes(
     }
 }
 
-/// Appends one entry per sub-asset the listers of `type_name` find in the
-/// file, right after the file's own entry. Only file types with a lister are
-/// read; a lister that fails is logged and leaves the file's own entry alone.
+/// Appends one entry per sub-asset the listers of `type_name` find in the file.
+///
+/// Only a type with a lister is read; a lister that fails is logged, the file's
+/// own entry left as it is.
 fn push_sub_assets(
     metadata: &mut Vec<AssetMetadata>,
     container: AssetUUID,
@@ -364,8 +311,7 @@ mod tests {
             asset_type_for_extension("kscript").as_deref(),
             Some("script")
         );
-        // Unknown extensions fall back to a per-extension bucket so the
-        // file is still tracked (vs. silently dropped).
+        // An unknown extension is a type of its own, so the file is still indexed.
         assert_eq!(asset_type_for_extension("xyz").as_deref(), Some("xyz"));
         assert_eq!(asset_type_for_extension("MD").as_deref(), Some("md"));
     }
@@ -597,9 +543,9 @@ mod tests {
 
     // ── Sub-assets ──────────────────────────────────────────────────────────
 
-    /// Index type of the test-only container files (`*.ksubtest`). The
-    /// extension is unknown to `asset_type_for_extension`, so it falls back to
-    /// its own bucket and no production lister claims it.
+    /// Index type of the test-only container files (`*.ksubtest`).
+    ///
+    /// An unknown extension, so a type of its own no production lister claims.
     const TEST_CONTAINER_TYPE: &str = "ksubtest";
 
     /// Index type of test-only container files whose lister always fails.
@@ -850,9 +796,9 @@ mod tests {
     /// trust module does not name — at `Restricted` trust.
     const STRICT_TEXT_CAP: usize = 16 * MIB;
 
-    /// `bytes`, padded with `pad` to one byte over the strict text cap: a file
-    /// that still parses as it did, but that a restricted guard refuses for
-    /// its size.
+    /// Returns `bytes` padded with `pad` to one byte over the strict text cap.
+    ///
+    /// It still parses as it did, but a restricted guard refuses it for its size.
     fn oversized(bytes: &[u8], pad: u8) -> Vec<u8> {
         let mut padded = bytes.to_vec();
         padded.resize(STRICT_TEXT_CAP + 1, pad);
@@ -885,13 +831,11 @@ mod tests {
             .collect()
     }
 
-    /// **The index reads a material through its guard.** A project opened
-    /// restricted holds a `.kmat` naming a texture, padded past the strict
-    /// text cap, beside the same material under the cap. Built through a
-    /// restricted guard, the oversized material is refused for its size,
-    /// quarantined and reported; its own entry is kept, with no dependencies,
-    /// since its bytes were never read. The material under the cap is read
-    /// through the guard and lists its texture.
+    /// **The index reads a material through its guard.**
+    ///
+    /// Under a restricted guard, a `.kmat` padded past the strict text cap is
+    /// refused and quarantined, its entry kept without dependencies; the same
+    /// material under the cap lists its texture.
     #[test]
     fn the_index_reads_a_material_through_its_guard() {
         let dir = tempdir().unwrap();
@@ -958,12 +902,10 @@ mod tests {
         );
     }
 
-    /// **The index reads a container through its guard.** A project opened
-    /// restricted holds a container listing two sub-assets, padded past the
-    /// strict cap with blank lines its lister skips. Built through a
-    /// restricted guard, the container is refused for its size and
-    /// quarantined; its own entry is kept and no sub-asset is listed, since
-    /// its bytes were never read.
+    /// **The index reads a container through its guard.**
+    ///
+    /// Under a restricted guard, a container padded past the strict cap is
+    /// refused and quarantined: its entry is kept and no sub-asset is listed.
     #[test]
     fn the_index_reads_a_container_through_its_guard() {
         let dir = tempdir().unwrap();

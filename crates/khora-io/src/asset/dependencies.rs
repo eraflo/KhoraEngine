@@ -12,53 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Asset dependency extraction for the index builder.
+//! The direct dependencies of an asset, read from its bytes while the index is built.
 //!
-//! The index builder records, for each asset, the UUIDs of the other assets it
-//! directly references (a material's textures, a scene's prefabs, …). Those
-//! references populate [`AssetMetadata::dependencies`], which the asset agent
-//! uses to load an asset's prerequisites without first decoding it.
-//!
-//! [`extract_dependencies`] is the single dispatch seam: it switches on the
-//! canonical asset type name (the same names [`asset_type_for_extension`]
-//! produces) and delegates to a per-format extractor. A type with no extractor
-//! returns an empty list — that is the historical behaviour and the extension
-//! point: supporting a new format means adding one match arm, not rewiring the
-//! builder.
-//!
-//! # Determinism
-//!
-//! Extracted UUID lists are deduplicated and sorted. The index builder's
-//! contract is byte-determinism (two builds of the same project produce a
-//! byte-identical index); unsorted or duplicated dependencies would break it.
-//!
-//! [`AssetMetadata::dependencies`]: khora_core::asset::AssetMetadata::dependencies
-//! [`asset_type_for_extension`]: crate::asset::asset_type_for_extension
+//! See the book: concepts/assets.md, "Dependency tracking".
 
 use khora_core::asset::AssetUUID;
 
 use crate::asset::decoders::decode_material;
 
-/// `true` if [`extract_dependencies`] can extract references from this asset
-/// type, i.e. the type has a real extractor rather than the empty fallback.
+/// Whether [`extract_dependencies`] has a real extractor for `asset_type`.
 ///
-/// The index builder uses this to read file contents **only** for types it can
-/// actually parse — textures, audio, meshes, etc. are never read, so adding
-/// dependency extraction costs nothing for the assets that have no outbound
-/// references. Keep this in sync with the populated arms of
-/// [`extract_dependencies`].
+/// The index builder reads a file's bytes only for such a type. Keep it in
+/// sync with the populated arms of [`extract_dependencies`].
 pub fn type_has_dependency_extractor(asset_type: &str) -> bool {
     matches!(asset_type, "material" | "script")
 }
 
-/// Extracts the direct asset dependencies encoded in `bytes`, dispatching on
-/// the canonical `asset_type` name.
+/// Returns the direct asset dependencies encoded in `bytes`, by the `asset_type` name.
 ///
-/// Returns a deduplicated, sorted list so the index builder stays
-/// byte-deterministic. Unknown or not-yet-handled types return an empty list —
-/// this is the extensible seam (see the module docs). A decode failure on a
-/// handled type also yields an empty list (logged at `warn`): a single corrupt
-/// asset must never abort the whole index build.
+/// Deduplicated and sorted, so the index stays byte-deterministic. A type with no
+/// extractor, or bytes that do not decode, give an empty list (the latter logged
+/// at `warn`): one corrupt asset never aborts the index build.
 pub fn extract_dependencies(asset_type: &str, path: &str, bytes: &[u8]) -> Vec<AssetUUID> {
     let mut deps = match asset_type {
         "material" => material_dependencies(bytes),
@@ -66,13 +40,9 @@ pub fn extract_dependencies(asset_type: &str, path: &str, bytes: &[u8]) -> Vec<A
         // root it is relative to — which is why this needs the importing file's
         // own location and the other extractors do not.
         "script" => script_dependencies(path, bytes),
-        // Scenes reference entities/prefabs/meshes, but the scene schema is
-        // still evolving; their references are not extracted yet.
+        // Scenes, prefabs and meshes reference other assets; not extracted yet.
         "scene" => Vec::new(),
-        // Prefabs reference component assets; not extracted yet.
         "prefab" => Vec::new(),
-        // Meshes (glTF/glb/obj) embed or reference textures and materials;
-        // format-specific parsing is not done yet.
         "mesh" => Vec::new(),
         // Leaf assets (textures, audio, shaders, fonts, blobs) have no outbound
         // asset references.
@@ -85,16 +55,9 @@ pub fn extract_dependencies(asset_type: &str, path: &str, bytes: &[u8]) -> Vec<A
 
 /// Collects the module UUIDs a `.erg` script imports.
 ///
-/// This is what makes hot-reload correct rather than merely fast: editing a
-/// module has to recompile the files that import it, and the asset system
-/// already knows how to walk a dependency edge backwards. Without the edge, a
-/// script would be reloaded when its own file changed and left stale when the
-/// file it depends on did — which is the half of hot-reload that produces a
-/// game running code the author has already replaced.
-///
-/// Bytes that are not UTF-8 contribute nothing: the decoder will refuse them
-/// too, and reporting it twice would put the same message in the log for one
-/// mistake.
+/// They are the script's dependencies in the asset index. Script hot reload
+/// reads imports from the files instead, an `.erg` edited in place being never
+/// reindexed. Bytes that are not UTF-8 contribute nothing: the decoder reports them.
 fn script_dependencies(path: &str, bytes: &[u8]) -> Vec<AssetUUID> {
     let Ok(source) = std::str::from_utf8(bytes) else {
         log::warn!("asset index: script '{path}' is not valid UTF-8");
@@ -115,15 +78,9 @@ fn script_dependencies(path: &str, bytes: &[u8]) -> Vec<AssetUUID> {
         .collect()
 }
 
-/// Collects the texture UUIDs referenced by a `.kmat` material.
+/// Collects the texture UUIDs a `.kmat` material references, possibly repeated.
 ///
-/// Decodes the bytes via [`decode_material`] (no runtime asset service needed)
-/// and gathers every `Some(uuid)` the [`Material`] trait's texture accessors
-/// expose. A material that references the same texture in several slots
-/// contributes that UUID once (the caller dedups). On decode failure the
-/// material is skipped with a `warn` and contributes nothing.
-///
-/// [`Material`]: khora_core::asset::Material
+/// A material that does not decode contributes nothing, with a `warn`.
 fn material_dependencies(bytes: &[u8]) -> Vec<AssetUUID> {
     let Some(material) = decode_material(bytes) else {
         log::warn!("asset index: skipping unreadable material while extracting dependencies");
@@ -251,9 +208,7 @@ mod tests {
             assert!(!type_has_dependency_extractor("texture"));
         }
 
-        /// **The edge hot-reload walks backwards.** Without it a script would be
-        /// reloaded when its own file changed and left stale when the file it
-        /// depends on did.
+        /// **An import is recorded as a dependency on the module it names.**
         #[test]
         fn an_import_becomes_the_uuid_of_the_file_it_names() {
             let source = br#"import "combat/damage.erg";
@@ -286,9 +241,7 @@ mod tests {
             assert!(deps.is_empty(), "{deps:?}");
         }
 
-        /// **An `.erg` outside `scripts/` has no edges** — under another folder,
-        /// under a script folder spelled in another case, or under a `scripts`
-        /// folder below another one.
+        /// **An `.erg` outside `scripts/` has no edges**, whatever folder or case it is under.
         #[test]
         fn an_erg_outside_the_script_folder_has_no_edges() {
             let source = br#"import "helper.erg"; fn void Main() { }"#;

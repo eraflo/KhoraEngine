@@ -14,12 +14,6 @@
 
 //! The bytes a glTF file points at: its buffers and its images, embedded in
 //! the file, written into a `data:` URI, or stored in files next to it.
-//!
-//! glTF resolves a relative URI against the glTF file's own location, so a
-//! Blender export (`thing.gltf` beside `thing.bin`) works wherever it sits
-//! under `assets/`. A URI is percent-decoded, and one that would leave the
-//! assets root (an absolute path, a scheme other than `data:`, or `..` past
-//! the root) is refused: the file is untrusted input.
 
 use std::error::Error;
 use std::path::Path;
@@ -32,9 +26,9 @@ use super::GltfResourceResolver;
 
 type BoxError = Box<dyn Error + Send + Sync>;
 
-/// Every buffer of the file, in document order, so `buffer.index()` indexes
-/// the result. `base_dir` is the glTF file's folder, relative to the assets
-/// root.
+/// Every buffer of the file, in document order, so `buffer.index()` indexes the result.
+///
+/// `base_dir` is the glTF file's folder, relative to the assets root.
 pub(super) fn load_buffers(
     gltf: &gltf::Gltf,
     resolver: &dyn GltfResourceResolver,
@@ -113,6 +107,10 @@ pub(super) fn decode_data_uri(uri: &str) -> Result<Vec<u8>, BoxError> {
 
 /// The asset-root-relative path (forward slashes) a relative URI names from
 /// `base_dir`, or why it may not be read.
+///
+/// glTF resolves a URI against the file's own folder, so an export works
+/// wherever it sits. The URI is percent-decoded; one absolute, naming a scheme
+/// or climbing past the assets root is refused.
 pub(super) fn resolve_relative_uri(base_dir: &Path, uri: &str) -> Result<String, BoxError> {
     let decoded = percent_decode(uri)
         .ok_or_else(|| format!("glTF URI '{uri}' is not valid percent-encoded UTF-8"))?;

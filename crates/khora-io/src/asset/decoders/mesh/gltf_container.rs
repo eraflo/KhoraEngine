@@ -15,19 +15,8 @@
 //! A glTF file's sub-assets: its scenes, primitives, materials and textures.
 //!
 //! The file's own uuid still decodes as one merged [`Mesh`] (see
-//! [`GltfDecoder`](super::GltfDecoder)); each piece of it is also an asset of
-//! its own, named by a label inside the file:
-//!
-//! | label | asset |
-//! |---|---|
-//! | `scene` | the default scene (else the first; a file without scenes shows each mesh once) |
-//! | `scene{i}` | scene `i` |
-//! | `mesh{m}/prim{p}` | primitive `p` of mesh `m`, in the mesh's own space |
-//! | `material{i}` | material `i`, as a [`StandardMaterial`] |
-//! | `material_default` | the glTF default material, for primitives without one |
-//! | `texture{i}` | the image of texture `i` |
-//!
-//! Labels follow the file's order, like the glTF indices they come from.
+//! [`GltfDecoder`](super::GltfDecoder)); each part is also an asset, named by
+//! the label [`list_gltf_sub_assets`] gives it.
 
 use std::any::Any;
 use std::path::{Path, PathBuf};
@@ -52,8 +41,19 @@ use crate::trust::{FileKind, LimitExceeded, Limits, Trust};
 /// file uses is reported once when the file is opened.
 const MAPPED_EXTENSIONS: &[&str] = &["KHR_materials_emissive_strength", "KHR_materials_specular"];
 
-/// Lists the sub-assets of a glTF file from its JSON alone: no buffer or image
-/// is read. Bytes that are not glTF (an OBJ) have none.
+/// Lists the sub-assets of a glTF file from its JSON alone, reading no buffer or image.
+///
+/// Bytes that are not glTF (an OBJ) have none. Labels follow the file's order,
+/// like the glTF indices they come from:
+///
+/// | label | asset |
+/// |---|---|
+/// | `scene` | the default scene (else the first; a file without scenes shows each mesh once) |
+/// | `scene{i}` | scene `i` |
+/// | `mesh{m}/prim{p}` | primitive `p` of mesh `m`, in the mesh's own space |
+/// | `material{i}` | material `i`, as a [`StandardMaterial`] |
+/// | `material_default` | the glTF default material, for primitives without one |
+/// | `texture{i}` | the image of texture `i` |
 pub fn list_gltf_sub_assets(bytes: &[u8]) -> anyhow::Result<Vec<SubAssetEntry>> {
     if !MeshDispatcher::is_gltf(bytes) {
         return Ok(Vec::new());
@@ -98,21 +98,22 @@ pub struct GltfContainer {
 }
 
 impl GltfContainer {
-    /// A container reading external files under `assets_root`, its refusals
-    /// kept in memory. A run opens through [`Self::guarded`].
+    /// Creates a container reading external files under `assets_root`.
+    ///
+    /// Its refusals stay in memory; a running project opens through [`Self::guarded`].
     pub fn new(assets_root: impl Into<PathBuf>) -> Self {
         Self {
             resolver: Arc::new(FileSystemResolver::new(assets_root.into())),
         }
     }
 
-    /// A container reading external files through `resolver`: a packed
-    /// game's, inside its pack.
+    /// Creates a container reading external files through `resolver`, such as
+    /// a packed game's.
     pub fn resolving_with(resolver: Arc<dyn GltfResourceResolver>) -> Self {
         Self { resolver }
     }
 
-    /// A container reading external files through `guard`.
+    /// Creates a container reading external files through `guard`.
     pub fn guarded(guard: crate::trust::FileGuard) -> Self {
         Self {
             resolver: Arc::new(FileSystemResolver::guarded(guard)),
@@ -192,9 +193,10 @@ impl AssetContainer for GltfContainer {
         self.extract_limited(opened, container, label, type_name, &limits)
     }
 
-    /// Extracts the part `label` within `limits`, its own type's: a texture
-    /// decodes within a texture's limits; a primitive within the element
-    /// caps the glTF was opened with.
+    /// Extracts the part `label` within its own type's `limits`.
+    ///
+    /// A texture decodes within a texture's limits; a primitive within the
+    /// element caps the glTF was opened with.
     fn extract_limited(
         &self,
         opened: &(dyn Any + Send + Sync),

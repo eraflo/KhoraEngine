@@ -35,16 +35,12 @@ use crate::trust::{
 /// How many of a file's first bytes its decoder is shown to recognise it.
 const SNIFFED: usize = 512;
 
-/// What decoding an asset reads: the index snapshot, the decoders, the
-/// containers, the pack manifest and the IO. Shared as an
-/// `Arc<AssetReader>`, it decodes on any thread, without the
-/// [`AssetService`](super::AssetService)'s lock and without touching its
-/// caches.
+/// Everything decoding an asset reads: index snapshot, decoders, containers, manifest and IO.
 ///
-/// A service hands its current reader out with
-/// [`AssetService::reader`](super::AssetService::reader). A new index
-/// (`reindex`) gives the service a new reader; a reader taken before keeps
-/// reading the index it was built over.
+/// Shared as an `Arc`, it decodes on any thread, without the
+/// [`AssetService`](super::AssetService)'s lock or caches. A reader taken with
+/// [`AssetService::reader`](super::AssetService::reader) keeps the index it was
+/// built over when the service reindexes. See the book: concepts/trust.md, "The guard".
 #[derive(Clone)]
 pub struct AssetReader {
     pub(super) index: Arc<AssetIndex>,
@@ -77,18 +73,11 @@ pub(super) type Opened = (
 pub use khora_core::asset::Decoded;
 
 impl AssetReader {
-    /// Decodes the asset `uuid` as the Rust type `type_id`: from its own
-    /// bytes, or, for a sub-asset, extracted from its container, opened for
-    /// the occasion. Touches no cache: decoding one asset twice decodes it
-    /// twice.
+    /// Decodes the asset `uuid`, a sub-asset from its container, as the Rust type `type_id`.
     ///
-    /// The type is a `TypeId` because the decoder is chosen by the asset's
-    /// index type name (its metadata), as `DecoderRegistry::decode_at` does;
-    /// the `TypeId` only checks the result is the type the caller will
-    /// downcast to.
-    ///
-    /// Never panics on bad data: every failure is an `Err` in
-    /// [`Decoded::value`].
+    /// Touches no cache: decoding one asset twice decodes it twice. The decoder is
+    /// chosen by the asset's index type name; `type_id` only checks the result.
+    /// Never panics on bad data: every failure is an `Err` in [`Decoded::value`].
     pub fn decode(&self, uuid: &AssetUUID, type_id: TypeId) -> Decoded {
         let mut external_files = Vec::new();
         let value = self
@@ -111,9 +100,10 @@ impl AssetReader {
         }
     }
 
-    /// Decodes `uuid` as whatever type its decoder or container produces,
-    /// noting in `external_files` each container it opened with the files
-    /// that container reads besides its own.
+    /// Decodes `uuid` as whatever type its decoder or container produces.
+    ///
+    /// Notes in `external_files` each container opened, with the files it reads
+    /// besides its own.
     fn decode_any(
         &self,
         uuid: &AssetUUID,
@@ -142,9 +132,12 @@ impl AssetReader {
         Ok(value)
     }
 
-    /// The raw bytes of the asset `uuid`, undecoded: what a scene load reads
-    /// before its own encodings decode it. Refused for a sub-asset, which has
-    /// no bytes of its own. Runs on any thread.
+    /// Returns the raw bytes of the asset `uuid`, undecoded, as a scene load reads them.
+    ///
+    /// Runs on any thread.
+    ///
+    /// # Errors
+    /// For a sub-asset, which has no bytes of its own, and as any read fails.
     pub fn read_raw(&self, uuid: &AssetUUID) -> Result<Vec<u8>> {
         let (_, source) = self.source_of(uuid)?;
         if let AssetSource::Sub { container, label } = source {
@@ -155,12 +148,12 @@ impl AssetReader {
         self.read(uuid, source)
     }
 
-    /// The index this reader reads assets through.
+    /// Returns the index this reader reads assets through.
     pub fn index(&self) -> &AssetIndex {
         &self.index
     }
 
-    /// The index entry of `uuid` and its default source.
+    /// Returns the index entry of `uuid` and its default source.
     pub(super) fn source_of(&self, uuid: &AssetUUID) -> Result<(&AssetMetadata, &AssetSource)> {
         let metadata = self
             .index
@@ -173,8 +166,7 @@ impl AssetReader {
         Ok((metadata, source))
     }
 
-    /// The bytes of `uuid` at `source`, checked against the manifest when
-    /// there is one.
+    /// Reads the bytes of `uuid` at `source`, checked against the manifest if any.
     pub(super) fn read(&self, uuid: &AssetUUID, source: &AssetSource) -> Result<Vec<u8>> {
         if let AssetSource::Packed {
             size,
@@ -198,10 +190,10 @@ impl AssetReader {
         Ok(bytes)
     }
 
-    /// Decodes a file's own `bytes` with the decoder of its index type, as
-    /// the type `type_id`. A file whose type is also a container (a glTF
-    /// decoded whole) is opened too, once it decoded as that type, for the
-    /// files it reads besides its own: `None` for any other.
+    /// Decodes a file's own `bytes` with the decoder of its index type, as `type_id`.
+    ///
+    /// A file whose type is also a container (a glTF decoded whole) is opened too,
+    /// for the files it reads besides its own: `None` for any other.
     pub(super) fn decode_file(
         &self,
         metadata: &AssetMetadata,
@@ -238,10 +230,9 @@ impl AssetReader {
         Ok((value, files))
     }
 
-    /// Refuses `bytes` when the decoder of the file's type does not know
-    /// what they start with: a file whose extension lies about what it
-    /// holds is never handed to a decoder. The refusal quarantines the file
-    /// by its content.
+    /// Refuses `bytes` whose start the decoder of the file's type does not know.
+    ///
+    /// A file whose extension lies is never decoded; it is quarantined by content.
     fn check_type(&self, metadata: &AssetMetadata, bytes: &[u8]) -> Result<()> {
         let head = &bytes[..bytes.len().min(SNIFFED)];
         if self.decoders.sniff(&metadata.asset_type_name, head) != Some(false) {
@@ -253,7 +244,7 @@ impl AssetReader {
         Err(self.refuse(metadata, Content::Bytes(bytes), TrustLayer::Decoder, reason))
     }
 
-    /// What opens the container file `container`.
+    /// Returns what opens the container file `container`.
     pub(super) fn opener_of(&self, container: &AssetUUID) -> Result<Arc<dyn AssetContainer>> {
         let metadata = self
             .index
@@ -316,17 +307,18 @@ impl AssetReader {
         .with_context(|| format!("extracting '{label}' from {container}"))
     }
 
-    /// The limits of a file of `metadata`'s type at this reader's trust:
-    /// its decoder's, the strictest when it has none.
+    /// Returns the limits of `metadata`'s type at this reader's trust.
+    ///
+    /// Its decoder's, or else its file kind's.
     fn limits_of(&self, metadata: &AssetMetadata) -> Limits {
         self.decoders
             .limits(&metadata.asset_type_name, self.trust)
             .unwrap_or_else(|| Limits::of(FileKind::of_path(&metadata.source_path), self.trust))
     }
 
-    /// Refuses a pack entry declaring more bytes than it may hold — more
-    /// than the manifest recorded for it, or than its type's limit — before
-    /// anything is read or allocated.
+    /// Refuses a pack entry declaring more bytes than it may hold, before anything is read.
+    ///
+    /// Its cap is the manifest's size for it, or else its type's limit.
     fn check_packed(&self, uuid: &AssetUUID, declared: u64) -> Result<()> {
         let Some(metadata) = self.index.get_metadata(uuid) else {
             return Ok(());
@@ -363,9 +355,10 @@ impl AssetReader {
         Err(self.refuse(metadata, Content::Bytes(bytes), TrustLayer::Decoder, reason))
     }
 
-    /// Runs a decoder's work on the file of `metadata`: a limit that stopped
-    /// it, or a panic, is refused and quarantined by the file's `content`;
-    /// the panic never reaches the caller.
+    /// Runs a decoder's `work` on the file of `metadata`, catching its panics.
+    ///
+    /// A limit that stopped it, or a panic, refuses and quarantines the file by
+    /// its `content`; the panic never reaches the caller.
     fn guarded<T>(
         &self,
         metadata: &AssetMetadata,
@@ -399,8 +392,9 @@ impl AssetReader {
         }
     }
 
-    /// Reports the refusal of the file of `metadata`, quarantining it by its
-    /// `content` when it is known, and returns it as an error.
+    /// Reports the refusal of the file of `metadata` and returns it as an error.
+    ///
+    /// The file is quarantined by its `content` when that is known.
     fn refuse(
         &self,
         metadata: &AssetMetadata,
@@ -436,7 +430,7 @@ impl AssetReader {
     }
 }
 
-/// What a panic said: its message, when it carried one.
+/// Returns a panic's message, when it carried one.
 fn panic_message(payload: &(dyn Any + Send)) -> String {
     payload
         .downcast_ref::<&str>()
@@ -451,7 +445,7 @@ enum Content<'a> {
     /// The bytes read for it.
     Bytes(&'a [u8]),
     /// Its bytes, read again: a container's part refused after the container
-    /// was opened from bytes no longer held.
+    /// was opened from bytes since dropped.
     Reread,
     /// Nothing: a pack entry refused for the size it declares, never read.
     Unread,

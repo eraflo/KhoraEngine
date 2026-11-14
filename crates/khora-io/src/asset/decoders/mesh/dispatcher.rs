@@ -12,15 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Mesh format dispatcher.
+//! Mesh format dispatcher: glTF or OBJ, by the file's first bytes.
 //!
-//! The single canonical entry-point that the editor and runtime register
-//! under the `"mesh"` slot. Sniffs the bytes (gltf binary magic, gltf JSON,
-//! or OBJ text) and delegates to the appropriate inner decoder.
-//!
-//! Lives next to the per-format decoders (`gltf.rs`, `obj.rs`) which stay
-//! public — a downstream crate can compose its own dispatcher (for example
-//! to add FBX) and register that instead, without forking `khora-io`.
+//! The per-format decoders stay public, so a crate can compose its own
+//! dispatcher (to add a format) and register that instead.
 
 use std::error::Error;
 use std::path::Path;
@@ -33,15 +28,12 @@ use crate::trust::{FileKind, Limits, Trust};
 
 use super::{GltfDecoder, GltfResourceResolver, NoOpResourceResolver, ObjDecoder};
 
-/// Default mesh dispatcher: delegates to gltf or obj based on byte sniffing.
+/// The `"mesh"` decoder: delegates to glTF or OBJ by sniffing the bytes.
 ///
-/// Intentionally **not** registered via `inventory::submit!` — this slot has
-/// multiple competing implementations (gltf vs obj vs eventual FBX) and the
-/// choice should be visible at the consumer's call site:
+/// Not registered by `inventory`: its glTF resolver depends on the project or
+/// pack, so [`AssetService::register_default_decoders`] registers it.
 ///
-/// ```ignore
-/// svc.register_decoder::<Mesh>("mesh", MeshDispatcher::default());
-/// ```
+/// [`AssetService::register_default_decoders`]: crate::asset::AssetService::register_default_decoders
 #[derive(Clone)]
 pub struct MeshDispatcher {
     gltf: GltfDecoder,
@@ -49,7 +41,7 @@ pub struct MeshDispatcher {
 }
 
 impl MeshDispatcher {
-    /// Creates a dispatcher with the given gltf resource resolver.
+    /// Creates a dispatcher whose glTF decoder reads external files through `resolver`.
     pub fn new(resolver: Arc<dyn GltfResourceResolver>) -> Self {
         Self {
             gltf: GltfDecoder::new(resolver),
@@ -67,8 +59,7 @@ impl MeshDispatcher {
         bytes.len() >= 4 && &bytes[..4] == b"glTF"
     }
 
-    /// Returns true when `bytes` parses as JSON starting with a `{` after
-    /// optional whitespace — the standard gltf 2.0 JSON form.
+    /// Returns true when the first non-blank byte, within 64, is `{`: glTF's JSON form.
     pub(super) fn looks_like_gltf_json(bytes: &[u8]) -> bool {
         for &b in bytes.iter().take(64) {
             match b {
@@ -82,15 +73,10 @@ impl MeshDispatcher {
 }
 
 impl Default for MeshDispatcher {
-    /// Default dispatcher uses [`NoOpResourceResolver`] for gltf. Suitable
-    /// for self-contained `.glb` files (the binary chunk is embedded) and
-    /// `.obj` files (no external resources at all). For `.gltf` files that
-    /// reference external `.bin` / texture buffers, supply a project-aware
-    /// resolver via [`MeshDispatcher::new`] — `ProjectVfs::open` does this
-    /// automatically with a [`FileSystemResolver`] rooted at the project's
-    /// `assets/` directory.
+    /// Creates a dispatcher whose glTF decoder refuses every external file.
     ///
-    /// [`FileSystemResolver`]: super::FileSystemResolver
+    /// Enough for a `.glb` or an `.obj`; a `.gltf` with external files needs a
+    /// [`FileSystemResolver`](super::FileSystemResolver) through [`MeshDispatcher::new`].
     fn default() -> Self {
         Self::new(Arc::new(NoOpResourceResolver))
     }

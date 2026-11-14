@@ -44,10 +44,12 @@ fn store_in(dir: &Path) -> PathBuf {
 
 // ─── The store ──────────────────────────────────────────────────────────────
 
-/// **A decision is read back from its store**: none before one is taken;
-/// once decided, the same store answers it, the store's file is written, and
-/// a store opened afresh over that file answers it too. A decision taken
-/// again replaces the first; another project is still undecided.
+/// **A decision is read back from its store.**
+///
+/// None before one is taken; once decided, the same store answers it, the
+/// store's file is written, and a store opened afresh over that file answers it
+/// too. A decision taken again replaces the first; another project is still
+/// undecided.
 #[test]
 fn a_decision_is_read_back_from_its_store() {
     let dir = TempDir::new().expect("a temp dir");
@@ -83,9 +85,10 @@ fn a_decision_is_read_back_from_its_store() {
     );
 }
 
-/// **A decision is found by any spelling of the project's folder**: it is
-/// kept by the folder's canonical path, so the folder named through one of
-/// its own sub-folders and `..`, or with a `.` after it, finds the decision
+/// **A decision is found by any spelling of the project's folder.**
+///
+/// It is kept by the folder's canonical path, so the folder named through one
+/// of its own sub-folders and `..`, or with a `.` after it, finds the decision
 /// taken under its plain name — and the other way round.
 #[test]
 fn a_decision_is_found_by_any_spelling_of_the_project_folder() {
@@ -118,10 +121,11 @@ fn a_decision_is_found_by_any_spelling_of_the_project_folder() {
     }
 }
 
-/// **Two stores sharing one file keep each other's decisions**: the hub and
-/// the editor each open the store, then each decides of its own project.
-/// Each writes only its own change over the store as it is then, so the file
-/// ends holding both: neither write lost the other's.
+/// **Two stores sharing one file keep each other's decisions.**
+///
+/// The hub and the editor each open the store, then each decides of its own
+/// project. Each writes only its own change over the store as it is then, so
+/// the file ends holding both: neither write lost the other's.
 #[test]
 fn two_stores_sharing_a_file_keep_each_others_decisions() {
     let dir = TempDir::new().expect("a temp dir");
@@ -153,10 +157,11 @@ fn two_stores_sharing_a_file_keep_each_others_decisions() {
     assert_eq!(reread.decision(&ember), Some(ProjectTrust::Trusted));
 }
 
-/// **A missing or unreadable store reads as no decision**: a store whose
-/// file does not exist, or holds something else than decisions, decides
-/// nothing — and deciding over the unreadable one writes a store that reads.
-/// A store with no file keeps its decisions in memory.
+/// **A missing or unreadable store reads as no decision.**
+///
+/// A store whose file does not exist, or holds something else than decisions,
+/// decides nothing — and deciding over the unreadable one writes a store that
+/// reads. A store with no file keeps its decisions in memory.
 #[test]
 fn a_missing_or_corrupt_store_reads_as_no_decision() {
     let dir = TempDir::new().expect("a temp dir");
@@ -193,9 +198,11 @@ fn a_missing_or_corrupt_store_reads_as_no_decision() {
 }
 
 /// **A decision is read from its file again only when the file changed.**
+///
 /// The hub asks a store for a project's decision once per card per frame:
 /// the store re-reads its file only when its length or its modified time
 /// moved since the last read.
+///
 /// - The file is replaced by bytes that read as no store at all, of the same
 ///   length and given back the same modified time: the store still answers
 ///   the decision it read, so it did not read the file again.
@@ -277,10 +284,11 @@ fn a_project_decision_reads_at_its_trust() {
     assert_eq!(ProjectTrust::Restricted.trust(), Trust::Restricted);
 }
 
-/// **The trust of the project open is shared, and changes**: the state holds
-/// the trust it was made with, then the one set; a runtime holding it reads
-/// it, and a runtime holding none — a game, the sandbox, a test — reads as
-/// `Trusted`.
+/// **The trust of the project open is shared, and changes.**
+///
+/// The state holds the trust it was made with, then the one set; a runtime
+/// holding it reads it, and a runtime holding none — a game, the sandbox, a
+/// test — reads as `Trusted`.
 #[test]
 fn the_project_trust_state_is_shared_through_the_runtime() {
     let state = ProjectTrustState::new(ProjectTrust::Restricted);
@@ -308,8 +316,10 @@ fn the_project_trust_state_is_shared_through_the_runtime() {
     );
 }
 
-/// **A folder is read at the trust of the project open only when it lies in
-/// it.** The trust is held for project `game`, trusted:
+/// **A folder is read at the trust of the project open only when it lies in it.**
+///
+/// The trust is held for project `game`, trusted:
+///
 /// - its `assets/`, named as the project was, through a `..`, or by its
 ///   canonical (`\\?\` on Windows) path, is read trusted;
 /// - `game2` beside it — its name starts with `game` — and any other folder
@@ -377,11 +387,13 @@ fn refusal(dir: &Path, name: &str, trust: Trust, reason: SecurityReason) -> Secu
 }
 
 /// **Trusting a project releases what its restricted limits refused, and
-/// nothing else**: of the files quarantined, those refused at `Restricted`
-/// for a size (`TooLarge`) or a limit (`OverLimit`) are released — here, in
-/// the problems and in the store. A file refused for what it holds
-/// (`WrongType`, `DecoderPanic`), one refused as a download (`Imported`) and
-/// one refused at a trusted project's own limits (`Project`) stay.
+/// nothing else.**
+///
+/// Of the files quarantined, those refused at `Restricted` for a size
+/// (`TooLarge`) or a limit (`OverLimit`) are released — here, in the problems
+/// and in the store. A file refused for what it holds (`WrongType`,
+/// `DecoderPanic`), one refused as a download (`Imported`) and one refused at a
+/// trusted project's own limits (`Project`) stay.
 #[test]
 fn releasing_the_strict_refusals_keeps_those_refused_for_their_content() {
     let dir = TempDir::new().expect("a temp dir");
@@ -498,11 +510,12 @@ fn releasing_the_strict_refusals_keeps_those_refused_for_their_content() {
     );
 }
 
-/// **A decision the store cannot write is still the decision of the run**:
-/// the store's folder cannot be made (a file stands where it would be), so
-/// the decision is not written — yet the same store, asked again, answers
-/// it. Otherwise an editor whose user answered "Trust and open" reads the
-/// project as undecided at once and asks again, forever.
+/// **A decision the store cannot write is still the decision of the run.**
+///
+/// The store's folder cannot be made (a file stands where it would be), so the
+/// decision is not written — yet the same store, asked again, answers it.
+/// Otherwise an editor whose user answered "Trust and open" reads the project
+/// as undecided at once and asks again, forever.
 #[test]
 fn a_decision_the_store_cannot_write_is_kept_for_the_run() {
     let dir = TempDir::new().expect("a temp dir");

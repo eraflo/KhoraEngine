@@ -93,7 +93,8 @@ fn single_mesh_file(b: &mut GltfBuilder, primitives: Vec<Value>) {
     b.default_scene(s);
 }
 
-/// Two nodes, two materials, one texture:
+/// A file of two nodes, two materials and one texture.
+///
 /// - node 0 `Left`, translated by (10, 0, 0), shows mesh 0: [`TRI_A`] in
 ///   material 0, [`TRI_B`] in material 1;
 /// - node 1 `Right` shows mesh 1: [`QUAD`] in material 1;
@@ -1031,9 +1032,8 @@ fn recorded_warnings() -> Vec<String> {
     WARNINGS.with(|warnings| warnings.borrow().clone())
 }
 
-/// `KHR_materials_specular` is imported, so opening a file that uses it does
-/// not report it among the extensions left out; an extension that is still
-/// left out, used beside it, is reported (the recorder sees the report).
+/// `KHR_materials_specular` is imported, so it is not reported unmapped; an
+/// extension still left out, used beside it, is.
 #[test]
 fn a_file_using_khr_materials_specular_does_not_report_it_unmapped() {
     let mut b = GltfBuilder::new();
@@ -1102,9 +1102,8 @@ fn a_specular_texture_on_a_second_uv_set_is_reported() {
     }
 }
 
-/// UV1, a texture transform, a normal scale, an occlusion strength and a
-/// non-default sampler are not mapped (each logs a warning); the material
-/// and its textures still decode.
+/// Texture features left unmapped (UV1, a transform, a normal scale, an
+/// occlusion strength, a sampler) each warn, and the material still decodes.
 #[test]
 fn unmapped_texture_features_still_decode() {
     let mut b = GltfBuilder::new();
@@ -1315,9 +1314,8 @@ fn a_percent_encoded_buffer_uri_names_its_file() {
     assert_positions(&prim, &points(&TRI_A));
 }
 
-/// `../../outside.bin` from `assets/models/` is the project's own folder:
-/// outside the assets root, refused — though a buffer sits there, and one
-/// sits where the URI would land from the assets root.
+/// `../../outside.bin` from `assets/models/` leaves the assets root: refused,
+/// though a buffer sits there and one where the URI would land from the root.
 #[test]
 fn a_buffer_uri_leaving_the_assets_root_is_refused() {
     let project = Project::new();
@@ -1544,9 +1542,11 @@ fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
         .unwrap_or_else(|| "(no message)".to_owned())
 }
 
-/// Reads `bytes` as `models/hostile.gltf` every way the engine does — the
-/// lister, the merged mesh decoder, the container, and each sub-asset the
-/// lister names — and returns the panics, named by where they happened.
+/// Reads `bytes` as `models/hostile.gltf` every way the engine does, and
+/// returns the panics, named by where they happened.
+///
+/// The lister, the merged mesh decoder, the container, and each sub-asset the
+/// lister names.
 fn panics_reading(bytes: &[u8]) -> Vec<String> {
     use std::panic::{catch_unwind, AssertUnwindSafe};
     let mut panics = Vec::new();
@@ -1597,9 +1597,11 @@ fn assert_no_case_panics(cases: Vec<(&str, Vec<u8>)>) {
     );
 }
 
-/// glTF fixes the type of each attribute (`POSITION` and `NORMAL` are float
-/// VEC3, `TEXCOORD_0` a float or normalised VEC2, `COLOR_0` a VEC3/VEC4,
-/// indices an unsigned SCALAR); the validator does not check it.
+/// An accessor of a type its attribute cannot hold never panics: glTF fixes
+/// the type, the validator does not check it.
+///
+/// `POSITION` and `NORMAL` are float VEC3, `TEXCOORD_0` a float or normalised
+/// VEC2, `COLOR_0` a VEC3 or VEC4, indices an unsigned SCALAR.
 #[test]
 fn accessors_of_a_type_their_attribute_cannot_hold_never_panic() {
     assert_no_case_panics(vec![
@@ -1715,9 +1717,8 @@ fn images_naming_no_readable_bytes_never_panic() {
     ]);
 }
 
-/// A primitive's indices or normals that lie outside its buffer are a broken
-/// file: drawing it with sequential indices or flat normals instead would
-/// show a shape the file does not describe.
+/// Indices or normals outside their buffer refuse the file: sequential indices
+/// or flat normals instead would show a shape it does not describe.
 #[test]
 fn an_index_or_normal_accessor_outside_its_buffer_is_refused() {
     let mut accepted = Vec::new();
@@ -1807,9 +1808,8 @@ fn a_glb_whose_bin_chunk_is_shorter_than_its_buffer_is_refused() {
     );
 }
 
-/// glTF requires a sparse accessor's indices to strictly increase and to lie
-/// inside the accessor; a substitution that breaks either names no vertex
-/// the file can mean, and dropping it silently draws another shape.
+/// Sparse indices out of order or past the accessor are refused: glTF forbids
+/// them, and dropping one silently draws another shape.
 #[test]
 fn sparse_indices_unsorted_or_past_the_accessor_are_refused() {
     let cases = [
@@ -1913,9 +1913,8 @@ fn a_glb_declaring_a_length_shorter_than_its_header_never_panics() {
     assert_no_case_panics(vec![("a GLB of length 0", glb)]);
 }
 
-/// glTF: only the first buffer may be a GLB's BIN chunk. Each further buffer
-/// without a uri would be one more full copy of the chunk, so a few bytes of
-/// JSON per buffer multiply the file's memory.
+/// A second buffer naming the BIN chunk is refused: each would be one more
+/// copy of the chunk, multiplying the file's memory.
 #[test]
 fn a_glb_whose_second_buffer_names_the_bin_chunk_is_refused() {
     let mut b = GltfBuilder::new();
@@ -1956,10 +1955,11 @@ fn a_glb_whose_second_buffer_names_the_bin_chunk_is_refused() {
     );
 }
 
-/// The checks refuse what the reader cannot read, never a layout glTF
-/// allows: POSITION and NORMAL interleaved in one strided view, U16
-/// indices, normalised U16 UVs, normalised U8 RGB colours padded to a
-/// 4-byte stride, and a sparse POSITION over its own buffer view.
+/// The checks refuse what the reader cannot read, never a layout glTF allows.
+///
+/// `POSITION` and `NORMAL` interleaved in one strided view, U16 indices,
+/// normalised U16 UVs, normalised U8 RGB colours padded to a 4-byte stride, and
+/// a sparse `POSITION` over its own buffer view.
 #[test]
 fn interleaved_normalised_and_sparse_attributes_still_decode() {
     use base64::Engine;

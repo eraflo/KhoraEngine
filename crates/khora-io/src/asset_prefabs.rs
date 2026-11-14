@@ -22,9 +22,10 @@ use khora_data::scene::{PrefabSource, SceneRecord};
 use crate::asset::AssetService;
 use crate::serialization::read_prefab;
 
-/// The prefabs of a project, read through its [`AssetService`]: a prefab is
-/// the `.kprefab` its asset id names, decoded once and kept until the service
-/// invalidates it.
+/// The prefabs of a project, read through its [`AssetService`].
+///
+/// A prefab is the `.kprefab` its asset id names, decoded once and kept until
+/// the service invalidates it.
 pub struct AssetPrefabs {
     assets: Arc<Mutex<AssetService>>,
 }

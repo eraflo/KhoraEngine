@@ -12,13 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The scene loads prepared off the frame, committed at its boundary.
-//!
-//! The `loading` family stages each prepared load in the runtime's
-//! reserve; `scene_intake` commits them at the boundary, in the order they
-//! were staged, and files each outcome under its ticket in the runtime's
-//! `SceneLoadHub`. It publishes the world's load catalogue first, when the
-//! world's components changed since.
+//! The scene loads prepared off the frame, committed at its boundary in the
+//! order they were filed.
 
 use std::sync::Arc;
 
@@ -32,9 +27,10 @@ use khora_data::scene::{Identity, LoadFailure};
 use crate::scene_loads::{LoadOutcome, SceneLoadHub};
 use crate::serialization::{SerializationService, SerializationServiceError};
 
-/// Publishes `world`'s catalogue to the runtime's `SceneLoadHub` when it
-/// moved, then commits into `world` every prepared load the reserve holds
-/// and files each outcome. Nothing without a hub or a reserve.
+/// Commits into `world` every prepared load the reserve holds, and files each outcome.
+///
+/// Publishes `world`'s catalogue to the runtime's `SceneLoadHub` first, when
+/// it moved. Nothing without a hub or a reserve.
 pub fn take_in_loads(world: &mut World, runtime: &Runtime) {
     let Some(hub) = runtime.resources.get::<Arc<SceneLoadHub>>() else {
         return;
@@ -60,9 +56,10 @@ pub fn take_in_loads(world: &mut World, runtime: &Runtime) {
     }
 }
 
-/// Commits `load` into `world`, as its request asked: the ticket and the
-/// outcome to file, or `None` when it was filed again — prepared against
-/// components the world changed since.
+/// Commits `load` into `world`, and returns the ticket and the outcome to file.
+///
+/// `None` when it was filed again: prepared against components the world
+/// changed since.
 fn land(
     load: PreparedLoad,
     world: &mut World,
@@ -79,8 +76,7 @@ fn land(
         }
     };
     if prepared.is_for(world) && !prepared.is_current(world) {
-        // Read against components the world has changed since: prepared
-        // again off the frame, rather than on it — and never after a
+        // Prepared again off the frame rather than on it, and never after a
         // replace emptied the world.
         PreparedLoad {
             ticket,

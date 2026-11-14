@@ -14,14 +14,8 @@
 
 //! The checks a glTF file must pass before its data is read.
 //!
-//! A glTF file is untrusted input. `gltf-json` validates that indices point
-//! at existing objects, but not that an accessor's type fits the attribute
-//! naming it, that its count is at least one, or that its bytes lie inside
-//! its buffer; the `gltf` reader then reaches `unreachable!`, unchecked
-//! arithmetic or `unwrap` on such a file. Every accessor and image the
-//! importer reads is checked here first, with checked arithmetic, so a
-//! hostile file is refused with an error instead of taking down whatever is
-//! loading it.
+//! The `gltf` reader panics on what `gltf-json` leaves unchecked (an accessor's
+//! type, count or bounds), so each accessor and image it reads is checked here.
 
 use std::error::Error;
 
@@ -36,17 +30,16 @@ type BoxError = Box<dyn Error + Send + Sync>;
 /// [`Limits`] it is decoded within.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct ElementCaps {
-    /// The most vertices one decoded mesh may hold — `max_elements`, 1 << 24
-    /// (768 MiB of 48-byte vertices) for a trusted project's file. A file
-    /// that places one mesh under many nodes is decoded once per placement
-    /// when its scene is flattened, so a few bytes of JSON could otherwise
-    /// multiply a mesh past any memory.
+    /// The most vertices one decoded mesh may hold: the limits' `max_elements`.
+    ///
+    /// A mesh placed under many nodes is decoded once per placement, so a few
+    /// bytes of JSON could otherwise multiply it past any memory.
     pub(super) vertices: usize,
-    /// The most elements an accessor without a buffer view may describe — a
-    /// sixteenth of the vertices. Such an accessor is all zeros (plus sparse
-    /// substitutions), so its count is not bounded by any data in the file;
-    /// without a cap a single number in the JSON could ask for gigabytes.
-    /// Real files use it for small zero-filled attributes, far below this.
+    /// The most elements an accessor without a buffer view may describe: a
+    /// sixteenth of the vertices.
+    ///
+    /// Such an accessor is zeros, its count bounded by no data in the file.
+    /// Real files use it for small attributes, far below this.
     pub(super) unbacked: usize,
 }
 
@@ -61,9 +54,10 @@ impl ElementCaps {
     }
 }
 
-/// Checks every accessor `primitive` gives the importer: `POSITION`,
-/// `NORMAL`, `TEXCOORD_0`, `COLOR_0` and the indices. `buffers` are the
-/// file's loaded buffers, in document order.
+/// Checks every accessor `primitive` gives the importer.
+///
+/// `POSITION`, `NORMAL`, `TEXCOORD_0`, `COLOR_0` and the indices. `buffers`
+/// are the file's loaded buffers, in document order.
 pub(super) fn check_primitive(
     caps: &ElementCaps,
     primitive: &gltf::Primitive<'_>,
@@ -222,10 +216,10 @@ fn check_accessor(
     Ok(())
 }
 
-/// glTF: sparse indices strictly increase and name elements of the accessor.
-/// The reader matches each index against a running counter, so one out of
-/// order or out of range would be dropped without a word, and the mesh would
-/// show a shape the file does not describe.
+/// Checks that sparse indices strictly increase and name elements of the accessor.
+///
+/// glTF requires it, and the reader would silently drop an index out of order
+/// or out of range, showing a shape the file does not describe.
 fn check_sparse_indices(
     accessor: usize,
     bytes: &[u8],

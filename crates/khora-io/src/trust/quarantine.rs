@@ -28,9 +28,9 @@ use super::{SecurityReason, SecurityRefusal};
 /// What a quarantined file is held by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum QuarantineKey {
-    /// The BLAKE3 hash of its bytes, when they were read.
+    /// The BLAKE3 hash of its bytes, when they were read: refused while the file holds them.
     Content([u8; 32]),
-    /// Its stamp, when it was refused before it was read.
+    /// Its stamp, when it was refused before it was read: released once the file reads whole.
     Stamp {
         /// Its length, in bytes.
         len: u64,
@@ -41,21 +41,11 @@ pub enum QuarantineKey {
 
 /// Every refusal of a run, and the files quarantined.
 ///
-/// Shared by every reader of a run: the guards, the asset reader. A refusal
-/// is reported to the problems under [`ProblemSource::Security`]; one with a
-/// key — what the file held, or its stamp — quarantines the file:
-/// - a content refused stays refused while the file holds it; once the file
-///   reads with another content it is no longer reported, but the content
-///   refused is refused again should it come back;
-/// - a file refused by its stamp (too large to read) leaves the quarantine as
-///   soon as it reads.
+/// Shared by every reader of a run. A refusal is reported to the problems
+/// under [`ProblemSource::Security`]; one with a key quarantines its file, in
+/// a store several runs may share.
 ///
-/// An `Escape` is never quarantined: the path is refused whatever it holds.
-/// Files are known by their real path, however a root spells them.
-///
-/// The quarantine is kept in a store several runs may share (two editors,
-/// the editor and the sandbox): each write reads it again and keeps what the
-/// others quarantined.
+/// See the book: concepts/trust.md, "The quarantine".
 pub struct Refusals {
     problems: Option<Arc<Problems>>,
     store: Option<PathBuf>,
@@ -72,9 +62,9 @@ struct Held {
     /// The refusals reported that quarantine nothing, each once.
     reported: Vec<SecurityRefusal>,
     /// What these refusals changed since they last wrote the store, by real
-    /// path: the entry they put there, or `None` for one they took out. A
-    /// write applies only these to the store as it is then — another run
-    /// sharing it keeps what it changed.
+    /// path: the entry put there, or `None` for one taken out.
+    ///
+    /// A write applies only these, so another run sharing the store keeps its own.
     changed: HashMap<PathBuf, Option<Entry>>,
 }
 
@@ -83,7 +73,7 @@ struct Held {
 struct Entry {
     refusal: SecurityRefusal,
     key: QuarantineKey,
-    /// Its real path, what it is held by; empty in a store from before.
+    /// Its real path, what it is held by; empty in a store that does not record it.
     #[serde(default)]
     at: PathBuf,
     /// The file has read with another content since: it is not reported,
@@ -128,8 +118,9 @@ impl std::fmt::Debug for Refusals {
 }
 
 impl Refusals {
-    /// Refusals reported to `problems`, the quarantine kept in `store` (read
-    /// when it exists, written on each change).
+    /// Creates refusals reported to `problems`, the quarantine kept in `store`.
+    ///
+    /// The store is read when it exists, and written on each change.
     pub fn new(problems: Option<Arc<Problems>>, store: Option<PathBuf>) -> Self {
         let quarantined = store
             .as_deref()
@@ -151,9 +142,9 @@ impl Refusals {
         refusals
     }
 
-    /// Hands what these refusals hold over to `successor`, and every call
-    /// after: what read through these — a guard made before the run's
-    /// refusals were known — reports to the run's.
+    /// Hands what these refusals hold, and every later call, over to `successor`.
+    ///
+    /// A guard made before the run's refusals were known then reports to the run's.
     pub fn hand_over_to(&self, successor: Arc<Refusals>) {
         // Handing over to refusals that hand over to these would loop.
         let mut next = Some(Arc::clone(&successor));
@@ -180,8 +171,7 @@ impl Refusals {
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(successor);
     }
 
-    /// Holds `entry` as it is — superseded or not — reporting and storing
-    /// it: what a hand-over brings.
+    /// Holds `entry` as a hand-over brings it, superseded or not, and reports and stores it.
     fn adopt(&self, entry: Entry) {
         if let Some(successor) = self.successor() {
             return successor.adopt(entry);
@@ -248,8 +238,9 @@ impl Refusals {
         find(&held, abs_path).is_some_and(|(_, entry)| entry.key == *key)
     }
 
-    /// Whether anything is quarantined at `abs_path`, whatever it holds: a
-    /// reader hashes a file's bytes only when it is.
+    /// Whether anything is quarantined at `abs_path`, whatever it holds.
+    ///
+    /// A reader hashes a file's bytes only when it is.
     pub fn holds(&self, abs_path: &Path) -> bool {
         if let Some(successor) = self.successor() {
             return successor.holds(abs_path);
@@ -257,9 +248,10 @@ impl Refusals {
         find(&self.lock(), abs_path).is_some()
     }
 
-    /// Notes that the file at `abs_path` read, as `key` says it is now: a
-    /// file quarantined by its stamp fits now and leaves the quarantine; one
-    /// quarantined by another content is no longer reported.
+    /// Notes that the file at `abs_path` read, as `key` says it is now.
+    ///
+    /// A file quarantined by its stamp leaves the quarantine; one quarantined
+    /// for another content is set aside, no longer reported.
     pub fn note_read(&self, abs_path: &Path, key: &QuarantineKey) {
         if let Some(successor) = self.successor() {
             return successor.note_read(abs_path, key);
@@ -324,9 +316,9 @@ impl Refusals {
         self.report(&held);
     }
 
-    /// Releases the refusals made at `trust` for a size or a limit
-    /// (`TooLarge`, `OverLimit`): what trusting a project lifts. A file
-    /// refused for what it holds (`WrongType`, `DecoderPanic`), or refused at
+    /// Releases the refusals made at `trust` for a size or a limit (`TooLarge`, `OverLimit`).
+    ///
+    /// A file refused for what it holds (`WrongType`, `DecoderPanic`), or at
     /// another trust, stays.
     pub fn release_strict(&self, trust: super::Trust) {
         if let Some(successor) = self.successor() {
@@ -354,9 +346,7 @@ impl Refusals {
         self.report(&held);
     }
 
-    /// Releases the refusals made at `trust` for a size or a limit, of the
-    /// files under `root` only — trusting one project lifts its own
-    /// refusals, never another project's.
+    /// Releases the refusals made at `trust` for a size or a limit, of the files under `root` only.
     pub fn release_strict_under(&self, trust: super::Trust, root: &Path) {
         if let Some(successor) = self.successor() {
             return successor.release_strict_under(trust, root);
@@ -392,8 +382,7 @@ impl Refusals {
         self.report(&held);
     }
 
-    /// The refusals quarantined, but those whose file has read with another
-    /// content since.
+    /// Returns the refusals quarantined, but those whose file has read with another content since.
     pub fn quarantined(&self) -> Vec<SecurityRefusal> {
         if let Some(successor) = self.successor() {
             return successor.quarantined();
@@ -406,9 +395,7 @@ impl Refusals {
         refusals
     }
 
-    /// The refusals quarantined, as [`quarantined`](Self::quarantined) lists
-    /// them, each with the key its file is held by — what the editor shows
-    /// of a quarantined file.
+    /// Returns the refusals [`quarantined`](Self::quarantined) lists, each with its file's key.
     pub fn quarantine(&self) -> Vec<(SecurityRefusal, QuarantineKey)> {
         if let Some(successor) = self.successor() {
             return successor.quarantine();
@@ -448,9 +435,9 @@ impl Refusals {
         problems.report(ProblemSource::Security, list);
     }
 
-    /// Writes what these refusals changed to the store, when there is one:
-    /// the store as it is now, another run's changes kept, with these
-    /// applied over it. What is held becomes the store as written.
+    /// Writes what these refusals changed over the store as it is now, when there is one.
+    ///
+    /// What is held becomes the store as written, another run's changes included.
     fn write(&self, held: &mut Held) {
         let changed = std::mem::take(&mut held.changed);
         let Some(store) = &self.store else {

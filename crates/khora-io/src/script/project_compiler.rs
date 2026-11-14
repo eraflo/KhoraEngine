@@ -12,15 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A project's scripts, compiled for the `loading` family.
-//!
-//! What the hot-reload pump once did inside the frame, as a pure function of
-//! a [`CompileRequest`]: the modules it names and every module importing
-//! one of them recompiled from disk, a module whose file is gone withdrawn,
-//! and a module that does not compile kept running — its diagnostics
-//! reported, no reload. What each recompiled module reads is announced to the
-//! script flow's demand before its program is handed on, and the record of
-//! what each mounted root brings in follows.
+//! A project's scripts, compiled from disk for the `loading` family, one
+//! [`CompileRequest`] at a time.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -48,10 +41,10 @@ use crate::trust::{FileGuard, ProjectTrustState, Refusals, Trust};
 pub use khora_script::reload::ScriptReload;
 pub use khora_script::toolchain::{CompileRequest, Recompiled, ScriptCompiler};
 
-/// The engine's [`ScriptCompiler`]: reads a project's script folder from
-/// disk, with the engine's prelude, reporting to the runtime's problems,
-/// announcing to the script flow's demand and recording what each mounted
-/// root brings in — each when the runtime it was built from holds it.
+/// The engine's [`ScriptCompiler`]: reads a project's script folder from disk, with the prelude.
+///
+/// Reports to the problems, the script flow's demand and the mounted roots
+/// of the runtime it was built from, those it holds.
 #[derive(Debug, Default)]
 pub struct ProjectCompiler {
     problems: Option<Arc<Problems>>,
@@ -62,9 +55,10 @@ pub struct ProjectCompiler {
 }
 
 impl ProjectCompiler {
-    /// A compiler reporting to what `runtime` holds: its
-    /// `Arc<Problems>`, its `Arc<Interest<ScriptReads>>` and its
-    /// `Arc<MountedScripts>`. `ProjectCompiler::default()` reports to none.
+    /// Creates a compiler reporting to what `runtime` holds.
+    ///
+    /// Its problems, script reads, mounted scripts, refusals and project trust;
+    /// `ProjectCompiler::default()` reports to none.
     pub fn from_runtime(runtime: &Runtime) -> Self {
         Self {
             problems: runtime.resources.get::<Arc<Problems>>().cloned(),
@@ -78,16 +72,14 @@ impl ProjectCompiler {
         }
     }
 
-    /// The trust the project's scripts are read at now: a restricted
-    /// project's at the strict caps.
+    /// Returns the trust the project's scripts are read at now.
     fn trust(&self) -> Trust {
         self.trust_state
             .as_ref()
             .map_or(Trust::Project, |state| state.get().trust())
     }
 
-    /// A loader of the modules under `script_root`, through a guard
-    /// reporting to the runtime's refusals.
+    /// Returns a loader of the modules under `script_root`, reporting to the runtime's refusals.
     fn loader(&self, script_root: &Path) -> PreludeLoader<DiskLoader> {
         let refusals = self
             .refusals
@@ -100,11 +92,10 @@ impl ProjectCompiler {
         )))
     }
 
-    /// Compiles every module under `script_root` — a project's script
-    /// folder — as a mount does: a program per module that compiles, what
-    /// each declaring module declares (once, however many import it), what
-    /// each reads announced, what each compile found reported. A module that
-    /// does not compile is reported and left out.
+    /// Compiles every module under the script folder `script_root`, as a mount does.
+    ///
+    /// Each module's declarations are handed on once, however many import it.
+    /// A module that does not compile is reported and left out.
     pub fn compile_all(&self, script_root: &Path) -> Recompiled {
         let loader = self.loader(script_root);
         let mut compiled = Recompiled::default();
@@ -133,9 +124,9 @@ impl ProjectCompiler {
         }
     }
 
-    /// Announces what `module`'s program reads, ahead of the intake
-    /// installing it: the flow projects those components the frame the
-    /// program lands.
+    /// Announces what `module`'s program reads, before the intake installs it.
+    ///
+    /// The flow then projects those components the frame the program lands.
     fn announce(&self, module: &str, program: &Program) {
         if let Some(reads) = &self.reads {
             reads.announce(
@@ -156,11 +147,10 @@ impl ScriptCompiler for ProjectCompiler {
         self.compile_leased(request).0
     }
 
-    /// Compiled for a root mounted, the result holds while the root stays
-    /// mounted: one unmounted before the reserve takes it in has it
-    /// abandoned, however late in the run the unmount came. What a request
-    /// for a root already unmounted hands on — withdrawals, or modules
-    /// compiled from another root — holds to nothing.
+    /// Compiles as [`compile`](Self::compile), leased while the request's root stays mounted.
+    ///
+    /// A request for a root already unmounted hands on withdrawals, or modules
+    /// compiled from another root, with no lease.
     fn compile_leased(&self, request: &CompileRequest) -> (Recompiled, Option<Lease>) {
         // A root unmounted since the request was filed is no project's any
         // more: its modules are withdrawn, never compiled back in.
@@ -172,9 +162,8 @@ impl ScriptCompiler for ProjectCompiler {
             Lease::new(move || !mounted.is_closed(&root))
         });
         let (compiled, touched) = self.compile_mounted(request);
-        // Unmounted while it compiled: what came out is no project's either —
-        // nor are the problems and reads of every module it went through,
-        // the importers included, reported after the unmount took back its own.
+        // Unmounted while it compiled: the problems and reads of every module
+        // it went through, importers included, are taken back too.
         if !self.is_mounted(&request.root) {
             let mut modules = request.modules.clone();
             modules.extend(touched);
@@ -188,18 +177,17 @@ impl ScriptCompiler for ProjectCompiler {
 }
 
 impl ProjectCompiler {
-    /// Whether `root` is mounted: not unmounted since it was. With no record
-    /// of mounts, every root is.
+    /// Whether `root` is mounted: not unmounted since. With no record of mounts, every root is.
     fn is_mounted(&self, root: &Path) -> bool {
         self.mounted
             .as_ref()
             .is_none_or(|mounted| !mounted.is_closed(root))
     }
 
-    /// What a request for a root no longer mounted hands on: each module that
-    /// another mounted root still provides by the same name compiled from that
-    /// root — it is that root's now — and every other one withdrawn, its
-    /// declarations emptied, its announced reads and its problems taken back.
+    /// Returns what a request for a root no longer mounted hands on.
+    ///
+    /// A module another mounted root provides by name is compiled from there;
+    /// any other is withdrawn, with its declarations, reads and problems.
     fn unmounted(&self, request: &CompileRequest) -> Recompiled {
         let mut compiled = Recompiled::default();
         let mut elsewhere: BTreeMap<std::path::PathBuf, BTreeSet<String>> = BTreeMap::new();
@@ -245,9 +233,10 @@ impl ProjectCompiler {
         compiled
     }
 
-    /// Recompiles the modules `request` names in its root, mounted, and every
-    /// module importing one of them; withdraws those whose file is gone.
-    /// Returns what came out, and every module it went through.
+    /// Recompiles the modules `request` names and every module importing one.
+    ///
+    /// Withdraws those whose file is gone. Returns what came out, and every
+    /// module it went through.
     fn compile_mounted(&self, request: &CompileRequest) -> (Recompiled, BTreeSet<String>) {
         let root = request.root.as_path();
         let changed = &request.modules;
@@ -275,8 +264,7 @@ impl ProjectCompiler {
         }
 
         for module in affected {
-            // Deleted, or moved away: nothing to compile, nothing wrong with
-            // it — and nothing to run. Its program leaves the runtime, rather
+            // Deleted, or moved away: its program leaves the runtime rather
             // than keep running code whose file is gone.
             if !is_on_disk(root, &module) {
                 if let Some(problems) = &self.problems {
@@ -330,9 +318,7 @@ impl ProjectCompiler {
                         program: Some(program),
                     });
                 }
-                // Kept running rather than replaced: a save mid-edit usually
-                // does not compile, and stopping the game for one would make
-                // hot reload unusable for what it is for.
+                // Kept running: a save mid-edit usually does not compile.
                 None => log_diagnostics(&module, &outcome.diagnostics),
             }
         }

@@ -22,8 +22,7 @@ use khora_core::app::GameIdentity;
 
 use crate::profiles::{path_safe, ProfilePlace};
 
-/// The user's home folder — `USERPROFILE` on Windows, `HOME` elsewhere — read
-/// through `env`.
+/// Returns the user's home folder, read through `env`: `USERPROFILE` on Windows, `HOME` elsewhere.
 pub fn home_dir(env: &dyn Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
     if cfg!(windows) {
         var(env, "USERPROFILE")
@@ -32,16 +31,17 @@ pub fn home_dir(env: &dyn Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
     }
 }
 
-/// `env`'s value for `key`, when it names something.
+/// Returns `env`'s value for `key`, when it names something.
 pub(crate) fn var(env: &dyn Fn(&str) -> Option<OsString>, key: &str) -> Option<PathBuf> {
     env(key)
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
 }
 
-/// The per-user data folder, read through `env`: `%APPDATA%` on Windows;
-/// `$HOME/Library/Application Support` on macOS; `$XDG_DATA_HOME`, else
-/// `$HOME/.local/share`, elsewhere.
+/// Returns the per-user data folder, read through `env`.
+///
+/// `%APPDATA%` on Windows; `$HOME/Library/Application Support` on macOS;
+/// `$XDG_DATA_HOME`, else `$HOME/.local/share`, elsewhere.
 pub fn data_dir(env: &dyn Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
     if cfg!(windows) {
         var(env, "APPDATA")
@@ -53,13 +53,15 @@ pub fn data_dir(env: &dyn Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
     }
 }
 
-/// `<home>/.khora`, read through `env`.
+/// Returns `<home>/.khora`, read through `env`.
 pub fn khora_dir(env: &dyn Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
     home_dir(env).map(|home| home.join(".khora"))
 }
 
-/// The quarantine list's file: `<home>/.khora/quarantine.ron` for a
-/// developer, `<data>/<game>/khora/quarantine.ron` for a player.
+/// Returns the quarantine list's file, read through `env`.
+///
+/// `<home>/.khora/quarantine.ron` for a developer,
+/// `<data>/<game>/khora/quarantine.ron` for a player.
 pub fn quarantine_path(
     place: ProfilePlace,
     game: &GameIdentity,
@@ -72,14 +74,14 @@ pub fn quarantine_path(
     Some(folder.join(QUARANTINE_FILE))
 }
 
-/// The trust store's file, shared by the hub and the editor:
-/// `<home>/.khora/trust.ron`, read through `env`.
+/// Returns the trust store's file the hub and the editor share: `<home>/.khora/trust.ron`.
 pub fn trust_path(env: &dyn Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
     khora_dir(env).map(|khora| khora.join(TRUST_FILE))
 }
 
-/// The folder the build's signing key is kept in, never in a project:
-/// `<home>/.khora/signing`, read through `env`.
+/// Returns the folder the build's signing key is kept in: `<home>/.khora/signing`.
+///
+/// Never in a project.
 pub fn signing_dir(env: &dyn Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
     khora_dir(env).map(|khora| khora.join(SIGNING_DIR))
 }

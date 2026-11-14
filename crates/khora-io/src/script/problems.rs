@@ -12,10 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What compiling a module found, reported to the project's
-//! [`Problems`] — located through the program's source map, each
-//! problem naming the module it is in — and the `.erg` files an assets root
-//! holds outside its script folder, which are never compiled.
+//! The script problems reported to the project's [`Problems`]: what compiling
+//! a module found, and the `.erg` files that are no module.
 
 use std::path::Path;
 
@@ -27,11 +25,11 @@ use khora_script::modules::EXTENSION;
 
 use crate::script::layout::{misplaced, SCRIPT_DIR};
 
-/// Reports what compiling `module` found, replacing what its last compile
-/// reported — none clears it. Each problem names the module it is located in,
-/// which may be one `module` imports: compiling that module may find it too,
-/// and the list shows it once; whichever compile found it is the one whose
-/// clean compile takes it back.
+/// Reports what compiling `module` found, replacing what its last compile reported.
+///
+/// Empty clears it. Each problem names the module it lies in, which may be one
+/// `module` imports; the compile that found it is the one whose clean compile
+/// takes it back.
 pub fn report_compile(problems: &Problems, module: &str, outcome: &CompileOutcome) {
     let found = outcome
         .diagnostics
@@ -67,12 +65,10 @@ pub fn report_compile(problems: &Problems, module: &str, outcome: &CompileOutcom
     );
 }
 
-/// The problem of the Ergon file at `rel_path` (under its assets root,
-/// forward slashes) that is no module: an error in no module, at no line, its
-/// message naming the path, its note saying what to do — move it to
-/// `scripts/<rel_path>`; when its first folder is `scripts` spelled in another
-/// case, rename that folder `scripts`; when it is in place but spelled `.ERG`,
-/// rename it `.erg`. Every path it suggests ends in `.erg`.
+/// Returns the problem of the Ergon file at `rel_path` that is no module.
+///
+/// `rel_path` is under its assets root, with forward slashes. An error at no
+/// line, its note saying how to fix the folder or the extension.
 pub fn misplaced_problem(rel_path: &str) -> Problem {
     let first = rel_path.split('/').next().unwrap_or(rel_path);
     let extension = rel_path.rsplit('.').next().unwrap_or_default();
@@ -122,9 +118,9 @@ pub fn misplaced_problem(rel_path: &str) -> Problem {
     }
 }
 
-/// Reports every `.erg` file under `assets_root` outside its script folder,
-/// under [`ProblemSource::Placement`] for that root — replacing what the root
-/// reported before; none clears it.
+/// Reports every misplaced `.erg` file under `assets_root`, replacing that root's last list.
+///
+/// Reported under [`ProblemSource::Placement`]; empty clears it.
 pub fn report_misplaced(problems: &Problems, assets_root: &Path) {
     problems.report(
         placement_of(assets_root),
@@ -135,15 +131,15 @@ pub fn report_misplaced(problems: &Problems, assets_root: &Path) {
     );
 }
 
-/// Takes back what [`report_misplaced`] reported for `assets_root`: the root
-/// is no longer the project's to show.
+/// Takes back what [`report_misplaced`] reported for `assets_root`.
 pub fn clear_misplaced(problems: &Problems, assets_root: &Path) {
     problems.report(placement_of(assets_root), Vec::new());
 }
 
-/// The source `assets_root`'s misplaced files are reported under — keyed by
-/// the root made absolute, as the watch reports it, so the mount that names
-/// the root and the pump that hears of its changes replace one list, not two.
+/// Returns the source `assets_root`'s misplaced files are reported under.
+///
+/// Keyed by the root made absolute, as the watch reports it, so the mount and
+/// the pump replace one list, not two.
 fn placement_of(assets_root: &Path) -> ProblemSource {
     ProblemSource::Placement {
         root: crate::asset::root_path::absolute(assets_root),
@@ -210,8 +206,9 @@ mod tests {
         assert!(note.contains("scripts/guard.erg"), "{note}");
     }
 
-    /// **A script folder spelled in another case is renamed, not nested**:
-    /// moving `Scripts/ai/guard.erg` to `scripts/Scripts/ai/guard.erg` is not
+    /// **A script folder spelled in another case is renamed, not nested.**
+    ///
+    /// Moving `Scripts/ai/guard.erg` to `scripts/Scripts/ai/guard.erg` is not
     /// what its author meant.
     #[test]
     fn a_script_folder_in_another_case_is_told_to_be_renamed() {

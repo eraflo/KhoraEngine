@@ -6,30 +6,23 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! Pack-integrity sidecar (`manifest.bin`).
+//! A pack's integrity manifest (`manifest.bin`): each asset's BLAKE3 hash and size.
 //!
-//! A signed build records, for every entry in `data.pack`, a BLAKE3 hash of
-//! its **uncompressed** bytes alongside its UUID, and signs the whole over
-//! `index.bin` (`signing::SignedManifest`). A packed runtime verifies the
-//! signature at boot and re-hashes each asset on load. Mismatches raise `IntegrityError` so corruption / tampering is
-//! detected before the bytes hit a decoder.
-//!
-//! On-disk layout: bincode-encoded `Vec<ManifestEntry>` — same approach
-//! as `index.bin`, distinct file so the runtime can opt out cheaply.
+//! See the book: concepts/trust.md, "Signed packs".
 
 use anyhow::{anyhow, Context, Result};
 use khora_core::asset::AssetUUID;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// One row of `manifest.bin` — pre-computed integrity record.
+/// One row of `manifest.bin`: an asset's integrity record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ManifestEntry {
+    /// The asset the record is of.
     pub uuid: AssetUUID,
     /// BLAKE3 hash of the asset's *uncompressed* bytes, as a 32-byte digest.
     pub blake3: [u8; 32],
-    /// Uncompressed size in bytes — defensive sanity check (mismatch
-    /// indicates a corrupted index even before the hash is computed).
+    /// Uncompressed size in bytes, checked before the hash is computed.
     pub size: u64,
 }
 
@@ -40,12 +33,12 @@ pub struct PackManifest {
 }
 
 impl PackManifest {
-    /// Empty manifest — writer accumulates entries through [`Self::insert`].
+    /// Returns an empty manifest, filled through [`Self::insert`].
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Hashes `bytes` with BLAKE3, records the digest under `uuid`.
+    /// Records the BLAKE3 digest and size of `bytes` under `uuid`.
     pub fn insert(&mut self, uuid: AssetUUID, bytes: &[u8]) {
         let hash: [u8; 32] = *blake3::hash(bytes).as_bytes();
         self.by_uuid.insert(
@@ -61,10 +54,8 @@ impl PackManifest {
     /// Encodes the manifest into the on-disk byte vector.
     pub fn encode(&self) -> Result<Vec<u8>> {
         let mut entries: Vec<ManifestEntry> = self.by_uuid.values().cloned().collect();
-        // Stable order — same property the index relies on for byte
-        // determinism across builds. Sorted by BLAKE3 digest because
-        // `AssetUUID` doesn't implement `Ord` and the digest is already
-        // stable + total.
+        // Sorted so two builds of one project encode the same bytes; by digest,
+        // a stable total order.
         entries.sort_by_key(|a| a.blake3);
         let cfg = bincode::config::standard();
         bincode::serde::encode_to_vec(&entries, cfg)
@@ -90,15 +81,15 @@ impl PackManifest {
         self.by_uuid.len()
     }
 
-    /// Retrieve the recorded hash + size for `uuid`.
+    /// Returns the record of `uuid`, if any.
     pub fn get(&self, uuid: &AssetUUID) -> Option<&ManifestEntry> {
         self.by_uuid.get(uuid)
     }
 
-    /// Verifies `bytes` against the recorded hash for `uuid`.
-    /// Returns `Ok(())` on match, `Err` on mismatch (or if the uuid is
-    /// not in the manifest — the caller chose to verify but the record
-    /// is missing).
+    /// Verifies `bytes` against the record of `uuid`.
+    ///
+    /// # Errors
+    /// When the size or the hash differs, or `uuid` has no record.
     pub fn verify(&self, uuid: &AssetUUID, bytes: &[u8]) -> Result<()> {
         let Some(entry) = self.by_uuid.get(uuid) else {
             return Err(anyhow!("Manifest: no record for asset {:?}", uuid));

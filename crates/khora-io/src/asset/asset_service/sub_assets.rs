@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Sub-assets: the containers that hold them, opened once and cached, the
-//! parts extracted from them, and whether a part has left the project.
+//! Sub-assets: their containers, opened once and cached, the parts extracted from
+//! them, and whether a part has left the project.
 
 use std::any::Any;
 use std::sync::Arc;
@@ -25,9 +25,9 @@ use super::AssetService;
 use crate::asset::container::AssetContainer;
 
 impl AssetService {
-    /// Whether the file `uuid` names can hold sub-assets (a glTF can): when
-    /// its bytes change, its parts may have changed too, and the index must
-    /// list them again.
+    /// Whether the file `uuid` can hold sub-assets, as a glTF can.
+    ///
+    /// When its bytes change, its parts may have changed too: the index lists them again.
     pub fn may_hold_sub_assets(&self, uuid: &AssetUUID) -> bool {
         self.reader
             .index
@@ -45,9 +45,9 @@ impl AssetService {
             .insert(type_name.to_string(), Arc::new(container));
     }
 
-    /// The container file `container` and what opens it, opened once and
-    /// cached until it is invalidated. Each opening records the other files
-    /// it reads.
+    /// Opens the container file `container`, cached until invalidated; returns it and its opener.
+    ///
+    /// Each opening records the other files it reads.
     fn open_container(
         &mut self,
         container: AssetUUID,
@@ -84,13 +84,10 @@ impl AssetService {
         })
     }
 
-    /// Whether `uuid` is no longer part of the project: it is not indexed
-    /// and, for a sub-asset, its container is gone too, or opens and no
-    /// longer holds it.
+    /// Whether `uuid` has left the project: unindexed, its container gone or without it.
     ///
-    /// A sub-asset whose container is indexed but does not open (a file
-    /// caught mid-write, indexed without its parts) is not gone: its file
-    /// is read again when it changes.
+    /// A sub-asset whose container is indexed but does not open (a file caught
+    /// mid-write) is not gone: its file is read again when it changes.
     pub fn is_gone(&mut self, uuid: &AssetUUID) -> bool {
         if self.gone_from_index(uuid) {
             return true;
@@ -98,8 +95,8 @@ impl AssetService {
         if self.reader.index.get_metadata(uuid).is_some() {
             return false;
         }
-        // A part whose container is still indexed: gone when the container
-        // opens and no longer holds it.
+        // A part whose container is still indexed is gone when the container
+        // opens without it.
         let container = self
             .served_subs
             .iter()
@@ -108,9 +105,9 @@ impl AssetService {
         container.is_some_and(|container| self.open_container(container).is_ok())
     }
 
-    /// Whether the index alone says `uuid` left the project: it is not
-    /// indexed and, for a part, its container is not indexed either. Reads no
-    /// file — what decides a removed asset on the frame its change is seen.
+    /// Whether the index alone says `uuid` left the project, its container unindexed too.
+    ///
+    /// Reads no file, so it decides a removal on the frame its change is seen.
     pub fn gone_from_index(&self, uuid: &AssetUUID) -> bool {
         if self.reader.index.get_metadata(uuid).is_some() {
             return false;

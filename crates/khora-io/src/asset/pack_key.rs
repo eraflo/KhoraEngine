@@ -37,9 +37,10 @@ const fn slot(magic: [u8; 32]) -> [u8; 64] {
     slot
 }
 
-/// The slot as the binary holds it now — read volatile, so neither the
-/// compiler nor the linker assumes the bytes it was built with: a stamp
-/// writes them after the build.
+/// Returns the slot as the binary file holds it, stamp included.
+///
+/// Read volatile: a stamp writes the bytes after the build, so neither the
+/// compiler nor the linker may assume the ones it was built with.
 fn slot_bytes() -> [u8; 64] {
     // SAFETY: `PACK_KEY_SLOT` is a `'static`, initialised, properly aligned
     // `[u8; 64]` that nothing in the program writes; a volatile read of it
@@ -47,25 +48,25 @@ fn slot_bytes() -> [u8; 64] {
     unsafe { std::ptr::read_volatile(&PACK_KEY_SLOT) }
 }
 
-/// The slot's magic, read from the slot at run time: no second copy of it
-/// is held anywhere in the binary.
+/// Returns the slot's magic, read from the slot so the binary holds no second copy of it.
 pub fn slot_magic() -> [u8; 32] {
     let mut magic = [0u8; 32];
     magic.copy_from_slice(&slot_bytes()[..32]);
     magic
 }
 
-/// The key stamped into the running binary, read volatile; `None` while
-/// its slot is zero.
+/// Returns the key stamped into the running binary; `None` while its slot is zero.
 pub fn stamped_pack_key() -> Option<PackKey> {
     let mut key = [0u8; 32];
     key.copy_from_slice(&slot_bytes()[32..]);
     (key != [0u8; 32]).then_some(PackKey(key))
 }
 
-/// Writes `key` into the slot of the binary at `exe`: its magic found
-/// exactly once, the key written after it. Zero or several matches is an
-/// error, the file left as it was.
+/// Writes `key` into the pack key slot of the binary at `exe`, after its magic.
+///
+/// # Errors
+/// When the magic is found zero or several times, the file left as it was, or
+/// when the file cannot be read or written.
 pub fn stamp_pack_key(exe: &Path, key: &PackKey) -> Result<()> {
     let magic = slot_magic();
     let bytes = std::fs::read(exe).with_context(|| format!("cannot read {}", exe.display()))?;

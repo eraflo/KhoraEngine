@@ -19,9 +19,8 @@ use khora_core::asset::Asset;
 use std::error::Error;
 use std::path::Path;
 
-/// A trait for types that can decode a specific kind of asset from raw bytes.
+/// A decoder of one asset type (`CpuTexture`, `Mesh`, `SoundData`…) from raw bytes.
 ///
-/// Each implementation handles one asset type (e.g., `CpuTexture`, `Mesh`, `SoundData`).
 /// Concrete decoders live in [`crate::asset::decoders`].
 pub trait AssetDecoder<A: Asset> {
     /// Parses a byte slice and converts it into an instance of the asset `A`.
@@ -34,21 +33,26 @@ pub trait AssetDecoder<A: Asset> {
         self.load(bytes)
     }
 
-    /// Whether `head`, the start of a file, is the start of a file this
-    /// decoder reads: its magic bytes, or text (UTF-8, no NUL) for a text
-    /// format. A file whose head this refuses is never decoded.
+    /// Whether `head`, the start of a file, is the start of a file this decoder reads.
+    ///
+    /// That is its magic bytes, or text (UTF-8, no NUL) for a text format. A file
+    /// whose head this refuses is never decoded.
     fn sniff(&self, head: &[u8]) -> bool;
 
-    /// The limits a file this decoder reads has at `trust`. The strictest
-    /// limits by default; each built-in decoder gives its kind's.
+    /// Returns the limits of a file this decoder reads at `trust`.
+    ///
+    /// The strictest limits by default; each built-in decoder gives its kind's.
     fn limits(&self, trust: Trust) -> Limits {
         let _ = trust;
         Limits::strictest()
     }
 
-    /// Decodes the asset stored at `source_path` within `limits`, returning
-    /// a [`LimitExceeded`](crate::trust::LimitExceeded) when one stops it.
+    /// Decodes the asset stored at `source_path` within `limits`.
+    ///
     /// By default, [`Self::load_at`], ignoring them.
+    ///
+    /// # Errors
+    /// Returns a [`LimitExceeded`](crate::trust::LimitExceeded) when a limit stops it.
     fn load_limited(
         &self,
         bytes: &[u8],

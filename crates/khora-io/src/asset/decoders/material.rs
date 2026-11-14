@@ -14,26 +14,7 @@
 
 //! Material decoder: `.kmat` RON bytes → `Box<dyn Material>`.
 //!
-//! A `.kmat` file is RON of the shape
-//! `(type_name: "StandardMaterial", material: ( ...fields... ))` — the same
-//! `{ type_name, material }` split [`material_to_json`] produces, but
-//! RON-encoded. The `type_name` selects the matching `MaterialRegistration`
-//! from the open type-tag registry (re-exported from `khora-data`); that
-//! registration's `deserialize_json` decodes the `material` sub-value into the
-//! concrete material type. Any material type that registers itself (including
-//! plugin types) is therefore loadable from a `.kmat` with no decoder change.
-//!
-//! Decoding goes through `serde_json::Value`: RON is self-describing, so
-//! `ron::de::from_bytes::<serde_json::Value>` yields a serde value tree from
-//! which `type_name` (a string) and `material` (a sub-tree) are pulled, and the
-//! sub-tree is handed straight to `deserialize_json`. This reuses the existing
-//! `serialize_json`/`deserialize_json` machinery the editor inspector already
-//! relies on — no second, RON-specific code path on `MaterialRegistration`.
-//!
-//! Auto-registered via [`inventory::submit!`] under the canonical `"material"`
-//! slot (the extension mapping `kmat|mat → "material"` lives in the index
-//! builder). No fallback material: a missing `type_name`, an unknown type, or a
-//! decode failure is returned as an error and the caller skips the asset.
+//! See the book: reference/formats.md, "`.kmat` — material file".
 
 use std::error::Error;
 
@@ -42,8 +23,10 @@ use khora_data::scene::MaterialRegistration;
 
 use crate::asset::{AssetDecoder, DecoderRegistration};
 
-/// Decodes a `.kmat` RON document into a type-erased [`Material`] via the
-/// `MaterialRegistration` type-tag dispatch.
+/// Decodes a `.kmat` RON document into the [`Material`] its `type_name` registers.
+///
+/// A missing `type_name`, an unknown type or a field that does not decode fails
+/// the load: there is no fallback material.
 #[derive(Clone, Default)]
 pub struct MaterialDecoder;
 
@@ -64,29 +47,22 @@ impl AssetDecoder<Box<dyn Material>> for MaterialDecoder {
     }
 }
 
-/// Decodes `.kmat` RON bytes into a [`Material`] without the runtime
-/// [`AssetService`], returning `None` on any failure.
+/// Decodes `.kmat` RON bytes into a [`Material`] without an [`AssetService`].
 ///
-/// The index builder calls this to read a material's texture references while
-/// scanning a project, where spinning up the asset service would be both
-/// heavyweight and circular. Because [`MaterialDecoder`] is stateless and
-/// dispatches purely through the `inventory` type-tag registry, decoding needs
-/// nothing but the bytes. A decode failure is intentionally swallowed (the
-/// caller logs and continues); use [`MaterialDecoder::load`] when the error
-/// detail matters.
+/// For the index builder, which reads a material's texture references while it
+/// scans a project. Returns `None` on any failure; [`MaterialDecoder::load`]
+/// says why.
 ///
 /// [`AssetService`]: crate::asset::AssetService
 pub fn decode_material(bytes: &[u8]) -> Option<Box<dyn Material>> {
     decode_material_inner(bytes).ok()
 }
 
-/// Shared `.kmat` RON → [`Material`] decode used by both the [`AssetDecoder`]
-/// impl and the service-free [`decode_material`] helper.
 fn decode_material_inner(
     bytes: &[u8],
 ) -> Result<Box<dyn Material>, Box<dyn Error + Send + Sync + 'static>> {
-    // RON is self-describing, so it deserializes straight into a serde
-    // value tree. From there we read the `{ type_name, material }` split.
+    // RON is self-describing, so it parses into a JSON value tree: the
+    // registrations' `deserialize_json` reads it, with no RON path of its own.
     let doc: serde_json::Value =
         ron::de::from_bytes(bytes).map_err(|e| format!("failed to parse .kmat RON: {e}"))?;
 
@@ -126,22 +102,16 @@ mod tests {
     use khora_core::math::LinearRgba;
     use khora_data::scene::material_to_json;
 
-    /// Renders a `{ type_name, material }` JSON object as a `.kmat` RON
-    /// document — the on-disk form the decoder consumes.
+    /// Renders a `{ type_name, material }` JSON object as a `.kmat` document.
     fn json_to_kmat_ron(value: &serde_json::Value) -> String {
         ron::ser::to_string(value).expect("material JSON should encode to RON")
     }
 
     #[test]
     fn decodes_hand_written_standard_kmat_with_texture() {
-        // A hand-authored `.kmat` with distinctive, non-default fields,
-        // including a `base_color_texture` UUID, to prove every field — and
-        // the `Option<AssetUUID>` — survives the RON → value → material bridge.
-        //
-        // The `.kmat` is RON of the `{ type_name, material }` JSON-value tree,
-        // so absent options serialize as `()` (the unit value), unit enum
-        // variants as quoted strings, and UUIDs as quoted strings — exactly
-        // what `material_to_json` → RON produces.
+        // Non-default fields and a texture UUID, so a lossy bridge shows. As
+        // `material_to_json` → RON writes them: an absent option is `()`, a
+        // unit variant and a UUID are quoted strings.
         let tex_uuid = AssetUUID::new_v5("textures/wood.png");
         let tex_str = serde_json::to_value(tex_uuid)
             .ok()
@@ -204,11 +174,8 @@ mod tests {
 
     #[test]
     fn serialize_then_decode_round_trips_all_fields() {
-        // Produce the `.kmat` bytes programmatically from a material, feed them
-        // back through the decoder, and assert equality. This guards the
-        // serde_json::Value ↔ RON bridge against any lossy field (the
-        // `AlphaMode::Mask(f32)` tuple variant and `Option<AssetUUID>` are the
-        // sharp edges).
+        // The sharp edges of the JSON value ↔ RON bridge: the
+        // `AlphaMode::Mask(f32)` tuple variant and `Option<AssetUUID>`.
         let original = StandardMaterial {
             base_color: LinearRgba::new(0.42, 0.13, 0.87, 0.5),
             base_color_texture: Some(AssetUUID::new_v5("textures/diffuse.png")),
@@ -244,8 +211,8 @@ mod tests {
         assert_eq!(standard.double_sided, original.double_sided);
     }
 
-    /// A `.kmat` written before `KHR_materials_specular` has no specular
-    /// field: it must decode to specular 1 / white (today's image), not 0.
+    /// A `.kmat` with no specular field decodes to specular 1 and white, not 0,
+    /// so it renders as a material without `KHR_materials_specular` would.
     #[test]
     fn a_kmat_without_specular_fields_decodes_to_specular_one_and_white() {
         let kmat = r#"{

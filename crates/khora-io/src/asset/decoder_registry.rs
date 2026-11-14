@@ -141,9 +141,10 @@ impl DecoderRegistry {
         self.decode_at(type_name, bytes, Path::new(""))
     }
 
-    /// Decodes an asset of the specified type from the bytes of the file at
-    /// `source_path` (relative to the assets root), for formats that read
-    /// files next to their own.
+    /// Decodes an asset of type `type_name` from the bytes of the file at `source_path`.
+    ///
+    /// `source_path` is relative to the assets root, for formats that read files
+    /// next to their own.
     pub fn decode_at<A: Asset>(
         &self,
         type_name: &str,
@@ -168,8 +169,9 @@ impl DecoderRegistry {
             .map(|decoder| decoder.sniff(head))
     }
 
-    /// The limits of a file of `type_name` read at `trust`, as its decoder
-    /// gives them; `None` when no decoder is registered for it.
+    /// Returns the limits its decoder gives a `type_name` file read at `trust`.
+    ///
+    /// `None` when no decoder is registered for `type_name`.
     pub fn limits(
         &self,
         type_name: &str,
@@ -180,10 +182,10 @@ impl DecoderRegistry {
             .map(|decoder| decoder.limits(trust))
     }
 
-    /// Decodes the bytes of the file at `source_path` with the decoder
-    /// registered for `type_name`, within `limits`, as whatever type it
-    /// produces. A limit that stopped it is kept in the error, as a
-    /// [`LimitExceeded`].
+    /// Decodes the file at `source_path` within `limits`, as whatever type its decoder produces.
+    ///
+    /// # Errors
+    /// A limit that stopped the decoder stays in the error as a [`LimitExceeded`].
     pub(crate) fn decode_any_limited(
         &self,
         type_name: &str,
@@ -199,9 +201,10 @@ impl DecoderRegistry {
     }
 }
 
-/// A decoder's error as the service carries it: a limit that stopped the
-/// decoder stays a [`LimitExceeded`], what the reader refuses it by; any
-/// other error by its message.
+/// Returns a decoder's error as the service carries it.
+///
+/// A [`LimitExceeded`] stays one, since the reader refuses the file by it; any
+/// other error is kept by its message.
 fn error_of(error: Box<dyn std::error::Error + Send + Sync>) -> anyhow::Error {
     match error.downcast::<LimitExceeded>() {
         Ok(limit) => anyhow::Error::new(*limit),
@@ -210,8 +213,7 @@ fn error_of(error: Box<dyn std::error::Error + Send + Sync>) -> anyhow::Error {
 }
 
 impl DecoderRegistry {
-    /// Decodes the bytes of the file at `source_path` with the decoder
-    /// registered for `type_name`, as whatever type it produces.
+    /// Decodes the file at `source_path` as whatever type the `type_name` decoder produces.
     pub(crate) fn decode_any_at(
         &self,
         type_name: &str,

@@ -34,9 +34,9 @@ mod quarantine_view;
 
 const MIB: u64 = 1 << 20;
 
-/// A project's assets folder, `<dir>/assets`, holding
-/// `textures/inside.png`, beside a folder `<dir>/elsewhere` holding
-/// `secret.png`, which is under no root.
+/// A project's assets folder, `<dir>/assets`, holding `textures/inside.png`.
+///
+/// Beside it, a folder `<dir>/elsewhere` holds `secret.png`, under no root.
 struct Layout {
     _dir: TempDir,
     root: PathBuf,
@@ -95,9 +95,10 @@ fn sized(path: &Path, len: u64) {
         .expect("a file of the size asked for");
 }
 
-/// Makes `link` a link to the folder `target`: a symbolic link, or on Windows
-/// a junction when a symbolic link needs a privilege the test lacks. False
-/// when the system makes neither, and the test that needed it skips that
+/// Makes `link` a link to the folder `target`: a symbolic link, or on Windows a
+/// junction when a symbolic link needs a privilege the test lacks.
+///
+/// False when the system makes neither, and the test that needed it skips that
 /// part.
 fn link_dir(target: &Path, link: &Path) -> bool {
     #[cfg(unix)]
@@ -126,12 +127,13 @@ fn link_dir(target: &Path, link: &Path) -> bool {
     }
 }
 
-/// **A path escaping its root is refused**: `..` leaving it, a path through
-/// a folder then `..` past the root, an absolute path, and a link inside the
-/// root that resolves outside it are each refused as an `Escape`, at the file
-/// layer, at the guard's trust, and reported. A file under the root reads its
-/// bytes, through a link that stays inside too; a missing file is an IO
-/// error, not a refusal.
+/// **A path escaping its root is refused.**
+///
+/// `..` leaving it, a path through a folder then `..` past the root, an
+/// absolute path, and a link inside the root that resolves outside it are each
+/// refused as an `Escape`, at the file layer, at the guard's trust, and
+/// reported. A file under the root reads its bytes, through a link that stays
+/// inside too; a missing file is an IO error, not a refusal.
 #[test]
 fn a_path_escaping_its_root_is_refused() {
     let at = layout();
@@ -187,9 +189,10 @@ fn a_path_escaping_its_root_is_refused() {
     }
 }
 
-/// **A file over its cap is refused before it is read**: its size, read from
-/// the metadata, is over the cap of its kind at the guard's trust — the
-/// strict caps under `Restricted` and `Imported`, the larger under
+/// **A file over its cap is refused before it is read.**
+///
+/// Its size, read from the metadata, is over the cap of its kind at the guard's
+/// trust — the strict caps under `Restricted` and `Imported`, the larger under
 /// `Project`. A file exactly at its cap reads.
 #[test]
 fn a_file_over_its_cap_is_refused_before_it_is_read() {
@@ -239,10 +242,11 @@ fn a_file_over_its_cap_is_refused_before_it_is_read() {
     );
 }
 
-/// **A downloaded file is read as `Imported`**: a texture between the
-/// strict cap and the project's, carrying Windows' download mark
-/// (`Zone.Identifier`), is refused under `Project` trust, at the strict cap;
-/// the same file without the mark reads.
+/// **A downloaded file is read as `Imported`.**
+///
+/// A texture between the strict cap and the project's, carrying Windows'
+/// download mark (`Zone.Identifier`), is refused under `Project` trust, at the
+/// strict cap; the same file without the mark reads.
 #[cfg(windows)]
 #[test]
 fn a_downloaded_file_is_read_as_imported() {
@@ -308,9 +312,11 @@ fn a_file_kind_comes_from_its_extension() {
     }
 }
 
-/// **A file's cap follows its kind and trust**, as decided: the larger caps
-/// for the engine's and a trusted project's files, the strict ones for a
-/// restricted project, an import and a save; `Other` as text.
+/// **A file's cap follows its kind and trust.**
+///
+/// As decided: the larger caps for the engine's and a trusted project's files,
+/// the strict ones for a restricted project, an import and a save; `Other` as
+/// text.
 #[test]
 fn a_file_cap_follows_its_kind_and_trust() {
     let larger = [
@@ -361,7 +367,8 @@ fn text_is_utf8_without_a_nul() {
     );
 }
 
-/// **A refused file is quarantined and reported**:
+/// **A refused file is quarantined and reported.**
+///
 /// - a refusal with a key is quarantined, held by that key only, reported to
 ///   the problems under `Security` (an error located at the file, with what
 ///   to do), and written to the store, where new refusals over the same
@@ -472,9 +479,10 @@ fn a_refused_file_is_quarantined_and_reported() {
     assert!(after_release.is_quarantined(&huge, &stamp));
 }
 
-/// **A quarantined file is read again once it changes**: its content
-/// quarantined by its BLAKE3 hash is refused `Quarantined` and reported;
-/// new bytes read; the old bytes back are refused again.
+/// **A quarantined file is read again once it changes.**
+///
+/// Its content quarantined by its BLAKE3 hash is refused `Quarantined` and
+/// reported; new bytes read; the old bytes back are refused again.
 #[test]
 fn a_quarantined_file_is_read_again_once_it_changes() {
     let at = layout();
@@ -517,10 +525,11 @@ fn a_quarantined_file_is_read_again_once_it_changes() {
     );
 }
 
-/// **A file whose bytes lie about its type is refused**: through a guarded
-/// file loader, a `.png` holding text fails to load, is refused as the
-/// wrong type (`texture`), quarantined and reported through the service's
-/// refusals; a `.png` holding a PNG loads.
+/// **A file whose bytes lie about its type is refused.**
+///
+/// Through a guarded file loader, a `.png` holding text fails to load, is
+/// refused as the wrong type (`texture`), quarantined and reported through the
+/// service's refusals; a `.png` holding a PNG loads.
 #[test]
 fn a_file_whose_bytes_lie_about_its_type_is_refused() {
     use crate::asset::{AssetService, FileLoader, IndexBuilder, TextureDecoder};
@@ -704,9 +713,10 @@ mod sniffs {
     }
 }
 
-/// **Every read goes through the guard**: a glTF buffer or image, a script,
-/// a shader overlay — each refused when it leaves its root, by `..` or
-/// through a link inside it, or is over its cap.
+/// **Every read goes through the guard.**
+///
+/// A glTF buffer or image, a script, a shader overlay — each refused when it
+/// leaves its root, by `..` or through a link inside it, or is over its cap.
 mod every_read_goes_through_the_guard {
     use std::fs;
     use std::sync::Arc;
@@ -812,11 +822,12 @@ mod every_read_goes_through_the_guard {
     }
 }
 
-/// **Two runs sharing one store keep each other's quarantine**: two editors
-/// open at once (or the editor and a sandbox, both a developer's) read the
-/// same `~/.khora/quarantine.ron` at boot, then each quarantines a file of
-/// its own. The store ends holding both: a refusal written by one is not
-/// erased by the other's next write.
+/// **Two runs sharing one store keep each other's quarantine.**
+///
+/// Two editors open at once (or the editor and a sandbox, both a developer's)
+/// read the same `~/.khora/quarantine.ron` at boot, then each quarantines a
+/// file of its own. The store ends holding both: a refusal written by one is
+/// not erased by the other's next write.
 #[test]
 fn two_runs_sharing_a_store_keep_each_others_quarantine() {
     let dir = TempDir::new().expect("a temp dir");
@@ -850,11 +861,12 @@ fn two_runs_sharing_a_store_keep_each_others_quarantine() {
     );
 }
 
-/// **A file refused for its size is no longer reported once it fits**: a
-/// script over its strict cap is refused `TooLarge` and quarantined by its
-/// stamp; made smaller, as the remedy asks, it reads — and its refusal
-/// leaves the problems and the store, rather than being reported at every
-/// boot for a file that now loads.
+/// **A file refused for its size is no longer reported once it fits.**
+///
+/// A script over its strict cap is refused `TooLarge` and quarantined by its
+/// stamp; made smaller, as the remedy asks, it reads — and its refusal leaves
+/// the problems and the store, rather than being reported at every boot for a
+/// file that now loads.
 #[test]
 fn a_file_refused_for_its_size_is_no_longer_reported_once_it_fits() {
     let dir = TempDir::new().expect("a temp dir");
@@ -900,8 +912,9 @@ fn a_file_refused_for_its_size_is_no_longer_reported_once_it_fits() {
     );
 }
 
-/// **A quarantined file is refused through any spelling of its root**: the
-/// quarantine names a file, not the way its root was typed. The same
+/// **A quarantined file is refused through any spelling of its root.**
+///
+/// The quarantine names a file, not the way its root was typed. The same
 /// project opened as `<dir>/assets` in one run and `<dir>/elsewhere/../assets`
 /// in the next reads the same file, whose quarantined content is refused.
 #[test]
@@ -945,11 +958,13 @@ fn wrong_type_at(dir: &Path, name: &str) -> SecurityRefusal {
     }
 }
 
-/// **A release by one run sticks though another run sharing the store held
-/// the file**: two runs boot over one store holding a quarantined file; the
-/// first releases it; the second then quarantines another file. The store
-/// must not hold the released file again — the second run's write may keep
-/// what others quarantined, not bring back what they released.
+/// **A release by one run sticks though another run sharing the store held the
+/// file.**
+///
+/// Two runs boot over one store holding a quarantined file; the first releases
+/// it; the second then quarantines another file. The store must not hold the
+/// released file again — the second run's write may keep what others
+/// quarantined, not bring back what they released.
 #[test]
 fn a_release_sticks_when_another_run_sharing_the_store_writes() {
     let dir = TempDir::new().expect("a temp dir");
@@ -972,11 +987,13 @@ fn a_release_sticks_when_another_run_sharing_the_store_writes() {
     );
 }
 
-/// **A file quarantined by another run after this one released it stays in
-/// the store**: the first run releases a file; the second, sharing the
-/// store, then refuses that file's new content; the first's next write, for
-/// another file, must keep the second's quarantine — a release covers what
-/// was released, not what another run refused since.
+/// **A file quarantined by another run after this one released it stays in the
+/// store.**
+///
+/// The first run releases a file; the second, sharing the store, then refuses
+/// that file's new content; the first's next write, for another file, must keep
+/// the second's quarantine — a release covers what was released, not what
+/// another run refused since.
 #[test]
 fn a_file_quarantined_by_another_run_after_a_release_here_stays_in_the_store() {
     let dir = TempDir::new().expect("a temp dir");
@@ -1000,9 +1017,10 @@ fn a_file_quarantined_by_another_run_after_a_release_here_stays_in_the_store() {
     );
 }
 
-/// **A file read with another content is no longer reported**: its content
-/// quarantined, the file reads once it holds other bytes; it leaves the
-/// problems and `quarantined()`, though its old content is still refused
+/// **A file read with another content is no longer reported.**
+///
+/// Its content quarantined, the file reads once it holds other bytes; it leaves
+/// the problems and `quarantined()`, though its old content is still refused
 /// and reported again when it comes back.
 #[test]
 fn a_file_read_with_another_content_is_no_longer_reported() {
@@ -1041,11 +1059,12 @@ fn a_file_read_with_another_content_is_no_longer_reported() {
     assert_eq!(security(&problems).len(), 1, "{:?}", security(&problems));
 }
 
-/// **Refusals handed over keep a file that reads again unreported**: a
-/// guard made before the run's refusals were known quarantined a file's
-/// content, then read the file with other content — it is no longer
-/// reported. Handed over to the run's refusals, the file must stay
-/// unreported there, while its old content stays refused.
+/// **Refusals handed over keep a file that reads again unreported.**
+///
+/// A guard made before the run's refusals were known quarantined a file's
+/// content, then read the file with other content — it is no longer reported.
+/// Handed over to the run's refusals, the file must stay unreported there,
+/// while its old content stays refused.
 #[test]
 fn refusals_handed_over_keep_a_file_that_reads_again_unreported() {
     let at = layout();
@@ -1087,8 +1106,9 @@ fn refusals_handed_over_keep_a_file_that_reads_again_unreported() {
     );
 }
 
-/// **A store written before entries named their real path reads**: an
-/// entry with only its refusal and key is quarantined by the refusal's path,
+/// **A store written before entries named their real path reads.**
+///
+/// An entry with only its refusal and key is quarantined by the refusal's path,
 /// and survives the next write.
 #[test]
 fn a_store_from_before_real_paths_reads() {
@@ -1119,8 +1139,9 @@ fn a_store_from_before_real_paths_reads() {
     assert!(Refusals::new(None, Some(store)).is_quarantined(&old.path, &key));
 }
 
-/// The reads a run makes report their refusals to the run's [`Refusals`]:
-/// what the project's script compile and the glTF reads of an asset service
+/// The reads a run makes report their refusals to the run's [`Refusals`].
+///
+/// What the project's script compile and the glTF reads of an asset service
 /// refuse reaches the run's problems under `Security`.
 mod refusals_reach_the_run {
     use std::fs;
@@ -1142,11 +1163,12 @@ mod refusals_reach_the_run {
         })
     }
 
-    /// **The project's script compile reports its refusals to the run**: a
-    /// module over its cap, compiled by a `ProjectCompiler` made from a
-    /// runtime holding the run's refusals and problems, is refused by the
-    /// guard — and that refusal is reported under `Security`, as every other
-    /// read of the run is.
+    /// **The project's script compile reports its refusals to the run.**
+    ///
+    /// A module over its cap, compiled by a `ProjectCompiler` made from a
+    /// runtime holding the run's refusals and problems, is refused by the guard
+    /// — and that refusal is reported under `Security`, as every other read of
+    /// the run is.
     #[test]
     fn the_projects_script_compile_reports_its_refusals_to_the_run() {
         use crate::script::project_compiler::ProjectCompiler;
@@ -1171,12 +1193,14 @@ mod refusals_reach_the_run {
         );
     }
 
-    /// **A service given the run's refusals after its decoders reports its
-    /// glTF reads to them**: as a packed game's launcher does — the service
-    /// built and its default decoders registered, then the run's refusals set
-    /// by the bootstrap — a glTF buffer reached through a link leaving the
-    /// assets root is refused, and reported to the run, not to refusals the
-    /// service made for itself before.
+    /// **A service given the run's refusals after its decoders reports its glTF
+    /// reads to them.**
+    ///
+    /// As a packed game's launcher does — the service built and its default
+    /// decoders registered, then the run's refusals set by the bootstrap — a
+    /// glTF buffer reached through a link leaving the assets root is refused,
+    /// and reported to the run, not to refusals the service made for itself
+    /// before.
     #[test]
     fn a_gltf_read_refused_after_the_service_takes_the_runs_refusals_is_reported_to_them() {
         use crate::asset::{AssetService, FileLoader, IndexBuilder};
@@ -1239,9 +1263,10 @@ mod refusals_reach_the_run {
     }
 }
 
-/// **A hand-over back to refusals handed over to is ignored**: after `a`
-/// hands over to `b`, `b` handing over to `a` would forward every call
-/// between them forever; it is refused, and both still answer.
+/// **A hand-over back to refusals handed over to is ignored.**
+///
+/// After `a` hands over to `b`, `b` handing over to `a` would forward every
+/// call between them forever; it is refused, and both still answer.
 #[test]
 fn a_hand_over_back_to_refusals_handed_over_to_is_ignored() {
     let a = in_memory();
@@ -1277,11 +1302,12 @@ mod limits {
     const LARGER: [Trust; 2] = [Trust::Engine, Trust::Project];
     const STRICT: [Trust; 3] = [Trust::Restricted, Trust::Imported, Trust::Save];
 
-    /// **A kind's limits follow its trust**, as decided: a texture's file,
-    /// dimension and decoded size; a glTF's file and decoded vertices; a
-    /// sound's file and decoded size; a font's and a text's file, decoded as
-    /// their bytes. A cap a kind has none of is the largest value.
-    /// `max_bytes` is always the file's size cap.
+    /// **A kind's limits follow its trust.**
+    ///
+    /// As decided: a texture's file, dimension and decoded size; a glTF's file
+    /// and decoded vertices; a sound's file and decoded size; a font's and a
+    /// text's file, decoded as their bytes. A cap a kind has none of is the
+    /// largest value. `max_bytes` is always the file's size cap.
     #[test]
     fn a_kinds_limits_follow_its_trust() {
         for trust in LARGER {
@@ -1354,9 +1380,11 @@ mod limits {
         }
     }
 
-    /// **The strictest limits are a text's strict row**: the kind with the
-    /// smallest caps, read untrusted — what a decoder stating no limits of
-    /// its own decodes within. No kind's strict file cap is smaller.
+    /// **The strictest limits are a text's strict row.**
+    ///
+    /// The kind with the smallest caps, read untrusted — what a decoder stating
+    /// no limits of its own decodes within. No kind's strict file cap is
+    /// smaller.
     #[test]
     fn the_strictest_limits_are_a_texts_strict_row() {
         let strictest = Limits::strictest();
@@ -1376,9 +1404,10 @@ mod limits {
         }
     }
 
-    /// **Each built-in decoder has its kind's limits**, at every trust: a
-    /// texture's, a glTF's for the mesh decoders (an OBJ is read as one), a
-    /// sound's, a font's, a text's for the text formats.
+    /// **Each built-in decoder has its kind's limits.**
+    ///
+    /// At every trust: a texture's, a glTF's for the mesh decoders (an OBJ is
+    /// read as one), a sound's, a font's, a text's for the text formats.
     #[test]
     fn each_built_in_decoder_has_its_kinds_limits() {
         use crate::asset::decoders::audio::{SymphoniaDecoder, WavDecoder};
@@ -1441,9 +1470,10 @@ mod limits {
         }
     }
 
-    /// **A decoder stating no limits has the strictest**, and the decoder
-    /// registry answers a type's limits with its decoder's, or `None` for a
-    /// type no decoder reads.
+    /// **A decoder stating no limits has the strictest.**
+    ///
+    /// And the decoder registry answers a type's limits with its decoder's, or
+    /// `None` for a type no decoder reads.
     #[test]
     fn the_decoder_registry_answers_a_types_limits() {
         use crate::asset::{AssetDecoder, DecoderRegistry, TextureDecoder};

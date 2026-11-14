@@ -72,9 +72,9 @@ fn invalidating_a_container_announces_each_part_it_served() {
     );
 }
 
-/// A reload that fails leaves the parts unserved for a moment; the next
-/// invalidation of the container must still name them, since the engine
-/// still holds the copies it took before.
+/// After a failed reload, the next invalidation of the container still names its parts.
+///
+/// The engine still holds the copies it took before.
 #[test]
 fn a_container_still_announces_its_parts_after_a_failed_reload() {
     let files = shared_files();
@@ -87,7 +87,7 @@ fn a_container_still_announces_its_parts_after_a_failed_reload() {
         "the first invalidation names the container and its part"
     );
 
-    // The re-exported file is broken: the container no longer opens.
+    // The re-exported file is broken: the container does not open.
     files
         .lock()
         .unwrap()
@@ -123,10 +123,10 @@ fn announce_replacing_names_every_asset_the_outgoing_service_served() {
     );
 }
 
-/// A project that served more assets than the stream holds is replaced:
-/// the announcements that do not fit are lost, and what the incoming
-/// service hands the engine must still name every asset the outgoing one
-/// served, since the engine holds a copy of each.
+/// Replacing a service that served more assets than the stream holds still names each.
+///
+/// The announcements that do not fit are lost, yet the engine holds a copy of
+/// every asset the outgoing service served.
 #[test]
 fn a_replacement_overflowing_the_stream_still_names_everything_the_outgoing_service_served() {
     let count = CHANGE_BACKLOG + 1;

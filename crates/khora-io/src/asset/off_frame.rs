@@ -12,16 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Assets decoded off the frame.
-//!
-//! A frame asks the [`AssetService`] for an asset with
-//! [`request`](AssetService::request): a cached one comes back at once; a
-//! missing one is filed, once, as a [`DecodeRequest`] the `loading` family takes
-//! and decodes on the background pool through the service's
-//! [`AssetDecoding`]. Each result is staged under a lease on the asset's
-//! generation, and taken in at a frame's boundary by
-//! [`take_in`](AssetService::take_in) — unless the asset changed meanwhile,
-//! in which case it is abandoned and the asset is asked for afresh.
+//! Assets decoded off the frame: a missing asset is filed once, decoded by the `loading`
+//! family, and taken in at a frame's boundary unless a file it read changed meanwhile.
 
 use std::any::{Any, TypeId};
 use std::sync::{Arc, Mutex};
@@ -55,9 +47,9 @@ impl AssetService {
         }
     }
 
-    /// What [`request`](Self::request) answers, without the last good copy
-    /// served while an asset is decoded again: whether its new value landed.
-    /// What the `asset_reload` system asks.
+    /// Answers as [`request`](Self::request), without the last good copy served meanwhile.
+    ///
+    /// So it says whether a reloaded asset's new value landed, as `asset_reload` asks.
     pub(crate) fn request_decoded<A: Asset>(&mut self, uuid: &AssetUUID) -> Requested<A> {
         let type_id = TypeId::of::<A>();
         let storage = self
@@ -96,10 +88,10 @@ impl AssetService {
         Requested::Pending
     }
 
-    /// Takes in what one decode off the frame gave: the value into this
-    /// service's cache — served from now on — and its handle into `store`;
-    /// or the failure, answered [`Requested::Failed`] until an asset changes.
-    /// What the `loading` family stages, applied at a frame's boundary.
+    /// Takes in one decode the `loading` family staged, at a frame's boundary.
+    ///
+    /// The value goes into this service's cache and its handle into `store`; a
+    /// failure is answered [`Requested::Failed`] until an asset changes.
     pub fn take_in(&mut self, decoded: Decoded, store: &AssetStore) {
         let Decoded {
             uuid,
@@ -129,9 +121,9 @@ impl AssetService {
         install(self, store, uuid, value);
     }
 
-    /// Serves `handle`, the copy the engine holds of `uuid`, to a reference
-    /// resolved while `uuid` is decoded again after a change — not a copy a
-    /// replaced service served, which is no copy of this project's asset.
+    /// Serves `handle`, the engine's copy of `uuid`, while `uuid` is decoded again.
+    ///
+    /// Not a copy a replaced service served: that is no copy of this project's asset.
     pub(crate) fn serve_meanwhile<A: Asset>(&mut self, uuid: &AssetUUID, handle: AssetHandle<A>) {
         if self.inherited_mut().contains(uuid) {
             return;
@@ -140,31 +132,28 @@ impl AssetService {
             .insert((*uuid, TypeId::of::<A>()), Box::new(handle));
     }
 
-    /// Stops serving a last good copy of `uuid` as an `A`: its reload is
-    /// settled — landed, kept, or gone.
+    /// Stops serving a last good copy of `uuid` as an `A`, once its reload has settled.
     pub(crate) fn settle_meanwhile<A: Asset>(&mut self, uuid: &AssetUUID) {
         self.meanwhile.remove(&(*uuid, TypeId::of::<A>()));
     }
 
-    /// Hands this service the decode requests `outgoing` filed on: the
-    /// channel the engine's `loading` family takes from, so a service swapped
-    /// into the engine's place keeps reaching it.
+    /// Takes over the decode request channel of `outgoing`, the service it replaces.
+    ///
+    /// A service swapped into the engine's place so keeps reaching the `loading` family.
     pub fn adopt_decode_requests(&mut self, outgoing: &mut AssetService) {
         std::mem::swap(&mut self.requests, &mut outgoing.requests);
-        // The requests on that channel were stamped on `outgoing`'s counter:
-        // this service counts its changes on it from now on, so a change
-        // here moves past every stamp. And what was in flight read the
-        // other project: none of it is installed, and what this service
-        // asks for is filed afresh.
+        // The channel's stamps come of `outgoing`'s counter, so this service
+        // counts on it; what was in flight read the other project, so none of
+        // it is installed and every request is filed afresh.
         std::mem::swap(&mut self.generations, &mut outgoing.generations);
         self.generations.bump_all();
         outgoing.pending.clear();
         self.pending.clear();
     }
 
-    /// Files this service's decode requests on `requests` from now on — the
-    /// channel of the `loading` family serving it. What it had filed elsewhere
-    /// is asked for again, and any decode of it in flight is not installed.
+    /// Files this service's later decode requests on `requests`, its `loading` family's.
+    ///
+    /// What it had filed elsewhere is asked for again; no decode in flight is installed.
     pub(super) fn use_decode_requests(
         &mut self,
         requests: Channel<DecodeRequest>,
@@ -179,7 +168,7 @@ impl AssetService {
         self.pending.clear();
     }
 
-    /// The container file `uuid` is a part of, when it is a sub-asset.
+    /// Returns the container file of `uuid`, when it is a sub-asset.
     fn container_of(&self, uuid: &AssetUUID) -> Option<AssetUUID> {
         match self.reader.source_of(uuid) {
             Ok((_, AssetSource::Sub { container, .. })) => Some(*container),
@@ -218,7 +207,7 @@ fn install<A: Asset>(
     {
         assets.insert(uuid, handle.clone());
     }
-    // The new value serves from now on, in place of the last good copy.
+    // The new value serves in place of the last good copy.
     service.settle_meanwhile::<A>(&uuid);
     if fresh {
         service.load_count += 1;
@@ -229,9 +218,9 @@ fn install<A: Asset>(
     }
 }
 
-/// The `loading` family's [`AssetDecoding`] over the service a shared handle
-/// holds — whichever service is in it now: it takes that service's reader
-/// and generations under the lock, briefly, and decodes without it.
+/// The `loading` family's [`AssetDecoding`] over the service a shared handle holds.
+///
+/// It takes that service's reader under the lock, briefly, and decodes without it.
 pub(super) struct ServiceDecoding {
     service: Arc<Mutex<AssetService>>,
 }
@@ -299,15 +288,12 @@ impl AssetDecoding for ServiceDecoding {
     }
 }
 
-/// What the `loading` family reaches the engine's asset service through: the
-/// runtime's request channel, and the service it serves. A service is
-/// attached whenever one is found in the runtime — at the boot, and at every
-/// frame boundary after it — so one inserted after the boot (an editor hands
-/// its own over once the engine is up), or replaced, is served from the next
-/// boundary on. Until one is, every decode fails and says why.
+/// The decode request channel and the asset service the `loading` family serves.
 ///
-/// Its lock is a leaf: held only to read or replace the attached service,
-/// never while that service's lock is taken.
+/// The runtime's service is attached at the boot and at every frame boundary, so
+/// one inserted or replaced later is served from the next boundary. Until one
+/// is, every decode fails and says why. Its lock is a leaf: held only to read
+/// or replace the attached service, never while that service's lock is taken.
 pub struct DecodeHub {
     requests: Channel<DecodeRequest>,
     /// The change counter every service attached here counts on, so every
@@ -325,7 +311,7 @@ impl DecodeHub {
         }
     }
 
-    /// The service attached now, if any.
+    /// Returns the attached service, if any.
     fn service(&self) -> Option<Arc<Mutex<AssetService>>> {
         self.attached
             .lock()
@@ -333,9 +319,9 @@ impl DecodeHub {
             .clone()
     }
 
-    /// Attaches the asset service `runtime` holds, when it is not the one
-    /// attached already: it files its decode requests on this hub's channel
-    /// from now on, and asks again for what it had filed elsewhere.
+    /// Attaches the asset service `runtime` holds, unless it is attached already.
+    ///
+    /// It then files its decode requests on this hub's channel.
     fn attach(&self, runtime: &Runtime) {
         let Some(service) = runtime.services.get::<Arc<Mutex<AssetService>>>().cloned() else {
             return;
@@ -373,7 +359,7 @@ impl AssetDecoding for DecodeHub {
     }
 }
 
-/// What a decode gives when the engine holds no asset service.
+/// Returns the failed decode of `uuid` when the engine holds no asset service.
 fn no_service(uuid: &AssetUUID, type_id: TypeId) -> Decoded {
     Decoded {
         uuid: *uuid,
@@ -383,9 +369,10 @@ fn no_service(uuid: &AssetUUID, type_id: TypeId) -> Decoded {
     }
 }
 
-/// Installs in `runtime` what the `loading` family reads — the request channel
-/// and the [`AssetDecoding`], both through one [`DecodeHub`] — and attaches
-/// the asset service the runtime holds, if any. Replaces nothing installed.
+/// Installs one [`DecodeHub`] in `runtime`, unless one is there, attaching its asset service.
+///
+/// It is installed as the request channel and the [`AssetDecoding`] the `loading`
+/// family reads.
 pub fn install_decoding(runtime: &mut Runtime) {
     if runtime.resources.get::<Arc<DecodeHub>>().is_some() {
         return;
@@ -398,9 +385,9 @@ pub fn install_decoding(runtime: &mut Runtime) {
     runtime.resources.insert(hub);
 }
 
-/// Attaches the asset service `runtime` holds now to its decode hub, when it
-/// is another than the one attached: what a frame boundary does before it
-/// takes decodes in. Nothing without a hub.
+/// Attaches the asset service `runtime` holds to its decode hub, if it is a new one.
+///
+/// A frame boundary calls it before it takes decodes in. Does nothing without a hub.
 pub fn attach_decoding(runtime: &Runtime) {
     if let Some(hub) = runtime.resources.get::<Arc<DecodeHub>>() {
         hub.attach(runtime);

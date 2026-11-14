@@ -39,7 +39,7 @@ pub struct Limits {
 }
 
 impl Limits {
-    /// The limits of a file of `kind` read at `trust`.
+    /// Returns the limits of a file of `kind` read at `trust`.
     pub fn of(kind: FileKind, trust: Trust) -> Limits {
         let strict = trust.is_strict();
         let pick = |larger: u64, strict_value: u64| if strict { strict_value } else { larger };
@@ -74,8 +74,7 @@ impl Limits {
         }
     }
 
-    /// The strictest limits: the strict row of the kind with the smallest
-    /// caps — what a decoder that states none decodes within.
+    /// Returns the strictest limits: those a decoder that states none decodes within.
     pub fn strictest() -> Limits {
         Limits::of(FileKind::Text, Trust::Restricted)
     }

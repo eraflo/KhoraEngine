@@ -12,14 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Script mounts compiled off the frame, landed at a frame's boundary.
+//! Script mounts compiled off the frame, filed by ticket and landed at a
+//! frame's boundary.
 //!
-//! A host mounting a project's scripts files their compile with
-//! [`CompileHub::file`] and keeps its [`CompileTicket`]. The `loading`
-//! family compiles it off the frame and stages a [`CompileDone`] carrying the
-//! ticket beside what it compiled; the `script_compile_intake` DataSystem
-//! files the outcome under the ticket once the declarations are registered
-//! and the programs queued, for [`CompileHub::take_outcome`].
+//! See the book: concepts/the-frame.md, "Startup, once".
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -57,8 +53,7 @@ pub struct CompileHub {
 }
 
 impl CompileHub {
-    /// A hub filing its requests on `requests` — the channel the `loading`
-    /// family takes them from.
+    /// Creates a hub filing its requests on `requests`, the channel the `loading` family takes.
     pub fn new(requests: Channel<CompileRequest>) -> Self {
         Self {
             requests,
@@ -67,10 +62,11 @@ impl CompileHub {
         }
     }
 
-    /// Files `modules` of the assets root `root` to be compiled off the
-    /// frame, and landed at a later frame's boundary. Returns what its
-    /// outcome will be filed under. A request the channel cannot take lands
-    /// an error at once; none waiting is dropped for it.
+    /// Files `modules` of the assets root `root` to be compiled off the frame,
+    /// and returns the ticket its outcome lands under.
+    ///
+    /// A request the channel cannot take lands an error at once; none waiting
+    /// is dropped for it.
     pub fn file(
         &self,
         root: impl Into<PathBuf>,
@@ -113,8 +109,9 @@ impl CompileHub {
         self.tickets().pending.contains_key(&ticket)
     }
 
-    /// Lands `Err("unmounted")` for every ticket of `root` still in flight:
-    /// what an unmount does before it drops the root's requests.
+    /// Lands `Err("unmounted")` for every ticket of `root` still in flight.
+    ///
+    /// Call before dropping the root's requests on an unmount.
     pub fn withdraw(&self, root: &Path) {
         let mut tickets = self.tickets();
         let withdrawn: Vec<CompileTicket> = tickets
@@ -129,8 +126,9 @@ impl CompileHub {
         }
     }
 
-    /// Files `outcome` under `ticket`: the compile landed. A ticket no longer
-    /// in flight — withdrawn meanwhile — keeps the outcome it landed with.
+    /// Files `outcome` under `ticket`, whose compile landed.
+    ///
+    /// A ticket withdrawn meanwhile keeps the outcome it landed with.
     pub(crate) fn land(&self, ticket: CompileTicket, outcome: CompileTicketOutcome) {
         let mut tickets = self.tickets();
         if tickets.pending.remove(&ticket).is_some() {
@@ -139,10 +137,11 @@ impl CompileHub {
     }
 }
 
-/// Compiles at once every request waiting on `runtime`'s channel, through
-/// the runtime's `ScriptCompiler`, stages what each hands on from the host,
-/// and lands their tickets: what the boot does for a mount filed before it,
-/// so a game's `setup` finds what its scripts declare.
+/// Compiles at once every request waiting on `runtime`'s channel, stages the
+/// results and lands their tickets.
+///
+/// The boot calls it for mounts filed before it, so a game's `setup` finds
+/// what its scripts declare.
 pub fn compile_filed_now(runtime: &Runtime) {
     let (Some(requests), Some(compiler), Some(reserve)) = (
         runtime.resources.get::<Channel<CompileRequest>>(),

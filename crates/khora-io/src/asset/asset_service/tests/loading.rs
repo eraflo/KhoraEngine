@@ -160,8 +160,7 @@ fn load_raw_verifies_against_manifest_and_rejects_corruption() {
     let raw = svc.load_raw(&uuid).unwrap();
     assert_eq!(raw, payload);
 
-    // Now corrupt the bytes the mock returns. Same uuid, same manifest,
-    // different bytes => verification must fail.
+    // Same uuid and manifest, other bytes: verification fails.
     let mut bad_files = HashMap::new();
     bad_files.insert(
         std::path::PathBuf::from("scenes/a.kscene"),

@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Asset management service — on-demand loading, not an Agent.
+//! The asset service: assets loaded on demand through the VFS, the IO and the decoders.
 //!
-//! This service provides a `load()` API backed by a VFS + IO layer + decoder registry.
-//! No GORNA negotiation, no per-frame budget — assets are loaded on-demand.
+//! See the book: concepts/assets.md, "The pipeline".
 
 use std::any::{Any, TypeId};
 use std::collections::{HashMap, HashSet};
@@ -46,80 +45,75 @@ mod any_assets;
 mod invalidation;
 mod sub_assets;
 
-/// How many decode requests wait for the `loading` family before a new one is
-/// refused — and asked for again on a later frame.
+/// How many decode requests wait for the `loading` family; past it, a request
+/// is refused and asked for again on a later frame.
 pub(super) const REQUEST_BACKLOG: usize = 4096;
 
-/// The asset management service.
+/// The asset service: a cache of decoded assets by UUID, loaded on demand.
 ///
-/// Provides on-demand asset loading through a VFS → IO → Decode → Store pipeline.
-/// Registered in `ServiceRegistry` and accessed by game code via `AppContext`.
+/// A service, not an agent: loading has no strategy to negotiate.
 pub struct AssetService {
-    /// What decoding reads — the index, the IO, the decoders, the
-    /// containers, the manifest — shared with whoever decodes off this
-    /// service's lock. Replaced, never changed in place, while a reader is
-    /// out: a reader keeps the index it was taken with.
+    /// What decoding reads, shared with whoever decodes off this service's lock.
+    ///
+    /// Replaced, never changed in place, while a reader is out.
     pub(super) reader: Arc<AssetReader>,
     pub(super) storages: HashMap<TypeId, Box<dyn AnyAssets>>,
     pub(super) load_count: usize,
-    /// Each opened container, by the container file's uuid: opened once,
-    /// shared by every sub-asset extracted from it.
+    /// Each opened container by its file's uuid, shared by its extracted sub-assets.
     opened: HashMap<AssetUUID, Arc<dyn Any + Send + Sync>>,
-    /// Every sub-asset ever served from each container, by the container
-    /// file's uuid. Never emptied: invalidating the container drops and
-    /// announces each of them, even once a new index no longer lists them
-    /// and even after a reload of the container failed.
+    /// Every sub-asset ever served from each container, by the container file's uuid.
+    ///
+    /// Never emptied: invalidating the container announces each, even one a new
+    /// index dropped or whose container failed to reload.
     pub(super) served_subs: HashMap<AssetUUID, HashSet<AssetUUID>>,
-    /// Every asset [`load`](Self::load) ever decoded: what the engine may
-    /// hold a copy of.
+    /// Every asset [`load`](Self::load) ever decoded: the engine may hold a copy.
     pub(super) served: HashSet<AssetUUID>,
     /// The assets whose bytes changed, for the engine to replace its copies.
     changes: Channel<AssetChanged>,
     /// Set when `changes` dropped an announcement it had no room for.
     changes_lost: AtomicBool,
-    /// What the services this one replaced served and it has not served
-    /// since: the engine may still hold their copies, which are no last good
-    /// copy of this service's assets.
+    /// What the services this one replaced served and it has not served since.
+    ///
+    /// The engine may still hold those copies, no last good copy of this service's assets.
     inherited: Mutex<HashSet<AssetUUID>>,
-    /// The files, by asset key, each opened container reads besides its
-    /// own: a change to one of them is a change to the container. Kept
-    /// across invalidations, like `served_subs`.
+    /// The files, by asset key, each opened container reads besides its own.
+    ///
+    /// A change to one is a change to the container. Kept across invalidations.
     pub(super) external_files: HashMap<AssetUUID, Vec<String>>,
-    /// The assets whose last [`load`](Self::load) failed. Forgotten as soon
-    /// as any asset changes or the index is replaced: whatever made a load
-    /// fail (a broken file, a missing part) can only be fixed by such a
-    /// change, so it is the moment to try again.
+    /// The assets whose last [`load`](Self::load) failed.
+    ///
+    /// Forgotten when any asset changes or the index is replaced: only such a
+    /// change can fix what made a load fail.
     pub(super) failed: HashSet<AssetUUID>,
-    /// Where [`request`](Self::request) files a decode for the `loading` family
-    /// to take off the frame.
+    /// Where [`request`](Self::request) files a decode for the `loading` family.
     pub(super) requests: Channel<DecodeRequest>,
-    /// The assets, by uuid and type, a decode is filed for and not taken in:
-    /// asked for again meanwhile, they file nothing more.
+    /// The assets, by uuid and type, with a decode filed and not taken in.
     pub(super) pending: HashSet<(AssetUUID, TypeId)>,
     /// How each type a request named goes into the caches once decoded.
     pub(super) installers: HashMap<TypeId, super::off_frame::Installer>,
     /// Each asset's generation, which a decode in flight holds to.
     pub(super) generations: Arc<Generations>,
-    /// The changed assets whose new value is still being decoded, for the
-    /// `asset_reload` system to refresh their copies once it lands.
+    /// The changed assets whose new value is being decoded, for `asset_reload`.
     reloading: HashSet<AssetUUID>,
-    /// The last good copy of each asset being decoded again, by asset and
-    /// type: what a reference resolved meanwhile is served, as the copies
-    /// the engine holds are. Never in the cache, so the new value replaces
-    /// it when it lands.
+    /// The last good copy of each asset being decoded again, by asset and type.
+    ///
+    /// Served to a reference resolved meanwhile; never cached, so the new value
+    /// replaces it when it lands.
     pub(super) meanwhile: HashMap<(AssetUUID, TypeId), Box<dyn Any + Send + Sync>>,
-    /// The project whose loose `assets/` folder it serves, when it serves
-    /// one: what a project index filed off the frame must be for to be
-    /// taken in. `None` for a pack.
+    /// The project whose loose `assets/` it serves; `None` for a pack.
+    ///
+    /// A project index filed off the frame is taken in only for this project.
     project_root: Option<PathBuf>,
 }
 
 impl AssetService {
-    /// Creates a new `AssetService`.
+    /// Creates a service over the index `index_bytes`, reading through `io`.
     ///
-    /// When `manifest` is `Some`, both `load` and `load_raw` re-hash the
-    /// bytes returned by the underlying `AssetIo` against the recorded
-    /// BLAKE3 digest and refuse to proceed on mismatch.
+    /// With a `manifest`, every read is checked against its BLAKE3 digest and
+    /// refused on a mismatch.
+    ///
+    /// # Errors
+    /// When `index_bytes` is no index.
     pub fn new(
         index_bytes: &[u8],
         io: Box<dyn AssetIo>,
@@ -131,7 +125,7 @@ impl AssetService {
         Ok(Self::over_index(index, io, metrics_registry, manifest))
     }
 
-    /// The service reading `index`'s assets through `io`.
+    /// Returns the service reading `index`'s assets through `io`.
     fn over_index(
         index: AssetIndex,
         io: Box<dyn AssetIo>,
@@ -139,9 +133,6 @@ impl AssetService {
         manifest: Option<PackManifest>,
     ) -> Self {
         Self {
-            // When `Some`, every byte slice read is re-hashed against the
-            // manifest before reaching the decoder: a packed runtime's, once
-            // the pack's signed `manifest.bin` verified.
             reader: Arc::new(AssetReader {
                 index: Arc::new(index),
                 io: Arc::from(io),
@@ -171,8 +162,7 @@ impl AssetService {
         }
     }
 
-    /// A service with no asset and no project served: what a host holds
-    /// until the project it opens lands, or when it has none.
+    /// Returns a service of no asset, for a host until its project lands or without one.
     pub fn empty() -> Self {
         Self::over_index(
             AssetIndex::empty(),
@@ -182,8 +172,7 @@ impl AssetService {
         )
     }
 
-    /// The project whose loose `assets/` folder this service serves; `None`
-    /// for a pack.
+    /// Returns the project whose loose `assets/` this service serves; `None` for a pack.
     pub fn project_root(&self) -> Option<&Path> {
         self.project_root.as_deref()
     }
@@ -194,34 +183,28 @@ impl AssetService {
         self.project_root = Some(project_root.to_path_buf());
     }
 
-    /// Returns a reference to the underlying VFS for metadata enumeration
-    /// (asset browser) and direct UUID lookup.
+    /// Returns the asset index, to enumerate or look up metadata by UUID.
     pub fn index(&self) -> &AssetIndex {
         &self.reader.index
     }
 
-    /// The reader decoding this service's assets now: its index, decoders,
-    /// containers, manifest and IO, shared. It decodes on any thread without
-    /// this service's lock, and fills none of its caches.
+    /// Returns the reader decoding this service's assets, on any thread, without its lock.
     ///
-    /// A reader taken before a [`reindex`](Self::reindex) keeps the index
-    /// it was taken with; take it again for the new one.
+    /// It fills none of the caches. A reader taken before a
+    /// [`reindex`](Self::reindex) keeps the index it was taken with.
     pub fn reader(&self) -> Arc<AssetReader> {
         Arc::clone(&self.reader)
     }
 
-    /// The reader to change: this service's own, or a copy when a reader
-    /// handed out still holds it, which keeps what it was taken with.
+    /// Returns the reader to change: its own, or a copy when one handed out still holds it.
     fn reader_mut(&mut self) -> &mut AssetReader {
         Arc::make_mut(&mut self.reader)
     }
 
-    /// Where this service reports the files it refuses to decode: bytes that
-    /// are not what their type says.
+    /// Sets the refusals this service reports the files it refuses to decode to.
     ///
-    /// The refusals the service reported to before hand what they hold, and
-    /// what is reported to them after, over to `refusals`: a reader made
-    /// before — a glTF's resolver — reports to the run's.
+    /// The refusals it reported to before hand their content, and what is reported
+    /// to them later, over to `refusals`: a glTF resolver made before reports here.
     pub fn set_refusals(&mut self, refusals: Arc<crate::trust::Refusals>) {
         if let Some(former) = self.reader_mut().refusals.replace(Arc::clone(&refusals)) {
             if !Arc::ptr_eq(&former, &refusals) {
@@ -230,8 +213,7 @@ impl AssetService {
         }
     }
 
-    /// The refusals this service reports to: the ones set, or refusals kept
-    /// in memory when none were.
+    /// Returns the refusals this service reports to; in memory only when none were set.
     pub fn refusals(&mut self) -> Arc<crate::trust::Refusals> {
         let refusals = &mut self.reader_mut().refusals;
         Arc::clone(
@@ -239,11 +221,10 @@ impl AssetService {
         )
     }
 
-    /// How much this service trusts the files it decodes: the limits each
-    /// decode has. `Project` until set.
+    /// Sets the trust the files are decoded at, which gives each decode its limits.
     ///
-    /// Set it before [`Self::register_default_decoders`]: the readers those
-    /// decoders hold (a glTF's buffers and images) take it then.
+    /// `Project` until set. Set it before [`Self::register_default_decoders`]:
+    /// the readers those decoders hold take it then.
     pub fn set_trust(&mut self, trust: crate::trust::Trust) {
         self.reader_mut().trust = trust;
     }
@@ -257,12 +238,13 @@ impl AssetService {
         self.reader_mut().decoders.register::<A>(type_name, decoder);
     }
 
-    /// Loads, decodes, and returns a typed handle to an asset.
+    /// Loads and decodes the asset `uuid` on the calling thread; returns its cached handle.
+    ///
+    /// # Errors
+    /// When the asset is not indexed, cannot be read, or does not decode as `A`.
     pub fn load<A: Asset>(&mut self, uuid: &AssetUUID) -> Result<AssetHandle<A>> {
         let type_id = TypeId::of::<A>();
 
-        // Get or create the typed storage. Inserts a fresh `Assets<A>` the
-        // first time we see this `A`.
         let storage = self
             .storages
             .entry(type_id)
@@ -273,12 +255,10 @@ impl AssetService {
             .downcast_mut::<Assets<A>>()
             .ok_or_else(|| anyhow!("Mismatched asset storage type"))?;
 
-        // Return cached handle if already loaded.
         if let Some(handle) = assets.get(uuid) {
             return Ok(handle.clone());
         }
 
-        // VFS lookup → IO → Decode → Store
         let (asset, container) = match self.decode_uncached::<A>(uuid) {
             Ok(decoded) => decoded,
             Err(e) => {
@@ -303,32 +283,29 @@ impl AssetService {
         Ok(handle)
     }
 
-    /// The handle of `uuid` when it is cached; otherwise files one
-    /// [`DecodeRequest`](khora_core::asset::DecodeRequest) for its current
-    /// generation on [`decode_requests`](Self::decode_requests) — once while
-    /// it is pending — and answers [`Requested::Pending`](super::Requested),
-    /// or [`Requested::Failed`](super::Requested) once its last decode failed
-    /// and nothing changed since.
+    /// Returns the asset `uuid` if cached, else files its decode off the frame.
+    ///
+    /// One [`DecodeRequest`](khora_core::asset::DecodeRequest) is filed while it is
+    /// pending. [`Requested`](super::Requested) says `Failed` once its last decode
+    /// failed and nothing changed since.
     pub fn request<A: Asset>(&mut self, uuid: &AssetUUID) -> super::requested::Requested<A> {
         self.request_off_frame(uuid)
     }
 
-    /// The channel this service files its decode requests on, shared: the
-    /// `loading` family takes them from the runtime's copy.
+    /// Returns the channel this service files its decode requests on.
     pub fn decode_requests(&self) -> Channel<khora_core::asset::DecodeRequest> {
         self.requests.clone()
     }
 
-    /// The `loading` family's [`AssetDecoding`](khora_core::asset::AssetDecoding)
-    /// over the service `shared` holds: it decodes with that service's
-    /// current reader without holding its lock across the decode, and leases
-    /// each result on the asset's generation.
+    /// Returns the `loading` family's decoding over the service `shared` holds.
+    ///
+    /// An [`AssetDecoding`](khora_core::asset::AssetDecoding) that decodes without
+    /// holding the service's lock and leases each result on the files it read.
     pub fn decoding(shared: &Arc<Mutex<Self>>) -> Arc<dyn khora_core::asset::AssetDecoding> {
         Arc::new(super::off_frame::ServiceDecoding::new(shared))
     }
 
-    /// Decodes the asset `uuid` names: from its own bytes, or, for a
-    /// sub-asset, extracted from its opened container, which it returns too.
+    /// Decodes the asset `uuid`, a sub-asset from its container, which it returns too.
     fn decode_uncached<A: Asset>(&mut self, uuid: &AssetUUID) -> Result<(A, Option<AssetUUID>)> {
         let reader = Arc::clone(&self.reader);
         let (metadata, source) = reader.source_of(uuid)?;
@@ -341,9 +318,8 @@ impl AssetService {
 
         let bytes = reader.read(uuid, source)?;
         let (asset, files) = reader.decode_file(metadata, &bytes, TypeId::of::<A>())?;
-        // A container file decoded whole (a glTF as one mesh) reads the same
-        // files beside it as its parts do: a change to one of them is a
-        // change to it.
+        // A container decoded whole (a glTF as one mesh) reads the files beside
+        // it as its parts do: a change to one is a change to it.
         if let Some(files) = files {
             self.external_files.insert(*uuid, files);
         }
@@ -356,25 +332,27 @@ impl AssetService {
         Ok((*asset, None))
     }
 
-    /// Loads an asset's raw bytes via the VFS → IO path, skipping the
-    /// decoder. Used by scene loading where the bytes are then decoded by a
-    /// `SerializationService` strategy rather than an `AssetDecoder<A>`.
+    /// Returns an asset's raw bytes, undecoded, for a scene load to decode itself.
+    ///
+    /// # Errors
+    /// As [`AssetReader::read_raw`](super::AssetReader::read_raw).
     pub fn load_raw(&mut self, uuid: &AssetUUID) -> Result<Vec<u8>> {
         self.reader.read_raw(uuid)
     }
 
-    /// The inherited set, poisoning ignored: it holds plain uuids.
+    /// Returns the inherited set, poisoning ignored: it holds plain uuids.
     pub(super) fn inherited_mut(&self) -> std::sync::MutexGuard<'_, HashSet<AssetUUID>> {
         self.inherited
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// Atomically replaces the inner `AssetIndex` with a freshly
-    /// decoded one. Cached handles are kept; callers should `invalidate`
-    /// any UUID whose underlying bytes changed (the editor's hot-reload
-    /// pump only invokes `reindex` when files were *added or removed* —
-    /// pure in-place modifications go through `invalidate`).
+    /// Replaces the index with the one `index_bytes` encode, keeping cached handles.
+    ///
+    /// An asset whose bytes changed is to be invalidated too.
+    ///
+    /// # Errors
+    /// When `index_bytes` is no index; the service is left as it was.
     pub fn reindex(&mut self, index_bytes: &[u8]) -> Result<()> {
         let new_index =
             AssetIndex::new(index_bytes).context("Failed to decode replacement VFS index bytes")?;
@@ -386,10 +364,9 @@ impl AssetService {
         Ok(())
     }
 
-    /// Whether the last [`load`](Self::load) of `uuid` failed and nothing
-    /// changed since (no asset invalidated, no new index): loading it again
-    /// would fail the same way. Callers that resolve references every tick
-    /// skip such an asset instead of reading it again.
+    /// Whether the last [`load`](Self::load) of `uuid` failed and nothing changed since.
+    ///
+    /// Loading it again would fail the same way, so a caller resolving every tick skips it.
     pub fn has_failed(&self, uuid: &AssetUUID) -> bool {
         self.failed.contains(uuid)
     }

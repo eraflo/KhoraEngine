@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Data systems khora-io registers into the engine tick: resolving asset
-//! handles, and reloading changed shaders.
+//! The data systems khora-io registers into the engine tick: what the
+//! `loading` family hands back, asset resolution and reload, shader reload.
 
 pub mod asset_index_intake;
 pub mod asset_intake;

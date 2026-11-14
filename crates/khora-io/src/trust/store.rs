@@ -35,7 +35,7 @@ pub enum ProjectTrust {
 }
 
 impl ProjectTrust {
-    /// The trust a file of a project so decided is read at.
+    /// Returns the trust a file of a project so decided is read at.
     pub fn trust(self) -> Trust {
         match self {
             ProjectTrust::Trusted => Trust::Project,
@@ -44,8 +44,8 @@ impl ProjectTrust {
     }
 }
 
-/// The decision taken for each project, by its canonical path, kept in a
-/// store the hub and the editor share.
+/// The decision taken for each project, by its canonical path, in a store
+/// the hub and the editor share.
 ///
 /// Each decision is written at once, over the store as it is then: a hub
 /// and an editor sharing it keep each other's decisions.
@@ -59,9 +59,9 @@ pub struct TrustStore {
 struct Held {
     /// The decisions as the store file last read them.
     read: HashMap<PathBuf, ProjectTrust>,
-    /// The decisions this store could not write: kept for the run, over
-    /// what the file says, so a user is never asked again for a project
-    /// they answered.
+    /// The decisions this store could not write, kept for the run over what the file says.
+    ///
+    /// A user is never asked again for a project they answered.
     unwritten: HashMap<PathBuf, ProjectTrust>,
     /// The store file's length and modified time when it was last read:
     /// while they hold, the file is not read again.
@@ -97,8 +97,7 @@ fn real_path(path: &Path) -> PathBuf {
 }
 
 impl TrustStore {
-    /// The decisions kept in `store`, read when it exists; kept in memory
-    /// only without one.
+    /// Creates a store over the file `store`, read when it exists; in memory only without one.
     pub fn new(store: Option<PathBuf>) -> Self {
         let stamp = store.as_deref().and_then(stamp_of);
         let read = store.as_deref().map(read_store).unwrap_or_default();
@@ -112,11 +111,10 @@ impl TrustStore {
         }
     }
 
-    /// What was decided of the project at `project_root`, by its canonical
-    /// path; `None` when nothing was. The store is read again first when its
-    /// file changed — another program sharing it may have decided since —
-    /// and only then: a screen asking for every project it lists, every
-    /// frame, costs a look at the file's length and time.
+    /// Returns what was decided of the project at `project_root`; `None` when nothing was.
+    ///
+    /// The file is read again only when its length or time changed, since
+    /// another program sharing it may have decided: asking every frame is cheap.
     pub fn decision(&self, project_root: &Path) -> Option<ProjectTrust> {
         let mut held = self.lock();
         if let Some(store) = &self.store {
@@ -134,6 +132,8 @@ impl TrustStore {
 
     /// Decides `decision` for the project at `project_root`, written to the
     /// store over what it holds now.
+    ///
+    /// A decision the store cannot write is logged and holds for this run.
     pub fn decide(&self, project_root: &Path, decision: ProjectTrust) {
         let mut held = self.lock();
         let at = real_path(project_root);

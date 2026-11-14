@@ -12,57 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Authored-reference → resolved-handle pump.
+//! The asset resolver: each entity's authored references ([`MaterialRef`],
+//! [`MeshRef`], a UI font or image) turned into the handles the GPU projection reads.
 //!
-//! A `PreExtract` data system that turns each entity's authored asset
-//! references into the runtime handles the GPU projection consumes. It covers
-//! three reference kinds with one collect-then-mutate pass each:
-//!
-//! **Materials** — [`MaterialRef`] → [`MaterialHandle`]
-//! (`HandleComponent<Box<dyn Material>>`):
-//!
-//! - [`MaterialRef::Inline`] embeds the material value — it is wrapped into a
-//!   handle keyed by a content-derived UUID, so two entities holding the same
-//!   inline material share one resolved handle (and one `GpuMaterial`).
-//! - [`MaterialRef::Asset`] references a `.kmat` in the VFS — it is loaded via
-//!   the [`AssetService`] and the resulting handle is keyed by the asset's
-//!   stable UUID.
-//!
-//! **Meshes** — [`MeshRef`] → `HandleComponent<Mesh>`:
-//!
-//! - [`MeshRef::Procedural`] carries primitive params — the geometry is rebuilt
-//!   via [`reconstruct_procedural_mesh`] and keyed by a content-derived UUID, so
-//!   identical procedural meshes dedup to one resolved handle (and one
-//!   `GpuMesh`).
-//! - [`MeshRef::Asset`] references an imported mesh (glTF, OBJ) in the VFS — it
-//!   is loaded via the [`AssetService`] and keyed by the asset's stable UUID.
-//!
-//! **UI** — `UiText::font` → `HandleComponent<Font>`, and `UiImage::texture`
-//! → the `AssetStore`'s `CpuTexture` sub-store (see the `ui_asset_resolver`
-//! module).
-//!
-//! Each resolved CPU value is also inserted into the matching shared
-//! [`AssetStore`] sub-store (`store::<Box<dyn Material>>()` /
-//! `store::<Mesh>()`) so the GPU projection and future sharing see it. This
-//! system runs before both `gpu_material_sync` and `gpu_mesh_sync`, so a
-//! freshly-spawned entity resolves and projects in the same tick.
-//!
-//! The resolver is the sole authority that keeps resolved handles consistent
-//! with their authored references. Each authored ref carries an *identity
-//! UUID* (content-derived for `Inline`/`Procedural`, the stable asset UUID for
-//! `Asset`); every tick the resolver compares it against the resolved handle's
-//! UUID. In steady state this is a single cheap compare — nothing is loaded,
-//! cloned, or hashed. When the comparison fails (the developer/editor changed
-//! the ref, or no handle exists yet) the resolver (re)resolves, replaces the
-//! stale CPU handle, and drops the stale `HandleComponent<GpuMaterial>` /
-//! `HandleComponent<GpuMesh>` so the GPU projection re-projects under the new
-//! identity. This single read-phase compare covers editor inspector edits,
-//! `.kmat` assignment, save-as, and runtime gameplay mutation alike — there is
-//! no per-mutation-site invalidation.
-//!
-//! `khora-data` never depends on `khora-io`; this resolver lives here because
-//! it calls the `khora-io`-owned `AssetService` while mutating the
-//! `khora-data` `World` + `AssetStore`.
+//! The sole authority keeping a resolved handle in line with its reference:
+//! each reference carries an identity uuid (content-derived when inline, the
+//! asset's otherwise), compared every tick with the handle's. A mismatch, from
+//! any edit, resolves again and drops the stale GPU projection.
 
 use khora_data::ecs::SystemContext;
 use std::sync::{Arc, Mutex};
@@ -84,11 +40,10 @@ use khora_data::AssetStore;
 use super::ui_asset_resolver;
 use crate::asset::{AssetService, Requested};
 
-/// One pending material resolution: the entity to tag, the resolved handle to
-/// store under `uuid`, and whether the entity already carried a (now stale)
-/// resolved handle. The stale flag decides whether phase 2 overwrites the CPU
-/// handle in place and drops the stale GPU projection (a changed ref) or simply
-/// adds the handle (a first resolve).
+/// One pending material resolution: the entity to tag and the handle to store under `uuid`.
+///
+/// `had_stale_handle` when the reference changed: the handle is then
+/// overwritten in place and the stale GPU projection dropped.
 struct ResolvedMaterial {
     entity: EntityId,
     uuid: AssetUUID,
@@ -96,9 +51,7 @@ struct ResolvedMaterial {
     had_stale_handle: bool,
 }
 
-/// One pending mesh resolution: the entity to tag, the resolved handle to store
-/// under `uuid`, and whether the entity already carried a (now stale) resolved
-/// handle (see [`ResolvedMaterial`]).
+/// One pending mesh resolution, as [`ResolvedMaterial`].
 struct ResolvedMesh {
     entity: EntityId,
     uuid: AssetUUID,
@@ -122,11 +75,8 @@ fn resolve_materials(world: &mut World, runtime: &Runtime) {
     let asset_store = runtime.resources.get::<AssetStore>();
     let asset_service = runtime.services.get::<Arc<Mutex<AssetService>>>().cloned();
 
-    // Reconcile against the resolved handle while the query borrows
-    // the world read-only. Steady state is a cheap UUID compare: the authored
-    // ref's identity UUID already equals the resolved handle's UUID, so nothing
-    // is cloned, loaded, or hashed. Real work happens only when the authored
-    // ref changed (or has no handle yet).
+    // Collected while the query borrows the world read-only. Steady state is
+    // one uuid compare: nothing is cloned, loaded or hashed.
     let mut pending: Vec<ResolvedMaterial> = Vec::new();
     {
         let query = world.query::<(
@@ -193,12 +143,8 @@ fn resolve_materials(world: &mut World, runtime: &Runtime) {
         return;
     }
 
-    // Then publish resolved data to the shared store and tag entities. A
-    // first resolve adds the handle; a changed ref overwrites the stale handle
-    // in place (`set_component`) and drops the stale `HandleComponent<GpuMaterial>`
-    // so the projection re-projects under the new identity. The removal only
-    // runs when a stale handle existed, so a still-valid steady-state projection
-    // is never disturbed (and steady state never reaches phase 2 at all).
+    // The GPU projection is dropped only when a stale handle existed, so a
+    // still-valid projection is never disturbed.
     let store = asset_store.map(|s| s.store::<Box<dyn Material>>());
     let textures = asset_store.map(|s| s.store::<CpuTexture>());
     for ResolvedMaterial {
@@ -233,11 +179,10 @@ fn resolve_materials(world: &mut World, runtime: &Runtime) {
     }
 }
 
-/// Asks for every texture `material` names that `textures` does not hold
-/// yet: one cached is stored now, one being decoded off the frame is stored
-/// when it lands (`asset_intake`). The material's projection waits for all of
-/// them. A texture that failed waits for its file to change (see
-/// `asset_reload`).
+/// Asks for every texture `material` names that `textures` does not hold yet.
+///
+/// One cached is stored now, one being decoded is stored when it lands. A
+/// texture that failed waits for its file to change.
 pub(super) fn load_textures(
     material: &dyn Material,
     entity: EntityId,
@@ -279,10 +224,8 @@ fn resolve_meshes(world: &mut World, runtime: &Runtime) {
     let asset_store = runtime.resources.get::<AssetStore>();
     let asset_service = runtime.services.get::<Arc<Mutex<AssetService>>>().cloned();
 
-    // Reconcile against the resolved handle while the query borrows
-    // the world read-only. Steady state is a cheap UUID compare (no rebuild,
-    // clone, or hash); geometry is regenerated only when the authored ref
-    // changed (or has no handle yet).
+    // Collected while the query borrows the world read-only. Steady state is
+    // one uuid compare: no geometry is rebuilt.
     let mut pending: Vec<ResolvedMesh> = Vec::new();
     {
         let query = world.query::<(EntityId, &MeshRef, Option<&HandleComponent<Mesh>>)>();
@@ -341,11 +284,7 @@ fn resolve_meshes(world: &mut World, runtime: &Runtime) {
         return;
     }
 
-    // Then publish resolved data to the shared store and tag entities. A
-    // first resolve adds the handle; a changed ref overwrites the stale handle
-    // in place and drops the stale `HandleComponent<GpuMesh>` so the projection
-    // re-projects under the new identity, without disturbing a still-valid
-    // steady-state projection.
+    // The GPU projection is dropped only when a stale handle existed.
     let store = asset_store.map(|s| s.store::<Mesh>());
     for ResolvedMesh {
         entity,
@@ -402,9 +341,10 @@ mod tests {
     use khora_core::renderer::api::resource::{BufferId, SamplerId};
     use khora_core::renderer::api::shader::ShaderVariantKey;
 
-    /// A dummy resolved `GpuMaterial` handle for a given uuid — stands in for a
-    /// projection that already ran, so the reconciliation logic can be tested
-    /// without a real GPU device.
+    /// A dummy resolved `GpuMaterial` handle for a given uuid.
+    ///
+    /// Stands in for a projection that already ran, so the reconciliation logic
+    /// can be tested without a real GPU device.
     fn gpu_material_stub(uuid: AssetUUID) -> HandleComponent<GpuMaterial> {
         HandleComponent {
             handle: AssetHandle::new(GpuMaterial {
@@ -447,9 +387,7 @@ mod tests {
         }
     }
 
-    /// Frames of the resolver until what it asked for is decoded off the
-    /// frame and taken in at a boundary (the runtime holds the reserve the
-    /// `loading` family stages into).
+    /// Runs frames of the resolver until what it asked for is decoded and taken in.
     fn resolve_settled(world: &mut World, runtime: &Runtime) {
         crate::systems::asset_intake::tests::settle(runtime, world, |world| {
             asset_resolver_system(
@@ -554,9 +492,10 @@ mod tests {
         assert_eq!(first, second);
     }
 
-    /// Changing an entity's `MaterialRef` to a different inline material
-    /// re-resolves the CPU handle under the new content UUID and drops the
-    /// stale `HandleComponent<GpuMaterial>` so the projection rebuilds it.
+    /// A `MaterialRef` changed to another inline material resolves under its new uuid.
+    ///
+    /// The stale `HandleComponent<GpuMaterial>` is dropped so the projection
+    /// rebuilds it.
     #[test]
     fn changing_inline_material_reconciles_handle_and_drops_gpu() {
         let mut world = World::new();
@@ -681,9 +620,10 @@ mod tests {
         );
     }
 
-    /// Changing an entity's `MeshRef` to different procedural params
-    /// re-resolves the CPU handle under the new content UUID and drops the
-    /// stale `HandleComponent<GpuMesh>` so the projection rebuilds it.
+    /// A `MeshRef` changed to other procedural params resolves under its new uuid.
+    ///
+    /// The stale `HandleComponent<GpuMesh>` is dropped so the projection
+    /// rebuilds it.
     #[test]
     fn changing_procedural_mesh_reconciles_handle_and_drops_gpu() {
         use khora_data::ecs::ProceduralMeshKind;
@@ -913,8 +853,7 @@ mod tests {
     }
 
     /// End-to-end: a `MeshRef::Asset` referencing a tiny `.obj` in the VFS is
-    /// loaded by the resolver through a real `AssetService`. This is the path
-    /// that previously resolved to a silent empty placeholder.
+    /// loaded by the resolver through a real `AssetService`, never an empty placeholder.
     #[test]
     fn resolves_asset_mesh_from_obj_via_service() {
         use crate::asset::{FileLoader, IndexBuilder, MeshDispatcher};
@@ -985,9 +924,10 @@ mod tests {
         use std::path::Path;
         use tempfile::TempDir;
 
-        /// A project assets dir on disk, indexed and served by a real
-        /// `AssetService` (inventory decoders: texture + material), wired into
-        /// a runtime with a shared `AssetStore`.
+        /// A project assets dir on disk, indexed and served by a real `AssetService`.
+        ///
+        /// The inventory decoders (texture + material), wired into a runtime
+        /// with a shared `AssetStore`.
         struct Project {
             dir: TempDir,
             service: Arc<Mutex<AssetService>>,
@@ -1025,10 +965,11 @@ mod tests {
                 }
             }
 
-            /// One engine tick of the asset systems — the copies of changed
-            /// assets are refreshed, then the authored refs are resolved —
-            /// and the frames after it until what they asked for is decoded
-            /// off the frame and taken in at a boundary.
+            /// One engine tick of the asset systems.
+            ///
+            /// The copies of changed assets are refreshed, then the authored
+            /// refs are resolved — and the frames after it until what they
+            /// asked for is decoded off the frame and taken in at a boundary.
             fn tick(&self, world: &mut World) {
                 let asset_reload = inventory::iter::<DataSystemRegistration>
                     .into_iter()
@@ -1293,10 +1234,10 @@ mod tests {
             );
         }
 
-        /// A texture whose decode failed is not decoded again until an asset
-        /// changes: not on the next frames, and not when the material naming
-        /// it is edited — only a change to a file can fix what made it fail.
-        /// Once its file is announced changed, it loads.
+        /// A texture whose decode failed is decoded again only once an asset changes.
+        ///
+        /// Not on the next frames, nor when the material naming it is edited:
+        /// only a change to a file can fix it. Once its file changes, it loads.
         #[test]
         fn a_failed_texture_is_retried_once_an_asset_changes_not_when_its_material_ref_does() {
             let tex_path = "textures/late.png";
@@ -1346,9 +1287,10 @@ mod tests {
         }
 
         /// End to end: once the resolver ran, every texture the resolved
-        /// material lists is in `Assets<CpuTexture>` — the exact condition the
-        /// GPU projection's `material_textures_ready` waits on before it builds
-        /// the material.
+        /// material lists is in `Assets<CpuTexture>`.
+        ///
+        /// The exact condition the GPU projection's `material_textures_ready`
+        /// waits on before it builds the material.
         #[test]
         fn a_resolved_textured_material_is_ready_to_project() {
             let base_path = "textures/base.png";
@@ -1379,9 +1321,10 @@ mod tests {
             );
         }
 
-        /// A project opened like the editor and the runtime open one: loose
-        /// files under `<root>/assets/`, every default decoder and the glTF
-        /// container registered, so a glTF's materials and textures are
+        /// A project opened like the editor and the runtime open one.
+        ///
+        /// Loose files under `<root>/assets/`, every default decoder and the
+        /// glTF container registered, so a glTF's materials and textures are
         /// sub-assets the resolver can load.
         fn project_with_default_decoders(files: &[(&str, Vec<u8>)]) -> Project {
             let dir = tempfile::tempdir().unwrap();
@@ -1456,8 +1399,10 @@ mod tests {
         }
 
         /// The editor's hot reload drops a modified texture from the
-        /// `AssetService` cache. A material resolved after that must not be
-        /// projected with the image decoded from the file's former bytes.
+        /// `AssetService` cache.
+        ///
+        /// A material resolved after that must not be projected with the image
+        /// decoded from the file's former bytes.
         #[test]
         fn a_texture_modified_on_disk_is_served_fresh_once_the_material_ref_changes() {
             let tex_path = "textures/repainted.png";
@@ -1510,9 +1455,10 @@ mod tests {
         use std::path::Path;
         use tempfile::TempDir;
 
-        /// A project assets dir on disk, indexed and served by a real
-        /// `AssetService` (inventory decoders), wired into a runtime with a
-        /// shared `AssetStore`.
+        /// A project assets dir on disk, served by a real `AssetService` in a runtime.
+        ///
+        /// Its decoders are the registered ones; the runtime holds a shared
+        /// `AssetStore`.
         struct Project {
             _dir: TempDir,
             service: Arc<Mutex<AssetService>>,

@@ -20,17 +20,12 @@ use std::any::Any;
 use khora_core::asset::{Asset, AssetUUID};
 use khora_data::assets::Assets;
 
-/// Trait-object adapter so the service's storage map can dispatch
-/// per-uuid removal without knowing the concrete `A` at the call site.
-///
-/// One impl exists for every `Assets<A: Asset>` (see the blanket below).
+/// The type-erased view of an `Assets<A>`, implemented for every asset type.
 pub(in crate::asset) trait AnyAssets: Any + Send + Sync {
-    /// Removes the cached handle for `uuid` if present. Returns `true` if
-    /// something was removed.
+    /// Removes the cached handle for `uuid`; returns whether there was one.
     fn remove_uuid(&mut self, uuid: &AssetUUID) -> bool;
 
-    /// Required for downcast back to `Assets<A>` from the service's
-    /// `HashMap<TypeId, Box<dyn AnyAssets>>` map.
+    /// Returns the storage as `Any`, to downcast it back to its `Assets<A>`.
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 

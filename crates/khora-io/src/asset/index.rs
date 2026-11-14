@@ -12,28 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Virtual File System (VFS) module for fast, in-memory asset metadata access.
-//!
-//! This module provides the [`AssetIndex`] struct, which loads and manages
-//! an index of asset metadata for efficient runtime queries. It is designed to
-//! support asset loading and management by offering O(1) lookups of asset metadata
-//! using asset UUIDs. The VFS is typically initialized from a packed binary index
-//! file and serves as the primary source of truth for asset metadata in the engine.
+//! The asset index: every asset's metadata by UUID, the table of the VFS.
 
 use bincode;
 use khora_core::asset::{AssetMetadata, AssetUUID};
 use std::collections::HashMap;
 
-/// The runtime representation of the asset index (`index.bin`).
+/// The in-memory asset index (`index.bin`): each asset's metadata by its UUID.
 ///
-/// The Virtual File System is a service that provides fast, in-memory access
-/// to the metadata of all assets available in the packed data. It is the
-/// primary source of truth for the `AssetAgent` when it needs to make decisions
-/// about loading assets.
+/// See the book: concepts/assets.md, "The pipeline".
 #[derive(Debug)]
 pub struct AssetIndex {
-    /// The internal index mapping asset UUIDs to their metadata.
-    /// This provides O(1) average-time lookups.
     index: HashMap<AssetUUID, AssetMetadata>,
 }
 
@@ -41,23 +30,18 @@ pub struct AssetIndex {
 pub const MAX_INDEX_BYTES: usize = 256 << 20;
 
 impl AssetIndex {
-    /// Creates a new `AssetIndex` by loading and parsing an index file from its raw bytes.
-    ///
-    /// This function is the entry point for the runtime asset system. It takes the
-    /// binary data from `index.bin` and builds the in-memory lookup table.
+    /// Reads an index from the bytes of an `index.bin`.
     ///
     /// # Errors
-    /// Returns a `DecodeError` if the byte slice is not a valid, bincode-encoded
-    /// list of `AssetMetadata`.
+    /// Returns a `DecodeError` if the bytes are not a bincode-encoded list of
+    /// `AssetMetadata`, or would decode past [`MAX_INDEX_BYTES`].
     pub fn new(index_bytes: &[u8]) -> Result<Self, bincode::error::DecodeError> {
         // Bounded: a length in the file never makes the decode allocate past
         // what an index may hold.
         let config = bincode::config::standard().with_limit::<{ MAX_INDEX_BYTES }>();
-        // First, decode the bytes into a flat list of metadata.
         let (metadata_vec, _): (Vec<AssetMetadata>, _) =
             bincode::serde::decode_from_slice(index_bytes, config)?;
 
-        // Then, build the HashMap for fast lookups.
         let index = metadata_vec
             .into_iter()
             .map(|meta| (meta.uuid, meta))
@@ -73,17 +57,12 @@ impl AssetIndex {
         }
     }
 
-    /// Retrieves the metadata for a given asset UUID.
-    ///
-    /// This is the primary query method used by the `AssetAgent`.
+    /// Returns the metadata of the asset `uuid`, if indexed.
     pub fn get_metadata(&self, uuid: &AssetUUID) -> Option<&AssetMetadata> {
         self.index.get(uuid)
     }
 
-    /// Returns an iterator over all asset metadata entries in the VFS.
-    ///
-    /// Useful for editor tooling (asset browser) that needs to display all
-    /// available assets.
+    /// Returns an iterator over the metadata of every indexed asset.
     pub fn iter_all(&self) -> impl Iterator<Item = &AssetMetadata> {
         self.index.values()
     }
@@ -120,12 +99,10 @@ mod tests {
             .expect("the index encodes")
     }
 
-    /// **An index over its limit is refused**: an `index.bin` whose first
-    /// entry declares a source path of 300 MiB — in a file of a few dozen
-    /// bytes — is refused as over the index's byte limit
-    /// (`DecodeError::LimitExceeded`), rather than 300 MiB being allocated
-    /// for it before the file is found to end. A well-formed index still
-    /// reads.
+    /// **An index over its limit is refused** before it allocates.
+    ///
+    /// A few dozen bytes declaring a 300 MiB source path give
+    /// `DecodeError::LimitExceeded`; a well-formed index still reads.
     #[test]
     fn an_index_over_its_limit_is_refused() {
         let empty_path = encoded(&[entry("")]);

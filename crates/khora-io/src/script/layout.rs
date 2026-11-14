@@ -14,30 +14,26 @@
 
 //! Which `.erg` files are scripts, and the module each is known by.
 //!
-//! An `.erg` file is a script when its path under the assets root starts with
-//! the folder [`SCRIPT_DIR`], spelled exactly — the same answer on every
-//! operating system, whatever its file system thinks of case. Its module is
-//! its path after that folder, with forward slashes, and its extension is
-//! `.erg` in lower case — the spelling an `import` must use. Any other Ergon
-//! file, outside that folder or spelled `.ERG`, is *misplaced*: never
-//! compiled, and reported.
+//! Spelling decides, the same on every file system: a script lies under
+//! [`SCRIPT_DIR`] exactly, with the extension `.erg` in lower case. Any other
+//! Ergon file is *misplaced*: never compiled, and reported.
 
 use std::path::{Path, PathBuf};
 
 /// The folder of an assets root that holds its scripts, matched exactly.
 pub const SCRIPT_DIR: &str = "scripts";
 
-/// Whether `path` names an Ergon file — the extension `.erg` matched without
-/// regard to case, so a `.ERG` is recognised and can be reported rather than
-/// ignored. Either separator.
+/// Whether `path` names an Ergon file: the extension `.erg` in any case, either separator.
+///
+/// A `.ERG` is recognised, so it can be reported rather than ignored.
 pub fn is_script_file(path: &str) -> bool {
     extension_of(path)
         .is_some_and(|extension| extension.eq_ignore_ascii_case(khora_script::modules::EXTENSION))
 }
 
-/// Whether `path` names a file a module can be: its extension exactly `.erg`,
-/// in lower case — the one spelling the compiler accepts in an import. Where
-/// it is decides the rest ([`module_of`]). Either separator.
+/// Whether `path` names a file a module can be: its extension exactly `.erg`, either separator.
+///
+/// The one spelling an import accepts; where it lies decides the rest ([`module_of`]).
 pub fn is_module_file(path: &str) -> bool {
     extension_of(path) == Some(khora_script::modules::EXTENSION)
 }
@@ -50,11 +46,10 @@ fn extension_of(path: &str) -> Option<&str> {
         .map(|(_, extension)| extension)
 }
 
-/// The module the file at `rel_path` (under the assets root, forward slashes)
-/// is known by: `scripts/ai/guard.erg` is `ai/guard.erg`. `None` for a file
-/// whose extension is not exactly `.erg` — the compiler refuses any other
-/// spelling in an import — for anything not under the exact [`SCRIPT_DIR`],
-/// and for that folder with nothing after it.
+/// Returns the module the file at `rel_path` is known by: `scripts/ai/guard.erg` is `ai/guard.erg`.
+///
+/// `rel_path` is under the assets root, with forward slashes. `None` for a
+/// file not exactly `.erg`, or not under the exact [`SCRIPT_DIR`].
 pub fn module_of(rel_path: &str) -> Option<&str> {
     if !is_module_file(rel_path) {
         return None;
@@ -65,12 +60,11 @@ pub fn module_of(rel_path: &str) -> Option<&str> {
         .filter(|module| !module.is_empty())
 }
 
-/// `assets_root`'s script folder, when an entry named exactly [`SCRIPT_DIR`]
-/// is a directory there.
+/// Returns `assets_root`'s script folder, when a directory there is named exactly [`SCRIPT_DIR`].
 ///
-/// Read from the directory's listing rather than by joining the name: on a
-/// file system that ignores case, `Scripts` would answer to `scripts` — and a
-/// project mounted on one system would lose its scripts on another.
+/// Read from the listing: on a file system that ignores case, joining the
+/// name would let `Scripts` answer, and the project would lose its scripts
+/// on another system.
 pub fn script_dir(assets_root: &Path) -> Option<PathBuf> {
     std::fs::read_dir(assets_root)
         .ok()?
@@ -81,12 +75,10 @@ pub fn script_dir(assets_root: &Path) -> Option<PathBuf> {
 }
 
 /// Whether `rel_path` (forward slashes) names an entry under `base` spelled
-/// exactly so, folder by folder — on a file system that ignores case too.
+/// exactly so, folder by folder, on a file system that ignores case too.
 ///
-/// What a module is depends on spelling (`scripts/`, `Guard.erg`), so whether
-/// its file is still there must too: on such a file system, `Scripts/` or
-/// `guard.erg` would answer for a file renamed away from the spelling the
-/// module goes by, and the module would never be known to be gone.
+/// A module depends on spelling, so a file renamed to another case must read
+/// as gone.
 pub fn exists_exactly(base: &Path, rel_path: &str) -> bool {
     let mut at = base.to_path_buf();
     for part in rel_path.split('/').filter(|part| !part.is_empty()) {
@@ -111,9 +103,10 @@ pub fn is_file_exactly(base: &Path, rel_path: &str) -> bool {
     exists_exactly(base, rel_path) && base.join(rel_path).is_file()
 }
 
-/// Every Ergon file under `assets_root` that is no module — outside its script
-/// folder, or spelled `.ERG` in it — by its path under the root — forward slashes, sorted. Empty for a root that
-/// does not exist. Links are not followed.
+/// Returns every Ergon file under `assets_root` that is no module, by its path under the root.
+///
+/// Forward slashes, sorted; empty for a root that does not exist. Links are
+/// not followed.
 pub fn misplaced(assets_root: &Path) -> Vec<String> {
     let mut found: Vec<String> = walkdir::WalkDir::new(assets_root)
         .follow_links(false)
@@ -207,9 +200,11 @@ mod tests {
         assert_eq!(module_of("scripts"), None);
     }
 
-    /// **A module's extension is `.erg` in lower case**, the one spelling the
-    /// compiler accepts in an import: `Guard.ERG` is an Ergon file but no
-    /// module — reported as misplaced rather than compiled to an error.
+    /// **A module's extension is `.erg` in lower case.**
+    ///
+    /// The one spelling the compiler accepts in an import: `Guard.ERG` is an
+    /// Ergon file but no module — reported as misplaced rather than compiled to
+    /// an error.
     #[test]
     fn an_extension_in_capitals_is_an_ergon_file_but_no_module() {
         assert_eq!(module_of("scripts/ai/Guard.ERG"), None);
@@ -304,9 +299,11 @@ mod tests {
 
     // ─── misplaced ──────────────────────────────────────────────────────────
 
-    /// **Every `.erg` outside the script folder, and only those**: by path
-    /// under the root, forward slashes, sorted — whatever the case of their
-    /// extension, however deep, a `scripts` folder below another included.
+    /// **Every `.erg` outside the script folder, and only those.**
+    ///
+    /// By path under the root, forward slashes, sorted — whatever the case of
+    /// their extension, however deep, a `scripts` folder below another
+    /// included.
     #[test]
     fn misplaced_lists_every_erg_outside_the_script_folder_sorted() {
         let root = tempfile::TempDir::new().expect("a temp dir");

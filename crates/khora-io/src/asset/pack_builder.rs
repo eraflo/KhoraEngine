@@ -12,43 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Asset pack builder.
+//! The pack builder: a project's `assets/` bundled into `data.pack` and `index.bin`,
+//! and a signed `manifest.bin` when it is given a signer.
 //!
-//! Bundles a project's `assets/` directory into the two-file release layout
-//! consumed by [`crate::asset::PackLoader`]:
-//!
-//! - `<dest>/data.pack` — concatenation of every asset's bytes, in the order
-//!   produced by [`crate::asset::IndexBuilder`] (sorted by forward-slash
-//!   relative path → deterministic).
-//! - `<dest>/index.bin` — `bincode`-encoded `Vec<AssetMetadata>` with each
-//!   metadata's `variants["default"]` rewritten from `AssetSource::Path(rel)`
-//!   to `AssetSource::Packed { offset, size }`.
-//!
-//! UUIDs are produced by `IndexBuilder`, resolved through the project's
-//! [`crate::asset::AssetIdRegistry`] (loaded from `<project>/.khora/`), so they
-//! match what the editor sees during dev mode — same project, same UUIDs in dev
-//! and release, by construction. Projects without a registry fall back to the
-//! path-derived default, which is identical on both sides.
-//!
-//! # Determinism
-//!
-//! Two consecutive `build()` calls on the same source tree produce
-//! byte-identical `index.bin` and `data.pack`. CI relies on this for
-//! reproducibility checks.
-//!
-//! # Progress
-//!
-//! Pass a `crossbeam_channel::Sender<PackProgress>` via [`PackBuilder::with_progress`]
-//! to receive incremental events. The build thread sends one event per file
-//! processed plus a final `Finished` event. The editor's Build dialog drives
-//! its progress bar off this channel.
+//! See the book: reference/formats.md, "`.pack` — asset archive".
 
 use anyhow::{anyhow, Context, Result};
 use crossbeam_channel::Sender;
 use khora_core::asset::{asset_key, AssetSource, CompressionKind};
 use std::{
     fs::File,
-    io::Write,
+    io::{Seek, SeekFrom, Write},
     path::{Path, PathBuf},
 };
 
@@ -72,11 +46,10 @@ pub enum PackProgress {
     Finished {
         /// Number of assets packed.
         asset_count: usize,
-        /// Total size of `data.pack` in bytes.
+        /// The size of `data.pack`'s asset region in bytes, its header aside.
         pack_bytes: u64,
     },
-    /// The build failed mid-way. The error message is best-effort — the
-    /// caller should still surface the `Result` returned from `build()`.
+    /// The build failed mid-way; the `Result` of `build()` is still the one to surface.
     Failed {
         /// Human-readable description of the failure.
         message: String,
@@ -90,17 +63,16 @@ pub struct PackOutput {
     pub index_bin: PathBuf,
     /// Absolute path to the produced `data.pack`.
     pub data_pack: PathBuf,
-    /// Absolute path to the produced `manifest.bin` (BLAKE3 integrity
-    /// records). `None` when manifest emission was disabled.
+    /// Absolute path to the produced `manifest.bin`; `None` for a build without a signer.
     pub manifest_bin: Option<PathBuf>,
     /// Number of assets indexed (mirrors `index.bin`'s entry count).
     pub asset_count: usize,
-    /// Total size of `data.pack` in bytes.
+    /// The size of `data.pack`'s asset region in bytes, its header aside.
     pack_bytes: u64,
 }
 
 impl PackOutput {
-    /// Total size of `data.pack` in bytes.
+    /// Returns the size of `data.pack`'s asset region in bytes, its header aside.
     pub fn pack_bytes(&self) -> u64 {
         self.pack_bytes
     }
@@ -130,10 +102,9 @@ pub struct PackBuilder<'a> {
 }
 
 impl<'a> PackBuilder<'a> {
-    /// Creates a new builder. `assets_root` is the project's `assets/`
-    /// directory (the same path that `ProjectVfs` watches in dev mode).
-    /// `dest_dir` is where `index.bin` + `data.pack` will be written —
-    /// created if missing.
+    /// Returns a builder packing `assets_root`, a project's `assets/`, into `dest_dir`.
+    ///
+    /// `dest_dir` is created if missing.
     pub fn new(assets_root: &'a Path, dest_dir: &'a Path) -> Self {
         Self {
             assets_root,
@@ -144,39 +115,34 @@ impl<'a> PackBuilder<'a> {
         }
     }
 
-    /// Forwards incremental progress to `tx`. Drop the receiver to silently
-    /// disable progress (the sends are best-effort and never block).
+    /// Forwards the build's progress to `tx`; the sends never block nor fail the build.
     pub fn with_progress(mut self, tx: Sender<PackProgress>) -> Self {
         self.progress = Some(tx);
         self
     }
 
-    /// Sets the per-entry compression scheme. Default is
-    /// [`CompressionKind::None`]. When set to LZ4, every asset is
-    /// compressed individually so the runtime can decompress on demand
-    /// (no global state, no streaming gzip).
+    /// Sets the per-entry compression; [`CompressionKind::None`] by default.
+    ///
+    /// With LZ4, each asset is compressed alone, so the runtime decompresses it on demand.
     pub fn with_compression(mut self, compression: CompressionKind) -> Self {
         self.compression = compression;
         self
     }
 
-    /// Signs the pack with `signer`: `manifest.bin` is written as a
-    /// [`SignedManifest`](super::signing::SignedManifest) over the
-    /// `index.bin` the build writes. A build without a signer writes no
-    /// manifest, and a runtime refuses its pack.
+    /// Signs the pack with `signer`, writing `manifest.bin` over the `index.bin` built.
+    ///
+    /// A build without a signer writes no manifest, and a runtime refuses its pack.
     pub fn with_signer(mut self, signer: &'a super::signing::PackSigner) -> Self {
         self.signer = Some(signer);
         self
     }
 
-    /// Performs the build. Side effects:
+    /// Builds the pack, writing `data.pack`, `index.bin` and, when signed, `manifest.bin`.
     ///
-    /// - creates `<dest_dir>/` if missing,
-    /// - writes `<dest_dir>/data.pack` (concatenation of asset bytes),
-    /// - writes `<dest_dir>/index.bin` (`bincode`-encoded metadata).
+    /// Two builds of one tree write byte-identical files.
     ///
-    /// The two files together are everything `khora_runtime` needs to load
-    /// the project at runtime via [`crate::asset::PackLoader`].
+    /// # Errors
+    /// When an asset cannot be read, or a file written or signed.
     pub fn build(self) -> Result<PackOutput> {
         std::fs::create_dir_all(self.dest_dir).with_context(|| {
             format!(
@@ -185,10 +151,8 @@ impl<'a> PackBuilder<'a> {
             )
         })?;
 
-        // Resolve UUIDs through the same identity registry the editor uses so a
-        // renamed asset keeps its frozen UUID in the release pack. The registry
-        // lives at the project root (parent of `assets/`); a missing file yields
-        // an empty registry, i.e. the path-derived default — identical to dev.
+        // Through the editor's identity registry, so a renamed asset keeps its
+        // frozen UUID in the pack, as in development.
         let project_root = self.assets_root.parent().unwrap_or(self.assets_root);
         let registry = AssetIdRegistry::load(project_root);
         let mut metadata = IndexBuilder::new(self.assets_root)
@@ -209,14 +173,11 @@ impl<'a> PackBuilder<'a> {
         let mut data_file = File::create(&data_pack_path)
             .with_context(|| format!("Failed to create {}", data_pack_path.display()))?;
 
-        // Write the leading 24-byte header. Asset offsets recorded below
-        // are relative to the start of the asset region (i.e. don't
-        // include the header) — `PackLoader` adds `PACK_HEADER_SIZE` when
-        // seeking. This keeps the index oblivious to the on-disk framing.
+        // Offsets recorded below are relative to the asset region after this
+        // header.
+        // The LZ4 flag is set once an entry is written compressed, when the
+        // header is written again after the entries.
         let mut flags = 0u32;
-        if self.compression == CompressionKind::Lz4 {
-            flags |= PACK_FLAG_LZ4;
-        }
         if self.signer.is_some() {
             flags |= PACK_FLAG_MANIFEST;
         }
@@ -227,8 +188,6 @@ impl<'a> PackBuilder<'a> {
 
         let mut offset = 0u64;
         for meta in metadata.iter_mut() {
-            // The default variant is `AssetSource::Path(rel)` from
-            // IndexBuilder — extract the rel path before we overwrite it.
             let rel_path = match meta.variants.get("default") {
                 Some(AssetSource::Path(p)) => p.clone(),
                 // A sub-asset has no bytes of its own: it is extracted from
@@ -263,9 +222,7 @@ impl<'a> PackBuilder<'a> {
                 .with_context(|| format!("Failed to read asset bytes: {}", abs.display()))?;
             let uncompressed_size = raw.len() as u64;
 
-            // Manifest hashes uncompressed bytes — the runtime computes
-            // BLAKE3 after decompression so the check is independent of
-            // the compression algorithm.
+            // Uncompressed: the runtime checks the bytes after decompressing them.
             if let Some(m) = manifest.as_mut() {
                 m.insert(meta.uuid, &raw);
             }
@@ -284,6 +241,9 @@ impl<'a> PackBuilder<'a> {
                 }
             };
             let on_disk_size = bytes_to_write.len() as u64;
+            if compression == CompressionKind::Lz4 {
+                flags |= PACK_FLAG_LZ4;
+            }
 
             data_file
                 .write_all(&bytes_to_write)
@@ -302,8 +262,10 @@ impl<'a> PackBuilder<'a> {
             offset += on_disk_size;
         }
 
-        // Flush before writing index — index references offsets into the
-        // pack we just produced.
+        data_file
+            .seek(SeekFrom::Start(0))
+            .context("Failed to rewind data.pack")?;
+        PackLoader::write_header(&mut data_file, total as u32, flags)?;
         data_file.flush().context("Failed to flush data.pack")?;
         drop(data_file);
 
@@ -317,7 +279,7 @@ impl<'a> PackBuilder<'a> {
         let manifest_bin = if let (Some(m), Some(signer)) = (manifest, self.signer) {
             let manifest_path = self.dest_dir.join("manifest.bin");
             // Signed over the index just written: a pack whose index or
-            // manifest changed no longer verifies.
+            // manifest changed does not verify.
             let manifest_bytes = signer
                 .sign(&m, &encoded)
                 .and_then(|signed| signed.encode())
@@ -417,10 +379,8 @@ mod tests {
 
         let out = PackBuilder::new(proj.path(), dest.path()).build().unwrap();
 
-        // Read back the index, hand it to a VFS, and read each asset through
-        // a PackLoader to confirm the offsets/sizes line up with the bytes
-        // we appended (and that the leading 16-byte header is consumed
-        // transparently by PackLoader's seek-relative-to-asset-region logic).
+        // Each asset read back through the index and a PackLoader is the
+        // bytes appended: offsets skip the header.
         let index_bytes = std::fs::read(&out.index_bin).unwrap();
         let vfs = AssetIndex::new(&index_bytes).unwrap();
         let pack_file = std::fs::File::open(&out.data_pack).unwrap();
@@ -561,8 +521,7 @@ mod tests {
 
     const HERO: &[u8] = b"mesh mesh/Body\nmaterial material/Skin\n";
 
-    /// The manifest of the pack `out`, once its `manifest.bin` verified with
-    /// `signer`'s key over the pack's `index.bin`.
+    /// Returns the manifest of the pack `out`, once verified with `signer`'s key.
     fn signed_manifest_of(out: &PackOutput, signer: &PackSigner) -> PackManifest {
         let path = (out.manifest_bin.as_ref()).expect("a signed build writes a manifest");
         let signed = SignedManifest::decode(&fs::read(path).unwrap()).unwrap();
@@ -674,8 +633,7 @@ mod tests {
         );
     }
 
-    /// The pack header's count is the sanity check against `index.bin`: it
-    /// counts every index entry, sub entries included.
+    /// The pack header counts every index entry, sub entries included.
     #[test]
     fn the_pack_header_counts_every_index_entry_with_sub_entries() {
         let proj = tempdir().unwrap();
@@ -689,8 +647,7 @@ mod tests {
         assert_eq!(loader.header().asset_count, vfs.asset_count() as u32);
     }
 
-    /// Sub entries have no bytes to stream: the progress bar counts the files
-    /// it streams, one `Started` per file, numbered `0..total`.
+    /// Progress counts the files streamed, one `Started` each, without sub entries.
     #[test]
     fn progress_counts_the_streamed_files_of_a_project_with_sub_entries() {
         let proj = tempdir().unwrap();
@@ -718,5 +675,36 @@ mod tests {
             "the total is the number of streamed files"
         );
         assert_eq!(currents, vec![0, 1], "files are numbered 0..total");
+    }
+
+    /// The header's LZ4 flag is set only when some entry is LZ4-compressed.
+    #[test]
+    fn the_lz4_flag_is_clear_when_no_entry_compresses() {
+        let proj = tempdir().unwrap();
+        let dest = tempdir().unwrap();
+        // Five bytes LZ4 cannot shrink: each entry is written uncompressed.
+        fs::write(proj.path().join("a.bin"), b"ABCDE").unwrap();
+
+        let out = PackBuilder::new(proj.path(), dest.path())
+            .with_compression(CompressionKind::Lz4)
+            .build()
+            .unwrap();
+        let vfs = AssetIndex::new(&fs::read(&out.index_bin).unwrap()).unwrap();
+        let meta = vfs.iter_all().next().unwrap();
+        let Some(AssetSource::Packed { compression, .. }) = meta.variants.get("default") else {
+            panic!("a packed entry");
+        };
+        assert_eq!(
+            *compression,
+            CompressionKind::None,
+            "the entry is stored raw"
+        );
+
+        let loader = PackLoader::new(fs::File::open(&out.data_pack).unwrap()).unwrap();
+        assert_eq!(
+            loader.header().flags & PACK_FLAG_LZ4,
+            0,
+            "no entry is LZ4-compressed, yet the header says one is"
+        );
     }
 }

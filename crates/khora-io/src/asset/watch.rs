@@ -13,11 +13,6 @@
 // limitations under the License.
 
 //! The asset trees the engine watches on the application's behalf.
-//!
-//! One service, many roots: an application names the roots it wants watched
-//! (`watch`) and stops watching them (`unwatch`), through `&self`, at any
-//! frame. Every subscriber — the script pump, the shader pump, the editor's
-//! VFS — reads every root's changes from its own cursor.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -26,11 +21,11 @@ use anyhow::{bail, Context, Result};
 
 use super::{AssetChangeEvent, AssetWatcher};
 
-/// The asset trees the engine watches for the application.
+/// The asset trees the engine watches for the application, one [`AssetWatcher`] per root.
 ///
-/// One [`AssetWatcher`] per root, each computing paths against its own root
-/// exactly as it did alone; a subscriber's cursor lives in each, under its
-/// name, so `poll_for` reads every root from where that subscriber left it.
+/// Roots are added and removed through `&self`, at any frame. Each subscriber
+/// (the script pump, the shader pump, the editor's VFS) reads every root from
+/// its own cursor.
 #[derive(Default)]
 pub struct AssetWatch {
     roots: Mutex<Vec<Watched>>,
@@ -46,10 +41,11 @@ struct Watched {
 }
 
 impl AssetWatch {
-    /// Watches `root`, recursively. Watching a root already watched succeeds
-    /// and does nothing. Fails when the root cannot be watched, or when it
-    /// lies inside — or holds — a root already watched: two watches over one
-    /// file would report each save twice, a cost no test would see.
+    /// Watches `root`, recursively; a root already watched is left as it is.
+    ///
+    /// # Errors
+    /// When the root cannot be watched, or lies inside or holds a root already
+    /// watched: two watches over one file would report each save twice.
     pub fn watch(&self, root: &Path) -> Result<()> {
         let resolved = root
             .canonicalize()
@@ -79,8 +75,7 @@ impl AssetWatch {
         Ok(())
     }
 
-    /// Stops watching `root`; what it produced and nobody read goes with it.
-    /// A root that is not watched is not an error.
+    /// Stops watching `root`, dropping its unread changes; an unwatched root is no error.
     pub fn unwatch(&self, root: &Path) {
         let resolved = root.canonicalize().ok();
         self.lock().retain(|watched| {
@@ -88,10 +83,10 @@ impl AssetWatch {
         });
     }
 
-    /// The name the root `root` is watched by — as it was first named — when
-    /// `root` is that name or another spelling of the same folder. What the
-    /// changes under it carry, made absolute: whatever is kept per root must
-    /// be kept under this name, or one folder ends up with two entries.
+    /// Returns the name `root` is watched by, as first named, for any spelling of that folder.
+    ///
+    /// The changes under it carry this name, made absolute: keep whatever is kept
+    /// per root under it, or one folder ends up with two entries.
     pub fn named(&self, root: &Path) -> Option<PathBuf> {
         let resolved = root.canonicalize().ok();
         self.lock()
@@ -108,7 +103,7 @@ impl AssetWatch {
             .collect()
     }
 
-    /// The roots watched now, as they were named.
+    /// Returns the watched roots, as they were named.
     pub fn roots(&self) -> Vec<PathBuf> {
         self.lock()
             .iter()

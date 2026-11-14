@@ -219,27 +219,32 @@ snapshot: asked for `FastestLoad`, it is written compactly.
 
 ## `.pack` — asset archive
 
-In release builds, a project's assets are bundled into a **two-file** layout
-written by `khora_io::asset::PackBuilder`, staged under
+In release builds, a project's assets are bundled by
+`khora_io::asset::PackBuilder` into three files, staged under
 `<project>/dist/<target>/`:
 
-- `data.pack` — the concatenation of every asset's bytes.
+- `data.pack` — a header, then every asset's bytes, each compressed or not;
 - `index.bin` — a bincode-encoded `Vec<AssetMetadata>` mapping each asset's UUID
-  to its location inside `data.pack`.
+  to its place inside `data.pack`;
+- `manifest.bin`, when the build signs the pack (Build Game always does) — the signed manifest: each asset's UUID, the size and BLAKE3
+  hash of its uncompressed bytes, signed over the hash of `index.bin`. A shipped
+  game refuses a pack without one; see [Trust: signed packs](../concepts/trust.md#signed-packs).
 
-Both files are needed together. The split keeps the loader's I/O trivially
-zero-copy and lets a tool inspect either file independently.
+The split keeps the loader's I/O simple and lets a tool inspect each file on its
+own.
 
 ### `data.pack` layout
 
 ```
 data.pack
 ┌──────────────────────────────────────────────────┐  offset 0
-│ Header (16 bytes)                                 │
-│   ─ Magic:          "KHORAPK\0"  (8 bytes)        │
-│   ─ format_version: u32 LE       (4 bytes) = 1    │
-│   ─ asset_count:    u32 LE       (4 bytes)        │
-├──────────────────────────────────────────────────┤  offset 16
+│ Header (24 bytes, little-endian)                  │
+│   ─ magic:          "KHORAPK\0"  (8 bytes)        │
+│   ─ format_version: u32          (4 bytes) = 2    │
+│   ─ asset_count:    u32          (4 bytes)        │
+│   ─ flags:          u32          (4 bytes)        │
+│   ─ reserved:       u32          (4 bytes) = 0    │
+├──────────────────────────────────────────────────┤  offset 24
 │ asset 0 bytes                                     │
 │ asset 1 bytes                                     │
 │ …                                                 │
@@ -247,15 +252,23 @@ data.pack
 └──────────────────────────────────────────────────┘
 ```
 
-The 16-byte header lets `PackLoader::new` fail fast on a wrong/renamed file (bad
-magic), a pack from a future engine (`format_version` mismatch), or an `index.bin`
-that has drifted out of sync (`asset_count` cross-check). There are no checksums,
-no per-asset framing, and no padding — every byte after the header is asset
-payload. Asset offsets recorded in `index.bin` are **relative to the asset
-region** (the first asset is at 0); the loader adds the header size when seeking.
+The header lets `PackLoader::new` fail fast on a wrong or renamed file (bad
+magic) or a pack from another engine version (`format_version` must equal
+`PACK_FORMAT_VERSION`). `asset_count` holds `index.bin`'s entry count, sub-assets
+included. `flags` is for diagnostics: bit 0 says some entry was written
+LZ4-compressed, bit 1 that a `manifest.bin` accompanies the pack. Every byte
+after the header is asset payload, with no per-asset framing. Offsets recorded in
+`index.bin` are **relative to the asset region** (the first asset is at 0); the
+loader adds the header size when seeking.
 
-The constants are public: `PACK_MAGIC`, `PACK_FORMAT_VERSION`, `PACK_HEADER_SIZE`
-(re-exported through `khora-sdk`).
+Each entry is compressed on its own, or not: its `AssetSource::Packed` in
+`index.bin` gives its on-disk `size`, its `uncompressed_size` and its
+`compression`. A loaded entry is decompressed, then checked against the
+manifest's size and hash.
+
+The constants are public in `khora_io::asset`: `PACK_MAGIC`,
+`PACK_FORMAT_VERSION`, `PACK_HEADER_SIZE` (all three re-exported through
+`khora-sdk`), `PACK_FLAG_LZ4` and `PACK_FLAG_MANIFEST`.
 
 ### `index.bin` layout
 
@@ -268,7 +281,7 @@ future additions to `AssetMetadata` keep older files readable. Each
 | `uuid` | `AssetUUID` — the asset's stable identity: `AssetUUID::new_v5(forward_slash_rel_path)` by default, or the frozen value the [identity registry](#asset-identity-registry) holds for that path. |
 | `asset_type_name` | Canonical type tag (`"texture"`, `"mesh"`, `"material"`, `"script"`, …). |
 | `dependencies` | `Vec<AssetUUID>` — assets this one references (deduplicated, sorted). |
-| `variants` | `HashMap<String, AssetSource>` — the `"default"` variant points into `data.pack` as `Packed { offset, size }`. |
+| `variants` | `HashMap<String, AssetSource>` — the `"default"` variant points into `data.pack` as `Packed { offset, size, uncompressed_size, compression }`; a sub-asset keeps its `Sub` variant, extracted from its container. |
 | `tags` | `Vec<String>`. |
 
 ### Determinism

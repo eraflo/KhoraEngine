@@ -13,9 +13,6 @@
 // limitations under the License.
 
 //! Font decoder: TTF/OTF bytes → `Font`.
-//!
-//! Auto-registered via [`inventory::submit!`] under the canonical `"font"`
-//! slot. Single canonical implementation — no swap needed.
 
 use khora_core::asset::font::Font;
 

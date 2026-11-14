@@ -42,14 +42,16 @@ pub use super::sub_asset_lister_registration::{
 /// container file's index type with
 /// [`register_container`](super::AssetService::register_container).
 pub trait AssetContainer: Send + Sync + 'static {
-    /// Opens the container from its bytes. `source_path` is the container's
-    /// path relative to the assets root (for files next to it). The opened
-    /// value is cached per container uuid and shared by all its sub-assets.
+    /// Opens the container from its bytes.
+    ///
+    /// `source_path` is relative to the assets root, for files next to it. The
+    /// opened value is cached per container uuid and shared by its sub-assets.
     fn open(&self, bytes: &[u8], source_path: &Path) -> anyhow::Result<Arc<dyn Any + Send + Sync>>;
 
-    /// Opens the container within `limits`; an error holding a
-    /// [`LimitExceeded`](crate::trust::LimitExceeded) when one stops it. By
-    /// default, [`Self::open`], ignoring them.
+    /// Opens the container within `limits`; by default, [`Self::open`], ignoring them.
+    ///
+    /// # Errors
+    /// Holds a [`LimitExceeded`](crate::trust::LimitExceeded) when a limit stops it.
     fn open_limited(
         &self,
         bytes: &[u8],
@@ -70,10 +72,12 @@ pub trait AssetContainer: Send + Sync + 'static {
         type_name: &str,
     ) -> anyhow::Result<Box<dyn Any + Send>>;
 
-    /// Extracts the sub-asset `label` within `limits` — those of its own type
-    /// at the reader's trust; an error holding a
-    /// [`LimitExceeded`](crate::trust::LimitExceeded) when one stops it. By
-    /// default, [`Self::extract`], ignoring them.
+    /// Extracts the sub-asset `label` within `limits`; by default, [`Self::extract`].
+    ///
+    /// `limits` are those of the sub-asset's own type at the reader's trust.
+    ///
+    /// # Errors
+    /// Holds a [`LimitExceeded`](crate::trust::LimitExceeded) when a limit stops it.
     fn extract_limited(
         &self,
         opened: &(dyn Any + Send + Sync),
@@ -86,10 +90,11 @@ pub trait AssetContainer: Send + Sync + 'static {
         self.extract(opened, container, label, type_name)
     }
 
-    /// The files an opened container reads besides its own, as asset keys
-    /// (paths relative to the assets root, forward slashes): a glTF's
-    /// external buffers and images. A change to one of them is a change to
-    /// the container's sub-assets. None by default.
+    /// Returns the files an opened container reads besides its own, as asset keys.
+    ///
+    /// Keys are forward-slash paths relative to the assets root: a glTF's external
+    /// buffers and images. A change to one is a change to the container's
+    /// sub-assets. None by default.
     fn external_files(&self, opened: &(dyn Any + Send + Sync)) -> Vec<String> {
         let _ = opened;
         Vec::new()

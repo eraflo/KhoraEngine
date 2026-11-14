@@ -12,12 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The script compiles done off the frame, landed by ticket at its boundary.
-//!
-//! The `loading` family stages a `CompileDone` per root compiled, beside its
-//! reloads and declarations; `script_compile_intake` takes them in after
-//! `script_components` registered the declarations, and files the outcome of
-//! each ticket they carry in the runtime's `CompileHub`.
+//! The script compiles done off the frame, landed by ticket at its boundary,
+//! once `script_components` registered what they declare.
 
 use std::sync::Arc;
 
@@ -28,10 +24,10 @@ use khora_script::toolchain::CompileDone;
 
 use crate::script::compile_hub::CompileHub;
 
-/// Takes in every `CompileDone` the reserve holds, and files the outcome of
-/// each of its tickets in the runtime's `CompileHub`. Nothing without a hub
-/// or a reserve. A compile whose root was unmounted since lands nothing: the
-/// unmount withdrew its tickets.
+/// Files the outcome of every `CompileDone` the reserve holds in the runtime's `CompileHub`.
+///
+/// Nothing without a hub or a reserve. A compile whose root was unmounted
+/// since lands nothing: the unmount withdrew its tickets.
 pub fn take_in_compiles(runtime: &Runtime) {
     let (Some(hub), Some(reserve)) = (
         runtime.resources.get::<Arc<CompileHub>>(),

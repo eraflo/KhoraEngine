@@ -12,45 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `.erg` hot-reload pump.
+//! The `.erg` hot-reload pump: files a compile, per root, of every changed
+//! module and every module importing it, compiled off the frame.
 //!
-//! A `PreExtract` data system that reads the engine's [`AssetWatch`] and files a
-//! [`CompileRequest`] per root for every `.erg` file that changed. The compile
-//! family compiles it — **and every file that imports it** — off the frame
-//! (`crate::script::project_compiler`), and what it hands on lands at a later
-//! frame's boundary.
-//!
-//! # Why the importers too
-//!
-//! Editing a module changes what its importers compile *to*, not just what it
-//! compiles to. Reloading only the edited file would leave every importer
-//! running code built against the previous version — the half of hot-reload that
-//! produces a game whose behaviour depends on which file was saved last.
-//!
-//! # Why not the asset index
-//!
-//! The index records each script's imports, so walking that edge backwards
-//! looks like the obvious way to find importers. It is not: editing an `.erg`
-//! file in place never reindexes it — the editor drops the cached handle and
-//! leaves the edges alone, and nothing in the runtime path reindexes at all. So
-//! the index's imports are the ones the file had at the last **create or
-//! delete**, and an author who adds an `import` and saves would get an edge the
-//! index has never seen. Reading the tree is slower and right; reading the
-//! index would be faster and wrong.
-//!
-//! What *is* shared is the parser: [`imports_of`] answers the same question for
-//! the index builder and for this pump, so there is one definition of what an
-//! import is even though there are two ways of collecting them.
-//!
-//! # Nothing is replaced until it compiles
-//!
-//! A save mid-edit usually does not compile. The previous program keeps running
-//! and the diagnostics are logged; a pump that swapped in whatever came out
-//! would make every stray keystroke stop the game.
-//!
-//! With no assets directory present, no watcher is registered and this does
-//! nothing — hot-reload is a development affordance, and its absence is the
-//! shipping path.
+//! Imports are read from the files with [`imports_of`], never from the asset
+//! index: an `.erg` edited in place is not reindexed, so the index would miss a
+//! new `import`. A save that does not compile replaces nothing.
 
 use khora_data::ecs::SystemContext;
 use std::collections::{BTreeMap, BTreeSet};
@@ -73,33 +40,32 @@ use crate::script::layout::{
 };
 use crate::script::mounted::MountedScripts;
 
-/// How many requests may wait for the `loading` family. Requests of one root
-/// replace a waiting one they cover, so repeated saves never fill this; a mass
-/// change (a branch switch) files one request per root a run.
+/// How many requests may wait for the `loading` family.
+///
+/// Requests of one root replace a waiting one they cover, so repeated saves
+/// never fill this; a mass change (a branch switch) files one per root a run.
 const REQUEST_BACKLOG: usize = 1024;
 
-/// The channel the pump files its requests on, for the `loading` family to take.
+/// Returns the channel the pump files its requests on, for the `loading` family.
 pub fn request_channel() -> Channel<CompileRequest> {
     Channel::bounded(REQUEST_BACKLOG, WhenFull::Reject)
 }
 
-/// Whether a change at `rel_path` under `root` can change which Ergon files
-/// are misplaced there: an Ergon file's, a folder's that `arrived`, or one
-/// that is gone. A folder moved or deleted carries its files with it and
-/// reports only itself, and once it is gone nothing tells it from a file —
-/// `props.v2/` is named like one — so whatever is no longer there is taken as
-/// possibly one. A folder merely modified is what a save inside it reports,
-/// and moves nothing.
+/// Whether a change at `rel_path` under `root` can change which Ergon files are misplaced.
+///
+/// True for an Ergon file, a folder that `arrived`, or anything gone: a gone
+/// folder reports only itself and cannot be told from a file (`props.v2/`).
+/// A folder merely modified is what a save inside it reports, and moves nothing.
 fn may_move_a_script(root: &Path, rel_path: &str, arrived: bool) -> bool {
     is_script_file(rel_path)
         || !exists_exactly(root, rel_path)
         || (arrived && root.join(rel_path).is_dir())
 }
 
-/// What the modules inside the folder at `rel_path` (under the assets root)
-/// start with, when it is the script folder or a folder in it: nothing for
-/// the script folder itself, whose modules go by their own names; `ai/` for
-/// `scripts/ai`. `None` for any other folder.
+/// Returns the prefix of the modules in the folder at `rel_path`, under the assets root.
+///
+/// Empty for the script folder itself, `ai/` for `scripts/ai`; `None` for a
+/// folder outside the script folder.
 fn module_prefix_of_folder(rel_path: &str) -> Option<String> {
     match rel_path.strip_prefix(SCRIPT_DIR)? {
         "" => Some(String::new()),
@@ -110,10 +76,10 @@ fn module_prefix_of_folder(rel_path: &str) -> Option<String> {
     }
 }
 
-/// The recorded modules of `root` a folder at `rel_path` (under it) held, when
-/// that folder is the script folder or one inside it and is gone now: each
-/// whose file is no longer there. A folder deleted, or moved out, reports
-/// only itself — its modules are known from the record alone.
+/// Returns the recorded modules of `root` that a gone folder at `rel_path` held.
+///
+/// A folder deleted or moved out reports only itself, so its modules are known
+/// from the record alone. Empty unless the folder is in the script folder.
 fn modules_gone_with(mounted: Option<&MountedScripts>, root: &Path, rel_path: &str) -> Vec<String> {
     let Some(mounted) = mounted else {
         return Vec::new();
@@ -131,16 +97,18 @@ fn modules_gone_with(mounted: Option<&MountedScripts>, root: &Path, rel_path: &s
         .collect()
 }
 
-/// Whether `module`'s file is under `root`'s script folder, spelled as the
-/// module goes by — a file renamed to another case is gone under its old
-/// name, whatever the file system thinks of case.
+/// Whether `module`'s file is under `root`'s script folder, spelled exactly as the module.
+///
+/// A file renamed to another case is gone under its old name, whatever the
+/// file system thinks of case.
 pub(crate) fn is_on_disk(root: &Path, module: &str) -> bool {
     is_file_exactly(root, &format!("{SCRIPT_DIR}/{module}"))
 }
 
-/// Another mounted root whose script folder holds `module`, when `root`'s no
-/// longer does. Modules are known by name across roots, so one gone from a
-/// root another still provides is that root's now — as an unmount keeps it.
+/// Returns another mounted root whose script folder holds `module`, gone from `root`'s.
+///
+/// Modules are known by name across roots: one another root still provides
+/// is that root's, as an unmount keeps it.
 fn other_provider(mounted: Option<&MountedScripts>, root: &Path, module: &str) -> Option<PathBuf> {
     let here = crate::asset::root_path::absolute(root);
     mounted?
@@ -149,9 +117,10 @@ fn other_provider(mounted: Option<&MountedScripts>, root: &Path, module: &str) -
         .find(|other| *other != here && is_on_disk(other, module))
 }
 
-/// The modules a folder at `rel_path` (under the assets root) holds, when it
-/// is a folder now under the script folder: a folder moved in reports only
-/// itself, and its scripts must compile as surely as a file saved there.
+/// Returns the modules the folder at `rel_path` holds, when it is in the script folder.
+///
+/// A folder moved in reports only itself, and its scripts must compile as
+/// surely as a file saved there.
 fn modules_of_folder(root: &Path, rel_path: &str) -> Vec<String> {
     let Some(prefix) = module_prefix_of_folder(rel_path) else {
         return Vec::new();
@@ -166,18 +135,10 @@ fn modules_of_folder(root: &Path, rel_path: &str) -> Vec<String> {
         .collect()
 }
 
-/// Every module in `imports` that reaches one of `changed`, transitively.
+/// Returns every module in `imports` that reaches one of `changed`, transitively.
 ///
-/// Walked outward from the edit rather than recompiling everything: a project
-/// with two hundred scripts should not pay for all of them because one changed.
-/// Bounded by the number of modules, since a module already in the set is not
-/// expanded twice — which is also what stops a cyclic import from looping here,
-/// even though the compiler will refuse it later.
-///
-/// Takes the graph rather than a directory, and that is the point: the previous
-/// version re-walked the tree and re-read **every** file on each round of the
-/// fixpoint. Handing it a map read once makes the repetition impossible instead
-/// of merely avoided.
+/// `changed` is included. A cyclic import terminates here; the compiler
+/// refuses it later.
 pub(crate) fn importers_of(
     imports: &BTreeMap<String, Vec<String>>,
     changed: &BTreeSet<String>,
@@ -201,32 +162,24 @@ pub(crate) fn importers_of(
     affected
 }
 
-/// The modules under `script_root`, by the path they are known by.
+/// Returns the modules under `script_root`, by the path they are known by.
 pub fn module_names(script_root: &Path) -> Vec<String> {
     modules_under(script_root, None, crate::trust::Trust::Project)
         .into_keys()
         .collect()
 }
 
-/// Every `.erg` module under `root`, each with what it imports.
+/// Returns every `.erg` module under `root`, each with what it imports.
 ///
-/// One walk and one read per file, serving both callers: the initial load wants
-/// the module names, and the pump wants the edges between them. Two walks lived
-/// seventy lines apart here — one on `read_dir`, one on `walkdir` — which is one
-/// walk more than there are questions to answer, and the surviving one is the
-/// same `walkdir` the index builder uses so there is one way to cross a tree.
-///
-/// A file that cannot be read contributes its name with no imports rather than
-/// vanishing: it still needs compiling, and the compiler is where an unreadable
-/// file gets its diagnostic.
+/// Files are read through a guard at `trust`, reporting to `refusals` (in
+/// memory only without). A file that cannot be read is listed with no
+/// imports: it still compiles, and the compiler gives its diagnostic.
 pub(crate) fn modules_under(
     root: &Path,
     refusals: Option<&Arc<crate::trust::Refusals>>,
     trust: crate::trust::Trust,
 ) -> BTreeMap<String, Vec<String>> {
-    // Read through a guard reporting to `refusals` (to none kept but in
-    // memory without): a module over its cap is read as importing nothing,
-    // and the compile refuses it.
+    // A module over its cap is read as importing nothing; the compile refuses it.
     let refusals = refusals
         .cloned()
         .unwrap_or_else(|| Arc::new(crate::trust::Refusals::new(None, None)));
@@ -278,10 +231,9 @@ fn script_hot_reload_system(
         .get::<Arc<MountedScripts>>()
         .map(Arc::as_ref);
 
-    // Per watched root: each holds its scripts in its own script folder, and
-    // an import never crosses from one into another. A change outside that
-    // folder compiles nothing — it may only add, move or take away an `.erg`
-    // that is not a script, which the root's list of them then shows.
+    // Per watched root: an import never crosses roots. A change outside the
+    // script folder compiles nothing; it may only change which `.erg` files
+    // are misplaced, which the root's list then shows.
     let mut by_root: BTreeMap<std::path::PathBuf, BTreeSet<String>> = BTreeMap::new();
     let mut rescan: BTreeSet<std::path::PathBuf> = BTreeSet::new();
     for event in &events {
@@ -339,8 +291,7 @@ fn script_hot_reload_system(
             by_provider.entry(provider).or_default().insert(module);
         }
     }
-    // Filed, never compiled here: the `loading` family compiles off the frame,
-    // and what it hands on lands at a later frame's boundary.
+    // Filed, never compiled here: the `loading` family compiles off the frame.
     if let Some(requests) = requests {
         for (root, modules) in by_provider {
             let refused = requests.dropped();
@@ -374,6 +325,4 @@ inventory::submit! {
     }
 }
 
-// What the pump files is pinned in `tests/it/script_pump_files_requests.rs`,
-// what a compile of it hands on in `tests/it/project_compiler.rs`; which file
-// is which module is `crate::script::layout`'s answer, and is pinned there.
+// Pinned by `tests/it/script_pump_files_requests.rs` and `tests/it/project_compiler.rs`.

@@ -12,21 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! UI references → loaded assets.
+//! The UI's asset references resolved: a text's font into its handle, an
+//! image's texture into the `AssetStore`, where the UI agent uploads it.
 //!
-//! **Fonts** — `UiText::font` → `HandleComponent<Font>`. The built-in face
-//! ([`Font::BUILT_IN`]) is no asset: a text naming it gets no handle (a stale
-//! one is dropped). Any other id is a font asset, loaded through the
-//! [`AssetService`], published into `AssetStore::store::<Font>()` and attached
-//! to the entity; steady state is the same identity compare as materials.
-//!
-//! **Images** — every `UiImage::texture` the `AssetStore`'s `CpuTexture`
-//! sub-store does not hold yet is loaded into it, where the UI agent uploads
-//! it to the UI atlas.
-//!
-//! A font or image that fails to load is reported once and not read again
-//! until an asset changes (see [`AssetService::has_failed`]): a broken file
-//! costs nothing per tick, and the fixed file is picked up when it changes.
+//! The built-in face ([`Font::BUILT_IN`]) is no asset and gets no handle. A
+//! font or image that failed is asked for again only once an asset changes.
 
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};

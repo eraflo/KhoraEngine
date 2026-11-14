@@ -12,14 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Concrete [`AssetDecoder`] implementations: bytes → typed asset.
+//! The [`AssetDecoder`]s, one per asset type: bytes → typed asset, CPU work only.
 //!
-//! Decoders are pure CPU work; they have no GPU/IO state. They are
-//! registered with the [`AssetService`] via `register_decoder` and dispatched
-//! by asset type name during `load`.
+//! See the book: concepts/assets.md, "The pipeline".
 //!
 //! [`AssetDecoder`]: super::AssetDecoder
-//! [`AssetService`]: super::AssetService
 
 pub mod audio;
 pub mod font;

@@ -17,17 +17,11 @@
 
 use super::AssetService;
 
-/// Inventory entry for an `AssetDecoder` that wants to be auto-registered
-/// against an [`AssetService`] at startup.
+/// Inventory entry for an `AssetDecoder` registered on every [`AssetService`] at startup.
 ///
-/// Mirrors the existing pattern used by `MaterialRegistration`
-/// (`crates/khora-data/src/scene/material_registration.rs`),
-/// `DataSystemRegistration`, and `FlowRegistration`.
-///
-/// Use this for decoder slots with **a single canonical implementation**
-/// (e.g. `texture`, `font`). Slots where multiple backends compete (`audio`,
-/// `mesh`) deliberately stay explicit at the call site — see the rationale
-/// in `decoders/audio/mod.rs` and `decoders/mesh/mod.rs`.
+/// For a type with one canonical decoder (`texture`, `font`). A type whose
+/// backends compete (`audio`, `mesh`) is registered at the call site instead;
+/// `decoders/audio/mod.rs` and `decoders/mesh/mod.rs` say why.
 ///
 /// ```ignore
 /// inventory::submit! {
@@ -40,13 +34,13 @@ use super::AssetService;
 /// }
 /// ```
 pub struct DecoderRegistration {
-    /// Asset type name the decoder handles. Must match what
-    /// `IndexBuilder::asset_type_for_extension` returns for the relevant
-    /// file extensions (e.g. `"texture"`).
+    /// The asset type name the decoder handles (`"texture"`).
+    ///
+    /// Matches what `IndexBuilder::asset_type_for_extension` returns for its extensions.
     pub type_name: &'static str,
-    /// Function that performs the registration on an [`AssetService`].
-    /// Plain function pointer — no captures — so the entry can be embedded
-    /// in `inventory::submit!` (which needs `'static`).
+    /// Registers the decoder on an [`AssetService`].
+    ///
+    /// A plain function pointer, so the entry is `'static` for `inventory::submit!`.
     pub register: fn(&mut AssetService),
 }
 

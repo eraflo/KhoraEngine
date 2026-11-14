@@ -12,22 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Changed asset → refreshed copies.
+//! The asset reload: every copy the engine took of a changed asset replaced
+//! under the same uuid, and its GPU projection retired to be built again.
 //!
-//! A `PreExtract` data system that drains the
-//! [`AssetService`](crate::asset::AssetService)'s
-//! [`changes`](crate::asset::AssetService::changes) each tick and replaces
-//! every copy the engine took of a changed asset — the `AssetStore` CPU
-//! sub-stores, the entities' resolved handles — under the same uuid, then
-//! retires the stale GPU projection so it is built again from the new value.
-//! Runs before the [`asset_resolver`](super::asset_resolver).
-//!
-//! It decodes nothing itself: a changed asset some copy holds is asked for
-//! again ([`request`](crate::asset::AssetService::request)), and decoded off
-//! the frame by the `loading` family. Until it lands the last good copy keeps
-//! serving; the copies are refreshed on the frame it lands — taken in by
-//! `asset_intake` at that frame's boundary, before this runs. An asset the
-//! index alone says is gone is dropped on the frame its change is seen.
+//! The new value is decoded off the frame; until it lands, the last good copy
+//! keeps serving. An asset the index says is gone is dropped at once.
 
 use khora_data::ecs::SystemContext;
 use std::collections::{HashMap, HashSet};
@@ -53,12 +42,10 @@ use crate::asset::{AssetService, Requested};
 enum Reloaded<A: Asset> {
     /// The asset's current value.
     Fresh(AssetHandle<A>),
-    /// The asset left the index (its file was removed, or its container no
-    /// longer holds it): every copy goes, as it would after a restart.
+    /// The asset left the index, or its container no longer holds it: every copy goes.
     Gone,
-    /// The asset is still part of the project but did not decode (a file
-    /// caught mid-write): the last good copy stays, in the service too,
-    /// until the next change.
+    /// The asset did not decode (a file caught mid-write): the last good copy
+    /// stays, in the service too, until the next change.
     Kept,
     /// Its new value is still being decoded off the frame: the last good
     /// copy keeps serving until it lands.
@@ -165,8 +152,8 @@ fn asset_reload_system(
 }
 
 impl Reload<'_> {
-    /// Asks the service for `uuid` again — its copy was dropped when the
-    /// change was announced, so the `loading` family decodes it off the frame.
+    /// Asks the service for `uuid` again, decoded off the frame.
+    ///
     /// `last_good` is the copy the engine shows meanwhile.
     fn reload<A: Asset>(&self, uuid: &AssetUUID, last_good: &AssetHandle<A>) -> Reloaded<A> {
         let Ok(mut svc) = self.service.lock() else {
@@ -217,6 +204,7 @@ impl Reload<'_> {
     }
 
     /// Replaces, in `Assets<CpuTexture>`, every changed texture it holds.
+    ///
     /// Returns the textures whose copy changed (replaced or dropped).
     fn textures(&self, changed: &HashSet<AssetUUID>) -> HashSet<AssetUUID> {
         let mut refreshed = HashSet::new();
@@ -253,9 +241,10 @@ impl Reload<'_> {
         refreshed
     }
 
-    /// Brings every entity's resolved material up to date: a changed material
-    /// is replaced under its uuid, a material naming a changed texture is
-    /// projected again. Returns the changed materials some entity holds.
+    /// Brings every entity's resolved material up to date, and returns the changed ones held.
+    ///
+    /// A changed material is replaced under its uuid; one naming a changed
+    /// texture is projected again.
     fn materials(
         &mut self,
         world: &mut World,
@@ -324,6 +313,7 @@ impl Reload<'_> {
     }
 
     /// Replaces every entity's resolved mesh that changed, under its uuid.
+    ///
     /// Returns the changed meshes some entity holds.
     fn meshes(&mut self, world: &mut World, changed: &HashSet<AssetUUID>) -> HashSet<AssetUUID> {
         let affected: Vec<(EntityId, AssetUUID, AssetHandle<Mesh>)> = world
@@ -359,10 +349,10 @@ impl Reload<'_> {
         held
     }
 
-    /// Replaces every entity's resolved font that changed, under its uuid:
-    /// the handle written again is what tells the text systems to register
-    /// the new file and lay their texts out with it. Returns the changed fonts
-    /// some entity holds.
+    /// Replaces every entity's resolved font that changed, under its uuid.
+    ///
+    /// The handle written again tells the text systems to lay their texts out
+    /// anew. Returns the changed fonts some entity holds.
     fn fonts(&mut self, world: &mut World, changed: &HashSet<AssetUUID>) -> HashSet<AssetUUID> {
         let affected: Vec<(EntityId, AssetUUID, AssetHandle<Font>)> = world
             .query::<(EntityId, &HandleComponent<Font>)>()
@@ -422,10 +412,10 @@ impl Reload<'_> {
         }
     }
 
-    /// Takes the GPU projection of `uuid` out of the caches, once, so the
-    /// projection builds it again; the eviction service frees the old one
-    /// after this frame's render. Without one (no device ever projected
-    /// anything), the cache entries are simply dropped.
+    /// Takes the GPU projection of `uuid` out of the caches, once, to be built again.
+    ///
+    /// The eviction service frees the old one after this frame's render;
+    /// without one, the cache entries are dropped.
     fn retire(&mut self, uuid: &AssetUUID) {
         let Some(store) = self.store else {
             return;
@@ -498,9 +488,10 @@ mod tests {
             .unwrap_or_else(|| panic!("`{name}` is registered"))
     }
 
-    /// A project opened as the editor and the runtime open one: loose files
-    /// under `<root>/assets/`, every default decoder and the glTF container
-    /// registered, served into a runtime with a shared `AssetStore`.
+    /// A project opened as the editor and the runtime open one.
+    ///
+    /// Loose files under `<root>/assets/`, every default decoder and the glTF
+    /// container registered, served into a runtime with a shared `AssetStore`.
     struct Project {
         _dir: TempDir,
         root: PathBuf,
@@ -537,9 +528,10 @@ mod tests {
             }
         }
 
-        /// One engine tick of the asset systems — the reload, then the
-        /// resolver — and the frames after it until what they asked for is
-        /// decoded off the frame and taken in at a boundary.
+        /// One engine tick of the asset systems.
+        ///
+        /// The reload, then the resolver — and the frames after it until what
+        /// they asked for is decoded off the frame and taken in at a boundary.
         fn tick(&self, world: &mut World) {
             crate::systems::asset_intake::tests::settle(&self.runtime, world, |world| {
                 let mut deck = OutputDeck::default();
@@ -558,10 +550,11 @@ mod tests {
             });
         }
 
-        /// One frame of the asset systems and nothing more: the boundary's
-        /// intake of what the `loading` family landed, then the PreExtract
-        /// reload and resolver. Nothing is decoded during it: what it files
-        /// waits for [`Self::decode`].
+        /// One frame of the asset systems and nothing more: the boundary's intake of what the
+        /// `loading` family landed, then the PreExtract reload and resolver.
+        ///
+        /// Nothing is decoded during it: what it files waits for
+        /// [`Self::decode`].
         fn frame(&self, world: &mut World) {
             crate::systems::asset_intake::take_in_decoded(&self.runtime);
             let mut deck = OutputDeck::default();
@@ -580,8 +573,9 @@ mod tests {
         }
 
         /// One run of the `loading` family between two frames: every decode
-        /// filed, decoded and received under its lease. Returns how many
-        /// requests it took.
+        /// filed, decoded and received under its lease.
+        ///
+        /// Returns how many requests it took.
         fn decode(&self) -> usize {
             crate::systems::asset_intake::tests::decode_filed(&self.runtime)
         }
@@ -656,8 +650,9 @@ mod tests {
             self.store.store::<GpuMesh>().read().unwrap().contains(uuid)
         }
 
-        /// Stands for the GPU projection having built `entity`'s material:
-        /// the entity carries a `GpuMaterial` handle and the cache holds it
+        /// Stands for the GPU projection having built `entity`'s material.
+        ///
+        /// The entity carries a `GpuMaterial` handle and the cache holds it
         /// under the material's uuid.
         fn project_material(&self, world: &mut World, entity: EntityId) -> AssetUUID {
             let uuid = material_uuid(world, entity);
@@ -808,8 +803,9 @@ mod tests {
     const QUAD_OBJ: &str = "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n";
 
     /// A `.gltf` whose one mesh is a non-indexed list of `corners`, drawn in
-    /// its one material of base colour `color`; the vertex bytes are in the
-    /// buffer file `bin` beside it.
+    /// its one material of base colour `color`.
+    ///
+    /// The vertex bytes are in the buffer file `bin` beside it.
     fn gltf_shape(corners: &[[f32; 3]], color: [f32; 4], bin: &str) -> (Vec<u8>, Vec<u8>) {
         let mut bytes = Vec::new();
         for corner in corners {
@@ -975,9 +971,10 @@ mod tests {
         }
     }
 
-    /// One texture fails to decode, a sibling repaints fine: the broken one
-    /// keeps its last good image and the material naming it keeps its
-    /// projection, while the sibling's material re-projects.
+    /// One texture fails to decode, a sibling repaints fine.
+    ///
+    /// The broken one keeps its last good image and the material naming it
+    /// keeps its projection, while the sibling's material re-projects.
     #[test]
     fn a_reload_that_fails_to_decode_keeps_the_last_good_value() {
         let broken_path = "textures/broken.png";
@@ -1309,9 +1306,10 @@ mod tests {
     }
 
     /// A glTF's image is a file of its own: repainting it, and nothing else,
-    /// changes what the glTF's texture part decodes to. The editor's hot
-    /// reload invalidates only the image file it saw change; the part read
-    /// from it, and the material naming that part, must follow.
+    /// changes what the glTF's texture part decodes to.
+    ///
+    /// The editor's hot reload invalidates only the image file it saw change;
+    /// the part read from it, and the material naming that part, must follow.
     #[test]
     fn a_repainted_image_a_gltf_points_at_refreshes_the_gltf_texture_part() {
         let rel = "models/painted.gltf";
@@ -1348,10 +1346,12 @@ mod tests {
         );
     }
 
-    /// An exporter caught mid-write leaves a glTF the index cannot read, so
-    /// it lists the file without its parts. That is a file that failed to
-    /// decode, not parts the author removed: the entities keep the last good
-    /// mesh and material until the file is whole again.
+    /// An exporter caught mid-write leaves a glTF the index cannot read, so it
+    /// lists the file without its parts.
+    ///
+    /// That is a file that failed to decode, not parts the author removed: the
+    /// entities keep the last good mesh and material until the file is whole
+    /// again.
     #[test]
     fn a_gltf_caught_mid_write_keeps_its_parts_on_the_entities() {
         let rel = "models/shape.gltf";
@@ -1391,9 +1391,11 @@ mod tests {
     }
 
     /// A glTF placed before the image it names: its material resolves, its
-    /// texture part does not. The image then arrives as a new file, which
-    /// the editor's hot reload invalidates before it lists the assets folder
-    /// again; the texture part read from that image must load.
+    /// texture part does not.
+    ///
+    /// The image then arrives as a new file, which the editor's hot reload
+    /// invalidates before it lists the assets folder again; the texture part
+    /// read from that image must load.
     #[test]
     fn an_image_arriving_after_a_gltf_material_resolved_loads_its_texture_part() {
         let rel = "models/painted.gltf";
@@ -1430,8 +1432,10 @@ mod tests {
     }
 
     /// A glTF named whole as one mesh reads its vertices from the buffer file
-    /// beside it: rewriting that file, and nothing else, changes the mesh,
-    /// and the entity must show the rewritten vertices.
+    /// beside it.
+    ///
+    /// Rewriting that file, and nothing else, changes the mesh, and the entity
+    /// must show the rewritten vertices.
     #[test]
     fn a_rewritten_buffer_refreshes_a_gltf_resolved_whole_as_a_mesh() {
         let rel = "models/shape.gltf";
@@ -1507,8 +1511,10 @@ mod tests {
     }
 
     /// A buffer saved broken leaves its glTF unable to open: the parts keep
-    /// their last good value. Once the buffer is saved whole, the glTF's
-    /// parts must show it, though only the buffer file changed each time.
+    /// their last good value.
+    ///
+    /// Once the buffer is saved whole, the glTF's parts must show it, though
+    /// only the buffer file changed each time.
     #[test]
     fn a_buffer_repaired_after_a_broken_save_refreshes_the_gltf_parts() {
         let rel = "models/shape.gltf";
@@ -1551,9 +1557,10 @@ mod tests {
         );
     }
 
-    /// The engine's eviction service is present: the projection a change
-    /// made stale is handed to it to free after the render, not dropped
-    /// from the cache and leaked.
+    /// The engine's eviction service is present.
+    ///
+    /// The projection a change made stale is handed to it to free after the
+    /// render, not dropped from the cache and leaked.
     #[test]
     fn a_stale_projection_is_handed_to_the_eviction_to_free() {
         use khora_data::AssetEviction;
@@ -1590,8 +1597,10 @@ mod tests {
     }
 
     /// A `.kmat` saved broken keeps its last good value on the entities that
-    /// hold it; an entity that names the same asset afterwards (spawned, or
-    /// restored with its scene) must see that same value, not nothing.
+    /// hold it.
+    ///
+    /// An entity that names the same asset afterwards (spawned, or restored
+    /// with its scene) must see that same value, not nothing.
     #[test]
     fn an_entity_naming_a_material_kept_after_a_failed_reload_sees_the_last_good_value() {
         let kmat_path = "materials/kept.kmat";
@@ -1647,9 +1656,10 @@ mod tests {
         assert_eq!((texture.size.width, texture.size.height), (2, 2));
     }
 
-    /// Another project's service moves in under the same uuids: a mesh both
-    /// projects hold at one path reaches the entity with the incoming
-    /// project's contents.
+    /// Another project's service moves in under the same uuids.
+    ///
+    /// A mesh both projects hold at one path reaches the entity with the
+    /// incoming project's contents.
     #[test]
     fn a_service_moving_in_refreshes_the_copies_the_outgoing_one_served() {
         let obj_path = "meshes/shared.obj";
@@ -1690,8 +1700,10 @@ mod tests {
     }
 
     /// Many files change between two ticks (a branch checkout, a bulk
-    /// re-export): a change announced early, then buried under a full
-    /// backlog of later ones, must still reach the copy the engine holds.
+    /// re-export).
+    ///
+    /// A change announced early, then buried under a full backlog of later
+    /// ones, must still reach the copy the engine holds.
     #[test]
     fn a_change_buried_under_a_full_backlog_still_reaches_its_copy() {
         use crate::asset::CHANGE_BACKLOG;
@@ -1723,15 +1735,14 @@ mod tests {
 
     // ── Through the `loading` family ───────────────────────────────────────────
     //
-    // A changed asset is decoded again off the frame, by the `loading` family,
-    // as a first load is. The frame that sees the change decodes nothing; the
-    // engine keeps showing the last good copy; the refresh — re-tagging, the
-    // stale projection retired — runs on the frame the new value lands, its
-    // boundary's intake followed by the reload's pass.
+    // The frame that sees a change decodes nothing and keeps the last good
+    // copy; the refresh runs on the frame the new value lands.
 
     /// The frame that sees a change files the decode and decodes nothing
-    /// itself: the service counts no new load, the entity still shows the
-    /// value it had, and the `loading` family has one request to take.
+    /// itself.
+    ///
+    /// The service counts no new load, the entity still shows the value it had,
+    /// and the `loading` family has one request to take.
     #[test]
     fn a_change_is_not_decoded_on_the_frame_it_is_seen() {
         let kmat_path = "materials/seen.kmat";
@@ -1763,9 +1774,11 @@ mod tests {
         );
     }
 
-    /// Until the new value lands, the engine shows the last good one: the
-    /// entity keeps its handle and its projection, the store its copy, frame
-    /// after frame; the change is filed once, however many frames it waits.
+    /// Until the new value lands, the engine shows the last good one.
+    ///
+    /// The entity keeps its handle and its projection, the store its copy,
+    /// frame after frame; the change is filed once, however many frames it
+    /// waits.
     #[test]
     fn the_last_good_value_serves_until_the_new_one_lands() {
         let obj_path = "meshes/waiting.obj";
@@ -1814,9 +1827,10 @@ mod tests {
         );
     }
 
-    /// On the frame the new values land, the entities are re-tagged under the
-    /// same uuids, their stale GPU handles dropped, and the stale projections
-    /// handed to the eviction — not before.
+    /// On the frame the new values land, the entities are re-tagged under the same uuids, their
+    /// stale GPU handles dropped, and the stale projections handed to the eviction.
+    ///
+    /// Not before.
     #[test]
     fn on_landing_entities_are_retagged_and_stale_projections_evicted_the_same_frame() {
         use khora_data::AssetEviction;
@@ -1879,9 +1893,11 @@ mod tests {
         );
     }
 
-    /// A repainted texture: the store and the materials naming it keep the
-    /// old image and their projections until the new image lands; on that
-    /// frame the store serves it and every material naming it re-projects.
+    /// A repainted texture: the store and the materials naming it keep the old
+    /// image and their projections until the new image lands.
+    ///
+    /// On that frame the store serves it and every material naming it
+    /// re-projects.
     #[test]
     fn a_repainted_texture_reprojects_its_materials_the_frame_it_lands() {
         let tex_path = "textures/landing.png";
@@ -1922,9 +1938,11 @@ mod tests {
         assert!(!project.gpu_material_cached(&material));
     }
 
-    /// A reload whose decode fails is learned when the failure lands from
-    /// the `loading` family: the entity keeps the last good value and its
-    /// projection, and an entity naming the asset afterwards sees that value.
+    /// A reload whose decode fails is learned when the failure lands from the
+    /// `loading` family.
+    ///
+    /// The entity keeps the last good value and its projection, and an entity
+    /// naming the asset afterwards sees that value.
     #[test]
     fn a_reload_that_fails_off_the_frame_keeps_the_last_good_value() {
         let kmat_path = "materials/broken_later.kmat";
@@ -1965,10 +1983,11 @@ mod tests {
         );
     }
 
-    /// The file changes again while the decode of its first change is out:
-    /// that decode read bytes no longer on disk, so it is never installed.
-    /// The entity goes from the last good value straight to the newest one,
-    /// and no frame shows the one in between.
+    /// The file changes again while the decode of its first change is out: that
+    /// decode read bytes no longer on disk, so it is never installed.
+    ///
+    /// The entity goes from the last good value straight to the newest one, and
+    /// no frame shows the one in between.
     #[test]
     fn a_change_made_while_a_reload_is_in_flight_installs_only_the_newest() {
         let kmat_path = "materials/twice.kmat";
@@ -2008,9 +2027,10 @@ mod tests {
         panic!("the newest value never landed");
     }
 
-    /// A re-exported glTF: its parts are decoded again by the family, the
-    /// entity shows the old parts on the frame the change is seen and the
-    /// re-exported ones on the frame they land.
+    /// A re-exported glTF shows its old parts until the re-exported ones land.
+    ///
+    /// Its parts are decoded again by the family: the old parts on the frame the
+    /// change is seen, the re-exported ones on the frame they land.
     #[test]
     fn a_reexported_gltf_refreshes_its_parts_through_the_family() {
         let rel = "models/through.gltf";
@@ -2164,8 +2184,10 @@ mod tests {
     }
 
     /// A material whose own change is still decoding names a texture that
-    /// changed too and landed first: the material re-projects with the new
-    /// image, and again once its own new value lands.
+    /// changed too and landed first.
+    ///
+    /// The material re-projects with the new image, and again once its own new
+    /// value lands.
     #[test]
     fn a_material_still_decoding_reprojects_when_a_texture_it_names_lands_first() {
         let tex_path = "textures/first.png";
@@ -2326,8 +2348,9 @@ mod tests {
     }
 
     /// An entity naming a mesh while its reload decodes is served what its
-    /// siblings show, the last good copy, until the new one lands; the
-    /// change is decoded once for both.
+    /// siblings show, the last good copy, until the new one lands.
+    ///
+    /// The change is decoded once for both.
     #[test]
     fn an_entity_naming_an_asset_mid_reload_is_served_the_last_good_copy() {
         let obj_path = "meshes/sibling.obj";
@@ -2386,9 +2409,10 @@ mod tests {
             .map(|resolved| resolved.handle.positions.len())
     }
 
-    /// An entity served the last good copy mid-reload is re-tagged with the
-    /// new value on the frame it lands, its stale projection dropped, like
-    /// the entity that held the asset before the change.
+    /// An entity served the last good copy mid-reload is re-tagged on the frame the value lands.
+    ///
+    /// Its stale projection is dropped, like that of the entity that held the
+    /// asset before the change.
     #[test]
     fn a_sibling_served_the_last_good_copy_is_retagged_when_the_new_value_lands() {
         let obj_path = "meshes/retagged.obj";
@@ -2414,9 +2438,10 @@ mod tests {
     }
 
     /// The only holder of a changed mesh leaves while it decodes, and a new
-    /// entity names it on the same frame: the new entity is not handed the
-    /// copy no one holds any more (it would never be refreshed), and shows
-    /// the new value once it lands.
+    /// entity names it on the same frame.
+    ///
+    /// The new entity is not handed the copy no one holds any more (it would
+    /// never be refreshed), and shows the new value once it lands.
     #[test]
     fn an_entity_naming_an_asset_its_last_holder_left_mid_reload_gets_the_new_value() {
         let obj_path = "meshes/handed_on.obj";

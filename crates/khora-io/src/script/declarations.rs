@@ -12,14 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The components a project's scripts declare, registered in the `World`.
-//!
-//! The compile path — the initial load and the hot-reload pump — sends, for
-//! each module it compiled, the components that module declares
-//! ([`ScriptDeclarations`]). The `script_components` data system drains them
-//! at the frame boundary, where the `World` is mutable, in every engine mode:
-//! an editor editing a scene that holds a script's component must know it,
-//! though no script runs.
+//! The components a project's scripts declare, registered in the `World` at
+//! the frame boundary, whether or not scripts run.
 //!
 //! What a declaration that changed does to the rows already stored:
 //!
@@ -31,9 +25,8 @@
 //! | deletes the declaration | the component stays, with its data, **orphaned** — never silently deleted |
 //! | declares an orphan again | adopted, relaid out to the new declaration |
 //!
-//! A component another module already declares is refused, its first
-//! module's declaration kept: two modules that never import each other each
-//! compile alone, so this is the one place that sees both.
+//! A component another module already declares is refused, the first kept:
+//! modules compile alone, so this is the one place that sees both.
 
 use khora_data::ecs::SystemContext;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -49,8 +42,7 @@ use khora_data::ecs::{
 use khora_script::modules::behaviors::STATE_SUFFIX;
 use khora_script::vm::{DeclaredComponent, DeclaredKind};
 
-/// The components one module declares, as it last compiled — defined with
-/// the toolchain, where the `loading` family stages it.
+/// The components one module declares, as it last compiled.
 pub use khora_script::toolchain::ScriptDeclarations;
 
 /// What the registration remembers between frames: which module declares
@@ -62,11 +54,12 @@ pub struct DeclaredComponents {
     /// Components a module stopped declaring, kept with their data.
     orphans: BTreeSet<String>,
     /// Declarations refused because another module owned the name, by name
-    /// and refused module: what it declares — that module's own once the
-    /// owner stops declaring it, as a restart would give it.
+    /// and refused module.
+    ///
+    /// The first of them inherits the name once its owner stops declaring it,
+    /// as a restart would give it.
     refused: BTreeMap<(String, String), DeclaredComponent>,
-    /// Modules an unmount closed: what they declared is orphaned quietly —
-    /// the project they belonged to is no longer the one open.
+    /// Modules an unmount closed: what they declared is orphaned with no problem shown.
     unmounted: BTreeSet<String>,
     /// Orphans an unmount left: kept, and nothing to tell anyone about.
     quiet: BTreeSet<String>,
@@ -78,14 +71,15 @@ impl DeclaredComponents {
         self.orphans.contains(component)
     }
 
-    /// The module declaring `component`.
+    /// Returns the module declaring `component`.
     pub fn owner_of(&self, component: &str) -> Option<&str> {
         self.owner.get(component).map(String::as_str)
     }
 
-    /// Every name a module declares now — components, behaviors, systems —
-    /// sorted, each once: the names a new declaration is refused. Neither a
-    /// behavior's `#state` companion nor an orphan is listed.
+    /// Returns every name a module declares now, sorted: those a new declaration is refused.
+    ///
+    /// Components, behaviors and systems; neither a behavior's `#state`
+    /// companion nor an orphan.
     pub fn declared_names(&self) -> Vec<khora_core::script::ComponentName> {
         let mut names: Vec<_> = self
             .owner
@@ -97,15 +91,14 @@ impl DeclaredComponents {
         names
     }
 
-    /// Says `modules` are being unmounted: what they declared is orphaned
-    /// with nothing wrong to show — their project is closed.
+    /// Says `modules` are being unmounted: what they declared is orphaned with no problem shown.
     pub fn unmounting(&mut self, modules: impl IntoIterator<Item = String>) {
         self.unmounted.extend(modules);
     }
 
-    /// What is wrong with the declarations now, as a tool shows it: every
-    /// name a module is refused because another declares it, and every
-    /// component no module declares any more — but those an unmount left.
+    /// Returns what is wrong with the declarations now: the names refused, and the orphans.
+    ///
+    /// Orphans an unmount left are not listed.
     pub fn standing_problems(&self) -> Vec<khora_core::problems::Problem> {
         use khora_core::problems::{Problem, ProblemSeverity};
         let refusals = self.refused.keys().map(|(name, module)| {
@@ -166,11 +159,11 @@ pub struct DeclarationReport {
     pub refused: Vec<String>,
 }
 
-/// Registers, relays out, moves and orphans what `batch` declares, in
-/// `world`. `state` is the registration's memory across calls.
+/// Registers, relays out, moves and orphans what `batch` declares, in `world`.
 ///
-/// A batch is taken whole: a component one module drops and another declares
-/// in the same batch changes owner and is never orphaned.
+/// `state` is the registration's memory across calls. A batch is taken whole:
+/// a component one module drops and another declares in the same batch
+/// changes owner and is never orphaned.
 pub fn apply_declarations(
     world: &mut World,
     state: &mut DeclaredComponents,
@@ -500,12 +493,11 @@ fn layout_of(component: &DeclaredComponent) -> Result<PackedLayout, khora_data::
 }
 
 /// Registers in `world` what the compile path staged in `runtime`'s
-/// [`Reserve`](khora_core::lane::Reserve), with the runtime's shared
-/// `Arc<Mutex<DeclaredComponents>>` as the registration's memory.
+/// [`Reserve`](khora_core::lane::Reserve).
 ///
-/// Takes what the reserve holds: a second call registers nothing until the
-/// compile path stages again. An empty report when the runtime holds no
-/// reserve, no state, or nothing is staged.
+/// The runtime's `Arc<Mutex<DeclaredComponents>>` is the registration's
+/// memory. Takes what the reserve holds; an empty report when the runtime
+/// holds no reserve, no state, or nothing is staged.
 pub fn register_pending(world: &mut World, runtime: &Runtime) -> DeclarationReport {
     let Some(reserve) = runtime.look_up::<khora_core::lane::Reserve>() else {
         return DeclarationReport::default();

@@ -18,13 +18,10 @@ use std::error::Error;
 
 use super::resource_resolver::GltfResourceResolver;
 
-/// Resolver that fails on every external URI lookup. Suitable as a default
-/// for self-contained `.glb` files (which embed all buffers + images) and
-/// as a placeholder when no project context is available.
+/// A resolver refusing every external URI: enough for a `.glb`, which embeds them.
 ///
-/// `MeshDispatcher::default` uses this. For `.gltf` files referencing
-/// external `.bin` / texture buffers, construct
-/// [`MeshDispatcher::new(Arc::new(FileSystemResolver::new(...)))`] instead.
+/// [`MeshDispatcher::default`](super::MeshDispatcher::default) uses it. A `.gltf`
+/// with external buffers or textures needs a [`FileSystemResolver`](super::FileSystemResolver).
 pub struct NoOpResourceResolver;
 
 impl GltfResourceResolver for NoOpResourceResolver {

@@ -12,11 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Shader decoder: raw `.wgsl` bytes → `CpuShaderSource` (UTF-8).
+//! Shader decoder: `.wgsl` bytes → `CpuShaderSource` (UTF-8).
 //!
-//! Auto-registered via [`inventory::submit!`] under the canonical
-//! `"shader"` slot. Pure CPU work; the hot-reload pump feeds the decoded
-//! string to `PipelineSystem::set_overlay_source`.
+//! The hot-reload pump hands the source to `PipelineSystem::set_overlay_source`.
 
 use anyhow::{Context, Result};
 use khora_core::renderer::api::shader::CpuShaderSource;

@@ -12,15 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The project indexes built off the frame, taken in at its boundary.
-//!
-//! The `loading` family stages each project index in the runtime's reserve;
-//! `asset_index_intake` takes them in after `asset_intake`, so the decodes
-//! read for the asset service serving now are installed in it first. An
-//! `Open` builds a new asset service and swaps it into the runtime's; a
-//! `Reindex` reindexes the runtime's. Each outcome is filed under its
-//! ticket in the runtime's `IndexHub`, and the prefabs a script may spawn
-//! (the runtime's `PrefabCatalog`) are those the new index holds.
+//! The project indexes built off the frame, taken in at its boundary: an
+//! `Open` swaps in a new asset service, a `Reindex` reindexes the current one.
 
 use std::sync::{Arc, Mutex};
 
@@ -35,9 +28,10 @@ use crate::asset::{AssetService, FileLoader, IndexHub, IndexOutcome};
 use crate::serialization::prefab_catalog;
 use crate::trust::{FileGuard, ProjectTrustState, Refusals};
 
-/// Takes in every project index the reserve holds, into the runtime's asset
-/// service, and files each outcome in the runtime's `IndexHub`. Nothing
-/// without a hub or a reserve.
+/// Takes every project index the reserve holds into the runtime's asset service.
+///
+/// Files each outcome in the runtime's `IndexHub`, and makes the runtime's
+/// `PrefabCatalog` follow the new index. Nothing without a hub or a reserve.
 pub fn take_in_indexes(runtime: &Runtime) {
     let (Some(hub), Some(reserve)) = (
         runtime.resources.get::<Arc<IndexHub>>(),
@@ -47,9 +41,7 @@ pub fn take_in_indexes(runtime: &Runtime) {
     };
     for indexed in reserve.take::<IndexedAssets>() {
         let ticket = indexed.ticket;
-        // An index whose project was replaced since it was received — an
-        // `Open` filed meanwhile — is taken in nowhere: its ticket already
-        // says so.
+        // An `Open` filed meanwhile replaced its project: its ticket already says so.
         if !hub.is_pending(ticket) {
             continue;
         }
@@ -62,9 +54,7 @@ pub fn take_in_indexes(runtime: &Runtime) {
     }
 }
 
-/// Makes the runtime's prefab catalog, when it has one, the prefabs its
-/// asset service indexes now: a prefab indexed since is one a script may
-/// spawn, and one gone is not.
+/// Makes the runtime's prefab catalog, when it has one, the prefabs its asset service indexes now.
 fn follow_prefabs(runtime: &Runtime) {
     let (Some(catalog), Some(service)) = (
         runtime.resources.get::<PrefabCatalog>(),
@@ -90,9 +80,7 @@ fn take_in(runtime: &Runtime, indexed: IndexedAssets) -> IndexOutcome {
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     match indexed.kind {
         IndexKind::Reindex => {
-            // The engine may serve another project now — a host opened one
-            // without filing it here: the index is for the one it was filed
-            // for.
+            // A host may have opened another project without filing it here.
             if service.project_root() != Some(indexed.project_root.as_path()) {
                 return Err(format!(
                     "the engine no longer serves {}",
@@ -105,15 +93,11 @@ fn take_in(runtime: &Runtime, indexed: IndexedAssets) -> IndexOutcome {
         }
         IndexKind::Open => {
             let assets_root = indexed.project_root.join("assets");
-            // The project's files are read through the run's guard, its
-            // refusals reported with the run's other problems.
             let refusals = runtime
                 .resources
                 .get::<Arc<Refusals>>()
                 .cloned()
                 .unwrap_or_else(|| Arc::new(Refusals::new(None, None)));
-            // Read at the trust the project was opened at: a restricted
-            // project's files at the strict limits.
             let trust = ProjectTrustState::of(runtime).trust();
             let io = Box::new(FileLoader::guarded(FileGuard::new(
                 &assets_root,
@@ -122,9 +106,7 @@ fn take_in(runtime: &Runtime, indexed: IndexedAssets) -> IndexOutcome {
             )));
             let mut opened = AssetService::new(&bytes, io, Arc::new(MetricsRegistry::new()), None)
                 .map_err(|error| format!("{error:#}"))?;
-            // A trusted open lifts what the project's restricted limits
-            // refused — read again, at a trusted project's — whatever was
-            // refused before it landed.
+            // A trusted open lifts what the project's restricted limits refused.
             if trust == crate::trust::Trust::Project {
                 refusals
                     .release_strict_under(crate::trust::Trust::Restricted, &indexed.project_root);
@@ -133,8 +115,6 @@ fn take_in(runtime: &Runtime, indexed: IndexedAssets) -> IndexOutcome {
             opened.set_trust(trust);
             opened.register_default_decoders(&assets_root);
             opened.serve_project(&indexed.project_root);
-            // The engine holds the service it serves by this one handle: the
-            // project opened takes its place behind it.
             std::mem::swap(&mut *service, &mut opened);
             // A uuid is its path unless the registry froze it, so another
             // project's `textures/a.png` is the same uuid: what the engine took

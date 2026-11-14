@@ -187,9 +187,8 @@ fn root_key() -> PersistentId {
     PersistentId::named("gltf-node:")
 }
 
-/// The key of the node at `path` from the scene's root: each segment (split
-/// on the `/` its escaping leaves bare) composed onto its parent's key, from
-/// the root's.
+/// The key of the node at `path` from the scene's root, each segment composed
+/// onto its parent's key.
 fn key(path: &str) -> PersistentId {
     let mut segments = Vec::new();
     let mut segment = String::new();
@@ -291,9 +290,8 @@ fn assert_identity(t: &Transform, what: &str) {
 
 // ─── Record shape ───────────────────────────────────────────────────────
 
-/// The record of a two-node, two-material file: entity 0 is the root, then
-/// each node in the file's tree order, each under its parent, with its own
-/// transform and its primitive's mesh and material sub-assets.
+/// A scene record is its root, then each node in tree order under its parent,
+/// with its own transform and its primitive's mesh and material sub-assets.
 #[test]
 fn a_scene_record_is_its_root_then_each_node_with_parent_transform_and_sub_assets() {
     let record = scene_of(&TwoNodes::default().glb());
@@ -401,9 +399,8 @@ fn a_primitive_without_material_shows_material_default() {
     assert_eq!(material_of(&world, plain), Some(sub("material_default")));
 }
 
-/// A node shows its mesh's primitive 0 itself; each further primitive is a
-/// child entity `prim{p}` at the node's origin, with its own mesh and
-/// material, keyed by the node's path and `#prim{p}`.
+/// A node shows its mesh's primitive 0 itself; each further one is a child
+/// `prim{p}` at its origin, keyed by the node's path and `#prim{p}`.
 #[test]
 fn a_node_shows_primitive_zero_and_a_prim_child_per_further_primitive() {
     let mut b = GltfBuilder::new();
@@ -989,9 +986,8 @@ fn the_scene_sub_asset_loads_as_a_prefab_through_the_service() {
     );
 }
 
-/// The scene sub-asset reads, through the shared reader, as the prefab the
-/// service loads: a glTF's scene is a prefab a project's scenes link to,
-/// and the editor reads every prefab through the reader.
+/// The scene sub-asset reads as a prefab through the shared reader, which the
+/// editor reads every prefab through.
 #[test]
 fn the_scene_sub_asset_reads_as_a_prefab_through_the_shared_reader() {
     let project = Project::with_file(&TwoNodes::default().glb());
@@ -1093,10 +1089,10 @@ fn level_with_override_on_b(assets: &Arc<Mutex<AssetService>>) -> (SceneFile, Pe
     (file, instance)
 }
 
-/// The glTF re-exported — nodes reordered in the file, `A` moved, material
-/// 1 recoloured — and the saved level opened again: the override stays on
-/// `B`, which keeps its material; what the designer left alone follows the
-/// file.
+/// A re-exported glTF keeps a designer's override on the same node; what the
+/// designer left alone follows the file.
+///
+/// The re-export reorders nodes, moves `A` and recolours material 1.
 #[test]
 fn a_reexported_gltf_keeps_a_designer_override_on_the_same_node() {
     let project = Project::with_file(&TwoNodes::default().glb());
@@ -1148,9 +1144,8 @@ fn a_reexported_gltf_keeps_a_designer_override_on_the_same_node() {
     );
 }
 
-/// The glTF re-exported with `B` renamed: `B`'s override has no node to
-/// land on any more — the renamed node comes in as the file has it, and
-/// the load reports the override's node gone.
+/// A renamed node orphans its override: the node comes in as the file has it,
+/// and the load reports the override's node gone.
 #[test]
 fn a_renamed_node_orphans_its_override_and_the_load_reports_it() {
     let project = Project::with_file(&TwoNodes::default().glb());
@@ -1233,9 +1228,8 @@ fn matrix_node(matrix: &[f32; 16]) -> Vec<u8> {
     b.build_glb()
 }
 
-/// A matrix that is a rotation and a scale far from 1 — an exporter's unit
-/// conversion (×100 centimetres, ×1000 millimetres, ÷1000) — is no shear:
-/// it imports with that scale.
+/// A rotation with a scale far from 1, an exporter's unit conversion (×100,
+/// ×1000, ÷1000), is no shear: it imports with that scale.
 #[test]
 fn a_rotated_matrix_with_a_scale_far_from_one_is_not_a_shear() {
     let axes = [[1.0, 2.0, 3.0], [0.0, 1.0, 0.0], [-0.3, 0.2, 0.9]];
@@ -1282,9 +1276,8 @@ fn a_matrix_scaling_an_axis_to_zero_is_not_a_shear() {
     assert_scale(&t, [0.0, 1.0, 1.0], "M");
 }
 
-/// A shear is a shear at any size: the same sheared matrix scaled down to
-/// millimetres is refused, as it is at full size, rather than imported
-/// with its shear dropped.
+/// A shear scaled down to millimetres is refused as it is at full size, never
+/// imported with its shear dropped.
 #[test]
 fn a_shear_in_a_matrix_scaled_down_is_refused() {
     for scale in [1.0f32, 0.001] {
@@ -1318,9 +1311,9 @@ fn a_mirroring_matrix_imports_with_a_negative_scale() {
     );
 }
 
-/// Opens `bytes` as the file at `path` and extracts its scene sub-asset
-/// `label`: the error of whichever step refuses it, the open or the
-/// extraction.
+/// Opens `bytes` as the file at `path` and extracts its scene sub-asset `label`.
+///
+/// The error is that of whichever step refuses it, the open or the extraction.
 fn import_scene(bytes: &[u8], path: &str, label: &str) -> anyhow::Result<SceneRecord> {
     let dir = tempfile::tempdir().expect("a temp dir");
     let container = GltfContainer::new(dir.path());
@@ -1332,11 +1325,10 @@ fn import_scene(bytes: &[u8], path: &str, label: &str) -> anyhow::Result<SceneRe
         .0)
 }
 
-/// A node whose numbers overflow a float — `1e39`, past `f32::MAX` — has no
-/// place: the glTF is refused as it is read, nothing of it imported, and the
-/// error says where in the file the number is — out of range, at a line and
-/// a column — rather than bringing in an infinite transform whose children
-/// propagate NaN.
+/// A node number past `f32::MAX` refuses the whole glTF, with the line and
+/// column of the number.
+///
+/// Never an infinite transform whose children propagate NaN.
 #[test]
 fn a_node_transform_that_overflows_a_float_refuses_the_gltf_where_the_number_is() {
     for (case, field, value) in [
@@ -1431,9 +1423,8 @@ fn a_deep_node_chain_imports_in_time_proportional_to_its_depth() {
 
 // ─── A glTF scene inside a prefab ───────────────────────────────────────
 
-/// A `.kprefab` holding an instance of a glTF scene keeps the link: the
-/// glTF re-exported, the prefab instantiates its nodes as the file has them
-/// now.
+/// A `.kprefab` holding a glTF scene instance keeps the link: it instantiates
+/// the nodes as the re-exported file has them.
 #[test]
 fn a_prefab_holding_a_gltf_instance_expands_the_file_as_it_is_now() {
     let project = Project::with_file(&TwoNodes::default().glb());

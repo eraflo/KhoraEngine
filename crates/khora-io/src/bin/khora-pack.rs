@@ -12,13 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `khora-pack <assets-root> <out-dir>` — packs a project's assets into the
-//! release layout (`index.bin`, `data.pack`, `manifest.bin`) with
-//! [`PackBuilder`], the packer the editor's Build Game uses: the same UUIDs,
-//! resolved through the project's registry, and the same asset kinds.
+//! `khora-pack <assets-root> <out-dir>`: packs a project's assets into the
+//! release layout with [`PackBuilder`], as the editor's Build Game does.
 //!
-//! What it says goes through `log`, to a sink that writes to stderr — the
-//! one place a `log::Log` may print, since it is where the log ends up.
+//! Its log sink writes to stderr: the one place a `log::Log` may print.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -71,8 +68,7 @@ fn main() -> ExitCode {
     }
 }
 
-/// The assets root and the output directory, in that order — or what to
-/// write instead.
+/// Returns the assets root and the output directory, in that order, or the usage to print.
 fn arguments(mut args: impl Iterator<Item = String>) -> Result<(PathBuf, PathBuf), String> {
     const USAGE: &str = "usage: khora-pack <assets-root> <out-dir>";
     let root = args.next().ok_or(USAGE)?;

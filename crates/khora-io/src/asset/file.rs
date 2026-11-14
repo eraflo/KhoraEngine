@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! File-based asset loader for editor/development mode.
-//!
-//! Reads assets directly from individual files on disk under a root directory.
+//! The asset loader of loose files on disk, for the editor and development builds.
 
 use anyhow::{bail, Context, Result};
 use khora_core::asset::AssetSource;
@@ -25,18 +23,16 @@ use std::sync::Arc;
 use super::{AssetIo, AssetWriter};
 use crate::trust::{FileGuard, Refusals, Trust};
 
-/// File-based asset loader for editor/development mode.
-///
-/// Reads assets directly from individual files on disk. The `root` path is
-/// typically `<project>/assets/`.
+/// An asset loader reading loose files under a root, typically `<project>/assets/`.
 pub struct FileLoader {
     guard: FileGuard,
 }
 
 impl FileLoader {
-    /// A loader reading the files under `root` as a trusted project's, its
-    /// refusals kept in memory: what a test or a tool with no refusals of
-    /// its own reads through. A run reads through [`Self::guarded`].
+    /// Returns a loader reading the files under `root` at a trusted project's trust.
+    ///
+    /// Its refusals stay in memory: for a test or a tool with none of its own.
+    /// A run reads through [`Self::guarded`].
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self::guarded(FileGuard::new(
             root,
@@ -45,7 +41,7 @@ impl FileLoader {
         ))
     }
 
-    /// A loader reading every file through `guard`, under the guard's root.
+    /// Returns a loader reading every file through `guard`, under the guard's root.
     pub fn guarded(guard: FileGuard) -> Self {
         Self { guard }
     }

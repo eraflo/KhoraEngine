@@ -12,19 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Mesh decoders for various formats (GLTF, OBJ) plus a sniffing dispatcher.
-//!
-//! Unlike texture / font, the mesh slot has multiple competing implementations
-//! — the consumer (editor / runtime) explicitly picks one when constructing
-//! the [`crate::asset::AssetService`]. Default choice is [`MeshDispatcher`],
-//! which delegates to gltf or obj based on byte sniffing.
-//!
-//! ```ignore
-//! use khora_io::asset::{MeshDispatcher, FileSystemResolver};
-//! use std::sync::Arc;
-//! let resolver = Arc::new(FileSystemResolver::new(project_root.join("assets/meshes")));
-//! svc.register_decoder::<Mesh>("mesh", MeshDispatcher::new(resolver));
-//! ```
+//! Mesh decoders (glTF, OBJ), the dispatcher that picks one by the file's bytes,
+//! and the resolvers a glTF reads its external files through.
 
 mod dispatcher;
 mod file_system_resolver;

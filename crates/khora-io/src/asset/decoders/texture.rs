@@ -12,19 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Texture decoder: image bytes → `CpuTexture` (via the `image` crate).
+//! Texture decoder: image bytes → `CpuTexture`, in its pixel layout only.
 //!
-//! Auto-registered via [`inventory::submit!`] under the canonical
-//! `"texture"` slot. Single canonical implementation — no swap needed.
-//!
-//! The decoder reports the pixel **layout** only. Whether the values are to be
-//! read as sRGB or linear is the *role* of the material slot referencing them,
-//! supplied downstream as a
-//! [`TextureColorSpace`](khora_core::renderer::api::resource::TextureColorSpace) —
-//! the same PNG is an sRGB albedo map or a linear normal map depending on the
-//! slot. Float sources (Radiance `.hdr`, OpenEXR) keep their high dynamic range
-//! instead of being flattened to 8-bit, which is what makes an authored
-//! environment map usable by the IBL bake.
+//! Whether the values are sRGB or linear is the
+//! [`TextureColorSpace`](khora_core::renderer::api::resource::TextureColorSpace)
+//! of the material slot that reads the texture.
 
 use anyhow::{Context, Result};
 use image::ColorType;
@@ -117,9 +109,7 @@ impl AssetDecoder<CpuTexture> for TextureDecoder {
     }
 }
 
-/// Refuses an image whose header announces more than `limits` allow — a
-/// side past the dimension cap, or pixels filling more than the decoded
-/// limit — before a pixel is decoded.
+/// Refuses, from its header alone, an image whose sides or pixels pass `limits`.
 fn check_header(bytes: &[u8], limits: &Limits) -> Result<(), LimitExceeded> {
     let Ok(decoder) = image::ImageReader::new(std::io::Cursor::new(bytes))
         .with_guessed_format()
@@ -138,10 +128,8 @@ fn check_header(bytes: &[u8], limits: &Limits) -> Result<(), LimitExceeded> {
             });
         }
     }
-    // What the decode fills: the texture it becomes, 8 bytes a pixel for a
-    // float image, 4 otherwise. The decoded image is turned into it without
-    // a copy when it already has its layout; `image`'s own limit bounds the
-    // decode itself.
+    // What the decode fills is the texture it becomes: 8 bytes a pixel for a
+    // float image, 4 otherwise. `image`'s own limit bounds the decode itself.
     let float = matches!(decoder.color_type(), ColorType::Rgb32F | ColorType::Rgba32F);
     let pixels = u64::from(width) * u64::from(height);
     let decoded = pixels.saturating_mul(if float { 8 } else { 4 });
@@ -275,11 +263,10 @@ mod tests {
         png
     }
 
-    /// **An image announcing huge dimensions is refused before decoding**:
-    /// a PNG whose header says 100000 × 100000 — 40 GB of pixels — is
-    /// refused as a `LimitExceeded` by its header alone, at a trusted
-    /// project's limits and at the strict ones; so is one only too wide, or
-    /// only too tall, against the dimension cap.
+    /// **An image announcing huge dimensions is refused by its header**, at
+    /// both trusts.
+    ///
+    /// 100000 × 100000 pixels (40 GB), and one side only past the cap.
     #[test]
     fn an_image_announcing_huge_dimensions_is_refused_by_its_header() {
         for trust in [Trust::Project, Trust::Restricted] {
@@ -304,9 +291,8 @@ mod tests {
         }
     }
 
-    /// **An image whose pixels pass the decoded limit is refused**: within
-    /// the dimension cap, 100 × 100 RGBA pixels are 40 000 bytes, past a
-    /// 1 000-byte `max_decoded_bytes`; under ample limits it decodes.
+    /// **An image whose pixels pass the decoded limit is refused**: 100 × 100
+    /// RGBA pixels are 40 000 bytes, past a 1 000-byte limit.
     #[test]
     fn an_image_whose_pixels_pass_the_decoded_limit_is_refused() {
         let file = png(100, 100);
@@ -333,11 +319,8 @@ mod tests {
         assert_eq!((texture.size.width, texture.size.height), (100, 100));
     }
 
-    /// **A square image at the dimension cap is within the decoded limit**:
-    /// an 8-bit RGBA image as wide and as tall as the cap allows — 16384² at a
-    /// project's limits, 8192² at the strict ones — fills `width × height × 4`
-    /// bytes, exactly its trust's decoded limit (1 GiB, 256 MiB), so its
-    /// header is not refused.
+    /// **A square image at the dimension cap passes its header check**: its
+    /// `side² × 4` bytes are exactly its trust's decoded limit.
     #[test]
     fn a_square_image_at_the_dimension_cap_passes_its_header_check() {
         for (trust, side) in [(Trust::Project, 16384), (Trust::Restricted, 8192)] {
@@ -353,9 +336,8 @@ mod tests {
         }
     }
 
-    /// **An image wider than the strict dimension decodes only under the
-    /// larger limits**: 16384 × 1 pixels is a trusted project's widest, and
-    /// twice an untrusted one's.
+    /// **16384 × 1 pixels decode at a trusted project's limits**: twice the
+    /// strict width.
     #[test]
     fn an_image_wider_than_the_strict_dimension_decodes_only_under_the_larger_limits() {
         let file = png(16384, 1);

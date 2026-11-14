@@ -12,47 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The engine's components, as Ergon declarations.
+//! The engine's components as Ergon declarations, built from each
+//! [`ComponentShape`], so a script's misspelt field is refused at compile time.
 //!
-//! Every component publishes a [`ComponentShape`]. This turns that shape into
-//! Ergon source, so a script can name `Transform.translation` and be told at
-//! compile time when it writes `tranlsation` instead.
-//!
-//! # Served, not written
-//!
-//! The mirrors are a [`SourceLoader`] answer, not a file. A generated file that
-//! an author can open becomes stale and then edited, in that order, and the
-//! second is discovered long after the first. Serving them in memory means the
-//! mirror always describes *the engine that is running* — there is no older copy
-//! for it to disagree with, and [`PreludeLoader`] deliberately answers before
-//! the disk so a file that somehow exists at that path cannot shadow it.
-//!
-//! # Partial by design
-//!
-//! Ergon cannot yet name every type a component field can have. Such a field is
-//! **kept as a comment** rather than dropped: the omission then reads where an
-//! author looks for it, and the comment names the Rust type it could not
-//! express — which is what [`FieldSchema::ty`] carries the source spelling for.
-//!
-//! Dropping the whole component instead would be worse: `RigidBody.mass` is
-//! perfectly expressible, and losing it because `body_type` is an enum would
-//! cost the author the fields that do work.
-//!
-//! # What a mirror buys today, and what it does not
-//!
-//! It buys a name that resolves, a field that resolves with its type, and a
-//! misspelling refused where it was written. A `component` is written with
-//! `e.Set(C { … })` and read with `e.Get(C)`, a read-only copy; a component a
-//! script cannot write stays a `struct` — a `Transform` value, built as a
-//! literal or passed as a parameter, reads and writes its fields like any
-//! struct's. `e.Transform` is refused, naming `Get` — pinned by
-//! `a_component_is_read_from_an_entity_with_get` here.
-//!
-//! The distinction matters because `ENGINE_TYPES` in `khora-script` records the
-//! mistake this resembles: it once named `Transform`, which had no fields at
-//! all, so `Transform t;` shaped cleanly and failed with the misleading
-//! "`Transform` has no `x`". A mirror is the opposite — the fields are real and
-//! the remaining error names the thing that is actually missing.
+//! Served from memory, never a file, so they always describe the running
+//! engine. A field Ergon cannot name is kept as a comment naming its Rust type
+//! ([`FieldSchema::ty`]), never dropped with its component.
+//! See the book: reference/ergon.md, "Writing components".
 //!
 //! [`ComponentShape`]: khora_data::scene::ComponentShape
 //! [`FieldSchema::ty`]: khora_data::scene::FieldSchema::ty
@@ -64,18 +30,16 @@ use khora_data::scene::{ComponentRegistration, ComponentShape};
 use khora_script::modules::SourceLoader;
 use khora_script::TokenKind;
 
-/// Where a script imports the mirrors from.
+/// Where a script imports the mirrors from: `import "engine/components.erg";`.
 ///
-/// `import "engine/components.erg";` — an ordinary import, so a script that does
-/// not use a component pays nothing. A project's own `component` may not take
-/// an engine component's name whether it imports this or not: a name is unique
-/// among every component the engine stores.
+/// A project's own `component` may not take an engine component's name,
+/// imported or not: a name is unique among every component the engine stores.
 pub const MIRROR_MODULE: &str = khora_script::ENGINE_COMPONENTS_MODULE;
 
-/// The Ergon source mirroring every registered component.
+/// Returns the Ergon source mirroring every registered component.
 ///
-/// Built once. The component registry is filled by `inventory` at link time, so
-/// the answer cannot change while the process runs.
+/// Built once: the registry is filled at link time, so it cannot change while
+/// the process runs.
 pub fn mirror_source() -> &'static str {
     static SOURCE: OnceLock<String> = OnceLock::new();
     SOURCE.get_or_init(generate)
@@ -104,7 +68,7 @@ impl<L> PreludeLoader<L> {
         Self { inner }
     }
 
-    /// The wrapped loader.
+    /// Returns the wrapped loader.
     pub fn inner(&self) -> &L {
         &self.inner
     }
@@ -113,9 +77,8 @@ impl<L> PreludeLoader<L> {
 impl<L: SourceLoader> SourceLoader for PreludeLoader<L> {
     fn load(&self, path: &str) -> Option<String> {
         if path == MIRROR_MODULE {
-            // Ahead of the inner loader on purpose: a file left at this path is
-            // a copy of an older engine, and letting it win would put the
-            // author's tools and the running engine into quiet disagreement.
+            // Ahead of the inner loader: a file left at this path is a copy of
+            // an older engine, and must not shadow the running one.
             return Some(mirror_source().to_owned());
         }
         self.inner.load(path)
@@ -126,10 +89,11 @@ impl<L: SourceLoader> SourceLoader for PreludeLoader<L> {
     }
 }
 
-/// Every engine component's name and former name, and every retired
-/// component's, sorted: the complete list — the mirror leaves some out, the
-/// registrations do not. A retired name stays the engine's: a script
-/// declaring it would read an old file's cells of the type that was removed.
+/// Returns every engine component's name, former name and retired name, sorted.
+///
+/// The complete list, which the mirror is not. A retired name stays the
+/// engine's: a script declaring it would read an old file's cells of the
+/// removed type.
 pub fn engine_component_names() -> &'static [String] {
     static NAMES: OnceLock<Vec<String>> = OnceLock::new();
     NAMES.get_or_init(|| {
@@ -191,10 +155,8 @@ fn declaration(registration: &ComponentRegistration) -> String {
         ComponentShape::Fields(fields) => fields,
     };
 
-    // A name the language cannot spell — a tuple index, or a word it reserves.
-    // Mirroring one means inventing a name, and that name would then have to
-    // agree with the inspector and with what a scene file writes, neither of
-    // which has one to offer. Better absent than invented.
+    // A name the language cannot spell is never invented: the inspector and
+    // the scene file would have to agree with it, and have none to offer.
     if let Some((field, reason)) = fields
         .iter()
         .find_map(|field| unspellable(field.name).map(|reason| (field, reason)))
@@ -219,9 +181,7 @@ fn declaration(registration: &ComponentRegistration) -> String {
         .map(|slot| (registration.script_type)(slot).map(|ty| ty.to_string()))
         .collect();
 
-    // A component none of whose fields can be expressed would otherwise mirror
-    // as an empty struct — which reads as a marker. That is the same conflation
-    // `ComponentShape::Opaque` exists to prevent, one layer up.
+    // With no field expressible, an empty struct would read as a marker.
     if types.iter().all(Option::is_none) {
         return not_mirrored(name, "Ergon cannot yet name the type of any of its fields");
     }
@@ -275,16 +235,11 @@ fn not_mirrored(name: &str, reason: &str) -> String {
     format!("// {name} — not mirrored: {reason}.\n")
 }
 
-/// Why an Ergon source could not spell `name` as a field, if it could not.
+/// Returns why an Ergon source could not spell `name` as a field, if it could not.
 ///
-/// Asked of the lexer rather than answered here, so the keyword list has one
-/// home. `Script.behavior` and `UiInteraction.state` are both reserved words:
-/// mirroring either would produce a module that does not parse, and the mistake
-/// would then surface in every script that imported it rather than here.
-///
-/// The two reasons are kept apart because they are different problems. A tuple
-/// index will never have a name; a reserved word has one that a future version
-/// of the language could let through, or that renaming the Rust field would fix.
+/// Asked of the lexer, so the keyword list has one home. A tuple index and a
+/// reserved word (`Script.behavior`) get different reasons: only the second
+/// could be fixed by renaming the Rust field.
 fn unspellable(name: &str) -> Option<&'static str> {
     match khora_script::lex(name)
         .tokens
@@ -309,10 +264,12 @@ mod tests {
         compile_module(&loader, "main.erg")
     }
 
-    /// **The whole module type-checks.** Every declaration the generator emits
-    /// is put in front of the real checker, so a type spelling it invents that
-    /// the language does not know — or a field name that does not parse — fails
-    /// here rather than in whichever script first imported it.
+    /// **The whole module type-checks.**
+    ///
+    /// Every declaration the generator emits is put in front of the real
+    /// checker, so a type spelling it invents that the language does not know —
+    /// or a field name that does not parse — fails here rather than in whichever
+    /// script first imported it.
     #[test]
     fn the_mirrors_compile() {
         let result = compile("import \"engine/components.erg\";\nfn void Main() { }");
@@ -382,10 +339,12 @@ mod tests {
         );
     }
 
-    /// **A mirrored component is a struct a script can read.** A mirror is an
-    /// ordinary Ergon `struct`, so a value of it — here written as a literal,
-    /// every field given — is built, passed and read like any other: the
-    /// program compiles, and the read returns the field that was written.
+    /// **A mirrored component is a struct a script can read.**
+    ///
+    /// A mirror is an ordinary Ergon `struct`, so a value of it — here written
+    /// as a literal, every field given — is built, passed and read like any
+    /// other: the program compiles, and the read returns the field that was
+    /// written.
     ///
     /// `.y` goes through two hops on purpose: `translation` is a struct field
     /// holding an engine type, and `y` is that engine type's own component, so
@@ -420,12 +379,13 @@ mod tests {
         assert_eq!(machine.result(), Value::Float(2.5));
     }
 
-    /// **A component is read from an entity with `Get`.** Against the real
-    /// mirror, `e.Get(RigidBody)` compiles, the program says it reads
-    /// `RigidBody`, and the copy it returns imports as the mirror's struct:
-    /// the read returns the entity's mass. `e.RigidBody` stays refused — an
-    /// entity has no fields — and the refusal names `Get`, the way to read one,
-    /// no longer saying reading is unavailable.
+    /// **A component is read from an entity with `Get`.**
+    ///
+    /// Against the real mirror, `e.Get(RigidBody)` compiles, the program says it
+    /// reads `RigidBody`, and the copy it returns imports as the mirror's
+    /// struct: the read returns the entity's mass. `e.RigidBody` stays refused —
+    /// an entity has no fields — and the refusal names `Get`, the way to read
+    /// one.
     #[test]
     fn a_component_is_read_from_an_entity_with_get() {
         use std::collections::HashMap;
@@ -525,9 +485,10 @@ mod tests {
         assert!(source.contains("float z_near;"));
     }
 
-    /// A camera's aspect is the shape of the image it fills, not a field of
-    /// the camera: the mirror offers scripts no `aspect_ratio` to read or
-    /// write.
+    /// A camera's aspect is the shape of the image it fills, not a field of the
+    /// camera.
+    ///
+    /// The mirror offers scripts no `aspect_ratio` to read or write.
     #[test]
     fn the_camera_mirror_has_no_aspect_ratio() {
         let source = mirror_source();
@@ -554,9 +515,10 @@ mod tests {
         );
     }
 
-    /// A reserved word is its own reason, not folded into the positional one:
-    /// `UiInteraction.state` has a perfectly good name that this language
-    /// happens to have taken, which is a different problem with a different fix.
+    /// A reserved word is its own reason, not folded into the positional one.
+    ///
+    /// `UiInteraction.state` has a perfectly good name that this language happens
+    /// to have taken, which is a different problem with a different fix.
     #[test]
     fn a_reserved_field_name_is_reported_as_one() {
         assert!(
@@ -569,6 +531,7 @@ mod tests {
     }
 
     /// **A marker and a component nothing can express are not the same answer.**
+    ///
     /// `UiImage` has a field; it is an `AssetUUID`. Mirroring it as an empty
     /// struct would say it carries no data — the same conflation
     /// `ComponentShape::Opaque` exists to prevent, one layer up.
@@ -592,9 +555,11 @@ mod tests {
         assert!(mirror_source().contains("struct Teleported { }"));
     }
 
-    /// **Nothing is silently missing.** Every registered component appears —
-    /// as a declaration or as a stated reason. Without this, a component whose
-    /// fields all became unexpressible would quietly vanish from the language.
+    /// **Nothing is silently missing.**
+    ///
+    /// Every registered component appears — as a declaration or as a stated
+    /// reason. Without this, a component whose fields all became unexpressible
+    /// would quietly vanish from the language.
     #[test]
     fn every_component_is_either_declared_or_explained() {
         let source = mirror_source();
@@ -610,9 +575,11 @@ mod tests {
         }
     }
 
-    /// The mirror answers before the disk. A file left at that path is a copy of
-    /// an older engine, and letting it win would put the author's tooling and
-    /// the running engine into quiet disagreement.
+    /// The mirror answers before the disk.
+    ///
+    /// A file left at that path is a copy of an older engine, and letting it win
+    /// would put the author's tooling and the running engine into quiet
+    /// disagreement.
     #[test]
     fn a_file_at_the_mirror_path_does_not_shadow_the_mirror() {
         let loader = PreludeLoader::new(
@@ -671,9 +638,11 @@ mod tests {
         })
     }
 
-    /// **A script may write what an author may write.** Every component the
-    /// editor's "+ Add Component" offers is declared a `component` — the
-    /// physics and audio ones a game reaches for first among them.
+    /// **A script may write what an author may write.**
+    ///
+    /// Every component the editor's "+ Add Component" offers is declared a
+    /// `component` — the physics and audio ones a game reaches for first among
+    /// them.
     #[test]
     fn the_mirror_emits_components_not_structs() {
         let source = mirror_source();
@@ -696,9 +665,11 @@ mod tests {
         }
     }
 
-    /// **And nothing else is.** What the engine writes — `Derived`, `Runtime` —
-    /// what a tool writes, and `Transform`, which has its own placement
-    /// natives, stay plain structs, each saying why just above it.
+    /// **And nothing else is.**
+    ///
+    /// What the engine writes — `Derived`, `Runtime` — what a tool writes, and
+    /// `Transform`, which has its own placement natives, stay plain structs,
+    /// each saying why just above it.
     #[test]
     fn the_mirror_follows_the_add_component_rule() {
         let source = mirror_source();
@@ -745,15 +716,16 @@ mod tests {
 
     // ── The type mapping ──────────────────────────────
     //
-    // What a Rust field type is to a script is `ScriptField`'s answer
-    // (`khora_core::script::field`, where its spellings, refused widths and
-    // wrappers are pinned); the registration carries it here by slot.
+    // `ScriptField` (`khora_core::script::field`) answers what a Rust field
+    // type is to a script; the registration carries it here by slot.
 
-    /// **The type, not its spelling.** `length` is spelled `Meters` and
-    /// `stops` `Stops` — aliases a spelling cannot see through — and the
-    /// registration types them `float` and `Entity[]`: that is what is
-    /// mirrored. `odometer` is spelled `f32` but the registration gives it no
-    /// script type, so it is a comment, whatever its spelling suggests.
+    /// **The type, not its spelling.**
+    ///
+    /// `length` is spelled `Meters` and `stops` `Stops` — aliases a spelling
+    /// cannot see through — and the registration types them `float` and
+    /// `Entity[]`: that is what is mirrored. `odometer` is spelled `f32` but
+    /// the registration gives it no script type, so it is a comment, whatever
+    /// its spelling suggests.
     #[test]
     fn the_mirror_reads_the_trait_not_the_spelling() {
         use khora_core::script::ErgonType;
@@ -849,10 +821,12 @@ mod tests {
 
     // ── The engine's names ────────────
 
-    /// **Every engine component's name, mirrored or not.** A script may not
-    /// declare a component the engine has — and the mirror leaves some out
-    /// (`UiInteraction`, whose field is a reserved word), so the list is the
-    /// registry's, `formerly` names included, never the mirror's.
+    /// **Every engine component's name, mirrored or not.**
+    ///
+    /// A script may not declare a component the engine has — and the mirror
+    /// leaves some out (`UiInteraction`, whose field is a reserved word), so
+    /// the list is the registry's, `formerly` names included, never the
+    /// mirror's.
     #[test]
     fn the_prelude_names_every_engine_component() {
         let loader = PreludeLoader::new(MemoryLoader::new());
@@ -882,9 +856,11 @@ mod tests {
         );
     }
 
-    /// **The clash, against the real engine.** A script declaring `RigidBody`
-    /// — or `UiInteraction`, which the mirror does not declare — is refused
-    /// at the name, saying how to use the engine's instead.
+    /// **The clash, against the real engine.**
+    ///
+    /// A script declaring `RigidBody` — or `UiInteraction`, which the mirror
+    /// does not declare — is refused at the name, saying how to use the
+    /// engine's instead.
     #[test]
     fn a_script_component_named_like_an_engine_one_is_refused() {
         for name in ["RigidBody", "UiInteraction"] {
@@ -951,11 +927,12 @@ mod tests {
         );
     }
 
-    /// **A retired name is still the engine's.** A load checks a file's
-    /// declared names before the retired ones, so a script declaring a
-    /// retired component's name would capture an old file's cells: the name
-    /// is among the engine's, and a `component` or `behavior` declaring it is
-    /// refused at the name.
+    /// **A retired name is still the engine's.**
+    ///
+    /// A load checks a file's declared names before the retired ones, so a
+    /// script declaring a retired component's name would capture an old file's
+    /// cells: the name is among the engine's, and a `component` or `behavior`
+    /// declaring it is refused at the name.
     #[test]
     fn a_retired_component_name_is_refused_as_an_engine_one() {
         let loader = PreludeLoader::new(MemoryLoader::new());
@@ -972,9 +949,10 @@ mod tests {
         }
     }
 
-    /// **What a behavior replaced cannot be declared.** `"Script"` and
-    /// `"ScriptState"` — the components a behavior replaced, retired — are
-    /// refused as a `behavior` and as a `component`, at the name.
+    /// **What a behavior replaced cannot be declared.**
+    ///
+    /// `"Script"` and `"ScriptState"` — the components a behavior replaced,
+    /// retired — are refused as a `behavior` and as a `component`, at the name.
     #[test]
     fn a_script_may_not_declare_the_components_a_behavior_replaced() {
         for name in ["Script", "ScriptState"] {

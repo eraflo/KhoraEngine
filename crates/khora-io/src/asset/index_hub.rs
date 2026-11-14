@@ -12,14 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Projects indexed off the frame, landed at a frame's boundary.
+//! Projects indexed off the frame by the `loading` family, landed at a frame's boundary.
 //!
-//! A host files an index with [`IndexHub::file`] and keeps its
-//! [`IndexTicket`]. The `loading` family indexes it off the frame through
-//! the hub, which is the runtime's [`AssetIndexing`]; the
-//! `asset_index_intake` DataSystem builds or reindexes the engine's asset
-//! service at a frame's boundary and files the outcome under the ticket, for
-//! [`IndexHub::take_outcome`].
+//! See the book: concepts/the-frame.md, "Startup, once".
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
@@ -34,8 +29,7 @@ use khora_core::Runtime;
 /// What an index filed off the frame came to: landed, or why not.
 pub type IndexOutcome = Result<(), String>;
 
-/// How many indexes may wait to be built: past it, an index filed fails at
-/// once and says why.
+/// How many indexes may wait to be built; past it, an index filed fails at once.
 const INDEX_BACKLOG: usize = 64;
 
 /// The tickets filed and not landed, each with the project generation it was
@@ -46,11 +40,10 @@ struct IndexTickets {
     landed: HashMap<IndexTicket, IndexOutcome>,
 }
 
-/// The project indexes in flight: the requests filed, and the outcomes
-/// landed, by ticket.
+/// The project indexes in flight: the requests filed, and the outcomes landed, by ticket.
 ///
-/// Its locks are leaves: held only to file, look up or take, never across a
-/// call out.
+/// It is the runtime's [`AssetIndexing`]; the `asset_index_intake` DataSystem
+/// lands each index. Its locks are leaves.
 pub struct IndexHub {
     requests: Channel<IndexRequest>,
     next: AtomicU64,
@@ -58,9 +51,8 @@ pub struct IndexHub {
     /// project replaced since.
     opened: Arc<AtomicU64>,
     tickets: Mutex<IndexTickets>,
-    /// What a project's files are read through while indexed: the run's
-    /// refusals and the trust of the project open. `None` until both are
-    /// installed; the index then reads as it is (a test's).
+    /// The run's refusals and the open project's trust, which indexing reads files
+    /// through. `None` until both are installed: a test's index reads files as they are.
     through: Mutex<Option<ReadThrough>>,
 }
 
@@ -81,13 +73,10 @@ impl IndexHub {
         }
     }
 
-    /// Files the project at `project_root` to be indexed for `kind`, off
-    /// the frame, and landed at a later frame's boundary. Returns what its
-    /// outcome will be filed under.
+    /// Files the project at `project_root` to be indexed for `kind`; returns its ticket.
     ///
-    /// An `Open` replaces the project: every index filed before it and still
-    /// in flight lands an error at once, and its result is turned down when
-    /// it reaches the boundary.
+    /// An `Open` supersedes the project: every index filed before it and still in
+    /// flight lands an error at once, and its result is turned down at the boundary.
     pub fn file(&self, project_root: impl Into<PathBuf>, kind: IndexKind) -> IndexTicket {
         let ticket = IndexTicket(self.next.fetch_add(1, Ordering::Relaxed));
         let mut tickets = self.tickets();
@@ -128,8 +117,7 @@ impl IndexHub {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// Takes the outcome of the index filed as `ticket`, once it landed:
-    /// `None` while it is in flight, and once taken.
+    /// Takes the outcome of the index filed as `ticket`; `None` while in flight, and once taken.
     pub fn take_outcome(&self, ticket: IndexTicket) -> Option<IndexOutcome> {
         self.tickets().landed.remove(&ticket)
     }
@@ -139,9 +127,9 @@ impl IndexHub {
         self.tickets().pending.contains_key(&ticket)
     }
 
-    /// Builds every project index from now on through a guard at the trust
-    /// of the project open, `trust` read at each index, reporting to the
-    /// run's `refusals`.
+    /// Builds each later project index through a guard reporting to `refusals`.
+    ///
+    /// The guard is at the open project's trust, `trust` read at each index.
     pub fn read_through(
         &self,
         refusals: Arc<crate::trust::Refusals>,
@@ -156,8 +144,7 @@ impl IndexHub {
 
     /// Files `outcome` under `ticket`: the index landed.
     ///
-    /// A ticket no longer in flight — replaced by an `Open` meanwhile —
-    /// keeps the outcome it landed with.
+    /// A ticket superseded by an `Open` meanwhile keeps the outcome it landed with.
     pub(crate) fn land(&self, ticket: IndexTicket, outcome: IndexOutcome) {
         let mut tickets = self.tickets();
         if tickets.pending.remove(&ticket).is_some() {
@@ -205,9 +192,9 @@ impl AssetIndexing for IndexHub {
     }
 }
 
-/// The index of `<project_root>/assets/`, its ids read from the project's
-/// registry, the files it looks into read `through` a guard at the trust of
-/// the project open.
+/// Builds the index of `<project_root>/assets/`, ids from the project's registry.
+///
+/// The files it looks into are read `through` a guard at the open project's trust.
 fn build_index(
     project_root: &std::path::Path,
     through: Option<ReadThrough>,
@@ -226,10 +213,10 @@ fn build_index(
         .map_err(|error| format!("{error:#}"))
 }
 
-/// Installs in `runtime` what the `loading` family reads — the request
-/// channel and the [`AssetIndexing`], both through one [`IndexHub`],
-/// itself held as `Arc<IndexHub>` for the hosts that file indexes.
-/// Replaces nothing installed.
+/// Installs one [`IndexHub`] in `runtime`, unless one is there.
+///
+/// It is installed as the request channel and the [`AssetIndexing`] the `loading`
+/// family reads, and as `Arc<IndexHub>` for the hosts that file indexes.
 pub fn install_indexing(runtime: &mut Runtime) {
     if runtime.resources.get::<Arc<IndexHub>>().is_some() {
         return;

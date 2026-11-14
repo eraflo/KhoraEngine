@@ -12,13 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The assets decoded off the frame, taken in at its boundary.
-//!
-//! The `loading` family stages each decoded asset in the runtime's reserve;
-//! `asset_intake` takes them in before anything of the frame reads an asset:
-//! each value into the [`AssetService`]'s cache and the engine's
-//! [`AssetStore`], or its failure recorded. The resolvers that asked for them
-//! find them there on their next pass.
+//! The assets decoded off the frame, taken in at its boundary into the
+//! [`AssetService`]'s cache and the engine's [`AssetStore`], before anything
+//! of the frame reads an asset.
 
 use std::sync::{Arc, Mutex};
 
@@ -30,8 +26,9 @@ use khora_data::ecs::{DataSystemRegistration, SystemContext, TickPhase, World};
 
 use crate::asset::AssetService;
 
-/// Takes in every decode the reserve holds into the runtime's asset service
-/// and store. Nothing without a reserve, a service or a store.
+/// Takes in every decode the reserve holds into the runtime's asset service and store.
+///
+/// Nothing without a reserve, a service or a store.
 pub fn take_in_decoded(runtime: &Runtime) {
     // A service handed over since the last boundary is served from now on.
     crate::asset::attach_decoding(runtime);
@@ -95,19 +92,18 @@ pub(crate) mod tests {
 
     use crate::asset::AssetService;
 
-    /// One run of the `loading` family: the requests the runtime's asset
-    /// service filed, taken, decoded through its `AssetDecoding`, each staged
-    /// under its lease, and received by the runtime's `Reserve` — as a frame
-    /// start receives them. Returns how many requests it took.
+    /// Plays one run of the `loading` family, and returns how many requests it took.
+    ///
+    /// The requests the runtime's asset service filed are decoded, staged under
+    /// their leases and received by the runtime's `Reserve`, as a frame start does.
     pub(crate) fn decode_filed(runtime: &Runtime) -> usize {
         decode_filed_while(runtime, || {})
     }
 
-    /// [`decode_filed`], with `during` run once every filed request is
-    /// decoded and before the reserve receives them: what the host does
-    /// while the `loading` family's run is out (a file saved again, an asset
-    /// invalidated), checked by each decode's lease when the frame start
-    /// receives it.
+    /// Plays [`decode_filed`], running `during` between the decodes and their reception.
+    ///
+    /// `during` is what the host does while the run is out (a file saved again,
+    /// an asset invalidated), checked by each decode's lease.
     pub(crate) fn decode_filed_while(runtime: &Runtime, during: impl FnOnce()) -> usize {
         let service = runtime
             .services
@@ -141,12 +137,13 @@ pub(crate) mod tests {
     /// How many frames [`settle`] runs before it calls the systems stuck.
     const SETTLE_FRAMES: usize = 8;
 
-    /// Frames of the systems `frame` runs, until what they asked for is
-    /// decoded and taken in: each frame takes in, at its boundary, what the
-    /// `loading` family landed, then runs `frame`; between two frames the decode
-    /// family decodes what was filed. Done on the first frame that files
-    /// nothing. Panics when the systems still file a decode after
-    /// [`SETTLE_FRAMES`] frames — asking again for what is pending or failed.
+    /// Runs frames of the systems `frame` runs until what they asked for is taken in.
+    ///
+    /// Done on the first frame that files nothing.
+    ///
+    /// # Panics
+    ///
+    /// When the systems still file a decode after [`SETTLE_FRAMES`] frames.
     pub(crate) fn settle(
         runtime: &Runtime,
         world: &mut khora_data::ecs::World,
