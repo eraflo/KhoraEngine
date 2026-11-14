@@ -36,9 +36,10 @@ pub(crate) struct Plan {
     pub(crate) fixed: Option<Envelope>,
     /// An envelope a `Stable` agent's may not grow past.
     pub(crate) ceiling: Option<Envelope>,
-    /// The rows ruled out: unpriced, outside a `Bounded` range, over the cap,
-    /// or any row of a pinned agent; a proposer also rules out the rows it
-    /// finds not to fit.
+    /// The rows ruled out, by index into the offer's rows.
+    ///
+    /// Unpriced, outside a `Bounded` range, over the cap, or any row of a
+    /// pinned agent; a proposer also rules out the rows it finds not to fit.
     pub(crate) out: Vec<bool>,
 }
 
@@ -89,12 +90,12 @@ impl Plan {
         }
     }
 
-    /// What the plan asks of the frame: the time on each device (µs), the
-    /// memory held on each, and the bytes moved on each link. A planned row
-    /// never asks less than the floor. A kept envelope asks what it lent: its
-    /// time, and its memory on every device where that memory was known — an
-    /// envelope lent while a device's memory was not known reads `u64::MAX`
-    /// there, and then asks its rows' memory instead.
+    /// Returns what the plan asks of the frame: time (µs) and memory per
+    /// device, bytes moved per link.
+    ///
+    /// A planned row never asks less than the floor. A kept envelope asks what
+    /// it lent, except memory lent while unknown (`u64::MAX`): there it asks
+    /// its rows' memory.
     pub(super) fn asks(&self, rows: &[OfferRow]) -> (PerDevice<u64>, PerDevice<u64>, PerLink<u64>) {
         let planned = self.row.map_or(self.floor, |row| rows[row].cost);
         let mut time = PerDevice::default();
@@ -117,7 +118,7 @@ impl Plan {
     }
 }
 
-/// How much `bid` weighs: its `Prioritize` hint, else its importance —
+/// Returns how much `bid` weighs: its `Prioritize` hint, else its importance —
 /// Critical 1.0, Important 0.75, Optional 0.5.
 pub(crate) fn weight(bid: &Bid) -> f64 {
     f64::from(bid.hints.priority.unwrap_or(match bid.importance {
@@ -127,7 +128,7 @@ pub(crate) fn weight(bid: &Bid) -> f64 {
     }))
 }
 
-/// Whether `id` lies in the `Bounded` range `min..=max`, the ids ordered
+/// Returns whether `id` lies in the `Bounded` range `min..=max`, the ids ordered
 /// `LowPower < Balanced < HighPerformance < Custom(n)` by `n`.
 pub(super) fn within(id: StrategyId, min: StrategyId, max: StrategyId) -> bool {
     (rank(min)..=rank(max)).contains(&rank(id))

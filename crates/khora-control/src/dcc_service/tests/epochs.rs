@@ -144,10 +144,11 @@ fn first_epoch(dcc: &DccService) -> Epoch {
     epochs(dcc)[0].epoch
 }
 
-/// **Over-budget reports in a row open an epoch**, `Overruns`, once as many
-/// as the configuration says are published — the reports the scheduler
-/// publishes, not ones the DCC asks the agent for (asked, this agent says it
-/// is within budget).
+/// **Over-budget reports in a row open an `Overruns` epoch.**
+///
+/// It opens once as many as the configuration says are published: the
+/// reports the scheduler publishes, not ones the DCC asks the agent for
+/// (asked, this agent says it is within budget).
 #[test]
 fn over_budget_reports_in_a_row_open_an_epoch() {
     let (mut dcc, rx, _ear) = one_speaker(DccConfig {
@@ -170,8 +171,9 @@ fn over_budget_reports_in_a_row_open_an_epoch() {
 }
 
 /// **Fewer over-budget reports in a row than the limit open no epoch.**
-/// Against a limit of five: four reports over budget, one within, four over
-/// — eight over, never five in a row.
+///
+/// Against a limit of five: four reports over budget, one within, four over —
+/// eight over, never five in a row.
 #[test]
 fn fewer_over_budget_reports_than_the_limit_open_no_epoch() {
     let (mut dcc, rx, _ear) = one_speaker(DccConfig {
@@ -199,6 +201,7 @@ fn fewer_over_budget_reports_than_the_limit_open_no_epoch() {
 }
 
 /// **The DCC counts overruns from published reports, not by asking agents.**
+///
 /// Asked, this agent would say it is over budget every time; no report is
 /// published, so no `Overruns` epoch opens.
 #[test]
@@ -223,10 +226,11 @@ fn an_agent_over_budget_only_when_asked_opens_no_epoch() {
     );
 }
 
-/// **Reports of epoch zero count toward overruns.** An agent that reports
-/// before it was lent any epoch says `Epoch(0)`, whatever epoch is in force;
-/// its over-budget reports in a row are not dropped as stale, and open an
-/// `Overruns` epoch like any other agent's.
+/// **Reports of epoch zero count toward overruns.**
+///
+/// An agent that reports before it was lent any epoch says `Epoch(0)`, whatever
+/// epoch is in force; its over-budget reports in a row are not dropped as
+/// stale, and open an `Overruns` epoch like any other agent's.
 #[test]
 fn reports_of_epoch_zero_count_toward_overruns() {
     let (mut dcc, rx, _ear) = one_speaker(DccConfig {
@@ -248,13 +252,15 @@ fn reports_of_epoch_zero_count_toward_overruns() {
     assert!(opened, "{recorded:?}");
 }
 
-/// **The overruns an epoch answered open no other.** Three over-budget
-/// reports on the first epoch open an `Overruns` epoch. The scheduler lends
-/// it only at its next frame start, so the runs of the frames still going
-/// while the round decided — over budget, on the first epoch — reach the DCC
-/// after the epoch opened (a physics agent sub-stepping three times a frame
-/// sends three in one frame). Then the agent, lent the new epoch, runs within
-/// it. The overruns were already answered: no second `Overruns` epoch opens.
+/// **The overruns an epoch answered open no other.**
+///
+/// Three over-budget reports on the first epoch open an `Overruns` epoch. The
+/// scheduler lends it only at its next frame start, so the runs of the frames
+/// still going while the round decided — over budget, on the first epoch —
+/// reach the DCC after the epoch opened (a physics agent sub-stepping three
+/// times a frame sends three in one frame). Then the agent, lent the new epoch,
+/// runs within it. The overruns were already answered: no second `Overruns`
+/// epoch opens.
 #[test]
 fn the_overruns_an_epoch_answered_open_no_other() {
     let (mut dcc, rx, _ear) = one_speaker(DccConfig {
@@ -295,10 +301,11 @@ fn the_overruns_an_epoch_answered_open_no_other() {
     assert_eq!(overruns, 1, "{recorded:?}");
 }
 
-/// **An epoch lasts at least its minimum.** With a minimum of 30 ticks
-/// (300 ms at 100 Hz), a family switched off right after the first epoch
-/// opens no epoch at once; it is not lost either: its epoch opens once the
-/// minimum has passed.
+/// **An epoch lasts at least its minimum.**
+///
+/// With a minimum of 30 ticks (300 ms at 100 Hz), a family switched off right
+/// after the first epoch opens no epoch at once; it is not lost either: its
+/// epoch opens once the minimum has passed.
 #[test]
 fn an_epoch_lasts_at_least_its_minimum_ticks() {
     let (mut dcc, rx, _renderer, _audio) = two_speakers(DccConfig {
@@ -323,10 +330,11 @@ fn an_epoch_lasts_at_least_its_minimum_ticks() {
     assert!(later, "the switch opens its epoch after the minimum");
 }
 
-/// **`Safety` does not wait for the epoch to end.** Under a minimum of
-/// 100 000 ticks, a death spiral (critical heat, critical battery, a
-/// saturated processor) opens a `Safety` epoch at once, lending the agent
-/// its floor.
+/// **`Safety` does not wait for the epoch to end.**
+///
+/// Under a minimum of 100 000 ticks, a death spiral (critical heat, critical
+/// battery, a saturated processor) opens a `Safety` epoch at once, lending the
+/// agent its floor.
 #[test]
 fn safety_does_not_wait_for_the_epoch_to_end() {
     let (mut dcc, rx, _ear) = one_speaker(DccConfig {
@@ -367,9 +375,9 @@ fn safety_does_not_wait_for_the_epoch_to_end() {
     );
 }
 
-/// **A stalled, unhealthy agent opens an epoch**, `AgentStalled`, where a
-/// health below 0.5 was once only logged — learnt from its published report
-/// (asked, this agent says it is well).
+/// **A stalled, unhealthy agent opens an `AgentStalled` epoch.**
+///
+/// Learnt from its published report (asked, this agent says it is well).
 #[test]
 fn a_stalled_unhealthy_agent_opens_an_epoch() {
     let (mut dcc, rx, _ear) = one_speaker(quick());
@@ -419,9 +427,10 @@ fn a_stalled_agent_in_good_health_opens_no_epoch() {
     );
 }
 
-/// **An agent busy when an epoch opens does not reopen it.** The set of
-/// agents does not change; one of them is running (its lock held) at the
-/// moment the epoch opens. The next tick reads every agent and finds the
+/// **An agent busy when an epoch opens does not reopen it.**
+///
+/// The set of agents does not change; one of them is running (its lock held) at
+/// the moment the epoch opens. The next tick reads every agent and finds the
 /// same set: no `AgentsChanged` is raised.
 #[test]
 fn an_agent_busy_when_an_epoch_opens_does_not_reopen_it() {
@@ -443,9 +452,11 @@ fn an_agent_busy_when_an_epoch_opens_does_not_reopen_it() {
 }
 
 /// **A family switched off during a replay opens an epoch once the replay
-/// ends.** The replay lends recorded allocations for 20 ticks; a family is
-/// switched off meanwhile. The change is not dropped: when live arbitration
-/// resumes, an `AgentsChanged` epoch opens for the families on.
+/// ends.**
+///
+/// The replay lends recorded allocations for 20 ticks; a family is switched off
+/// meanwhile. The change is not dropped: when live arbitration resumes, an
+/// `AgentsChanged` epoch opens for the families on.
 #[test]
 fn a_family_switched_off_during_a_replay_opens_an_epoch_after_it() {
     let (mut dcc, rx, _renderer, _audio) = two_speakers(quick());
@@ -501,8 +512,9 @@ fn an_agent_replaced_by_another_opens_an_epoch() {
     );
 }
 
-/// **An agent a replay did not name is lent an envelope after it.** The
-/// recorded allocations name no agent; once the replay is over, live
+/// **An agent a replay did not name is lent an envelope after it.**
+///
+/// The recorded allocations name no agent; once the replay is over, live
 /// arbitration names the registered agent, and the scheduler lends it.
 #[test]
 fn an_agent_the_replay_did_not_name_is_lent_an_envelope_after_it() {
@@ -528,14 +540,15 @@ fn an_agent_the_replay_did_not_name_is_lent_an_envelope_after_it() {
     assert!(lent, "the agent is lent an envelope: {live:?}");
 }
 
-/// **A stall on a replayed epoch still being lent is not dropped.** A replay
-/// publishes its epochs in turn and the scheduler takes one per frame start,
-/// so while the DCC has already put epoch 43 in force, a long frame's
-/// successors still run on 41. Those runs are not of an epoch the DCC
-/// answered — 41 was never followed by anything the agent ran on — and a
-/// stall the renderer reports on 41 raises `AgentStalled`, as it would on
-/// the epoch the DCC holds in force. (The calls are the DCC loop's, in its
-/// order: a live epoch, then three replayed ones.)
+/// **A stall on a replayed epoch still being lent is not dropped.**
+///
+/// A replay publishes its epochs in turn and the scheduler takes one per frame
+/// start, so while the DCC has already put epoch 43 in force, a long frame's
+/// successors still run on 41. Those runs are not of an epoch the DCC answered
+/// — 41 was never followed by anything the agent ran on — and a stall the
+/// renderer reports on 41 raises `AgentStalled`, as it would on the epoch the
+/// DCC holds in force. (The calls are the DCC loop's, in its order: a live
+/// epoch, then three replayed ones.)
 #[test]
 fn a_stall_on_a_replayed_epoch_still_being_lent_is_not_dropped() {
     use super::super::epochs::Epochs;

@@ -76,9 +76,11 @@ fn offer(name: &'static str, epoch: u64, rows: Vec<OfferRow>, current: StrategyI
 }
 
 /// A journal entry for epoch `epoch`, opened at `at`, sharing `target_us`
-/// among `offers` weighed by `importance`: no policy, hint, wave, memory
-/// limit, background agent nor correction. Its allocation is a stand-in:
-/// these tests read what the epoch is decided again into, not what it was.
+/// among `offers` weighed by `importance`.
+///
+/// No policy, hint, wave, memory limit, background agent nor correction. Its
+/// allocation is a stand-in: these tests read what the epoch is decided again
+/// into, not what it was.
 fn epoch(
     epoch: u64,
     at: Duration,
@@ -131,11 +133,12 @@ fn rows_of(replayed: &ReplayedEpoch) -> Vec<(&'static str, StrategyId)> {
 
 // ── Two proposer sets on one journal ─────────────────────────────
 
-/// Three epochs of one knapsack round: `oak` (Critical, weight 1.0) offers
-/// 1 ms at 0.4 or 3.9 ms at 1.0, `pine` (Optional, weight 0.5) 1 ms at 0.4
-/// or 1.5 ms at 1.0, for a 5 ms target. The Q-RAM pass upgrades `pine`
-/// (0.9 weighed, 2.5 ms planned); the optimum upgrades `oak` instead (1.2
-/// weighed, 4.9 ms planned).
+/// Three epochs of one knapsack round, for a 5 ms target.
+///
+/// `oak` (Critical, weight 1.0) offers 1 ms at 0.4 or 3.9 ms at 1.0, `pine`
+/// (Optional, weight 0.5) 1 ms at 0.4 or 1.5 ms at 1.0. The Q-RAM pass
+/// upgrades `pine` (0.9 weighed, 2.5 ms planned); the optimum upgrades `oak`
+/// instead (1.2 weighed, 4.9 ms planned).
 fn knapsack_journal() -> DecisionTrace {
     let importance = vec![
         (AgentId::new("oak"), Critical),
@@ -169,10 +172,11 @@ fn knapsack_journal() -> DecisionTrace {
     }
 }
 
-/// **Replay compares the proposer sets on one journal.** On the knapsack
-/// journal, the Q-RAM pass alone plans 0.9 of weighed quality an epoch and
-/// the exact search after it 1.2: the second set's mean quality is the
-/// greater, each epoch says which proposer decided it, both plans fit the
+/// **Replay compares the proposer sets on one journal.**
+///
+/// On the knapsack journal, the Q-RAM pass alone plans 0.9 of weighed quality
+/// an epoch and the exact search after it 1.2: the second set's mean quality is
+/// the greater, each epoch says which proposer decided it, both plans fit the
 /// target — 2.5 ms and 0.1 ms of slack — and the shield refuses neither.
 #[test]
 fn replay_compares_the_arbiters_on_one_journal() {
@@ -243,9 +247,11 @@ fn replay_compares_the_arbiters_on_one_journal() {
 
 // ── Row changes per minute ───────────────────────────────────────
 
-/// Epochs opened at `times` (in seconds), each sharing the target of the
-/// same rank in `targets_us` with `ash`, which offers 1 ms at 0.4 or 3 ms at
-/// 1.0: a 10 ms target plans its upgrade, a 2 ms target its floor.
+/// Epochs opened at `times` (in seconds), each sharing the target of the same
+/// rank in `targets_us` with `ash`.
+///
+/// `ash` offers 1 ms at 0.4 or 3 ms at 1.0: a 10 ms target plans its upgrade,
+/// a 2 ms target its floor.
 fn ash_journal(times: &[u64], targets_us: &[u64]) -> DecisionTrace {
     DecisionTrace {
         epochs: (times.iter().zip(targets_us).enumerate())
@@ -269,10 +275,11 @@ fn ash_journal(times: &[u64], targets_us: &[u64]) -> DecisionTrace {
 }
 
 /// **Replay counts the row changes per minute from the epochs' times.**
-/// Five epochs opened from 5 s to 65 s plan `ash`'s upgrade, its upgrade,
-/// its floor, its floor, its upgrade: two changes over the sixty seconds
-/// the epochs span, two a minute, whichever proposer set decides. A journal
-/// whose epochs all opened at once, or of one epoch, spans no time: no rate.
+///
+/// Five epochs opened from 5 s to 65 s plan `ash`'s upgrade, its upgrade, its
+/// floor, its floor, its upgrade: two changes over the sixty seconds the epochs
+/// span, two a minute, whichever proposer set decides. A journal whose epochs
+/// all opened at once, or of one epoch, spans no time: no rate.
 #[test]
 fn replay_counts_row_changes_per_minute_from_the_epochs_times() {
     let trace = ash_journal(
@@ -359,7 +366,8 @@ fn ash_corrected(factor: f64) -> Vec<(AgentId, StrategyId, Correction)> {
     ]
 }
 
-/// Three epochs of `ash`, which offers 1 ms or 4 ms:
+/// Three epochs of `ash`, which offers 1 ms or 4 ms.
+///
 /// - epoch 1 corrects nothing; epoch 2's report says `ash` ran its 4 ms row
 ///   under it while its load had grown, quoting 4.4 ms for a run of 5.5 ms
 ///   — off by a fifth;
@@ -424,11 +432,12 @@ fn quoted_journal() -> DecisionTrace {
 }
 
 /// **Replay reads the prediction error and the overruns from the journal.**
-/// Each run is paired with the epoch it ran under: what it quoted, corrected
-/// as that epoch corrected its row, against its host time. Off by a fifth,
-/// then — corrected — by 0.35: a mean error of 0.275. The frames number 35,
-/// 7 of them over their target, the worst 40 ms. Neither depends on the
-/// proposer set; a journal with no report has no error to read.
+///
+/// Each run is paired with the epoch it ran under: what it quoted, corrected as
+/// that epoch corrected its row, against its host time. Off by a fifth, then —
+/// corrected — by 0.35: a mean error of 0.275. The frames number 35, 7 of them
+/// over their target, the worst 40 ms. Neither depends on the proposer set; a
+/// journal with no report has no error to read.
 #[test]
 fn replay_reads_the_prediction_error_and_overruns_from_the_journal() {
     let trace = quoted_journal();
@@ -569,7 +578,8 @@ fn feed_until(
     done()
 }
 
-/// A journal the running DCC recorded, with every input a round reads:
+/// A journal the running DCC recorded, with every input a round reads.
+///
 /// - `oak` (Critical) offers three rows, the best holding 300 MiB of video
 ///   memory where 256 MiB are left, and is capped at 8 ms; a report of a
 ///   3 ms run of its 2 ms floor teaches the cost book that floor's
@@ -655,12 +665,13 @@ fn recorded_journal() -> DecisionTrace {
     trace
 }
 
-/// **A journal replayed through its arbiter decides what it recorded.** The
-/// running DCC records epochs whose rounds read importance, a correction,
-/// a memory limit, an agent at the background, a `Stable` policy, a cap
-/// and a target the governor moved. Decided again from the journal alone
-/// by the engine's own proposer set, every epoch gives back the allocation
-/// recorded, and why.
+/// **A journal replayed through its arbiter decides what it recorded.**
+///
+/// The running DCC records epochs whose rounds read importance, a correction, a
+/// memory limit, an agent at the background, a `Stable` policy, a cap and a
+/// target the governor moved. Decided again from the journal alone by the
+/// engine's own proposer set, every epoch gives back the allocation recorded,
+/// and why.
 #[test]
 fn a_journal_replayed_through_its_arbiter_decides_what_it_recorded() {
     let trace = recorded_journal();
@@ -697,11 +708,12 @@ fn a_journal_replayed_through_its_arbiter_decides_what_it_recorded() {
 }
 
 /// **A journal begun while the DCC runs decides its first epoch again.**
-/// The DCC decides a few epochs before a journal begins, so the journal's
-/// first round opens with an allocation in force that it does not hold:
-/// `pine`, `Stable`, keeps the envelope it was lent then. Decided again
-/// from the journal alone, that first epoch gives back the allocation
-/// recorded, as every other one does.
+///
+/// The DCC decides a few epochs before a journal begins, so the journal's first
+/// round opens with an allocation in force that it does not hold: `pine`,
+/// `Stable`, keeps the envelope it was lent then. Decided again from the
+/// journal alone, that first epoch gives back the allocation recorded, as every
+/// other one does.
 #[test]
 fn a_journal_begun_while_the_dcc_runs_decides_its_first_epoch_again() {
     let (mut dcc, rx) = DccService::new(DccConfig {
@@ -759,12 +771,13 @@ fn a_journal_begun_while_the_dcc_runs_decides_its_first_epoch_again() {
     assert_eq!(replayed.metrics.same_as_recorded, trace.epochs.len());
 }
 
-/// **The prediction error pairs a run with the quote of the epoch it ran
-/// in.** A journal keeps each agent's latest report when a round opens, so
-/// an agent that ran once, under epoch 1, is reported at epoch 2 and again
-/// at epoch 3. Its run met its quote exactly under epoch 1, which corrected
-/// nothing; epoch 2 corrected the same row ×3, but `ash` never ran under it.
-/// The error is the one run against the correction it ran under: none.
+/// **The prediction error pairs a run with the quote of the epoch it ran in.**
+///
+/// A journal keeps each agent's latest report when a round opens, so an agent
+/// that ran once, under epoch 1, is reported at epoch 2 and again at epoch 3.
+/// Its run met its quote exactly under epoch 1, which corrected nothing; epoch
+/// 2 corrected the same row ×3, but `ash` never ran under it. The error is the
+/// one run against the correction it ran under: none.
 #[test]
 fn the_prediction_error_pairs_a_run_with_the_quote_of_the_epoch_it_ran_in() {
     let rows = || vec![row(LowPower, 1_000, 0.4), row(HighPerformance, 4_000, 1.0)];
@@ -809,8 +822,9 @@ fn the_prediction_error_pairs_a_run_with_the_quote_of_the_epoch_it_ran_in() {
     );
 }
 
-/// One epoch of `ash`, which offers 1 ms at 0.4 or 3 ms at 1.0 for a 5 ms
-/// target, its rows corrected by `factor` with `spread`, its round planning
+/// One epoch of `ash`, which offers 1 ms at 0.4 or 3 ms at 1.0 for a 5 ms target.
+///
+/// Its rows are corrected by `factor` with `spread`; its round plans
 /// `caution` spreads above each correction and nothing else.
 fn corrected_journal(factor: f64, spread: f64, caution: f64) -> DecisionTrace {
     let ash = AgentId::new("ash");
@@ -847,6 +861,7 @@ fn ash_planned(trace: &DecisionTrace, arbiters: Arbiters) -> StrategyId {
 }
 
 /// **A replay decides on the corrections its journal recorded.**
+///
 /// - `ash`'s rows ran twice what they quote: its 3 ms upgrade is 6 ms, over
 ///   the 5 ms target, for every set that reads the corrections — the Q-RAM
 ///   pass, the exact search after it, the planned set — and fits for the
@@ -887,10 +902,12 @@ fn a_replay_decides_on_the_corrections_its_journal_recorded() {
 }
 
 /// **A journal with an agent busy through its rounds decides what it
-/// recorded.** `pine`'s lock is held through a few rounds, so the DCC
-/// finds it busy: it keeps the envelope it holds, named late, with no
-/// offer. Decided again from the journal alone, every epoch — those with
-/// `pine` busy included — gives back the allocation recorded.
+/// recorded.**
+///
+/// `pine`'s lock is held through a few rounds, so the DCC finds it busy: it
+/// keeps the envelope it holds, named late, with no offer. Decided again from
+/// the journal alone, every epoch — those with `pine` busy included — gives
+/// back the allocation recorded.
 #[test]
 fn a_journal_with_an_agent_busy_through_its_rounds_decides_what_it_recorded() {
     let (mut dcc, rx) = DccService::new(DccConfig {
@@ -947,11 +964,12 @@ fn a_journal_with_an_agent_busy_through_its_rounds_decides_what_it_recorded() {
     }
 }
 
-/// **A journal's `Safety` rounds decide again as recorded.** One round
-/// opened by the governor whose floors do not fit the target, one opened as
-/// `Safety` (a death spiral) whose floors fit: both lend every agent its
-/// floor, the first naming the breach, the second none. Each is recorded
-/// as the engine's arbiter decides it, and decided again the same.
+/// **A journal's `Safety` rounds decide again as recorded.**
+///
+/// One round opened by the governor whose floors do not fit the target, one
+/// opened as `Safety` (a death spiral) whose floors fit: both lend every agent
+/// its floor, the first naming the breach, the second none. Each is recorded as
+/// the engine's arbiter decides it, and decided again the same.
 #[test]
 fn a_journals_safety_rounds_decide_again_as_recorded() {
     let offers = |n: u64| {
@@ -1032,11 +1050,12 @@ fn a_journals_safety_rounds_decide_again_as_recorded() {
 }
 
 /// **A journal with a replay between two of its epochs decides what it
-/// recorded.** While the DCC records, it replays an earlier allocation: the
-/// next live round opens with that one in force, not with the journal's
-/// previous epoch. `pine`, `Stable`, keeps what the replay lent it; decided
-/// again from the journal alone, every epoch gives back the allocation
-/// recorded.
+/// recorded.**
+///
+/// While the DCC records, it replays an earlier allocation: the next live round
+/// opens with that one in force, not with the journal's previous epoch. `pine`,
+/// `Stable`, keeps what the replay lent it; decided again from the journal
+/// alone, every epoch gives back the allocation recorded.
 #[test]
 fn a_journal_with_a_replay_between_its_epochs_decides_what_it_recorded() {
     let (mut dcc, rx) = DccService::new(DccConfig {
@@ -1097,9 +1116,10 @@ fn a_journal_with_a_replay_between_its_epochs_decides_what_it_recorded() {
 
 // ── A journal the DCC planned ────────────────────────────────────
 
-/// `oak`'s report of a run of `row`, under epoch 0, quoting `quoted_us` on
-/// the host — its workload — and taking `factor` times that, carrying
-/// `switch`.
+/// `oak`'s report of a run of `row` under epoch 0, carrying `switch`.
+///
+/// The run quotes `quoted_us` on the host (its workload) and takes `factor`
+/// times that.
 fn oak_ran(
     row: StrategyId,
     quoted_us: f64,
@@ -1124,7 +1144,8 @@ fn oak_ran(
     })
 }
 
-/// A journal the running DCC recorded while planning beyond the frame:
+/// A journal the running DCC recorded while planning beyond the frame.
+///
 /// - `oak` (Critical) offers 2 ms, 5 ms or 9 ms; it measured once, under
 ///   epoch 0, a switch to `Balanced` of 3 ms — that first run teaches the
 ///   cost book nothing — and ran `Balanced` once more for what it quoted;
@@ -1189,13 +1210,14 @@ fn planned_journal() -> DecisionTrace {
     trace
 }
 
-/// **A journal replayed through the planned arbiter decides what it
-/// recorded.** The running DCC plans its rounds beyond the frame — a switch
-/// measured, a margin from the frames' spread, a rising workload — on the
-/// rows its cost book corrected: `oak`'s floor runs twice what it quotes,
-/// its `Balanced` what it quotes. It records each round's planning and each
-/// row's correction. Decided again from the journal alone by the planned
-/// set, every epoch gives back the allocation recorded, and why.
+/// **A journal replayed through the planned arbiter decides what it recorded.**
+///
+/// The running DCC plans its rounds beyond the frame — a switch measured, a
+/// margin from the frames' spread, a rising workload — on the rows its cost
+/// book corrected: `oak`'s floor runs twice what it quotes, its `Balanced` what
+/// it quotes. It records each round's planning and each row's correction.
+/// Decided again from the journal alone by the planned set, every epoch gives
+/// back the allocation recorded, and why.
 #[test]
 fn a_journal_replayed_through_the_planned_arbiter_decides_what_it_recorded() {
     let trace = planned_journal();
@@ -1263,8 +1285,9 @@ fn a_journal_replayed_through_the_planned_arbiter_decides_what_it_recorded() {
     assert_eq!(replayed.metrics.same_as_recorded, trace.epochs.len());
 }
 
-/// **A recorded epoch plans the switch the DCC measured.** `oak` ran
-/// `Balanced` under epoch 0 and measured its switch to it at 3 ms:
+/// **A recorded epoch plans the switch the DCC measured.**
+///
+/// `oak` ran `Balanced` under epoch 0 and measured its switch to it at 3 ms:
 /// - while its layer is kept — epochs 1 to `KEEP_EPOCHS` — every round
 ///   names a switch back to it at zero: it prepares nothing, and pays only
 ///   the transient;

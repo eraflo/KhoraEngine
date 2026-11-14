@@ -54,9 +54,10 @@ fn biased_agents() -> Vec<SimAgent> {
     ]
 }
 
-/// Twenty seconds of the biased agents with a 4 ms host part and true
-/// costs varying by a fifth, `render` twice as loaded from the tenth
-/// second: what they measure, and every frame.
+/// Twenty seconds of the biased agents: what they measure, and every frame.
+///
+/// A 4 ms host part, true costs varying by a fifth, and `render` twice as
+/// loaded from the tenth second.
 fn noisy_run(seed: u64) -> (SimMetrics, Vec<SimFrame>) {
     let mut sim = Simulation::new(
         GovernorConfig::default(),
@@ -72,11 +73,12 @@ fn noisy_run(seed: u64) -> (SimMetrics, Vec<SimFrame>) {
     (without_wall_clock(sim.metrics()), sim.frames().to_vec())
 }
 
-/// **The simulation is deterministic for a seed.** Twenty seconds of noisy
-/// agents run twice from one seed give the same frames and the same
-/// metrics; from another seed, other frames. Every scenario run twice from
-/// one seed, by either proposer set, measures the same, `simulate` and
-/// `Scenario::run` alike; and some scenario measures otherwise from another
+/// **The simulation is deterministic for a seed.**
+///
+/// Twenty seconds of noisy agents run twice from one seed give the same frames
+/// and the same metrics; from another seed, other frames. Every scenario run
+/// twice from one seed, by either proposer set, measures the same, `simulate`
+/// and `Scenario::run` alike; and some scenario measures otherwise from another
 /// seed: their noise is drawn from it.
 #[test]
 fn the_simulation_is_deterministic_for_a_seed() {
@@ -125,10 +127,11 @@ fn each_arbiter_set_has_a_name_of_its_own() {
     assert_eq!(distinct.len(), names.len(), "{names:?}");
 }
 
-/// **Every scenario runs with every proposer set.** The four scenarios —
-/// a light ramp, shadow casters, a script load, thermal throttling — each
-/// named once, run by each set: frames run, decisions made, every metric a
-/// number, and the shield refuses no plan.
+/// **Every scenario runs with every proposer set.**
+///
+/// The four scenarios — a light ramp, shadow casters, a script load, thermal
+/// throttling — each named once, run by each set: frames run, decisions made,
+/// every metric a number, and the shield refuses no plan.
 #[test]
 fn every_scenario_runs_with_every_arbiter() {
     let scenarios = Scenario::all();
@@ -173,10 +176,11 @@ fn steady() -> Vec<SimAgent> {
     vec![SimAgent::new("steady", vec![(LowPower, 1_000, 1.0)])]
 }
 
-/// **The frames over the setpoint are counted once each.** A 2 ms host part
-/// and one 1 ms agent make 3 ms frames; two hitches of 50 ms and 200 ms
-/// are the only frames over the setpoint — the second lasting four DCC
-/// ticks — so two are counted, the worst 200 ms, and every frame run is
+/// **The frames over the setpoint are counted once each.**
+///
+/// A 2 ms host part and one 1 ms agent make 3 ms frames; two hitches of 50 ms
+/// and 200 ms are the only frames over the setpoint — the second lasting four
+/// DCC ticks — so two are counted, the worst 200 ms, and every frame run is
 /// counted once. With a 20 ms host part, every frame is over.
 #[test]
 fn the_frames_over_the_setpoint_are_counted_once_each() {
@@ -213,9 +217,10 @@ fn the_frames_over_the_setpoint_are_counted_once_each() {
     );
 }
 
-/// Three agents of three rows each — `render` 2, 4 or 7 ms, `physics` 1, 2
-/// or 3 ms, `audio` 0.5, 1 or 1.5 ms — costing what they quote: with a 2 ms
-/// host part, no plan runs over the setpoint.
+/// Three agents of three rows each, costing what they quote.
+///
+/// `render` 2, 4 or 7 ms, `physics` 1, 2 or 3 ms, `audio` 0.5, 1 or 1.5 ms:
+/// with a 2 ms host part, no plan runs over the setpoint.
 fn three_rows_each() -> Vec<SimAgent> {
     vec![
         SimAgent::new(
@@ -246,6 +251,7 @@ fn three_rows_each() -> Vec<SimAgent> {
 }
 
 /// **The steady overruns leave out what the governor has to answer.**
+///
 /// - A 20 ms host part runs every frame over the setpoint until the
 ///   governor decides: those before its first decision are over, not
 ///   steady.
@@ -308,9 +314,10 @@ fn the_steady_overruns_leave_out_what_the_governor_has_to_answer() {
     );
 }
 
-/// **A simulation whose frames take no time still ends.** With no agent
-/// and no host part, every frame lasts nothing: a run of a tick returns
-/// rather than running frames forever without the clock moving.
+/// **A simulation whose frames take no time still ends.**
+///
+/// With no agent and no host part, every frame lasts nothing: a run of a tick
+/// returns rather than running frames forever without the clock moving.
 #[test]
 fn a_simulation_whose_frames_take_no_time_still_ends() {
     let (done, finished) = std::sync::mpsc::channel();
@@ -334,13 +341,14 @@ fn a_simulation_whose_frames_take_no_time_still_ends() {
     );
 }
 
-/// **The cost book lowers the quote error without overrunning more.** Every
-/// scenario, run from one seed by the planned set and by the planned set on
-/// the agents' raw quotes: learning each row's correction from the runs
-/// makes the quotes the rounds plan on closer to what the rows cost — a
-/// lower prediction error — and, once the engine runs on what it learnt,
-/// no more frames over the setpoint: a frame used fully overruns for the
-/// moment the governor takes to answer a load's step, which is not counted.
+/// **The cost book lowers the quote error without overrunning more.**
+///
+/// Every scenario, run from one seed by the planned set and by the planned set
+/// on the agents' raw quotes: learning each row's correction from the runs
+/// makes the quotes the rounds plan on closer to what the rows cost — a lower
+/// prediction error — and, once the engine runs on what it learnt, no more
+/// frames over the setpoint: a frame used fully overruns for the moment the
+/// governor takes to answer a load's step, which is not counted.
 #[test]
 fn the_book_lowers_the_quote_error_without_overrunning_more() {
     const SEED: u64 = 7;
@@ -367,20 +375,14 @@ fn the_book_lowers_the_quote_error_without_overrunning_more() {
 /// scripts burst ×4 for one second in every five.
 const BURSTING: &str = "script load";
 
-/// **Planning switches less without overrunning more.** Every scenario, run
-/// from one seed by the engine's planned set and by the Q-RAM pass then the
-/// exact search unplanned: planning beyond the frame — a switch charged, a
-/// margin kept from the frames' spread, the workload's trend, each row's
-/// correction — runs no more frames over the setpoint once steady (past the
-/// governor's first decision, and not while it answers a load's step).
-/// Every scenario whose load moves progressively or steps once — the light
-/// ramp, the shadow casters, the thermal — also changes rows no more often a
-/// minute. The bursting scenario is exempt from that one check: a quote
-/// follows its load, so each burst shows in the quotes, and switching down
-/// for the burst then back up after it is the right answer — with costs the
-/// book has made accurate, the plan sits close to the target and has no
-/// room to ride a burst out. Over all the scenarios, the planned set still
-/// changes rows less often.
+/// **Planning switches less without overrunning more.**
+///
+/// Every scenario runs from one seed through the engine's planned set and
+/// through the unplanned Q-RAM pass then exact search. Once steady, planning
+/// runs no more frames over the setpoint; on every scenario but the bursting
+/// one, it also changes rows no more often a minute, and over all of them,
+/// less often. A burst shows in the quotes, so switching down for it and back
+/// up after is the right answer there.
 #[test]
 fn planning_switches_less_without_overrunning_more() {
     const SEED: u64 = 7;

@@ -12,28 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A small persistent thread pool owned by the [`ExecutionScheduler`].
+//! The persistent worker threads the [`ExecutionScheduler`] runs each member of
+//! a concurrent wave on, spawned once and joined on [`Drop`].
 //!
-//! The scheduler runs every member of a concurrent wave as an independent
-//! job. Rather than re-spawn threads with `std::thread::scope`
-//! every wave, this pool spawns its workers **once** (in
-//! [`ExecutionScheduler::from_registry`]) and reuses them for the life of the scheduler,
-//! amortising the spawn cost as waves grow.
-//!
-//! The jobs it runs are `'static`: no agent touches the `World`, and each
-//! reaches its per-frame inputs through an `Arc<LaneBus>` + `Arc<Runtime>` and
-//! its own place, all of which are owned/`Send`. Nothing borrowed from the
-//! frame stack crosses onto a worker, so this needs **no `unsafe`** and no
-//! lifetime transmute.
-//!
-//! # RULES §5
-//! This is the third named exception to the "no `std::thread::spawn`" rule (the
-//! DCC tick thread and the scheduler's scoped executor are the other two): a
-//! scheduler-owned pool, spawned once and joined on [`Drop`]. It never spawns
-//! per frame and its threads never outlive the scheduler.
+//! Its jobs are `'static`: each reaches its inputs through `Arc`s, so nothing
+//! borrowed from the frame crosses onto a worker and no `unsafe` is needed.
 //!
 //! [`ExecutionScheduler`]: crate::scheduler::ExecutionScheduler
-//! [`ExecutionScheduler::from_registry`]: crate::scheduler::ExecutionScheduler::from_registry
 
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -67,16 +52,14 @@ impl WorkerPool {
     pub fn new(size: usize) -> Self {
         let size = size.max(1);
         let (sender, receiver) = mpsc::channel::<Message>();
-        // Shared receiver: each worker locks it only long enough to pull the
-        // next message, then releases it before running the job — the canonical
-        // safe std work-stealing-lite pattern.
+        // Each worker holds the receiver's lock only to pull a message, never
+        // while running the job.
         let receiver = Arc::new(Mutex::new(receiver));
 
         let mut workers = Vec::with_capacity(size);
         for _ in 0..size {
             let receiver: Arc<Mutex<Receiver<Message>>> = Arc::clone(&receiver);
-            // RULES §5 (3rd exception): scheduler-owned persistent pool, spawned
-            // once here and joined on Drop — never spawned per frame.
+            // Spawned once and joined on Drop, never per frame.
             let handle = std::thread::spawn(move || loop {
                 let message = {
                     let rx = receiver.lock().unwrap_or_else(|e| e.into_inner());
@@ -181,10 +164,10 @@ mod tests {
         assert_eq!(counter.load(Ordering::SeqCst), 12);
     }
 
-    /// A job that panics costs the pool nothing: the worker that ran it
-    /// survives. Proven by running, after the panic, as many jobs as there are
-    /// workers that each wait until all of them are running at once — which
-    /// only happens if every worker is still alive — then a batch more.
+    /// A job that panics leaves every worker alive.
+    ///
+    /// After the panic, as many jobs as workers each wait until all run at
+    /// once, which only happens if every worker survived; then a batch more.
     #[test]
     fn a_panicking_job_leaves_the_pool_whole() {
         use std::time::{Duration, Instant};

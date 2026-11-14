@@ -31,12 +31,13 @@ impl Proposer for Greedy {
         DecidedBy::Greedy
     }
 
-    /// While an upgrade fits, take the one that gains the most value per
-    /// microsecond — weighed quality, less what the switch to it charges —
-    /// climbing each agent's convex hull of priced rows. An upgrade that
-    /// does not fit is rejected, with the constraint it broke; a smaller one
-    /// of the same agent may still fit. The price is the gain per µs of the
-    /// last upgrade taken. The round is planned as its [`Problem`].
+    /// Returns the plan the greedy grows from `base`, the round planned as its
+    /// [`Problem`].
+    ///
+    /// Value counts weighed quality less what a switch charges. An upgrade
+    /// that does not fit is rejected with the constraint it broke; a smaller
+    /// one of the same agent may still fit. The price is the gain per µs of
+    /// the last upgrade taken.
     fn propose(&self, round: &Round<'_>, bids: &[&Bid], base: &[Plan]) -> Proposal {
         let problem = Problem::of(round, bids, base);
         let refs = problem.refs();
@@ -95,8 +96,8 @@ impl Proposer for Greedy {
     }
 }
 
-/// What a `Stable` ceiling refuses of `cost`: the ceiling on the first
-/// device whose time or memory it is over.
+/// Returns what a `Stable` ceiling refuses of `cost`: the ceiling on the
+/// first device whose time or memory it is over.
 pub(super) fn over_ceiling(cost: &Cost, ceiling: &Envelope) -> BindingConstraint {
     let device = Device::ALL
         .into_iter()
@@ -119,8 +120,8 @@ struct Step {
 }
 
 impl Step {
-    /// Whether `self` is taken before `other`: the steeper gain, then the
-    /// larger gain, then the agent named first, then the lower row.
+    /// Returns whether `self` is taken before `other`: the steeper gain, then
+    /// the larger gain, then the agent named first, then the lower row.
     fn goes_before(&self, other: &Step, bids: &[&Bid]) -> bool {
         self.slope
             .total_cmp(&other.slope)
@@ -136,11 +137,12 @@ impl Step {
     }
 }
 
-/// The next step up `bid`'s convex hull from the row `plan` holds: among the
-/// rows not ruled out, of greater quality and no lesser cost, whose value
-/// gained — weighed quality, less the change in switch charge — is above
-/// zero, the steepest gain per microsecond (the larger gain, then the lower
-/// row, on a tie).
+/// Returns the next step up `bid`'s convex hull from the row `plan` holds,
+/// if one gains value.
+///
+/// Among the rows not ruled out, of greater quality and no lesser cost, the
+/// steepest gain per µs of weighed quality less the change in switch charge;
+/// the larger gain, then the lower row, on a tie.
 fn next_step(round: &Round<'_>, agent: usize, bid: &Bid, plan: &Plan) -> Option<Step> {
     let rows = &bid.offer.rows;
     let weight = weight(bid);

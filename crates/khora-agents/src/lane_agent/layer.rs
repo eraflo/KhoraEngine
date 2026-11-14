@@ -68,8 +68,8 @@ pub(super) struct LaneLayer {
 }
 
 impl LaneLayer {
-    /// A layer of `lane` at `level`, which offers the row `row` holding
-    /// `memory`.
+    /// Creates a layer of `lane` at `level`, which offers the row `row`
+    /// holding `memory`.
     pub(super) fn new(
         lane: Box<dyn AnyLane>,
         level: usize,
@@ -99,10 +99,11 @@ impl LaneLayer {
         }
     }
 
-    /// Why the agent must choose again after a run that cost `cost`, on
-    /// `terms`, on `frame`: the target changed, the quote stopped fitting,
-    /// drifted — in time, in the impact it names or in the share of the work
-    /// it serves — or aged.
+    /// Returns why the agent must choose again after a run that cost `cost`
+    /// on `terms` and `frame`, if it must.
+    ///
+    /// The target changed, or the quote stopped fitting, drifted (in time, in
+    /// the impact it names or in the share of the work it serves), or aged.
     fn watch(&mut self, cost: &Cost, terms: &Terms, frame: Option<&FrameContext>) -> Option<Wake> {
         let time = time_of(cost);
         // The row's quote at the last full quote is the base; a row unquoted
@@ -177,9 +178,10 @@ impl Layer for LaneLayer {
         self.memory
     }
 
-    /// Fetch, prepare if the target changed, record, cost every level, and
-    /// commit what the lane wrote. Each run commits through a deck of its own,
-    /// so the sub-steps of a fixed-step frame each commit theirs.
+    /// Runs the lane at its level, and commits what it wrote when it recorded.
+    ///
+    /// Each run commits through a deck of its own, so the sub-steps of a
+    /// fixed-step frame each commit theirs.
     fn run(&mut self, terms: &Terms, context: &mut EngineContext<'_>) -> LayerRun {
         let device = context.resource::<Arc<dyn GraphicsDevice>>().cloned();
         let pipelines = context.resource::<Arc<dyn PipelineSystem>>().cloned();
@@ -273,8 +275,8 @@ impl Layer for LaneLayer {
         self.lane.shutdown(gpu);
     }
 
-    /// A layer swapped back in watches as one just prepared: what it saw
-    /// before it was kept says nothing of the frames it runs now.
+    /// Forgets what the layer saw before it was kept: a layer swapped back in
+    /// watches as one just prepared.
     fn installed(&mut self) {
         self.base = None;
         self.fitted = true;
@@ -285,7 +287,7 @@ impl Layer for LaneLayer {
     }
 }
 
-/// A setup on `device` and `pipelines`, headless without a device.
+/// Returns a setup on `device` and `pipelines`, headless without a device.
 pub(super) fn gpu_with<'g>(
     device: Option<&'g dyn GraphicsDevice>,
     pipelines: Option<&'g dyn PipelineSystem>,

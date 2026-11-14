@@ -132,8 +132,9 @@ fn test_critical_frame_time_pressure() {
     assert!(!report.alerts.is_empty());
 }
 
-/// **Ten frames over the critical threshold raise a critical alert.** The
-/// heuristics read the frame's critical path, `frame:critical_ms`: ten
+/// **Ten frames over the critical threshold raise a critical alert.**
+///
+/// The heuristics read the frame's critical path, `frame:critical_ms`: ten
 /// samples at 30 ms, over the 25 ms threshold, ask for a negotiation and say
 /// why.
 #[test]
@@ -156,7 +157,8 @@ fn ten_critical_path_samples_over_the_threshold_raise_a_critical_alert() {
     );
 }
 
-/// **The renderer's frame-time metric no longer reaches the heuristics.**
+/// **The renderer's frame-time metric does not reach the heuristics.**
+///
 /// The same ten samples at 30 ms, on `renderer:frame_time`, ask for nothing:
 /// the frame's time comes from its report, not from that metric.
 #[test]

@@ -14,6 +14,8 @@
 
 //! The cost book: what the DCC learns of each (agent, row) — the correction
 //! from its quoted host time to its measured one.
+//!
+//! See the book: concepts/gorna.md, "The cost model and the frame governor".
 
 use std::time::Duration;
 
@@ -30,15 +32,16 @@ pub struct CostBookConfig {
     /// The spread a row starts from before any run, default 0.5.
     pub prior_spread: f64,
     /// How many runs of its agent halve the weight of a row's own estimate
-    /// once the row stops running, the rest going to its agent's other
-    /// learned rows; default 120. `0` never relaxes an estimate.
+    /// once the row stops running; default 120.
+    ///
+    /// The rest of the weight goes to its agent's other learned rows. `0`
+    /// never relaxes an estimate.
     pub stale_half_life: u32,
 }
 
 impl Default for CostBookConfig {
-    /// Each older run weighs 0.95 of the next one; a row starts from a
-    /// spread of 0.5; a row unrun for 120 runs of its agent weighs its own
-    /// estimate half.
+    /// Returns a forgetting of 0.95, a prior spread of 0.5 and a stale
+    /// half-life of 120 runs.
     fn default() -> Self {
         Self {
             forgetting: 0.95,
@@ -75,9 +78,10 @@ struct Learnt {
     seen: f64,
     /// Its agent's clock at its last run.
     last_run: u64,
-    /// The runs a seeded row's factor weighs as, until its first run here:
-    /// that run sets how much the fit already knows (its information, from
-    /// the run's own quote), then it is 0.
+    /// The runs a seeded row's factor weighs as until its first run here,
+    /// then 0.
+    ///
+    /// That first run sets the fit's information from its own quote.
     prior_weight: f64,
 }
 
@@ -85,9 +89,10 @@ struct Learnt {
 /// runs then takes over from what another run learnt.
 const MAX_SEEDED_RUNS: u32 = 20;
 
-/// The largest correction, or spread, a row is planned with: past it a
-/// measure says nothing a frame could use, and a time so scaled would
-/// overflow.
+/// The largest correction, or spread, a row is planned with.
+///
+/// Past it a measure says nothing a frame could use, and a time so scaled
+/// would overflow.
 const MAX_FACTOR: f64 = 1e3;
 
 /// What a row's fit starts from: an information so small the first run sets
@@ -95,7 +100,7 @@ const MAX_FACTOR: f64 = 1e3;
 const PRIOR_P: f64 = 1.0e6;
 
 impl CostBook {
-    /// A book of `cfg` that has learnt nothing yet.
+    /// Creates a book of `cfg` that has learnt nothing yet.
     pub fn new(cfg: CostBookConfig) -> Self {
         Self {
             config: cfg,
@@ -104,13 +109,14 @@ impl CostBook {
         }
     }
 
-    /// The book's settings.
+    /// Returns the book's settings.
     pub fn config(&self) -> CostBookConfig {
         self.config
     }
 
-    /// One run of `agent`'s `row`: quoted `quoted`, measured `measured`
-    /// (host times). A run quoting no time is ignored.
+    /// Records one run of `agent`'s `row`, its quoted and measured host times.
+    ///
+    /// A run quoting no time is ignored.
     pub fn observe(
         &mut self,
         agent: AgentId,
@@ -171,11 +177,12 @@ impl CostBook {
         learnt.seen += 1.0;
     }
 
-    /// A report: its workload read as the quoted host time in µs, its
-    /// measured host time. A report with no workload, or zero, is ignored;
-    /// so is the first run of a layer just installed (it names its
-    /// preparation): its caches and pipelines were cold, and it says nothing
-    /// of what the row takes once warm.
+    /// Records a report's run: its workload read as the quoted host time in
+    /// µs, beside its measured host time.
+    ///
+    /// A report with no workload, or zero, is ignored; so is a layer's first
+    /// run (it names its preparation): its caches and pipelines were cold, and
+    /// it says nothing of what the row takes once warm.
     pub fn observe_report(&mut self, report: &Report) {
         if report.switch.is_some() {
             return;
@@ -191,10 +198,10 @@ impl CostBook {
         );
     }
 
-    /// `agent`'s `row`: once learned, its factor (measured ≈ factor ×
-    /// quoted, each older run forgotten by the configured weight) and its
-    /// spread. A row never run takes the mean factor and the mean spread of
-    /// the agent's learned rows — its quotes have been that far off — so an
+    /// Returns the correction of `agent`'s `row`: its factor (measured ≈
+    /// factor × quoted) and its spread.
+    ///
+    /// A row never run takes the mean of the agent's learned rows, so an
     /// upgrade not yet tried is not held back for ever by what is unknown of
     /// it. An agent of which nothing was learned is planned at its quotes.
     pub fn correction(&self, agent: AgentId, row: StrategyId) -> Correction {
@@ -216,11 +223,11 @@ impl CostBook {
         }
     }
 
-    /// What `agent`'s `row` learnt, relaxed toward the mean of the agent's
-    /// other learned rows as it goes unrun: weighed by half every
-    /// `stale_half_life` runs of the agent since its own last. A row learnt
-    /// from a measure that was off — a run while the engine started — is so
-    /// tried again in time, rather than held back for ever by it.
+    /// Returns what `agent`'s `row` learnt, relaxed toward the mean of the
+    /// agent's other learned rows as it goes unrun.
+    ///
+    /// A row learnt from a measure that was off (a run while the engine
+    /// started) is so tried again in time, rather than held back for ever.
     fn relaxed(&self, agent: AgentId, row: StrategyId, learnt: &Learnt) -> Correction {
         let own = self.learnt(learnt);
         let half_life = self.config.stale_half_life;
@@ -248,9 +255,10 @@ impl CostBook {
         }
     }
 
-    /// What a row `learnt`: its factor, and its spread — its recent runs'
-    /// spread around it, and the prior's, weighed down by every run it ever
-    /// had.
+    /// Returns a row's factor and spread.
+    ///
+    /// The spread is its recent runs' spread around the factor, and the
+    /// prior's, weighed down by every run it ever had.
     fn learnt(&self, learnt: &Learnt) -> Correction {
         let prior = self.config.prior_spread;
         let variance = if learnt.runs > 0.0 {
@@ -264,9 +272,10 @@ impl CostBook {
         }
     }
 
-    /// Every row the book learnt, by its agent's name: its own factor and
-    /// spread, as it learnt them (not relaxed toward its agent's other
-    /// rows), and how many runs it learnt them from (at most `u32::MAX`).
+    /// Returns every row the book learnt, by its agent's name.
+    ///
+    /// Each row has its own factor and spread (not relaxed toward its agent's
+    /// other rows), and how many runs it learnt them from (at most `u32::MAX`).
     pub fn export(&self) -> Vec<ProfileRow> {
         (self.rows.iter())
             .map(|(agent, row, learnt)| {
@@ -282,14 +291,12 @@ impl CostBook {
             .collect()
     }
 
-    /// Seeds the book with `rows`, a profile's: each row whose agent is named
-    /// like one of `agents` becomes a learnt row at its factor and spread,
-    /// weighing as many prior runs as it was learnt from, at most 20, so the
-    /// runs measured on this machine take over within a second. A row naming
-    /// no agent of `agents` is ignored.
+    /// Seeds the book with a profile's `rows`, for the agents named in `agents`.
     ///
-    /// A seeded row counts as run when it is seeded: it relaxes toward its
-    /// agent's other rows as the agent runs others, as a learnt row does.
+    /// A seeded row weighs as many prior runs as it was learnt from, at most
+    /// 20, so the runs measured on this machine take over within a second. It
+    /// counts as run when seeded, and relaxes as a learnt row does. A row
+    /// naming no agent of `agents` is ignored.
     pub fn seed(&mut self, rows: &[ProfileRow], agents: &[AgentId]) {
         for seeded in rows {
             let Some(agent) = agents.iter().find(|agent| agent.name() == seeded.agent) else {
@@ -331,7 +338,7 @@ impl CostBook {
         }
     }
 
-    /// The correction of every row of `offers`.
+    /// Returns the correction of every row of `offers`.
     pub fn corrections(&self, offers: &[Offer]) -> Vec<(AgentId, StrategyId, Correction)> {
         offers
             .iter()
@@ -343,11 +350,11 @@ impl CostBook {
     }
 }
 
-/// `offer` with each row's host time planned at its correction: its quote
-/// times the factor `corrections` name for it, `caution` spreads above for a
-/// row above the floor.
-/// Every other device keeps its quote; a row `corrections` does not name is
-/// planned at its quote.
+/// Plans each row's host time of `offer` at its correction.
+///
+/// The quote is scaled by the factor `corrections` name for the row, planned
+/// `caution` spreads above for a row above the floor. Every other device, and
+/// a row `corrections` does not name, keeps its quote.
 pub(crate) fn correct(
     offer: &mut Offer,
     corrections: &[(AgentId, StrategyId, Correction)],
@@ -360,10 +367,12 @@ pub(crate) fn correct(
     }
 }
 
-/// The factor `corrections` plan `agent`'s `row` with: for a row above its
-/// `floor`, `caution` spreads above its own — the floor is what the agent
-/// runs whatever is lent, and is admitted at the time it is learnt to take,
-/// not refused for what is not yet known of it; 1 for a row they do not name.
+/// Returns the factor `corrections` plan `agent`'s `row` with; 1 for a row
+/// they do not name.
+///
+/// A row above `floor` is planned `caution` spreads above its own factor. The
+/// floor is not: the agent runs it whatever is lent, so it is admitted at the
+/// time it is learnt to take.
 fn planned_factor(
     corrections: &[(AgentId, StrategyId, Correction)],
     agent: AgentId,
@@ -383,9 +392,10 @@ fn planned_factor(
     }
 }
 
-/// `bid` as a round plans it, in measured time: each row's host time at its
-/// correction, and the envelope it keeps — lent in its quoted units — at the
-/// correction of the row it runs.
+/// Converts `bid` into measured time, as a round plans it.
+///
+/// Each row's host time is planned at its correction, and the envelope it
+/// keeps (lent in its quoted units) at the correction of the row it runs.
 pub(crate) fn correct_bid(
     bid: &mut Bid,
     corrections: &[(AgentId, StrategyId, Correction)],
@@ -404,20 +414,13 @@ pub(crate) fn correct_bid(
     correct(&mut bid.offer, corrections, caution);
 }
 
-/// `allocation`, decided in measured time, lent in each agent's quoted
-/// units, then held to the plan at the costs the agents quoted (`quoted`),
-/// as they choose by them:
+/// Converts `allocation`, decided in measured time, into each agent's quoted
+/// units, held to the plan at the costs the agents quoted (`quoted`).
 ///
-/// - an agent of `kept` is lent the host time it holds (`held`), as it
-///   holds it, the rest of its envelope as the round shared it;
-/// - in a `Safety` round, an agent that offered rows is lent its floor: the
-///   envelope's host time over the floor's correction;
-/// - any other, the envelope's host time over the correction of the row
-///   planned for it — never under that row's quote by the round's rounding,
-///   so the row planned fits the envelope lent for it unless a cap or a
-///   ceiling bounded it.
-///
-/// `bids` are the round's bids, corrected.
+/// An agent of `kept` keeps the host time it holds (`held`); in a `Safety`
+/// round, an agent that offered rows is lent its floor; any other is lent its
+/// planned row, which fits unless a cap or a ceiling bounded it. `bids` are
+/// the round's bids, corrected.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn lend_in_quotes(
     allocation: &mut Allocation,

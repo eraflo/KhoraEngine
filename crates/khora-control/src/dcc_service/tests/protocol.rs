@@ -43,8 +43,9 @@ fn host() -> Host {
     })
 }
 
-/// **The first epoch lends every agent an envelope**, through the protocol:
-/// the agent is asked for an offer and, at a frame start, applied an
+/// **The first epoch lends every agent an envelope, through the protocol.**
+///
+/// The agent is asked for an offer and, at a frame start, applied an
 /// envelope. The first allocation is `Initial`.
 #[test]
 fn the_first_epoch_lends_every_agent_an_envelope() {
@@ -65,10 +66,11 @@ fn the_first_epoch_lends_every_agent_an_envelope() {
     assert_eq!(heard.lent[0].0, first.epoch, "lent for the epoch recorded");
 }
 
-/// **The DCC thread never calls `apply`.** Running alone, the DCC opens its
-/// epochs and lends nothing: an allocation is published, not applied. Once
-/// a scheduler runs frames, the agent is lent its envelope — on the thread
-/// running the frames, at a frame start, every time.
+/// **The DCC thread never calls `apply`.**
+///
+/// Running alone, the DCC opens its epochs and lends nothing: an allocation is
+/// published, not applied. Once a scheduler runs frames, the agent is lent its
+/// envelope — on the thread running the frames, at a frame start, every time.
 #[test]
 fn the_dcc_thread_never_calls_apply() {
     let mut host = host();
@@ -98,9 +100,10 @@ fn the_dcc_thread_never_calls_apply() {
     );
 }
 
-/// **The DCC records each epoch's allocation**: every recorded epoch lends
-/// the registered agent an envelope, which reaches the agent once the
-/// scheduler lends it.
+/// **The DCC records each epoch's allocation.**
+///
+/// Every recorded epoch lends the registered agent an envelope, which reaches
+/// the agent once the scheduler lends it.
 #[test]
 fn the_dcc_records_each_epochs_allocation() {
     let mut host = host();
@@ -140,9 +143,10 @@ fn replay_runs_while_the_trace_has_epochs_left() {
     assert!(!dcc.is_replaying());
 }
 
-/// **A replayed allocation reaches the agent as recorded**: the envelope it
-/// lends is not one the DCC would decide (3.333 ms for a 2 ms floor in a
-/// 16.66 ms frame), and the agent is lent exactly it.
+/// **A replayed allocation reaches the agent as recorded.**
+///
+/// The envelope it lends is not one the DCC would decide (3.333 ms for a
+/// 2 ms floor in a 16.66 ms frame), and the agent is lent exactly it.
 #[test]
 fn a_replayed_allocation_reaches_the_agent() {
     let mut host = host();
@@ -169,11 +173,12 @@ fn a_replayed_allocation_reaches_the_agent() {
     assert!(replayed, "lent: {:?}", ear.heard().lent);
 }
 
-/// **Replay re-issues every epoch to every agent, through the channel.** A
-/// trace of three epochs, each lending the renderer and the audio their own
-/// envelope, is replayed one epoch a tick: each agent is lent each epoch
-/// once, in order, with its recorded envelope — at the scheduler's frame
-/// starts, on the thread running the frames — and is asked for no offer.
+/// **Replay re-issues every epoch to every agent, through the channel.**
+///
+/// A trace of three epochs, each lending the renderer and the audio their own
+/// envelope, is replayed one epoch a tick: each agent is lent each epoch once,
+/// in order, with its recorded envelope — at the scheduler's frame starts, on
+/// the thread running the frames — and is asked for no offer.
 #[test]
 fn replay_reissues_every_epoch_to_every_agent() {
     // Ten ticks a second leave each replayed epoch in force for dozens of
@@ -257,12 +262,13 @@ fn replay_reissues_every_epoch_to_every_agent() {
     }
 }
 
-/// **Stopping a replay stops lending its epochs.** The DCC replays a trace of
-/// thirty epochs while no frame runs (a long frame), so the epochs it has
-/// published wait their turn; then the replay is stopped, returning to live
-/// arbitration. The frames that follow do not go on lending the recorded
-/// epochs still waiting, one per frame start: at most the one in force when
-/// the replay stopped is lent.
+/// **Stopping a replay stops lending its epochs.**
+///
+/// The DCC replays a trace of thirty epochs while no frame runs (a long frame),
+/// so the epochs it has published wait their turn; then the replay is stopped,
+/// returning to live arbitration. The frames that follow do not go on lending
+/// the recorded epochs still waiting, one per frame start: at most the one in
+/// force when the replay stopped is lent.
 #[test]
 fn stopping_a_replay_stops_lending_its_epochs() {
     let mut host = host();
@@ -300,12 +306,12 @@ fn stopping_a_replay_stops_lending_its_epochs() {
 }
 
 /// **Replay lends every epoch even when a frame outlasts the DCC's ticks.**
-/// The DCC replays one recorded epoch a tick; the scheduler lends at its
-/// frame starts. A frame longer than the trace — a scene loading, a shader
-/// compiling, here the first frame starting only once the DCC is done
-/// replaying — still sees each recorded epoch lent to the agent, in order:
-/// a replay that reproduces a session cannot drop the epochs a slow frame
-/// stepped over.
+///
+/// The DCC replays one recorded epoch a tick; the scheduler lends at its frame
+/// starts. A frame longer than the trace — a scene loading, a shader compiling,
+/// here the first frame starting only once the DCC is done replaying — still
+/// sees each recorded epoch lent to the agent, in order: a replay that
+/// reproduces a session cannot drop the epochs a slow frame stepped over.
 #[test]
 fn replay_lends_every_epoch_though_a_frame_outlasts_the_ticks() {
     let mut host = host();
@@ -352,9 +358,10 @@ fn replay_lends_every_epoch_though_a_frame_outlasts_the_ticks() {
     );
 }
 
-/// **A `Manual` mode set on the DCC pins the agent**: with ample budget the
-/// agent would be lent its `Balanced` upgrade; pinned to `LowPower`, it is
-/// lent its pin.
+/// **A `Manual` mode set on the DCC pins the agent.**
+///
+/// With ample budget the agent would be lent its `Balanced` upgrade; pinned
+/// to `LowPower`, it is lent its pin.
 #[test]
 fn a_manual_mode_set_on_the_dcc_pins_the_agent() {
     let mut host = host();
@@ -381,14 +388,15 @@ fn a_manual_mode_set_on_the_dcc_pins_the_agent() {
     assert!(pinned, "the agent is lent its pin: {:?}", ear.heard().lent);
 }
 
-/// **The governor's recovery widens the envelope again.** The agent offers a
-/// 2 ms floor and an 8 ms upgrade: at the 16.66 ms target it is lent about
-/// 14.9 ms. A sustained 40 ms frame pulls the budget multiplier down until
-/// its envelope shrinks below 11 ms; once frames settle at 5 ms — a burst of
-/// them each poll, so the frame time the governor remembers its cut for
-/// passes quickly — only the governor can open an epoch, and the envelope
-/// grows back above 12 ms. Without that trigger the agent would stay
-/// squeezed forever.
+/// **The governor's recovery widens the envelope again.**
+///
+/// The agent offers a 2 ms floor and an 8 ms upgrade: at the 16.66 ms target it
+/// is lent about 14.9 ms. A sustained 40 ms frame pulls the budget multiplier
+/// down until its envelope shrinks below 11 ms; once frames settle at 5 ms — a
+/// burst of them each poll, so the frame time the governor remembers its cut
+/// for passes quickly — only the governor can open an epoch, and the envelope
+/// grows back above 12 ms. Without that trigger the agent would stay squeezed
+/// forever.
 #[test]
 fn the_governors_recovery_widens_the_envelope_again() {
     let (mut dcc, rx) = recording(DccConfig::default());
@@ -427,9 +435,10 @@ fn the_governors_recovery_widens_the_envelope_again() {
     assert!(widened, "the recovery widens it again: {after:?}");
 }
 
-/// **A hardware report keeps the known VRAM.** A hardware report says
-/// nothing of the VRAM: the figure the DCC knew stays, instead of becoming
-/// `Some(0)` — which refused every upgrade that adds VRAM.
+/// **A hardware report keeps the known VRAM.**
+///
+/// A hardware report says nothing of the VRAM: the figure the DCC knew stays,
+/// instead of becoming `Some(0)` — which refused every upgrade that adds VRAM.
 #[test]
 fn a_hardware_report_keeps_the_known_vram() {
     let (mut dcc, rx) = DccService::new(DccConfig {
@@ -549,9 +558,10 @@ fn a_vram_report_under_a_budget_leaves_the_remainder() {
     );
 }
 
-/// **A VRAM budget wins over the device's capacity.** A report that carries
-/// a 2 GiB capacity, under a 1 GiB budget, still leaves the budget's
-/// remainder: the budget is the ceiling the engine was given.
+/// **A VRAM budget wins over the device's capacity.**
+///
+/// A report that carries a 2 GiB capacity, under a 1 GiB budget, still leaves
+/// the budget's remainder: the budget is the ceiling the engine was given.
 #[test]
 fn a_vram_budget_wins_over_the_capacity() {
     let (mut dcc, tx) = vram_dcc(Some(1024 * MIB));
@@ -587,10 +597,10 @@ fn within_a_byte(vram: Option<u64>, exact: f64) -> bool {
     vram.is_some_and(|v| (v as f64 - exact).abs() < 1.0)
 }
 
-/// **Without a budget, nine tenths of the device's capacity bound the
-/// VRAM.** No budget set and a 2 GiB capacity in the report: the platform's
-/// figure keeps a tenth in reserve, so 300 MiB in use leaves 0.9 × 2 GiB −
-/// 300 MiB.
+/// **Without a budget, nine tenths of the device's capacity bound the VRAM.**
+///
+/// No budget set and a 2 GiB capacity in the report: the platform's figure
+/// keeps a tenth in reserve, so 300 MiB in use leaves 0.9 × 2 GiB − 300 MiB.
 #[test]
 fn without_a_budget_the_capacity_bounds_the_vram() {
     let exact = 0.9 * (2048 * MIB) as f64 - (300 * MIB) as f64;
@@ -608,9 +618,10 @@ fn without_a_budget_the_capacity_bounds_the_vram() {
     );
 }
 
-/// **A platform's VRAM capacity keeps a tenth in reserve.** A 1000 MiB
-/// capacity with 100 MiB in use leaves 800 MiB: the 100 MiB above nine
-/// tenths are never offered to an upgrade.
+/// **A platform's VRAM capacity keeps a tenth in reserve.**
+///
+/// A 1000 MiB capacity with 100 MiB in use leaves 800 MiB: the 100 MiB above
+/// nine tenths are never offered to an upgrade.
 #[test]
 fn a_platform_vram_capacity_keeps_a_tenth_in_reserve() {
     let (mut dcc, tx) = vram_dcc(None);
@@ -626,9 +637,10 @@ fn a_platform_vram_capacity_keeps_a_tenth_in_reserve() {
     );
 }
 
-/// **VRAM used into the reserved tenth leaves none.** 950 MiB in use out of
-/// a 1000 MiB capacity is past its nine tenths: nothing is left — never an
-/// underflow, never the 50 MiB of the reserve.
+/// **VRAM used into the reserved tenth leaves none.**
+///
+/// 950 MiB in use out of a 1000 MiB capacity is past its nine tenths: nothing
+/// is left — never an underflow, never the 50 MiB of the reserve.
 #[test]
 fn vram_used_into_the_reserved_tenth_leaves_none() {
     let (mut dcc, tx) = vram_dcc(None);
@@ -642,9 +654,10 @@ fn vram_used_into_the_reserved_tenth_leaves_none() {
 }
 
 /// **A VRAM report with neither budget nor capacity keeps the known VRAM.**
+///
 /// Once a report with a capacity has set the available VRAM, one without a
-/// capacity, and no budget to stand in, says nothing of what is left: the
-/// known figure stays.
+/// capacity, and no budget to stand in, says nothing of what is left: the known
+/// figure stays.
 #[test]
 fn a_vram_report_without_a_ceiling_keeps_the_known_vram() {
     let (mut dcc, tx) = vram_dcc(None);
@@ -669,9 +682,10 @@ fn a_vram_report_without_a_ceiling_keeps_the_known_vram() {
     );
 }
 
-/// **A system-RAM report leaves the VRAM alone.** Only a VRAM report moves
-/// the available VRAM: a RAM report, capacity and all, under a VRAM budget,
-/// changes nothing of it.
+/// **A system-RAM report leaves the VRAM alone.**
+///
+/// Only a VRAM report moves the available VRAM: a RAM report, capacity and all,
+/// under a VRAM budget, changes nothing of it.
 #[test]
 fn a_system_ram_report_leaves_the_vram_alone() {
     let (mut dcc, tx) = vram_dcc(Some(1024 * MIB));
@@ -696,9 +710,10 @@ fn a_system_ram_report_leaves_the_vram_alone() {
     assert_eq!(vram, Some(724 * MIB), "a RAM report keeps the VRAM figure");
 }
 
-/// **Only the families on are asked.** While the script family is off, the
-/// script is neither asked for an offer nor named by an epoch; once it is on
-/// again, it is.
+/// **Only the families on are asked.**
+///
+/// While the script family is off, the script is neither asked for an offer nor
+/// named by an epoch; once it is on again, it is.
 #[test]
 fn only_the_families_on_are_asked() {
     let (mut dcc, rx) = recording(DccConfig {
@@ -737,10 +752,11 @@ fn only_the_families_on_are_asked() {
     assert!(!script_ear.heard().asked.is_empty());
 }
 
-/// **The DCC journals why it decided.** A renderer offering a 2 ms floor
-/// and an 8 ms upgrade fits the first frame: the Q-RAM pass decides the
-/// first epoch, and its record says so, with the trigger the round was
-/// decided under.
+/// **The DCC journals why it decided.**
+///
+/// A renderer offering a 2 ms floor and an 8 ms upgrade fits the first frame:
+/// the Q-RAM pass decides the first epoch, and its record says so, with the
+/// trigger the round was decided under.
 #[test]
 fn the_dcc_journals_why_it_decided() {
     let (mut dcc, rx) = recording(DccConfig::default());
@@ -777,12 +793,13 @@ fn the_dcc_journals_why_it_decided() {
     );
 }
 
-/// **The journal records each epoch's inputs.** Before the first epoch the
-/// developer set the renderer `Stable` and capped it at 12 ms, the scheduler
-/// published its waves, and the renderer reported a run. The first epoch's
-/// record holds them all — the target the renderer was asked for, its offer
-/// for that epoch, its report, the waves, the policy and the hint — beside
-/// the allocation.
+/// **The journal records each epoch's inputs.**
+///
+/// Before the first epoch the developer set the renderer `Stable` and capped it
+/// at 12 ms, the scheduler published its waves, and the renderer reported a
+/// run. The first epoch's record holds them all — the target the renderer was
+/// asked for, its offer for that epoch, its report, the waves, the policy and
+/// the hint — beside the allocation.
 #[test]
 fn the_journal_records_each_epochs_inputs() {
     let (mut dcc, rx) = recording(DccConfig::default());
@@ -955,16 +972,16 @@ fn host_frame(ms: u64) -> TelemetryEvent {
     })
 }
 
-/// **A recorded epoch keeps what its round read.** Before the first epoch,
-/// the renderer (Critical) reported thirty runs of its 1 ms floor, each
-/// taking 3 ms, which its cost book learns; the streamer (Optional) runs at
-/// the background and reported nothing; 512 MiB of video memory are left;
-/// five frames ran — three of 25 ms, over the target, and two of 5 ms. The
-/// first epoch's record holds each agent's importance, the correction of
-/// every row offered — the renderer's floor near ×3, the streamer's never
-/// run at its quote (factor 1, no spread) —, the memory limit, the streamer at the
-/// background, when it opened since recording started, and the five frames
-/// summed up.
+/// **A recorded epoch keeps what its round read.**
+///
+/// Before the first epoch, the renderer (Critical) reported thirty runs of its 1
+/// ms floor, each taking 3 ms, which its cost book learns; the streamer (Optional)
+/// runs at the background and reported nothing; 512 MiB of video memory are left;
+/// five frames ran — three of 25 ms, over the target, and two of 5 ms. The first
+/// epoch's record holds each agent's importance, the correction of every row
+/// offered — the renderer's floor near ×3, the streamer's never run at its quote
+/// (factor 1, no spread) —, the memory limit, the streamer at the background, when
+/// it opened since recording started, and the five frames summed up.
 #[test]
 fn a_recorded_epoch_keeps_what_its_round_read() {
     use khora_core::agent::AgentImportance::{Critical, Optional};
@@ -1076,10 +1093,11 @@ fn a_recorded_epoch_keeps_what_its_round_read() {
     );
 }
 
-/// **A channel connected after the DCC started still carries its
-/// allocations.** The engine starts the decision thread, then builds its
-/// scheduler and connects its channel: the agent is lent its envelope at a
-/// frame start all the same.
+/// **A channel connected after the DCC started still carries its allocations.**
+///
+/// The engine starts the decision thread, then builds its scheduler and
+/// connects its channel: the agent is lent its envelope at a frame start all
+/// the same.
 #[test]
 fn a_channel_connected_after_the_dcc_started_carries_its_allocations() {
     let (mut dcc, rx) = DccService::new(DccConfig {
@@ -1104,10 +1122,11 @@ fn a_channel_connected_after_the_dcc_started_carries_its_allocations() {
     assert!(lent, "the agent was lent an envelope");
 }
 
-/// **An allocation decided before the scheduler connected is not lost.** The
-/// first epoch opens while no channel is connected yet; once the scheduler
-/// connects, the allocation in force is handed to it, and the agent is lent
-/// its envelope without waiting for another epoch to open.
+/// **An allocation decided before the scheduler connected is not lost.**
+///
+/// The first epoch opens while no channel is connected yet; once the scheduler
+/// connects, the allocation in force is handed to it, and the agent is lent its
+/// envelope without waiting for another epoch to open.
 #[test]
 fn an_allocation_decided_before_the_scheduler_connected_is_lent() {
     let (mut dcc, rx) = recording(DccConfig {
@@ -1138,9 +1157,10 @@ fn an_allocation_decided_before_the_scheduler_connected_is_lent() {
     assert_eq!(opened, 1, "no other epoch was needed");
 }
 
-/// **A journal sums up only the frames run since it began.** Frames run
-/// while an earlier journal recorded and no epoch opened — no agent took
-/// part — are not the new journal's: once it begins and an agent joins,
+/// **A journal sums up only the frames run since it began.**
+///
+/// Frames run while an earlier journal recorded and no epoch opened — no agent
+/// took part — are not the new journal's: once it begins and an agent joins,
 /// its first epoch ran no frame.
 #[test]
 fn a_journal_sums_up_only_the_frames_run_since_it_began() {
@@ -1176,9 +1196,10 @@ fn a_journal_sums_up_only_the_frames_run_since_it_began() {
     );
 }
 
-/// An agent of one 1 ms floor row whose offer, once armed, says it was
-/// asked and waits to be let go: what happens on the DCC's thread between
-/// the round opening and its record can be pinned.
+/// An agent of one 1 ms floor row whose offer, once armed, waits to be let go.
+///
+/// It says it was asked, so what happens on the DCC's thread between the
+/// round opening and its record can be pinned.
 struct Gated {
     inner: Ranked,
     armed: Arc<std::sync::atomic::AtomicBool>,
@@ -1220,9 +1241,11 @@ impl Agent for Gated {
 }
 
 /// **A journal begun while a round is open sums up none of the frames run
-/// before it.** Frames run under an earlier journal; a round opens on them,
-/// and while it asks for offers a new journal begins. The round is the new
-/// journal's first epoch: no frame ran since that journal began.
+/// before it.**
+///
+/// Frames run under an earlier journal; a round opens on them, and while it
+/// asks for offers a new journal begins. The round is the new journal's first
+/// epoch: no frame ran since that journal began.
 #[test]
 fn a_journal_begun_while_a_round_is_open_sums_up_no_earlier_frame() {
     use khora_core::agent::AgentImportance::Critical;

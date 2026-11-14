@@ -20,24 +20,20 @@ use khora_core::agent::dependency::DependencyKind;
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::Contention;
 
-/// Per-agent metadata the parallel executor needs to group agents into waves.
+/// What the executor needs of an agent to group it into a wave.
 pub(super) struct WaveMeta {
-    /// The agent's id.
     pub(super) id: AgentId,
     /// Ids this agent hard-depends on (must run in an earlier wave).
     pub(super) hard_dep_targets: Vec<AgentId>,
-    /// What this agent competes for (from [`Agent::contention`]), used to verify
-    /// co-wave agents do not collide before dispatch, and stamped onto the
-    /// context so an undeclared reach is refused at the point of access.
+    /// What this agent competes for: checked against its wave-mates, and stamped onto its
+    /// context so an undeclared reach is refused.
     pub(super) contention: Contention,
 }
 
-/// Reads each agent's id and the contention of its installed layer once,
-/// building the [`WaveMeta`] the wave partitioner + disjointness check need.
+/// Reads each agent's id and its installed layer's contention once, as [`WaveMeta`]s.
 ///
-/// Once, and reused: the context is stamped with the same `Contention` the wave
-/// was built from, so what the scheduler checked and what the agent is held to
-/// cannot be two different answers.
+/// The context is stamped with the same `Contention` the wave was built from, so what the
+/// scheduler checked and what the agent is held to cannot differ.
 pub(super) fn build_wave_metas(agents: &[AgentSlot]) -> Vec<WaveMeta> {
     agents
         .iter()
@@ -53,15 +49,11 @@ pub(super) fn build_wave_metas(agents: &[AgentSlot]) -> Vec<WaveMeta> {
         .collect()
 }
 
-/// Groups agents (already in `sort_agents` order) into execution waves; with
-/// `concurrent` off, every agent is a wave of its own.
+/// Groups agents, in `sort_agents` order, into waves; with `concurrent` off, one per agent.
 ///
-/// A wave is a maximal run of consecutive agents in which no member
-/// hard-depends on another member and no member's
-/// [`Contention`](khora_core::agent::Contention) overlaps another's. Because the input is
-/// already topologically ordered by hard deps, and a dependent never shares a
-/// wave with its target, running the waves in order preserves the exact
-/// Hard-dependency ordering.
+/// A wave is a maximal run of consecutive agents none of which hard-depends on another or
+/// overlaps another's [`Contention`]. A dependent never
+/// shares a wave with its target, so running the waves in order keeps Hard dependencies.
 pub(super) fn partition_waves(metas: &[WaveMeta], concurrent: bool) -> Vec<Vec<usize>> {
     let mut waves: Vec<Vec<usize>> = Vec::new();
     for (i, meta) in metas.iter().enumerate() {
@@ -85,20 +77,12 @@ pub(super) fn partition_waves(metas: &[WaveMeta], concurrent: bool) -> Vec<Vec<u
     waves
 }
 
-/// Logs an error for every surface two agents in the same concurrent `wave`
-/// would fight over.
+/// Logs an error for every surface two agents of a concurrent `wave` would fight over,
+/// returning their count.
 ///
-/// A deck slot written twice loses one of the two when the private shards are
-/// folded back; a resource locked twice serialises the pair the wave existed to
-/// run at once; a resource locked by one and read by another shows the reader a
-/// half-written state. Reading the same thing is not a conflict, which is the
-/// whole point of declaring it.
-///
-/// [`Agent::contention`](khora_core::agent::Agent::contention) is what makes
-/// this checkable at wave-formation time — naming the offending agents — rather
-/// than discovered defensively at the merge, or not at all.
-///
-/// Returns the number of collisions detected (0 = disjoint, the expected case).
+/// A deck slot written twice loses one write at the fold; a resource locked twice
+/// serialises the pair; a lock beside a read shows the reader a half-written state. Two
+/// reads are no conflict.
 pub(super) fn check_wave_disjoint(wave: &[usize], metas: &[WaveMeta]) -> usize {
     let mut collisions = 0;
     for (position, &idx) in wave.iter().enumerate() {

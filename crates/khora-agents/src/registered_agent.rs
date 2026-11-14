@@ -27,7 +27,11 @@ use khora_core::Runtime;
 use crate::lane_agent::{lane_agent, LaneAgent};
 
 /// Checks `registrations` together against `runtime` and `caps`, then builds
-/// one [`LaneAgent`] per registration, in order. A refused set builds none.
+/// one [`LaneAgent`] per registration, in order.
+///
+/// # Errors
+///
+/// Returns the [`BootError`] that refused the set; a refused set builds none.
 pub fn lane_agents(
     registrations: &[&'static AgentRegistration],
     runtime: &Runtime,
@@ -36,8 +40,12 @@ pub fn lane_agents(
     lane_agents_in(registrations, runtime, caps, ExecutionPhase::DEFAULT_ORDER)
 }
 
-/// [`lane_agents`] for a scheduler running `phase_order`, the order the
-/// registrations' deck reads are checked against.
+/// Builds the agents as [`lane_agents`] does, for a scheduler running
+/// `phase_order`, the order the registrations' deck reads are checked against.
+///
+/// # Errors
+///
+/// Returns the [`BootError`] that refused the set; a refused set builds none.
 pub fn lane_agents_in(
     registrations: &[&'static AgentRegistration],
     runtime: &Runtime,

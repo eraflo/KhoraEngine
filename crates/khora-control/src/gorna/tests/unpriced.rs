@@ -12,11 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! An agent with no priced row has nothing GORNA can lend for: every row it
-//! offers is `Assumed`, so an envelope shared from them is the zero time of a
-//! guess. The allocation names no envelope for it — it keeps what it holds,
-//! and, withdrawn, runs at its own price — while an agent with a priced row
-//! is named as before, and a late agent keeps the envelope it holds.
+//! An agent with no priced row: the allocation names no envelope for it, so it
+//! keeps what it holds or runs at its own price, while a priced or late agent
+//! is lent as before.
 
 use super::decide::{bid, round};
 use super::*;
@@ -59,9 +57,10 @@ fn names(allocation: &Allocation, name: &'static str) -> bool {
         .any(|(agent, _)| *agent == AgentId::new(name))
 }
 
-/// **An agent with no priced row is named in no envelope.** In a 16 ms
-/// frame, `ash` offers priced rows and `script` its floor alone, unpriced.
-/// The allocation names no envelope for `script`, and lends `ash` the
+/// **An agent with no priced row is named in no envelope.**
+///
+/// In a 16 ms frame, `ash` offers priced rows and `script` its floor alone,
+/// unpriced. The allocation names no envelope for `script`, and lends `ash` the
 /// envelope it would be lent were `script` not there.
 #[test]
 fn an_agent_with_no_priced_row_is_named_in_no_envelope() {
@@ -86,8 +85,9 @@ fn an_agent_with_no_priced_row_is_named_in_no_envelope() {
 }
 
 /// **The arbitrator names no envelope for an agent with no priced row.**
-/// `ash` answers priced rows and `script` an unpriced floor in a live round
-/// of a 16 ms frame: the allocation names `ash`, with room for its
+///
+/// `ash` answers priced rows and `script` an unpriced floor in a live round of
+/// a 16 ms frame: the allocation names `ash`, with room for its
 /// `HighPerformance`, and not `script`.
 #[test]
 fn the_arbitrator_names_no_envelope_for_an_agent_with_no_priced_row() {
@@ -122,11 +122,11 @@ fn the_arbitrator_names_no_envelope_for_an_agent_with_no_priced_row() {
 }
 
 /// **A `Safety` round names no envelope for an agent with no priced row.**
-/// In a 16 ms frame opened as `Safety`, `ash` offers priced rows and
-/// `script` its floor alone, unpriced. Every agent with a price is lent its
-/// floor; `script`, whose floor is a guess of no time, is named in no
-/// envelope — a zero-time one would starve it as surely as in any other
-/// round.
+///
+/// In a 16 ms frame opened as `Safety`, `ash` offers priced rows and `script`
+/// its floor alone, unpriced. Every agent with a price is lent its floor;
+/// `script`, whose floor is a guess of no time, is named in no envelope — a
+/// zero-time one would starve it as surely as in any other round.
 #[test]
 fn a_safety_round_names_no_envelope_for_an_agent_with_no_priced_row() {
     let bids = [
@@ -143,11 +143,12 @@ fn a_safety_round_names_no_envelope_for_an_agent_with_no_priced_row() {
     );
 }
 
-/// **A pin on an agent with no priced row still reaches it.** `script`
-/// offers two unpriced rows and a developer pins it to `HighPerformance`
-/// (`Manual`). The allocation names the pin; lent at a frame start, it
-/// reaches the agent — a developer's pin is no envelope, and the round
-/// needs no price to deliver it.
+/// **A pin on an agent with no priced row still reaches it.**
+///
+/// `script` offers two unpriced rows and a developer pins it to
+/// `HighPerformance` (`Manual`). The allocation names the pin; lent at a frame
+/// start, it reaches the agent — a developer's pin is no envelope, and the
+/// round needs no price to deliver it.
 #[test]
 fn a_pin_on_an_agent_with_no_priced_row_still_reaches_it() {
     let mut pinned = bid(
@@ -177,11 +178,12 @@ fn a_pin_on_an_agent_with_no_priced_row_still_reaches_it() {
     assert_eq!(script.last_lent().pin, Some(HighPerformance));
 }
 
-/// **A late agent with no priced row keeps the envelope it holds.** `script`
-/// answers late, its floor alone unpriced, holding 3 ms from an earlier
-/// round; `elm`, on time, offers the same unpriced floor and holds nothing.
-/// The allocation names `script` with the envelope it holds, and names no
-/// envelope for `elm`.
+/// **A late agent with no priced row keeps the envelope it holds.**
+///
+/// `script` answers late, its floor alone unpriced, holding 3 ms from an
+/// earlier round; `elm`, on time, offers the same unpriced floor and holds
+/// nothing. The allocation names `script` with the envelope it holds, and names
+/// no envelope for `elm`.
 #[test]
 fn a_late_agent_with_no_priced_row_keeps_the_envelope_it_holds() {
     let mut late = bid(unpriced_offer("script"), Important);
@@ -206,12 +208,14 @@ fn a_late_agent_with_no_priced_row_keeps_the_envelope_it_holds() {
     );
 }
 
-/// **A late agent with no priced row is lent no zero-time floor in a
-/// `Safety` round.** In a 16 ms frame opened as `Safety`, `script` answers
-/// late, its floor alone unpriced, holding 3 ms from an earlier round. Its
-/// floor is a guess of no time: lent as an envelope it would starve the
-/// agent. The allocation either names no envelope for it or lends it the
-/// 3 ms it holds — never an envelope of no time.
+/// **A late agent with no priced row is lent no zero-time floor in a `Safety`
+/// round.**
+///
+/// In a 16 ms frame opened as `Safety`, `script` answers late, its floor alone
+/// unpriced, holding 3 ms from an earlier round. Its floor is a guess of no
+/// time: lent as an envelope it would starve the agent. The allocation either
+/// names no envelope for it or lends it the 3 ms it holds — never an envelope
+/// of no time.
 #[test]
 fn a_late_agent_with_no_priced_row_is_lent_no_zero_time_floor_in_a_safety_round() {
     let mut late = bid(unpriced_offer("script"), Important);

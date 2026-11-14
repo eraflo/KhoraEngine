@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The strategic brain of the Khora Engine, responsible for the **[C]ontrol Plane**.
+//! The strategic brain of the Khora Engine, responsible for the **\[C\]ontrol Plane**.
 //!
 //! This crate implements the core logic of the Symbiotic Adaptive Architecture (SAA).
 //! It is designed to make high-level, strategic decisions based on telemetry data,

@@ -34,9 +34,9 @@ pub(super) struct Epochs {
     ticks_since: u32,
     /// Whether an epoch was opened (or replayed) yet.
     opened_any: bool,
-    /// The agents the last epoch was opened for, known without locking any:
-    /// a weak reference each, which also keeps a removed agent's address from
-    /// being taken by a newcomer while it is held.
+    /// The agents the last epoch was opened for, known without locking any.
+    ///
+    /// A held weak reference keeps a removed agent's address from a newcomer.
     agents: Vec<Weak<Mutex<dyn Agent>>>,
     /// Each agent's over-budget reports in a row.
     overruns: HashMap<AgentId, u32>,
@@ -72,17 +72,12 @@ impl Epochs {
         self.unanswered.push(epoch);
     }
 
-    /// A run's report, as the scheduler published it: an agent over budget
-    /// `overruns_in_a_row` reports in a row raises `Overruns`, a stalled agent
-    /// whose health fell below 0.5 raises `AgentStalled`.
+    /// Counts a run's report: overruns in a row raise `Overruns`, a stalled
+    /// agent under 0.5 health raises `AgentStalled`.
     ///
-    /// The reports of an epoch an opened epoch answered do not count: the
-    /// runs of the frames still going on it — until the scheduler lends the
-    /// new one at its next frame start — were answered by the epoch they
-    /// opened. A replay answers nothing: the replayed epochs the frames are
-    /// still lending, and the live one an agent the trace does not name runs
-    /// on, all count. A report naming no epoch (an agent not lent yet)
-    /// always counts.
+    /// A report under an epoch that an opened epoch answered is dropped; a
+    /// replay answers nothing, and a report naming no epoch always counts.
+    /// See the book: concepts/gorna.md, "When things go wrong".
     pub(super) fn report(&mut self, report: &Report, overruns_in_a_row: u32) {
         if report.epoch != Epoch::default() && self.answered.contains(&report.epoch) {
             return;
@@ -97,9 +92,10 @@ impl Epochs {
         }
     }
 
-    /// The trigger that opens an epoch this tick, if one does: `Initial`
-    /// first, then `Safety` at once, any other once the epoch has lasted
-    /// `min_ticks`.
+    /// The trigger that opens an epoch this tick, if one does.
+    ///
+    /// `Initial` first, then `Safety` at once, any other once the epoch has
+    /// lasted `min_ticks`.
     pub(super) fn due(&self, min_ticks: u32) -> Option<Trigger> {
         if !self.opened_any {
             return Some(Trigger::Initial);

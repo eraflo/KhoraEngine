@@ -12,22 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Work that spans frames: the runs of the families at
-//! [`ExecutionPhase::BACKGROUND`].
-//!
-//! A family there has its installed layer run off the frame when its `Take`
-//! mailbox holds mail, on a pool of its own — so a long run never queues in
-//! front of a wave's jobs — and never more than one run of a family at once.
-//! The layer is checked out of its place for the run, so the place is never
-//! held across frames; at the frame start after the run ended, the layer is
-//! checked back in and what it staged goes to the runtime's
-//! [`Reserve`], for the frame's `Boundary` systems.
-//!
-//! The same pool prepares the layers the families switch to, whatever their
-//! phase: a [`Preparation`] an agent left at its place runs there, one per
-//! family at a time, while the installed layer keeps running, and what it
-//! gave goes back to the place at the frame start after it ended — in time
-//! for that frame start's swap.
+//! Work off the frame: the runs of the families at [`ExecutionPhase::BACKGROUND`], and
+//! the preparations of the layers any family switches to, one per family at a time.
+//! See the book: reference/glossary.md, "ExecutionPhase / TickPhase".
 
 use std::collections::HashSet;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -75,7 +62,7 @@ pub(super) struct Background {
 }
 
 impl Background {
-    /// Runs on a pool of `threads` of their own.
+    /// Creates the background work's own pool, of `threads` threads.
     pub(super) fn new(threads: usize) -> Self {
         let (finished_tx, finished_rx) = channel();
         let (ready_tx, ready_rx) = channel();
@@ -90,9 +77,10 @@ impl Background {
         }
     }
 
-    /// Starts a run of every family at the background in `met` — those of the
-    /// families on — that has mail in a `Take` mailbox of its own and
-    /// no run under way, on the frame's `bus`.
+    /// Starts a run of each background family in `met` with `Take` mail and no run under way.
+    ///
+    /// The layer is checked out of its place for the run, so the place is never held
+    /// across frames.
     pub(super) fn start(&mut self, met: &[MetAgent], runtime: &Arc<Runtime>, bus: &Arc<LaneBus>) {
         for (_, known) in met {
             let id = &known.id;
@@ -146,9 +134,10 @@ impl Background {
         }
     }
 
-    /// Starts the preparation waiting at the place of every family in
-    /// `met` with none under way, on the frame's `bus`: each runs under
-    /// its own contention, and nothing waits for it.
+    /// Starts the preparation waiting at each place in `met` with none under way.
+    ///
+    /// Each runs under its own contention while the installed layer keeps running;
+    /// nothing waits for it.
     pub(super) fn prepare(&mut self, met: &[MetAgent], runtime: &Arc<Runtime>, bus: &Arc<LaneBus>) {
         for (_, known) in met {
             let id = &known.id;
@@ -180,9 +169,9 @@ impl Background {
         }
     }
 
-    /// Takes back every run that ended: its layer to its place, what it
-    /// staged to the runtime's reserve. Returns the runs' reports, each with
-    /// the host time it took.
+    /// Takes back every run that ended, returning each report with its host time in ms.
+    ///
+    /// The layer goes back to its place, and what the run staged to the runtime's reserve.
     pub(super) fn finish(&mut self, runtime: &Runtime) -> Vec<(Report, f64)> {
         let reserve = runtime.look_up::<Reserve>();
         let mut reports = Vec::new();
@@ -204,11 +193,10 @@ impl Background {
 }
 
 impl Background {
-    /// Waits for every run and every preparation under way to end, and hands
-    /// each back to its place: a layer out comes home, a prepared one is
-    /// staged or kept — so whatever shuts the places down next shuts every
-    /// layer down, none lost on the way. What the runs staged is dropped: no
-    /// frame will apply it.
+    /// Waits for every run and preparation under way to end, and hands each back to its place.
+    ///
+    /// So whatever shuts the places down next shuts every layer down. What the runs
+    /// staged is dropped: no frame will apply it.
     pub(super) fn wind_down(&mut self) {
         let wait = std::time::Duration::from_millis(5);
         while !self.running.is_empty() || !self.preparing.is_empty() {
@@ -237,9 +225,10 @@ impl Drop for Background {
     }
 }
 
-/// Runs `preparation` of `id`'s layer on a context of its own, and sends what
-/// it gave back to `place` through `ready`. A preparation that panics gives
-/// no layer: the place wakes the agent as for one that failed.
+/// Runs `preparation` of `id`'s layer on a context of its own, sending the result to
+/// `place` through `ready`.
+///
+/// A preparation that panics gives no layer: the place wakes the agent as for a failed one.
 fn run_preparation(
     id: AgentId,
     place: Arc<std::sync::Mutex<Place>>,
@@ -268,8 +257,8 @@ fn run_preparation(
     });
 }
 
-/// Whether a `Take` mailbox of `family`, on one of the channels `taken`,
-/// holds mail in `runtime`.
+/// Returns whether a `Take` mailbox of `family`, on one of the channels `taken`, holds
+/// mail in `runtime`.
 fn has_mail(family: AgentId, runtime: &Runtime, taken: &[std::any::TypeId]) -> bool {
     inventory::iter::<Mailbox>.into_iter().any(|mailbox| {
         mailbox.family == family

@@ -42,10 +42,11 @@ fn share(agents: &[Arc<Mutex<dyn Agent>>], hints: &HashMap<AgentId, AgentHints>)
     arbitrator().allocate(&playing(), &frame_of(10.5), Trigger::Refresh, agents, hints)
 }
 
-/// **Priority comes from importance, not from a table of names.** With room
-/// for one upgrade, the more important agent takes it, whatever the two are
-/// called and in whichever order they are listed. The names are the ones an
-/// old table ranked the other way round (`renderer` above `asset`).
+/// **Priority comes from importance, not from a table of names.**
+///
+/// With room for one upgrade, the more important agent takes it, whatever the
+/// two are called and in whichever order they are listed. The names are the
+/// ones an old table ranked the other way round (`renderer` above `asset`).
 #[test]
 fn priority_comes_from_importance_not_from_a_table() {
     let pairs = [
@@ -80,10 +81,11 @@ fn priority_comes_from_importance_not_from_a_table() {
     }
 }
 
-/// **A `Prioritize` hint outweighs importance, both ways.** With room for
-/// one upgrade, a `Critical` agent hinted down to 0 gives it to an unhinted
-/// `Optional` one; an `Optional` agent hinted up to 2 takes it from an
-/// unhinted `Critical` one. The hint replaces the weight importance gives.
+/// **A `Prioritize` hint outweighs importance, both ways.**
+///
+/// With room for one upgrade, a `Critical` agent hinted down to 0 gives it to
+/// an unhinted `Optional` one; an `Optional` agent hinted up to 2 takes it from
+/// an unhinted `Critical` one. The hint replaces the weight importance gives.
 #[test]
 fn a_prioritize_hint_outweighs_importance() {
     for (hinted, hint, other, hinted_wins) in [

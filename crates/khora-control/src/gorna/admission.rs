@@ -40,8 +40,9 @@ pub(crate) enum Admission<'r> {
     },
 }
 
-/// Admits `round`: one order for everything that follows, every agent's
-/// floor checked on the critical path, and a `Stable` agent's envelope kept
+/// Admits `round`, checking every agent's floor on the critical path.
+///
+/// The bids come back in agent order. A `Stable` agent's envelope is kept
 /// while it still fits the frame with every other agent at its floor.
 pub(crate) fn admit<'r>(round: &'r Round<'_>) -> Admission<'r> {
     let (bids, mut plans) = floors(round);
@@ -58,11 +59,10 @@ pub(crate) fn admit<'r>(round: &'r Round<'_>) -> Admission<'r> {
                         time: plan.floor.time,
                         memory: plan.floor.memory,
                     };
-                    // An agent that offered nothing this round (busy, or
-                    // late with no rows) has no floor to fall to: it keeps
-                    // what it holds.
-                    // One that priced no row has a floor of no known cost:
-                    // it keeps what it holds too, or is named in no envelope.
+                    // An agent that offered nothing (busy, or late with no
+                    // rows) or priced no row has no floor of known cost to
+                    // fall to: it keeps what it holds, or is named in no
+                    // envelope.
                     let keeps = bid.offer.rows.is_empty() || !priced(bid);
                     (
                         bid.offer.agent,
@@ -108,8 +108,8 @@ pub(crate) fn admit<'r>(round: &'r Round<'_>) -> Admission<'r> {
     Admission::Admitted { bids, plans }
 }
 
-/// `round`'s bids in agent order, and each one's plan at its floor, as its
-/// policies make it.
+/// Returns `round`'s bids in agent order, and each one's plan at its floor,
+/// as its policies make it.
 pub(crate) fn floors<'r>(round: &'r Round<'_>) -> (Vec<&'r Bid>, Vec<Plan>) {
     let mut bids: Vec<&Bid> = round.bids.iter().collect();
     bids.sort_by_key(|bid| bid.offer.agent);
@@ -117,8 +117,8 @@ pub(crate) fn floors<'r>(round: &'r Round<'_>) -> (Vec<&'r Bid>, Vec<Plan>) {
     (bids, plans)
 }
 
-/// What the plans leave of the target, in milliseconds, on the device whose
-/// critical path is the longest: negative when they are over it.
+/// Returns what the plans leave of the target on the device whose critical
+/// path is the longest, in milliseconds: negative when they are over it.
 pub(crate) fn slack_ms(round: &Round<'_>, bids: &[&Bid], plans: &[Plan]) -> f64 {
     let paths = critical_paths(round, bids, plans);
     let longest = Device::ALL
@@ -129,7 +129,7 @@ pub(crate) fn slack_ms(round: &Round<'_>, bids: &[&Bid], plans: &[Plan]) -> f64 
     (micros(round.target) as f64 - longest as f64) / 1_000.0
 }
 
-/// The agents named late in `bids`.
+/// Returns the agents named late in `bids`.
 pub(super) fn late(bids: &[&Bid]) -> Vec<AgentId> {
     bids.iter()
         .filter(|bid| bid.late)
@@ -137,9 +137,10 @@ pub(super) fn late(bids: &[&Bid]) -> Vec<AgentId> {
         .collect()
 }
 
-/// What the plans break, if anything: the first device whose critical path
-/// is over the target, else the first whose memory held is over what is
-/// known of it. `None` when they fit the frame.
+/// Returns what the plans break, if anything; `None` when they fit the frame.
+///
+/// Time comes first: the first device whose critical path is over the
+/// target, else the first whose memory held is over what is known of it.
 pub(crate) fn breach(
     round: &Round<'_>,
     bids: &[&Bid],
@@ -164,8 +165,8 @@ pub(crate) fn breach(
         .map(BindingConstraint::Memory)
 }
 
-/// The frame's time on each device, in µs: each wave costs its slowest
-/// member, an agent in no wave its own, and every agent its transfers.
+/// Returns the frame's time on each device, in µs: each wave costs its
+/// slowest member, an agent in no wave its own, every agent its transfers.
 pub(crate) fn critical_paths(round: &Round<'_>, bids: &[&Bid], plans: &[Plan]) -> PerDevice<u64> {
     let mut alone = PerDevice::<u64>::default();
     let mut waves = vec![PerDevice::<u64>::default(); round.waves.len()];
@@ -203,7 +204,7 @@ pub(crate) fn critical_paths(round: &Round<'_>, bids: &[&Bid], plans: &[Plan]) -
     alone
 }
 
-/// The memory the plans hold on each device.
+/// Returns the memory the plans hold on each device.
 pub(super) fn held(bids: &[&Bid], plans: &[Plan]) -> PerDevice<u64> {
     let mut held = PerDevice::<u64>::default();
     for (bid, plan) in bids.iter().zip(plans) {

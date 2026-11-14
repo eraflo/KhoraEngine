@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The ExecutionScheduler — hot-path orchestrator for the SAA frame loop.
+//! The execution scheduler: runs each family's installed layer, phase by phase, every frame.
+//! See the book: concepts/the-frame.md, "The six-stage descent".
 
 use crate::agent_registry::AgentRegistry;
 use crate::budget_channel::{BudgetChannel, Publication};
@@ -46,15 +47,15 @@ mod sim_steps;
 mod sub_steps;
 mod waves;
 
-/// How often (in frames) the scheduler samples per-component access stats for
-/// the layout advisor. Per-frame would flood the telemetry channel for data
-/// that changes slowly; ~once a second at 60 FPS is plenty.
+/// How often, in frames, the scheduler samples component access stats for the layout advisor.
+///
+/// The stats move slowly: once a second at 60 FPS spares the telemetry channel.
 const COMPONENT_ACCESS_SAMPLE_PERIOD: u64 = 60;
 
-/// Upper bound on real frame delta fed into the simulation accumulator, in
-/// seconds. A longer real gap (debugger break, asset hitch, window drag) is
-/// truncated to this value so the accumulator never demands an unbounded
-/// number of catch-up steps — the classic "spiral of death".
+/// The longest real frame delta, in seconds, fed into the simulation accumulator.
+///
+/// A longer gap is truncated, so the accumulator never demands unbounded catch-up.
+/// See the book: concepts/the-frame.md, "Fixed-timestep simulation and render interpolation".
 const MAX_FRAME_DELTA_SECONDS: f32 = 0.25;
 
 /// An agent of a phase: its lock, its importance, its priority, its
@@ -67,66 +68,62 @@ type AgentSlot = (
     Known,
 );
 
-/// Which subset of a phase's agents [`ExecutionScheduler::execute_agents_in_phase`]
-/// should run, used to split the fixed-update sub-loop from the once-per-frame
-/// loop without double-running any agent.
+/// Which of a phase's agents [`ExecutionScheduler::execute_agents_in_phase`] runs.
+///
+/// Splits the fixed-update sub-loop from the once-per-frame loop, so no agent runs twice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AgentSelection {
-    /// Every agent in the phase (legacy path — no fixed agent present).
+    /// Every agent in the phase: no place holds a fixed step.
     All,
-    /// The agents whose place runs at a fixed step still owed a sub-step at this
-    /// round of the fixed-update sub-loop: round `r` runs every fixed agent
-    /// whose frame owes it more than `r` sub-steps.
+    /// The fixed agents still owed a sub-step at this round of the fixed-update sub-loop:
+    /// round `r` runs every fixed agent owed more than `r` sub-steps this frame.
     FixedRound(u32),
     /// Every agent except the fixed-timestep ones (they were sub-stepped).
     ExcludeFixed,
 }
 
 /// The hot-path execution scheduler.
+///
+/// See the book: concepts/agents-and-lanes.md, "Lanes are layers".
 pub struct ExecutionScheduler {
     registry: Arc<Mutex<AgentRegistry>>,
     budget_channel: BudgetChannel,
-    /// What the frame starts took from the channel, oldest first, each with
-    /// whether it was published in turn: the one in force last, and before it
-    /// the replayed ones an agent of a family on has not been lent yet.
+    /// What the frame starts took from the channel, oldest first, each with whether it
+    /// was published in turn.
+    ///
+    /// The last is in force; the others are replays an agent of a family on is still owed.
     taken: Vec<(Publication, bool)>,
-    /// Each agent seen at a frame start, by a weak reference to its lock,
-    /// with the place of the last publication it was handed: what it is owed
-    /// is what was taken after it.
+    /// Each agent seen at a frame start, by a weak reference to its lock, with the place
+    /// of the last publication it was handed: it is owed what was taken after it.
     lent: Vec<(Weak<Mutex<dyn khora_core::agent::Agent>>, u64)>,
     /// The families seen off at a frame start and not on again since.
     resting: BTreeSet<AgentId>,
-    /// The families on again, each with the place in force at the frame
-    /// start that found it on (`None` while nothing was taken): withdrawn at
-    /// the first frame start their agent is free, and owed only what was
-    /// taken after that place.
+    /// The families on again, each with the place in force when found on (`None` while
+    /// nothing was taken).
+    ///
+    /// Each is withdrawn at the first frame start its agent is free, and owed only what
+    /// was taken after that place.
     resuming: Vec<(AgentId, Option<u64>)>,
     phase_order: Vec<ExecutionPhase>,
     frame_start: Instant,
     frame_budget: Duration,
-    /// Output deck retained across the tick boundary so the engine I/O
-    /// layer can drain typed lane outputs (recorded GPU commands, draw
-    /// lists, etc.) after the scheduler has finished.
+    /// The last frame's output deck, kept for the engine's I/O boundary to drain.
     last_deck: OutputDeck,
-    /// Read-only observation tunnel to the DCC: per-agent cost samples and
-    /// per-component access snapshots are pushed here (non-blocking) for the
-    /// cold-path cost model + layout advisor. `None` if telemetry is disabled.
+    /// The observation tunnel to the DCC, for run reports and component access
+    /// snapshots; `None` when telemetry is off.
     telemetry: Option<Sender<TelemetryEvent>>,
     /// Monotonic frame counter, used to throttle low-rate telemetry sampling.
     frame_counter: u64,
     /// Wall-clock instant of the previous `run_frame`, used to derive the
     /// real per-frame delta. `None` on the very first frame.
     last_frame_instant: Option<Instant>,
-    /// Carried-over simulated time (seconds) on the game's clock. Each frame
-    /// the scaled real delta is added and whole ticks of
-    /// [`DEFAULT_FIXED_DELTA_SECONDS`](khora_core::time::DEFAULT_FIXED_DELTA_SECONDS)
-    /// are consumed; the remainder stays here.
+    /// Simulated time, in seconds, carried over on the game's clock: what is left once
+    /// whole ticks are consumed.
     sim_accumulator: f32,
-    /// Per fixed agent, the simulated time (seconds) the game's ticks
-    /// advanced that it has not stepped through yet — less than one of its
-    /// own steps after any frame that ticked. Fed only by ticks, so it never
-    /// holds time the game's clock has not passed. One clock per agent: each
-    /// cuts the same time at its own step.
+    /// Per fixed agent, the ticked time, in seconds, it has not stepped through yet.
+    ///
+    /// Fed only by ticks, so it never holds time the game's clock has not passed. One
+    /// clock per agent: each cuts the same time at its own step.
     fixed_clocks: HashMap<AgentId, f32>,
     /// This frame's sub-steps per fixed agent, read by the fixed-update
     /// sub-loop's [`AgentSelection::FixedRound`].
@@ -134,9 +131,7 @@ pub struct ExecutionScheduler {
     /// When `true`, agents whose contentions are disjoint share concurrent
     /// waves; when `false` (default) every agent is a wave of its own.
     parallel_execution: bool,
-    /// Persistent worker pool for concurrent waves. Spawned once here and
-    /// joined on drop; runs every member of a concurrent wave as a `'static`
-    /// job. See [`WorkerPool`].
+    /// The persistent worker pool the members of a concurrent wave run on.
     pool: WorkerPool,
     /// What agents wrote into the deck without declaring it, last frame
     /// (debug builds only; see [`undeclared_deck_writes`](Self::undeclared_deck_writes)).
@@ -184,12 +179,12 @@ impl ExecutionScheduler {
         }
     }
 
-    /// The deck slots agents wrote during the last frame without declaring
-    /// them in their [`Agent::contention`](khora_core::agent::Agent::contention)
-    /// `deck`, each with the agent that wrote it.
+    /// Returns the deck slots agents wrote last frame without declaring them, each with
+    /// its writer.
     ///
-    /// Recorded in debug builds only; a release build always returns an empty
-    /// list. Each one is also logged as an error when it is found.
+    /// Declared means listed in the agent's
+    /// [`Agent::contention`](khora_core::agent::Agent::contention) `deck`. Recorded in debug
+    /// builds only: a release build returns an empty list. Each is also logged as an error.
     pub fn undeclared_deck_writes(&self) -> Vec<(AgentId, std::any::TypeId)> {
         self.undeclared_deck_writes
             .lock()
@@ -221,41 +216,36 @@ impl ExecutionScheduler {
         }
     }
 
-    /// Enables or disables concurrent waves (default off): agents whose
-    /// [`Contention`](khora_core::agent::Contention)s are disjoint share one.
-    /// Off, every agent is a wave of its own and runs inline.
+    /// Enables or disables concurrent waves; off by default.
+    ///
+    /// On, agents whose [`Contention`](khora_core::agent::Contention)s are disjoint share a
+    /// wave; off, every agent is a wave of its own and runs inline.
     pub fn set_parallel_execution(&mut self, enabled: bool) {
         self.parallel_execution = enabled;
     }
 
-    /// Waits for the work off the frame — the background runs and the layer
-    /// preparations under way — to end, and hands it back to the families'
-    /// places, so shutting the lanes down after it shuts every layer down.
-    /// What an engine does before it shuts its lanes down; dropping the
-    /// scheduler does it too.
+    /// Waits for the work off the frame to end and hands it back to the families' places.
+    ///
+    /// That work is the background runs and the layer preparations under way. Call it
+    /// before shutting the lanes down, so every layer is shut down; dropping the scheduler
+    /// does it too.
     pub fn wind_down(&mut self) {
         self.background.wind_down();
     }
 
-    /// Publishes the current frame's [`TelemetryEvent::WavePlan`] to the DCC so
-    /// the cold-path cost model can budget a concurrent wave by its critical
-    /// path (`max`) rather than the sum of its members.
+    /// Publishes this frame's [`TelemetryEvent::WavePlan`], so the DCC costs a wave by its
+    /// critical path.
     ///
-    /// No-op when telemetry is disabled or parallel execution is off — serial
-    /// execution runs every agent as its own singleton, so summing per-agent
-    /// costs (the DCC's fallback with no plan) is already exact.
+    /// A no-op when telemetry is off, or when parallel execution is: every wave
+    /// is then a single agent, and the DCC's sum is already exact.
     fn emit_wave_plan(&self, inactive: &BTreeSet<AgentId>) {
         let Some(tx) = &self.telemetry else { return };
         if !self.parallel_execution {
             return;
         }
-        // Mirror the executor's grouping: for each phase, the phase's agents in
-        // `sort_agents` order, partitioned into waves. Every agent lands in
-        // exactly one wave, so cross-phase and
-        // serial work is naturally costed as a sum while concurrent members
-        // share a wave.
-        // A fixed-step agent runs in the fixed rounds, apart from the
-        // once-per-frame ones, so the two never share a wave.
+        // Mirrors the executor's grouping, so every agent lands in exactly one wave.
+        // Fixed-step agents run in the fixed rounds, apart from the once-per-frame
+        // ones, so the two never share a wave.
         let mut waves: Vec<Vec<AgentId>> = Vec::new();
         for &phase in &self.phase_order {
             let (fixed, once): (Vec<AgentSlot>, Vec<AgentSlot>) = self
@@ -278,16 +268,15 @@ impl ExecutionScheduler {
         let _ = tx.try_send(TelemetryEvent::WavePlan { waves });
     }
 
-    /// Connects the read-only observation tunnel to the DCC. The scheduler then
-    /// publishes per-agent cost samples and per-component access snapshots so
-    /// the cold path can fit cost models and recommend layouts. Non-blocking:
-    /// if the channel is full the sample is dropped (telemetry is best-effort).
+    /// Connects the observation tunnel to the DCC: run reports and component access
+    /// snapshots.
+    ///
+    /// Non-blocking: a sample is dropped when the channel is full.
     pub fn set_telemetry_sender(&mut self, sender: Sender<TelemetryEvent>) {
         self.telemetry = Some(sender);
     }
 
-    /// Mutable access to the last frame's [`OutputDeck`] — drained by the
-    /// engine at the I/O boundary (e.g. GPU submit / present).
+    /// Returns the last frame's [`OutputDeck`], for the engine to drain at the I/O boundary.
     pub fn deck_mut(&mut self) -> &mut OutputDeck {
         &mut self.last_deck
     }
@@ -302,9 +291,10 @@ impl ExecutionScheduler {
         self.phase_order = order.to_vec();
     }
 
-    /// The agents of the families on in `phase`, each with its importance, priority
-    /// and dependencies. No agent is locked: its timing is the one it
-    /// declared when the scheduler met it.
+    /// Returns the agents of the families on in `phase`, with their importance, priority
+    /// and dependencies.
+    ///
+    /// Locks no agent: the timing is the one it declared when the scheduler met it.
     fn phase_slots(&self, phase: ExecutionPhase, inactive: &BTreeSet<AgentId>) -> Vec<AgentSlot> {
         let agents: Vec<Arc<Mutex<dyn khora_core::agent::Agent>>> = {
             let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
@@ -326,21 +316,16 @@ impl ExecutionScheduler {
             .collect()
     }
 
-    /// The id of the agent in `slot` when its place runs at a fixed step,
-    /// `None` otherwise.
+    /// Returns the id of the agent in `slot` when its place runs at a fixed step.
     fn fixed_slot_id(&self, slot: &AgentSlot) -> Option<AgentId> {
         slot.4.fixed_step().map(|_| slot.4.id)
     }
 }
 
-/// Orders the agents within a phase: Hard-dependency edges first (topological),
-/// then importance + priority as a tiebreaker among ready-equal nodes.
+/// Orders a phase's agents by their Hard dependencies, then by importance and priority.
 ///
-/// On a cycle the topo sort fails; we log and fall back to the
-/// importance/priority ordering — execution still happens, just not in DAG
-/// order. Validating cycles at registration time is a future improvement.
+/// On a dependency cycle, logs an error and keeps the importance and priority order.
 fn sort_agents(mut agents: Vec<AgentSlot>) -> Vec<AgentSlot> {
-    // Importance + priority tiebreaker.
     agents.sort_by(|a, b| {
         let imp_ord = a.1.cmp(&b.1);
         if imp_ord != std::cmp::Ordering::Equal {
@@ -399,11 +384,9 @@ fn sort_agents(mut agents: Vec<AgentSlot>) -> Vec<AgentSlot> {
     }
 }
 
-/// Worker-pool size: one thread per available core minus two (reserved for the
-/// main/render thread and the DCC cold thread), clamped to `[1, 16]`.
-/// The threads the background runs get, apart from the waves' pool: a long
-/// run never queues in front of a wave's jobs. A quarter of the cores, at
-/// least one.
+/// Returns the background pool's size: a quarter of the cores, within `[1, 8]`.
+///
+/// Apart from the waves' pool, so a long run never queues in front of a wave's jobs.
 fn default_background_size() -> usize {
     std::thread::available_parallelism()
         .map(|cores| cores.get() / 4)
@@ -411,6 +394,8 @@ fn default_background_size() -> usize {
         .clamp(1, 8)
 }
 
+/// Returns the waves' pool size: the cores minus two (the main thread's and the DCC's), within
+/// `[1, 16]`.
 fn default_pool_size() -> usize {
     std::thread::available_parallelism()
         .map(|n| n.get().saturating_sub(2))
@@ -418,7 +403,7 @@ fn default_pool_size() -> usize {
         .clamp(1, 16)
 }
 
-/// How fast the simulated world should run this frame.
+/// Returns how fast the simulated world runs this frame.
 ///
 /// Defaults to real time when nothing holds a [`Time`](khora_core::time::Time)
 /// — a headless host that never installed one is not a paused one.
@@ -436,8 +421,8 @@ fn are_hard_dependencies_completed(
 ) -> bool {
     for dep in dependencies {
         if matches!(dep.kind, DependencyKind::Hard) {
-            // Conditions are not yet evaluated in the scheduler — preserved
-            // from the previous behaviour. Treat conditional deps as active.
+            // A dependency's condition is not evaluated here: a conditional Hard
+            // dependency counts as active.
             match completion_map.outcome(dep.target) {
                 Some(CompletionOutcome::Completed) => {}
                 Some(CompletionOutcome::Skipped | CompletionOutcome::Failed) | None => {

@@ -73,10 +73,11 @@ impl Agent for StalledInItsReport {
     }
 }
 
-/// **A stalled agent is counted from its report.** Two agents whose reports
-/// say they are stalled — and whose floors, 1 ms each, fit the 16.66 ms
-/// frame — are two stalled agents for the round: it is `Safety`, though
-/// nothing else about them asks for it.
+/// **A stalled agent is counted from its report.**
+///
+/// Two agents whose reports say they are stalled — and whose floors, 1 ms each,
+/// fit the 16.66 ms frame — are two stalled agents for the round: it is
+/// `Safety`, though nothing else about them asks for it.
 #[test]
 fn a_stalled_agent_is_logged_from_its_report() {
     let agents: Vec<Arc<Mutex<dyn Agent>>> = ["renderer", "physics"]

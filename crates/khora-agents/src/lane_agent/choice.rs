@@ -34,8 +34,8 @@ pub struct Choice {
     pub over_budget: bool,
 }
 
-/// The time a cost takes: the busiest device's, the devices running side by
-/// side.
+/// Returns the time a cost takes: the busiest device's, the devices running
+/// side by side.
 pub(super) fn time_of(cost: &Cost) -> Duration {
     cost.time
         .cpu
@@ -44,19 +44,19 @@ pub(super) fn time_of(cost: &Cost) -> Duration {
         .max(cost.time.other)
 }
 
-/// How much running `level` on the inputs its `quote` priced changes the
-/// result: what the quote names, else the level's own impact.
+/// Returns how much running `level` on the inputs its `quote` priced changes
+/// the result: what the quote names, else the level's own impact.
 pub(super) fn impact_of(quote: Option<&Cost>, level: &Level) -> Impact {
     quote.and_then(|cost| cost.impact).unwrap_or(level.impact)
 }
 
-/// What running `level` on the inputs its `quote` priced is worth: the
-/// quality of its impact times the share of the work it serves.
+/// Returns what running `level` on the inputs its `quote` priced is worth:
+/// the quality of its impact times the share of the work it serves.
 pub(super) fn quality_of(quote: Option<&Cost>, level: &Level) -> f32 {
     impact_of(quote, level).quality() * quote.map_or(1.0, Cost::served)
 }
 
-/// Whether every device's `value` is within its `limit`.
+/// Returns whether every device's `value` is within its `limit`.
 fn within<T: PartialOrd + Copy>(value: &PerDevice<T>, limit: &PerDevice<T>) -> bool {
     value.cpu <= limit.cpu
         && value.gpu <= limit.gpu
@@ -64,16 +64,17 @@ fn within<T: PartialOrd + Copy>(value: &PerDevice<T>, limit: &PerDevice<T>) -> b
         && value.other <= limit.other
 }
 
-/// Whether `cost` fits `envelope`: its time and its memory, on every device.
+/// Returns whether `cost` fits `envelope`: its time and memory, on every device.
 pub(super) fn fits(cost: &Cost, envelope: &Envelope) -> bool {
     within(&cost.time, &envelope.time) && within(&cost.memory, &envelope.memory)
 }
 
-/// Whether the agent never runs `row` while another lane's row stands: one of
-/// `others` — `(row, lane, quote, quality)` — in another lane, of no worse
-/// quality, no dearer on any device, in time or memory, and better on one of
-/// them or listed first. [`choose`] takes the cheapest lane between equals,
-/// so the dominating row fits wherever `row` does and is taken instead.
+/// Returns whether the agent never runs `row` while a row of `others`, each
+/// `(row, lane, quote, quality)`, stands in another lane.
+///
+/// Such a row is of no worse quality, no dearer on any device in time or
+/// memory, and better on one of them or listed first. [`choose`] takes the
+/// cheapest lane between equals, so it is taken wherever `row` fits.
 pub(super) fn dominated(
     row: (usize, usize, &Cost, f32),
     others: &[(usize, usize, Cost, f32)],
@@ -93,16 +94,15 @@ pub(super) fn dominated(
         })
 }
 
-/// The row a family runs within `envelope`: among the rows of `menu` whose
-/// quote fits it on every device, the best quality — the quality of the
-/// impact (the quote's, else the level's) times the share of the work the
-/// quote serves; between equals, the dearest level of each lane, then the
-/// cheapest of those lanes. The floor (the cheapest priced row) when none
-/// fits, and `default` when no row is priced. `pin` overrides the choice;
-/// `allowed` filters the rows.
+/// Returns the row a family runs within `envelope`: the best quality among
+/// the rows of `menu` whose quote fits it on every device.
 ///
-/// `lanes[row]` is the lane `row` belongs to: a lane's rows are its levels,
-/// cheapest first.
+/// Between equals, each lane's dearest level, then the cheapest of those
+/// lanes. The floor (the cheapest priced row) when none fits, `default` when
+/// no row is priced. `pin` overrides the choice; `allowed` filters the rows.
+/// `lanes[row]` is the lane `row` belongs to, its levels cheapest first.
+///
+/// See the book: concepts/gorna.md, "How an agent chooses".
 pub fn choose(
     envelope: &Envelope,
     quotes: &[Option<Cost>],
@@ -190,11 +190,11 @@ pub fn choose(
 }
 
 impl LaneAgent {
-    /// The row that runs on `lent` with no envelope — the round could not
-    /// price the agent: the pinned row; else the running row while the policy
-    /// allows it and it has not failed; else the default row, then the first,
-    /// that the policy allows and that has not failed; else, every allowed
-    /// row failed, the running row.
+    /// Returns the row that runs on `lent` when the round could not price the
+    /// agent, so lent no envelope.
+    ///
+    /// The pinned row; else the running row, the default row, then the first,
+    /// that the policy allows and that has not failed; else the running row.
     fn kept_to_policy(&self, lent: &Lent) -> usize {
         if let Some(row) = (lent.pin).and_then(|pin| self.menu.iter().position(|row| row.id == pin))
         {
@@ -213,9 +213,10 @@ impl LaneAgent {
     }
 
     /// Chooses the row that runs within the envelope the DCC lent, from the
-    /// quotes as they stand; nothing while nothing is lent. Lent a pin or
-    /// allowed rows but no envelope, it keeps to them
-    /// ([`kept_to_policy`](Self::kept_to_policy)).
+    /// quotes as they stand.
+    ///
+    /// Nothing while nothing is lent. Lent a pin or allowed rows but no
+    /// envelope, it keeps to them ([`kept_to_policy`](Self::kept_to_policy)).
     pub(super) fn choose_row(&mut self) {
         let Some(lent) = &self.lent else {
             return;

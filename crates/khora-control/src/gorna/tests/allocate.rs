@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A round of the arbitrator: one offer request per agent, the correction of
-//! each row's quoted host time and the decision. A round lends nothing itself: the scheduler lends the
-//! allocation at its next frame start. What an agent is lent is checked here
-//! by lending it as the scheduler would ([`lend`]).
+//! A round of the arbitrator: one offer request per agent, each row's quoted
+//! host time corrected, and the decision; what an agent is lent is checked by
+//! lending it as the scheduler would ([`lend`]).
 
 use super::*;
 use khora_core::agent::gorna::protocol::Trigger;
@@ -37,9 +36,10 @@ fn lock<A>(agent: &Arc<Mutex<A>>) -> std::sync::MutexGuard<'_, A> {
     agent.lock().expect("the agent lock")
 }
 
-/// `name` offering three rows: `LowPower` 2 ms holding 1 KiB, `Balanced`
-/// 8 ms holding 10 MiB, `HighPerformance` 14 ms holding 20 MiB, of quality
-/// 0.4, 0.7 and 1.0; its floor is `LowPower`.
+/// Returns `name` offering three rows, its floor `LowPower`.
+///
+/// `LowPower` 2 ms holding 1 KiB, `Balanced` 8 ms holding 10 MiB,
+/// `HighPerformance` 14 ms holding 20 MiB, of quality 0.4, 0.7 and 1.0.
 fn three_rows(name: &'static str) -> Bidder {
     Bidder::new(
         name,
@@ -71,12 +71,12 @@ fn fits_in_time(cost: &Cost, envelope: &Envelope) -> bool {
 
 // ── The round ─────────────────────────────────────────────────────
 
-/// **A round asks each agent once, for its epoch, and lends nothing
-/// itself.** The request carries the round's epoch, the frame's target (the
-/// analysis' latency under the budget multiplier). The
-/// round decides the agent's envelope but never calls its `apply` — the
-/// scheduler lends it at its next frame start. Each round opens a later
-/// epoch.
+/// **A round asks each agent once, for its epoch, and lends nothing itself.**
+///
+/// The request carries the round's epoch, the frame's target (the analysis'
+/// latency under the budget multiplier). The round decides the agent's envelope
+/// but never calls its `apply` — the scheduler lends it at its next frame
+/// start. Each round opens a later epoch.
 #[test]
 fn a_round_asks_each_agent_once_and_lends_nothing_itself() {
     let (bidder, agent) = shared(Bidder::single("ash", 2_000));
@@ -179,9 +179,10 @@ fn a_throttled_frame_shrinks_the_envelopes() {
     assert!(throttled < full, "{throttled:?} vs {full:?}");
 }
 
-/// **Concurrent agents share the frame by their slowest member.** Floors of
-/// 6 ms each do not fit 10 ms in a row, so the round is `Safety`; once the
-/// scheduler runs them in one wave they cost 6 ms, and they do.
+/// **Concurrent agents share the frame by their slowest member.**
+///
+/// Floors of 6 ms each do not fit 10 ms in a row, so the round is `Safety`;
+/// once the scheduler runs them in one wave they cost 6 ms, and they do.
 #[test]
 fn concurrent_agents_share_the_frame_by_their_slowest_member() {
     let two = || -> Vec<Arc<Mutex<dyn Agent>>> {
@@ -208,10 +209,12 @@ fn concurrent_agents_share_the_frame_by_their_slowest_member() {
 
 // ── The cost book ─────────────────────────────────────────────────
 
-/// **The cost book corrects the offers.** `renderer` quotes its floor at
-/// 2 ms, and its runs of it took three times that: its floor is planned at
-/// 6 ms at least. With `physics`' 2 ms floor that is 8 ms, over the 7 ms
-/// frame: the round is `Safety`, where the quotes alone (2 + 2 ms) fit.
+/// **The cost book corrects the offers.**
+///
+/// `renderer` quotes its floor at 2 ms, and its runs of it took three times
+/// that: its floor is planned at 6 ms at least. With `physics`' 2 ms floor that
+/// is 8 ms, over the 7 ms frame: the round is `Safety`, where the quotes alone
+/// (2 + 2 ms) fit.
 #[test]
 fn the_cost_book_corrects_the_offers() {
     let round = |taught: Option<f64>| {
@@ -237,9 +240,11 @@ fn the_cost_book_corrects_the_offers() {
 }
 
 /// **A round keeps the offers as the agents answered them, for its epoch
-/// only.** `renderer` quotes its running `LowPower` at 2 ms and its runs of
-/// it took 6 ms: the round decides on that row corrected ×3, but the offer it
-/// keeps for the journal holds the 2 ms quoted, for the round's epoch. The next round,
+/// only.**
+///
+/// `renderer` quotes its running `LowPower` at 2 ms and its runs of it took 6
+/// ms: the round decides on that row corrected ×3, but the offer it keeps for
+/// the journal holds the 2 ms quoted, for the round's epoch. The next round,
 /// with no agent, keeps no offer of the last one.
 #[test]
 fn a_round_keeps_the_offers_as_answered_for_its_epoch() {
@@ -273,9 +278,10 @@ fn a_round_keeps_the_offers_as_answered_for_its_epoch() {
 
 // ── Policies ──────────────────────────────────────────────────────
 
-/// **A `Manual` agent is pinned against the budget.** The frame would hold
-/// `HighPerformance`; the allocation names the pinned `LowPower`, and the
-/// agent is lent it.
+/// **A `Manual` agent is pinned against the budget.**
+///
+/// The frame would hold `HighPerformance`; the allocation names the pinned
+/// `LowPower`, and the agent is lent it.
 #[test]
 fn a_manual_mode_pins_the_row_against_the_budget() {
     let (bidder, agent) = shared(three_rows("renderer"));
@@ -288,10 +294,11 @@ fn a_manual_mode_pins_the_row_against_the_budget() {
     assert_eq!(lock(&bidder).last_lent().pin, Some(LowPower));
 }
 
-/// **A `Bounded` agent runs within its range.** The frame would hold
-/// `HighPerformance`; the allocation allows `LowPower..=Balanced` only, the
-/// agent is lent that range, and its envelope holds `Balanced`, the dearest
-/// row of it.
+/// **A `Bounded` agent runs within its range.**
+///
+/// The frame would hold `HighPerformance`; the allocation allows
+/// `LowPower..=Balanced` only, the agent is lent that range, and its envelope
+/// holds `Balanced`, the dearest row of it.
 #[test]
 fn a_bounded_agent_runs_within_its_range() {
     let (bidder, agent) = shared(three_rows("renderer"));
@@ -324,9 +331,10 @@ fn a_bounded_agent_runs_within_its_range() {
     );
 }
 
-/// **A `Stable` agent is not upgraded on recovery.** Its envelope from a
-/// 10 ms frame is kept when the frame recovers to 20 ms, and shrinks when
-/// the frame falls to 6 ms.
+/// **A `Stable` agent is not upgraded on recovery.**
+///
+/// Its envelope from a 10 ms frame is kept when the frame recovers to 20 ms,
+/// and shrinks when the frame falls to 6 ms.
 #[test]
 fn a_stable_agent_is_not_upgraded_on_recovery() {
     let (_bidder, agent) = shared(Bidder::single("renderer", 2_000));
@@ -357,10 +365,11 @@ fn a_stable_agent_is_not_upgraded_on_recovery() {
     assert!(pressed.time.cpu <= ms(6));
 }
 
-/// **A `Cap` hint is a ceiling on the envelope.** At 20 ms the envelope
-/// would hold `HighPerformance` (14 ms); a 10 ms cap leaves room for
-/// `Balanced` (8 ms) and no more, a 5 ms cap for `LowPower` (2 ms) and no
-/// more, and the envelope never passes the cap.
+/// **A `Cap` hint is a ceiling on the envelope.**
+///
+/// At 20 ms the envelope would hold `HighPerformance` (14 ms); a 10 ms cap
+/// leaves room for `Balanced` (8 ms) and no more, a 5 ms cap for `LowPower` (2
+/// ms) and no more, and the envelope never passes the cap.
 #[test]
 fn a_cap_hint_bounds_the_envelope() {
     for (cap_ms, expected, beyond) in [(10.0, Balanced, HighPerformance), (5.0, LowPower, Balanced)]
@@ -400,10 +409,11 @@ fn a_cap_hint_bounds_the_envelope() {
     }
 }
 
-/// **A `Cap` hint bounds the envelope of a pinned row too.** The developer
-/// pins `renderer` to `HighPerformance` (14 ms) and caps it at 5 ms: the row
-/// pinned runs whatever is lent, but the envelope lent never passes the cap
-/// above the floor's 2 ms — it is not raised to the pinned row's quote.
+/// **A `Cap` hint bounds the envelope of a pinned row too.**
+///
+/// The developer pins `renderer` to `HighPerformance` (14 ms) and caps it at 5
+/// ms: the row pinned runs whatever is lent, but the envelope lent never passes
+/// the cap above the floor's 2 ms — it is not raised to the pinned row's quote.
 #[test]
 fn a_cap_hint_bounds_the_envelope_of_a_pinned_row() {
     let (_, agent) = shared(three_rows("renderer"));
@@ -462,10 +472,11 @@ fn a_cap_on_another_agent_changes_nothing() {
     assert_eq!(round(&elsewhere).envelopes, round(&nothing()).envelopes);
 }
 
-/// **The VRAM the context knows bounds the envelopes.** At 20 ms the
-/// envelope would hold `HighPerformance`, but its 20 MiB do not fit 15 MiB:
-/// it holds `Balanced` (10 MiB) and no more. Without a VRAM figure nothing
-/// limits it.
+/// **The VRAM the context knows bounds the envelopes.**
+///
+/// At 20 ms the envelope would hold `HighPerformance`, but its 20 MiB do not
+/// fit 15 MiB: it holds `Balanced` (10 MiB) and no more. Without a VRAM figure
+/// nothing limits it.
 #[test]
 fn vram_known_to_the_context_bounds_the_envelopes() {
     let lent_with = |vram: Option<u64>| {
@@ -503,9 +514,10 @@ fn vram_known_to_the_context_bounds_the_envelopes() {
 // ── Late offers ───────────────────────────────────────────────────
 
 /// **I10: an offer after `reply_by` keeps the agent's envelope, and the
-/// allocation names it.** `zinc` answers on time in a 10 ms frame, then late
-/// when the frame grows to 20 ms: it keeps its 10 ms-frame envelope while
-/// `ash`, on time, is lent more.
+/// allocation names it.**
+///
+/// `zinc` answers on time in a 10 ms frame, then late when the frame grows to
+/// 20 ms: it keeps its 10 ms-frame envelope while `ash`, on time, is lent more.
 #[test]
 fn a_late_offer_keeps_the_envelope() {
     let (ash, first) = shared(Bidder::single("ash", 2_000));
@@ -541,10 +553,11 @@ fn a_late_offer_keeps_the_envelope() {
 
 // ── The emergency ─────────────────────────────────────────────────
 
-/// **The emergency gives every agent its floor**, and names no row: a death
-/// spiral makes the round `Safety`. `grid` has no `LowPower` (its floor is
-/// `Custom(1)`); `skybox` has no `LowPower` either (its floor is
-/// `Balanced`). Each is lent exactly its floor.
+/// **The emergency gives every agent its floor**
+///
+/// , and names no row: a death spiral makes the round `Safety`. `grid` has no
+/// `LowPower` (its floor is `Custom(1)`); `skybox` has no `LowPower` either
+/// (its floor is `Balanced`). Each is lent exactly its floor.
 #[test]
 fn the_emergency_gives_every_agent_its_floor() {
     let (grid, first) = shared(Bidder::new(
@@ -616,10 +629,11 @@ fn two_stalled_agents_make_the_round_safety() {
 
 // ── Kept envelopes across live rounds ─────────────────────────────
 
-/// **`Stable` agents keep their envelopes on a machine that says nothing of
-/// its memory.** The first round lends envelopes of unknown memory; the
-/// next round, with both agents `Stable`, decides from them and lends each
-/// the one it held.
+/// **`Stable` agents keep their envelopes on a machine that says nothing of its
+/// memory.**
+///
+/// The first round lends envelopes of unknown memory; the next round, with both
+/// agents `Stable`, decides from them and lends each the one it held.
 #[test]
 fn stable_agents_keep_their_envelopes_when_the_memory_is_unknown() {
     let (_ash, first) = shared(Bidder::single("ash", 2_000));
@@ -641,11 +655,12 @@ fn stable_agents_keep_their_envelopes_when_the_memory_is_unknown() {
     assert_eq!(lent_to(&kept, "birch"), lent_to(&held, "birch"));
 }
 
-/// **A late agent does not make the round `Safety` once the VRAM is
-/// known.** The first round, before the machine names its VRAM, lends
-/// envelopes of unknown memory. When the VRAM is known and `zinc` answers
-/// late, it keeps its envelope; the floors (2 + 2 ms, no graphics memory)
-/// still fit, so the round keeps its trigger.
+/// **A late agent does not make the round `Safety` once the VRAM is known.**
+///
+/// The first round, before the machine names its VRAM, lends envelopes of
+/// unknown memory. When the VRAM is known and `zinc` answers late, it keeps its
+/// envelope; the floors (2 + 2 ms, no graphics memory) still fit, so the round
+/// keeps its trigger.
 #[test]
 fn a_late_agent_does_not_make_the_round_safety_once_vram_is_known() {
     let (_ash, first) = shared(Bidder::single("ash", 2_000));
@@ -668,11 +683,12 @@ fn a_late_agent_does_not_make_the_round_safety_once_vram_is_known() {
     assert_eq!(after.late, vec![AgentId::new("zinc")]);
 }
 
-/// **An agent too busy to be asked keeps its envelope.** `ash` holds its
-/// lock through the second round, so it is neither asked nor lent: it keeps
-/// running in the envelope it holds. The allocation still names that
-/// envelope (as a late agent's) so `birch` is not lent `ash`'s time, and the
-/// round after can keep it again.
+/// **An agent too busy to be asked keeps its envelope.**
+///
+/// `ash` holds its lock through the second round, so it is neither asked nor
+/// lent: it keeps running in the envelope it holds. The allocation still names
+/// that envelope (as a late agent's) so `birch` is not lent `ash`'s time, and
+/// the round after can keep it again.
 #[test]
 fn an_agent_busy_through_a_round_keeps_its_envelope() {
     let (ash, first) = shared(Bidder::single("ash", 2_000));
@@ -735,14 +751,15 @@ fn while_busy<A: Send + 'static, R>(agent: &Arc<Mutex<A>>, round: impl FnOnce() 
     result
 }
 
-/// **The envelope a busy agent keeps is planned at the time it runs.** Every
-/// run of `ash`'s one row took twice its 6 ms quote, so the first round of a
-/// 16 ms frame plans it at 12 ms and lends it about 6.7 ms in its quoted
+/// **The envelope a busy agent keeps is planned at the time it runs.**
+///
+/// Every run of `ash`'s one row took twice its 6 ms quote, so the first round
+/// of a 16 ms frame plans it at 12 ms and lends it about 6.7 ms in its quoted
 /// units; `elm`'s floor (2 ms) and upgrade (6 ms) run as quoted, and the
 /// upgrade does not fit beside `ash`. Busy through the second round, `ash`
-/// keeps that envelope and runs on it — about 13 ms of the frame — so `elm`
-/// is not lent its upgrade: planned at its quoted 6.7 ms, `ash` would leave
-/// room for it, and the frame would run about 20 ms.
+/// keeps that envelope and runs on it — about 13 ms of the frame — so `elm` is
+/// not lent its upgrade: planned at its quoted 6.7 ms, `ash` would leave room
+/// for it, and the frame would run about 20 ms.
 #[test]
 fn the_envelope_a_busy_agent_keeps_is_planned_at_the_time_it_runs() {
     let (ash, first) = shared(Bidder::single("ash", 6_000));
@@ -779,10 +796,11 @@ fn the_envelope_a_busy_agent_keeps_is_planned_at_the_time_it_runs() {
     );
 }
 
-/// **An agent busy through a round keeps its memory too.** The VRAM is
-/// known (512 MiB) and `ash` holds 10 MiB of it; busy through the second
-/// round, it keeps the whole envelope it held, graphics memory included, and
-/// `birch` is not lent the memory `ash` holds.
+/// **An agent busy through a round keeps its memory too.**
+///
+/// The VRAM is known (512 MiB) and `ash` holds 10 MiB of it; busy through the
+/// second round, it keeps the whole envelope it held, graphics memory included,
+/// and `birch` is not lent the memory `ash` holds.
 #[test]
 fn an_agent_busy_through_a_round_keeps_its_memory() {
     let (ash, first) = shared(Bidder::new(
@@ -819,12 +837,13 @@ fn an_agent_busy_through_a_round_keeps_its_memory() {
     );
 }
 
-/// **A late agent's envelope lent while the memory was not known is held to
-/// the memory known now.** `zinc`'s first envelope was lent while the
-/// graphics memory was not known: it holds `u64::MAX` there. In the second
-/// round the context knows 100 MiB and `zinc` answers late: it keeps its
-/// time, but its graphics memory is the share computed now, within the
-/// 100 MiB, and with `ash`'s within them too.
+/// **A late agent's envelope lent while the memory was not known is held to the
+/// memory known now.**
+///
+/// `zinc`'s first envelope was lent while the graphics memory was not known: it
+/// holds `u64::MAX` there. In the second round the context knows 100 MiB and
+/// `zinc` answers late: it keeps its time, but its graphics memory is the share
+/// computed now, within the 100 MiB, and with `ash`'s within them too.
 #[test]
 fn a_late_agent_lent_while_the_memory_was_not_known_is_held_to_the_memory_known_now() {
     let (_ash, first) = shared(Bidder::new(
@@ -863,10 +882,11 @@ fn a_late_agent_lent_while_the_memory_was_not_known_is_held_to_the_memory_known_
     );
 }
 
-/// **A late agent keeps its memory while it still fits.** In a 100 MiB
-/// device, `zinc` is lent 42 MiB in the first round. In the second it is
-/// late while `ash` now holds 30 MiB: 42 + 30 MiB still fit, so `zinc` keeps
-/// its 42 MiB, and the two envelopes stay within the device.
+/// **A late agent keeps its memory while it still fits.**
+///
+/// In a 100 MiB device, `zinc` is lent 42 MiB in the first round. In the second
+/// it is late while `ash` now holds 30 MiB: 42 + 30 MiB still fit, so `zinc`
+/// keeps its 42 MiB, and the two envelopes stay within the device.
 #[test]
 fn a_late_agent_keeps_its_memory_while_it_fits() {
     let (ash, first) = shared(Bidder::new(

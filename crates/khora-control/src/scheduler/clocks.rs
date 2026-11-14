@@ -24,11 +24,11 @@ use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
 impl ExecutionScheduler {
-    /// Advances the frame's clocks from the frame start: the real delta,
-    /// clamped and scaled; the game's whole ticks; each fixed agent's
-    /// sub-clock, cut at its own step; then the frame's `Time` is published.
-    /// The most sub-steps any fixed agent is owed this frame, or `None` when
-    /// no place holds a fixed step.
+    /// Advances the frame's clocks and publishes the frame's `Time`.
+    ///
+    /// Returns the most sub-steps any fixed agent is owed this frame, or `None` when no
+    /// place holds a fixed step. See the book:
+    /// concepts/the-frame.md, "Fixed-timestep simulation and render interpolation".
     pub(super) fn advance_clocks(
         &mut self,
         runtime: &Runtime,
@@ -45,16 +45,8 @@ impl ExecutionScheduler {
         .min(MAX_FRAME_DELTA_SECONDS);
         self.last_frame_instant = Some(now);
 
-        // The simulated world's clock, which is the wall clock times whatever
-        // the game asked for. At `0.0` the accumulator below never fills, so
-        // `sim_steps` is zero: no body integrates, no script timer counts down,
-        // and the renderer carries on at real time because it does not read
-        // this. That is what a pause menu is, what a slow-motion hit is — and
-        // what the editor sets while nobody has pressed Play.
-        //
-        // Applied here rather than per agent: an agent deciding for itself
-        // whether time passes would be a dozen places to disagree about what
-        // "paused" means.
+        // Scaled once, here, never per agent.
+        // See the book: concepts/the-frame.md, "The simulation clock".
         let dt = dt * simulation_scale(runtime);
 
         // The game's clock: whole ticks, capped, on the scaled clock — no tick
@@ -90,10 +82,11 @@ impl ExecutionScheduler {
         (!fixed_steps.is_empty()).then_some(rounds)
     }
 
-    /// Every agent of a family on whose place runs at a fixed step, with that
-    /// step in seconds — read from the place each frame, so a step the game's
-    /// setting changed takes effect on the next frame. An agent whose family is off
-    /// keeps no clock: it owes nothing for the time it sat out.
+    /// Returns each agent of a family on whose place runs at a fixed step, with the step in
+    /// seconds.
+    ///
+    /// Read from the place each frame, so a changed step takes effect next frame. An agent
+    /// whose family is off keeps no clock: it owes nothing for the time it sat out.
     fn declared_fixed_steps(&self, inactive: &BTreeSet<AgentId>) -> Vec<(AgentId, f32)> {
         let agents: Vec<Arc<Mutex<dyn Agent>>> = {
             let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
@@ -109,9 +102,8 @@ impl ExecutionScheduler {
             .collect()
     }
 
-    /// Writes the per-frame [`Time`](khora_core::time::Time) into the runtime
-    /// resource so Flows and game `update` read the real delta + alpha.
-    /// No-op if no `SharedTime` resource is registered.
+    /// Writes the frame's [`Time`](khora_core::time::Time) into the runtime's `SharedTime`,
+    /// when it holds one.
     fn publish_time(
         &self,
         runtime: &Runtime,

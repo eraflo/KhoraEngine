@@ -555,7 +555,7 @@ fn an_allocation_lent_at_a_frame_start_wakes_the_agent_that_frame() {
 }
 
 /// **A swap keeps the family's place**: its phase, and its slot among the
-/// agents around it. An old agent runs in `TRANSFORM`; in `OUTPUT` the
+/// agents around it. A plain agent runs in `TRANSFORM`; in `OUTPUT` the
 /// layered agent runs between a dearer and a cheaper priority. Its first
 /// layer raises `QuoteUnfit` on its first run: from the third frame its next
 /// layer runs — at the very same position.

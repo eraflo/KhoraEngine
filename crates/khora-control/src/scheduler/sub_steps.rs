@@ -15,12 +15,11 @@
 //! Physics sub-step arithmetic: how many physics steps cover the time the
 //! gameplay ticks advanced.
 
-/// The fraction of a step by which the sub-clock may fall short and still
-/// count the step as covered. `n` ticks summed in `f32` land a few ulps under
-/// `n` steps of the same length; without this slack a step equal to the tick
-/// would lose a sub-step to rounding and physics would drift behind the game.
-/// The shortfall is carried as a debt, never forgiven, so the slack moves a
-/// step earlier and never adds time.
+/// The fraction of a step by which the sub-clock may fall short and still count it covered.
+///
+/// `n` ticks summed in `f32` land a few ulps under `n` steps of the same length: without
+/// the slack, physics would lose a sub-step to rounding and drift behind the game. The
+/// shortfall is carried as a debt, so the slack moves a step earlier and never adds time.
 const SUB_STEP_SLACK: f32 = 1e-3;
 
 /// Result of [`compute_sub_steps`].
@@ -30,18 +29,12 @@ pub(super) struct SubSteps {
     pub(super) new_accumulator: f32,
 }
 
-/// Physics sub-step arithmetic: how many steps of the declared physics
-/// `step` cover the simulated time the gameplay ticks just `advanced`.
+/// Returns how many steps of `step` cover the time the ticks just `advanced`, and the carry.
 ///
-/// The carried-over `accumulator` plus `advanced` is consumed in whole
-/// `step`s; the remainder is returned to be carried into the next frame
-/// (also across a change of `step`). It lies in `[-SLACK·step, step)`: a step
-/// taken a hair early is owed back from the next frame's time rather than
-/// rounded away, so over any run the steps never cover more time than the
-/// ticks advanced, nor fall a step behind it. There is no cap here: the ticks
-/// are already capped, so the sub-steps a frame owes are bounded by the time
-/// those ticks advanced. A non-positive `step` runs nothing and keeps nothing
-/// (degenerate guard; the scheduler only passes positive steps).
+/// The carry lies in `[-SLACK·step, step)`, kept across a change of `step`: a step taken a
+/// hair early is owed back next frame, so the steps never cover more time than the ticks
+/// advanced, nor fall a step behind. No cap: the ticks are already capped. A non-positive
+/// `step` runs nothing and carries nothing.
 pub(super) fn compute_sub_steps(accumulator: f32, advanced: f32, step: f32) -> SubSteps {
     if step <= 0.0 {
         return SubSteps {

@@ -12,13 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The exact proposer: a branch-and-bound over each agent's rows, started
-//! from the Q-RAM pass's plan and bounded by a node budget. It finds the plan
-//! of most weighed quality the shield accepts, never lends less than the
-//! Q-RAM pass, keeps every policy, says what stops each agent growing, and
-//! leaves a tie to the Q-RAM pass. Its plans are checked against a
-//! brute-force enumeration of every row of every agent, over rounds drawn by
-//! a seeded generator. Every figure is in whole microseconds.
+//! The exact proposer, checked against a brute-force enumeration of every row
+//! of every agent over seeded random rounds, and on the knapsack the Q-RAM pass
+//! loses. Every figure is in whole microseconds.
 
 use super::decide::{bid, round};
 use super::*;
@@ -68,9 +64,10 @@ fn worth(bids: &[&Bid], base: &[Plan], proposal: &Proposal) -> f64 {
         .sum()
 }
 
-/// The plan of most weighed quality the shield accepts, and its worth: every
-/// row of every agent, and its base row, enumerated. The first found is kept
-/// on a tie.
+/// Returns the plan of most weighed quality the shield accepts, and its worth.
+///
+/// Every row of every agent, and its base row, is enumerated. The first found
+/// is kept on a tie.
 fn optimum(round: &Round<'_>, bids: &[&Bid], base: &[Plan]) -> (Proposal, f64) {
     let choices: Vec<Vec<Option<usize>>> = bids
         .iter()
@@ -195,8 +192,10 @@ impl Case {
     }
 }
 
-/// A round of 1 to `max_agents` agents, each offering 1 to `max_rows` rows
-/// of host time, sometimes graphics time, graphics memory and a quality
+/// Draws a round of 1 to `max_agents` agents, each offering 1 to `max_rows`
+/// rows.
+///
+/// Rows of host time, sometimes graphics time, graphics memory and a quality
 /// unrelated to the cost; a floor that is usually the first row; a policy
 /// (`Manual`, `Bounded`, a cap, `Stable` with an envelope kept, late, or
 /// none) and sometimes a priority; waves, agents at the background and a
@@ -275,8 +274,10 @@ fn generate(rng: &mut Rng, max_agents: usize, max_rows: usize) -> Case {
 
 // ── The optimum ───────────────────────────────────────────────────
 
-/// The knapsack the Q-RAM pass loses. In a 5 ms frame, `oak` (Critical)
-/// offers 1 ms at quality 0.4 or 3.9 ms at 1.0; `pine` (Optional) 1 ms at
+/// **The knapsack the Q-RAM pass loses.**
+///
+/// In a 5 ms frame, `oak` (Critical) offers 1 ms at quality 0.4 or 3.9 ms at
+/// 1.0; `pine` (Optional) 1 ms at
 /// 0.4 or 1.5 ms at 1.0. `pine`'s upgrade gains 0.5 × 0.6 over 0.5 ms
 /// (0.0006 per µs), `oak`'s 1.0 × 0.6 over 2.9 ms (0.0002 per µs): the Q-RAM
 /// pass takes `pine`'s first, and then `oak`'s no longer fits (3.9 + 1.5 ms).
@@ -357,12 +358,13 @@ fn exact_beats_greedy_on_a_knapsack_counterexample() {
     );
 }
 
-/// **The exact search finds the optimum of small rounds.** Over 400 rounds
-/// of at most 4 agents × 4 rows, drawn with policies, waves, agents at the
-/// background and memory limits: with an ample budget, the exact plan is
-/// accepted by the shield and lends the weighed quality of the brute-force
-/// optimum. The generator is first checked to draw rounds the Q-RAM pass
-/// does not solve.
+/// **The exact search finds the optimum of small rounds.**
+///
+/// Over 400 rounds of at most 4 agents × 4 rows, drawn with policies, waves,
+/// agents at the background and memory limits: with an ample budget, the exact
+/// plan is accepted by the shield and lends the weighed quality of the
+/// brute-force optimum. The generator is first checked to draw rounds the Q-RAM
+/// pass does not solve.
 #[test]
 fn exact_finds_the_optimum_of_small_rounds() {
     let mut rng = Rng(0x5eed_0e8a_c7b1_0001);
@@ -430,12 +432,13 @@ impl PlannedCase {
     }
 }
 
-/// A round of [`generate`]'s, planned: each agent free to choose its row
-/// (no pin, no kept envelope) runs one of its rows, and a switch to each of
-/// its other rows costs, more often than not, a preparation of up to 30 ms;
-/// half the rounds keep a margin of up to 3 ms free of the target; some
-/// agents are expected to grow by 0.5 to 2. Plans hold 5 s, with a 250 ms
-/// transient.
+/// Draws a round of [`generate`]'s, planned beyond its frame.
+///
+/// Each agent free to choose its row (no pin, no kept envelope) runs one of
+/// its rows, and a switch to each of its other rows costs, more often than
+/// not, a preparation of up to 30 ms; half the rounds keep a margin of up to
+/// 3 ms free of the target; some agents are expected to grow by 0.5 to 2.
+/// Plans hold 5 s, with a 250 ms transient.
 fn generate_planned(rng: &mut Rng, max_agents: usize, max_rows: usize) -> PlannedCase {
     let mut case = generate(rng, max_agents, max_rows);
     let mut planning = Planning {
@@ -470,10 +473,11 @@ fn generate_planned(rng: &mut Rng, max_agents: usize, max_rows: usize) -> Planne
     PlannedCase { case, planning }
 }
 
-/// The value `proposal` plans for `round`: each agent's weight times the
-/// quality of the row it plans, less, for a row other than the one its
-/// offer runs whose switch the planning prices, its weight times the
-/// switch's preparation and transient over the horizon.
+/// Returns the value `proposal` plans for `round`, recomputed by hand.
+///
+/// Each agent's weight times the quality of the row it plans, less, for a
+/// row other than the one its offer runs whose switch the planning prices,
+/// its weight times the switch's preparation and transient over the horizon.
 fn planned_value(round: &Round<'_>, bids: &[&Bid], base: &[Plan], proposal: &Proposal) -> f64 {
     let planning = &round.planning;
     bids.iter()
@@ -500,9 +504,10 @@ fn planned_value(round: &Round<'_>, bids: &[&Bid], base: &[Plan], proposal: &Pro
         .sum()
 }
 
-/// The plan of most planned value the shield accepts, and its value: every
-/// row of every agent, and its base row, enumerated. The first found is kept
-/// on a tie.
+/// Returns the plan of most planned value the shield accepts, and its value.
+///
+/// Every row of every agent, and its base row, is enumerated. The first found
+/// is kept on a tie.
 fn planned_optimum(round: &Round<'_>, bids: &[&Bid], base: &[Plan]) -> (Proposal, f64) {
     let choices: Vec<Vec<Option<usize>>> = bids
         .iter()
@@ -545,13 +550,14 @@ fn planned_optimum(round: &Round<'_>, bids: &[&Bid], base: &[Plan]) -> (Proposal
     }
 }
 
-/// **The exact search finds the optimum of the planned value.** Over 400
-/// rounds of at most 4 agents × 4 rows, drawn as [`generate`] draws them and
-/// planned — switch charges, margins and growth — the exact plan with an
-/// ample budget is accepted by the shield and plans the value of the
+/// **The exact search finds the optimum of the planned value.**
+///
+/// Over 400 rounds of at most 4 agents × 4 rows, drawn as [`generate`] draws
+/// them and planned — switch charges, margins and growth — the exact plan with
+/// an ample budget is accepted by the shield and plans the value of the
 /// brute-force optimum: weighed quality less the switch charges, within the
-/// planned target and at the planned costs. The generator is first checked
-/// to draw rounds whose planned optimum is not their unplanned one.
+/// planned target and at the planned costs. The generator is first checked to
+/// draw rounds whose planned optimum is not their unplanned one.
 #[test]
 fn exact_finds_the_optimum_of_the_planned_value() {
     let mut rng = Rng(0x5eed_91a7_0ed0_0005);
@@ -606,12 +612,13 @@ fn exact_finds_the_optimum_of_the_planned_value() {
     }
 }
 
-/// A round drawn wider than [`generate`]'s: rows timed on every device, held
-/// in both memories and moving bytes over both links, which may be timed;
-/// floors anywhere; negative, zero and large priorities; `Stable` and late
-/// envelopes kept on several devices, some lent while a memory was not known
-/// (`u64::MAX`); agents in several waves or at the background; a limit on
-/// both memories.
+/// Draws a round wider than [`generate`]'s.
+///
+/// Rows timed on every device, held in both memories and moving bytes over
+/// both links, which may be timed; floors anywhere; negative, zero and large
+/// priorities; `Stable` and late envelopes kept on several devices, some lent
+/// while a memory was not known (`u64::MAX`); agents in several waves or at
+/// the background; a limit on both memories.
 fn generate_wide(rng: &mut Rng, max_agents: usize, max_rows: usize) -> WideCase {
     let agents = 1 + rng.index(max_agents);
     let importances = [Critical, Important, Optional];
@@ -750,12 +757,13 @@ impl WideCase {
     }
 }
 
-/// **The exact search finds the optimum whatever the round holds.** Over
-/// 6 000 rounds of at most 4 agents × 4 rows drawn by [`generate_wide`] —
+/// **The exact search finds the optimum whatever the round holds.**
+///
+/// Over 6 000 rounds of at most 4 agents × 4 rows drawn by [`generate_wide`] —
 /// transfers on timed links, time on every device, both memories limited,
 /// negative and zero priorities, kept envelopes whose memory was not known —
-/// the exact plan with an ample budget is accepted by the shield and lends
-/// the weighed quality of the brute-force optimum. The cut of a branch that
+/// the exact plan with an ample budget is accepted by the shield and lends the
+/// weighed quality of the brute-force optimum. The cut of a branch that
 /// breaches with the agents left at their base rows is only sound where those
 /// rows cost least on every device, memory and link; these rounds reach it.
 #[test]
@@ -799,10 +807,11 @@ fn exact_finds_the_optimum_with_transfers_every_device_and_any_priority() {
     );
 }
 
-/// **The exact search never lends less than the Q-RAM pass**, whatever its
-/// budget, down to a single node: over 300 rounds of at most 6 agents × 4
-/// rows, its plan is accepted by the shield and lends at least the weighed
-/// quality the Q-RAM pass lends.
+/// **The exact search never lends less than the Q-RAM pass**
+///
+/// , whatever its budget, down to a single node: over 300 rounds of at most 6
+/// agents × 4 rows, its plan is accepted by the shield and lends at least the
+/// weighed quality the Q-RAM pass lends.
 #[test]
 fn exact_never_lends_less_than_greedy() {
     const BUDGETS: [u32; 10] = [1, 2, 3, 5, 8, 13, 34, 144, 610, 4_096];
@@ -834,12 +843,14 @@ fn exact_never_lends_less_than_greedy() {
     assert!(admitted_rounds >= 100, "{admitted_rounds} of 300 admitted");
 }
 
-/// **The exact search stops at its node budget.** Ten agents of four rows
-/// each, their upgrades priced off the convex hull, in a frame that holds
-/// some upgrades and not all. Under budgets of 1, 16 and 256 nodes, the
-/// search visits no more nodes than its budget, and the plan it keeps is
-/// accepted by the shield and lends at least what the Q-RAM pass lends. An
-/// ample budget visits more than 16 nodes: the smallest budgets did stop it.
+/// **The exact search stops at its node budget.**
+///
+/// Ten agents of four rows each, their upgrades priced off the convex hull, in
+/// a frame that holds some upgrades and not all. Under budgets of 1, 16 and 256
+/// nodes, the search visits no more nodes than its budget, and the plan it
+/// keeps is accepted by the shield and lends at least what the Q-RAM pass
+/// lends. An ample budget visits more than 16 nodes: the smallest budgets did
+/// stop it.
 #[test]
 fn the_exact_search_stops_at_its_node_budget() {
     let mut rng = Rng(0xb0d6_e7ed_0000_0010);
@@ -893,8 +904,9 @@ fn the_exact_search_stops_at_its_node_budget() {
 
 // ── The policies ──────────────────────────────────────────────────
 
-/// **The exact plan keeps every policy.** In a 100 ms frame where every top
-/// row fits:
+/// **The exact plan keeps every policy.**
+///
+/// In a 100 ms frame where every top row fits:
 /// - `ash`, pinned (`Manual`) to `Balanced`, stays on it; `birch`, free,
 ///   takes its top row;
 /// - `ash`, allowed `LowPower..=Balanced` (`Bounded`), takes `Balanced`;
@@ -1022,14 +1034,16 @@ fn exact_keeps_pins_bounds_caps_ceilings_and_kept_envelopes() {
 
 // ── Why ───────────────────────────────────────────────────────────
 
-/// **The exact why names what stops each agent growing.** The knapsack the
-/// Q-RAM pass loses, with a third agent: `fir` runs 0.1 ms holding 1 MiB at
-/// 0.4, or the same time holding 20 MiB at 1.0, and the graphics processor
-/// has 10 MiB. The exact plan upgrades `oak` alone (3.9 + 1 + 0.1 ms fill
-/// the 5 ms frame). Each agent's next better row is then tried: `oak` has
-/// none, `pine`'s breaks the host's time (3.9 + 1.5 + 0.1 ms), `fir`'s the
-/// graphics processor's memory. The decision is the exact proposer's, names
-/// those two refusals and no other, binds on one of them, and has no price.
+/// **The exact why names what stops each agent growing.**
+///
+/// The knapsack the Q-RAM pass loses, with a third agent: `fir` runs 0.1 ms
+/// holding 1 MiB at 0.4, or the same time holding 20 MiB at 1.0, and the
+/// graphics processor has 10 MiB. The exact plan upgrades `oak` alone
+/// (3.9 + 1 + 0.1 ms fill the 5 ms frame). Each agent's next better row is then tried:
+/// `oak` has none, `pine`'s breaks the host's time (3.9 + 1.5 + 0.1 ms),
+/// `fir`'s the graphics processor's memory. The decision is the exact
+/// proposer's, names those two refusals and no other, binds on one of them, and
+/// has no price.
 #[test]
 fn the_exact_why_names_what_stops_each_agent_growing() {
     let bids = [
@@ -1111,11 +1125,12 @@ fn the_exact_why_names_what_stops_each_agent_growing() {
 }
 
 /// **The exact why names a `Stable` ceiling that stops an agent growing.**
+///
 /// The knapsack the Q-RAM pass loses, in a 6 ms frame, with `ash`, `Stable`,
-/// keeping 0.5 ms: less than its 1 ms floor, so that envelope is a ceiling,
-/// and its 1.2 ms top row is over it. The exact plan upgrades `oak` alone
-/// (3.9 + 1 + 1 ms). What stops `ash` growing is its ceiling, as the Q-RAM
-/// pass alone says of the same round: the exact why names it too.
+/// keeping 0.5 ms: less than its 1 ms floor, so that envelope is a ceiling, and
+/// its 1.2 ms top row is over it. The exact plan upgrades `oak` alone
+/// (3.9 + 1 + 1 ms). What stops `ash` growing is its ceiling, as the Q-RAM pass alone
+/// says of the same round: the exact why names it too.
 #[test]
 fn the_exact_why_names_a_stable_ceiling_that_stops_an_agent() {
     let mut ash = bid(
@@ -1170,11 +1185,12 @@ fn the_exact_why_names_a_stable_ceiling_that_stops_an_agent() {
     );
 }
 
-/// **A tie keeps the Q-RAM plan.** Two identical agents and room for one
-/// upgrade: the Q-RAM pass gives it to `alpha`, and upgrading `beta` instead
-/// lends as much — the exact search finds nothing better. The decision is
-/// the Q-RAM pass's, with its price and its refusals: the allocation is the
-/// one the Q-RAM pass alone lends.
+/// **A tie keeps the Q-RAM plan.**
+///
+/// Two identical agents and room for one upgrade: the Q-RAM pass gives it to
+/// `alpha`, and upgrading `beta` instead lends as much — the exact search finds
+/// nothing better. The decision is the Q-RAM pass's, with its price and its
+/// refusals: the allocation is the one the Q-RAM pass alone lends.
 #[test]
 fn a_tie_keeps_the_greedy_plan() {
     let twin = |name| {

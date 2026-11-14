@@ -16,7 +16,7 @@
 //! ([`DEFAULT_FIXED_DELTA_SECONDS`]) is the one clock game code sees: the
 //! accumulator, the time scale, the [`MAX_SIM_STEPS`]-tick catch-up cap and
 //! the published `Time` all run on it. The step a fixed agent declares (the
-//! physics GORNA strategy: 1/30, 1/60 or 1/120 s) only subdivides the time
+//! game's physics step: here 1/30, 1/60 or 1/120 s) only subdivides the time
 //! those ticks advanced: whatever the step, and however often it changes,
 //! physics time stays within one step of gameplay time, and nothing a game
 //! reads depends on it.
@@ -50,7 +50,7 @@ const G: f64 = 9.81;
 /// The gameplay tick, in seconds.
 const TICK: f64 = DEFAULT_FIXED_DELTA_SECONDS as f64;
 
-/// The physics steps GORNA chooses between, in hertz.
+/// The physics steps the tests switch between, in hertz.
 const GORNA_RATES: [f64; 3] = [30.0, 60.0, 120.0];
 
 /// The real frame clamp the scheduler applies, in ticks.
@@ -301,7 +301,7 @@ fn the_published_time_counts_gameplay_ticks_under_every_physics_step() {
 
 /// **Switching the physics step between frames keeps physics on gameplay
 /// time.** Sixty 1/20-s frames with the step switched before nearly every
-/// one (1/60 → 1/120 → 1/30 → …, as GORNA re-budgets): after every frame
+/// one (1/60 → 1/120 → 1/30 → …, as a game's setting may): after every frame
 /// the physics time is within one step — the coarsest, 1/30 s — of the
 /// three ticks a frame the gameplay clock advanced.
 #[test]

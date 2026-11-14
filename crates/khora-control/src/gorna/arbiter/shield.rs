@@ -39,11 +39,16 @@ pub(crate) enum Refusal {
 pub(crate) struct Shield;
 
 impl Shield {
-    /// Whether `proposal` may be kept for `round`: every planned row one the
-    /// policies allow (or the agent's base row), the critical path within the
-    /// target on every device, the memory within what each device has, and a
-    /// late or kept envelope untouched — an agent holding one stays on its
-    /// base row. `plans` are admission's plans, in the order of `bids`.
+    /// Accepts `proposal` for `round`, or says why it may not be kept.
+    ///
+    /// Every planned row must be one the policies allow (or the base row), an
+    /// agent holding a late or kept envelope stays on its base row, and the
+    /// frame's time and memory fit on every device. `plans` are admission's
+    /// plans, in the order of `bids`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first row ruled out, else the constraint the plan breaks.
     pub(crate) fn check(
         round: &Round<'_>,
         bids: &[&Bid],

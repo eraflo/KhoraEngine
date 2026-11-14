@@ -12,31 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Fixed-timestep arithmetic: how many simulation sub-steps a frame runs.
+//! Fixed-timestep arithmetic: how many game ticks a frame runs.
 
 pub(super) use super::sub_steps::compute_sub_steps;
 
-/// Upper bound on fixed simulation sub-steps run in a single frame. When the
-/// accumulator would demand more, the excess time is dropped (the sim runs
-/// in slow-motion rather than freezing). Bounds worst-case per-frame cost.
-/// The engine's one cap, which the script lane bounds the steps it owes by.
+/// The most game ticks a frame runs; the excess time is dropped.
+///
+/// The engine's one cap: the script lane bounds the steps it owes by it too.
 pub(super) const MAX_SIM_STEPS: u32 = khora_core::time::MAX_SIM_STEPS;
 
-/// Pure step-count arithmetic for the fixed-timestep accumulator.
+/// Returns the whole ticks of `fixed_delta` a frame runs, the time carried over, and the
+/// render alpha in `[0, 1)`.
 ///
-/// Given the carried-over `accumulator`, the (already clamped) real frame
-/// `dt`, the simulation `fixed_delta`, and a `max_steps` ceiling, returns:
-/// - `steps` — whole fixed sub-steps to run this frame (`0..=max_steps`),
-/// - `new_accumulator` — leftover time carried to the next frame,
-/// - `alpha` — render-interpolation factor in `[0, 1)`.
-///
-/// On `max_steps` saturation the excess accumulated time is discarded so the
-/// accumulator stays bounded (slow-motion under sustained overload rather than
-/// a runaway). A non-finite total — an infinite time scale — saturates the
-/// same way and carries nothing, so one such frame cannot leave a `NaN` that
-/// would stop the clock for good. A non-positive `fixed_delta` is treated as a
-/// single step with no leftover (degenerate guard; callers pass a positive
-/// step).
+/// `dt` is already clamped. Past `max_steps` the excess time is dropped, so the
+/// accumulator stays bounded; a non-finite total saturates the same way and carries
+/// nothing, so no `NaN` can stop the clock. A non-positive `fixed_delta` runs one step and
+/// carries nothing.
 pub(super) fn compute_sim_steps(
     accumulator: f32,
     dt: f32,
@@ -76,7 +67,7 @@ pub(super) fn compute_sim_steps(
         acc -= steps as f32 * fixed_delta;
     }
 
-    // Guard against tiny negative residue from float subtraction.
+    // Float subtraction can leave a tiny negative residue.
     if acc < 0.0 {
         acc = 0.0;
     }

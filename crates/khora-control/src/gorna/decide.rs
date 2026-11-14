@@ -13,12 +13,8 @@
 // limitations under the License.
 
 //! How the DCC shares the frame: from every agent's offer, one envelope each.
-//!
-//! [`decide`] is a pure function of its [`Round`]: the same round always gives
-//! the same [`Allocation`]. The [`Arbiter`] decides it; what every proposer
-//! shares — the round, admission, the checks, each agent's plan, the share
-//! and the units they count in — lives in the modules beside this one, and is
-//! reached through it.
+//! What every proposer shares (the round, admission, plans, the share, the
+//! units) is re-exported here from the modules beside this one.
 
 use khora_core::agent::gorna::protocol::Allocation;
 
@@ -30,21 +26,12 @@ pub use super::round::{Bid, Round};
 pub(crate) use super::share::{allocation, hold_to_plan, hold_to_quotes, lever};
 pub(crate) use super::units::{busiest, fits_envelope, micros};
 
-/// The allocation for `round`, as the default [`Arbiter`] decides it.
+/// Returns the allocation for `round`, as the default arbiter decides it.
 ///
-/// 1. **Admission.** Every agent's floor must fit the target on the critical
-///    path (on every device, the waves' slowest members plus the transfers);
-///    otherwise the allocation is `Trigger::Safety`, every envelope its
-///    agent's floor.
-/// 2. **The plan.** The Q-RAM greedy takes upgrades over each agent's convex
-///    hull in order of `Δ(weight × quality) / Δcost` (cost in µs) while they
-///    fit; the exact search starts from its plan and lends a plan of more
-///    weighed quality when it finds one within its node budget.
-/// 3. **Envelopes.** Each agent gets the cost of the row planned for it, plus
-///    80 % of the slack shared in proportion to that cost; 20 % stays in
-///    reserve.
-///
+/// A pure function: the same round always gives the same [`Allocation`].
 /// Times are counted in whole microseconds.
+///
+/// See the book: concepts/gorna.md, "Formalisation".
 pub fn decide(round: &Round<'_>) -> Allocation {
     Arbiter::default().decide(round).allocation
 }

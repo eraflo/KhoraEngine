@@ -38,8 +38,9 @@ pub struct Bid {
     pub hints: AgentHints,
     /// The envelope the agent holds from the allocation in force, if any.
     pub kept: Option<Envelope>,
-    /// Whether the offer came after the request's `reply_by`: the agent then
-    /// keeps [`kept`](Self::kept) and is named in
+    /// Whether the offer came after the request's `reply_by`.
+    ///
+    /// A late agent keeps [`kept`](Self::kept) and is named in
     /// [`Allocation::late`](khora_core::agent::gorna::protocol::Allocation::late).
     pub late: bool,
 }
@@ -62,14 +63,15 @@ pub struct Round<'a> {
     /// The scheduler's waves: the agents of one wave run side by side, so a
     /// wave costs its slowest member. An agent in no wave runs alone.
     pub waves: &'a [Vec<AgentId>],
-    /// The agents that run off the frame, at
-    /// [`ExecutionPhase::BACKGROUND`](khora_core::agent::ExecutionPhase::BACKGROUND):
-    /// they add nothing to the frame's critical path.
+    /// The agents that run off the frame, at the background phase.
+    ///
+    /// They add nothing to the frame's critical path.
     pub background: &'a [AgentId],
     /// Every agent asked, with its offer.
     pub bids: &'a [Bid],
-    /// What the round plans for beyond its frame: the charge of a switch of
-    /// row, the margin kept free of the target, and each agent's expected
-    /// cost growth.
+    /// What the round plans for beyond its frame.
+    ///
+    /// The charge of a switch of row, the margin kept free of the target, and
+    /// each agent's expected cost growth.
     pub planning: Planning,
 }

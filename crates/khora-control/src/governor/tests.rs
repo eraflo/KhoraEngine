@@ -78,11 +78,12 @@ fn the_multiplier_starts_at_output_max() {
     assert_eq!(tuned.multiplier(), 0.8);
 }
 
-/// **An isolated hitch leaves the multiplier at rest.** Among frames of
-/// 10 ms, one frame of 100 ms, of a second, of ten seconds — a load, a
-/// stall, a debugger break: it follows a frame within the setpoint, so it is
-/// a hitch and stays out of the estimate. The governor, deciding after every
-/// frame, never changes the multiplier from 1.0.
+/// **An isolated hitch leaves the multiplier at rest.**
+///
+/// Among frames of 10 ms, one frame of 100 ms, of a second, of ten seconds — a
+/// load, a stall, a debugger break: it follows a frame within the setpoint, so
+/// it is a hitch and stays out of the estimate. The governor, deciding after
+/// every frame, never changes the multiplier from 1.0.
 #[test]
 fn an_isolated_hitch_among_fast_frames_leaves_the_multiplier_at_rest() {
     for hitch in [ms(100.0), ms(1_000.0), ms(10_000.0)] {
@@ -99,10 +100,11 @@ fn an_isolated_hitch_among_fast_frames_leaves_the_multiplier_at_rest() {
     }
 }
 
-/// **A hitch leaves a lowered multiplier where it was.** The multiplier was
-/// lowered to 0.75, and frames of 14 ms — inside the band — hold it there.
-/// One frame of 100 ms, a second or ten seconds after them is a hitch: the
-/// multiplier stays 0.75.
+/// **A hitch leaves a lowered multiplier where it was.**
+///
+/// The multiplier was lowered to 0.75, and frames of 14 ms — inside the band —
+/// hold it there. One frame of 100 ms, a second or ten seconds after them is a
+/// hitch: the multiplier stays 0.75.
 #[test]
 fn a_hitch_after_frames_within_the_setpoint_leaves_a_lowered_multiplier_where_it_was() {
     for hitch in [ms(100.0), ms(1_000.0), ms(10_000.0)] {
@@ -124,10 +126,11 @@ fn a_hitch_after_frames_within_the_setpoint_leaves_a_lowered_multiplier_where_it
     }
 }
 
-/// **Sustained long frames are load.** After frames of 10 ms, frames of
-/// 40 ms that go on: the first follows a frame within the setpoint and is a
-/// hitch, the next ones follow a frame over it and are load. They lower the
-/// multiplier, never under `output_min`.
+/// **Sustained long frames are load.**
+///
+/// After frames of 10 ms, frames of 40 ms that go on: the first follows a frame
+/// within the setpoint and is a hitch, the next ones follow a frame over it and
+/// are load. They lower the multiplier, never under `output_min`.
 #[test]
 fn sustained_long_frames_are_load_and_lower_the_multiplier() {
     let cfg = GovernorConfig::default();
@@ -148,13 +151,14 @@ fn sustained_long_frames_are_load_and_lower_the_multiplier() {
     );
 }
 
-/// **A long frame after a long frame enters the estimate bounded.** Two
-/// frames of 20 ms, then one of ten seconds: it follows a frame over the
+/// **A long frame after a long frame enters the estimate bounded.**
+///
+/// Two frames of 20 ms, then one of ten seconds: it follows a frame over the
 /// setpoint, so it is load, and enters the estimate as a frame of twice the
-/// setpoint (33.3 ms), not as ten seconds. With drops allowed up to 90 %,
-/// the decision lowers the multiplier to about 15 / 33.3 = 0.45: below the
-/// 0.75 the two 20 ms frames alone would give (the long frame entered), far
-/// above the floor ten seconds would give (it entered bounded).
+/// setpoint (33.3 ms), not as ten seconds. With drops allowed up to 90 %, the
+/// decision lowers the multiplier to about 15 / 33.3 = 0.45: below the 0.75 the
+/// two 20 ms frames alone would give (the long frame entered), far above the
+/// floor ten seconds would give (it entered bounded).
 #[test]
 fn a_long_frame_after_an_over_setpoint_frame_enters_the_estimate_bounded() {
     let mut governor = FrameGovernor::new(GovernorConfig {
@@ -176,11 +180,12 @@ fn a_long_frame_after_an_over_setpoint_frame_enters_the_estimate_bounded() {
     );
 }
 
-/// **Each frame weighs its own duration in the estimate.** Seeded by a frame
-/// of 30 ms, then 25 frames of 10 ms — a quarter second of frame time, one
-/// filter time constant: the estimate is `10 + 20·e⁻¹` ≈ 17.36 ms. With
-/// drops allowed up to 90 %, the decision lowers the multiplier to
-/// 15 / 17.36 ≈ 0.864.
+/// **Each frame weighs its own duration in the estimate.**
+///
+/// Seeded by a frame of 30 ms, then 25 frames of 10 ms — a quarter second of
+/// frame time, one filter time constant: the estimate is `10 + 20·e⁻¹` ≈ 17.36
+/// ms. With drops allowed up to 90 %, the decision lowers the multiplier to 15
+/// / 17.36 ≈ 0.864.
 #[test]
 fn the_estimate_weighs_each_frame_by_its_own_duration() {
     let mut governor = FrameGovernor::new(GovernorConfig {
@@ -202,9 +207,11 @@ fn the_estimate_weighs_each_frame_by_its_own_duration() {
 }
 
 /// **Lowering scales the multiplier by the target over the estimate, down to
-/// the floor.** Frames of 30 ms: each decision would scale it by 15 / 30 =
-/// 0.5, but takes at most 30 %: 0.7, 0.49, 0.343, then 0.3, the floor (0.24
-/// is under it). At the floor, nothing more changes.
+/// the floor.**
+///
+/// Frames of 30 ms: each decision would scale it by 15 / 30 = 0.5, but takes at
+/// most 30 %: 0.7, 0.49, 0.343, then 0.3, the floor (0.24 is under it). At the
+/// floor, nothing more changes.
 #[test]
 fn lowering_scales_the_multiplier_by_the_target_over_the_estimate_down_to_the_floor() {
     let mut governor = governor();
@@ -228,9 +235,10 @@ fn lowering_scales_the_multiplier_by_the_target_over_the_estimate_down_to_the_fl
     assert!((governor.multiplier() - 0.3).abs() < 1e-6);
 }
 
-/// **A decision never takes more than `max_drop` of the multiplier.** Frames
-/// of ten seconds, each load after the first: every decision keeps at least
-/// 70 % of the multiplier it lowers, and several decisions are made.
+/// **A decision never takes more than `max_drop` of the multiplier.**
+///
+/// Frames of ten seconds, each load after the first: every decision keeps at
+/// least 70 % of the multiplier it lowers, and several decisions are made.
 #[test]
 fn a_decision_never_drops_the_multiplier_by_more_than_max_drop() {
     let cfg = GovernorConfig::default();
@@ -257,10 +265,11 @@ fn a_decision_never_drops_the_multiplier_by_more_than_max_drop() {
     );
 }
 
-/// **The governor waits `settle_frames` frames after a change.** Tuned to
-/// settle over 10 frames and panic after 3, frames of 16 ms — over the
-/// 15 ms target, within the setpoint, so never a panic — lower the
-/// multiplier on the tenth frame only, and again ten frames after.
+/// **The governor waits `settle_frames` frames after a change.**
+///
+/// Tuned to settle over 10 frames and panic after 3, frames of 16 ms — over the
+/// 15 ms target, within the setpoint, so never a panic — lower the multiplier
+/// on the tenth frame only, and again ten frames after.
 #[test]
 fn no_decision_before_settle_frames_frames() {
     let mut governor = FrameGovernor::new(GovernorConfig {
@@ -288,10 +297,12 @@ fn no_decision_before_settle_frames_frames() {
     }
 }
 
-/// **A panic does not wait for the frames to settle.** Tuned to settle over
-/// 10 frames and panic after 3, frames of 20 ms — over the setpoint — lower
-/// the multiplier on the third. A frame within the setpoint breaks the run:
-/// 20, 20, 10, 20, 20 ms decide nothing, the next 20 ms frame does.
+/// **A panic does not wait for the frames to settle.**
+///
+/// Tuned to settle over 10 frames and panic after 3, frames of 20 ms — over the
+/// setpoint — lower the multiplier on the third. A frame within the setpoint
+/// breaks the run: 20, 20, 10, 20, 20 ms decide nothing, the next 20 ms frame
+/// does.
 #[test]
 fn panic_frames_over_the_setpoint_decide_without_waiting_to_settle() {
     let tuned = GovernorConfig {
@@ -322,9 +333,10 @@ fn panic_frames_over_the_setpoint_decide_without_waiting_to_settle() {
     );
 }
 
-/// **A silence decides nothing.** Once the frames over the setpoint have
-/// lowered the multiplier, ticks that observed no frame since leave it where
-/// it is: no frame, no new measurement.
+/// **A silence decides nothing.**
+///
+/// Once the frames over the setpoint have lowered the multiplier, ticks that
+/// observed no frame since leave it where it is: no frame, no new measurement.
 #[test]
 fn a_silence_decides_nothing() {
     let mut governor = lowered_to_three_quarters();
@@ -338,11 +350,13 @@ fn a_silence_decides_nothing() {
     assert!((governor.multiplier() - 0.75).abs() < 1e-6);
 }
 
-/// **The ceiling memory blocks raising for `memory_seconds` of frame time,
-/// then lets it.** Frames of 30 ms lower the multiplier from 1.0 to 0.7,
-/// then from 0.7 to 0.49: the governor remembers 0.7. Frames of 5 ms follow,
-/// far under the target: for five seconds of frame time the multiplier
-/// rises but never past 0.7 − 0.06 = 0.64; past them, it rises above it.
+/// **The ceiling memory blocks raising for `memory_seconds` of frame time, then
+/// lets it.**
+///
+/// Frames of 30 ms lower the multiplier from 1.0 to 0.7, then from 0.7 to 0.49:
+/// the governor remembers 0.7. Frames of 5 ms follow, far under the target: for
+/// five seconds of frame time the multiplier rises but never past 0.7 − 0.06 =
+/// 0.64; past them, it rises above it.
 #[test]
 fn the_ceiling_memory_blocks_raising_for_memory_seconds_of_frame_time_then_lets_it() {
     let memory = Duration::from_secs_f32(GovernorConfig::default().memory_seconds);
@@ -402,9 +416,11 @@ fn the_ceiling_memory_blocks_raising_for_memory_seconds_of_frame_time_then_lets_
     );
 }
 
-/// **With no lever, the governor does not lower.** Frames of 20 ms would
-/// lower the multiplier, but every agent is on its floor (`no_lever`): it
-/// stays at 1.0. Once a lever is back, the same frames lower it.
+/// **With no lever, the governor does not lower.**
+///
+/// Frames of 20 ms would lower the multiplier, but every agent is on its floor
+/// (`no_lever`): it stays at 1.0. Once a lever is back, the same frames lower
+/// it.
 #[test]
 fn no_lever_stops_lowering() {
     let mut governor = governor();
@@ -422,9 +438,10 @@ fn no_lever_stops_lowering() {
     );
 }
 
-/// **With no lever, the governor still raises.** The multiplier was lowered
-/// to 0.75; frames of 5 ms run far under the target: with every agent on its
-/// floor, the multiplier rises all the same.
+/// **With no lever, the governor still raises.**
+///
+/// The multiplier was lowered to 0.75; frames of 5 ms run far under the target:
+/// with every agent on its floor, the multiplier rises all the same.
 #[test]
 fn no_lever_does_not_stop_raising() {
     let mut governor = lowered_to_three_quarters();
@@ -437,9 +454,10 @@ fn no_lever_does_not_stop_raising() {
     );
 }
 
-/// **Inside the band, nothing changes.** The multiplier was lowered to 0.75;
-/// frames of 13 ms or of 14.5 ms — between 12.75 ms and the 15 ms target —
-/// hold it there, decision after decision.
+/// **Inside the band, nothing changes.**
+///
+/// The multiplier was lowered to 0.75; frames of 13 ms or of 14.5 ms — between
+/// 12.75 ms and the 15 ms target — hold it there, decision after decision.
 #[test]
 fn inside_the_band_nothing_changes() {
     for frame in [13.0, 14.5] {
@@ -455,10 +473,11 @@ fn inside_the_band_nothing_changes() {
     }
 }
 
-/// **A change smaller than 0.02 is not made.** Frames of 15.2 ms are just
-/// over the 15 ms target: lowering would take the multiplier from 1.0 to
-/// 15 / 15.2 ≈ 0.987, a change of 0.013. Decision after decision, it stays
-/// 1.0; frames of 15.5 ms (0.968) do lower it.
+/// **A change smaller than 0.02 is not made.**
+///
+/// Frames of 15.2 ms are just over the 15 ms target: lowering would take the
+/// multiplier from 1.0 to 15 / 15.2 ≈ 0.987, a change of 0.013. Decision after
+/// decision, it stays 1.0; frames of 15.5 ms (0.968) do lower it.
 #[test]
 fn a_change_smaller_than_two_hundredths_is_not_made() {
     let mut governor = governor();
@@ -479,9 +498,10 @@ fn a_change_smaller_than_two_hundredths_is_not_made() {
     );
 }
 
-/// **Raising moves the multiplier a quarter of the way to its target.** The
-/// multiplier was lowered to 0.75 a long time ago (in frame time); frames of
-/// 12 ms run under the band: the target is 0.75 × 15 / 12 = 0.9375, and one
+/// **Raising moves the multiplier a quarter of the way to its target.**
+///
+/// The multiplier was lowered to 0.75 a long time ago (in frame time); frames
+/// of 12 ms run under the band: the target is 0.75 × 15 / 12 = 0.9375, and one
 /// decision moves the multiplier to 0.75 + 0.25 × 0.1875 ≈ 0.797.
 #[test]
 fn raising_moves_the_multiplier_a_quarter_of_the_way_to_its_target() {
@@ -496,12 +516,12 @@ fn raising_moves_the_multiplier_a_quarter_of_the_way_to_its_target() {
     );
 }
 
-/// **A hitch as the very first frame leaves the multiplier at rest.** The
-/// engine's first frame is its longest — pipelines built, assets uploaded:
-/// 100 ms, a second, ten seconds. Frames of 10 ms follow, far under the
-/// target. The first frame is as much a hitch as one among fast frames, and
-/// the governor, deciding after every frame, never changes the multiplier
-/// from 1.0.
+/// **A hitch as the very first frame leaves the multiplier at rest.**
+///
+/// The engine's first frame is its longest — pipelines built, assets uploaded:
+/// 100 ms, a second, ten seconds. Frames of 10 ms follow, far under the target.
+/// The first frame is as much a hitch as one among fast frames, and the
+/// governor, deciding after every frame, never changes the multiplier from 1.0.
 #[test]
 fn a_hitch_as_the_very_first_frame_leaves_the_multiplier_at_rest() {
     for hitch in [ms(100.0), ms(1_000.0), ms(10_000.0)] {
@@ -522,13 +542,14 @@ fn a_hitch_as_the_very_first_frame_leaves_the_multiplier_at_rest() {
 }
 
 /// **One long frame right after a change does not lower the multiplier.**
-/// The multiplier was lowered to 0.75 long ago, and frames of 10 ms raised
-/// it to 0.8125. The frame right after the raise lasts 30 ms — over the
-/// setpoint, under twice it, so not a hitch — and the two after it 10 ms: in
-/// a low-pass of a quarter second, the 30 ms frame weighs its 30 ms, about a
-/// ninth, and the estimate stays near 12 ms, under the band. The same frames
-/// in another order (10, 30, 10 ms) raise the multiplier; in this one, the
-/// governor must not cut it by 30 %.
+///
+/// The multiplier was lowered to 0.75 long ago, and frames of 10 ms raised it
+/// to 0.8125. The frame right after the raise lasts 30 ms — over the setpoint,
+/// under twice it, so not a hitch — and the two after it 10 ms: in a low-pass
+/// of a quarter second, the 30 ms frame weighs its 30 ms, about a ninth, and
+/// the estimate stays near 12 ms, under the band. The same frames in another
+/// order (10, 30, 10 ms) raise the multiplier; in this one, the governor must
+/// not cut it by 30 %.
 #[test]
 fn a_single_long_frame_right_after_a_change_does_not_lower_the_multiplier() {
     let mut governor = lowered_to_three_quarters();
@@ -550,13 +571,14 @@ fn a_single_long_frame_right_after_a_change_does_not_lower_the_multiplier() {
     );
 }
 
-/// **A small cut is raised back once its memory has passed.** Frames of
-/// 15.5 ms lower the multiplier from 1.0 to 15 / 15.5 ≈ 0.968, a cut of
-/// 0.032. Frames of 5 ms follow, a third of the target, for ten seconds of
-/// frame time: the ceiling 1.0 left keeps the multiplier under 0.94 for five
-/// of them, then lets it go. The way back, 0.032, is more than the smallest
-/// change made, and a raise is at least that change and never past its
-/// goal: the multiplier returns to 1.0.
+/// **A small cut is raised back once its memory has passed.**
+///
+/// Frames of 15.5 ms lower the multiplier from 1.0 to 15 / 15.5 ≈ 0.968, a cut
+/// of 0.032. Frames of 5 ms follow, a third of the target, for ten seconds of
+/// frame time: the ceiling 1.0 left keeps the multiplier under 0.94 for five of
+/// them, then lets it go. The way back, 0.032, is more than the smallest change
+/// made, and a raise is at least that change and never past its goal: the
+/// multiplier returns to 1.0.
 #[test]
 fn a_small_cut_is_raised_back_once_its_memory_has_passed() {
     let mut governor = governor();
@@ -583,9 +605,11 @@ fn keeps(kept: Option<Duration>, expected: Duration) -> bool {
     kept.is_some_and(|kept| kept.abs_diff(expected) <= Duration::from_nanos(1))
 }
 
-/// **A frame under the hitch bound is kept as it is.** Its sample is the
-/// frame itself — 12 ms within the setpoint, 20 ms over it but under
-/// `hitch_ratio × setpoint` — what GORNA's planning margin reads of it.
+/// **A frame under the hitch bound is kept as it is.**
+///
+/// Its sample is the frame itself — 12 ms within the setpoint, 20 ms over it
+/// but under `hitch_ratio × setpoint` — what GORNA's planning margin reads of
+/// it.
 #[test]
 fn observe_keeps_a_frame_under_the_hitch_bound_as_it_is() {
     let mut governor = governor();
@@ -601,10 +625,12 @@ fn observe_keeps_a_frame_under_the_hitch_bound_as_it_is() {
     );
 }
 
-/// **A hitch is kept nowhere.** A 100 ms frame right after one within the
-/// setpoint, and the engine's first frame when it is that long, are hitches:
-/// `observe` returns no sample, so GORNA's margin never reads them. A frame
-/// that took no time measured nothing, and returns none either.
+/// **A hitch is kept nowhere.**
+///
+/// A 100 ms frame right after one within the setpoint, and the engine's first
+/// frame when it is that long, are hitches: `observe` returns no sample, so
+/// GORNA's margin never reads them. A frame that took no time measured nothing,
+/// and returns none either.
 #[test]
 fn observe_keeps_no_sample_of_a_hitch() {
     let mut first = governor();
@@ -628,10 +654,11 @@ fn observe_keeps_no_sample_of_a_hitch() {
     );
 }
 
-/// **A load frame is kept bounded.** A 100 ms frame right after a 20 ms one,
-/// over the setpoint, is load: its sample is bounded at `hitch_ratio ×
-/// setpoint` — 33.3 ms — so a load's frames reach GORNA's margin no longer
-/// than that.
+/// **A load frame is kept bounded.**
+///
+/// A 100 ms frame right after a 20 ms one, over the setpoint, is load: its
+/// sample is bounded at `hitch_ratio × setpoint` — 33.3 ms — so a load's frames
+/// reach GORNA's margin no longer than that.
 #[test]
 fn observe_keeps_a_load_frame_bounded_at_the_hitch_ratio() {
     let mut governor = governor();

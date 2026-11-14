@@ -37,21 +37,23 @@ pub(crate) use shield::Shield;
 
 /// One way of planning a round's rows.
 pub(crate) trait Proposer: Send + Sync {
-    /// What the journal names this proposer.
+    /// Returns the name the journal gives this proposer.
     fn name(&self) -> DecidedBy;
 
-    /// The rows this proposer plans for `round`. `bids` are the round's bids
-    /// in agent order; `base` is what admission planned for each, in the same
-    /// order.
+    /// Returns the rows this proposer plans for `round`.
+    ///
+    /// `bids` are the round's bids in agent order; `base` is what admission
+    /// planned for each, in the same order.
     fn propose(&self, round: &Round<'_>, bids: &[&Bid], base: &[Plan]) -> Proposal;
 }
 
 /// A proposer's plan for a round.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct Proposal {
-    /// The row planned for each agent, as an index into its offer's rows, in
-    /// the order of the bids the proposer was given; `None` where the agent
-    /// offers no row to plan.
+    /// The row planned for each agent, as an index into its offer's rows;
+    /// `None` where the agent offers no row to plan.
+    ///
+    /// In the order of the bids the proposer was given.
     pub(crate) rows: Vec<Option<usize>>,
     /// The cutoff of the upgrades, for information only.
     pub(crate) price: Option<f32>,
@@ -83,8 +85,8 @@ pub(crate) struct Decision {
 }
 
 impl Decision {
-    /// The decision lending `allocation` for `why`, its planned rows `plans`
-    /// valued as `round` plans them, its slack read against `target`.
+    /// Builds the decision lending `allocation` for `why`, its `plans` valued
+    /// as `round` plans them, its slack read against `target`.
     fn of(
         round: &Round<'_>,
         target: Duration,
@@ -133,23 +135,25 @@ pub(crate) struct Arbiter {
 }
 
 impl Default for Arbiter {
-    /// The Q-RAM pass, then the exact search started from its plan: the
-    /// exact plan is lent when it weighs more, the greedy's on a tie.
+    /// Returns the Q-RAM greedy, then the exact search started from its plan:
+    /// the exact plan is lent when it weighs more, the greedy's on a tie.
     fn default() -> Self {
         Self::with(vec![Box::new(Greedy), Box::new(Exact::default())])
     }
 }
 
 impl Arbiter {
-    /// An arbiter running `proposers`, in this order.
+    /// Creates an arbiter running `proposers`, in this order.
     pub(crate) fn with(proposers: Vec<Box<dyn Proposer>>) -> Self {
         Self { proposers }
     }
 
-    /// The decision for `round`: admission, then each proposer's plan in
-    /// turn, checked by the [`Shield`]; the accepted plan of most weighed
-    /// quality is lent, the first proposer's on a tie. With none accepted,
-    /// the admitted plans are lent, decided by the floors.
+    /// Returns the decision for `round`, each proposer's plan checked by the
+    /// [`Shield`].
+    ///
+    /// The accepted plan of most weighed quality is lent, the first
+    /// proposer's on a tie. With none accepted, the admitted plans are lent,
+    /// decided by the floors.
     pub(crate) fn decide(&self, round: &Round<'_>) -> Decision {
         let (bids, base) = match admit(round) {
             Admission::Safety(allocation, binding) => {
@@ -229,8 +233,8 @@ impl Arbiter {
     }
 }
 
-/// `base` with the rows `proposal` plans; an agent `proposal` names no row
-/// for keeps its base row.
+/// Returns `base` with the rows `proposal` plans; an agent `proposal` names
+/// no row for keeps its base row.
 pub(crate) fn planned(base: &[Plan], proposal: &Proposal) -> Vec<Plan> {
     base.iter()
         .enumerate()
@@ -244,8 +248,8 @@ pub(crate) fn planned(base: &[Plan], proposal: &Proposal) -> Vec<Plan> {
         .collect()
 }
 
-/// The weighed quality `plans` lend: each agent's weight times the quality
-/// of the row planned for it — its base row where a proposal names none.
+/// Returns the weighed quality `plans` lend: each agent's weight times the
+/// quality of the row planned for it.
 fn worth(bids: &[&Bid], plans: &[Plan]) -> f64 {
     bids.iter()
         .zip(plans)

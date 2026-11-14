@@ -12,10 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The arbiter: its proposers run behind the shield, the best plan accepted
-//! is kept, and the decision says why — what decided it, the trigger, the
-//! constraint that bound it and the upgrades it refused. Every figure is in
-//! whole microseconds.
+//! The arbiter: its proposers behind the shield, the best plan accepted kept,
+//! and the decision's why. Every figure is in whole microseconds.
 
 use super::decide::{bid, round};
 use super::*;
@@ -31,8 +29,9 @@ use StrategyId::{Balanced, HighPerformance, LowPower};
 type Verdicts = Arc<Mutex<Vec<Result<(), Refusal>>>>;
 
 /// A proposer that plans fixed rows: the row it names for an agent, its
-/// floor for every other. It asks the shield of its own plan, and records the
-/// answer.
+/// floor for every other.
+///
+/// It asks the shield of its own plan, and records the answer.
 struct Fixed {
     by: DecidedBy,
     rows: Vec<(AgentId, StrategyId)>,
@@ -99,10 +98,11 @@ fn on_gpu(id: StrategyId, gpu_us: u64, quality: f32) -> OfferRow {
 
 // ── What decided, and why ─────────────────────────────────────────
 
-/// **A decision names its proposer and its trigger.** An ordinary round,
-/// opened for the periodic refresh, whose floors fit, decided by the Q-RAM
-/// pass alone: the decision says so and keeps the round's trigger. The
-/// default arbiter lends what `decide` lends.
+/// **A decision names its proposer and its trigger.**
+///
+/// An ordinary round, opened for the periodic refresh, whose floors fit,
+/// decided by the Q-RAM pass alone: the decision says so and keeps the round's
+/// trigger. The default arbiter lends what `decide` lends.
 #[test]
 fn a_decision_names_its_proposer_and_trigger() {
     let bids = [
@@ -137,12 +137,14 @@ fn a_decision_names_its_proposer_and_trigger() {
     );
 }
 
-/// **Floors that do not fit are decided by the floors.** Floors of 6 + 5 ms
-/// exceed a 10 ms frame on the host: the round becomes `Safety`, every agent
-/// is lent its floor, and the decision names the floors and the host's time
-/// as what they broke. Floors that fit the time but hold 12 MB of a graphics
-/// processor's 10 MB break its memory instead. A round opened as `Safety`
-/// broke nothing: the trigger, not a constraint, gave every agent its floor.
+/// **Floors that do not fit are decided by the floors.**
+///
+/// Floors of 6 + 5 ms exceed a 10 ms frame on the host: the round becomes
+/// `Safety`, every agent is lent its floor, and the decision names the floors
+/// and the host's time as what they broke. Floors that fit the time but hold 12
+/// MB of a graphics processor's 10 MB break its memory instead. A round opened
+/// as `Safety` broke nothing: the trigger, not a constraint, gave every agent
+/// its floor.
 #[test]
 fn floors_that_do_not_fit_are_decided_by_the_floors() {
     const MB: u64 = 1_000_000;
@@ -222,11 +224,12 @@ fn floors_that_do_not_fit_are_decided_by_the_floors() {
     assert!(decision.why.rejected.is_empty(), "{:?}", decision.why);
 }
 
-/// **The why names the constraint that stopped an upgrade.** `ash` runs on
-/// the graphics processor: its floor takes 2 ms there, `Balanced` 6 ms and
-/// `HighPerformance` 12 ms. In a 10 ms frame the Q-RAM pass takes `Balanced`
-/// and refuses `HighPerformance` for the graphics processor's time; the
-/// decision names that constraint and that upgrade. In a 20 ms frame every
+/// **The why names the constraint that stopped an upgrade.**
+///
+/// `ash` runs on the graphics processor: its floor takes 2 ms there, `Balanced`
+/// 6 ms and `HighPerformance` 12 ms. In a 10 ms frame the Q-RAM pass takes
+/// `Balanced` and refuses `HighPerformance` for the graphics processor's time;
+/// the decision names that constraint and that upgrade. In a 20 ms frame every
 /// upgrade fits: nothing binds, nothing is refused.
 #[test]
 fn the_why_names_the_constraint_that_stopped_an_upgrade() {
@@ -274,11 +277,12 @@ fn the_why_names_the_constraint_that_stopped_an_upgrade() {
 
 // ── The shield ────────────────────────────────────────────────────
 
-/// **The shield refuses a proposal over the target.** A proposer plans
-/// `ash`'s 9 ms row beside `birch`'s 2 ms floor in a 10 ms frame: the shield
-/// refuses it for the host's time. Alone, it leaves the round to the floors,
-/// and `ash` is not lent room for its 9 ms row; followed by the Q-RAM pass,
-/// that pass decides, as `decide` would.
+/// **The shield refuses a proposal over the target.**
+///
+/// A proposer plans `ash`'s 9 ms row beside `birch`'s 2 ms floor in a 10 ms
+/// frame: the shield refuses it for the host's time. Alone, it leaves the round
+/// to the floors, and `ash` is not lent room for its 9 ms row; followed by the
+/// Q-RAM pass, that pass decides, as `decide` would.
 #[test]
 fn the_shield_refuses_a_proposal_over_the_target() {
     let bids = [
@@ -318,12 +322,13 @@ fn the_shield_refuses_a_proposal_over_the_target() {
     assert_eq!(decision.allocation, decide(&round));
 }
 
-/// **The shield refuses a ruled-out row.** `ash` is pinned (`Manual`) to its
-/// floor: a proposal moving it to `HighPerformance` is refused, one leaving
-/// it on its pinned row is accepted and decides. `birch` may run `LowPower`
-/// to `Balanced` (`Bounded`): a proposal moving it to `HighPerformance` is
-/// refused, and the round falls to the floors; one moving it to `Balanced` is
-/// accepted.
+/// **The shield refuses a ruled-out row.**
+///
+/// `ash` is pinned (`Manual`) to its floor: a proposal moving it to
+/// `HighPerformance` is refused, one leaving it on its pinned row is accepted
+/// and decides. `birch` may run `LowPower` to `Balanced` (`Bounded`): a
+/// proposal moving it to `HighPerformance` is refused, and the round falls to
+/// the floors; one moving it to `Balanced` is accepted.
 #[test]
 fn the_shield_refuses_a_ruled_out_row() {
     let mut pinned = bid(
@@ -400,11 +405,12 @@ fn the_shield_refuses_a_ruled_out_row() {
 
 // ── The best plan accepted ────────────────────────────────────────
 
-/// **The arbiter keeps the best feasible proposal.** Both plans fit the
-/// 16 ms frame. One plans `ash` at `Balanced` and `birch` at its floor
-/// (0.75 × (0.7 + 0.4) weighed quality), the other both at `HighPerformance`
-/// (0.75 × 2.0): the second is kept, and named, whichever order the arbiter
-/// asks them in.
+/// **The arbiter keeps the best feasible proposal.**
+///
+/// Both plans fit the 16 ms frame. One plans `ash` at `Balanced` and `birch` at
+/// its floor (0.75 × (0.7 + 0.4) weighed quality), the other both at
+/// `HighPerformance` (0.75 × 2.0): the second is kept, and named, whichever
+/// order the arbiter asks them in.
 #[test]
 fn the_arbiter_keeps_the_best_feasible_proposal() {
     let bids = [
@@ -483,12 +489,13 @@ impl Proposer for Naming {
     }
 }
 
-/// **A proposal is weighed by the rows it lends.** A proposal that names no
-/// row for `birch` keeps it on its base row, as the shield and the
-/// allocation read it: it lends `ash` `HighPerformance` and `birch` its
-/// floor, 0.75 × (1.0 + 0.4) weighed quality. Another lends `ash` `Balanced`
-/// and `birch` its floor, 0.75 × (0.7 + 0.4). Both fit; the first lends
-/// more weighed quality and is kept, whichever order they are asked in.
+/// **A proposal is weighed by the rows it lends.**
+///
+/// A proposal that names no row for `birch` keeps it on its base row, as the
+/// shield and the allocation read it: it lends `ash` `HighPerformance` and
+/// `birch` its floor, 0.75 × (1.0 + 0.4) weighed quality. Another lends `ash`
+/// `Balanced` and `birch` its floor, 0.75 × (0.7 + 0.4). Both fit; the first
+/// lends more weighed quality and is kept, whichever order they are asked in.
 #[test]
 fn a_proposal_is_weighed_by_the_rows_it_lends() {
     let bids = [
@@ -543,11 +550,12 @@ fn a_proposal_is_weighed_by_the_rows_it_lends() {
     }
 }
 
-/// **A `Stable` ceiling is not named as the frame's time.** `ash` keeps a
-/// 0.5 ms envelope, smaller than its 1 ms floor: it may not grow past it, so
-/// its 3 ms `HighPerformance` is refused. The frame is 100 ms and the plan
-/// asks 1 ms of it: the host's time on the critical path did not refuse the
-/// upgrade, and the decision must not say it did.
+/// **A `Stable` ceiling is not named as the frame's time.**
+///
+/// `ash` keeps a 0.5 ms envelope, smaller than its 1 ms floor: it may not grow
+/// past it, so its 3 ms `HighPerformance` is refused. The frame is 100 ms and
+/// the plan asks 1 ms of it: the host's time on the critical path did not
+/// refuse the upgrade, and the decision must not say it did.
 #[test]
 fn a_stable_ceiling_is_not_named_as_the_frames_time() {
     let mut stable = bid(

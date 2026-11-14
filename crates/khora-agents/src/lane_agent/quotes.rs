@@ -44,7 +44,7 @@ pub(super) struct FullQuote {
     pub(super) bases: Vec<Option<Cost>>,
 }
 
-/// Whether `now` moved from `base` by more than [`QUOTE_DRIFT`] of it.
+/// Returns whether `now` moved from `base` by more than [`QUOTE_DRIFT`] of it.
 pub(super) fn drifted(base: Duration, now: Duration) -> bool {
     if base.is_zero() {
         return !now.is_zero();
@@ -79,8 +79,10 @@ impl LaneAgent {
     }
 
     /// Quotes every level of `lane` on this frame's inputs, lent the time the
-    /// agent was granted and the `step` its place runs at: a budgeted lane
-    /// prices its own budget. Its rows are left unquoted when it cannot be.
+    /// agent was granted and the `step` its place runs at.
+    ///
+    /// A budgeted lane prices its own budget. Its rows are left unquoted when
+    /// it cannot be.
     pub(super) fn quote_lane(
         &mut self,
         lane: usize,

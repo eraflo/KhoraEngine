@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! Evaluating the arbiter, with no I/O: a recorded journal decided again by
-//! a set of proposers ([`replay`]), and a simulated engine run through
+//! a set of proposers ([`replay`](replay())), and a simulated engine run through
 //! scenarios ([`simulate`]).
 
 mod replay;
@@ -34,9 +34,11 @@ pub enum Arbiters {
     /// The Q-RAM pass, then the exact search started from its plan, deciding
     /// without planning beyond the frame.
     GreedyExact,
-    /// The Q-RAM pass then the exact search, on the planned problem: the
-    /// switch charges, the margin and the growth, each row's host time
-    /// corrected by the cost book. The engine's default.
+    /// The Q-RAM pass then the exact search, on the planned problem; the
+    /// engine's default.
+    ///
+    /// The plan counts the switch charges, the margin and the growth, each
+    /// row's host time corrected by the cost book.
     Planned,
     /// The planned set on the agents' raw quotes: no cost book.
     PlannedOnQuotes,

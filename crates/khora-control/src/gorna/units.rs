@@ -20,7 +20,7 @@ use std::time::Duration;
 use khora_core::agent::gorna::protocol::Envelope;
 use khora_core::lane::cost::{Cost, Device, PerDevice, PerLink};
 
-/// Whether `cost` fits `envelope`, its time and memory on every device.
+/// Returns whether `cost` fits `envelope`, its time and memory on every device.
 pub(crate) fn fits_envelope(cost: &Cost, envelope: &Envelope) -> bool {
     Device::ALL.iter().all(|device| {
         device.get(&cost.time) <= device.get(&envelope.time)
@@ -28,13 +28,13 @@ pub(crate) fn fits_envelope(cost: &Cost, envelope: &Envelope) -> bool {
     })
 }
 
-/// The time on the busiest device.
+/// Returns the time on the busiest device.
 pub(crate) fn busiest(time: &PerDevice<Duration>) -> Duration {
     time.cpu.max(time.gpu).max(time.npu).max(time.other)
 }
 
-/// The time moving `transfer`'s bytes takes over the links, in µs; a link of
-/// rate `0` is not timed.
+/// Returns the time moving `transfer`'s bytes takes over the links, in µs;
+/// a link of rate `0` is not timed.
 pub(super) fn transfer_micros(transfer: &PerLink<u64>, rate: &PerLink<u64>) -> u64 {
     let over = |bytes: u64, rate: u64| {
         if rate == 0 {
@@ -54,7 +54,7 @@ pub(super) fn micros_of_ms(ms: f32) -> u64 {
     (f64::from(ms.max(0.0)) * 1_000.0) as u64
 }
 
-/// `values` with `f` applied on every device.
+/// Returns `values` with `f` applied on every device.
 pub(super) fn each<T: Copy, U: Default>(values: &PerDevice<T>, f: impl Fn(T) -> U) -> PerDevice<U> {
     PerDevice {
         cpu: f(values.cpu),

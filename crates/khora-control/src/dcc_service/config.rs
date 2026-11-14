@@ -29,17 +29,16 @@ pub struct DccConfig {
     /// Timeout for acquiring locks on agents during negotiation.
     /// If an agent lock cannot be acquired within this time, the agent is skipped.
     pub agent_lock_timeout_ms: u64,
-    /// Optional system-RAM budget in bytes. When set, the DCC derives
+    /// Optional system-RAM budget in bytes; `None` disables the memory signal.
+    ///
+    /// When set, the DCC derives
     /// [`DccContext::memory_pressure`](crate::dcc_context::DccContext::memory_pressure)
-    /// from the tracking allocator's live usage and degrades frame budgets as
-    /// the ceiling approaches. `None` disables the signal — chiefly useful on
-    /// memory-constrained targets.
+    /// from the tracking allocator's live usage.
     pub memory_budget_bytes: Option<u64>,
-    /// Optional VRAM budget in bytes, as
-    /// [`memory_budget_bytes`](Self::memory_budget_bytes) for system RAM.
-    /// When set, a VRAM report makes the available VRAM `budget − current`;
-    /// otherwise the device's capacity, if the report carries one, stands in
-    /// for the budget.
+    /// Optional VRAM budget in bytes, as [`memory_budget_bytes`](Self::memory_budget_bytes) for RAM.
+    ///
+    /// When set, the available VRAM is `budget − current`; otherwise the
+    /// device's capacity, if reported, stands in for the budget.
     pub vram_budget_bytes: Option<u64>,
     /// Tuning for the frame governor that drives
     /// [`DccContext::global_budget_multiplier`](crate::dcc_context::DccContext::global_budget_multiplier).
@@ -50,9 +49,7 @@ pub struct DccConfig {
     /// How many over-budget reports in a row from one agent raise
     /// `Trigger::Overruns`.
     pub overruns_in_a_row: u32,
-    /// The planner's settings: the horizon a plan is meant to hold, the
-    /// transient and the default preparation a switch costs, the risk of a
-    /// frame over its target, and how many frames and reports it reads.
+    /// The planner's settings: horizon, switch costs, risk, and how much it reads.
     pub planning: PlanningConfig,
     /// The cost book's settings: how fast it forgets older runs, and the
     /// spread a row starts from before any run.

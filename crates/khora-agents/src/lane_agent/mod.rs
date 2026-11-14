@@ -15,20 +15,7 @@
 //! The one agent behaviour: a family's lanes, offered to GORNA as menu rows,
 //! run as layers.
 //!
-//! A `LaneAgent` is built from a family's [`AgentRegistration`]. Its menu is
-//! every level of every lane the device supports. The DCC lends it an
-//! envelope; the agent chooses the row that fits, and installs it at the
-//! family's [`Place`] as a layer — a lane instance of its own, prepared at
-//! the row's level. The scheduler runs the installed layer every frame
-//! without the agent, and wakes the agent only when the layer or an
-//! allocation says it must choose again: it then prepares the new row's
-//! layer beside the installed one, swapped in at the next frame start, or
-//! reinstates a layer kept from before. On a `LaneError` it falls back to a
-//! cheaper row.
-//!
-//! An agent implements only [`Agent`]: it is built by [`lane_agent`], from a
-//! registration, and its lanes are released by [`shut_down_lanes`], two free
-//! functions of this module.
+//! See the book: concepts/agents-and-lanes.md, "Lanes are layers".
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -83,6 +70,7 @@ struct Row {
 pub struct LaneAgent {
     registration: &'static AgentRegistration,
     /// Every lane the device supports, the instances the agent quotes with.
+    ///
     /// Behind a lock because an agent is shared between threads and a lane
     /// need only be `Send`; the agent alone ever takes it.
     lanes: Vec<Mutex<Box<dyn AnyLane>>>,
@@ -101,9 +89,10 @@ pub struct LaneAgent {
     levels: Vec<Level>,
     /// The row the family starts on, and runs while nothing is priced.
     default_row: usize,
-    /// The envelope the DCC lent, with its epoch, the row a policy pins and
-    /// the rows a policy allows; `None` until the first allocation, while the
-    /// family runs its default level.
+    /// The envelope the DCC lent, with its epoch, pinned row and allowed rows.
+    ///
+    /// `None` until the first allocation, while the family runs its default
+    /// level.
     lent: Option<Lent>,
     /// Whether the last choice found no row fitting the envelope.
     over_budget: bool,
@@ -129,8 +118,8 @@ struct Lent {
     allowed: Option<Vec<StrategyId>>,
 }
 
-/// The agent of `registration`'s family, its menu holding every level of
-/// every lane `caps` supports.
+/// Builds the agent of `registration`'s family, its menu holding every level
+/// of every lane `caps` supports.
 pub fn lane_agent(registration: &'static AgentRegistration, caps: &DeviceCaps) -> LaneAgent {
     let (makers, lanes): (Vec<MakeLane>, Vec<Box<dyn AnyLane>>) = registration
         .lanes
@@ -187,17 +176,18 @@ pub fn lane_agent(registration: &'static AgentRegistration, caps: &DeviceCaps) -
     }
 }
 
-/// The family's place, holding from the start the step its registration
-/// runs at: the scheduler reads it there each frame.
+/// Returns the family's place, holding from the start the step its
+/// registration runs at: the scheduler reads it there each frame.
 fn place_of(registration: &AgentRegistration) -> Place {
     let mut place = Place::new(registration.agent);
     place.set_fixed_step(registration.fixed_step);
     place
 }
 
-/// The inputs of one run as the agent lends them: the bus, the earlier
-/// phases' deck and the runtime, with the budget lent, the fixed step, and
-/// the frame's target and clear colour.
+/// Returns the inputs of one run as the agent lends them.
+///
+/// The bus, the earlier phases' deck and the runtime, with the budget lent,
+/// the fixed step, and the frame's target and clear colour.
 fn lend<'c>(
     context: &'c EngineContext<'_>,
     budget: Option<Duration>,
@@ -223,8 +213,8 @@ fn lend<'c>(
 }
 
 impl LaneAgent {
-    /// The time lent to a `#[budget]` lane: the envelope's on its busiest
-    /// device; `None` while no envelope is lent.
+    /// Returns the time lent to a `#[budget]` lane: the envelope's on its
+    /// busiest device; `None` while no envelope is lent.
     fn budget(&self) -> Option<Duration> {
         self.lent
             .as_ref()
@@ -236,10 +226,12 @@ impl LaneAgent {
     }
 }
 
-/// Sets the step `agent` runs at, for a fixed-step family: what a game's
-/// setting decides (the physics step) where the registration only gives the
-/// default. Its place holds it, the one source the scheduler and the agent
-/// read. A family that runs every frame is left as it is.
+/// Sets the step a fixed-step family's `agent` runs at, over its
+/// registration's default.
+///
+/// A game's setting decides it (the physics step). The place holds it, the
+/// one source the scheduler and the agent read. A family that runs every
+/// frame is left as it is.
 pub fn set_fixed_step(agent: &mut LaneAgent, step: Duration) {
     let mut place = agent.locked_place();
     if place.fixed_step().is_some() && !step.is_zero() {
@@ -248,9 +240,10 @@ pub fn set_fixed_step(agent: &mut LaneAgent, step: Duration) {
 }
 
 /// Drives one frame of `agent`'s place for a caller with no scheduler (a
-/// test, a tool): the wakes waiting answered, the frame start, the installed
-/// layer's run, and the wakes that run raised answered at once, so the next
-/// call runs what they chose. The report of the run, `None` when nothing ran.
+/// test, a tool), and returns the run's report, `None` when nothing ran.
+///
+/// The wakes the run raises are answered at once, so the next call runs what
+/// they chose.
 pub fn run_frame(agent: &mut LaneAgent, context: &mut EngineContext<'_>) -> Option<Report> {
     agent.whole_frame(context)
 }
@@ -271,13 +264,14 @@ impl Agent for LaneAgent {
         self.registration.agent
     }
 
-    /// Every row the agent can run, at its quote: `Measured` for the row that
-    /// ran it, `Quoted` for the others, `Assumed` at its level's memory for a
-    /// row not priced. A priced row another lane's row dominates is left out:
-    /// the agent never runs it while that row stands, so it is no step the
-    /// DCC can lend for. The floor is the cheapest priced row, the default
-    /// level while none is; the current row is the one running — installed,
-    /// not merely staged.
+    /// Offers every row the agent can run, at its quote.
+    ///
+    /// `Measured` for the row that ran, `Quoted` for the others, `Assumed` at
+    /// its level's memory for a row not priced; a row another lane's row
+    /// dominates is left out. The floor is the cheapest priced row (the
+    /// default level while none is); the current row is the one installed.
+    ///
+    /// See the book: concepts/gorna.md, "Formalisation".
     fn offer(&mut self, request: &OfferRequest) -> Offer {
         let (ran, running, health) = {
             let place = Arc::clone(&self.place);
@@ -367,10 +361,11 @@ impl Agent for LaneAgent {
         }
     }
 
-    /// Keeps the envelope, the pin and the allowed rows — a `#[budget]` lane is
-    /// lent the envelope's time on its busiest device — and chooses the row on
-    /// the quotes as they stand. Its place hears of the allocation: the agent
-    /// is woken for it, and installs what it chose.
+    /// Keeps the envelope, the pin and the allowed rows, and chooses the row
+    /// on the quotes as they stand.
+    ///
+    /// A `#[budget]` lane is lent the envelope's time on its busiest device.
+    /// The place hears of the allocation, so the agent is woken to install it.
     fn apply(
         &mut self,
         epoch: Epoch,
@@ -391,8 +386,9 @@ impl Agent for LaneAgent {
     }
 
     /// Drops the envelope, the pin and the allowed rows, and gives every row
-    /// its chance again. The row chosen stays; its place's terms lend its
-    /// layer nothing, so a `#[budget]` lane runs at its own price until an
+    /// its chance again.
+    ///
+    /// The row chosen stays; a `#[budget]` lane runs at its own price until an
     /// allocation lends the agent another envelope.
     fn withdraw(&mut self) {
         self.lent = None;
@@ -406,8 +402,8 @@ impl Agent for LaneAgent {
         place.set_terms(terms);
     }
 
-    /// The report of the place's last run, with what its lane said; before
-    /// any, the row chosen on the terms lent.
+    /// Returns the report of the place's last run, with what its lane said;
+    /// before any, the row chosen on the terms lent.
     fn report(&self) -> Report {
         if let Some(report) = self.locked_place().last_run().report.clone() {
             return report;
@@ -434,10 +430,12 @@ impl Agent for LaneAgent {
         Arc::clone(&self.place)
     }
 
-    /// Takes in what the last run found, answers each wake — falls back from
-    /// a row that failed, drops the price of a lane whose input is unusable
-    /// — quotes every lane when the quotes may no longer hold, chooses the
-    /// row within the envelope, and installs it.
+    /// Answers the wakes `why`, and installs the row chosen within the
+    /// envelope.
+    ///
+    /// A failed row is fallen back from, a lane whose input is unusable loses
+    /// its price, and every lane is quoted again when the quotes may no longer
+    /// hold.
     fn wake(&mut self, why: &[Wake], place: &mut Place, context: &mut EngineContext<'_>) {
         self.answer(why, place, context);
     }
@@ -459,10 +457,14 @@ impl Agent for LaneAgent {
         }
     }
 
-    /// The chosen lane's declaration, what the other lanes read (the agent
-    /// quotes them on their inputs), and the graphics device and pipeline
-    /// system the agent prepares and shuts its lanes down with: what the
-    /// agent reaches when it is woken. A run contends as the layer installed.
+    /// Declares what the agent reaches when it is woken.
+    ///
+    /// The chosen lane's declaration, what the other lanes read (it quotes
+    /// them on their inputs), and the graphics device and pipeline system it
+    /// prepares and shuts lanes down with. A run contends as the layer
+    /// installed.
+    ///
+    /// See the book: concepts/agents-and-lanes.md, "What an agent declares".
     fn contention(&self) -> Contention {
         let running = self.row().map(|row| row.lane);
         let mut contention = running

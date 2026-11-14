@@ -12,13 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The cost book: what the DCC learns of each (agent, row) — measured host
-//! time ≈ factor × quoted, older runs forgotten, with the spread of the runs
-//! around it — and what a round makes of it: each row's host time planned
-//! at its quote corrected, a caution above it while the correction is
-//! uncertain, every other device as quoted, and each envelope lent in the
-//! agent's own quoted units, so the row it chooses on its quotes is the row
-//! planned.
+//! The cost book: what the DCC learns of each (agent, row), and what a round
+//! makes of it, from the planned host time to the envelope lent in quoted units.
 
 use super::*;
 use crate::gorna::arbiter::Arbiter;
@@ -51,9 +46,11 @@ fn draw(state: &mut u64) -> f64 {
 /// A generator's first state.
 const SEED: u64 = 0x2545_F491_4F6C_DD1D;
 
-/// `runs` runs of `agent`'s `row` into `book`: each quoting between 0.5 and
-/// 1.5 ms on the host, as a lane's quote follows its workload, and taking
-/// `factor` times its quote, within ±`noise` of it, relative.
+/// Feeds `book` `runs` runs of `agent`'s `row`, each taking `factor` times
+/// its quote.
+///
+/// Each run quotes between 0.5 and 1.5 ms on the host, as a lane's quote
+/// follows its workload, and takes its factor within ±`noise`, relative.
 fn run(
     book: &mut CostBook,
     agent: AgentId,
@@ -77,12 +74,14 @@ fn run(
 
 // ── What the book learns ──────────────────────────────────────────
 
-/// **The book converges to a linear cost.** A row whose runs take 1.5 times
-/// what they quote, within ±5 %, is learned at 1.5 within 0.04, and its
-/// spread narrows as runs come: below the prior after five runs, narrower
-/// still after two hundred, never zero while the runs vary. The default
-/// book forgets each older run by 0.95 a run, starts from a spread of 0.5,
-/// and halves a row's own estimate every 120 runs of its agent it misses.
+/// **The book converges to a linear cost.**
+///
+/// A row whose runs take 1.5 times what they quote, within ±5 %, is learned at
+/// 1.5 within 0.04, and its spread narrows as runs come: below the prior after
+/// five runs, narrower still after two hundred, never zero while the runs vary.
+/// The default book forgets each older run by 0.95 a run, starts from a spread
+/// of 0.5, and halves a row's own estimate every 120 runs of its agent it
+/// misses.
 #[test]
 fn rls_converges_to_a_linear_cost() {
     assert_eq!(
@@ -114,11 +113,12 @@ fn rls_converges_to_a_linear_cost() {
     assert!(late.spread > 0.0, "the runs still vary: {late:?}");
 }
 
-/// **The book follows a change of cost.** A row learned at 1 over a hundred
-/// runs then costs twice its quote: ten runs later its factor has moved
-/// past 1.2, sixty runs later it is within 0.1 of 2. A book that forgets
-/// nothing (λ = 1), fed the same runs, is still more than 0.3 from 2: the
-/// forgetting is what follows the change.
+/// **The book follows a change of cost.**
+///
+/// A row learned at 1 over a hundred runs then costs twice its quote: ten runs
+/// later its factor has moved past 1.2, sixty runs later it is within 0.1 of 2.
+/// A book that forgets nothing (λ = 1), fed the same runs, is still more than
+/// 0.3 from 2: the forgetting is what follows the change.
 #[test]
 fn the_book_follows_a_change_of_cost() {
     let mut forgetting = book();
@@ -152,10 +152,11 @@ fn the_book_follows_a_change_of_cost() {
     );
 }
 
-/// **A row never run plans at its agent's mean correction.** `ash`'s floor
-/// is learned at 2 from steady runs, its `Balanced` at 3 from runs spread
-/// ±20 %: its `HighPerformance`, never run, is corrected by their mean
-/// factor and their mean spread — it can only be learned by running it, so
+/// **A row never run plans at its agent's mean correction.**
+///
+/// `ash`'s floor is learned at 2 from steady runs, its `Balanced` at 3 from
+/// runs spread ±20 %: its `HighPerformance`, never run, is corrected by their
+/// mean factor and their mean spread — it can only be learned by running it, so
 /// it is not held back by a prior of its own. An agent with no learned row
 /// plans at its quotes: factor 1, no spread, whatever book settings name it.
 /// (The book relaxes no estimate here, so the floor, unrun while `Balanced`
@@ -206,8 +207,9 @@ fn a_row_never_run_plans_at_its_agents_mean_correction() {
     );
 }
 
-/// **Each row learns its own correction.** `ash`'s floor costs its quote
-/// and its `HighPerformance` twice its quote:
+/// **Each row learns its own correction.**
+///
+/// `ash`'s floor costs its quote and its `HighPerformance` twice its quote:
 /// - forty runs of the floor, then forty of the upgrade, learn 1 and 2
 ///   apart; the upgrade's runs leave the floor's correction as it was;
 /// - runs alternating between the two, one switch a run, still learn them
@@ -263,9 +265,10 @@ fn each_row_learns_its_own_correction() {
     assert!((book.correction(ELM, LowPower).factor - 3.0).abs() < 1e-3);
 }
 
-/// `ash`'s `row` reported once, quoting 1 ms on the host and taking
-/// `factor` times that, on the first run of a layer just installed: it
-/// carries the time its preparation took.
+/// Returns `ash`'s `row` reported once, on the first run of a layer just
+/// installed: it carries the time its preparation took.
+///
+/// The run quotes 1 ms on the host and takes `factor` times that.
 fn warm_up(row: StrategyId, factor: f64) -> Report {
     Report {
         switch: Some(ms(4)),
@@ -273,9 +276,11 @@ fn warm_up(row: StrategyId, factor: f64) -> Report {
     }
 }
 
-/// **A layer's first run teaches nothing.** The first run of a layer just
-/// installed runs cold — pipelines and caches still to fill — so the
-/// report carrying its preparation time is no measure of the row:
+/// **A layer's first run teaches nothing.**
+///
+/// The first run of a layer just installed runs cold — pipelines and caches
+/// still to fill — so the report carrying its preparation time is no measure of
+/// the row:
 /// - `ash`'s floor learned at 2 and its `HighPerformance` at 3; two hundred
 ///   and forty first runs of its `Balanced` at ×50 leave `Balanced` never
 ///   run (the mean of the two), and age neither learned row: each reads
@@ -330,10 +335,12 @@ fn a_layers_first_run_teaches_nothing() {
     );
 }
 
-/// **A row long unrun returns to its agent's mean.** `ash`'s `Balanced` is
-/// learned at 300 over ten runs, then only its floor runs, at 20. Each run
-/// of the agent it misses weighs `Balanced`'s own estimate down — half every
-/// 120 — the rest going to its agent's other learned rows, here the floor:
+/// **A row long unrun returns to its agent's mean.**
+///
+/// `ash`'s `Balanced` is learned at 300 over ten runs, then only its floor
+/// runs, at 20. Each run of the agent it misses weighs `Balanced`'s own
+/// estimate down — half every 120 — the rest going to its agent's other learned
+/// rows, here the floor:
 /// - another agent's runs are not `ash`'s: they age none of its rows;
 /// - after 120 runs of the floor, `Balanced` is halfway: about 160;
 /// - after 1 200, within 3 % of 20, its spread the floor's within 0.005;
@@ -399,11 +406,12 @@ fn a_row_long_unrun_returns_to_its_agents_mean() {
     );
 }
 
-/// **A run that quoted no host time teaches nothing.** Runs of a row quoting
-/// no time leave it as never run; so do reports with no workload, or a
-/// workload of zero. A report's workload is the host time its row quoted,
-/// in µs, and only its host time is read: thirty reports quoting 1 ms that
-/// took 2 ms on the host and 50 ms on the graphics processor learn 2.
+/// **A run that quoted no host time teaches nothing.**
+///
+/// Runs of a row quoting no time leave it as never run; so do reports with no
+/// workload, or a workload of zero. A report's workload is the host time its
+/// row quoted, in µs, and only its host time is read: thirty reports quoting 1
+/// ms that took 2 ms on the host and 50 ms on the graphics processor learn 2.
 #[test]
 fn a_run_that_quoted_no_host_time_teaches_nothing() {
     let mut book = book();
@@ -441,9 +449,11 @@ fn a_run_that_quoted_no_host_time_teaches_nothing() {
     );
 }
 
-/// **The book corrects every row it is offered.** Offers of `ash` (its floor
-/// learned at 2, its `Balanced` never run) and `elm` (nothing learned): one
-/// correction per offered row, each the book's own for that row.
+/// **The book corrects every row it is offered.**
+///
+/// Offers of `ash` (its floor learned at 2, its `Balanced` never run) and `elm`
+/// (nothing learned): one correction per offered row, each the book's own for
+/// that row.
 #[test]
 fn the_book_corrects_every_row_it_is_offered() {
     let mut book = book();
@@ -491,8 +501,9 @@ fn row_on_both(id: StrategyId, cpu_us: u64, gpu_us: u64, quality: f32) -> OfferR
     row
 }
 
-/// **Only the host time is corrected.** `ash`'s floor runs twice the host
-/// time it quotes:
+/// **Only the host time is corrected.**
+///
+/// `ash`'s floor runs twice the host time it quotes:
 /// - quoting 2 ms on the host and 6 ms on the graphics processor, it is
 ///   planned at about 4.4 ms and 6 ms in a 10 ms frame: the round is not
 ///   `Safety` (corrected on the graphics processor too, it would be 13 ms),
@@ -544,9 +555,11 @@ fn only_the_host_time_is_corrected() {
     );
 }
 
-/// Teaches `arbitrator`'s cost book that `name`'s `row`, quoting
-/// `quoted_us` µs on the host, runs alternately 0.4 and 1.6 times its quote:
-/// a factor near 1, its runs spread widely around it.
+/// Teaches `arbitrator`'s cost book that `name`'s `row` runs at a factor near
+/// 1, its runs spread widely around it.
+///
+/// The row quotes `quoted_us` µs on the host and runs alternately 0.4 and 1.6
+/// times its quote.
 fn teach_widely_spread(
     arbitrator: &mut GornaArbitrator,
     name: &'static str,
@@ -561,11 +574,12 @@ fn teach_widely_spread(
     }
 }
 
-/// **An uncertain row is planned with caution.** `ash` offers its floor,
-/// 2 ms at 0.4, and an upgrade, 6 ms at 1.0, in a 9 ms frame, both running
-/// about what they quote. A round plans a row above the floor at
-/// (factor + z × spread) × quote, z the planner's for its risk (about 1.645
-/// at 5 %), and the floor at its factor alone.
+/// **An uncertain row is planned with caution.**
+///
+/// `ash` offers its floor, 2 ms at 0.4, and an upgrade, 6 ms at 1.0, in a 9 ms
+/// frame, both running about what they quote. A round plans a row above the
+/// floor at (factor + z × spread) × quote, z the planner's for its risk (about
+/// 1.645 at 5 %), and the floor at its factor alone.
 /// - The upgrade's runs spread widely (0.4 then 1.6 times its quote): its
 ///   spread is over 0.4, so it is planned at about 2 × 6 = 12 ms and held
 ///   back — the envelope lent fits no upgrade on the agent's quotes.
@@ -646,14 +660,15 @@ fn an_uncertain_row_is_planned_with_caution() {
     );
 }
 
-/// **An envelope is lent in the agent's quoted units.** `ash` offers 2 ms at
-/// 0.4, 4 ms at 0.7 and 7 ms at 1.0, and every run of each took twice what
-/// it quoted. In a 12 ms frame, the round plans `Balanced` (about 8.7 ms
-/// corrected; the best row, about 15 ms, does not fit), and lends its
-/// envelope — decided in corrected time — divided by `Balanced`'s planned
-/// factor: within the frame in real time, it fits `Balanced`'s 4 ms quote
-/// and not the best row's 7 ms, so the agent, choosing on its own quotes,
-/// runs the row planned.
+/// **An envelope is lent in the agent's quoted units.**
+///
+/// `ash` offers 2 ms at 0.4, 4 ms at 0.7 and 7 ms at 1.0, and every run of each
+/// took twice what it quoted. In a 12 ms frame, the round plans `Balanced`
+/// (about 8.7 ms corrected; the best row, about 15 ms, does not fit), and lends
+/// its envelope — decided in corrected time — divided by `Balanced`'s planned
+/// factor: within the frame in real time, it fits `Balanced`'s 4 ms quote and
+/// not the best row's 7 ms, so the agent, choosing on its own quotes, runs the
+/// row planned.
 #[test]
 fn an_envelope_is_lent_in_the_agents_quoted_units() {
     let rows = vec![
@@ -754,13 +769,13 @@ fn an_envelope_is_lent_in_the_agents_quoted_units() {
     );
 }
 
-/// **A `Safety` round lends the floor at its quote, whatever row is
-/// pinned.** `ash`'s floor quotes 2 ms and runs as quoted; its
-/// `HighPerformance`, pinned by the developer, runs twice its 3 ms quote. A
-/// round opened as `Safety` lends every agent its floor: `ash`'s envelope
-/// is its floor's 2 ms, in its quoted units — not the floor's corrected time
-/// divided by the pinned row's correction, about 0.95 ms, under the floor it
-/// runs whatever is lent.
+/// **A `Safety` round lends the floor at its quote, whatever row is pinned.**
+///
+/// `ash`'s floor quotes 2 ms and runs as quoted; its `HighPerformance`, pinned
+/// by the developer, runs twice its 3 ms quote. A round opened as `Safety`
+/// lends every agent its floor: `ash`'s envelope is its floor's 2 ms, in its
+/// quoted units — not the floor's corrected time divided by the pinned row's
+/// correction, about 0.95 ms, under the floor it runs whatever is lent.
 #[test]
 fn a_safety_round_lends_the_floor_at_its_quote_whatever_row_is_pinned() {
     let rows = vec![row(LowPower, 2_000, 0.4), row(HighPerformance, 3_000, 1.0)];
@@ -786,13 +801,13 @@ fn a_safety_round_lends_the_floor_at_its_quote_whatever_row_is_pinned() {
     );
 }
 
-/// **The row planned fits the envelope lent for it when it fills the
-/// frame.** `ash`'s rows run 1.25 times their quotes, learned without
-/// spread, and the round plans at the factor alone: its `HighPerformance`,
-/// quoting 1999 µs, is planned at 2498.75 µs in a 2498 µs frame (times are
-/// counted in whole microseconds), and taken. The envelope lent for it, in
-/// `ash`'s quoted units, still fits its 1999 µs quote, so `ash` runs the row
-/// planned.
+/// **The row planned fits the envelope lent for it when it fills the frame.**
+///
+/// `ash`'s rows run 1.25 times their quotes, learned without spread, and the
+/// round plans at the factor alone: its `HighPerformance`, quoting 1999 µs, is
+/// planned at 2498.75 µs in a 2498 µs frame (times are counted in whole
+/// microseconds), and taken. The envelope lent for it, in `ash`'s quoted units,
+/// still fits its 1999 µs quote, so `ash` runs the row planned.
 #[test]
 fn the_row_planned_fits_the_envelope_lent_for_it_when_it_fills_the_frame() {
     let rows = vec![row(LowPower, 1_000, 0.4), row(HighPerformance, 1_999, 1.0)];
@@ -862,10 +877,11 @@ fn the_row_planned_fits_the_envelope_lent_for_it_when_it_fills_the_frame() {
     );
 }
 
-/// **A bad first measure does not hold a row back for ever.** `ash` offers
-/// its floor, 0.1 ms at 0.4, and `Balanced`, 0.4 ms at 0.9, in a 16 ms frame.
-/// `Balanced` ran once at 300 times its quote — a cold start —, then only the
-/// floor runs, at 20 times its quote:
+/// **A bad first measure does not hold a row back for ever.**
+///
+/// `ash` offers its floor, 0.1 ms at 0.4, and `Balanced`, 0.4 ms at 0.9, in a
+/// 16 ms frame. `Balanced` ran once at 300 times its quote — a cold start —,
+/// then only the floor runs, at 20 times its quote:
 /// - sixty runs on, `Balanced` is still planned far over 100 × 0.4 ms, over
 ///   the frame: the round plans the floor;
 /// - six hundred runs on, its estimate has relaxed toward the floor's 20:
@@ -914,11 +930,12 @@ fn micros(time: Duration) -> u64 {
 }
 
 /// **A `Stable` agent keeps its envelope as it holds it, under any
-/// correction.** `ash`'s rows run 0.77 times their quotes (a lane quoting
-/// above what it takes). The first round lends `ash` an envelope in its quoted
-/// units; `Stable` from then on, the second round keeps it — every
-/// nanosecond of it, though the round plans it in measured time and lends it
-/// back in quoted time.
+/// correction.**
+///
+/// `ash`'s rows run 0.77 times their quotes (a lane quoting above what it
+/// takes). The first round lends `ash` an envelope in its quoted units;
+/// `Stable` from then on, the second round keeps it — every nanosecond of it,
+/// though the round plans it in measured time and lends it back in quoted time.
 #[test]
 fn a_stable_agent_keeps_its_envelope_as_it_holds_it_under_a_correction() {
     let rows = vec![row(LowPower, 3_333, 0.4), row(HighPerformance, 9_999, 1.0)];
@@ -956,9 +973,11 @@ fn exported(
         .cloned()
 }
 
-/// **The book exports what it learnt.** `ash`'s `Balanced` learnt at 300
-/// over ten runs, then its floor at 20 over 120: `elm`'s floor at 3 over 30.
-/// The export names every learnt row once, by its agent's name:
+/// **The book exports what it learnt.**
+///
+/// `ash`'s `Balanced` learnt at 300 over ten runs, then its floor at 20 over
+/// 120: `elm`'s floor at 3 over 30. The export names every learnt row once, by
+/// its agent's name:
 /// - each row's own factor and spread, as it learnt them: `Balanced`, unrun
 ///   while the floor ran, reads about 160 as a round plans it (relaxed toward
 ///   the floor), but is exported at its own 300;
@@ -1014,18 +1033,21 @@ fn steady_run(book: &mut CostBook, agent: AgentId, row: StrategyId, factor: f64)
     book.observe(agent, row, ms(1), Duration::from_secs_f64(factor / 1_000.0));
 }
 
-/// Whether `spread`, a row's right after it was seeded, is the `seeded`
-/// spread: at least it, and at most it with the default prior's spread
-/// weighed down by twenty runs seen.
+/// Returns whether `spread`, a row's right after it was seeded, is the
+/// `seeded` spread.
+///
+/// At least it, and at most it with the default prior's spread weighed down
+/// by twenty runs seen.
 fn within_the_prior(spread: f64, seeded: f64) -> bool {
     let prior = CostBookConfig::default().prior_spread;
     let most = (seeded * seeded + prior * prior / 21.0).sqrt();
     spread >= seeded - 1e-9 && spread <= most + 1e-9
 }
 
-/// **A profile seeds the book as a prior that measures overtake.** A profile
-/// learnt `ash`'s `Balanced` at 3, spread 0.3, over fifty runs; this machine
-/// runs it at its quote.
+/// **A profile seeds the book as a prior that measures overtake.**
+///
+/// A profile learnt `ash`'s `Balanced` at 3, spread 0.3, over fifty runs; this
+/// machine runs it at its quote.
 /// - Seeded, before any run, `Balanced` is planned at 3 and its spread is
 ///   the profile's 0.3 (the prior's own spread, weighed down by the twenty
 ///   runs the profile counts as seen, may add to it); `elm`, which the
@@ -1121,12 +1143,13 @@ fn a_profile_seeds_the_book_as_a_prior_that_measures_overtake() {
     }
 }
 
-/// **A row never run keeps its spread from one profile to the next.** `ash`'s
-/// `Balanced` learnt at 2 over sixty runs, within ±5 %, is exported. A run
-/// that never runs that row seeds its book from the profile and exports it
+/// **A row never run keeps its spread from one profile to the next.**
+///
+/// `ash`'s `Balanced` learnt at 2 over sixty runs, within ±5 %, is exported. A
+/// run that never runs that row seeds its book from the profile and exports it
 /// again; fifty such runs in a row — fifty boots in which the agent kept to
-/// another row — still export it at the spread first learnt, within 0.01:
-/// a profile carried from run to run adds no uncertainty of its own to a row
+/// another row — still export it at the spread first learnt, within 0.01: a
+/// profile carried from run to run adds no uncertainty of its own to a row
 /// nothing measured.
 #[test]
 fn a_row_never_run_keeps_its_spread_from_one_profile_to_the_next() {
@@ -1153,10 +1176,11 @@ fn a_row_never_run_keeps_its_spread_from_one_profile_to_the_next() {
     );
 }
 
-/// **A seeded spread, however large, plans a bounded time.** A profile is a
-/// file anyone can edit; its rows, made sane, hold a finite spread of at
-/// least 0 but no bound above. Seeded with them, a round plans a row above
-/// the floor:
+/// **A seeded spread, however large, plans a bounded time.**
+///
+/// A profile is a file anyone can edit; its rows, made sane, hold a finite
+/// spread of at least 0 but no bound above. Seeded with them, a round plans a
+/// row above the floor:
 /// - `elm`'s `HighPerformance`, learnt at 2 with a spread of 10²⁰⁰, is
 ///   planned at no less than twice its 2 ms quote — never at its quote, as
 ///   if nothing were known of it;

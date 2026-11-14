@@ -43,26 +43,27 @@ pub struct PlanningConfig {
     /// How many frames the spread waits for: fewer read as no spread, the
     /// margin zero.
     pub min_frames: usize,
-    /// How many frames in a row past what the margin covers — the target
-    /// plus the margin — make a load. The first frame within the target
-    /// after one ends it, and the spread is read afresh from that frame: a
-    /// load's frames, a startup's among them, say nothing of the spread after
-    /// it. Frames spread around the target run past the margin as rarely as
-    /// the risk says, so their spread is kept.
+    /// How many frames in a row past the target plus the margin make a load.
+    ///
+    /// The first frame within the target after a load ends it, and the spread
+    /// is read afresh from there: a load's frames, a startup's among them, say
+    /// nothing of the spread after it.
     pub load_frames: usize,
     /// How many reports a workload trend is read over.
     pub trend: usize,
-    /// Whether a round plans each agent's costs to grow as its workload
-    /// trend says. Off by default: a trend read over a few reports and
-    /// carried over the horizon follows a burst as readily as a trend, and
-    /// holds back upgrades it should not.
+    /// Whether a round plans each agent's costs to grow as its workload trend
+    /// says.
+    ///
+    /// Off by default: a trend read over a few reports follows a burst as
+    /// readily as a real rise, and holds back upgrades it should not.
     pub follow_trends: bool,
 }
 
 impl Default for PlanningConfig {
-    /// A 5 s horizon, a 250 ms transient, a 5 ms prior, a 5 % risk, the spread
-    /// read over 120 frames once 10 ran and afresh after 3 frames past the
-    /// target, and a trend over 16 reports, not followed.
+    /// Returns a 5 s horizon, a 250 ms transient, a 5 ms prior and a 5 % risk.
+    ///
+    /// The spread is read over 120 frames once 10 ran, afresh after a load of
+    /// 3 frames; a trend is read over 16 reports, and not followed.
     fn default() -> Self {
         Self {
             horizon: Duration::from_secs(5),
@@ -78,8 +79,9 @@ impl Default for PlanningConfig {
     }
 }
 
-/// The standard normal quantile of 1 − `risk` (z), 0 for risk ≥ 0.5. A risk
-/// of zero or less reads as the smallest positive one.
+/// Returns the standard normal quantile of 1 − `risk` (z), 0 for risk ≥ 0.5.
+///
+/// A risk of zero or less reads as the smallest positive one.
 pub fn z_of(risk: f64) -> f64 {
     if risk.is_nan() || risk >= 0.5 {
         return 0.0;
@@ -87,9 +89,11 @@ pub fn z_of(risk: f64) -> f64 {
     normal_quantile(1.0 - risk, risk.max(f64::MIN_POSITIVE))
 }
 
-/// The standard normal quantile of `p`, in (0, 1), whose upper tail
-/// `1 − p` is `upper`, given apart so a tail too thin for `p` to hold is
-/// still read: Acklam's rational approximation, within 1.2·10⁻⁹ relative.
+/// Returns the standard normal quantile of `p` in (0, 1), by Acklam's
+/// rational approximation (within 1.2·10⁻⁹ relative).
+///
+/// `upper` is `1 − p`, given apart so a tail too thin for `p` to hold is
+/// still read.
 fn normal_quantile(p: f64, upper: f64) -> f64 {
     const A: [f64; 6] = [
         -3.969_683_028_665_376e1,
@@ -137,9 +141,10 @@ fn normal_quantile(p: f64, upper: f64) -> f64 {
     }
 }
 
-/// `z_of(risk)` × 1.4826 × the median absolute deviation of `frames`; zero
-/// for fewer than 2 frames. The median absolute deviation reads the frames'
-/// spread without their hitches: a few frames far off move it little.
+/// Returns `z_of(risk)` × 1.4826 × the median absolute deviation of `frames`.
+///
+/// Zero for fewer than 2 frames. The median absolute deviation reads the
+/// frames' spread without their hitches: a few frames far off move it little.
 pub fn margin(frames: &[Duration], risk: f64) -> Duration {
     if frames.len() < 2 {
         return Duration::ZERO;
@@ -156,7 +161,7 @@ pub fn margin(frames: &[Duration], risk: f64) -> Duration {
     }
 }
 
-/// The median of `values`, which it sorts.
+/// Returns the median of `values`, which it sorts.
 fn median(values: &mut [f64]) -> f64 {
     values.sort_by(f64::total_cmp);
     let half = values.len() / 2;
@@ -167,10 +172,11 @@ fn median(values: &mut [f64]) -> f64 {
     }
 }
 
-/// The cost growth over `horizon` of a workload whose recent `(at, n)`
-/// samples are `trend`, read through `class`: f(n(t+H)) / f(n(t)) with
-/// n(t+H) from a least-squares line over the samples; 1 with fewer than 2
-/// samples, a flat trend, or f(n(t)) ≤ 0; never negative.
+/// Returns the cost growth over `horizon` of a workload whose recent
+/// `(at, n)` samples are `trend`, read through `class`.
+///
+/// f(n(t+H)) / f(n(t)), n(t+H) from a least-squares line over the samples;
+/// 1 with fewer than 2 samples, a flat trend, or f(n(t)) ≤ 0; never negative.
 pub fn growth(trend: &[(Duration, f64)], class: ComplexityClass, horizon: Duration) -> f64 {
     if trend.len() < 2 {
         return 1.0;
@@ -227,7 +233,7 @@ pub struct Planner {
 }
 
 impl Planner {
-    /// A planner of `cfg`, that has learnt nothing yet.
+    /// Creates a planner of `cfg` that has learnt nothing yet.
     pub fn new(cfg: PlanningConfig) -> Self {
         Self {
             config: cfg,
@@ -240,12 +246,12 @@ impl Planner {
         }
     }
 
-    /// The planner's settings.
+    /// Returns the planner's settings.
     pub fn config(&self) -> PlanningConfig {
         self.config
     }
 
-    /// A report at `at`: its switch time for (agent, row) when it carries
+    /// Records a report received at `at`: its switch time when it carries
     /// one, the row it ran under its epoch, its workload.
     pub fn observe_report(&mut self, report: &Report, at: Duration) {
         if let Some(switch) = report.switch {
@@ -267,10 +273,11 @@ impl Planner {
         }
     }
 
-    /// A frame's critical path, and the target it ran under. The first frame
-    /// within the target after `load_frames` past the target plus the margin
-    /// starts the frames the spread is read over afresh; a frame between the
-    /// two leaves the count as it is.
+    /// Records a frame's critical path and the target it ran under.
+    ///
+    /// The first frame within the target after a load (see
+    /// [`PlanningConfig::load_frames`]) restarts the frames the spread is
+    /// read over.
     pub fn observe_frame(&mut self, critical: Duration, target: Duration) {
         // A frame past the target but within the margin neither counts
         // toward a load nor ends one.
@@ -288,7 +295,7 @@ impl Planner {
         }
     }
 
-    /// The margin the frames read since the last load ended keep: none
+    /// Returns the margin of the frames since the last load ended: none
     /// below `min_frames` of them.
     fn margin(&self) -> Duration {
         if self.frames.len() < self.config.min_frames {
@@ -298,19 +305,19 @@ impl Planner {
         margin(&frames, self.config.risk)
     }
 
-    /// The class `agent`'s cost model fits.
+    /// Records the class `agent`'s cost model fits.
     pub fn observe_class(&mut self, agent: AgentId, class: ComplexityClass) {
         self.classes.insert(agent, class);
     }
 
-    /// The planning for a round of `epoch` over `offers`: horizon and
-    /// transient from the config; the margin from the frames; each agent's
-    /// growth from its trend and class, when the config follows trends; and,
-    /// for each offered row other than the offer's `current`, its switch
-    /// time — none for a row the agent ran within the last `KEEP_EPOCHS`
-    /// epochs before `epoch` (its layer is kept: the switch pays only its
-    /// transient), else the last measured for (agent, row), else the agent's
-    /// mean measured, else `switch_prior`.
+    /// Returns the planning for a round of `epoch` over `offers`.
+    ///
+    /// A row other than the offer's `current` is charged a switch time: none
+    /// when the agent ran it within the last `KEEP_EPOCHS` epochs (its layer
+    /// is kept), else the last measured for it, else the agent's mean
+    /// measured, else `switch_prior`.
+    ///
+    /// See the book: concepts/gorna.md, "Formalisation".
     pub fn planning(&self, offers: &[Offer], epoch: Epoch) -> Planning {
         let mut planning = Planning {
             horizon: self.config.horizon,

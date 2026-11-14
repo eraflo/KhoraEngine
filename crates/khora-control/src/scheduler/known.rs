@@ -20,9 +20,10 @@ use khora_core::agent::{Agent, Contention, ExecutionTiming, Place};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
 
-/// An agent as the scheduler knows it from the first time it met it: the
-/// family's place in the frame is fixed, so its timing is too. Its fixed
-/// step lives at its place, read each frame.
+/// An agent as the scheduler knows it from their first meeting.
+///
+/// A family's place in the frame is fixed, so its timing is too; its fixed step lives at
+/// the place, read each frame.
 #[derive(Clone)]
 pub(super) struct Known {
     /// Its name, which never changes.
@@ -46,9 +47,9 @@ pub(super) struct KnownAgents {
 }
 
 impl KnownAgents {
-    /// What the scheduler knows of `agent`, meeting it — under its lock,
-    /// once — the first time. `None` while a panic poisoned it before it was
-    /// ever met.
+    /// Returns what the scheduler knows of `agent`, meeting it under its lock the first time.
+    ///
+    /// `None` while a panic poisoned the agent before it was ever met.
     pub(super) fn of(&self, agent: &Arc<Mutex<dyn Agent>>) -> Option<Known> {
         let weak = Arc::downgrade(agent);
         if let Some((_, known)) = self.met().iter().find(|(seen, _)| seen.ptr_eq(&weak)) {
@@ -74,22 +75,21 @@ impl KnownAgents {
 }
 
 impl Known {
-    /// The step the agent's family runs at, read now from its place; `None`
-    /// for a family that runs every frame.
+    /// Returns the step the agent's family runs at, read from its place; `None` for a
+    /// family that runs every frame.
     pub(super) fn fixed_step(&self) -> Option<Duration> {
         locked(&self.place)
             .fixed_step()
             .filter(|step| !step.is_zero())
     }
 
-    /// What the agent competes for this frame: its installed layer's
-    /// declaration, read from its place.
+    /// Returns what the agent competes for this frame: its installed layer's declaration.
     pub(super) fn contention(&self) -> Contention {
         locked(&self.place).contention()
     }
 }
 
-/// `place`, locked; a place a panicking layer poisoned is still the family's.
+/// Locks `place`; a place a panicking layer poisoned is still the family's.
 pub(super) fn locked(place: &Mutex<Place>) -> MutexGuard<'_, Place> {
     place.lock().unwrap_or_else(|e| e.into_inner())
 }

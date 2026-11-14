@@ -22,20 +22,13 @@ use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, TryLockError};
 
 impl ExecutionScheduler {
-    /// Lends every agent of a family on what it is owed, under its lock, at the
-    /// frame start: each replayed allocation taken since it was last handed
-    /// one, in order, then the one in force — which the whole frame runs on.
-    /// The DCC never lends. An agent busy now (asked for an offer) is not
-    /// waited for: it runs this frame on what it holds, and is handed what it
-    /// missed at the next frame start. An agent whose family is off is lent
-    /// nothing. An allocation that does not name an agent leaves it with what
-    /// it holds.
+    /// Lends every agent of a family on the allocations it is owed, under its lock.
     ///
-    /// A family seen off at a frame start and found on at a later one has
-    /// its agent withdrawn ([`Agent::withdraw`]) at the first frame start it
-    /// is free: what it held was lent for another session, and what was
-    /// taken up to its resume was decided without it. It runs at its own
-    /// price until an allocation taken after its resume lends it another.
+    /// It is owed each replay taken since it was last handed one, in order, then the one in
+    /// force; an allocation that does not name it leaves it with what it holds. An agent busy
+    /// now is handed what it missed at the next frame start. A family found on again after
+    /// being off is first withdrawn ([`Agent::withdraw`]), and owed only what was taken
+    /// after its resume. See the book: concepts/gorna.md, "When things go wrong".
     pub(super) fn lend_allocation(&mut self, inactive: &BTreeSet<AgentId>) {
         let current = self.taken.last().map(|((place, _), _)| *place);
         self.note_resumes(inactive, current);
@@ -97,9 +90,10 @@ impl ExecutionScheduler {
         }
     }
 
-    /// Notes the families off at this frame start, and those found on again
-    /// since one saw them off: each resumes from `current`, the place in
-    /// force now. A family off again before it was withdrawn resumes anew.
+    /// Notes the families off at this frame start, and those on again since, resuming from
+    /// `current`.
+    ///
+    /// A family off again before it was withdrawn resumes anew.
     fn note_resumes(&mut self, inactive: &BTreeSet<AgentId>, current: Option<u64>) {
         self.resuming.retain(|(id, _)| !inactive.contains(id));
         self.resting.extend(inactive.iter().copied());

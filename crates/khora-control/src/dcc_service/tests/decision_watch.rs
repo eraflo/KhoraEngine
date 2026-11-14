@@ -21,9 +21,10 @@ use khora_core::agent::gorna::protocol::{BindingConstraint, DecidedBy, Rejected,
 use khora_core::agent::gorna::{Correction, DecisionView, Planning};
 use khora_core::lane::cost::Device;
 
-/// A DCC ticking at 100 Hz and recording its epochs, with `renderer`
-/// offering a 2 ms floor and a 5 ms `Balanced` — an upgrade a 16 ms frame
-/// has room for — and `audio` a 1 ms floor alone; not started.
+/// A DCC ticking at 100 Hz and recording its epochs, of two agents; not started.
+///
+/// `renderer` offers a 2 ms floor and a 5 ms `Balanced`, an upgrade a 16 ms
+/// frame has room for; `audio` a 1 ms floor alone.
 fn a_recording_dcc_of_two_agents() -> (DccService, Receiver<TelemetryEvent>) {
     let (dcc, rx) = recording(DccConfig::default());
     let (renderer, _) = Speaker::with_upgrade(
@@ -51,12 +52,13 @@ fn host_time_lent(record: &EpochRecord, name: &'static str) -> Duration {
         .unwrap_or_else(|| panic!("no envelope for `{name}`: {:?}", record.allocation))
 }
 
-/// **The DCC publishes its last decision.** After live rounds, the DCC's
-/// decision watch holds the last one, as the journal recorded it: its epoch,
-/// the trigger that opened it, the frame's target, why it was decided, each
-/// agent's envelope as lent, the corrections and the planning it decided on
-/// — and the rows it planned, `renderer`'s upgrade and `audio`'s floor. It
-/// was decided live, not replayed.
+/// **The DCC publishes its last decision.**
+///
+/// After live rounds, the DCC's decision watch holds the last one, as the
+/// journal recorded it: its epoch, the trigger that opened it, the frame's
+/// target, why it was decided, each agent's envelope as lent, the corrections
+/// and the planning it decided on — and the rows it planned, `renderer`'s
+/// upgrade and `audio`'s floor. It was decided live, not replayed.
 #[test]
 fn the_dcc_publishes_its_last_decision() {
     let (mut dcc, rx) = a_recording_dcc_of_two_agents();
@@ -95,11 +97,11 @@ fn the_dcc_publishes_its_last_decision() {
     assert!(!view.replayed, "decided live");
 }
 
-/// The epoch a journal recorded as `epoch`: `renderer` lent `renderer_us` on
-/// the host and planned at `Balanced`, decided by the exact search, bound by
-/// the graphics processor's time with the renderer's `HighPerformance`
-/// refused for it, under a 33 ms target, the renderer's `Balanced` learnt at
-/// 1.5 ± 0.25, and planned with a 2 ms margin.
+/// The epoch a journal recorded as `epoch`, `renderer` lent `renderer_us` on the host.
+///
+/// The renderer is planned at `Balanced` by the exact search, bound by the
+/// graphics processor's time with its `HighPerformance` refused, under a
+/// 33 ms target, its `Balanced` learnt at 1.5 ± 0.25, with a 2 ms margin.
 fn a_recorded_epoch(epoch: u64, renderer_us: u64) -> EpochRecord {
     let renderer = AgentId::new("renderer");
     let mut recorded = record(allocation(
@@ -134,11 +136,13 @@ fn a_recorded_epoch(epoch: u64, renderer_us: u64) -> EpochRecord {
     recorded
 }
 
-/// **A replayed epoch publishes the reasons it replays.** A journal of two
-/// epochs is replayed, with no agent registered so no live round follows:
-/// the DCC's decision watch holds the last epoch replayed — its allocation's
-/// epoch, trigger and envelopes, its target, its `why`, its planned rows, its
-/// corrections and its planning, as recorded — and says it was replayed.
+/// **A replayed epoch publishes the reasons it replays.**
+///
+/// A journal of two epochs is replayed, with no agent registered so no live
+/// round follows: the DCC's decision watch holds the last epoch replayed — its
+/// allocation's epoch, trigger and envelopes, its target, its `why`, its
+/// planned rows, its corrections and its planning, as recorded — and says it
+/// was replayed.
 #[test]
 fn a_replayed_epoch_publishes_the_reasons_it_replays() {
     let (mut dcc, rx) = DccService::new(DccConfig {
@@ -176,10 +180,11 @@ fn a_replayed_epoch_publishes_the_reasons_it_replays() {
     );
 }
 
-/// **The journal records the rows planned.** Recording, every epoch the DCC
-/// journals names the rows its round planned: `renderer`'s 5 ms upgrade,
-/// which the frame has room for, and `audio`'s floor. The last one is the
-/// rows the published decision names.
+/// **The journal records the rows planned.**
+///
+/// Recording, every epoch the DCC journals names the rows its round planned:
+/// `renderer`'s 5 ms upgrade, which the frame has room for, and `audio`'s
+/// floor. The last one is the rows the published decision names.
 #[test]
 fn the_journal_records_the_rows_planned() {
     let (mut dcc, rx) = a_recording_dcc_of_two_agents();
@@ -214,12 +219,13 @@ fn the_journal_records_the_rows_planned() {
     assert_eq!(sorted(last.planned.clone()), sorted(view.planned));
 }
 
-/// **A live round after a replay publishes its own decision.** A journal of
-/// one epoch, written before the rows planned were kept, is replayed to a
-/// recording DCC of `renderer` and `audio`; once it runs out, a live round
-/// opens. The decision watch then holds that live round, as the journal
-/// recorded it — its epoch, past the replayed one, its target, its `why` and
-/// the rows it planned — and says it was decided live, not replayed.
+/// **A live round after a replay publishes its own decision.**
+///
+/// A journal of one epoch, written before the rows planned were kept, is
+/// replayed to a recording DCC of `renderer` and `audio`; once it runs out, a
+/// live round opens. The decision watch then holds that live round, as the
+/// journal recorded it — its epoch, past the replayed one, its target, its
+/// `why` and the rows it planned — and says it was decided live, not replayed.
 #[test]
 fn a_live_round_after_a_replay_publishes_its_own_decision() {
     let (mut dcc, rx) = a_recording_dcc_of_two_agents();

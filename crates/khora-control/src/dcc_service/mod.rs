@@ -45,9 +45,9 @@ const COST_MODEL_CAPACITY: usize = 64;
 /// its multiplier rather than reacting to thin data.
 pub(crate) const FRAME_TIME_MIN_SAMPLES: usize = 10;
 
-/// How far the published budget multiplier must have moved since the last
-/// issuance for the DCC to re-arbitrate: any real move. The governor only
-/// changes it by whole steps, so this only tells a change from none.
+/// How far the published multiplier must move for the DCC to re-arbitrate: any real move.
+///
+/// The governor moves it by whole steps, so this only tells a change from none.
 const MULTIPLIER_EPSILON: f32 = 1e-4;
 
 /// The Dynamic Context Core service.
@@ -57,24 +57,21 @@ pub struct DccService {
     config: DccConfig,
     context: Arc<std::sync::RwLock<DccContext>>,
     registry: Arc<std::sync::Mutex<AgentRegistry>>,
-    /// The scheduler's channel, shared with the decision thread: connected
-    /// before or after the thread starts, it is the one the next allocation is
-    /// published on.
+    /// The scheduler's channel, shared with the decision thread.
+    ///
+    /// Connected before or after the thread starts, it carries the next allocation.
     budget_channel: Arc<std::sync::RwLock<Option<BudgetChannel>>>,
     running: Arc<AtomicBool>,
     handle: Option<thread::JoinHandle<()>>,
     event_tx: Sender<TelemetryEvent>,
-    /// Per-agent developer-control modes, shared with the cold-path arbitrator.
-    /// Written from any thread (host/editor), read each tick by the DCC loop.
+    /// Per-agent developer-control modes, written from any thread, read each tick.
     adaptation_modes: Arc<std::sync::RwLock<HashMap<AgentId, AdaptationMode>>>,
-    /// Per-agent developer hints (`Cap`, `Prioritize`) that bias arbitration
-    /// without changing game semantics. Written from any thread (host/editor)
-    /// via [`set_hint`](Self::set_hint), read each tick by the DCC loop and fed
-    /// into the arbitrator. The same developer-control axis as `adaptation_modes`.
+    /// Per-agent developer hints, written from any thread via
+    /// [`set_hint`](Self::set_hint), read each tick.
     hints: Arc<std::sync::RwLock<HashMap<AgentId, AgentHints>>>,
-    /// Latest read-only layout recommendations per component, derived by the
-    /// DCC from access telemetry via the Data-layer advisor. Glass-box only:
-    /// the DCC *advises*, it never repacks — Data owns its layout (CLAD).
+    /// The latest layout recommendation per component, from access telemetry.
+    ///
+    /// Advice only: the DCC never repacks.
     layout_recommendations: Arc<std::sync::RwLock<HashMap<String, LayoutRecommendation>>>,
     /// When the DCC started recording GORNA decisions; `None` while it
     /// records none.
@@ -123,10 +120,10 @@ impl DccService {
         (service, rx)
     }
 
-    /// Sets the [`AdaptationMode`] for an agent — the developer-control surface
-    /// over the adaptive core. Thread-safe; takes effect on the next arbitration
-    /// tick. `Manual(strategy)` pins an agent, `Stable` blocks opportunistic
-    /// upgrades, `Bounded` clamps the range, `Learning` (default) negotiates freely.
+    /// Sets the [`AdaptationMode`] for an agent, from any thread.
+    ///
+    /// Takes effect on the next arbitration tick. See the book:
+    /// concepts/gorna.md, "AdaptationMode — the developer-control surface".
     pub fn set_adaptation_mode(&self, agent_id: AgentId, mode: AdaptationMode) {
         if let Ok(mut modes) = self.adaptation_modes.write() {
             modes.insert(agent_id, mode);
@@ -142,15 +139,12 @@ impl DccService {
             .unwrap_or_default()
     }
 
-    /// Applies a developer [`EngineHint`] biasing GORNA arbitration — the same
-    /// control axis as [`set_adaptation_mode`](Self::set_adaptation_mode).
-    /// `Cap` bounds an agent's per-frame time budget; `Prioritize` biases its
-    /// negotiation weight. Thread-safe; takes effect on the next arbitration
-    /// tick. Hints persist and accumulate per agent (latest value wins per
-    /// kind) until cleared with [`clear_agent_hints`](Self::clear_agent_hints).
-    /// Advisory only: a `Manual` pin and the death-spiral safety stop still win.
+    /// Applies a developer [`EngineHint`] biasing GORNA arbitration, from any thread.
     ///
-    /// A hint whose value is not a number, or a weight that is not finite, is
+    /// Takes effect on the next arbitration tick. Hints accumulate per agent,
+    /// the latest of each kind winning, until
+    /// [`clear_agent_hints`](Self::clear_agent_hints); a `Manual` pin and the
+    /// `Safety` allocation still win. A NaN value or a non-finite weight is
     /// refused and logged: it would make every round's shares meaningless.
     pub fn set_hint(&self, hint: EngineHint) {
         let usable = match hint {
@@ -166,24 +160,21 @@ impl DccService {
         }
     }
 
-    /// Clears all developer hints for an agent, restoring engine defaults.
-    /// Thread-safe; takes effect on the next arbitration tick.
+    /// Clears all developer hints for an agent, from the next arbitration tick.
     pub fn clear_agent_hints(&self, agent_id: AgentId) {
         if let Ok(mut hints) = self.hints.write() {
             hints.remove(&agent_id);
         }
     }
 
-    /// Read-only snapshot of the accumulated per-agent hints (glass-box; safe
-    /// any time), e.g. for the editor's Control-Plane panel.
+    /// Returns a snapshot of the accumulated per-agent hints.
     pub fn hints(&self) -> HashMap<AgentId, AgentHints> {
         self.hints.read().map(|h| h.clone()).unwrap_or_default()
     }
 
-    /// Read-only snapshot of the per-component layout recommendations the DCC's
-    /// advisor has derived from access telemetry — for the glass-box surface
-    /// (e.g. the editor's Control-Plane panel). Advisory only: the DCC observes
-    /// the Data layer and recommends, it never repacks.
+    /// Returns a snapshot of the layout recommendation per component.
+    ///
+    /// Advice only: the DCC never repacks.
     pub fn layout_recommendations(&self) -> HashMap<String, LayoutRecommendation> {
         self.layout_recommendations
             .read()
@@ -191,9 +182,9 @@ impl DccService {
             .unwrap_or_default()
     }
 
-    /// Starts recording each epoch's allocation into a fresh trace. The
-    /// recording can be replayed later for bit-for-bit reproduction (QA,
-    /// network lockstep, bug repro). Thread-safe; takes effect next tick.
+    /// Starts recording each epoch's allocation into a fresh trace, from the next tick.
+    ///
+    /// The trace replays bit for bit with [`replay_decisions`](Self::replay_decisions).
     pub fn start_decision_recording(&self) {
         if let Ok(mut rec) = self.decision_recording.write() {
             *rec = Some(Instant::now());
@@ -219,17 +210,18 @@ impl DccService {
             .unwrap_or_default()
     }
 
-    /// Begins replaying `trace`: each subsequent tick lends the next recorded
-    /// allocation, asking for no offer,
-    /// until the trace is exhausted; then live rounds resume.
+    /// Begins replaying `trace`, one recorded allocation a tick, asking for no offer.
+    ///
+    /// Live rounds resume once the trace is exhausted.
     pub fn replay_decisions(&self, trace: DecisionTrace) {
         if let Ok(mut replay) = self.replay.write() {
             *replay = Some((trace, 0));
         }
     }
 
-    /// Stops any in-progress replay, returning to live arbitration. The
-    /// replayed epochs the scheduler has not taken yet are withdrawn.
+    /// Stops any replay in progress, returning to live arbitration.
+    ///
+    /// The replayed epochs the scheduler has not taken yet are withdrawn.
     pub fn stop_replay(&self) {
         if let Ok(mut replay) = self.replay.write() {
             *replay = None;
@@ -248,10 +240,9 @@ impl DccService {
             .unwrap_or(false)
     }
 
-    /// Connects the DCC to the scheduler's channel: each allocation the DCC
-    /// decides or replays is published on it, for the scheduler to lend at
-    /// its frame start. Connected before or after [`start`](Self::start), it
-    /// carries the next allocation.
+    /// Connects the DCC to the scheduler's channel, where it publishes each allocation.
+    ///
+    /// Connected before or after [`start`](Self::start), it carries the next one.
     pub fn connect_budget_channel(&mut self, channel: BudgetChannel) {
         *self
             .budget_channel
@@ -259,10 +250,10 @@ impl DccService {
             .unwrap_or_else(|e| e.into_inner()) = Some(channel);
     }
 
-    /// Gives the DCC the monitor it reads the hardware from — heat, battery,
-    /// the CPU's load. The DCC's thread refreshes and reads it, at most about
-    /// once a second and on its first tick, so a slow sensor read never lands
-    /// in a frame.
+    /// Gives the DCC the monitor it reads heat, battery and CPU load from.
+    ///
+    /// The DCC's thread reads it on its first tick and about once a second
+    /// after, so a slow sensor never lands in a frame.
     pub fn set_hardware_monitor(&self, monitor: Arc<dyn HardwareMonitor>) {
         *self
             .hardware_monitor
@@ -270,18 +261,20 @@ impl DccService {
             .unwrap_or_else(|e| e.into_inner()) = Some(monitor);
     }
 
-    /// Hands the DCC what a profile learnt of this machine, before
-    /// [`start`](Self::start): its thread seeds its cost book with `rows` as
-    /// it starts, mapping each row's agent name onto the agents registered
-    /// then. A row naming no registered agent is ignored.
+    /// Hands the DCC what a profile learnt of this machine, for its cost book.
+    ///
+    /// Call before [`start`](Self::start): its thread reads the rows once, as
+    /// it starts, matching them by agent name to the agents registered then; a
+    /// row naming none is ignored, and a call after `start` does nothing.
     pub fn seed_cost_book(&self, rows: Vec<khora_core::agent::gorna::ProfileRow>) {
         if let Ok(mut seeded) = self.seeded_costs.write() {
             *seeded = rows;
         }
     }
 
-    /// What the DCC's cost book has learnt, as its thread last published it
-    /// (at least once an epoch): every row, by its agent's name.
+    /// Returns every row the cost book has learnt, by agent name.
+    ///
+    /// The DCC's thread publishes it at least once an epoch.
     pub fn learnt_costs(&self) -> Vec<khora_core::agent::gorna::ProfileRow> {
         self.learnt_costs
             .read()
@@ -289,9 +282,9 @@ impl DccService {
             .unwrap_or_default()
     }
 
-    /// The handle on the DCC's last decision: its thread publishes one after
-    /// each live round and each replayed epoch, and a tool reads it from any
-    /// thread.
+    /// Returns the handle on the DCC's last decision, readable from any thread.
+    ///
+    /// Published after each live round and each replayed epoch.
     pub fn decision_watch(&self) -> khora_core::agent::gorna::DecisionWatch {
         self.decision_watch.clone()
     }
@@ -309,13 +302,10 @@ impl DccService {
         connected(&self.budget_channel)
     }
 
-    /// Registers an agent with a priority value: what the boot does for each
-    /// family's agent. A game adds a subsystem as a family
-    /// (`register_agent!`), never as a hand-written agent.
+    /// Registers a family's agent with a priority; higher runs first in a frame.
     ///
-    /// Higher priority values mean the agent is updated first in each frame.
-    /// It runs while its family is on
-    /// ([`Activation`](khora_core::agent::Activation)).
+    /// The boot calls it for each family (`register_agent!`). The agent runs
+    /// while its family is on ([`Activation`](khora_core::agent::Activation)).
     pub fn register_agent(&self, agent: Arc<std::sync::Mutex<dyn Agent>>, priority: f32) {
         let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
         registry.register(agent, priority);
@@ -339,11 +329,7 @@ impl DccService {
             .clone()
     }
 
-    /// Returns a shared handle to the live context.
-    ///
-    /// Used by observers (e.g. the editor's Control Plane workspace) that
-    /// want to read up-to-date hardware state, mode, and budget multiplier
-    /// each frame without going through `get_context()`'s clone.
+    /// Returns a shared handle to the live context, read without a clone.
     pub fn context_handle(&self) -> Arc<std::sync::RwLock<DccContext>> {
         Arc::clone(&self.context)
     }

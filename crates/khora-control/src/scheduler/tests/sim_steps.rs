@@ -272,7 +272,7 @@ fn the_remainder_carries_across_a_change_of_step() {
 }
 
 /// **Physics time tracks gameplay time to within one step** for each step
-/// GORNA chooses (1/30, 1/60, 1/120 s, as the scheduler reads them from a
+/// a game may set (1/30, 1/60, 1/120 s, as the scheduler reads them from a
 /// `Duration`): over ten thousand ticks, steps × step is within one step of
 /// ticks × tick.
 #[test]

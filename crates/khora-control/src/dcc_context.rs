@@ -31,14 +31,14 @@ pub struct HardwareState {
     pub available_vram: Option<u64>,
     /// Total VRAM in bytes (if known).
     pub total_vram: Option<u64>,
-    /// Currently-allocated system RAM in bytes, from the tracking allocator
-    /// (if a `MemoryMonitor` is feeding telemetry). `None` when unknown.
+    /// Currently-allocated system RAM in bytes, from the tracking allocator.
+    ///
+    /// `None` unless a `MemoryMonitor` feeds telemetry.
     pub current_ram_bytes: Option<u64>,
-    /// Developer-set system-RAM budget in bytes. When both this and
-    /// `current_ram_bytes` are known, the DCC derives `memory_pressure` and
-    /// degrades budgets as the ceiling approaches. `None` disables the signal
-    /// (no overhead, no effect) — it matters chiefly on memory-constrained
-    /// targets (console / mobile / iGPU).
+    /// Developer-set system-RAM budget in bytes; `None` disables the signal.
+    ///
+    /// With `current_ram_bytes`, it gives
+    /// [`memory_pressure`](DccContext::memory_pressure).
     pub memory_budget_bytes: Option<u64>,
 }
 
@@ -47,27 +47,21 @@ pub struct HardwareState {
 pub struct DccContext {
     /// Observed hardware state.
     pub hardware: HardwareState,
-    /// The families off in the state in force, as the last
-    /// [`ActivationChanged`](khora_core::telemetry::TelemetryEvent::ActivationChanged)
-    /// said: their agents are neither asked nor lent.
-    pub inactive: std::collections::BTreeSet<khora_core::agent::gorna::AgentId>,
-    /// Global budget multiplier applied to all frame budgets for graceful
-    /// performance degradation. Ranges from 0.0 (emergency) to 1.0 (full
-    /// performance).
+    /// The families off in the state in force; their agents are neither asked nor lent.
     ///
-    /// Driven by the DCC's frame governor ([`crate::governor`]), not a static
-    /// table: it moves this value so the frames' measured critical path
-    /// settles under the heuristic-suggested latency
-    /// (`AnalysisReport::suggested_latency_ms`, itself modulated by
-    /// thermal/battery/phase), with headroom. On `Critical` thermal/battery or
-    /// high memory pressure the DCC additionally clamps it to a hard safety
-    /// ceiling.
+    /// Set by the last
+    /// [`ActivationChanged`](khora_core::telemetry::TelemetryEvent::ActivationChanged).
+    pub inactive: std::collections::BTreeSet<khora_core::agent::gorna::AgentId>,
+    /// The multiplier on the frame target GORNA shares, from 0.0 (emergency) to 1.0.
+    ///
+    /// Driven by the frame governor ([`crate::governor`]) and capped by
+    /// [`safety_ceiling`]. See the book: concepts/gorna.md, "The cost model and
+    /// the frame governor".
     pub global_budget_multiplier: f32,
-    /// System-memory pressure in `[0, 1]` — `current_ram_bytes / memory_budget_bytes`,
-    /// or `0.0` when the budget is unset. A first-class resource signal alongside
-    /// thermal/CPU/GPU: drives graceful degradation here and feeds the AGDF
-    /// repack-headroom gate (a repack transiently doubles a column, so it is
-    /// declined under high pressure).
+    /// System-memory pressure in `[0, 1]`: `current_ram_bytes / memory_budget_bytes`.
+    ///
+    /// `0.0` when the budget is unset. Read by the heuristics and by
+    /// [`safety_ceiling`].
     pub memory_pressure: f32,
 }
 
@@ -87,14 +81,10 @@ impl Default for DccContext {
 pub const MEMORY_PRESSURE_CRITICAL: f32 = 0.95;
 
 impl DccContext {
-    /// Recomputes [`DccContext::memory_pressure`] from the current RAM usage versus
-    /// the developer-set budget.
+    /// Recomputes [`DccContext::memory_pressure`] from the RAM in use and the budget.
     ///
-    /// Pressure is `current_ram_bytes / memory_budget_bytes`, clamped to `[0, 1]`.
-    /// An unset budget yields `0.0` (the signal is inert). This is a first-class
-    /// resource signal consumed by the heuristic engine and the AGDF repack gate;
-    /// it no longer feeds the budget multiplier directly — that is the frame governor's
-    /// job — but it does drive the DCC's hard safety clamp (see [`safety_ceiling`]).
+    /// An unset budget yields `0.0`. The pressure reaches the multiplier only
+    /// through [`safety_ceiling`].
     pub fn refresh_memory_pressure(&mut self) {
         self.memory_pressure = match (
             self.hardware.current_ram_bytes,
@@ -110,11 +100,8 @@ impl DccContext {
 
 /// The hard ceiling on the budget multiplier for the current context.
 ///
-/// The frame governor regulates the multiplier smoothly toward the frame-time target,
-/// but emergencies (`Critical` thermal/battery, near-budget memory pressure)
-/// demand an immediate cap that does not wait for the loop to converge. This is
-/// the feedforward / safety half of the controller: it can only ever *lower* the
-/// multiplier, never raise it.
+/// It only ever lowers the multiplier, at once, on `Critical` thermal or
+/// battery or near-budget memory, without waiting for the governor.
 pub fn safety_ceiling(ctx: &DccContext) -> f32 {
     let mut ceiling = 1.0_f32;
     if ctx.hardware.thermal == ThermalStatus::Critical {
@@ -201,7 +188,7 @@ mod tests {
         let mut ctx = DccContext::default();
         ctx.hardware.thermal = ThermalStatus::Throttling;
         ctx.hardware.battery = BatteryLevel::Low;
-        // Throttling / Low now shape the setpoint, not a hard clamp.
+        // Throttling and Low shape the setpoint, not a hard clamp.
         assert_eq!(safety_ceiling(&ctx), 1.0);
     }
 }

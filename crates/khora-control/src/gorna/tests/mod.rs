@@ -12,19 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! GORNA as a protocol: [`decide`](super::decide) shares the frame into
-//! envelopes (`decide.rs`), the arbiter runs its proposers behind the shield
-//! and says why it decided (`arbiter.rs`), the arbitrator asks for offers,
-//! decides and lends each agent its envelope (`allocate.rs`,
-//! `importance.rs`), a round planned beyond its frame — switch charges,
-//! margin, growth — and the planner that learns them (`planning.rs`), the
-//! cost book that corrects each row's quoted host time and what a round makes
-//! of it (`cost_book.rs`), what the arbitrator keeps to explain its last
-//! decision, live or reissued from a journal (`decision.rs`), and it counts
-//! the agents whose report says they are stalled (`stalls.rs`).
-//!
-//! The fake agent, [`Bidder`], speaks the protocol (`offer`, `apply`,
-//! `report`).
+//! The tests of GORNA as a protocol, one module per concern, around a fake
+//! agent, [`Bidder`], that speaks it (`offer`, `apply`, `report`).
 
 mod allocate;
 mod arbiter;
@@ -206,9 +195,10 @@ fn run_quoting(name: &'static str, row: StrategyId, quoted_us: u64, factor: f64)
     }
 }
 
-/// Teaches `arbitrator`'s cost book, through [`TAUGHT_RUNS`] reports as the
-/// DCC feeds them, that `name`'s `row`, quoting `quoted_us` µs on the host,
-/// runs `factor` times its quote.
+/// Teaches `arbitrator`'s cost book that `name`'s `row`, quoting `quoted_us`
+/// µs on the host, runs `factor` times its quote.
+///
+/// It is fed [`TAUGHT_RUNS`] reports, as the DCC feeds them.
 fn teach(
     arbitrator: &mut GornaArbitrator,
     name: &'static str,
@@ -222,10 +212,11 @@ fn teach(
     }
 }
 
-/// Lends each of `agents` what `allocation` names for it — its envelope, pin
-/// and allowed rows — as the scheduler does at a frame start. A round decides
-/// and lends nothing itself; the tests of what an agent makes of its envelope
-/// lend it here.
+/// Lends each of `agents` its envelope, pin and allowed rows from
+/// `allocation`, as the scheduler does at a frame start.
+///
+/// A round decides and lends nothing itself; the tests of what an agent makes
+/// of its envelope lend it here.
 fn lend(allocation: &Allocation, agents: &[Arc<Mutex<dyn Agent>>]) {
     for agent in agents {
         let mut agent = agent.lock().expect("the agent lock");

@@ -12,17 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! GORNA, the DCC's side of the protocol.
+//! GORNA, the DCC's side of the protocol: one round per epoch, from each
+//! agent's [`Offer`] to the envelopes it [`decide`](decide())s.
 //!
-//! One round per epoch: the arbitrator asks every agent for an
-//! [`Offer`] (one `OfferRequest` each, with a deadline), corrects each row's
-//! quoted host time by what its [`CostBook`](cost_book::CostBook) learned, and
-//! [`decide`]s an envelope for each agent.
-//! The DCC publishes the allocation; the scheduler lends it at its next frame
-//! start, through [`Agent::apply`] — the DCC's thread never does. The DCC
-//! decides *how much*; each agent chooses *how*, within its envelope. A death
-//! spiral, too many stalled agents, or floors that do not fit make the round
-//! `Trigger::Safety`: every agent is lent its floor.
+//! See the book: concepts/gorna.md, "How the DCC shares the time".
 
 use crate::analysis::AnalysisReport;
 use crate::dcc_context::DccContext;
@@ -56,11 +49,10 @@ use planning::{Planner, PlanningConfig};
 
 const MAX_STALLED_AGENTS: usize = 2;
 
-/// The row `decision` planned for each agent it lends an envelope for: a
-/// `Safety` round lends every agent that offered its floor; any other round
-/// plans the rows its proposer chose. An agent that keeps the envelope it
-/// holds — late, or `Stable` — has no row planned: it runs on that envelope
-/// the row it chooses.
+/// Returns the row `decision` planned for each agent it lends an envelope for.
+///
+/// A `Safety` round plans every offering agent's floor. An agent that keeps
+/// the envelope it holds (late, or `Stable`) has no row planned.
 fn planned_rows(decision: &arbiter::Decision, bids: &[Bid]) -> Vec<(AgentId, StrategyId)> {
     let floor_of = |agent: AgentId| {
         (bids.iter())
@@ -107,9 +99,8 @@ pub struct GornaArbitrator {
     lock_timeout: Duration,
     /// Per-agent developer-control mode (default `Learning`).
     modes: HashMap<AgentId, AdaptationMode>,
-    /// The scheduler's latest wave grouping (agents that run concurrently),
-    /// refreshed by the DCC each tick via [`set_wave_plan`](Self::set_wave_plan).
-    /// Empty means serial execution.
+    /// The scheduler's latest waves of agents run side by side; empty means
+    /// serial execution.
     wave_plan: Vec<Vec<AgentId>>,
     /// The agents the last round found at the background, off the frame.
     background: Vec<AgentId>,
@@ -142,9 +133,10 @@ pub struct GornaArbitrator {
     importance: Vec<(AgentId, AgentImportance)>,
     /// The bytes the last round let the agents hold on each device.
     memory: PerDevice<Option<u64>>,
-    /// Each agent seen, by a weak reference to its lock: the name of one busy
-    /// through a round is known without locking it (the weak reference also
-    /// keeps a removed agent's lock address from being reused while held).
+    /// Each agent seen, by a weak reference to its lock.
+    ///
+    /// Names an agent busy through a round without locking it; the weak
+    /// reference keeps a removed agent's lock address from being reused.
     known: Vec<(Weak<Mutex<dyn Agent>>, AgentId)>,
 }
 
@@ -191,48 +183,50 @@ impl GornaArbitrator {
         self.modes.get(&agent_id).copied().unwrap_or_default()
     }
 
-    /// The allocation in force, if a round ran.
+    /// Returns the allocation in force, if a round ran.
     pub fn in_force(&self) -> Option<&Allocation> {
         self.in_force.as_ref()
     }
 
-    /// What decided the last round, and why: the proposer, the trigger, the
-    /// constraint that stopped the plan growing, the upgrades refused.
+    /// Returns what decided the last round, and why: the proposer, the trigger,
+    /// the constraint that stopped the plan growing, the upgrades refused.
     pub fn why(&self) -> &Why {
         &self.why
     }
 
-    /// The last round's offers, as the agents answered them — before the
-    /// DCC corrected them by what its cost book learned.
+    /// Returns the last round's offers as the agents answered them, before
+    /// the cost book corrected them.
     pub fn offers(&self) -> &[Offer] {
         &self.offers
     }
 
-    /// The agents the last round found at
-    /// [`ExecutionPhase::BACKGROUND`](khora_core::agent::ExecutionPhase::BACKGROUND):
-    /// they add nothing to the frame's critical path.
+    /// Returns the agents the last round found at the background phase.
+    ///
+    /// They run off the frame, so they add nothing to its critical path.
     pub fn background(&self) -> &[AgentId] {
         &self.background
     }
 
-    /// The target time for the frame the last round shared.
+    /// Returns the target time for the frame the last round shared.
     pub fn target(&self) -> Duration {
         self.target
     }
 
-    /// Each agent's importance, as the last round read it, by agent.
+    /// Returns each agent's importance as the last round read it, by agent.
     pub fn importance(&self) -> &[(AgentId, AgentImportance)] {
         &self.importance
     }
 
-    /// The bytes the last round let the agents hold on each device; `None`
-    /// where it knew no limit.
+    /// Returns the bytes the last round let the agents hold on each device;
+    /// `None` where it knew no limit.
     pub fn memory(&self) -> PerDevice<Option<u64>> {
         self.memory
     }
 
-    /// What the DCC learns between rounds for its planning: the switches
-    /// measured, the frames' spread, each agent's workload trend and class.
+    /// Returns what the DCC learns between rounds for its planning.
+    ///
+    /// The switches measured, the frames' spread, each agent's workload trend
+    /// and class.
     pub fn planner_mut(&mut self) -> &mut Planner {
         &mut self.planner
     }
@@ -242,19 +236,18 @@ impl GornaArbitrator {
         &self.planning
     }
 
-    /// What the DCC learnt of each (agent, row), to read.
+    /// Returns what the DCC learnt of each (agent, row).
     pub fn cost_book(&self) -> &CostBook {
         &self.book
     }
 
-    /// What the DCC learns of each (agent, row): the correction from its
-    /// quoted host time to its measured one.
+    /// Returns, to update, what the DCC learns of each (agent, row): the
+    /// correction from its quoted host time to its measured one.
     pub fn cost_book_mut(&mut self) -> &mut CostBook {
         &mut self.book
     }
 
-    /// The correction of each row the last round was offered, by agent and
-    /// row.
+    /// Returns the correction of each row the last round was offered.
     pub fn corrections(&self) -> &[(AgentId, StrategyId, Correction)] {
         &self.corrections
     }
@@ -264,8 +257,8 @@ impl GornaArbitrator {
         &self.planned
     }
 
-    /// The decision in force, as a tool reads it — `replayed` when it was
-    /// put in force from a journal. `None` before any round.
+    /// Returns the decision in force as a tool reads it, `replayed` when it
+    /// came from a journal; `None` before any round.
     pub fn view(&self, replayed: bool) -> Option<DecisionView> {
         let allocation = self.in_force.as_ref()?;
         Some(DecisionView {
@@ -281,17 +274,14 @@ impl GornaArbitrator {
         })
     }
 
-    /// One round of the protocol: asks every agent in `agents` for an offer
-    /// (one `OfferRequest` for the round's epoch and the frame's target),
-    /// corrects each row's quoted host time by the cost book, and
-    /// [`decide`]s each agent's envelope, pin and allowed rows. Returns the
-    /// allocation, which stays in force until the next round; the round
-    /// lends nothing itself — the scheduler lends the allocation at its next
-    /// frame start.
+    /// Runs one round of the protocol and returns the allocation it decides.
     ///
-    /// `trigger` says why the round opens. The round is `Trigger::Safety`
-    /// instead when `report` detects a death spiral, when too many agents are
-    /// stalled, or when the floors do not fit.
+    /// The allocation stays in force until the next round; the scheduler, not
+    /// the round, lends it at a frame start. The round is `Trigger::Safety`
+    /// instead of `trigger` when `report` detects a death spiral, too many
+    /// agents are stalled, or the floors do not fit.
+    ///
+    /// See the book: concepts/gorna.md, "How the DCC shares the time".
     pub fn allocate(
         &mut self,
         context: &DccContext,
@@ -458,11 +448,11 @@ impl GornaArbitrator {
         decision.allocation
     }
 
-    /// Puts a recorded epoch in force without asking for offers or deciding:
-    /// a replay. Its allocation is in force, with the reasons it was decided
-    /// for — its `why`, planning, corrections, planned rows and target. The
-    /// DCC publishes the allocation for the scheduler to lend, and the next
-    /// live round keeps from it the envelopes of the agents that answer late.
+    /// Puts a recorded epoch in force, with its reasons, without asking for
+    /// offers: a replay.
+    ///
+    /// The next live round keeps from it the envelopes of the agents that
+    /// answer late.
     pub fn reissue(&mut self, record: &EpochRecord) {
         self.epoch = self.epoch.max(record.allocation.epoch);
         self.in_force = Some(record.allocation.clone());

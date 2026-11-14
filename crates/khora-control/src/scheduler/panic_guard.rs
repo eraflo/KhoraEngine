@@ -25,9 +25,10 @@ use khora_core::agent::Place;
 use khora_core::lane::OutputDeck;
 use std::sync::Mutex;
 
-/// Runs an agent's work — its layer's run, its wake, its place's frame
-/// start — turning a panic into `false` so the frame goes on
-/// and the agent is reported as failed instead of taking the thread down.
+/// Runs an agent's work, turning a panic into `false` so the frame goes on.
+///
+/// The work is its layer's run, its wake or its place's frame start. A panic is logged,
+/// and the agent reported failed instead of taking the thread down.
 pub(super) fn run_guarded(id: AgentId, execute: impl FnOnce()) -> bool {
     let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(execute)).is_ok();
     if !ran {
@@ -36,9 +37,9 @@ pub(super) fn run_guarded(id: AgentId, execute: impl FnOnce()) -> bool {
     ran
 }
 
-/// After the run of `id` panicked: its place's lock is usable again, and the
-/// place reports the run stalled, saying it panicked, as a background run
-/// that panicked is.
+/// Makes `place` usable again after the run of `id` panicked, returning its report.
+///
+/// The report says the run stalled because it panicked, as a background run's does.
 pub(super) fn recover(place: &Mutex<Place>, id: AgentId) -> Option<Report> {
     place.clear_poison();
     locked(place).run_failed(format!("the run of `{id}` panicked"))
@@ -52,8 +53,8 @@ pub(super) fn outcome_of(ran: bool) -> CompletionOutcome {
     }
 }
 
-/// After an agent wrote straight into the frame's deck: checks its writes
-/// against its declaration, and drops them if it panicked.
+/// Checks the writes an agent made straight into the frame's deck against its
+/// declaration, and drops them if it panicked.
 pub(super) fn settle_deck(
     scheduler: &ExecutionScheduler,
     id: AgentId,

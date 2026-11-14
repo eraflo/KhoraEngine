@@ -173,7 +173,7 @@ Two pieces turn measurements into the frame's target, and the division of labour
 between them is the heart of the control loop.
 
 The **heuristics** shape a single *frame-time target* rather than scaling the budget
-directly. Thermal, battery, and engine-phase heuristics *relax* the target (a hot
+directly. The thermal and battery heuristics *relax* the target (a hot
 device aims for 30 FPS rather than 60). They answer the question "what frame time
 should we be aiming for?". The cost-model forecast can *tighten* what GORNA shares
 pre-emptively: the target it allocates on, never the governor's setpoint, so one
@@ -232,15 +232,19 @@ by accretion, without touching the existing ones.
 
 | Heuristic | Reads | Effect |
 |---|---|---|
-| **Phase** | the current engine phase | relaxes or tightens the target for that phase |
-| **Thermal** | GPU/CPU temperature | relaxes the target when hot; hard safety cap on critical |
-| **Battery** | battery level + AC state | relaxes the target on low battery; hard cap on critical |
-| **Frame time** | recent frame durations | tightens when frames run over target |
-| **Stutter** | frame-time variance | flags inconsistent timing |
-| **Trend** | frame-time slope | anticipates degradation before it becomes a stutter |
-| **CPU pressure** | CPU utilisation | rebalances toward CPU-light rows |
-| **GPU pressure** | GPU utilisation | rebalances toward GPU-light rows |
-| **Death spiral** | consecutive over-budget frames | the `Safety` allocation until recovery |
+| **Thermal** | the heat state | throttling: a target of 30 FPS at most; critical: 20 FPS. Both count as a pressure |
+| **Battery** | the battery level | low: 30 FPS at most; critical: 20 FPS, and a pressure |
+| **Frame time** | the frames' critical path, from 10 frames on | above 18 ms: a round opens; above 25 ms: a pressure too |
+| **Stutter** | its variance | above 4 ms²: a round opens |
+| **Trend** | its slope | rising faster than 2 ms a window: a round opens before it stutters |
+| **CPU pressure** | the CPU's load | above 95 %: a round opens, and a pressure |
+| **GPU pressure** | the GPU's load | above 90 %: a round opens; above 95 %: a pressure too |
+| **Memory pressure** | memory used against its budget | above 85 %: a round opens; above 95 %: a pressure too. Inert with no budget set |
+| **Allocation churn** | how much the memory used varies (its coefficient of variation) | above 0.15: an alert only, never a change |
+| **Death spiral** | the pressures above | three or more at once: the `Safety` allocation, every agent at its floor |
+
+A target the heuristics raise is a ceiling on the frame rate the round plans
+for; the frame governor then sets how much of it the agents are lent.
 
 One firm constraint runs through all of this: **GORNA can never force a phase.**
 Adaptation changes the HOW, never the WHAT.

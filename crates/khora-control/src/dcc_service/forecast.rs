@@ -19,23 +19,12 @@ use crate::cost_model::CostModel;
 use khora_core::agent::gorna::AgentId;
 use std::collections::HashMap;
 
-/// Forecasts the frame's empirical cost (`c·f(n)`), each agent's model read at
-/// **its own** workload: `workloads` holds the latest `n` each agent reported,
-/// and a model whose agent reported none is not counted. Agents are grouped
-/// into concurrent waves: a wave costs its **critical path** (the `max` of its
-/// members), and the frame is the sum over waves.
+/// Forecasts the frame's empirical cost: each wave's slowest member, summed over waves.
 ///
-/// With an empty `wave_plan` — serial execution, or before the hot path has
-/// published one — every agent is its own singleton wave, so this reduces to
-/// the plain per-agent sum. A model for an agent absent from the plan is
-/// likewise summed as its own singleton (conservative).
-///
-/// An agent of `background` runs off the frame, at
-/// [`ExecutionPhase::BACKGROUND`](khora_core::agent::ExecutionPhase::BACKGROUND):
-/// it adds nothing to the frame, whatever its model.
-///
-/// Returns `None` until at least one agent has enough distinct-`n` samples to
-/// fit a model — before that the DCC has nothing to anticipate with.
+/// Each agent's model is read at its latest reported workload; an agent that
+/// reported none is not counted. An agent absent from `wave_plan` is its own
+/// wave, and an agent of `background` runs off the frame and adds nothing.
+/// `None` until some agent's model has a fit.
 pub(super) fn forecast_frame_ms(
     models: &HashMap<AgentId, CostModel>,
     workloads: &HashMap<AgentId, f64>,

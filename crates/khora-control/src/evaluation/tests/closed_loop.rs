@@ -73,12 +73,13 @@ fn largest_move(sim: &Simulation, since: Duration, rest: f32) -> f32 {
         .fold(0.0, f32::max)
 }
 
-/// **A hitch moves the multiplier less than 0.05.** The engine settled
-/// twice: with frame time to spare (a 2 ms host part, every agent on its
-/// best row) and loaded (a 9 ms host part, the multiplier lowered to fit).
-/// Once settled — no decision for five seconds — one frame of 100 ms, of a
-/// second or of ten seconds: over the ten seconds of frames that follow, no
-/// decision takes the multiplier 0.05 from where it had settled.
+/// **A hitch moves the multiplier less than 0.05.**
+///
+/// The engine settled twice: with frame time to spare (a 2 ms host part, every
+/// agent on its best row) and loaded (a 9 ms host part, the multiplier lowered
+/// to fit). Once settled — no decision for five seconds — one frame of 100 ms,
+/// of a second or of ten seconds: over the ten seconds of frames that follow,
+/// no decision takes the multiplier 0.05 from where it had settled.
 #[test]
 fn a_hitch_moves_the_multiplier_less_than_five_hundredths() {
     for host_ms in [2.0, 9.0] {
@@ -106,10 +107,12 @@ fn a_hitch_moves_the_multiplier_less_than_five_hundredths() {
 }
 
 /// **A sustained overload returns the frame under the setpoint within a few
-/// epochs.** The engine runs with time to spare (a 2 ms host part, 13.5 ms
-/// frames); then the host part grows to 9 ms for good — the frame would
-/// last 20.5 ms. Within six epochs, the frames are back under the
-/// setpoint, and stay there for the ten seconds that follow.
+/// epochs.**
+///
+/// The engine runs with time to spare (a 2 ms host part, 13.5 ms frames); then
+/// the host part grows to 9 ms for good — the frame would last 20.5 ms. Within
+/// six epochs, the frames are back under the setpoint, and stay there for the
+/// ten seconds that follow.
 #[test]
 fn a_sustained_overload_returns_the_frame_under_the_setpoint_within_a_few_epochs() {
     let mut sim = engine(GovernorConfig::default(), three_agents(), 2.0);
@@ -146,10 +149,11 @@ fn a_sustained_overload_returns_the_frame_under_the_setpoint_within_a_few_epochs
     );
 }
 
-/// Two agents whose plans straddle the governor's band: with a 7 ms host
-/// part, `scene` on its floor makes 9 ms frames — far under the 15 ms
-/// target, so the governor raises — and on its best row 16 ms — over it,
-/// so the governor lowers. No plan holds still.
+/// Two agents whose plans straddle the governor's band, so no plan holds still.
+///
+/// With a 7 ms host part, `scene` on its floor makes 9 ms frames, far under
+/// the 15 ms target, so the governor raises; on its best row 16 ms, over it,
+/// so the governor lowers.
 fn straddling_agents() -> Vec<SimAgent> {
     vec![
         SimAgent::new(
@@ -174,13 +178,13 @@ fn round_trips(sim: &Simulation, agents: usize, since: Duration) -> usize {
         .sum()
 }
 
-/// **In steady state, a row round-trips at most once per five seconds.** No
-/// plan of the straddling agents holds still: the full row overruns the
-/// target, the floor leaves it far under. Over sixty seconds of frames once
-/// the engine has settled, the rows go up and back at most once per five
-/// seconds — the governor remembers the multiplier that overran. The
-/// scenario is one that cycles: without that memory, the same engine
-/// round-trips more often.
+/// **In steady state, a row round-trips at most once per five seconds.**
+///
+/// No plan of the straddling agents holds still: the full row overruns the
+/// target, the floor leaves it far under. Over sixty seconds of frames once the
+/// engine has settled, the rows go up and back at most once per five seconds —
+/// the governor remembers the multiplier that overran. The scenario is one that
+/// cycles: without that memory, the same engine round-trips more often.
 #[test]
 fn in_steady_state_a_row_round_trips_at_most_once_per_five_seconds() {
     let window = 60.0;
@@ -247,11 +251,12 @@ fn heavy_floors() -> Vec<SimAgent> {
 }
 
 /// **With a host part above the target, the multiplier stops at the first
-/// all-floors plan.** The host part alone (16 ms) is over the 15 ms target:
-/// no plan brings the frame under it. The governor lowers the multiplier
-/// until GORNA's plan puts every agent on its floor (no lever left),
-/// then lowers it no more — lowering further would change nothing — and
-/// stops above its own floor.
+/// all-floors plan.**
+///
+/// The host part alone (16 ms) is over the 15 ms target: no plan brings the
+/// frame under it. The governor lowers the multiplier until GORNA's plan puts
+/// every agent on its floor (no lever left), then lowers it no more — lowering
+/// further would change nothing — and stops above its own floor.
 #[test]
 fn with_a_host_part_above_the_target_the_multiplier_stops_at_the_first_all_floors_plan() {
     let cfg = GovernorConfig::default();

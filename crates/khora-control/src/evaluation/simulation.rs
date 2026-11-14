@@ -86,10 +86,10 @@ pub struct SimMetrics {
     pub frames: u64,
     /// Frames over the setpoint.
     pub frames_over: u64,
-    /// Frames over the setpoint once the engine runs on what it learnt:
-    /// not those before the governor's first decision, nor those within
-    /// half a second of a load's step (a change of more than a tenth at
-    /// once) — the governor's to answer.
+    /// Frames over the setpoint once the engine runs on what it learnt.
+    ///
+    /// Not counted: those before the governor's first decision, and those
+    /// within half a second of a load's step (more than a tenth at once).
     pub frames_over_steady: u64,
     /// The longest frame.
     pub worst_frame: Duration,
@@ -160,8 +160,10 @@ pub struct Simulation {
 
 impl Simulation {
     /// The engine with `agents` and a host part of `host`, deciding through
-    /// `arbiters`, its noise drawn from `seed`. Its first epoch is decided at
-    /// the governor's resting multiplier and runs from the first frame.
+    /// `arbiters`, its noise drawn from `seed`.
+    ///
+    /// Its first epoch is decided at the governor's resting multiplier and
+    /// runs from the first frame.
     pub fn new(
         cfg: GovernorConfig,
         agents: Vec<SimAgent>,
@@ -445,9 +447,8 @@ impl Simulation {
             }
             self.quality += WEIGHT * f64::from(agent.rows[row].2);
             agents_time += truth;
-            // What the agent reports of its run: the row, its time, its load
-            // as its workload, and the preparation on the first run of a row
-            // it switched to.
+            // The quote stands for the workload; a row's preparation is
+            // reported on its first run after a switch.
             reports.push(Report {
                 agent: AgentId::new(agent.name),
                 epoch: self.lent,

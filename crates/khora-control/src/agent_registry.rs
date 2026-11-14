@@ -237,11 +237,12 @@ mod tests {
         }
     }
 
-    /// **The registry refuses a second agent under a name it holds.** The
-    /// frame's completion map, the phase order and the budgets are keyed by
-    /// the name, so a second `narrator` could never be scheduled as itself:
-    /// the first stays, the second is not registered, and an agent with
-    /// another name still is.
+    /// **The registry refuses a second agent under a name it holds.**
+    ///
+    /// The frame's completion map, the phase order and the budgets are keyed by
+    /// the name, so a second `narrator` could never be scheduled as itself: the
+    /// first stays, the second is not registered, and an agent with another
+    /// name still is.
     #[test]
     fn the_registry_refuses_a_duplicate_name() {
         let mut registry = AgentRegistry::new();
@@ -270,9 +271,10 @@ mod tests {
         );
     }
 
-    /// **The active agents come with their ids.** Of `narrator` and
-    /// `chorus`, with `chorus` off, only `narrator` is listed, under its id
-    /// and as the agent registered under it.
+    /// **The active agents come with their ids.**
+    ///
+    /// Of `narrator` and `chorus`, with `chorus` off, only `narrator` is
+    /// listed, under its id and as the agent registered under it.
     #[test]
     fn the_active_agents_are_listed_with_their_ids() {
         let mut registry = AgentRegistry::new();
@@ -291,9 +293,10 @@ mod tests {
         assert!(Arc::ptr_eq(&listed[0].1, &narrator));
     }
 
-    /// **The registry remembers where each agent comes from.** An origin is
-    /// kept per name, a second `set_origin` for one name replaces the first,
-    /// and a name never given one has none.
+    /// **The registry remembers where each agent comes from.**
+    ///
+    /// An origin is kept per name, a second `set_origin` for one name replaces
+    /// the first, and a name never given one has none.
     #[test]
     fn the_registry_keeps_one_origin_per_agent() {
         let mut registry = AgentRegistry::new();
@@ -326,11 +329,13 @@ mod tests {
             "another agent's origin is untouched"
         );
     }
-    /// **A poisoned agent still holds its name.** An agent whose lock a panic
-    /// poisoned (one that panicked while running, say) is still registered,
-    /// and still answers to its name: a second agent under that name is
-    /// refused like any other duplicate — the registry reads names through
-    /// the poison, the agents' already registered as much as the newcomer's.
+    /// **A poisoned agent still holds its name.**
+    ///
+    /// An agent whose lock a panic poisoned (one that panicked while running,
+    /// say) is still registered, and still answers to its name: a second agent
+    /// under that name is refused like any other duplicate — the registry reads
+    /// names through the poison, the agents' already registered as much as the
+    /// newcomer's.
     #[test]
     fn a_poisoned_agent_still_holds_its_name() {
         let mut registry = AgentRegistry::new();

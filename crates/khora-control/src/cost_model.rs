@@ -12,22 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Empirical cost model — fits a subsystem's measured runtime to a complexity
-//! class so the DCC can *anticipate* a budget breach instead of only reacting to
-//! it.
+//! The empirical cost model: fits measured `(n, time)` samples to `c · f(n)`
+//! for a complexity class, so the DCC can forecast a budget breach.
 //!
-//! Big-O cannot be derived from arbitrary code, so the engine **measures** it:
-//! given `(n, time)` samples (workload size vs observed milliseconds), it fits a
-//! constant factor `c` to each candidate class `f(n)` by least squares and keeps
-//! the best-fitting one. The prediction is then `cost(n) ≈ c · f(n)` — the same
-//! shape a database query optimiser uses (cardinality × per-row cost). This
-//! learns the cost *on the hardware it actually runs on*, instead of trusting a
-//! compile-time guess, and lets the cold path forecast "at this growth rate the
-//! frame budget breaks at ~N entities".
-//!
-//! This module is the pure, dependency-free *algorithm*. Feeding it live samples
-//! from telemetry and consuming its forecast in arbitration is the integration
-//! step performed by the DCC.
+//! See the book: concepts/agdf.md, "Layer 1 — observe and advise".
 
 /// A candidate complexity class the cost model can fit a measured workload to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,8 +87,9 @@ impl CostModel {
         }
     }
 
-    /// Records one `(n, time_ms)` observation. Overwrites the oldest sample once
-    /// the ring is full. Non-finite inputs are ignored.
+    /// Records one `(n, time_ms)` observation, overwriting the oldest once full.
+    ///
+    /// Non-finite inputs are ignored.
     pub fn record(&mut self, n: f64, time_ms: f64) {
         if !n.is_finite() || !time_ms.is_finite() {
             return;
@@ -124,12 +113,10 @@ impl CostModel {
         self.samples.is_empty()
     }
 
-    /// Fits each complexity class by least squares and returns the best
-    /// `(class, c)` — the class with the smallest residual and the constant
-    /// factor that scales its `f(n)` to the data.
+    /// Returns the least-squares `(class, c)` with the smallest residual.
     ///
-    /// Returns `None` until there are at least two samples with distinct `n`
-    /// (a single workload size can't distinguish the classes).
+    /// `None` until there are two samples of distinct `n`: a single workload
+    /// size can't distinguish the classes.
     pub fn best_fit(&self) -> Option<(ComplexityClass, f64)> {
         if self.samples.len() < 2 {
             return None;
@@ -170,6 +157,7 @@ impl CostModel {
     }
 
     /// Predicts the cost in milliseconds at workload size `n` from the best fit.
+    ///
     /// `None` until [`best_fit`](Self::best_fit) is available.
     pub fn predict_ms(&self, n: f64) -> Option<f64> {
         self.best_fit().map(|(class, c)| c * class.f(n))
@@ -177,10 +165,8 @@ impl CostModel {
 
     /// The most recently recorded observation's time in milliseconds, if any.
     ///
-    /// Fallback cost signal when [`predict_ms`](Self::predict_ms) has no fit yet
-    /// (a stable workload never produces two distinct `n` values, so the model
-    /// can't pick a complexity class — but the raw measurement is still the best
-    /// available anchor).
+    /// The fallback when [`predict_ms`](Self::predict_ms) has no fit: a stable
+    /// workload never yields two distinct `n`.
     pub fn latest_ms(&self) -> Option<f64> {
         if self.samples.is_empty() {
             return None;

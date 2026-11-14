@@ -83,13 +83,9 @@ const CEILING_MARGIN: f32 = 0.06;
 /// Drives the budget multiplier so the frames' critical path settles under the
 /// setpoint, with headroom.
 ///
-/// A ratio law, not a PID: the multiplier is scaled by `target / estimate`,
-/// which inverts the frame's cost in the budget in one step when the agents'
-/// work follows their envelopes. Around it, what makes it hold on a plant that
-/// moves by whole rows and a frame or two late: a band it does not act in, a
-/// memory of the multiplier that ran over, decisions only on frames measured
-/// after the last one took effect, hitches left out, and no lowering when no
-/// agent has a row left to give.
+/// A ratio law, not a PID: each decision scales the multiplier by
+/// `target / estimate`. See the book: concepts/gorna.md, "The cost model and
+/// the frame governor".
 #[derive(Debug, Clone)]
 pub struct FrameGovernor {
     cfg: GovernorConfig,
@@ -102,8 +98,9 @@ pub struct FrameGovernor {
     clock: f64,
     /// Frames observed since the last change was lent.
     since_change: u32,
-    /// Frame time, in seconds, the estimate has measured since it started
-    /// again: until it spans `filter_seconds`, the estimate is a plain
+    /// Frame time, in seconds, the estimate has measured since it started again.
+    ///
+    /// Until it spans `filter_seconds`, the estimate is a plain
     /// duration-weighted mean, so no one frame weighs more than its share.
     measured: f64,
     /// Consecutive frames over the setpoint since the last change.
@@ -131,17 +128,15 @@ impl FrameGovernor {
         }
     }
 
-    /// One frame report: the frame's critical path, against `setpoint`.
+    /// Observes one frame's critical path against `setpoint`, returning the
+    /// sample the estimate took.
     ///
-    /// The estimate is a low-pass weighted by the frame's own length, so it
-    /// spans the same time at any frame rate. A frame longer than
-    /// `hitch_ratio × setpoint` right after one within the setpoint is a
-    /// hitch — a load, a stall, nothing a row could fix — and is left out;
-    /// one that follows a long frame is load, and enters bounded.
-    ///
-    /// Returns the sample the estimate took: `None` for a hitch or a frame
-    /// that took no time. The planner reads its margin from these samples, so
-    /// both read the same frames.
+    /// The estimate is a low-pass weighted by each frame's length, so it spans
+    /// the same time at any frame rate. A frame over `hitch_ratio × setpoint`
+    /// right after one within the setpoint is a hitch and is left out (`None`);
+    /// one after a long frame is load, and enters bounded. A frame that took
+    /// no time is left out too. The planner reads its margin from the returned
+    /// samples.
     pub fn observe(&mut self, frame: Duration, setpoint: Duration) -> Option<Duration> {
         let seconds = frame.as_secs_f64();
         // A frame that took no time measured nothing.
@@ -179,14 +174,12 @@ impl FrameGovernor {
         Some(Duration::from_secs_f64(sample))
     }
 
-    /// One DCC tick: the new multiplier when the governor changes it.
-    /// `no_lever` says lowering the multiplier would change nothing (every
-    /// agent is on its floor).
+    /// Decides on one DCC tick, returning the new multiplier when it changes.
     ///
-    /// It acts once `settle_frames` frames, and `filter_seconds` of frame
-    /// time, were measured since its last change was lent ([`lent`]) — the
-    /// change has reached the frames, and the estimate spans its time — or at
-    /// once when `panic_frames` frames in a row ran over the setpoint.
+    /// `no_lever` says every agent is on its floor, so lowering would change
+    /// nothing. It acts once `settle_frames` frames and `filter_seconds` were
+    /// measured since its last change was [`lent`], or at once after
+    /// `panic_frames` frames in a row over the setpoint.
     ///
     /// [`lent`]: Self::lent
     pub fn decide(&mut self, setpoint: Duration, no_lever: bool) -> Option<f32> {
@@ -243,11 +236,9 @@ impl FrameGovernor {
         Some(next)
     }
 
-    /// The last change was lent to the agents: what was measured before says
-    /// nothing of the frames under it, so the estimate starts again from them.
-    /// The DCC calls it when an epoch carries the multiplier out; until then a
-    /// governor driving a real allocation would be deciding on frames that
-    /// never saw its last decision.
+    /// Restarts the estimate once an epoch has lent the last change to the agents.
+    ///
+    /// What was measured before says nothing of the frames under the change.
     pub fn lent(&mut self) {
         self.restart();
     }

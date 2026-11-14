@@ -34,9 +34,11 @@ use khora_core::EngineContext;
 use super::layer::{gpu_with, LaneLayer};
 use super::{lend, time_of, LaneAgent, Row};
 
-/// Whether a refusal for `reason` leaves the lane without a price: an input
-/// absent or unusable. A lock not obtained in time is contention, and a
-/// missing budget GORNA's own doing: the price stands.
+/// Returns whether a refusal for `reason` leaves the lane without a price: an
+/// input absent or unusable.
+///
+/// A lock not obtained in time is contention, and a missing budget GORNA's
+/// own doing: the price stands.
 fn unusable(reason: Reason) -> bool {
     matches!(
         reason,
@@ -49,25 +51,25 @@ fn unusable(reason: Reason) -> bool {
 }
 
 impl LaneAgent {
-    /// The row chosen, if the menu has any.
+    /// Returns the row chosen, if the menu has any.
     pub(super) fn row(&self) -> Option<Row> {
         self.menu.get(self.current).copied()
     }
 
-    /// The row of `id`, as an index into the menu: a family offers each id
-    /// once.
+    /// Returns the row of `id`, as an index into the menu: a family offers
+    /// each id once.
     pub(super) fn row_of(&self, id: StrategyId) -> Option<usize> {
         self.menu.iter().position(|row| row.id == id)
     }
 
-    /// The agent's place, locked.
+    /// Returns the agent's place, locked.
     pub(super) fn locked_place(&self) -> MutexGuard<'_, Place> {
         self.place
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// The row running: the one installed at `place`, else the one chosen.
+    /// Returns the row running: the one installed at `place`, else the one chosen.
     pub(super) fn running(&self, place: &Place) -> StrategyId {
         place
             .installed_row()
@@ -75,7 +77,7 @@ impl LaneAgent {
             .unwrap_or(StrategyId::Balanced)
     }
 
-    /// The row that ran last at `place`, if any did.
+    /// Returns the row that ran last at `place`, if any did.
     pub(super) fn ran(&self, place: &Place) -> Option<usize> {
         let report = place.last_run().report.as_ref()?;
         self.row_of(report.row)
@@ -100,8 +102,8 @@ impl LaneAgent {
         }
     }
 
-    /// The frame's target and clear colour, for a family one of whose lanes
-    /// reads them: only such a contention names the `FrameContext`.
+    /// Returns the frame's target and clear colour for a family one of whose
+    /// lanes reads them: only such a contention names the `FrameContext`.
     pub(super) fn frame(&self, context: &EngineContext<'_>) -> Option<Arc<FrameContext>> {
         let frame_context = TypeId::of::<Arc<FrameContext>>();
         self.contentions
@@ -111,10 +113,11 @@ impl LaneAgent {
             .flatten()
     }
 
-    /// Marks `row` failed under the envelope lent, so the choice passes it by
-    /// until the next allocation — its own lane's runs would price it again,
-    /// and it would fail again — and falls back from it: within the envelope
-    /// once one is lent, to a cheaper row before the first allocation.
+    /// Marks `row` failed under the envelope lent, and falls back from it.
+    ///
+    /// The choice passes it by until the next allocation: its own lane's runs
+    /// would price it again, and it would fail again. The fallback is within
+    /// the envelope once one is lent, a cheaper row before.
     pub(super) fn fail(&mut self, row: usize) {
         if self.lent.is_some() {
             if let Some(failed) = self.failed.get_mut(row) {
@@ -125,14 +128,14 @@ impl LaneAgent {
         self.choose_row();
     }
 
-    /// Installs the row chosen at `place`: nothing when it is installed or
-    /// staged already; the layer kept for it, reinstated, preparing nothing;
-    /// beside an installed layer, a preparation of the new one, left at the
-    /// place for the scheduler to run off the frame while the installed one
-    /// keeps running; or, into an empty place, a new layer prepared here on
-    /// this frame's inputs and installed at once. A row that fails to prepare
-    /// here is failed, and the row the agent falls back to is installed
-    /// instead.
+    /// Installs the row chosen at `place`, unless it is installed or staged
+    /// already.
+    ///
+    /// A kept layer is reinstated. Beside an installed layer, the new one is
+    /// left to prepare off the frame; into an empty place, it is prepared here
+    /// and installed at once. A row that fails to prepare here falls back.
+    ///
+    /// See the book: concepts/agents-and-lanes.md, "Lanes are layers".
     pub(super) fn install(
         &mut self,
         place: &mut Place,
@@ -213,10 +216,10 @@ impl LaneAgent {
         }
     }
 
-    /// The preparation of `row`'s layer, off the frame: a fresh lane, made
-    /// here, prepared by the job on the context the scheduler lends it — the
-    /// inputs lent as for a run, on `frame` when the lane reads it — under
-    /// the lane's own declaration and the graphics it prepares with. A lane
+    /// Returns the preparation of `row`'s layer, to run off the frame.
+    ///
+    /// A fresh lane, prepared on the context the scheduler lends the job, on
+    /// `frame` when the lane reads it, under the lane's own declaration. A lane
     /// that fails to prepare is shut down, and the job says why.
     fn preparation(
         &self,
@@ -262,18 +265,18 @@ impl LaneAgent {
         })
     }
 
-    /// Answers a preparation that failed off the frame for `id`'s row: the
-    /// row is failed, as one failing to prepare here is. Returns the row the
-    /// agent is left on when there is nothing to fall back to.
+    /// Fails `id`'s row after its preparation failed off the frame.
+    ///
+    /// Returns the row the agent is left on when there is nothing to fall
+    /// back to.
     fn prepare_failed(&mut self, id: StrategyId) -> Option<usize> {
         let failed = self.menu.iter().position(|row| row.id == id)?;
         self.fail(failed);
         (self.current == failed).then_some(failed)
     }
 
-    /// Stages `row`'s layer unprepared: what is left when it failed to
-    /// prepare and there is nothing to fall back to — it runs, and fails
-    /// where it can be seen.
+    /// Stages `row`'s layer unprepared, when it failed to prepare and nothing
+    /// is left to fall back to: it runs, and fails where it can be seen.
     fn stage_unprepared(&self, row: usize, place: &mut Place) {
         let row = self.menu[row];
         let layer = LaneLayer::new(
@@ -286,7 +289,7 @@ impl LaneAgent {
         place.stage(Box::new(layer), std::time::Duration::ZERO);
     }
 
-    /// The terms the chosen row runs on, at the `fixed_step` its place holds.
+    /// Returns the terms the chosen row runs on, at the `fixed_step` its place holds.
     pub(super) fn terms(&self, fixed_step: Option<std::time::Duration>) -> Terms {
         let full = self.full_quote.as_ref();
         Terms {
@@ -304,10 +307,12 @@ impl LaneAgent {
         }
     }
 
-    /// The row to fall back to from `from`: the dearest row quoted cheaper
-    /// than `from`, or, with no quote to go by, the level below in the same
-    /// lane — a lane's levels come cheapest first, a family's lanes in no
-    /// order. `from` itself when nothing is known to be cheaper.
+    /// Returns the row to fall back to from `from`; `from` itself when nothing
+    /// is known to be cheaper.
+    ///
+    /// The dearest row quoted cheaper than `from`, else the level below in the
+    /// same lane: a lane's levels come cheapest first, a family's lanes in no
+    /// order.
     pub(super) fn cheaper_row(&self, from: usize) -> usize {
         let quoted = |row: usize| self.quotes.get(row).copied().flatten().map(|c| time_of(&c));
         if let Some(limit) = quoted(from) {
@@ -325,10 +330,11 @@ impl LaneAgent {
         }
     }
 
-    /// One frame of the family's place for a caller that drives the agent
-    /// itself: the wakes waiting answered, the frame start, the installed
-    /// layer's run, and the wakes that run raised answered at once, so the
-    /// next call runs what they chose.
+    /// Drives one frame of the family's place for a caller that drives the
+    /// agent itself.
+    ///
+    /// The wakes the run raises are answered at once, so the next call runs
+    /// what they chose.
     pub(super) fn whole_frame(&mut self, context: &mut EngineContext<'_>) -> Option<Report> {
         let place = Arc::clone(&self.place);
         let mut place = place
@@ -354,8 +360,10 @@ impl LaneAgent {
     }
 
     /// Runs here, at once, the preparation the agent left at `place`, for a
-    /// caller with no scheduler to run it off the frame; one that fails is
-    /// answered at once too, so the row fallen back to is prepared as well.
+    /// caller with no scheduler to run it off the frame.
+    ///
+    /// One that fails is answered at once too, so the row fallen back to is
+    /// prepared as well.
     fn prepare_here(&mut self, place: &mut Place, context: &mut EngineContext<'_>) {
         for _ in 0..=self.menu.len() {
             let Some(preparation) = place.take_preparation() else {
@@ -369,9 +377,9 @@ impl LaneAgent {
             self.wake(&why, place, context);
         }
     }
-    /// Takes in what the last run found, answers each wake, quotes every lane
-    /// when the quotes may no longer hold, chooses the row within the
-    /// envelope, installs it, and sets the terms it runs on.
+
+    /// Answers the wakes `why`, installs the row chosen within the envelope,
+    /// and sets the terms it runs on.
     pub(super) fn answer(
         &mut self,
         why: &[Wake],

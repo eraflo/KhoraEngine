@@ -24,9 +24,10 @@ use khora_core::renderer::GraphicsDevice;
 use khora_core::{EngineContext, Runtime};
 use std::sync::Arc;
 
-/// The frame start of each family's place: its staged layer is swapped in,
-/// and the kept layers it can no longer keep are released. A layer that
-/// panics while released fails its own family's frame start, not the frame.
+/// Starts each family's place's frame: swaps its staged layer in, releases the kept ones
+/// it cannot keep.
+///
+/// A layer that panics while released fails its own family's frame start, not the frame.
 pub(super) fn swap_layers(met: &[MetAgent], runtime: &Runtime) {
     let mut gpu = gpu_of(runtime);
     for (_, known) in met {
@@ -37,10 +38,10 @@ pub(super) fn swap_layers(met: &[MetAgent], runtime: &Runtime) {
     }
 }
 
-/// Wakes every agent whose place gathered a wake, under its lock and then
-/// its place's — the one order both are ever taken in — with the permit of
-/// its own contention: what it quotes and prepares with. It touches no
-/// world, and writes nothing a later agent reads.
+/// Wakes every agent whose place gathered a wake, with the permit of its own contention.
+///
+/// Takes the agent's lock, then its place's: the one order both are ever taken in. Touches
+/// no world, and writes nothing a later agent reads.
 pub(super) fn wake_agents(met: &[MetAgent], runtime: &Arc<Runtime>, bus: &LaneBus) {
     for (agent, known) in met {
         let id = &known.id;
@@ -79,8 +80,8 @@ pub(super) fn wake_agents(met: &[MetAgent], runtime: &Arc<Runtime>, bus: &LaneBu
     }
 }
 
-/// The device and pipeline system a layer is released with, as the runtime
-/// holds them; headless without a device.
+/// Returns the device and pipeline system a layer is released with; headless without a
+/// device.
 fn gpu_of(runtime: &Runtime) -> GpuSetup<'_> {
     let mut gpu = match runtime.look_up::<Arc<dyn GraphicsDevice>>() {
         Some(device) => GpuSetup::new(device.as_ref()),

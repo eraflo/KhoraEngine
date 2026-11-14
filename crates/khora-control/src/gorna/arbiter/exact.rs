@@ -23,13 +23,15 @@ use super::greedy::{over_ceiling, Greedy};
 use super::problem::{value, value_of, Problem};
 use super::{planned, Proposal, Proposer};
 
-/// The nodes an [`Exact`] search visits at most, unless told otherwise: at 10
-/// agents × 4 rows, under 1 ms in a release build on the worst rounds
+/// The nodes an [`Exact`] search visits at most, unless told otherwise.
+///
+/// At 10 agents × 4 rows, under 1 ms in a release build on the worst rounds
 /// measured.
 pub(crate) const DEFAULT_NODE_BUDGET: u32 = 3_072;
 
-/// Searches each agent's rows for the plan of most weighed quality that fits,
-/// starting from the Q-RAM pass's plan, and stops at its node budget with
+/// A branch-and-bound search for the plan of most weighed quality that fits.
+///
+/// It starts from the Q-RAM pass's plan, and stops at its node budget with
 /// the best plan found.
 pub(crate) struct Exact {
     /// The nodes the search visits at most.
@@ -45,17 +47,11 @@ impl Default for Exact {
 }
 
 impl Exact {
-    /// The plan the search finds for `round`, and the nodes it visited.
-    /// `bids` and `base` are as [`Proposer::propose`] takes them.
+    /// Returns the plan the search finds for `round`, and the nodes it visited.
     ///
-    /// The search starts from the greedy's plan, so it never returns one of
-    /// less weighed quality. Each agent's candidates — its base row, and
-    /// every row its policies allow within a `Stable` ceiling; its base row
-    /// alone when it holds a kept envelope — are tried best first. A branch
-    /// is cut when what it can still reach does not beat the best plan found,
-    /// or when it breaches with every agent left at its base row (only where
-    /// those base rows cost no more than any of their candidates). The plan
-    /// found first is kept on equal worth.
+    /// `bids` and `base` are as [`Proposer::propose`] takes them. Starting
+    /// from the greedy's plan, it never returns one of less weighed quality;
+    /// the plan found first is kept on equal worth.
     pub(crate) fn search(
         &self,
         round: &Round<'_>,
@@ -146,9 +142,10 @@ struct Candidate {
     worth: f64,
 }
 
-/// `bid`'s candidates: its base row, and every row its policies allow within
-/// its `Stable` ceiling — its base row alone when it holds a kept envelope —
-/// best first, the base row first among equals.
+/// Returns `bid`'s candidates, best first, the base row first among equals.
+///
+/// Its base row, and every row its policies allow within its `Stable`
+/// ceiling; its base row alone when it holds a kept envelope.
 fn candidates(round: &Round<'_>, bid: &Bid, plan: &Plan) -> Vec<Candidate> {
     let rows = &bid.offer.rows;
     let worth_of = |row: Option<usize>| value_of(round, bid, row);
@@ -175,8 +172,8 @@ fn candidates(round: &Round<'_>, bid: &Bid, plan: &Plan) -> Vec<Candidate> {
     candidates
 }
 
-/// Whether `plan`'s base row costs no more than any of `candidates`, on every
-/// device, in memory and on every link.
+/// Returns whether `plan`'s base row costs no more than any of `candidates`,
+/// on every device, in memory and on every link.
 fn cheapest_base(bid: &Bid, plan: &Plan, candidates: &[Candidate]) -> bool {
     let rows = &bid.offer.rows;
     let cost_of = |row: Option<usize>| row.map_or(plan.floor, |row| rows[row].cost);
@@ -186,7 +183,7 @@ fn cheapest_base(bid: &Bid, plan: &Plan, candidates: &[Candidate]) -> bool {
         .all(|candidate| no_more(&base, &cost_of(candidate.row)))
 }
 
-/// Whether `a` costs no more than `b` anywhere.
+/// Returns whether `a` costs no more than `b` anywhere.
 fn no_more(a: &Cost, b: &Cost) -> bool {
     Device::ALL.into_iter().all(|device| {
         device.get(&a.time) <= device.get(&b.time) && device.get(&a.memory) <= device.get(&b.memory)
@@ -253,10 +250,11 @@ impl Search<'_, '_> {
     }
 }
 
-/// For each agent of `plans`, in order, the row its policies allow next above
-/// its planned one in quality, when it is refused: by a `Stable` ceiling, or
-/// by the frame when trying it breaches — the row, and the constraint it
-/// broke. An agent holding a kept envelope grows into nothing.
+/// Returns, for each agent of `plans`, the next row up its policies allow,
+/// when it is refused, with the constraint it broke.
+///
+/// A row is refused by a `Stable` ceiling, or by the frame when trying it
+/// breaches. An agent holding a kept envelope grows into nothing.
 fn refused_next_rows(round: &Round<'_>, bids: &[&Bid], plans: &[Plan]) -> Vec<Rejected> {
     let mut rejected = Vec::new();
     let mut trial = plans.to_vec();

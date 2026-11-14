@@ -12,13 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Flow runner — executes every registered [`Flow`](khora_data::flow::Flow)
-//! during the Substrate Pass and publishes their Views into the
-//! [`LaneBus`](khora_core::lane::LaneBus).
-//!
-//! Per the CLAD doctrine, this runs *before* agents execute (Pass A), so
-//! that lanes (in Pass B) read pre-projected, AGDF-adapted Views instead of
-//! querying the World directly.
+//! Runs every registered [`Flow`](khora_data::flow::Flow), publishing its View into the
+//! [`LaneBus`] before any agent runs.
 
 use std::sync::Arc;
 
@@ -29,16 +24,15 @@ use khora_core::Runtime;
 use khora_data::ecs::{Observer, Tick, World};
 use khora_data::flow::{FlowContext, FlowRegistration};
 
-/// Executes every registered Flow on the World, publishing each View into the
-/// bus. Flows are **read-only projectors**: they do not mutate the World and do
-/// not compete for the frame budget (only agents do), so no budget is passed.
+/// Runs every registered Flow on `world`, publishing each View into `bus`.
+///
+/// A Flow serving a family that is off is skipped and publishes nothing. Flows are not
+/// budgeted: only agents compete for the frame.
 pub fn run_flows(world: &mut World, bus: &mut LaneBus, runtime: &Runtime) {
     let activation = runtime.resources.get::<Arc<Activation>>();
 
-    // Each run reads at a tick of its own, which is what the Flow has seen
-    // once it returns; the clock then moves past it. A Flow projecting for a
-    // family off in the state in force is skipped and publishes nothing; the
-    // world notes it, so its next run is told it resumes.
+    // Each run reads at a tick of its own, which is what the Flow has seen once
+    // it returns. A skip is noted, so the Flow's next run is told it resumes.
     for reg in inventory::iter::<FlowRegistration> {
         let observer = Observer::Flow(reg.name);
         let Some(scope) = role_scope(reg.role, activation.map(|a| a.as_ref()), world) else {
@@ -56,10 +50,10 @@ pub fn run_flows(world: &mut World, bus: &mut LaneBus, runtime: &Runtime) {
     }
 }
 
-/// The tick at which the observing Flow registered as `name` last ran on
-/// `world` — what it has seen of that world's changes. `Tick(0)` for a Flow
-/// that never ran on it: a new world (a new [`World::instance_id`]) restarts
-/// every observer.
+/// Returns the tick at which the Flow registered as `name` last ran on `world`.
+///
+/// `Tick(0)` for a Flow that never ran on it: a new world (a new [`World::instance_id`])
+/// restarts every observer.
 pub fn flow_last_seen(name: &str, world: &World) -> Tick {
     super::data_system_runner::registered_name(
         name,

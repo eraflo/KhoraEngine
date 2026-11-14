@@ -47,7 +47,6 @@ impl ExecutionScheduler {
         deck: &mut OutputDeck,
         selection: AgentSelection,
     ) {
-        // Collect this phase's agents, among the families on
         let agents = self.phase_slots(phase, inactive);
 
         // Partition by whether the agent's place holds a fixed step, so the
@@ -77,24 +76,12 @@ impl ExecutionScheduler {
         self.execute_agents(sorted, runtime, completion_map, bus, deck);
     }
 
-    /// Runs the phase's agents wave by wave, in priority order (the
-    /// [`sort_agents`] output).
+    /// Runs the phase's agents wave by wave, in [`sort_agents`] order.
     ///
-    /// Consecutive agents whose [`Contention`](khora_core::agent::Contention)s
-    /// are disjoint, and none of which hard-depends on another, share a wave
-    /// ([`partition_waves`]); with parallel execution off, every agent is a
-    /// wave of its own. Waves run in order, so the Hard-dependency ordering is
-    /// kept.
-    ///
-    /// A wave of one runs inline on this thread, writing straight into the
-    /// frame's deck. Every member of a larger wave runs as a `'static` job on
-    /// the persistent [`WorkerPool`](crate::worker_pool::WorkerPool), with a
-    /// private deck shard and a cloned `Arc<LaneBus>`; the shards are folded
-    /// back in wave (index) order once collected, keeping outputs
-    /// deterministic. No agent reaches the `World`, so none crosses a thread.
-    ///
-    /// The scheduler publishes the grouping, so the budget fit costs each wave
-    /// by its critical path.
+    /// Waves run in order, so Hard dependencies hold. A wave of one runs inline into the
+    /// frame's deck; a larger wave's members run on the worker pool into private deck
+    /// shards, folded back in wave order so the outputs stay deterministic. See the book:
+    /// concepts/agents-and-lanes.md, "What an agent declares".
     fn execute_agents(
         &self,
         agents: Vec<AgentSlot>,
@@ -160,11 +147,8 @@ impl ExecutionScheduler {
                 continue;
             }
 
-            // Verify the wave's members contend for nothing in common before
-            // we run them into private shards (declared via
-            // `Agent::contention`). A collision is a parallel-eligibility bug:
-            // the shards would clash on merge — surface it here, naming the
-            // agents, not later on a raw TypeId.
+            // A collision is a parallel-eligibility bug: surfaced here, naming
+            // the agents, not later at the merge on a raw TypeId.
             let conflicts = check_wave_disjoint(&wave, &metas);
             debug_assert_eq!(
                 conflicts, 0,
@@ -180,11 +164,8 @@ impl ExecutionScheduler {
                 continue;
             }
 
-            // The wave reads the deck as the earlier phases and waves left
-            // it, frozen, and writes into shards of its own, one per member,
-            // each starting with the slots its agent declares — so a slot an
-            // agent grows sub-step after sub-step keeps what the earlier
-            // sub-steps put in it. They are folded back once every member ran.
+            // Each shard starts with the slots its agent declares, so a slot grown
+            // sub-step after sub-step keeps what the earlier sub-steps put in it.
             let mut shards: Vec<Option<OutputDeck>> = metas
                 .iter()
                 .enumerate()
@@ -281,12 +262,11 @@ impl ExecutionScheduler {
         }
     }
 
-    /// Publishes to the DCC an agent's `report` of the run that just took
-    /// `ms` on the host: the host time at least what the scheduler measured.
-    /// Its workload is left as the run reported it — the host time the run
-    /// quoted, or none: the DCC's cost book learns each row against it, and
-    /// any other count read as one would teach it nonsense. Best-effort, like
-    /// all telemetry.
+    /// Publishes to the DCC an agent's `report` of a run that took `ms` on the host.
+    ///
+    /// The host time is raised to at least what the scheduler measured. The workload stays
+    /// as the run reported it: the DCC's cost book learns each row against it, and any
+    /// other count would teach it nonsense. Best-effort, like all telemetry.
     pub(super) fn publish_report(&self, report: Option<Report>, ms: f64) {
         let (Some(tx), Some(mut report)) = (&self.telemetry, report) else {
             return;

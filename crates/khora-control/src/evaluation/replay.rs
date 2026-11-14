@@ -26,18 +26,13 @@ use super::Arbiters;
 use crate::gorna::cost_book::{correct_bid, lend_in_quotes};
 use crate::gorna::{Bid, Round};
 
-/// `trace` decided again through `arbiters`: each epoch's round rebuilt from
-/// what it read — the offers calibrated as recorded, each agent's
-/// importance, policy and hints, the target, the memory limits, the waves
-/// and the agents at the background — and what the epochs measure.
+/// Decides `trace` again through `arbiters`, each epoch's round rebuilt from
+/// what it read, and measures the result.
 ///
-/// An agent keeps the envelope these proposers lent it at the previous
-/// epoch, not the recorded one: through the arbiter that recorded it, a
-/// journal gives back every allocation recorded; through another, it says
-/// what that one would have lent. Where the journal has no previous epoch,
-/// or something else was put in force between two (the journal begun while
-/// the DCC ran, a replay between them), the envelopes recorded in force are
-/// kept.
+/// An agent keeps the envelope these proposers lent it at the previous epoch,
+/// not the recorded one, so the recording arbiter gives back every recorded
+/// allocation. With no previous epoch, or something else put in force between
+/// two, the envelopes recorded in force are kept.
 pub fn replay(trace: &DecisionTrace, arbiters: Arbiters) -> Replay {
     let arbiter = arbiters.arbiter();
     let mut epochs: Vec<ReplayedEpoch> = Vec::with_capacity(trace.epochs.len());
@@ -121,10 +116,10 @@ pub fn replay(trace: &DecisionTrace, arbiters: Arbiters) -> Replay {
     Replay { epochs, metrics }
 }
 
-/// The trigger `record`'s round opened with. A journal keeps the trigger of
-/// what was lent: a `Safety` allocation naming a breach was a round opened
-/// otherwise whose floors did not fit, one naming none a round opened as
-/// `Safety`.
+/// The trigger `record`'s round opened with.
+///
+/// A journal keeps the trigger of what was lent: a `Safety` allocation naming
+/// a breach was a round opened otherwise whose floors did not fit.
 fn opened_by(record: &EpochRecord) -> Trigger {
     match record.allocation.trigger {
         Trigger::Safety if record.why.binding.is_some() => Trigger::Refresh,
@@ -132,9 +127,9 @@ fn opened_by(record: &EpochRecord) -> Trigger {
     }
 }
 
-/// `record`'s bids, as its round read them, each agent keeping what it
-/// `held`. An agent the round found busy — late, with no offer — keeps its
-/// envelope, as the DCC lets it.
+/// `record`'s bids, as its round read them, each agent keeping what it `held`.
+///
+/// An agent the round found busy (late, with no offer) keeps its envelope.
 fn bids(record: &EpochRecord, held: Option<&[(AgentId, Envelope)]>) -> Vec<Bid> {
     let kept = |agent: AgentId| -> Option<Envelope> {
         held.and_then(|envelopes| {
@@ -261,12 +256,11 @@ fn row_changes_per_minute(trace: &DecisionTrace, epochs: &[ReplayedEpoch]) -> Op
     Some(changes as f64 / (span.as_secs_f64() / 60.0))
 }
 
-/// How far the corrected quotes were from what ran: for each report an
-/// epoch read of a run under the previous epoch, the host time the run
-/// quoted (its workload, in µs) times the previous epoch's correction of its
-/// row (1 when it recorded none), against the host time measured. A report
-/// read again, of an older run, is not counted twice; a run that quoted
-/// nothing is not counted. `None` without such a pair.
+/// Returns the mean relative error of the corrected quotes against the host time measured.
+///
+/// Each run under the previous epoch is counted once: its quoted workload
+/// (µs) times that epoch's correction of its row (1 if none). A run that
+/// quoted nothing is skipped; `None` without any.
 fn prediction_error(trace: &DecisionTrace) -> Option<f64> {
     let mut errors = Vec::new();
     for pair in trace.epochs.windows(2) {
@@ -341,10 +335,9 @@ pub struct ReplayMetrics {
     pub row_changes_per_minute: Option<f64>,
     /// Epochs whose allocation equals the recorded one.
     pub same_as_recorded: usize,
-    /// Mean |calibrated quote of the row run − measured| / measured: the
-    /// quote from epoch e's offer and calibration, the measured time on the
-    /// host from epoch e+1's report of that agent and row; `None` without
-    /// such a pair.
+    /// Mean |corrected quote − measured| / measured, of the host time of each run.
+    ///
+    /// `None` without a run that quoted its workload.
     pub prediction_error: Option<f64>,
     /// Frames run, summed from the journal's frame summaries.
     pub frames: u64,

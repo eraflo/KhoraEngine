@@ -60,9 +60,10 @@ fn floor_factor(rows: &[ProfileRow], agent: &str) -> Option<f64> {
         .map(|row| row.factor)
 }
 
-/// **The DCC seeds its book and publishes what it learns.** A profile learnt
-/// the renderer's floor at 3 times its quote; it also names `ghost`, an
-/// agent never registered. Handed to the DCC before it starts:
+/// **The DCC seeds its book and publishes what it learns.**
+///
+/// A profile learnt the renderer's floor at 3 times its quote; it also names
+/// `ghost`, an agent never registered. Handed to the DCC before it starts:
 /// - the first round plans the renderer's floor at 3: the book was seeded as
 ///   the thread started, before any run;
 /// - the DCC publishes what its book learnt: the renderer's floor at 3, and

@@ -27,9 +27,10 @@ type Reading = (ThermalStatus, BatteryLevel, f32);
 /// The context's hardware before anything was read.
 const UNREAD: Reading = (ThermalStatus::Cool, BatteryLevel::Mains, 0.0);
 
-/// A hardware monitor whose readings move with its refreshes: after `n`
-/// refreshes it reads `readings[n]`, and the last reading past the end. So a
-/// reading is only seen if the DCC refreshed the monitor before reading it.
+/// A hardware monitor whose readings move with its refreshes.
+///
+/// After `n` refreshes it reads `readings[n]`, and the last reading past the
+/// end, so a reading is seen only if the DCC refreshed the monitor first.
 struct FakeHardware {
     readings: Vec<Reading>,
     refreshes: AtomicUsize,
@@ -125,9 +126,10 @@ fn the_dcc_hands_back_the_hardware_monitor_it_was_given() {
     );
 }
 
-/// **The hardware monitor sets the context once the DCC starts.** A monitor
-/// that reads `Warm`, a `Low` battery and a 0.42 CPU load once refreshed:
-/// the running DCC refreshes it, reads it, and the context says so.
+/// **The hardware monitor sets the context once the DCC starts.**
+///
+/// A monitor that reads `Warm`, a `Low` battery and a 0.42 CPU load once
+/// refreshed: the running DCC refreshes it, reads it, and the context says so.
 #[test]
 fn the_hardware_monitor_sets_the_context_once_the_dcc_starts() {
     let warm = (ThermalStatus::Warm, BatteryLevel::Low, 0.42);
@@ -156,10 +158,11 @@ fn the_dcc_refreshes_the_hardware_monitor() {
     );
 }
 
-/// **The hardware monitor is refreshed at most about once a second.** A
-/// sensor read can cost milliseconds: a DCC ticking at 100 Hz for two
-/// seconds refreshes the monitor on its first tick and about once a second
-/// after, not on every tick.
+/// **The hardware monitor is refreshed at most about once a second.**
+///
+/// A sensor read can cost milliseconds: a DCC ticking at 100 Hz for two seconds
+/// refreshes the monitor on its first tick and about once a second after, not
+/// on every tick.
 #[test]
 fn the_hardware_monitor_is_refreshed_at_most_about_once_a_second() {
     let monitor = FakeHardware::new(vec![UNREAD]);
@@ -179,10 +182,11 @@ fn the_hardware_monitor_is_refreshed_at_most_about_once_a_second() {
     );
 }
 
-/// **The hardware monitor is read again a second later.** Once a second the
-/// DCC refreshes and reads the monitor anew: a monitor that reads `Cool` on
-/// its first refresh and `Throttling` on its second has the context end up
-/// `Throttling`.
+/// **The hardware monitor is read again a second later.**
+///
+/// Once a second the DCC refreshes and reads the monitor anew: a monitor that
+/// reads `Cool` on its first refresh and `Throttling` on its second has the
+/// context end up `Throttling`.
 #[test]
 fn the_hardware_monitor_is_read_again_a_second_later() {
     let first = (ThermalStatus::Cool, BatteryLevel::High, 0.1);
@@ -199,9 +203,10 @@ fn the_hardware_monitor_is_read_again_a_second_later() {
     );
 }
 
-/// **The hardware monitor leaves the GPU load as it is.** It measures no GPU:
-/// the GPU load a hardware report set stays once the DCC has read the monitor
-/// again.
+/// **The hardware monitor leaves the GPU load as it is.**
+///
+/// It measures no GPU: the GPU load a hardware report set stays once the DCC
+/// has read the monitor again.
 #[test]
 fn the_hardware_monitor_leaves_the_gpu_load_as_it_is() {
     let first = (ThermalStatus::Warm, BatteryLevel::High, 0.3);
@@ -234,8 +239,9 @@ fn the_hardware_monitor_leaves_the_gpu_load_as_it_is() {
     );
 }
 
-/// **A hardware report still sets the hardware beside a monitor.** The DCC
-/// reads its monitor, then the telemetry reports a `Critical` heat, a
+/// **A hardware report still sets the hardware beside a monitor.**
+///
+/// The DCC reads its monitor, then the telemetry reports a `Critical` heat, a
 /// `Critical` battery and a 0.9 CPU load: the context says what the report
 /// said, until the monitor is read again.
 #[test]
@@ -324,10 +330,12 @@ impl HardwareMonitor for HeldHardware {
     }
 }
 
-/// **A slow hardware read never holds the context.** The frame's thread
-/// reads the context every frame: while the DCC's thread waits on a sensor
-/// — refreshing, or reading the heat, the battery or the CPU's load — the
-/// context can still be read, and once the read ends the context says it.
+/// **A slow hardware read never holds the context.**
+///
+/// The frame's thread reads the context every frame: while the DCC's thread
+/// waits on a sensor — refreshing, or reading the heat, the battery or the
+/// CPU's load — the context can still be read, and once the read ends the
+/// context says it.
 #[test]
 fn a_slow_hardware_read_never_holds_the_context() {
     for held in [Held::Refresh, Held::Thermal, Held::Battery, Held::CpuLoad] {
@@ -368,9 +376,10 @@ fn a_slow_hardware_read_never_holds_the_context() {
     }
 }
 
-/// **A hardware monitor given to a running DCC is read.** The DCC's thread
-/// looks for its monitor as it ticks: a monitor given after `start` is
-/// refreshed and read, and the context says what it read.
+/// **A hardware monitor given to a running DCC is read.**
+///
+/// The DCC's thread looks for its monitor as it ticks: a monitor given after
+/// `start` is refreshed and read, and the context says what it read.
 #[test]
 fn a_hardware_monitor_given_to_a_running_dcc_is_read() {
     let warm = (ThermalStatus::Warm, BatteryLevel::Low, 0.42);

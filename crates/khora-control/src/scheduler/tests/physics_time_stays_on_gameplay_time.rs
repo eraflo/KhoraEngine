@@ -40,10 +40,10 @@ use std::time::{Duration, Instant};
 /// The gameplay tick, in seconds.
 const TICK: f64 = DEFAULT_FIXED_DELTA_SECONDS as f64;
 
-/// The physics steps GORNA chooses between, in hertz.
+/// The physics steps the tests switch between, in hertz.
 const GORNA_RATES: [f32; 3] = [30.0, 60.0, 120.0];
 
-/// A GORNA step as the scheduler sees it: the agent's `f32` step, through the
+/// A physics step as the scheduler sees it: the agent's `f32` step, through the
 /// `Duration` it declares.
 fn gorna_step(hz: f32) -> Duration {
     Duration::from_secs_f32(1.0 / hz)
@@ -195,10 +195,10 @@ fn a_step_a_hair_over_the_tick_does_not_run_physics_ahead_of_gameplay() {
 
 /// **An hour of irregular frames with the step switched every frame never
 /// drifts.** The scheduler's two clocks, driven directly for an hour of
-/// frames from 2 ms to 42 ms, the GORNA step (as the scheduler sees it)
+/// frames from 2 ms to 42 ms, the physics step (as the scheduler sees it)
 /// picked anew each frame: physics stays within the coarsest step, 1/30 s,
 /// of gameplay time after every frame — `f32` rounding over 200 000 ticks
-/// does not accumulate. Coverage: holds today.
+/// does not accumulate.
 #[test]
 fn an_hour_of_irregular_frames_with_the_step_switched_every_frame_never_drifts() {
     let tick = DEFAULT_FIXED_DELTA_SECONDS;
@@ -244,8 +244,7 @@ fn an_hour_of_irregular_frames_with_the_step_switched_every_frame_never_drifts()
 /// **Slow motion and fast forward keep physics on gameplay time under every
 /// step.** The scale runs through 0.1, 0.5, 1, 3 and 10 over 1/30-s frames —
 /// fast forward hitting the catch-up cap — and after every frame the physics
-/// time is within one step of the gameplay ticks published. Coverage: holds
-/// today.
+/// time is within one step of the gameplay ticks published.
 #[test]
 fn slow_motion_and_fast_forward_keep_physics_on_gameplay_time_under_every_step() {
     let scales = [0.1, 0.5, 1.0, 3.0, 10.0, 0.25, 7.0, 1.0];
@@ -305,7 +304,6 @@ fn an_infinite_time_scale_does_not_stop_the_games_clock() {
 /// paused, the step drops to 1/120 s — enough carried time for two steps —
 /// and still no step runs in eight frames; resumed, a one-tick frame pays
 /// both ticks at the new step: four runs, physics on gameplay time.
-/// Coverage: holds today.
 #[test]
 fn paused_a_step_change_runs_nothing_and_resumed_the_carry_is_paid_at_the_new_step() {
     let mut rig = Rig::new(&[(AgentId::new("physics"), Some(gorna_step(30.0)))], 1.0);
@@ -342,7 +340,7 @@ fn paused_a_step_change_runs_nothing_and_resumed_the_carry_is_paid_at_the_new_st
 /// step.** At 0.1 s and 0.5 s a step — longer than the cap's 5/60 s — frames
 /// from a quarter tick to a clamped quarter second run the agent only when a
 /// whole step has passed on the gameplay clock, and the physics time is
-/// never more than a step from it. Coverage: holds today.
+/// never more than a step from it.
 #[test]
 fn a_step_longer_than_the_catch_up_cap_keeps_physics_within_a_step() {
     let frames = [0.25, 1.0, 3.0, 15.0, 2.5, 18.0, 0.5, 6.0, 1.5, 4.0];
@@ -366,8 +364,7 @@ fn a_step_longer_than_the_catch_up_cap_keeps_physics_within_a_step() {
 /// **A zero fixed step is no fixed step.** An agent declaring
 /// `Some(Duration::ZERO)` runs once a frame, alone or beside a real fixed
 /// agent, and the game's clock still ticks: a 1/20-s frame publishes three
-/// ticks while the 1/120-s agent beside it sub-steps six times. Coverage:
-/// holds today.
+/// ticks while the 1/120-s agent beside it sub-steps six times.
 #[test]
 fn a_zero_fixed_step_is_no_fixed_step() {
     let mut alone = Rig::new(&[(AgentId::new("script"), Some(Duration::ZERO))], 1.0);
@@ -403,8 +400,7 @@ fn a_zero_fixed_step_is_no_fixed_step() {
 /// **With no fixed agent the published interpolation factor is the
 /// gameplay remainder.** A half-tick frame publishes 0.5, the next half
 /// tick completes the tick and publishes 0 — the same factor as with a fixed
-/// agent, no longer the 0 the single clock published when nothing stepped.
-/// Coverage: pins the new behaviour.
+/// agent.
 #[test]
 fn with_no_fixed_agent_the_interpolation_factor_is_the_gameplay_remainder() {
     let mut rig = Rig::new(&[(AgentId::new("script"), None)], 1.0);

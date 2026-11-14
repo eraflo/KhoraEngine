@@ -12,12 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Heuristic analysis for the DCC.
+//! The DCC's heuristics: whether to renegotiate, and what frame time to aim for.
 //!
-//! The `HeuristicEngine` is the analytical core that evaluates the full
-//! situational model (hardware state, execution phase, metric trends) to
-//! decide whether a GORNA renegotiation is necessary and what the global
-//! performance target should be.
+//! See the book: concepts/gorna.md, "The heuristics".
 
 use crate::dcc_context::DccContext;
 use crate::metrics::MetricStore;
@@ -46,33 +43,24 @@ const GPU_LOAD_WARN: f32 = 0.90;
 const MEM_PRESSURE_CRITICAL: f32 = 0.95;
 /// Memory-pressure threshold for a warning-level response.
 const MEM_PRESSURE_WARN: f32 = 0.85;
-/// Coefficient-of-variation (stddev/mean) of resident bytes above which memory
-/// is "churning" — a scale-free signal of per-frame allocation hotspots. Pure
-/// glass-box diagnostic (no control action), so a noisy estimate can't misfire.
+/// Coefficient of variation (stddev/mean) of resident bytes above which memory churns.
+///
+/// An alert only, never a control action, so a noisy estimate can't misfire.
 const MEM_CHURN_COV_THRESHOLD: f32 = 0.15;
 
 /// Analyzes metrics and context to determine engine-wide strategy changes.
 pub struct HeuristicEngine;
 
 impl HeuristicEngine {
-    /// Analyzes the current situational model.
-    ///
-    /// Evaluates the full set of heuristics:
-    /// 1. **Phase heuristics**: Adjust target FPS for the current execution phase.
-    /// 2. **Thermal analysis**: Detect throttling / critical and reduce budgets.
-    /// 3. **Battery analysis**: Conserve power on low/critical battery.
-    /// 4. **Frame time analysis**: Detect sustained performance drops.
-    /// 5. **Stutter analysis**: Detect high frame time variance.
-    /// 6. **Trend analysis**: Preempt worsening performance via slope detection.
-    /// 7. **CPU/GPU pressure**: Detect resource saturation.
+    /// Runs every heuristic on the context and the metrics, and reports what they conclude.
     pub fn analyze(&self, context: &DccContext, store: &MetricStore) -> AnalysisReport {
         let mut report = AnalysisReport::default();
         let mut pressure_count: u32 = 0;
 
-        // ── 1. Target latency (60 FPS baseline) ──────────────────────────
+        // ── Target latency (60 FPS baseline) ──────────────────────────
         report.suggested_latency_ms = 16.66;
 
-        // ── 2. Thermal Analysis ──────────────────────────────────────────
+        // ── Thermal Analysis ──────────────────────────────────────────
         match context.hardware.thermal {
             ThermalStatus::Critical => {
                 log::warn!("Heuristic: CRITICAL thermal state — emergency budget reduction.");
@@ -98,7 +86,7 @@ impl HeuristicEngine {
             ThermalStatus::Cool => {}
         }
 
-        // ── 3. Battery Analysis ──────────────────────────────────────────
+        // ── Battery Analysis ──────────────────────────────────────────
         match context.hardware.battery {
             BatteryLevel::Critical => {
                 log::warn!("Heuristic: Battery CRITICAL — mandatory power saving.");
@@ -120,7 +108,7 @@ impl HeuristicEngine {
             BatteryLevel::High | BatteryLevel::Mains => {}
         }
 
-        // ── 4. Frame Time Analysis ───────────────────────────────────────
+        // ── Frame Time Analysis ───────────────────────────────────────
         // The frame's critical path, from the frame reports.
         let frame_time_id = MetricId::new("frame", "critical_ms");
         let avg_frame_time = store.get_average(&frame_time_id);
@@ -150,7 +138,7 @@ impl HeuristicEngine {
                 ));
             }
 
-            // ── 5. Stutter Detection (variance) ─────────────────────────
+            // ── Stutter Detection (variance) ─────────────────────────
             let variance = store.get_variance(&frame_time_id);
             if variance > FRAME_TIME_VARIANCE_THRESHOLD {
                 log::info!(
@@ -164,7 +152,7 @@ impl HeuristicEngine {
                 ));
             }
 
-            // ── 6. Trend Analysis (preemptive) ──────────────────────────
+            // ── Trend Analysis (preemptive) ──────────────────────────
             let trend = store.get_trend(&frame_time_id);
             if trend > FRAME_TIME_TREND_THRESHOLD {
                 log::info!(
@@ -179,7 +167,7 @@ impl HeuristicEngine {
             }
         }
 
-        // ── 7. CPU Pressure ──────────────────────────────────────────────
+        // ── CPU Pressure ──────────────────────────────────────────────
         if context.hardware.cpu_load > CPU_LOAD_CRITICAL {
             log::warn!(
                 "Heuristic: CPU load critical ({:.2}). Triggering negotiation.",
@@ -193,7 +181,7 @@ impl HeuristicEngine {
             pressure_count += 1;
         }
 
-        // ── 8. GPU Pressure ──────────────────────────────────────────────
+        // ── GPU Pressure ──────────────────────────────────────────────
         if context.hardware.gpu_load > GPU_LOAD_CRITICAL {
             log::warn!(
                 "Heuristic: GPU load critical ({:.2}). Triggering negotiation.",
@@ -217,10 +205,9 @@ impl HeuristicEngine {
             ));
         }
 
-        // ── 8b. Memory Pressure ──────────────────────────────────────────
-        // A first-class resource signal alongside CPU/GPU: when resident RAM
-        // approaches the developer-set budget, downgrade so memory-heavy
-        // strategies aren't selected. Inert when no budget is set (pressure 0).
+        // ── Memory Pressure ──────────────────────────────────────────
+        // Near the RAM budget, downgrade so memory-heavy rows aren't chosen.
+        // Inert when no budget is set (pressure 0).
         if context.memory_pressure > MEM_PRESSURE_CRITICAL {
             log::warn!(
                 "Heuristic: Memory pressure critical ({:.0}%). Triggering negotiation.",
@@ -244,7 +231,7 @@ impl HeuristicEngine {
             ));
         }
 
-        // ── 8c. Allocation churn (glass-box diagnostic) ──────────────────
+        // ── Allocation churn (glass-box diagnostic) ──────────────────
         // High volatility of resident bytes points to per-frame allocation
         // hotspots (allocator locks / page faults = hitch risk). Surfaced as an
         // alert only — it never forces a strategy change.
@@ -263,7 +250,7 @@ impl HeuristicEngine {
             }
         }
 
-        // ── 9. Death Spiral Detection ────────────────────────────────────
+        // ── Death Spiral Detection ────────────────────────────────────
         // If 3+ independent pressure sources are active simultaneously,
         // the engine is likely in a cascading failure ("death spiral").
         if pressure_count >= 3 {

@@ -12,11 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! How `decide` shares the frame: admission of the floors, Q-RAM upgrades,
-//! the 80 / 20 slack, the policies as envelope shapes, and determinism.
-//! Every figure is in whole microseconds, so the expected envelopes are exact.
-//! The order the Q-RAM pass takes its upgrades in is pinned on an arbiter
-//! running that pass alone: the default arbiter may keep a better plan.
+//! How `decide` shares the frame: admission, Q-RAM upgrades, the 80 / 20 slack,
+//! the policies and determinism, in whole microseconds. The Q-RAM order is pinned
+//! on an arbiter running that pass alone: the default may keep a better plan.
 
 use super::*;
 use crate::gorna::arbiter::{Arbiter, Greedy};
@@ -104,10 +102,12 @@ fn critical_path(
 
 // ── Admission ─────────────────────────────────────────────────────
 
-/// **The floors come first.** Floors of 4 + 5 ms fit 10 ms: the round keeps
-/// its trigger and every envelope holds at least its agent's floor. Floors of
-/// 6 + 5 ms do not: the round is `Safety`, and every envelope is exactly its
-/// agent's floor, whatever else the agent offers.
+/// **The floors come first.**
+///
+/// Floors of 4 + 5 ms fit 10 ms: the round keeps its trigger and every envelope
+/// holds at least its agent's floor. Floors of 6 + 5 ms do not: the round is
+/// `Safety`, and every envelope is exactly its agent's floor, whatever else the
+/// agent offers.
 #[test]
 fn floors_are_admitted_first_or_the_round_is_safety() {
     let admitted = [
@@ -185,9 +185,11 @@ fn admission_counts_a_wave_by_its_slowest_member() {
     );
 }
 
-/// **Transfers are on the critical path.** Floors of 4 + 4 ms fit 10 ms,
-/// but not once `ash` sends 3 MB to the graphics processor over a link moving
-/// 1 GB/s: 3 ms more. A link the DCC cannot time (rate 0) adds nothing.
+/// **Transfers are on the critical path.**
+///
+/// Floors of 4 + 4 ms fit 10 ms, but not once `ash` sends 3 MB to the graphics
+/// processor over a link moving 1 GB/s: 3 ms more. A link the DCC cannot time
+/// (rate 0) adds nothing.
 #[test]
 fn admission_counts_the_transfers() {
     let mut sending = row(LowPower, 4_000, 0.4);
@@ -217,9 +219,11 @@ fn admission_counts_the_transfers() {
     );
 }
 
-/// **The emergency names no row.** A `Safety` round lends every agent its
-/// floor even when far more would fit, pins nothing and allows nothing —
-/// whether the floor is called `LowPower`, `Balanced` or `Custom`.
+/// **The emergency names no row.**
+///
+/// A `Safety` round lends every agent its floor even when far more would fit,
+/// pins nothing and allows nothing — whether the floor is called `LowPower`,
+/// `Balanced` or `Custom`.
 #[test]
 fn a_safety_round_gives_every_agent_its_floor_even_when_more_fits() {
     let bids = [
@@ -269,13 +273,14 @@ fn a_round_without_agents_lends_nothing() {
 // ── Upgrades ──────────────────────────────────────────────────────
 
 /// **Q-RAM order: quality gained per microsecond, weighed by importance.**
-/// Either upgrade fits 5 ms alone, both do not. `oak` (Critical) gains
-/// 1.0 × 0.6 over 3 ms, 0.0002 per µs; `pine` (Optional) gains 0.5 × 0.6
-/// over 0.5 ms, 0.0006 per µs. `pine` is upgraded first, and `oak`'s upgrade
-/// no longer fits: the less important agent wins because its gain per µs is
-/// higher. Then the weights decide: with rows whose raw gain per µs favours
-/// `pine`, `oak` takes the upgrade once it is Critical and `pine` Optional,
-/// and `pine` takes it back once the importances swap.
+///
+/// Either upgrade fits 5 ms alone, both do not. `oak` (Critical) gains 1.0 ×
+/// 0.6 over 3 ms, 0.0002 per µs; `pine` (Optional) gains 0.5 × 0.6 over 0.5 ms,
+/// 0.0006 per µs. `pine` is upgraded first, and `oak`'s upgrade no longer fits:
+/// the less important agent wins because its gain per µs is higher. Then the
+/// weights decide: with rows whose raw gain per µs favours `pine`, `oak` takes
+/// the upgrade once it is Critical and `pine` Optional, and `pine` takes it
+/// back once the importances swap.
 #[test]
 fn upgrades_go_to_the_best_gain_per_microsecond() {
     // The gain per µs outranks the importance.
@@ -353,11 +358,13 @@ fn upgrades_go_to_the_best_gain_per_microsecond() {
     );
 }
 
-/// **Upgrades climb each agent's convex hull.** `oak`'s middle row is a poor
-/// step (0.1 for 2 ms) under the line to its top row (0.6 for 3 ms, 0.0002
-/// per µs), so the hull goes straight to the top, which outranks `pine`'s
-/// 0.0001 per µs and leaves no room for it. Stepping row by row would have
-/// upgraded `pine` first and stopped `oak` at its middle row.
+/// **Upgrades climb each agent's convex hull.**
+///
+/// `oak`'s middle row is a poor step (0.1 for 2 ms) under the line to its top
+/// row (0.6 for 3 ms, 0.0002 per µs), so the hull goes straight to the top,
+/// which outranks `pine`'s 0.0001 per µs and leaves no room for it. Stepping
+/// row by row would have upgraded `pine` first and stopped `oak` at its middle
+/// row.
 #[test]
 fn upgrades_climb_each_agents_convex_hull() {
     let bids = [
@@ -388,9 +395,11 @@ fn upgrades_climb_each_agents_convex_hull() {
     assert_eq!(lent_to(&allocation, "pine").time, on_cpu(1_032));
 }
 
-/// **A row without a price is never planned.** `ash`'s top row is `Assumed`:
-/// no time, so it would look free. Planning it would lend `ash` nothing to
-/// run its floor with; its envelope holds its floor.
+/// **A row without a price is never planned.**
+///
+/// `ash`'s top row is `Assumed`: no time, so it would look free. Planning it
+/// would lend `ash` nothing to run its floor with; its envelope holds its
+/// floor.
 #[test]
 fn an_unpriced_row_is_never_planned() {
     let assumed = OfferRow {
@@ -416,10 +425,12 @@ fn an_unpriced_row_is_never_planned() {
     );
 }
 
-/// **An upgrade must fit the memory too.** 16 ms fit `ash`'s top row (14 ms)
-/// but its 20 MB do not fit the 15 MB the graphics processor has: the middle
-/// row (10 MB) is planned, and the envelope lends 10 MB plus 80 % of the
-/// 5 MB left — not enough for the top row, though its time would fit.
+/// **An upgrade must fit the memory too.**
+///
+/// 16 ms fit `ash`'s top row (14 ms) but its 20 MB do not fit the 15 MB the
+/// graphics processor has: the middle row (10 MB) is planned, and the envelope
+/// lends 10 MB plus 80 % of the 5 MB left — not enough for the top row, though
+/// its time would fit.
 #[test]
 fn an_upgrade_that_does_not_fit_the_memory_is_not_taken() {
     const MB: u64 = 1_000_000;
@@ -480,9 +491,11 @@ fn an_unknown_memory_limits_nothing() {
 
 // ── The share ─────────────────────────────────────────────────────
 
-/// **80 % of the slack goes back to the envelopes, in proportion; 20 % stays
-/// in reserve.** 2 + 6 ms planned in 16 ms leave 8 ms: 6.4 ms are shared
-/// 1 : 3, so 3.6 ms and 10.8 ms, and 1.6 ms stay unlent.
+/// **80 % of the slack goes back to the envelopes, in proportion; 20 % stays in
+/// reserve.**
+///
+/// 2 + 6 ms planned in 16 ms leave 8 ms: 6.4 ms are shared 1 : 3, so 3.6 ms and
+/// 10.8 ms, and 1.6 ms stay unlent.
 #[test]
 fn slack_is_shared_eighty_twenty() {
     let bids = [
@@ -549,9 +562,11 @@ impl Lcg {
     }
 }
 
-/// **I2: the envelopes fit the target on the critical path, on every
-/// device, and the memory they lend fits the memory there is.** Over many
-/// rounds of four agents with host and graphics rows, in waves and alone.
+/// **I2: the envelopes fit the target on the critical path, on every device,
+/// and the memory they lend fits the memory there is.**
+///
+/// Over many rounds of four agents with host and graphics rows, in waves and
+/// alone.
 #[test]
 fn envelopes_sum_within_the_target_on_the_critical_path() {
     const NAMES: [&str; 4] = ["ash", "birch", "oak", "pine"];
@@ -730,9 +745,11 @@ fn a_tie_goes_to_the_agent_named_first() {
 
 // ── Policies are envelope shapes ──────────────────────────────────
 
-/// **`Cap` is a ceiling on the envelope.** Uncapped, `ash` alone in 16 ms
-/// plans its top row; capped at 5 ms, its envelope stays within 5 ms on every
-/// device, and still holds the dearest row under the cap.
+/// **`Cap` is a ceiling on the envelope.**
+///
+/// Uncapped, `ash` alone in 16 ms plans its top row; capped at 5 ms, its
+/// envelope stays within 5 ms on every device, and still holds the dearest row
+/// under the cap.
 #[test]
 fn a_cap_is_a_ceiling_on_the_envelope() {
     let rows = vec![
@@ -843,9 +860,10 @@ fn a_stable_agent_keeps_its_envelope_unless_it_no_longer_fits() {
     assert!(ash.time.cpu >= us(2_000), "still its floor: {ash:?}");
 }
 
-/// **A late bid keeps the envelope it held, and is named.** `birch` answered
-/// after `reply_by`: its rows are not read, its envelope is the one it held,
-/// and the allocation says so; `ash`, on time, is not named.
+/// **A late bid keeps the envelope it held, and is named.**
+///
+/// `birch` answered after `reply_by`: its rows are not read, its envelope is
+/// the one it held, and the allocation says so; `ash`, on time, is not named.
 #[test]
 fn a_late_bid_keeps_its_envelope_and_is_named() {
     let mut late = bid(
@@ -875,10 +893,11 @@ fn a_late_bid_keeps_its_envelope_and_is_named() {
     );
 }
 
-/// **A `Stable` agent never keeps an envelope below its floor.** `ash` holds
-/// 1 ms from an earlier round, but its floor now costs 8 ms: keeping 1 ms
-/// would lend it less than it can run, and lend `birch` the time `ash`'s
-/// floor needs. Whatever `ash` is lent holds its floor, and the two
+/// **A `Stable` agent never keeps an envelope below its floor.**
+///
+/// `ash` holds 1 ms from an earlier round, but its floor now costs 8 ms:
+/// keeping 1 ms would lend it less than it can run, and lend `birch` the time
+/// `ash`'s floor needs. Whatever `ash` is lent holds its floor, and the two
 /// envelopes, with `ash` at its floor, stay within the 16 ms frame.
 #[test]
 fn a_stable_envelope_below_the_floor_is_not_kept() {
@@ -906,11 +925,13 @@ fn a_stable_envelope_below_the_floor_is_not_kept() {
     );
 }
 
-/// **A `Bounded` agent whose range leaves out its floor is planned at a row
-/// it may run.** `ash` may run only `Balanced` (4 ms); its floor `LowPower`
-/// (1 ms) is outside the range. `birch`'s upgrade is steeper, but `ash`'s
-/// cheapest allowed row and `birch`'s floor fit the 6 ms frame (4 + 1 ms):
-/// `ash` is lent room for `Balanced`, not an envelope no allowed row fits.
+/// **A `Bounded` agent whose range leaves out its floor is planned at a row it
+/// may run.**
+///
+/// `ash` may run only `Balanced` (4 ms); its floor `LowPower` (1 ms) is outside
+/// the range. `birch`'s upgrade is steeper, but `ash`'s cheapest allowed row
+/// and `birch`'s floor fit the 6 ms frame (4 + 1 ms): `ash` is lent room for
+/// `Balanced`, not an envelope no allowed row fits.
 #[test]
 fn a_bounded_agent_is_lent_room_for_an_allowed_row() {
     let mut bounded = bid(
@@ -949,13 +970,13 @@ fn a_bounded_agent_is_lent_room_for_an_allowed_row() {
     );
 }
 
-/// **A `Stable` agent on its floor leaves no lever in the envelope it
-/// keeps.** `ash` offers its floor alone (2 ms), `Stable`. The first round
-/// lends it the floor and the slack: every agent runs its floor, there is no
-/// lever. The next round, at the same 16 ms, keeps that envelope — floor plus
-/// slack — and `ash` still has nothing but its floor to run: a lower target
-/// would take back slack it cannot use, never a row. The round leaves no
-/// lever either.
+/// **A `Stable` agent on its floor leaves no lever in the envelope it keeps.**
+///
+/// `ash` offers its floor alone (2 ms), `Stable`. The first round lends it the
+/// floor and the slack: every agent runs its floor, there is no lever. The next
+/// round, at the same 16 ms, keeps that envelope — floor plus slack — and `ash`
+/// still has nothing but its floor to run: a lower target would take back slack
+/// it cannot use, never a row. The round leaves no lever either.
 #[test]
 fn a_stable_agent_on_its_floor_leaves_no_lever_in_the_envelope_it_keeps() {
     let stable = |kept| {
@@ -981,10 +1002,12 @@ fn a_stable_agent_on_its_floor_leaves_no_lever_in_the_envelope_it_keeps() {
     );
 }
 
-/// **An agent busy through the round is no lever.** `ash` could not be
-/// asked — its lock was held through the deadline — so it offers no row and
-/// keeps the 5 ms it holds; `birch` offers its floor alone. No target this
-/// round changes what either runs: the allocation leaves no lever.
+/// **An agent busy through the round is no lever.**
+///
+/// `ash` could not be asked — its lock was held through the deadline — so it
+/// offers no row and keeps the 5 ms it holds; `birch` offers its floor alone.
+/// No target this round changes what either runs: the allocation leaves no
+/// lever.
 #[test]
 fn an_agent_busy_through_the_round_is_no_lever() {
     let mut busy = bid(
@@ -1018,8 +1041,9 @@ fn an_agent_busy_through_the_round_is_no_lever() {
     );
 }
 
-/// **A row pinned above the floor is no lever; an upgrade is one.** `ash`
-/// is pinned (`Manual`) to its 6 ms row, above its 1 ms floor: no target
+/// **A row pinned above the floor is no lever; an upgrade is one.**
+///
+/// `ash` is pinned (`Manual`) to its 6 ms row, above its 1 ms floor: no target
 /// moves it, and with `birch` on its floor the allocation leaves no lever.
 /// Freed to `Learning`, `ash` takes the same row as an upgrade, and a lower
 /// target could take it back: the allocation leaves a lever.
@@ -1063,11 +1087,12 @@ fn a_row_pinned_above_the_floor_is_no_lever_an_upgrade_is_one() {
 
 // ── Work off the frame ────────────────────────────────────────────
 
-/// **An agent at the background adds nothing to the frame's critical
-/// path.** `oven` runs off the frame: its 5 ms floor does not count against
-/// the 1 ms target, so the round is admitted on `ash`'s floor alone, and
-/// `ash` is lent exactly what it would be lent were `oven` not there. `oven`
-/// is still lent an envelope, which bounds its time at the background.
+/// **An agent at the background adds nothing to the frame's critical path.**
+///
+/// `oven` runs off the frame: its 5 ms floor does not count against the 1 ms
+/// target, so the round is admitted on `ash`'s floor alone, and `ash` is lent
+/// exactly what it would be lent were `oven` not there. `oven` is still lent an
+/// envelope, which bounds its time at the background.
 #[test]
 fn an_agent_at_the_background_adds_nothing_to_the_critical_path() {
     let ash = || {

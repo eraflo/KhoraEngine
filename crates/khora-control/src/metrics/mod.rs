@@ -24,9 +24,7 @@ pub use ring_buffer::RingBuffer;
 /// Central store for all incoming metrics, organized by ID.
 #[derive(Debug, Default)]
 pub struct MetricStore {
-    // For now we use a simple HashMap.
-    // In the future, we might want to use a more dense representation if many metrics exist.
-    buffers: HashMap<MetricId, RingBuffer<f32, 120>>, // Stores last 120 samples (e.g. 2s at 60Hz)
+    buffers: HashMap<MetricId, RingBuffer<f32, 120>>, // The last 120 samples (2 s at 60 Hz).
 }
 
 impl MetricStore {
@@ -57,12 +55,12 @@ impl MetricStore {
         self.buffers.get(id).map(|b| b.variance()).unwrap_or(0.0)
     }
 
-    /// Returns the maximum value for a metric, or 0.0 if not found.
+    /// Returns the maximum value for a metric, or `f32::MIN` if not found.
     pub fn get_max(&self, id: &MetricId) -> f32 {
         self.buffers.get(id).map(|b| b.max()).unwrap_or(f32::MIN)
     }
 
-    /// Returns the minimum value for a metric, or 0.0 if not found.
+    /// Returns the minimum value for a metric, or `f32::MAX` if not found.
     pub fn get_min(&self, id: &MetricId) -> f32 {
         self.buffers.get(id).map(|b| b.min()).unwrap_or(f32::MAX)
     }

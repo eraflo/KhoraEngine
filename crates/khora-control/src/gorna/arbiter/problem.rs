@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The problem a round plans, beyond its own frame: each row above its
-//! agent's floor at the cost the horizon expects, the target less the risk
-//! margin, and each switch of row charged in weighed quality. Every
-//! proposer and the shield plan and check this same problem.
+//! The problem a round plans beyond its own frame, which every proposer and
+//! the shield plan and check.
+//!
+//! See the book: concepts/gorna.md, "Formalisation".
 
 use std::time::Duration;
 
@@ -33,17 +33,12 @@ pub(crate) struct Problem {
 }
 
 impl Problem {
-    /// The problem `round` plans for `bids`, whose base plans are `base`.
+    /// Returns the problem `round` plans for `bids`, whose base plans are `base`.
     ///
-    /// - A row above its agent's floor costs its quote times the agent's
-    ///   growth over the horizon, when that growth is above 1; the floor, the
-    ///   agent's base row and every row of an agent expected not to grow cost
-    ///   their quote. A base row admission let in is never grown past the
-    ///   target: growth weighs the upgrades, never what is already lent.
-    /// - The plans share the target less the margin, never less than what the
-    ///   base plans (the floors, the kept envelopes, a bounded agent's
-    ///   cheapest allowed row) take on the critical path: the margin never
-    ///   refuses what admission let in.
+    /// Rows above the floor, other than the base row, are grown by the agent's
+    /// expected growth. The plans share the target less the margin, never less
+    /// than the base plans take on the critical path: growth and margin weigh
+    /// the upgrades, never refuse what admission let in.
     pub(crate) fn of(round: &Round<'_>, bids: &[&Bid], base: &[Plan]) -> Self {
         let bids: Vec<Bid> = (bids.iter().zip(base))
             .map(|(bid, plan)| grown(round, bid, plan.row))
@@ -62,12 +57,12 @@ impl Problem {
         Self { bids, target }
     }
 
-    /// The bids, by reference, in their order.
+    /// Returns the bids, by reference, in their order.
     pub(crate) fn refs(&self) -> Vec<&Bid> {
         self.bids.iter().collect()
     }
 
-    /// `round` as this problem plans it: its bids, and its target.
+    /// Returns `round` as this problem plans it: its bids, and its target.
     pub(crate) fn round<'s>(&'s self, round: &Round<'s>) -> Round<'s> {
         Round {
             target: self.target,
@@ -77,8 +72,8 @@ impl Problem {
     }
 }
 
-/// `bid` with each row above its floor, but its base row `base`, grown by
-/// its agent's expected growth, when that growth is above 1.
+/// Returns `bid` with each row above its floor, but its base row `base`,
+/// grown by its agent's expected growth when that growth is above 1.
 fn grown(round: &Round<'_>, bid: &Bid, base: Option<usize>) -> Bid {
     let mut bid = bid.clone();
     let growth = round.planning.growth_of(bid.offer.agent);
@@ -99,8 +94,9 @@ fn grown(round: &Round<'_>, bid: &Bid, base: Option<usize>) -> Bid {
     bid
 }
 
-/// What switching `bid`'s agent to row `row` charges, in weighed quality:
-/// its weight times the switch's preparation and transient, over the
+/// Returns what switching `bid`'s agent to `row` charges, in weighed quality.
+///
+/// Its weight times the switch's preparation and transient, over the
 /// horizon. The running row, a row the planning names no preparation for,
 /// and a round with no horizon charge nothing.
 pub(crate) fn charge(round: &Round<'_>, bid: &Bid, row: usize) -> f64 {
@@ -120,15 +116,15 @@ pub(crate) fn charge(round: &Round<'_>, bid: &Bid, row: usize) -> f64 {
     }
 }
 
-/// What planning `row` for `bid` is worth: its weighed quality, less what
-/// switching to it charges. Nothing planned is worth nothing.
+/// Returns what planning `row` for `bid` is worth: its weighed quality, less
+/// what switching to it charges. Nothing planned is worth nothing.
 pub(crate) fn value_of(round: &Round<'_>, bid: &Bid, row: Option<usize>) -> f64 {
     row.map_or(0.0, |row| {
         weight(bid) * f64::from(bid.offer.rows[row].quality) - charge(round, bid, row)
     })
 }
 
-/// What `plans` are worth for `bids`: each one's planned row's value.
+/// Returns what `plans` are worth for `bids`: each one's planned row's value.
 pub(crate) fn value(round: &Round<'_>, bids: &[&Bid], plans: &[Plan]) -> f64 {
     bids.iter()
         .zip(plans)

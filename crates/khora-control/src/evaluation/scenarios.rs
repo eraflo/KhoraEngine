@@ -38,13 +38,13 @@ pub struct Scenario {
     load: fn(f64, usize) -> f64,
 }
 
-/// The agents every scenario runs, in this order: a renderer, shadows,
-/// physics, scripts and audio. Like a lane whose `cost()` formula was
-/// calibrated on another machine, an agent's quotes are off by the same
-/// factor on each of its rows: the renderer and the scripts take a fifth
-/// and three tenths more than they quote, physics a fifth less; shadows and
-/// audio quote right. Every agent on its best row and the host part overrun
-/// a 60 Hz frame; every agent on its floor leaves half of it free.
+/// The agents every scenario runs, in order: renderer, shadows, physics, scripts, audio.
+///
+/// Like a lane calibrated on another machine, some take a fixed factor of
+/// what they quote on every row: the renderer and the scripts more (×1.2,
+/// ×1.3), physics less (×0.8). Every
+/// agent at its best overruns a 60 Hz frame; every agent at its floor leaves
+/// half of it free.
 fn agents() -> Vec<SimAgent> {
     let rows = |rows: &[(StrategyId, u64, f32)]| rows.to_vec();
     let biased = |mut agent: SimAgent, bias: f64| {

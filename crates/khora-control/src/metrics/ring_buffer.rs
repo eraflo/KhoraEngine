@@ -77,9 +77,9 @@ impl<const N: usize> RingBuffer<f32, N> {
         self.iter().sum::<f32>() / self.count as f32
     }
 
-    /// Calculates the trend (slope) based on a simple linear regression or
-    /// just the difference between first and last half.
-    /// Returns positive if increasing, negative if decreasing.
+    /// Returns the trend: the newer half's mean minus the older half's.
+    ///
+    /// Positive when the values rise, negative when they fall.
     pub fn trend(&self) -> f32 {
         if self.count < 2 {
             return 0.0;

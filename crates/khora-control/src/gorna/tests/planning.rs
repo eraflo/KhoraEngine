@@ -12,12 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A round planned beyond its frame: a switch of row is charged in weighed
-//! quality, the plans keep a margin free of the target that never takes it
-//! below the floors, and a row above its floor is planned at the cost its
-//! agent's workload trend expects over the horizon. The planner learns, from
-//! the reports and the frames, each switch's preparation, the frames' spread
-//! and each agent's trend. Every round figure is in whole microseconds.
+//! A round planned beyond its frame (switch charges, a risk margin, workload
+//! growth), and the planner that learns them from reports and frames. Every
+//! round figure is in whole microseconds.
 
 use super::decide::{bid, round};
 use super::*;
@@ -130,14 +127,15 @@ fn planned_for(rows: &[(AgentId, StrategyId)], name: &'static str) -> Option<Str
 
 // ── The switch charge ─────────────────────────────────────────────
 
-/// **A gain below the switch charge keeps the running row.** `oak` weighs 1
-/// and runs its floor, 1 ms at 0.5; a switch to its 2 ms row costs 5 ms to
-/// prepare. Planned over 5 s with a 250 ms transient, the switch is charged
-/// 1 × (5 + 250) ms / 5 s = 0.051 of weighed quality. A row of 0.54 gains
-/// 0.04: it is not taken, and the plan is worth what the floor lends. A row
-/// of 0.56 gains 0.06: it is taken, and the plan is worth 0.56 less the
-/// charge, though it lends 0.56 of weighed quality. Unplanned, both are
-/// taken; with no horizon, nothing is charged.
+/// **A gain below the switch charge keeps the running row.**
+///
+/// `oak` weighs 1 and runs its floor, 1 ms at 0.5; a switch to its 2 ms row
+/// costs 5 ms to prepare. Planned over 5 s with a 250 ms transient, the switch
+/// is charged 1 × (5 + 250) ms / 5 s = 0.051 of weighed quality. A row of 0.54
+/// gains 0.04: it is not taken, and the plan is worth what the floor lends. A
+/// row of 0.56 gains 0.06: it is taken, and the plan is worth 0.56 less the
+/// charge, though it lends 0.56 of weighed quality. Unplanned, both are taken;
+/// with no horizon, nothing is charged.
 #[test]
 fn a_gain_below_the_switch_charge_keeps_the_running_row() {
     let oak = AgentId::new("oak");
@@ -210,11 +208,12 @@ fn a_gain_below_the_switch_charge_keeps_the_running_row() {
 }
 
 /// **A gain below the switch charge lends no envelope the upgrade fits.**
-/// The agent runs the best row its envelope fits, whatever row the plan
-/// names: `oak`, kept on its 1 ms floor of 0.5 because a switch to its 2 ms
-/// row of 0.54 gains less than the 0.051 it is charged, must not be lent an
-/// envelope that 2 ms row fits — otherwise it switches all the same, and the
-/// charge damps nothing.
+///
+/// The agent runs the best row its envelope fits, whatever row the plan names:
+/// `oak`, kept on its 1 ms floor of 0.5 because a switch to its 2 ms row of
+/// 0.54 gains less than the 0.051 it is charged, must not be lent an envelope
+/// that 2 ms row fits — otherwise it switches all the same, and the charge
+/// damps nothing.
 #[test]
 fn a_gain_below_the_switch_charge_lends_no_envelope_the_upgrade_fits() {
     let oak = AgentId::new("oak");
@@ -240,10 +239,11 @@ fn a_gain_below_the_switch_charge_lends_no_envelope_the_upgrade_fits() {
     );
 }
 
-/// **An envelope held to its floor leaves no lever.** `oak`, held on its
-/// 1 ms floor by the switch charge, is lent an envelope its 2 ms row no
-/// longer fits: no row above its floor fits, so a lower target takes
-/// nothing back, and the allocation must say so — the governor reads
+/// **An envelope held to its floor leaves no lever.**
+///
+/// `oak`, held on its 1 ms floor by the switch charge, is lent an envelope its
+/// 2 ms row no longer fits: no row above its floor fits, so a lower target
+/// takes nothing back, and the allocation must say so — the governor reads
 /// `lever` to know whether lowering the target would change anything.
 #[test]
 fn an_envelope_held_to_its_floor_leaves_no_lever() {
@@ -269,13 +269,14 @@ fn an_envelope_held_to_its_floor_leaves_no_lever() {
     );
 }
 
-/// **An envelope held to the plan still fits the planned row.** `oak` runs
-/// its floor (1 ms on the host, 1 ms on the graphics processor, 0.5); its
-/// upgrade (0.54) costs 2 ms on the graphics processor and half a
-/// microsecond more on the host — a corrected quote is not whole
-/// microseconds. Held off it by the charge, the envelope must be cut where
-/// the upgrade costs clearly more, never below the floor it plans: an
-/// envelope its planned row does not fit runs the agent over budget.
+/// **An envelope held to the plan still fits the planned row.**
+///
+/// `oak` runs its floor (1 ms on the host, 1 ms on the graphics processor,
+/// 0.5); its upgrade (0.54) costs 2 ms on the graphics processor and half a
+/// microsecond more on the host — a corrected quote is not whole microseconds.
+/// Held off it by the charge, the envelope must be cut where the upgrade costs
+/// clearly more, never below the floor it plans: an envelope its planned row
+/// does not fit runs the agent over budget.
 #[test]
 fn an_envelope_held_to_the_plan_still_fits_the_planned_row() {
     let oak = AgentId::new("oak");
@@ -305,13 +306,14 @@ fn an_envelope_held_to_the_plan_still_fits_the_planned_row() {
     );
 }
 
-/// **An envelope is held to the plan at the costs the agent quoted.** The
-/// agent runs the best row whose own quote fits its envelope. `oak`
+/// **An envelope is held to the plan at the costs the agent quoted.**
+///
+/// The agent runs the best row whose own quote fits its envelope. `oak`
 /// (Important) quotes 1 ms at 0.5 (running) and 2 ms at 0.54; the planner's
-/// charge (0.75 × 255 ms / 5 s ≈ 0.038) is above the gain (0.75 × 0.04 =
-/// 0.03), so the plan keeps the 1 ms row. Its runs of that row took 1.5 ms,
-/// so the cost book corrects its rows ×1.5: the envelope lent must still not
-/// fit the 2 ms the agent quotes for its upgrade, or it switches anyway.
+/// charge (0.75 × 255 ms / 5 s ≈ 0.038) is above the gain (0.75 × 0.04 = 0.03),
+/// so the plan keeps the 1 ms row. Its runs of that row took 1.5 ms, so the
+/// cost book corrects its rows ×1.5: the envelope lent must still not fit the 2
+/// ms the agent quotes for its upgrade, or it switches anyway.
 #[test]
 fn an_envelope_is_held_to_the_plan_at_the_costs_the_agent_quoted() {
     let upgrade = row(HighPerformance, 2_000, 0.54);
@@ -344,8 +346,8 @@ fn an_envelope_is_held_to_the_plan_at_the_costs_the_agent_quoted() {
     }
 }
 
-/// **The running row switches free, and a kept row pays only the
-/// transient.**
+/// **The running row switches free, and a kept row pays only the transient.**
+///
 /// - In a round, `oak` runs its 2 ms row of 0.54 and its floor lends 0.5: a
 ///   preparation the planning names for the running row is not charged, so
 ///   `oak` stays on it, and the plan is worth the 0.54 it lends.
@@ -460,11 +462,12 @@ fn the_running_row_switches_free_and_a_kept_row_pays_only_the_transient() {
 }
 
 /// **A row never prepared costs the agent's mean switch, else the prior.**
-/// `oak` measured a switch to `Balanced` of 2 ms and to `HighPerformance` of
-/// 4 ms, long before the round: those rows cost what they measured, and
+///
+/// `oak` measured a switch to `Balanced` of 2 ms and to `HighPerformance` of 4
+/// ms, long before the round: those rows cost what they measured, and
 /// `Custom(1)`, never prepared, their mean, 3 ms. `pine` measured none: its
-/// upgrade costs the configured prior, 7 ms. Neither running row is named.
-/// The planning holds the configured horizon and transient.
+/// upgrade costs the configured prior, 7 ms. Neither running row is named. The
+/// planning holds the configured horizon and transient.
 #[test]
 fn a_row_never_prepared_costs_the_agents_mean_switch_else_the_prior() {
     let (oak, pine) = (AgentId::new("oak"), AgentId::new("pine"));
@@ -514,11 +517,12 @@ fn a_row_never_prepared_costs_the_agents_mean_switch_else_the_prior() {
     assert_eq!(planner.config(), cfg);
 }
 
-/// **The DCC keeps each measured switch per agent and row.** `oak` measured
-/// its switch to `Balanced` at 2 ms, then at 6 ms; to `HighPerformance` at
-/// 4 ms; `pine` its own to `Balanced` at 1 ms. The round reads the last
-/// measured of each (agent, row): 6 ms, 4 ms and 1 ms — `pine`'s is not
-/// `oak`'s — and a later report that carries no switch forgets nothing.
+/// **The DCC keeps each measured switch per agent and row.**
+///
+/// `oak` measured its switch to `Balanced` at 2 ms, then at 6 ms; to
+/// `HighPerformance` at 4 ms; `pine` its own to `Balanced` at 1 ms. The round
+/// reads the last measured of each (agent, row): 6 ms, 4 ms and 1 ms — `pine`'s
+/// is not `oak`'s — and a later report that carries no switch forgets nothing.
 #[test]
 fn the_dcc_keeps_each_measured_switch_per_agent_and_row() {
     let (oak, pine) = (AgentId::new("oak"), AgentId::new("pine"));
@@ -557,9 +561,10 @@ fn the_dcc_keeps_each_measured_switch_per_agent_and_row() {
 
 // ── The margin ────────────────────────────────────────────────────
 
-/// **The risk reads as a normal quantile.** A 5 % risk asks z ≈ 1.645, a 1 %
-/// risk z ≈ 2.326; a risk of one half or more asks none. Fewer than two
-/// frames, or frames that do not vary, ask no margin.
+/// **The risk reads as a normal quantile.**
+///
+/// A 5 % risk asks z ≈ 1.645, a 1 % risk z ≈ 2.326; a risk of one half or more
+/// asks none. Fewer than two frames, or frames that do not vary, ask no margin.
 #[test]
 fn the_risk_reads_as_a_normal_quantile() {
     assert!((z_of(0.05) - 1.6449).abs() < 1e-3, "{}", z_of(0.05));
@@ -572,11 +577,12 @@ fn the_risk_reads_as_a_normal_quantile() {
     assert_eq!(margin(&[ms(16); 50], 0.05), Duration::ZERO);
 }
 
-/// **A risk of zero keeps the widest margin, never none.** A risk of zero
-/// or less reads as the smallest positive one: its z is the largest, so the
-/// margin over a spread of frames is wider than a 5 % risk's — not zero, as
-/// a z that is not a number would make it. The same holds for a risk too
-/// small for 1 − risk to differ from 1.
+/// **A risk of zero keeps the widest margin, never none.**
+///
+/// A risk of zero or less reads as the smallest positive one: its z is the
+/// largest, so the margin over a spread of frames is wider than a 5 % risk's —
+/// not zero, as a z that is not a number would make it. The same holds for a
+/// risk too small for 1 − risk to differ from 1.
 #[test]
 fn a_risk_of_zero_keeps_the_widest_margin() {
     let frames = steady(30);
@@ -603,12 +609,13 @@ fn steady(count: usize) -> Vec<Duration> {
     (0..count).map(|frame| ms(9 + (frame % 3) as u64)).collect()
 }
 
-/// **The margin follows the frames' spread, not their hitches.** 120 frames
-/// cycling through 9, 10 and 11 ms spread by a median absolute deviation of
-/// 1 ms: at a 5 % risk, the margin is 1.645 × 1.4826 × 1 ms ≈ 2.439 ms. Four
-/// of them turned into 100 ms hitches leave the margin as it was, where a
-/// standard deviation would grow tenfold. The planner, fed those frames
-/// after older ones beyond the 120 it reads, plans the same margin.
+/// **The margin follows the frames' spread, not their hitches.**
+///
+/// 120 frames cycling through 9, 10 and 11 ms spread by a median absolute
+/// deviation of 1 ms: at a 5 % risk, the margin is 1.645 × 1.4826 × 1 ms ≈
+/// 2.439 ms. Four of them turned into 100 ms hitches leave the margin as it
+/// was, where a standard deviation would grow tenfold. The planner, fed those
+/// frames after older ones beyond the 120 it reads, plans the same margin.
 #[test]
 fn the_margin_follows_the_frames_spread_not_their_hitches() {
     let expected = 1.644_853_6 * 1.4826 * 1e-3;
@@ -646,11 +653,12 @@ fn the_margin_follows_the_frames_spread_not_their_hitches() {
     );
 }
 
-/// **The planner keeps no margin before ten frames.** A spread read over a
-/// handful of frames says nothing of the spread the engine will run with:
-/// two frames of 2 and 60 ms would keep 70 ms free of a 16 ms target. Below
-/// the default ten frames the planner keeps none; from the tenth, the
-/// frames' spread.
+/// **The planner keeps no margin before ten frames.**
+///
+/// A spread read over a handful of frames says nothing of the spread the engine
+/// will run with: two frames of 2 and 60 ms would keep 70 ms free of a 16 ms
+/// target. Below the default ten frames the planner keeps none; from the tenth,
+/// the frames' spread.
 #[test]
 fn the_planner_keeps_no_margin_before_ten_frames() {
     let mut started = Planner::new(PlanningConfig::default());
@@ -680,9 +688,10 @@ fn the_planner_keeps_no_margin_before_ten_frames() {
     );
 }
 
-/// **The planner waits for the frames its config names.** `min_frames` is
-/// ten by default; set to five, four frames keep no margin and the fifth
-/// keeps the frames' spread.
+/// **The planner waits for the frames its config names.**
+///
+/// `min_frames` is ten by default; set to five, four frames keep no margin and
+/// the fifth keeps the frames' spread.
 #[test]
 fn the_planner_waits_for_the_frames_its_config_names() {
     assert_eq!(PlanningConfig::default().min_frames, 10);
@@ -708,11 +717,13 @@ fn the_planner_waits_for_the_frames_its_config_names() {
 }
 
 /// **Normally spread frames are kept past the target no more often than the
-/// risk.** 120 frames of 10 ms plus 1 ms × the 120 normal quantiles — a
-/// standard deviation of 1 ms — in 32 orders shuffled by a fixed generator.
-/// At a 5 % risk the margin is about z × 1 ms ≈ 1.645 ms, so about 5 % of
-/// the frames run past 10 ms plus it, whatever their order: over the 32
-/// orders, no more than 7.5 %.
+/// risk.**
+///
+/// 120 frames of 10 ms plus 1 ms × the 120 normal quantiles — a standard
+/// deviation of 1 ms — in 32 orders shuffled by a fixed generator. At a 5 %
+/// risk the margin is about z × 1 ms ≈ 1.645 ms, so about 5 % of the frames run
+/// past 10 ms plus it, whatever their order: over the 32 orders, no more than
+/// 7.5 %.
 #[test]
 fn normally_spread_frames_overrun_the_margin_no_more_often_than_the_risk() {
     let quantile = |p: f64| if p < 0.5 { -z_of(p) } else { z_of(1.0 - p) };
@@ -746,11 +757,12 @@ fn normally_spread_frames_overrun_the_margin_no_more_often_than_the_risk() {
     );
 }
 
-/// **Frames alternating fast and slow keep a margin of their spread.** Half
-/// the frames at 8 ms and half at 12 ms, alternating every frame, every two
-/// frames or every five: a standard deviation of 2 ms, half the frames 2 ms
-/// above their mean. A margin under 2 ms plans half the frames past the
-/// target, so each order keeps at least 2 ms.
+/// **Frames alternating fast and slow keep a margin of their spread.**
+///
+/// Half the frames at 8 ms and half at 12 ms, alternating every frame, every
+/// two frames or every five: a standard deviation of 2 ms, half the frames 2 ms
+/// above their mean. A margin under 2 ms plans half the frames past the target,
+/// so each order keeps at least 2 ms.
 #[test]
 fn frames_alternating_fast_and_slow_keep_a_margin_of_their_spread() {
     for period in [1, 2, 5] {
@@ -772,8 +784,9 @@ fn frames_alternating_fast_and_slow_keep_a_margin_of_their_spread() {
     }
 }
 
-/// **The margin never takes the target below the floors.** `oak` (4 ms at
-/// 0.4, or 5 ms at 1.0) and `pine` (4 ms) in a 10 ms frame:
+/// **The margin never takes the target below the floors.**
+///
+/// `oak` (4 ms at 0.4, or 5 ms at 1.0) and `pine` (4 ms) in a 10 ms frame:
 /// - unplanned, `oak`'s upgrade fits (9 ms) and is taken;
 /// - keeping 5 ms free, the plans share 8 ms — the floors' critical path,
 ///   not 5 ms: the upgrade does not fit, the round keeps its trigger, and
@@ -851,12 +864,14 @@ fn the_margin_never_takes_the_target_below_the_floors() {
     assert_eq!(lent_to(&decision.allocation, "oak").time.cpu, us(4_000));
 }
 
-/// **The shield checks the planned target.** In a 10 ms frame keeping 2 ms
-/// free, `oak`'s 7 ms row beside `pine`'s 2 ms (9 ms) is refused, over the
-/// host's time; its 6 ms row (8 ms, at the planned target) and the floors
-/// are accepted. Unplanned, the 7 ms row is accepted. Planned at a growth of
-/// 1.5, `oak`'s 7 ms row asks 10.5 ms and is refused in an 11 ms frame, where
-/// it fits at its quote; the floors, planned at their quote, are accepted.
+/// **The shield checks the planned target.**
+///
+/// In a 10 ms frame keeping 2 ms free, `oak`'s 7 ms row beside `pine`'s 2 ms (9
+/// ms) is refused, over the host's time; its 6 ms row (8 ms, at the planned
+/// target) and the floors are accepted. Unplanned, the 7 ms row is accepted.
+/// Planned at a growth of 1.5, `oak`'s 7 ms row asks 10.5 ms and is refused in
+/// an 11 ms frame, where it fits at its quote; the floors, planned at their
+/// quote, are accepted.
 #[test]
 fn the_shield_checks_the_planned_target() {
     let mut bids = oak_and_pine(7_000);
@@ -939,8 +954,9 @@ fn the_shield_checks_the_planned_target() {
 
 // ── The growth ────────────────────────────────────────────────────
 
-/// **A rising workload holds back an upgrade that would not last.** `oak`
-/// (2 ms, or 6 ms at 1.0) beside `pine` (2 ms) in a 10 ms frame:
+/// **A rising workload holds back an upgrade that would not last.**
+///
+/// `oak` (2 ms, or 6 ms at 1.0) beside `pine` (2 ms) in a 10 ms frame:
 /// - with no trend, the upgrade (8 ms) is taken;
 /// - expected to grow by 1.5 over the horizon, it would ask 11 ms: it is not;
 /// - expected to grow by 1.2, it asks 7.2 ms and is taken, and the envelope
@@ -984,11 +1000,13 @@ fn a_rising_workload_holds_back_an_upgrade_that_would_not_last() {
     assert_eq!(planned_for(&floors.rows, "oak"), Some(LowPower));
 }
 
-/// **A falling workload does not cheapen a row.** A workload falling from
-/// 100 to 80 over 2 s is expected, linear, at 30 in 5 s: a growth of 0.375.
-/// Planned at it, `oak`'s 9 ms row still asks 9 ms beside `pine`'s 2 ms, and
-/// is not taken in a 10 ms frame; its 6 ms row is taken, and lent what its
-/// quote asks: 6 ms plus its part of 80 % of the 2 ms left, 7.2 ms.
+/// **A falling workload does not cheapen a row.**
+///
+/// A workload falling from 100 to 80 over 2 s is expected, linear, at 30 in 5
+/// s: a growth of 0.375. Planned at it, `oak`'s 9 ms row still asks 9 ms beside
+/// `pine`'s 2 ms, and is not taken in a 10 ms frame; its 6 ms row is taken, and
+/// lent what its quote asks: 6 ms plus its part of 80 % of the 2 ms left, 7.2
+/// ms.
 #[test]
 fn a_falling_workload_does_not_cheapen_a_row() {
     let falling = [
@@ -1023,13 +1041,14 @@ fn a_falling_workload_does_not_cheapen_a_row() {
     );
 }
 
-/// **A growing row never lets another agent past the target.** `oak` is
-/// pinned to its 8 ms row (floor 1 ms) and expected to grow by 2; `pine`, in
-/// `oak`'s wave, offers 1 ms or 12 ms. In a 10 ms frame the wave asks
-/// max(8, 12) = 12 ms with `pine`'s upgrade: over the target, so the round
+/// **A growing row never lets another agent past the target.**
+///
+/// `oak` is pinned to its 8 ms row (floor 1 ms) and expected to grow by 2;
+/// `pine`, in `oak`'s wave, offers 1 ms or 12 ms. In a 10 ms frame the wave
+/// asks max(8, 12) = 12 ms with `pine`'s upgrade: over the target, so the round
 /// without a trend refuses it. Planning for `oak`'s growth only plans rows
-/// dearer: it must refuse at least as much, never plan `pine` past the
-/// frame because `oak`'s grown row lifted the target the plans share.
+/// dearer: it must refuse at least as much, never plan `pine` past the frame
+/// because `oak`'s grown row lifted the target the plans share.
 #[test]
 fn a_growing_row_never_lets_another_agent_past_the_target() {
     let mut bids = [
@@ -1080,11 +1099,12 @@ fn a_growing_row_never_lets_another_agent_past_the_target() {
     );
 }
 
-/// **The growth reads the trend through the cost class.** A workload rising
-/// from 100 by 10 a second, last at 120, is expected at 170 in 5 s: a linear
-/// cost grows by 170 / 120, a quadratic one by its square, an `n log n` one
-/// by f(170) / f(120), a constant one not at all. With fewer than two
-/// samples, a flat trend, or a cost of nothing now, nothing grows; a
+/// **The growth reads the trend through the cost class.**
+///
+/// A workload rising from 100 by 10 a second, last at 120, is expected at 170
+/// in 5 s: a linear cost grows by 170 / 120, a quadratic one by its square, an
+/// `n log n` one by f(170) / f(120), a constant one not at all. With fewer than
+/// two samples, a flat trend, or a cost of nothing now, nothing grows; a
 /// workload expected below zero grows to nothing, never less.
 #[test]
 fn the_growth_reads_the_trend_through_the_cost_class() {
@@ -1136,10 +1156,11 @@ fn the_growth_reads_the_trend_through_the_cost_class() {
     );
 }
 
-/// A planner of `cfg` that has read `oak`'s and `pine`'s reports: `oak`'s
-/// workload falls for 14 reports, then rises linearly for 16, from 100 to
-/// 250 a second apart, its cost quadratic; `pine`'s holds at 50, its cost
-/// linear.
+/// Returns a planner of `cfg` that has read `oak`'s and `pine`'s reports.
+///
+/// `oak`'s workload falls for 14 reports, then rises linearly for 16, from
+/// 100 to 250 a second apart, its cost quadratic; `pine`'s holds at 50, its
+/// cost linear.
 fn planner_of_two_trends(cfg: PlanningConfig) -> Planner {
     let (oak, pine) = (AgentId::new("oak"), AgentId::new("pine"));
     let mut planner = Planner::new(cfg);
@@ -1166,11 +1187,12 @@ fn two_offers() -> [Offer; 2] {
     ]
 }
 
-/// **The planner reads each agent's growth from its trend and class**, when
-/// it follows trends. `oak`'s trend is read over the 16 reports the config
-/// names, from 100 to 250 a second apart: expected at 300 in 5 s, a
-/// quadratic cost grows by (300 / 250)² = 1.44. `pine`'s holds at 50: it
-/// grows by 1.
+/// **The planner reads each agent's growth from its trend and class**
+///
+/// , when it follows trends. `oak`'s trend is read over the 16 reports the
+/// config names, from 100 to 250 a second apart: expected at 300 in 5 s, a
+/// quadratic cost grows by (300 / 250)² = 1.44. `pine`'s holds at 50: it grows
+/// by 1.
 #[test]
 fn the_planner_reads_each_agents_growth_from_its_trend_and_class() {
     let (oak, pine) = (AgentId::new("oak"), AgentId::new("pine"));
@@ -1190,9 +1212,10 @@ fn the_planner_reads_each_agents_growth_from_its_trend_and_class() {
     assert_eq!(planning.horizon, Duration::from_secs(5));
 }
 
-/// **The planner follows no trend by default.** Fed the same rising
-/// workload, a planner of the default settings names no growth: every agent
-/// is planned at its quote.
+/// **The planner follows no trend by default.**
+///
+/// Fed the same rising workload, a planner of the default settings names no
+/// growth: every agent is planned at its quote.
 #[test]
 fn the_planner_follows_no_trend_by_default() {
     assert!(!PlanningConfig::default().follow_trends);

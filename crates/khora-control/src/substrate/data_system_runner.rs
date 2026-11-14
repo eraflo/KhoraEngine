@@ -23,18 +23,13 @@ use khora_data::ecs::{
 };
 use std::collections::HashMap;
 
-/// Runs every [`DataSystemRegistration`] declared for the given phase, in a
-/// stable order: topological by `runs_after`, then by `order_hint`, then by
-/// `name` for full determinism.
+/// Runs every [`DataSystemRegistration`] of `phase`: by `runs_after`, then `order_hint`,
+/// then `name`.
 ///
-/// `deck` is the per-tick typed [`OutputDeck`] the lanes wrote into during
-/// the CLAD descent. `Maintenance`-phase systems drain typed writeback
-/// slots from it (`deck.take::<MyWriteback>()`) and apply the results to
-/// ECS components. Pre-scheduler phases pass a transient empty deck.
-///
-/// On a cycle in `runs_after` the function logs an error and falls back to
-/// the `(order_hint, name)` ordering — execution still happens, just not in
-/// DAG order. Validating cycles at registration time is a future improvement.
+/// `deck` is the frame's [`OutputDeck`]: `Maintenance` systems drain the lanes'
+/// writebacks from it; the phases before the scheduler pass an empty one. A system
+/// serving a family that is off is skipped. On a `runs_after` cycle, logs an error and
+/// keeps the `(order_hint, name)` order.
 pub fn run_data_systems(
     world: &mut World,
     runtime: &Runtime,
@@ -55,11 +50,9 @@ pub fn run_data_systems(
 
     let activation = runtime.resources.get::<std::sync::Arc<Activation>>();
 
-    // Each run writes at a tick of its own, which is what the system has
-    // seen once it returns; the clock then moves past it. It is handed the
-    // tick of its previous run on this world: what changed since is what it
-    // has not seen. A system serving a family off in the state in force is
-    // skipped, and the world notes it, so its next run is told it resumes.
+    // Each run writes at a tick of its own, and is handed the tick of its previous
+    // run on this world: what changed since is what it has not seen. A skip is
+    // noted, so the system's next run is told it resumes.
     for sys in systems {
         let observer = Observer::DataSystem(sys.name);
         let Some(scope) = role_scope(sys.role, activation.map(|a| a.as_ref()), world) else {
@@ -78,14 +71,12 @@ pub fn run_data_systems(
     }
 }
 
-/// Whether a registration of `role` runs this frame, and on what: `None`
-/// when it is skipped (it serves a family off); `Some(None)` when it runs on
-/// everything (upkeep, or a family plainly on); `Some(Some(key))` when its
-/// family is scoped to the marker registered as `key`'s name. A runtime with
-/// no [`Activation`] has every family on.
+/// Returns whether a registration of `role` runs this frame, and on which marker's key.
 ///
-/// A marker the world does not know resolves to the key of its name, which no
-/// entity holds: the family works on nothing until something declares it.
+/// `None`: skipped, its family is off. `Some(None)`: it runs on everything (upkeep, a
+/// family plainly on, or no [`Activation`]). `Some(Some(key))`: its family is scoped to
+/// the marker named by `key`; a marker the world does not know resolves to the key of its
+/// name, which no entity holds.
 pub(crate) fn role_scope(
     role: Role,
     activation: Option<&Activation>,
@@ -106,9 +97,9 @@ pub(crate) fn role_scope(
     }
 }
 
-/// The tick at which the observing `DataSystem` registered as `name` last
-/// ran on `world` — what it has seen of that world's changes. `Tick(0)` for a
-/// system that never ran on it: a new world (a new
+/// Returns the tick at which the `DataSystem` registered as `name` last ran on `world`.
+///
+/// `Tick(0)` for a system that never ran on it: a new world (a new
 /// [`World::instance_id`]) restarts every observer.
 pub fn data_system_last_seen(name: &str, world: &World) -> Tick {
     registered_name(
@@ -122,7 +113,7 @@ pub fn data_system_last_seen(name: &str, world: &World) -> Tick {
     })
 }
 
-/// The registered `&'static` name equal to `name`, if one is registered.
+/// Returns the registered `&'static` name equal to `name`, if one is registered.
 pub(crate) fn registered_name(
     name: &str,
     mut names: impl Iterator<Item = &'static str>,
@@ -130,12 +121,9 @@ pub(crate) fn registered_name(
     names.find(|registered| *registered == name)
 }
 
-/// Stable in-place sort over a phase's systems.
+/// Sorts a phase's systems in place by `runs_after`, ties broken by `(order_hint, name)`.
 ///
-/// Topological by `runs_after` (Kahn's algorithm via
-/// [`topological_sort`]), with `(order_hint, name)` lifted as the
-/// tie-breaker among ready-equal nodes. On a cycle, falls back to
-/// `(order_hint, name)` only and logs an error.
+/// On a cycle, keeps the `(order_hint, name)` order and logs an error.
 fn sort_systems(systems: &mut Vec<&'static DataSystemRegistration>) {
     // Lift `(order_hint, name)` as the deterministic baseline. Kahn's
     // ready queue is a FIFO, so this baseline ordering carries through to

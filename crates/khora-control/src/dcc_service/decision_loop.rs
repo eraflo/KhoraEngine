@@ -40,16 +40,19 @@ use khora_core::agent::gorna::protocol::{Report, Trigger};
 use khora_core::agent::gorna::{AgentHints, AgentId, EpochRecord, FrameSummary};
 use std::collections::HashMap;
 
-/// The share of the platform's video-memory budget kept in reserve, as
-/// engines that size their pools from it do: the budget moves with the
-/// other programs on the GPU, and running at its edge invites eviction.
+/// The share of the platform's video-memory budget kept in reserve.
+///
+/// The budget moves with the other programs on the GPU, and running at its
+/// edge invites eviction. See the book: concepts/telemetry.md, "Video memory".
 const VRAM_HEADROOM: f64 = 0.1;
 
 /// How often the DCC's thread reads its hardware monitor.
 const HARDWARE_READ_PERIOD: Duration = Duration::from_secs(1);
 
 impl DccService {
-    /// Starts the DCC background thread.
+    /// Starts the DCC's decision thread; does nothing if it already runs.
+    ///
+    /// See the book: concepts/the-frame.md, "Two clocks, one channel".
     pub fn start(&mut self, event_rx: Receiver<TelemetryEvent>) {
         if self.running.load(Ordering::SeqCst) {
             return;
@@ -106,21 +109,16 @@ impl DccService {
             let started = Instant::now();
             // When the next epoch opens, and what waits to open it.
             let mut epochs = Epochs::default();
-            // Per-agent empirical cost models (`c·f(n)`), fed from the reports
-            // the scheduler publishes and used to forecast budget breaches
-            // before they happen, each read at the workload its own agent last
-            // reported.
+            // Per-agent empirical cost models (`c·f(n)`), each read at the
+            // workload its own agent last reported.
             let mut cost_models: HashMap<AgentId, CostModel> = HashMap::new();
             let mut workloads: HashMap<AgentId, f64> = HashMap::new();
             // Each agent's latest report, for the journal.
             let mut reports: HashMap<AgentId, Report> = HashMap::new();
-            // Latest wave plan from the hot path: how agents are grouped for
-            // concurrent execution. Empty until the scheduler publishes one (and
-            // stays empty under serial execution), in which case cost fitting
-            // falls back to summing per-agent costs.
+            // The latest wave plan from the hot path; empty until the scheduler
+            // publishes one, and under serial execution.
             let mut latest_wave_plan: Vec<Vec<AgentId>> = Vec::new();
-            // Read-only layout advisor: turns per-component access telemetry into
-            // a recommendation for the glass-box. Stateless (a tuned heuristic).
+            // Turns per-component access telemetry into a layout recommendation.
             let layout_advisor = LayoutAdvisor::default();
             // The frame governor: drives the global budget multiplier from the
             // frames' critical paths, so the frame settles under its setpoint.
@@ -151,9 +149,8 @@ impl DccService {
             while running.load(Ordering::Relaxed) {
                 let start_time = Instant::now();
 
-                // Read the hardware — heat, battery, the CPU's load — on this
-                // thread, at most once a second: a sensor read can take
-                // milliseconds, and none of it may land in a frame.
+                // A sensor read can take milliseconds, and none of it may land
+                // in a frame. See the book: concepts/telemetry.md, "The hardware".
                 if hardware_read.is_none_or(|at| at.elapsed() >= HARDWARE_READ_PERIOD) {
                     let monitor = hardware_monitor
                         .read()
@@ -177,9 +174,8 @@ impl DccService {
                     }
                 }
 
-                // Ingest all pending events. The frames reported during
-                // this tick, in order, are what the governor observes once
-                // the tick's setpoint is known.
+                // The frames reported during this tick, in order, are what the
+                // governor observes once the tick's setpoint is known.
                 let mut frames: Vec<Duration> = Vec::new();
                 let journal = recording_since(&decision_recording);
                 if journal != frames_of {
@@ -194,11 +190,9 @@ impl DccService {
                             }
                         }
                         TelemetryEvent::ResourceReport { resource, usage } => {
-                            // The video memory left is what GORNA caps the
-                            // upgrades that add VRAM on: the developer's
-                            // budget, else the device's capacity, less what
-                            // is used. A report with neither says nothing of
-                            // what is left: the figure the DCC knew stays.
+                            // A report with neither a budget nor a capacity
+                            // says nothing of what is left: the figure the
+                            // DCC knew stays.
                             if resource == MonitoredResourceType::Vram {
                                 store.push(
                                     MetricId::new("vram", "current_bytes"),
@@ -249,10 +243,6 @@ impl DccService {
                             ctx.inactive = inactive;
                         }
                         TelemetryEvent::AgentReport(run) => {
-                            // A run's report feeds the agent's empirical cost
-                            // model at the run's workload, surfaces the run's
-                            // time as a glass-box metric, may raise a trigger,
-                            // and is kept for the journal.
                             let id = run.agent;
                             let time = &run.measured;
                             let time_ms = time
@@ -286,9 +276,6 @@ impl DccService {
                             reports.insert(id, run);
                         }
                         TelemetryEvent::FrameReport(frame) => {
-                            // The frame's busy time on each device it
-                            // measured, and its critical path, which the
-                            // governor and the heuristics regulate on.
                             let busy = &frame.busy;
                             for (device, time) in [
                                 ("cpu_ms", busy.cpu),
@@ -313,9 +300,7 @@ impl DccService {
                             }
                         }
                         TelemetryEvent::WavePlan { waves } => {
-                            // The hot path republishes this each frame; keep the
-                            // latest so arbitration costs concurrent waves by
-                            // their critical path.
+                            // Republished each frame: the latest wins.
                             latest_wave_plan = waves;
                         }
                         TelemetryEvent::ComponentAccess {
@@ -324,9 +309,8 @@ impl DccService {
                             query_count,
                             rows_scanned,
                         } => {
-                            // Advise (read-only) which layout this component would
-                            // benefit from, and surface rows-scanned for the
-                            // glass-box. The DCC never repacks — Data owns layout.
+                            // Advice only: the DCC never repacks, Data owns its
+                            // layout.
                             let recommendation =
                                 layout_advisor.recommend(size_bytes, query_count, rows_scanned);
                             if let Ok(mut recs) = layout_recommendations.write() {
@@ -340,12 +324,10 @@ impl DccService {
                     }
                 }
 
-                // Perform Analysis & Arbitration
                 let (mut report, mut ctx_copy) = {
                     let mut ctx = context.write().unwrap_or_else(|e| e.into_inner());
-                    // Fold the latest tracking-allocator telemetry into the
-                    // context so memory pressure influences the budget alongside
-                    // thermal/battery (the allocator's data drives a decision).
+                    // The tracking allocator's figures give the memory pressure
+                    // the heuristics read.
                     let mem_bytes = store.get_average(&MetricId::new("memory", "current_bytes"));
                     ctx.hardware.current_ram_bytes = (mem_bytes > 0.0).then_some(mem_bytes as u64);
                     ctx.hardware.memory_budget_bytes = memory_budget_bytes;
@@ -360,12 +342,9 @@ impl DccService {
                 // would cut the same overrun twice.
                 let setpoint_ms = report.suggested_latency_ms;
 
-                // Anticipatory budgeting: the empirical per-agent cost models
-                // forecast the combined frame cost at the current workload. If
-                // that exceeds the budget, negotiate now and tighten the target
-                // so GORNA downgrades *before* the frame actually overruns —
-                // turning the reactive loop predictive (model proposes,
-                // measurement disposes).
+                // A forecast breach tightens the target GORNA shares, so it
+                // downgrades before the frame overruns. See the book:
+                // concepts/gorna.md, "The cost model and the frame governor".
                 if let Some(predicted_ms) = forecast_frame_ms(
                     &cost_models,
                     &workloads,
@@ -391,12 +370,10 @@ impl DccService {
                     epochs.raise(Trigger::Pressure);
                 }
 
-                // The frame governor: it observes the tick's frames and
-                // decides, once the last change has reached them, whether
-                // the multiplier moves. It never lowers it when every agent
-                // already runs its floor — no row is left to give. A hard
-                // safety ceiling (Critical thermal/battery, near-budget
-                // memory) caps what is published, whatever it decided.
+                // The governor decides only on frames its last change reached,
+                // and never lowers with every agent at its floor; the safety
+                // ceiling caps what is published. See the book:
+                // concepts/gorna.md, "The cost model and the frame governor".
                 let setpoint = Duration::from_secs_f64(f64::from(setpoint_ms.max(0.0)) / 1_000.0);
                 // The planner reads its margin from the samples the governor
                 // keeps: no hitch, a load frame bounded.
@@ -436,10 +413,8 @@ impl DccService {
                     frames.len()
                 );
 
-                // 2b-ter. A multiplier that moved since the last issuance — in
-                //     either direction — re-arbitrates: pressure drives
-                //     downgrades, and this drives recovery, so agents upgrade
-                //     again once the frames have room.
+                // A multiplier moved either way re-arbitrates: pressure drives
+                // downgrades, this drives recovery once the frames have room.
                 if let Some(last) = last_issued_multiplier {
                     if (multiplier - last).abs() > MULTIPLIER_EPSILON {
                         epochs.raise(Trigger::FrameGovernor);
@@ -603,7 +578,6 @@ impl DccService {
                     *learnt = arbitrator.cost_book().export();
                 }
 
-                // Sleep until next tick
                 let elapsed = start_time.elapsed();
                 if elapsed < tick_duration {
                     thread::sleep(tick_duration - elapsed);

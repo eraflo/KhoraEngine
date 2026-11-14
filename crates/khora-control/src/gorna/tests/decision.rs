@@ -67,11 +67,13 @@ fn a_live_round(arbitrator: &mut GornaArbitrator) -> Allocation {
     )
 }
 
-/// **The arbitrator keeps the rows it planned.** In a 16 ms frame, `ash`'s
-/// 3 ms upgrade fits and `elm`'s 20 ms one does not: the round plans `ash`'s
-/// `HighPerformance` and `elm`'s floor, and lends each an envelope that fits
-/// the row planned for it, in its quotes. `planned()` names each agent once,
-/// with that row — the row the agent runs on what it was lent.
+/// **The arbitrator keeps the rows it planned.**
+///
+/// In a 16 ms frame, `ash`'s 3 ms upgrade fits and `elm`'s 20 ms one does not:
+/// the round plans `ash`'s `HighPerformance` and `elm`'s floor, and lends each
+/// an envelope that fits the row planned for it, in its quotes. `planned()`
+/// names each agent once, with that row — the row the agent runs on what it was
+/// lent.
 #[test]
 fn the_arbitrator_keeps_the_rows_it_planned() {
     let mut arbitrator = arbitrator();
@@ -93,12 +95,14 @@ fn the_arbitrator_keeps_the_rows_it_planned() {
     );
 }
 
-/// The reasons a journal recorded for epoch 99, each unlike what a live round
-/// of `ash` and `elm` in a 16 ms frame decides: decided by the exact search,
-/// bound by the graphics processor's time, `elm`'s `Balanced` refused for
-/// it; a 33 ms target; a 2 ms margin and a 4 ms switch of `ash` to
-/// `Balanced`; `ash`'s `Balanced` learnt at 1.5 ± 0.25; `ash` planned at
-/// `Balanced` and `elm` at its floor; `ash` lent 7 ms and `elm` 2.5 ms.
+/// Returns the reasons a journal recorded for epoch 99, each unlike what a
+/// live round of `ash` and `elm` in a 16 ms frame decides.
+///
+/// Decided by the exact search, bound by the graphics processor's time,
+/// `elm`'s `Balanced` refused for it; a 33 ms target; a 2 ms margin and a
+/// 4 ms switch of `ash` to `Balanced`; `ash`'s `Balanced` learnt at
+/// 1.5 ± 0.25; `ash` planned at `Balanced` and `elm` at its floor; `ash` lent
+/// 7 ms and `elm` 2.5 ms.
 fn a_recorded_epoch() -> EpochRecord {
     let lent = |micros| Envelope {
         time: PerDevice {
@@ -161,11 +165,13 @@ fn a_recorded_epoch() -> EpochRecord {
     }
 }
 
-/// **A reissued record puts its reasons in force.** After a live round, a
-/// journal's epoch is reissued: the allocation in force is the record's, and
-/// so are the reasons the arbitrator gives for it — its `why`, its planning,
-/// its corrections, its planned rows and its target — not the live round's.
-/// A replayed allocation is never explained by another round's reasons.
+/// **A reissued record puts its reasons in force.**
+///
+/// After a live round, a journal's epoch is reissued: the allocation in force
+/// is the record's, and so are the reasons the arbitrator gives for it — its
+/// `why`, its planning, its corrections, its planned rows and its target — not
+/// the live round's. A replayed allocation is never explained by another
+/// round's reasons.
 #[test]
 fn a_reissued_record_puts_its_reasons_in_force() {
     let mut arbitrator = arbitrator();
@@ -210,11 +216,12 @@ fn each_planned_row_is_run(
         .collect()
 }
 
-/// **A `Safety` round plans the floors it lends.** `ash` is pinned to its
-/// `HighPerformance`; the round opens as `Safety`, which lends every agent
-/// its floor and no pin. The rows the arbitrator says it planned are the rows
-/// the agents run on what they are lent: `ash`'s floor, not the pin the
-/// round did not lend.
+/// **A `Safety` round plans the floors it lends.**
+///
+/// `ash` is pinned to its `HighPerformance`; the round opens as `Safety`, which
+/// lends every agent its floor and no pin. The rows the arbitrator says it
+/// planned are the rows the agents run on what they are lent: `ash`'s floor,
+/// not the pin the round did not lend.
 #[test]
 fn a_safety_round_plans_the_floors_it_lends() {
     let mut arbitrator = arbitrator();
@@ -246,10 +253,11 @@ fn a_safety_round_plans_the_floors_it_lends() {
 }
 
 /// **A `Stable` agent that keeps its envelope is planned the row it runs.**
-/// A first round lends `ash` its 3 ms `HighPerformance`; `Stable` from then
-/// on, the next round keeps its envelope. The row the arbitrator says it
-/// planned for `ash`, if it names one, is the row `ash` runs on the envelope
-/// kept — not its floor.
+///
+/// A first round lends `ash` its 3 ms `HighPerformance`; `Stable` from then on,
+/// the next round keeps its envelope. The row the arbitrator says it planned
+/// for `ash`, if it names one, is the row `ash` runs on the envelope kept — not
+/// its floor.
 #[test]
 fn a_stable_agent_keeping_its_envelope_is_planned_the_row_it_runs() {
     let mut arbitrator = arbitrator();
@@ -289,11 +297,12 @@ fn a_stable_agent_keeping_its_envelope_is_planned_the_row_it_runs() {
     );
 }
 
-/// **An agent that answers late is planned the row it runs.** A first round
-/// lends `ash` its 3 ms `HighPerformance`; in the next, `ash` answers after
-/// the round's deadline and keeps its envelope. The row the arbitrator says it
-/// planned for `ash`, if it names one, is the row `ash` runs on the envelope
-/// kept — not its floor.
+/// **An agent that answers late is planned the row it runs.**
+///
+/// A first round lends `ash` its 3 ms `HighPerformance`; in the next, `ash`
+/// answers after the round's deadline and keeps its envelope. The row the
+/// arbitrator says it planned for `ash`, if it names one, is the row `ash` runs
+/// on the envelope kept — not its floor.
 #[test]
 fn an_agent_answering_late_is_planned_the_row_it_runs() {
     let mut arbitrator = GornaArbitrator::new(Duration::from_millis(20));

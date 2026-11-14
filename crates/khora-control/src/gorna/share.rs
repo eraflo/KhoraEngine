@@ -26,12 +26,12 @@ use super::plan::{within, Plan};
 use super::round::{Bid, Round};
 use super::units::{busiest, fits_envelope, micros, micros_of_ms};
 
-/// The allocation that lends `plans`: the envelopes shared from them, the
-/// pins and allowed rows the policies name, the agents late, the price of
-/// the last upgrade, and whether a lower target can take something back.
-/// An agent that priced no row is named in no envelope, unless it keeps
-/// one: the round knows nothing of what it costs, and a zero-time envelope
-/// would starve it. It keeps what it holds, or runs at its own price.
+/// Returns the allocation that lends `plans`.
+///
+/// It holds the envelopes shared from them, the pins and allowed rows the
+/// policies name, the agents late, the price of the last upgrade, and whether
+/// a lower target can take something back. An agent that priced no row and
+/// keeps no envelope is named in none: it runs at its own price.
 pub(crate) fn allocation(
     round: &Round<'_>,
     bids: &[&Bid],
@@ -79,9 +79,10 @@ pub(crate) fn allocation(
     }
 }
 
-/// Leaves out of `envelopes` every agent of `bids` that priced no row and
-/// keeps no envelope: the round knows nothing of what it costs, and a
-/// zero-time envelope would starve it.
+/// Removes from `envelopes` every agent that priced no row and keeps none.
+///
+/// The round knows nothing of what such an agent costs, and a zero-time
+/// envelope would starve it.
 pub(crate) fn name_priced(envelopes: &mut Vec<(AgentId, Envelope)>, bids: &[&Bid], plans: &[Plan]) {
     let unpriced: Vec<AgentId> = (bids.iter().zip(plans))
         .filter(|(bid, plan)| plan.fixed.is_none() && !priced(bid))
@@ -90,15 +91,16 @@ pub(crate) fn name_priced(envelopes: &mut Vec<(AgentId, Envelope)>, bids: &[&Bid
     envelopes.retain(|(agent, _)| !unpriced.contains(agent));
 }
 
-/// Whether `bid` offers a row whose cost is known.
+/// Returns whether `bid` offers a row whose cost is known.
 pub(crate) fn priced(bid: &Bid) -> bool {
     (bid.offer.rows.iter()).any(|row| row.confidence != CostBasis::Assumed)
 }
 
-/// Holds each envelope of `envelopes` to the row planned for its agent: an
-/// agent runs the best row its envelope fits, so an envelope that fits a row
-/// of more quality than the one planned is cut just under that row. An agent
-/// holding a kept envelope keeps it.
+/// Holds each envelope to the row planned for its agent; a kept envelope is
+/// left as it is.
+///
+/// An agent runs the best row its envelope fits, so an envelope that fits a
+/// row of more quality than the one planned is cut just under that row.
 pub(crate) fn hold_to_plan(envelopes: &mut [(AgentId, Envelope)], bids: &[&Bid], plans: &[Plan]) {
     for (bid, plan) in bids.iter().zip(plans) {
         let Some(planned) = plan.row else {
@@ -117,11 +119,12 @@ pub(crate) fn hold_to_plan(envelopes: &mut [(AgentId, Envelope)], bids: &[&Bid],
     }
 }
 
-/// Holds `allocation`, lent in the agents' quoted units, to the rows
-/// `planned` at the costs the agents quoted in `quoted` — an agent chooses
-/// its row by its own quotes — then says again whether a lower target can
-/// take something back, `bids` giving each agent's policies. The agents of
-/// `kept` keep their envelope.
+/// Holds `allocation`, lent in quoted units, to the rows `planned` at the
+/// costs the agents quoted in `quoted`.
+///
+/// An agent chooses its row by its own quotes. The agents of `kept` keep
+/// their envelope. `lever` is cleared when no agent has a lever as it sees
+/// its envelope, `bids` giving each one's policies; it is never raised.
 pub(crate) fn hold_to_quotes(
     allocation: &mut Allocation,
     quoted: &[Offer],
@@ -159,7 +162,7 @@ pub(crate) fn hold_to_quotes(
     allocation.lever = allocation.lever && lever(&refs, &allocation.envelopes);
 }
 
-/// Whether a lower target can take something back from any agent of `bids`
+/// Returns whether a lower target can take something back from any agent of `bids`
 /// under `envelopes`.
 pub(crate) fn lever(bids: &[&Bid], envelopes: &[(AgentId, Envelope)]) -> bool {
     bids.iter().any(|bid| {
@@ -169,10 +172,11 @@ pub(crate) fn lever(bids: &[&Bid], envelopes: &[(AgentId, Envelope)]) -> bool {
     })
 }
 
-/// Cuts `envelope` so no row of `rows` of more quality than `planned` fits
-/// it, never below `least`: each such row that fits is cut just under, on
-/// the device where it costs the most above `least` by at least a
-/// microsecond, else in memory. A row that costs no more than `least`
+/// Cuts `envelope` so no row of more quality than `planned` fits it, never
+/// below `least`.
+///
+/// A row is cut just under on the device where it costs most above `least`
+/// (by at least 1 µs), else in memory. A row that costs no more than `least`
 /// anywhere cannot be held off.
 fn hold(envelope: &mut Envelope, rows: &[OfferRow], planned: &OfferRow, least: &Cost) {
     let step = Duration::from_micros(1);
@@ -202,12 +206,11 @@ fn hold(envelope: &mut Envelope, rows: &[OfferRow], planned: &OfferRow, least: &
     }
 }
 
-/// Whether a lower frame target can take something back from `bid`: a row
-/// above its floor fits the envelope it is lent, so a smaller one makes it
-/// run a cheaper row. That covers a planned upgrade, a `Stable` envelope it
-/// keeps, and the slack share every envelope carries — an agent chooses its
-/// row within its envelope, whatever row the plan started it on. No target
-/// moves a row a `Manual` policy pins, nor what a late or busy agent keeps.
+/// Returns whether a lower frame target can take something back from `bid`.
+///
+/// True when a row above its floor fits the envelope it is lent: a planned
+/// upgrade, a kept `Stable` envelope, or the slack share. No target moves a
+/// row a `Manual` policy pins, nor what a late or busy agent keeps.
 fn above_floor(bid: &Bid, plan: &Plan, envelope: &Envelope) -> bool {
     if matches!(bid.mode, AdaptationMode::Manual(_)) || bid.late || bid.offer.rows.is_empty() {
         return false;
@@ -220,15 +223,14 @@ fn above_floor(bid: &Bid, plan: &Plan, envelope: &Envelope) -> bool {
         .any(|row| fits_envelope(&row.cost, envelope))
 }
 
-/// The envelopes: each agent's planned time and memory, plus 80 % of what
-/// the frame leaves on each device shared in proportion to them; 20 % stays
-/// in reserve. A kept envelope is lent as it is. A cap and a `Stable` ceiling
-/// bound the time, never below the floor. A memory the DCC does not know
-/// limits nothing.
+/// Returns each agent's envelope: its planned cost plus its part of 80 % of
+/// the slack on each device.
 ///
-/// The share scales every planned time by one factor per device, so a wave's
-/// slowest member stays its slowest and the critical path grows by 80 % of
-/// the slack at most.
+/// A kept envelope is lent as it is. A cap and a `Stable` ceiling bound the
+/// time, never below the floor. A memory the DCC does not know limits
+/// nothing. The share keeps the critical path under the target.
+///
+/// See the book: concepts/gorna.md, "Formalisation".
 fn share(round: &Round<'_>, bids: &[&Bid], plans: &[Plan]) -> Vec<(AgentId, Envelope)> {
     let target = micros(round.target);
     let paths = critical_paths(round, bids, plans);
@@ -263,11 +265,9 @@ fn share(round: &Round<'_>, bids: &[&Bid], plans: &[Plan]) -> Vec<(AgentId, Enve
                     }
                 };
             }
-            // A kept envelope is lent as it was, except for memory it can no
-            // longer have now the DCC knows the device's.
-            // A kept envelope is lent as it was. Where it was lent while the
-            // device's memory was not known (`u64::MAX`), its memory is the
-            // share computed now.
+            // A kept envelope is lent as it was, except where it was lent
+            // while the device's memory was unknown (`u64::MAX`): there its
+            // memory is the share computed now.
             if let Some(fixed) = plan.fixed {
                 envelope.time = fixed.time;
                 for device in Device::ALL {
@@ -281,7 +281,7 @@ fn share(round: &Round<'_>, bids: &[&Bid], plans: &[Plan]) -> Vec<(AgentId, Enve
         .collect()
 }
 
-/// `asked`'s part of 80 % of `slack`, in proportion to `asked` out of
+/// Returns `asked`'s part of 80 % of `slack`, in proportion to `asked` out of
 /// `total`, rounded down.
 fn eighty_percent_share(slack: u64, asked: u64, total: u64) -> u64 {
     if total == 0 {

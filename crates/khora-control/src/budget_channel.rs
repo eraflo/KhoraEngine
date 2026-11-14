@@ -39,9 +39,9 @@ struct BudgetChannelInner {
 
 #[derive(Default)]
 struct Waiting {
-    /// The publications waiting, each with whether it waits its turn (a
-    /// replayed one) or may be superseded (a live one). A live one, if any,
-    /// is the last.
+    /// The publications waiting, each flagged `true` if it waits its turn.
+    ///
+    /// A live one (`false`), if any, is the last.
     queue: VecDeque<(Publication, bool)>,
     /// How many allocations were published, the last one's place.
     count: u64,
@@ -74,16 +74,18 @@ impl BudgetChannel {
         Self::default()
     }
 
-    /// Cold thread: publishes the allocation the DCC decided. Non-blocking;
-    /// the last one published before a [`sync`](Self::sync) wins over the
-    /// live ones before it.
+    /// Publishes the allocation the DCC decided, from the cold thread.
+    ///
+    /// Non-blocking. The last one published before a [`sync`](Self::sync)
+    /// supersedes the live ones before it.
     pub fn publish(&self, allocation: Allocation) {
         self.waiting().push(allocation, false);
     }
 
-    /// Cold thread: publishes a replayed allocation, which waits its turn: it
-    /// is taken at a frame start of its own, after the ones published in turn
-    /// before it, and no later publication supersedes it.
+    /// Publishes a replayed allocation that waits its turn, from the cold thread.
+    ///
+    /// It is taken at a frame start of its own, after the ones published in
+    /// turn before it; no later publication supersedes it.
     pub fn publish_in_turn(&self, allocation: Allocation) {
         self.waiting().push(allocation, true);
     }
@@ -93,23 +95,25 @@ impl BudgetChannel {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
 
-    /// Cold thread: withdraws the replayed allocations still waiting their
-    /// turn — a replay stopped lends no more of its epochs. A live one waiting
-    /// stays.
+    /// Withdraws the replayed allocations still waiting their turn, from the cold thread.
+    ///
+    /// A stopped replay lends no more of its epochs; a live one waiting stays.
     pub fn withdraw_in_turn(&self) {
         self.waiting().queue.retain(|(_, in_turn)| !in_turn);
     }
 
-    /// Hot thread, at a frame start: the oldest publication waiting becomes
-    /// the one in force. With nothing new, the one in force stays.
+    /// Puts the oldest publication waiting in force; called at a frame start.
+    ///
+    /// With nothing new, the one in force stays.
     pub fn sync(&self) {
         let _ = self.take();
     }
 
-    /// [`sync`](Self::sync), handing back what the frame start took, if
-    /// anything: the publication — the allocation with its place among the
-    /// ones published, so two publications of one allocation are still two —
-    /// and whether it was published in turn.
+    /// Syncs like [`sync`](Self::sync), returning the publication taken and
+    /// whether it waited its turn.
+    ///
+    /// A publication carries its place among the ones published, so two
+    /// publications of one allocation are still two.
     pub(crate) fn take(&self) -> Option<(Publication, bool)> {
         let next = self.waiting().queue.pop_front()?;
         *self
@@ -120,8 +124,8 @@ impl BudgetChannel {
         Some(next)
     }
 
-    /// Hot thread: the allocation in force since the last
-    /// [`sync`](Self::sync), if any was published.
+    /// Returns, on the hot thread, the allocation in force since the last
+    /// [`sync`](Self::sync), if any.
     pub fn latest(&self) -> Option<Arc<Allocation>> {
         self.inner
             .current
@@ -154,8 +158,9 @@ mod tests {
         }
     }
 
-    /// **The hot side sees the latest allocation as of its last sync.** What
-    /// the DCC publishes waits for the next sync, so a frame reads one
+    /// **The hot side sees the latest allocation as of its last sync.**
+    ///
+    /// What the DCC publishes waits for the next sync, so a frame reads one
     /// allocation from its start to its end; of two published between two
     /// syncs, the later wins.
     #[test]
