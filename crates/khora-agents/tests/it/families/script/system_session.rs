@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A project's systems and behaviors played over a world (Ergon spec 10):
+//! A project's systems and behaviors played over a world:
 //! one session wired the way the engine wires one — declarations staged in
 //! the reserve and programs waiting for the intake, what each program reads
 //! announced to the catalog, the engine's `Activation` when the test switches

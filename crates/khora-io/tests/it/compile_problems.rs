@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **What the hot-reload pump files, the compile reports** (Ergon spec 11):
+//! **What the hot-reload pump files, the compile reports**:
 //! each module recompiled leaves its diagnostics in the runtime's
 //! `Problems`, located — module, line, column — through the program's
 //! source map. A diagnostic located in an imported module is reported under

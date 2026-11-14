@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **A behavior's run survives a game save into another world** (Ergon spec
-//! 09): what its state companion holds — a suspended sequence and the
+//! **A behavior's run survives a game save into another world**:
+//! what its state companion holds — a suspended sequence and the
 //! entities it holds in hand — comes back pointing at the same entities,
 //! whatever ids the loading world gives them.
 

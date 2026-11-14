@@ -56,15 +56,15 @@ pub struct EditorApp {
     /// `setup()`. Needed because the overlay's `begin_frame` and
     /// `handle_window_event` both expect a winit window reference.
     raw_window: Option<Arc<winit::window::Window>>,
-    /// Live monitor handle exposed by the engine (Phase 2.1). Cloned in
+    /// Live monitor handle exposed by the engine. Cloned in
     /// `setup` from the ServiceRegistry; queried each frame to push
     /// CPU/GPU load, VRAM, draw calls and triangles into
     /// `EditorState::status`.
     monitors: Option<khora_sdk::MonitorRegistry>,
-    /// Live agent registry (Phase 2.3). Used by the Control Plane
-    /// workspace to enumerate agents instead of the previous mock list.
+    /// Live agent registry. The Control Plane workspace enumerates the agents
+    /// from it.
     agent_registry: Option<Arc<Mutex<khora_sdk::AgentRegistry>>>,
-    /// DCC context handle (Phase 2.2). Locked each frame for the Control
+    /// DCC context handle. Locked each frame for the Control
     /// Plane summary bar — exposes mode, budget multiplier, hardware
     /// load.
     dcc_context: Option<Arc<std::sync::RwLock<khora_sdk::DccContext>>>,
@@ -285,7 +285,7 @@ impl EditorApp {
         state.status.fps = if dt > 0.0 { 1.0 / dt } else { 0.0 };
         state.status.entity_count = state.entity_count;
 
-        // Phase 2.1 — pull live telemetry into status. Only the fields
+        // Live telemetry into the status. Only the fields
         // actually reported are updated; missing reports leave the
         // previous value untouched (status fields default to 0).
         if let Some(ref monitors) = self.monitors {

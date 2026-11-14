@@ -14,7 +14,7 @@
 
 //! Command palette — Cmd+K modal that runs editor actions.
 //!
-//! Phase J: atomic modal — backdrop + box are painted absolutely, all
+//! An atomic modal — backdrop + box are painted absolutely, all
 //! interactive controls live inside a single `region_at` so the layout
 //! stays in sync regardless of zoom or window size.
 

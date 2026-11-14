@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Worlds whose behaviors are components (Ergon spec 09), for the tests that
+//! Worlds whose behaviors are components, for the tests that
 //! take the road a frame takes: the flow projects each entity holding `Guard`
 //! with its row, the lane runs it, and the engine's writeback records what the
 //! turn changed into `Guard` and what it keeps of the instance into

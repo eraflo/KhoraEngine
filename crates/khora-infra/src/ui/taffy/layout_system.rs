@@ -56,7 +56,7 @@ impl LayoutSystem for TaffyLayoutSystem {
         // trait default when the view has no live surface size).
         let (viewport_w, viewport_h) = view.viewport_size();
 
-        // 1. First pass: Create taffy nodes for all UI entities
+        // First pass: Create taffy nodes for all UI entities
         let entities = view.get_all_ui_entities();
         for entity in entities.iter() {
             if let Some(ui_node) = view.get_node(*entity) {
@@ -72,7 +72,7 @@ impl LayoutSystem for TaffyLayoutSystem {
             }
         }
 
-        // 2. Second pass: Build hierarchy
+        // Second pass: Build hierarchy
         let mut roots = Vec::new();
 
         for &entity in entities.iter() {
@@ -83,7 +83,7 @@ impl LayoutSystem for TaffyLayoutSystem {
             self.attach_children(entity, view);
         }
 
-        // 3. Compute layout against the real viewport.
+        // Compute layout against the real viewport.
         for root in roots {
             if let Some(&root_node) = self.entity_to_node.get(&root) {
                 let available_space = Size {

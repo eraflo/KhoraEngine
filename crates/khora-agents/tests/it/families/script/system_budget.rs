@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **GORNA prices the rows a system sweeps** (Ergon spec 10): one system is
+//! **GORNA prices the rows a system sweeps**: one system is
 //! one instance whatever its queries match, so the script lane's whole level
 //! counts the rows the systems' queries took last frame on top of the lane's
 //! overhead and the measured demand — ten thousand rows are not the cost of

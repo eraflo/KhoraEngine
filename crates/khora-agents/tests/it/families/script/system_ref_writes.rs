@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **A system's `ref` writes reach the `World`** (Ergon spec 10), end to
+//! **A system's `ref` writes reach the `World`**, end to
 //! end: through the frame's working set — so a script later in the frame
 //! reads them — and as column writes applied at the boundary, writing only
 //! the fields a row changed and keeping their place among the frame's

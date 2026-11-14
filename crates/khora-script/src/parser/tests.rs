@@ -481,7 +481,7 @@ fn a_broken_declaration_does_not_hide_the_next() {
     );
 }
 
-/// **A component takes `[Domain(…)]` and field defaults** (Ergon spec 08):
+/// **A component takes `[Domain(…)]` and field defaults**:
 /// which attributes mean something on it is the checker's question, not the
 /// grammar's.
 #[test]

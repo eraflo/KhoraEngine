@@ -108,7 +108,7 @@ impl WgpuDevice {
             descriptor.label
         );
 
-        // 1. The shader modules and the layout, cloned out of the registry.
+        // The shader modules and the layout, cloned out of the registry.
         let missing_module = |id| {
             ResourceError::Pipeline(PipelineError::InvalidShaderModuleForPipeline {
                 id,
@@ -139,7 +139,7 @@ impl WgpuDevice {
         };
         let fs_wgpu_module_opt = fs_module.as_ref();
 
-        // 2. Convert vertex buffers layout
+        // Convert vertex buffers layout
         let wgpu_vertex_attributes_storage = vertex_attributes(descriptor);
         let wgpu_vertex_buffers_layouts =
             vertex_buffer_layouts(descriptor, &wgpu_vertex_attributes_storage);
@@ -154,7 +154,7 @@ impl WgpuDevice {
             alpha_to_coverage_enabled: descriptor.multisample_state.alpha_to_coverage_enabled,
         };
 
-        // 7. Create pipeline layout and render pipeline
+        // Create pipeline layout and render pipeline
         let (wgpu_render_pipeline_arc, id) = self.with_wgpu_device(|device| {
             let layout_entry_opt = layout_arc.clone();
 
@@ -279,7 +279,7 @@ impl WgpuDevice {
         &self,
         descriptor: &ComputePipelineDescriptor,
     ) -> Result<ComputePipelineId, ResourceError> {
-        // 1. The shader module and the layout, cloned out of the registry.
+        // The shader module and the layout, cloned out of the registry.
         let (shader_module, layout_entry_opt) = self.with_registry(|r| {
             (
                 r.shader_modules
@@ -296,7 +296,7 @@ impl WgpuDevice {
             id: descriptor.shader_module,
         })?;
 
-        // 2. Create compute pipeline
+        // Create compute pipeline
         let wgpu_pipeline =
             self.wgpu_device()
                 .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -308,7 +308,7 @@ impl WgpuDevice {
                     cache: None,
                 });
 
-        // 3. Store and return ID
+        // Store and return ID
         let id = ComputePipelineId(
             self.internal
                 .next_compute_pipeline_id

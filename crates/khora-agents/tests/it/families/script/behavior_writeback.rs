@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **What a behavior's turn changed goes back to its components** (Ergon
-//! spec 09): the fields it wrote to the behavior's component — those only,
+//! **What a behavior's turn changed goes back to its components**:
+//! the fields it wrote to the behavior's component — those only,
 //! one column write per behavior — and what the engine keeps of it to its
 //! state companion, added on its first writeback. A field changed outside
 //! the instance — the inspector during Play, another script's `Set` — is

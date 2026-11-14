@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **Positions where modules meet** (Ergon spec 11): a module imported
+//! **Positions where modules meet**: a module imported
 //! through two paths is placed once and its error located once; an error at
 //! the very end of an imported module stays in it, not in the module placed
 //! after; a bad entry path is located nowhere. Placing a module at another

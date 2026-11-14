@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **What is wrong with the running instances, reported** (Ergon spec 11):
+//! **What is wrong with the running instances, reported**:
 //! the `script_problems` data system rebuilds the `Running` source of the
 //! runtime's `Problems` from the `ScriptRuntime` service — an error for
 //! every instance disabled by a fault (entity, behavior, the fault's reason),

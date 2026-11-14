@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **A problem only an importer's compile finds** (Ergon spec 11): a name two
+//! **A problem only an importer's compile finds**: a name two
 //! imported modules both declare is located in the second one, though that
 //! module compiles clean on its own. The problem belongs to the importer's
 //! compile — it must stand while the importer does not compile, whatever the

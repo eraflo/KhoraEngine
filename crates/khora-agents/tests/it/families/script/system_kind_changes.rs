@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **A name changing kind on a hot reload** (Ergon spec 10) — a behavior
+//! **A name changing kind on a hot reload** — a behavior
 //! become a system, a system become a behavior: the system runs once a
 //! frame, on its one entity, whatever entities held the behavior; the
 //! entities a scene authored stay in the scene; and a system become a

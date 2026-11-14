@@ -55,7 +55,7 @@ where
     let mut adjacency_list: HashMap<T, Vec<T>> = HashMap::new();
     let mut in_degree: HashMap<T, usize> = node_list.iter().map(|id| (*id, 0)).collect();
 
-    // 1. Build adjacency list and in-degree counts from edges.
+    // Build adjacency list and in-degree counts from edges.
     for (parent, child) in edges {
         adjacency_list.entry(parent).or_default().push(child);
         if let Some(degree) = in_degree.get_mut(&child) {
@@ -63,7 +63,7 @@ where
         }
     }
 
-    // 2. Initialize queue with all root nodes (in-degree of 0).
+    // Initialize queue with all root nodes (in-degree of 0).
     let mut queue: VecDeque<T> = VecDeque::new();
     for &node in &node_list {
         if in_degree.get(&node).cloned().unwrap_or(0) == 0 {
@@ -71,7 +71,7 @@ where
         }
     }
 
-    // 3. Process the queue.
+    // Process the queue.
     let mut sorted_list = Vec::with_capacity(node_list.len());
     while let Some(parent_node) = queue.pop_front() {
         sorted_list.push(parent_node);
@@ -87,7 +87,7 @@ where
         }
     }
 
-    // 4. Check for cycles.
+    // Check for cycles.
     if sorted_list.len() != node_list.len() {
         Err(CycleError)
     } else {

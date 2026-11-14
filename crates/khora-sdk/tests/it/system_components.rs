@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A game never attaches a system (Ergon spec 10): a system's component and
+//! A game never attaches a system: a system's component and
 //! its state are the engine's, held by the one entity it keeps for the
 //! system, so `GameWorld::add_declared_component` refuses both by name — as
 //! it refuses a behavior's state — while the behaviors and components of the

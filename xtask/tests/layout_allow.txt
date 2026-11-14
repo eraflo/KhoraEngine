@@ -144,3 +144,715 @@ private_helpers_come_after_the_primary_type_impls crates/khora-sdk/src/runtime_c
 
 # --- each_file_holds_one_primary_type -----------------------------------------
 
+
+# --- doc_summary_is_short ----------------------------------------------------
+
+doc_summary_is_short crates/khora-agents/src/lane_agent/choice.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-agents/src/lane_agent/layer.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-agents/src/lane_agent/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-agents/src/lane_agent/quotes.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-agents/src/lane_agent/wake.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/agent_registry.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/analysis/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/budget_channel.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/cost_model.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/dcc_context.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/dcc_service/config.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/dcc_service/decision_loop.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/dcc_service/epochs.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/dcc_service/forecast.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/dcc_service/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/evaluation/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/evaluation/replay.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/evaluation/scenarios.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/evaluation/simulation.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/gorna/admission.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/gorna/arbiter/exact.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/gorna/arbiter/greedy.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/gorna/arbiter/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/gorna/arbiter/problem.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/gorna/arbiter/shield.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/gorna/cost_book.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/gorna/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/gorna/plan.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/gorna/planning.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/gorna/round.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/gorna/share.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/governor/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/metrics/ring_buffer.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/scheduler/background.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/scheduler/clocks.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/scheduler/execution.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/scheduler/frame.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/scheduler/known.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/scheduler/layers.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/scheduler/lending.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/scheduler/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/scheduler/panic_guard.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/scheduler/sim_steps.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/scheduler/sub_steps.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/scheduler/waves.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/substrate/data_system_runner.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/substrate/flow_runner.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-control/src/worker_pool.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/agent/activation.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/agent/background_checks.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/agent/execution_phase.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/agent/gorna/agent_hints.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/agent/gorna/agent_id.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/agent/gorna/decision_trace.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/agent/gorna/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/agent/gorna/planning.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/agent/gorna/profile.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/agent/gorna/protocol.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/agent/gorna/report.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/agent/gorna/why.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/agent/layer/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/agent/layer/place.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/agent/layer/preparation/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/agent/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/agent/registration.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/agent/timing.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/asset/asset_decoding.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/asset/asset_indexing.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/asset/asset_kind.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/asset/asset_uuid.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/asset/decoded.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/asset/font.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/asset/index_request.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/asset/materials/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/asset/materials/standard.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/asset/metadata.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/audio/device.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/ecs/entity_reserver.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/ecs/persistent_id.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/ecs/reservation_hold.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/engine_context.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/event/channel.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/event/mailbox.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/gpu/device_caps.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/interpolation/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/lane/contract/compile_check.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/lane/contract/cost.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/lane/contract/erased.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/lane/contract/io/input_source.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/lane/contract/io/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/lane/contract/io/output_sink.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/lane/contract/io/pass.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/lane/contract/io/scene_target.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/lane/contract/lane.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/lane/contract/level.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/lane/plumbing/bus.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/lane/plumbing/deck.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/lane/plumbing/host_views.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/lane/plumbing/lease.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/lane/plumbing/reserve.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/lane/plumbing/staging.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/math/affine_transform.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/math/basis.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/math/color.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/math/cube.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/math/matrix/cube.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/math/matrix/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/math/simd.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/math/vector/vec3.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/math/vector/vec4.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/physics/collider_desc.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/physics/settings.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/platform/input.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/platform/input_map.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/platform/machine.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/problems.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/renderer/api/gpu_scene/mesh/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/renderer/api/ibl/bindings.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/renderer/api/material/bindings.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/renderer/api/material/gpu_material.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/renderer/api/pipeline/compute_pipeline_spec.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/renderer/api/pipeline/layout.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/renderer/api/pipeline/spec.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/renderer/api/resource/texture_format.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/renderer/api/shader/variant.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/renderer/api/shadow/bindings.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/renderer/api/shadow/entries.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/renderer/error.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/renderer/light/gpu_light.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/renderer/traits/graphics_device.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/renderer/traits/pipeline_system.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/residency/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/runtime/typed_registry.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/scene/format.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/scene/serialization.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/script/batch.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/script/catalog.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/script/command.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/script/field/hints.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/script/field/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/script/frozen.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/script/projection/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/script/reads.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/script/snapshot.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/script/table.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/script/value.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/script/writeback.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/telemetry/event.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/telemetry/host_monitors.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/time/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/ui/app/app_context.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/ui/app/runtime.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/ui/editor/font_family_hint.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/ui/editor/gradient.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/ui/editor/icons.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/ui/editor/inspected.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/ui/editor/interaction.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/ui/editor/panel_location.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/ui/editor/property_edit.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/ui/editor/radial_gradient.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/ui/editor/shell.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/ui/editor/state.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/ui/editor/ui_builder.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/ui/fonts.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/ui/glyph_rasterizer.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/ui/text.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-core/src/util/bitflags.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/assets/audio.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/assets/storage.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/bundle.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/check.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/column_ops.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/column_ticks.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/component.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/component_key.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/component_registry.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/components/audio/source.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/components/camera.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/components/handle.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/components/light.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/components/material_ref.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/components/mesh_ref.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/components/physics/active_events.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/components/physics/collider.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/components/physics/kinematic_character_controller.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/components/transform.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/entity.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/entity_store.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/layout/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/mut_guard.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/observer.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/packed/column.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/packed/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/page.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/query/fetch_context.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/query/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/query/native_row_plan.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/query/read.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/query/write.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/query_plan.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/role.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/soa.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/storage.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/system.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/systems/behavior_writeback/order.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/systems/capture_previous_transform.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/systems/collision_dispatch.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/systems/collision_to_script.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/systems/component_checks.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/systems/ensure_global_transform.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/systems/ibl_bake.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/systems/input_map_update.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/systems/script_commands/applied.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/systems/script_commands/apply.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/systems/script_commands/json.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/systems/script_commands/prefab_spawn.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/systems/script_systems.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/systems/transform_propagation.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/tick.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/world/clock.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/world/column_write.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/world/compaction.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/world/component_access.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/world/hierarchy.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/world/identity.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/world/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/world/projection.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/world/queries.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/world/reservations.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/world/rows.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/world/runtime.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ecs/world_ext.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/flow/audio.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/flow/audio_playback_writeback.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/flow/behaviors.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/flow/camera.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/flow/companion/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/flow/flow_context.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/flow/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/flow/physics.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/flow/registration.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/flow/render.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/flow/script.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/flow/selection.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/flow/shadow.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/flow/ui.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/gpu/eviction.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/gpu/ibl/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/gpu/ibl/pipelines.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/gpu/ibl/resources.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/render/frame_graph.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/render/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/render/shining.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/render/world.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/residency/material_on_gpu.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/apply.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/asset_kinds.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/capture.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/commit.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/component_registration.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/declared.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/encoding/compact/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/load_catalog.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/loading.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/material_registration.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/positional/de.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/positional/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/prefab/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/prefab/overrides.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/prefab/rekey.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/prefab/siblings.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/record/diff.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/record/report.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/record/self_describing.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/save/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/save/read.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/scene_record.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/schema/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/schema/trace.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/shape.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/scene/snapshot/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ui/glyph_atlas.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ui/image_atlas.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ui/systems/glyphs_on_gpu/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-data/src/ui/systems/text_layout/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/after_index.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/app/engine_app.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/app/layout.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/app/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/app/project_open.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/app/trust_view.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/bootstrap.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/build_game/cargo_build.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/build_game/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/commands/asset_ops.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/commands/material.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/commands/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/commands/prefab.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/commands/scene.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/commands/transport.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/drag_payload.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/gizmo/frame.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/gizmo/interact.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/gizmo/selection.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/hot_reload.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/input.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/ops/declared.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/ops/inspect.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/ops/prefab_overrides/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/ops/scene_tree.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/ops/spawn.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/panels/asset_browser/handlers.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/panels/asset_browser/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/panels/asset_browser/naming.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/panels/asset_browser/new_script.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/panels/asset_browser/parts.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/panels/console.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/panels/control_plane/decision.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/panels/control_plane/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/panels/control_plane/paint.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/panels/loading.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/panels/problems/tile_badge.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/panels/problems/view.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/panels/scene_tree/drop.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/panels/scene_tree/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/panels/scene_tree/rows.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/panels/viewport/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/panels/viewport/overlays.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/panels/workbench.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/picking.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/play_prefabs.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/project_identity.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/project_physics.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/project_scripts/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/project_vfs.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/scene_io/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/widgets/inspector/add_component.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/widgets/inspector/asset_pane.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/widgets/inspector/card.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/widgets/inspector/declared/asset_slot.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/widgets/inspector/declared/fields.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/widgets/inspector/declared/hints.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/widgets/inspector/declared/ranged.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/widgets/inspector/instance_band.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/widgets/inspector/renderers.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/widgets/inspector/tabs.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/widgets/inspector/tag_chips.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/widgets/inspector/walker.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/widgets/panel_header.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-editor/src/widgets/tile.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-hub/src/app/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-hub/src/async_pump.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-hub/src/services/config.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-hub/src/services/download.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-hub/src/services/github/auth.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-hub/src/services/github/releases.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-hub/src/services/project.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/graphics/wgpu/backend.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/graphics/wgpu/command.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/graphics/wgpu/conversions.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/graphics/wgpu/device/graphics_device.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/graphics/wgpu/device/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/graphics/wgpu/device/vram_probe.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/graphics/wgpu/flag_bridge.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/graphics/wgpu/graphics_context.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/graphics/wgpu/pipeline_system/dependencies.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/graphics/wgpu/pipeline_system/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/graphics/wgpu/pipeline_system/rebuild.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/graphics/wgpu/profiler.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/graphics/wgpu/resilience.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/graphics/wgpu/system/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/graphics/wgpu/system/resize_debounce.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/graphics/wgpu/system/viewport.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/memory/tracking_allocator.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/physics/rapier/world.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/platform/machine.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/platform/sysinfo_impl.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/platform/winit/input.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/platform/winit/window.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/ui/egui/app/runtime.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/ui/egui/fonts.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/ui/egui/gradient_fill.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/ui/egui/inset_panels.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/ui/egui/overlay.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/ui/egui/paint.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/ui/egui/shell.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/ui/egui/ui_builder.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/ui/text/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-infra/src/ui/text/parley_shaper.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/asset_service/invalidation.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/asset_service/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/asset_service/sub_assets.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/asset_writer.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/container.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/decoder.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/decoder_registration.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/decoder_registry.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/decoders/audio/symphonia.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/decoders/audio/wav.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/decoders/mesh/dispatcher.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/decoders/mesh/file_system_resolver.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/decoders/mesh/gltf.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/decoders/mesh/gltf_checks.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/decoders/mesh/gltf_container.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/decoders/mesh/gltf_resources.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/decoders/mesh/gltf_scene.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/decoders/mesh/no_op_resource_resolver.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/decoders/mesh/packed_resolver.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/decoders/script.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/decoders/texture.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/defaults.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/dependencies.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/file.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/generations.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/id_registry.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/index.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/index_builder.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/index_hub.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/io.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/manifest.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/off_frame.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/pack.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/pack_builder.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/pack_key.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/reader.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/root_path.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/signing.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/watch.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset/watcher.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/asset_prefabs.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/profiles.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/reader_prefabs.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/scene_loads.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/script/compile_hub.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/script/declarations.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/script/hot_reload.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/script/layout.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/script/mirror.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/script/mounted.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/script/problems.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/script/project_compiler.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/serialization.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/systems/asset_index_intake.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/systems/asset_intake.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/systems/asset_reload.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/systems/asset_resolver.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/systems/scene_intake.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/systems/script_compile_intake.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/systems/shader_hot_reload.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/trust/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/trust/project.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/trust/quarantine.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/trust/store.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-io/src/user_dirs.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/audio/spatial_mixing.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/loading/inputs.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/loading/paced.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/loading/work.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/overlay/gizmo/lane.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/overlay/grid/lane.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/overlay/wireframe/lane.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/physics/family.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/render/forward_plus/gpu.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/render/forward_plus/gpu_resources.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/render/forward_plus/lane_gpu.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/render/forward_plus/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/render/forward_plus/render.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/render/forward_plus/tile_grid.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/render/lit_forward/gpu.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/render/lit_forward/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/render/lit_forward/render.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/render/recording.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/render/simple_unlit/gpu.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/render/util/block.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/render/util/dynamic_uniform_ring_buffer.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/render/util/kept_bind_groups.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/render/util/target_state.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/render/util/variant_pipelines.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/advance.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/carry.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/delivery.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/fuel.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/hooks.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/intake.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/invocation.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/lane.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/levels.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/mail.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/outcome.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/park.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/persistence.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/progress.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/rate.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/reload.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/report.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/runtime.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/shares.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/state_update.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/turn.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/script/watchdog.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/shadows/algo/atlas_2d.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/shadows/algo/atlas_cube.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/shadows/algo/pass.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/shadows/algo/state.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/shadows/lane.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/skybox/lane.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/ui/glyphs.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/ui/lane.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/ui/pipeline.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-lanes/src/ui/ui_instance_data.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-macros/src/component/attrs.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-macros/src/component/fields.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-macros/src/component/inventory.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-macros/src/component/mirror.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-macros/src/component/soa.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-macros/src/component_check.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-macros/src/script_fields.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/arena/owned.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/ast/stmt.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/bridge/declared.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/bytecode/behavior.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/bytecode/calls.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/bytecode/components.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/bytecode/expr.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/bytecode/flow.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/bytecode/keys.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/bytecode/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/bytecode/objects.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/bytecode/sites.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/dispatch/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/lexer/interpolated.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/lifecycle.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/modules/behaviors.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/modules/components.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/modules/inspector.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/modules/loader.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/modules/path.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/modules/schedule.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/native/convert.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/native/engine_types.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/native/world.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/parser/decl.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/pipeline.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/reload.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/source_map.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/toolchain/compile_done.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/toolchain/compile_request.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/toolchain/compile_ticket.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/toolchain/compiled.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/toolchain/script_compiler.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/toolchain/script_declarations.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/types/asset_names.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/types/binding.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/types/components.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/types/members.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/types/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/types/query.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/types/structs.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/types/ty.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/vm/instruction.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/vm/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/vm/objects.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/vm/program.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/vm/resume.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/vm/rows.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/vm/site.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-script/src/vm/value.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/engine/app_update.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/engine/bootstrap.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/engine/decision_journal.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/engine/defaults.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/engine/families.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/engine/frame.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/engine/frame_clock.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/engine/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/engine/phase_order.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/engine/profiles/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/engine/readiness.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/engine/refusals.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/engine/render_frame.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/engine/runtime_entries.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/engine/scheduler_boot.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/game_world.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/prefabs.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/run_default/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/run_default/opening.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/runtime_config.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/scripts.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/traits.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/window_provider.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-sdk/src/winit_adapters.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-tool-ui/src/brand.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-tool-ui/src/dock.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-tool-ui/src/fonts.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-tool-ui/src/testing/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-tool-ui/src/widgets/chips.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-tool-ui/src/widgets/dialog.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-tool-ui/src/widgets/feedback.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-tool-ui/src/widgets/fields.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-tool-ui/src/widgets/loading.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-tool-ui/src/widgets/measure.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-tool-ui/src/widgets/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-tool-ui/src/widgets/modal.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-tool-ui/src/widgets/nav.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short crates/khora-tool-ui/src/widgets/scroll.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short examples/sandbox/src/assets.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short examples/sandbox/src/game.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short examples/sandbox/src/player.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short xtask/src/commands/ci.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short xtask/src/commands/dev.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short xtask/src/commands/landing/mod.rs  # summaries trimmed crate by crate in the P7 comment pass
+doc_summary_is_short xtask/src/main.rs  # summaries trimmed crate by crate in the P7 comment pass
+
+
+# --- inline_comments_are_short -----------------------------------------------
+
+inline_comments_are_short crates/khora-control/src/dcc_service/decision_loop.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-control/src/gorna/admission.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-control/src/gorna/share.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-control/src/scheduler/clocks.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-control/src/scheduler/execution.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-control/src/scheduler/frame.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-control/src/scheduler/mod.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-control/src/substrate/data_system_runner.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-core/src/math/affine_transform.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-core/src/platform/input_map.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-core/src/renderer/api/shader/defs.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-core/src/util/bitflags.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-data/src/ecs/query/write.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-data/src/ecs/systems/ensure_global_transform.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-data/src/ecs/systems/physics_world_writeback.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-data/src/ecs/systems/script_commands/mod.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-data/src/ecs/systems/transform_propagation.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-data/src/ecs/world/clock.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-data/src/ecs/world/migration.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-data/src/ecs/world/mod.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-data/src/flow/audio.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-data/src/flow/physics.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-data/src/flow/render.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-data/src/flow/shadow.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-data/src/gpu/ibl/bake.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-data/src/residency/material_on_gpu.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-data/src/scene/apply.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-data/src/scene/encoding/mod.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-data/src/scene/save/mod.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-data/src/scene/save/read.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-editor/src/app/engine_app.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-editor/src/app/project_open.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-editor/src/commands/mod.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-editor/src/gizmo/selection.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-editor/src/input.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-editor/src/ops/inspect.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-editor/src/panels/asset_browser/panel.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-editor/src/panels/command_palette.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-editor/src/panels/control_plane/agents.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-editor/src/panels/control_plane/inspector.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-editor/src/panels/properties.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-editor/src/panels/scene_tree/panel.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-editor/src/panels/scene_tree/rows.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-editor/src/panels/viewport/mod.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-editor/src/widgets/inspector/card.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-hub/src/services/project.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-infra/src/graphics/wgpu/graphics_context.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-infra/src/graphics/wgpu/system/mod.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-infra/src/graphics/wgpu/system/render_system.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-infra/src/physics/rapier/world.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-infra/src/ui/egui/app/runtime.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-infra/src/ui/egui/editors.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-infra/src/ui/egui/inset_panels.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-infra/src/ui/egui/menus.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-infra/src/ui/egui/shell.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-infra/src/ui/egui/ui_builder.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-io/src/asset/decoders/material.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-io/src/asset/off_frame.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-io/src/asset/watcher.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-io/src/script/mirror.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-io/src/systems/asset_reload.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-io/src/systems/asset_resolver.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-lanes/src/script/carry.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-lanes/src/script/delivery.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-lanes/src/script/departure.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-lanes/src/script/frame.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-lanes/src/script/lane.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-lanes/src/script/turn.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-lanes/src/shadows/algo/atlas_cube.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-macros/src/component/mirror.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-macros/src/ergon_fn.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-script/src/arena/mod.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-script/src/bytecode/behavior.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-script/src/bytecode/calls.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-script/src/bytecode/expr.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-script/src/bytecode/mod.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-script/src/dispatch/ticked.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-script/src/parser/mod.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-script/src/types/expr.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-script/src/vm/freeze.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-script/src/vm/mod.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-script/src/vm/step.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-sdk/src/engine/app_update.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-sdk/src/engine/bootstrap.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-sdk/src/engine/frame.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-sdk/src/engine/render_frame.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-sdk/src/engine/runtime_entries.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-sdk/src/run_default/mod.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-sdk/src/scripts.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short crates/khora-sdk/src/winit_adapters.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short examples/sandbox/src/game.rs  # inline essays trimmed crate by crate in the P7 comment pass
+inline_comments_are_short examples/sandbox/src/main.rs  # inline essays trimmed crate by crate in the P7 comment pass
+

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! **A timer body the watchdog stops leaves its schedule as a fault does**
-//! (Ergon spec 10): a timer whose body faults is rearmed — an `after` has
+//!: a timer whose body faults is rearmed — an `after` has
 //! fired and fires no more, an `every` waits its interval — so the edit that
 //! starts the instance again does not run that schedule a second time at
 //! once.

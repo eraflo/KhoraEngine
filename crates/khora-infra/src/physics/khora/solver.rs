@@ -66,16 +66,16 @@ impl ImpulseSolver {
             return (a, b);
         }
 
-        // 1. Calculate relative velocity in the direction of the collision normal.
+        // Calculate relative velocity in the direction of the collision normal.
         let rv = b.linear_velocity - a.linear_velocity;
         let vel_along_normal = rv.dot(manifold.normal);
 
-        // 2. If already separating, no impulse is needed.
+        // If already separating, no impulse is needed.
         if vel_along_normal > 0.0 {
             return (a, b);
         }
 
-        // 3. Calculate impulse magnitude (j).
+        // Calculate impulse magnitude (j).
         let inv_mass_a = if a.body_type == BodyType::Dynamic {
             1.0 / a.mass
         } else {
@@ -95,7 +95,7 @@ impl ImpulseSolver {
         let mut j = -(1.0 + self.restitution) * vel_along_normal;
         j /= total_inv_mass;
 
-        // 4. Apply impulse as a change in linear velocity.
+        // Apply impulse as a change in linear velocity.
         let impulse = manifold.normal * j;
         if a.body_type == BodyType::Dynamic {
             a.linear_velocity = a.linear_velocity - (impulse * inv_mass_a);
@@ -104,7 +104,7 @@ impl ImpulseSolver {
             b.linear_velocity = b.linear_velocity + (impulse * inv_mass_b);
         }
 
-        // 5. Positional correction (Linear Projection) using velocity "slack".
+        // Positional correction (Linear Projection) using velocity "slack".
         let correction_mag =
             (manifold.depth - self.slop).max(0.0) / total_inv_mass * self.baumgarte_percent;
         let correction = manifold.normal * correction_mag;

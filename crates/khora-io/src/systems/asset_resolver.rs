@@ -122,7 +122,7 @@ fn resolve_materials(world: &mut World, runtime: &Runtime) {
     let asset_store = runtime.resources.get::<AssetStore>();
     let asset_service = runtime.services.get::<Arc<Mutex<AssetService>>>().cloned();
 
-    // Phase 1: reconcile against the resolved handle while the query borrows
+    // Reconcile against the resolved handle while the query borrows
     // the world read-only. Steady state is a cheap UUID compare: the authored
     // ref's identity UUID already equals the resolved handle's UUID, so nothing
     // is cloned, loaded, or hashed. Real work happens only when the authored
@@ -193,7 +193,7 @@ fn resolve_materials(world: &mut World, runtime: &Runtime) {
         return;
     }
 
-    // Phase 2: publish resolved data to the shared store and tag entities. A
+    // Then publish resolved data to the shared store and tag entities. A
     // first resolve adds the handle; a changed ref overwrites the stale handle
     // in place (`set_component`) and drops the stale `HandleComponent<GpuMaterial>`
     // so the projection re-projects under the new identity. The removal only
@@ -279,7 +279,7 @@ fn resolve_meshes(world: &mut World, runtime: &Runtime) {
     let asset_store = runtime.resources.get::<AssetStore>();
     let asset_service = runtime.services.get::<Arc<Mutex<AssetService>>>().cloned();
 
-    // Phase 1: reconcile against the resolved handle while the query borrows
+    // Reconcile against the resolved handle while the query borrows
     // the world read-only. Steady state is a cheap UUID compare (no rebuild,
     // clone, or hash); geometry is regenerated only when the authored ref
     // changed (or has no handle yet).
@@ -341,7 +341,7 @@ fn resolve_meshes(world: &mut World, runtime: &Runtime) {
         return;
     }
 
-    // Phase 2: publish resolved data to the shared store and tag entities. A
+    // Then publish resolved data to the shared store and tag entities. A
     // first resolve adds the handle; a changed ref overwrites the stale handle
     // in place and drops the stale `HandleComponent<GpuMesh>` so the projection
     // re-projects under the new identity, without disturbing a still-valid

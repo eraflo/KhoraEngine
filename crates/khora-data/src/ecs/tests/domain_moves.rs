@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A declared component changes domain (Ergon spec 08).
+//! A declared component changes domain.
 //!
 //! An author edits `[Domain(Script)]` to `[Domain(Physics)]` and reloads: every
 //! row of the component moves to its entity's page of the new domain, its

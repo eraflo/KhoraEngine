@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The inspector over components a script declared (Ergon spec 11): typed
+//! The inspector over components a script declared: typed
 //! cards read from the World's registry, their edits, "+ Add Component", and
 //! what Play shows — through the editor's pure `ops`, no rendering.
 //!

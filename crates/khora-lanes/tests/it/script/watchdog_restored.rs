@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **What the watchdog names, and what it leaves behind** (Ergon spec 10):
+//! **What the watchdog names, and what it leaves behind**:
 //! the member of a state's body and the function a body stands in when it
 //! has called into another; a fault the watchdog recorded travels in a save
 //! and keeps the loaded instance stopped; and a restored body waiting behind

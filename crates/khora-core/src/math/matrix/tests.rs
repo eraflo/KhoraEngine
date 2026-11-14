@@ -482,15 +482,15 @@ fn test_mul_mat4() {
     // Order matters: Translate then Rotate
     let tr = r * t;
     let p = Vec4::new(1.0, 0.0, 0.0, 1.0); // Point at (1,0,0)
-                                           // 1. Translate: p becomes (2, 0, 0, 1)
-                                           // 2. Rotate Z 90: (2, 0, 0) becomes (0, 2, 0)
+                                           // Translate: p becomes (2, 0, 0, 1)
+                                           // Rotate Z 90: (2, 0, 0) becomes (0, 2, 0)
     let expected_tr = Vec4::new(0.0, 2.0, 0.0, 1.0);
     assert!(vec4_approx_eq(tr * p, expected_tr));
 
     // Order matters: Rotate then Translate
     let rt = t * r;
-    // 1. Rotate Z 90: p becomes (0, 1, 0, 1)
-    // 2. Translate: (0, 1, 0) becomes (1, 1, 0)
+    // Rotate Z 90: p becomes (0, 1, 0, 1)
+    // Translate: (0, 1, 0) becomes (1, 1, 0)
     let expected_rt = Vec4::new(1.0, 1.0, 0.0, 1.0);
     assert!(vec4_approx_eq(rt * p, expected_rt));
 }

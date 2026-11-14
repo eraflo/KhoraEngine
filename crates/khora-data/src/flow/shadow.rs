@@ -225,7 +225,7 @@ const SHADOW_CASCADE_DISTANCE: f32 = 60.0;
 
 /// CSM (cascaded shadow map) view-projection for a directional light.
 fn directional_shadow_view_proj(direction: Vec3, camera: &ExtractedView) -> Mat4 {
-    // 1. Camera frustum corners in world space. Each (x, y) edge yields a
+    // Camera frustum corners in world space. Each (x, y) edge yields a
     // near (z=0) and far (z=1) corner; the far corner is pulled back along
     // the near→far ray so the cascade covers at most
     // `SHADOW_CASCADE_DISTANCE` world units rather than the full far plane.
@@ -251,7 +251,7 @@ fn directional_shadow_view_proj(direction: Vec3, camera: &ExtractedView) -> Mat4
         }
     }
 
-    // 2. Light view matrix centered on frustum center.
+    // Light view matrix centered on frustum center.
     let light_dir = direction.normalize();
     let up = if light_dir.y.abs() > 0.99 {
         Vec3::Z
@@ -267,7 +267,7 @@ fn directional_shadow_view_proj(direction: Vec3, camera: &ExtractedView) -> Mat4
 
     let light_view = Mat4::look_at_rh(center, center + light_dir, up).unwrap_or(Mat4::IDENTITY);
 
-    // 3. Frustum AABB in light space.
+    // Frustum AABB in light space.
     let mut min = Vec3::new(f32::MAX, f32::MAX, f32::MAX);
     let mut max = Vec3::new(f32::MIN, f32::MIN, f32::MIN);
     for p in corners {
@@ -280,7 +280,7 @@ fn directional_shadow_view_proj(direction: Vec3, camera: &ExtractedView) -> Mat4
         max.z = max.z.max(p_ls.z);
     }
 
-    // 4. Texel snapping to prevent shimmer when the camera moves.
+    // Texel snapping to prevent shimmer when the camera moves.
     let shadow_map_size = 2048.0_f32;
     let units_per_texel_x = (max.x - min.x) / shadow_map_size;
     let units_per_texel_y = (max.y - min.y) / shadow_map_size;
@@ -289,7 +289,7 @@ fn directional_shadow_view_proj(direction: Vec3, camera: &ExtractedView) -> Mat4
     min.y = (min.y / units_per_texel_y).floor() * units_per_texel_y;
     max.y = (max.y / units_per_texel_y).floor() * units_per_texel_y;
 
-    // 5. Ortho projection — z padding for casters outside the frustum.
+    // Ortho projection — z padding for casters outside the frustum.
     let z_padding = 100.0;
     let light_proj = Mat4::orthographic_rh_zo(
         min.x,

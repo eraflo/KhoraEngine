@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! The brand typefaces every Khora tool installs, embedded in the binary —
-//! the pair of the logo (`docs/src/design/editor.md`, "Typography"):
+//! the pair of the logo (`docs/src/design/editor.md`, "04 — Typography"):
 //!
 //! - **Archivo**: every word on screen. Regular, Medium and SemiBold at normal
 //!   width for text, labels and titles; Light at 112 % width for display

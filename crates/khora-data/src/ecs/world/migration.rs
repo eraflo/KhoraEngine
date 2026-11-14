@@ -53,7 +53,7 @@ impl World {
         push: impl FnOnce(&mut dyn AnyVec),
         added_at: Tick,
     ) -> Result<Option<PageIndex>, AddComponentError> {
-        // 1. Validate EntityId and get metadata — a copy, written back when
+        // Validate EntityId and get metadata — a copy, written back when
         // the move is done. The slot keeps its metadata meanwhile: an entity
         // is never seen dead halfway through a change, even one that unwinds.
         let Some((id_in_world, Some(current))) = self.entities.get(entity_id.index as usize) else {
@@ -71,7 +71,7 @@ impl World {
 
         let old_location_opt = metadata.locations.get(&domain).copied();
 
-        // 2. Determine old and new page signatures
+        // Determine old and new page signatures
         let old_keys = old_location_opt.map_or(Vec::new(), |loc| {
             self.storage.pages[loc.page_id as usize].keys.clone()
         });
@@ -81,10 +81,10 @@ impl World {
         let mut new_keys = old_keys.clone();
         new_keys.insert(at, key);
 
-        // 3. Find or create the destination page
+        // Find or create the destination page
         let dest_page_id = self.find_or_create_page_for_signature(&new_keys);
 
-        // 4. Perform the migration
+        // Perform the migration
         let dest_row_index;
         {
             let (src_page_opt, dest_page) = match old_location_opt {
@@ -146,7 +146,7 @@ impl World {
         // The whole row moved: every domain of the destination page sees it.
         self.note_page_changed(dest_page_id);
 
-        // 5. Update metadata and put it back.
+        // Update metadata and put it back.
         //
         // The migration copied the entity's *whole* archetype row (every
         // component in the source page, across all its domains) into the
@@ -188,15 +188,15 @@ impl World {
         // The entity gained a component in this domain — invalidate cached Views.
         self.bump_domain_epoch(domain);
 
-        // 6. Record the abandoned source page so maintenance compacts its
-        //    now-orphaned row later (see `StorageManager::dirty_pages`). The
-        //    `None` case adds the entity to a domain for the first time, leaving
-        //    no orphan behind.
+        // Record the abandoned source page so maintenance compacts its
+        // now-orphaned row later (see `StorageManager::dirty_pages`). The
+        // `None` case adds the entity to a domain for the first time, leaving
+        // no orphan behind.
         if let Some(old) = old_location_opt {
             self.orphan_row(old.page_id);
         }
 
-        // 7. Return the old location for cleanup, without performing swap_remove
+        // Return the old location for cleanup, without performing swap_remove
         Ok(old_location_opt)
     }
 
@@ -207,7 +207,7 @@ impl World {
         entity_id: EntityId,
         key: ComponentKey,
     ) -> Result<Option<PageIndex>, RemoveComponentError> {
-        // 1. Validate the entity, and copy its metadata — written back when
+        // Validate the entity, and copy its metadata — written back when
         // the change is done, so the slot is never empty while it runs.
         let Some((id_in_world, Some(current))) = self.entities.get(entity_id.index as usize) else {
             return Err(RemoveComponentError::EntityNotFound);
@@ -217,7 +217,7 @@ impl World {
             return Err(RemoveComponentError::EntityNotFound);
         }
 
-        // 2. Resolve the component's domain.
+        // Resolve the component's domain.
         let Some(domain) = self.storage.registry.domain_of(key) else {
             return Err(RemoveComponentError::ComponentNotRegistered);
         };
@@ -233,12 +233,12 @@ impl World {
             return Err(RemoveComponentError::ComponentNotPresent);
         };
 
-        // 3. Build the new signature (without the component).
+        // Build the new signature (without the component).
         let mut new_keys = old_keys.clone();
         new_keys.remove(at);
 
-        // 4. If it was the last component of the row, just drop the domain
-        //    location and bitset bit. No page migration needed.
+        // If it was the last component of the row, just drop the domain
+        // location and bitset bit. No page migration needed.
         if new_keys.is_empty() {
             metadata.locations.remove(&domain);
             if let Some(bitset) = self.storage.domain_bitsets.get_mut(&domain) {
@@ -255,10 +255,10 @@ impl World {
             return Ok(Some(loc));
         }
 
-        // 5. Find or create the destination page for the reduced signature.
+        // Find or create the destination page for the reduced signature.
         let dest_page_id = self.find_or_create_page_for_signature(&new_keys);
 
-        // 6. Migrate every surviving component from src → dest.
+        // Migrate every surviving component from src → dest.
         let dest_row_index;
         {
             let (src_page, dest_page) = two_pages(
@@ -304,10 +304,10 @@ impl World {
         // The whole row moved: every domain of the destination page sees it.
         self.note_page_changed(dest_page_id);
 
-        // 7. Update entity metadata to point at the new (page, row). As in
-        //    `attach`, the whole archetype row migrated, so repoint every
-        //    co-located domain (not just this one) to keep the entity in one page
-        //    and leave the old row fully dead.
+        // Update entity metadata to point at the new (page, row). As in
+        // `attach`, the whole archetype row migrated, so repoint every
+        // co-located domain (not just this one) to keep the entity in one page
+        // and leave the old row fully dead.
         let new_location = PageIndex {
             page_id: dest_page_id,
             row_index: dest_row_index,
@@ -325,11 +325,11 @@ impl World {
         // The entity lost a component in this domain — invalidate cached Views.
         self.bump_domain_epoch(domain);
 
-        // 8. Record the abandoned source page so maintenance compacts its
-        //    now-orphaned row later.
+        // Record the abandoned source page so maintenance compacts its
+        // now-orphaned row later.
         self.orphan_row(loc.page_id);
 
-        // 9. Hand the old location off to the GC.
+        // Hand the old location off to the GC.
         Ok(Some(loc))
     }
 }

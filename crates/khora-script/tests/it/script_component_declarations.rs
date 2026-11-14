@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A project declares its own components (Ergon spec 08).
+//! A project declares its own components.
 //!
 //! What the compiler accepts and refuses about a `component` written in a
 //! script: its `[Domain(…)]`, its field defaults, the zero a field without one

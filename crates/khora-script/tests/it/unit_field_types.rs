@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A `Duration` or `Angle` field declares its unit (Ergon spec 11): the
+//! A `Duration` or `Angle` field declares its unit: the
 //! declaration the engine registers types the field `Duration` or `Angle`,
 //! not `float`, so the editor can show it in `s` or `deg`.
 

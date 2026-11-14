@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! A `Duration` and an `Angle` field keep their unit from the compiler to the
-//! layout (Ergon spec 11) — compiled, declared, registered — and are stored
+//! layout — compiled, declared, registered — and are stored
 //! as the float they are: a scene saved when the field was a `float` still
 //! loads its value, and a scene saved since keeps the unit for a world that
 //! never declared the component.

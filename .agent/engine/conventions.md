@@ -116,6 +116,41 @@ pub struct Light {
 - Keep mdBook chapters in sync with the code: change a public API → update the chapter in the same change.
 - For any **design / UI-UX** task (editor visuals, docs visual language, game UI), use **`/impeccable`**.
 
+## 9b — Comments
+
+**Code says how; comments say what and why.**
+
+1. **Doc comment (`///`) = the contract.** First paragraph: *one sentence*, at most 2 lines (about
+   15 words). A function's summary starts with a verb ("Returns…", "Spawns…"); a type's is a noun
+   phrase. Then, if needed, one short paragraph of what the signature cannot say: preconditions,
+   side effects, ordering ("call after…"), units, invariants, locks held. Then the standard
+   sections: `# Errors`, `# Panics`, `# Safety`, `# Examples`. Aim for 6 prose lines or fewer;
+   more only for a public entry point with an example.
+2. **Never the implementation in a doc.** No step lists, no "the scheduler then…". If the reader
+   needs the mechanism, it is a book page.
+3. **Every `pub` item is documented.** A private item gets a doc only when its name and
+   signature leave something non-obvious, usually in one line.
+4. **Inline comment (`//`) = why.** A reason, a trap, an invariant relied on. Four lines at most,
+   full sentences. No numbered steps: a function with a step list is split into named functions.
+5. **Never in a comment**: history ("previously", "replaces", "no longer"), plan or review labels
+   (`Phase N`, `step 3f`, `P1`, `R7`), restating the code, rules copied from `RULES.md`, design
+   essays. History goes in the commit message.
+6. **One home per fact.** Design, rationale, frame order and protocols live in `docs/src`. A
+   comment points there with `See the book: concepts/the-frame.md, "Heading".` (a path and a
+   heading, both checked).
+7. **`//!` module doc**: 1–3 lines saying what the module holds. A crate's `lib.rs` may say more.
+8. **`// SAFETY:`** on every `unsafe` block, unchanged. The 13-line licence header stays.
+
+Checked by `xtask/tests/layout.rs`: `no_plan_labels_in_comments` and `book_citations_resolve`
+(strict), `doc_summary_is_short` and `inline_comments_are_short` (ratchets).
+
+**Checklist before commit**
+- Each summary is one sentence and fits in 2 lines.
+- Errors, panics and unsafety are in their sections, not in prose.
+- No doc describes how the body works; no comment restates a line.
+- No plan label, no history, no step numbering.
+- Anything longer than a paragraph is in the book, linked by path and heading.
+
 ## 10 — Render bind-group budget
 
 Every render lane uses **exactly four bind groups**, the four stable inputs of a draw:

@@ -70,7 +70,7 @@ impl ProjectionRegistry {
     /// This method is idempotent and safe to call every frame.
     pub fn sync_all(&self, world: &mut World, device: &dyn GraphicsDevice) {
         let cache = self.store.store::<GpuMesh>();
-        // Phase 1: collect pending uploads (read-only ECS borrow).
+        // Collect the pending uploads (read-only ECS borrow).
         let mut pending: HashMap<EntityId, HandleComponent<GpuMesh>> = HashMap::new();
 
         {
@@ -117,9 +117,9 @@ impl ProjectionRegistry {
             }
         }
 
-        // Phase 2: mutate the ECS world (no longer borrowed by the query above).
+        // Then mutate the ECS world (no longer borrowed by the query above).
         for (entity_id, component) in pending {
-            // The ECS query skips stale orphan rows, so an entity reaches phase 2
+            // The ECS query skips stale orphan rows, so an entity reaches this loop
             // only when it genuinely lacks the handle — any failure is unexpected.
             if let Err(e) = world.add_component(entity_id, component) {
                 log::warn!("projection: attaching GPU handle to {entity_id:?} failed: {e:?}");

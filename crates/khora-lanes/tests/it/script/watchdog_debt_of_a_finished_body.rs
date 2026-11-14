@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! **A debt is the run time of the body that overdrew it, and no other's**
-//! (Ergon spec 10): when the body that overspent finishes in the very turn it
+//!: when the body that overspent finishes in the very turn it
 //! overspent, the frames the behavior then sits out repaying belong to
 //! nobody — not to the body that starts once the debt is paid, which
 //! overdrew none of it.

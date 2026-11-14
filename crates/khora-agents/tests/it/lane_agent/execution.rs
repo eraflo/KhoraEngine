@@ -38,7 +38,7 @@ use crate::protocol::pin;
 /// before.
 ///
 /// The pass half of this row (a `#[pass]` slot holding the closed pass) waits
-/// for the first pass family: `#[pass]` cannot open before step 3f.
+/// for the first pass family: no family declares a `#[pass]` slot yet.
 #[test]
 fn outputs_are_committed_by_the_agent() {
     let mut agent = lane_agent(&LADDER, &DeviceCaps::default());

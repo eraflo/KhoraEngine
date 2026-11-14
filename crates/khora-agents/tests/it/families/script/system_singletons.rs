@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **A system lives on one runtime entity** (Ergon spec 10), known by the
+//! **A system lives on one runtime entity**, known by the
 //! named identity `system:Name`: it exists once while the game plays,
 //! holding the system's component and its state companion; it is not there
 //! while nothing plays; frames, reloads and a game-save load never make a

@@ -32,8 +32,8 @@ pub fn paint_brand_pill(
     project_name: &str,
     theme: &UiTheme,
 ) -> f32 {
-    // Real font measurement (Phase 3 — replaces the previous 7px-per-char
-    // guess that broke at large font sizes / non-ASCII names).
+    // Measured with the real font: a fixed width per character breaks at
+    // large sizes and on non-ASCII names.
     let engine_w = ui.measure_text(
         engine_name,
         theme.font_size_body,

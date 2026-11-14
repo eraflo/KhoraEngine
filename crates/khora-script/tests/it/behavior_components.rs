@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A behavior is a component (Ergon spec 09): what a program declares for
+//! A behavior is a component: what a program declares for
 //! each `behavior` its project writes — the behavior's own component, its
 //! authored fields in the behavior's `[Domain]`, and its **state companion**
 //! `Name#state`, the same fixed layout for every behavior, always in the

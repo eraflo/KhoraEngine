@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! **What an importer's compile found leaves once the import is fixed,
-//! however the import is spelled** (Ergon spec 11). The language accepts
+//! however the import is spelled**. The language accepts
 //! `import "./helper.erg";` for `helper.erg`; the pump must recompile that
 //! importer when `helper.erg` changes, or the error its compile found in
 //! `helper.erg` stays listed after the fix — and the importer, which did not

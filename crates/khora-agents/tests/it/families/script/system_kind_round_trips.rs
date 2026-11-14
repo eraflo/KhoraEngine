@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **A name changing kind and back** (Ergon spec 10): the entities that held
+//! **A name changing kind and back**: the entities that held
 //! a behavior keep their fields while it is a system and run from them once
 //! it is a behavior again; a system's entity was never an instance of the
 //! behavior it turns into; a game save holding a system's entity loads into

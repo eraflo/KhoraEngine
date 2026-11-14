@@ -151,9 +151,9 @@ impl DccService {
             while running.load(Ordering::Relaxed) {
                 let start_time = Instant::now();
 
-                // 0. Read the hardware — heat, battery, the CPU's load — on this
-                //    thread, at most once a second: a sensor read can take
-                //    milliseconds, and none of it may land in a frame.
+                // Read the hardware — heat, battery, the CPU's load — on this
+                // thread, at most once a second: a sensor read can take
+                // milliseconds, and none of it may land in a frame.
                 if hardware_read.is_none_or(|at| at.elapsed() >= HARDWARE_READ_PERIOD) {
                     let monitor = hardware_monitor
                         .read()
@@ -177,9 +177,9 @@ impl DccService {
                     }
                 }
 
-                // 1. Ingest all pending events. The frames reported during
-                //    this tick, in order, are what the governor observes once
-                //    the tick's setpoint is known.
+                // Ingest all pending events. The frames reported during
+                // this tick, in order, are what the governor observes once
+                // the tick's setpoint is known.
                 let mut frames: Vec<Duration> = Vec::new();
                 let journal = recording_since(&decision_recording);
                 if journal != frames_of {
@@ -340,7 +340,7 @@ impl DccService {
                     }
                 }
 
-                // 2. Perform Analysis & Arbitration
+                // Perform Analysis & Arbitration
                 let (mut report, mut ctx_copy) = {
                     let mut ctx = context.write().unwrap_or_else(|e| e.into_inner());
                     // Fold the latest tracking-allocator telemetry into the
@@ -360,12 +360,12 @@ impl DccService {
                 // would cut the same overrun twice.
                 let setpoint_ms = report.suggested_latency_ms;
 
-                // 2b. Anticipatory budgeting: the empirical per-agent cost models
-                //     forecast the combined frame cost at the current workload. If
-                //     that exceeds the budget, negotiate now and tighten the target
-                //     so GORNA downgrades *before* the frame actually overruns —
-                //     turning the reactive loop predictive (model proposes,
-                //     measurement disposes).
+                // Anticipatory budgeting: the empirical per-agent cost models
+                // forecast the combined frame cost at the current workload. If
+                // that exceeds the budget, negotiate now and tighten the target
+                // so GORNA downgrades *before* the frame actually overruns —
+                // turning the reactive loop predictive (model proposes,
+                // measurement disposes).
                 if let Some(predicted_ms) = forecast_frame_ms(
                     &cost_models,
                     &workloads,
@@ -391,12 +391,12 @@ impl DccService {
                     epochs.raise(Trigger::Pressure);
                 }
 
-                // 2b-bis. The frame governor: it observes the tick's frames and
-                //     decides, once the last change has reached them, whether
-                //     the multiplier moves. It never lowers it when every agent
-                //     already runs its floor — no row is left to give. A hard
-                //     safety ceiling (Critical thermal/battery, near-budget
-                //     memory) caps what is published, whatever it decided.
+                // The frame governor: it observes the tick's frames and
+                // decides, once the last change has reached them, whether
+                // the multiplier moves. It never lowers it when every agent
+                // already runs its floor — no row is left to give. A hard
+                // safety ceiling (Critical thermal/battery, near-budget
+                // memory) caps what is published, whatever it decided.
                 let setpoint = Duration::from_secs_f64(f64::from(setpoint_ms.max(0.0)) / 1_000.0);
                 // The planner reads its margin from the samples the governor
                 // keeps: no hitch, a load frame bounded.
@@ -461,10 +461,10 @@ impl DccService {
                     }
                 }
 
-                // 3. GORNA. Only the agents of the families on take part; a
-                //    due trigger opens an epoch. The allocation is published
-                //    for the scheduler, which lends it at its next frame
-                //    start: this thread never lends.
+                // GORNA. Only the agents of the families on take part; a
+                // due trigger opens an epoch. The allocation is published
+                // for the scheduler, which lends it at its next frame
+                // start: this thread never lends.
                 let agents: Vec<Arc<std::sync::Mutex<dyn Agent>>> = {
                     let registry = registry.lock().unwrap_or_else(|e| e.into_inner());
                     registry.iter_active(&ctx_copy.inactive).cloned().collect()
@@ -603,7 +603,7 @@ impl DccService {
                     *learnt = arbitrator.cost_book().export();
                 }
 
-                // 4. Sleep until next tick
+                // Sleep until next tick
                 let elapsed = start_time.elapsed();
                 if elapsed < tick_duration {
                     thread::sleep(tick_duration - elapsed);

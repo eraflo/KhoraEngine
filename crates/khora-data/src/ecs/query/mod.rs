@@ -215,18 +215,18 @@ impl<T: Component> WorldQuery for &T {
         row_index: usize,
         _ctx: FetchContext<'_>,
     ) -> Self::Item<'a> {
-        // 1. Get a reference to the `ComponentPage`.
+        // Get a reference to the `ComponentPage`.
         let page = &*page_ptr;
 
-        // 2. Get the type-erased column for the component `T`.
+        // Get the type-erased column for the component `T`.
         // We can unwrap because the caller guarantees the column exists.
         let column: &dyn AnyVec = &**page.columns.get(&ComponentKey::of::<T>()).unwrap();
 
-        // 3. Downcast the column to its concrete `Vec<T>` type.
+        // Downcast the column to its concrete `Vec<T>` type.
         // First, cast to `&dyn Any`, then `downcast_ref`.
         let vec: &Vec<T> = column.as_any().downcast_ref::<Vec<T>>().unwrap();
 
-        // 4. Get the component from the vector at the specified row.
+        // Get the component from the vector at the specified row.
         // We use `get_unchecked` for performance, as the caller guarantees the
         // index is in bounds. This avoids a bounds check.
         vec.get_unchecked(row_index)

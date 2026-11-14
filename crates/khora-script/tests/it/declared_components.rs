@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What a program says about the components its scripts declare (Ergon spec
-//! 08): `Program::declared`, one entry per `component` written outside the
+//! What a program says about the components its scripts declare:
+//! `Program::declared`, one entry per `component` written outside the
 //! engine's module — its module, its domain, and each field's type and
 //! default — sorted by name. This is what the engine registers.
 

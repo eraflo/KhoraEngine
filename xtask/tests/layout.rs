@@ -90,6 +90,8 @@ const RATCHETED_CHECKS: &[&str] = &[
     "private_helpers_come_after_the_primary_type_impls",
     "each_file_holds_one_primary_type",
     "functions_under_200_lines",
+    "doc_summary_is_short",
+    "inline_comments_are_short",
 ];
 
 /// Module names too generic to say what a file holds: each is shared by
@@ -3698,6 +3700,17 @@ fn residency_folder_check_names_what_is_not_one_file_per_residency() {
     assert_eq!(bad_problems.len(), 5, "{bad_problems:#?}");
 }
 
+/// Whether the `r` at `at` opens a raw string: it follows no identifier
+/// character, or only the `b` of a byte raw string (`br"…"`).
+fn opens_raw_string(chars: &[char], at: usize) -> bool {
+    let ident = |at: usize| chars.get(at).is_some_and(|&ch| is_ident_char(ch));
+    match at.checked_sub(1) {
+        None => true,
+        Some(before) if chars[before] == 'b' => before == 0 || !ident(before - 1),
+        Some(before) => !ident(before),
+    }
+}
+
 /// `text` with every `//` and `/* */` comment blanked out (doc comments
 /// included), keeping string and character literals and every newline, so
 /// line numbers survive.
@@ -3750,11 +3763,9 @@ fn strip_rust_comments(text: &str) -> String {
             }
         } else if c == 'r'
             && (next == Some('"') || next == Some('#'))
-            && !chars
-                .get(i.wrapping_sub(1))
-                .is_some_and(|p| p.is_alphanumeric() || *p == '_')
+            && opens_raw_string(&chars, i)
         {
-            // A raw string: r"…", r#"…"#, …
+            // A raw string: r"…", r#"…"#, br"…", …
             let mut j = i + 1;
             let mut hashes = 0;
             while chars.get(j) == Some(&'#') {
@@ -6213,6 +6224,1423 @@ pub struct Locked {
             "crates/alpha/src/source.rs",
             &["`enum SourceKind` (line 1)", "`struct Locked` (line 5)"]
         )]
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Comments
+// ---------------------------------------------------------------------------
+//
+// Code says how; comments say what and why (`.agent/engine/conventions.md`,
+// comments section). A comment's text is what follows `//` on a line, string
+// and character literal contents blanked first, so a `//` inside a literal
+// opens no comment. Two strict checks read every Rust file of the scanned
+// trees, test files included; two ratchets read the non-test files of the
+// `src` trees.
+
+/// Every comment line under `root` that names a plan or review label, or an
+/// inline `//` comment opening on a numbered step, as `path:line: comment`.
+///
+/// Reads every `.rs` file of `crates/*/src`, `crates/*/tests`, `xtask/src`,
+/// `xtask/tests` and `examples/*/src`; block comments count.
+fn plan_label_problems(root: &Path) -> Vec<String> {
+    let mut problems = Vec::new();
+    for (path, text) in comment_scanned_files(root) {
+        for comment in comments_of(&text) {
+            let numbered =
+                comment.kind == CommentKind::Line && opens_on_numbered_step(&comment.text);
+            if numbered || names_plan_label(&comment.text) {
+                problems.push(format!("{path}:{}: {}", comment.line, comment.text.trim()));
+            }
+        }
+    }
+    problems
+}
+
+/// Per non-test file of `root`'s `src` trees: each `///` block whose first
+/// paragraph runs over more than 2 lines, as `line N: summary of K lines`.
+fn doc_summary_violations(root: &Path) -> Violations {
+    let mut violations = Violations::new();
+    for src in rust_src_roots(root) {
+        for (path, text) in non_test_rust_files(&src) {
+            let docs: Vec<Comment> = comments_of(&text)
+                .into_iter()
+                .filter(|comment| comment.kind == CommentKind::Doc && comment.whole_line)
+                .collect();
+            for block in runs(&docs) {
+                let blank = |comment: &&Comment| comment.text[3..].trim().is_empty();
+                let mut lines = block.iter().skip_while(blank).peekable();
+                let Some(first) = lines.peek().map(|comment| comment.line) else {
+                    continue;
+                };
+                let summary = lines.take_while(|comment| !blank(comment)).count();
+                if summary > 2 {
+                    add(
+                        &mut violations,
+                        rel(root, &path),
+                        format!("line {first}: summary of {summary} lines"),
+                    );
+                }
+            }
+        }
+    }
+    violations
+}
+
+/// Per non-test file of `root`'s `src` trees: each run of more than 4
+/// indented `//` comment lines, as `line N: K comment lines`.
+fn inline_comment_violations(root: &Path) -> Violations {
+    let mut violations = Violations::new();
+    for src in rust_src_roots(root) {
+        for (path, text) in non_test_rust_files(&src) {
+            let inline: Vec<Comment> = comments_of(&text)
+                .into_iter()
+                .filter(|comment| {
+                    comment.kind == CommentKind::Line && comment.whole_line && comment.indented
+                })
+                .collect();
+            for run in runs(&inline) {
+                let opening = run[0].text.trim_start_matches('/').trim_start();
+                if run.len() > 4 && !opening.starts_with("SAFETY:") {
+                    add(
+                        &mut violations,
+                        rel(root, &path),
+                        format!("line {}: {} comment lines", run[0].line, run.len()),
+                    );
+                }
+            }
+        }
+    }
+    violations
+}
+
+/// Every book citation under `root` that names a missing page or heading, as
+/// `path:line: what is missing`. Reads the files `plan_label_problems` reads.
+fn book_citation_problems(root: &Path) -> Vec<String> {
+    let mut problems = Vec::new();
+    for (path, text) in comment_scanned_files(root) {
+        let comments = comments_of(&text);
+        for (at, comment) in comments.iter().enumerate() {
+            // A citation wrapped onto the next comment line is read whole.
+            let next = comments
+                .get(at + 1)
+                .filter(|next| next.line == comment.line + 1)
+                .map_or("", |next| {
+                    next.text.trim_start_matches(['/', '!', '*']).trim_start()
+                });
+            let joined = format!("{} {next}", comment.text.trim_end());
+            let own = comment.text.trim_end().len();
+            for (page, heading) in book_citations(&joined)
+                .into_iter()
+                .filter(|(_, _, start)| *start < own)
+                .map(|(page, heading, _)| (page, heading))
+            {
+                let file = root.join(&page);
+                let missing = if !file.is_file() {
+                    Some(format!("no page `{page}`"))
+                } else {
+                    heading
+                        .filter(|heading| !has_heading(&read_text(&file), heading))
+                        .map(|heading| format!("no heading \"{heading}\" in `{page}`"))
+                };
+                if let Some(missing) = missing {
+                    problems.push(format!("{path}:{}: {missing}", comment.line));
+                }
+            }
+        }
+    }
+    problems
+}
+
+/// What a comment is: a line comment, an item doc, a module doc, or a block
+/// comment (or a line inside one).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CommentKind {
+    Line,
+    Doc,
+    Inner,
+    Block,
+}
+
+/// One line's comment, read from a file.
+#[derive(Clone, Debug)]
+struct Comment {
+    /// 1-based line.
+    line: usize,
+    kind: CommentKind,
+    /// From the comment's opening `//` or `/*` (inside a block comment, from
+    /// the line's first character) to the end of the line.
+    text: String,
+    /// Nothing but whitespace before the comment on its line.
+    whole_line: bool,
+    /// The line starts with whitespace.
+    indented: bool,
+}
+
+/// The comment of each line of `text` that holds one, told from code by
+/// `strip_rust_comments`, which blanks comments and keeps literals.
+fn comments_of(text: &str) -> Vec<Comment> {
+    let stripped = strip_rust_comments(text);
+    let mut comments = Vec::new();
+    let mut in_block = false;
+    for (index, (raw, code)) in text.lines().zip(stripped.lines()).enumerate() {
+        let raw: Vec<char> = raw.chars().collect();
+        let code: Vec<char> = code.chars().collect();
+        let Some(start) = (0..raw.len()).find(|&at| code.get(at) != Some(&raw[at])) else {
+            // A blank line inside a block comment keeps it open.
+            in_block = in_block && raw.iter().all(|ch| ch.is_whitespace());
+            continue;
+        };
+        let comment: String = raw[start..].iter().collect();
+        let first = raw.iter().position(|ch| !ch.is_whitespace()).unwrap_or(0);
+        let kind = if in_block && start == first {
+            CommentKind::Block
+        } else if comment.starts_with("///") && !comment.starts_with("////") {
+            CommentKind::Doc
+        } else if comment.starts_with("//!") {
+            CommentKind::Inner
+        } else if comment.starts_with("//") {
+            CommentKind::Line
+        } else {
+            CommentKind::Block
+        };
+        in_block = block_open_after(&raw, &code, start, in_block && start == first);
+        comments.push(Comment {
+            line: index + 1,
+            kind,
+            text: comment,
+            whole_line: start == first,
+            indented: raw.first().is_some_and(|ch| ch.is_whitespace()),
+        });
+    }
+    comments
+}
+
+/// Whether a block comment is still open at the end of a line, its `raw`
+/// and comment-blanked `code` characters from `start` on: `/*` and `*/` are
+/// counted where they are comment, nesting kept, until a `//` outside any
+/// block ends the line. `open` says the line starts inside one.
+fn block_open_after(raw: &[char], code: &[char], start: usize, open: bool) -> bool {
+    let comment = |at: usize| code.get(at) != raw.get(at);
+    let mut depth = usize::from(open);
+    let mut at = start;
+    while at + 1 < raw.len() {
+        let pair = (raw[at], raw[at + 1]);
+        if comment(at) && comment(at + 1) {
+            match pair {
+                ('/', '*') => {
+                    depth += 1;
+                    at += 2;
+                    continue;
+                }
+                ('*', '/') if depth > 0 => {
+                    depth -= 1;
+                    at += 2;
+                    continue;
+                }
+                ('/', '/') if depth == 0 => return false,
+                _ => {}
+            }
+        }
+        at += 1;
+    }
+    depth > 0
+}
+
+/// `comments` cut into runs of consecutive lines.
+fn runs(comments: &[Comment]) -> Vec<&[Comment]> {
+    let mut runs = Vec::new();
+    let mut start = 0;
+    for at in 1..=comments.len() {
+        if at == comments.len() || comments[at].line != comments[at - 1].line + 1 {
+            if start < at {
+                runs.push(&comments[start..at]);
+            }
+            start = at;
+        }
+    }
+    runs
+}
+
+/// Every `.rs` file the comment checks read, as its repo-relative path and
+/// its text: `crates/*/src`, `crates/*/tests`, `xtask/src`, `xtask/tests`
+/// and `examples/*/src`, test files included.
+fn comment_scanned_files(root: &Path) -> Vec<(String, String)> {
+    let mut trees = rust_src_roots(root);
+    for member in child_dirs(&root.join("crates")) {
+        trees.push(member.join("tests"));
+    }
+    trees.push(root.join("xtask/tests"));
+    let mut files = Vec::new();
+    for tree in trees.into_iter().filter(|tree| tree.is_dir()) {
+        for path in walk_files(&tree) {
+            if has_extension(&path, "rs") {
+                files.push((rel(root, &path), read_text(&path)));
+            }
+        }
+    }
+    files.sort();
+    files
+}
+
+/// Whether `comment` names a plan or review label: a phase, a step or a
+/// review round with its number or letter, a review tag, a spec by number.
+fn names_plan_label(comment: &str) -> bool {
+    let chars: Vec<char> = comment.chars().collect();
+    let boundary = |at: usize| at == 0 || !is_ident_char(chars[at - 1]);
+    let digit = |at: usize| chars.get(at).is_some_and(char::is_ascii_digit);
+    let word = |at: usize, word: &str| {
+        word.chars()
+            .enumerate()
+            .all(|(k, ch)| chars.get(at + k) == Some(&ch))
+    };
+    let digits_end = |mut at: usize| {
+        while digit(at) {
+            at += 1;
+        }
+        at
+    };
+    (0..chars.len()).any(|at| {
+        let labelled = |name: &str| word(at, name) && boundary(at) && digit(at + name.len());
+        if labelled("Phase ") || labelled("Round ") || labelled("round ") {
+            return true;
+        }
+        if labelled("Steps ") || labelled("spec ") || labelled("Spec ") {
+            return true;
+        }
+        // A phase named by a capital letter.
+        if word(at, "Phase ")
+            && boundary(at)
+            && chars.get(at + 6).is_some_and(char::is_ascii_uppercase)
+            && !chars.get(at + 7).is_some_and(|&ch| is_ident_char(ch))
+        {
+            return true;
+        }
+        if labelled("Step ") || labelled("step ") {
+            let mut end = digits_end(at + 5);
+            if chars.get(end).is_some_and(char::is_ascii_lowercase) {
+                end += 1;
+            }
+            return !chars.get(end).is_some_and(|&ch| is_ident_char(ch));
+        }
+        if chars[at] == 'R' && boundary(at) && digit(at + 1) {
+            return chars.get(digits_end(at + 1)) == Some(&':');
+        }
+        if word(at, "faute ") {
+            let after = at + 6;
+            return digit(after) || (chars.get(after) == Some(&'#') && digit(after + 1));
+        }
+        word(at, "ergon-E") && digit(at + 7)
+    })
+}
+
+/// Whether a `//` comment opens on a numbered step: `// 1. `, `// 2b. `,
+/// `// 2b-bis. `, `// 3) `, `// 6–8. `, `// (1) `.
+fn opens_on_numbered_step(comment: &str) -> bool {
+    let rest = comment.trim_start_matches('/').trim_start();
+    let number = |text: &str| -> Option<usize> {
+        let digits = text.chars().take_while(char::is_ascii_digit).count();
+        (digits > 0).then(|| {
+            let letter = text[digits..].starts_with(|ch: char| ch.is_ascii_lowercase());
+            digits + usize::from(letter)
+        })
+    };
+    if let Some(inner) = rest.strip_prefix('(') {
+        return number(inner).is_some_and(|end| {
+            (inner[end..].strip_prefix(')'))
+                .is_some_and(|after| after.starts_with(char::is_whitespace))
+        });
+    }
+    let Some(mut end) = number(rest) else {
+        return false;
+    };
+    let mut tail = &rest[end..];
+    tail = tail.strip_prefix("-bis").unwrap_or(tail);
+    // A range of steps: `6–8.`, `6-8.`.
+    if let Some(range) = tail.strip_prefix('–').or_else(|| tail.strip_prefix('-')) {
+        if let Some(second) = number(range) {
+            end = second;
+            tail = &range[end..];
+        }
+    }
+    let Some(after) = tail.strip_prefix('.').or_else(|| tail.strip_prefix(')')) else {
+        return false;
+    };
+    after.starts_with(char::is_whitespace)
+}
+
+/// The book pages `comment` cites, each with the heading it names and where
+/// the citation starts: a path `docs/src/….md`, or `See the book: <path under
+/// docs/src>.md`, either followed by `, "Heading"`. Paths are repo-relative.
+fn book_citations(comment: &str) -> Vec<(String, Option<String>, usize)> {
+    let path_at = |text: &str| -> Option<String> {
+        let path: String = text
+            .chars()
+            .take_while(|&ch| ch.is_alphanumeric() || matches!(ch, '/' | '-' | '_' | '.'))
+            .collect();
+        let end = path.find(".md")?;
+        Some(path[..end + 3].to_owned())
+    };
+    // `, "Heading"` right after a path, a closing backtick allowed between.
+    let heading_after = |rest: &str| {
+        rest.trim_start_matches('`')
+            .strip_prefix(", \"")
+            .and_then(|quoted| quoted.find('"').map(|end| quoted[..end].to_owned()))
+    };
+    let mut cited = Vec::new();
+    for (at, _) in comment.match_indices("docs/src/") {
+        if let Some(path) = path_at(&comment[at..]) {
+            let heading = heading_after(&comment[at + path.len()..]);
+            cited.push((path, heading, at));
+        }
+    }
+    for (at, marker) in comment.match_indices("See the book:") {
+        let rest = comment[at + marker.len()..].trim_start();
+        let Some(path) = path_at(rest) else {
+            continue;
+        };
+        let heading = heading_after(&rest[path.len()..]);
+        cited.push((format!("docs/src/{path}"), heading, at));
+    }
+    cited
+}
+
+/// Whether `page` holds `heading` as a heading line: one to six `#`, a
+/// space, then exactly the heading.
+fn has_heading(page: &str, heading: &str) -> bool {
+    page.lines().any(|line| {
+        let hashes = line.chars().take_while(|&ch| ch == '#').count();
+        (1..=6).contains(&hashes)
+            && line[hashes..]
+                .strip_prefix(' ')
+                .is_some_and(|text| text.trim_end() == heading)
+    })
+}
+
+/// **No comment carries a plan or review label, nor numbers a step.** A
+/// phase, a step, a review tag, a review round, an Ergon spec name: history,
+/// which goes in the commit message. An inline comment opening on a numbered
+/// step asks for the function to be split. Strict.
+#[test]
+fn no_plan_labels_in_comments() {
+    let problems = plan_label_problems(&repo_root());
+    assert!(
+        problems.is_empty(),
+        "{} comments carry a plan or review label, or number a step (say what the code does \
+         and why; history goes in the commit message):\n  {}",
+        problems.len(),
+        problems.join("\n  ")
+    );
+}
+
+/// **A doc summary is one sentence, two lines at most.** The first paragraph
+/// of each `///` block, in the non-test files of the `src` trees. Keyed by
+/// the file.
+#[test]
+fn doc_summary_is_short() {
+    ratchet(
+        "doc_summary_is_short",
+        "doc summaries longer than 2 lines (one sentence, two lines at most)",
+        &doc_summary_violations(&repo_root()),
+    );
+}
+
+/// **An inline comment says why in four lines at most.** A run of indented
+/// `//` lines longer than that is a step list or an essay; a `// SAFETY:` run
+/// is exempt. Keyed by the file.
+#[test]
+fn inline_comments_are_short() {
+    ratchet(
+        "inline_comments_are_short",
+        "inline comment blocks longer than 4 lines (say why in four lines; split a function \
+         that needs a step list)",
+        &inline_comment_violations(&repo_root()),
+    );
+}
+
+/// **Every book citation in a comment resolves.** A `docs/src` page path
+/// names an existing page; a citation of a page and a heading names an
+/// existing page and one of its headings. Strict.
+#[test]
+fn book_citations_resolve() {
+    let problems = book_citation_problems(&repo_root());
+    assert!(
+        problems.is_empty(),
+        "{} book citations name a missing page or heading:\n  {}",
+        problems.len(),
+        problems.join("\n  ")
+    );
+}
+
+/// A strict comment check's problems on a fresh tree of `files` (paths
+/// relative to it).
+fn comment_problems(
+    label: &str,
+    files: &[(&str, &str)],
+    scan: fn(&Path) -> Vec<String>,
+) -> Vec<String> {
+    let dir = order_temp_dir(label);
+    let setup = write_order_tree(&dir, files);
+    let problems = scan(&dir);
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+    problems
+}
+
+/// A comment ratchet's violations on a fresh tree of `files` (paths relative
+/// to it), as `(path, details)` pairs.
+fn comment_violations(
+    label: &str,
+    files: &[(&str, &str)],
+    scan: fn(&Path) -> Violations,
+) -> Vec<(String, Vec<String>)> {
+    let dir = order_temp_dir(label);
+    let setup = write_order_tree(&dir, files);
+    let violations = scan(&dir);
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+    violation_list(violations)
+}
+
+/// Asserts `problems` hold exactly one problem per `(path, line, text)`: one
+/// starting `path:line: ` and holding `text`.
+fn assert_problems(problems: &[String], expected: &[(&str, usize, &str)]) {
+    let missing: Vec<String> = expected
+        .iter()
+        .filter(|(path, line, text)| {
+            let prefix = format!("{path}:{line}: ");
+            !problems
+                .iter()
+                .any(|problem| problem.starts_with(&prefix) && problem.contains(text))
+        })
+        .map(|(path, line, text)| format!("{path}:{line}: …{text}…"))
+        .collect();
+    assert!(
+        missing.is_empty() && problems.len() == expected.len(),
+        "expected {} problems; missing {missing:#?}; got {problems:#?}",
+        expected.len()
+    );
+}
+
+/// **A plan label in any comment is reported at its line.** A phase number,
+/// a step with a number and a letter, a review tag with its colon, a review
+/// note, an Ergon spec name, a review round in either case: in a `//` line, a
+/// trailing comment, a block comment, a `///` doc.
+#[test]
+fn plan_label_check_names_each_label_with_its_line() {
+    const LIB: &str = "\
+//! The alpha crate.
+
+// Phase 2 builds the cache.
+pub fn a() {
+    // the step 3f fallback
+    let x = 1; // R7: keep this
+    /* faute #4 */
+    let _ = x;
+}
+
+/// Runs ergon-E5 hot reload.
+pub fn b() {}
+
+/// Round 2 of the review.
+pub fn c() {
+    // round 3 fix
+    // Step 12 then
+}
+";
+    let problems = comment_problems(
+        "labels-each",
+        &[("crates/alpha/src/lib.rs", LIB)],
+        plan_label_problems,
+    );
+    let path = "crates/alpha/src/lib.rs";
+    assert_problems(
+        &problems,
+        &[
+            (path, 3, "Phase 2"),
+            (path, 5, "step 3f"),
+            (path, 6, "R7:"),
+            (path, 7, "faute #4"),
+            (path, 11, "ergon-E5"),
+            (path, 14, "Round 2"),
+            (path, 16, "round 3"),
+            (path, 17, "Step 12"),
+        ],
+    );
+}
+
+/// **An inline comment opening on a numbered step is reported; a doc list is
+/// not.** `1.`, `2b.`, `2b-bis.` and `3)` at the start of a `//` comment are
+/// step numbers; the same numbers in a `///` or `//!` markdown list are a
+/// list, and a number further into an inline comment is prose.
+#[test]
+fn plan_label_check_names_a_numbered_step_in_an_inline_comment_only() {
+    const LIB: &str = "\
+//! What the module holds:
+//!
+//! 1. one thing
+
+/// The steps:
+///
+/// 1. first
+/// 2. second
+pub fn listed() {
+    // 1. load the file
+    // 2b. parse it
+    // 2b-bis. parse again
+    // 3) write it
+    // keeps item 1. as is
+}
+";
+    let problems = comment_problems(
+        "labels-numbered",
+        &[("crates/alpha/src/lib.rs", LIB)],
+        plan_label_problems,
+    );
+    let path = "crates/alpha/src/lib.rs";
+    assert_problems(
+        &problems,
+        &[
+            (path, 10, "1. load"),
+            (path, 11, "2b. parse"),
+            (path, 12, "2b-bis. parse"),
+            (path, 13, "3) write"),
+        ],
+    );
+}
+
+/// **The words phase and step are not labels.** `ExecutionPhase` (even
+/// before a number), `Phase::Output`, `phase` and `step` without a number
+/// pass; the control file beside them, holding a phase number, is reported.
+#[test]
+fn plan_label_check_passes_the_words_phase_and_step() {
+    const LIB: &str = "\
+// Runs in ExecutionPhase::Output.
+// The phase that renders, Phase::Output too.
+// An ExecutionPhase 2 slot is a type name, not a label.
+pub fn words() {
+    // One step at a time, step by step.
+    let _ = 1;
+}
+
+/// The steps of the phase, as a list:
+///
+/// - first
+pub fn listed() {}
+";
+    let problems = comment_problems(
+        "labels-words",
+        &[
+            ("crates/alpha/src/lib.rs", LIB),
+            ("crates/alpha/src/control.rs", "// Phase 1 left over.\n"),
+        ],
+        plan_label_problems,
+    );
+    assert_problems(&problems, &[("crates/alpha/src/control.rs", 1, "Phase 1")]);
+}
+
+/// **A label inside a string or char literal is not a comment.** A `//` in a
+/// URL, in a string, in a raw string, in a fixture string of the layout tests
+/// opens no comment; the real comment after a char literal, and the one after
+/// the fixture, are reported.
+#[test]
+fn plan_label_check_ignores_labels_inside_literals() {
+    const LIB: &str = r##"pub const URL: &str = "http://example.com/Phase 2";
+pub const TEXT: &str = "// Phase 3 inside a string";
+pub const RAW: &str = r#"
+    // step 4 inside a raw string
+"#;
+pub const C: char = '/'; // R7: after a char literal
+"##;
+    const FIXTURES: &str = r#"const FIXTURE: &str = "\
+// Phase 2 builds the cache.
+";
+// round 2 leftover
+"#;
+    let problems = comment_problems(
+        "labels-literals",
+        &[
+            ("crates/alpha/src/lib.rs", LIB),
+            ("xtask/tests/layout.rs", FIXTURES),
+        ],
+        plan_label_problems,
+    );
+    assert_problems(
+        &problems,
+        &[
+            ("crates/alpha/src/lib.rs", 6, "R7:"),
+            ("xtask/tests/layout.rs", 4, "round 2"),
+        ],
+    );
+}
+
+/// **Every scanned tree is read, test files included; nothing else.** A
+/// label in a crate's `src`, its `tests.rs`, its `tests/` binary, `xtask/src`,
+/// `xtask/tests` and an example's `src` is reported; one in a Rust file
+/// outside those trees, or in a file that is not Rust, is not.
+#[test]
+fn plan_label_check_reads_every_scanned_tree_and_its_test_files() {
+    let problems = comment_problems(
+        "labels-scope",
+        &[
+            ("crates/alpha/src/lib.rs", "// Phase 1 here\n"),
+            ("crates/alpha/src/tests.rs", "// step 2 here\n"),
+            ("crates/alpha/tests/it/main.rs", "// Round 3 here\n"),
+            ("xtask/src/main.rs", "// faute 5 here\n"),
+            ("xtask/tests/layout.rs", "// R4: here\n"),
+            ("examples/demo/src/main.rs", "// ergon-E6 here\n"),
+            ("tools/scratch.rs", "// Phase 1 here\n"),
+            ("crates/alpha/notes.md", "// Phase 1 here\n"),
+        ],
+        plan_label_problems,
+    );
+    assert_problems(
+        &problems,
+        &[
+            ("crates/alpha/src/lib.rs", 1, "Phase 1"),
+            ("crates/alpha/src/tests.rs", 1, "step 2"),
+            ("crates/alpha/tests/it/main.rs", 1, "Round 3"),
+            ("xtask/src/main.rs", 1, "faute 5"),
+            ("xtask/tests/layout.rs", 1, "R4:"),
+            ("examples/demo/src/main.rs", 1, "ergon-E6"),
+        ],
+    );
+}
+
+/// **A phase named by a letter is a plan label.** A phase with a capital
+/// letter for its number, in a module doc, in a section rule and in a note,
+/// is reported; a phase followed by a word passes.
+#[test]
+fn plan_label_check_names_a_phase_named_by_a_letter() {
+    const LIB: &str = "\
+//! Phase J: atomic modal, painted absolutely.
+
+// ── Phase Heuristics ─────────────────────
+pub fn paint() {
+    // ── Branded overlays (Phase I) ────────────
+    let _ = 1;
+    // The façade was removed in Phase F.
+    let _ = 2;
+}
+";
+    let problems = comment_problems(
+        "labels-letter",
+        &[("crates/alpha/src/lib.rs", LIB)],
+        plan_label_problems,
+    );
+    let path = "crates/alpha/src/lib.rs";
+    assert_problems(
+        &problems,
+        &[
+            (path, 1, "Phase J"),
+            (path, 5, "Phase I"),
+            (path, 7, "Phase F"),
+        ],
+    );
+}
+
+/// **A numbered range of steps is a plan label.** The plural with a range of
+/// step numbers, in an inline comment and in a doc, names steps by number
+/// like the singular does; both are reported.
+#[test]
+fn plan_label_check_names_a_range_of_steps() {
+    const LIB: &str = "\
+/// Steps 2-5 of a spawn, for an entity whose id is already allocated.
+fn place() {}
+
+pub fn despawn() {
+    // Steps 1-2: kill the entity, taking its metadata.
+    let _ = 1;
+}
+";
+    let problems = comment_problems(
+        "labels-steps-range",
+        &[("crates/alpha/src/lib.rs", LIB)],
+        plan_label_problems,
+    );
+    let path = "crates/alpha/src/lib.rs";
+    assert_problems(&problems, &[(path, 1, "Steps 2-5"), (path, 5, "Steps 1-2")]);
+}
+
+/// **An inline comment opening on a step range or a parenthesised step
+/// number is a numbered step.** Both are reported, like a single number
+/// with a dot; a range of decimal values at the start passes.
+#[test]
+fn plan_label_check_names_a_step_range_and_a_parenthesised_step() {
+    const LIB: &str = "\
+pub fn frame() {
+    // 6–8. The waves: the fixed-update sub-loop, then every phase once.
+    let _ = 1;
+    // (1) Sibling of the editor binary, the release layout.
+    let _ = 2;
+    // 0.0–1.0, the load range.
+    let _ = 3;
+}
+";
+    let problems = comment_problems(
+        "labels-numbered-forms",
+        &[("crates/alpha/src/lib.rs", LIB)],
+        plan_label_problems,
+    );
+    let path = "crates/alpha/src/lib.rs";
+    assert_problems(&problems, &[(path, 2, "6–8."), (path, 4, "(1)")]);
+}
+
+/// **A comment after a line holding a closed block comment is read as what
+/// it is.** The block comment closes on its line and code follows it; the
+/// `//` line below opens on a numbered step and is reported.
+#[test]
+fn plan_label_check_reads_a_line_comment_after_a_closed_block_comment() {
+    const LIB: &str = "\
+pub fn pill() {
+    let w = 18.0 /* sign */ + 12.0;
+    // 1. paint the background
+    let _ = w;
+}
+";
+    let problems = comment_problems(
+        "labels-after-block",
+        &[("crates/alpha/src/lib.rs", LIB)],
+        plan_label_problems,
+    );
+    assert_problems(&problems, &[("crates/alpha/src/lib.rs", 3, "1. paint")]);
+}
+
+/// **A label inside a byte raw string is not a comment.** The `//` of a URL
+/// in `br#"…"#` JSON opens no comment, as in an `r#"…"#`; the real comment
+/// below is reported.
+#[test]
+fn plan_label_check_ignores_labels_inside_a_byte_raw_string() {
+    const LIB: &str = r###"pub const JSON: &[u8] = br#"{"url": "http://example.com/Phase 2"}"#;
+// round 2 leftover
+"###;
+    let problems = comment_problems(
+        "labels-byte-raw",
+        &[("crates/alpha/src/lib.rs", LIB)],
+        plan_label_problems,
+    );
+    assert_problems(&problems, &[("crates/alpha/src/lib.rs", 2, "round 2")]);
+}
+
+/// **An Ergon spec named by its number is a plan label.** The spec it names
+/// is not in the repository, like an engine-fix spec tag; it is reported.
+/// The words without a number pass.
+#[test]
+fn plan_label_check_names_an_ergon_spec_by_number() {
+    const LIB: &str = "\
+//! **A hot reload lands in one frame** (Ergon spec 09): the view is whole.
+//! The Ergon spec of the language says more.
+";
+    let problems = comment_problems(
+        "labels-ergon-spec",
+        &[("crates/alpha/src/lib.rs", LIB)],
+        plan_label_problems,
+    );
+    assert_problems(
+        &problems,
+        &[("crates/alpha/src/lib.rs", 1, "Ergon spec 09")],
+    );
+}
+
+/// **A summary of two lines passes; three lines are named at the block's
+/// first line.** The first paragraph ends at the first blank `///` line or
+/// at the block's end: a long paragraph after the blank is detail, not
+/// summary.
+#[test]
+fn doc_summary_check_passes_two_lines_and_names_three_with_their_line() {
+    const LIB: &str = "\
+/// A two-line summary that
+/// fits the rule.
+///
+/// A long paragraph
+/// of detail
+/// that runs on
+/// and on.
+pub fn fine() {}
+
+/// One line.
+pub fn short() {}
+
+/// A summary that runs
+/// over three lines
+/// and is too long.
+pub fn long() {}
+
+/// Two lines
+/// then a blank.
+///
+pub fn trailing_blank() {}
+
+/// A first paragraph
+/// of three lines
+/// before the blank.
+///
+/// Detail.
+pub fn long_then_detail() {}
+";
+    let list = comment_violations(
+        "summary-lines",
+        &[("crates/alpha/src/lib.rs", LIB)],
+        doc_summary_violations,
+    );
+    assert_eq!(
+        list,
+        vec![(
+            "crates/alpha/src/lib.rs".to_owned(),
+            vec![
+                "line 13: summary of 3 lines".to_owned(),
+                "line 23: summary of 3 lines".to_owned(),
+            ]
+        )]
+    );
+}
+
+/// **Only `///` blocks are read.** A three-line `//!` module doc and three
+/// `#[doc = …]` attributes pass; the control file's three-line `///` summary
+/// is reported.
+#[test]
+fn doc_summary_check_reads_only_triple_slash_blocks() {
+    const LIB: &str = "\
+//! A module doc
+//! of three lines
+//! is not read here.
+
+mod control;
+
+#[doc = \"One\"]
+#[doc = \"Two\"]
+#[doc = \"Three\"]
+pub fn attr() {}
+";
+    const CONTROL: &str = "\
+/// One,
+/// two,
+/// three.
+pub fn control() {}
+";
+    let list = comment_violations(
+        "summary-kinds",
+        &[
+            ("crates/alpha/src/lib.rs", LIB),
+            ("crates/alpha/src/control.rs", CONTROL),
+        ],
+        doc_summary_violations,
+    );
+    assert_eq!(
+        list,
+        vec![(
+            "crates/alpha/src/control.rs".to_owned(),
+            vec!["line 1: summary of 3 lines".to_owned()]
+        )]
+    );
+}
+
+/// **An indented `///` block is read.** A method's three-line summary inside
+/// an `impl` is named at its first line; its one-line neighbour passes.
+#[test]
+fn doc_summary_check_reads_an_indented_block_in_an_impl() {
+    const LIB: &str = "\
+pub struct S;
+
+impl S {
+    /// An indented summary
+    /// that runs over
+    /// three lines.
+    pub fn method(&self) {}
+
+    /// Fine, one line.
+    pub fn other(&self) {}
+}
+";
+    let list = comment_violations(
+        "summary-impl",
+        &[("crates/alpha/src/lib.rs", LIB)],
+        doc_summary_violations,
+    );
+    assert_eq!(
+        list,
+        vec![(
+            "crates/alpha/src/lib.rs".to_owned(),
+            vec!["line 4: summary of 3 lines".to_owned()]
+        )]
+    );
+}
+
+/// **Test files are not read.** A three-line summary in a `tests.rs` and in
+/// a crate's `tests/` binary passes; the control file's is reported.
+#[test]
+fn doc_summary_check_skips_test_files() {
+    const LONG: &str = "\
+/// One,
+/// two,
+/// three.
+pub fn long() {}
+";
+    let list = comment_violations(
+        "summary-tests",
+        &[
+            (
+                "crates/alpha/src/lib.rs",
+                "mod control;\n#[cfg(test)]\nmod tests;\n",
+            ),
+            ("crates/alpha/src/tests.rs", LONG),
+            ("crates/alpha/tests/it.rs", LONG),
+            ("crates/alpha/src/control.rs", LONG),
+        ],
+        doc_summary_violations,
+    );
+    assert_eq!(
+        list,
+        vec![(
+            "crates/alpha/src/control.rs".to_owned(),
+            vec!["line 1: summary of 3 lines".to_owned()]
+        )]
+    );
+}
+
+/// **A blank first `///` line does not hide the summary.** Rustdoc skips it
+/// and shows the paragraph after as the summary, so a three-line paragraph
+/// there is a three-line summary.
+#[test]
+fn doc_summary_check_reads_past_a_blank_first_line() {
+    const LIB: &str = "\
+///
+/// A summary that runs
+/// over three lines
+/// and is too long.
+pub fn long() {}
+";
+    let list = comment_violations(
+        "summary-blank-first",
+        &[("crates/alpha/src/lib.rs", LIB)],
+        doc_summary_violations,
+    );
+    assert!(
+        list.len() == 1
+            && list[0].0 == "crates/alpha/src/lib.rs"
+            && list[0].1.len() == 1
+            && list[0].1[0].ends_with("summary of 3 lines"),
+        "expected one three-line summary in lib.rs; got {list:#?}"
+    );
+}
+
+/// **Four inline comment lines pass; five are named at the run's first
+/// line.**
+#[test]
+fn inline_comment_check_passes_four_lines_and_names_five_with_their_line() {
+    const LIB: &str = "\
+pub fn f() {
+    // One,
+    // two,
+    // three,
+    // four.
+    let a = 1;
+    // One,
+    // two,
+    // three,
+    // four,
+    // five.
+    let _ = a;
+}
+";
+    let list = comment_violations(
+        "inline-lines",
+        &[("crates/alpha/src/lib.rs", LIB)],
+        inline_comment_violations,
+    );
+    assert_eq!(
+        list,
+        vec![(
+            "crates/alpha/src/lib.rs".to_owned(),
+            vec!["line 7: 5 comment lines".to_owned()]
+        )]
+    );
+}
+
+/// **A run opening on `// SAFETY:` is exempt; one that only holds it further
+/// down is not.** The five-line safety argument passes; the five-line run
+/// whose third line is `// SAFETY:` is reported.
+#[test]
+fn inline_comment_check_exempts_a_run_opening_on_safety() {
+    const LIB: &str = "\
+pub fn f() {
+    // SAFETY: the pointer is valid
+    // because the page is pinned,
+    // the row is in bounds,
+    // nothing else writes it,
+    // and the frame holds the lock.
+    let _ = 1;
+    // Two lines,
+    // and then
+    // SAFETY: not first, so the run
+    // is read like any
+    // other one.
+}
+";
+    let list = comment_violations(
+        "inline-safety",
+        &[("crates/alpha/src/lib.rs", LIB)],
+        inline_comment_violations,
+    );
+    assert_eq!(
+        list,
+        vec![(
+            "crates/alpha/src/lib.rs".to_owned(),
+            vec!["line 8: 5 comment lines".to_owned()]
+        )]
+    );
+}
+
+/// **Column-0 runs are not read.** The licence header and a section comment
+/// between items pass, however long; the control file's indented five-line
+/// run is reported.
+#[test]
+fn inline_comment_check_skips_column_zero_runs() {
+    const LIB: &str = "\
+// Copyright 2025 eraflo
+//
+// Licensed under the Apache License, Version 2.0 (the \"License\");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+
+mod control;
+
+// ---------------------------------------------------------------------------
+// A section
+// between items
+// that runs
+// over lines.
+// ---------------------------------------------------------------------------
+
+pub fn b() {}
+";
+    const CONTROL: &str = "\
+pub fn f() {
+    // One,
+    // two,
+    // three,
+    // four,
+    // five.
+}
+";
+    let list = comment_violations(
+        "inline-column-zero",
+        &[
+            ("crates/alpha/src/lib.rs", LIB),
+            ("crates/alpha/src/control.rs", CONTROL),
+        ],
+        inline_comment_violations,
+    );
+    assert_eq!(
+        list,
+        vec![(
+            "crates/alpha/src/control.rs".to_owned(),
+            vec!["line 2: 5 comment lines".to_owned()]
+        )]
+    );
+}
+
+/// **Only consecutive comment-only lines make a run.** Five trailing
+/// comments after code, four comment lines before a line of code with a
+/// trailing comment, two runs split by a blank line, an indented `///`
+/// block, and `//` lines inside a string literal all pass; the control
+/// file's five-line run is reported.
+#[test]
+fn inline_comment_check_counts_only_consecutive_comment_lines() {
+    const LIB: &str = "\
+pub fn f() {
+    let a = 1; // one
+    let b = 2; // two
+    let c = 3; // three
+    let d = 4; // four
+    let e = 5; // five
+    let _ = (a, b, c, d, e);
+    // One,
+    // two,
+    // three,
+    // four.
+    let g = 6; // and a trailing one
+    let _ = g;
+    // One,
+    // two,
+    // three.
+
+    // Four,
+    // five.
+    let _ = 7;
+}
+
+pub const TEXT: &str = \"
+    // one
+    // two
+    // three
+    // four
+    // five
+\";
+
+pub struct S;
+
+impl S {
+    /// A doc
+    /// block
+    /// of
+    /// six
+    /// lines
+    /// here.
+    pub fn m(&self) {}
+}
+";
+    const CONTROL: &str = "\
+pub fn f() {
+    // One,
+    // two,
+    // three,
+    // four,
+    // five.
+}
+";
+    let list = comment_violations(
+        "inline-consecutive",
+        &[
+            ("crates/alpha/src/lib.rs", LIB),
+            ("crates/alpha/src/control.rs", CONTROL),
+        ],
+        inline_comment_violations,
+    );
+    assert_eq!(
+        list,
+        vec![(
+            "crates/alpha/src/control.rs".to_owned(),
+            vec!["line 2: 5 comment lines".to_owned()]
+        )]
+    );
+}
+
+/// **Test files are not read.** A five-line run in a `tests.rs` and in a
+/// crate's `tests/` binary passes; the control file's is reported.
+#[test]
+fn inline_comment_check_skips_test_files() {
+    const LONG: &str = "\
+pub fn f() {
+    // One,
+    // two,
+    // three,
+    // four,
+    // five.
+}
+";
+    let list = comment_violations(
+        "inline-tests",
+        &[
+            (
+                "crates/alpha/src/lib.rs",
+                "mod control;\n#[cfg(test)]\nmod tests;\n",
+            ),
+            ("crates/alpha/src/tests.rs", LONG),
+            ("crates/alpha/tests/it.rs", LONG),
+            ("crates/alpha/src/control.rs", LONG),
+        ],
+        inline_comment_violations,
+    );
+    assert_eq!(
+        list,
+        vec![(
+            "crates/alpha/src/control.rs".to_owned(),
+            vec!["line 2: 5 comment lines".to_owned()]
+        )]
+    );
+}
+
+/// The book page the citation self-tests cite: a title, two headings, and
+/// two lines that are not headings (seven hashes, no space).
+const BOOK_PAGE: &str = "\
+# The page
+
+## The frame
+
+### Deep dive
+
+####### Seven hashes
+
+#Tight
+";
+
+/// **A citation naming an existing page and heading passes.** In a `//`
+/// line, an indented one, a `///` doc, and a bare `docs/src` page path; the
+/// control file's citation of a missing page is reported.
+#[test]
+fn book_citation_check_passes_an_existing_page_and_heading() {
+    const LIB: &str = r#"// See the book: concepts/x.md, "The frame".
+pub fn a() {
+    // See the book: concepts/x.md, "Deep dive".
+    let _ = 1;
+}
+/// See the book: concepts/x.md, "The page".
+pub fn b() {}
+// The page lives at docs/src/concepts/x.md.
+"#;
+    let problems = comment_problems(
+        "book-fine",
+        &[
+            ("docs/src/concepts/x.md", BOOK_PAGE),
+            ("crates/alpha/src/lib.rs", LIB),
+            (
+                "crates/alpha/src/control.rs",
+                "// See the book: concepts/missing.md, \"The frame\".\n",
+            ),
+        ],
+        book_citation_problems,
+    );
+    assert_problems(
+        &problems,
+        &[("crates/alpha/src/control.rs", 1, "concepts/missing.md")],
+    );
+}
+
+/// **The quoted heading must be a heading line of the page, word for word.**
+/// A heading the page lacks, a prefix of one, a line of seven hashes, a line
+/// with no space after its hashes, and a heading in another case are each
+/// reported.
+#[test]
+fn book_citation_check_names_a_heading_the_page_lacks() {
+    const LIB: &str = r#"// See the book: concepts/x.md, "No such heading".
+// See the book: concepts/x.md, "Deep".
+// See the book: concepts/x.md, "Seven hashes".
+// See the book: concepts/x.md, "Tight".
+// See the book: concepts/x.md, "the frame".
+"#;
+    let problems = comment_problems(
+        "book-heading",
+        &[
+            ("docs/src/concepts/x.md", BOOK_PAGE),
+            ("crates/alpha/src/lib.rs", LIB),
+        ],
+        book_citation_problems,
+    );
+    let path = "crates/alpha/src/lib.rs";
+    assert_problems(
+        &problems,
+        &[
+            (path, 1, "No such heading"),
+            (path, 2, "Deep"),
+            (path, 3, "Seven hashes"),
+            (path, 4, "Tight"),
+            (path, 5, "the frame"),
+        ],
+    );
+}
+
+/// **A page that does not exist is reported.** A bare `docs/src` page path
+/// and a cited page and heading, in a folder that exists or not, each name
+/// the missing page.
+#[test]
+fn book_citation_check_names_a_missing_page() {
+    const LIB: &str = r#"// Detail in docs/src/concepts/gone.md.
+// See the book: concepts/missing.md, "The frame".
+// See the book: missing/x.md, "The frame".
+"#;
+    let problems = comment_problems(
+        "book-page",
+        &[
+            ("docs/src/concepts/x.md", BOOK_PAGE),
+            ("crates/alpha/src/lib.rs", LIB),
+        ],
+        book_citation_problems,
+    );
+    let path = "crates/alpha/src/lib.rs";
+    assert_problems(
+        &problems,
+        &[
+            (path, 1, "docs/src/concepts/gone.md"),
+            (path, 2, "concepts/missing.md"),
+            (path, 3, "missing/x.md"),
+        ],
+    );
+}
+
+/// **Only comments of the scanned trees are read, test files included.** A
+/// page path or a citation inside a string or raw string, in a crate or in
+/// the layout tests' fixtures, passes, and so does one in a Rust file outside
+/// the scanned trees; a broken citation in a crate's `tests/` binary is
+/// reported.
+#[test]
+fn book_citation_check_reads_comments_of_the_scanned_trees_only() {
+    const LIB: &str = r##"pub const P: &str = "docs/src/concepts/nope.md";
+pub const Q: &str = r#"// See the book: concepts/nope.md, "Nope"."#;
+"##;
+    let problems = comment_problems(
+        "book-scope",
+        &[
+            ("docs/src/concepts/x.md", BOOK_PAGE),
+            ("crates/alpha/src/lib.rs", LIB),
+            (
+                "xtask/tests/layout.rs",
+                "const F: &str = \"// docs/src/concepts/nope.md\";\n",
+            ),
+            (
+                "tools/scratch.rs",
+                "// See the book: concepts/nope.md, \"Nope\".\n",
+            ),
+            (
+                "crates/alpha/tests/it/main.rs",
+                "// See the book: concepts/x.md, \"Nope\".\n",
+            ),
+        ],
+        book_citation_problems,
+    );
+    assert_problems(&problems, &[("crates/alpha/tests/it/main.rs", 1, "Nope")]);
+}
+
+/// **A citation wrapped across two comment lines is checked whole.** A
+/// missing page after a `See the book:` that ends its line, and a missing
+/// heading quoted on the line after its page, are each reported.
+#[test]
+fn book_citation_check_reads_a_citation_wrapped_across_lines() {
+    const LIB: &str = r#"// The frame order is a protocol. See the book:
+// concepts/missing.md, "The frame".
+pub fn a() {}
+// The frame order is a protocol. See the book: concepts/x.md,
+// "No such heading".
+pub fn b() {}
+"#;
+    let problems = comment_problems(
+        "book-wrapped",
+        &[
+            ("docs/src/concepts/x.md", BOOK_PAGE),
+            ("crates/alpha/src/lib.rs", LIB),
+        ],
+        book_citation_problems,
+    );
+    assert!(
+        problems.len() == 2
+            && problems.iter().any(|p| p.contains("concepts/missing.md"))
+            && problems.iter().any(|p| p.contains("No such heading")),
+        "expected the missing page and the missing heading; got {problems:#?}"
+    );
+}
+
+/// **A page path followed by a quoted heading has its heading checked.** The
+/// `` (`docs/src/…md`, "Heading") `` form cites a page and a heading like
+/// `See the book:` does; a heading the page lacks is reported, one it holds
+/// passes.
+#[test]
+fn book_citation_check_names_the_heading_quoted_after_a_page_path() {
+    const LIB: &str = r#"//! The pair of the logo (`docs/src/concepts/x.md`, "No such heading").
+//! The frame (`docs/src/concepts/x.md`, "The frame").
+"#;
+    let problems = comment_problems(
+        "book-path-heading",
+        &[
+            ("docs/src/concepts/x.md", BOOK_PAGE),
+            ("crates/alpha/src/lib.rs", LIB),
+        ],
+        book_citation_problems,
+    );
+    assert_problems(
+        &problems,
+        &[("crates/alpha/src/lib.rs", 1, "No such heading")],
     );
 }
 

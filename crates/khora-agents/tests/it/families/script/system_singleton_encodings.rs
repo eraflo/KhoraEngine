@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **A system's entity in a scene, whatever the encoding** (Ergon spec 10):
+//! **A system's entity in a scene, whatever the encoding**:
 //! the goal a scene is saved for picks how it is written, never what it
 //! holds — so no encoding of a scene saved while playing brings back a
 //! system's entity.

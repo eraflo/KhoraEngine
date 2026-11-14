@@ -51,4 +51,6 @@ Report only what you can demonstrate.
 - **Tried and held** — the attacks that did not break it, one line each, so the next round does not
   repeat them.
 
+Comments follow [`conventions.md`](../conventions.md) §9b: a one-sentence summary, the contract not the implementation, `//` says why in four lines at most, no plan labels, history or step numbering; a longer explanation goes to the book.
+
 At most two rounds per change; the main agent fixes between them. Never commit, never push.

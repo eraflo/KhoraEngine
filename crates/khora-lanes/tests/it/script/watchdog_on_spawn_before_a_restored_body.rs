@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! **An `OnSpawn` the watchdog stops does not take the body a save restored
-//! with it** (Ergon spec 10): a load owing `OnSpawn` runs it in front of the
+//! with it**: a load owing `OnSpawn` runs it in front of the
 //! body the save caught part-way. When that `OnSpawn` spins until the
 //! watchdog faults it, the instance stops — and once an edit starts it again,
 //! the restored body is the one owed next, as it is when `OnSpawn` finishes

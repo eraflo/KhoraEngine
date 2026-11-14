@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **Every module refused a component's name says so** (Ergon spec 11): a
+//! **Every module refused a component's name says so**: a
 //! name three modules declare is kept by one, and each of the two others
 //! has its own registration error — its tile wears it, its declaration is
 //! ignored as surely as the other's.

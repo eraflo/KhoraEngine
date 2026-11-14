@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **A project closed and opened again** (Ergon spec 11): its components,
+//! **A project closed and opened again**: its components,
 //! orphaned quietly by the close, are adopted by the reopen with nothing to
 //! show — and a declaration its author deletes afterwards is a warning, as
 //! in a project never closed.

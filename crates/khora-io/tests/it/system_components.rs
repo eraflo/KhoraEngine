@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A project's systems reach the `World` as components (Ergon spec 10): each
+//! A project's systems reach the `World` as components: each
 //! system's own component — written by the engine as the system runs, on an
 //! entity no scene holds, so `Runtime` and resumable — and its state
 //! companion, as a behavior's. Each role records where its behavior or

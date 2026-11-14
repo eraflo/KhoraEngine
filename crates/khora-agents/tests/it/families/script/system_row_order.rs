@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! **A run's `ref` writes reach the `World` in the order they were made**
-//! (Ergon spec 10): the `World` after the boundary holds what the run's last
+//!: the `World` after the boundary holds what the run's last
 //! write of each field said — what the working set already showed the run —
 //! however many sweeps wrote it, whichever fields each row changed, and
 //! wherever the body left a row (`continue`, `break` from a loop inside it).

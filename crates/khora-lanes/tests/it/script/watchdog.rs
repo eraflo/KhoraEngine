@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **The watchdog** (Ergon spec 10): a body that keeps running without
+//! **The watchdog**: a body that keeps running without
 //! finishing — a loop with no `await`, cut by fuel frame after frame — is
 //! reported once past ten seconds of game time, and faults past sixty:
 //! disabled, its fault recorded, its body dropped, until an edit. Waiting is

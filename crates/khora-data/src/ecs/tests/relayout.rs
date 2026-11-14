@@ -242,7 +242,7 @@ fn relayout_of_a_rust_component_is_refused() {
     );
 }
 
-/// **The int → float widening a reload keeps** (Ergon spec 08). A field
+/// **The int → float widening a reload keeps**. A field
 /// retyped from `int` to `float` keeps each row's value, converted: it is
 /// neither dropped nor defaulted. The other direction stays a retype — see
 /// `relayout_of_a_retyped_field_takes_its_default`.

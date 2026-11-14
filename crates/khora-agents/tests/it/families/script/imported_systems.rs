@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **A system imported by several modules runs once a frame** (Ergon spec
-//! 10): every importer's program holds the system's code, and only the
+//! **A system imported by several modules runs once a frame**:
+//! every importer's program holds the system's code, and only the
 //! module that declares it runs it.
 
 use khora_data::ecs::World;

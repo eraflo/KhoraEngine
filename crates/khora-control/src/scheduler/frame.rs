@@ -126,7 +126,7 @@ impl ExecutionScheduler {
         runtime: Arc<Runtime>,
         before_agents: impl FnOnce(&LaneBus),
     ) {
-        // 1. The frame start, unless the host began the frame itself.
+        // The frame start, unless the host began the frame itself.
         if !std::mem::take(&mut self.begun) {
             self.begin_frame(&runtime);
             self.begun = false;
@@ -136,37 +136,37 @@ impl ExecutionScheduler {
             found.clear();
         }
 
-        // 1a. Read the families off, once: the state in force the frame
-        //     boundary settled, which the Flows and DataSystems read too, so
-        //     the whole frame agrees. A runtime with no activation runs every
-        //     family.
+        // Read the families off, once: the state in force the frame
+        // boundary settled, which the Flows and DataSystems read too, so
+        // the whole frame agrees. A runtime with no activation runs every
+        // family.
         let inactive = inactive_families(&runtime);
 
-        // 1a-bis. The families, the frame start having lent and swapped.
+        // The families, the frame start having lent and swapped.
         let met = self.met_agents(&inactive);
 
-        // 1b. Real frame delta + fixed-timestep accumulator bookkeeping, then
-        //     1c. the per-frame Time resource (read by Flows + game code).
+        // Real frame delta + fixed-timestep accumulator bookkeeping, then
+        // the per-frame Time resource (read by Flows + game code).
         let fixed_rounds = self.advance_clocks(&runtime, &inactive);
 
-        // 2. Build the per-frame completion map. The scheduler tracks
-        //    completion internally — agents do not read it through the
-        //    runtime containers.
+        // Build the per-frame completion map. The scheduler tracks
+        // completion internally — agents do not read it through the
+        // runtime containers.
         let completion_map = self.completion_map();
 
-        // 3. Publish how agents will be grouped into concurrent waves this
-        //    frame, so the DCC can budget each wave by its critical path.
+        // Publish how agents will be grouped into concurrent waves this
+        // frame, so the DCC can budget each wave by its critical path.
         self.emit_wave_plan(&inactive);
 
-        // 4. Build the per-frame substrate: typed input bus and output deck.
-        //    The deck is moved into the scheduler's `last_deck` slot at the
-        //    end of the frame so the engine I/O layer can drain it.
+        // Build the per-frame substrate: typed input bus and output deck.
+        // The deck is moved into the scheduler's `last_deck` slot at the
+        // end of the frame so the engine I/O layer can drain it.
         let mut bus = LaneBus::new();
         let mut deck = OutputDeck::new();
 
-        // 5. Run the Substrate Pass: every registered Flow projects its View
-        //    into the bus. Flows are read-only projectors — no budget needed
-        //    (only agents compete for the frame budget).
+        // Run the Substrate Pass: every registered Flow projects its View
+        // into the bus. Flows are read-only projectors — no budget needed
+        // (only agents compete for the frame budget).
         substrate::run_flows(world, &mut bus, &runtime);
         // Then the Views no Flow produces: the ones the host application set.
         if let Some(host_views) = runtime.resources.get::<Arc<HostViews>>() {
@@ -174,9 +174,9 @@ impl ExecutionScheduler {
         }
         before_agents(&bus);
 
-        // 5b. The event pass: every agent whose place gathered a wake is woken
-        //     for it, once the bus is built and before any layer runs. A quiet
-        //     agent is neither called nor locked.
+        // The event pass: every agent whose place gathered a wake is woken
+        // for it, once the bus is built and before any layer runs. A quiet
+        // agent is neither called nor locked.
         wake_agents(&met, &runtime, &bus);
 
         // Freeze the bus behind an `Arc` for the rest of the frame. It is
@@ -185,14 +185,14 @@ impl ExecutionScheduler {
         // wave's jobs `'static`. A wave of one derefs it to `&LaneBus`.
         let bus = Arc::new(bus);
 
-        // 5c. The families at the background with mail start a run off the
-        //     frame, on this frame's bus; nothing waits for it.
+        // The families at the background with mail start a run off the
+        // frame, on this frame's bus; nothing waits for it.
         self.background.start(&met, &runtime, &bus);
-        // 5d. The layers the event pass asked to prepare start too, beside
-        //     the installed ones, which keep running until they land.
+        // The layers the event pass asked to prepare start too, beside
+        // the installed ones, which keep running until they land.
         self.background.prepare(&met, &runtime, &bus);
 
-        // 6–8. The waves: the fixed-update sub-loop, then every phase once.
+        // The waves: the fixed-update sub-loop, then every phase once.
         self.run_phases(
             &runtime,
             &inactive,
@@ -202,10 +202,10 @@ impl ExecutionScheduler {
             fixed_rounds,
         );
 
-        // 9. Hand the populated deck off to the engine for the I/O boundary.
+        // Hand the populated deck off to the engine for the I/O boundary.
         self.last_deck = deck;
 
-        // 10. Low-rate observation tunnel.
+        // Low-rate observation tunnel.
         self.sample_component_access(world);
     }
 
@@ -242,13 +242,13 @@ impl ExecutionScheduler {
         deck: &mut OutputDeck,
         fixed_rounds: Option<u32>,
     ) {
-        // 6. Fixed-update sub-loop. When a place holds a fixed step, the
-        //    fixed-step agents advance their discrete sub-steps before the
-        //    once-per-frame phase loop, round by round — each round runs every
-        //    fixed agent still owed one. Each sub-step is a full agent
-        //    invocation, so the physics provider integrates N times while the
-        //    render pass below fires once. When there is no fixed agent, every
-        //    agent runs in its normal phase below — so this loop does nothing.
+        // Fixed-update sub-loop. When a place holds a fixed step, the
+        // fixed-step agents advance their discrete sub-steps before the
+        // once-per-frame phase loop, round by round — each round runs every
+        // fixed agent still owed one. Each sub-step is a full agent
+        // invocation, so the physics provider integrates N times while the
+        // render pass below fires once. When there is no fixed agent, every
+        // agent runs in its normal phase below — so this loop does nothing.
         let phases: Vec<ExecutionPhase> = self.phase_order.clone();
         if let Some(rounds) = fixed_rounds {
             for round in 0..rounds {
@@ -266,17 +266,17 @@ impl ExecutionScheduler {
             }
         }
 
-        // 7. Once-per-frame agents. When the sim was sub-stepped above, fixed
-        //    agents are excluded here so they are not run an extra time; with
-        //    no fixed agent, every agent runs through this `All` path.
+        // Once-per-frame agents. When the sim was sub-stepped above, fixed
+        // agents are excluded here so they are not run an extra time; with
+        // no fixed agent, every agent runs through this `All` path.
         let selection = if fixed_rounds.is_some() {
             AgentSelection::ExcludeFixed
         } else {
             AgentSelection::All
         };
 
-        // 8. Execute each phase: each family's installed layer runs at its
-        //    place.
+        // Execute each phase: each family's installed layer runs at its
+        // place.
         for phase in phases {
             self.execute_agents_in_phase(
                 phase,

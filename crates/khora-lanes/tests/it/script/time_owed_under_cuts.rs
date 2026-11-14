@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **No game time is lost** (Ergon spec, "no time is lost … its next turn is
-//! handed all the time since its last"): every countdown of an instance — the
+//! **No game time is lost:**
+//! an instance's next turn is handed all the time since its last: every
+//! countdown of an instance — the
 //! wait of its pending body, each of its timers — and its `Update` receive
 //! every elapsed second exactly once, possibly late, never dropped, never
 //! twice. A turn that stops before reaching one of them — a resumed body cut

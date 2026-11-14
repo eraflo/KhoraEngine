@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **The watchdog's count travels with the body** (Ergon spec 10): a save
+//! **The watchdog's count travels with the body**: a save
 //! taken part-way through a body that has run forty seconds loads with those
 //! forty seconds — it faults about twenty seconds of running later, not
 //! sixty — whichever encoding carried it, and a hot reload carrying the body

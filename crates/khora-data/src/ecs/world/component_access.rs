@@ -143,17 +143,17 @@ impl World {
         &mut self,
         entity_id: EntityId,
     ) -> Option<PageIndex> {
-        // 1. Validate the entity ID to ensure we're acting on a live entity.
+        // Validate the entity ID to ensure we're acting on a live entity.
         let (id_in_world, metadata_slot) = self.entities.get_mut(entity_id.index as usize)?;
         if id_in_world.generation != entity_id.generation || metadata_slot.is_none() {
             return None;
         }
 
-        // 2. Use the registry to find the component's domain.
+        // Use the registry to find the component's domain.
         let domain = self.storage.registry.get_domain(TypeId::of::<C>())?;
 
-        // 3. Remove the location entry from the entity's metadata.
-        //    `HashMap::remove` returns the value that was at that key, which is exactly what we need.
+        // Remove the location entry from the entity's metadata.
+        // `HashMap::remove` returns the value that was at that key, which is exactly what we need.
         let metadata = metadata_slot.as_mut().unwrap();
         let location = metadata.locations.remove(&domain);
 
@@ -182,7 +182,7 @@ impl World {
     ///
     /// `None` if the entity is not alive or does not have the requested component.
     pub fn get_mut<T: Component>(&mut self, entity_id: EntityId) -> Option<Mut<'_, T>> {
-        // 1. Validate the entity ID. An out-of-range index means "not alive"
+        // Validate the entity ID. An out-of-range index means "not alive"
         // (e.g. a stale or malformed EntityId), so return None rather than panic.
         let (id_in_world, metadata_opt) = self.entities.get(entity_id.index as usize)?;
         if id_in_world.generation != entity_id.generation || metadata_opt.is_none() {
@@ -190,11 +190,11 @@ impl World {
         }
         let metadata = metadata_opt.as_ref().unwrap();
 
-        // 2. Use the registry to find the component's domain and its location.
+        // Use the registry to find the component's domain and its location.
         let domain = self.storage.registry.get_domain(TypeId::of::<T>())?;
         let location = *metadata.locations.get(&domain)?;
 
-        // 3. Get the component data from the page, through the page buffer's
+        // Get the component data from the page, through the page buffer's
         // pointer, which the guard notes its write through.
         let key = ComponentKey::of::<T>();
         let observed = self.clock.observed.contains(&key);
@@ -250,7 +250,7 @@ impl World {
             None => return results,
         };
 
-        // 1. Collect locations and check for duplicates
+        // Collect locations and check for duplicates
         let mut locations = [(0u32, 0u32); N];
         let mut found_mask = [false; N];
 
@@ -266,7 +266,7 @@ impl World {
             }
         }
 
-        // 2. Check for collisions in (page, row) to prevent aliasing
+        // Check for collisions in (page, row) to prevent aliasing
         for i in 0..N {
             if !found_mask[i] {
                 continue;
@@ -286,7 +286,7 @@ impl World {
         // at a time.
         let epoch = unsafe { World::domain_epoch_slot(self, domain) };
 
-        // 3. Retrieve the guards through raw pointers to bypass split_at_mut
+        // Retrieve the guards through raw pointers to bypass split_at_mut
         // complexity: the pages through the page buffer's pointer, never a
         // reference to one, which the next would invalidate — the guards note
         // their writes through theirs.
@@ -335,7 +335,7 @@ impl World {
     ///
     /// `None` if the entity is not alive or does not have the requested component.
     pub fn get<T: Component>(&self, entity_id: EntityId) -> Option<&T> {
-        // 1. Validate the entity ID. An out-of-range index means "not alive"
+        // Validate the entity ID. An out-of-range index means "not alive"
         // (e.g. a stale or malformed EntityId), so return None rather than panic.
         let (id_in_world, metadata_opt) = self.entities.get(entity_id.index as usize)?;
         if id_in_world.generation != entity_id.generation || metadata_opt.is_none() {
@@ -343,15 +343,15 @@ impl World {
         }
         let metadata = metadata_opt.as_ref().unwrap();
 
-        // 2. Use the registry to find the component's domain and its location.
+        // Use the registry to find the component's domain and its location.
         let domain = self.storage.registry.get_domain(TypeId::of::<T>())?;
         let location = metadata.locations.get(&domain)?;
 
-        // 3. Get the component data from the page.
+        // Get the component data from the page.
         let type_id = TypeId::of::<T>();
         let page = self.storage.pages.get(location.page_id as usize)?;
 
-        // 4. Return the immutable reference.
+        // Return the immutable reference.
         let vec = page
             .columns
             .get(&ComponentKey::Rust(type_id))?

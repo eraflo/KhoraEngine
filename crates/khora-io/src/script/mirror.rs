@@ -333,8 +333,7 @@ mod tests {
             .contains("only an engine type's components can be read yet")
     }
 
-    /// **What P1 exists to prove.** A component's field resolves through the
-    /// mirror, with its type.
+    /// **A component's field resolves through the mirror, with its type.**
     ///
     /// `.y` is the proof of the type rather than decoration: it resolves only
     /// because `translation` came back as an engine type that declares a `y`. A
@@ -848,7 +847,7 @@ mod tests {
         assert_eq!(unspellable(""), Some("is not a name Ergon can spell"));
     }
 
-    // ── The engine's names (Ergon spec 08) ────────────
+    // ── The engine's names ────────────
 
     /// **Every engine component's name, mirrored or not.** A script may not
     /// declare a component the engine has — and the mirror leaves some out

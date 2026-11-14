@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A system is a behavior with no subject (Ergon spec 10): what a program
+//! A system is a behavior with no subject: what a program
 //! declares for each `system` its project writes — the system's component,
 //! its fields with their defaults, and its state companion `Name#state`, the
 //! one layout every behavior's companion has — where each behavior and

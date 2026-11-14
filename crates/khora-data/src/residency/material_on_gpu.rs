@@ -196,7 +196,7 @@ impl ProjectionRegistry {
         }
 
         for (entity_id, component) in pending {
-            // The ECS query skips stale orphan rows, so an entity reaches phase 2
+            // The ECS query skips stale orphan rows, so an entity reaches this loop
             // only when it genuinely lacks the handle — any failure is unexpected.
             if let Err(e) = world.add_component(entity_id, component) {
                 log::warn!("projection: attaching GPU handle to {entity_id:?} failed: {e:?}");

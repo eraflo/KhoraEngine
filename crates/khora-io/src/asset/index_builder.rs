@@ -16,7 +16,7 @@
 //!
 //! Walks a project's `assets/` directory and produces an [`AssetMetadata`] list
 //! suitable for [`crate::asset::AssetIndex::new`] — used by the editor to
-//! build an in-memory index at boot, and by the pack builder (Phase 2) to
+//! build an in-memory index at boot, and by the pack builder to
 //! produce reproducible release archives.
 //!
 //! # Determinism
@@ -53,7 +53,7 @@ use std::{
 /// The well-known set is the **single source of truth** shared by:
 /// - the editor's in-memory index (this module),
 /// - the asset browser's tile categorization,
-/// - the pack builder (Phase 2).
+/// - the pack builder.
 ///
 /// All names are lower-case to match the existing decoder registrations
 /// (`crates/khora-agents/tests/asset_loading_test.rs:162` registers
@@ -84,7 +84,7 @@ pub fn asset_type_for_extension(ext: &str) -> Option<String> {
         // Script formats. `.erg` is Ergon, the engine's own language; `kscript`
         // predates it and is kept so a project that used it still indexes.
         khora_script::modules::EXTENSION | "kscript" => Some("script"),
-        // Prefab formats (Phase 5 — instanced via SerializationService)
+        // Prefab formats, instanced through the `SerializationService`.
         "kprefab" => Some("prefab"),
         _ => None,
     };

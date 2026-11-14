@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **A name that changes hands** (Ergon spec 11): the module keeping a
+//! **A name that changes hands**: the module keeping a
 //! component stops declaring it — deleted, renamed, or unmounted — and a
 //! module refused that name takes it, as a restart would give it. What the
 //! Problems tab shows afterwards, and what the `World` holds, must be what a

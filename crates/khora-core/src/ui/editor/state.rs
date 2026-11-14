@@ -136,13 +136,13 @@ pub struct EditorState {
     /// `process_reparents` in the editor's tick.
     pub pending_reparent: Option<(EntityId, Option<EntityId>)>,
 
-    // ── Phase 4: Properties Inspector ──────────────────
+    // ── Properties Inspector ───────────────────────────
     /// Snapshot of the single-selected entity's components (if any).
     pub inspected: Option<InspectedEntity>,
     /// Pending property edits to apply back to the ECS world.
     pub pending_edits: Vec<PropertyEdit>,
 
-    // ── Phase 5: Console / Status Bar ──────────────────
+    // ── Console / Status Bar ───────────────────────────
     /// Log entries captured by the editor log sink.
     pub log_entries: Vec<LogEntry>,
     /// What is wrong with the open project's scripts — compile, registration
@@ -175,7 +175,7 @@ pub struct EditorState {
     /// Asset entries for the asset browser (populated from the VFS).
     pub asset_entries: Vec<AssetEntry>,
 
-    // ── Phase 6: Viewport interaction + Gizmo ──────────
+    // ── Viewport interaction + Gizmo ───────────────────
     /// Whether the 3D viewport is currently hovered (for camera controls).
     /// Updated each frame from `is_last_item_hovered()` after the viewport
     /// image is laid out — only meaningful for the current paint pass; UI
@@ -196,7 +196,7 @@ pub struct EditorState {
     pub selected_asset: Option<usize>,
     /// Forward-slash relative path (under `<project>/assets/`) of the
     /// asset selected in the browser, or `None`. When set, the
-    /// Inspector switches to asset-metadata mode (Phase 5). Cleared
+    /// Inspector switches to asset-metadata mode. Cleared
     /// when an entity selection is made.
     pub inspected_asset_path: Option<String>,
     /// The asset an inspector slot asked to reveal, by its forward-slash
@@ -223,7 +223,7 @@ pub struct EditorState {
     /// Whether the asset browser should open a folder picker next frame.
     pub pending_browse_project_folder: bool,
 
-    // ── Phase 7: Play Mode ─────────────────────────────
+    // ── Play Mode ──────────────────────────────────────
     /// Current play mode (Editing / Playing / Paused).
     pub play_mode: PlayMode,
     /// The active camera that renders nothing while playing — its entity and

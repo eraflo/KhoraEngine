@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **Attaching a behavior is adding its component** (Ergon spec 09): an
+//! **Attaching a behavior is adding its component**: an
 //! entity holding `Guard` runs `Guard`, as many behaviors as it holds
 //! components of, in a fixed order — behavior by behavior, each sweeping its
 //! entities by entity, never by where storage keeps them — and what a

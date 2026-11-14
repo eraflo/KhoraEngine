@@ -47,9 +47,9 @@ pub(crate) fn ui_text_layout(
         return;
     };
 
-    // 1. The fonts whose file is new — loaded, or replaced by a hot reload —
-    //    registered once each, their file copied once, whatever number of
-    //    texts use them.
+    // The fonts whose file is new — loaded, or replaced by a hot reload —
+    // registered once each, their file copied once, whatever number of
+    // texts use them.
     let changed_handles: Vec<EntityId> = world
         .query::<(EntityId, Changed<HandleComponent<Font>>)>()
         .since(ctx.since)
@@ -67,9 +67,9 @@ pub(crate) fn ui_text_layout(
         readable.insert(font, registered);
     }
 
-    // 2. The texts to shape: their text changed, their font handle did, or
-    //    their font was registered again — the shaper holds one file per
-    //    font, so every text in that font is now shaped with the new one.
+    // The texts to shape: their text changed, their font handle did, or
+    // their font was registered again — the shaper holds one file per
+    // font, so every text in that font is now shaped with the new one.
     let mut dirty: HashSet<EntityId> = world
         .query::<(EntityId, Changed<UiText>)>()
         .since(ctx.since)
@@ -89,9 +89,9 @@ pub(crate) fn ui_text_layout(
     let mut dirty: Vec<EntityId> = dirty.into_iter().collect();
     dirty.sort_by_key(|entity| (entity.index, entity.generation));
 
-    // 3. A layout outlives nothing it was made from: its text gone, or the
-    //    font it needs no longer on the entity. Removing a component moves a
-    //    row — it is not a write — so this is checked for every layout.
+    // A layout outlives nothing it was made from: its text gone, or the
+    // font it needs no longer on the entity. Removing a component moves a
+    // row — it is not a write — so this is checked for every layout.
     let stale: Vec<EntityId> = world
         .query::<(EntityId, &UiTextLayout)>()
         .map(|(entity, _)| entity)
@@ -105,7 +105,7 @@ pub(crate) fn ui_text_layout(
         })
         .collect();
 
-    // 4. Shape what is dirty; a text that cannot be shaped has no layout.
+    // Shape what is dirty; a text that cannot be shaped has no layout.
     let mut shaped = Vec::new();
     let mut unshaped = stale;
     for entity in dirty {

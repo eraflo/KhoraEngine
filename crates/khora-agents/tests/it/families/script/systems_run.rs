@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **A system runs as a behavior instance on its one entity** (Ergon spec
-//! 10): its `Update` every frame while the game plays, its fields kept from
+//! **A system runs as a behavior instance on its one entity**:
+//! its `Update` every frame while the game plays, its fields kept from
 //! frame to frame, its `every` and `after` firing on game time, a fault
 //! disabling it, a hot reload carrying its fields — and behaviors and
 //! systems taking their turns in one list, by module and then by where each

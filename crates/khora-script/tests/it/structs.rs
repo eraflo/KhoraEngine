@@ -17,7 +17,7 @@
 //!
 //! A struct is built by a named literal — `Loot { value: 1 }`, fields in any
 //! order, a missing field taking its declared default or its type's zero. It
-//! is a value (spec 05, D1), like an array: binding one read from a place to a
+//! is a value, like an array: binding one read from a place to a
 //! name copies it, so writing through the new name never changes the old one.
 //! Writing through a path (`r.points[1].x = 4.0`) changes the struct the path
 //! names, in place.

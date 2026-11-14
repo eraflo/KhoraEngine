@@ -54,7 +54,7 @@ impl World {
     pub fn query<'a, Q: ReadOnlyWorldQuery>(&'a self) -> Query<'a, Q> {
         let type_ids = Q::type_ids();
 
-        // 1. Try to fetch the strategy plan from the cache.
+        // Try to fetch the strategy plan from the cache.
         // We cache the execution logic (Native vs Transversal), not the page indices.
         let plan = {
             let cache = self
@@ -77,7 +77,7 @@ impl World {
             }
         };
 
-        // 2. Dynamically find matching pages for this call.
+        // Dynamically find matching pages for this call.
         // This ensures the query is correct even if new archetypes were created
         // in a different domain since the last call.
         let without_type_ids = Q::without_type_ids();
@@ -95,7 +95,7 @@ impl World {
             .registry
             .record_access(&plan_key(&type_ids), rows_scanned);
 
-        // 3. Return the query with the plan and the current matching pages.
+        // Return the query with the plan and the current matching pages.
         Query::new(self, plan, matching_page_indices, row_plan)
     }
 
@@ -120,7 +120,7 @@ impl World {
         }
         let type_ids = Q::type_ids();
 
-        // 1. Get strategy from cache
+        // Get strategy from cache
         let plan = {
             let cache = self
                 .planner
@@ -142,7 +142,7 @@ impl World {
             }
         };
 
-        // 2. Dynamically find pages
+        // Dynamically find pages
         let without_type_ids = Q::without_type_ids();
         let matching_page_indices = self.plan_pages(&plan, &without_type_ids);
         let row_plan = self.native_row_plan(&plan, &without_type_ids, &Q::optional_type_ids());
@@ -156,7 +156,7 @@ impl World {
             .registry
             .record_access(&plan_key(&type_ids), rows_scanned);
 
-        // 3. Construct the iterator
+        // Construct the iterator
         QueryMut::new(self, plan, matching_page_indices, row_plan)
     }
 

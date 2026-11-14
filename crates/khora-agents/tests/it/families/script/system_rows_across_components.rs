@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **Sweeps of two components, interleaved** (Ergon spec 10): a run writing
+//! **Sweeps of two components, interleaved**: a run writing
 //! `Health`, then `Regen`, then `Health` again leaves the `World` holding
 //! each field as the run last wrote it — the later `Health` sweep reading
 //! what the `Regen` sweep wrote — whether the run finishes in one frame or

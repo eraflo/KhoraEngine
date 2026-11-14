@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A project's behaviors reach the `World` as components (Ergon spec 09):
+//! A project's behaviors reach the `World` as components:
 //! each behavior's own component, authored — a scene keeps it — and its
 //! state companion, written by the engine and kept only by a game save, so
 //! registered `Runtime` and resumable.

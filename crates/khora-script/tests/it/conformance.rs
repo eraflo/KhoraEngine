@@ -512,7 +512,7 @@ const SHIPPED: &[Row] = &[
         args: &[],
         expect: Expect::Rejected("`await` takes a duration"),
     },
-    // ─── Runtime correctness (spec 02) ──────────────────────────────────────
+    // ─── Runtime correctness ──────────────────────────────────────
     Row {
         construct: "uninitialised local",
         source: "fn int F() { int x; x = x + 1; return x; }",
@@ -542,7 +542,7 @@ const SHIPPED: &[Row] = &[
         args: &[],
         expect: Expect::Rejected("expected `int`, found `string`"),
     },
-    // ─── Loops, narrowing and `match` (spec 04) ─────────────────────────────
+    // ─── Loops, narrowing and `match` ─────────────────────────────
     Row {
         construct: "`break`",
         source: "fn int F() {
@@ -697,7 +697,7 @@ const SHIPPED: &[Row] = &[
         args: &[],
         expect: Expect::Runs(Value::Int(3)),
     },
-    // ─── Values (spec 05) ───────────────────────────────────────────────────
+    // ─── Values ───────────────────────────────────────────────────
     Row {
         construct: "array literal and index",
         source: "fn int F() { return [1, 2, 3][1]; }",
@@ -796,7 +796,7 @@ const SHIPPED: &[Row] = &[
         args: &[],
         expect: Expect::Runs(Value::Float(4.0)),
     },
-    // ─── Entity methods and component writes (spec 06) ──────────────────────
+    // ─── Entity methods and component writes ──────────────────────
     Row {
         construct: "an entity operation as a method",
         source: "behavior Mover {
@@ -949,7 +949,7 @@ const SHIPPED: &[Row] = &[
         args: &[],
         expect: Expect::Rejected("`Set`"),
     },
-    // ─── Component reads (spec 07) ──────────────────────────────────────────
+    // ─── Component reads ──────────────────────────────────────────
     // A row's host projects no component, so every entity holds none.
     Row {
         construct: "`Get` of a component the entity does not hold",

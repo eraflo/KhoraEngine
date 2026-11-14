@@ -15,7 +15,7 @@
 //! Arrays at run time: literals, indexing, `.Length`, `foreach`, zeros, and
 //! what binding one to a name means.
 //!
-//! An array is a value (spec 05, D1): binding one read from a place — a local,
+//! An array is a value: binding one read from a place — a local,
 //! a field, an element — to a name copies it, so writing through the new name
 //! never changes the old one. Writing through a path (`grid[0][1] = 7`)
 //! changes the array the path names, in place.
@@ -250,7 +250,7 @@ fn an_array_without_a_value_starts_empty() {
 
 // ─── Fields ─────────────────────────────────────────────────────────────────
 
-/// **The bug spec 05 names: a field load always made a string.** An array in a
+/// **A field load always made a string.** An array in a
 /// behavior field reads back as that array — its elements and its length — in
 /// a later frame, after the arena it was built in was emptied; and a write
 /// through the field is still there in the frame after.

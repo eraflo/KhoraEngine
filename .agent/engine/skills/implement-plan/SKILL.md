@@ -42,7 +42,9 @@ The **Implement** phase of [`../../workflow-rpi.md`](../../workflow-rpi.md). Goa
   say why, and have it corrected (by that subagent or the human); record the change in the plan's Status.
   Tests for private helpers you add yourself are yours to write.
 - Trivial single-file changes that skip the RPI loop still get a test that fails before the change.
-- Comments must be self-contained — never reference plan step labels ("phase 2", "D1") in code.
+- Comments follow [`conventions.md`](../../conventions.md) §9b: a one-sentence summary, the contract not the
+  implementation, `//` says why in four lines at most, never a plan label ("phase 2", "D1"), history or step
+  numbering; a longer explanation goes to the book.
 - When all phases are green, run [`../release-checklist/SKILL.md`](../release-checklist/SKILL.md) before any
   commit/push. Never push without explicit permission.
 - Update [`../../knowledge/MEMORY.md`](../../knowledge/MEMORY.md) "Latest work" when the change lands.

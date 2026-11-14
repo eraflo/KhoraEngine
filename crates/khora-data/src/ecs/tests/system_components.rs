@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Behaviors and systems run in one list (Ergon spec 10): by module, then by
+//! Behaviors and systems run in one list: by module, then by
 //! where each is written in its module — never by name, which only breaks a
 //! tie — and a system's singleton is found by a named identity that takes
 //! nothing from the numbering of the entities the game creates.

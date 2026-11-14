@@ -58,7 +58,7 @@ enum FontChange {
 pub(crate) fn resolve_ui_fonts(world: &mut World, runtime: &Runtime) {
     let asset_service = runtime.services.get::<Arc<Mutex<AssetService>>>().cloned();
 
-    // Phase 1: compare each text's font with its resolved handle while the
+    // Compare each text's font with its resolved handle while the
     // query borrows the world read-only.
     let mut changes: Vec<FontChange> = Vec::new();
     {
@@ -106,7 +106,7 @@ pub(crate) fn resolve_ui_fonts(world: &mut World, runtime: &Runtime) {
         return;
     }
 
-    // Phase 2: publish the fonts and tag the entities.
+    // Then publish the fonts and tag the entities.
     let fonts = runtime
         .resources
         .get::<AssetStore>()

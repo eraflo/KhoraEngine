@@ -43,4 +43,6 @@ says the code must do, not from a guess at how it will be done.
 - **Plan questions** — places where the plan was ambiguous and you had to choose; state the choice.
 
 Follow Khora's rules in tests too (`RULES.md`): `khora_core::math`, `log::*`, no `std::thread::spawn`
-outside test isolation. Never commit, never push.
+outside test isolation.
+Comments follow [`conventions.md`](../conventions.md) §9b: a one-sentence summary, the contract not the implementation, `//` says why in four lines at most, no plan labels, history or step numbering; a longer explanation goes to the book.
+Never commit, never push.

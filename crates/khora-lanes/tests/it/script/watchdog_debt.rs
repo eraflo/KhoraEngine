@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **The watchdog counts only a body's own time** (Ergon spec 10): a frame
+//! **The watchdog counts only a body's own time**: a frame
 //! the behavior sits out repaying fuel a body overdrew is that body's run
 //! time, and no other's — not another instance of the same behavior, and not
 //! a frame handed no fuel at all, which repays nothing.

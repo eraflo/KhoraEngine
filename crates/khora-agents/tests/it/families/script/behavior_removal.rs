@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **Removing a behavior's component detaches the behavior** (Ergon spec
-//! 09): what it ran as is over — a later attach starts afresh, and the
+//! **Removing a behavior's component detaches the behavior**:
+//! what it ran as is over — a later attach starts afresh, and the
 //! entity's later despawn is none of its business.
 
 use khora_core::script::ScriptValue;

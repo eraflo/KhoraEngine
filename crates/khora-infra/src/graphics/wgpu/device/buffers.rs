@@ -145,19 +145,19 @@ impl WgpuDevice {
         offset: u64,
         data: &[u8],
     ) -> Result<(), ResourceError> {
-        // 1. The buffer, cloned out of the registry.
+        // The buffer, cloned out of the registry.
         let wgpu_buffer = self
             .with_registry(|r| r.buffers.get(&id).map(|e| Arc::clone(&e.wgpu_buffer)))?
             .ok_or(ResourceError::NotFound)?;
 
-        // 2. Check the bounds
+        // Check the bounds
         let buffer_size = wgpu_buffer.size();
         let end_offset = offset + data.len() as u64;
         if end_offset > buffer_size {
             return Err(ResourceError::OutOfBounds);
         }
 
-        // 3. Write directly. No padding, no allocation. It's simple and efficient.
+        // Write directly. No padding, no allocation. It's simple and efficient.
         self.wgpu_queue().write_buffer(&wgpu_buffer, offset, data);
 
         log::debug!(

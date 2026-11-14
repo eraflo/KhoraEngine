@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **Where a clash with the engine's component mirror is located** (Ergon
-//! spec 11): the mirror is served by the engine, never a file under the
+//! **Where a clash with the engine's component mirror is located**:
+//! the mirror is served by the engine, never a file under the
 //! script root, so a problem a tool lists there has no file to open.
 
 use khora_core::problems::Problems;

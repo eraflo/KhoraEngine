@@ -28,7 +28,7 @@
 //! - **Pipeline cache** — keyed by `(shader, variant, color_format)`, deduped.
 //! - **Shader variants** — specialization defs (`#ifdef`) keyed by
 //!   [`ShaderVariantKey`].
-//! - **Hot-reload** — overlay sources + recompose (Phase 3).
+//! - **Hot-reload** — overlay sources + recompose.
 
 use crate::renderer::api::command::{BindGroupLayoutEntry, BindGroupLayoutId};
 use crate::renderer::api::pipeline::{

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A project's behaviors played as components (Ergon spec 09): one session
+//! A project's behaviors played as components: one session
 //! wired the way the engine wires one — declarations staged in the reserve
 //! and programs waiting for the intake, the `Boundary` registration, the
 //! flow, the script lane run

@@ -361,7 +361,7 @@ impl World {
         if let Some(component) = B::repeated() {
             return Err(SpawnError::ComponentNamedTwice { component });
         }
-        // Step 1: Allocate a new EntityId. Its persistent identity waits until
+        // Allocate a new EntityId. Its persistent identity waits until
         // something asks for it.
         let entity_id = self.create_entity();
         self.place(entity_id, bundle);
@@ -373,12 +373,12 @@ impl World {
         self.place(entity_id, ());
     }
 
-    /// Steps 2-5 of a spawn, for an entity whose id is already allocated.
+    /// The rest of a spawn, past its id, for an entity whose id is already allocated.
     fn place<B: ComponentBundle>(&mut self, entity_id: EntityId, bundle: B) {
-        // Step 2: Find or create a page for this bundle.
+        // Find or create a page for this bundle.
         let page_id = self.find_or_create_page_for_bundle::<B>();
 
-        // --- Step 3: Push component data into the page. ---
+        // Push component data into the page.
         let row_index;
         {
             let page = &mut self.storage.pages[page_id as usize];
@@ -396,12 +396,12 @@ impl World {
         }
         self.note_page_changed(page_id);
 
-        // --- Step 4: Update the entity's metadata. ---
+        // Update the entity's metadata.
         let location = PageIndex { page_id, row_index };
         let metadata = self.entities.get_metadata_mut(entity_id).unwrap();
         B::update_metadata(metadata, location, &self.storage.registry);
 
-        // --- Step 5: Update domain bitsets and stats for the newly created entity components. ---
+        // Update domain bitsets and stats for the newly created entity components.
         for domain in metadata.locations.keys() {
             self.storage
                 .domain_bitsets
@@ -547,14 +547,14 @@ impl World {
     ///
     /// Returns `true` if the entity was valid and despawned, `false` otherwise.
     pub fn despawn(&mut self, entity_id: EntityId) -> bool {
-        // Steps 1-2: kill the entity — only one that is alive, at this
+        // Kill the entity — only one that is alive, at this
         // generation — taking its metadata and freeing its index.
         let Some(metadata) = self.entities.despawn(entity_id) else {
             return false;
         };
         self.forget_identity(entity_id);
 
-        // --- Step 3: Remove the entity's data and update per-domain bookkeeping. ---
+        // Remove the entity's data and update per-domain bookkeeping.
         // A mixed-domain bundle lives in one page but is registered under several
         // domain keys that all address the same `(page_id, row_index)`. The
         // physical row must be `swap_remove`d exactly once — calling it per domain

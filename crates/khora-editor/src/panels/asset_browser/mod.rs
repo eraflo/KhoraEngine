@@ -27,7 +27,7 @@
 //! ```
 //!
 //! Single-click on a tile sets `EditorState::inspected_asset_path` so
-//! the Inspector switches to asset-metadata mode (Phase 5). Double-click
+//! the Inspector switches to asset-metadata mode. Double-click
 //! still routes through the [`handlers::AssetTypeHandler`] activation
 //! — `LoadScene` for `.kscene`, `OpenExternal` for everything else.
 

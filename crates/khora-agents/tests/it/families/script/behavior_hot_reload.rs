@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **A hot reload lands in one frame** (Ergon spec 09): the `World`'s
+//! **A hot reload lands in one frame**: the `World`'s
 //! relayout of a behavior's component and the lane's swap of its program
 //! happen in the same frame, so no frame runs old code over rows already
 //! relaid for the new one — and what the `World` keeps of a running

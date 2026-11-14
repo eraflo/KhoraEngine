@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A behavior and its state companion in documents (Ergon spec 09): the
+//! A behavior and its state companion in documents: the
 //! behavior's component `Guard` is authored, so a scene keeps it; its
 //! companion `Guard#state` is the engine's, `Runtime` and resumable, so only
 //! a game save keeps it — the Play snapshot drops it, a promotion never

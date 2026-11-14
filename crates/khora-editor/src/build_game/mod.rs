@@ -72,8 +72,8 @@ use cargo_build::stage_with_cargo_build;
 /// pack and every runtime verifies it: a pack is sealed whatever the
 /// preset.
 ///
-/// `Debug` / `Shipping` are reserved for the upcoming "Build…" dialog
-/// (Phase 6) — `Release` is the default until that lands.
+/// `Debug` / `Shipping` are reserved for a "Build…" dialog; `Release` is the
+/// default until it exists.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildPreset {
@@ -459,8 +459,8 @@ fn sanitize_binary_name(name: &str) -> String {
 fn locate_runtime_binary(target: BuildTarget) -> Result<PathBuf> {
     let bin_name = format!("khora-runtime{}", target.exe_suffix());
 
-    // (1) Sibling of the editor binary — release-archive layout, also what
-    //     `cargo build -p khora-runtime` produces in `target/<profile>/`.
+    // First, beside the editor binary — release-archive layout, also what
+    // `cargo build -p khora-runtime` produces in `target/<profile>/`.
     let sibling_dir = if target == BuildTarget::host() {
         let editor_exe =
             std::env::current_exe().context("locate_runtime_binary: current_exe failed")?;
@@ -475,10 +475,10 @@ fn locate_runtime_binary(target: BuildTarget) -> Result<PathBuf> {
         }
     }
 
-    // (2) Sibling profile fallback — for the common dev workflow where the
-    //     hub launches an editor in `target/debug/` while the contributor
-    //     ran the hub itself in `--release`. Same layout, just the other
-    //     profile.
+    // Then the sibling profile fallback — for the common dev workflow where the
+    // hub launches an editor in `target/debug/` while the contributor
+    // ran the hub itself in `--release`. Same layout, just the other
+    // profile.
     if let Some(dir) = sibling_dir.as_ref() {
         if let Some(workspace_root) = workspace_root_from_target_dir(dir) {
             for profile in ["release", "debug"] {
@@ -490,8 +490,8 @@ fn locate_runtime_binary(target: BuildTarget) -> Result<PathBuf> {
         }
     }
 
-    // (3) Hub engine cache — matches the layout produced by
-    //     `hub::download::start_download`: <cache>/<version>/runtime/<bin>.
+    // Then the hub's engine cache — matches the layout produced by
+    // `hub::download::start_download`: <cache>/<version>/runtime/<bin>.
     if target == BuildTarget::host() {
         if let Some(cache) = engine_cache_dir() {
             if let Ok(entries) = std::fs::read_dir(&cache) {

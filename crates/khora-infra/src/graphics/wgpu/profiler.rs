@@ -304,15 +304,15 @@ mod tests {
             return;
         }
 
-        // 1. Create the profiler using the new signature.
+        // Create the profiler using the new signature.
         let mut profiler = WgpuTimestampProfiler::new(&device)
             .expect("Profiler creation should succeed when feature is available.");
 
-        // 2. Set the timestamp period, which is now a separate step.
+        // Set the timestamp period, which is now a separate step.
         let period = queue.get_timestamp_period();
         profiler.set_timestamp_period(period);
 
-        // 3. Assert initial state using the public GpuProfiler trait methods.
+        // Assert initial state using the public GpuProfiler trait methods.
         assert_eq!(profiler.last_main_pass_ms(), 0.0);
         assert_eq!(profiler.last_frame_total_ms(), 0.0);
     }

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **Several behaviors on one entity** (Ergon spec 09): what one of them has
+//! **Several behaviors on one entity**: what one of them has
 //! not heard yet is held for it alone — and stays its to hear whatever the
 //! entity's other behaviors do meanwhile.
 

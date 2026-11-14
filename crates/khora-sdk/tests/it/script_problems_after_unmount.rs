@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **A project unmounted leaves nothing in the problems** (Ergon spec 11): an
+//! **A project unmounted leaves nothing in the problems**: an
 //! editor closing a project, or switching to another, must not keep showing
 //! what was wrong with the closed project's scripts — its modules' compile
 //! problems, and what their declarations left behind.

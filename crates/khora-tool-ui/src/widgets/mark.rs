@@ -17,7 +17,7 @@
 //! The sign is a square cut along a K: one cut straight down through the
 //! centre, two at 45° from the centre to the right-hand corners. The pieces
 //! never move; the K is the gap between them (`docs/src/design/editor.md`,
-//! "Brand & identity").
+//! "02 — Brand & identity").
 
 use khora_core::ui::editor::ui_builder::FontFamilyHint;
 use khora_core::ui::editor::{GradientStop, LinearGradient};

@@ -117,7 +117,7 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
     /// This is the most efficient execution path.
     fn next_native(&mut self) -> Option<Q::Item<'a>> {
         loop {
-            // 1. Check if there are any pages left to iterate through.
+            // Check if there are any pages left to iterate through.
             if self.current_page_index >= self.matching_page_indices.len() {
                 return None; // No more pages, iteration is finished.
             }
@@ -128,7 +128,7 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
             // reborrowing it as `&World` here is sound.
             let world = unsafe { &*self.world_ptr };
 
-            // 2. Get the current page; one no row of which can pass the
+            // Get the current page; one no row of which can pass the
             // query's filters is skipped whole.
             let page_id = self.matching_page_indices[self.current_page_index];
             let page = &world.storage.pages[page_id as usize];
@@ -138,7 +138,7 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
             }
             let ctx = FetchContext::read_only(world.current_tick(), self.since);
 
-            // 3. Check if there are rows left in the current page.
+            // Check if there are rows left in the current page.
             if self.current_row_index < page.row_count() {
                 let row = self.current_row_index;
                 self.current_row_index += 1;

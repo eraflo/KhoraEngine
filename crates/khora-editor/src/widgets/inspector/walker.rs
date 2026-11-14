@@ -199,7 +199,7 @@ fn render_object(
     theme: &UiTheme,
     marks: &mut Marks<'_>,
 ) -> bool {
-    // 1. Single-key objects are serde-tagged enum variants.
+    // Single-key objects are serde-tagged enum variants.
     if map.len() == 1 {
         let key = map.keys().next().cloned().unwrap();
 
@@ -253,7 +253,7 @@ fn render_object(
         return changed;
     }
 
-    // 2. Specialised shapes detected by field-name signature.
+    // Specialised shapes detected by field-name signature.
     if is_color(map) {
         return render_color(ui, map, theme);
     }
@@ -264,7 +264,7 @@ fn render_object(
         return render_quat(ui, map);
     }
 
-    // 3. Generic object — one row per field.
+    // Generic object — one row per field.
     let mut changed = false;
     let keys: Vec<String> = map.keys().cloned().collect();
     for key in keys {

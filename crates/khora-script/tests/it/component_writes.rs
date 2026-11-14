@@ -428,7 +428,7 @@ fn spawn_takes_a_position_then_distinct_components() {
     );
 }
 
-/// **A script declares components of its own** (spec 08), in its own module
+/// **A script declares components of its own**, in its own module
 /// or in one it imports, and writes them with the same operations — the same
 /// commands — as the engine's.
 #[test]

@@ -63,7 +63,7 @@ impl TelemetryService {
 
             // Forward monitor reports to DCC if sender is configured.
             if let Some(sender) = &self.dcc_sender {
-                // 1. Forward monitor reports.
+                // Forward monitor reports.
                 for monitor in self.monitors.get_all_monitors() {
                     // Standard ResourceUsageReport (bytes)
                     let usage = monitor.get_usage_report();
@@ -83,7 +83,7 @@ impl TelemetryService {
                     }
                 }
 
-                // 2. Forward metric updates.
+                // Forward metric updates.
                 for metric in self.metrics.backend().list_all_metrics() {
                     let _ = sender.send(TelemetryEvent::MetricUpdate {
                         id: metric.metadata.id,

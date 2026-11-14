@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A project's own components reach the `World` (Ergon spec 08).
+//! A project's own components reach the `World`.
 //!
 //! Compiled against the mirrors the engine serves, their declarations handed
 //! to the frame-boundary registration the way the engine hands them — one

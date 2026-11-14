@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **A body's first frame is watched like the others** (Ergon spec 10): the
+//! **A body's first frame is watched like the others**: the
 //! frame a body starts in and is cut by fuel counts its `dt`, so one long
 //! frame — a hitch, a fast time scale — that takes it past ten seconds is
 //! reported, and one that takes it past sixty faults it.

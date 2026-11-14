@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **Positions across modules** (Ergon spec 11): a program is compiled from
+//! **Positions across modules**: a program is compiled from
 //! every module its entry imports, merged into one tree, and each of its
 //! diagnostics is located — module, 1-based line, column in characters —
 //! through the outcome's source map. Parse, resolve, check and compile

@@ -572,7 +572,7 @@ impl EditorPanel for AssetBrowserPanel {
             if let Some(asset) = self.flat.get(i) {
                 if let Ok(mut state) = self.state.lock() {
                     // Single-click switches the inspector to asset
-                    // metadata mode (Phase 5). Clearing entity
+                    // metadata mode. Clearing entity
                     // selection prevents the entity inspector from
                     // ghosting under the asset metadata pane.
                     state.inspected_asset_path = Some(asset.rel_path.clone());

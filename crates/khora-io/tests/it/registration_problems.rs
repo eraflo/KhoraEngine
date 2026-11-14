@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **What the registration refuses or orphans, it reports** (Ergon spec 11):
+//! **What the registration refuses or orphans, it reports**:
 //! the `script_components` data system leaves in the runtime's
 //! `Problems` an error for a component two modules declare — naming
 //! the component, the module refused and the module keeping it — and a

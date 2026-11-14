@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A project's own components, end to end (Ergon spec 08).
+//! A project's own components, end to end.
 //!
 //! The declarations travel the way the engine sends them — staged in the
 //! reserve by the `loading` family, beside the program — and are registered by

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **The watchdog in a session** (Ergon spec 10): a system whose `Update`
+//! **The watchdog in a session**: a system whose `Update`
 //! or timer never finishes is reported once past ten seconds of game time and
 //! faults past sixty — its companion records the fault, an edit re-enables
 //! it; frames the game does not play do not count; and a game save keeps

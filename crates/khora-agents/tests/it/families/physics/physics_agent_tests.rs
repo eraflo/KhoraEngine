@@ -174,8 +174,7 @@ fn test_physics_raycast() {
     // One physics step to register the collider with the backend.
     step_n(&mut agent, &mut world, &runtime, 1);
 
-    // Raycast directly via the PhysicsProvider trait — the legacy
-    // `PhysicsQueryService` façade was removed in Phase F.
+    // Raycast directly through the `PhysicsProvider` trait.
     let ray = khora_core::physics::Ray {
         origin: Vec3::new(0.0, 5.0, 0.0),
         direction: Vec3::new(0.0, -1.0, 0.0),

@@ -42,7 +42,7 @@ pub fn hub_dev() -> Result<()> {
         BOLD, RESET
     );
 
-    // Step 1: build editor + runtime (debug). The hub's dev_engine() expects
+    // Build the editor and the runtime (debug). The hub's dev_engine() expects
     // both at target/debug/, and the editor's Build Game feature stamps the
     // runtime from there.
     execute_command(
@@ -51,7 +51,7 @@ pub fn hub_dev() -> Result<()> {
         "Build editor + runtime (debug)",
     )?;
 
-    // Step 2: run the hub itself in release.
+    // Then run the hub itself in release.
     execute_command(
         "cargo",
         &["run", "-p", "khora-hub", "--release"],

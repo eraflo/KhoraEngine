@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A `Duration` and an `Angle` field (Ergon spec 11): the layout keeps the
+//! A `Duration` and an `Angle` field: the layout keeps the
 //! unit in the field's Ergon type, so the inspector can show `s` and `deg`,
 //! and stores the value as the float it is — the same bytes as a `float`
 //! field, so what was saved as a `float` still reads.

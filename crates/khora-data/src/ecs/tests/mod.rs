@@ -856,7 +856,7 @@ fn test_transversal_lifecycle() {
     world.register_component::<Position>(SemanticDomain::Spatial);
     world.register_component::<RenderTag>(SemanticDomain::Render);
 
-    // 1. Spawn: Verify bits are set
+    // Spawn: Verify bits are set
     let entity = world.spawn((Position(1), RenderTag));
 
     {
@@ -875,7 +875,7 @@ fn test_transversal_lifecycle() {
         assert!(render_bitset.is_set(entity.index));
     }
 
-    // 2. Remove domain: Verify bit is cleared
+    // Remove domain: Verify bit is cleared
     world.remove_component_domain::<RenderTag>(entity).unwrap();
     {
         let render_bitset = world
@@ -892,7 +892,7 @@ fn test_transversal_lifecycle() {
         assert!(spatial_bitset.is_set(entity.index)); // Spatial should remain
     }
 
-    // 3. Add component: Verify bit is set again
+    // Add component: Verify bit is set again
     world.add_component(entity, RenderTag).unwrap();
     {
         let render_bitset = world
@@ -903,7 +903,7 @@ fn test_transversal_lifecycle() {
         assert!(render_bitset.is_set(entity.index));
     }
 
-    // 4. Despawn: Verify all bits cleared
+    // Despawn: Verify all bits cleared
     world.despawn(entity);
     {
         let spatial_bitset = world
@@ -963,22 +963,22 @@ fn test_transversal_recycled_entities() {
     world.register_component::<Position>(SemanticDomain::Spatial);
     world.register_component::<RenderTag>(SemanticDomain::Render);
 
-    // 1. Spawn and despawn to create a "hole"
+    // Spawn and despawn to create a "hole"
     let e1 = world.spawn((Position(10), RenderTag));
     world.despawn(e1);
 
-    // 2. Spawn a new entity - it should recycle the index
+    // Spawn a new entity - it should recycle the index
     let e2 = world.spawn((Position(20), RenderTag));
     assert_eq!(e1.index, e2.index);
     assert_ne!(e1.generation, e2.generation);
 
-    // 3. Query should only find the new entity
+    // Query should only find the new entity
     let mut query = world.query::<(&Position, &RenderTag)>();
     let (p, _) = query.next().unwrap();
     assert_eq!(p.0, 20);
     assert!(query.next().is_none());
 
-    // 4. Verify bitset was cleared and set correctly
+    // Verify bitset was cleared and set correctly
     {
         let spatial_bitset = world
             .storage
@@ -1066,7 +1066,7 @@ fn test_get_many_mut() {
     let e2 = world.spawn((Position(20), Velocity(2)));
     let e3 = world.spawn(Position(30));
 
-    // 1. Success case: disjoint entities
+    // Success case: disjoint entities
     {
         let [p1, p2] = world.get_many_mut::<Position, 2>([e1, e2]);
         assert_eq!(p1.as_ref().unwrap().0, 10);
@@ -1078,21 +1078,21 @@ fn test_get_many_mut() {
     assert_eq!(world.get::<Position>(e1).unwrap().0, 110);
     assert_eq!(world.get::<Position>(e2).unwrap().0, 220);
 
-    // 2. Failure case: duplicate IDs
+    // Failure case: duplicate IDs
     {
         let [p1, p2] = world.get_many_mut::<Position, 2>([e1, e1]);
         assert!(p1.is_none());
         assert!(p2.is_none());
     }
 
-    // 3. Mixed case: one missing component
+    // Mixed case: one missing component
     {
         let [p1, p2] = world.get_many_mut::<Velocity, 2>([e1, e3]);
         assert!(p1.is_some());
         assert!(p2.is_none()); // e3 only has Position
     }
 
-    // 4. Case: invalid EntityId
+    // Case: invalid EntityId
     {
         use khora_core::ecs::entity::EntityId;
         let invalid_id = EntityId {

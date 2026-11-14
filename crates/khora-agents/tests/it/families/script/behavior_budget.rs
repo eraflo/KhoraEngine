@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **The frame's fuel is shared fairly among behavior instances** (Ergon
-//! spec 09): a frame short of fuel resumes where the last one stopped, so
+//! **The frame's fuel is shared fairly among behavior instances**:
+//! a frame short of fuel resumes where the last one stopped, so
 //! every instance runs within a bounded number of frames — whatever one
 //! long-running instance does with its own share.
 

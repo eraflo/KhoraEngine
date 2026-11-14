@@ -93,17 +93,17 @@ impl ComponentPage {
     /// It's the caller's (`World::despawn`) responsibility to update the metadata of
     /// the entity that was moved from the last row.
     pub(crate) fn swap_remove_row(&mut self, row_index: u32) {
-        // 1. Remove the corresponding entity ID from the list. `swap_remove` on a Vec
+        // Remove the corresponding entity ID from the list. `swap_remove` on a Vec
         // returns the element that was at that index, but we don't need it here.
         self.entities.swap_remove(row_index as usize);
 
-        // 2. Iterate through all component columns and perform the same swap_remove
+        // Iterate through all component columns and perform the same swap_remove
         // on each one, using our `AnyVec` trait.
         for column in self.columns.values_mut() {
             column.swap_remove_any(row_index as usize);
         }
 
-        // 3. The ticks follow their rows; the order moved, no value did.
+        // The ticks follow their rows; the order moved, no value did.
         for ticks in self.ticks.values_mut() {
             ticks.swap_remove(row_index as usize);
         }

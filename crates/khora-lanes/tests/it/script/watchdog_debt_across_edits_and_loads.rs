@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! **An edit or a load in the middle of a debt keeps what the debt has
-//! counted** (Ergon spec 10): the frames a behavior sits out repaying fuel
+//! counted**: the frames a behavior sits out repaying fuel
 //! its body overdrew are that body's run time; a hot reload carrying the body
 //! into edited code keeps its count — those frames included — as a reload
 //! into the same code does, and a game loaded while the debt still runs does

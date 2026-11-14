@@ -54,7 +54,7 @@ pub(crate) fn glyphs_on_gpu(
         return;
     };
 
-    // 1. A font whose file is new: registered, and its glyphs made again.
+    // A font whose file is new: registered, and its glyphs made again.
     let mut new = HashSet::new();
     for (font, handle) in new_fonts(world, ctx.since) {
         if let Err(error) = rasterizer.register_font(font, Arc::from(&handle.data[..])) {
@@ -70,8 +70,8 @@ pub(crate) fn glyphs_on_gpu(
         made: HashMap::new(),
     };
 
-    // 2. The glyphs a full atlas left out are tried again once a glyph that
-    //    was in use is no longer — only a glyph going away makes room.
+    // The glyphs a full atlas left out are tried again once a glyph that
+    // was in use is no longer — only a glyph going away makes room.
     let mut rebuilt: Vec<GlyphKind> = Vec::new();
     let mut left_out: HashMap<GlyphKey, GlyphKind> = HashMap::new();
     let mut in_use: Option<Vec<GlyphKey>> = None;
@@ -92,9 +92,9 @@ pub(crate) fn glyphs_on_gpu(
         in_use = Some(now);
     }
 
-    // 3. The glyphs of the layouts that changed, or whose font is new, each
-    //    rasterised once; a full atlas is built again from every glyph in use,
-    //    once a run per kind.
+    // The glyphs of the layouts that changed, or whose font is new, each
+    // rasterised once; a full atlas is built again from every glyph in use,
+    // once a run per kind.
     let changed: HashSet<EntityId> = world
         .query::<(EntityId, Changed<UiTextLayout>)>()
         .since(ctx.since)
@@ -135,7 +135,7 @@ pub(crate) fn glyphs_on_gpu(
         }
     }
 
-    // 4. What was left out is remembered with the glyphs in use now.
+    // What was left out is remembered with the glyphs in use now.
     let in_use = if left_out.is_empty() {
         HashSet::new()
     } else {

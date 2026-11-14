@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! **Nested `ref` sweeps cut by fuel and carried across a hot reload write
-//! each row where it belongs** (Ergon spec 10): the outer row's write lands
+//! each row where it belongs**: the outer row's write lands
 //! on the outer row's entity, the inner rows' on theirs, whichever slice the
 //! sweep stopped at and whether the system was edited while it stood there.
 

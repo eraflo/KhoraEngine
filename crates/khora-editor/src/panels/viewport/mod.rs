@@ -142,7 +142,7 @@ impl EditorPanel for ViewportPanel {
                     self.paint_camera_preview(ui, min, [w, h]);
                 }
 
-                // ── Branded overlays (Phase I) ────────────
+                // ── Branded overlays ────────────
                 self.paint_tool_pill(ui, min);
                 self.paint_transport_pill(ui, min, [w, h]);
                 self.paint_stats_card(ui, min, [w, h]);

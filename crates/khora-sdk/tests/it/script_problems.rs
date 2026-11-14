@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **One surface for what is wrong with the scripts** (Ergon spec 11): every
+//! **One surface for what is wrong with the scripts**: every
 //! application holds the engine's `Problems`, and the three places
 //! that find a problem fill it — a mount's compile of every module, the
 //! registration of what they declare, and the instances running once the
