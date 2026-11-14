@@ -12,11 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Editor camera with orbit / pan / zoom controls.
+//! The editor's orbit camera: orbit, pan and zoom around a target point.
 //!
-//! This is a backend-agnostic camera controller. The concrete input
-//! handling is performed by the editor application, which translates
-//! `InputEvent` into the methods exposed here.
+//! Backend-agnostic: the editor translates `InputEvent`s into its methods.
 
 use khora_sdk::khora_core::math::{Mat4, Vec3, FRAC_PI_4};
 use khora_sdk::khora_core::renderer::api::resource::view::ViewInfo;
@@ -81,7 +79,7 @@ impl EditorCamera {
         self.target + Vec3::new(x, y, z)
     }
 
-    /// Orbit by a screen-space delta (pixels).
+    /// Orbits by a screen-space delta (pixels).
     pub fn orbit(&mut self, delta_x: f32, delta_y: f32) {
         self.yaw += delta_x * self.orbit_speed;
         self.pitch -= delta_y * self.orbit_speed;
@@ -90,7 +88,7 @@ impl EditorCamera {
         self.pitch = self.pitch.clamp(-limit, limit);
     }
 
-    /// Pan the target in the camera's local XY plane.
+    /// Pans the target in the camera's local XY plane.
     pub fn pan(&mut self, delta_x: f32, delta_y: f32) {
         let right = self.right();
         let up = self.up();
@@ -98,23 +96,23 @@ impl EditorCamera {
         self.target = self.target - right * delta_x * speed + up * delta_y * speed;
     }
 
-    /// Zoom by a scroll delta (positive = closer).
+    /// Zooms by a scroll delta (positive = closer).
     pub fn zoom(&mut self, delta: f32) {
         self.distance -= delta * self.zoom_speed * self.distance * 0.1;
         self.distance = self.distance.clamp(self.min_distance, self.max_distance);
     }
 
-    /// The camera's forward direction (from camera to target).
+    /// Returns the camera's forward direction (from camera to target).
     pub fn forward(&self) -> Vec3 {
         (self.target - self.position()).normalize()
     }
 
-    /// The camera's right direction.
+    /// Returns the camera's right direction.
     pub fn right(&self) -> Vec3 {
         self.forward().cross(Vec3::Y).normalize()
     }
 
-    /// The camera's up direction.
+    /// Returns the camera's up direction.
     pub fn up(&self) -> Vec3 {
         self.right().cross(self.forward()).normalize()
     }
@@ -133,7 +131,7 @@ impl EditorCamera {
         }
     }
 
-    /// Compute a world-space ray from a viewport pixel position.
+    /// Returns the world-space ray through a viewport pixel.
     ///
     /// `x` and `y` are in pixels (top-left origin), `width`/`height`
     /// are the viewport dimensions in pixels.

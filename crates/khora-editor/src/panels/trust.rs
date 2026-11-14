@@ -13,18 +13,8 @@
 // limitations under the License.
 
 //! The trust panel: the question asked of a project nothing was decided of,
-//! and the confirmation of trusting the project open.
-//!
-//! A `Floating` panel, always registered, painting only when needed, over
-//! the screen rect, through the [`dialog`](khora_tool_ui::widgets::dialog)
-//! widget:
-//! - `EditorState::trust_prompt` set: the prompt, `id_salt` `trust-prompt` —
-//!   choices `Close project` (0) → `cancel_open`, `Open restricted` (1) →
-//!   `restrict_open`, `Trust and open` (2) → `trust_open`, as
-//!   `pending_menu_action`;
-//! - `EditorState::trust_confirm` set: the confirmation, `id_salt`
-//!   `trust-confirm` — choices `Keep restricted` (0) closes it, `Trust and
-//!   reopen` (1) closes it and asks `trust_project`.
+//! and the confirmation of trusting the open project.
+//! See the book: reference/editor.md, "11 — Restricted projects".
 
 use std::sync::{Arc, Mutex};
 
@@ -32,6 +22,9 @@ use khora_sdk::editor_ui::{EditorPanel, EditorState, Icon, TrustSummary, UiBuild
 use khora_tool_ui::widgets::{dialog, ButtonKind, Dialog, DialogChoice};
 
 /// The trust prompt and the trust confirmation.
+///
+/// Always registered; it paints over the screen only while
+/// `EditorState::trust_prompt` or `EditorState::trust_confirm` is set.
 pub struct TrustPanel {
     state: Arc<Mutex<EditorState>>,
     theme: UiTheme,
@@ -41,7 +34,7 @@ impl TrustPanel {
     /// The panel's id.
     pub const ID: &'static str = "khora.editor.trust";
 
-    /// A trust panel over `state`.
+    /// Returns a trust panel over `state`.
     pub fn new(state: Arc<Mutex<EditorState>>, theme: UiTheme) -> Self {
         Self { state, theme }
     }
@@ -133,7 +126,7 @@ impl TrustPanel {
         }
     }
 
-    /// Confirms trusting the project open, saying what it changes.
+    /// Asks to confirm trusting the open project, saying what it lets run.
     fn confirm(
         &self,
         ui: &mut dyn UiBuilder,
@@ -197,8 +190,8 @@ impl TrustPanel {
     }
 }
 
-/// The name of the folder at `path`, as a project is called before its
-/// `project.json` is read.
+/// Returns the name of the folder at `path`, as a project is called before
+/// its `project.json` is read.
 fn folder_name(path: &std::path::Path) -> String {
     path.file_name()
         .map(|name| name.to_string_lossy().into_owned())

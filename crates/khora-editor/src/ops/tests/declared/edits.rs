@@ -27,10 +27,11 @@ fn lamp() -> (GameWorld, EntityId) {
     (world, lamp)
 }
 
-/// **Every kind of field is written by its edit**: an int, a float, a bool,
-/// a string, a `Vec3`, an entity, an optional given a value and given
-/// `null` again, an array, a nested struct — each lands in the row, and the
-/// other fields keep theirs.
+/// **Every kind of field is written by its edit.**
+///
+/// An int, a float, a bool, a string, a `Vec3`, an entity, an optional given a
+/// value and given `null` again, an array, a nested struct — each lands in the
+/// row, and the other fields keep theirs.
 #[test]
 fn a_declared_field_edit_writes_every_kind_of_field_into_the_row() {
     let (mut world, lamp) = lamp();
@@ -70,10 +71,11 @@ fn a_declared_field_edit_writes_every_kind_of_field_into_the_row() {
     }
 }
 
-/// **A value the field refuses leaves the row as it was** — text for a
-/// float, a non-finite float, an element of another type in an array, a
-/// struct of another shape, a field the component does not have — and the
-/// entity keeps the component.
+/// **A value the field refuses leaves the row as it was.**
+///
+/// Text for a float, a non-finite float, an element of another type in an
+/// array, a struct of another shape, a field the component does not have — and
+/// the entity keeps the component.
 #[test]
 fn a_refused_declared_field_edit_leaves_the_row_unchanged() {
     let (mut world, lamp) = lamp();

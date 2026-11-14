@@ -69,7 +69,6 @@ impl ControlPlanePanel {
             return;
         };
 
-        // Header (icon tile + name + crate tag + status pill)
         ui.paint_rect_filled(
             [x + 12.0, y + 46.0],
             [36.0, 36.0],
@@ -98,8 +97,7 @@ impl ControlPlanePanel {
             TextAlign::Center,
         );
 
-        // Status pill — same thresholds as the health bar (see `Health`), so
-        // the word and the bar always agree.
+        // `Health`'s thresholds, so the word and the health bar agree.
         let (status_label, status_color) = if agent.report.stalled {
             ("stalled", theme.error)
         } else {
@@ -127,7 +125,6 @@ impl ControlPlanePanel {
             status_color,
         );
 
-        // Section divider
         ui.paint_line(
             [x + 8.0, y + 100.0],
             [x + 8.0 + w - 16.0, y + 100.0],
@@ -135,11 +132,9 @@ impl ControlPlanePanel {
             1.0,
         );
 
-        // Cards — each shows real fields from the Report + ExecutionTiming,
-        // then the DCC's last decision. Below the header they scroll: the
-        // decision cards are taller than a short panel. They are laid out
-        // first without painting, so the wheel is clamped to the height they
-        // take on this very frame — never an offset they no longer reach.
+        // The cards are measured first without painting, so the scroll is
+        // clamped to the height they take this frame, never an offset they no
+        // longer reach.
         let view = [x, y + 104.0, w, (h - 108.0).max(0.0)];
         let content_h = {
             let mut measuring = Measuring::new(&*ui);

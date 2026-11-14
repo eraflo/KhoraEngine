@@ -12,26 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! One field of a script-declared component, drawn by its Ergon type.
-//!
-//! | `ErgonType`        | Widget |
-//! |--------------------|--------|
-//! | `bool`             | checkbox |
-//! | `int` / `float`    | drag value (an `int` stays whole) |
-//! | `Duration`         | drag value in seconds, `s` after it |
-//! | `Angle`            | drag value in degrees, `deg` after it — stored in radians |
-//! | ranged number      | the drag value kept inside `[Range(…)]`, a gauge under it |
-//! | `string`           | text field |
-//! | `Vec2/3/4`, `Quat` | one drag value per axis |
-//! | `Color`            | colour swatch |
-//! | `Entity`           | a slot naming the entity; drop one from the hierarchy |
-//! | `T?`               | `T`, or `none`, with a toggle between them |
-//! | `T[]`              | a row per item, an add button, a context menu to move or remove |
-//! | struct             | a collapsing block, a row per field |
-//!
-//! A read-only field — what the engine writes — is the same row as text.
-//! A `[Tooltip(…)]` is said by hovering a number's label, or the control of
-//! any other field.
+//! One field of a script-declared component, drawn by its Ergon type, or as
+//! text when read-only.
+//! See the book: design/editor.md, "Inspector (right, 320 px)".
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -98,9 +81,8 @@ impl FieldContext<'_> {
     }
 }
 
-/// The value a field of `ty` starts with when the author gives it one: the
-/// type's neutral value — what an `Optional` set from `none` or an array's
-/// new item holds.
+/// Returns the neutral value of `ty`: what an optional set from `none`, or an
+/// array's new item, holds.
 pub fn neutral(ty: &ErgonType) -> ScriptValue {
     match ty {
         ErgonType::Bool => ScriptValue::Bool(false),
@@ -132,9 +114,8 @@ pub fn neutral(ty: &ErgonType) -> ScriptValue {
     }
 }
 
-/// `value` as one line of text, read the way its type reads: a duration in
-/// seconds, an angle in degrees, an entity by its name, an asset by the
-/// name of the entry of `assets` holding it.
+/// Returns `value` as one line of text, read as its type reads: a duration in
+/// seconds, an angle in degrees, an entity or an asset by its name.
 pub fn value_text(
     value: &ScriptValue,
     ty: &ErgonType,
@@ -183,8 +164,8 @@ pub fn value_text(
     }
 }
 
-/// An entity as a slot shows it: its name, or its index where the scene tree
-/// does not know it.
+/// Returns an entity as a slot shows it: its name, or its index where the
+/// scene tree does not know it.
 pub fn entity_text(entity: EntityId, names: &HashMap<EntityId, String>) -> String {
     names
         .get(&entity)
@@ -593,9 +574,8 @@ fn render_struct(
     changed
 }
 
-/// An entity slot: the entity's name in a well, where an entity dragged from
-/// the hierarchy is dropped. An optional one is cleared with its context
-/// menu.
+/// Draws an entity slot: the entity's name in a well that takes an entity
+/// dragged from the hierarchy; an optional one is cleared by its context menu.
 fn render_entity(
     ui: &mut dyn UiBuilder,
     label: &str,

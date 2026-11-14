@@ -260,8 +260,9 @@ fn reverting_a_declared_field_clears_its_override_and_keeps_the_others() {
     );
 }
 
-/// **Reverting a removed declared component brings back the prefab's** —
-/// added again, each field set to the prefab's value: the root overrides
+/// **Reverting a removed declared component brings back the prefab's.**
+///
+/// Added again, each field set to the prefab's value: the root overrides
 /// nothing any more.
 #[test]
 fn reverting_a_removed_declared_component_brings_back_the_prefabs() {
@@ -402,9 +403,10 @@ fn saved_then_redeclared(
     (world, library, root)
 }
 
-/// **A field the script declared after the prefab was saved is no
-/// override**: the prefab gives it no value, so an instance that never
-/// touched it holds the declaration's default — as the prefab itself would.
+/// **A field the script declared after the prefab was saved is no override.**
+///
+/// The prefab gives it no value, so an instance that never touched it holds the
+/// declaration's default — as the prefab itself would.
 #[test]
 fn a_field_declared_after_the_prefab_was_saved_is_no_override() {
     let (world, library, root) = saved_then_redeclared(
@@ -427,8 +429,10 @@ fn a_field_declared_after_the_prefab_was_saved_is_no_override() {
 }
 
 /// **A field widened from `int` to `float` since the prefab was saved is no
-/// override**: the instance loaded the prefab's 2 as 2.0 — the prefab's own
-/// value, read under the declaration the world has now.
+/// override.**
+///
+/// The instance loaded the prefab's 2 as 2.0 — the prefab's own value, read
+/// under the declaration the world has now.
 #[test]
 fn a_field_widened_since_the_prefab_was_saved_is_no_override() {
     let (world, library, root) = saved_then_redeclared(
@@ -576,9 +580,10 @@ fn reverting_an_entity_field_points_it_at_the_instances_own_member() {
 }
 
 /// **An `int` too large for a `float` since the prefab was saved is no
-/// override**: a load does not round it — the instance holds the field's
-/// default — so the prefab's value, read the way a load reads it, is that
-/// default too.
+/// override.**
+///
+/// A load does not round it — the instance holds the field's default — so the
+/// prefab's value, read the way a load reads it, is that default too.
 #[test]
 fn an_int_past_what_a_float_holds_since_the_prefab_was_saved_is_no_override() {
     let (world, library, root) = saved_then_redeclared(
@@ -607,9 +612,11 @@ fn an_int_past_what_a_float_holds_since_the_prefab_was_saved_is_no_override() {
     );
 }
 
-/// **A field whose type changed beyond widening since the prefab was saved
-/// is no override**: neither the instance nor the prefab, read under the
-/// new declaration, keeps the old value — both hold the default.
+/// **A field whose type changed beyond widening since the prefab was saved is
+/// no override.**
+///
+/// Neither the instance nor the prefab, read under the new declaration, keeps
+/// the old value — both hold the default.
 #[test]
 fn a_field_retyped_since_the_prefab_was_saved_is_no_override() {
     let (world, library, root) = saved_then_redeclared(

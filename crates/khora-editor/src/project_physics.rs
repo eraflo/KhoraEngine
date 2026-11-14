@@ -19,11 +19,11 @@ use std::path::Path;
 
 use khora_sdk::khora_core::physics::PhysicsSettings;
 
-/// The physics settings of the project at `root`: the `physics` section of
-/// its `project.json`, or the defaults when it has none or the file cannot be
-/// read. A section that does not read (a zero or negative step) is reported
-/// and the defaults kept. A few hundred bytes, read as the editor starts:
-/// the engine boots its physics family at this step.
+/// Returns the physics settings of the project at `root`, from its `project.json`.
+///
+/// The defaults stand in when the file is missing, unreadable or has no
+/// `physics` section; a section that does not read (a zero or negative step)
+/// is reported and the defaults kept.
 pub fn project_physics(root: &Path) -> PhysicsSettings {
     let path = root.join("project.json");
     let Ok(text) = std::fs::read_to_string(&path) else {

@@ -12,17 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The editor's loading screen — the door film over the whole window while
+//! The editor's loading screen: the door film over the whole window while
 //! the editor starts.
-//!
-//! The panel sits in the shell's [`PanelLocation::Cover`] slot, above every
-//! other panel and taking every click. It plays the film until the editor is
-//! [ready](LoadingPanel::ready), plays on to the end of the chapter under way,
-//! fades out, and is then [done](LoadingPanel::is_done) — the editor removes
-//! it. A click or Esc only shortens the fade once the editor is ready.
-//!
-//! Times are seconds on the panel's own clock; [`EditorPanel::ui`] reads it
-//! from the wall clock, [`LoadingPanel::paint_at`] takes it from the caller.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -34,13 +25,16 @@ use khora_tool_ui::widgets::{LoadingScreen, LoadingState};
 
 /// The editor's loading screen: [`Film::Door`] over the whole window until the
 /// editor is ready.
+///
+/// It sits in the [`PanelLocation::Cover`] slot, above every panel and taking
+/// every click. Once ready, it plays to the end of its chapter and fades out; a
+/// click or Esc shortens that. Times are seconds on the panel's own clock.
 pub struct LoadingPanel {
     screen: LoadingScreen,
     /// What the panel's clock reads at its first paint.
     start: f32,
-    /// The instant the panel's clock reads 0: set at its first paint, so the
-    /// film starts where it was built to whatever came between — an engine
-    /// booting before the window shows it.
+    /// The instant the panel's clock reads 0, set at its first paint: the
+    /// engine boots before the window shows the film.
     origin: Option<Instant>,
     signals: Arc<Signals>,
 }
@@ -58,8 +52,8 @@ struct Signals {
 pub struct LoadingHandle(Arc<Signals>);
 
 impl LoadingHandle {
-    /// The editor is ready: the panel plays on to the end of its chapter, then
-    /// fades out.
+    /// Tells the panel the editor is ready: it plays to the end of its
+    /// chapter, then fades out.
     pub fn ready(&self) {
         self.0.ready.store(true, Ordering::Release);
     }
@@ -74,9 +68,9 @@ impl LoadingPanel {
     /// The panel's id, the one to remove it by.
     pub const ID: &'static str = "khora.editor.loading";
 
-    /// A loading screen starting its film at `now` on its own clock, which
-    /// reads `now` at the panel's first paint. The film has its own backdrop;
-    /// the theme is not needed to paint it.
+    /// Returns a loading screen whose clock reads `now` at its first paint.
+    ///
+    /// The film has its own backdrop: the theme is unused.
     pub fn new(now: f32, _theme: UiTheme) -> Self {
         Self {
             screen: LoadingScreen::new(Film::Door, now, false),
@@ -86,18 +80,18 @@ impl LoadingPanel {
         }
     }
 
-    /// The editor's hold on this panel once it is in the shell.
+    /// Returns the editor's hold on this panel once it is in the shell.
     pub fn handle(&self) -> LoadingHandle {
         LoadingHandle(Arc::clone(&self.signals))
     }
 
-    /// The slot the panel is registered in.
+    /// Returns the slot the panel is registered in.
     pub fn location(&self) -> PanelLocation {
         PanelLocation::Cover
     }
 
-    /// The editor is ready: the film plays on to the end of its chapter, then
-    /// fades out.
+    /// Marks the editor ready at `now`: the film plays to the end of its
+    /// chapter, then fades out.
     pub fn ready(&mut self, now: f32) {
         self.screen.ready(now);
     }
@@ -107,8 +101,8 @@ impl LoadingPanel {
         self.screen.state(now) == LoadingState::Done
     }
 
-    /// Paints the film over the panel rect at `now`, handling a click or Esc;
-    /// returns where the screen is after painting.
+    /// Paints the film over the panel rect at `now`, handling a click or Esc,
+    /// and returns where the screen is after painting.
     pub fn paint_at(&mut self, ui: &mut dyn UiBuilder, now: f32) -> LoadingState {
         if self.signals.ready.load(Ordering::Acquire) {
             self.ready(now);
@@ -331,9 +325,8 @@ mod tests {
             .sum()
     }
 
-    /// The editor builds the panel before the engine has booted and before the
-    /// window shows its first frame: the film must start when it is first
-    /// seen, not when it was built, or its opening is never seen.
+    /// The film starts at its first paint, not when the panel was built:
+    /// the engine boots in between, and the opening would be lost.
     #[test]
     fn the_film_starts_at_its_first_paint() {
         // How long the panel waits, built but not painted.

@@ -81,9 +81,10 @@ fn walk(live: &Value, prefab: &Value, path: &mut Vec<String>, found: &mut Vec<Ve
     }
 }
 
-/// Whether two values are the same value. A float the inspector widened from
-/// a component's `f32` is the same as the `f32` it came from; integers are
-/// compared exactly.
+/// Whether two values are the same value.
+///
+/// A float the inspector widened from a component's `f32` is the same as that
+/// `f32`; integers are compared exactly.
 fn same(a: &Value, b: &Value) -> bool {
     match (a, b) {
         (Value::Number(x), Value::Number(y)) => {
@@ -108,8 +109,8 @@ fn same(a: &Value, b: &Value) -> bool {
     }
 }
 
-/// `live`, with the prefab's value at `path` — or without the key, where the
-/// prefab has none.
+/// Returns `live` with the prefab's value at `path`, or without the key where
+/// the prefab has none.
 pub fn reverted(live: &Value, prefab: &Value, path: &[String]) -> Value {
     let mut out = live.clone();
     revert_into(&mut out, prefab, path);
@@ -142,16 +143,13 @@ fn revert_into(live: &mut Value, prefab: &Value, path: &[String]) {
     }
 }
 
-/// `value`, read in `from`, with every entity it names named as the entity
-/// of the same identity in `to`.
+/// Returns `value`, read in `from`, with every entity it names named as the
+/// entity of the same identity in `to`.
 ///
-/// A value read from the prefab's scratch world names that world's entities;
-/// compared with or written into the live world as they are, an index that
-/// happens to be shared would read as another entity. An entity is the
-/// `{ index, generation }` object an `EntityId` serializes as. A reference to
-/// nothing, or to an entity `to` does not have, names `to`'s nothing — the
-/// entity a load gives every reference that has no target — never a value
-/// an `EntityId` cannot be read from.
+/// Otherwise an index both worlds share would read as another entity. An
+/// entity is the `{ index, generation }` object an `EntityId` serializes as. A
+/// reference to nothing, or to an entity `to` lacks, names `to`'s nothing: the
+/// entity a load gives every reference that has no target.
 pub fn rebound(value: &Value, from: &World, to: &World) -> Value {
     match value {
         Value::Object(map) if is_entity(map) => {
@@ -191,10 +189,10 @@ fn is_entity(map: &serde_json::Map<String, Value>) -> bool {
         && map.get("generation").is_some_and(Value::is_u64)
 }
 
-/// `entity` seen against the prefab of the innermost instance it belongs
-/// to, or `None` when it is no part of an instance. The editor keeps the
-/// prefab's expansion across frames and calls [`inspect_against`]; this is
-/// the whole of it in one call.
+/// Returns `entity` seen against the prefab of the innermost instance it belongs to.
+///
+/// `None` when it is no part of an instance. The editor keeps the prefab's
+/// expansion across frames and calls [`inspect_against`]; this does all in one call.
 #[cfg_attr(not(test), allow(dead_code))]
 pub fn inspect_prefab(
     world: &GameWorld,
@@ -206,9 +204,10 @@ pub fn inspect_prefab(
     inspect_against(world.inner_world(), entity, &instance, &scratch)
 }
 
-/// `entity` seen against `scratch`, its instance's prefab expanded under the
-/// instance root — what [`inspect_prefab`] builds, kept by a caller that
-/// inspects the same instance frame after frame.
+/// Returns `entity` seen against `scratch`, its instance's prefab expanded under the root.
+///
+/// What [`inspect_prefab`] builds, kept by a caller that inspects the same
+/// instance frame after frame.
 pub fn inspect_against(
     world: &World,
     entity: EntityId,
@@ -301,10 +300,10 @@ pub fn inspect_against(
     })
 }
 
-/// The edits that take every member of `instance` back to `scratch`, its
-/// prefab expanded under the instance root: each value override reverted,
-/// each component the instance added removed, each it removed restored. The
-/// root's placement stays — where the instance stands is the scene's.
+/// Returns the edits that take every member of `instance` back to `scratch`, its expanded prefab.
+///
+/// Each value override reverted, each component the instance added removed,
+/// each it removed restored. The root's placement stays: it is the scene's.
 pub fn revert_instance(world: &World, instance: &InstanceOf, scratch: &World) -> Vec<PropertyEdit> {
     let mut edits = Vec::new();
     for twin in scratch.iter_entities() {
@@ -358,10 +357,10 @@ pub fn revert_instance(world: &World, instance: &InstanceOf, scratch: &World) ->
     edits
 }
 
-/// The edits that take `member`'s declared components back to `twin`'s, its
-/// counterpart in the prefab's expansion: each field set apart set back, a
-/// component the member added removed, one it removed added with the
-/// prefab's values.
+/// Returns the edits that take `member`'s declared components back to `twin`'s.
+///
+/// `twin` is its counterpart in the prefab's expansion: each field set apart
+/// is set back, a component added removed, one removed added with its values.
 fn revert_declared(
     world: &World,
     member: EntityId,

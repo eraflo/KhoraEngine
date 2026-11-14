@@ -12,26 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What a field's hints say on its row, without drawing it: the section
-//! header above it, its range in the units the inspector shows, whether the
-//! value it holds lies outside that range and why, how fast its scrubber
-//! drags, how an edit is kept inside, and where its gauge fills to.
-//!
-//! A range constrains the inspector only: a value a script or a file wrote
-//! outside it is shown as it is, and changes only when the author edits it.
+//! What a declared field's hints say on its row, without drawing it: section
+//! header, range, scrubber speed, edit clamping and gauge fill.
+//! See the book: design/editor.md, "Inspector (right, 320 px)".
 
 use khora_sdk::editor_ui::DeclaredFieldView;
 use khora_sdk::khora_core::script::{ErgonType, FieldRange, ScriptValue};
 
-/// The section header shown above `field`, as its `[Header("…")]` gives
-/// it — `None` when it opens no section.
+/// Returns the section header `field`'s `[Header("…")]` opens above it, if
+/// any.
 pub fn section_header(field: &DeclaredFieldView) -> Option<String> {
     field.hints.header.clone()
 }
 
-/// `range`'s bounds as the inspector shows a `ty` value: `0–100` for an
-/// `int`, `0.5–2` for a `float`, `0–5 s` for a `Duration`, `0–90 deg` for
-/// an `Angle` stored in radians.
+/// Returns `range`'s bounds as the inspector shows a `ty` value: `0–5 s` for a
+/// `Duration`, `0–90 deg` for an `Angle` stored in radians.
 pub fn range_text(ty: &ErgonType, range: FieldRange) -> String {
     let (min, max) = (shown(ty, range.min), shown(ty, range.max));
     match ty {
@@ -56,8 +51,9 @@ fn shown(ty: &ErgonType, value: f64) -> String {
     }
 }
 
-/// Whether `value`, a numeric leaf of type `ty`, lies outside `range`. A
-/// value that is not a number of `ty` is never outside.
+/// Returns whether `value`, a numeric leaf of type `ty`, lies outside `range`.
+///
+/// A value that is not a number of `ty` is never outside.
 pub fn outside_range(ty: &ErgonType, value: &ScriptValue, range: FieldRange) -> bool {
     match (ty, value) {
         (ErgonType::Int, ScriptValue::Int(i)) => !range.contains(*i as f64),
@@ -68,7 +64,7 @@ pub fn outside_range(ty: &ErgonType, value: &ScriptValue, range: FieldRange) -> 
     }
 }
 
-/// What hovering a value outside `range` says — `None` for one inside.
+/// Returns what hovering a value outside `range` says; `None` for one inside.
 pub fn range_note(ty: &ErgonType, value: &ScriptValue, range: FieldRange) -> Option<String> {
     outside_range(ty, value, range).then(|| {
         format!(
@@ -78,9 +74,10 @@ pub fn range_note(ty: &ErgonType, value: &ScriptValue, range: FieldRange) -> Opt
     })
 }
 
-/// How far a `ty` scrubber bounded by `range` moves per point dragged, in
-/// the units it edits (degrees for an angle): about 200 points span the
-/// range.
+/// Returns how far a `ty` scrubber bounded by `range` moves per point
+/// dragged, about 200 points spanning the range.
+///
+/// In the units it edits: degrees for an angle.
 pub fn ranged_speed(ty: &ErgonType, range: FieldRange) -> f32 {
     // The span the scrubber edits — an angle is dragged in degrees.
     let span = match ty {
@@ -98,7 +95,7 @@ pub fn ranged_speed(ty: &ErgonType, range: FieldRange) -> f32 {
 /// How many points of drag span a range.
 const SCRUB_POINTS: f64 = 200.0;
 
-/// How far an unbounded `ty` scrubber moves per point dragged.
+/// Returns how far an unbounded `ty` scrubber moves per point dragged.
 pub fn unbounded_speed(ty: &ErgonType) -> f32 {
     match ty {
         ErgonType::Int => 0.25,
@@ -108,8 +105,8 @@ pub fn unbounded_speed(ty: &ErgonType) -> f32 {
     }
 }
 
-/// The value an edit from `before` to `after` stores: `after` kept inside
-/// `range` — and `before` untouched when nothing was edited.
+/// Returns the value an edit from `before` to `after` stores: `after` kept
+/// inside `range`, or `before` untouched when nothing was edited.
 pub fn edit_within(before: f64, after: f64, range: FieldRange) -> f64 {
     if after == before {
         before
@@ -118,8 +115,8 @@ pub fn edit_within(before: f64, after: f64, range: FieldRange) -> f64 {
     }
 }
 
-/// How far `value` fills the gauge under its scrubber: `0` at `range.min`,
-/// `1` at `range.max`, held within `0..=1`.
+/// Returns how far `value` fills the gauge under its scrubber: `0` at
+/// `range.min`, `1` at `range.max`, held within `0..=1`.
 pub fn gauge_fraction(value: f64, range: FieldRange) -> f32 {
     let fraction = range.fraction(value) as f32;
     if fraction.is_nan() {

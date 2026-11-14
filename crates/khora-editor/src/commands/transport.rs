@@ -12,14 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Play, Pause and Stop — the transport — as the engine sees them.
+//! Play, Pause and Stop, the transport, as the engine sees them.
 //!
-//! The engine has no mode: Play and Stop are the editor's. Editing, the
-//! families a scene runs only while it is played — its scripts, its physics,
-//! its sounds — are off; Play snapshots the scene and switches them on, Stop
-//! restores the scene and switches them off, Pause stops the clock and
-//! nothing else. Processed in `before_frame`, before the engine fixes the
-//! frame, so a frame is wholly edited or wholly played.
+//! The engine has no mode: the editor switches the play families and the clock
+//! scale in `before_frame`. See the book: reference/editor.md, "04 — Play mode".
 
 use std::sync::{Arc, Mutex};
 
@@ -37,8 +33,7 @@ pub const PLAY_FAMILIES: [AgentId; 3] = [
     khora_sdk::khora_core::audio::AUDIO,
 ];
 
-/// What the editor's `setup` does to the engine: it opens editing, the
-/// [`PLAY_FAMILIES`] off.
+/// Opens editing: switches the [`PLAY_FAMILIES`] off. The editor's `setup` calls it.
 pub fn start_editing(runtime: &Runtime) {
     follow(runtime, PlayMode::Editing);
 }
@@ -48,16 +43,12 @@ pub(crate) fn is_transport(action: &str) -> bool {
     matches!(action, "play" | "pause" | "stop")
 }
 
-/// Processes the transport action the editor's state holds — `"play"`,
-/// `"pause"` or `"stop"` — and leaves any other action for `update`. Play
-/// snapshots the scene, then switches the [`PLAY_FAMILIES`] on, at a time
-/// scale of 1, refused while a restore is under way; Stop switches them
-/// off, the scale back at 1, and files the scene's restore with the
-/// runtime's scene loads; Pause sets the scale to 0 and switches nothing.
-/// The scene cameras follow.
+/// Processes the transport action the editor's state holds, leaving any other for `update`.
 ///
-/// Whatever else moved the transport — a new scene, an opened one — the
-/// families and the clock follow where it stands, every frame.
+/// Play snapshots the scene and is refused while a restore is under way; Stop
+/// files the scene's restore with the runtime's scene loads. Whatever moved the
+/// transport, the families and the clock follow where it stands, every frame.
+/// See the book: reference/editor.md, "04 — Play mode".
 pub fn process_transport(
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
@@ -140,9 +131,10 @@ fn play_mode(editor_state: &Arc<Mutex<EditorState>>) -> PlayMode {
         .unwrap_or(PlayMode::Editing)
 }
 
-/// Asks the engine for what `play_mode` runs: the [`PLAY_FAMILIES`] on while
-/// the scene is played or paused, off while it is edited; the clock stopped
-/// only when paused. Requests only — the frame boundary settles them.
+/// Asks the engine for what `play_mode` runs: the [`PLAY_FAMILIES`] on unless
+/// edited, the clock stopped only when paused.
+///
+/// Requests only: the frame boundary settles them.
 fn follow(runtime: &Runtime, play_mode: PlayMode) {
     if let Some(activation) = runtime.resources.get::<Arc<Activation>>() {
         let played = play_mode != PlayMode::Editing;

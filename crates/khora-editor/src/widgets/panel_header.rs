@@ -12,20 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Chrome widgets — pieces shared between title bar, status bar and panel
-//! headers. Everything below paints to absolute screen-space coordinates and
-//! tracks its own click hit-test via [`UiBuilder::interact_rect`].
+//! Small pieces of chrome shared by the title bar and the panel headers:
+//! shortcut chips, the search pill, header tabs and the header strip.
 
 use khora_sdk::editor_ui::{FontFamilyHint, Icon, Interaction, TextAlign, UiBuilder, UiTheme};
-// `Icon` is consumed inside `paint_search_pill` via `Icon::Search`.
-// `Interaction` is the return type of `paint_search_pill` and `panel_tab` (for
-// the click + width tuple). Kept explicit to make the public surface readable.
 
 use khora_tool_ui::widgets::paint;
 use khora_tool_ui::widgets::with_alpha;
 
-/// A keyboard-shortcut chip ("⌘", "K", "Esc"). Returns the right edge in
-/// screen-space.
+/// Paints a keyboard-shortcut chip ("⌘", "K", "Esc"); returns its right edge
+/// in screen space.
 pub fn paint_kbd_chip(
     ui: &mut dyn UiBuilder,
     origin: [f32; 2],
@@ -55,15 +51,16 @@ pub fn paint_kbd_chip(
     origin[0] + w
 }
 
-/// A circular dot indicator (used in status bars and pill chips).
+/// Paints a round status dot with a faint halo.
 pub fn paint_status_dot(ui: &mut dyn UiBuilder, center: [f32; 2], color: [f32; 4]) {
     ui.paint_circle_filled(center, 3.5, color);
     ui.paint_circle_filled(center, 5.5, with_alpha(color, 0.18));
 }
 
-/// The wide "search commands" pill in the title bar. Returns the click
-/// interaction (whether the user wants to open the command palette) plus the
-/// right edge in screen-space.
+/// Paints the title bar's search pill, with its ⌘ K chips.
+///
+/// Returns its interaction (a click opens the command palette) and its right
+/// edge in screen space.
 pub fn paint_search_pill(
     ui: &mut dyn UiBuilder,
     origin: [f32; 2],
@@ -101,7 +98,7 @@ pub fn paint_search_pill(
         theme.text_muted,
     );
 
-    // Kbd chips on the right ⌘ K
+    // The ⌘ K chips, laid right to left.
     let chip_y = origin[1] + (height - 16.0) * 0.5;
     let mut x = origin[0] + width - 12.0;
     for ch in ["K", "⌘"] {
@@ -115,7 +112,7 @@ pub fn paint_search_pill(
     (interaction, origin[0] + width)
 }
 
-/// A panel header tab. Returns whether it was clicked plus its width.
+/// Paints a panel header tab; returns whether it was clicked, and its width.
 pub fn panel_tab(
     ui: &mut dyn UiBuilder,
     id_salt: &str,
@@ -190,9 +187,8 @@ pub fn panel_tab(
     (interaction.clicked, w)
 }
 
-/// Paints a panel-header strip: subtle gradient bg, hairline at bottom, then
-/// a row of tabs returned through `tabs_clicked` and a row of action icons on
-/// the right. Returns the y-coordinate where panel content can begin.
+/// Paints a panel header's strip: a vertical gradient over `height`, and a
+/// hairline under it.
 pub fn paint_panel_header(
     ui: &mut dyn UiBuilder,
     panel_rect: [f32; 4],

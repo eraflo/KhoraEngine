@@ -25,10 +25,9 @@ fn restore_scene(world: &mut GameWorld, snap: &[u8]) {
     crate::tests::scene_loads::restore(world, snap);
 }
 
-/// Regression: snapshot/restore must round-trip the `Name` component.
-/// Symptom of a broken implementation: entities show "Entity N" in the
-/// scene tree after Stop because the fallback in `extract_scene_tree`
-/// kicks in.
+/// **Snapshot and restore round-trip the `Name` component.**
+///
+/// Otherwise the scene tree shows "Entity N" after Stop, its fallback name.
 #[test]
 fn snapshot_restore_preserves_name() {
     let mut world = GameWorld::new();
@@ -141,11 +140,11 @@ fn snapshot_restore_preserves_multiple_components() {
     assert!(has_camera, "a Camera must survive the round-trip");
 }
 
-/// Play/stop guard: entities that share storage pages across domains
-/// (mesh entities carry Spatial + Render components) are snapshotted,
-/// despawned wholesale during "play", then restored. The pre-play state
-/// must come back fully — this exercises the multi-domain despawn path
-/// that previously corrupted survivor rows.
+/// **Play and Stop restore entities whose pages span domains.**
+///
+/// Mesh entities carry Spatial and Render components: snapshotted, despawned
+/// wholesale during play, then restored, they come back fully, through the
+/// multi-domain despawn path.
 #[test]
 fn play_stop_restores_state_after_multi_domain_despawn() {
     let mut world = GameWorld::new();
@@ -460,9 +459,11 @@ fn stop_restores_script_targets() {
     );
 }
 
-/// **The Play snapshot is the authored scene.** After the lane's state is
-/// written back during play, the snapshot Stop restores from holds the
-/// behavior's component exactly as authored and no observed state.
+/// **The Play snapshot is the authored scene.**
+///
+/// After the lane's state is written back during play, the snapshot Stop
+/// restores from holds the behavior's component exactly as authored and no
+/// observed state.
 #[test]
 fn the_play_snapshot_never_holds_observed_state() {
     use khora_sdk::khora_core::lane::OutputDeck;

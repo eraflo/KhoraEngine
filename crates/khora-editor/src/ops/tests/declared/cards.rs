@@ -21,10 +21,11 @@ use khora_sdk::khora_core::script::{FieldHints, FieldRange};
 
 use super::*;
 
-/// **A declared component shows as a typed card**: titled by its name, in
-/// its domain, naming the module that declares it, its fields in
-/// declaration order — each with its Ergon type, the value the entity holds
-/// and its default.
+/// **A declared component shows as a typed card.**
+///
+/// Titled by its name, in its domain, naming the module that declares it, its
+/// fields in declaration order — each with its Ergon type, the value the entity
+/// holds and its default.
 #[test]
 fn a_declared_component_shows_as_a_card_with_its_typed_fields_in_declaration_order() {
     let mut world = GameWorld::new();
@@ -143,8 +144,9 @@ fn a_duration_and_an_angle_field_keep_their_type_on_the_card() {
     );
 }
 
-/// **Each field carries the hints its module gives it to the card** — its
-/// range, tooltip and header, as the registry holds them — and a field
+/// **Each field carries the hints its module gives it to the card.**
+///
+/// Its range, tooltip and header, as the registry holds them — and a field
 /// given none carries none.
 #[test]
 fn a_card_carries_each_fields_hints_and_none_where_none_are_given() {

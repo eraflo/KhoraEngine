@@ -26,9 +26,8 @@ pub(crate) struct TileBadge {
     pub count: usize,
 }
 
-/// The badge of a module with `counts` — its errors and warnings, as
-/// `Problems::of_module` gives them; `None` with neither. An error
-/// outranks any number of warnings.
+/// Returns the badge of a module with `counts` errors and warnings, `None`
+/// with neither; an error outranks any number of warnings.
 pub(crate) fn tile_badge(counts: (usize, usize)) -> Option<TileBadge> {
     match counts {
         (0, 0) => None,

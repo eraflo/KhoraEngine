@@ -6,12 +6,8 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! Display heuristics — icon, type tag, category labels for the Inspector.
-//!
-//! Pure functions over `InspectedEntity` / domain tag — no state. Component
-//! authors that want a different icon / tag for their type can extend the
-//! match arms here (or, in a later iteration, register through the
-//! `inventory` registry that already carries per-component metadata).
+//! How the inspector names and pictures things: an entity's icon and type
+//! tag, a domain's icon and label.
 
 use khora_sdk::editor_ui::{Icon, InspectedEntity};
 
@@ -52,8 +48,7 @@ pub fn pick_type_tag(i: &InspectedEntity) -> &'static str {
     }
 }
 
-/// Per-domain card icon. Domain tags come from the macro-generated
-/// `ComponentRegistration::domain` field.
+/// Returns a component card's icon for its domain tag.
 pub fn icon_for_domain_tag(tag: Option<u8>) -> Icon {
     match tag {
         Some(0) => Icon::Axes,   // Spatial
@@ -66,7 +61,7 @@ pub fn icon_for_domain_tag(tag: Option<u8>) -> Icon {
     }
 }
 
-/// Add-Component menu sub-header label per domain tag.
+/// Returns the "+ Add Component" submenu label for a domain tag.
 pub fn category_label_for_tag(tag: Option<u8>) -> &'static str {
     match tag {
         Some(0) => "Spatial",

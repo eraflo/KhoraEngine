@@ -14,11 +14,7 @@
 
 //! The cards of components a script declared: the same group as a Rust
 //! component's, its rows drawn by Ergon type rather than from JSON.
-//!
-//! Under the title, one quiet line says where the component comes from —
-//! the `.erg` declaring it, that the engine writes it, or that no script
-//! declares it any more. The category tag names the part it plays:
-//! `script`, `behavior`, `state`, `system`.
+//! See the book: design/editor.md, "Inspector (right, 320 px)".
 
 mod asset_slot;
 mod fields;
@@ -41,7 +37,7 @@ use super::walker::{FieldAction, Marks};
 use asset_slot::SlotMemory;
 use fields::{render_field, FieldContext};
 
-/// The tag a card's header carries for the part its component plays.
+/// Returns the tag a card's header carries for the part its component plays.
 pub fn kind_tag(kind: DeclaredCardKind) -> &'static str {
     match kind {
         DeclaredCardKind::Component => "script",
@@ -51,7 +47,7 @@ pub fn kind_tag(kind: DeclaredCardKind) -> &'static str {
     }
 }
 
-/// The line under a card's title: where the component comes from.
+/// Returns the line under a card's title: where the component comes from.
 pub fn provenance_line(card: &DeclaredCard) -> String {
     match (&card.module, card.kind) {
         (_, DeclaredCardKind::BehaviorState) => "Written by the engine while playing".to_owned(),
@@ -64,7 +60,7 @@ pub fn provenance_line(card: &DeclaredCard) -> String {
     }
 }
 
-/// Every entity of the scene tree by id, as an entity slot names it.
+/// Returns every entity of the scene tree by id, as an entity slot names it.
 pub fn scene_names(roots: &[SceneNode]) -> HashMap<EntityId, String> {
     fn walk(nodes: &[SceneNode], names: &mut HashMap<EntityId, String>) {
         for node in nodes {
@@ -129,8 +125,8 @@ fn reverted(entity: EntityId, name: &str, prefab: &InspectedPrefab) -> Vec<Prope
         .collect()
 }
 
-/// The edits that restore `name`, which the instance removed: added again,
-/// each field given the prefab's value.
+/// Returns the edits that restore `name`, which the instance removed: added
+/// again, each field given the prefab's value.
 pub fn restored(entity: EntityId, name: &str, prefab: &InspectedPrefab) -> Vec<PropertyEdit> {
     let Some(fields) = prefab_fields(prefab, name) else {
         return Vec::new();

@@ -18,11 +18,10 @@ use khora_sdk::editor_ui::*;
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::GameWorld;
 
-/// The material the editor attaches to a freshly-spawned primitive so it is
-/// immediately visible and editable. The engine projection has no implicit
-/// default material (a meshed entity without one is a clear, logged error),
-/// so the authoring tool supplies an explicit one — a neutral matte grey the
-/// user then tweaks in the inspector.
+/// Returns the material a freshly spawned primitive gets: a neutral matte grey.
+///
+/// The engine has no implicit default material (a meshed entity without one is
+/// a logged error), so the authoring tool supplies one.
 fn default_surface_material() -> khora_sdk::prelude::materials::StandardMaterial {
     khora_sdk::prelude::materials::StandardMaterial {
         base_color: khora_sdk::prelude::math::LinearRgba::new(0.7, 0.7, 0.7, 1.0),
@@ -31,10 +30,10 @@ fn default_surface_material() -> khora_sdk::prelude::materials::StandardMaterial
     }
 }
 
-/// Spawns an entity that references a mesh asset by UUID at a world point,
-/// attaching a default surface material so it renders immediately. The
-/// `asset_resolver_system` loads the mesh from the `MeshRef::Asset` next tick.
-/// Returns the new entity, named `name`.
+/// Spawns an entity named `name` showing the mesh asset `uuid` at `point`.
+///
+/// A default surface material makes it render at once; the mesh loads from its
+/// `MeshRef::Asset` on the next tick.
 pub fn spawn_mesh_asset(
     world: &mut GameWorld,
     uuid: khora_sdk::khora_core::asset::AssetUUID,

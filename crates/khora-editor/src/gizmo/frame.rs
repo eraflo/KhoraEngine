@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The ECS side of the gizmos: reads the selection out of the world, hands the
-//! geometry and drag math what they need, and writes the resulting transforms
-//! back.
+//! The ECS side of the gizmos: reads the selection out of the world and
+//! writes the dragged transforms back.
 
 use super::interact::{gizmo_basis, GizmoBasis, GizmoDelta, GizmoTransform};
 use super::selection::{
@@ -40,8 +39,8 @@ pub struct SelectionFrame {
     pub basis: GizmoBasis,
 }
 
-/// The frame the manipulator occupies for the current selection, or `None` when
-/// nothing is selected.
+/// Returns the frame the manipulator occupies for the current selection, or
+/// `None` when nothing is selected.
 ///
 /// The pivot is the mean of the selected origins, so a multi-selection rotates
 /// and scales as one body rather than each entity about itself.
@@ -161,12 +160,10 @@ pub fn collect_gizmo_lines(
     lines
 }
 
-/// The transforms the selected entities have right now, to be held for the
-/// duration of a drag.
+/// Captures the transforms the selected entities have now, held for a drag.
 ///
-/// A drag resolves against these rather than against the live values, so the
-/// entity always ends up where the cursor says it should be instead of
-/// integrating a chain of per-frame deltas.
+/// A drag resolves against these rather than the live values, so the entity
+/// ends up where the cursor says instead of integrating per-frame deltas.
 pub fn capture_starts(
     world: &GameWorld,
     editor_state: &EditorState,
@@ -209,24 +206,24 @@ pub fn apply_delta(
         transform.scale = result.scale;
 
         // Says so, rather than leaving the physics sync to infer it from a
-        // difference. A body the simulation owns is otherwise put straight back
-        // where it was, and a drag under a centimetre used to vanish entirely.
+        // difference: a body the simulation owns would be put straight back,
+        // and a drag under a centimetre would vanish.
         let _ = world
             .inner_world_mut()
             .add_component(entity, khora_sdk::khora_data::ecs::Teleported);
     }
 }
 
-/// The projection `camera` renders with at `aspect`, or `None` when its
-/// values make no image (a selected camera's values are whatever the user is
-/// typing; the camera's own check says what is wrong).
+/// Returns the projection `camera` renders with at `aspect`; `None` when its
+/// values make no image, as mid-edit (the camera's own check says why).
 fn frustum_projection(camera: &Camera, aspect: f32) -> Option<Mat4> {
     camera.projection_matrix(aspect).ok()
 }
 
-/// The gizmo of a light that reaches `range`: its range sphere, or — when the
-/// range is not a finite positive distance (mid-edit in the inspector, or a
-/// broken scene) — the mark of a selection with nothing to draw.
+/// Returns the gizmo of a light that reaches `range`: its range sphere.
+///
+/// A range that is not a finite positive distance (mid-edit, or a broken
+/// scene) gets the mark of a selection with nothing to draw.
 fn range_gizmo(range: f32) -> GizmoKind {
     if range.is_finite() && range > 0.0 {
         GizmoKind::PointLight { radius: range }
@@ -253,10 +250,10 @@ mod tests {
     use khora_sdk::editor_ui::GizmoMode;
     use khora_sdk::khora_core::math::{Quaternion, Ray};
 
-    /// A Move drag grabbed on the selection's pivot writes the dragged offset
-    /// into every selected entity's `Transform`, flags each one `Teleported`,
-    /// and resolves against the captured starts, so a second update does not
-    /// add to the first.
+    /// **A Move drag writes the dragged offset into every selected entity.**
+    ///
+    /// Each one is flagged `Teleported`, and the drag resolves against the
+    /// captured starts, so a second update does not add to the first.
     #[test]
     fn move_drag_moves_the_selected_entities_in_the_world() {
         let mut world = GameWorld::new();
@@ -337,9 +334,8 @@ mod tests {
         )
     }
 
-    /// The lines the gizmo draws for `camera`, selected alone, posed by
-    /// `transform` (its `GlobalTransform` the same matrix), with the viewport
-    /// at `aspect`.
+    /// Returns the lines the gizmo draws for `camera`, selected alone, posed by
+    /// `transform` (its `GlobalTransform` alike), with the viewport at `aspect`.
     fn camera_gizmo_lines(
         camera: Camera,
         transform: Transform,
@@ -388,9 +384,10 @@ mod tests {
         }
     }
 
-    /// Fov 60°, near 0.5, far 20, a 2:1 viewport: the frustum drawn is the
-    /// camera's own, to its real far plane, at the viewport's aspect — not a
-    /// fixed 45°/16:9 stand-in.
+    /// **The frustum drawn is the camera's own, at the viewport's aspect.**
+    ///
+    /// Fov 60°, near 0.5, far 20, a 2:1 viewport: drawn to its real far plane,
+    /// not a fixed 45°/16:9 stand-in.
     #[test]
     fn a_selected_camera_draws_its_own_frustum_at_the_viewport_aspect() {
         let camera = Camera::new_perspective(60.0_f32.to_radians(), 0.5, 20.0);
@@ -438,9 +435,10 @@ mod tests {
         assert_has_corners(&lines, &plane_corners(4.0, 2.0, -5.0), "far plane");
     }
 
-    /// The frustum is placed by the camera's rotation and translation only,
-    /// as the render path builds the camera's view: scaling the camera
-    /// entity does not stretch the volume it sees.
+    /// **The frustum is placed by the camera's rotation and translation only.**
+    ///
+    /// As the render path builds the camera's view: scaling the camera entity
+    /// does not stretch the volume it sees.
     #[test]
     fn a_scaled_camera_draws_the_same_frustum_as_an_unscaled_one() {
         let camera = Camera::new_perspective(60.0_f32.to_radians(), 0.5, 20.0);
@@ -470,9 +468,10 @@ mod tests {
         assert_has_corners(&scaled, &expected, "camera scaled ×3");
     }
 
-    /// The engine's own default orthographic camera — 1080 units tall,
-    /// near −1, far 1000 — in a 16:9 viewport sees a box 1920 × 1080 between
-    /// view depths +1 and −1000; selecting it draws that box.
+    /// **Selecting the engine's default orthographic camera draws its box.**
+    ///
+    /// 1080 units tall, near −1, far 1000, in a 16:9 viewport: a box
+    /// 1920 × 1080 between view depths +1 and −1000.
     #[test]
     fn the_default_orthographic_camera_draws_its_frustum() {
         let lines = camera_gizmo_lines(
@@ -496,10 +495,10 @@ mod tests {
         }
     }
 
-    /// A camera whose clip planes make no projection — near at zero or
-    /// behind the eye, far not beyond near — is what a user passes through
-    /// while dragging those fields in the inspector, with the camera
-    /// selected. The editor must keep running, and draw no line to infinity.
+    /// **A camera whose clip planes make no projection draws no line to infinity.**
+    ///
+    /// Near at zero or behind the eye, far not beyond near: what a user passes
+    /// through while dragging those fields. The editor keeps running.
     #[test]
     fn a_selected_camera_with_unusable_clip_planes_keeps_the_editor_running() {
         let mut failures = Vec::new();
@@ -549,11 +548,11 @@ mod tests {
             .count()
     }
 
-    /// A point or spot light whose range is zero, negative, NaN or infinite
-    /// lights nothing a sphere could bound — a user passes through such values
-    /// while typing in the inspector, with the light selected. The gizmo draws
-    /// no range sphere for it, and no line it draws reaches a non-finite point.
-    /// A light with a usable range still draws its sphere.
+    /// **A light whose range bounds nothing draws no range sphere.**
+    ///
+    /// A range zero, negative, NaN or infinite, passed through while typing in
+    /// the inspector: no line reaches a non-finite point. A usable range still
+    /// draws its sphere.
     #[test]
     fn a_light_with_an_unusable_range_draws_no_range_sphere() {
         use khora_sdk::khora_core::renderer::light::{PointLight, SpotLight};
@@ -621,9 +620,10 @@ mod tests {
         collect_gizmo_lines(&world, &state, &editor_view(), 16.0 / 9.0)
     }
 
-    /// A point light whose range is a usable distance, yet so large that
-    /// the entity's scale carries its sphere past the largest float, draws no
-    /// line to a non-finite point.
+    /// **A range scaled past the largest float draws no non-finite line.**
+    ///
+    /// The range is a usable distance, yet so large that the entity's scale
+    /// carries its sphere past `f32::MAX`.
     #[test]
     fn a_huge_range_under_a_scaled_entity_draws_no_line_to_infinity() {
         use khora_sdk::khora_core::renderer::light::PointLight;

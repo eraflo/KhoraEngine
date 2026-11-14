@@ -12,12 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Status bar — one monospace strip of live facts.
-//!
-//! Every value here changes every frame, so every value is monospace: numbers
-//! stay in their columns instead of jittering as digits change width. The
-//! colours are semantic — a red frame time means the frame is late, not that
-//! red looked nice there.
+//! The status bar, one strip of live facts about the frame and the project.
+//! Every value is monospace so its digits keep their columns as it changes.
 
 use std::sync::{Arc, Mutex};
 

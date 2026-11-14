@@ -59,15 +59,13 @@ impl ControlPlanePanel {
             TextAlign::Right,
         );
 
-        // List the real built-in phases. Custom phases are listed too if any
-        // agent declares one outside the built-in set.
+        // The built-in phases only: an agent in a custom phase is not listed.
         let mut row_y = y + 46.0;
         for phase in ExecutionPhase::DEFAULT_ORDER {
             let phase_color = phase_color_for(*phase, theme);
             let in_phase: Vec<&AgentSnapshot> =
                 agents.iter().filter(|a| a.phase == *phase).collect();
 
-            // Phase header
             ui.paint_circle_filled([x + 16.0, row_y + 8.0], 3.5, phase_color);
             ui.paint_text_styled(
                 [x + 26.0, row_y + 4.0],
@@ -91,7 +89,6 @@ impl ControlPlanePanel {
             );
             row_y += 22.0;
 
-            // Listed agents
             if in_phase.is_empty() {
                 ui.paint_text_styled(
                     [x + 32.0, row_y],

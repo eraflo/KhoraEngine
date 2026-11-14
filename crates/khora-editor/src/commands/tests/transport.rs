@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **Play, Pause and Stop, as the engine sees them.** Editing, the scene's
-//! scripts, physics and sounds are off; Play snapshots the scene and switches
-//! them on; Stop restores the scene and switches them off; Pause stops the
-//! clock and switches nothing. While editing, the clock runs at 1.
+//! **Play, Pause and Stop, as the engine sees them.**
+//!
+//! Editing, the scene's scripts, physics and sounds are off; Play snapshots the
+//! scene and switches them on; Stop restores the scene and switches them off;
+//! Pause stops the clock and switches nothing. While editing, the clock runs at
+//! 1.
 
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, RwLock};
@@ -243,10 +245,11 @@ fn at_trust(engine: &mut Engine, trust: khora_sdk::trust::ProjectTrust) {
         .insert(Arc::new(khora_sdk::trust::ProjectTrustState::new(trust)));
 }
 
-/// **Play is refused in a restricted project**: nothing of a project the
-/// user has not trusted runs. Play leaves the editor editing — no snapshot,
-/// the scene's scripts, physics and sounds still off — and the editor's
-/// state says why, for the transport to show.
+/// **Play is refused in a restricted project.**
+///
+/// Nothing of a project the user has not trusted runs. Play leaves the editor
+/// editing — no snapshot, the scene's scripts, physics and sounds still off —
+/// and the editor's state says why, for the transport to show.
 #[test]
 fn play_is_refused_in_a_restricted_project() {
     let mut engine = engine();
@@ -304,9 +307,10 @@ fn play_runs_in_a_trusted_project() {
     );
 }
 
-/// **Build Game is refused in a restricted project** — a build runs the
-/// project's own code — and the editor's state says why; in a trusted
-/// project it is not refused, and no refusal is said.
+/// **Build Game is refused in a restricted project, and the editor's state says why.**
+///
+/// A build runs the project's own code. In a trusted project it is not
+/// refused, and no refusal is said.
 #[test]
 fn build_game_is_refused_in_a_restricted_project() {
     use khora_sdk::trust::ProjectTrust;
@@ -335,11 +339,13 @@ fn build_game_is_refused_in_a_restricted_project() {
 }
 
 /// **A project that becomes restricted while playing runs none of its
-/// scripts.** The editor plays a trusted project; a restricted one is opened
-/// meanwhile — File > Open Project sets the trust of the project open as the
-/// open starts, and nothing stops the play. From the next frame on, the
-/// scene's scripts are off: what lands of the restricted project, its scripts
-/// mounted and its scene, never runs.
+/// scripts.**
+///
+/// The editor plays a trusted project; a restricted one is opened meanwhile —
+/// File > Open Project sets the trust of the project open as the open starts,
+/// and nothing stops the play. From the next frame on, the scene's scripts are
+/// off: what lands of the restricted project, its scripts mounted and its
+/// scene, never runs.
 #[test]
 fn a_project_turned_restricted_during_play_runs_no_script() {
     let mut engine = engine();

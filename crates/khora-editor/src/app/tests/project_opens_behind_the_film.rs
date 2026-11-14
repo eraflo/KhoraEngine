@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **The editor opens its project behind its film.** The project named on
-//! the command line is not walked on the frame: `setup` files an `Open` with
-//! the engine's index hub and takes a hold on `Readiness`; `before_frame`
-//! lands it once the `Open` landed — the project's VFS over the engine's
-//! service, its default scene opened by ticket or created; `before_agents`
-//! mounts its scripts and lets the hold go. The film waits on the index, the
-//! scene and the scripts, and on the hold.
+//! **The editor opens its project behind its film.**
+//!
+//! The project named on the command line is not walked on the frame: `setup`
+//! files an `Open` with the engine's index hub and takes a hold on `Readiness`;
+//! `before_frame` lands it once the `Open` landed — the project's VFS over the
+//! engine's service, its default scene opened by ticket or created;
+//! `before_agents` mounts its scripts and lets the hold go. The film waits on
+//! the index, the scene and the scripts, and on the hold.
 //!
 //! The engine's side of the frames is played by hand: the index built and
 //! landed ([`IndexingEngine`]), the scene loads prepared and committed
@@ -288,14 +289,16 @@ fn waiting(landed: usize, waited: usize) -> ReadinessState {
 
 // ─── The tests ──────────────────────────────────────────────────────────────
 
-/// **The project opens off the frame.** `setup` walks nothing: the engine's
-/// service indexes no file of the project and the browser lists none; an
-/// `Open` is filed, and what needs no index — the folder, the name and the
-/// engine version — is filled at once. Before the `Open` lands, nothing
-/// lands. Once it has, the browser lists the project's files and folders
-/// under a new epoch, and the project's VFS serves the engine's service and
-/// files its reindexes with the engine's hub: a file written since is
-/// indexed off the frame, and the VFS sees it once that reindex lands.
+/// **The project opens off the frame.**
+///
+/// `setup` walks nothing: the engine's service indexes no file of the project
+/// and the browser lists none; an `Open` is filed, and what needs no index —
+/// the folder, the name and the engine version — is filled at once. Before the
+/// `Open` lands, nothing lands. Once it has, the browser lists the project's
+/// files and folders under a new epoch, and the project's VFS serves the
+/// engine's service and files its reindexes with the engine's hub: a file
+/// written since is indexed off the frame, and the VFS sees it once that
+/// reindex lands.
 #[test]
 fn the_project_opens_off_the_frame() {
     let scene = scene_holding("Lantern");
@@ -410,12 +413,13 @@ fn the_project_opens_off_the_frame() {
     );
 }
 
-/// **The default scene is opened by ticket.** Once the index lands and
-/// holds the default scene, the scene is filed as a load — not loaded on
-/// the frame: the world does not hold its entity yet — and `Readiness`
-/// waits on it beside the index. Once the engine prepared and committed it,
-/// it is in the world and is the editor's open scene, and `Readiness` counts
-/// it landed.
+/// **The default scene is opened by ticket.**
+///
+/// Once the index lands and holds the default scene, the scene is filed as a
+/// load — not loaded on the frame: the world does not hold its entity yet — and
+/// `Readiness` waits on it beside the index. Once the engine prepared and
+/// committed it, it is in the world and is the editor's open scene, and
+/// `Readiness` counts it landed.
 #[test]
 fn the_default_scene_is_opened_by_ticket() {
     let scene = scene_holding("Lantern");
@@ -465,12 +469,13 @@ fn the_default_scene_is_opened_by_ticket() {
     );
 }
 
-/// **A project without a default scene gets one.** A bare project — a
-/// `project.json`, no `assets/` — gets its `assets/` as it starts opening.
-/// Once its index lands, a camera and a light are spawned and saved as the
-/// default scene; the save is reindexed off the frame. Nothing waits on a
-/// load: no scene load is filed, `Readiness` waits on the index alone, and
-/// once the scripts' turn has passed the startup is ready.
+/// **A project without a default scene gets one.**
+///
+/// A bare project — a `project.json`, no `assets/` — gets its `assets/` as it
+/// starts opening. Once its index lands, a camera and a light are spawned and
+/// saved as the default scene; the save is reindexed off the frame. Nothing
+/// waits on a load: no scene load is filed, `Readiness` waits on the index
+/// alone, and once the scripts' turn has passed the startup is ready.
 #[test]
 fn a_project_without_a_default_scene_gets_one() {
     let project = Project::with("default-scene-created", &[]);
@@ -533,12 +538,13 @@ fn a_project_without_a_default_scene_gets_one() {
     assert_eq!(opening.poll(), ReadinessState::Ready);
 }
 
-/// **The film waits for the index, the scene and the scripts.** While the
-/// `Open` is in flight, and after it landed until the scripts are filed,
-/// the hold keeps `Readiness` waiting — a `before_agents` before the
-/// project landed lets nothing go. The scene is waited on from the
-/// project's landing, the scripts' compile from their mount, which lets the
-/// hold go. `Readiness` is ready only once all three landed.
+/// **The film waits for the index, the scene and the scripts.**
+///
+/// While the `Open` is in flight, and after it landed until the scripts are
+/// filed, the hold keeps `Readiness` waiting — a `before_agents` before the
+/// project landed lets nothing go. The scene is waited on from the project's
+/// landing, the scripts' compile from their mount, which lets the hold go.
+/// `Readiness` is ready only once all three landed.
 #[test]
 fn the_film_waits_for_the_index_the_scene_and_the_scripts() {
     let scene = scene_holding("Lantern");
@@ -600,10 +606,11 @@ fn the_film_waits_for_the_index_the_scene_and_the_scripts() {
     assert_eq!(opening.poll(), ReadinessState::Ready);
 }
 
-/// **A project that does not open lets the film go.** The editor's `Open`
-/// fails — another project's `Open` superseded it. The failure is reported
-/// to the Problems under `Load`, the open is dropped, the hold let go, and
-/// `Readiness` is ready: the editor runs with no project.
+/// **A project that does not open lets the film go.**
+///
+/// The editor's `Open` fails — another project's `Open` superseded it. The
+/// failure is reported to the Problems under `Load`, the open is dropped, the
+/// hold let go, and `Readiness` is ready: the editor runs with no project.
 #[test]
 fn a_project_that_does_not_open_lets_the_film_go() {
     let project = Project::with("does-not-open", &[("textures/crate.png", b"PNG")]);
@@ -641,10 +648,11 @@ fn a_project_that_does_not_open_lets_the_film_go() {
     assert_eq!(opening.poll(), ReadinessState::Ready);
 }
 
-/// **A project that does not open is not shown as open.** The editor's
-/// `Open` fails; the editor runs with no project, so nothing in its state
-/// names one: no folder — which the asset browser takes as a project to
-/// list, reveal and create folders in — and no name in the title bar.
+/// **A project that does not open is not shown as open.**
+///
+/// The editor's `Open` fails; the editor runs with no project, so nothing in
+/// its state names one: no folder — which the asset browser takes as a project
+/// to list, reveal and create folders in — and no name in the title bar.
 #[test]
 fn a_project_that_does_not_open_is_not_shown_as_open() {
     let project = Project::with("not-shown-as-open", &[("textures/crate.png", b"PNG")]);
@@ -670,11 +678,12 @@ fn a_project_that_does_not_open_is_not_shown_as_open() {
     );
 }
 
-/// **A default scene on disk is never overwritten by a new one.** The
-/// project's default scene is written while its `Open` is walked — after the
-/// `loading` family read the folder, before the index landed — so the index
-/// does not name it. The file is the user's: the project opening does not
-/// spawn a camera and a light and save them over it.
+/// **A default scene on disk is never overwritten by a new one.**
+///
+/// The project's default scene is written while its `Open` is walked — after
+/// the `loading` family read the folder, before the index landed — so the index
+/// does not name it. The file is the user's: the project opening does not spawn
+/// a camera and a light and save them over it.
 #[test]
 fn a_default_scene_on_disk_is_never_overwritten_by_a_new_one() {
     let project = Project::with("default-scene-not-overwritten", &[]);
@@ -697,10 +706,11 @@ fn a_default_scene_on_disk_is_never_overwritten_by_a_new_one() {
     );
 }
 
-/// **An opened project shows its game's version.** What needs no index is
-/// filled as the project starts opening, its version with it: the `version`
-/// of its `project.json`, or `0.1.0` for a project written before projects
-/// had one.
+/// **An opened project shows its game's version.**
+///
+/// What needs no index is filled as the project starts opening, its version
+/// with it: the `version` of its `project.json`, or `0.1.0` for a project
+/// written before projects had one.
 #[test]
 fn an_opened_project_shows_its_games_version() {
     let older = Project::with("version-older", &[]);
@@ -723,11 +733,12 @@ fn an_opened_project_shows_its_games_version() {
     }
 }
 
-/// **An opened project shows the version its game is built at.** What the
-/// editor shows as the project's version is what "Build Game" writes and
-/// what the editor names its game by (`project_identity`): a `version`
-/// written with stray blanks around it is the same version once trimmed,
-/// not a different one on screen.
+/// **An opened project shows the version its game is built at.**
+///
+/// What the editor shows as the project's version is what "Build Game" writes
+/// and what the editor names its game by (`project_identity`): a `version`
+/// written with stray blanks around it is the same version once trimmed, not a
+/// different one on screen.
 #[test]
 fn an_opened_project_shows_the_version_its_game_is_built_at() {
     let project = Project::with("version-blanks", &[]);
@@ -751,9 +762,10 @@ fn an_opened_project_shows_the_version_its_game_is_built_at() {
     );
 }
 
-/// **A project that does not open shows no version.** The editor's `Open`
-/// fails; the editor runs with no project, so the version the project's
-/// `project.json` gave as it started opening is no longer shown.
+/// **A project that does not open shows no version.**
+///
+/// The editor's `Open` fails; the editor runs with no project, so the version
+/// the project's `project.json` gave as it started opening is no longer shown.
 #[test]
 fn a_project_that_does_not_open_shows_no_version() {
     let project = Project::with("no-version-shown", &[("textures/crate.png", b"PNG")]);

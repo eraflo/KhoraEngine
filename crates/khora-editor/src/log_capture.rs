@@ -61,7 +61,7 @@ impl log::Log for EditorLogCapture {
             return;
         }
 
-        // Print to stderr for development debugging.
+        // stderr directly: a `log::Log` that called `log::*` would recurse.
         eprintln!(
             "[{}] {}: {}",
             record.level(),

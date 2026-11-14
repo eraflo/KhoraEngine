@@ -96,9 +96,11 @@ fn target(world: &mut GameWorld) -> EntityId {
 // ─── Spawning a glTF scene ──────────────────────────────────────────────────
 
 /// **Spawning a glTF file's scene places each of its nodes, each in its own
-/// material**: one linked instance whose root is named after the scene, and
-/// under it `Hull` and `Mast`, each with its primitive's mesh and its own
-/// material — and those materials decode to the colours the file gives them.
+/// material.**
+///
+/// One linked instance whose root is named after the scene, and under it `Hull`
+/// and `Mast`, each with its primitive's mesh and its own material — and those
+/// materials decode to the colours the file gives them.
 #[test]
 fn spawning_a_gltf_scene_places_its_nodes_each_in_its_own_material() {
     let project = ship_project("spawn-scene");
@@ -363,9 +365,11 @@ fn material_of(world: &GameWorld, entity: EntityId, what: &str) -> AssetUUID {
     }
 }
 
-/// **Applying an override to a glTF scene instance never writes over the
-/// glTF file**: the file is an import the editor reads, not a prefab file it
-/// owns — a prefab file written in its place would destroy the model.
+/// **Applying an override to a glTF scene instance never writes over the glTF
+/// file.**
+///
+/// The file is an import the editor reads, not a prefab file it owns — a prefab
+/// file written in its place would destroy the model.
 #[test]
 fn applying_to_a_gltf_scene_never_writes_over_the_gltf_file() {
     use khora_sdk::editor_ui::PrefabApplyScope;
@@ -398,10 +402,12 @@ fn applying_to_a_gltf_scene_never_writes_over_the_gltf_file() {
     );
 }
 
-/// **A saved scene holding a glTF instance comes back with each node in its
-/// own material**: save, then load into a fresh world — `Hull` and `Mast`
-/// return under the scene's root, each wearing its own material of the file,
-/// whose colours decode as the file gives them.
+/// **A saved scene holding a glTF instance comes back with each node in its own
+/// material.**
+///
+/// Save, then load into a fresh world — `Hull` and `Mast` return under the
+/// scene's root, each wearing its own material of the file, whose colours
+/// decode as the file gives them.
 #[test]
 fn a_saved_gltf_instance_reloads_with_each_node_in_its_own_material() {
     let project = ship_project("save-reload-gltf-instance");
@@ -449,9 +455,10 @@ fn a_saved_gltf_instance_reloads_with_each_node_in_its_own_material() {
     }
 }
 
-/// **A glTF renamed through the project keeps its instances**: the scene
-/// saved before the rename loads after it with both nodes — the file's
-/// identity, and so its parts', survives the rename.
+/// **A glTF renamed through the project keeps its instances.**
+///
+/// The scene saved before the rename loads after it with both nodes — the
+/// file's identity, and so its parts', survives the rename.
 #[test]
 fn a_saved_gltf_instance_reloads_after_its_file_is_renamed() {
     let project = ship_project("rename-gltf-instance");

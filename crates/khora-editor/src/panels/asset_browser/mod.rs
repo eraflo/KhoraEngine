@@ -12,24 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Asset Browser — folder explorer + grid + per-asset inspection.
-//!
-//! Layout:
-//!
-//! ```text
-//! ┌──────────────┬───────────────────────────────────┐
-//! │  Categories  │  ← / breadcrumb / search →        │
-//! │  (filters)   ├───────────────────────────────────┤
-//! ├──────────────┤  Tile grid                        │
-//! │  Folder tree │                                   │
-//! │  (real VFS)  │                                   │
-//! └──────────────┴───────────────────────────────────┘
-//! ```
-//!
-//! Single-click on a tile sets `EditorState::inspected_asset_path` so
-//! the Inspector switches to asset-metadata mode. Double-click
-//! still routes through the [`handlers::AssetTypeHandler`] activation
-//! — `LoadScene` for `.kscene`, `OpenExternal` for everything else.
+//! The asset browser: a folder tree beside a tile grid over the project's
+//! `assets/`. See the book: reference/editor.md, "06 — Asset browser".
 
 pub mod handlers;
 
@@ -82,18 +66,16 @@ struct FlatAsset {
     container: Option<AssetUUID>,
 }
 
+/// The asset browser panel.
 pub struct AssetBrowserPanel {
     state: Arc<Mutex<EditorState>>,
     theme: UiTheme,
     search_filter: String,
     flat: Vec<FlatAsset>,
-    /// Every real directory under `assets/` (forward-slash, relative), mirrored
-    /// from `EditorState::asset_dirs` so empty / freshly-created folders show up
-    /// in the tree even though the file-only VFS never lists them.
+    /// Every directory under `assets/`, mirrored from `EditorState::asset_dirs`:
+    /// the file-only VFS never lists an empty folder.
     asset_dirs: Vec<String>,
-    /// Last `EditorState::asset_epoch` we rebuilt `flat` for; a mismatch drives
-    /// the rescan (an in-place edit that doesn't change the entry count used to
-    /// be missed by the old `(folder, len)` key).
+    /// The `EditorState::asset_epoch` `flat` was built at; a mismatch rescans.
     last_epoch: Option<u64>,
     selected_filter: Option<AssetTileKind>,
     selected_index: Option<usize>,
@@ -116,9 +98,8 @@ pub struct AssetBrowserPanel {
     expanded_folders: std::collections::HashMap<String, bool>,
     /// Path awaiting the delete confirmation, and whether it names a folder.
     ///
-    /// Every delete route parks its target here instead of writing
-    /// `EditorState::pending_delete_asset` directly, so the recycle-bin call
-    /// only happens once the user has answered the dialog.
+    /// Every delete route parks its target here, so nothing reaches the
+    /// recycle bin before the user answers the dialog.
     confirm_delete: Option<(String, bool)>,
     /// How far the tile grid is scrolled.
     grid_scroll: khora_tool_ui::widgets::ScrollState,
@@ -130,8 +111,7 @@ pub struct AssetBrowserPanel {
     /// The parts of each file, as indices into `flat`, rebuilt with it.
     parts_by_file: std::collections::HashMap<AssetUUID, Vec<usize>>,
     /// Every name the open project's scripts declare, mirrored from
-    /// `EditorState::declared_names`: a new script's name is kept clear of
-    /// them, exactly — Ergon names are exact.
+    /// `EditorState::declared_names`; a new script's name avoids them exactly.
     declared_names: Vec<String>,
     /// Last `EditorState::declared_names_generation` `declared_names` was
     /// copied at; `None` before the first copy.
@@ -139,6 +119,7 @@ pub struct AssetBrowserPanel {
 }
 
 impl AssetBrowserPanel {
+    /// Returns the asset browser over the shared editor state.
     pub fn new(state: Arc<Mutex<EditorState>>, theme: UiTheme) -> Self {
         Self {
             state,
@@ -166,12 +147,11 @@ impl AssetBrowserPanel {
         }
     }
 
-    /// Asks before sending anything to the recycle bin, and only then queues
-    /// the deletion for `commands::process_pending_asset_file_ops`.
+    /// Asks before a deletion, then queues it for
+    /// `commands::process_pending_asset_file_ops`.
     ///
-    /// Deleting a file is the one action here the editor cannot undo — there is
-    /// no undo history, and the file leaves the project. A folder takes
-    /// everything under it, so its wording says so.
+    /// Deleting is the one action here the editor cannot undo: the file leaves
+    /// the project. A folder's wording says it takes everything under it.
     fn render_delete_confirmation(
         &mut self,
         ui: &mut dyn UiBuilder,
@@ -214,9 +194,8 @@ impl AssetBrowserPanel {
         }
     }
 
-    /// Copies the names the scripts declare from the editor state when their
-    /// generation moved since the last copy — one lock, nothing copied
-    /// otherwise.
+    /// Copies the names the scripts declare when their generation moved since
+    /// the last copy.
     fn follow_declared_names(&mut self) {
         let Ok(state) = self.state.lock() else {
             return;
@@ -265,8 +244,7 @@ impl AssetBrowserPanel {
             return;
         }
 
-        // Rescan only when the shared epoch advances — cheaper than diffing and
-        // it also catches in-place file edits that leave the entry count fixed.
+        // The epoch also moves on an in-place edit that keeps the entry count.
         if self.last_epoch == Some(epoch) {
             return;
         }
@@ -313,9 +291,8 @@ impl AssetBrowserPanel {
         }
     }
 
-    /// Shows the asset an inspector slot asked to reveal: its folder opened
-    /// and expanded down to it, its tile selected with no filter hiding it,
-    /// and the inspector on it — as a click on the tile does.
+    /// Shows the asset an inspector slot asked to reveal, as a click on its
+    /// tile would, with its folder opened and no filter hiding it.
     fn follow_reveal(&mut self) {
         let Ok(mut state) = self.state.lock() else {
             return;
@@ -367,8 +344,7 @@ impl AssetBrowserPanel {
         self.absolute_rel_path(&asset.rel_path)
     }
 
-    /// Opens the OS file explorer at `rel`. For a file we reveal its containing
-    /// folder; for a directory we open the directory itself.
+    /// Opens the OS file explorer at `rel`: a folder itself, a file's parent.
     fn reveal_in_explorer(&self, rel: &str, is_dir: bool) {
         let Some(abs) = self.absolute_rel_path(rel) else {
             log::warn!("Asset browser: cannot reveal '{rel}' — no project folder set");
@@ -427,9 +403,8 @@ impl AssetBrowserPanel {
         log::info!("Asset browser: creating folder '{rel}'");
     }
 
-    /// Paints a small chip that follows the cursor while a tile is being
-    /// dragged, so it's obvious the user is carrying an asset. Drawn on top of
-    /// the grid, offset from the pointer so the cursor stays visible.
+    /// Paints the chip that follows the cursor while a tile is dragged, offset
+    /// so the cursor stays visible.
     fn paint_drag_ghost(
         &self,
         ui: &mut dyn UiBuilder,
@@ -446,9 +421,8 @@ impl AssetBrowserPanel {
         let x = cursor[0] + 14.0;
         let y = cursor[1] + 6.0;
         let accent = kind.accent(theme);
-        // Painted in the unclipped top overlay layer so the ghost stays visible
-        // once the cursor leaves the asset-browser panel (dragging toward the
-        // folder tree or the 3D viewport). Soft shadow, body, accent border.
+        // The unclipped overlay layer keeps the ghost visible once the cursor
+        // leaves the panel, toward the folder tree or the viewport.
         ui.overlay_rect_filled(
             [x + 1.0, y + 2.0],
             [w, h],
@@ -485,8 +459,7 @@ impl AssetBrowserPanel {
     }
 
     /// Queues saving `entity`'s subtree as a `.kprefab` in the current folder,
-    /// using the entity's display name as the file stem. Shared by the
-    /// grid-wide drop target and the per-tile entity-drop handler.
+    /// named after the entity.
     fn queue_save_entity_as_prefab(&self, entity: khora_sdk::prelude::ecs::EntityId) {
         let folder = self.current_folder.clone().unwrap_or_default();
         if let Ok(mut state) = self.state.lock() {

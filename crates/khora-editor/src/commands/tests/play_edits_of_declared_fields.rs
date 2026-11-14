@@ -151,9 +151,10 @@ fn named(world: &GameWorld, name: &str) -> EntityId {
         .unwrap_or_else(|| panic!("`{name}` is in the world"))
 }
 
-/// **What Play added or removed of declared components, Stop undoes**: a
-/// component added while playing is gone, one removed is back with its
-/// values — and a `Duration` and an `Angle` come back typed so.
+/// **What Play added or removed of declared components, Stop undoes.**
+///
+/// A component added while playing is gone, one removed is back with its values
+/// — and a `Duration` and an `Angle` come back typed so.
 #[test]
 fn declared_components_added_or_removed_in_play_are_undone_by_stop() {
     let mut world = GameWorld::new();

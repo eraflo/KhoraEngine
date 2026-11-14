@@ -24,8 +24,8 @@ use khora_tool_ui::widgets::with_alpha;
 use super::{AssetBrowserPanel, SIDEBAR_ROW_H, TREE_INDENT};
 use crate::drag_payload::unpack_asset_drag;
 
-/// A folder-tree context-menu / drag-drop action, collected during the
-/// (`&self`) tree walk and applied afterwards where `&mut self` is available.
+/// A folder-tree menu or drop action, collected during the `&self` tree walk
+/// and applied after it.
 enum FolderAction {
     /// Create a "New Folder" child under this folder (`""` = assets root).
     NewFolder(String),
@@ -86,9 +86,8 @@ impl AssetBrowserPanel {
                 cursor.asset_count += 1;
             }
         }
-        // Union in every real directory (including empty and freshly-created
-        // ones the file-only VFS can't enumerate). These are pure structure —
-        // no assets to count — so we only create the missing nodes.
+        // The file-only VFS never lists an empty folder: add every directory,
+        // with nothing to count.
         for dir in &self.asset_dirs {
             if dir.is_empty() {
                 continue;
@@ -114,8 +113,7 @@ impl AssetBrowserPanel {
         root
     }
 
-    /// Render the recursive folder tree in the sidebar's lower panel.
-    /// Returns the y coordinate after the last rendered row.
+    /// Paints the folder tree in the sidebar and returns the y below its last row.
     pub(super) fn render_folder_tree(
         &mut self,
         ui: &mut dyn UiBuilder,
@@ -129,9 +127,7 @@ impl AssetBrowserPanel {
         let mut new_current = self.current_folder.clone();
         let mut new_expanded: Vec<(String, bool)> = Vec::new();
         let mut actions: Vec<FolderAction> = Vec::new();
-        // Window-space rect of the folder row being inline-renamed (if any),
-        // captured during the walk so we can overlay a text field afterwards
-        // where `&mut self` (hence the shared edit buffer) is available.
+        // The rename field needs `&mut self`: the walk only records its rect.
         let mut rename_rect: Option<[f32; 4]> = None;
         self.render_folder_node(
             ui,
@@ -153,7 +149,6 @@ impl AssetBrowserPanel {
             self.current_folder = new_current;
         }
 
-        // Apply folder context-menu / drop actions collected during the walk.
         for action in actions {
             match action {
                 FolderAction::NewFolder(parent) => self.queue_new_folder(&parent),
@@ -182,7 +177,6 @@ impl AssetBrowserPanel {
             }
         }
 
-        // Inline folder-rename overlay, drawn over the captured row rect.
         if let Some(rect) = rename_rect {
             let focus = self.rename_focus_pending;
             let buf = &mut self.folder_rename_buffer;
@@ -254,10 +248,8 @@ impl AssetBrowserPanel {
             [row_x, *y, row_w, SIDEBAR_ROW_H],
         );
 
-        // Context menu (attached to this row's response) and folder drop target
-        // (an asset dragged onto a folder is a move). Both run before any child
-        // row registers its own `interact_rect`, so `last_response` still points
-        // at this row.
+        // Before any child row registers its own `interact_rect`, so the menu
+        // and the drop target still attach to this row's response.
         {
             let full = node.full_path.clone();
             let display = label.to_string();
@@ -298,9 +290,6 @@ impl AssetBrowserPanel {
             }
         }
 
-        // A droppable target: while an asset is being dragged and this row is
-        // hovered, show an accent fill + border so it's obvious a drop here
-        // moves the file into this folder.
         let drop_hover = ui.is_drag_active() && interaction.hovered;
         if drop_hover {
             ui.paint_rect_filled(
@@ -354,8 +343,7 @@ impl AssetBrowserPanel {
             },
         );
         if is_renaming {
-            // Leave the label blank and hand its rect to the caller, which
-            // overlays a text field there once `&mut self` is available.
+            // The caller overlays the rename field here.
             *rename_rect = Some([
                 icon_x + 12.0,
                 *y + 2.0,
@@ -385,8 +373,7 @@ impl AssetBrowserPanel {
         }
         if interaction.clicked {
             *current = Some(node.full_path.clone());
-            // Click on a folder also flips its expand state (handy on
-            // narrow sidebars where the chevron is hard to hit).
+            // The chevron is a small target on a narrow sidebar.
             if has_children {
                 new_expanded.push((node.full_path.clone(), !expanded));
             }
@@ -411,8 +398,8 @@ impl AssetBrowserPanel {
         }
     }
 
-    /// Render the navigable breadcrumb (`project › assets › subfolder ›`).
-    /// Each segment is clickable — sets `current_folder`.
+    /// Paints the breadcrumb (`project › assets › subfolder`); a click on a
+    /// segment opens that folder.
     pub(super) fn render_breadcrumb(
         &mut self,
         ui: &mut dyn UiBuilder,

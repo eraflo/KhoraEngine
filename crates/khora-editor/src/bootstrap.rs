@@ -40,8 +40,7 @@ pub fn load_logo_icon() -> WindowIcon {
     }
 }
 
-/// Editor binary entry point. Parses `--project`, then hands control to
-/// `run_winit` with a setup closure that wires renderer + overlay + shell.
+/// Runs the editor until its window closes; `--project <path>` names the project to open.
 pub fn run() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let project = args
@@ -146,9 +145,10 @@ pub fn run() -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    /// The embedded logo decodes into the window icon. A PNG the `image` build
-    /// cannot read falls back to a transparent 1x1 icon with only a warning,
-    /// so nothing else notices a lost `png` feature or a bad asset.
+    /// **The embedded logo decodes into the window icon.**
+    ///
+    /// A PNG the `image` build cannot read falls back to a transparent 1x1
+    /// icon with only a warning, so nothing else notices a lost `png` feature.
     #[test]
     fn the_window_icon_is_the_decoded_logo() {
         let icon = super::load_logo_icon();

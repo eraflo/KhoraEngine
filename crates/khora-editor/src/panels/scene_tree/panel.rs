@@ -43,13 +43,10 @@ impl EditorPanel for SceneTreePanel {
         let panel_rect = ui.panel_rect();
         let [px, py, pw, _] = panel_rect;
 
-        // ── Header strip ──────────────────────────────
         paint_panel_header(ui, panel_rect, HEADER_HEIGHT, &theme);
 
-        // Lock the editor state once and hold it through the whole panel.
-        // The search field needs `&mut state.search_filter` for `text_edit_singleline`,
-        // so the lock must outlive that closure — and it's cheaper to just
-        // hold it for the full body than to reacquire it three times.
+        // Held through the whole panel: the search field edits
+        // `state.search_filter` inside a closure.
         let mut state_guard = match self.state.lock() {
             Ok(s) => s,
             Err(_) => return,
@@ -57,24 +54,12 @@ impl EditorPanel for SceneTreePanel {
 
         let total_count = state_guard.entity_count;
 
-        // Action icons live on the right; we always keep them visible because
-        // they hold the only entry point for "+" / filter. Tabs adapt around
-        // the remaining space — Layers/Tags drop out first when cramped.
-        // Only "+" survives, and it does something. The `More` and `Filter`
-        // icons painted a hover highlight and discarded the click — the search
-        // field below already filters, and `More` duplicated the row context
-        // menu. An icon that lights up and does nothing costs more than it
-        // saves.
         let icons_total_w = 30.0;
         let icons_left = px + pw - icons_total_w;
         let spawn_from_menu: std::cell::Cell<Option<String>> = std::cell::Cell::new(None);
 
         let tab_x = px + 6.0;
         let tab_y = py + (HEADER_HEIGHT - 22.0) * 0.5;
-        // Single tab today — Layers and Tags were decorative and removed
-        // until they're actually wired (filtered scene views per layer,
-        // tag-based selection, etc.).
-        // Filter — applied to scene_roots before rendering.
         let filter_lower = state_guard.search_filter.to_lowercase();
         let filter_active = !filter_lower.is_empty();
         let filtered_roots: Vec<SceneNode> = if filter_active {
@@ -98,8 +83,7 @@ impl EditorPanel for SceneTreePanel {
             format!("{}", total_count)
         };
 
-        // Only the count: the dock tab above already says "Scene Tree", and a
-        // second title 20px below it was the same word twice.
+        // Only the count: the dock tab above already names the panel.
         paint::text(
             ui,
             [tab_x, tab_y + 5.0],
@@ -109,9 +93,7 @@ impl EditorPanel for SceneTreePanel {
         );
         let _ = icons_left;
 
-        // ── Add entity (right) ────────────────────────
-        // Inset 12px from the right edge so we don't compete with the dock
-        // splitter's grab band.
+        // Inset 12px from the right edge, clear of the dock splitter's grab band.
         let add_rect = [px + pw - 34.0, py + 6.0, 22.0, 22.0];
         let add_int = ui.interact_rect("h-act-plus", add_rect);
         if add_int.hovered {
@@ -133,9 +115,8 @@ impl EditorPanel for SceneTreePanel {
                 theme.text_dim
             },
         );
-        // Click spawns an empty entity; right-click offers the same list the
-        // panel's background menu does, so the button is a shortcut rather than
-        // a second, divergent way to create things.
+        // Right-click offers the background menu's list: the button is a
+        // shortcut, not a second way to create things.
         ui.context_menu_last(&mut |menu| {
             for kind in ["Empty", "Cube", "Sphere", "Plane", "Light", "Camera"] {
                 if menu.button(kind) {
@@ -151,7 +132,6 @@ impl EditorPanel for SceneTreePanel {
             state_guard.pending_spawn = Some(kind);
         }
 
-        // ── Search toolbar ────────────────────────────
         let toolbar_y = py + HEADER_HEIGHT;
         let search_x = px + 8.0;
         let search_w = pw - 16.0;
@@ -176,8 +156,7 @@ impl EditorPanel for SceneTreePanel {
             12.0,
             theme.text_muted,
         );
-        // Optional "n / n" count on the right edge of the search pill —
-        // only painted when there's room without overlapping the input.
+        // The count only where it leaves the input room.
         let count_w = if search_w >= 200.0 {
             let count_text = if filter_active {
                 format!("{} / {}", visible_count, total_count)
@@ -197,7 +176,6 @@ impl EditorPanel for SceneTreePanel {
             0.0
         };
 
-        // Real text input — bound directly to `state.search_filter`.
         let input_w = (search_w - 32.0 - count_w).max(40.0);
         let search_filter_ref = &mut state_guard.search_filter;
         ui.region_at(
@@ -208,7 +186,6 @@ impl EditorPanel for SceneTreePanel {
             },
         );
 
-        // ── Section header ────────────────────────────
         let section_y = toolbar_y + TOOLBAR_HEIGHT + 4.0;
         ui.paint_text_styled(
             [px + 14.0, section_y],
@@ -225,16 +202,15 @@ impl EditorPanel for SceneTreePanel {
             1.0,
         );
 
-        // ── Rows ──────────────────────────────────────
         let selected = state_guard.selection.clone();
+        // Dims the rows it names; nothing fills it yet.
         let hidden = state_guard.hidden_entities.clone();
         let asset_epoch = state_guard.asset_epoch;
         let renaming = state_guard.renaming_entity;
         let rename_rect: std::cell::Cell<Option<[f32; 4]>> = std::cell::Cell::new(None);
         let pending: std::cell::Cell<Option<EditorAction>> = std::cell::Cell::new(None);
 
-        // F2 starts a rename on the single selected entity, matching the
-        // convention the context menu already advertises.
+        // F2, as the context menu advertises.
         if ui.key_pressed(khora_sdk::KeyCode::F2) {
             if let Some(entity) = state_guard.single_selected() {
                 let name = find_node_name(&state_guard.scene_roots, entity).unwrap_or_default();
@@ -243,7 +219,6 @@ impl EditorPanel for SceneTreePanel {
             }
         }
 
-        // Rows live between the section header and the bottom of the panel.
         let rows_top = section_y + 18.0;
         let rows_area = [
             px,
@@ -314,23 +289,16 @@ impl EditorPanel for SceneTreePanel {
             "hierarchy-scroll",
         );
 
-        // Below this point `row_y` is a scrolled coordinate; the panel-wide
-        // right-click area must sit under the *visible* rows, not the virtual
+        // The background area sits under the visible rows, not the scrolled
         // ones, or it would swallow clicks meant for the list.
         let row_y = row_y.max(rows_top).min(panel_rect[1] + panel_rect[3]);
 
-        // ── Panel-wide right-click area ───────────────
-        // The remaining empty space below the last row is its own hit
-        // target with an "Add …" context menu — letting the user spawn
-        // new entities without having to right-click an existing row.
-        // It's also a drop target: dragging an entity here unparents it.
         let panel_bottom = panel_rect[1] + panel_rect[3];
         let empty_h = (panel_bottom - row_y).max(0.0);
         if empty_h > 4.0 {
             let _empty_int = ui.interact_rect("scene-tree-empty", [px, row_y, pw, empty_h]);
             if let Some(packed) = ui.dnd_take_drop_payload() {
-                // Entity drags unparent to root; asset-tile drags instantiate
-                // into the scene (both share this drop channel).
+                // An entity dropped here goes to the root; an asset is placed.
                 if payload_is_entity(packed) {
                     pending.set(Some(EditorAction::Reparent {
                         child: unpack_entity(packed),
@@ -389,8 +357,8 @@ impl EditorPanel for SceneTreePanel {
                     }
                 }
                 EditorAction::Rename(eid) => {
-                    // Seed with the current name so the field opens on it —
-                    // renaming usually means editing, not retyping.
+                    // The field opens on the current name: renaming is
+                    // usually editing, not retyping.
                     let current = find_node_name(&state_guard.scene_roots, eid).unwrap_or_default();
                     state_guard.renaming_entity = Some(eid);
                     state_guard.rename_buffer = current;

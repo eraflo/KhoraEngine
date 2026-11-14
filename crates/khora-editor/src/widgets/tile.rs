@@ -12,32 +12,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Asset-browser tile widget — type-coloured gradient thumbnails.
+//! The asset browser's tile: a thumbnail tinted by the asset's category,
+//! over its name.
 
 use khora_sdk::editor_ui::{FontFamilyHint, Icon, TextAlign, UiBuilder, UiTheme};
 
 use khora_tool_ui::widgets::paint;
 use khora_tool_ui::widgets::with_alpha;
 
-/// Visual category for an asset tile. Drives the gradient + icon + format
-/// glyph. Variants map onto the canonical type names produced by
-/// `khora_io::asset::IndexBuilder::asset_type_for_extension`. Add a new
-/// variant when a new asset *category* lands engine-side; per-extension
-/// distinctions belong in the IndexBuilder.
+/// The category an asset tile is drawn as: its tint, icon and format glyph.
+///
+/// One variant per type name of `khora_io::asset::IndexBuilder::asset_type_for_extension`;
+/// distinctions between extensions belong there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssetTileKind {
+    /// A mesh or model file.
     Mesh,
+    /// An image.
     Texture,
+    /// A sound.
     Audio,
+    /// A shader source.
     Shader,
+    /// A scene file.
     Scene,
-    /// Authored materials (`.kmat`) — RON material definitions referenced
-    /// by entities through `MaterialRef::Asset`.
+    /// An authored material (`.kmat`), referenced through `MaterialRef::Asset`.
     Material,
-    /// Gameplay scripts (`.erg`, Ergon) — hot-reloadable: the watcher
-    /// recompiles an edited script and the running behaviors carry on in
-    /// the new code.
+    /// An Ergon script (`.erg`).
     Script,
+    /// A file of no known type.
     Unknown,
 }
 
@@ -55,9 +58,7 @@ impl AssetTileKind {
         }
     }
 
-    /// Returns the top accent colour for the tile gradient (the bottom
-    /// always falls into `theme.surface` so the tile blends with the panel
-    /// background regardless of category).
+    /// Returns the colour the tile's thumbnail is filled with.
     pub(crate) fn accent(self, theme: &UiTheme) -> [f32; 4] {
         let raw = match self {
             Self::Mesh => theme.accent_a,
@@ -87,21 +88,19 @@ impl AssetTileKind {
 }
 
 /// What the user did to an asset tile this frame.
-///
-/// Tiles surface both single- and double-click distinctly: single click
-/// selects (asset browser shows metadata), double-click is the "primary
-/// action" (load a scene, open a script in OS-default editor, etc.).
 #[derive(Debug, Default, Clone, Copy)]
 pub struct AssetTileInteraction {
+    /// Clicked: the tile is selected.
     pub clicked: bool,
+    /// Double-clicked: the asset's primary action, such as loading a scene.
     pub double_clicked: bool,
 }
 
-/// Paints an asset tile (thumbnail + name) and reports interaction.
+/// Paints an asset tile, its thumbnail over its name, and returns what the
+/// user did to it.
 ///
-/// `origin` is the top-left in screen-space, `size` is the total tile box
-/// (thumbnail + name strip below). The tile self-measures so the caller only
-/// has to grid-place identical-size boxes.
+/// `origin` is the top-left corner in screen space; `size` is the whole tile,
+/// name included.
 #[allow(clippy::too_many_arguments)] // UI paint helper — splitting hurts readability.
 pub fn paint_asset_tile(
     ui: &mut dyn UiBuilder,
@@ -130,7 +129,6 @@ pub fn paint_asset_tile(
         ui.paint_rect_filled(origin, [w, h], with_alpha(theme.surface_elevated, 0.4), 6.0);
     }
 
-    // Thumbnail
     let thumb_x = origin[0] + 4.0;
     let thumb_y = origin[1] + 4.0;
     let tw = w - 8.0;
@@ -150,7 +148,6 @@ pub fn paint_asset_tile(
         paint_dashed_frame(ui, [thumb_x, thumb_y, tw, th], with_alpha(theme.error, 0.8));
     }
 
-    // Centered icon
     let icon_size = (tw * 0.45).clamp(20.0, 36.0);
     paint::icon(
         ui,
@@ -163,7 +160,6 @@ pub fn paint_asset_tile(
         with_alpha(theme.text, 0.85),
     );
 
-    // Format glyph bottom-right
     ui.paint_text_styled(
         [thumb_x + tw - 4.0, thumb_y + th - 14.0],
         kind.glyph_label(),
@@ -202,7 +198,7 @@ pub fn paint_asset_tile(
         );
     }
 
-    // Name (clipped if too long — egui handles eg_text overflow per-character)
+    // The name, cut short to fit under the thumbnail.
     let truncated = if name.chars().count() > 14 {
         let mut s: String = name.chars().take(13).collect();
         s.push('…');
@@ -267,10 +263,8 @@ fn paint_dashed_frame(ui: &mut dyn UiBuilder, rect: [f32; 4], color: [f32; 4]) {
 /// Paints the disclosure chip of a tile that holds parts (a glTF file's
 /// scenes, meshes, materials, textures) and reports whether it was clicked.
 ///
-/// A neutral pill on the thumbnail's bottom-left corner — the problems
-/// badge holds the top-right, the format glyph the bottom-right: a chevron
-/// (right while closed, down while open) and how many parts. Drawn after
-/// the tile, so the chip takes the click and the tile keeps the rest.
+/// It sits on the thumbnail's bottom-left corner, clear of the problems badge
+/// and the format glyph. Draw it after the tile, so the chip takes the click.
 pub fn paint_parts_chip(
     ui: &mut dyn UiBuilder,
     id_salt: &str,

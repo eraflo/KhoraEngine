@@ -40,11 +40,9 @@ pub fn extract_inspected(world: &GameWorld, state: &mut EditorState) {
         .map(|n: &Name| n.as_str().to_owned())
         .unwrap_or_else(|| format!("Entity {}", entity.index));
 
-    // Collect every component on this entity, captured generically as
-    // JSON via the macro-generated `to_json`. The inspector walks this
-    // list and renders every entry through a single field-typed walker
-    // — adding a new ECS component costs zero editor code. A component a
-    // script declared has no Rust type: it is read typed, from its layout.
+    // Every component, captured generically as JSON (`to_json`): the inspector
+    // renders each through one field-typed walker, so a new component costs no
+    // editor code. A script-declared one has no Rust type: read from its layout.
     let inner_world = world.inner_world();
     let mut components_json = Vec::new();
     for reg in inventory::iter::<khora_sdk::ComponentRegistration> {
@@ -71,10 +69,9 @@ pub fn extract_inspected(world: &GameWorld, state: &mut EditorState) {
 
 /// Applies queued property edits back into ECS components.
 ///
-/// All component edits go through one path: the inspector ships a JSON
-/// patch and we look up the component's `from_json` from the inventory
-/// registration. The single special case is `Name`, which lives in the
-/// inspector header (not as a component card) and so has its own variant.
+/// The inspector ships a JSON patch, read back through the component's
+/// registered `from_json`. `Name` lives in the inspector header, not on a
+/// card, so it has its own variant.
 pub fn apply_edits(world: &mut GameWorld, state: &mut EditorState) {
     let edits = state.drain_edits();
     for edit in edits {
@@ -184,9 +181,9 @@ pub fn apply_edits(world: &mut GameWorld, state: &mut EditorState) {
     }
 }
 
-/// What "+ Add Component" offers `entity`: every author-facing component of
-/// the world's registry it does not hold — Rust and script-declared alike —
-/// each with its domain and what declares it.
+/// Returns what "+ Add Component" offers `entity`: every author-facing component it does not hold.
+///
+/// Rust and script-declared alike, each with its domain and what declares it.
 pub fn addable_components(world: &GameWorld, entity: EntityId) -> Vec<AddableComponent> {
     let inner = world.inner_world();
     let mut entries: Vec<AddableComponent> = inventory::iter::<khora_sdk::ComponentRegistration>

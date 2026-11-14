@@ -25,19 +25,19 @@ pub enum AfterIndex {
     /// Reveals the asset at this forward-slash path in the browser (sets
     /// `pending_reveal_asset`).
     Reveal(String),
-    /// Opens the scene at this forward-slash path of the project (sets
-    /// `pending_scene_load`) if the index now holds it, and no other scene
-    /// was chosen since `choice` (`EditorState::scene_choices`) nor is
-    /// asked for; a scene the index still lacks is reported, without
-    /// indexing again.
+    /// Opens the scene at this forward-slash project path (sets `pending_scene_load`).
+    ///
+    /// Only if the index now holds it, and no other scene was chosen since
+    /// `choice` (`EditorState::scene_choices`) nor is asked for; a scene the
+    /// index still lacks is reported, without indexing again.
     OpenScene { rel: String, choice: u64 },
-    /// Replaces `entity`'s inline material with `MaterialRef::Asset(uuid)`,
-    /// if the entity is alive and still wears the inline material saved,
-    /// `saved` being its RON text. The entity is looked up by `persistent`,
-    /// its identity, when it has one: a restore at Stop gives it another id.
-    /// Nothing once another scene was chosen since `choice`. Saved while
-    /// the scene was `played`, it is for the played scene only; saved while
-    /// editing, it waits for the edited scene to come back.
+    /// Replaces `entity`'s inline material with `MaterialRef::Asset(uuid)`.
+    ///
+    /// Only if the entity is alive, still wears the inline material saved
+    /// (`saved`, its RON text), and no other scene was chosen since `choice`.
+    /// The entity is found by `persistent` when it has one: a restore at Stop
+    /// gives it another id. Saved while `played`, it is for the played scene
+    /// only; saved while editing, it waits for the edited scene to come back.
     AssignMaterial {
         entity: EntityId,
         persistent: Option<PersistentId>,

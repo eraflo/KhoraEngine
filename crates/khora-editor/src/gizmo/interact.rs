@@ -12,31 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Gizmo manipulation — grabbing a handle and turning cursor motion into a
-//! transform delta.
+//! Gizmo manipulation: grabbing a handle and turning cursor motion into a transform delta.
 //!
-//! No ECS, no rendering, no input plumbing: the editor supplies a cursor
-//! [`Ray`] plus the world-space frame of the manipulator, and this module
-//! answers *which handle is under the cursor* and *how far it has been
-//! dragged*. That keeps the part most likely to be subtly wrong — the
-//! manipulation semantics — testable without a window. The intersection math
-//! underneath belongs to [`Ray`], not here.
-//!
-//! Handles are **world-aligned for Move and Rotate, object-aligned for
-//! Scale**. That is the convention every DCC settled on, and not arbitrarily:
-//! a world-aligned scale handle on a rotated object would have to shear it to
-//! mean anything, which a `Transform` cannot represent.
-//!
-//! Deltas are expressed relative to the transform each entity had when the drag
-//! began ([`GizmoDelta::apply`]) rather than accumulated frame by frame, so a
-//! long drag cannot drift away from where the cursor says it should be.
+//! No ECS, rendering or input, so it is testable without a window. Handles are
+//! world-aligned for Move and Rotate, object-aligned for Scale: a world-aligned
+//! scale on a rotated object would shear it, which a `Transform` cannot hold.
+//! Deltas are relative to the drag's start ([`GizmoDelta::apply`]), so a long
+//! drag cannot drift.
 
 use khora_sdk::editor_ui::GizmoMode;
 use khora_sdk::khora_core::math::{Quaternion, Ray, Vec3};
 
 /// How close the cursor ray must come to a handle to grab it, as a fraction of
-/// the gizmo's world size. Generous on purpose — a handle you have to hit
-/// pixel-perfectly is a handle you fight.
+/// the gizmo's world size.
+///
+/// Generous on purpose: a handle that must be hit pixel-perfectly is one you fight.
 const PICK_TOLERANCE: f32 = 0.14;
 
 /// Floor on the gizmo size used as a scale drag's unit, so a degenerate size
@@ -104,9 +94,6 @@ pub fn gizmo_basis(mode: GizmoMode, rotation: Quaternion) -> GizmoBasis {
 }
 
 /// The transform an entity had when a drag began.
-///
-/// Deliberately not `Transform` — that lives in `khora-data`, which sits above
-/// this crate.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GizmoTransform {
     /// Position.
@@ -241,9 +228,9 @@ impl GizmoDrag {
 
     /// Advances the drag to a new cursor ray.
     ///
-    /// Returns `None` when the ray no longer yields a usable parameter — the
-    /// cursor is edge-on to the rotation plane, or parallel to the axis. The
-    /// caller should hold the last delta rather than snapping the entity.
+    /// Returns `None` when the ray yields no usable parameter (edge-on to the
+    /// rotation plane, or parallel to the axis): the caller should hold the
+    /// last delta rather than snap the entity.
     pub fn update(&mut self, ray: &Ray) -> Option<GizmoDelta> {
         let now = drag_parameter(self.mode, self.pivot, self.direction, ray)?;
 
@@ -280,11 +267,10 @@ impl GizmoDrag {
     }
 }
 
-/// The nearest handle whose geometry the ray passes within tolerance of, or
-/// `None` when the cursor is not over the manipulator.
+/// Returns the nearest handle the ray passes within tolerance of, or `None`
+/// when the cursor is not over the manipulator.
 ///
-/// Nearest *along the ray*, so a handle in front wins over one behind it —
-/// which is what "the one you can see" means when two overlap on screen.
+/// Nearest along the ray, so a handle in front wins over one behind it.
 pub fn pick_handle(
     mode: GizmoMode,
     pivot: Vec3,
@@ -491,10 +477,10 @@ mod tests {
         assert!(offset.y.abs() < 1e-4 && offset.z.abs() < 1e-4);
     }
 
-    /// A Move drag on a grabbed handle moves the entity by exactly the distance
-    /// the cursor travelled along that handle, whatever the gizmo's drawn size,
-    /// and leaves its orientation and scale alone. Every entity of the
-    /// selection moves by the same offset.
+    /// **A Move drag moves the entity by exactly the cursor's travel along the handle.**
+    ///
+    /// The gizmo's drawn size does not change it, and orientation and scale are
+    /// left alone; every entity of the selection moves by the same offset.
     #[test]
     fn move_drag_moves_the_entity_by_the_dragged_amount() {
         let rotation = Quaternion::from_axis_angle(Vec3::Z, std::f32::consts::FRAC_PI_2);
@@ -540,9 +526,9 @@ mod tests {
         );
     }
 
-    /// Dragging back to where the grab started returns the entity exactly to
-    /// its start — the property that makes deltas start-relative rather than
-    /// accumulated.
+    /// **Dragging back to the grab's start returns the entity exactly to its start.**
+    ///
+    /// The property that makes deltas start-relative rather than accumulated.
     #[test]
     fn dragging_out_and_back_is_a_no_op() {
         let start = GizmoTransform {
@@ -734,9 +720,9 @@ mod tests {
         assert!(delta.apply(identity()).translation.length() < 1e-5);
     }
 
-    /// The two perpendiculars are unit, mutually orthogonal, and orthogonal to
-    /// the axis — for every axis, including the ones that would make a naive
-    /// fixed seed degenerate.
+    /// **The two perpendiculars are unit and orthogonal to each other and the axis.**
+    ///
+    /// For every axis, including those that would make a naive fixed seed degenerate.
     #[test]
     fn perpendiculars_stay_orthonormal_on_every_axis() {
         for axis in [

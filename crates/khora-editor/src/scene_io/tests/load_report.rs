@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **Loading a scene returns what the load adapted**, the report it used to
-//! only log, so the editor can list it in Problems.
+//! **Loading a scene returns what the load adapted**, besides logging it, so
+//! the editor can list it in Problems.
 
 use std::path::PathBuf;
 use std::sync::Arc;

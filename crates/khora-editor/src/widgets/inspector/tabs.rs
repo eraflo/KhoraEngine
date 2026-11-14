@@ -6,12 +6,8 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! Inspector tabs — `Properties` and `Debug`. Adding a third tab is a
-//! matter of implementing [`InspectorTab`] and adding it to the panel's
-//! `tabs` vector at construction time.
-//!
-//! `Events` and `Prefab` tabs are intentionally absent — see the editor
-//! design doc.
+//! The inspector's tabs: `Properties`, the component cards, and `Debug`.
+//! A tab implements [`InspectorTab`].
 
 use std::sync::{Arc, Mutex};
 
@@ -36,20 +32,25 @@ use super::walker::{render_value_marked, FieldAction, Marks};
 
 pub use super::debug_tab::DebugTab;
 
-/// Per-tab context handed to [`InspectorTab::render`]. Locked once by the
-/// caller and passed through.
+/// What [`InspectorTab::render`] is handed.
 pub struct InspectorTabContext<'a> {
+    /// The editor's shared state.
     pub state: &'a Arc<Mutex<EditorState>>,
+    /// The undo and redo history.
     pub history: &'a Arc<Mutex<CommandHistory>>,
+    /// The editor's theme.
     pub theme: &'a UiTheme,
+    /// The inspected entity.
     pub entity: EntityId,
+    /// What the inspector read of that entity.
     pub inspected: &'a InspectedEntity,
 }
 
-/// A self-contained body for one Inspector sub-tab. The panel iterates
-/// the registered tabs and dispatches the active one's `render`.
+/// One inspector tab: a label and a body.
 pub trait InspectorTab: Send + Sync {
+    /// Returns the tab's label.
     fn label(&self) -> &str;
+    /// Renders the tab's body into `body_rect`.
     fn render(
         &mut self,
         ui: &mut dyn UiBuilder,
@@ -58,7 +59,7 @@ pub trait InspectorTab: Send + Sync {
     );
 }
 
-/// Default tab — component cards plus "+ Add Component" menu.
+/// The default tab: the component cards and the "+ Add Component" menu.
 pub struct PropertiesTab;
 
 impl InspectorTab for PropertiesTab {
@@ -277,9 +278,11 @@ fn prefab_value_of<'a>(
         .map(|(_, value)| value)
 }
 
-/// One component the prefab gives the entity and the instance removed: a dim
-/// line that says so, and restores it on demand. The edits, when asked — one
-/// for a Rust component, the addition and each field for a declared one.
+/// Renders a component the prefab gives and the instance removed, as a dim
+/// line with Restore; returns the edits a Restore asks for.
+///
+/// One edit for a Rust component; the addition and each field for a declared
+/// one.
 #[allow(clippy::too_many_arguments)]
 fn render_removed_component(
     ui: &mut dyn UiBuilder,

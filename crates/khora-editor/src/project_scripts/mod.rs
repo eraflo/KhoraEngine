@@ -14,10 +14,9 @@
 
 //! The open project's scripts, mounted while it is open.
 //!
-//! Opening a project mounts `<project>/assets`; opening another unmounts the
-//! first and mounts the second; closing unmounts. While the editor edits,
-//! what the scripts declare registers — the registry lists the project's
-//! behaviors and components — and what they compiled to waits for Play.
+//! Opening a project mounts `<project>/assets`, opening another swaps it,
+//! closing unmounts. While editing, what the scripts declare registers; what
+//! they compiled to waits for Play.
 
 use std::path::{Path, PathBuf};
 
@@ -51,9 +50,10 @@ pub(crate) fn follow_open_project(
     ticket
 }
 
-/// Copies the names the scripts declare from `catalog` into `state` when the
-/// catalog's declared generation moved since the last copy — nothing
-/// otherwise. Called each frame, where the script problems are mirrored.
+/// Copies the names the scripts declare from `catalog` into `state`, when the
+/// catalog's declared generation moved since the last copy.
+///
+/// Called each frame, where the script problems are mirrored.
 pub(crate) fn mirror_declared_names(catalog: &ScriptCatalog, state: &mut EditorState) {
     let generation = catalog.declared_generation();
     if generation == state.declared_names_generation {
@@ -67,10 +67,11 @@ pub(crate) fn mirror_declared_names(catalog: &ScriptCatalog, state: &mut EditorS
     state.declared_names_generation = generation;
 }
 
-/// Opens the script at `path` for its author: in the app the system gives
-/// `.erg` files, or — when the system has none and says so — in its own text
-/// editor, so a script is never one the author cannot open. Windows asks which
-/// app to use rather than failing, so its fallback is only for a refusal.
+/// Opens the script at `path` in the app the system gives `.erg` files.
+///
+/// When the system has none and says so, the system's text editor opens it
+/// instead. Windows asks which app to use rather than failing, so its
+/// fallback is only for a refusal.
 pub(crate) fn open_script(path: &Path) -> std::io::Result<()> {
     open::that(path).or_else(|error| match TEXT_EDITOR {
         Some(editor) => {

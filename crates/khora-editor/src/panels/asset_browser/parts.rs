@@ -12,10 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A file's parts in the browser: a glTF's scenes, meshes, materials and
-//! textures are listed behind their file's tile, on a band of their own, and
-//! follow their file — they are never renamed, moved, deleted or duplicated
-//! on their own.
+//! A file's parts in the browser (a glTF's scenes, meshes, materials…): listed
+//! behind their file's tile, never renamed, moved or deleted on their own.
 
 use khora_sdk::editor_ui::{UiBuilder, UiTheme};
 use khora_sdk::khora_core::asset::AssetUUID;
@@ -23,15 +21,12 @@ use khora_sdk::khora_core::asset::AssetUUID;
 use super::{AssetBrowserPanel, FlatAsset, TILE_SIZE};
 
 impl AssetBrowserPanel {
-    /// The tiles of the grid, in order, as indices into `flat` (and so into
-    /// `EditorState::asset_entries`): the assets of the current folder that
-    /// the kind filter and the search keep. A sub-asset is no tile of its
-    /// folder: it follows its file's tile, and only while that file is
-    /// expanded.
+    /// Returns the grid's tiles in order, as indices into `flat`: the assets
+    /// of the current folder that the kind filter and the search keep.
     ///
-    /// The kind filter and the search see a file's parts too: a file shows
-    /// when it or one of its parts is kept, and opened it lists only the
-    /// parts kept (all of them when the search names the file itself).
+    /// A part follows its file's tile while the file is open. A file shows when
+    /// it or one of its parts is kept, and lists only the parts kept (all of
+    /// them when the search names the file itself).
     pub(super) fn grid_tiles(&self) -> Vec<usize> {
         let filter_text = self.search_filter.to_lowercase();
         let current_folder = self.current_folder.clone().unwrap_or_default();
@@ -47,8 +42,7 @@ impl AssetBrowserPanel {
             if asset.container.is_some() {
                 continue;
             }
-            // When a folder is selected, only show assets that live *within*
-            // it (recursive — `assets/props` matches `assets/props/crates/a.png`).
+            // Recursive: `props` keeps `props/crates/a.png`.
             let folder_kept = current_folder.is_empty()
                 || asset.folder == current_folder
                 || asset.folder.starts_with(&format!("{current_folder}/"));
@@ -75,7 +69,7 @@ impl AssetBrowserPanel {
         tiles
     }
 
-    /// The parts of the file at `flat[idx]`, in index order.
+    /// Returns the parts of the file at `flat[idx]`, in index order.
     pub(super) fn parts_of(&self, idx: usize) -> &[usize] {
         self.flat
             .get(idx)
@@ -83,14 +77,13 @@ impl AssetBrowserPanel {
             .map_or(&[], Vec::as_slice)
     }
 
-    /// How many sub-assets the file at `flat[idx]` holds — the count its
-    /// disclosure toggle shows. `0` for an asset holding none.
+    /// Returns how many parts the file at `flat[idx]` holds, as its
+    /// disclosure chip shows.
     pub(super) fn sub_count(&self, idx: usize) -> usize {
         self.parts_of(idx).len()
     }
 
-    /// Opens or closes the file at `flat[idx]`: its sub-assets follow its
-    /// tile in the grid while it is open. Every file starts closed.
+    /// Opens or closes the file at `flat[idx]`, showing or hiding its parts.
     pub(super) fn toggle_container(&mut self, idx: usize) {
         if self.sub_count(idx) == 0 {
             return;
@@ -103,17 +96,16 @@ impl AssetBrowserPanel {
         }
     }
 
-    /// Whether the tile at `flat[idx]` offers the file operations — rename,
-    /// move, delete, duplicate. A sub-asset does not: it follows its file.
+    /// Whether the tile at `flat[idx]` offers rename, move, delete and
+    /// duplicate; a part does not.
     pub(super) fn file_ops_offered(&self, idx: usize) -> bool {
         self.flat
             .get(idx)
             .is_some_and(|asset| asset.container.is_none())
     }
 
-    /// Paints the band an open file and its parts sit on, behind their
-    /// tiles: `visible` are the grid's tiles, `rect` gives the slot of the
-    /// `i`-th one.
+    /// Paints the band behind an open file and its parts; `rect` gives the
+    /// slot of the `i`-th of the `visible` tiles.
     pub(super) fn paint_part_bands(
         &self,
         ui: &mut dyn UiBuilder,
@@ -167,14 +159,12 @@ impl AssetBrowserPanel {
             )
     }
 
-    /// Asks to delete the selected tile's file — never a part on its own,
-    /// which goes with its file.
+    /// Asks to delete the selected tile's file; a part is never deleted alone.
     pub(super) fn ask_to_delete_selected(&mut self) {
         match self
             .selected_index
             .and_then(|i| self.flat.get(i).map(|a| (i, a)))
         {
-            // A part goes with its file, never on its own.
             Some((i, asset)) if !self.file_ops_offered(i) => log::info!(
                 "Asset browser: '{}' is a part of its file; delete the file instead",
                 asset.name

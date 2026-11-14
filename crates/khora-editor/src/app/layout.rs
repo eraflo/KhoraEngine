@@ -28,12 +28,11 @@ use crate::panels::{
 };
 
 impl EditorApp {
-    /// Default Scene arrangement: hierarchy left, inspector right, viewport in
-    /// the middle, assets and console sharing a dock below it.
+    /// Returns the default Scene arrangement: hierarchy left, inspector right,
+    /// viewport in the middle, assets and console sharing a dock below it.
     ///
-    /// Expressed as a sequence of drops because that is exactly what the user
-    /// would do by hand — which keeps the default honest about what the dock
-    /// can express.
+    /// Built as the drops a user would make by hand, so the default uses only
+    /// what the dock can express.
     fn scene_layout() -> DockTree {
         const VIEWPORT: &str = "khora.editor.viewport";
         let mut t = DockTree::single(VIEWPORT);
@@ -69,14 +68,12 @@ impl EditorApp {
             t.set_ratio(id, 0.72); // viewport keeps most of the centre column
         }
 
-        // The asset browser is the tab that opens, matching the previous dock.
+        // The asset browser is the tab that opens.
         t.activate("khora.editor.asset_browser");
         t
     }
 
-    /// Control Plane is a single full-bleed workspace. The hierarchy and the
-    /// bottom dock used to stay on screen here with nothing to show, because
-    /// the old shell could only hide one slot.
+    /// Returns the Control Plane layout: a single full-bleed workspace.
     fn control_plane_layout() -> DockTree {
         DockTree::single("khora.editor.control_plane")
     }

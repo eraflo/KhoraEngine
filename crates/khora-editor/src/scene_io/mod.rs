@@ -12,14 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Scene serialization helpers.
+//! Scene serialization helpers: saves and loads through the project's VFS.
 //!
-//! All scene I/O is **project-relative when possible** — saves and loads route
-//! through [`crate::project_vfs::ProjectVfs`] so the editor uses the same
-//! `AssetService` + `FileLoader` contract as a future runtime. The "Save As" /
-//! "Open" file-dialog flows still accept arbitrary paths (that's intentional —
-//! you might want to open a scene from outside the current project) and fall
-//! back to direct `std::fs` only in that case.
+//! A Save As or an Open outside the project falls back to `std::fs`.
 
 use crate::project_vfs::{AfterIndex, ProjectVfs};
 use khora_sdk::khora_core::asset::asset_key;
@@ -37,21 +32,14 @@ use khora_sdk::DEFAULT_SCENE_REL_PATH as DEFAULT_SCENE_REL;
 use khora_sdk::{GameWorld, SerializationGoal, SerializationService};
 use std::path::Path;
 
-// Canonical relative path of the auto-created default scene: the one the
-// runtime loads when `runtime.json` names none.
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Play-mode snapshot — full-world capture via SerializationService as a
-// snapshot (`FastestLoad`): the same build writes and reads it, in memory, so
-// the fastest form is the right one. Stop restores it atomically and with the
-// same persistent identities, so references held by scripts land on the
-// restored entities.
+// Play-mode snapshot. See the book: concepts/serialization.md, "Play-mode snapshots".
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Serializes the entire world to an in-memory byte buffer for play-mode
-/// restore. Returns an empty `Vec` on failure (caller logs and proceeds —
-/// the worst case is "Stop button leaves the live state in place", which is
-/// preferable to a panic mid-play).
+/// Serializes the whole world in memory, for Stop to restore.
+///
+/// Returns an empty `Vec` on failure: Stop then leaves the live state in
+/// place, better than a panic mid-play.
 pub fn snapshot_scene(world: &GameWorld) -> Vec<u8> {
     let svc = SerializationService::new();
     match svc.save_world(world.inner_world(), SerializationGoal::FastestLoad) {
@@ -75,19 +63,15 @@ pub(crate) fn log_report(what: &str, report: &khora_sdk::khora_data::scene::reco
 // Project-relative saves and loads — primary path used by Save / Open / auto-load
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Serializes the current world to a `.kscene` file at `rel_path` (relative
-/// to the project's `assets/` root) via the project's `AssetService`. Re-
-/// indexes on success so the new scene is immediately resolvable by UUID.
+/// Saves the world as a `.kscene` at `rel_path` under the project's `assets/`, then reindexes.
 ///
-/// Default callers should use [`save_scene_in_project`] which selects
-/// `EditorInterchange` (the compact encoding). Use
-/// [`save_scene_in_project_with_goal`] to pick another encoding
-/// (`HumanReadableDebug` for readable JSON, `PortableBinary` for MessagePack).
+/// Under the `EditorInterchange` goal; [`save_scene_in_project_with_goal`]
+/// picks another (`HumanReadableDebug` for JSON, `PortableBinary` for MessagePack).
 pub fn save_scene_in_project(pvfs: &mut ProjectVfs, world: &GameWorld, rel_path: &Path) -> bool {
     save_scene_in_project_with_goal(pvfs, world, rel_path, SerializationGoal::EditorInterchange)
 }
 
-/// Same as [`save_scene_in_project`] with an explicit serialization goal.
+/// Saves as [`save_scene_in_project`] does, under an explicit serialization goal.
 pub fn save_scene_in_project_with_goal(
     pvfs: &mut ProjectVfs,
     world: &GameWorld,
@@ -126,9 +110,8 @@ pub fn save_scene_in_project_with_goal(
 
 // Synchronous: for tests and scratch worlds; the editor opens a scene by ticket.
 #[cfg(test)]
-/// Loads a scene by its relative path under `<project>/assets/` via the
-/// project's `AssetService::load_raw`. Falls back to a fresh reindex + retry
-/// once if the path isn't yet known to the VFS (e.g. just-saved).
+/// Loads a scene by its path under `<project>/assets/`, reindexing once when
+/// the VFS does not know it yet (just saved).
 #[cfg(test)]
 pub fn load_scene_in_project(
     pvfs: &mut ProjectVfs,
@@ -140,8 +123,9 @@ pub fn load_scene_in_project(
 
 // Synchronous: for tests and scratch worlds; the editor opens a scene by ticket.
 #[cfg(test)]
-/// [`load_scene_in_project`], returning what the load adapted — the
-/// [`LoadReport`] it also logs — or `None` when the scene did not load.
+/// Loads as [`load_scene_in_project`] does, returning what the load adapted.
+///
+/// The [`LoadReport`] it also logs; `None` when the scene did not load.
 ///
 /// [`LoadReport`]: khora_sdk::khora_data::scene::record::LoadReport
 pub fn load_scene_in_project_with_report(
@@ -237,10 +221,11 @@ impl SceneFetch for SceneOnDisk {
     }
 }
 
-/// Where a scene load reads the scene at `rel_path_fwd_slash` in the project
-/// from, and the prefabs it links to: the asset resolved in the project's
-/// index now — indexed again once when it is missing — its bytes read off
-/// the frame. `None`, logged, when the project holds no such scene.
+/// Returns where a load reads the project scene at `rel_path_fwd_slash` from,
+/// and the prefabs it links to.
+///
+/// Its bytes are read off the frame; a scene missing from the index is
+/// indexed again once. `None`, logged, when the project holds no such scene.
 pub fn scene_in_project(
     pvfs: &mut ProjectVfs,
     rel_path_fwd_slash: &str,
@@ -282,8 +267,8 @@ pub fn scene_in_project(
     ))
 }
 
-/// Where a scene load reads the scene file at `path`, outside the project,
-/// from — its bytes read off the frame — and the prefabs it links to: none.
+/// Returns where a load reads the scene file at `path`, outside the project,
+/// from; it links to no prefabs.
 pub fn scene_on_disk(path: &Path) -> (SceneSource, std::sync::Arc<dyn PrefabSource + Send + Sync>) {
     (
         SceneSource::Fetch(std::sync::Arc::new(SceneOnDisk(path.to_path_buf()))),
@@ -293,10 +278,10 @@ pub fn scene_on_disk(path: &Path) -> (SceneSource, std::sync::Arc<dyn PrefabSour
 
 // Synchronous: for tests and scratch worlds; the editor opens a scene by ticket.
 #[cfg(test)]
-/// Puts what a load adapted in `problems`, as the `Load` source's warnings:
-/// each entry's entity found in `world` by its persistent id, its component
-/// and its path as the problem's field. Replaces what the last load
-/// reported; a clean report clears it.
+/// Puts what a load adapted in `problems`, as the `Load` source's warnings.
+///
+/// Each on the entity `world` holds under its persistent id, its component and
+/// path as the field. Replaces what the last load reported; a clean report clears it.
 pub fn report_load(
     problems: &khora_sdk::khora_core::problems::Problems,
     world: &khora_sdk::khora_data::ecs::World,
@@ -305,9 +290,10 @@ pub fn report_load(
     problems.report(ProblemSource::Load, load_problems(world, report));
 }
 
-/// What a load adapted, as problems: one `Warning` per entry, on the entity
-/// `world` holds under the entry's persistent id (none when it holds no such
-/// entity), its component, its path as the field, the entry as the message.
+/// Returns what a load adapted as problems, one `Warning` per entry.
+///
+/// On the entity `world` holds under the entry's persistent id (none when it
+/// holds none), its component and path as the field, the entry as the message.
 pub fn load_problems(
     world: &khora_sdk::khora_data::ecs::World,
     report: &khora_sdk::khora_data::scene::record::LoadReport,
@@ -375,10 +361,9 @@ pub(crate) fn create_default_scene_in_project(
 // location outside the current project. Bypasses the VFS by design.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Serializes the world to a `.kscene` at an absolute path. Used by the
-/// "Save As..." dialog when the user picks a destination outside
-/// `<project>/assets/`. Logs a warning so the divergence from VFS-managed
-/// I/O is visible.
+/// Saves the world as a `.kscene` at an absolute path outside `<project>/assets/`.
+///
+/// For a Save As outside the project; logs a warning, the write bypassing the VFS.
 pub fn save_scene_to_path_with_goal(
     world: &GameWorld,
     path: &str,
@@ -415,9 +400,9 @@ pub fn save_scene_to_path_with_goal(
 // Path utilities
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// If `abs_path` lives under `<project>/assets/`, returns the relative path
-/// in forward-slash form ready for [`load_scene_in_project`]. Otherwise
-/// returns `None` — callers should fall back to [`load_scene_from_path_with_report`].
+/// Returns `abs_path` relative to `assets_root`, forward-slashed, if it lies under it.
+///
+/// `None` otherwise: callers read the scene from its path ([`scene_on_disk`]).
 pub fn rel_inside_project(abs_path: &Path, assets_root: &Path) -> Option<String> {
     let rel = abs_path.strip_prefix(assets_root).ok()?;
     Some(asset_key(rel))

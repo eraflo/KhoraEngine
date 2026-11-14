@@ -26,9 +26,10 @@ use khora_sdk::khora_data::ecs::{ComponentKey, ComponentProvenance, ScriptRole, 
 /// One declared component's row: its name and fields, by name.
 pub type DeclaredRow = (String, Vec<(String, ScriptValue)>);
 
-/// The declared components `entity` holds, as cards: fields in declaration
-/// order. A behavior's state companion shows only `playing`, and it and a
-/// system's fields are the engine's — read only.
+/// Returns the declared components `entity` holds, as cards, fields in declaration order.
+///
+/// A behavior's state companion shows only `playing`; it and a system's
+/// fields are the engine's, read only.
 pub fn declared_cards(world: &World, entity: EntityId, playing: bool) -> Vec<DeclaredCard> {
     let mut cards = Vec::new();
     for vtable in world.components().iter() {
@@ -151,9 +152,10 @@ pub fn apply_declared_edit(world: &mut World, edit: &PropertyEdit) -> bool {
     }
 }
 
-/// The declared components "+ Add Component" offers `entity`: a script's
-/// components and behaviors a module declares now, the entity does not hold
-/// yet — never what the engine writes (a state companion, a system's).
+/// Returns the declared components "+ Add Component" offers `entity`.
+///
+/// The components and behaviors a module declares now that the entity does
+/// not hold yet; never what the engine writes (a state companion, a system's).
 pub fn addable_declared(world: &World, entity: EntityId) -> Vec<AddableComponent> {
     world
         .components()
@@ -223,11 +225,11 @@ fn rebound_value(value: &ScriptValue, from: &World, to: &World) -> ScriptValue {
     }
 }
 
-/// `fields`, a row of `name` read under another declaration of it — the one
-/// a prefab file was saved with — as `world` declares `name` now, the way a
-/// load reads it (`PackedLayout::fit`): a field it still declares keeps a
-/// value its type takes, widened where exact; one it gained has its default; one it dropped is gone. Kept as it
-/// is where `world` declares no `name`.
+/// Returns `fields`, a row of `name` saved under another declaration, as `world` declares it now.
+///
+/// Read as a load reads it (`PackedLayout::fit`): a field still declared keeps
+/// a value its type takes, widened where exact; one gained has its default;
+/// one dropped is gone. Kept as it is where `world` declares no `name`.
 pub fn conformed(
     world: &World,
     name: &str,
@@ -290,9 +292,10 @@ pub struct PairedRow {
     pub prefab: Option<Vec<(String, ScriptValue)>>,
 }
 
-/// The declared components a scene keeps of `member` in `world` and of
-/// `twin`, its counterpart in the prefab's `scratch` expansion, paired by
-/// name — the prefab's read as `world` declares them now.
+/// Pairs by name the declared components a scene keeps of `member` and of `twin`.
+///
+/// `twin` is its counterpart in the prefab's `scratch` expansion, whose rows
+/// are read as `world` declares them now.
 pub fn paired_rows(
     world: &World,
     member: EntityId,

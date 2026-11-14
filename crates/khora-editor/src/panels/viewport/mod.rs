@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! 3D Viewport panel — displays the offscreen render texture.
+//! The 3D viewport panel: the offscreen render texture, its overlays, and
+//! the assets dropped on it.
 
 use std::path::{Path, MAIN_SEPARATOR_STR};
 use std::sync::{Arc, Mutex};
@@ -23,9 +24,8 @@ use crate::camera::EditorCamera;
 
 mod overlays;
 
-/// The viewport target size, in pixels, for a panel rect `[x, y, w, h]` in
-/// physical pixels: `w` × `h` rounded to the nearest pixel, at least 1 on each
-/// side (a non-finite, negative or sub-pixel side gives 1).
+/// Returns the render target size for a panel rect `[x, y, w, h]` in physical
+/// pixels: `w` × `h` rounded, at least 1 on each side, even when not finite.
 pub(crate) fn target_size_for(rect_px: [f32; 4]) -> (u32, u32) {
     let side = |v: f32| {
         let rounded = v.round();
@@ -38,6 +38,7 @@ pub(crate) fn target_size_for(rect_px: [f32; 4]) -> (u32, u32) {
     (side(rect_px[2]), side(rect_px[3]))
 }
 
+/// The viewport: the scene as the editor camera sees it.
 pub struct ViewportPanel {
     handle: ViewportTextureHandle,
     state: Arc<Mutex<EditorState>>,
@@ -45,8 +46,8 @@ pub struct ViewportPanel {
     theme: UiTheme,
 }
 
-/// Snapshot of the few status fields the stats card paints, copied while
-/// the EditorState mutex is held so we don't keep it locked during paint.
+/// The status fields the stats card paints, copied so the state is not held
+/// locked while painting.
 struct StatsSnap {
     fps: f32,
     frame_time_ms: f32,
@@ -58,6 +59,7 @@ struct StatsSnap {
 }
 
 impl ViewportPanel {
+    /// Returns the viewport showing the texture behind `handle`.
     pub fn new(
         handle: ViewportTextureHandle,
         state: Arc<Mutex<EditorState>>,
@@ -90,10 +92,8 @@ impl EditorPanel for ViewportPanel {
         "Viewport"
     }
     fn ui(&mut self, ui: &mut dyn UiBuilder) {
-        // Always reset the viewport's hovered/rect state at the start of
-        // the frame — otherwise the values from the previous Scene-mode
-        // frame leak into DCC mode and the input pipeline routes mouse
-        // events into the engine when the viewport isn't even visible.
+        // Reset each frame: a stale rect from another workspace would route
+        // the mouse into the engine while the viewport is not shown.
         if let Ok(mut state) = self.state.lock() {
             state.viewport_hovered = false;
             state.viewport_screen_rect = None;
@@ -106,11 +106,6 @@ impl EditorPanel for ViewportPanel {
         if w > 1.0 && h > 1.0 {
             if let Some(min) = ui.viewport_image(self.handle, [w, h]) {
                 let hovered = ui.is_last_item_hovered();
-                // Drop target: any asset tile dragged onto the viewport. The
-                // asset browser tags its drag payload with `ASSET_DRAG_TAG`
-                // (high 32 bits) so we can tell our drops apart from the
-                // scene-tree reparent flow's `EntityId`-packed payloads. We
-                // dispatch by the asset's declared type.
                 if let Some(payload) = ui.dnd_take_drop_payload() {
                     // Resolve index and epoch under one lock: the payload's
                     // epoch stamp is only meaningful against the same read of
@@ -142,7 +137,6 @@ impl EditorPanel for ViewportPanel {
                     self.paint_camera_preview(ui, min, [w, h]);
                 }
 
-                // ── Branded overlays ────────────
                 self.paint_tool_pill(ui, min);
                 self.paint_transport_pill(ui, min, [w, h]);
                 self.paint_stats_card(ui, min, [w, h]);
@@ -176,12 +170,8 @@ impl ViewportPanel {
             (Icon::Rotate, GizmoMode::Rotate, "h-tool-rotate"),
             (Icon::Scale, GizmoMode::Scale, "h-tool-scale"),
         ];
-        // Local/World labels are decorations today (the toggle isn't wired).
-        // Keep the pill snug around just the gizmo tools so the labels can't
-        // overflow.
         let total_w = btn_w * tools.len() as f32 + 8.0;
 
-        // bg
         ui.paint_rect_filled(
             [pill_x, pill_y],
             [total_w, pill_h],
@@ -224,15 +214,13 @@ impl ViewportPanel {
             cx += btn_w;
         }
 
-        let _ = cx; // Local/World toggle removed until it's actually wired.
+        let _ = cx;
     }
 
-    /// The transport — play, pause, stop — floating at the bottom centre.
+    /// Paints the transport (play, pause, stop) at the bottom centre.
     ///
-    /// Each button's *state* is derived from `PlayMode`, so the control always
-    /// tells the truth about what the engine is doing: a disabled Stop while
-    /// editing means there is genuinely nothing to stop. Buttons that cannot
-    /// act are dimmed and swallow their clicks rather than silently no-op.
+    /// Each button's state follows `PlayMode`; a button that cannot act is
+    /// dimmed and takes no click.
     fn paint_transport_pill(
         &self,
         ui: &mut dyn UiBuilder,
@@ -276,8 +264,7 @@ impl ViewportPanel {
         let mut x = pill_x + pad;
         let cy = pill_y + pad;
 
-        // ── Play / resume ──
-        // While playing, this is the "running" indicator rather than an action.
+        // While playing, this is the running indicator rather than an action.
         let play_rect = [x, cy, btn, btn];
         let play_hit = ui.interact_rect("vp-play", play_rect);
         if restricted {
@@ -306,7 +293,6 @@ impl ViewportPanel {
         }
         x += btn + gap;
 
-        // ── Pause ── only meaningful while something is running.
         let pause_rect = [x, cy, btn, btn];
         let pause_hit = ui.interact_rect("vp-pause", pause_rect);
         if paused {
@@ -332,7 +318,6 @@ impl ViewportPanel {
         }
         x += btn + gap;
 
-        // ── Stop ──
         let stop_rect = [x, cy, btn, btn];
         let stop_hit = ui.interact_rect("vp-stop", stop_rect);
         icon_centered(
@@ -360,6 +345,7 @@ impl ViewportPanel {
         }
     }
 
+    /// Paints the frame's stats along the bottom left.
     fn paint_stats_card(
         &self,
         ui: &mut dyn UiBuilder,
@@ -381,9 +367,7 @@ impl ViewportPanel {
         };
 
         let card_h = 50.0;
-        // Card width adapts to viewport: never wider than viewport - 24px
-        // margin, never narrower than 320px (FPS cell would otherwise become
-        // unreadable). On very small viewports we bail out entirely.
+        // Narrower than 280px, the cells would be unreadable: no card.
         let avail_w = viewport_size[0] - 24.0;
         if avail_w < 280.0 || viewport_size[1] < 120.0 {
             return;
@@ -406,7 +390,6 @@ impl ViewportPanel {
             1.0,
         );
 
-        // Format triangle counts compactly.
         let tris_str = if snapshot.triangles >= 1_000_000 {
             format!("{:.1}M", snapshot.triangles as f64 / 1_000_000.0)
         } else if snapshot.triangles >= 1_000 {
@@ -475,8 +458,7 @@ impl ViewportPanel {
         }
     }
 
-    // Empty marker — closes paint_stats_card
-
+    /// Paints the border and the label that say the scene is playing or paused.
     fn paint_play_mode_indicator(
         &self,
         ui: &mut dyn UiBuilder,
@@ -487,11 +469,9 @@ impl ViewportPanel {
         let (mode_label, color) = match self.state.lock().ok().map(|s| s.play_mode) {
             Some(PlayMode::Playing) => ("PLAY", theme.success),
             Some(PlayMode::Paused) => ("PAUSED", theme.warning),
-            _ => return, // Editing — no indicator.
+            _ => return,
         };
 
-        // Colored border around the entire viewport so the user can't miss
-        // that they're not in edit mode.
         let stroke_w = 2.0;
         ui.paint_rect_stroke(
             [viewport_min[0], viewport_min[1]],
@@ -501,7 +481,6 @@ impl ViewportPanel {
             stroke_w,
         );
 
-        // Label pill in the top-center.
         let label_w = ui.measure_text(mode_label, 11.0, FontFamilyHint::Proportional)[0] + 24.0;
         let label_h = 22.0;
         let lx = viewport_min[0] + (viewport_size[0] - label_w) * 0.5;
@@ -523,9 +502,10 @@ impl ViewportPanel {
         );
     }
 
-    /// Routes a dropped asset by its declared type. Prefabs/scenes spawn or
-    /// load; a mesh materialises at the unprojected drop point; a texture or
-    /// material is assigned to the current selection.
+    /// Queues what a dropped asset does, by its type.
+    ///
+    /// A mesh spawns at the drop point on the ground; a texture or material is
+    /// assigned to the selection.
     fn dispatch_asset_drop(
         &self,
         ui: &dyn UiBuilder,
@@ -606,9 +586,8 @@ impl ViewportPanel {
         }
     }
 
-    /// Unprojects the drop point onto the ground plane (`y = 0`). Falls back to
-    /// a fixed distance along the ray when the ray is parallel to the ground or
-    /// the pointer position is unavailable (uses the viewport centre then).
+    /// Returns the drop point on the ground plane (`y = 0`), or 10 units along
+    /// the ray when it misses the ground; without a pointer, the centre's.
     fn compute_drop_point(
         &self,
         ui: &dyn UiBuilder,
@@ -637,7 +616,7 @@ impl ViewportPanel {
         [point.x, point.y, point.z]
     }
 
-    /// The sign behind an empty viewport, at 5 % opacity.
+    /// Paints the sign behind the viewport, at 5 % opacity.
     fn paint_sign_watermark(
         &self,
         ui: &mut dyn UiBuilder,

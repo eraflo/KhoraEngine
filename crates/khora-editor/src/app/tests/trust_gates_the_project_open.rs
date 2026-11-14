@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **A project opens at the trust the user decided of it.** The editor opens
-//! a project one way — the `--project` of the command line, a folder picked
-//! by File > Open Project — and that way reads what the trust store holds of
-//! it: a project never decided of is held, nothing of it filed, until the
-//! user decides; one decided of opens at that trust. Trusting a project
-//! opened restricted lifts its restricted mode.
+//! **A project opens at the trust the user decided of it.**
+//!
+//! The editor opens a project one way — the `--project` of the command line, a
+//! folder picked by File > Open Project — and that way reads what the trust
+//! store holds of it: a project never decided of is held, nothing of it filed,
+//! until the user decides; one decided of opens at that trust. Trusting a
+//! project opened restricted lifts its restricted mode.
 //!
 //! Every folder here is under the temp folder: no test reads or writes the
 //! user's home folder.
@@ -148,13 +149,14 @@ fn opens(requests: &[IndexRequest], root: &Path) -> bool {
     })
 }
 
-/// **An unknown project asks for trust once.** Opened with nothing decided
-/// of it, the project is held: nothing is filed, nothing of it is shown as
-/// open, no hold is taken on the film, and the editor's state names it as
-/// waiting for the user's decision. Once decided — here, restricted — the
-/// same open opens it: its `Open` is filed, the trust of the project open is
-/// the one decided, and nothing waits for a decision any more. A second
-/// editor over the same store opens it at once.
+/// **An unknown project asks for trust once.**
+///
+/// Opened with nothing decided of it, the project is held: nothing is filed,
+/// nothing of it is shown as open, no hold is taken on the film, and the
+/// editor's state names it as waiting for the user's decision. Once decided —
+/// here, restricted — the same open opens it: its `Open` is filed, the trust of
+/// the project open is the one decided, and nothing waits for a decision any
+/// more. A second editor over the same store opens it at once.
 #[test]
 fn an_unknown_project_asks_for_trust_once() {
     let folder = Folder::new("asks-once");
@@ -199,10 +201,11 @@ fn an_unknown_project_asks_for_trust_once() {
     assert_eq!(second.state().trust_prompt, None);
 }
 
-/// **The open waits for a decision, and opens at the one given**: with no
-/// decision, `start_opening_project` files nothing and names the project as
-/// waiting; with one, it files the project's `Open` and sets the trust of
-/// the project open to it — restricted, then trusted.
+/// **The open waits for a decision, and opens at the one given.**
+///
+/// With no decision, `start_opening_project` files nothing and names the
+/// project as waiting; with one, it files the project's `Open` and sets the
+/// trust of the project open to it — restricted, then trusted.
 #[test]
 fn a_project_opens_at_the_trust_decided() {
     let folder = Folder::new("opens-at-trust");
@@ -243,9 +246,10 @@ fn a_project_opens_at_the_trust_decided() {
     assert_eq!(editor.trust.get(), ProjectTrust::Trusted);
 }
 
-/// **File > Open Project goes through the same gate**: a second project
-/// picked while one is open, never decided of, is held and named as waiting;
-/// the project open stays as it was, at its trust.
+/// **File > Open Project goes through the same gate.**
+///
+/// A second project picked while one is open, never decided of, is held and
+/// named as waiting; the project open stays as it was, at its trust.
 #[test]
 fn a_project_picked_by_file_open_asks_for_trust_too() {
     let folder = Folder::new("file-open");
@@ -271,13 +275,14 @@ fn a_project_picked_by_file_open_asks_for_trust_too() {
     assert_eq!(editor.trust.get(), ProjectTrust::Trusted);
 }
 
-/// **Granting trust lifts the restricted mode.** A project opened
-/// restricted, two of its files refused at the strict trust — one too large,
-/// one holding what its type does not — is trusted: the store says so, the
-/// trust of the project open is `Trusted`, the file refused for its size is
-/// released while the one refused for its content stays, and the project's
-/// index is filed anew, so every reader is built at a trusted project's
-/// trust.
+/// **Granting trust lifts the restricted mode.**
+///
+/// A project opened restricted, two of its files refused at the strict trust —
+/// one too large, one holding what its type does not — is trusted: the store
+/// says so, the trust of the project open is `Trusted`, the file refused for
+/// its size is released while the one refused for its content stays, and the
+/// project's index is filed anew, so every reader is built at a trusted
+/// project's trust.
 #[test]
 fn granting_trust_lifts_the_restricted_mode() {
     let folder = Folder::new("grant");
@@ -347,10 +352,12 @@ fn granting_trust_lifts_the_restricted_mode() {
 }
 
 /// **Trusting a project lifts its own restricted refusals, not another
-/// project's.** The quarantine is the user's, shared by every project they
-/// open: a file of another project, never trusted, refused over a restricted
-/// limit, stays quarantined when this one is trusted — that other project
-/// is still read at the strict limits, and its file was never cleared.
+/// project's.**
+///
+/// The quarantine is the user's, shared by every project they open: a file of
+/// another project, never trusted, refused over a restricted limit, stays
+/// quarantined when this one is trusted — that other project is still read at
+/// the strict limits, and its file was never cleared.
 #[test]
 fn trusting_a_project_keeps_another_projects_restricted_refusals() {
     let folder = Folder::new("grant-own");
@@ -394,13 +401,15 @@ fn trusting_a_project_keeps_another_projects_restricted_refusals() {
 }
 
 /// **A restricted project's shader overlays are never used while another
-/// project opens.** A project opened restricted lands: its assets are
-/// watched, its overlay on disk is not used. The user then opens another
-/// project, trusted — in `before_frame`, File > Open Project or a trust
-/// answer: the trust of the project open is the new one's at once. The
-/// restricted project is unmounted only in `before_agents`, so the frame's
-/// `PreExtract` shader pump, between the two, still watches its assets: the
-/// restricted project's overlay must still not be used.
+/// project opens.**
+///
+/// A project opened restricted lands: its assets are watched, its overlay on
+/// disk is not used. The user then opens another project, trusted — in
+/// `before_frame`, File > Open Project or a trust answer: the trust of the
+/// project open is the new one's at once. The restricted project is unmounted
+/// only in `before_agents`, so the frame's `PreExtract` shader pump, between
+/// the two, still watches its assets: the restricted project's overlay must
+/// still not be used.
 #[test]
 fn a_restricted_projects_overlay_is_not_used_while_a_trusted_project_opens() {
     let folder = Folder::new("overlay-while-opening");

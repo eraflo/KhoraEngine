@@ -14,11 +14,9 @@
 
 //! Utility helpers for the editor application.
 
-/// Read the current git branch name from a project's `.git/HEAD`.
+/// Returns the git branch checked out in the project at `project_root`.
 ///
-/// Returns `Some(branch_name)` if the project is a git repository on a
-/// regular branch, `None` if the project isn't tracked or HEAD is detached.
-/// Cheap (single fs read of a small file) — safe to call once at startup.
+/// `None` when the project is not a git repository or its HEAD is detached.
 pub fn read_git_branch(project_root: &std::path::Path) -> Option<String> {
     let head_path = project_root.join(".git").join("HEAD");
     let head = std::fs::read_to_string(head_path).ok()?;

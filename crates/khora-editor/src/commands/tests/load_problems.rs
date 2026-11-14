@@ -13,10 +13,12 @@
 // limitations under the License.
 
 //! **What a scene load adapted reaches Problems through the editor's own
-//! commands**: a load hands its problems over, the next load replaces them,
-//! a new scene clears them — and after Play and Stop, which respawns every
-//! entity under a fresh id, a load problem's row still selects the entity it
-//! is about, not a slot that no longer holds anything.
+//! commands.**
+//!
+//! A load hands its problems over, the next load replaces them, a new scene
+//! clears them — and after Play and Stop, which respawns every entity under a
+//! fresh id, a load problem's row still selects the entity it is about, not a
+//! slot that no longer holds anything.
 
 use std::path::PathBuf;
 

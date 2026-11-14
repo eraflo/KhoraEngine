@@ -12,49 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! "Build Game" — packs the project's assets and stages a runnable binary.
+//! "Build Game": packs the project's assets and stages a runnable binary.
 //!
-//! Two strategies, picked deterministically from the project's contents:
-//!
-//! - **Runtime stamp** (default, project has no `Cargo.toml`):
-//!   1. `khora_io::PackBuilder` produces `index.bin` + `data.pack` from
-//!      `<project>/assets/`.
-//!   2. The pre-built `khora-runtime` binary for the chosen target is
-//!      copied into the output directory and renamed to the project name.
-//!   3. A `runtime.json` companion file is written so the runtime knows
-//!      which scene to auto-load.
-//!
-//!   This path is **cross-platform trivial** — the runtime binary already
-//!   exists for every target (built by `release.yml`), so building Linux
-//!   from a Windows host is just a file copy.
-//!
-//! - **Cargo build** (project has `Cargo.toml` — opted in via the hub's
-//!   "Add Native Code" button):
-//!   1. Same `PackBuilder` step.
-//!   2. `cargo build --release --manifest-path <project>/Cargo.toml`
-//!      compiles the user's binary (which depends on `khora-sdk` and
-//!      registers their custom components / agents / lanes).
-//!   3. The compiled binary is copied into the output directory.
-//!   4. Same `runtime.json` companion is written.
-//!
-//!   This path is **host-only in v1** because Rust cross-compilation needs
-//!   per-target toolchains; running the editor on each target is the
-//!   simplest workaround. Future work can integrate `cross` for
-//!   Docker-based cross-compilation.
-//!
-//! Output layout (identical between the two strategies):
-//! ```text
-//! <project>/dist/<target>/
-//! ├── <project_name>{.exe}   # renamed runtime OR compiled user binary
-//! ├── data.pack              # asset blobs
-//! ├── index.bin              # asset metadata (UUIDs → packed offsets)
-//! └── runtime.json           # project name + default scene rel path
-//! ```
-//!
-//! The user can therefore start data-only, ship cross-platform via the
-//! stamp strategy, and "graduate" to native Rust without changing how
-//! Build Game is invoked — the editor switches strategies automatically
-//! based on `Cargo.toml`'s presence.
+//! A project without a `Cargo.toml` stamps the pre-built runtime; one with it
+//! is built by cargo, host only. See the book: reference/editor.md, "09 — Build Game".
 
 use crate::project_vfs::ProjectVfs;
 use anyhow::{anyhow, Context, Result};
@@ -68,9 +29,7 @@ use std::path::{Path, PathBuf};
 mod cargo_build;
 use cargo_build::stage_with_cargo_build;
 
-/// Build profile selecting the pack's compression. Every preset signs its
-/// pack and every runtime verifies it: a pack is sealed whatever the
-/// preset.
+/// Build profile selecting the pack's compression; every preset signs its pack.
 ///
 /// `Debug` / `Shipping` are reserved for a "Build…" dialog; `Release` is the
 /// default until it exists.
@@ -112,8 +71,7 @@ pub enum BuildTarget {
 }
 
 impl BuildTarget {
-    /// The build target matching the editor's host OS. Used by the
-    /// "Build Game…" menu (v1) and as a sane default in any future UI.
+    /// Returns the build target matching the editor's host OS.
     pub fn host() -> Self {
         if cfg!(target_os = "windows") {
             Self::Windows
@@ -148,12 +106,10 @@ impl BuildTarget {
 /// Which build strategy was used to produce a [`BuildOutcome`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildStrategy {
-    /// The pre-built `khora-runtime` binary was stamped next to the
-    /// project's pack. Cross-platform trivial.
+    /// The pre-built `khora-runtime` binary, stamped next to the project's pack.
     RuntimeStamp,
-    /// `cargo build --release` was invoked on the project's `Cargo.toml`
-    /// to produce a custom binary that links the user's native Rust.
-    /// Host-only.
+    /// A binary built by `cargo build --release` from the project's
+    /// `Cargo.toml`, linking its native Rust; host only.
     CargoBuild,
 }
 
@@ -166,23 +122,19 @@ impl BuildStrategy {
     }
 }
 
-/// Result of a successful build, returned to the caller (the editor's
-/// menu dispatcher logs + banners off these fields).
+/// Result of a successful build, which the menu dispatcher reports.
 #[derive(Debug, Clone)]
 pub struct BuildOutcome {
     pub strategy: BuildStrategy,
     pub output_dir: PathBuf,
-    /// Absolute path of the staged executable. Used by future UI affordances
-    /// like a "Reveal in Explorer" button — currently the menu dispatcher
-    /// only reads `output_dir` and the asset/byte counts.
+    /// Absolute path of the staged executable.
     pub binary_path: PathBuf,
     pub asset_count: usize,
     pub pack_bytes: u64,
 }
 
-/// Stages a build for the host OS using the **Release** preset by
-/// default, signed with the user's key. Convenience wrapper for the menu's
-/// "Build Game…" entry.
+/// Stages a build for the host OS with the **Release** preset, signed with
+/// the user's key.
 pub fn build_for_host(pvfs: &ProjectVfs, project_name: &str) -> Result<BuildOutcome> {
     let target = BuildTarget::host();
     let signer = user_signer()?;
@@ -197,10 +149,10 @@ fn user_signer() -> Result<PackSigner> {
     PackSigner::load_or_create(&dir).context("Build Game: the signing key")
 }
 
-/// Stages a build for any target with an explicit preset. v1 only
-/// invokes this with the host; non-host targets fail at the
-/// runtime-binary lookup (or, for the cargo path, are explicitly
-/// refused — see [`stage_with_cargo_build`]) until cross-compile lands.
+/// Stages a build for `target` with an explicit preset.
+///
+/// A non-host target fails at the runtime-binary lookup, or is refused by
+/// [`stage_with_cargo_build`]: there is no cross-compilation.
 pub fn build_for_target(
     pvfs: &ProjectVfs,
     project_name: &str,
@@ -303,10 +255,10 @@ fn stamp_binary(bin: &Path, signer: &PackSigner) -> Result<()> {
         .with_context(|| format!("Build Game: cannot stamp {}", bin.display()))
 }
 
-/// The runtime-stamp build over the runtime binary at `runtime_src`: the
-/// project's `assets_root` packed into `output_dir` with `preset`'s
-/// compression and signed by `signer`, and `runtime_src` staged there,
-/// named after the project and stamped with `signer`'s public key.
+/// Builds by runtime stamp: packs `assets_root` into `output_dir` and stages `runtime_src` there.
+///
+/// The pack has `preset`'s compression and is signed by `signer`; the binary
+/// is named after the project and stamped with `signer`'s public key.
 fn build_with_runtime(
     assets_root: &Path,
     output_dir: &Path,
@@ -356,9 +308,10 @@ fn write_runtime_config(output_dir: &Path, project_name: &str, preset: BuildPres
     write_runtime_config_with(output_dir, project_name, preset, PhysicsSettings::default())
 }
 
-/// The `runtime.json` "Build Game" writes for `game` built with `preset`:
-/// named and titled by the game's name, at the game's version, with the
-/// project's physics settings.
+/// Returns the `runtime.json` "Build Game" writes for `game` built with `preset`.
+///
+/// Named and titled by the game's name, at its version, with the project's
+/// physics settings.
 fn runtime_config(
     game: &khora_sdk::GameIdentity,
     preset: BuildPreset,
@@ -390,7 +343,7 @@ fn write_runtime_config_with(
     write_runtime_config_of(output_dir, &game, preset, physics)
 }
 
-/// `runtime.json`: what the runtime reads at start-up — the game it runs,
+/// Writes the `runtime.json` the runtime reads at start-up: the game it runs,
 /// at its version, the project's physics settings included.
 fn write_runtime_config_of(
     output_dir: &Path,
@@ -417,8 +370,8 @@ fn set_executable_bit(path: &Path) {
     }
 }
 
-/// Replaces filesystem-unsafe characters in the project name with
-/// underscores so we can use it as a binary filename.
+/// Returns the project name with filesystem-unsafe characters made
+/// underscores, for a binary file name.
 fn sanitize_binary_name(name: &str) -> String {
     let cleaned: String = name
         .chars()
@@ -437,25 +390,12 @@ fn sanitize_binary_name(name: &str) -> String {
     }
 }
 
-/// Looks for the `khora-runtime` binary for `target` in:
+/// Returns the `khora-runtime` binary for `target`.
 ///
-/// 1. **Sibling of the editor binary** — the canonical layout once the
-///    engine release archive is unpacked, and what `cargo build` produces
-///    in `target/<profile>/`.
-/// 2. **Sibling profile fallback** — when the editor runs from
-///    `target/release/`, also check `target/debug/` (and vice-versa).
-///    Lets a contributor running `cargo run -p khora-hub --release` find
-///    a runtime that was built in debug by `cargo build` or `cargo
-///    hub-dev`.
-/// 3. **Hub engine cache** — `~/.khora/engines/<version>/runtime/` is the
-///    layout produced by `hub::download::start_download` when the matching
-///    `khora-runtime-<host>` artifact is present in the GitHub release.
-///
-/// Non-host targets always fall through today: the hub only fetches its
-/// own host architecture from a release, and dev builds only produce the
-/// host runtime. Cross-target build-template caching is a future expansion
-/// that re-uses this same lookup once the hub fetches all three runtime
-/// archives.
+/// Looked for beside the editor binary (a release archive, or
+/// `target/<profile>/`), then in the other cargo profile, then in the hub's
+/// engine cache (`~/.khora/engines/<version>/runtime/`). Only the host's
+/// runtime is found: the hub and dev builds fetch or build no other.
 fn locate_runtime_binary(target: BuildTarget) -> Result<PathBuf> {
     let bin_name = format!("khora-runtime{}", target.exe_suffix());
 
@@ -537,9 +477,9 @@ fn locate_runtime_binary(target: BuildTarget) -> Result<PathBuf> {
     ))
 }
 
-/// Returns the workspace root if `target_dir` is a `target/<profile>/`
-/// subdirectory of one. Detection: parent must be named `target`, and
-/// the grandparent must contain a `Cargo.toml`.
+/// Returns the workspace root if `target_dir` is a `target/<profile>/` of one.
+///
+/// Its parent must be named `target`, and its grandparent hold a `Cargo.toml`.
 fn workspace_root_from_target_dir(target_dir: &Path) -> Option<PathBuf> {
     let target_dir_name = target_dir.parent()?.file_name()?.to_str()?;
     if target_dir_name != "target" {

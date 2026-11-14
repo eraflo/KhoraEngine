@@ -6,18 +6,8 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! Inspector widget library — header, cards, JSON property walker, tabs.
-//!
-//! Layout:
-//!   - [`header`]        — panel-top entity strip (icon + name + tags)
-//!   - [`card`]          — collapsible component card frame
-//!   - [`walker`]        — JSON `Value` → widget walker (single source)
-//!   - [`renderers`]     — per-shape leaf renderers (Vec3, Quat, Color, …)
-//!   - [`add_component`] — "+ Add Component" menu, bucketed by domain
-//!   - [`display`]       — icon / type-tag / category labels
-//!   - [`tabs`]          — `InspectorTab` trait + `Properties` / `Debug`
-//!   - [`asset_pane`]    — asset metadata shown when an asset is selected
-//!   - [`tag_chips`]     — chip renderer for the `Tag` component
+//! The inspector's widgets: the entity header, component cards drawn from
+//! JSON or from a script's declaration, the tabs and the asset pane.
 
 pub mod add_component;
 pub mod asset_pane;

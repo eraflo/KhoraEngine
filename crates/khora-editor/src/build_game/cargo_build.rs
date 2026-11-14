@@ -21,12 +21,10 @@ use anyhow::{anyhow, Context, Result};
 
 use super::{sanitize_binary_name, set_executable_bit, BuildTarget};
 
-/// Invokes `cargo build --release` against `<project>/Cargo.toml`,
-/// streams stdout+stderr into the editor log, and copies the resulting
-/// binary into `output_dir` renamed to the project name.
+/// Builds the project with `cargo build --release` and stages its binary in `output_dir`.
 ///
-/// Refuses non-host targets with a clear error — Rust cross-compilation
-/// is host-only in v1.
+/// Cargo's output goes to the editor log; the binary is renamed to the
+/// project name. Refuses a non-host target: there is no cross-compilation.
 pub(super) fn stage_with_cargo_build(
     project_root: &Path,
     output_dir: &Path,

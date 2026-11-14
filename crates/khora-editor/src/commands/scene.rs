@@ -21,12 +21,11 @@ use khora_sdk::{EditorState, GameWorld, SerializationGoal};
 use crate::project_vfs::ProjectVfs;
 use crate::{build_game, scene_io};
 
-/// Save dispatch: routes through the project VFS when the target path
-/// lives under `<project>/assets/`, falls back to direct `std::fs` for
-/// arbitrary out-of-project Save-As destinations. Saves under the
-/// `EditorInterchange` goal (the compact encoding).
-/// Returns whether the scene reached disk. Failures are logged by the write
-/// paths themselves; the flag lets a caller react instead of assuming success.
+/// Saves the scene, through the project VFS when the path lies under `<project>/assets/`.
+///
+/// A Save-As elsewhere writes with `std::fs`. Saves under the
+/// `EditorInterchange` goal. Returns whether the scene reached disk;
+/// failures are logged.
 pub fn save_scene_dispatch(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &GameWorld,
@@ -40,9 +39,9 @@ pub fn save_scene_dispatch(
     )
 }
 
-/// Same as [`save_scene_dispatch`] but with an explicit serialization
-/// goal — `HumanReadableDebug` for a JSON scene, `PortableBinary` for
-/// MessagePack.
+/// Saves as [`save_scene_dispatch`] does, under an explicit serialization goal.
+///
+/// `HumanReadableDebug` for a JSON scene, `PortableBinary` for MessagePack.
 pub fn save_scene_dispatch_with_goal(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &GameWorld,
@@ -69,12 +68,11 @@ pub fn save_scene_dispatch_with_goal(
     scene_io::save_scene_to_path_with_goal(world, path_str, goal)
 }
 
-/// Opens the scene at `abs` off the frame, replacing the open one: the asset
-/// is resolved in the project's index now, its bytes are read and the load
-/// prepared in the background, and it lands at a later frame's boundary,
-/// where [`land_scene_loads`] finishes it. A scene outside the project is
-/// read from its path, without prefabs. Returns the load's ticket; `None`
-/// when nothing was filed.
+/// Opens the scene at `abs` off the frame, replacing the open one; returns the load's ticket.
+///
+/// The load lands at a later frame's boundary, where [`land_scene_loads`]
+/// finishes it. A scene outside the project is read from its path, without
+/// prefabs. `None` when nothing was filed.
 pub fn open_scene_dispatch(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,
@@ -110,11 +108,11 @@ pub fn open_scene_dispatch(
     Some(ticket)
 }
 
-/// Finishes the scene loads the editor filed — an opened scene, Stop's
-/// restore — whose outcome landed: the editor's entity references cleared,
-/// the load's problems mapped onto the entities it brought and handed to
-/// Problems; an opened scene's path set. A load that failed changes nothing
-/// and is reported. Returns whether one replaced the world.
+/// Finishes the scene loads the editor filed (an opened scene, Stop's restore) that landed.
+///
+/// Clears the editor's entity references, maps the load's problems onto the
+/// entities it brought, and sets an opened scene's path. A failed load
+/// changes nothing and is reported. Returns whether one replaced the world.
 pub fn land_scene_loads(
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
@@ -216,10 +214,10 @@ fn load_failed(message: String) -> khora_sdk::khora_core::problems::Problem {
     }
 }
 
-/// Whether Build Game is refused in a project at `trust` — a restricted
-/// project's build would run its code — saying why in the editor's
-/// `EditorState::refusal` when it is. A trusted project's build is not
-/// refused, and leaves the refusal as it was.
+/// Whether Build Game is refused in a project at `trust`: a restricted
+/// project's build would run its code.
+///
+/// Says why in `EditorState::refusal` when refused; a trusted project leaves it as it was.
 pub fn build_game_refused(
     trust: khora_sdk::trust::ProjectTrust,
     editor_state: &Arc<Mutex<EditorState>>,
@@ -237,10 +235,13 @@ pub fn build_game_refused(
 /// Why Build Game is refused in a restricted project.
 const BUILD_REFUSED: &str = "Build Game is off in restricted mode: building runs this project's                              code. Trust the project to build it.";
 
-/// Build Game dispatch: packs the project's assets, copies the host-target
-/// `khora-runtime` binary into `<project>/dist/<target>/`, and writes the
-/// runtime config so the staged binary auto-loads the project's default
-/// scene. Reports progress + final path through the editor's logger.
+/// Builds the game for the host under `<project>/dist/<target>/`.
+///
+/// It writes the `runtime.json` from which the staged binary loads the
+/// project's default scene at startup.
+///
+/// Progress and the final path go to the log. See the book:
+/// reference/editor.md, "09 — Build Game".
 pub fn run_build_game(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     editor_state: &Arc<Mutex<EditorState>>,
@@ -284,9 +285,10 @@ pub fn run_build_game(
     }
 }
 
-/// "File > Open Project…": the folder the user picks, if any. The project is
-/// opened the one way the editor opens a project — what the user decided of
-/// it decides — once the frame can (`EditorApp::open_picked`).
+/// Returns the folder "File > Open Project…" picks, if any.
+///
+/// The app keeps it as `picked_project` and opens it before the next frame, at
+/// what the user decided of it.
 pub fn pick_project_folder() -> Option<std::path::PathBuf> {
     rfd::FileDialog::new().pick_folder()
 }

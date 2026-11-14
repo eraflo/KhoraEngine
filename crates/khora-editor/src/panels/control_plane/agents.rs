@@ -63,11 +63,8 @@ impl ControlPlanePanel {
             return;
         }
 
-        // Group by crate (built-in vs user-plugin) for the section headers.
-        //
-        // The list scrolls: it used to run straight off the bottom of the panel
-        // with no bound at all, so past roughly eight agents the rows painted
-        // outside their pane and became unclickable.
+        // One section per crate. The list scrolls and clips: rows painted
+        // past the pane would be unclickable.
         let rows_top = y + 40.0;
         let view = [x, rows_top, w, (y + h - rows_top).max(0.0)];
         let sections = agents
@@ -151,18 +148,14 @@ impl ControlPlanePanel {
             self.selected_idx = idx;
         }
 
-        // Icon box
         ui.paint_rect_filled([x + 8.0, y + 8.0], [22.0, 22.0], theme.surface_active, 4.0);
         paint::icon(ui, [x + 12.0, y + 12.0], Icon::Cpu, 14.0, theme.primary);
 
-        // Top row: name + importance badge + status dot
         let name = agent.name();
         paint::text(ui, [x + 38.0, y + 7.0], &name, 12.5, theme.text);
-        // Stalled indicator
         if agent.report.stalled {
             paint_status_dot(ui, [x + w - 50.0, y + 14.0], theme.error);
         }
-        // Importance badge
         let badge_x = x + w - 26.0;
         ui.paint_rect_filled(
             [badge_x, y + 8.0],
@@ -179,7 +172,6 @@ impl ControlPlanePanel {
             TextAlign::Center,
         );
 
-        // Strategy
         ui.paint_text_styled(
             [x + 38.0, y + 24.0],
             agent.strategy_label(),
@@ -189,9 +181,8 @@ impl ControlPlanePanel {
             TextAlign::Left,
         );
 
-        // Health meter (real value: 0..1 from the agent's report). The thresholds
-        // live in the shared `Health` type so the bar, the dot and the
-        // "healthy / degraded" label can never disagree about the same agent.
+        // The thresholds are `Health`'s, so the bar, the dot and the label
+        // never disagree about one agent.
         let health = agent.report.health.clamp(0.0, 1.0);
         let bar_color = Health::from_ratio(health).color(theme);
         khora_tool_ui::widgets::meter_bar(
@@ -202,7 +193,6 @@ impl ControlPlanePanel {
             bar_color,
         );
 
-        // Foot: phase + priority
         ui.paint_text_styled(
             [x + 38.0, y + 47.0],
             &format!("p={:.2}", agent.priority),

@@ -12,14 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Properties Inspector panel — composition layer over `widgets::inspector`.
-//!
-//! Owns the panel chrome (panel header, sub-tab segment control,
-//! inspector entity header) and dispatches the active sub-tab to the
-//! tab implementations registered in `widgets::inspector::tabs`. The
-//! actual JSON walker, per-shape renderers, card frame, and add-component
-//! menu live under `widgets/inspector/` so they can be reused by other
-//! panels and stay independently testable.
+//! The Inspector panel: its chrome and header, over the inspector tabs and
+//! the asset pane of `widgets::inspector`.
 
 use crate::commands::CommandHistory;
 use std::sync::{Arc, Mutex};
@@ -36,6 +30,7 @@ const HEADER_HEIGHT: f32 = 34.0;
 const INSPECTOR_HEADER_HEIGHT: f32 = 64.0;
 const SUBTAB_HEIGHT: f32 = 28.0;
 
+/// The Inspector: the selected entity's components, or the selected asset.
 pub struct PropertiesPanel {
     state: Arc<Mutex<EditorState>>,
     command_history: Arc<Mutex<CommandHistory>>,
@@ -45,6 +40,7 @@ pub struct PropertiesPanel {
 }
 
 impl PropertiesPanel {
+    /// Returns the Inspector over the editor state and its undo history.
     pub fn new(
         state: Arc<Mutex<EditorState>>,
         history: Arc<Mutex<CommandHistory>>,
@@ -78,20 +74,11 @@ impl EditorPanel for PropertiesPanel {
         let panel_rect = ui.panel_rect();
         let [px, py, pw, _] = panel_rect;
 
-        // ── Panel header strip ────────────────────────
+        // No title chip: the dock tab above already names this panel.
         paint_panel_header(ui, panel_rect, HEADER_HEIGHT, &theme);
 
-        // No title chip: the dock tab above already names this panel.
-        //
-        // The `More` and `Lock` icons are gone too. Both painted a hover
-        // highlight and discarded the click: `More` had no menu behind it, and
-        // "lock the inspector to this entity" is a real feature nobody had
-        // written. They advertised capability the panel does not have.
-
-        // ── Snapshot ─────────────────────────────────
-        // The inspector is context-aware: when an asset is selected in
-        // the browser, switch to asset-metadata mode; otherwise show
-        // entity components (or empty state).
+        // An asset selected in the browser shows its pane, unless an entity
+        // is inspected.
         let (entity_data, asset_path, project_folder, quarantine) = {
             let s = match self.state.lock() {
                 Ok(s) => s,
@@ -117,7 +104,6 @@ impl EditorPanel for PropertiesPanel {
         };
         let asset_mode = entity_data.is_none() && asset_path.is_some();
 
-        // ── Inspector header ─────────────────────────
         let header_origin = [px, py + HEADER_HEIGHT];
         let after_header = if asset_mode {
             paint_asset_header(ui, header_origin, pw, asset_path.as_ref().unwrap(), &theme)
@@ -165,7 +151,6 @@ impl EditorPanel for PropertiesPanel {
             }
         };
 
-        // ── Asset mode body — short-circuits the tab rendering ──
         if asset_mode {
             if let Some(rel) = asset_path.as_ref() {
                 let body_y = after_header + 12.0;
@@ -188,9 +173,8 @@ impl EditorPanel for PropertiesPanel {
             return;
         }
 
-        // ── Sub-tabs: Properties | Debug ─────────────
-        // Two views of the *same* entity, so a segmented control — not tabs,
-        // which would imply navigating somewhere else.
+        // Two views of the same entity: a segmented control, as tabs would
+        // imply going somewhere else.
         let subtab_y = after_header + 8.0;
         let labels: Vec<&str> = self.tabs.iter().map(|t| t.label()).collect();
         if let Some(hit) = khora_tool_ui::widgets::segmented_tabs(
@@ -204,7 +188,6 @@ impl EditorPanel for PropertiesPanel {
             self.active_tab = hit;
         }
 
-        // ── Body — dispatched to the active tab ──────
         let body_y = subtab_y + SUBTAB_HEIGHT + 10.0;
         let body_h = (panel_rect[1] + panel_rect[3] - body_y - 6.0).max(0.0);
         let body_rect = [px + 6.0, body_y, pw - 12.0, body_h];

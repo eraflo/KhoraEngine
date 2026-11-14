@@ -19,15 +19,10 @@ use khora_sdk::khora_data::ecs::{SemanticDomain, Tag};
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::GameWorld;
 
-/// Maps [`SemanticDomain`] to the small integer tag the editor side uses
-/// in [`ComponentJson::domain`]. Kept here so `khora-core` doesn't have to
-/// know about `khora-data`'s domain enum — the inspector reads the tag and
-/// dispatches to category labels.
+/// Maps [`SemanticDomain`] to the integer tag of [`ComponentJson::domain`].
 ///
-/// The numbering is [`SemanticDomain::index`] rather than a table of its own:
-/// that index already has to be dense and stable to address the `World`'s
-/// per-domain arrays, and a second listing would only be somewhere for the two
-/// to disagree.
+/// So `khora-core` need not know `khora-data`'s domain enum. The tag is
+/// [`SemanticDomain::index`], already dense and stable: no second table to disagree.
 pub(super) fn domain_tag(d: SemanticDomain) -> u8 {
     d.index() as u8
 }
@@ -75,14 +70,8 @@ fn build_scene_node(
 
 /// Extracts a scene tree snapshot from the ECS world into editor state.
 ///
-/// Assembles the tree **top-down from the roots**, in `entity.index` order at
-/// every level. The previous bottom-up pass folded each child into its parent
-/// by draining a `HashMap`, which made the result depend on iteration order —
-/// and `HashMap` re-seeds its hasher per instance, so the order differed every
-/// frame. Two symptoms followed: a grandchild whose parent had already been
-/// moved was re-inserted as a root (so three-level hierarchies lost a level at
-/// random), and siblings reordered continuously, which let a click land on a
-/// different entity than the one aimed at.
+/// Built top-down from the roots, in `entity.index` order at every level, so
+/// the tree is the same every frame and a click lands on the entity aimed at.
 pub fn extract_scene_tree(world: &GameWorld, state: &mut EditorState) {
     let entities: Vec<EntityId> = world.iter_entities().collect();
     state.entity_count = entities.len();

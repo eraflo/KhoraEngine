@@ -12,13 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A number on a declared card — an `int`, a `float`, a `Duration` in
-//! seconds, an `Angle` in degrees — and what its hints add around it: the
-//! section header above the field, the tooltip on its label, and for a
-//! ranged one a scrubber kept inside the range with a gauge under it.
-//!
-//! A value outside the range is never changed by being shown: its gauge
-//! turns amber and its scrubber says why, until the author edits it.
+//! A number on a declared card (`int`, `float`, `Duration` in seconds,
+//! `Angle` in degrees) and what its hints add: a section header, a label
+//! tooltip, and for a ranged one a bounded scrubber over a gauge.
 
 use khora_sdk::editor_ui::{UiBuilder, UiTheme};
 use khora_sdk::khora_core::script::{ErgonType, FieldRange, ScriptValue};
@@ -52,7 +48,7 @@ pub fn render_header(ui: &mut dyn UiBuilder, theme: &UiTheme, text: &str, first:
     eyebrow(ui, theme, [rect[0], rect[1] + room - HEADER_LIFT], text);
 }
 
-/// The field's label, saying its tooltip when hovered.
+/// Draws the field's label, saying its tooltip when hovered.
 pub fn render_label(ui: &mut dyn UiBuilder, cx: &FieldContext<'_>, text: &str, color: [f32; 4]) {
     match cx.tooltip {
         Some(tooltip) => ui.colored_label_with_tooltip(color, text, tooltip),
@@ -60,9 +56,10 @@ pub fn render_label(ui: &mut dyn UiBuilder, cx: &FieldContext<'_>, text: &str, c
     }
 }
 
-/// Draws `value`, a number of `ty`, on one row — its label, its scrubber,
-/// its unit — and its gauge under it when ranged. Returns whether the author
-/// changed it; `None` when `value` is not a number of `ty`.
+/// Draws `value`, a number of `ty`, on one row with its unit, and its gauge
+/// under it when ranged; returns whether the author changed it.
+///
+/// Returns `None` when `value` is not a number of `ty`.
 pub fn render_number(
     ui: &mut dyn UiBuilder,
     label: &str,
@@ -119,7 +116,7 @@ pub fn render_number(
     Some(changed)
 }
 
-/// A read-only number's gauge, under its text row.
+/// Draws a read-only number's gauge, under its text row.
 pub fn render_read_only_gauge(
     ui: &mut dyn UiBuilder,
     cx: &FieldContext<'_>,

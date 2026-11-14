@@ -14,9 +14,8 @@
 
 //! File names: sanitising, keeping an extension, naming a saved entity.
 
-/// Walks a `SceneNode` forest to find `entity`'s display name. Used by
-/// the asset browser's drop receiver to compose a default `.kprefab`
-/// filename without a round-trip through the live `World`.
+/// Returns `entity`'s display name as the scene tree shows it, without
+/// reaching the `World`.
 pub(super) fn entity_display_name(
     roots: &[khora_sdk::editor_ui::SceneNode],
     entity: khora_sdk::prelude::ecs::EntityId,
@@ -38,10 +37,9 @@ pub(super) fn entity_display_name(
     walk(roots, entity)
 }
 
-/// Strips characters that aren't safe in cross-platform file names
-/// (path separators, shell-meta, control chars). Falls back to an
-/// underscore for runs of stripped chars so consecutive replacements
-/// don't collapse into nothing.
+/// Returns `name` safe as a file name on every platform, or `"prefab"`.
+///
+/// Each run of unsafe characters becomes one underscore.
 pub(super) fn sanitize_for_filename(name: &str) -> String {
     let mut out = String::with_capacity(name.len());
     let mut last_was_replacement = false;
@@ -63,9 +61,8 @@ pub(super) fn sanitize_for_filename(name: &str) -> String {
     }
 }
 
-/// Re-applies the original file's extension to a user-edited name when the
-/// user omitted one (so renaming `crate.png` to `box` yields `box.png`, but
-/// `box.jpg` is honoured verbatim).
+/// Returns `new_name` with `old_name`'s extension when it has none of its own:
+/// `crate.png` renamed `box` gives `box.png`, renamed `box.jpg` stays so.
 pub(super) fn ensure_extension(new_name: &str, old_name: &str) -> String {
     if new_name.contains('.') {
         return new_name.to_string();

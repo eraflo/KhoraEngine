@@ -18,7 +18,7 @@
 use khora_sdk::editor_ui::Icon;
 use khora_sdk::khora_core::asset::AssetKind;
 
-/// The icon an asset of `kind` is shown with.
+/// Returns the icon an asset of `kind` is shown with.
 pub fn asset_kind_icon(kind: AssetKind) -> Icon {
     match kind {
         AssetKind::Prefab => Icon::Prefab,
@@ -30,7 +30,7 @@ pub fn asset_kind_icon(kind: AssetKind) -> Icon {
     }
 }
 
-/// The word a sentence names an asset of `kind` by: `"prefab"`, `"sound"`, …
+/// Returns the word a sentence names an asset of `kind` by: `"prefab"`, `"sound"`, …
 pub fn asset_kind_noun(kind: AssetKind) -> &'static str {
     match kind {
         AssetKind::Prefab => "prefab",

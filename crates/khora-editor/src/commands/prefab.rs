@@ -32,16 +32,12 @@ use crate::ops::prefab_overrides::{json_overrides, rebound, reverted};
 use crate::project_vfs::{ProjectPrefabs, ProjectVfs};
 use crate::scene_io;
 
-/// Drains [`EditorState::pending_save_as_prefab`] and
-/// [`EditorState::pending_save_as_prefab_at`], writing the entity's
-/// subtree as a `.kprefab` (a scene file of the subtree, compact encoding).
+/// Drains the pending prefab saves, writing the entity's subtree as a `.kprefab`.
 ///
-/// - The `_at` variant carries a pre-chosen forward-slash relative
-///   path under `<project>/assets/`; the dispatcher writes directly
-///   without showing a dialog. Set by drag-drop (entity → asset
-///   browser folder).
-/// - The plain variant opens an `rfd::FileDialog`. Set by the scene
-///   tree's "Save as Prefab…" context entry.
+/// [`EditorState::pending_save_as_prefab_at`], set by a drop on an asset
+/// folder, carries its path under `<project>/assets/` and writes at once;
+/// [`EditorState::pending_save_as_prefab`], from the scene tree's "Save as
+/// Prefab…", asks for the file first.
 pub fn process_pending_save_as_prefab(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &GameWorld,
@@ -177,10 +173,10 @@ fn write_prefab_through_vfs(pvfs: &mut ProjectVfs, rel_fwd: &str, bytes: &[u8]) 
     log::info!("Prefab saved to '{}' ({} bytes)", rel_fwd, bytes.len());
 }
 
-/// Drains [`EditorState::pending_prefab_spawn`] and brings the referenced
-/// `.kprefab` into the live world as a linked instance via
-/// [`instantiate_prefab`]. The forward-slash relative path resolves through
-/// the project's VFS / `AssetService`.
+/// Drains [`EditorState::pending_prefab_spawn`]: spawns the prefab its id names as a linked instance.
+///
+/// The id is a `.kprefab`, a glTF scene or another sub-asset prefab, read
+/// through the project's VFS; given a parent, the new root is placed under it.
 pub fn process_pending_prefab_spawn(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,
@@ -215,10 +211,11 @@ pub fn process_pending_prefab_spawn(
     }
 }
 
-/// Drains [`EditorState::pending_prefab_apply`]: what of the entity's
-/// instance is applied is written into its prefab — the prefab's file
-/// rewritten through the project's VFS and reindexed — so every instance of
-/// it takes the value on its next load.
+/// Drains [`EditorState::pending_prefab_apply`]: writes what is applied of the instance into its prefab.
+///
+/// The prefab's file is rewritten through the project's VFS and reindexed;
+/// the other instances in this world follow at once. See the book:
+/// concepts/prefabs.md, "Seeing and editing overrides".
 pub fn process_pending_prefab_apply(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &GameWorld,
@@ -282,10 +279,8 @@ pub fn process_pending_prefab_apply(
         }
     };
 
-    // The other instances of the prefab in this world, as the prefab stood:
-    // what they did not override follows the new prefab now, not on their
-    // next load — a save in between would otherwise pin the old value as
-    // an override.
+    // The other instances follow the new prefab now, not on their next load:
+    // a save in between would pin the old value as an override.
     let others = other_instances(inner, &instance);
     let before: Vec<_> = others
         .iter()
@@ -331,9 +326,9 @@ fn other_instances(world: &World, instance: &InstanceOf) -> Vec<InstanceOf> {
         .collect()
 }
 
-/// The edits that carry each instance in `before` onto its prefab as it now
-/// is: a value the instance overrides stays the instance's; any other takes
-/// the prefab's new one.
+/// Returns the edits that carry each instance in `before` onto its prefab as it now is.
+///
+/// A value the instance overrides stays the instance's; any other takes the prefab's new one.
 fn rebased_instances(
     world: &World,
     before: &[(InstanceOf, World)],
@@ -399,10 +394,10 @@ fn rebased_instances(
     edits
 }
 
-/// [`rebased_instances`] for the declared components of one member: `twin`
-/// in the prefab's `old` expansion, `now` in its `new` one. A field the
-/// member set apart from the old prefab keeps its value; every other takes
-/// the new prefab's.
+/// Does [`rebased_instances`] for the declared components of one member.
+///
+/// `twin` in the prefab's `old` expansion, `now` in its `new` one. A field the
+/// member set apart from the old prefab keeps its value; every other takes the new one.
 fn rebased_declared(
     world: &World,
     member: EntityId,

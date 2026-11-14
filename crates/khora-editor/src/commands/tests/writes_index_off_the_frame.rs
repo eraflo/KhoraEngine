@@ -13,14 +13,16 @@
 // limitations under the License.
 
 //! **The editor's writes are indexed off the frame, and what needs the index
-//! waits for it.** The project serves the engine's asset service and files
-//! its reindexes with the engine's index hub. A save, a create or a rename
-//! reindexes nothing on the frame: the service, and the browser, learn of
-//! the file only once the reindex lands; what must use the new file — a
-//! material assigned by its identity, a script revealed, a scene opened —
-//! runs then. The engine's side of a frame is played by hand
-//! ([`IndexingEngine`]), around the editor's own `land_reindex`, whose
-//! actions that need the world are applied as `before_frame` applies them.
+//! waits for it.**
+//!
+//! The project serves the engine's asset service and files its reindexes with
+//! the engine's index hub. A save, a create or a rename reindexes nothing on
+//! the frame: the service, and the browser, learn of the file only once the
+//! reindex lands; what must use the new file — a material assigned by its
+//! identity, a script revealed, a scene opened — runs then. The engine's side
+//! of a frame is played by hand ([`IndexingEngine`]), around the editor's own
+//! `land_reindex`, whose actions that need the world are applied as
+//! `before_frame` applies them.
 
 use std::path::Path;
 
@@ -80,12 +82,13 @@ fn listed(state: &Arc<Mutex<EditorState>>, rel: &str) -> bool {
         .any(|entry| entry.source_path == rel)
 }
 
-/// **A saved material is assigned once its index lands.** An entity wears
-/// an inline material, which the author saves as a `.kmat`. The file is
-/// written at once, but the index does not know it yet: the entity keeps
-/// its inline material, so nothing asks the engine for an asset it cannot
-/// find, and the service never records a failed decode of it. Once the
-/// reindex lands, the entity references the saved material, and it decodes.
+/// **A saved material is assigned once its index lands.**
+///
+/// An entity wears an inline material, which the author saves as a `.kmat`. The
+/// file is written at once, but the index does not know it yet: the entity
+/// keeps its inline material, so nothing asks the engine for an asset it cannot
+/// find, and the service never records a failed decode of it. Once the reindex
+/// lands, the entity references the saved material, and it decodes.
 #[test]
 fn a_saved_material_is_assigned_once_its_index_lands() {
     const STEEL: &str = "materials/Steel.kmat";
@@ -149,8 +152,9 @@ fn a_saved_material_is_assigned_once_its_index_lands() {
     assert!(!service.has_failed(&steel), "no decode of it failed");
 }
 
-/// **A material assigned at a landing spares an entity changed since.** An
-/// entity despawned before the reindex landed stays gone; one that wears
+/// **A material assigned at a landing spares an entity changed since.**
+///
+/// An entity despawned before the reindex landed stays gone; one that wears
 /// another material asset since keeps it.
 #[test]
 fn a_material_landing_spares_an_entity_despawned_or_reassigned_since() {
@@ -204,10 +208,11 @@ fn a_material_landing_spares_an_entity_despawned_or_reassigned_since() {
     );
 }
 
-/// **A scene saved is listed once indexed.** The save writes the file, but
-/// reindexes nothing on the frame: the service does not know it and the
-/// browser does not list it. Once the reindex lands, both do, and the
-/// browser is told to rescan.
+/// **A scene saved is listed once indexed.**
+///
+/// The save writes the file, but reindexes nothing on the frame: the service
+/// does not know it and the browser does not list it. Once the reindex lands,
+/// both do, and the browser is told to rescan.
 #[test]
 fn a_scene_saved_is_listed_once_indexed() {
     const LEVEL: &str = "scenes/level.kscene";
@@ -247,9 +252,10 @@ fn a_scene_saved_is_listed_once_indexed() {
     );
 }
 
-/// **A script created is revealed once indexed.** The browser asks for a
-/// new script: it is written at once, but revealed only when the reindex
-/// lands, when the browser's entries hold it.
+/// **A script created is revealed once indexed.**
+///
+/// The browser asks for a new script: it is written at once, but revealed only
+/// when the reindex lands, when the browser's entries hold it.
 #[test]
 fn a_script_created_is_revealed_once_indexed() {
     const PLAYER: &str = "scripts/Player.erg";
@@ -289,9 +295,10 @@ fn a_script_created_is_revealed_once_indexed() {
     );
 }
 
-/// **A renamed asset keeps its identity once reindexed.** Until the
-/// reindex lands, the service still finds the asset at its old path; after
-/// it, at its new path, under the same identity — never under the one its
+/// **A renamed asset keeps its identity once reindexed.**
+///
+/// Until the reindex lands, the service still finds the asset at its old path;
+/// after it, at its new path, under the same identity — never under the one its
 /// new path would derive.
 #[test]
 fn a_renamed_asset_keeps_its_uuid_once_reindexed() {
@@ -341,9 +348,10 @@ fn a_renamed_asset_keeps_its_uuid_once_reindexed() {
     );
 }
 
-/// **A prefab saved joins the catalog once indexed.** A script's `Spawn` is
-/// checked against the project's prefab catalog; a prefab saved into the
-/// project joins it when the reindex lands, not before.
+/// **A prefab saved joins the catalog once indexed.**
+///
+/// A script's `Spawn` is checked against the project's prefab catalog; a prefab
+/// saved into the project joins it when the reindex lands, not before.
 #[test]
 fn a_saved_prefab_joins_the_catalog_once_indexed() {
     const TURRET: &str = "prefabs/turret.kprefab";
@@ -412,10 +420,11 @@ fn names_the_file(pending: Option<&str>, expected: &Path) -> bool {
     })
 }
 
-/// **A scene missing from the index opens once indexed.** A scene written
-/// behind the index's back is opened: the open files a reindex and nothing
-/// else — no scene load, no reindex on the frame. Once the reindex lands
-/// and the index holds the scene, it is queued to open.
+/// **A scene missing from the index opens once indexed.**
+///
+/// A scene written behind the index's back is opened: the open files a reindex
+/// and nothing else — no scene load, no reindex on the frame. Once the reindex
+/// lands and the index holds the scene, it is queued to open.
 #[test]
 fn a_scene_missing_from_the_index_opens_once_indexed() {
     const HIDDEN: &str = "scenes/hidden.kscene";
@@ -459,10 +468,11 @@ fn a_scene_missing_from_the_index_opens_once_indexed() {
     assert_eq!(engine.filed(), 1, "one reindex, no other");
 }
 
-/// **A scene still missing after its reindex is not indexed again.** A
-/// scene that is nowhere is opened: one reindex is filed; when it lands
-/// and the scene is still missing, nothing is opened and no second reindex
-/// is filed.
+/// **A scene still missing after its reindex is not indexed again.**
+///
+/// A scene that is nowhere is opened: one reindex is filed; when it lands and
+/// the scene is still missing, nothing is opened and no second reindex is
+/// filed.
 #[test]
 fn a_scene_still_missing_after_its_reindex_is_reported_once() {
     const NOWHERE: &str = "scenes/nowhere.kscene";
@@ -511,10 +521,12 @@ fn scene_of_one_inline_entity(path: &Path, name: &str) {
 }
 
 /// **A material landing after the scene was replaced touches none of the new
-/// scene's entities.** An entity's inline material is saved as a `.kmat`;
-/// before its reindex lands, another scene replaces the world. The entity
-/// the save named is gone: its id may come back attached to an entity of
-/// the new scene, which must keep its own inline material.
+/// scene's entities.**
+///
+/// An entity's inline material is saved as a `.kmat`; before its reindex lands,
+/// another scene replaces the world. The entity the save named is gone: its id
+/// may come back attached to an entity of the new scene, which must keep its
+/// own inline material.
 #[test]
 fn a_material_landing_after_the_scene_was_replaced_touches_no_new_entity() {
     const STEEL: &str = "materials/Steel.kmat";
@@ -566,10 +578,11 @@ fn a_material_landing_after_the_scene_was_replaced_touches_no_new_entity() {
     );
 }
 
-/// **A new scene has the last word over a scene waiting for its index.** A
-/// scene missing from the index is opened: it waits for a reindex. Before
-/// that lands, the author asks for a new scene. The new scene stays: once
-/// the reindex lands, the scene asked for before is not queued to open.
+/// **A new scene has the last word over a scene waiting for its index.**
+///
+/// A scene missing from the index is opened: it waits for a reindex. Before
+/// that lands, the author asks for a new scene. The new scene stays: once the
+/// reindex lands, the scene asked for before is not queued to open.
 #[test]
 fn a_new_scene_has_the_last_word_over_a_scene_waiting_for_its_index() {
     const HIDDEN: &str = "scenes/hidden.kscene";
@@ -603,11 +616,12 @@ fn a_new_scene_has_the_last_word_over_a_scene_waiting_for_its_index() {
     );
 }
 
-/// **A scene opened since has the last word over one waiting for its
-/// index.** A scene missing from the index is opened and waits for a
-/// reindex; before that lands, the author opens another scene, which lands.
-/// Once the reindex lands, the scene asked for first is not queued to open
-/// over the one asked for last.
+/// **A scene opened since has the last word over one waiting for its index.**
+///
+/// A scene missing from the index is opened and waits for a reindex; before
+/// that lands, the author opens another scene, which lands. Once the reindex
+/// lands, the scene asked for first is not queued to open over the one asked
+/// for last.
 #[test]
 fn a_scene_opened_since_has_the_last_word_over_one_waiting_for_its_index() {
     const HIDDEN: &str = "scenes/hidden.kscene";
@@ -643,9 +657,10 @@ fn a_scene_opened_since_has_the_last_word_over_one_waiting_for_its_index() {
     );
 }
 
-/// **A scene opened once indexed loads from the path queued.** The path a
-/// landing queues for a scene missing from the index is read back by the
-/// next update as the open's own: it resolves inside the project, and the
+/// **A scene opened once indexed loads from the path queued.**
+///
+/// The path a landing queues for a scene missing from the index is read back by
+/// the next update as the open's own: it resolves inside the project, and the
 /// scene lands in the world, its path the editor's current one.
 #[test]
 fn a_scene_queued_once_indexed_opens_from_the_path_queued() {
@@ -697,11 +712,12 @@ fn a_scene_queued_once_indexed_opens_from_the_path_queued() {
     assert_eq!(engine.filed(), 1, "its open filed no other reindex");
 }
 
-/// **The material saved last is the one the entity wears.** An entity's
-/// inline material is saved as `Steel`, then, before that reindex lands,
-/// saved again as `Iron` — the save accepts it, the entity being still
-/// inline. Once both landed, the entity references `Iron`, the author's
-/// last choice, not `Steel`.
+/// **The material saved last is the one the entity wears.**
+///
+/// An entity's inline material is saved as `Steel`, then, before that reindex
+/// lands, saved again as `Iron` — the save accepts it, the entity being still
+/// inline. Once both landed, the entity references `Iron`, the author's last
+/// choice, not `Steel`.
 #[test]
 fn the_material_saved_last_is_the_one_the_entity_wears() {
     const STEEL: &str = "materials/Steel.kmat";
@@ -746,10 +762,11 @@ fn the_material_saved_last_is_the_one_the_entity_wears() {
 }
 
 /// **An inline material changed since the save is not overwritten by it.**
-/// An entity's inline material is saved as `Steel`; before that reindex
-/// lands, a texture is dropped on the entity, which now wears a new inline
-/// material made of it. The landing does not put the saved `Steel` over
-/// that later change.
+///
+/// An entity's inline material is saved as `Steel`; before that reindex lands,
+/// a texture is dropped on the entity, which now wears a new inline material
+/// made of it. The landing does not put the saved `Steel` over that later
+/// change.
 #[test]
 fn an_inline_material_changed_since_the_save_is_kept_at_the_landing() {
     const RUST: &str = "textures/rust.png";
@@ -795,11 +812,12 @@ fn an_inline_material_changed_since_the_save_is_kept_at_the_landing() {
     );
 }
 
-/// **A material saved just before Play is still worn after Stop.** An
-/// entity's inline material is saved as `Steel` while editing; Play is
-/// pressed before the reindex lands, and the landing comes during play.
-/// Stop brings back the scene as it was edited: the entity references the
-/// material the author saved, not its inline one.
+/// **A material saved just before Play is still worn after Stop.**
+///
+/// An entity's inline material is saved as `Steel` while editing; Play is
+/// pressed before the reindex lands, and the landing comes during play. Stop
+/// brings back the scene as it was edited: the entity references the material
+/// the author saved, not its inline one.
 #[test]
 fn a_material_saved_just_before_play_is_worn_after_stop() {
     const STEEL: &str = "materials/Steel.kmat";
@@ -851,11 +869,12 @@ fn a_material_saved_just_before_play_is_worn_after_stop() {
     );
 }
 
-/// **A scene asked for on the frame a waiting open lands is the one
-/// opened.** A scene missing from the index is opened and waits for a
-/// reindex. On the frame that reindex lands, the shell — drawn before the
-/// landing is read — has queued another scene the author double-clicked:
-/// the landing does not put the scene asked for first over it.
+/// **A scene asked for on the frame a waiting open lands is the one opened.**
+///
+/// A scene missing from the index is opened and waits for a reindex. On the
+/// frame that reindex lands, the shell — drawn before the landing is read — has
+/// queued another scene the author double-clicked: the landing does not put the
+/// scene asked for first over it.
 #[test]
 fn a_scene_asked_for_as_a_waiting_open_lands_is_not_overwritten() {
     const HIDDEN: &str = "scenes/hidden.kscene";
@@ -909,14 +928,15 @@ fn worn(world: &GameWorld, entity: EntityId) -> Option<Option<AssetUUID>> {
         })
 }
 
-/// **A material landing spares the scene opened since, even where it holds
-/// the same entity.** An authored entity's inline material is saved as a
-/// `.kmat`; before its reindex lands, the author opens another scene — a copy
-/// of this one, or this one reopened from disk — which holds an entity under
-/// the same identity, wearing the same inline material. The save was made on
-/// the scene the author left: the scene opened since keeps its inline
-/// material, as it keeps its own choice of scene over an open waiting for the
-/// index.
+/// **A material landing spares the scene opened since, even where it holds the
+/// same entity.**
+///
+/// An authored entity's inline material is saved as a `.kmat`; before its
+/// reindex lands, the author opens another scene — a copy of this one, or this
+/// one reopened from disk — which holds an entity under the same identity,
+/// wearing the same inline material. The save was made on the scene the author
+/// left: the scene opened since keeps its inline material, as it keeps its own
+/// choice of scene over an open waiting for the index.
 #[test]
 fn a_material_landing_spares_the_same_entity_of_a_scene_opened_since() {
     const STEEL: &str = "materials/Steel.kmat";
@@ -964,11 +984,12 @@ fn a_material_landing_spares_the_same_entity_of_a_scene_opened_since() {
     );
 }
 
-/// **The material saved last is worn, across a Stop.** An authored entity's
-/// inline material is saved as `Steel`; Play and Stop come before its reindex
-/// lands, and the restored entity — the same identity under another id — is
-/// saved again as `Iron`. Once both landed, the entity wears `Iron`, the
-/// author's last choice.
+/// **The material saved last is worn, across a Stop.**
+///
+/// An authored entity's inline material is saved as `Steel`; Play and Stop come
+/// before its reindex lands, and the restored entity — the same identity under
+/// another id — is saved again as `Iron`. Once both landed, the entity wears
+/// `Iron`, the author's last choice.
 #[test]
 fn the_material_saved_last_is_worn_across_a_stop() {
     const STEEL: &str = "materials/Steel.kmat";
@@ -1020,11 +1041,13 @@ fn the_material_saved_last_is_worn_across_a_stop() {
 }
 
 /// **A material saved while editing is worn after Stop, whatever is saved
-/// during play.** An authored entity's inline material is saved as `Steel`
-/// while editing; Play is pressed before its reindex lands. During play the
-/// entity's material is changed and saved as `Iron` — a change of the played
-/// world, which Stop discards. After Stop, the edited entity wears `Steel`,
-/// as it would had its reindex landed before Play.
+/// during play.**
+///
+/// An authored entity's inline material is saved as `Steel` while editing; Play
+/// is pressed before its reindex lands. During play the entity's material is
+/// changed and saved as `Iron` — a change of the played world, which Stop
+/// discards. After Stop, the edited entity wears `Steel`, as it would had its
+/// reindex landed before Play.
 #[test]
 fn a_material_saved_while_editing_is_worn_after_a_save_during_play() {
     const STEEL: &str = "materials/Steel.kmat";
@@ -1074,11 +1097,12 @@ fn a_material_saved_while_editing_is_worn_after_a_save_during_play() {
     );
 }
 
-/// **A textured material saved just before Play is worn after Stop.** As
-/// [`a_material_saved_just_before_play_is_worn_after_stop`], with a material
-/// whose fields are not the defaults: a base color texture, colors and
-/// factors no short decimal writes. The restore brings back the same
-/// material, so the landing recognises it.
+/// **A textured material saved just before Play is worn after Stop.**
+///
+/// As [`a_material_saved_just_before_play_is_worn_after_stop`], with a material
+/// whose fields are not the defaults: a base color texture, colors and factors
+/// no short decimal writes. The restore brings back the same material, so the
+/// landing recognises it.
 #[test]
 fn a_textured_material_saved_just_before_play_is_worn_after_stop() {
     const STEEL: &str = "materials/Steel.kmat";

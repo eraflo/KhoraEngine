@@ -12,13 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The Problems tab: what is wrong with the open project's scripts — compile
-//! errors and warnings, registration clashes and orphans, faulted and slow
-//! instances — grouped by module, each row leading to its file or its entity.
-//!
-//! Drawn as the Console is: the same filter pills, the same grid of rows, the
-//! same tint for the two severities, and the severity is an icon as well as a
-//! colour.
+//! The Problems tab: what is wrong with the open project's scripts and scene
+//! data, grouped by module or component, each row leading to its file or its
+//! entity. Drawn as the Console is, the severity an icon as well as a colour.
 
 mod tile_badge;
 pub(crate) mod view;
@@ -48,8 +44,7 @@ const GAP: f32 = 9.0;
 pub struct ProblemsPanel {
     state: Arc<Mutex<EditorState>>,
     theme: UiTheme,
-    /// The tab's title, its counts included: rebuilt each frame from what it
-    /// lists.
+    /// The tab's title with its counts, rebuilt each frame.
     title: String,
     show_errors: bool,
     show_warnings: bool,
@@ -58,7 +53,7 @@ pub struct ProblemsPanel {
 }
 
 impl ProblemsPanel {
-    /// A Problems tab over the editor's state.
+    /// Returns a Problems tab over the editor's state.
     pub fn new(state: Arc<Mutex<EditorState>>, theme: UiTheme) -> Self {
         Self {
             state,
@@ -84,7 +79,7 @@ enum Line {
     Note(String),
 }
 
-/// The name the hierarchy shows for `entity`.
+/// Returns the name the hierarchy shows for `entity`.
 fn name_in(nodes: &[SceneNode], entity: EntityId) -> Option<String> {
     nodes.iter().find_map(|node| {
         if node.entity == entity {
@@ -95,8 +90,8 @@ fn name_in(nodes: &[SceneNode], entity: EntityId) -> Option<String> {
     })
 }
 
-/// `row_text` split into its `line:col` and its message — the position
-/// empty when the problem has none.
+/// Returns `row_text` split into its `line:col` and its message, the
+/// position empty when the problem has none.
 fn split_position(row_text: &str) -> (String, String) {
     match row_text.split_once("  ") {
         Some((position, message))
@@ -141,7 +136,6 @@ impl EditorPanel for ProblemsPanel {
             .count();
         let warnings = problems.len() - errors;
 
-        // ── Header ──
         ui.paint_rect_filled([r[0], r[1]], [r[2], HEADER_H], t.surface, 0.0);
         ui.paint_line(
             [r[0], r[1] + HEADER_H],
@@ -150,7 +144,6 @@ impl EditorPanel for ProblemsPanel {
             1.0,
         );
 
-        // ── Filters ──
         let fy = r[1] + HEADER_H + 5.0;
         let mut x = r[0] + 10.0;
         let pills = [
@@ -192,7 +185,6 @@ impl EditorPanel for ProblemsPanel {
             None => {}
         }
 
-        // ── Lines ──
         let body_y = r[1] + HEADER_H + FILTER_H + 2.0;
         let body = [r[0], body_y, r[2], (widgets::bottom(r) - body_y).max(0.0)];
         let shown: Vec<_> = problems

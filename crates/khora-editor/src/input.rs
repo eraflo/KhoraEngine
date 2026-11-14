@@ -6,12 +6,10 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! Editor input dispatch — keyboard shortcuts + camera navigation.
+//! Editor input dispatch: keyboard shortcuts and camera navigation.
 //!
-//! Pulls per-frame `InputEvent`s from `EditorApp::update` and routes them
-//! to the editor camera, gizmo mode switches, the command palette and the
-//! workspace shortcuts. Viewport-rect aware so dragging across panels does not
-//! nudge the camera.
+//! Routes each frame's `InputEvent`s to the editor camera, the gizmo, the
+//! command palette and the workspace shortcuts.
 
 use std::sync::{Arc, Mutex};
 
@@ -34,27 +32,23 @@ pub struct InputState {
     pub shift_held: bool,
     pub ctrl_held: bool,
     pub prev_cursor: Option<(f32, f32)>,
-    /// Last known cursor position in physical screen pixels — kept in
-    /// sync with every `WindowEvent::CursorMoved`. Used by
-    /// `intercept_window_event` to test whether a `MouseInput` event
-    /// (which carries no position) lands inside the 3D viewport rect.
+    /// Last cursor position in physical pixels, to place a `MouseInput`,
+    /// which carries none, inside or outside the viewport.
     pub last_cursor_pos: Option<(f32, f32)>,
     /// The gizmo handle currently being dragged, if any.
     pub gizmo_drag: Option<GizmoDrag>,
-    /// Transforms the selection had when that drag began. A drag resolves
-    /// against these rather than against the live values, so it cannot
-    /// accumulate drift over a long gesture.
+    /// Transforms the selection had when that drag began.
+    ///
+    /// A drag resolves against these, not the live values, so a long gesture cannot drift.
     pub gizmo_starts: Vec<(EntityId, GizmoTransform)>,
 }
 
 impl InputState {
     /// Drops every held button and modifier.
     ///
-    /// Called when the window loses focus: a release that happens while another
-    /// application is in front never reaches us, so without this the flag stays
-    /// set forever — Alt-Tab with the middle button down and the camera orbits
-    /// on plain mouse movement from then on. A stuck `ctrl_held` is quieter and
-    /// worse: it disables the gizmo shortcuts, which just stop working.
+    /// Called when the window loses focus: a release made while another
+    /// application is in front never arrives. A stuck middle button orbits on
+    /// plain motion; a stuck `ctrl_held` silently disables the gizmo shortcuts.
     pub fn release_all(&mut self) {
         self.middle_down = false;
         self.right_down = false;
@@ -85,8 +79,9 @@ fn cursor_ray(
     Some(camera.screen_to_ray(cx - rx, cy - ry, rw, rh))
 }
 
-/// Drive the editor camera + global shortcuts off the per-frame input
-/// queue produced by the engine. World access is needed for `Delete`.
+/// Drives the editor camera and the global shortcuts from the frame's input events.
+///
+/// Takes the world for `Delete`.
 pub fn process_events(
     state: &mut InputState,
     inputs: &[InputEvent],
@@ -104,24 +99,18 @@ pub fn process_events(
             .map(|[rx, ry, rw, rh]| x >= rx && x < rx + rw && y >= ry && y < ry + rh)
             .unwrap_or(false)
     };
-    // The editor camera is only navigable in Editing mode. In Play /
-    // Paused, mouse motion over the viewport must NOT move the editor
-    // camera — otherwise users see no visible difference between the
-    // two modes (and the active scene camera is the one that should
-    // render).
+    // Only Editing navigates the editor camera: in Play and Paused the scene's
+    // camera renders, and moving the editor's would blur the two modes.
     let editor_cam_navigable = play_mode == PlayMode::Editing;
 
     for input in inputs {
         match input {
-            // The engine reports this now, so the editor no longer has to read
-            // raw winit events to notice it. Losing focus swallows every
-            // release, so whatever is held has to be let go here or it stays
-            // held until the user happens to press and release it again.
+            // Losing focus swallows every release: let go of whatever is held
+            // here, or it stays held until pressed and released again.
             InputEvent::FocusLost => state.release_all(),
             InputEvent::MouseButtonPressed { button } => {
-                // Only arm camera navigation when the press *starts* in the
-                // viewport. Pressing on the inspector and dragging across used
-                // to grab the camera halfway.
+                // Arm camera navigation only when the press starts in the
+                // viewport: a drag begun over the inspector never grabs it.
                 let started_in_viewport = state
                     .last_cursor_pos
                     .map(|(x, y)| cursor_in_viewport(x, y))
@@ -130,10 +119,7 @@ pub fn process_events(
                     match button {
                         MouseButton::Middle => state.middle_down = true,
                         MouseButton::Right => state.right_down = true,
-                        // Left click grabs a gizmo handle, or picks. Selection
-                        // is no longer hierarchy-only: `GizmoMode::Select` and
-                        // `screen_to_ray` both existed, but nothing cast a ray
-                        // against the scene, so the viewport was read-only.
+                        // Left click grabs a gizmo handle, or picks an entity.
                         MouseButton::Left => {
                             let ray = cursor_ray(camera, state.last_cursor_pos, viewport_rect);
                             let view = viewport_rect.and_then(|[_, _, rw, rh]| {
@@ -263,9 +249,8 @@ pub fn process_events(
                     }
                 }
 
-                // Escape retreats one level. Today that means closing the
-                // palette, then clearing the selection — the design doc's
-                // "Esc always retreats" applied to what exists.
+                // Escape retreats one level: closes the palette, else clears
+                // the selection.
                 if *key_code == KeyCode::Escape {
                     if let Ok(mut s) = editor_state.lock() {
                         if s.command_palette_open {
@@ -277,10 +262,9 @@ pub fn process_events(
                     }
                 }
 
-                // Ctrl+Z / Ctrl+Y are unbound on purpose: nothing pushes onto
-                // `CommandHistory`, so both were no-ops. A shortcut that
-                // silently does nothing is worse than an absent one — it
-                // teaches the user their edits are reversible when they are not.
+                // Ctrl+Z / Ctrl+Y stay unbound: nothing pushes onto
+                // `CommandHistory`, and a shortcut that silently does nothing
+                // teaches that edits are reversible when they are not.
             }
             InputEvent::KeyReleased { key_code } => {
                 if matches!(key_code, KeyCode::ShiftLeft | KeyCode::ShiftRight) {
@@ -311,11 +295,8 @@ pub fn process_events(
                         let dy = y - py;
 
                         if let Ok(mut cam) = camera.lock() {
-                            // DCC convention, shared by Blender, Unity, Unreal
-                            // and Godot: middle orbits, shift+middle pans.
-                            // Right-drag used to pan, which left the button
-                            // doing something no other 3D tool does and wasted
-                            // the one people reach for to look around.
+                            // As in Blender, Unity, Unreal and Godot: middle
+                            // orbits, shift+middle pans.
                             if state.middle_down && state.shift_held {
                                 cam.pan(dx, dy);
                             } else if state.middle_down || state.right_down {

@@ -43,9 +43,8 @@ impl ControlPlanePanel {
             1.0,
         );
 
-        // Brand block (left). Width is computed from the actual rendered
-        // sub-text so the stats cells start *after* it instead of at a
-        // hard-coded 320px (which used to overlap on common screen widths).
+        // The stats cells start after the brand block's measured width, so
+        // they never overlap its text.
         khora_tool_ui::widgets::sign(ui, theme, [x + 24.0, y + h * 0.5], 16.0, 1.0);
         paint::text(
             ui,
@@ -58,7 +57,7 @@ impl ControlPlanePanel {
             .map(|c| families_off_label(&c.inactive))
             .unwrap_or_else(|| "—".to_owned());
         let mult = dcc.map(|c| c.global_budget_multiplier).unwrap_or(1.0);
-        // Sub-text on two compact lines so it doesn't run into the stats grid.
+        // Two short lines, so the text does not run into the stats.
         let sub_line1 = format!("khora-control · {} · budget×{:.2}", mode_str, mult,);
         let sub_line2 = format!(
             "{} agent{} · {:.0} fps · {:.2}/{:.2}ms",
@@ -85,14 +84,12 @@ impl ControlPlanePanel {
             TextAlign::Left,
         );
 
-        // Compute brand block width (longest of the two lines + sign gutter).
         let brand_title_w =
             ui.measure_text("Dynamic Context Core", 14.0, FontFamilyHint::Proportional)[0];
         let sub1_w = ui.measure_text(&sub_line1, 10.5, FontFamilyHint::Monospace)[0];
         let sub2_w = ui.measure_text(&sub_line2, 10.5, FontFamilyHint::Monospace)[0];
-        let brand_w = 40.0 + brand_title_w.max(sub1_w).max(sub2_w) + 24.0; // sign + text + breathing
+        let brand_w = 40.0 + brand_title_w.max(sub1_w).max(sub2_w) + 24.0;
 
-        // 5 stats cells (right) — all real values now.
         let stats_x = x + brand_w.max(220.0);
         let stats_w = (w - brand_w.max(220.0) - 16.0).max(120.0);
         let cell_w = stats_w / 5.0;
@@ -172,8 +169,8 @@ impl ControlPlanePanel {
                 FontFamilyHint::Monospace,
                 TextAlign::Left,
             );
-            // The frame budget shows a trend (it's the DCC's real cost signal);
-            // the other cells are instantaneous, so a single bar fits them.
+            // The frame time shows a trend; the other cells are instantaneous,
+            // so a bar fits them.
             if i == 0 && frame_samples.len() >= 4 {
                 khora_tool_ui::widgets::sparkline(
                     ui,
@@ -194,8 +191,8 @@ impl ControlPlanePanel {
     }
 }
 
-/// What the summary bar says of the families off: every one by name, or that
-/// none is.
+/// Returns what the summary bar says of the families off: each by name, or
+/// that none is.
 pub(super) fn families_off_label(
     inactive: &std::collections::BTreeSet<khora_sdk::AgentId>,
 ) -> String {

@@ -12,26 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Workbench — the dockable area between the spine and the status bar.
-//!
-//! One [`EditorPanel`] that hosts all the others. It owns a
-//! [`DockTree`] per [`EditorMode`], lays the tree out over its own rect, and
-//! hands each leaf its share through [`UiBuilder::region_at`] — so the panels
-//! inside see a `panel_rect()` of exactly their pane and need no notion of the
-//! dock at all.
-//!
-//! ## Why here and not in the shell
-//!
-//! The dock's chrome is painted with `khora-tool-ui`, which carries Khora's
-//! brand. `khora-infra` — where the egui shell lives — must not depend on it,
-//! or every game built on the engine would inherit the vendor's look. Hosting
-//! the dock as a Center panel keeps the branded widgets in the editor where
-//! they belong, and leaves `EditorShell` generic.
-//!
-//! It also puts the per-mode layouts where mode knowledge already lives. The
-//! shell used to reach into `EditorState::active_mode` to hide the right
-//! sidebar in Control Plane mode; with a tree per mode, switching modes swaps
-//! the whole layout and that special case disappears.
+//! The workbench: the dockable area between the spine and the status bar, one
+//! panel hosting the others in a dock tree per editor mode. It lives here, not
+//! in the shell, so the shell never depends on the branded `khora-tool-ui`.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -43,25 +26,26 @@ use khora_tool_ui::widgets::{
 };
 
 /// Hosts the dockable panels for every workspace.
+///
+/// Each panel paints into its pane through [`UiBuilder::region_at`], so its
+/// `panel_rect()` is exactly its pane.
 pub struct WorkbenchPanel {
     state: Arc<Mutex<EditorState>>,
     theme: UiTheme,
-    /// Panels by id. Owned here rather than by the shell, because the dock —
-    /// not the registration order — decides where each one goes.
+    /// Panels by id: the dock, not the registration order, places them.
     panels: HashMap<String, Box<dyn EditorPanel>>,
     /// One layout per workspace. Switching modes swaps the tree wholesale.
     trees: HashMap<EditorMode, DockTree>,
-    /// Panel id currently being dragged by its tab, for the whole gesture.
+    /// Panel id being dragged by its tab, for the whole gesture.
     ///
-    /// Held as an id rather than an index: the layout is rebuilt every frame,
-    /// so an index would address a different pane the moment anything moved.
+    /// An id, not an index: the layout is rebuilt every frame.
     dragging: Option<String>,
-    /// Where the in-flight drag would land if released now.
+    /// Where the drag under way would land if released.
     pending_drop: Option<(String, DropZone)>,
 }
 
 impl WorkbenchPanel {
-    /// Creates an empty workbench.
+    /// Returns an empty workbench.
     pub fn new(state: Arc<Mutex<EditorState>>, theme: UiTheme) -> Self {
         Self {
             state,
@@ -75,8 +59,7 @@ impl WorkbenchPanel {
 
     /// Adds a panel to the pool the layouts can place.
     ///
-    /// A panel that no mode's tree names is simply never shown — the pool and
-    /// the layouts are deliberately independent, so a mode can drop a panel
+    /// A panel no mode's tree names is never shown: a mode drops a panel
     /// without unregistering it.
     pub fn add_panel(&mut self, panel: Box<dyn EditorPanel>) {
         self.panels.insert(panel.id().to_owned(), panel);
@@ -117,7 +100,6 @@ impl EditorPanel for WorkbenchPanel {
         let pointer = ui.pointer_position();
         let drag_active = ui.is_drag_active();
 
-        // ── Panes ─────────────────────────────────────
         let mut activate: Option<(String, String)> = None;
         let mut drag_start: Option<String> = None;
 
@@ -149,7 +131,6 @@ impl EditorPanel for WorkbenchPanel {
             }
         }
 
-        // ── Dividers ──────────────────────────────────
         for (si, splitter) in layout.splitters.iter().enumerate() {
             if let Some(ratio) = dock_splitter(ui, &theme, splitter, &format!("wb-sp{si}")) {
                 if let Some(tree) = self.trees.get_mut(&mode) {
@@ -158,16 +139,14 @@ impl EditorPanel for WorkbenchPanel {
             }
         }
 
-        // ── Drag feedback and commit ──────────────────
         if let Some(id) = drag_start {
             self.dragging = Some(id);
         }
 
         if let Some(dragged) = self.dragging.clone() {
             if drag_active {
-                // Recompute the target every frame from the live layout: the
-                // pane under the cursor is only meaningful for the frame it
-                // was measured in.
+                // Measured again every frame: the pane under the cursor is
+                // only meaningful for the layout it was measured in.
                 self.pending_drop = pointer.and_then(|p| {
                     layout.groups.iter().find_map(|g| {
                         let zone = zone_at(g.rect, p)?;
@@ -214,9 +193,8 @@ mod tests {
     use super::*;
     use khora_tool_ui::dock::DropZone;
 
-    /// A panel the pool holds but no layout names must simply not be shown —
-    /// the two are independent so a mode can drop a panel without the app
-    /// having to unregister it.
+    /// A panel the pool holds but no layout names is not shown, so a mode
+    /// drops a panel without unregistering it.
     #[test]
     fn layout_selects_from_the_pool_rather_than_the_pool_driving_the_layout() {
         let state = Arc::new(Mutex::new(EditorState::default()));

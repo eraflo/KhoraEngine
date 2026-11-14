@@ -12,12 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Project-scoped Virtual File System for the editor.
-//!
-//! Wraps the `khora-io` `AssetService` and a subscription to an `AssetWatch` together with a
-//! `FileLoader` rooted at `<project>/assets/`. This is the single I/O entry
-//! point used by `scene_io`, the asset browser, and any other editor code
-//! that needs to read or write project content.
+//! The editor's project-scoped virtual file system: every read and write of
+//! project content goes through it.
 
 pub use crate::after_index::{AfterIndex, Landed};
 use anyhow::{bail, Context, Result};
@@ -36,27 +32,23 @@ use std::{
 
 /// All project I/O, in one place.
 ///
-/// `open` performs a recursive scan of `<root>/assets/`, builds an in-memory
-/// VFS index (UUIDs derived from forward-slash relative paths via
-/// `AssetUUID::new_v5`), constructs the `AssetService` with every default
-/// decoder registered, and arms a recursive filesystem watcher for hot
-/// reload. UUIDs match what a future pack-builder would produce, so the
-/// dev/release transparency promise of the VFS is preserved.
+/// Assets are indexed under `<root>/assets/` by identity: `AssetUUID::new_v5`
+/// of the forward-slash path, unless the identity registry froze another, so
+/// a pack built from the project names every asset the same.
 pub struct ProjectVfs {
     pub root: PathBuf,
     pub assets_root: PathBuf,
-    /// The project's assets: shared with the engine (see
-    /// [`Self::share_assets`]), so the editor and the frame read one index
-    /// and one cache.
+    /// The project's assets, shared with the engine ([`Self::share_assets`]):
+    /// the editor and the frame read one index and one cache.
     asset_service: Arc<Mutex<AssetService>>,
-    /// Where its changes are read from: the engine's shared watch — one
-    /// subscriber among the script and shader pumps — or, opened on its own,
-    /// a watch of its own.
+    /// Where its changes are read from: the engine's shared watch, or one of
+    /// its own when the project was opened alone.
     watch: Arc<AssetWatch>,
     file_loader: FileLoader,
-    /// Stable-identity registry (`<root>/.khora/asset-registry.ron`). The editor
-    /// is the sole writer: file operations freeze/rename/remove entries so an
-    /// asset keeps its UUID across renames and every reference keeps resolving.
+    /// Stable-identity registry (`<root>/.khora/asset-registry.ron`), written by the editor only.
+    ///
+    /// File operations freeze, rename and remove its entries, so an asset
+    /// keeps its UUID across renames and every reference keeps resolving.
     registry: AssetIdRegistry,
     /// Moves on every write and every reindex: what was read from the
     /// project's files before is stale once it moves.
@@ -78,22 +70,19 @@ pub struct ProjectVfs {
 }
 
 impl ProjectVfs {
-    /// Opens (or creates) `<root>/assets/`, builds the VFS, and arms the
-    /// watcher. Tolerates fresh projects whose `assets/` directory hasn't
-    /// been populated yet — the resulting service has zero indexed assets,
-    /// which is exactly what the asset browser will show.
+    /// Opens (or creates) `<root>/assets/`, builds the VFS and arms a watcher of its own.
+    ///
+    /// A fresh project with an empty `assets/` opens with nothing indexed.
     #[cfg(test)]
     pub fn open(root: PathBuf, metrics: Arc<MetricsRegistry>) -> Result<Self> {
         Self::open_watched(root, metrics, Arc::new(AssetWatch::default()))
     }
 
-    /// Opens `<root>/assets/` as [`Self::open`] does, reading its changes
-    /// from the engine's shared `watch` — one subscriber among the script and
-    /// shader pumps — rather than from a watcher of its own.
+    /// Opens `<root>/assets/` as [`Self::open`] does, reading its changes from the shared `watch`.
+    ///
     /// [`Self::poll_changes`] then reports the changes under this project's
-    /// assets root only. A run opens a project through the engine's index
-    /// (`start_opening_project`), at the trust its user decided; this builds
-    /// one on the spot, for tests.
+    /// assets root only. For tests: a run opens a project through the
+    /// engine's index (`start_opening_project`), at the trust its user decided.
     #[cfg(test)]
     pub fn open_watched(
         root: PathBuf,
@@ -112,8 +101,8 @@ impl ProjectVfs {
         // `assets/`), so it is never scanned, watched, or packed. Missing file →
         // empty registry → every path keeps its `new_v5` default.
         let registry = AssetIdRegistry::load(&root);
-        // Materialize the file on first open so it's visible in the project and
-        // confirms persistence is wired, even before the first rename.
+        // Made on first open, so the file is visible in the project even
+        // before the first rename.
         if let Err(e) = registry.ensure_file() {
             log::warn!("Could not create asset identity registry file: {e}");
         }
@@ -152,11 +141,12 @@ impl ProjectVfs {
         })
     }
 
-    /// Opens the project at `root` over `service`, the engine's shared asset
-    /// service, which an `Open` filed with the engine's index hub filled off
-    /// the frame. As [`Self::open_watched`] does, it ensures `<root>/assets/`
-    /// exists, loads the identity registry (its file made), builds the
-    /// writer and arms `watch`; it walks nothing: the index is the service's.
+    /// Opens the project at `root` over `service`, the engine's shared asset service.
+    ///
+    /// The service was filled off the frame by an `Open` filed with the
+    /// engine's index hub, so nothing is walked. As `open_watched` (tests)
+    /// does, it makes `<root>/assets/` and the identity registry's file, and
+    /// arms `watch`.
     pub fn over_service(
         root: PathBuf,
         service: Arc<Mutex<AssetService>>,
@@ -201,10 +191,10 @@ impl ProjectVfs {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// Serves this project's assets through `shared` from now on: its
-    /// service moves into `shared`, which the engine holds — the asset
-    /// resolver then loads the meshes, materials and textures the editor's
-    /// entities reference, from the same index and cache the editor reads.
+    /// Serves this project's assets through `shared`, the engine's service, from now on.
+    ///
+    /// The engine then resolves the editor's entities' meshes, materials and
+    /// textures from the index and cache the editor reads.
     pub fn share_assets(&mut self, shared: &Arc<Mutex<AssetService>>) {
         if Arc::ptr_eq(&self.asset_service, shared) {
             return;
@@ -243,8 +233,9 @@ impl ProjectVfs {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// Re-walks `<root>/assets/` and swaps the VFS index, on the frame: what
-    /// [`Self::reindex`] does without an engine, and what the setup-time
+    /// Re-walks `<root>/assets/` and swaps the VFS index, on the frame.
+    ///
+    /// What [`Self::reindex`] does without an engine, and what the setup-time
     /// scene load does.
     pub fn rebuild_index(&mut self) -> Result<()> {
         let bytes = IndexBuilder::new(&self.assets_root)
@@ -259,9 +250,9 @@ impl ProjectVfs {
         Ok(())
     }
 
-    /// Takes in a reindex done off the frame, once it landed in the engine's
-    /// asset service: the prefab catalog is refilled from the new index, and
-    /// the project's generation moves.
+    /// Takes in a reindex that landed in the engine's asset service.
+    ///
+    /// Refills the prefab catalog from the new index and moves the project's generation.
     pub fn index_landed(&mut self) {
         if let Some(catalog) = &self.prefab_catalog {
             catalog.replace(khora_sdk::prefab_catalog(&self.assets()));
@@ -269,9 +260,9 @@ impl ProjectVfs {
         self.moved_on();
     }
 
-    /// Files this project's reindexes with `hub`, the engine's index hub,
-    /// from now on: they are built off the frame and land at a frame's
-    /// boundary.
+    /// Files this project's reindexes with `hub`, the engine's index hub, from now on.
+    ///
+    /// They are built off the frame and land at a frame's boundary.
     pub fn index_with(&mut self, hub: Arc<khora_sdk::IndexHub>) {
         if self
             .indexes
@@ -288,20 +279,20 @@ impl ProjectVfs {
         self.held.extend(actions);
     }
 
-    /// The actions kept until the edited scene was back.
+    /// Returns the actions kept until the edited scene was back.
     pub fn release(&mut self) -> Vec<AfterIndex> {
         std::mem::take(&mut self.held)
     }
 
-    /// The reindex in flight, if any.
+    /// Returns the reindex in flight, if any.
     pub fn reindexing(&self) -> Option<khora_sdk::IndexTicket> {
         self.awaiting.as_ref().map(|(ticket, _)| *ticket)
     }
 
-    /// Indexes the project again after a write: with a hub and nothing in
-    /// flight, files a reindex and keeps its ticket; while one is in flight,
-    /// the write is indexed by the reindex filed once it lands; without a
-    /// hub, rebuilds on the frame.
+    /// Indexes the project again after a write.
+    ///
+    /// With a hub, a reindex is filed, or, while one is in flight, the next
+    /// is filed once it lands; without a hub, the index is rebuilt on the frame.
     pub fn reindex(&mut self) -> Result<()> {
         let Some(indexes) = self.indexes.clone() else {
             return self.rebuild_index();
@@ -338,12 +329,12 @@ impl ProjectVfs {
         Some(action)
     }
 
-    /// Takes the outcome of the reindex in flight, once it landed: on `Ok`
-    /// the project takes it in; the next reindex is filed if one was asked
-    /// for. `None` while it is in flight, or when none is.
+    /// Takes the outcome of the reindex in flight, once it landed.
     ///
-    /// The actions that waited for a reindex that failed are dropped: what
-    /// they needed is not in the index.
+    /// On `Ok` the project takes it in; the next reindex is filed if one was
+    /// asked for. `None` while it is in flight, or when none is. The actions
+    /// that waited for a failed reindex are dropped: what they needed is not
+    /// in the index.
     pub fn land(&mut self) -> Option<Landed> {
         let (ticket, _) = self.awaiting.as_ref()?;
         let outcome = self.indexes.as_ref()?.take_outcome(*ticket)?;
@@ -372,27 +363,28 @@ impl ProjectVfs {
         Some(Landed { outcome, actions })
     }
 
-    /// The project's physics settings: the `physics` section of its
-    /// `project.json`, or the defaults when it has none. A section that does
-    /// not read (a zero or negative step) is reported and the defaults kept.
+    /// Returns the project's physics settings, from its `project.json`.
+    ///
+    /// The defaults when it has no `physics` section; a section that does not
+    /// read (a zero or negative step) is reported and the defaults kept.
     pub fn physics_settings(&self) -> PhysicsSettings {
         crate::project_physics::project_physics(&self.root)
     }
 
-    /// Writes `bytes` to `<root>/assets/<rel_path>`. Creates intermediate
-    /// directories as needed. Caller is responsible for calling
-    /// [`Self::rebuild_index`] afterwards if the new path needs to be
-    /// resolvable through the VFS in the same frame.
+    /// Writes `bytes` to `<root>/assets/<rel_path>`, creating its folders.
+    ///
+    /// Not indexed: call [`Self::rebuild_index`] for the path to resolve
+    /// through the VFS in the same frame.
     pub fn write_asset(&self, rel_path: &Path, bytes: &[u8]) -> Result<()> {
         let written = self.file_loader.write_bytes(rel_path, bytes);
         self.moved_on();
         written
     }
 
-    /// Resolves a forward-slash relative path to its UUID through the identity
-    /// registry: the frozen identity if the asset has been renamed, otherwise
-    /// the `new_v5` default. It must be used whenever an asset the user could
-    /// have renamed is looked up by path (scene / prefab / material load).
+    /// Resolves a forward-slash relative path to its UUID through the identity registry.
+    ///
+    /// The frozen identity if the asset was renamed, else the `new_v5` default.
+    /// Use it whenever an asset the user could have renamed is looked up by path.
     pub fn resolve_uuid(&self, rel_path_fwd_slash: &str) -> AssetUUID {
         self.registry.resolve(rel_path_fwd_slash)
     }
@@ -406,9 +398,9 @@ impl ProjectVfs {
         p
     }
 
-    /// Creates an (empty) folder under `assets/` at `rel_dir` (forward-slash).
-    /// Empty folders are surfaced by [`Self::list_dirs`] since the VFS itself
-    /// only indexes files.
+    /// Creates an empty folder under `assets/` at `rel_dir` (forward-slash).
+    ///
+    /// The VFS indexes files only: [`Self::list_dirs`] is what shows it.
     pub fn create_folder(&mut self, rel_dir: &str) -> Result<()> {
         let abs = self.abs_of(rel_dir);
         std::fs::create_dir_all(&abs)
@@ -416,9 +408,10 @@ impl ProjectVfs {
         Ok(())
     }
 
-    /// Renames/moves an asset from `old_rel` to `new_rel` (both forward-slash,
-    /// under `assets/`), **freezing its UUID** so every existing reference keeps
-    /// resolving. Fails if the destination already exists. Rebuilds the index.
+    /// Renames or moves an asset from `old_rel` to `new_rel` (forward-slash, under `assets/`).
+    ///
+    /// **Freezes its UUID**, so every existing reference keeps resolving.
+    /// Fails if the destination already exists. Rebuilds the index.
     pub fn rename_asset(&mut self, old_rel: &str, new_rel: &str) -> Result<()> {
         if old_rel == new_rel {
             return Ok(());
@@ -480,9 +473,9 @@ impl ProjectVfs {
         self.reindex()
     }
 
-    /// Duplicates an asset next to itself with a unique ` copy` suffix. The copy
-    /// is a **new asset** (no registry entry → fresh `new_v5` identity). Returns
-    /// the new forward-slash relative path.
+    /// Duplicates an asset next to itself with a unique ` copy` suffix, returning its path.
+    ///
+    /// The copy is a **new asset**, with no registry entry: a fresh `new_v5` identity.
     pub fn duplicate_asset(&mut self, rel: &str) -> Result<String> {
         let src_abs = self.abs_of(rel);
         if !src_abs.exists() {
@@ -524,9 +517,10 @@ impl ProjectVfs {
         Ok(new_rel)
     }
 
-    /// Creates a new file at `rel` (forward-slash under `assets/`) holding
-    /// `bytes`, its folders too. Refuses an existing file, an empty path, and any
-    /// `..` / `.` / empty segment or absolute path. Rebuilds the index.
+    /// Creates a new file at `rel` (forward-slash, under `assets/`) holding `bytes`, folders too.
+    ///
+    /// Refuses an existing file, an empty path, and any `..` / `.` / empty
+    /// segment or absolute path. Rebuilds the index.
     pub fn create_asset(&mut self, rel: &str, bytes: &[u8]) -> Result<()> {
         // `abs_of` drops empty segments and joins the rest as they are, so the
         // path is checked here: a `..`, a drive or a backslash would put the
@@ -556,9 +550,9 @@ impl ProjectVfs {
         self.reindex()
     }
 
-    /// Lists every directory under `assets/` as forward-slash relative paths
-    /// (sorted, excluding the root). The VFS only indexes files, so empty
-    /// folders — including freshly created ones — are only visible through this.
+    /// Lists every folder under `assets/` as sorted forward-slash paths, the root excluded.
+    ///
+    /// The VFS indexes files only, so an empty folder shows only here.
     pub fn list_dirs(&self) -> Vec<String> {
         let mut dirs = Vec::new();
         for entry in walkdir::WalkDir::new(&self.assets_root)
@@ -584,8 +578,7 @@ impl ProjectVfs {
         dirs
     }
 
-    /// Drains pending hot-reload events. Convenience wrapper so callers
-    /// don't need to reach through `pvfs.watcher`.
+    /// Drains the pending hot-reload events under this project's assets root.
     pub fn poll_changes(&self) -> Vec<AssetChangeEvent> {
         let own = self.assets_root.canonicalize().ok();
         self.watch
@@ -599,9 +592,9 @@ impl ProjectVfs {
     }
 }
 
-/// The project's prefabs, read through its VFS: a prefab is the scene file
-/// its asset id names. Locks the VFS for each read, so it can be handed to a
-/// load or a save that does not hold it.
+/// The project's prefabs, read through its VFS: a prefab is the scene file its asset id names.
+///
+/// Locks the VFS for each read, so it can be handed to a load or a save that does not hold it.
 pub struct ProjectPrefabs<'a>(pub &'a std::sync::Mutex<ProjectVfs>);
 
 impl khora_sdk::khora_data::scene::PrefabSource for ProjectPrefabs<'_> {
@@ -643,9 +636,9 @@ impl ProjectVfs {
         Some(rel.to_string_lossy().replace('\\', "/"))
     }
 
-    /// Whether `id` names a part of a file (a glTF's scene, mesh,
-    /// material…) rather than a file of its own: it shares its file's path
-    /// and is never written.
+    /// Whether `id` names a part of a file (a glTF's scene, mesh, material…).
+    ///
+    /// Such a part shares its file's path and is never written.
     pub fn is_part_of_a_file(&self, id: AssetUUID) -> bool {
         self.assets()
             .index()
@@ -681,8 +674,9 @@ mod tests {
     use super::*;
     use khora_sdk::khora_core::renderer::api::gpu_scene::Mesh;
 
-    /// One file per asset type the index builder knows. The bytes are not a
-    /// valid asset of any kind: the probe only asks whether a decoder is
+    /// One file per asset type the index builder knows.
+    ///
+    /// The bytes are no valid asset: the probe asks whether a decoder is
     /// registered for the type, not whether it accepts the file.
     const PROBES: &[&str] = &[
         "probe.obj",
@@ -696,10 +690,10 @@ mod tests {
         "probe.kprefab",
     ];
 
-    /// The asset types a loose-files project can decode. The SDK's
-    /// `run_default` test pins the same list for the runtime's loose-files
-    /// mode: the editor and a runtime reading the same project decode the same
-    /// assets.
+    /// The asset types a loose-files project can decode.
+    ///
+    /// The SDK's `run_default` test pins the same list for the runtime: both
+    /// decode the same assets of one project.
     const DECODABLE: &[&str] = &[
         "audio", "font", "material", "mesh", "prefab", "script", "shader", "texture",
     ];
@@ -750,10 +744,10 @@ mod tests {
         Ok(())
     }
 
-    /// A renamed asset keeps the UUID its references stored: an opened project
-    /// indexes it under the identity `.khora/asset-registry.ron` froze, not the
-    /// one its new path would derive. The SDK's loose-files runtime is held to
-    /// the same by its own test.
+    /// A renamed asset keeps the UUID its references stored.
+    ///
+    /// An opened project indexes it under the identity `.khora/asset-registry.ron`
+    /// froze, not the one its new path would derive.
     #[test]
     fn an_opened_project_resolves_the_uuids_the_registry_froze() -> Result<()> {
         let root = std::env::temp_dir().join(format!(
@@ -913,10 +907,10 @@ mod tests {
         Ok(())
     }
 
-    /// The engine holds copies of what the previous project's service served;
-    /// once another project's service moves in under the same uuids (a path
-    /// both projects share), those copies are stale and the engine must hear
-    /// of each one.
+    /// The engine hears of each copy made stale by another project's service moving in.
+    ///
+    /// A path both projects share is one uuid, so what the previous service
+    /// served is stale once the next moves in.
     #[test]
     fn sharing_another_projects_assets_announces_what_the_previous_one_served() -> Result<()> {
         const REL: &str = "meshes/a.obj";
@@ -1021,10 +1015,10 @@ mod tests {
         AfterIndex::Reveal(rel.to_owned())
     }
 
-    /// **Without a hub, a write reindexes at once.** A project opened with
-    /// no engine (a test, an editor with no engine) has no index hub:
-    /// `reindex` rebuilds the index on the frame, so the file is indexed
-    /// when it returns, and an action asked for after it runs now.
+    /// **Without a hub, a write reindexes at once.**
+    ///
+    /// A project opened with no engine has no index hub: `reindex` rebuilds
+    /// the index on the frame, and an action asked for after it runs now.
     #[test]
     fn without_a_hub_writes_reindex_at_once() -> Result<()> {
         const PLAYER: &str = "scripts/Player.erg";
@@ -1074,14 +1068,12 @@ mod tests {
         assert_eq!(engine.filed(), 0, "no reindex was filed");
     }
 
-    /// **A write during a reindex waits for the next.** A first write files
-    /// a reindex, and its project walk is built; a second write arrives
-    /// before that reindex lands. At its landing, only the first write's
-    /// action runs, and the index does not hold the second file — its walk
-    /// began before it. A second reindex is filed then, not before: one in
-    /// flight at a time. At its landing, the second write's action runs and
-    /// the index holds the second file. Each landing moves the project's
-    /// generation.
+    /// **A write during a reindex waits for the next.**
+    ///
+    /// The first reindex's walk began before the second write, so its landing
+    /// runs only the first write's action. The second reindex is filed then,
+    /// one in flight at a time, and its landing runs the second's. Each
+    /// landing moves the project's generation.
     #[test]
     fn a_write_during_a_reindex_waits_for_the_next() {
         use crate::tests::gltf_fixture::GltfProject;
@@ -1166,11 +1158,10 @@ mod tests {
         assert_eq!(engine.most_waiting(), 1, "one reindex in flight at a time");
     }
 
-    /// **A project opened over the engine's service is not walked.** Its
-    /// `assets/` holds a file, but the engine's service is empty: the
-    /// project serves that very service, so it indexes nothing — the index
-    /// comes through the engine's `IndexHub`. The identity registry's file is
-    /// made and the project's assets are watched, as `open_watched` does.
+    /// **A project opened over the engine's service is not walked.**
+    ///
+    /// Its index comes through the engine's `IndexHub`. The identity
+    /// registry's file is made and its assets are watched, as `open_watched` does.
     #[test]
     fn a_project_opened_over_the_engines_service_is_not_walked() -> Result<()> {
         let project = TempProject::new("over-service-not-walked")?;
@@ -1219,8 +1210,9 @@ mod tests {
         Ok(())
     }
 
-    /// **A project opened over the engine's service gets its `assets/`.** A
-    /// project folder holding no `assets/` yet opens with one, empty: the
+    /// **A project opened over the engine's service gets its `assets/`.**
+    ///
+    /// A project folder with no `assets/` yet opens with one, empty: the
     /// writer and the watch have a folder to work in.
     #[test]
     fn a_project_opened_over_the_engines_service_gets_its_assets_folder() -> Result<()> {
@@ -1239,10 +1231,10 @@ mod tests {
         Ok(())
     }
 
-    /// **The project's physics step is read from its `project.json`.** A
-    /// `physics` section's step is the project's; a project with no section,
-    /// with no `project.json`, or with a section that does not read (a zero
-    /// step) runs at the default step.
+    /// **The project's physics step is read from its `project.json`.**
+    ///
+    /// A project with no section, no `project.json`, or a section that does
+    /// not read (a zero step) runs at the default step.
     #[test]
     fn the_physics_settings_are_the_physics_section_of_project_json() -> Result<()> {
         let a_128th = std::time::Duration::from_nanos(7_812_500);

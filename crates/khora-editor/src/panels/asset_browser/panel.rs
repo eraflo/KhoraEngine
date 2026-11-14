@@ -56,7 +56,6 @@ impl EditorPanel for AssetBrowserPanel {
         let panel_rect = ui.panel_rect();
         let [px, py, pw, ph] = panel_rect;
 
-        // ── Header ────────────────────────────────────
         paint_panel_header(ui, panel_rect, HEADER_HEIGHT, &theme);
         let tab_y = py + (HEADER_HEIGHT - 22.0) * 0.5;
         let badge = format!("{}", self.flat.len());
@@ -69,9 +68,8 @@ impl EditorPanel for AssetBrowserPanel {
             theme.text_muted,
         );
 
-        // Header action buttons. Trash deletes the current selection; Filter
-        // and More open small context menus. Effects are collected here and
-        // applied after the loop so the closures don't need `&mut self`.
+        // Collected, then applied after the loop: the menu closures cannot
+        // borrow `self` mutably.
         let mut header_delete_selected = false;
         let mut header_filter_pick: Option<Option<AssetTileKind>> = None;
         let mut header_new_folder = false;
@@ -144,7 +142,6 @@ impl EditorPanel for AssetBrowserPanel {
             self.reveal_project();
         }
 
-        // ── Layout: sidebar | grid ────────────────────
         let body_y = py + HEADER_HEIGHT;
         let body_h = ph - HEADER_HEIGHT;
         let sidebar_w = SIDEBAR_WIDTH;
@@ -162,7 +159,6 @@ impl EditorPanel for AssetBrowserPanel {
             1.0,
         );
 
-        // Type-category filter rows (compact, top of sidebar).
         let mut row_y = body_y + 8.0;
         let row_h = 22.0;
         let mut new_filter = self.selected_filter;
@@ -230,15 +226,12 @@ impl EditorPanel for AssetBrowserPanel {
         }
         self.selected_filter = new_filter;
 
-        // Tree separator label.
         row_y += 8.0;
         paint::text(ui, [px + 8.0, row_y], "FOLDERS", 10.0, theme.text_muted);
         row_y += 16.0;
 
-        // Folder tree (real VFS hierarchy).
         let _ = self.render_folder_tree(ui, px, row_y, sidebar_w, &theme);
 
-        // ── Grid area ─────────────────────────────────
         let grid_x = px + sidebar_w;
         let grid_w = pw - sidebar_w;
 
@@ -269,8 +262,7 @@ impl EditorPanel for AssetBrowserPanel {
                 )
             })
             .unwrap_or_default();
-        // Each `.erg`'s errors and warnings — a misplaced one's error too —
-        // for its tile's badge.
+        // A misplaced `.erg`'s error counts in its badge too.
         let counts_of =
             |rel_path: &str| crate::panels::problems::view::script_tile_counts(rel_path, &problems);
 
@@ -278,7 +270,6 @@ impl EditorPanel for AssetBrowserPanel {
         let search_x = grid_x + grid_w - search_w - 12.0;
         let search_y = crumb_y + 4.0;
 
-        // Breadcrumb on the left, capped to leave room for the search.
         let crumb_max_w = (search_x - grid_x - 24.0).max(0.0);
         self.render_breadcrumb(
             ui,
@@ -289,7 +280,6 @@ impl EditorPanel for AssetBrowserPanel {
             &project_folder,
         );
 
-        // Search affordance icon.
         paint::icon(
             ui,
             [search_x + 4.0, search_y + 5.0],
@@ -298,7 +288,6 @@ impl EditorPanel for AssetBrowserPanel {
             theme.text_muted,
         );
 
-        // ── Tile grid ─────────────────────────────────
         let grid_inner_x = grid_x + 12.0;
         let grid_inner_y = crumb_y + TOOLBAR_HEIGHT + 12.0;
         let grid_inner_w = grid_w - 24.0;
@@ -312,14 +301,9 @@ impl EditorPanel for AssetBrowserPanel {
             .map(|idx| (idx, self.flat[idx].clone()))
             .collect();
 
-        // Drop target for entity drags from the scene tree. Registered
-        // *before* the tile loop so the per-tile `interact_rect` calls
-        // come later and take click priority — without this ordering
-        // the grid-wide rect overlays the tiles and absorbs single
-        // clicks (regression: tiles unselectable). The drop check
-        // happens immediately, while `last_response` still points at
-        // the grid rect; tiles registering after won't change the
-        // already-read drop status.
+        // The grid-wide drop target for scene-tree entities is registered
+        // before the tiles, so their own rects take the clicks; otherwise it
+        // would absorb them. Its drop is read now, while `last_response` is it.
         let drop_y = grid_inner_y;
         let drop_h = (body_y + body_h - grid_inner_y).max(0.0);
         let _drop_int =
@@ -331,9 +315,8 @@ impl EditorPanel for AssetBrowserPanel {
             }
         }
 
-        // Right-click on the empty grid background. Bound to the same grid-wide
-        // response as the drop target above; per-tile menus (registered later,
-        // on top) take precedence when the cursor is over a tile.
+        // The empty background's menu, on the grid-wide response: over a tile,
+        // the tile's own menu, registered later, wins.
         let mut bg_new_folder = false;
         let mut bg_new_script = false;
         let mut bg_reveal_current = false;
@@ -372,14 +355,10 @@ impl EditorPanel for AssetBrowserPanel {
         let mut to_rename: Option<usize> = None;
         let mut to_duplicate: Option<String> = None;
         let mut to_delete: Option<String> = None;
-        // Name + kind of the tile currently being dragged, so we can paint a
-        // cursor-following ghost after the grid (a visible "I'm carrying this").
         let mut dragging_ghost: Option<(String, AssetTileKind)> = None;
-        // A scene-tree entity dropped onto a tile → save it as a prefab here.
         let mut entity_drop: Option<khora_sdk::prelude::ecs::EntityId> = None;
-        // Tiles are placed at computed rects, so the grid scrolls by offsetting
-        // its own origin and clipping — same shape as the Console and the
-        // Hierarchy.
+        // Tiles sit at computed rects: the grid scrolls by offsetting its
+        // origin and clipping.
         let grid_view = [grid_inner_x, grid_inner_y, grid_inner_w, drop_h];
         // A script being named takes the first slot; the tiles follow it.
         let lead = usize::from(self.new_script.is_some());
@@ -420,8 +399,7 @@ impl EditorPanel for AssetBrowserPanel {
             let row = (i + lead) / cols;
             let tx = grid_inner_x + col as f32 * (TILE_SIZE + TILE_GAP);
             let ty = grid_origin_y + row as f32 * (tile_h + TILE_GAP);
-            // Skip whole rows scrolled out of view rather than painting them
-            // under the clip.
+            // Rows out of view are skipped, not painted under the clip.
             if ty + tile_h < grid_view[1] || ty > grid_view[1] + grid_view[3] {
                 continue;
             }
@@ -438,11 +416,8 @@ impl EditorPanel for AssetBrowserPanel {
                 asset.container.is_none() && quarantined.contains(&asset.rel_path),
                 &theme,
             );
-            // Every tile is a drag source — the low 32 bits carry the index
-            // into `EditorState::asset_entries`. The drop sink (viewport /
-            // folder tree) dispatches by the asset's type.
-            // Stamped with the epoch `flat` was built for — that is the epoch
-            // `orig_idx` is an index into.
+            // Stamped with the epoch `flat` was built at, the one `orig_idx`
+            // indexes into.
             ui.dnd_attach_drag_payload(pack_asset_drag(
                 *orig_idx as u32,
                 self.last_epoch.unwrap_or(0),
@@ -450,24 +425,17 @@ impl EditorPanel for AssetBrowserPanel {
             if ui.is_last_item_dragged() {
                 dragging_ghost = Some((asset.name.clone(), asset.asset_type));
             }
-            // A scene-tree entity released ONTO this tile saves it as a prefab.
-            // Tiles blanket the populated grid, so without this the entity would
-            // land on a tile (top hovered) and the grid-wide drop rect below
-            // would never see it.
+            // Tiles cover the grid, so the grid-wide drop target never sees an
+            // entity released onto a tile.
             if let Some(payload) = ui.dnd_take_drop_payload() {
                 if payload_is_entity(payload) {
                     entity_drop = Some(unpack_entity(payload));
                 }
             }
-            // Generic per-tile context menu (same idiom the scene tree uses
-            // for entity actions). Material tiles keep their "Assign to
-            // selected" entry on top of the shared actions.
             let idx = *orig_idx;
             let rel = asset.rel_path.clone();
             let is_material = asset.type_name == "material";
             let (uuid, name) = (asset.uuid, asset.name.clone());
-            // A part follows its file: it is renamed, moved, duplicated and
-            // deleted with it, never on its own.
             let file_ops = asset.container.is_none();
             ui.context_menu_last(&mut |menu| {
                 if menu.button("Open") {
@@ -518,8 +486,7 @@ impl EditorPanel for AssetBrowserPanel {
             "ab-grid-scroll",
         );
 
-        // Cursor-following drag ghost — painted after the clip is popped so it
-        // can follow the cursor outside the grid.
+        // After the clip is popped, so the ghost follows the cursor anywhere.
         if let Some((name, kind)) = dragging_ghost {
             if let Some(pos) = ui.pointer_position() {
                 self.paint_drag_ghost(ui, pos, &name, kind, &theme);
@@ -549,9 +516,7 @@ impl EditorPanel for AssetBrowserPanel {
             }
         }
         if let Some(idx) = to_rename {
-            // Seed the shared buffer with the current file name and switch this
-            // tile into inline-edit mode; the overlay is drawn near the search
-            // box handling at the end of `ui()`.
+            // The rename field is drawn over the tile further down.
             if let Some(asset) = self.flat.get(idx) {
                 self.rename_buffer = asset.name.clone();
                 self.renaming_index = Some(idx);
@@ -571,10 +536,8 @@ impl EditorPanel for AssetBrowserPanel {
             self.selected_index = Some(i);
             if let Some(asset) = self.flat.get(i) {
                 if let Ok(mut state) = self.state.lock() {
-                    // Single-click switches the inspector to asset
-                    // metadata mode. Clearing entity
-                    // selection prevents the entity inspector from
-                    // ghosting under the asset metadata pane.
+                    // The entity selection is cleared, or its inspector would
+                    // show under the asset's.
                     state.inspected_asset_path = Some(asset.rel_path.clone());
                     state.selected_asset = Some(i);
                     state.clear_selection();
@@ -606,9 +569,7 @@ impl EditorPanel for AssetBrowserPanel {
             );
         }
 
-        // Inline tile-rename overlay: a text field painted over the renaming
-        // tile's label. Committed on Enter, cancelled on Escape (the builder
-        // doesn't surface focus-loss, so those two keys are the commit path).
+        // Enter commits and Escape cancels: the builder reports no focus loss.
         if let Some(rename_idx) = self.renaming_index {
             let slot = visible
                 .iter()
@@ -620,7 +581,7 @@ impl EditorPanel for AssetBrowserPanel {
                     let ty = grid_origin_y + row as f32 * (tile_h + TILE_GAP);
                     [tx + 3.0, ty + TILE_SIZE - 2.0, TILE_SIZE - 6.0, 20.0]
                 });
-            // Snapshot the asset before taking the `&mut` buffer borrow.
+            // Cloned before the buffer is borrowed mutably.
             let asset = self.flat.get(rename_idx).cloned();
             match (slot, asset) {
                 (Some(rect), Some(asset)) => {

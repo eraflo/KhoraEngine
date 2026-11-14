@@ -65,9 +65,10 @@ fn a_behaviors_state_card_is_hidden_while_editing() {
     );
 }
 
-/// **A behavior's state is shown read-only while the game runs** — paused
-/// too — with what the engine keeps of the instance; the behavior's own
-/// card stays editable, an edit in Play changing the live value.
+/// **A behavior's state is shown read-only while the game runs, paused too.**
+///
+/// It shows what the engine keeps of the instance; the behavior's own card
+/// stays editable, an edit in Play changing the live value.
 #[test]
 fn a_behaviors_state_card_is_read_only_while_playing() {
     let (world, sentry) = sentry();

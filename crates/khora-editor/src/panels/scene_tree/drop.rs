@@ -18,10 +18,10 @@ use khora_sdk::editor_ui::*;
 
 use crate::ops::AssetDrop;
 
-/// Routes an asset dropped onto the hierarchy to the right `pending_*` action,
-/// mirroring the viewport's drop dispatch. Meshes spawn at the world origin
-/// (a tree has no 3D drop point), prefabs instantiate, scenes load, and a
-/// texture/material assigns to the `target` row (or the selection).
+/// Queues what an asset dropped onto the hierarchy does, as the viewport does.
+///
+/// A mesh spawns at the origin, as a tree has no 3D drop point; a texture or
+/// material is assigned to the `target` row, or else the selection.
 pub(super) fn dispatch_asset_drop(
     state: &mut EditorState,
     idx: usize,
@@ -37,8 +37,7 @@ pub(super) fn dispatch_asset_drop(
     };
     match crate::ops::asset_drop(&state.asset_entries, &entry) {
         AssetDrop::Mesh(uuid) => {
-            // Dropped on a row → parent the new entity under it (Unity/Godot
-            // convention); dropped on empty space → spawn at scene root.
+            // Under the row it was dropped on, as Unity and Godot do.
             state.pending_spawn_mesh_asset = Some((uuid, [0.0, 0.0, 0.0], target));
             log::info!("Hierarchy: mesh '{}' dropped — spawning{under}", entry.name);
         }

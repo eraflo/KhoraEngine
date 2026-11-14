@@ -45,7 +45,7 @@ pub(super) fn script_folder_for(folder: &str) -> String {
     }
 }
 
-/// The behaviour name `typed` gives, or None when nothing usable is left.
+/// Returns the behaviour name `typed` gives, or None when nothing usable is left.
 ///
 /// An Ergon name is ASCII letters, digits and `_`, not starting with a digit.
 /// Anything else separates words, and each word starts with a capital:
@@ -81,8 +81,8 @@ pub(super) fn behavior_name(typed: &str) -> Option<String> {
     Some(name)
 }
 
-/// The source a new script named `name` starts with: a behaviour that runs,
-/// each part saying what it is for, so a first-time author can start from it.
+/// Returns the source a new script named `name` starts with: a behaviour
+/// that runs, each part saying what it is for.
 pub(super) fn script_source(name: &str) -> String {
     format!(
         "// {name} — a behavior, written in Ergon.\n\
@@ -144,7 +144,7 @@ impl AssetBrowserPanel {
         self.new_script = Some(NewScript { folder, name });
     }
 
-    /// The file name the placeholder would create now (`"MyPlayer.erg"`), or None.
+    /// Returns the file name the placeholder would create (`"MyPlayer.erg"`), or None.
     pub(super) fn new_script_file_name(&self) -> Option<String> {
         let typed = &self.new_script.as_ref()?.name;
         let name = self.free_script_name(&behavior_name(typed)?);
@@ -176,14 +176,12 @@ impl AssetBrowserPanel {
         self.new_script = None;
     }
 
-    /// `name`, or `name2`, `name3`, … — the first neither the engine nor a
-    /// script of the project already holds. The engine's names — its
-    /// components', its asset kinds' — no script can declare. Behaviour names
-    /// are the project's, whatever folder declares them: a name another script
-    /// declares inside it — a component, a behavior, a system — is taken,
-    /// exactly as Ergon spells it, or the registry would refuse the new one.
-    /// File names differ only by case on some systems, so every `.erg` counts
-    /// too, its stem compared without case.
+    /// Returns `name`, or `name2`, `name3`, …: the first neither the engine
+    /// nor a script of the project already holds.
+    ///
+    /// A name any script declares is taken exactly, or the registry would
+    /// refuse the new one; an `.erg` stem is taken without case, as some file
+    /// systems compare names.
     fn free_script_name(&self, name: &str) -> String {
         let taken = |candidate: &str| {
             khora_sdk::scripts::is_engine_name(candidate)
@@ -207,13 +205,11 @@ impl AssetBrowserPanel {
     }
 }
 
-/// Paints the placeholder of the script being named, if any, at `origin`: a
-/// selected Script tile whose label is the name field, the file it will write
-/// (`file`) named on its thumbnail. `focus` asks the field for the keyboard
-/// once. Returns what the field did this frame.
+/// Paints the placeholder tile of the script being named, if any, and returns
+/// what its name field did this frame.
 ///
-/// A free function over the panel's fields rather than a method: the grid
-/// holds the asset list borrowed while it paints.
+/// `file` is named on the thumbnail; `focus` asks the field for the keyboard
+/// once. A free function: the grid holds the asset list borrowed while it paints.
 pub(super) fn paint_new_script_tile(
     ui: &mut dyn UiBuilder,
     origin: [f32; 2],
@@ -263,8 +259,8 @@ pub(super) fn paint_new_script_tile(
     event
 }
 
-/// `text` cut to `room` pixels at the thumbnail's type, its end replaced by
-/// `…` when it does not fit.
+/// Returns `text` cut to `room` pixels at the thumbnail's type, ending in `…`
+/// when it does not fit.
 fn fit(ui: &mut dyn UiBuilder, text: &str, room: f32) -> String {
     let width =
         |ui: &mut dyn UiBuilder, s: &str| ui.measure_text(s, 9.5, FontFamilyHint::Monospace)[0];

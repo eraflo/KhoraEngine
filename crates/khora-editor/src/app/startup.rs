@@ -24,8 +24,8 @@ use super::EditorApp;
 use crate::panels::loading::LoadingPanel;
 
 impl EditorApp {
-    /// The editor is starting: the shell gets the brand theme and typefaces,
-    /// and the loading screen goes over it.
+    /// Starts the editor: gives the shell the brand theme and typefaces, and
+    /// puts the loading screen over it.
     pub(super) fn begin_startup(&mut self, runtime: &Runtime) {
         self.overlay = runtime
             .backends
@@ -52,7 +52,7 @@ impl EditorApp {
         self.shell = Some(shell_ref);
     }
 
-    /// The brand theme and typefaces on `shell`, once.
+    /// Installs the brand theme and typefaces on `shell`, once.
     pub(super) fn install_brand(&mut self, shell: &mut dyn EditorShell) {
         if self.brand_installed {
             return;
@@ -62,8 +62,8 @@ impl EditorApp {
         self.brand_installed = true;
     }
 
-    /// What the startup waited on landed: the loading screen plays on to the
-    /// end of its chapter, then fades out.
+    /// Ends the startup: the loading screen plays on to the end of its
+    /// chapter, then fades out.
     pub(super) fn end_startup(&mut self) {
         if let Some(loading) = self.loading.as_ref() {
             loading.ready();

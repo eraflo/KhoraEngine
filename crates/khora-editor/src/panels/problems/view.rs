@@ -22,8 +22,8 @@ use khora_sdk::khora_core::problems::{Problem, ProblemSeverity};
 
 pub(crate) use super::tile_badge::{tile_badge, TileBadge};
 
-/// One module's problems — or, for the scene's data, one component's — as
-/// the tab lists them.
+/// One module's problems, or one component's for the scene's data, as the
+/// tab lists them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProblemGroup {
     /// The module, `None` for the problems in no module.
@@ -36,8 +36,7 @@ pub(crate) struct ProblemGroup {
 }
 
 impl ProblemGroup {
-    /// What the group's header reads: its module, or the component its
-    /// problems are in ("Camera") for the scene's data problems.
+    /// Returns the group's header: its module, or its component ("Camera").
     pub(crate) fn title(&self) -> String {
         self.module
             .clone()
@@ -73,9 +72,10 @@ pub(crate) enum ProblemAction {
     Nothing,
 }
 
-/// `problems` grouped by module, each entity named by `name_of`: the modules
-/// in name order, then the scene's data problems by component, the problems
-/// in neither last, each group's rows in the order given.
+/// Returns `problems` grouped, each entity named by `name_of`.
+///
+/// The modules come first by name, then the scene's data problems by
+/// component, then the rest; each group's rows keep the order given.
 pub(crate) fn grouped(
     problems: &[Problem],
     name_of: &dyn Fn(EntityId) -> Option<String>,
@@ -122,8 +122,7 @@ pub(crate) fn grouped(
             }),
         }
     }
-    // Modules first, by name; then components, by name; then the rest. (A
-    // bare `None` would sort first as an `Option`.)
+    // A bare `None` would sort first as an `Option`.
     groups.sort_by(|a, b| {
         let key = |g: &ProblemGroup| {
             (
@@ -138,8 +137,8 @@ pub(crate) fn grouped(
     groups
 }
 
-/// What clicking `problem`'s row does: a running problem selects its entity,
-/// any other in a module opens that module.
+/// Returns what clicking `problem`'s row does: a running problem selects its
+/// entity, any other in a module opens that module.
 pub(crate) fn row_action(problem: &Problem) -> ProblemAction {
     match (problem.entity, &problem.module) {
         (Some(entity), _) => ProblemAction::SelectEntity(entity),
@@ -152,7 +151,7 @@ pub(crate) fn row_action(problem: &Problem) -> ProblemAction {
     }
 }
 
-/// The tab's title, with its counts of errors and warnings.
+/// Returns the tab's title, with its counts of errors and warnings.
 pub(crate) fn tab_title(problems: &[Problem]) -> String {
     let errors = problems
         .iter()
@@ -173,22 +172,20 @@ pub(crate) fn tab_title(problems: &[Problem]) -> String {
     }
 }
 
-/// Where a project keeps its scripts, under its assets root — the engine's
-/// one rule, not a copy of it.
+/// Where a project keeps its scripts, under its assets root.
 pub(crate) const SCRIPT_DIR: &str = khora_sdk::scripts::SCRIPT_DIR;
 
-/// The module an asset at `rel_path` (under the assets root) is known by,
-/// `None` when it is no script: not an `.erg` file, or one outside the script
-/// folder.
+/// Returns the module the asset at `rel_path` is known by, `None` for an
+/// asset that is no `.erg` under the script folder.
 pub(crate) fn module_of_asset(rel_path: &str) -> Option<String> {
     let path = rel_path.replace('\\', "/");
     khora_sdk::scripts::module_of(&path).map(str::to_owned)
 }
 
-/// What the tile of the asset at `rel_path` (under the assets root) counts,
-/// as (errors, warnings): a script's are its module's in `problems`; a
-/// misplaced `.erg` — one outside the script folder, never compiled — has its
-/// one error; any other file has no count.
+/// Returns the (errors, warnings) the tile of the asset at `rel_path` counts.
+///
+/// A script counts its module's; an `.erg` outside the script folder, never
+/// compiled, counts one error; any other file counts nothing.
 pub(crate) fn script_tile_counts(rel_path: &str, problems: &[Problem]) -> Option<(usize, usize)> {
     let Some(module) = module_of_asset(rel_path) else {
         return khora_sdk::scripts::is_script_file(rel_path).then_some((1, 0));
@@ -206,7 +203,7 @@ pub(crate) fn script_tile_counts(rel_path: &str, problems: &[Problem]) -> Option
     )
 }
 
-/// The file of `module` in the project whose assets are at `assets_root`.
+/// Returns the file of `module` in the project whose assets are at `assets_root`.
 pub(crate) fn module_file(assets_root: &Path, module: &str) -> PathBuf {
     module
         .split('/')

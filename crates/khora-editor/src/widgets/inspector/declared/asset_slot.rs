@@ -12,12 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! An asset slot: the twin of the entity slot, for a field typed by a kind
-//! of asset — `Prefab? bullet;`.
-//!
-//! The slot names what it holds by the file it lives in, takes an asset of
-//! its kind dragged from the browser, and opens a picker of that kind on a
-//! click. A drag it would refuse leaves it as it was: no light, no message.
+//! An asset slot: the entity slot's twin, for a field typed by a kind of
+//! asset (`Prefab? bullet;`). A drag it would refuse leaves it as it was.
+//! See the book: design/editor.md, "Inspector (right, 320 px)".
 
 use std::cell::RefCell;
 
@@ -47,9 +44,8 @@ pub struct SlotMemory {
     pub reveal: Option<String>,
 }
 
-/// An asset as a slot names it: the file stem of the entry holding `uuid`,
-/// or `missing · ` and the first eight hex digits of `uuid` where no entry
-/// holds it.
+/// Returns an asset as a slot names it: the file stem of the entry holding
+/// `uuid`, or `missing · ` and its first eight hex digits.
 pub fn asset_text(uuid: AssetUUID, entries: &[AssetEntry]) -> String {
     match entries.iter().find(|entry| entry.uuid == uuid) {
         Some(entry) => stem(&entry.name).to_owned(),
@@ -57,8 +53,8 @@ pub fn asset_text(uuid: AssetUUID, entries: &[AssetEntry]) -> String {
     }
 }
 
-/// The entries a picker for `kind` offers: those of that kind, sorted by
-/// name.
+/// Returns the entries a picker for `kind` offers: those of that kind, sorted
+/// by name.
 pub fn picker_entries(kind: AssetKind, entries: &[AssetEntry]) -> Vec<&AssetEntry> {
     let mut offered: Vec<&AssetEntry> = entries
         .iter()
@@ -74,8 +70,9 @@ pub fn picker_entries(kind: AssetKind, entries: &[AssetEntry]) -> Vec<&AssetEntr
 }
 
 /// Draws the slot of `label`, holding an asset of `kind` or none; returns
-/// whether the author changed it. An `optional` one is cleared with its
-/// context menu.
+/// whether the author changed it.
+///
+/// An `optional` one is cleared with its context menu.
 pub fn render_asset(
     ui: &mut dyn UiBuilder,
     label: &str,
@@ -179,9 +176,10 @@ pub fn render_asset(
     false
 }
 
-/// The picker of `kind`: its entries by name, each with its folder muted and
-/// its path as a tooltip, and — when `searchable` and there are many — a
-/// search field filtering them. Returns the asset picked, if any.
+/// Draws the picker of `kind`; returns the asset picked, if any.
+///
+/// Entries by name, folder muted, path as tooltip; a search field when
+/// `searchable` and there are more than `SEARCH_FROM`.
 pub fn pick_asset(
     ui: &mut dyn UiBuilder,
     kind: AssetKind,

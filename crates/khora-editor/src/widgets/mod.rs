@@ -12,13 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Editor widget library — composite widgets used by panels.
-//!
-//! Each widget is a free function that takes `&mut dyn UiBuilder` plus
-//! whatever parameters it needs (theme, data, callbacks). Widgets paint to
-//! absolute screen coordinates via the new [`UiBuilder`] primitives —
-//! `paint_*`, `interact_rect`, etc. — so they compose cleanly without
-//! relying on egui's auto-layout.
+//! The editor's composite widgets, used by its panels: free functions over a
+//! `&mut dyn UiBuilder` that paint at absolute screen coordinates.
 
 pub mod asset_kind;
 pub mod brand;

@@ -30,9 +30,10 @@ use crate::project_vfs::ProjectVfs;
 pub struct PlayPrefabs(Mutex<Option<Arc<Mutex<ProjectVfs>>>>);
 
 impl PlayPrefabs {
-    /// Follows `open`, the project open now — however it was opened — and
-    /// keeps `catalog` to its prefabs. Nothing changes while it stays the
-    /// one followed.
+    /// Follows `open`, the project open now, and keeps `catalog` to its prefabs.
+    ///
+    /// It does so however the project was opened; nothing changes while it
+    /// stays the one followed.
     pub fn follow(&self, open: Option<&Arc<Mutex<ProjectVfs>>>, catalog: &PrefabCatalog) {
         let mut followed = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         let same = match (followed.as_ref(), open) {
@@ -152,9 +153,10 @@ mod tests {
         );
     }
 
-    /// The same project opened again is a new project to follow: a prefab
-    /// written to it meanwhile is one the catalog holds and the game reads,
-    /// and the catalog follows the new opening's reindexes.
+    /// **The same project opened again is a new project to follow.**
+    ///
+    /// A prefab written to it meanwhile is one the catalog holds and the game
+    /// reads, and the catalog follows the new opening's reindexes.
     #[test]
     fn the_same_project_opened_again_is_followed_anew() {
         let first = project("Chest");

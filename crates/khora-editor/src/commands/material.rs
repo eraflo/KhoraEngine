@@ -21,15 +21,11 @@ use khora_sdk::{EditorState, GameWorld};
 
 use crate::project_vfs::{AfterIndex, ProjectVfs};
 
-/// Drains [`EditorState::pending_save_as_material`]: serializes the
-/// entity's inline material to a `.kmat` (RON), writes it under
-/// `assets/materials/<name>.kmat`, reindexes the VFS, then rewrites the
-/// entity's component to `MaterialRef::Asset(uuid)` so it references the
-/// freshly-saved shared, reloadable asset.
+/// Drains [`EditorState::pending_save_as_material`]: saves the entity's inline material as a `.kmat`.
 ///
-/// The `.kmat` bytes are exactly what the material decoder expects:
-/// `material_to_json(&dyn Material)` (the `{ type_name, material }` value
-/// split) RON-encoded. No project open → logged warning, no-op.
+/// Writes `assets/materials/<name>.kmat` in the decoder's RON shape, then has
+/// the entity reference the saved asset (`MaterialRef::Asset`) once the index
+/// holds it. With no project open, logs a warning and does nothing.
 pub fn process_pending_save_as_material(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,
@@ -122,11 +118,11 @@ fn inline_material_ron(world: &GameWorld, entity: EntityId) -> Result<String, St
     ron::ser::to_string(&json).map_err(|e| format!("failed to encode material as RON: {e}"))
 }
 
-/// Applies the actions that waited for a reindex and need the world, as
-/// [`crate::hot_reload::land_reindex`] returns them: an
-/// [`AfterIndex::AssignMaterial`] replaces its entity's inline material with
-/// a reference to the saved asset, if the entity is alive and still wears
-/// the material saved.
+/// Applies the actions that waited for a reindex and need the world.
+///
+/// As [`crate::hot_reload::land_reindex`] returns them: an
+/// [`AfterIndex::AssignMaterial`] gives its entity a reference to the saved
+/// asset, if the entity is alive and still wears the material saved.
 pub fn apply_after_index(world: &mut GameWorld, actions: Vec<AfterIndex>) {
     for action in actions {
         let AfterIndex::AssignMaterial {
@@ -158,9 +154,8 @@ pub fn apply_after_index(world: &mut GameWorld, actions: Vec<AfterIndex>) {
     }
 }
 
-/// Drains [`EditorState::pending_assign_material`]: sets
-/// `MaterialRef::Asset(uuid)` on every selected entity, `uuid` being the
-/// chosen material's identity.
+/// Drains [`EditorState::pending_assign_material`]: sets `MaterialRef::Asset(uuid)`
+/// on every selected entity, `uuid` being the chosen material's identity.
 pub fn process_pending_assign_material(
     _project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,

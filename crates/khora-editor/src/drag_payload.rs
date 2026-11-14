@@ -12,27 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The `u64` drag-and-drop payloads the editor's panels exchange: asset
-//! tiles, scene-tree entities, and the dock's own tab tag. One module, so a
-//! receiver classifies every kind the same way.
+//! The `u64` drag-and-drop payloads the editor's panels exchange: asset tiles,
+//! scene-tree entities and the dock's tab tag, classified in one place.
 
 use khora_tool_ui::widgets::DOCK_DRAG_TAG;
 
 /// The high half of a payload, where the kind tags live.
 const TAG_MASK: u64 = 0xFFFF_FFFF_0000_0000;
 
-/// High 32 bits of a `u64` drag payload that identifies an asset-browser
-/// tile — the low 32 bits hold the asset index in `EditorState::asset_entries`.
-/// Every tile is a drag source; the drop sink (viewport / folder tree)
-/// dispatches by the asset's type, so the tag is type-agnostic. Picked so
-/// it can't collide with the `EntityId`-packed payload used by the
-/// scene-tree reparent flow (entity generations are u32 and start at 1, so
-/// any value with `0xKHPF` in the top half can only mean "asset tile").
+/// High 32 bits marking an asset-browser tile; the low 32 hold its index in
+/// `EditorState::asset_entries`.
+///
+/// Type-agnostic: the drop sink dispatches by the asset's type. A packed
+/// `EntityId` never carries it, its generation being a small u32 from 1.
 const ASSET_DRAG_TAG: u64 = 0x4B48_5046_0000_0000; // "KHPF" in ASCII
 
-/// Number of low bits of `EditorState::asset_epoch` stamped into a drag
-/// payload. Eight is plenty: the stamp only has to survive one drag, and the
-/// epoch would have to advance 256 times mid-gesture to alias.
+/// Low bits of `EditorState::asset_epoch` stamped into a drag payload.
+///
+/// The stamp only has to survive one drag: aliasing takes 256 rescans mid-gesture.
 const DRAG_EPOCH_BITS: u32 = 8;
 
 const DRAG_INDEX_MASK: u64 = (1 << (32 - DRAG_EPOCH_BITS)) - 1;
@@ -72,10 +69,9 @@ pub(crate) fn unpack_asset_drag(payload: u64, current_epoch: u64) -> Option<u32>
     Some((payload & DRAG_INDEX_MASK) as u32)
 }
 
-/// Packs an `EntityId` into a `u64` for drag-and-drop payloads. Layout:
-/// high 32 = generation, low 32 = index. Also used by the asset
-/// browser's drop handler to ingest entity drags from the scene tree
-/// (drop = create prefab in the current folder).
+/// Packs an `EntityId` into a drag payload: generation high, index low.
+///
+/// The asset browser takes these drops too: an entity dropped there becomes a prefab.
 pub(crate) fn pack_entity(e: khora_sdk::prelude::ecs::EntityId) -> u64 {
     ((e.generation as u64) << 32) | (e.index as u64)
 }
@@ -88,14 +84,10 @@ pub(crate) fn unpack_entity(payload: u64) -> khora_sdk::prelude::ecs::EntityId {
     }
 }
 
-/// `true` when `payload` carries none of the drag tags: neither an asset
-/// tile nor a dock tab. Lets receivers tell scene-tree entity payloads apart
-/// from the others on the same `dnd_take_drop_payload` channel.
+/// Whether `payload` carries no drag tag, so is a scene-tree entity.
 ///
-/// The check is conservative: any payload whose top 32 bits don't
-/// match a known tag is assumed to be a packed `EntityId`. Entity
-/// generations are tiny u32s (start at 1) so this can't collide with
-/// the ASCII-encoded tags.
+/// Any payload whose high half matches no tag is taken for a packed
+/// `EntityId`: generations are small u32s, far below the ASCII tags.
 pub(crate) fn payload_is_entity(payload: u64) -> bool {
     !is_asset_drag(payload) && payload & TAG_MASK != DOCK_DRAG_TAG & TAG_MASK
 }

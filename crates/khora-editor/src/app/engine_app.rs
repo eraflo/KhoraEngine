@@ -39,8 +39,10 @@ impl EngineApp for EditorApp {
         true
     }
 
-    /// The game the project opened at launch is, from its `project.json`;
-    /// the editor's own name and version when none was opened.
+    /// Returns the identity of the game the project opened at launch makes.
+    ///
+    /// Read from its `project.json`; the editor's own name and version when none
+    /// was opened.
     fn game_identity() -> khora_sdk::GameIdentity {
         crate::bootstrap::PROJECT_PATH
             .get()
@@ -108,8 +110,8 @@ impl EngineApp for EditorApp {
         }
     }
 
-    /// What the engine reads of the editor: its state, its camera, the
-    /// viewport override, the open project's prefabs and assets.
+    /// Provides what the engine reads of the editor: its state, its camera,
+    /// the viewport override, the open project's prefabs and assets.
     fn provide(&self, runtime: &mut Runtime) {
         runtime.resources.insert(self.editor_state.clone());
         runtime.resources.insert(self.camera.clone());
@@ -293,11 +295,9 @@ impl EngineApp for EditorApp {
         let Ok(mut overlay) = overlay_arc.lock() else {
             return false;
         };
-        // egui *always* sees the event so it can keep its hover state in
-        // sync; the override below only changes the "consumed" verdict so
-        // the engine can ALSO process pointer events that land inside the
-        // viewport rect (without the override, egui's CentralPanel
-        // swallows every press/drag via `wants_pointer_input()`).
+        // egui always sees the event, to keep its hover state; the override
+        // only changes the verdict, so the engine also gets the pointer events
+        // inside the viewport, which egui's CentralPanel would swallow.
         let consumed_by_egui =
             overlay.handle_window_event((&**raw_window) as &dyn std::any::Any, event);
 
@@ -358,11 +358,9 @@ impl EngineApp for EditorApp {
 
     fn before_frame(&mut self, world: &mut GameWorld, runtime: &Runtime, window: &dyn KhoraWindow) {
         self.show_frame(runtime, window);
-        // The shell has been shown, so a click on Play this frame is pending:
-        // the transport is processed now, before the engine fixes the frame,
-        // so the frame is wholly edited or wholly played.
-        // What landed at the last boundary first (an opened scene, Stop's
-        // restore), so the transport sees whether a restore is under way.
+        // The shell was just shown, so a click on Play this frame is pending:
+        // processed now, before the engine fixes the frame, it is wholly edited
+        // or wholly played. What landed at the last boundary comes first.
         if let Some(loads) = &self.scene_loads {
             if commands::land_scene_loads(world, &self.editor_state, loads) {
                 commands::forget_history(&self.command_history);
@@ -518,11 +516,9 @@ impl EngineApp for EditorApp {
             }
         }
 
-        // Publish the viewport camera into the EditorViewportOverride: the
-        // flows fall back to it when no scene Camera is active (Editing mode
-        // forces every scene camera inactive), and the engine prepares the
-        // renderer with it after the flows run, as it would with a scene
-        // camera. The editor never prepares the renderer itself.
+        // The flows fall back to this camera when no scene Camera is active
+        // (Editing forces them all inactive); the engine prepares the renderer
+        // with it, as with a scene camera.
         self.viewport_override.set_camera(Some(view_info.clone()));
 
         // Toggle the editor ground grid per-frame: it is editor chrome,
@@ -548,11 +544,8 @@ impl EngineApp for EditorApp {
             ));
         }
 
-        // Collect the current selection gizmos and set them as the gizmo
-        // View. The gizmo family's `GizmoLane` renders them
-        // during the scheduler's OUTPUT phase — the editor is a pure data
-        // producer here, the engine owns the rendering mechanism. Gated
-        // on `PlayMode::Editing`: gizmos must not bleed into Play / Paused.
+        // The selection gizmos, published as the gizmo View for the gizmo
+        // family's `GizmoLane`. Editing only: they must not bleed into Play.
         let gizmo_lines = if let Ok(state) = self.editor_state.lock() {
             if state.play_mode != PlayMode::Editing || state.selection.is_empty() {
                 Vec::new()
@@ -579,11 +572,6 @@ impl EngineApp for EditorApp {
         else {
             return;
         };
-
-        // Gizmo rendering now happens inside the scheduler via
-        // the gizmo family's `GizmoLane` (the lines are published into the
-        // shared `GizmoFrame` from `before_agents`). The editor no longer
-        // drives a separate gizmo render pass here.
 
         // Present the egui overlay last so the dock + panels paint over
         // the 3D scene encoded by the agents.
@@ -623,16 +611,13 @@ impl EngineApp for EditorApp {
 }
 
 impl EditorApp {
-    /// The editor's shell for this frame: the renderer switched to the
-    /// viewport, the overlay begun, the panels shown and the viewport target
-    /// sized from its panel.
+    /// Shows the editor's shell for this frame, the scene rendered into the
+    /// viewport panel's target, sized from that panel.
     fn show_frame(&mut self, runtime: &Runtime, window: &dyn KhoraWindow) {
         self.drop_finished_loading_screen();
-        // Switch the renderer to offscreen-viewport mode BEFORE
-        // `begin_render_frame` runs, so the per-frame `FrameContext`
-        // receives the viewport color/depth targets (instead of the
-        // swapchain) and agents paint into the texture displayed by the
-        // egui viewport panel.
+        // Offscreen before `begin_render_frame`, so the frame's `FrameContext`
+        // receives the viewport targets, not the swapchain, and the lanes
+        // paint into the texture the viewport panel shows.
         if let Some(rs_arc) = runtime
             .backends
             .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()

@@ -6,13 +6,8 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! Inspector asset-metadata pane.
-//!
-//! When the user selects an asset in the browser, the Properties panel
-//! switches from per-entity component cards to this pane: file
-//! metadata, source path, and a couple of OS-level actions
-//! (Reveal in Explorer, Open Externally). Per-type preview cards
-//! (texture image, mesh stats, audio duration) do not exist yet.
+//! The inspector's pane for a selected asset: its quarantine if it has one,
+//! the file's facts, and actions to open or reveal it.
 
 use khora_sdk::editor_ui::{FontFamilyHint, Icon, QuarantinedAsset, TextAlign, UiBuilder, UiTheme};
 
@@ -47,8 +42,8 @@ fn paint_kv_row(
     );
 }
 
-/// Render the asset metadata pane — led, when the asset is quarantined, by
-/// its quarantine. Returns whether `Release` was clicked.
+/// Renders the asset pane, led by the quarantine card of a quarantined asset;
+/// returns whether `Release` was clicked.
 pub fn render_asset_pane(
     ui: &mut dyn UiBuilder,
     body_rect: [f32; 4],
@@ -184,9 +179,11 @@ pub fn render_asset_pane(
     release
 }
 
-/// The quarantine card: why the file is refused, what to do, what refused
-/// it, the trust it was read at, what holds it, and `Release`. Returns the
-/// card's bottom and whether `Release` was clicked.
+/// Paints the quarantine card: why the file is refused, what refused it, and
+/// `Release`.
+///
+/// Returns the card's bottom and whether `Release` was clicked. See the book:
+/// reference/editor.md, "11 — Restricted projects".
 fn paint_quarantine_card(
     ui: &mut dyn UiBuilder,
     rect: [f32; 3],
@@ -270,8 +267,8 @@ fn paint_quarantine_card(
     (y + h, hit.clicked)
 }
 
-/// Header line for asset mode — re-uses the entity Inspector header
-/// widget so the visual rhythm matches.
+/// Paints the asset pane's header, in the entity header's widget; returns its
+/// bottom edge.
 pub fn paint_asset_header(
     ui: &mut dyn UiBuilder,
     origin: [f32; 2],
@@ -322,8 +319,8 @@ fn format_mtime(secs: Option<u64>) -> String {
     format!("{:04}-{:02}-{:02}", y, m, d)
 }
 
-/// Convert days since the Unix epoch to (year, month, day). Used only
-/// for the Inspector mtime label.
+/// Converts days since the Unix epoch to `(year, month, day)`, by Howard
+/// Hinnant's `civil_from_days`.
 fn days_to_ymd(mut days: i64) -> (i32, u32, u32) {
     days += 719_468;
     let era = days.div_euclid(146_097);

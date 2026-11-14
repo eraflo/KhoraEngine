@@ -6,22 +6,8 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! Generic JSON walker — single source of truth for "show a component".
-//!
-//! Dispatch by JSON shape:
-//!
-//! | Shape                                 | Widget |
-//! |---------------------------------------|--------|
-//! | `Object { x, y, z }`                  | Vec3 with X/Y/Z badges |
-//! | `Object { x, y, z, w }`               | Quaternion (4 drag values) |
-//! | `Object { r, g, b, a }`               | colour swatch + RGBA dragvalues |
-//! | `Object { "Variant": <inner> }`       | enum: variant title + recurse |
-//! | `Object { … }` (other)                | indented row of children |
-//! | `Number`                              | DragValue |
-//! | `Bool`                                | checkbox |
-//! | `String`                              | text input |
-//! | `Array<f64>` (3 or 4)                 | falls through to Vec3 / colour |
-//! | `Null`                                | dim "null" label |
+//! The JSON walker that draws a component's fields, a widget per shape of
+//! value, marking the rows that override the prefab.
 
 use khora_sdk::editor_ui::{Icon, UiBuilder, UiTheme};
 use khora_sdk::khora_core::problems::{Problem, ProblemSeverity};
@@ -65,7 +51,7 @@ pub struct Marks<'a> {
 }
 
 impl<'a> Marks<'a> {
-    /// Marks for a component whose overridden fields are `overridden`.
+    /// Creates marks for a component whose overridden fields are `overridden`.
     pub fn new(overridden: &'a [Vec<String>]) -> Self {
         Self {
             overridden,
@@ -76,16 +62,18 @@ impl<'a> Marks<'a> {
         }
     }
 
-    /// The same marks, offering no Apply when `read_only` — the prefab of
-    /// an imported file.
+    /// Returns the same marks, offering no Apply when `read_only`: the prefab
+    /// of an imported file.
     pub fn read_only(mut self, read_only: bool) -> Self {
         self.no_apply = read_only;
         self
     }
 
-    /// The same marks, painting under a field's row the message of each of
-    /// `problems` whose `field` is that row's path — the component's own
-    /// problems, as its check found them on this entity.
+    /// Returns the same marks, painting each of `problems` under the row of
+    /// its `field`.
+    ///
+    /// `problems` are the component's own, as its check found them on this
+    /// entity.
     pub fn with_problems(mut self, problems: &'a [Problem]) -> Self {
         self.problems = problems;
         self
@@ -109,9 +97,10 @@ impl<'a> Marks<'a> {
         }
     }
 
-    /// Marks the row of the top-level field `field`, drawn from `top`, when
-    /// it overrides the prefab's — for a card whose rows are drawn by another
-    /// walker than this one.
+    /// Marks the row of the top-level `field`, drawn at `top`, when it
+    /// overrides the prefab's.
+    ///
+    /// For a card whose rows another walker draws.
     pub fn mark_field(
         &mut self,
         ui: &mut dyn UiBuilder,
@@ -130,9 +119,10 @@ impl<'a> Marks<'a> {
         !self.path.is_empty() && self.overridden.iter().any(|p| p.starts_with(&self.path))
     }
 
-    /// A dot in the row's gutter and a revert at its end — the dot and the
-    /// glyph together, so colour is never the only sign; right-click offers
-    /// both actions in words.
+    /// Paints a row's override marks: a dot in its gutter, a revert at its end.
+    ///
+    /// Two signs, so colour is never the only one; right-click offers both
+    /// actions in words.
     fn mark_row(&mut self, ui: &mut dyn UiBuilder, top: [f32; 2], theme: &UiTheme) {
         let path = self.path.clone();
         ui.paint_circle_filled([top[0] - 7.0, top[1] + 9.0], 2.5, theme.primary);
@@ -172,10 +162,11 @@ impl<'a> Marks<'a> {
     }
 }
 
-/// Renders a top-level component value, marking the rows of the fields that
-/// override the component's prefab and gathering what those rows were asked
-/// in `marks`. Returns true if the user mutated any leaf — the caller queues
-/// a `SetComponentJson` edit in that case.
+/// Renders a component's value, marking the rows that override its prefab;
+/// returns whether a leaf changed.
+///
+/// What the marked rows were asked is gathered in `marks`. On `true` the
+/// caller queues a `SetComponentJson` edit.
 pub fn render_value_marked(
     ui: &mut dyn UiBuilder,
     value: &mut Value,
@@ -203,9 +194,8 @@ fn render_object(
     if map.len() == 1 {
         let key = map.keys().next().cloned().unwrap();
 
-        // If this enum is registered as editor-switchable, render a
-        // combo-box and replace the payload with the new variant's
-        // defaults on selection.
+        // A switchable enum: picking a variant replaces the payload with that
+        // variant's defaults.
         if let Some(variants) = editable_variants(&key) {
             let names: Vec<&str> = variants.iter().map(|(n, _)| *n).collect();
             let mut current = variants
@@ -279,8 +269,7 @@ fn render_object(
     changed
 }
 
-/// Renders a single labelled row. Picks a widget by leaf type or
-/// recurses for nested structure.
+/// Renders one labelled field, with its override marks and its problems.
 fn render_field(
     ui: &mut dyn UiBuilder,
     label: &str,
@@ -353,9 +342,8 @@ fn render_field_value(
     }
 }
 
-/// Generic array row. Numeric arrays of length 3 / 4 are treated like
-/// Vec3 / Vec4 with axis colours; everything else falls back to "[i] = …"
-/// rows.
+/// Renders an array: three or four numbers as one row, anything else as a row
+/// per element.
 fn render_array(
     ui: &mut dyn UiBuilder,
     label: &str,

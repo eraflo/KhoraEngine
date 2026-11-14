@@ -12,12 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Console — the engine talking.
-//!
-//! Rows are a fixed grid (time · level · source · message) so the eye can scan
-//! one column without reading the others. Warn and error rows are tinted, but
-//! the level is *also* an icon: colour alone would leave the severity invisible
-//! to a colour-blind reader.
+//! The console: the engine's log, one row per entry on a fixed grid of
+//! time, level, source and message. A level is an icon as well as a colour,
+//! for a colour-blind reader.
 
 use std::sync::{Arc, Mutex};
 
@@ -32,18 +29,14 @@ const HEADER_H: f32 = 34.0;
 const FILTER_H: f32 = 30.0;
 const ROW_H: f32 = 17.0;
 
-/// Column geometry. The message column takes whatever is left and *wraps*;
-/// it never widens the row, because a console that scrolls sideways is a
-/// console you cannot read.
+/// Width of the time column; the message column takes what is left and never
+/// widens the row, as a console that scrolls sideways cannot be read.
 const COL_TIME: f32 = 58.0;
 const COL_LEVEL: f32 = 16.0;
 const COL_SOURCE: f32 = 122.0;
 const GAP: f32 = 9.0;
 
-/// Which log levels the console is currently showing.
-///
-/// A plain value type, separate from the panel, so the toggle logic can be
-/// tested without a UI at all.
+/// Which log levels the console shows, testable without a UI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LevelFilter {
     /// Show `Info` entries.
@@ -57,8 +50,8 @@ pub struct LevelFilter {
 }
 
 impl Default for LevelFilter {
-    /// Errors, warnings and info on; debug off. Debug is noise until you go
-    /// looking for it.
+    /// Returns errors, warnings and info on, debug off: debug is noise until
+    /// looked for.
     fn default() -> Self {
         Self {
             info: true,
@@ -122,13 +115,13 @@ pub struct ConsolePanel {
     theme: UiTheme,
     filter: LevelFilter,
     search: String,
-    /// How far the log is scrolled. Owned by the panel because the rows are
-    /// painted in absolute coordinates — see `khora_tool_ui::widgets::scroll`.
+    /// How far the log is scrolled; the panel owns it, as its rows are painted
+    /// in absolute coordinates.
     scroll: widgets::ScrollState,
 }
 
 impl ConsolePanel {
-    /// Creates a new console.
+    /// Returns a console over the shared editor state.
     pub fn new(state: Arc<Mutex<EditorState>>, theme: UiTheme) -> Self {
         Self {
             state,
@@ -140,7 +133,7 @@ impl ConsolePanel {
     }
 }
 
-/// The colour and glyph that stand for a level.
+/// Returns the colour and glyph that stand for a level.
 fn level_style(level: LogLevel, t: &UiTheme) -> ([f32; 4], Icon) {
     match level {
         LogLevel::Error => (t.error, Icon::Error),
@@ -171,7 +164,6 @@ impl EditorPanel for ConsolePanel {
             .unwrap_or_default();
         let counts = Counts::of(&entries);
 
-        // ── Header: the dock tabs ──
         ui.paint_rect_filled([r[0], r[1]], [r[2], HEADER_H], t.surface, 0.0);
         ui.paint_line(
             [r[0], r[1] + HEADER_H],
@@ -181,7 +173,6 @@ impl EditorPanel for ConsolePanel {
         );
         // No title chip: the dock tab above already names this panel.
 
-        // ── Filters ──
         let fy = r[1] + HEADER_H + 5.0;
         let mut x = r[0] + 10.0;
 
@@ -240,7 +231,6 @@ impl EditorPanel for ConsolePanel {
             self.filter.toggle(level);
         }
 
-        // Search, right-aligned.
         let sw = 160.0_f32.min(r[2] * 0.32);
         let sx = widgets::right(r) - sw - 10.0;
         if sx > x {
@@ -262,7 +252,6 @@ impl EditorPanel for ConsolePanel {
             );
         }
 
-        // ── Rows ──
         let body_y = r[1] + HEADER_H + FILTER_H + 2.0;
         let body = [r[0], body_y, r[2], (widgets::bottom(r) - body_y).max(0.0)];
 
@@ -307,18 +296,16 @@ impl EditorPanel for ConsolePanel {
         let msg_w = (widgets::right(body) - 12.0 - msg_x).max(40.0);
         let size = t.font_size_caption;
 
-        // Scrolling, the whole of it: take the wheel, offset the cursor, clip.
-        // The rows below still paint in absolute coordinates — they just start
-        // higher up, and anything outside `body` is clipped away.
+        // The rows paint in absolute coordinates, starting higher by the
+        // scroll offset; whatever leaves `body` is clipped.
         let content_h = visible.len() as f32 * ROW_H + 4.0;
         self.scroll.update(ui, body, content_h);
         ui.push_clip_rect(body);
 
         let mut y = body[1] + 2.0 - self.scroll.offset();
         for (row_index, e) in visible.iter().enumerate() {
-            // Skip rows scrolled off either edge instead of painting them under
-            // the clip: a 2000-line buffer would otherwise cost 2000 paint
-            // calls a frame to show forty.
+            // Rows out of view are skipped: painting them under the clip
+            // would cost the whole buffer a frame to show forty.
             if y + ROW_H < body[1] {
                 y += ROW_H;
                 continue;
@@ -329,7 +316,6 @@ impl EditorPanel for ConsolePanel {
             let row = [body[0], y, body[2], ROW_H];
             let (color, glyph) = level_style(e.level, &t);
 
-            // Tint the row for the two levels that mean "look at me".
             match e.level {
                 LogLevel::Error => fill(ui, row, widgets::tint(t.error, 0.09), 0.0),
                 LogLevel::Warn => fill(ui, row, widgets::tint(t.warning, 0.07), 0.0),
@@ -366,8 +352,8 @@ impl EditorPanel for ConsolePanel {
     }
 }
 
-/// Clips a source path to fit its column, keeping the tail (the part that
-/// actually distinguishes `khora_control` from `khora_data`).
+/// Returns `s` cut to `max` characters, keeping the tail, which tells
+/// sources apart.
 fn truncate(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         return s.to_owned();

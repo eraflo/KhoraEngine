@@ -12,17 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Click-to-select in the viewport.
+//! Click-to-select in the viewport: the nearest entity whose world bounding box the ray enters.
 //!
-//! Casts the cursor ray against every entity's world-space bounding box and
-//! returns the nearest hit. Bounding boxes, not triangles: an editor pick has
-//! to feel instant and forgiving, and a box is both — clicking slightly off a
-//! thin object still selects it, which is what people expect from a viewport.
-//!
-//! Everything here runs **on click**, never per frame, so computing a mesh's
-//! bounds from its vertex positions on the spot is cheap enough not to need a
-//! cache. If picking ever moves to hover-highlighting, that changes and the
-//! bounds want caching against the mesh handle.
+//! Boxes, not triangles, so a pick is instant and forgiving. It runs on click,
+//! never per frame, so mesh bounds are computed on the spot rather than cached.
 
 use khora_sdk::khora_core::math::{Aabb, Mat4, Ray, Vec3};
 use khora_sdk::khora_core::renderer::api::gpu_scene::mesh::Mesh;
@@ -31,9 +24,8 @@ use khora_sdk::{GameWorld, HandleComponent};
 
 /// Half-extent of the clickable box given to entities that have no mesh.
 ///
-/// A light or a camera is drawn as a gizmo, not geometry, so it has no bounds
-/// of its own — without this they would be unselectable in the viewport, which
-/// is precisely when you want to grab them.
+/// A light or a camera is drawn as a gizmo, with no bounds of its own:
+/// without this box it could not be clicked in the viewport.
 const GIZMO_PICK_HALF_EXTENT: f32 = 0.35;
 
 /// The nearest entity whose bounds the ray enters, if any.
@@ -67,9 +59,9 @@ pub fn pick_entity(world: &GameWorld, ray: &Ray) -> Option<EntityId> {
     best.map(|(_, entity)| entity)
 }
 
-/// World matrix for `entity`, preferring the propagated `GlobalTransform` so a
-/// child is picked where it is actually drawn rather than where its local
-/// transform alone would put it.
+/// Returns `entity`'s world matrix, from its propagated `GlobalTransform` when it has one.
+///
+/// So a child is picked where it is drawn, not where its local transform alone puts it.
 fn entity_matrix(world: &GameWorld, entity: EntityId) -> Option<Mat4> {
     if let Some(global) = world.get_component::<GlobalTransform>(entity) {
         return Some(global.0 .0);
@@ -111,17 +103,14 @@ mod tests {
     use super::*;
     use khora_sdk::prelude::ecs::Name;
 
-    /// Spawns an entity at `pos` carrying only a transform — the gizmo-box
-    /// case, which is what most editor entities are.
-    ///
-    /// `GlobalTransform` is set to match, standing in for the propagation pass
-    /// the engine runs every tick. Picking reads the *global* transform, so a
-    /// fixture that left it at identity would place every entity at the origin
-    /// and test nothing.
     fn ray_from(origin: Vec3, direction: Vec3) -> Ray {
         Ray::new(origin, direction)
     }
 
+    /// Spawns an entity at `pos` carrying only a transform: the gizmo-box case.
+    ///
+    /// `GlobalTransform` is set to match, standing in for the propagation the
+    /// engine runs every tick: picking reads the global transform.
     fn spawn_at(world: &mut GameWorld, pos: Vec3, name: &str) -> EntityId {
         world.spawn((
             Transform::from_translation(pos),
@@ -136,8 +125,6 @@ mod tests {
     fn ray_hits_an_entity_in_its_path() {
         let mut world = GameWorld::new();
         let entity = spawn_at(&mut world, Vec3::ZERO, "target");
-        // `GlobalTransform::identity()` is what a freshly spawned entity has
-        // before propagation runs, which is exactly the state a click sees.
         let hit = pick_entity(
             &world,
             &ray_from(Vec3::new(0.0, 0.0, 5.0), Vec3::new(0.0, 0.0, -1.0)),

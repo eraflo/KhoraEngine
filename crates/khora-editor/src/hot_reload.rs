@@ -6,12 +6,9 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! Project hot-reload pump.
+//! Project hot-reload pump: the watcher's file changes, applied to the asset cache and the index.
 //!
-//! Drains pending filesystem-change events from the project watcher,
-//! invalidates the `AssetService` cache for modified UUIDs, and reindexes
-//! when files are added or removed. Run once per frame, before the agents
-//! see the world, so a coherent VFS is in scope for the rest of the tick.
+//! Run once per frame from `before_agents`, so the rest of the tick reads a coherent project.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -22,12 +19,14 @@ use khora_sdk::{AssetChangeKind, AssetSource};
 
 use crate::project_vfs::{AfterIndex, ProjectVfs};
 
-/// Drain the project's filesystem watcher and apply the appropriate
-/// invalidation / reindex actions. A full reindex is filed with the
-/// engine's index hub the project holds ([`ProjectVfs::reindex`]), its
-/// ticket mirrored in the editor state, for [`land_reindex`] to read; with
-/// no hub, it is done on the frame and the asset browser cache rebuilt at
-/// once.
+/// Drains the project's file watcher: invalidates modified assets, reindexes when files change.
+///
+/// A create, a remove or a rescan reindexes, and so does a change to a file
+/// that may hold parts (a glTF).
+///
+/// A reindex is filed with the project's index hub ([`ProjectVfs::reindex`]),
+/// its ticket kept in the editor state for [`land_reindex`]; with no hub it
+/// runs on the frame and the asset browser cache is rebuilt at once.
 pub fn pump(pvfs_mutex: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mutex<EditorState>>) {
     let Ok(mut pvfs) = pvfs_mutex.lock() else {
         return;
@@ -110,12 +109,11 @@ pub fn pump(pvfs_mutex: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mutex<Editor
     }
 }
 
-/// Reads the outcome of the project's reindex in flight, once it landed
-/// ([`ProjectVfs::land`]): the asset browser cache is rebuilt, the actions
-/// that waited on the editor state run, and a failure is reported. Returns
-/// the actions that need the world ([`AfterIndex::AssignMaterial`]), for
-/// the caller to apply. Nothing while it is in flight, or when none was
-/// filed.
+/// Reads the outcome of the project's reindex once it landed ([`ProjectVfs::land`]).
+///
+/// Rebuilds the asset browser cache, runs the actions that wait on the editor
+/// state and reports a failure. Returns the actions that need the world
+/// ([`AfterIndex::AssignMaterial`]); nothing while in flight, or when none was filed.
 pub fn land_reindex(
     pvfs_mutex: &Arc<Mutex<ProjectVfs>>,
     editor_state: &Arc<Mutex<EditorState>>,
@@ -235,9 +233,7 @@ fn assignable(
     now
 }
 
-/// Build an `AssetEntry` cache from the current VFS contents. Used by the
-/// initial project open and when the user browses to a different folder
-/// at runtime.
+/// Builds the asset browser's entries from the project's VFS.
 pub fn collect_asset_entries(pvfs: &ProjectVfs) -> Vec<AssetEntry> {
     pvfs.assets()
         .index()
@@ -279,9 +275,10 @@ mod tests {
     use super::collect_asset_entries;
     use crate::project_vfs::ProjectVfs;
 
-    /// **Each entry carries the identity the index gave its asset** — the one
-    /// the registry froze for a renamed file, the path's own for the others:
-    /// what a reference to the asset stores.
+    /// **Each entry carries the identity the index gave its asset.**
+    ///
+    /// The one the registry froze for a renamed file, the path's own for the
+    /// others: what a reference to the asset stores.
     #[test]
     fn each_asset_entry_carries_the_identity_the_index_resolved() -> anyhow::Result<()> {
         let root = std::env::temp_dir().join(format!(
@@ -329,10 +326,10 @@ mod tests {
     const SHIP: &str = "models/ship.gltf";
     const CRATE: &str = "models/crate.obj";
 
-    /// **Each part of a file is listed as an entry of its own, marked with
-    /// its file**: named by its label, typed by its kind, found at its
-    /// file's path. The file and a mesh file with no parts are marked with
-    /// none.
+    /// **Each part of a file is listed as an entry of its own, marked with its file.**
+    ///
+    /// Named by its label, typed by its kind, found at its file's path. The
+    /// file and a mesh file with no parts are marked with none.
     #[test]
     fn each_part_of_a_file_is_an_entry_marked_with_its_file() {
         use crate::tests::gltf_fixture::{GltfProject, SHIP_GLTF, TRIANGLE_OBJ};
@@ -385,9 +382,10 @@ mod tests {
         );
     }
 
-    /// **A glTF saved over with another node lists its new parts once the
-    /// pump has run**: its list of parts changed with its contents, though
-    /// the file was only modified — not created or removed.
+    /// **A glTF saved over with another node lists its new parts once the pump has run.**
+    ///
+    /// Its parts changed with its contents, though the file was only modified,
+    /// not created or removed.
     #[test]
     fn a_modified_gltf_lists_its_new_parts_after_the_pump() {
         use std::sync::Mutex;
@@ -446,10 +444,11 @@ mod tests {
         assert_ne!(state_now.asset_epoch, 1, "the browser is told to rescan");
     }
 
-    /// **A glTF that could not be read when it was indexed lists its parts
-    /// once it is saved whole**: an exporter caught mid-write leaves a file
-    /// the index lists alone, without parts; the save that completes it is
-    /// a modification, and its parts must appear all the same.
+    /// **A glTF unreadable when indexed lists its parts once it is saved whole.**
+    ///
+    /// An exporter caught mid-write leaves a file the index lists without
+    /// parts; the save that completes it is a modification, and its parts
+    /// must appear all the same.
     #[test]
     fn a_gltf_saved_whole_after_a_broken_write_lists_its_parts_after_the_pump() {
         use std::sync::Mutex;
@@ -510,10 +509,8 @@ mod tests {
         );
     }
 
-    /// The engine's side of one frame, for a project index: the `loading`
-    /// family indexes what was filed, each result staged under its lease and
-    /// received by the reserve, as the next frame start receives it; then
-    /// the boundary's `asset_intake` and `asset_index_intake` take it in.
+    /// Runs the engine's side of one frame for a project index: the `loading`
+    /// family's indexing, then the boundary's `asset_intake` and `asset_index_intake`.
     fn engine_frame(runtime: &khora_sdk::Runtime) {
         use khora_sdk::khora_core::asset::{AssetIndexing, IndexRequest};
         use khora_sdk::khora_core::event::Channel;
@@ -564,15 +561,12 @@ mod tests {
         }
     }
 
-    /// **A file created is indexed off the frame.** The project serves the
-    /// engine's asset service, and the engine holds its index hub. A file is
-    /// created: the pump files a reindex with the hub and keeps its ticket,
-    /// without reindexing on the frame — the service does not know the file,
-    /// the browser's entries and epoch are unchanged, the project's
-    /// generation has not moved. Once the engine's frames index it and land
-    /// it, the editor reads the ticket's outcome: the entries list the file,
-    /// the epoch tells the browser to rescan, and the project's generation
-    /// moved.
+    /// **A file created is indexed off the frame.**
+    ///
+    /// The pump files a reindex with the engine's hub and keeps its ticket:
+    /// until it lands, the service, the browser's entries and epoch and the
+    /// project's generation are unchanged. Once it lands, the entries list
+    /// the file, and the epoch and the generation have moved.
     #[test]
     fn a_file_created_is_indexed_off_the_frame() {
         use std::sync::Mutex;
@@ -699,13 +693,11 @@ mod tests {
         );
     }
 
-    /// **A reindex filed for a project closed since lands nothing in the one
-    /// opened.** The engine serves project A; a file is created in A and the
-    /// pump files a reindex of A. Before it lands, the user opens project B,
-    /// whose service moves into the engine's (`share_assets`, as
-    /// `before_agents` does on the frame a project opens). When A's reindex
-    /// lands, the engine's service must still index B's files and none of
-    /// A's, and the browser must list B's files, not A's.
+    /// **A reindex filed for a project closed since lands nothing in the one opened.**
+    ///
+    /// A reindex of project A is filed, then project B opens before it lands
+    /// (`share_assets`, as `before_agents` does). Once A's lands, the engine's
+    /// service and the browser hold B's files and none of A's.
     #[test]
     fn a_reindex_filed_for_a_project_closed_since_lands_nothing_in_the_next() {
         use std::sync::Mutex;

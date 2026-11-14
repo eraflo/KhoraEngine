@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **The scenes the editor loads land at a later boundary.** Opening a
-//! scene and Stop's restore are filed to the engine's scene load hub,
+//! **The scenes the editor loads land at a later boundary.**
+//!
+//! Opening a scene and Stop's restore are filed to the engine's scene load hub,
 //! prepared off the frame and committed at a frame's boundary; the editor
 //! finishes each once its outcome landed. The engine's side of a frame is
-//! played here by hand, around the editor's own per-frame calls: the
-//! boundary's `scene_intake`, the `loading` family's run, then
-//! `land_scene_loads` and `process_transport`.
+//! played here by hand, around the editor's own per-frame calls: the boundary's
+//! `scene_intake`, the `loading` family's run, then `land_scene_loads` and
+//! `process_transport`.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -96,12 +97,13 @@ fn play_families() -> BTreeSet<AgentId> {
     PLAY_FAMILIES.into_iter().collect()
 }
 
-/// **Stop restores the scene at a later boundary.** The mode goes to
-/// Editing on the frame Stop is pressed, and the play families — the
-/// scripts among them — are off from that frame on. The restore is filed
+/// **Stop restores the scene at a later boundary.**
+///
+/// The mode goes to Editing on the frame Stop is pressed, and the play families
+/// — the scripts among them — are off from that frame on. The restore is filed
 /// and in flight: the world is still the played one, and Play is refused
-/// meanwhile. Once its outcome lands, the world is the scene as Play found
-/// it, and the refused Play never fires later.
+/// meanwhile. Once its outcome lands, the world is the scene as Play found it,
+/// and the refused Play never fires later.
 #[test]
 fn stop_restores_the_scene_at_a_later_boundary() {
     let engine = engine();
@@ -182,12 +184,13 @@ impl Drop for Folder {
     }
 }
 
-/// **Opening a scene lands its problems after the commit.** A scene whose
-/// camera's near plane sits at its eye is opened: nothing changes on the
-/// frame it is opened. Once it lands, the world is the scene, what the
+/// **Opening a scene lands its problems after the commit.**
+///
+/// A scene whose camera's near plane sits at its eye is opened: nothing changes
+/// on the frame it is opened. Once it lands, the world is the scene, what the
 /// editor selected is forgotten, the scene's path is the open one, and the
-/// load's problems name the camera the load brought — a live entity of the
-/// new world.
+/// load's problems name the camera the load brought — a live entity of the new
+/// world.
 #[test]
 fn opening_a_scene_lands_its_problems_after_the_commit() {
     let dir = std::env::temp_dir().join(format!(
@@ -301,10 +304,11 @@ fn names_of(world: &GameWorld) -> BTreeSet<String> {
         .collect()
 }
 
-/// **A new scene made while a scene is opening stays the new scene.** A
-/// scene is opened, and before it lands the user makes a new scene: the
-/// later action has the last word — the opening lands nothing over it, and
-/// the new scene is not saved under the opened scene's path.
+/// **A new scene made while a scene is opening stays the new scene.**
+///
+/// A scene is opened, and before it lands the user makes a new scene: the later
+/// action has the last word — the opening lands nothing over it, and the new
+/// scene is not saved under the opened scene's path.
 #[test]
 fn a_new_scene_made_while_a_scene_opens_is_not_replaced_by_it() {
     let dir = std::env::temp_dir().join(format!(
@@ -365,9 +369,10 @@ fn a_new_scene_made_while_a_scene_opens_is_not_replaced_by_it() {
 }
 
 /// **An edit made between Stop and its restore is not silently lost.**
+///
 /// Stop is pressed — Editing at once — and before the restore lands the user
-/// deletes the selected entity. Either the edit is refused while the world
-/// is still the played one, or it holds once the restore has landed.
+/// deletes the selected entity. Either the edit is refused while the world is
+/// still the played one, or it holds once the restore has landed.
 #[test]
 fn an_edit_made_while_the_scene_is_restored_is_refused_or_kept() {
     let engine = engine();
@@ -414,11 +419,12 @@ fn an_edit_made_while_the_scene_is_restored_is_refused_or_kept() {
     }
 }
 
-/// **A new scene made once an open is prepared stays the new scene.** The
-/// frames run in the editor's order: the transport and the landed loads
-/// before the update, the menus in the update, the boundary after. A scene
-/// is opened and prepared by the background; the next update makes a new
-/// scene; that frame's boundary must not land the opened scene over it.
+/// **A new scene made once an open is prepared stays the new scene.**
+///
+/// The frames run in the editor's order: the transport and the landed loads
+/// before the update, the menus in the update, the boundary after. A scene is
+/// opened and prepared by the background; the next update makes a new scene;
+/// that frame's boundary must not land the opened scene over it.
 #[test]
 fn a_new_scene_made_after_an_open_was_prepared_is_not_replaced_by_it() {
     let dir = std::env::temp_dir().join(format!(

@@ -12,18 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A project's game identity, read from its `project.json`: what the editor
-//! names the game it runs by, and what "Build Game" versions the built game
-//! with.
+//! A project's game identity, read from its `project.json`: the name the
+//! editor runs the game by, and the version "Build Game" stamps on it.
 
 use std::path::Path;
 
 use khora_sdk::GameIdentity;
 
-/// The game the project at `root` is: the `name` and `version` of its
-/// `project.json`, the version `0.1.0` for a project written before projects
-/// had one. `None` when the project has no `project.json`, or one that does
-/// not parse or names no game.
+/// Returns the game the project at `root` is, from its `project.json`'s `name` and `version`.
+///
+/// A file without a `version` reads `0.1.0`. `None` when the project has no
+/// `project.json`, or one that does not parse or names no game.
 pub fn project_identity(root: &Path) -> Option<GameIdentity> {
     let json = project_json(root)?;
     let name = field(&json, "name")?;
@@ -33,8 +32,8 @@ pub fn project_identity(root: &Path) -> Option<GameIdentity> {
     })
 }
 
-/// The version of the game the project at `root` is: its `project.json`'s
-/// `version`, else `0.1.0` — whether or not the file names the game.
+/// Returns the version of the game at `root`: its `project.json`'s `version`,
+/// else `0.1.0`, whether or not the file names the game.
 pub fn project_version(root: &Path) -> String {
     project_json(root).map_or_else(
         || khora_sdk::DEFAULT_GAME_VERSION.to_owned(),
@@ -49,7 +48,7 @@ fn project_json(root: &Path) -> Option<serde_json::Value> {
     serde_json::from_str(&text).ok()
 }
 
-/// `json`'s `key`, trimmed, when it is a string not blank.
+/// Returns `json`'s `key`, trimmed, when it is a string not blank.
 pub fn field(json: &serde_json::Value, key: &str) -> Option<String> {
     (json.get(key).and_then(|value| value.as_str()))
         .map(str::trim)
@@ -128,9 +127,10 @@ mod tests {
         );
     }
 
-    /// **No game is named without a project file.** A folder with no
-    /// `project.json`, or one that does not parse, names no game: the editor
-    /// falls back to its own default.
+    /// **No game is named without a project file.**
+    ///
+    /// A folder with no `project.json`, or one that does not parse, names no
+    /// game: the editor falls back to its own default.
     #[test]
     fn no_game_is_named_without_a_readable_project_file() {
         let missing = Project::with("missing", None);

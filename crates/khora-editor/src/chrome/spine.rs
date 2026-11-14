@@ -12,12 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Spine — the vertical workspace switcher on the far-left edge.
+//! The spine, the vertical workspace switcher on the far-left edge.
 //!
-//! The active workspace is marked in **gold**, because which workspace you are
-//! in *is* a selection — the same thing the gold bar means everywhere else in
-//! the editor. (The hub's sidebar is different: it navigates between places,
-//! so it tints with the brand silver instead.)
+//! The active workspace is lit gold because which workspace you are in is a
+//! selection; the hub's sidebar, which moves between places, tints silver.
 
 use std::sync::{Arc, Mutex};
 
@@ -81,12 +79,10 @@ impl EditorPanel for SpinePanel {
         ui.paint_rect_filled([px, py], [pw, ph], theme.surface, 0.0);
         ui.paint_line([px + pw, py], [px + pw, py + ph], theme.border, 1.0);
 
-        // Brand mark — the sign, no plate around it. The spine is chrome;
-        // it should recede, not compete with the work.
+        // The sign without a plate: chrome recedes behind the work.
         let cx = px + pw * 0.5;
         khora_tool_ui::widgets::sign(ui, theme, [cx, py + 22.0], 16.0, 1.0);
 
-        // Mode buttons.
         let current = self.current_mode();
         let mut y = py + 48.0;
 

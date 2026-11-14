@@ -20,9 +20,8 @@ use khora_sdk::editor_ui::*;
 use khora_sdk::prelude::math::Vec3;
 
 impl ViewportPanel {
-    /// While the game plays through a camera whose values make no image, says
-    /// so over the empty picture: which camera, what is wrong, and where the
-    /// problem is listed — rather than a black viewport and no reason.
+    /// Says, while the game plays through a camera that makes no image, which
+    /// camera, what is wrong, and where the problem is listed.
     pub(super) fn paint_broken_play_camera(
         &self,
         ui: &mut dyn UiBuilder,
@@ -72,13 +71,14 @@ impl ViewportPanel {
         );
     }
 
+    /// Paints the camera preview's frame in the bottom-right corner; it shows
+    /// no picture yet.
     pub(super) fn paint_camera_preview(
         &self,
         ui: &mut dyn UiBuilder,
         viewport_min: [f32; 2],
         viewport_size: [f32; 2],
     ) {
-        // Keep the preview legible but avoid clutter on small viewports.
         if viewport_size[0] < 320.0 || viewport_size[1] < 220.0 {
             return;
         }
@@ -96,10 +96,8 @@ impl ViewportPanel {
         ];
         let size = [preview_w, preview_h];
 
-        // Background panel.
         ui.paint_rect_filled(min, size, [0.05, 0.06, 0.09, 0.86], 6.0 * scale);
 
-        // Border.
         let x0 = min[0];
         let y0 = min[1];
         let x1 = min[0] + size[0];
@@ -111,7 +109,6 @@ impl ViewportPanel {
         ui.paint_line([x1, y1], [x0, y1], border, border_w);
         ui.paint_line([x0, y1], [x0, y0], border, border_w);
 
-        // Fake frame content area to make the placeholder more informative.
         let content_min = [x0 + 8.0 * scale, y0 + 34.0 * scale];
         let content_size = [
             (size[0] - 16.0 * scale).max(8.0),
@@ -124,7 +121,6 @@ impl ViewportPanel {
             4.0 * scale,
         );
 
-        // Crosshair inside preview frame.
         let cx = content_min[0] + content_size[0] * 0.5;
         let cy = content_min[1] + content_size[1] * 0.5;
         ui.paint_line(
@@ -152,6 +148,7 @@ impl ViewportPanel {
         );
     }
 
+    /// Paints the view-orientation gizmo in the top-right corner.
     pub(super) fn paint_axis_gizmo(
         &self,
         ui: &mut dyn UiBuilder,
@@ -162,10 +159,8 @@ impl ViewportPanel {
         let min_dim = viewport_size[0].min(viewport_size[1]);
         let scale = (min_dim / 700.0).clamp(0.75, 1.55);
 
-        // Top-right corner. This is where every 3D tool puts the view-
-        // orientation gizmo, and muscle memory is worth more here than
-        // novelty. The transport lives at the bottom centre, so nothing
-        // competes for the corner.
+        // Where every 3D tool puts it: muscle memory is worth more here than
+        // novelty.
         let plate_half = 34.0 * scale;
         let length = 22.0 * scale;
         let margin = 12.0 * scale;
@@ -174,7 +169,7 @@ impl ViewportPanel {
             viewport_min[1] + margin + plate_half,
         ];
 
-        // A translucent puck so the gizmo stays legible over any scene without
+        // Translucent, so the gizmo stays legible over any scene without
         // hiding it.
         ui.paint_circle_filled(
             center,
@@ -193,8 +188,6 @@ impl ViewportPanel {
         let label_offset = 5.0 * scale;
         let show_labels = min_dim >= 240.0;
 
-        // Per-axis paint: line out from center + colored knob at the tip
-        // with the axis label centered on the knob (compass-puck look).
         let paint_axis = |ui: &mut dyn UiBuilder,
                           axis: Vec3,
                           label: &str,
@@ -209,9 +202,7 @@ impl ViewportPanel {
             let sx = axis.dot(right);
             let sy = axis.dot(up);
             let end = [center[0] + sx * length, center[1] - sy * length];
-            // Line from origin to knob center.
             ui.paint_line(center, end, color, line_w);
-            // Knob.
             let knob_r = 7.0 * scale;
             ui.paint_circle_filled(end, knob_r, color);
             ui.paint_circle_stroke(end, knob_r, [0.05, 0.07, 0.10, 1.0], 1.0);
@@ -270,7 +261,7 @@ impl ViewportPanel {
     }
 }
 
-/// The name `scene_roots` gives `entity`, searching every level.
+/// Returns the name `scene_roots` gives `entity`, searching every level.
 fn node_name(nodes: &[SceneNode], entity: khora_sdk::prelude::ecs::EntityId) -> Option<String> {
     nodes.iter().find_map(|node| {
         if node.entity == entity {

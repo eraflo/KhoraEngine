@@ -21,10 +21,11 @@ use crate::drag_payload::{pack_entity, payload_is_entity, unpack_asset_drag, unp
 use khora_tool_ui::widgets::paint;
 use khora_tool_ui::widgets::with_alpha;
 
-/// Filters a `SceneNode` against a lowercase needle. Returns `Some(node)`
-/// when the node's own name contains the needle (subtree kept intact) or
-/// when any descendant matches (only matching descendants kept). Returns
-/// `None` when neither the node nor any descendant matches.
+/// Returns `node` filtered by a lowercase `needle`, `None` when nothing in it
+/// matches.
+///
+/// A node whose name matches keeps its whole subtree; otherwise only its
+/// matching descendants are kept.
 pub(super) fn filter_scene_node(node: &SceneNode, needle: &str) -> Option<SceneNode> {
     if node.name.to_lowercase().contains(needle) {
         return Some(node.clone());
@@ -44,7 +45,7 @@ pub(super) fn filter_scene_node(node: &SceneNode, needle: &str) -> Option<SceneN
     }
 }
 
-/// Recursively counts every visible node in a subtree (self + children).
+/// Returns how many nodes the forest holds, folded or not.
 pub(super) fn count_scene_nodes(nodes: &[SceneNode]) -> usize {
     nodes
         .iter()
@@ -52,7 +53,7 @@ pub(super) fn count_scene_nodes(nodes: &[SceneNode]) -> usize {
         .sum()
 }
 
-/// Finds an entity's display name in a `SceneNode` forest.
+/// Returns an entity's display name in a `SceneNode` forest.
 pub(super) fn find_node_name(
     nodes: &[SceneNode],
     entity: khora_sdk::prelude::ecs::EntityId,
@@ -78,6 +79,8 @@ fn entity_icon(kind: EntityIcon) -> Icon {
     }
 }
 
+/// Paints the row of `node` at `y` and, unless folded, its children's; returns
+/// the y under the last row.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn render_node(
     ui: &mut dyn UiBuilder,
@@ -90,8 +93,7 @@ pub(super) fn render_node(
     hidden: &std::collections::HashSet<khora_sdk::prelude::ecs::EntityId>,
     theme: &UiTheme,
     pending: &std::cell::Cell<Option<EditorAction>>,
-    // Current `EditorState::asset_epoch` — rejects an asset drag whose index
-    // was read before a rescan.
+    // Refuses an asset drag whose index was read before a rescan.
     asset_epoch: u64,
     collapsed: &std::collections::HashSet<khora_sdk::prelude::ecs::EntityId>,
     // The entity being renamed, and where its field should go once found.
@@ -103,9 +105,8 @@ pub(super) fn render_node(
     let is_selected = selection.contains(&node.entity);
     let is_hidden = hidden.contains(&node.entity);
 
-    // Leave the last 10px of the row unclickable so the dock splitter's grab
-    // band stays reachable — a row that swallows the edge makes the panel feel
-    // unresizable.
+    // The last 10px stay unclickable, so the dock splitter's grab band stays
+    // reachable.
     let row_click_w = (row_w - 10.0).max(0.0);
 
     let interaction = ui.interact_rect(
@@ -113,16 +114,11 @@ pub(super) fn render_node(
         [row_x, y, row_click_w, ROW_HEIGHT],
     );
 
-    // Drag-and-drop wiring — both source and target attach to the SAME
-    // interact_rect response above, so a single hit-target serves clicks,
-    // drags, and drops without stealing each other's pointer events.
-    // Payload is the row's `EntityId` packed into u64 (high 32 = generation,
-    // low 32 = index) so reparent addresses the exact live entity, not a
-    // stale slot. Cycle prevention happens in `GameWorld::set_parent`.
+    // Drag source and drop target share the row's one response, so clicks,
+    // drags and drops do not steal each other's pointer. The payload carries
+    // the generation, never a stale slot; `GameWorld::set_parent` refuses a cycle.
     ui.dnd_attach_drag_payload(pack_entity(node.entity));
     if let Some(packed) = ui.dnd_take_drop_payload() {
-        // An entity drag reparents under this row; an asset-tile drag
-        // instantiates into the scene (texture/material assigns to this row).
         if payload_is_entity(packed) {
             let dropped = unpack_entity(packed);
             if dropped != node.entity {
@@ -139,10 +135,8 @@ pub(super) fn render_node(
         }
     }
 
-    // Selection is **gold** — the same mark the asset tiles, the palette and
-    // the spine use. Silver is the brand colour and says "Khora"; gold says
-    // "this is the thing you are acting on", and it has to mean only that for
-    // the eye to find it instantly.
+    // Selection is gold, as everywhere in the editor. See the book:
+    // design/editor.md, "Accents — three signals only".
     if is_selected {
         ui.paint_rect_filled(
             [row_x, y],
@@ -168,11 +162,6 @@ pub(super) fn render_node(
         pending.set(Some(EditorAction::Select(node.entity)));
     }
 
-    // Right-click context menu on the row. We attach it to the same
-    // interaction so right-clicking anywhere on the row (excluding the
-    // eye target) opens the menu. Selecting the row first means actions
-    // like Duplicate / Delete operate on the right entity even if it
-    // wasn't already selected.
     let entity = node.entity;
     let node_name = node.name.clone();
     ui.context_menu_last(&mut |menu| {
@@ -202,12 +191,10 @@ pub(super) fn render_node(
         }
     });
 
-    // Indent
     let indent_px = ROW_PAD_X + depth as f32 * 14.0;
     let mut cx = row_x + indent_px;
 
-    // Chevron — the fold control, and a hit target of its own so clicking it
-    // folds without also re-selecting the row.
+    // A hit target of its own: folding does not also select the row.
     if !node.children.is_empty() {
         let is_collapsed = collapsed.contains(&node.entity);
         let chev_rect = [cx - 3.0, y + 4.0, 17.0, 17.0];
@@ -229,7 +216,6 @@ pub(super) fn render_node(
     }
     cx += 14.0;
 
-    // Icon
     let base_icon_color = if is_selected {
         theme.accent_c
     } else {
@@ -244,16 +230,12 @@ pub(super) fn render_node(
     paint::icon(ui, [cx, y + 6.0], icon, 13.0, icon_color);
     cx += 18.0;
 
-    // Tag indicator — small glyph next to the type icon when the entity
-    // carries any `Tag` component entries. Tooltip would show the actual
-    // tag set; for now the glyph alone tells the user "this entity has
-    // tags, look at the inspector for details".
+    // The tags themselves are in the inspector.
     if node.tag_count > 0 {
         paint::icon(ui, [cx, y + 6.0], Icon::Tag, 12.0, icon_color);
         cx += 16.0;
     }
 
-    // Label
     let base_label_color = if is_selected {
         theme.text
     } else {
@@ -264,23 +246,14 @@ pub(super) fn render_node(
     } else {
         base_label_color
     };
-    // While a row is being renamed its label is replaced by a field — drawn by
-    // the caller after the loop, so the recursion doesn't have to carry a
-    // `&mut String` down every level. The row just reports where it goes.
+    // The caller draws the rename field here, so the recursion carries no
+    // `&mut String`.
     if renaming == Some(node.entity) {
         let field_w = (row_x + row_click_w - cx - 6.0).max(40.0);
         rename_rect.set(Some([cx - 2.0, y + 3.0, field_w, ROW_HEIGHT - 6.0]));
     } else {
         paint::text(ui, [cx, y + 7.0], &node.name, 12.0, label_color);
     }
-
-    // No visibility eye. It used to dim the row and nothing else — the object
-    // kept rendering — because `pending_visibility_toggle` was never consumed.
-    //
-    // Hiding an object belongs to a component activation model (deactivate an
-    // entity's render components), which every consuming `Flow` would have to
-    // honour or the flag is decorative all over again. That is an ECS feature,
-    // not an editor one; until it exists, no eye is better than a fake one.
 
     let mut next_y = y + ROW_HEIGHT;
     if collapsed.contains(&node.entity) {
@@ -307,10 +280,8 @@ pub(super) fn render_node(
     next_y
 }
 
-/// Counts the rows a forest actually shows, stopping at folded nodes.
-///
-/// Used for the scroll extent: counting the whole tree would let the view
-/// scroll past the end of a mostly-folded hierarchy.
+/// Returns how many rows a forest shows, folded subtrees left out, which is
+/// the scroll extent.
 pub(super) fn count_visible_nodes(
     nodes: &[SceneNode],
     collapsed: &std::collections::HashSet<khora_sdk::prelude::ecs::EntityId>,

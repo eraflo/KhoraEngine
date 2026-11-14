@@ -38,6 +38,7 @@ pub(super) fn phase_color_for(phase: ExecutionPhase, theme: &UiTheme) -> [f32; 4
     }
 }
 
+/// Paints a card's titled header and returns the y its lines start at.
 pub(super) fn paint_card_box(
     ui: &mut dyn UiBuilder,
     x: f32,
@@ -59,8 +60,7 @@ pub(super) fn paint_card_box(
     y + header_h + 4.0
 }
 
-/// Render a key/value row with the key left-aligned and the value
-/// right-aligned within `[x, x+w]`.
+/// Paints a key on the left and its value on the right of `[x, x + w]`.
 pub(super) fn kv(
     ui: &mut dyn UiBuilder,
     x: f32,
@@ -91,10 +91,10 @@ impl AgentSnapshot {
     }
 }
 
-/// Paints `text` from `pos`, word-wrapped to `width`: one run per line,
-/// split at spaces, each line under the previous one. Returns the height
-/// under the last line. The editor's text calls paint a single line, so a
-/// sentence longer than its column is laid out here.
+/// Paints `text` from `pos`, wrapped at spaces to `width`, and returns the y
+/// under its last line.
+///
+/// The editor's text calls paint a single line.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn wrapped(
     ui: &mut dyn UiBuilder,

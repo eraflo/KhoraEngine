@@ -44,8 +44,7 @@ const NO_ROW_MEASURED: &str = "No row measured yet.";
 const SWITCH_FOOTNOTE: &str =
     "Switch: what a move to that row is charged — its preparation and the swap.";
 
-/// One card's place in the inspector: its left edge and width, and where
-/// the lines inside it start and how wide they run.
+/// One card's place in the inspector: its left edge and its width.
 #[derive(Clone, Copy)]
 pub(super) struct Card {
     pub(super) x: f32,
@@ -84,7 +83,7 @@ impl Card {
         below
     }
 
-    /// A key on the left and its value, in monospace, on the right.
+    /// Paints a key on the left and its value, in monospace, on the right.
     fn line(
         self,
         ui: &mut dyn UiBuilder,
@@ -106,13 +105,13 @@ impl Card {
         y + LINE
     }
 
-    /// A muted sub-label over a group of lines.
+    /// Paints a muted sub-label over a group of lines.
     fn sub_label(self, ui: &mut dyn UiBuilder, y: f32, label: &str, theme: &UiTheme) -> f32 {
         paint::text(ui, [self.inner_x(), y + 6.0], label, 10.5, theme.text_muted);
         y + 18.0
     }
 
-    /// A sentence across the card's lines, word-wrapped.
+    /// Paints a sentence across the card, word-wrapped.
     fn sentence(
         self,
         ui: &mut dyn UiBuilder,
@@ -133,9 +132,11 @@ impl Card {
     }
 }
 
-/// Paints the Decision card for `agent` — and, when `view` lends it an
-/// envelope, the card of what the DCC learnt of its rows — from `y`.
-/// Returns where the next card goes.
+/// Paints the Decision card for `agent` from `y`, and returns where the next
+/// card goes.
+///
+/// When `view` lends the agent an envelope, the card of what the DCC learnt
+/// of its rows follows. See the book: concepts/gorna.md, "How an agent chooses".
 pub(super) fn paint_decision_cards(
     ui: &mut dyn UiBuilder,
     card: Card,
@@ -175,8 +176,8 @@ pub(super) fn paint_decision_cards(
     cy + 10.0
 }
 
-/// What the agent was lent: its time on the host and the GPU, and the
-/// memory on every device — a device lent nothing is not named.
+/// Paints what the agent was lent: its time on the host and the GPU, and its
+/// memory over every device; a device lent nothing is not named.
 fn paint_lent(ui: &mut dyn UiBuilder, card: Card, y: f32, lent: &Envelope, theme: &UiTheme) -> f32 {
     let mut cy = card.sub_label(ui, y + 2.0, "Lent", theme);
     cy = card.line(
@@ -215,8 +216,8 @@ fn paint_lent(ui: &mut dyn UiBuilder, card: Card, y: f32, lent: &Envelope, theme
     cy
 }
 
-/// The row planned for the agent and the row it runs: gold is the one it
-/// runs now.
+/// Paints the row planned for the agent and the row it runs, the running one
+/// in gold.
 fn paint_rows(
     ui: &mut dyn UiBuilder,
     card: Card,
@@ -269,9 +270,8 @@ fn paint_rows(
     }
 }
 
-/// Why the round decided as it did: what opened it, who decided, what bound
-/// the frame and the margin kept — each when there is one —, and the
-/// upgrades the agent was refused, each with what it broke.
+/// Paints why the round decided as it did, and the upgrades the agent was
+/// refused, each with what it broke.
 fn paint_why(
     ui: &mut dyn UiBuilder,
     card: Card,
@@ -323,7 +323,7 @@ fn paint_why(
     cy
 }
 
-/// One refused upgrade, on an amber tint: the row, and what it broke.
+/// Paints one refused upgrade on an amber tint: the row, and what it broke.
 fn paint_refusal(
     ui: &mut dyn UiBuilder,
     card: Card,
@@ -366,8 +366,8 @@ fn paint_refusal(
     y + 46.0
 }
 
-/// What the DCC learnt of each of the agent's rows — its measured time over
-/// its quote, the spread, and what a switch to it is charged.
+/// Paints what the DCC learnt of each of the agent's rows: its measured time
+/// over its quote, the spread, and what a switch to it is charged.
 fn paint_learnt(
     ui: &mut dyn UiBuilder,
     card: Card,
@@ -468,13 +468,13 @@ fn paint_learnt(
     card.sentence(ui, cy + 2.0, SWITCH_FOOTNOTE, 10.5, theme.text_muted)
 }
 
-/// `time` in milliseconds, to two places.
+/// Returns `time` in milliseconds, to two places.
 fn millis(time: Duration) -> String {
     format!("{:.2} ms", time.as_secs_f64() * 1_000.0)
 }
 
-/// `amount` bytes in the largest unit it holds a whole one of: bytes, KiB
-/// or MiB — a few hundred bytes never read as `0 MiB`.
+/// Returns `amount` bytes in the largest unit it holds a whole one of, so a
+/// few hundred bytes never read as `0 MiB`.
 fn bytes(amount: u64) -> String {
     const KIB: u64 = 1024;
     const MIB: u64 = 1024 * KIB;
@@ -487,7 +487,7 @@ fn bytes(amount: u64) -> String {
     }
 }
 
-/// A row as tools name it.
+/// Returns a row as tools name it.
 fn row_name(row: StrategyId) -> String {
     match row {
         StrategyId::LowPower => "LowPower".to_owned(),
@@ -497,7 +497,7 @@ fn row_name(row: StrategyId) -> String {
     }
 }
 
-/// What opened a round, in words.
+/// Returns what opened a round, in words.
 fn trigger_name(trigger: Trigger) -> &'static str {
     match trigger {
         Trigger::Initial => "Initial",
@@ -513,7 +513,7 @@ fn trigger_name(trigger: Trigger) -> &'static str {
     }
 }
 
-/// What decided a round, in words.
+/// Returns what decided a round, in words.
 fn decider_name(by: DecidedBy) -> &'static str {
     match by {
         DecidedBy::Floors => "Floors only",
@@ -523,7 +523,7 @@ fn decider_name(by: DecidedBy) -> &'static str {
     }
 }
 
-/// A device, as the constraints name it.
+/// Returns a device as the constraints name it.
 fn device_name(device: Device) -> &'static str {
     match device {
         Device::Cpu => "host",
@@ -533,7 +533,7 @@ fn device_name(device: Device) -> &'static str {
     }
 }
 
-/// The constraint that bound the frame, in words.
+/// Returns the constraint that bound the frame, in words.
 fn binding_name(binding: BindingConstraint) -> String {
     match binding {
         BindingConstraint::Time(Device::Cpu) => "Host time".to_owned(),
@@ -544,7 +544,7 @@ fn binding_name(binding: BindingConstraint) -> String {
     }
 }
 
-/// What a refused upgrade broke, in words.
+/// Returns what a refused upgrade broke, in words.
 fn broke(over: BindingConstraint) -> String {
     match over {
         BindingConstraint::Time(device) => format!("over the frame, {}", device_name(device)),

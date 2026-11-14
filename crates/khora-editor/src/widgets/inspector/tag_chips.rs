@@ -12,18 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Custom inspector renderer for the `Tag` component.
-//!
-//! `SerializableTag(BTreeSet<String>)` serializes as a flat array of
-//! strings. The generic JSON walker would render it as
-//! `[0] = "alpha", [1] = "beta", …` rows, which is correct but ugly. This
-//! renderer shows each tag as a chip with an `x` button to remove it,
-//! plus a row at the bottom with a text input + `+` button to add new tags.
-//!
-//! On any mutation we mark the parent value `changed = true`; the inspector
-//! then queues a `PropertyEdit::SetComponentJson` against the entity, which
-//! re-runs the macro-generated `from_json` to rebuild a `Tag` from the
-//! updated JSON array.
+//! The inspector's renderer for the `Tag` component: a chip per tag with a
+//! remove button, and a row to add one.
 
 use khora_sdk::editor_ui::UiBuilder;
 use serde_json::Value;
@@ -34,14 +24,12 @@ use std::collections::HashMap;
 use khora_sdk::prelude::ecs::EntityId;
 
 thread_local! {
-    /// Per-entity scratch buffer for the "add tag" text input. Wiping the
-    /// buffer after a successful add means the next chip starts empty.
+    /// Each entity's "add tag" text input, kept across frames.
     static ADD_BUFFERS: RefCell<HashMap<EntityId, String>> = RefCell::new(HashMap::new());
 }
 
-/// Renders the chip strip + add-row for a `Tag` component value. Returns
-/// `true` if the tag set was mutated and the caller should queue a
-/// `SetComponentJson` edit.
+/// Renders a `Tag` value's chips and add row; returns whether the set
+/// changed, for the caller to queue a `SetComponentJson` edit.
 pub fn render_tag_chips(ui: &mut dyn UiBuilder, entity: EntityId, value: &mut Value) -> bool {
     let arr = match value {
         Value::Array(a) => a,

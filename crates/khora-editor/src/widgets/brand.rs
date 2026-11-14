@@ -19,11 +19,10 @@ use khora_sdk::editor_ui::{FontFamilyHint, TextAlign, UiBuilder, UiTheme};
 
 use khora_tool_ui::widgets::with_alpha;
 
-/// Paints the editor's branded "pill" (rounded 999 background containing a
-/// the Khora sign, the engine name, a separator and the active project name).
+/// Paints the editor's brand pill: the Khora sign, the engine name and the
+/// active project's name.
 ///
-/// Returns the right edge of the pill in screen-space, so the caller can
-/// position the next widget after it.
+/// Returns the pill's right edge in screen space.
 pub fn paint_brand_pill(
     ui: &mut dyn UiBuilder,
     origin: [f32; 2],
@@ -51,7 +50,6 @@ pub fn paint_brand_pill(
     let pill_x = origin[0];
     let pill_y = origin[1] + pad_y;
 
-    // Background
     ui.paint_rect_filled(
         [pill_x, pill_y],
         [total_w, pill_h],
@@ -66,10 +64,8 @@ pub fn paint_brand_pill(
         1.0,
     );
 
-    // The sign
     khora_tool_ui::widgets::sign(ui, theme, [pill_x + 14.0, pill_y + pill_h * 0.5], 12.0, 1.0);
 
-    // Engine name
     let text_y = pill_y + (pill_h - theme.font_size_body) * 0.5;
     ui.paint_text_styled(
         [pill_x + 26.0, text_y],
@@ -80,7 +76,6 @@ pub fn paint_brand_pill(
         TextAlign::Left,
     );
 
-    // Vertical separator after engine name
     let sep_x = pill_x + 26.0 + engine_w + 6.0;
     ui.paint_line(
         [sep_x, pill_y + 5.0],
@@ -89,7 +84,6 @@ pub fn paint_brand_pill(
         1.0,
     );
 
-    // Project name
     ui.paint_text_styled(
         [sep_x + 8.0, text_y],
         project_name,

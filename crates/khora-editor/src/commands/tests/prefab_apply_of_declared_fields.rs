@@ -221,9 +221,10 @@ fn glow_scope() -> PrefabApplyScope {
     }
 }
 
-/// **Applying a declared field writes it into the prefab's file** — and
-/// nothing else the instance overrides: the override of the applied field
-/// is gone, the other one stays.
+/// **Applying a declared field writes it, and nothing else, into the prefab's file.**
+///
+/// The override of the applied field is gone; the instance's other override
+/// stays.
 #[test]
 fn applying_a_declared_field_writes_it_into_the_prefab_and_clears_its_override() {
     let project = project("prefab-apply-declared-field");

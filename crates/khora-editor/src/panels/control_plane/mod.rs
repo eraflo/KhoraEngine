@@ -12,22 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Control Plane workspace v3 — live DCC view.
-//!
-//! Reads the engine's [`AgentRegistry`] each frame, snapshots
-//! [`Report`] and [`ExecutionTiming`] for every agent, and renders:
-//! - a DCC summary bar (live FPS / frame budget / heap)
-//! - an Agents list (real agents, grouped into the Critical / Important /
-//!   Optional buckets reported by their `execution_timing()`)
-//! - a Schedule view that groups agents by their `phase`
-//!   (`INIT / OBSERVE / TRANSFORM / MUTATE / OUTPUT / FINALIZE`) — per-phase
-//!   timing isn't exposed by `ExecutionScheduler` yet, so this is a
-//!   schedule, not a timeline.
-//! - an Inspector for the selected agent, showing real status fields.
-//!
-//! When the registry isn't available (engine not booted, headless test) the
-//! workspace falls back to a clear "(no agents registered)" state instead
-//! of mock rows.
+//! The Control Plane workspace: the DCC's summary, its agents, their schedule
+//! by phase, and the selected agent's inspector, read live from the engine.
+//! See the book: reference/editor.md, "10 — The Control Plane".
 
 use std::sync::{Arc, Mutex};
 
@@ -53,7 +40,7 @@ const AGENT_ROW_HEIGHT: f32 = 60.0;
 
 const FRAME_TARGET_MS: f32 = 16.67;
 
-/// Snapshot of one agent for the duration of a single frame's UI.
+/// One agent as read for one frame's UI.
 #[derive(Debug, Clone)]
 struct AgentSnapshot {
     id: AgentId,
@@ -97,9 +84,8 @@ impl AgentSnapshot {
     }
 }
 
-/// The crate an agent comes from, as tools show it: the first segment of the
-/// module its family was registered in (`khora_lanes::ui::registration` →
-/// `khora-lanes`), or `other` for an agent registered without one.
+/// Returns the crate an agent's family was registered in (`khora-lanes` for
+/// `khora_lanes::ui::registration`), or `other` without one.
 fn crate_label(origin: Option<&str>) -> String {
     origin
         .and_then(|module| module.split("::").next())
@@ -110,16 +96,15 @@ fn crate_label(origin: Option<&str>) -> String {
 /// How many recent frame-time samples the summary sparkline keeps.
 const FRAME_HISTORY: usize = 48;
 
+/// The Control Plane panel.
 pub struct ControlPlanePanel {
     state: Arc<Mutex<EditorState>>,
     theme: UiTheme,
     registry: Option<Arc<Mutex<AgentRegistry>>>,
     dcc_context: Option<Arc<std::sync::RwLock<DccContext>>>,
     selected_idx: usize,
-    /// Recent frame-time samples (ms), oldest first. The DCC's aggregate cost
-    /// is the frame budget itself, and it *is* recorded every frame — unlike
-    /// per-agent cost, which the engine doesn't yet expose — so this is the
-    /// one sparkline the Control Plane can draw truthfully today.
+    /// Recent frame-time samples (ms), oldest first: the frame time is
+    /// measured every frame, where an agent's own cost is not.
     frame_history: std::collections::VecDeque<f32>,
     /// How far the agents column is scrolled.
     agents_scroll: khora_tool_ui::widgets::ScrollState,
@@ -130,6 +115,8 @@ pub struct ControlPlanePanel {
 }
 
 impl ControlPlanePanel {
+    /// Returns the panel over the engine's agents, its DCC context and its
+    /// last decision, each absent when the engine has not booted.
     pub fn new(
         state: Arc<Mutex<EditorState>>,
         theme: UiTheme,
@@ -158,8 +145,7 @@ impl ControlPlanePanel {
         self.frame_history.push_back(ms);
     }
 
-    /// Snapshots all agents for this frame. Returns an empty Vec if the
-    /// registry isn't available (e.g. headless boot).
+    /// Returns every agent as read this frame, none without a registry.
     fn snapshot_agents(&self) -> Vec<AgentSnapshot> {
         let Some(ref reg_arc) = self.registry else {
             return Vec::new();
@@ -211,9 +197,8 @@ impl EditorPanel for ControlPlanePanel {
             self.selected_idx = 0;
         }
 
-        // ── 1. DCC summary bar ───────────────────────
-        // Prefer DCC context (live hardware/budget) when available, fall
-        // back to telemetry snapshot from EditorState otherwise.
+        // The DCC context's hardware numbers when there is one, the editor's
+        // telemetry otherwise.
         let dcc_snap = self
             .dcc_context
             .as_ref()
@@ -234,9 +219,8 @@ impl EditorPanel for ControlPlanePanel {
             })
             .unwrap_or((0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
         if let Some(ctx) = dcc_snap.as_ref() {
-            // Override with DCC numbers when present (more authoritative for
-            // CPU/GPU load + VRAM since they come from the same hardware
-            // probe the engine uses for budgeting).
+            // The probe the engine budgets with is the authority on load and
+            // video memory.
             snap.3 = ctx.hardware.cpu_load;
             snap.4 = ctx.hardware.gpu_load;
             if let Some(vram_used) = ctx.hardware.available_vram.and_then(|avail| {
@@ -247,8 +231,6 @@ impl EditorPanel for ControlPlanePanel {
                 snap.5 = vram_used;
             }
         }
-        // Record this frame's time before drawing, so the budget sparkline
-        // includes the current sample.
         self.push_frame_sample(snap.1);
         let frame_samples: Vec<f32> = self.frame_history.iter().copied().collect();
         self.paint_summary_bar(
@@ -261,7 +243,6 @@ impl EditorPanel for ControlPlanePanel {
             &frame_samples,
         );
 
-        // ── 2. Body grid: agents | schedule | inspector
         let body_y = py + 8.0 + SUMMARY_BAR_HEIGHT + 8.0;
         let body_h = (ph - SUMMARY_BAR_HEIGHT - 24.0).max(0.0);
 

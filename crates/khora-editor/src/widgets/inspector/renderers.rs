@@ -6,19 +6,15 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! Per-shape leaf renderers + numeric helpers.
-//!
-//! Renderers are pure functions matched by JSON shape. The walker (in
-//! `widgets::inspector::walker`) iterates the shape detectors (`is_*`) in
-//! order and dispatches to the matching renderer. Adding a new shape =
-//! adding a `match_shape` predicate and a `render_*` function and wiring
-//! them in `walker::render_object`.
+//! The inspector's leaf renderers, each picked by its JSON shape in
+//! `walker::render_object`, and the bridge between JSON and floats.
 
 use khora_sdk::editor_ui::{UiBuilder, UiTheme};
 use serde_json::Value;
 
 // ─── shape detection ────────────────────────────────────────────────
 
+/// Returns whether `map` is a vector: numeric `x`, `y`, `z` and nothing else.
 pub fn is_vec3(map: &serde_json::Map<String, Value>) -> bool {
     map.len() == 3
         && map.get("x").is_some_and(|v| v.is_number())
@@ -26,6 +22,8 @@ pub fn is_vec3(map: &serde_json::Map<String, Value>) -> bool {
         && map.get("z").is_some_and(|v| v.is_number())
 }
 
+/// Returns whether `map` is a quaternion: numeric `x`, `y`, `z`, `w` and
+/// nothing else.
 pub fn is_quat(map: &serde_json::Map<String, Value>) -> bool {
     map.len() == 4
         && map.get("x").is_some_and(|v| v.is_number())
@@ -34,6 +32,8 @@ pub fn is_quat(map: &serde_json::Map<String, Value>) -> bool {
         && map.get("w").is_some_and(|v| v.is_number())
 }
 
+/// Returns whether `map` is a colour: numeric `r`, `g`, `b`, `a` and nothing
+/// else.
 pub fn is_color(map: &serde_json::Map<String, Value>) -> bool {
     map.len() == 4
         && map.get("r").is_some_and(|v| v.is_number())
@@ -44,6 +44,7 @@ pub fn is_color(map: &serde_json::Map<String, Value>) -> bool {
 
 // ─── leaf widgets ───────────────────────────────────────────────────
 
+/// Renders a vector as a drag row; returns whether it changed.
 pub fn render_vec3(
     ui: &mut dyn UiBuilder,
     map: &mut serde_json::Map<String, Value>,
@@ -63,6 +64,7 @@ pub fn render_vec3(
     changed
 }
 
+/// Renders a quaternion as four drag values; returns whether one changed.
 pub fn render_quat(ui: &mut dyn UiBuilder, map: &mut serde_json::Map<String, Value>) -> bool {
     let mut changed = false;
     for axis in ["x", "y", "z", "w"] {
@@ -75,6 +77,7 @@ pub fn render_quat(ui: &mut dyn UiBuilder, map: &mut serde_json::Map<String, Val
     changed
 }
 
+/// Renders a colour picker; returns whether the colour changed.
 pub fn render_color(
     ui: &mut dyn UiBuilder,
     map: &mut serde_json::Map<String, Value>,
@@ -96,6 +99,8 @@ pub fn render_color(
     changed
 }
 
+/// Renders a number as a drag row, in whole steps for a JSON integer; returns
+/// whether it changed.
 pub fn render_number_row(ui: &mut dyn UiBuilder, label: &str, value: &mut Value) -> bool {
     // An integer field (`u8`, `u32`, `i64` …) reads back only as a JSON
     // integer: it is dragged in whole steps and written whole.
@@ -125,14 +130,16 @@ fn integer_of(value: &Value) -> Option<i64> {
     }
 }
 
-/// `dragged`, rounded, as a JSON integer. JSON cannot tell an unsigned field
-/// from a signed one at zero or above, so nothing is clamped here: a value
-/// the field cannot hold (a negative `u8`, 300 for a `u8`) is refused by the
-/// component when it reads the edit back, and the field keeps its last value.
+/// Returns `dragged`, rounded, as a JSON integer.
+///
+/// Nothing is clamped, since JSON cannot tell an unsigned field from a signed
+/// one: a value the field cannot hold (300 for a `u8`) is refused when the
+/// component reads the edit back, and the field keeps its last value.
 fn integer_json(dragged: f32) -> Value {
     Value::from(dragged.round() as i64)
 }
 
+/// Renders a three-number array as a vector row; returns whether it changed.
 pub fn render_numeric_triple(ui: &mut dyn UiBuilder, label: &str, arr: &mut [Value]) -> bool {
     let mut v = [
         json_to_f32(Some(&arr[0])),
@@ -148,6 +155,8 @@ pub fn render_numeric_triple(ui: &mut dyn UiBuilder, label: &str, arr: &mut [Val
     changed
 }
 
+/// Renders a four-number array, as a colour when every number lies in
+/// `[0, 1]`; returns whether it changed.
 pub fn render_numeric_quad(
     ui: &mut dyn UiBuilder,
     label: &str,
@@ -191,8 +200,8 @@ pub fn render_numeric_quad(
 
 // ─── numeric bridge ─────────────────────────────────────────────────
 
-/// The float a JSON value holds: a number, or the `{"$float": …}` marker
-/// the engine writes for an infinity or a NaN; `0` for anything else.
+/// Returns the float a JSON value holds: a number, or the `{"$float": …}`
+/// marker the engine writes for an infinity or a NaN; `0` for anything else.
 pub fn json_to_f32(v: Option<&Value>) -> f32 {
     match v {
         Some(v) => v
@@ -204,9 +213,8 @@ pub fn json_to_f32(v: Option<&Value>) -> f32 {
     }
 }
 
-/// `f` as JSON: a number, or the `{"$float": …}` marker for an infinity or
-/// a NaN, which JSON has no number for — never `null`, which the component
-/// would refuse.
+/// Returns `f` as JSON: a number, or the `{"$float": …}` marker for an
+/// infinity or a NaN, never the `null` the component would refuse.
 pub fn f32_to_json(f: f32) -> Value {
     let marker = |text: &str| serde_json::json!({ FLOAT_KEY: text });
     if f.is_nan() {
@@ -226,7 +234,7 @@ pub fn f32_to_json(f: f32) -> Value {
 /// for (`khora_data::scene::inspector_json`).
 const FLOAT_KEY: &str = "$float";
 
-/// Whether `map` is the `{"$float": …}` marker of a float.
+/// Returns whether `map` is the `{"$float": …}` marker of a float.
 pub fn is_float_marker(map: &serde_json::Map<String, Value>) -> bool {
     map.len() == 1 && map.get(FLOAT_KEY).is_some_and(Value::is_string)
 }
@@ -241,8 +249,7 @@ fn float_marker(v: &Value) -> Option<f32> {
     }
 }
 
-/// `snake_case` → `"Snake Case"` — keeps the inspector readable without
-/// the engine having to ship a separate display-name table.
+/// Returns a `snake_case` field name as the label `"Snake Case"`.
 pub fn humanise(field: &str) -> String {
     let mut out = String::with_capacity(field.len());
     let mut up = true;

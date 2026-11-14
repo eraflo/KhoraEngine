@@ -12,11 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Editor command dispatch — file I/O, build-game, menu actions.
+//! Editor command dispatch: file I/O, Build Game, menu actions.
 //!
-//! Free functions invoked from `EditorApp::update`. They take only the
-//! state they actually need so each one is independently testable and
-//! easy to refactor as commands grow.
+//! Free functions called from `EditorApp::update`, each taking only the state it needs.
 
 use std::sync::{Arc, Mutex};
 
@@ -52,8 +50,7 @@ pub use scene::{land_scene_loads, open_scene_dispatch};
 pub use transport::PLAY_FAMILIES;
 pub use transport::{process_transport, start_editing};
 
-/// Process every pending menu action queued in `EditorState`. Drains
-/// `pending_browse_project_folder` and `pending_menu_action` in turn.
+/// Processes every pending menu action queued in `EditorState`.
 ///
 /// Returns the folder "File > Open Project…" picked, for the app to open;
 /// a restricted project (`trust`) builds no game.
@@ -106,11 +103,8 @@ pub fn process_menu_actions(
             std::process::exit(0);
         }
         "save" => apply_save(project_vfs.as_ref(), world, editor_state),
-        // Save-As does NOT expose an encoding picker. The engine knows
-        // which `SerializationGoal` is right for each context — for
-        // editor saves that's `EditorInterchange` (the compact encoding).
-        // Code paths that need another goal (text for diffing, MessagePack
-        // for tools) call `save_scene_dispatch_with_goal` directly.
+        // No encoding picker: an editor save is `EditorInterchange`. A path
+        // that needs another goal calls `save_scene_dispatch_with_goal`.
         "save_as" => apply_save_as(project_vfs.as_ref(), world, editor_state),
         "open" => {
             apply_open(editor_state);
@@ -143,9 +137,10 @@ pub fn process_menu_actions(
     picked
 }
 
-/// Empties the undo history after the world was replaced: every edit it holds
-/// names entities by id, and those ids now name nothing — or, once a slot is
-/// recycled, someone else.
+/// Empties the undo history after the world was replaced.
+///
+/// Every edit it holds names entities by id, and those ids now name nothing,
+/// or, once a slot is recycled, someone else.
 pub(crate) fn forget_history(command_history: &Arc<Mutex<CommandHistory>>) {
     if let Ok(mut history) = command_history.lock() {
         history.clear();
@@ -254,10 +249,10 @@ fn apply_pause(editor_state: &Arc<Mutex<EditorState>>) {
     }
 }
 
-/// Stops the play: Editing at once, and the scene as Play found it filed
-/// with `loads` to be restored off the frame — it lands at a later frame's
-/// boundary, where [`land_scene_loads`] finishes it. Play is refused until
-/// it does.
+/// Stops the play: Editing at once, the scene as Play found it filed with `loads`.
+///
+/// The restore lands at a later frame's boundary, where [`land_scene_loads`]
+/// finishes it; Play is refused until it does.
 fn apply_stop(
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,

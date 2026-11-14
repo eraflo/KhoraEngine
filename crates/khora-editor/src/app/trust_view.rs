@@ -37,25 +37,14 @@ pub(super) struct TrustView {
 }
 
 impl super::EditorApp {
-    /// Brings what the editor shows of the project's trust in line with the
-    /// engine, each frame (`before_frame`, after
-    /// [`follow_trust_answers`](super::EditorApp::follow_trust_answers)):
-    /// - `EditorState::restricted` mirrors the runtime's `ProjectTrustState`;
-    /// - the restricted bar (`RestrictedBarPanel`, `TopBar`) is registered
-    ///   with the shell when the project turns restricted, removed when it
-    ///   turns trusted — never twice;
-    /// - the `confirm_trust` menu action (the restricted bar's `Trust this
-    ///   project…`) is taken and fills `EditorState::trust_confirm` with what
-    ///   trusting the project open changes, read from its folder: the `.erg`
-    ///   files under `assets/scripts`, the `.wgsl` under `assets/shaders` by
-    ///   their logical names, a `Cargo.toml` at its root, its files the
-    ///   run's `Refusals` quarantined at `Trust::Restricted` for a size or a
-    ///   limit;
-    /// - `EditorState::quarantined` mirrors the run's `Refusals` (the paths
-    ///   relative to the project's assets root) when the problems' generation
-    ///   moves;
-    /// - `EditorState::pending_release` is taken and its file released from
-    ///   the quarantine.
+    /// Brings what the editor shows of the project's trust in line with the engine, each frame.
+    ///
+    /// Called after [`follow_trust_answers`](super::EditorApp::follow_trust_answers).
+    /// Mirrors `ProjectTrustState` into `EditorState::restricted` and the run's
+    /// `Refusals` into `EditorState::quarantined`, shows the restricted bar while
+    /// restricted, answers `confirm_trust` with what trusting would change, and
+    /// releases `EditorState::pending_release`. See the book:
+    /// reference/editor.md, "11 — Restricted projects".
     pub(super) fn follow_project_trust(&mut self, runtime: &Runtime) {
         let restricted = ProjectTrustState::of(runtime) == ProjectTrust::Restricted;
         let refusals = runtime.resources.get::<Arc<Refusals>>().cloned();
@@ -122,9 +111,8 @@ impl super::EditorApp {
         }
     }
 
-    /// Forgets what the asset services remember of the file at `rel_path`
-    /// under the assets — a load the quarantine failed — so its next load
-    /// reads it.
+    /// Forgets what the asset services remember of the file at `rel_path`, a
+    /// load the quarantine failed, so its next load reads it.
     fn read_again(&self, runtime: &Runtime, rel_path: &Path) {
         let uuid = khora_sdk::khora_core::asset::AssetUUID::new_v5(
             &khora_sdk::khora_core::asset::asset_key(rel_path),

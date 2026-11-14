@@ -39,10 +39,10 @@ fn refresh_asset_cache(pvfs_arc: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mut
     }
 }
 
-/// Drains the asset-explorer file operations (new folder / new script / rename /
-/// move / delete-to-trash / duplicate). Each routes through [`ProjectVfs`], which
-/// keeps the identity registry consistent so references survive renames and
-/// moves. A script written is then revealed, so the browser selects it.
+/// Drains the asset browser's file operations: new folder or script, rename, move, trash, duplicate.
+///
+/// Each goes through [`ProjectVfs`], which keeps the identity registry, so
+/// references survive renames and moves. A script written is then revealed.
 pub fn process_pending_asset_file_ops(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     editor_state: &Arc<Mutex<EditorState>>,
@@ -134,9 +134,9 @@ pub fn process_pending_asset_file_ops(
     }
 }
 
-/// Drains [`EditorState::pending_spawn_mesh_asset`]: spawns a `MeshRef::Asset`
-/// entity at the drop point. Set by dragging a mesh tile onto the viewport; the
-/// `asset_resolver_system` loads the mesh next tick.
+/// Drains [`EditorState::pending_spawn_mesh_asset`]: spawns a `MeshRef::Asset` entity at the drop.
+///
+/// Set by dragging a mesh tile onto the viewport; the mesh loads on the next tick.
 pub fn process_pending_spawn_mesh_asset(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,
@@ -194,9 +194,10 @@ fn indexed_asset(
     })
 }
 
-/// Drains [`EditorState::pending_assign_texture`]: assigns a dropped texture or
-/// `.kmat` to a specific entity. A `.kmat` becomes a `MaterialRef::Asset`; an
-/// image becomes the `base_color_texture` of a fresh inline standard material.
+/// Drains [`EditorState::pending_assign_texture`]: assigns a dropped texture or `.kmat` to an entity.
+///
+/// A `.kmat` becomes a `MaterialRef::Asset`; an image becomes the
+/// `base_color_texture` of a fresh inline standard material.
 pub fn process_pending_assign_texture(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,

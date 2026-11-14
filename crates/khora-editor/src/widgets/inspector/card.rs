@@ -6,17 +6,9 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! Component group — one collapsible section per component on the entity.
-//!
-//! Deliberately **flat**: a chevron, an icon, a name, a category tag, and a
-//! hairline. It used to be a bordered, filled card per component, which turned
-//! a five-component entity into boxes inside boxes inside a panel — the
-//! structure stopped being readable exactly when there was enough of it to
-//! need reading. Hierarchy now comes from type and spacing.
-//!
-//! The row actions (enable toggle, remove) appear on hover. They are rare and
-//! destructive-adjacent; the resting state should read as data, not as a
-//! toolbar.
+//! The component card: a flat collapsible group per component, closed by a
+//! hairline, its row actions shown only on hover so the rest reads as data.
+//! See the book: design/editor.md, "Inspector (right, 320 px)".
 
 use khora_sdk::editor_ui::{EditorState, FontFamilyHint, Icon, TextAlign, UiBuilder, UiTheme};
 use khora_sdk::prelude::ecs::EntityId;
@@ -71,8 +63,8 @@ impl CardPrefab {
     }
 }
 
-/// A row action on the header: a square hit-rect with its glyph, tinted on
-/// hover. Returns whether it was clicked.
+/// Paints a header row action, a glyph tinted on hover; returns whether it was
+/// clicked.
 #[allow(clippy::too_many_arguments)]
 fn header_action(
     ui: &mut dyn UiBuilder,
@@ -100,11 +92,9 @@ fn header_action(
     hit.clicked
 }
 
-/// The domain a component belongs to, shown as a small right-aligned tag.
+/// Returns the domain tag shown on a component's card, by its type name.
 ///
-/// Derived from the type name so a newly-added component is tagged without
-/// anyone having to register it anywhere; unknown components simply carry no
-/// tag rather than a wrong one.
+/// An unknown component gets no tag rather than a wrong one.
 pub fn category_for(title: &str) -> &'static str {
     match title {
         "Transform" | "GlobalTransform" | "Parent" | "Children" => "spatial",
@@ -116,10 +106,11 @@ pub fn category_for(title: &str) -> &'static str {
     }
 }
 
-/// Renders one component as a flat collapsible group, `category` its
-/// right-aligned tag, and calls `body` for its content. Open/closed state
-/// persists in `EditorState::inspector_card_open`, keyed by entity index +
-/// component title. Returns what the header was asked, if anything.
+/// Renders one component as a collapsible group, `body` drawing its content;
+/// returns what the header was asked, if anything.
+///
+/// `category` is the right-aligned tag. Whether the card is open persists in
+/// `EditorState::inspector_card_open`, keyed by entity and title.
 #[allow(clippy::too_many_arguments)]
 pub fn render_card(
     ui: &mut dyn UiBuilder,
@@ -183,10 +174,8 @@ pub fn render_card(
     }
 
     // ── Row actions, revealed on hover ──
-    // Allocated *after* the header so their hit-rects win the click, and laid
-    // out to the left of the category tag so they never sit on top of it.
-    // Shown while the pointer is anywhere on the header — on the actions
-    // too, which take the header's own hover.
+    // Allocated after the header so their hit-rects win the click, left of
+    // the category tag, and shown while the pointer is anywhere on the header.
     if head.contains_pointer {
         let size = 22.0;
         let top = y + (HEADER_H - size) * 0.5;
@@ -233,13 +222,8 @@ pub fn render_card(
             }
         }
 
-        // The component enable/disable switch used to be painted here. It had
-        // no `interact_rect` at all, so it was a picture of a switch; and every
-        // caller passed `enabled: None`, so it never even appeared.
-        //
-        // Turning a component off only means something once the ECS honours it
-        // — every query that consumes the component has to check the flag, or
-        // it is decorative. That is a data-layer feature, not a card one.
+        // Turning a component off means nothing until every query of it
+        // honours the flag, a data-layer feature: no caller may pass `Some`.
         debug_assert!(
             enabled.is_none(),
             "component enable/disable is not implemented; \

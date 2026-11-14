@@ -19,36 +19,28 @@ use khora_sdk::prelude::ecs::EntityId;
 
 use super::display::category_label_for_tag;
 
-/// Components the editor renders somewhere other than as an inspector card,
-/// so offering them in "+ Add Component" would be redundant.
+/// Components the editor shows somewhere other than a card, so "+ Add
+/// Component" does not offer them.
 ///
-/// This is a **presentation** concern, not an authorship one: `Name` is very
-/// much the author's data, it simply lives in the inspector header. Whether a
-/// component may be authored at all is answered by
-/// [`ComponentProvenance`](khora_sdk::khora_data::ecs::ComponentProvenance),
-/// which is declared on the component itself — so engine-written types are
-/// excluded by construction, including ones defined outside this workspace.
+/// A presentation filter: `Name` is the author's data, shown in the header.
+/// Whether a component may be authored at all is its
+/// [`ComponentProvenance`](khora_sdk::khora_data::ecs::ComponentProvenance).
 pub const SURFACED_ELSEWHERE: &[&str] = &["Name"];
 
-/// `SemanticDomain::Ui` as the small integer tag the editor carries in
-/// [`ComponentJson::domain`] (see `ops::scene_tree::domain_tag`).
+/// `SemanticDomain::Ui` as the tag the editor carries in
+/// `ComponentJson::domain` (see `ops::scene_tree::domain_tag`).
 ///
-/// The `Ui*` family drives the in-world Taffy UI, which is authored in a
-/// canvas, not on a 3D scene entity — dropping a `UiNode` on a mesh yields a
-/// component nothing lays out. Scene mode therefore hides the whole domain.
-/// This is a **workspace** filter, not an authorship one: the day a Canvas
-/// workspace ships, it shows this domain and hides the others rather than
-/// removing the rule.
+/// Scene mode hides this domain: UI is authored in a canvas, and a `UiNode`
+/// on a scene entity is laid out by nothing. A workspace filter, not an
+/// authorship one: a Canvas workspace would show it and hide the rest.
 const UI_DOMAIN_TAG: u8 = 4;
 
-/// Whether the inspector should treat `type_name` as the author's own data —
-/// offering it in "+ Add Component" and rendering it as an editable card.
+/// Returns whether `type_name` is the author's own data, offered in "+ Add
+/// Component" and drawn as an editable card.
 ///
-/// The single source of truth for both surfaces, so the menu and the card list
-/// cannot drift apart. Returns `false` for anything the engine writes
-/// (`GlobalTransform`, `Children`, `PhysicsDebugData`…), for tool-written
-/// components nobody adds by hand (`Parent`), for the ones rendered
-/// elsewhere, and for unregistered types.
+/// The menu and the card list both ask here, so they cannot drift. False for
+/// what the engine or a tool writes (`GlobalTransform`, `Parent`), for what is
+/// shown elsewhere, and for unregistered types.
 pub fn is_author_facing(type_name: &str) -> bool {
     if SURFACED_ELSEWHERE.contains(&type_name) {
         return false;
@@ -61,10 +53,10 @@ fn module_file(module: &str) -> &str {
     module.rsplit(['/', '\\']).next().unwrap_or(module)
 }
 
-/// Render the "+ Add Component" menu button from what the entity is offered
-/// ([`EditorState::addable_components`]): grouped by domain, a script's
-/// entry marked with its `.erg`. Selecting one queues
-/// `EditorState::pending_add_component` for the next frame.
+/// Renders the "+ Add Component" menu of
+/// [`EditorState::addable_components`], grouped by domain.
+///
+/// A pick sets `EditorState::pending_add_component`, applied next frame.
 pub fn render_add_component(
     ui: &mut dyn UiBuilder,
     entity: EntityId,

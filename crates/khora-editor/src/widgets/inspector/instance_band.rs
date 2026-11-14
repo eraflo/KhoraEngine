@@ -12,12 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The instance band: one quiet line under the inspector header saying which
+//! The instance band: one quiet line under the inspector header naming the
 //! prefab the entity's instance comes from, with the instance-wide actions.
-//!
-//! A line, not a card — the inspector's structure comes from type and
-//! spacing. The prefab's name is the band's one link: it selects the prefab
-//! in the asset browser, as a reference does anywhere else in the editor.
+//! See the book: concepts/prefabs.md, "Seeing and editing overrides".
 
 use khora_sdk::editor_ui::{
     EditorState, FontFamilyHint, Icon, InspectedPrefab, PrefabApplyScope, UiBuilder, UiTheme,
@@ -28,7 +25,7 @@ use khora_tool_ui::widgets::{self};
 
 const BAND_H: f32 = 30.0;
 
-/// The band for `entity`, a part of the instance `prefab` describes.
+/// Renders the band for `entity`, a part of the instance `prefab` describes.
 pub fn render_instance_band(
     ui: &mut dyn UiBuilder,
     entity: EntityId,
@@ -153,9 +150,8 @@ mod tests {
 
     const SHIP: &str = "models/ship.gltf";
 
-    /// **The band's link to a glTF scene selects the file's tile, never one
-    /// of its parts** — though the parts are found at the file's path, and
-    /// listed before it.
+    /// **The band's link to a glTF scene selects the file's tile, never a
+    /// part**, though the parts share its path and are listed before it.
     #[test]
     fn the_link_to_a_gltf_scene_selects_the_files_tile_not_a_part() {
         let mut state = EditorState {

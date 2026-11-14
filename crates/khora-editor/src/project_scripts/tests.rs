@@ -161,9 +161,11 @@ fn tick_until_landed(
 
 // ─── The mounted project follows the open one ───────────────────────────────
 
-/// **Opening a project mounts its scripts**: `<project>/assets` is watched
-/// at once, the compile is filed by ticket and lands a few frames later, and
-/// while the editor edits, what the project's scripts declare registers.
+/// **Opening a project mounts its scripts.**
+///
+/// `<project>/assets` is watched at once, the compile is filed by ticket and
+/// lands a few frames later, and while the editor edits, what the project's
+/// scripts declare registers.
 #[test]
 fn opening_a_project_mounts_its_assets_and_registers_its_scripts() {
     let project = Project::with("open-mounts", &[("greeter.erg", GREETER)]);
@@ -200,8 +202,9 @@ fn the_project_already_mounted_is_not_mounted_again() {
     assert_eq!(watched(&engine), vec![canonical(&project.assets())]);
 }
 
-/// **Opening another project unmounts the first and mounts the second**:
-/// only the second is watched, its scripts register, and what the first
+/// **Opening another project unmounts the first and mounts the second.**
+///
+/// Only the second is watched, its scripts register, and what the first
 /// declared is orphaned — kept with its data, declared by no module.
 #[test]
 fn opening_another_project_unmounts_the_first_and_mounts_the_second() {
@@ -275,8 +278,10 @@ fn mentions(events: &[AssetChangeEvent], rel_path: &str) -> bool {
 }
 
 /// **The VFS reads its project's changes from the engine's watch, without
-/// taking them**: the script pump, reading the same watch under its own
-/// name, still hears the same save.
+/// taking them.**
+///
+/// The script pump, reading the same watch under its own name, still hears the
+/// same save.
 #[test]
 fn the_project_vfs_reads_changes_from_the_shared_watch_without_taking_them() {
     let project = Project::with("vfs-shared", &[]);
@@ -307,10 +312,11 @@ fn the_project_vfs_reads_changes_from_the_shared_watch_without_taking_them() {
     );
 }
 
-/// **The VFS reports only its own project's changes.** The engine's watch
-/// may arm other roots — a shader tree — and a change under one of them is
-/// not a change to the project's assets, which the asset browser would
-/// reindex under the wrong path.
+/// **The VFS reports only its own project's changes.**
+///
+/// The engine's watch may arm other roots — a shader tree — and a change under
+/// one of them is not a change to the project's assets, which the asset browser
+/// would reindex under the wrong path.
 #[test]
 fn the_project_vfs_reports_only_its_own_projects_changes() {
     let project = Project::with("vfs-own", &[]);
@@ -425,11 +431,11 @@ fn mirroring_an_emptied_declared_set_empties_the_state() {
     );
 }
 
-/// **The names an open project's scripts declare reach the editor state
-/// through the engine's own catalog, and leave with the project**: opened,
-/// `Greeter` and `Lantern` are mirrored; another project declaring
-/// `Greeter` from another module takes it over; closed, nothing is left
-/// taken.
+/// **The names an open project's scripts declare reach the editor state through
+/// the engine's own catalog, and leave with the project.**
+///
+/// Opened, `Greeter` and `Lantern` are mirrored; another project declaring
+/// `Greeter` from another module takes it over; closed, nothing is left taken.
 #[test]
 fn the_names_an_open_projects_scripts_declare_follow_the_project() {
     let first = Project::with(

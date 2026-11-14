@@ -12,34 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Registry of inspector-editable enum variants.
-//!
-//! The JSON-driven inspector walks `serde_json::Value`s and renders widgets
-//! by shape. Single-key objects are typically serde-tagged enum variants:
-//! e.g. `{"Directional": {...}}` for `LightType::Directional(_)`. To let
-//! the user *switch* the variant from the inspector, we need (1) the list
-//! of valid variant names and (2) a default-serialized payload for each.
-//!
-//! That information cannot be reliably derived from the JSON alone (the
-//! type information is lost once we serialize to `serde_json::Value`), so
-//! this module hard-codes the small set of enums the inspector currently
-//! knows how to switch. It is **opt-in**: enums not registered here keep
-//! the previous read-only `Variant: <key>` label.
-//!
-//! A future iteration could move this generation into the `#[derive(Component)]`
-//! macro itself (emit `enum_variants_for(field_path)` per field whose type
-//! is an enum). For now, the registry is the smallest honest fix.
+//! The enums whose variant the inspector can switch, each variant with its
+//! default payload. Listed by hand, since a JSON value has lost its type; an
+//! enum not listed here is shown read-only.
 
 use khora_sdk::khora_core::renderer::light::{DirectionalLight, LightType, PointLight, SpotLight};
 use serde_json::Value;
 use std::sync::OnceLock;
 
-/// Returns the editable variant set for a single-key JSON object whose key
-/// matches a known enum variant, or `None` if the key isn't recognised.
+/// Returns the variants of the enum whose variant is named `current_key`, or
+/// `None` for an unknown name.
 ///
-/// Each entry is `(variant_name, full_default_json)`. The
-/// `full_default_json` is the entire `{"VariantName": {...}}` object —
-/// callers replace the current map with it on selection.
+/// Each entry is `(name, default)`, `default` being the whole
+/// `{"Name": {...}}` object that replaces the current one when picked.
 pub fn editable_variants(current_key: &str) -> Option<&'static [(&'static str, Value)]> {
     static REGISTRY: OnceLock<Vec<RegisteredEnum>> = OnceLock::new();
     let registry = REGISTRY.get_or_init(build_registry);

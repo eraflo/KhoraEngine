@@ -12,12 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Editor application root.
+//! Editor application root: `EditorApp`, the editor's `EngineApp` and `PhaseProvider`.
 //!
-//! Implements `EngineApp` and `PhaseProvider`. Per-frame
-//! work is delegated to the focused modules (`input`, `commands`,
-//! `hot_reload`) so this file stays a composition layer rather than a
-//! 1000-line god struct.
+//! Per-frame work lives in the focused modules (`input`, `commands`, `hot_reload`).
 
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -52,48 +49,39 @@ pub struct EditorApp {
     log_handle: Arc<Mutex<Vec<LogEntry>>>,
     shell: Option<Arc<Mutex<Box<dyn EditorShell>>>>,
     overlay: Option<Arc<Mutex<Box<dyn EditorOverlay>>>>,
-    /// Cached `Arc<winit::window::Window>` retrieved from services in
-    /// `setup()`. Needed because the overlay's `begin_frame` and
-    /// `handle_window_event` both expect a winit window reference.
+    /// The winit window, kept from `setup` for the overlay's `begin_frame`
+    /// and `handle_window_event`.
     raw_window: Option<Arc<winit::window::Window>>,
-    /// Live monitor handle exposed by the engine. Cloned in
-    /// `setup` from the ServiceRegistry; queried each frame to push
-    /// CPU/GPU load, VRAM, draw calls and triangles into
-    /// `EditorState::status`.
+    /// The engine's monitors, read each frame into `EditorState::status`
+    /// (CPU/GPU load, VRAM, draw calls, triangles).
     monitors: Option<khora_sdk::MonitorRegistry>,
     /// Live agent registry. The Control Plane workspace enumerates the agents
     /// from it.
     agent_registry: Option<Arc<Mutex<khora_sdk::AgentRegistry>>>,
-    /// DCC context handle. Locked each frame for the Control
-    /// Plane summary bar — exposes mode, budget multiplier, hardware
-    /// load.
+    /// The DCC's context, read each frame for the Control Plane summary bar
+    /// (mode, budget multiplier, hardware load).
     dcc_context: Option<Arc<std::sync::RwLock<khora_sdk::DccContext>>>,
     /// The DCC's last decision, for the Control Plane inspector.
     decision_watch: Option<khora_sdk::khora_core::agent::gorna::DecisionWatch>,
-    /// View info computed in `before_agents` and re-used by
-    /// `after_agents` for gizmo rendering.
+    /// The view info computed in `before_agents` for the frame.
     last_view_info: Option<ViewInfo>,
     input: InputState,
-    /// Whether the wireframe debug overlay is on. Toggled from the command
-    /// palette ("Toggle Wireframe") and pushed into the shared
-    /// `WireframeConfig` each frame in `before_agents`.
+    /// Whether the wireframe debug overlay is on, toggled from the command palette.
+    ///
+    /// Pushed into the shared `WireframeConfig` each frame in `before_agents`.
     wireframe_enabled: bool,
     last_frame_time: Instant,
-    /// Editor viewport override — read by `RenderFlow` as fallback when
-    /// no active scene `Camera` exists (i.e. Editing mode). Updated each
-    /// frame in `before_agents` from the editor's free camera.
+    /// The editor camera's view, which `RenderFlow` renders when the scene has
+    /// no active `Camera` (Editing); updated each frame in `before_agents`.
     viewport_override: khora_sdk::khora_data::render::EditorViewportOverride,
-    /// Project-scoped VFS — instantiated in `setup` once the project
-    /// path resolves. All scene I/O, asset enumeration and hot-reload
-    /// routes through this. `None` when the editor was launched without
-    /// a project (rare; the hub always passes `--project`).
+    /// The open project's VFS, through which scene I/O, asset listing and hot
+    /// reload go; `None` while no project is open.
     project_vfs: Option<Arc<Mutex<ProjectVfs>>>,
     /// The engine's watch over asset trees, which the project's VFS reads its
     /// changes from beside the script and shader pumps.
     asset_watch: Arc<khora_sdk::AssetWatch>,
-    /// The assets root whose scripts are mounted — the open project's, once
-    /// [`project_scripts::follow_open_project`](crate::project_scripts) has
-    /// caught up with it.
+    /// The assets root whose scripts are mounted: the open project's, once
+    /// [`project_scripts::follow_open_project`](crate::project_scripts) caught up.
     mounted_scripts: Option<std::path::PathBuf>,
     /// The `--project` being opened behind the film, until its index lands.
     opening: Option<project_open::OpeningProject>,
@@ -120,9 +108,9 @@ pub struct EditorApp {
     /// The open project's prefabs, as a script's `Spawn` is checked against
     /// them — shared with the runtime.
     prefab_catalog: khora_sdk::khora_data::scene::PrefabCatalog,
-    /// The asset service the engine resolves the scene's asset references
-    /// through — the meshes, materials and textures its entities name. The
-    /// open project serves its assets through it (see
+    /// The asset service the engine resolves the scene's asset references through.
+    ///
+    /// The open project serves its assets through it (see
     /// [`ProjectVfs::share_assets`]); empty while no project is open.
     ///
     /// [`ProjectVfs::share_assets`]: crate::project_vfs::ProjectVfs::share_assets
@@ -330,9 +318,10 @@ impl EditorApp {
     }
 }
 
-/// What decides which instance an entity belongs to: the entity, the project
-/// files' generation, and its ancestors with the prefab each links to — a
-/// reparent, a root deleted or unlinked, a prefab rewritten all change it.
+/// What decides which instance an entity belongs to.
+///
+/// The entity, the project files' generation, and its ancestors with the
+/// prefab each links to: a reparent, an unlink or a prefab rewritten changes it.
 #[derive(Clone, PartialEq)]
 struct ViewKey {
     entity: EntityId,
@@ -364,9 +353,9 @@ fn ancestry(
     chain
 }
 
-/// The inspected entity's instance and its prefab expanded under the
-/// instance root, for one selection under one generation of the project's
-/// files.
+/// The inspected entity's instance and its prefab expanded under the instance root.
+///
+/// Valid for one selection under one generation of the project's files.
 struct PrefabView {
     key: ViewKey,
     found: Option<(InstanceOf, World)>,
@@ -376,10 +365,10 @@ struct PrefabView {
     read_only: bool,
 }
 
-/// Sees the inspected entity against its instance's prefab, if it belongs
-/// to one. The prefab is read once per selection and per generation of
-/// the project's files; the comparison runs every frame, so an edit shows
-/// its override at once.
+/// Sees the inspected entity against its instance's prefab, if it belongs to one.
+///
+/// The prefab is read once per selection and project generation; the
+/// comparison runs every frame, so an edit shows its override at once.
 fn attach_prefab_view(
     view: &mut Option<PrefabView>,
     project_vfs: Option<&Mutex<ProjectVfs>>,

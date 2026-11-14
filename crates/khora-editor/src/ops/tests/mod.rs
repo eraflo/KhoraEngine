@@ -234,10 +234,10 @@ fn extract_scene_tree_nests_three_levels() {
     assert_eq!(root.children[0].children[0].entity, c);
 }
 
-/// The extracted tree must be identical on every extraction. `HashMap`
-/// re-seeds its hasher per instance, so an order-dependent build produced a
-/// different shape each frame — rows visibly jittered and a click could
-/// land on the wrong entity.
+/// **The extracted tree is identical on every extraction.**
+///
+/// `HashMap` re-seeds its hasher per instance: an order-dependent build would
+/// change shape each frame, and a click could land on the wrong entity.
 #[test]
 fn extract_scene_tree_is_stable_across_extractions() {
     let mut world = GameWorld::new();
@@ -441,9 +441,9 @@ fn process_spawns_creates_and_selects_entity() {
     assert!(state.pending_spawn.is_none(), "the request is consumed");
 }
 
-/// Regression: duplicating an entity must carry its material across.
-/// A broken implementation drops `MaterialRef`, so the copy renders
-/// with no material (logged error) instead of the original look.
+/// **Duplicating an entity carries its material across.**
+///
+/// Without its `MaterialRef`, the copy renders with no material (a logged error).
 #[test]
 fn duplicate_entity_clones_material_ref() {
     let mut world = GameWorld::new();
@@ -481,8 +481,8 @@ fn duplicate_entity_clones_material_ref() {
     }
 }
 
-/// Regression: duplicating an entity must carry its authored `MeshRef`
-/// across so the resolver regenerates the copy's runtime mesh handle.
+/// Duplicating an entity carries its authored `MeshRef` across, so the
+/// resolver regenerates the copy's runtime mesh handle.
 #[test]
 fn duplicate_entity_clones_mesh_ref() {
     let mut world = GameWorld::new();

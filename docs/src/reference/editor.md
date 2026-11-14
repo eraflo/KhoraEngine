@@ -374,9 +374,13 @@ The second Spine mode is the **Control Plane** — a workspace dedicated to the 
 
 | Region | Purpose |
 |---|---|
-| **Lane Timeline** (top) | Horizontal lanes per subsystem, execution windows as colored bands |
-| **GORNA Stream** (bottom-left) | Live feed of negotiation: timestamp, subsystem, suggestion, accept/reject |
-| **Meters Wall** (bottom-right) | Frame time, GPU %, memory, agent budget, assets pending |
+| **Summary bar** (top) | The DCC at a glance: frame rate, frame budget, heap, and the frame time over the last frames |
+| **Agents** | Every registered agent, grouped by importance (Critical, Important, Optional), with its running row and health |
+| **Schedule** | The agents by execution phase. A schedule, not a timeline: per-phase timing is not measured yet, and a custom phase is not shown |
+| **Inspector** | The selected agent: its timing and status, and the last GORNA decision for it — the envelope lent, the row planned and the row running, what opened the round and what bound the frame, who decided |
+
+With no registry — the engine not booted, a headless test — the workspace says
+*no agents registered* instead of showing anything made up.
 
 The Control Plane is not a profiler popup. It is a first-class workspace. The whole pitch of Khora is the self-optimizing architecture; the editor surfaces that intelligence as a place you go to, not a window you launch.
 

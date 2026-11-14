@@ -63,9 +63,10 @@ fn the_runtime_json_the_editor_writes_is_what_the_runtime_reads() -> Result<()> 
     Ok(())
 }
 
-/// **A project's physics step reaches the built game.** The editor writes
-/// the project's `physics` section into `runtime.json`, and the runtime
-/// reads that step back; a project at the default step writes none.
+/// **A project's physics step reaches the built game.**
+///
+/// The editor writes the project's `physics` section into `runtime.json`, and
+/// the runtime reads that step back; a project at the default step writes none.
 #[test]
 fn the_runtime_json_carries_the_projects_physics_step_to_the_runtime() -> Result<()> {
     let a_128th = PhysicsSettings {
@@ -88,11 +89,12 @@ fn the_runtime_json_carries_the_projects_physics_step_to_the_runtime() -> Result
     Ok(())
 }
 
-/// **Build Game writes the project's version.** The `runtime.json` a
-/// game is built with carries the project's version as its
-/// `game_version`, which the runtime reads back as the game's identity;
-/// the rest is what Build Game always wrote — the name as project name
-/// and window title, the preset, the physics step.
+/// **Build Game writes the project's version.**
+///
+/// The `runtime.json` a game is built with carries the project's version as its
+/// `game_version`, which the runtime reads back as the game's identity; the
+/// rest is what Build Game always wrote — the name as project name and window
+/// title, the preset, the physics step.
 #[test]
 fn build_game_writes_the_projects_version() -> Result<()> {
     let game = khora_sdk::GameIdentity {

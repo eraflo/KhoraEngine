@@ -12,16 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The restricted bar: a `TopBar` strip, 34 px, shown while the project open
-//! is restricted — registered by the app when the project turns restricted,
-//! removed when it turns trusted.
-//!
-//! A lock glyph, `Restricted mode` in the warning colour, the description of
-//! what restricted means — or `EditorState::refusal`, the last thing
-//! refused, when it is set — and the `Trust this project…` button
-//! (interaction id `restricted-bar-trust`). The button asks for the trust
-//! confirmation: it sets `pending_menu_action` to `confirm_trust`, which the
-//! app turns into `EditorState::trust_confirm`.
+//! The restricted bar, the `TopBar` strip shown while the open project is
+//! restricted. See the book: reference/editor.md, "11 — Restricted projects".
 
 use std::sync::{Arc, Mutex};
 
@@ -31,7 +23,10 @@ use khora_sdk::editor_ui::{
 use khora_tool_ui::widgets::paint::{icon, text, with_alpha};
 use khora_tool_ui::widgets::{button, Button, ButtonKind};
 
-/// The bar saying the project open is restricted.
+/// The bar saying the open project is restricted.
+///
+/// The app registers it when the project turns restricted and removes it
+/// when the project is trusted.
 pub struct RestrictedBarPanel {
     state: Arc<Mutex<EditorState>>,
     theme: UiTheme,
@@ -41,7 +36,7 @@ impl RestrictedBarPanel {
     /// The panel's id.
     pub const ID: &'static str = "khora.editor.restricted_bar";
 
-    /// A restricted bar over `state`.
+    /// Creates a restricted bar over `state`.
     pub fn new(state: Arc<Mutex<EditorState>>, theme: UiTheme) -> Self {
         Self { state, theme }
     }
@@ -99,8 +94,8 @@ impl EditorPanel for RestrictedBarPanel {
         let said = refusal.as_deref().unwrap_or(DESCRIPTION);
         text(ui, [x, y], said, size, t.text_dim);
 
-        // Trusting the project is asked of the user through its
-        // confirmation: the app fills it from the project's folder.
+        // The bar only asks: the app turns `confirm_trust` into
+        // `EditorState::trust_confirm`, filled from the project's folder.
         let label = "Trust this project\u{2026}";
         let w = ui.measure_text(label, size, FontFamilyHint::Proportional)[0] + 28.0;
         let rect = [r[0] + r[2] - 14.0 - w, r[1] + (r[3] - 24.0) * 0.5, w, 24.0];

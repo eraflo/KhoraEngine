@@ -23,10 +23,8 @@ use khora_sdk::khora_core::renderer::api::resource::view::ViewInfo;
 
 /// Fraction of the viewport's half-height a manipulator arm spans.
 ///
-/// The manipulator is sized in world units but wants a constant *apparent*
-/// size: a fixed world length — what this used to be — swallows the screen when
-/// you zoom in and shrinks below the cursor a few metres out, which is exactly
-/// when you still need to grab it.
+/// A constant apparent size: a fixed world length would swallow the screen
+/// close up and shrink below the cursor a few metres out.
 const GIZMO_SCREEN_FRACTION: f32 = 0.32;
 
 /// Segments per rotation ring. Enough that a ring reads as round rather than
@@ -92,12 +90,11 @@ pub fn transform_axes(transform: &Mat4, length: f32) -> Vec<GizmoLineInstance> {
         .collect()
 }
 
-/// World size a manipulator at `origin` needs to occupy a constant fraction of
-/// the viewport, whatever its distance from the camera.
+/// Returns the world size at which a manipulator at `origin` spans a constant
+/// fraction of the viewport, whatever its distance from the camera.
 ///
-/// Derived from the projection matrix rather than from a field of view passed
-/// alongside it, so the gizmo cannot drift out of agreement with what is
-/// actually being rendered.
+/// Read from the projection matrix, not a field of view passed beside it, so
+/// the gizmo always agrees with what is rendered.
 pub fn gizmo_world_size(view: &ViewInfo, origin: Vec3) -> f32 {
     // A perspective projection stores `1 / tan(fov_y / 2)` in m11.
     let focal = view.projection_matrix.cols[1].y;
@@ -208,11 +205,11 @@ fn rotate_handles(pivot: Vec3, basis: &GizmoBasis, size: f32) -> Vec<GizmoLineIn
     lines
 }
 
-/// Generates the wireframe of the volume `projection` sees, placed by
-/// `transform`: the NDC corners `(±1, ±1, 0)` (near) and `(±1, ±1, 1)` (far)
-/// unprojected through `projection`'s inverse — 12 edges (near ring, far ring,
-/// four rails). Exact for perspective and orthographic alike. A projection
-/// that cannot be inverted draws nothing.
+/// Generates the wireframe of the volume `projection` sees, placed by `transform`.
+///
+/// Its 12 edges join the NDC corners unprojected through the inverse, exact
+/// for perspective and orthographic alike. A projection that cannot be
+/// inverted draws nothing.
 pub fn camera_frustum(
     transform: &Mat4,
     projection: &Mat4,
@@ -401,11 +398,9 @@ pub fn generate_selection_gizmos(
             }
         }
 
-        // The pointer tool manipulates nothing, so it shows each entity's own
-        // orientation instead. The three real tools get a single [`manipulator`]
-        // at the selection's shared pivot — drawn by the caller, because one
-        // per entity would stack five identical sets of handles on a
-        // five-entity selection, none of them where a drag actually pivots.
+        // The pointer tool shows each entity's own orientation. The other tools
+        // get one [`manipulator`] at the shared pivot, drawn by the caller: one
+        // per entity would stack handles nowhere near where a drag pivots.
         if gizmo_mode == GizmoMode::Select {
             lines.extend(transform_axes(transform, *size));
         }
@@ -482,9 +477,8 @@ mod tests {
             .map(|(_, label)| *label)
     }
 
-    /// `lines` is the box over `corners`: twelve edges, every endpoint one of
-    /// the corners, every corner reached, and every edge joining two corners
-    /// that differ in exactly one of x, y or depth (a ring side or a rail).
+    /// Asserts that `lines` is the box over `corners`: twelve edges, each joining
+    /// two corners that differ in exactly one of x, y or depth, every corner reached.
     fn assert_is_the_box_over(lines: &[GizmoLineInstance], corners: &[(Vec3, (i8, i8, i8))]) {
         assert_eq!(lines.len(), 12, "a frustum is twelve edges");
         let mut reached = vec![0_u32; corners.len()];
@@ -512,6 +506,8 @@ mod tests {
         }
     }
 
+    /// **A perspective frustum is drawn to its real planes.**
+    ///
     /// Fov 90°, aspect 2, near 1, far 10: the far half-height is
     /// `tan(45°)·10 = 10`, its half-width `20`; the near plane is ten times
     /// smaller. The camera looks down −Z.
@@ -557,9 +553,10 @@ mod tests {
         assert!(camera_frustum(&Mat4::IDENTITY, &Mat4::ZERO, COLOR).is_empty());
     }
 
-    /// An orthographic camera with no depth (near = far) or no extent
-    /// (height 0) projects through infinities: there is no volume to draw,
-    /// and no line may reach the GPU with a non-finite endpoint.
+    /// **A degenerate orthographic camera draws no volume.**
+    ///
+    /// No depth (near = far) or no extent (height 0) projects through
+    /// infinities: no line may reach the GPU with a non-finite endpoint.
     #[test]
     fn a_volume_without_depth_or_extent_draws_no_line_to_infinity() {
         for (what, projection) in [

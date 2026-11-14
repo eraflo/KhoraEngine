@@ -34,17 +34,14 @@ pub(crate) struct OpeningProject {
     pub(crate) choice: u64,
 }
 
-/// Starts opening the project at `root` off the frame, as `setup` does: takes
-/// a hold on the runtime's `Readiness` into `hold`, creates `<root>/assets/`,
-/// files an `Open` with the runtime's `IndexHub` and waits on it, and fills
-/// in `editor_state` what needs no index — the folder, the name and engine
-/// version `project.json` gives, the git branch. `None`, logged, when it
-/// cannot be filed.
+/// Starts opening the project at `root` off the frame, holding the runtime's `Readiness` in `hold`.
 ///
-/// `trust` is what the user decided of the project: `None`, nothing decided
-/// yet, holds the open — nothing is filed and `EditorState::trust_prompt`
-/// names the project until the user decides; a decision opens it at that
-/// trust, the runtime's `ProjectTrustState` set to it.
+/// Creates `<root>/assets/`, files an `Open` with the runtime's `IndexHub` (the
+/// runtime's `Readiness` waits on it), and fills `editor_state` with what needs
+/// no index (folder, name, engine version, git branch); `None`, logged, when it
+/// cannot be filed. `trust` is what the user decided: a decision sets the
+/// runtime's `ProjectTrustState` at once, before the `Open` lands; `None` files
+/// nothing and names the project in `EditorState::trust_prompt`.
 pub(crate) fn start_opening_project(
     root: std::path::PathBuf,
     trust: Option<khora_sdk::trust::ProjectTrust>,
@@ -132,11 +129,10 @@ pub(crate) fn start_opening_project(
 }
 
 impl super::EditorApp {
-    /// Opens the project at `root` at what its user decided of it: the
-    /// `--project` of the command line, a folder File > Open Project
-    /// picked. A project nothing was decided of waits for the user's answer
-    /// (`EditorState::trust_prompt`); one that opens replaces the project
-    /// open.
+    /// Opens the project at `root` at what its user decided of it.
+    ///
+    /// A project nothing was decided of waits for the user's answer
+    /// (`EditorState::trust_prompt`); one that opens replaces the project open.
     pub(super) fn open_at_its_trust(&mut self, root: std::path::PathBuf, runtime: &Runtime) {
         let store = self.trust_store.get_or_insert_with(|| {
             khora_sdk::trust::TrustStore::new(khora_sdk::user_dirs::trust_path(&|key| {
@@ -155,8 +151,9 @@ impl super::EditorApp {
         }
     }
 
-    /// Acts on the user's answers about trust, as the editor's actions carry
-    /// them: `trust_open` / `restrict_open` decide the project waiting
+    /// Acts on the user's answers about trust, carried by the editor's actions.
+    ///
+    /// `trust_open` / `restrict_open` decide the project waiting
     /// (`EditorState::trust_prompt`) and open it, `cancel_open` lets it go;
     /// `trust_project` trusts the project open.
     pub(super) fn follow_trust_answers(&mut self, runtime: &Runtime) {
@@ -228,9 +225,9 @@ const TRUST_ACTIONS: [&str; 4] = [
     "trust_project",
 ];
 
-/// Opens the project at `root` the one way the editor opens a project — the
-/// `--project` of the command line, a folder picked by File > Open Project:
-/// what `store` holds of it decides, through [`start_opening_project`].
+/// Opens the project at `root`, the one way the editor opens a project.
+///
+/// What `store` holds of it decides its trust, through [`start_opening_project`].
 pub(crate) fn open_project(
     root: std::path::PathBuf,
     store: &khora_sdk::trust::TrustStore,
@@ -242,10 +239,11 @@ pub(crate) fn open_project(
     start_opening_project(root, trust, runtime, editor_state, hold)
 }
 
-/// Trusts the project at `project_root`: the decision written to `store`,
-/// the runtime's `ProjectTrustState` set to `Trusted`, the refusals its
-/// restricted limits made released, and its index filed anew so every
-/// reader is built at a trusted project's trust.
+/// Trusts the project at `project_root`, writing the decision to `store`.
+///
+/// Sets the runtime's `ProjectTrustState` to `Trusted`, releases what its
+/// restricted limits refused, and files its index anew so every reader is
+/// built at the new trust. See the book: concepts/trust.md, "The quarantine".
 pub(crate) fn grant_trust(
     runtime: &Runtime,
     store: &khora_sdk::trust::TrustStore,
@@ -261,7 +259,7 @@ pub(crate) fn grant_trust(
     if let Some(refusals) = runtime.resources.get::<Arc<Refusals>>() {
         refusals.release_strict_under(Trust::Restricted, project_root);
     }
-    // What the restricted mode listed — an overlay ignored — no longer is.
+    // What the restricted mode listed, an ignored overlay, is cleared.
     if let Some(problems) =
         (runtime.resources).get::<Arc<khora_sdk::khora_core::problems::Problems>>()
     {
@@ -283,20 +281,14 @@ pub(crate) fn grant_trust(
     log::info!("'{}' is trusted", project_root.display());
 }
 
-/// Lands the project `opening` names once its `Open` landed, as
-/// `before_frame` does after the scene loads land. `None`, `opening` kept,
-/// while it is in flight.
+/// Lands the project `opening` names once its `Open` landed; `None`, `opening` kept, in flight.
 ///
-/// - **`Ok`:** the project's VFS is built over `shared_assets` (which the
-///   `Open` filled), reads its changes from `asset_watch` and files its
-///   reindexes with the runtime's `IndexHub`; the browser's entries, folders
-///   and epoch are filled; the default scene is opened by ticket when the
-///   index holds it, that ticket waited on by the runtime's `Readiness`, or
-///   created (spawned, then saved, the save reindexing off the frame).
-///   Returns the VFS; `opening` is emptied. `hold` is kept: the scripts are
-///   still to be mounted.
-/// - **`Err`:** logged and reported to the runtime's `Problems` under
-///   `ProblemSource::Load`; `opening` and `hold` are emptied. `None`.
+/// `opening` is emptied either way. On `Ok`, returns the project's VFS over
+/// `shared_assets`, the browser filled and the default scene opened by ticket
+/// (the runtime's `Readiness` waits on it), or created when there is none;
+/// `hold` is kept for the scripts. On `Err`, reports to the runtime's
+/// `Problems` (`ProblemSource::Load`), empties `hold` and clears the project's
+/// folder, name, version and branch.
 pub(crate) fn land_opened_project(
     opening: &mut Option<OpeningProject>,
     world: &mut GameWorld,
@@ -376,11 +368,9 @@ pub(crate) fn land_opened_project(
         state.asset_epoch = state.asset_epoch.wrapping_add(1);
     }
 
-    // Its default scene: opened by ticket when the index holds it, the film
-    // waiting on it; created when there is none.
-    // Whether there is one is asked of the disk, not of the index: a scene
-    // written after the walk, or spelled with other capitals, is the user's
-    // and is never saved over.
+    // The default scene, opened by ticket, or created when there is none.
+    // The disk is asked, not the index: a scene written after the walk, or
+    // spelled with other capitals, is the user's and is never saved over.
     let rel = khora_sdk::DEFAULT_SCENE_REL_PATH;
     let abs = root.join("assets").join(rel);
     let pvfs = Arc::new(Mutex::new(pvfs));
@@ -406,11 +396,10 @@ pub(crate) fn land_opened_project(
     Some(pvfs)
 }
 
-/// Brings the mounted scripts in line with `project`, as `before_agents`
-/// does ([`follow_open_project`]); the compile a mount files is waited on by
-/// the runtime's `Readiness`. Once a project is open — `project` is `Some` —
-/// `hold` is let go: what the project opens with is all filed. Returns the
-/// compile's ticket, as [`follow_open_project`] does.
+/// Brings the mounted scripts in line with `project`, as [`follow_open_project`] does.
+///
+/// The runtime's `Readiness` waits on the compile a mount files; once a
+/// project is open, `hold` is let go. Returns the compile's ticket.
 ///
 /// [`follow_open_project`]: crate::project_scripts::follow_open_project
 pub(crate) fn mount_opened_scripts(

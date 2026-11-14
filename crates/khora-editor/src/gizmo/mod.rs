@@ -12,10 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The viewport's transform gizmos: their geometry ([`selection`]), the drag
-//! math that turns a pointer move into a transform ([`interact`]), and the ECS
-//! side ([`frame`]) that reads the selection out of the world and writes the
-//! result back.
+//! The viewport's transform gizmos: geometry ([`selection`]), drag math
+//! ([`interact`]) and the ECS side ([`frame`]).
 
 pub mod frame;
 pub mod interact;

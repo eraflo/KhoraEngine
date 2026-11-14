@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **The editor shows the trust of the project open, as the engine holds
-//! it.** Each frame the app mirrors the runtime's `ProjectTrustState` into
-//! its state, shows the restricted bar while the project is restricted,
-//! fills the trust confirmation with what trusting the project changes,
-//! mirrors the run's quarantine and releases what the user releases.
-//! Trusting the project clears what its restricted mode listed.
+//! **The editor shows the trust of the project open, as the engine holds it.**
+//!
+//! Each frame the app mirrors the runtime's `ProjectTrustState` into its state,
+//! shows the restricted bar while the project is restricted, fills the trust
+//! confirmation with what trusting the project changes, mirrors the run's
+//! quarantine and releases what the user releases. Trusting the project clears
+//! what its restricted mode listed.
 //!
 //! The editor runs over a shell that records the panels it holds; every
 //! folder is under the temp folder — no test reads or writes the user's home
@@ -275,9 +276,10 @@ fn the_app_mirrors_the_trust_of_the_project_open() {
     assert!(!editor.state().restricted, "trusted once the engine is");
 }
 
-/// **The trust panel is always there**: registered with the panels, a
-/// floating overlay, whatever the trust — it paints only when a question is
-/// open.
+/// **The trust panel is always there.**
+///
+/// Registered with the panels, a floating overlay, whatever the trust — it
+/// paints only when a question is open.
 #[test]
 fn the_trust_panel_is_always_registered() {
     let editor = Editor::new(ProjectTrust::Trusted);
@@ -290,9 +292,10 @@ fn the_trust_panel_is_always_registered() {
     );
 }
 
-/// **The restricted bar shows while the project is restricted**: registered
-/// as a top strip once the project is restricted — once, however many
-/// frames — and removed once it is trusted.
+/// **The restricted bar shows while the project is restricted.**
+///
+/// Registered as a top strip once the project is restricted — once, however
+/// many frames — and removed once it is trusted.
 #[test]
 fn the_restricted_bar_shows_while_the_project_is_restricted() {
     let mut editor = Editor::new(ProjectTrust::Trusted);
@@ -451,8 +454,9 @@ fn a_released_file_leaves_the_quarantine() {
     assert_eq!(editor.state().pending_release, None, "the release is taken");
 }
 
-/// **Trusting the project clears what its restricted mode listed**: the
-/// problems under `ProblemSource::Restricted` — an overlay ignored — are
+/// **Trusting the project clears what its restricted mode listed.**
+///
+/// The problems under `ProblemSource::Restricted` — an overlay ignored — are
 /// gone once it is trusted.
 #[test]
 fn granting_trust_clears_what_the_restricted_mode_listed() {
@@ -502,11 +506,12 @@ fn announced(editor: &Editor) -> Vec<khora_sdk::khora_core::asset::AssetUUID> {
     announced
 }
 
-/// **A file released is read again**: releasing it from the quarantine
-/// invalidates its asset, so the asset service forgets the load the
-/// quarantine failed and announces the asset changed — the next load reads
-/// the file, rather than the failure being remembered until something else
-/// touches it.
+/// **A file released is read again.**
+///
+/// Releasing it from the quarantine invalidates its asset, so the asset service
+/// forgets the load the quarantine failed and announces the asset changed — the
+/// next load reads the file, rather than the failure being remembered until
+/// something else touches it.
 #[test]
 fn a_released_file_is_read_again() {
     let folder = Folder::new("release-reads");
@@ -535,9 +540,10 @@ fn a_released_file_is_read_again() {
     );
 }
 
-/// **A release reaches only a file of the project open**: a path climbing
-/// out of its assets with `..` names nothing of the project, and another
-/// project's quarantined file stays quarantined.
+/// **A release reaches only a file of the project open.**
+///
+/// A path climbing out of its assets with `..` names nothing of the project,
+/// and another project's quarantined file stays quarantined.
 #[test]
 fn a_release_climbing_out_of_the_assets_releases_nothing() {
     let folder = Folder::new("release-climbs");
@@ -588,11 +594,12 @@ fn a_release_of_an_absolute_path_releases_nothing() {
     );
 }
 
-/// **The confirmation names every overlay trusting would use**: the shader
-/// reload takes any `.wgsl` under the assets as an overlay of the module its
-/// path names (`logical_name_for_shader_path`) — and the restricted mode
-/// lists each as ignored — so one outside `assets/shaders` is used once the
-/// project is trusted, and the confirmation says so.
+/// **The confirmation names every overlay trusting would use.**
+///
+/// The shader reload takes any `.wgsl` under the assets as an overlay of the
+/// module its path names (`logical_name_for_shader_path`) — and the restricted
+/// mode lists each as ignored — so one outside `assets/shaders` is used once
+/// the project is trusted, and the confirmation says so.
 #[test]
 fn the_confirmation_names_every_overlay_the_shader_reload_would_use() {
     let folder = Folder::new("confirm-overlays");
@@ -620,9 +627,10 @@ fn the_confirmation_names_every_overlay_the_shader_reload_would_use() {
     );
 }
 
-/// **The quarantine shown follows the project open**: once another project
-/// is open, the files of the one before are no longer shown — even when
-/// nothing was refused meanwhile.
+/// **The quarantine shown follows the project open.**
+///
+/// Once another project is open, the files of the one before are no longer
+/// shown — even when nothing was refused meanwhile.
 #[test]
 fn the_quarantine_shown_follows_the_project_open() {
     let folder = Folder::new("mirror-switch");
@@ -651,9 +659,10 @@ fn the_quarantine_shown_follows_the_project_open() {
     );
 }
 
-/// **A project opened by its canonical path shows its quarantine**: the
-/// folder spelled `\?\…` on Windows, the refused file by the path its
-/// guard joined — the same file, shown by its path under the assets.
+/// **A project opened by its canonical path shows its quarantine.**
+///
+/// The folder spelled `\?\…` on Windows, the refused file by the path its guard
+/// joined — the same file, shown by its path under the assets.
 #[test]
 fn a_project_open_by_its_canonical_path_shows_its_quarantine() {
     let folder = Folder::new("mirror-canonical");
@@ -676,12 +685,13 @@ fn a_project_open_by_its_canonical_path_shows_its_quarantine() {
     assert_eq!(shown, vec!["textures/huge.png".to_owned()]);
 }
 
-/// **A project opened trusted holds none of its restricted refusals**: the
-/// quarantine outlives a run, so a file the restricted limits refused for a
+/// **A project opened trusted holds none of its restricted refusals.**
+///
+/// The quarantine outlives a run, so a file the restricted limits refused for a
 /// limit — held by its content — is still there when the project is next
-/// opened, trusted from elsewhere (the hub's `Trust this project…`).
-/// Opened trusted, it is read again at a trusted project's limits, as
-/// trusting it in the editor (`grant_trust`) would have.
+/// opened, trusted from elsewhere (the hub's `Trust this project…`). Opened
+/// trusted, it is read again at a trusted project's limits, as trusting it in
+/// the editor (`grant_trust`) would have.
 #[test]
 fn a_project_opened_trusted_holds_none_of_its_restricted_refusals() {
     let folder = Folder::new("open-trusted");

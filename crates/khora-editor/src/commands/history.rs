@@ -13,12 +13,6 @@
 // limitations under the License.
 
 //! Undo/redo command history for editor operations.
-//!
-//! An edit is meant to be wrapped in an [`EditorCommand`] and pushed onto
-//! the [`CommandHistory`] stack; nothing records one yet (see
-//! [`CommandHistory`]), so the history is only ever cleared — when a scene
-//! is opened, created or restored, since its edits would name entities that
-//! are gone.
 
 use khora_sdk::editor_ui::PropertyEdit;
 
@@ -77,7 +71,7 @@ impl CommandHistory {
         self.redo_stack.clear();
     }
 
-    /// Push a command after executing its forward edit.
+    /// Pushes a command after executing its forward edit.
     pub fn push(&mut self, cmd: EditorCommand) {
         self.redo_stack.clear();
         if self.undo_stack.len() >= self.max_size {
@@ -86,7 +80,7 @@ impl CommandHistory {
         self.undo_stack.push(cmd);
     }
 
-    /// Undo the last command. Returns the reverse `PropertyEdit` to apply.
+    /// Undoes the last command, returning the reverse `PropertyEdit` to apply.
     pub fn undo(&mut self) -> Option<PropertyEdit> {
         let cmd = self.undo_stack.pop()?;
         let reverse = cmd.reverse.clone();
@@ -94,7 +88,7 @@ impl CommandHistory {
         Some(reverse)
     }
 
-    /// Redo the last undone command. Returns the forward `PropertyEdit` to apply.
+    /// Redoes the last undone command, returning the forward `PropertyEdit` to apply.
     pub fn redo(&mut self) -> Option<PropertyEdit> {
         let cmd = self.redo_stack.pop()?;
         let forward = cmd.forward.clone();
@@ -112,18 +106,17 @@ impl CommandHistory {
         !self.redo_stack.is_empty()
     }
 
-    /// Description of the next undoable command (for UI display).
+    /// Returns the description of the next undoable command.
     pub fn undo_description(&self) -> Option<&str> {
         self.undo_stack.last().map(|c| c.description.as_str())
     }
 
-    /// Description of the next redoable command (for UI display).
+    /// Returns the description of the next redoable command.
     pub fn redo_description(&self) -> Option<&str> {
         self.redo_stack.last().map(|c| c.description.as_str())
     }
 
-    /// Number of commands currently on the undo stack. Bounded by the
-    /// configured maximum depth.
+    /// Returns the number of commands on the undo stack, at most the maximum depth.
     pub fn undo_depth(&self) -> usize {
         self.undo_stack.len()
     }
