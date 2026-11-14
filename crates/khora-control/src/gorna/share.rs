@@ -17,7 +17,7 @@
 
 use std::time::Duration;
 
-use khora_core::agent::gorna::protocol::{Allocation, Envelope, Offer, OfferRow};
+use khora_core::agent::gorna::protocol::{Allocation, CostBasis, Envelope, Offer, OfferRow};
 use khora_core::agent::gorna::{AdaptationMode, AgentId, StrategyId};
 use khora_core::lane::cost::{Cost, Device};
 
@@ -29,18 +29,22 @@ use super::units::{busiest, fits_envelope, micros, micros_of_ms};
 /// The allocation that lends `plans`: the envelopes shared from them, the
 /// pins and allowed rows the policies name, the agents late, the price of
 /// the last upgrade, and whether a lower target can take something back.
+/// An agent that priced no row is named in no envelope, unless it keeps
+/// one: the round knows nothing of what it costs, and a zero-time envelope
+/// would starve it. It keeps what it holds, or runs at its own price.
 pub(crate) fn allocation(
     round: &Round<'_>,
     bids: &[&Bid],
     plans: &[Plan],
     price: Option<f32>,
 ) -> Allocation {
-    let envelopes = share(round, bids, plans);
+    let mut envelopes = share(round, bids, plans);
     let lever = bids
         .iter()
         .zip(plans)
         .zip(&envelopes)
         .any(|((bid, plan), (_, envelope))| above_floor(bid, plan, envelope));
+    name_priced(&mut envelopes, bids, plans);
     Allocation {
         epoch: round.epoch,
         trigger: round.trigger,
@@ -73,6 +77,22 @@ pub(crate) fn allocation(
         price,
         lever,
     }
+}
+
+/// Leaves out of `envelopes` every agent of `bids` that priced no row and
+/// keeps no envelope: the round knows nothing of what it costs, and a
+/// zero-time envelope would starve it.
+pub(crate) fn name_priced(envelopes: &mut Vec<(AgentId, Envelope)>, bids: &[&Bid], plans: &[Plan]) {
+    let unpriced: Vec<AgentId> = (bids.iter().zip(plans))
+        .filter(|(bid, plan)| plan.fixed.is_none() && !priced(bid))
+        .map(|(bid, _)| bid.offer.agent)
+        .collect();
+    envelopes.retain(|(agent, _)| !unpriced.contains(agent));
+}
+
+/// Whether `bid` offers a row whose cost is known.
+pub(crate) fn priced(bid: &Bid) -> bool {
+    (bid.offer.rows.iter()).any(|row| row.confidence != CostBasis::Assumed)
 }
 
 /// Holds each envelope of `envelopes` to the row planned for its agent: an

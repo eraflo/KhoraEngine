@@ -117,16 +117,16 @@ impl Agent for Hand {
     fn apply(
         &mut self,
         epoch: Epoch,
-        envelope: &Envelope,
+        envelope: Option<&Envelope>,
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {
         self.held.lock().expect("the held lock").epoch = Some(epoch);
-        self.log
-            .lock()
-            .expect("the log lock")
-            .lent
-            .push((self.id, epoch, *envelope));
+        self.log.lock().expect("the log lock").lent.push((
+            self.id,
+            epoch,
+            envelope.copied().unwrap_or_default(),
+        ));
     }
     fn place(&self) -> Arc<Mutex<Place>> {
         Arc::clone(&self.place)
@@ -184,8 +184,7 @@ pub(super) fn scheduler_over(registry: &Arc<Mutex<AgentRegistry>>) -> ExecutionS
 /// order the test means.
 pub(super) fn one_phase(priority: f32) -> ExecutionTiming {
     ExecutionTiming {
-        allowed_phases: vec![ExecutionPhase::OUTPUT],
-        default_phase: ExecutionPhase::OUTPUT,
+        phase: ExecutionPhase::OUTPUT,
         priority,
         ..ExecutionTiming::default()
     }
@@ -459,7 +458,7 @@ impl Agent for Stepper {
     fn apply(
         &mut self,
         _epoch: Epoch,
-        _envelope: &Envelope,
+        _envelope: Option<&Envelope>,
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {

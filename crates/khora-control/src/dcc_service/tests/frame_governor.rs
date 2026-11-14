@@ -378,3 +378,46 @@ fn the_governor_does_not_move_again_on_frames_under_a_replayed_allocation() {
         "the multiplier moved again on frames no epoch lent its last move to: lowest {lowest}"
     );
 }
+
+/// **The DCC plans its rounds on the frames its governor keeps.** Five
+/// frames of 10 ms, then seven of 100 to 700 ms, queued before the DCC
+/// starts: its first tick reads them all, then opens its first epoch. The
+/// governor leaves the 100 ms frame out — a hitch after frames within the
+/// setpoint — and keeps the six after it as load, bounded at `hitch_ratio ×
+/// setpoint`: eleven samples, five of 10 ms and six of 33.3 ms, whose median
+/// absolute deviation is zero. The first epoch is planned with no margin.
+/// Planned on the raw frames, their spread would keep some 340 ms free of a
+/// 16.7 ms target.
+#[test]
+fn the_dcc_plans_its_rounds_on_the_frames_its_governor_keeps() {
+    let (mut dcc, rx) = recording(DccConfig::default());
+    let (agent, _ear) = Speaker::with_upgrade(
+        "renderer",
+        Duration::from_millis(2),
+        Duration::from_millis(8),
+    );
+    dcc.register_agent(agent, 1.0);
+    let tx = dcc.event_sender();
+    frames(&tx, 5, 10.0);
+    for load_ms in [100.0, 200.0, 300.0, 400.0, 500.0, 600.0, 700.0] {
+        frames(&tx, 1, load_ms);
+    }
+    dcc.start(rx);
+
+    let opened = wait_for(3, || !records(&dcc).is_empty());
+    let recorded = records(&dcc);
+    dcc.stop();
+
+    assert!(opened, "the first epoch opens");
+    let first = recorded.first().expect("the first epoch");
+    assert_eq!(
+        first.frames.count, 12,
+        "the first epoch is decided after the tick read the twelve frames"
+    );
+    assert_eq!(
+        first.planning.margin,
+        Duration::ZERO,
+        "the first epoch is planned on the governor's samples, not the raw frames: {:?}",
+        first.planning
+    );
+}

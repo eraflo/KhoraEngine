@@ -1020,7 +1020,7 @@ fn the_agent_moves_to_paced_when_the_work_filed_outgrows_its_envelope() {
     let mut agent = lane_agent(loading_registration(), &DeviceCaps::default());
     agent.apply(
         Epoch(1),
-        &host_envelope(Duration::from_millis(25)),
+        Some(&host_envelope(Duration::from_millis(25))),
         None,
         None,
     );
@@ -1057,7 +1057,7 @@ fn the_agent_settles_on_rush_under_loads_its_envelope_covers() {
     let mut agent = lane_agent(loading_registration(), &DeviceCaps::default());
     agent.apply(
         Epoch(1),
-        &host_envelope(Duration::from_millis(25)),
+        Some(&host_envelope(Duration::from_millis(25))),
         None,
         None,
     );

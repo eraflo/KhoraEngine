@@ -99,7 +99,7 @@ impl Agent for Chooser {
     fn apply(
         &mut self,
         epoch: Epoch,
-        _envelope: &Envelope,
+        _envelope: Option<&Envelope>,
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {
@@ -242,7 +242,7 @@ impl Agent for Recovering {
     fn apply(
         &mut self,
         _epoch: Epoch,
-        _envelope: &Envelope,
+        _envelope: Option<&Envelope>,
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {

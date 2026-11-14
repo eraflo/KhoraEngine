@@ -14,7 +14,7 @@
 
 //! The concrete, WGPU-based implementation of the `RenderSystem` trait.
 
-use crate::graphics::wgpu::backend::WgpuBackendSelector;
+use crate::graphics::wgpu::backend::{SelectedAdapter, WgpuBackendSelector};
 use crate::graphics::wgpu::device::WgpuDevice;
 use crate::graphics::wgpu::graphics_context::WgpuGraphicsContext;
 use crate::graphics::wgpu::profiler::WgpuTimestampProfiler;
@@ -198,17 +198,23 @@ impl WgpuRenderSystem {
         // front — surfaces created later are validated against it. Hand the window's
         // Arc directly; it implements `HasDisplayHandle + Debug + Send + Sync + 'static`,
         // which satisfies `wgpu::WgpuHasDisplayHandle`.
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(
-            Box::new(window_handle.clone()),
-        ));
-        let backend_selector = WgpuBackendSelector::new(instance.clone());
+        // One instance per backend tried, each on that backend alone: the
+        // surface and the device come from the instance the adapter was
+        // found on.
+        let display = window_handle.clone();
+        let backend_selector = WgpuBackendSelector::new(move |backends| {
+            let mut descriptor =
+                wgpu::InstanceDescriptor::new_with_display_handle(Box::new(display.clone()));
+            descriptor.backends = backends;
+            wgpu::Instance::new(descriptor)
+        });
         let selection_config = BackendSelectionConfig::default();
 
         let selection_result = backend_selector
             .select_backend(&selection_config)
             .await
             .map_err(|e| RenderError::InitializationFailed(e.to_string()))?;
-        let adapter = selection_result.adapter;
+        let SelectedAdapter { instance, adapter } = selection_result.adapter;
 
         let context = WgpuGraphicsContext::new(&instance, window_handle, adapter, window_size)
             .await

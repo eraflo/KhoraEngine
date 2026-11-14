@@ -41,7 +41,7 @@ pub(crate) struct Placed {
 /// `agent`'s phase and declaration.
 pub(crate) fn placed<A: Agent>(agent: &A) -> Placed {
     Placed {
-        phase: agent.execution_timing().default_phase,
+        phase: agent.execution_timing().phase,
         contention: agent.contention(),
     }
 }

@@ -27,10 +27,8 @@ use super::execution_phase::ExecutionPhase;
 /// ([`Activation`](crate::agent::Activation)), not this struct's.
 #[derive(Debug, Clone)]
 pub struct ExecutionTiming {
-    /// Phases where this agent CAN execute.
-    pub allowed_phases: Vec<ExecutionPhase>,
-    /// Default phase if GORNA doesn't specify one.
-    pub default_phase: ExecutionPhase,
+    /// The phase the agent runs in, once a frame: its place's.
+    pub phase: ExecutionPhase,
     /// Priority within the phase (higher = executed earlier).
     pub priority: f32,
     /// Importance for budget management.
@@ -42,8 +40,7 @@ pub struct ExecutionTiming {
 impl Default for ExecutionTiming {
     fn default() -> Self {
         Self {
-            allowed_phases: ExecutionPhase::DEFAULT_ORDER.to_vec(),
-            default_phase: ExecutionPhase::OUTPUT,
+            phase: ExecutionPhase::OUTPUT,
             priority: 0.5,
             importance: AgentImportance::Important,
             dependencies: Vec::new(),
@@ -81,12 +78,21 @@ impl AgentImportance {
 
 #[cfg(test)]
 mod tests {
-    use super::AgentImportance;
+    use super::{AgentImportance, ExecutionPhase, ExecutionTiming};
 
     #[test]
     fn only_optional_is_negotiable() {
         assert!(!AgentImportance::Critical.is_negotiable());
         assert!(!AgentImportance::Important.is_negotiable());
         assert!(AgentImportance::Optional.is_negotiable());
+    }
+
+    /// **An agent runs in one phase, `OUTPUT` unless it says otherwise.** The
+    /// default timing names a single phase, the one a frame's output is
+    /// recorded in: an agent built with it runs once a frame, not once in
+    /// every phase.
+    #[test]
+    fn the_default_timing_runs_in_output() {
+        assert_eq!(ExecutionTiming::default().phase, ExecutionPhase::OUTPUT);
     }
 }

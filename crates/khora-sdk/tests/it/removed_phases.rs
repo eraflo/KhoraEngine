@@ -78,8 +78,7 @@ impl EngineApp for StrandedInMutate {
     fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
     fn provide(&self, runtime: &mut Runtime) {
         let timing = ExecutionTiming {
-            allowed_phases: vec![ExecutionPhase::MUTATE],
-            default_phase: ExecutionPhase::MUTATE,
+            phase: ExecutionPhase::MUTATE,
             ..ExecutionTiming::default()
         };
         let agent = Hand::new(

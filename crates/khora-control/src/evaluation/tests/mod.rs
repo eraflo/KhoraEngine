@@ -17,6 +17,7 @@
 //! governor closes through GORNA, simulated (`closed_loop.rs`).
 
 mod closed_loop;
+mod margin;
 mod replay;
 mod simulation;
 

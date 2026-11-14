@@ -66,7 +66,7 @@ pub fn pin<A: Agent + ?Sized>(agent: &mut A, row: StrategyId) {
 /// Pins `agent` to `row` for epoch 1, lending it `time` on every device: a
 /// lane that reads a budget is granted `time`.
 pub fn pin_with<A: Agent + ?Sized>(agent: &mut A, row: StrategyId, time: Duration) {
-    agent.apply(Epoch(1), &every_device(time), Some(row), None);
+    agent.apply(Epoch(1), Some(&every_device(time)), Some(row), None);
 }
 
 /// What `agent`'s report says of its last run — what its lane said, or what

@@ -108,8 +108,8 @@ fn the_overlay_agents_are_optional_and_run_after_the_renderer() {
         assert_eq!(registration.fixed_step, None, "{name}: every frame");
 
         let timing = agent_of(registration).execution_timing();
-        assert_eq!(timing.default_phase, ExecutionPhase::OUTPUT, "{name}");
-        assert_eq!(timing.allowed_phases, [ExecutionPhase::OUTPUT], "{name}");
+        assert_eq!(timing.phase, ExecutionPhase::OUTPUT, "{name}");
+        assert_eq!(timing.phase, ExecutionPhase::OUTPUT, "{name}");
         assert_eq!(timing.importance, AgentImportance::Optional, "{name}");
         assert_eq!(
             timing.dependencies.len(),

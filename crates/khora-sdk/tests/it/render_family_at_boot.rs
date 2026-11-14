@@ -55,12 +55,9 @@ fn renderer_menu(engine: &EngineCore<Game>) -> Vec<StrategyId> {
     let renderer = registry
         .iter()
         .filter(|agent| {
-            agent.lock().is_ok_and(|agent| {
-                agent
-                    .execution_timing()
-                    .allowed_phases
-                    .contains(&ExecutionPhase::OUTPUT)
-            })
+            agent
+                .lock()
+                .is_ok_and(|agent| agent.execution_timing().phase == ExecutionPhase::OUTPUT)
         })
         .find(|agent| agent.lock().is_ok_and(|agent| agent.id() == RENDERER))
         .expect("the renderer is registered in OUTPUT");

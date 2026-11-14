@@ -43,7 +43,7 @@ fn level_at(agent: &mut LaneAgent, number: u64, load: u32) -> Option<usize> {
 #[test]
 fn a_reinstated_layer_whose_quote_stops_fitting_wakes_its_agent() {
     let mut agent = lane_agent(&LADDER, &DeviceCaps::default());
-    agent.apply(Epoch(1), &host_envelope(205), None, None);
+    agent.apply(Epoch(1), Some(&host_envelope(205)), None, None);
 
     assert_eq!(level_at(&mut agent, 1, 100), Some(1), "200 µs fits 205 µs");
     assert_eq!(level_at(&mut agent, 2, 104), Some(1));
@@ -60,7 +60,7 @@ fn a_reinstated_layer_whose_quote_stops_fitting_wakes_its_agent() {
     );
     assert!(wakes_of(&agent).is_empty(), "{:?}", wakes_of(&agent));
 
-    agent.apply(Epoch(2), &host_envelope(210), None, None);
+    agent.apply(Epoch(2), Some(&host_envelope(210)), None, None);
     assert_eq!(
         level_at(&mut agent, 5, 104),
         Some(0),
@@ -101,7 +101,7 @@ fn a_reinstated_layer_refused_an_input_wakes_its_agent() {
     let with_a_plan = || runtime(100, Plan::default());
     let mut deck = OutputDeck::new();
     let mut agent = lane_agent(&LADDER, &DeviceCaps::default());
-    agent.apply(Epoch(1), &host_envelope(205), None, None);
+    agent.apply(Epoch(1), Some(&host_envelope(205)), None, None);
 
     run(&mut agent, 1, &with_a_plan(), &mut deck);
     run(&mut agent, 2, &without_a_plan(), &mut deck);
@@ -112,7 +112,7 @@ fn a_reinstated_layer_refused_an_input_wakes_its_agent() {
 
     let request: OfferRequest = super::fixtures::offer_request(2);
     let _ = agent.offer(&request);
-    agent.apply(Epoch(2), &host_envelope(205), None, None);
+    agent.apply(Epoch(2), Some(&host_envelope(205)), None, None);
     run(&mut agent, 5, &with_a_plan(), &mut deck);
     let _ = run(&mut agent, 6, &without_a_plan(), &mut deck);
     assert_eq!(

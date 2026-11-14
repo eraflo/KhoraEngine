@@ -100,7 +100,12 @@ fn an_envelope_priced_on_an_empty_scene_is_reported_short_once_behaviours_arrive
     let shared = Arc::new(Mutex::new(scripts));
     let runtime = Arc::new(runtime_with(&shared));
     let mut agent = script_agent();
-    agent.apply(Epoch(1), &on_the_host(Duration::from_micros(1)), None, None);
+    agent.apply(
+        Epoch(1),
+        Some(&on_the_host(Duration::from_micros(1))),
+        None,
+        None,
+    );
 
     run_script_agent(
         &mut agent,

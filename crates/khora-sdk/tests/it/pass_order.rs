@@ -51,8 +51,7 @@ fn declared_order() -> [TypeId; 8] {
 /// The timing of an agent of `OUTPUT`.
 fn output() -> ExecutionTiming {
     ExecutionTiming {
-        allowed_phases: vec![ExecutionPhase::OUTPUT],
-        default_phase: ExecutionPhase::OUTPUT,
+        phase: ExecutionPhase::OUTPUT,
         ..ExecutionTiming::default()
     }
 }

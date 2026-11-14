@@ -86,8 +86,7 @@ fn layers_run_on_every_path() {
 /// A timing that runs in `TRANSFORM`.
 fn transform() -> ExecutionTiming {
     ExecutionTiming {
-        allowed_phases: vec![ExecutionPhase::TRANSFORM],
-        default_phase: ExecutionPhase::TRANSFORM,
+        phase: ExecutionPhase::TRANSFORM,
         ..ExecutionTiming::default()
     }
 }

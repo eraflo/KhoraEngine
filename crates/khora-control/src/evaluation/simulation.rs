@@ -146,6 +146,8 @@ pub struct Simulation {
     load_changes: Vec<Duration>,
     frames: Vec<SimFrame>,
     switches: Vec<(Duration, usize)>,
+    /// The margin each round was planned with.
+    margins: Vec<Duration>,
     /// How long each round took to decide, on the wall clock.
     decision_times: Vec<Duration>,
     refusals: usize,
@@ -205,6 +207,7 @@ impl Simulation {
             load_changes: Vec::new(),
             frames: Vec::new(),
             switches: Vec::new(),
+            margins: Vec::new(),
             decision_times: Vec::new(),
             refusals: 0,
             quality: 0.0,
@@ -284,6 +287,12 @@ impl Simulation {
         &self.switches
     }
 
+    /// The margin each round was planned with, in order, the first epoch's
+    /// included; empty for a set that plans nothing beyond the frame.
+    pub fn margins(&self) -> &[Duration] {
+        &self.margins
+    }
+
     /// What the run so far measures.
     pub fn metrics(&self) -> SimMetrics {
         let frames = self.frames.len() as u64;
@@ -357,6 +366,9 @@ impl Simulation {
         let planning = (self.planner.as_ref())
             .map(|planner| planner.planning(&offers, epoch))
             .unwrap_or_default();
+        if self.planner.is_some() {
+            self.margins.push(planning.margin);
+        }
         // The planned set plans each row at the time the book learnt it
         // takes; the others at its quote.
         let corrections = (self.book.as_ref())
@@ -458,7 +470,7 @@ impl Simulation {
         let time = (self.hitch.take())
             .unwrap_or(self.host + agents_time)
             .max(MIN_FRAME);
-        self.governor.observe(time, setpoint());
+        let kept = self.governor.observe(time, setpoint());
         if let Some(book) = self.book.as_mut() {
             for report in &reports {
                 book.observe_report(report);
@@ -468,7 +480,10 @@ impl Simulation {
             for report in &reports {
                 planner.observe_report(report, self.clock);
             }
-            planner.observe_frame(time);
+            // The frames the governor keeps: no hitch, a load frame bounded.
+            if let Some(kept) = kept {
+                planner.observe_frame(kept, setpoint());
+            }
         }
         self.frames.push(SimFrame {
             at: self.clock,

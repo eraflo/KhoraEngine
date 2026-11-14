@@ -370,7 +370,7 @@ impl GornaArbitrator {
             let importance = timing.importance;
             let id = agent.id();
             drop(agent);
-            if timing.default_phase == khora_core::agent::ExecutionPhase::BACKGROUND {
+            if timing.phase == khora_core::agent::ExecutionPhase::BACKGROUND {
                 background.push(id);
             }
             self.offers.push(offer.clone());

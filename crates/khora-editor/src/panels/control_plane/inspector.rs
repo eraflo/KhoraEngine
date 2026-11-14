@@ -188,7 +188,7 @@ fn paint_cards(
         cy + 6.0,
         w - 36.0,
         "Default phase",
-        &format!("{}", agent.default_phase),
+        &format!("{}", agent.phase),
         theme,
     );
     cy += 22.0;

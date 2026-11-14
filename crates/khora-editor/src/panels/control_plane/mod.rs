@@ -19,7 +19,7 @@
 //! - a DCC summary bar (live FPS / frame budget / heap)
 //! - an Agents list (real agents, grouped into the Critical / Important /
 //!   Optional buckets reported by their `execution_timing()`)
-//! - a Schedule view that groups agents by their `default_phase`
+//! - a Schedule view that groups agents by their `phase`
 //!   (`INIT / OBSERVE / TRANSFORM / MUTATE / OUTPUT / FINALIZE`) — per-phase
 //!   timing isn't exposed by `ExecutionScheduler` yet, so this is a
 //!   schedule, not a timeline.
@@ -59,7 +59,7 @@ struct AgentSnapshot {
     id: AgentId,
     crate_name: String,
     importance: AgentImportance,
-    default_phase: ExecutionPhase,
+    phase: ExecutionPhase,
     priority: f32,
     /// What the agent last reported: the row it ran, its health, whether it
     /// stalled, and what its lane said.
@@ -179,7 +179,7 @@ impl ControlPlanePanel {
                 id,
                 crate_name: crate_label(reg.origin(id)),
                 importance: timing.importance,
-                default_phase: timing.default_phase,
+                phase: timing.phase,
                 priority: timing.priority,
                 report,
             });

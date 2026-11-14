@@ -29,11 +29,13 @@ mod layer_panics;
 mod layer_paths;
 mod layer_preparations;
 mod layers;
+mod one_phase;
 mod panicking_agents;
 mod physics_step_is_precision;
 mod physics_time_stays_on_gameplay_time;
 mod published_fixed_steps;
 mod reports;
+mod resumed_families;
 mod run_order;
 mod sim_steps;
 mod sub_step_outputs;
@@ -231,7 +233,7 @@ impl Agent for Hosted {
     fn apply(
         &mut self,
         _epoch: Epoch,
-        _envelope: &Envelope,
+        _envelope: Option<&Envelope>,
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {

@@ -213,7 +213,7 @@ impl Agent for Painter {
     fn apply(
         &mut self,
         epoch: Epoch,
-        _envelope: &Envelope,
+        _envelope: Option<&Envelope>,
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {
@@ -286,7 +286,7 @@ impl Agent for Plain {
     fn apply(
         &mut self,
         _epoch: Epoch,
-        _envelope: &Envelope,
+        _envelope: Option<&Envelope>,
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {
@@ -563,14 +563,12 @@ fn an_allocation_lent_at_a_frame_start_wakes_the_agent_that_frame() {
 fn a_swap_keeps_the_family_place() {
     let log = SharedLog::default();
     let output = |priority| ExecutionTiming {
-        allowed_phases: vec![ExecutionPhase::OUTPUT],
-        default_phase: ExecutionPhase::OUTPUT,
+        phase: ExecutionPhase::OUTPUT,
         priority,
         ..ExecutionTiming::default()
     };
     let earlier = shared(Plain::new("earlier", &log).with_timing(ExecutionTiming {
-        allowed_phases: vec![ExecutionPhase::TRANSFORM],
-        default_phase: ExecutionPhase::TRANSFORM,
+        phase: ExecutionPhase::TRANSFORM,
         priority: 0.1,
         ..ExecutionTiming::default()
     }));
@@ -762,7 +760,7 @@ impl Agent for Threaded {
     fn apply(
         &mut self,
         _epoch: Epoch,
-        _envelope: &Envelope,
+        _envelope: Option<&Envelope>,
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {

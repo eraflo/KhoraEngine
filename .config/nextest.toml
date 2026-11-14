@@ -20,5 +20,5 @@ filter = 'package(khora-core) & binary(lane_contract) & test(/^compile_fail::/)'
 test-group = 'trybuild'
 
 [[profile.default.overrides]]
-filter = 'package(khora-infra) & (test(/device::tests::(concurrency|vram|caps)::/) | test(/wgpu::profiler::tests::/) | test(/^(light_culling_gpu|light_culling_edge_cases|spot_attenuation_gpu)::/))'
+filter = 'package(khora-infra) & (test(/device::tests::(concurrency|vram|caps)::/) | test(/wgpu::profiler::tests::/) | test(/wgpu::backend::tests::/) | test(/^(light_culling_gpu|light_culling_edge_cases|spot_attenuation_gpu)::/))'
 test-group = 'gpu'

@@ -36,13 +36,11 @@ pub(super) fn refuse_stranded_agents(dcc: &DccService, order: &[ExecutionPhase])
         let agent = agent
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let phases = agent.execution_timing().allowed_phases;
+        let phase = agent.execution_timing().phase;
         // The background runs off the frame: no phase order holds it.
-        let runs =
-            |phase: &ExecutionPhase| *phase == ExecutionPhase::BACKGROUND || order.contains(phase);
-        if !phases.iter().any(runs) {
+        if phase != ExecutionPhase::BACKGROUND && !order.contains(&phase) {
             panic!(
-                "the engine cannot boot: the agent {:?} runs only in {phases:?}, which the app removed",
+                "the engine cannot boot: the agent {:?} runs in {phase:?}, which the app removed",
                 agent.id()
             );
         }

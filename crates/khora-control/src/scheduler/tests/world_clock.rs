@@ -53,8 +53,7 @@ impl Family for Quiet {
     }
     fn timing(&self) -> ExecutionTiming {
         ExecutionTiming {
-            allowed_phases: vec![ExecutionPhase::TRANSFORM],
-            default_phase: ExecutionPhase::TRANSFORM,
+            phase: ExecutionPhase::TRANSFORM,
             importance: AgentImportance::Critical,
             dependencies: self
                 .after

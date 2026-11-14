@@ -64,8 +64,7 @@ impl Family for Spender {
     }
     fn timing(&self) -> ExecutionTiming {
         ExecutionTiming {
-            allowed_phases: vec![self.phase],
-            default_phase: self.phase,
+            phase: self.phase,
             importance: self.importance,
             ..ExecutionTiming::default()
         }

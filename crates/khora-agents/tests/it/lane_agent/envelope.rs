@@ -177,7 +177,7 @@ fn an_agent_follows_a_pin_and_its_allowed_rows() {
 
     agent.apply(
         Epoch(2),
-        &host_envelope(150),
+        Some(&host_envelope(150)),
         Some(StrategyId::HighPerformance),
         None,
     );
@@ -190,7 +190,7 @@ fn an_agent_follows_a_pin_and_its_allowed_rows() {
 
     agent.apply(
         Epoch(3),
-        &host_envelope(250),
+        Some(&host_envelope(250)),
         None,
         Some(&[StrategyId::LowPower, StrategyId::HighPerformance]),
     );
@@ -441,7 +441,7 @@ fn a_quote_is_lent_the_envelope_not_the_frame_time() {
     let _ = agent.offer(&offer_request(1));
     agent.apply(
         Epoch(1),
-        &host_envelope(3_000),
+        Some(&host_envelope(3_000)),
         None,
         Some(&[StrategyId::LowPower]),
     );

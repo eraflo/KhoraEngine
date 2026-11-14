@@ -96,7 +96,7 @@ impl Agent for Running {
     fn apply(
         &mut self,
         _epoch: Epoch,
-        _envelope: &Envelope,
+        _envelope: Option<&Envelope>,
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {

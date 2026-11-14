@@ -213,7 +213,7 @@ impl ControlPlanePanel {
         );
         ui.paint_text_styled(
             [x + w - 14.0, y + 47.0],
-            &format!("{}", agent.default_phase),
+            &format!("{}", agent.phase),
             10.0,
             theme.text_muted,
             FontFamilyHint::Monospace,

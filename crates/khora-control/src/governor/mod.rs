@@ -40,6 +40,7 @@ pub struct GovernorConfig {
     /// A frame longer than `hitch_ratio × setpoint` is a hitch, or load bounded
     /// at that length.
     pub hitch_ratio: f32,
+
     /// Time constant, in seconds of frame time, of the estimate's low-pass.
     pub filter_seconds: f32,
     /// Frames observed after a change before the governor changes again.
@@ -109,6 +110,7 @@ pub struct FrameGovernor {
     over: u32,
     /// Whether the last frame was over the setpoint.
     last_over: bool,
+
     /// The multiplier the last lowering left, and when, on the clock.
     ceiling: Option<(f32, f64)>,
 }
@@ -136,11 +138,15 @@ impl FrameGovernor {
     /// `hitch_ratio × setpoint` right after one within the setpoint is a
     /// hitch — a load, a stall, nothing a row could fix — and is left out;
     /// one that follows a long frame is load, and enters bounded.
-    pub fn observe(&mut self, frame: Duration, setpoint: Duration) {
+    ///
+    /// Returns the sample the estimate took: `None` for a hitch or a frame
+    /// that took no time. The planner reads its margin from these samples, so
+    /// both read the same frames.
+    pub fn observe(&mut self, frame: Duration, setpoint: Duration) -> Option<Duration> {
         let seconds = frame.as_secs_f64();
         // A frame that took no time measured nothing.
         if seconds <= 0.0 {
-            return;
+            return None;
         }
         self.clock += seconds;
         self.since_change = self.since_change.saturating_add(1);
@@ -154,7 +160,7 @@ impl FrameGovernor {
         let hitch = seconds > bound && !self.last_over;
         self.last_over = over;
         if hitch {
-            return;
+            return None;
         }
         let sample = seconds.min(bound.max(f64::MIN_POSITIVE));
         let filter = f64::from(self.cfg.filter_seconds).max(f64::MIN_POSITIVE);
@@ -170,6 +176,7 @@ impl FrameGovernor {
             Some(estimate) => estimate + alpha * (sample - estimate),
             None => sample,
         });
+        Some(Duration::from_secs_f64(sample))
     }
 
     /// One DCC tick: the new multiplier when the governor changes it.

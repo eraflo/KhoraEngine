@@ -52,8 +52,7 @@ fn declared_order() -> [TypeId; 8] {
 /// The timing of an agent of `OUTPUT`.
 fn output() -> ExecutionTiming {
     ExecutionTiming {
-        allowed_phases: vec![ExecutionPhase::OUTPUT],
-        default_phase: ExecutionPhase::OUTPUT,
+        phase: ExecutionPhase::OUTPUT,
         ..ExecutionTiming::default()
     }
 }
@@ -198,12 +197,9 @@ fn the_engine_boots_one_agent_per_overlay() {
     let output: Vec<AgentId> = registry
         .iter()
         .filter(|agent| {
-            agent.lock().is_ok_and(|agent| {
-                agent
-                    .execution_timing()
-                    .allowed_phases
-                    .contains(&ExecutionPhase::OUTPUT)
-            })
+            agent
+                .lock()
+                .is_ok_and(|agent| agent.execution_timing().phase == ExecutionPhase::OUTPUT)
         })
         .filter_map(|agent| agent.lock().ok().map(|agent| agent.id()))
         .collect();

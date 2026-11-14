@@ -576,3 +576,73 @@ fn a_small_cut_is_raised_back_once_its_memory_has_passed() {
         governor.multiplier()
     );
 }
+
+/// Whether `kept` is `expected`, to the nanosecond a conversion through
+/// seconds may lose.
+fn keeps(kept: Option<Duration>, expected: Duration) -> bool {
+    kept.is_some_and(|kept| kept.abs_diff(expected) <= Duration::from_nanos(1))
+}
+
+/// **A frame under the hitch bound is kept as it is.** Its sample is the
+/// frame itself — 12 ms within the setpoint, 20 ms over it but under
+/// `hitch_ratio × setpoint` — what GORNA's planning margin reads of it.
+#[test]
+fn observe_keeps_a_frame_under_the_hitch_bound_as_it_is() {
+    let mut governor = governor();
+    let kept = governor.observe(ms(12.0), setpoint());
+    assert!(
+        keeps(kept, ms(12.0)),
+        "a 12 ms frame is kept at 12 ms: {kept:?}"
+    );
+    let kept = governor.observe(ms(20.0), setpoint());
+    assert!(
+        keeps(kept, ms(20.0)),
+        "a 20 ms frame, over the setpoint but under the hitch bound, is kept at 20 ms: {kept:?}"
+    );
+}
+
+/// **A hitch is kept nowhere.** A 100 ms frame right after one within the
+/// setpoint, and the engine's first frame when it is that long, are hitches:
+/// `observe` returns no sample, so GORNA's margin never reads them. A frame
+/// that took no time measured nothing, and returns none either.
+#[test]
+fn observe_keeps_no_sample_of_a_hitch() {
+    let mut first = governor();
+    assert_eq!(
+        first.observe(ms(100.0), setpoint()),
+        None,
+        "the engine's first frame, 100 ms long, is a hitch"
+    );
+
+    let mut governor = governor();
+    observe(&mut governor, 5, ms(10.0));
+    assert_eq!(
+        governor.observe(ms(100.0), setpoint()),
+        None,
+        "100 ms after frames within the setpoint is a hitch"
+    );
+    assert_eq!(
+        governor.observe(Duration::ZERO, setpoint()),
+        None,
+        "a frame that took no time measured nothing"
+    );
+}
+
+/// **A load frame is kept bounded.** A 100 ms frame right after a 20 ms one,
+/// over the setpoint, is load: its sample is bounded at `hitch_ratio ×
+/// setpoint` — 33.3 ms — so a load's frames reach GORNA's margin no longer
+/// than that.
+#[test]
+fn observe_keeps_a_load_frame_bounded_at_the_hitch_ratio() {
+    let mut governor = governor();
+    observe(&mut governor, 5, ms(10.0));
+    let _ = governor.observe(ms(20.0), setpoint());
+    let bound = setpoint().mul_f64(f64::from(GovernorConfig::default().hitch_ratio));
+
+    let kept = governor.observe(ms(100.0), setpoint());
+
+    assert!(
+        keeps(kept, bound),
+        "100 ms after an overrun is load, kept at {bound:?}: {kept:?}"
+    );
+}

@@ -259,11 +259,7 @@ fn agents_in(engine: &EngineCore<Game>, phase: ExecutionPhase) -> Vec<AgentId> {
         .iter()
         .filter_map(|agent| {
             let agent = agent.lock().ok()?;
-            agent
-                .execution_timing()
-                .allowed_phases
-                .contains(&phase)
-                .then(|| agent.id())
+            (agent.execution_timing().phase == phase).then(|| agent.id())
         })
         .collect()
 }
@@ -332,8 +328,8 @@ fn the_script_family_boots_as_a_lane_agent_from_its_registration() {
         };
     let (registered, expected) = (agent.execution_timing(), built.execution_timing());
     assert_eq!(
-        (registered.allowed_phases, registered.importance),
-        (expected.allowed_phases, expected.importance),
+        (registered.phase, registered.importance),
+        (expected.phase, expected.importance),
         "the registered `script` agent sits where its registration places it"
     );
     assert_eq!(
@@ -406,12 +402,9 @@ fn probe_menu(engine: &EngineCore<Game>) -> Vec<StrategyId> {
     let probe = registry
         .iter()
         .filter(|agent| {
-            agent.lock().is_ok_and(|agent| {
-                agent
-                    .execution_timing()
-                    .allowed_phases
-                    .contains(&ExecutionPhase::OUTPUT)
-            })
+            agent
+                .lock()
+                .is_ok_and(|agent| agent.execution_timing().phase == ExecutionPhase::OUTPUT)
         })
         .find(|agent| {
             agent
@@ -522,7 +515,7 @@ impl khora_sdk::khora_core::agent::Agent for Squatter {
     fn apply(
         &mut self,
         _epoch: khora_sdk::khora_core::agent::gorna::protocol::Epoch,
-        _envelope: &khora_sdk::khora_core::agent::gorna::protocol::Envelope,
+        _envelope: Option<&khora_sdk::khora_core::agent::gorna::protocol::Envelope>,
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {

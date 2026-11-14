@@ -45,7 +45,7 @@ impl Agent for Stepped {
     fn apply(
         &mut self,
         epoch: Epoch,
-        _envelope: &Envelope,
+        _envelope: Option<&Envelope>,
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {
@@ -66,8 +66,7 @@ impl Agent for Stepped {
     }
     fn execution_timing(&self) -> ExecutionTiming {
         ExecutionTiming {
-            allowed_phases: vec![ExecutionPhase::TRANSFORM],
-            default_phase: ExecutionPhase::TRANSFORM,
+            phase: ExecutionPhase::TRANSFORM,
             ..ExecutionTiming::default()
         }
     }

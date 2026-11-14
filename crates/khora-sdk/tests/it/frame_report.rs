@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use khora_sdk::khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_sdk::khora_core::agent::{Agent, Contention, ExecutionPhase, Place};
+use khora_sdk::khora_core::agent::{Agent, Contention, Place};
 use khora_sdk::khora_core::lane::cost::{Cost, PerDevice};
 use khora_sdk::khora_core::math::Extent2D;
 use khora_sdk::khora_core::platform::window::KhoraWindow;
@@ -121,7 +121,7 @@ impl Agent for Graded {
     fn apply(
         &mut self,
         _epoch: Epoch,
-        _envelope: &Envelope,
+        _envelope: Option<&Envelope>,
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {
@@ -434,11 +434,7 @@ fn slow_agent(runs: &Arc<AtomicUsize>) -> Arc<Mutex<dyn Agent>> {
     });
     Hand::new(
         AgentId::new("slow_agent"),
-        // One phase: an agent allowed every phase runs in each of them.
-        ExecutionTiming {
-            allowed_phases: vec![ExecutionPhase::OUTPUT],
-            ..ExecutionTiming::default()
-        },
+        ExecutionTiming::default(),
         layer,
     )
     .shared()

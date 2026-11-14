@@ -22,7 +22,7 @@ use khora_core::agent::gorna::StrategyId;
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::level::{Impact, Level};
 
-use super::LaneAgent;
+use super::{LaneAgent, Lent};
 
 /// The row [`choose`] picks, and whether it is the floor run because nothing
 /// fitted.
@@ -190,10 +190,39 @@ pub fn choose(
 }
 
 impl LaneAgent {
+    /// The row that runs on `lent` with no envelope — the round could not
+    /// price the agent: the pinned row; else the running row while the policy
+    /// allows it and it has not failed; else the default row, then the first,
+    /// that the policy allows and that has not failed; else, every allowed
+    /// row failed, the running row.
+    fn kept_to_policy(&self, lent: &Lent) -> usize {
+        if let Some(row) = (lent.pin).and_then(|pin| self.menu.iter().position(|row| row.id == pin))
+        {
+            return row;
+        }
+        let usable = |row: usize| {
+            !self.failed.get(row).copied().unwrap_or(false)
+                && (lent.allowed.as_ref())
+                    .is_none_or(|allowed| allowed.contains(&self.menu[row].id))
+        };
+        [self.current, self.default_row]
+            .into_iter()
+            .chain(0..self.menu.len())
+            .find(|row| *row < self.menu.len() && usable(*row))
+            .unwrap_or(self.current)
+    }
+
     /// Chooses the row that runs within the envelope the DCC lent, from the
-    /// quotes as they stand; nothing while no envelope is lent.
+    /// quotes as they stand; nothing while nothing is lent. Lent a pin or
+    /// allowed rows but no envelope, it keeps to them
+    /// ([`kept_to_policy`](Self::kept_to_policy)).
     pub(super) fn choose_row(&mut self) {
         let Some(lent) = &self.lent else {
+            return;
+        };
+        let Some(envelope) = &lent.envelope else {
+            self.current = self.kept_to_policy(lent);
+            self.over_budget = false;
             return;
         };
         // A row that failed under this envelope has no price to fit on.
@@ -205,7 +234,7 @@ impl LaneAgent {
             .collect();
         let lanes: Vec<usize> = self.menu.iter().map(|row| row.lane).collect();
         let choice = choose(
-            &lent.envelope,
+            envelope,
             &quotes,
             &self.levels,
             &lanes,

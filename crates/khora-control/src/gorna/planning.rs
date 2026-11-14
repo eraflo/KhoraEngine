@@ -40,6 +40,16 @@ pub struct PlanningConfig {
     pub risk: f64,
     /// How many frames the spread is read over.
     pub frames: usize,
+    /// How many frames the spread waits for: fewer read as no spread, the
+    /// margin zero.
+    pub min_frames: usize,
+    /// How many frames in a row past what the margin covers — the target
+    /// plus the margin — make a load. The first frame within the target
+    /// after one ends it, and the spread is read afresh from that frame: a
+    /// load's frames, a startup's among them, say nothing of the spread after
+    /// it. Frames spread around the target run past the margin as rarely as
+    /// the risk says, so their spread is kept.
+    pub load_frames: usize,
     /// How many reports a workload trend is read over.
     pub trend: usize,
     /// Whether a round plans each agent's costs to grow as its workload
@@ -51,7 +61,8 @@ pub struct PlanningConfig {
 
 impl Default for PlanningConfig {
     /// A 5 s horizon, a 250 ms transient, a 5 ms prior, a 5 % risk, the spread
-    /// read over 120 frames and a trend over 16 reports, not followed.
+    /// read over 120 frames once 10 ran and afresh after 3 frames past the
+    /// target, and a trend over 16 reports, not followed.
     fn default() -> Self {
         Self {
             horizon: Duration::from_secs(5),
@@ -59,6 +70,8 @@ impl Default for PlanningConfig {
             switch_prior: Duration::from_millis(5),
             risk: 0.05,
             frames: 120,
+            min_frames: 10,
+            load_frames: 3,
             trend: 16,
             follow_trends: false,
         }
@@ -207,8 +220,10 @@ pub struct Planner {
     trends: HashMap<AgentId, VecDeque<(Duration, f64)>>,
     /// The class each agent's cost model fits.
     classes: HashMap<AgentId, ComplexityClass>,
-    /// The recent frames' critical paths.
+    /// The recent frames' critical paths, since the last load ended.
     frames: VecDeque<Duration>,
+    /// How many of the last frames in a row ran past their target.
+    over: usize,
 }
 
 impl Planner {
@@ -221,6 +236,7 @@ impl Planner {
             trends: HashMap::new(),
             classes: HashMap::new(),
             frames: VecDeque::new(),
+            over: 0,
         }
     }
 
@@ -251,12 +267,35 @@ impl Planner {
         }
     }
 
-    /// A frame's critical path.
-    pub fn observe_frame(&mut self, critical: Duration) {
+    /// A frame's critical path, and the target it ran under. The first frame
+    /// within the target after `load_frames` past the target plus the margin
+    /// starts the frames the spread is read over afresh; a frame between the
+    /// two leaves the count as it is.
+    pub fn observe_frame(&mut self, critical: Duration, target: Duration) {
+        // A frame past the target but within the margin neither counts
+        // toward a load nor ends one.
+        if critical > target.saturating_add(self.margin()) {
+            self.over = self.over.saturating_add(1);
+        } else if critical <= target {
+            if self.over >= self.config.load_frames.max(1) {
+                self.frames.clear();
+            }
+            self.over = 0;
+        }
         self.frames.push_back(critical);
         while self.frames.len() > self.config.frames.max(1) {
             self.frames.pop_front();
         }
+    }
+
+    /// The margin the frames read since the last load ended keep: none
+    /// below `min_frames` of them.
+    fn margin(&self) -> Duration {
+        if self.frames.len() < self.config.min_frames {
+            return Duration::ZERO;
+        }
+        let frames: Vec<Duration> = self.frames.iter().copied().collect();
+        margin(&frames, self.config.risk)
     }
 
     /// The class `agent`'s cost model fits.
@@ -273,11 +312,10 @@ impl Planner {
     /// transient), else the last measured for (agent, row), else the agent's
     /// mean measured, else `switch_prior`.
     pub fn planning(&self, offers: &[Offer], epoch: Epoch) -> Planning {
-        let frames: Vec<Duration> = self.frames.iter().copied().collect();
         let mut planning = Planning {
             horizon: self.config.horizon,
             transient: self.config.transient,
-            margin: margin(&frames, self.config.risk),
+            margin: self.margin(),
             growth: Vec::new(),
             switch: Vec::new(),
             // A row is planned this many spreads above its correction: the

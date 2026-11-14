@@ -38,8 +38,7 @@ impl Family for Ranked {
     }
     fn timing(&self) -> ExecutionTiming {
         ExecutionTiming {
-            allowed_phases: vec![ExecutionPhase::OUTPUT],
-            default_phase: ExecutionPhase::OUTPUT,
+            phase: ExecutionPhase::OUTPUT,
             priority: self.priority,
             ..ExecutionTiming::default()
         }

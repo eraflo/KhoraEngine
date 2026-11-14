@@ -122,7 +122,9 @@ pub struct LaneAgent {
 #[derive(Debug, Clone)]
 struct Lent {
     epoch: Epoch,
-    envelope: Envelope,
+    /// `None` when the round could not price the agent: its rows run at
+    /// their own price, within the pin and the allowed rows.
+    envelope: Option<Envelope>,
     pin: Option<StrategyId>,
     allowed: Option<Vec<StrategyId>>,
 }
@@ -222,12 +224,15 @@ fn lend<'c>(
 
 impl LaneAgent {
     /// The time lent to a `#[budget]` lane: the envelope's on its busiest
-    /// device; `None` until the first allocation.
+    /// device; `None` while no envelope is lent.
     fn budget(&self) -> Option<Duration> {
-        self.lent.as_ref().map(|lent| {
-            let time = &lent.envelope.time;
-            time.cpu.max(time.gpu).max(time.npu).max(time.other)
-        })
+        self.lent
+            .as_ref()
+            .and_then(|lent| lent.envelope)
+            .map(|envelope| {
+                let time = &envelope.time;
+                time.cpu.max(time.gpu).max(time.npu).max(time.other)
+            })
     }
 }
 
@@ -369,7 +374,7 @@ impl Agent for LaneAgent {
     fn apply(
         &mut self,
         epoch: Epoch,
-        envelope: &Envelope,
+        envelope: Option<&Envelope>,
         pin: Option<StrategyId>,
         allowed: Option<&[StrategyId]>,
     ) {
@@ -377,12 +382,28 @@ impl Agent for LaneAgent {
         self.failed.iter_mut().for_each(|failed| *failed = false);
         self.lent = Some(Lent {
             epoch,
-            envelope: *envelope,
+            envelope: envelope.copied(),
             pin,
             allowed: allowed.map(<[StrategyId]>::to_vec),
         });
         self.choose_row();
         self.locked_place().lent(epoch);
+    }
+
+    /// Drops the envelope, the pin and the allowed rows, and gives every row
+    /// its chance again. The row chosen stays; its place's terms lend its
+    /// layer nothing, so a `#[budget]` lane runs at its own price until an
+    /// allocation lends the agent another envelope.
+    fn withdraw(&mut self) {
+        self.lent = None;
+        self.over_budget = false;
+        self.failed.iter_mut().for_each(|failed| *failed = false);
+        let place = Arc::clone(&self.place);
+        let mut place = place
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let terms = self.terms(place.fixed_step());
+        place.set_terms(terms);
     }
 
     /// The report of the place's last run, with what its lane said; before
@@ -424,8 +445,7 @@ impl Agent for LaneAgent {
     fn execution_timing(&self) -> ExecutionTiming {
         let registration = self.registration;
         ExecutionTiming {
-            allowed_phases: vec![registration.phase],
-            default_phase: registration.phase,
+            phase: registration.phase,
             importance: registration.importance,
             dependencies: registration
                 .after

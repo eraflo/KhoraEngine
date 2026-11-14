@@ -343,12 +343,14 @@ impl Agent for Speaker {
     fn apply(
         &mut self,
         epoch: Epoch,
-        envelope: &Envelope,
+        envelope: Option<&Envelope>,
         pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {
         let mut heard = self.heard.lock().expect("the heard lock");
-        heard.lent.push((epoch, *envelope, pin));
+        heard
+            .lent
+            .push((epoch, envelope.copied().unwrap_or_default(), pin));
         heard.lent_on.push(thread::current().id());
     }
     fn report(&self) -> Report {

@@ -72,13 +72,22 @@ pub trait Agent: Send + Sync {
 
     /// Takes the envelope the DCC lent for `epoch`, the row a policy pins, and
     /// the rows a policy allows, and chooses the row that runs within them.
+    /// `envelope` is `None` when the round could not price the agent: it runs
+    /// at its own price, within the pin and the allowed rows.
     fn apply(
         &mut self,
         epoch: Epoch,
-        envelope: &Envelope,
+        envelope: Option<&Envelope>,
         pin: Option<StrategyId>,
         allowed: Option<&[StrategyId]>,
     );
+
+    /// The envelope the DCC lent is withdrawn: the family was off and is on
+    /// again. The agent drops what it held — its envelope, pin and allowed
+    /// rows — and runs at its own price until an allocation lends it another.
+    ///
+    /// Defaults to doing nothing.
+    fn withdraw(&mut self) {}
 
     /// Reports what the agent ran on its last frame: the row, its time, its
     /// health, and what its lane said of the run.

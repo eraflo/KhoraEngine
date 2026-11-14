@@ -335,7 +335,7 @@ fn after_frames(
     serves: Serves,
 ) -> (LaneAgent, &'static str) {
     let mut agent = lane_agent(registration, &DeviceCaps::default());
-    agent.apply(Epoch(1), &host_envelope(1_000), None, None);
+    agent.apply(Epoch(1), Some(&host_envelope(1_000)), None, None);
     let runtime = frame(serves);
     let mut lane = "";
     for frame in 1..=frames {
@@ -465,7 +465,7 @@ fn the_agent_runs_the_row_serving_all_the_work_when_it_fits() {
 #[test]
 fn a_running_row_whose_share_falls_at_the_same_time_is_left_at_once() {
     let mut agent = lane_agent(&PART_AND_WHOLE, &DeviceCaps::default());
-    agent.apply(Epoch(1), &host_envelope(1_000), None, None);
+    agent.apply(Epoch(1), Some(&host_envelope(1_000)), None, None);
 
     let all = frame(Serves {
         share: None,

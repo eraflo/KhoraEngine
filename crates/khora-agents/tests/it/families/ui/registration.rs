@@ -78,8 +78,8 @@ fn the_ui_registration_runs_in_output() {
     );
 
     let timing = ui_agent().execution_timing();
-    assert_eq!(timing.default_phase, ExecutionPhase::OUTPUT);
-    assert_eq!(timing.allowed_phases, [ExecutionPhase::OUTPUT]);
+    assert_eq!(timing.phase, ExecutionPhase::OUTPUT);
+    assert_eq!(timing.phase, ExecutionPhase::OUTPUT);
     assert_eq!(timing.importance, AgentImportance::Important);
     assert!(
         timing.dependencies.is_empty(),

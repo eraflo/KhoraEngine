@@ -307,7 +307,6 @@ impl DccService {
                                 let ms = critical.as_secs_f32() * 1_000.0;
                                 store.push(MetricId::new("frame", "critical_ms"), ms);
                                 frames.push(critical);
-                                arbitrator.planner_mut().observe_frame(critical);
                                 if journal.is_some() {
                                     epoch_frames.push(critical);
                                 }
@@ -399,8 +398,12 @@ impl DccService {
                 //     safety ceiling (Critical thermal/battery, near-budget
                 //     memory) caps what is published, whatever it decided.
                 let setpoint = Duration::from_secs_f64(f64::from(setpoint_ms.max(0.0)) / 1_000.0);
+                // The planner reads its margin from the samples the governor
+                // keeps: no hitch, a load frame bounded.
                 for frame in &frames {
-                    governor.observe(*frame, setpoint);
+                    if let Some(kept) = governor.observe(*frame, setpoint) {
+                        arbitrator.planner_mut().observe_frame(kept, setpoint);
+                    }
                 }
                 let frame_time_id = MetricId::new("frame", "critical_ms");
                 // A replay lends what was recorded, whatever the multiplier:

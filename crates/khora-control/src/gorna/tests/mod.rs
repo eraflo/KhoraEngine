@@ -35,6 +35,7 @@ mod exact;
 mod importance;
 mod planning;
 mod stalls;
+mod unpriced;
 
 use super::*;
 use crate::analysis::AnalysisReport;
@@ -243,7 +244,7 @@ fn lend(allocation: &Allocation, agents: &[Arc<Mutex<dyn Agent>>]) {
             .iter()
             .find(|(named, _)| *named == id)
             .map(|(_, rows)| rows.as_slice());
-        agent.apply(allocation.epoch, envelope, pin, allowed);
+        agent.apply(allocation.epoch, Some(envelope), pin, allowed);
     }
 }
 
@@ -345,13 +346,13 @@ impl Agent for Bidder {
     fn apply(
         &mut self,
         epoch: Epoch,
-        envelope: &Envelope,
+        envelope: Option<&Envelope>,
         pin: Option<StrategyId>,
         allowed: Option<&[StrategyId]>,
     ) {
         self.lent.push(Lent {
             epoch,
-            envelope: *envelope,
+            envelope: envelope.copied().unwrap_or_default(),
             pin,
             allowed: allowed.map(<[StrategyId]>::to_vec),
         });

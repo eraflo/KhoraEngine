@@ -154,7 +154,7 @@ static CAPPED_THEN_TILED: AgentRegistration = khora_core::register_agent! {
 #[test]
 fn a_running_row_whose_impact_worsens_at_the_same_time_is_left_at_once() {
     let mut agent = lane_agent(&CAPPED_THEN_TILED, &DeviceCaps::default());
-    agent.apply(Epoch(1), &host_envelope(1_000), None, None);
+    agent.apply(Epoch(1), Some(&host_envelope(1_000)), None, None);
 
     let at_cap = runtime(CAP, Plan::default());
     let mut lane = "";

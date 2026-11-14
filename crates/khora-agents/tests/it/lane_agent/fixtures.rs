@@ -754,7 +754,7 @@ pub fn host_envelope(micros: u64) -> Envelope {
 
 /// Lends `agent` `envelope` for epoch 1, with no pin and every row allowed.
 pub fn lend(agent: &mut LaneAgent, envelope: Envelope) {
-    agent.apply(Epoch(1), &envelope, None, None);
+    agent.apply(Epoch(1), Some(&envelope), None, None);
 }
 
 /// A request for an offer for `epoch`, at a 60 Hz target, while playing.

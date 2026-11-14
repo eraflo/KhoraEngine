@@ -309,7 +309,7 @@ impl Agent for Oven {
     fn apply(
         &mut self,
         epoch: Epoch,
-        _envelope: &Envelope,
+        _envelope: Option<&Envelope>,
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {
@@ -327,8 +327,7 @@ impl Agent for Oven {
     }
     fn execution_timing(&self) -> ExecutionTiming {
         ExecutionTiming {
-            allowed_phases: vec![ExecutionPhase::BACKGROUND],
-            default_phase: ExecutionPhase::BACKGROUND,
+            phase: ExecutionPhase::BACKGROUND,
             ..ExecutionTiming::default()
         }
     }

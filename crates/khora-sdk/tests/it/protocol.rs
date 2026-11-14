@@ -59,7 +59,7 @@ pub fn pin_with<A: Agent + ?Sized>(agent: &mut A, row: StrategyId, time: Duratio
             other: u64::MAX,
         },
     };
-    agent.apply(Epoch(1), &envelope, Some(row), None);
+    agent.apply(Epoch(1), Some(&envelope), Some(row), None);
 }
 
 /// An offer of `row` alone, unpriced: what a fake with nothing to trade
@@ -136,7 +136,7 @@ impl Agent for Hand {
     fn apply(
         &mut self,
         _epoch: Epoch,
-        _envelope: &Envelope,
+        _envelope: Option<&Envelope>,
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {

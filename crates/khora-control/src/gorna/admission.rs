@@ -22,6 +22,7 @@ use khora_core::lane::cost::{Device, PerDevice};
 
 use super::plan::Plan;
 use super::round::{Bid, Round};
+use super::share::{name_priced, priced};
 use super::units::{fits_envelope, micros, transfer_micros};
 
 /// What admission gives the proposers: the bids in one order, and what it
@@ -46,7 +47,7 @@ pub(crate) fn admit<'r>(round: &'r Round<'_>) -> Admission<'r> {
     let (bids, mut plans) = floors(round);
     let breached = breach(round, &bids, &plans);
     if round.trigger == Trigger::Safety || breached.is_some() {
-        let allocation = Allocation {
+        let mut allocation = Allocation {
             epoch: round.epoch,
             trigger: Trigger::Safety,
             envelopes: bids
@@ -60,10 +61,12 @@ pub(crate) fn admit<'r>(round: &'r Round<'_>) -> Admission<'r> {
                     // An agent that offered nothing this round (busy, or
                     // late with no rows) has no floor to fall to: it keeps
                     // what it holds.
-                    let offered_nothing = bid.offer.rows.is_empty();
+                    // One that priced no row has a floor of no known cost:
+                    // it keeps what it holds too, or is named in no envelope.
+                    let keeps = bid.offer.rows.is_empty() || !priced(bid);
                     (
                         bid.offer.agent,
-                        plan.fixed.filter(|_| offered_nothing).unwrap_or(floor),
+                        plan.fixed.filter(|_| keeps).unwrap_or(floor),
                     )
                 })
                 .collect(),
@@ -74,6 +77,8 @@ pub(crate) fn admit<'r>(round: &'r Round<'_>) -> Admission<'r> {
             // Every agent is lent its floor whatever the target.
             lever: false,
         };
+        // An agent that priced no row has no floor known to lend.
+        name_priced(&mut allocation.envelopes, &bids, &plans);
         // A round opened as `Safety` names no breach of its own.
         let binding = breached.filter(|_| round.trigger != Trigger::Safety);
         return Admission::Safety(allocation, binding);

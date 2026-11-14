@@ -148,18 +148,23 @@ pub struct Allocation {
 impl Allocation {
     /// Lends `agent` what the allocation names for it — its envelope, its pin
     /// and its allowed rows — through [`Agent::apply`]; whether it named the
-    /// agent. An agent it does not name is left with what it holds.
+    /// agent. An agent it names neither an envelope, a pin nor allowed rows
+    /// for is left with what it holds. One named a pin or allowed rows but no
+    /// envelope — the round could not price it — is lent no envelope.
     pub fn lend_to(&self, agent: &mut dyn Agent) -> bool {
         let id = agent.id();
-        let Some((_, envelope)) = self.envelopes.iter().find(|(named, _)| *named == id) else {
-            return false;
-        };
+        let envelope = (self.envelopes.iter())
+            .find(|(named, _)| *named == id)
+            .map(|(_, envelope)| envelope);
         let pin = (self.pins.iter())
             .find(|(named, _)| *named == id)
             .map(|(_, row)| *row);
         let allowed = (self.allowed.iter())
             .find(|(named, _)| *named == id)
             .map(|(_, rows)| rows.as_slice());
+        if envelope.is_none() && pin.is_none() && allowed.is_none() {
+            return false;
+        }
         agent.apply(self.epoch, envelope, pin, allowed);
         true
     }

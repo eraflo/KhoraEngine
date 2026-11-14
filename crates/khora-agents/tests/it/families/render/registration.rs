@@ -149,8 +149,8 @@ fn the_render_family_runs_in_output_after_the_shadows_by_phase() {
     );
 
     let timing = render_agent(&EVERY_CAP).execution_timing();
-    assert_eq!(timing.default_phase, ExecutionPhase::OUTPUT);
-    assert_eq!(timing.allowed_phases, [ExecutionPhase::OUTPUT]);
+    assert_eq!(timing.phase, ExecutionPhase::OUTPUT);
+    assert_eq!(timing.phase, ExecutionPhase::OUTPUT);
     assert_eq!(timing.importance, AgentImportance::Critical);
     assert!(timing.dependencies.is_empty(), "{:?}", timing.dependencies);
 }

@@ -74,8 +74,8 @@ fn the_skybox_registration_runs_after_the_renderer() {
     assert_eq!(registration.after, [AgentId::new("renderer")]);
 
     let timing = skybox_agent().execution_timing();
-    assert_eq!(timing.default_phase, ExecutionPhase::OUTPUT);
-    assert_eq!(timing.allowed_phases, [ExecutionPhase::OUTPUT]);
+    assert_eq!(timing.phase, ExecutionPhase::OUTPUT);
+    assert_eq!(timing.phase, ExecutionPhase::OUTPUT);
     assert_eq!(timing.importance, AgentImportance::Important);
     assert_eq!(timing.dependencies.len(), 1, "{:?}", timing.dependencies);
     assert_eq!(timing.dependencies[0].target, AgentId::new("renderer"));

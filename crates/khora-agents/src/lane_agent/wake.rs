@@ -294,7 +294,7 @@ impl LaneAgent {
                 .lent
                 .as_ref()
                 .map_or(Epoch::default(), |lent| lent.epoch),
-            envelope: self.lent.as_ref().map(|lent| lent.envelope),
+            envelope: self.lent.as_ref().and_then(|lent| lent.envelope),
             budget: self.budget(),
             fixed_step,
             over_budget: self.over_budget,

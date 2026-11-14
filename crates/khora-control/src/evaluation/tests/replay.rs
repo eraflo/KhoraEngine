@@ -506,7 +506,7 @@ impl Agent for Fixed {
     fn apply(
         &mut self,
         _epoch: Epoch,
-        _envelope: &Envelope,
+        _envelope: Option<&Envelope>,
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {
@@ -535,7 +535,7 @@ impl Agent for Fixed {
     fn execution_timing(&self) -> ExecutionTiming {
         ExecutionTiming {
             importance: self.importance,
-            default_phase: self.phase,
+            phase: self.phase,
             ..ExecutionTiming::default()
         }
     }

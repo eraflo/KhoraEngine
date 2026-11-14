@@ -202,7 +202,7 @@ fn envelope(micros: u64, gpu: u64) -> Envelope {
 
 /// Lends `agent` `envelope` for `epoch`, with no pin and every row allowed.
 fn lend_epoch(agent: &mut LaneAgent, epoch: u64, envelope: Envelope) {
-    agent.apply(Epoch(epoch), &envelope, None, None);
+    agent.apply(Epoch(epoch), Some(&envelope), None, None);
 }
 
 /// Runs one frame of `agent`, and gives what it recorded: its lane and the
@@ -309,8 +309,8 @@ fn a_swap_keeps_the_family_phase_and_outputs() {
     assert_eq!(frame(&mut agent, 3).map(|(lane, _)| lane), Some("cheap"));
 
     let after = agent.execution_timing();
-    assert_eq!(after.default_phase, before.default_phase);
-    assert_eq!(after.allowed_phases, before.allowed_phases);
+    assert_eq!(after.phase, before.phase);
+    assert_eq!(after.phase, before.phase);
     assert_eq!(place_step(&agent), step_before);
     assert!(
         locked(&place_of(&agent))

@@ -202,7 +202,7 @@ fn row_of(offer: &Offer, id: StrategyId) -> OfferRow {
 /// another holder kept the tally — so the locking lane could not be quoted.
 fn after_one_frame() -> LaneAgent {
     let mut agent = lane_agent(&OFFERED, &DeviceCaps::default());
-    agent.apply(Epoch(1), &host_envelope(1_000), None, None);
+    agent.apply(Epoch(1), Some(&host_envelope(1_000)), None, None);
     let mut deck = OutputDeck::new();
     let frame = runtime(100, Plan::default());
     let tally = Arc::clone(
@@ -289,7 +289,7 @@ fn an_offer_names_the_floor_and_each_rows_confidence() {
 #[test]
 fn a_locking_lane_whose_lock_is_free_is_offered_at_its_quote() {
     let mut agent = lane_agent(&OFFERED, &DeviceCaps::default());
-    agent.apply(Epoch(1), &host_envelope(1_000), None, None);
+    agent.apply(Epoch(1), Some(&host_envelope(1_000)), None, None);
     let mut deck = OutputDeck::new();
     run(&mut agent, 1, &runtime(100, Plan::default()), &mut deck);
 
@@ -334,7 +334,7 @@ fn before_any_run_every_row_is_assumed_and_the_floor_is_the_default_level() {
 #[test]
 fn a_report_names_the_row_that_ran_and_its_epoch() {
     let mut agent = lane_agent(&OFFERED, &DeviceCaps::default());
-    agent.apply(Epoch(4), &host_envelope(1_000), None, None);
+    agent.apply(Epoch(4), Some(&host_envelope(1_000)), None, None);
     let mut deck = OutputDeck::new();
     run(&mut agent, 1, &runtime(100, Plan::default()), &mut deck);
 

@@ -37,7 +37,7 @@ use super::fixtures::{
 #[test]
 fn while_a_layer_is_staged_the_offer_names_the_running_row() {
     let mut agent = lane_agent(&LADDER, &DeviceCaps::default());
-    agent.apply(Epoch(1), &host_envelope(205), None, None);
+    agent.apply(Epoch(1), Some(&host_envelope(205)), None, None);
     let mut deck = OutputDeck::new();
     run(&mut agent, 1, &runtime(100, Plan::default()), &mut deck);
     run(&mut agent, 2, &runtime(104, Plan::default()), &mut deck);

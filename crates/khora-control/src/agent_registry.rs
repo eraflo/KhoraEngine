@@ -131,6 +131,18 @@ impl AgentRegistry {
             .map(|e| &e.agent)
     }
 
+    /// The agents whose family is not in `inactive`, each with its id, in
+    /// priority order (highest first).
+    pub fn iter_active_with_ids<'a>(
+        &'a self,
+        inactive: &'a BTreeSet<AgentId>,
+    ) -> impl Iterator<Item = (AgentId, &'a Arc<Mutex<dyn Agent>>)> + 'a {
+        self.entries
+            .iter()
+            .filter(move |e| !inactive.contains(&e.id))
+            .map(|e| (e.id, &e.agent))
+    }
+
     /// Returns the [`AgentId`]s of every registered agent in priority order.
     ///
     /// Used by the scheduler to seed a fresh `AgentCompletionMap` per frame.
@@ -200,7 +212,7 @@ mod tests {
         fn apply(
             &mut self,
             _epoch: Epoch,
-            _envelope: &Envelope,
+            _envelope: Option<&Envelope>,
             _pin: Option<StrategyId>,
             _allowed: Option<&[StrategyId]>,
         ) {
@@ -257,6 +269,28 @@ mod tests {
             "the first `narrator` stays; the second is never registered"
         );
     }
+
+    /// **The active agents come with their ids.** Of `narrator` and
+    /// `chorus`, with `chorus` off, only `narrator` is listed, under its id
+    /// and as the agent registered under it.
+    #[test]
+    fn the_active_agents_are_listed_with_their_ids() {
+        let mut registry = AgentRegistry::new();
+        let narrator = Recording::named(AgentId::new("narrator"));
+        registry.register(Arc::clone(&narrator), 1.0);
+        registry.register(Recording::named(AgentId::new("chorus")), 1.0);
+        let inactive = BTreeSet::from([AgentId::new("chorus")]);
+
+        let listed: Vec<(AgentId, Arc<Mutex<dyn Agent>>)> = registry
+            .iter_active_with_ids(&inactive)
+            .map(|(id, agent)| (id, Arc::clone(agent)))
+            .collect();
+
+        assert_eq!(listed.len(), 1, "only `narrator` is on");
+        assert_eq!(listed[0].0, AgentId::new("narrator"));
+        assert!(Arc::ptr_eq(&listed[0].1, &narrator));
+    }
+
     /// **The registry remembers where each agent comes from.** An origin is
     /// kept per name, a second `set_origin` for one name replaces the first,
     /// and a name never given one has none.

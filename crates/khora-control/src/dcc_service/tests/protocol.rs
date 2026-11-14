@@ -913,7 +913,7 @@ impl Agent for Ranked {
     fn apply(
         &mut self,
         _epoch: Epoch,
-        _envelope: &Envelope,
+        _envelope: Option<&Envelope>,
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {
@@ -939,7 +939,7 @@ impl Agent for Ranked {
     fn execution_timing(&self) -> khora_core::agent::ExecutionTiming {
         khora_core::agent::ExecutionTiming {
             importance: self.importance,
-            default_phase: self.phase,
+            phase: self.phase,
             ..Default::default()
         }
     }
@@ -1202,7 +1202,7 @@ impl Agent for Gated {
     fn apply(
         &mut self,
         epoch: Epoch,
-        envelope: &Envelope,
+        envelope: Option<&Envelope>,
         pin: Option<StrategyId>,
         allowed: Option<&[StrategyId]>,
     ) {

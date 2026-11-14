@@ -28,35 +28,52 @@ impl ExecutionScheduler {
     /// The DCC never lends. An agent busy now (asked for an offer) is not
     /// waited for: it runs this frame on what it holds, and is handed what it
     /// missed at the next frame start. An agent whose family is off is lent
-    /// once it runs. An allocation that does not name an agent leaves it with
-    /// what it holds.
+    /// nothing. An allocation that does not name an agent leaves it with what
+    /// it holds.
+    ///
+    /// A family seen off at a frame start and found on at a later one has
+    /// its agent withdrawn ([`Agent::withdraw`]) at the first frame start it
+    /// is free: what it held was lent for another session, and what was
+    /// taken up to its resume was decided without it. It runs at its own
+    /// price until an allocation taken after its resume lends it another.
     pub(super) fn lend_allocation(&mut self, inactive: &BTreeSet<AgentId>) {
-        let Some(current) = self.taken.last().map(|((place, _), _)| *place) else {
-            return;
-        };
-        let agents: Vec<Arc<Mutex<dyn Agent>>> = {
+        let current = self.taken.last().map(|((place, _), _)| *place);
+        self.note_resumes(inactive, current);
+        let agents: Vec<(AgentId, Arc<Mutex<dyn Agent>>)> = {
             let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
-            registry.iter_active(inactive).cloned().collect()
+            (registry.iter_active_with_ids(inactive))
+                .map(|(id, agent)| (id, Arc::clone(agent)))
+                .collect()
         };
         // Agents removed since are forgotten.
         self.lent.retain(|(agent, _)| agent.strong_count() > 0);
         // The oldest place an agent of a family on was handed: what was
         // taken before it is owed to none of them any more.
-        let mut oldest_handed = Some(current);
-        for agent_mutex in &agents {
+        let mut oldest_handed = current;
+        for (id, agent_mutex) in &agents {
             let weak = Arc::downgrade(agent_mutex);
             let entry = self.lent.iter().position(|(seen, _)| seen.ptr_eq(&weak));
-            let handed = entry.map(|at| self.lent[at].1);
-            if handed == Some(current) {
+            let resume = self.resuming.iter().position(|(resumed, _)| resumed == id);
+            let mut handed = entry.map(|at| self.lent[at].1);
+            if resume.is_none() && (current.is_none() || handed == current) {
                 continue;
             }
             let mut agent = match agent_mutex.try_lock() {
                 Ok(agent) => agent,
                 Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
                 Err(TryLockError::WouldBlock) => {
-                    oldest_handed = oldest_handed.min(handed);
+                    let owed_from = resume.map_or(handed, |at| self.resuming[at].1);
+                    oldest_handed = oldest_handed.min(owed_from);
                     continue;
                 }
+            };
+            if let Some(at) = resume {
+                // Nothing taken up to the resume is owed to it.
+                handed = self.resuming.remove(at).1;
+                agent.withdraw();
+            }
+            let Some(current) = current else {
+                continue;
             };
             let owed = self
                 .taken
@@ -74,9 +91,25 @@ impl ExecutionScheduler {
         }
         // `None` is an agent never handed anything: it is owed all that is
         // kept.
-        if let Some(oldest) = oldest_handed {
+        if let (Some(oldest), Some(current)) = (oldest_handed, current) {
             self.taken
                 .retain(|((place, _), _)| *place > oldest || *place == current);
+        }
+    }
+
+    /// Notes the families off at this frame start, and those found on again
+    /// since one saw them off: each resumes from `current`, the place in
+    /// force now. A family off again before it was withdrawn resumes anew.
+    fn note_resumes(&mut self, inactive: &BTreeSet<AgentId>, current: Option<u64>) {
+        self.resuming.retain(|(id, _)| !inactive.contains(id));
+        self.resting.extend(inactive.iter().copied());
+        let resumed: Vec<AgentId> = (self.resting.iter())
+            .filter(|id| !inactive.contains(id))
+            .copied()
+            .collect();
+        for id in resumed {
+            self.resting.remove(&id);
+            self.resuming.push((id, current));
         }
     }
 }

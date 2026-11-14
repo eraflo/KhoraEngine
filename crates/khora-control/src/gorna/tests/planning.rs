@@ -37,6 +37,9 @@ use StrategyId::{Balanced, Custom, HighPerformance, LowPower};
 /// `f64`.
 const EPS: f64 = 1e-6;
 
+/// The target the frames fed to a planner run under: a 60 Hz frame.
+const TARGET: Duration = Duration::from_nanos(16_666_667);
+
 // ── Building a planned round ──────────────────────────────────────
 
 /// A planning holding its plans 5 s, a switch's transient 250 ms, and each
@@ -629,11 +632,11 @@ fn the_margin_follows_the_frames_spread_not_their_hitches() {
 
     let mut planner = Planner::new(PlanningConfig::default());
     for _ in 0..80 {
-        planner.observe_frame(ms(60));
-        planner.observe_frame(ms(2));
+        planner.observe_frame(ms(60), TARGET);
+        planner.observe_frame(ms(2), TARGET);
     }
     for frame in &hitched {
-        planner.observe_frame(*frame);
+        planner.observe_frame(*frame, TARGET);
     }
     let planning = planner.planning(&[], Epoch(1));
     assert!(
@@ -641,6 +644,132 @@ fn the_margin_follows_the_frames_spread_not_their_hitches() {
         "the last 120 frames' margin: {:?}",
         planning.margin
     );
+}
+
+/// **The planner keeps no margin before ten frames.** A spread read over a
+/// handful of frames says nothing of the spread the engine will run with:
+/// two frames of 2 and 60 ms would keep 70 ms free of a 16 ms target. Below
+/// the default ten frames the planner keeps none; from the tenth, the
+/// frames' spread.
+#[test]
+fn the_planner_keeps_no_margin_before_ten_frames() {
+    let mut started = Planner::new(PlanningConfig::default());
+    started.observe_frame(ms(2), TARGET);
+    started.observe_frame(ms(60), TARGET);
+    assert_eq!(
+        started.planning(&[], Epoch(1)).margin,
+        Duration::ZERO,
+        "two frames say nothing of the spread"
+    );
+
+    let mut planner = Planner::new(PlanningConfig::default());
+    for frame in steady(9) {
+        planner.observe_frame(frame, TARGET);
+    }
+    assert_eq!(
+        planner.planning(&[], Epoch(1)).margin,
+        Duration::ZERO,
+        "9 frames, under the ten the margin waits for"
+    );
+
+    planner.observe_frame(ms(10), TARGET);
+    let margin = planner.planning(&[], Epoch(1)).margin;
+    assert!(
+        margin > Duration::ZERO,
+        "ten frames spread over 9 to 11 ms keep a margin: {margin:?}"
+    );
+}
+
+/// **The planner waits for the frames its config names.** `min_frames` is
+/// ten by default; set to five, four frames keep no margin and the fifth
+/// keeps the frames' spread.
+#[test]
+fn the_planner_waits_for_the_frames_its_config_names() {
+    assert_eq!(PlanningConfig::default().min_frames, 10);
+    let mut planner = Planner::new(PlanningConfig {
+        min_frames: 5,
+        ..PlanningConfig::default()
+    });
+    for frame in steady(4) {
+        planner.observe_frame(frame, TARGET);
+    }
+    assert_eq!(
+        planner.planning(&[], Epoch(1)).margin,
+        Duration::ZERO,
+        "four frames, under the five the config names"
+    );
+
+    planner.observe_frame(ms(10), TARGET);
+    let margin = planner.planning(&[], Epoch(1)).margin;
+    assert!(
+        margin > Duration::ZERO,
+        "five frames spread over 9 to 11 ms keep a margin: {margin:?}"
+    );
+}
+
+/// **Normally spread frames are kept past the target no more often than the
+/// risk.** 120 frames of 10 ms plus 1 ms × the 120 normal quantiles — a
+/// standard deviation of 1 ms — in 32 orders shuffled by a fixed generator.
+/// At a 5 % risk the margin is about z × 1 ms ≈ 1.645 ms, so about 5 % of
+/// the frames run past 10 ms plus it, whatever their order: over the 32
+/// orders, no more than 7.5 %.
+#[test]
+fn normally_spread_frames_overrun_the_margin_no_more_often_than_the_risk() {
+    let quantile = |p: f64| if p < 0.5 { -z_of(p) } else { z_of(1.0 - p) };
+    let frames: Vec<f64> = (0..120)
+        .map(|i| 10.0 + quantile((f64::from(i) + 0.5) / 120.0))
+        .collect();
+    let orders = 32_u64;
+    let (mut past, mut widths) = (0_usize, 0.0);
+    for seed in 1..=orders {
+        let mut order = frames.clone();
+        let mut state = seed;
+        for i in (1..order.len()).rev() {
+            state = (state.wrapping_mul(6_364_136_223_846_793_005))
+                .wrapping_add(1_442_695_040_888_963_407);
+            order.swap(i, (state >> 33) as usize % (i + 1));
+        }
+        let durations: Vec<Duration> = (order.iter())
+            .map(|&frame| Duration::from_secs_f64(frame / 1_000.0))
+            .collect();
+        let width = margin(&durations, 0.05).as_secs_f64() * 1_000.0;
+        widths += width;
+        past += order.iter().filter(|&&frame| frame > 10.0 + width).count();
+    }
+    let share = past as f64 / (orders as f64 * 120.0);
+    let width = widths / orders as f64;
+    assert!(
+        share <= 0.075,
+        "{:.1} % of the frames run past the margin of a 5 % risk — the margin, \
+         {width:.3} ms on average, reads less than z × 1 ms ≈ 1.645 ms",
+        share * 100.0
+    );
+}
+
+/// **Frames alternating fast and slow keep a margin of their spread.** Half
+/// the frames at 8 ms and half at 12 ms, alternating every frame, every two
+/// frames or every five: a standard deviation of 2 ms, half the frames 2 ms
+/// above their mean. A margin under 2 ms plans half the frames past the
+/// target, so each order keeps at least 2 ms.
+#[test]
+fn frames_alternating_fast_and_slow_keep_a_margin_of_their_spread() {
+    for period in [1, 2, 5] {
+        let frames: Vec<Duration> = (0..120)
+            .map(|frame| {
+                if (frame / period) % 2 == 0 {
+                    ms(8)
+                } else {
+                    ms(12)
+                }
+            })
+            .collect();
+        let kept = margin(&frames, 0.05);
+        assert!(
+            kept >= ms(2),
+            "frames alternating 8 and 12 ms every {period} keep {kept:?}, under the 2 ms \
+             half of them run above their mean"
+        );
+    }
 }
 
 /// **The margin never takes the target below the floors.** `oak` (4 ms at

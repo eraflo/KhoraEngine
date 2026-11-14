@@ -93,6 +93,13 @@ pub struct ExecutionScheduler {
     /// with the place of the last publication it was handed: what it is owed
     /// is what was taken after it.
     lent: Vec<(Weak<Mutex<dyn khora_core::agent::Agent>>, u64)>,
+    /// The families seen off at a frame start and not on again since.
+    resting: BTreeSet<AgentId>,
+    /// The families on again, each with the place in force at the frame
+    /// start that found it on (`None` while nothing was taken): withdrawn at
+    /// the first frame start their agent is free, and owed only what was
+    /// taken after that place.
+    resuming: Vec<(AgentId, Option<u64>)>,
     phase_order: Vec<ExecutionPhase>,
     frame_start: Instant,
     frame_budget: Duration,
@@ -155,6 +162,8 @@ impl ExecutionScheduler {
             budget_channel: BudgetChannel::new(),
             taken: Vec::new(),
             lent: Vec::new(),
+            resting: BTreeSet::new(),
+            resuming: Vec::new(),
             phase_order: ExecutionPhase::DEFAULT_ORDER.to_vec(),
             frame_start: Instant::now(),
             frame_budget: Duration::from_millis(16),
@@ -305,7 +314,7 @@ impl ExecutionScheduler {
             .filter_map(|agent| {
                 let known = self.known.of(&agent)?;
                 let timing = known.timing.clone();
-                timing.allowed_phases.contains(&phase).then_some((
+                (timing.phase == phase).then_some((
                     agent,
                     timing.importance,
                     timing.priority,

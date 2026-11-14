@@ -73,8 +73,7 @@ impl Family for Stepping {
     }
     fn timing(&self) -> ExecutionTiming {
         ExecutionTiming {
-            allowed_phases: vec![ExecutionPhase::TRANSFORM],
-            default_phase: ExecutionPhase::TRANSFORM,
+            phase: ExecutionPhase::TRANSFORM,
             dependencies: self
                 .depends_on
                 .map(|target| {

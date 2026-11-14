@@ -190,13 +190,7 @@ fn agent_importance_variants(x: &khora_core::agent::timing::AgentImportance) {
 }
 
 fn execution_timing_fields(x: &khora_core::agent::timing::ExecutionTiming) {
-    let _ = (
-        &x.allowed_phases,
-        &x.default_phase,
-        &x.priority,
-        &x.importance,
-        &x.dependencies,
-    );
+    let _ = (&x.phase, &x.priority, &x.importance, &x.dependencies);
 }
 
 fn alpha_mode_variants(x: &khora_core::asset::AlphaMode) {

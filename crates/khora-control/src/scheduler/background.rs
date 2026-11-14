@@ -96,8 +96,7 @@ impl Background {
     pub(super) fn start(&mut self, met: &[MetAgent], runtime: &Arc<Runtime>, bus: &Arc<LaneBus>) {
         for (_, known) in met {
             let id = &known.id;
-            if known.timing.default_phase != ExecutionPhase::BACKGROUND || self.running.contains(id)
-            {
+            if known.timing.phase != ExecutionPhase::BACKGROUND || self.running.contains(id) {
                 continue;
             }
             let out = {

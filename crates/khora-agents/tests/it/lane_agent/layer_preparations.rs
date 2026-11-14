@@ -231,11 +231,11 @@ fn a_switch_leaves_a_preparation_beside_the_installed_layer() {
     let mut agent = lane_agent(&SWITCHING_A, &DeviceCaps::default());
     let runtime = Arc::new(Runtime::new());
     let mut deck = OutputDeck::new();
-    agent.apply(Epoch(1), &host_envelope(250), None, None);
+    agent.apply(Epoch(1), Some(&host_envelope(250)), None, None);
     run(&mut agent, 1, &runtime, &mut deck);
     assert_eq!(recorded_lane(&deck), Some("dear"));
 
-    agent.apply(Epoch(2), &host_envelope(150), None, None);
+    agent.apply(Epoch(2), Some(&host_envelope(150)), None, None);
     let mut deck = OutputDeck::new();
     let report = frame_leaving_preparations(&mut agent, 2, &runtime, &mut deck);
 
@@ -296,11 +296,11 @@ fn while_a_switch_is_prepared_the_installed_layer_reports_in_the_epoch_lent() {
     let mut agent = lane_agent(&SWITCHING_E, &DeviceCaps::default());
     let runtime = Arc::new(Runtime::new());
     let mut deck = OutputDeck::new();
-    agent.apply(Epoch(1), &host_envelope(250), None, None);
+    agent.apply(Epoch(1), Some(&host_envelope(250)), None, None);
     run(&mut agent, 1, &runtime, &mut deck);
     assert_eq!(recorded_lane(&deck), Some("dear"));
 
-    agent.apply(Epoch(2), &host_envelope(150), None, None);
+    agent.apply(Epoch(2), Some(&host_envelope(150)), None, None);
     let mut deck = OutputDeck::new();
     let report = frame_leaving_preparations(&mut agent, 2, &runtime, &mut deck)
         .expect("the installed layer ran");
@@ -345,11 +345,11 @@ fn a_row_whose_preparation_failed_is_passed_by_until_the_next_allocation() {
     let mut agent = lane_agent(&BRITTLE, &DeviceCaps::default());
     let runtime = Arc::new(Runtime::new());
     let mut deck = OutputDeck::new();
-    agent.apply(Epoch(1), &host_envelope(150), None, None);
+    agent.apply(Epoch(1), Some(&host_envelope(150)), None, None);
     run(&mut agent, 1, &runtime, &mut deck);
     assert_eq!(recorded_lane(&deck), Some("cheap"));
 
-    agent.apply(Epoch(2), &host_envelope(250), None, None);
+    agent.apply(Epoch(2), Some(&host_envelope(250)), None, None);
     let mut deck = OutputDeck::new();
     run(&mut agent, 2, &runtime, &mut deck);
     assert_eq!(
@@ -377,7 +377,7 @@ fn a_row_whose_preparation_failed_is_passed_by_until_the_next_allocation() {
     assert_eq!(agent.report().row, StrategyId::LowPower);
     assert_eq!(locked(&place_of(&agent)).pending_row(), None);
 
-    agent.apply(Epoch(3), &host_envelope(250), None, None);
+    agent.apply(Epoch(3), Some(&host_envelope(250)), None, None);
     let mut deck = OutputDeck::new();
     run(&mut agent, 6, &runtime, &mut deck);
     assert_eq!(
@@ -401,12 +401,12 @@ cheap_or_dear!(SWITCHING_C, CheapC, DearC);
 fn run_frame_lands_a_switch_answered_at_its_start_in_the_same_frame() {
     let mut agent = lane_agent(&SWITCHING_C, &DeviceCaps::default());
     let runtime = Arc::new(Runtime::new());
-    agent.apply(Epoch(1), &host_envelope(250), None, None);
+    agent.apply(Epoch(1), Some(&host_envelope(250)), None, None);
     let mut deck = OutputDeck::new();
     driven(&mut agent, 1, &runtime, &mut deck);
     assert_eq!(recorded_lane(&deck), Some("dear"));
 
-    agent.apply(Epoch(2), &host_envelope(150), None, None);
+    agent.apply(Epoch(2), Some(&host_envelope(150)), None, None);
     let mut deck = OutputDeck::new();
     driven(&mut agent, 2, &runtime, &mut deck);
 
@@ -590,7 +590,7 @@ fn a_switch_prepared_off_the_frame_builds_on_the_runtimes_device() {
     let place = place_of(&agent);
     agent.apply(
         Epoch(1),
-        &super::fixtures::host_envelope(1_000_000),
+        Some(&super::fixtures::host_envelope(1_000_000)),
         Some(StrategyId::Balanced),
         None,
     );
@@ -600,7 +600,7 @@ fn a_switch_prepared_off_the_frame_builds_on_the_runtimes_device() {
 
     agent.apply(
         Epoch(2),
-        &super::fixtures::host_envelope(1_000_000),
+        Some(&super::fixtures::host_envelope(1_000_000)),
         Some(StrategyId::HighPerformance),
         None,
     );
@@ -647,12 +647,12 @@ fn an_aged_quote_wakes_the_agent_once_while_a_switch_is_prepared() {
     let mut agent = lane_agent(&SWITCHING_F, &DeviceCaps::default());
     let runtime = Arc::new(Runtime::new());
     let mut deck = OutputDeck::new();
-    agent.apply(Epoch(1), &host_envelope(250), None, None);
+    agent.apply(Epoch(1), Some(&host_envelope(250)), None, None);
     run(&mut agent, 1, &runtime, &mut deck);
     assert_eq!(recorded_lane(&deck), Some("dear"));
 
     std::thread::sleep(khora_agents::lane_agent::QUOTE_MAX_AGE + Duration::from_millis(100));
-    agent.apply(Epoch(2), &host_envelope(150), None, None);
+    agent.apply(Epoch(2), Some(&host_envelope(150)), None, None);
     let mut aged = Vec::new();
     for frame in 2..10 {
         let mut deck = OutputDeck::new();
@@ -690,12 +690,12 @@ fn the_floor_reports_no_overrun_in_an_epoch_where_a_row_fits() {
     let mut agent = lane_agent(&SWITCHING_G, &DeviceCaps::default());
     let runtime = Arc::new(Runtime::new());
     let mut deck = OutputDeck::new();
-    agent.apply(Epoch(1), &host_envelope(50), None, None);
+    agent.apply(Epoch(1), Some(&host_envelope(50)), None, None);
     let first = run(&mut agent, 1, &runtime, &mut deck).expect("the floor ran");
     assert_eq!(recorded_lane(&deck), Some("cheap"));
     assert!(first.over_budget, "no row fits 50 µs: the floor runs");
 
-    agent.apply(Epoch(2), &host_envelope(250), None, None);
+    agent.apply(Epoch(2), Some(&host_envelope(250)), None, None);
     let mut overruns = Vec::new();
     for frame in 2..6 {
         let mut deck = OutputDeck::new();

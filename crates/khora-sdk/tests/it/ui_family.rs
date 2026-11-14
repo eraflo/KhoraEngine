@@ -65,12 +65,9 @@ fn the_engine_boots_the_ui_family_as_one_lane_agent() {
     let ui: Vec<bool> = registry
         .iter()
         .filter(|agent| {
-            agent.lock().is_ok_and(|agent| {
-                agent
-                    .execution_timing()
-                    .allowed_phases
-                    .contains(&ExecutionPhase::OUTPUT)
-            })
+            agent
+                .lock()
+                .is_ok_and(|agent| agent.execution_timing().phase == ExecutionPhase::OUTPUT)
         })
         .filter_map(|agent| {
             agent

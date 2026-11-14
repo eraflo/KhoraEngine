@@ -291,7 +291,7 @@ fn capped_quality_after_a_frame_on(load: u32) -> f32 {
     let mut agent = lane_agent(&CAPPED_ONLY, &DeviceCaps::default());
     agent.apply(
         khora_core::agent::gorna::protocol::Epoch(1),
-        &host_envelope(1_000),
+        Some(&host_envelope(1_000)),
         None,
         None,
     );
@@ -326,7 +326,7 @@ fn lane_running_after(frames: u64, load: u32) -> &'static str {
     let mut agent = lane_agent(&CAPPED_AND_TILED, &DeviceCaps::default());
     agent.apply(
         khora_core::agent::gorna::protocol::Epoch(1),
-        &host_envelope(1_000),
+        Some(&host_envelope(1_000)),
         None,
         None,
     );

@@ -45,8 +45,7 @@ impl Family for Watching {
     }
     fn timing(&self) -> ExecutionTiming {
         ExecutionTiming {
-            allowed_phases: vec![ExecutionPhase::OUTPUT],
-            default_phase: ExecutionPhase::OUTPUT,
+            phase: ExecutionPhase::OUTPUT,
             ..ExecutionTiming::default()
         }
     }

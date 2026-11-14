@@ -231,8 +231,8 @@ fn the_script_agent_runs_every_frame_in_transform_as_critical() {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .fixed_step();
     assert_eq!(step, None, "its place holds no fixed step");
-    assert_eq!(timing.allowed_phases, vec![ExecutionPhase::TRANSFORM]);
-    assert_eq!(timing.default_phase, ExecutionPhase::TRANSFORM);
+    assert_eq!(timing.phase, ExecutionPhase::TRANSFORM);
+    assert_eq!(timing.phase, ExecutionPhase::TRANSFORM);
     assert_eq!(timing.importance, AgentImportance::Critical);
 }
 

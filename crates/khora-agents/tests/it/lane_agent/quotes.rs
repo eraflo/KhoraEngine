@@ -943,7 +943,7 @@ fn a_lane_that_needs_a_budget_runs_when_driven_as_gorna_drives_it() {
             },
             memory: ANY_MEMORY,
         };
-        agent.apply(request.epoch, &envelope, None, None);
+        agent.apply(request.epoch, Some(&envelope), None, None);
         run(&mut agent, frame, &plain(100, &counts), &mut deck);
     }
 

@@ -198,8 +198,8 @@ fn the_physics_agent_runs_at_the_default_physics_step() {
     let timing = agent.execution_timing();
 
     assert_eq!(place_step(&agent), Some(PhysicsSettings::default().step));
-    assert_eq!(timing.allowed_phases, vec![ExecutionPhase::TRANSFORM]);
-    assert_eq!(timing.default_phase, ExecutionPhase::TRANSFORM);
+    assert_eq!(timing.phase, ExecutionPhase::TRANSFORM);
+    assert_eq!(timing.phase, ExecutionPhase::TRANSFORM);
     assert_eq!(timing.importance, AgentImportance::Critical);
 }
 

@@ -48,7 +48,7 @@ impl Agent for Counting {
     fn apply(
         &mut self,
         _epoch: Epoch,
-        _envelope: &Envelope,
+        _envelope: Option<&Envelope>,
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {
@@ -61,8 +61,7 @@ impl Agent for Counting {
     }
     fn execution_timing(&self) -> ExecutionTiming {
         ExecutionTiming {
-            allowed_phases: vec![ExecutionPhase::TRANSFORM],
-            default_phase: ExecutionPhase::TRANSFORM,
+            phase: ExecutionPhase::TRANSFORM,
             ..ExecutionTiming::default()
         }
     }
@@ -179,13 +178,13 @@ fn a_layered_agent_whose_family_is_off_is_neither_woken_nor_run() {
     assert_eq!(on.ran, vec![("painter", StrategyId::Balanced)]);
 }
 
-/// **A family switched off stops its installed layer, and is woken by what it
-/// missed once on again.** The painter runs its layer; switched off, its
-/// layer stops and an allocation published meanwhile wakes nothing; switched
-/// on, the allocation in force is lent at that frame's start and wakes it,
-/// and its layer runs again.
+/// **A family switched off stops its installed layer, and resumes without
+/// what was decided while it was off.** The painter runs its layer; switched
+/// off, its layer stops and an allocation published meanwhile wakes nothing;
+/// switched on, that allocation — decided without it — is not lent: nothing
+/// wakes it, and its layer runs again.
 #[test]
-fn a_layer_stops_while_its_family_is_off_and_the_allocation_waits_for_it() {
+fn a_layer_stops_while_its_family_is_off_and_resumes_without_the_allocation_decided_meanwhile() {
     let log = LayerLog::default();
     let painter = shared(Painter::new(
         "painter",
@@ -212,17 +211,22 @@ fn a_layer_stops_while_its_family_is_off_and_the_allocation_waits_for_it() {
     switch(&activation, family, true);
     scheduler.run_frame(&mut world, Arc::clone(&runtime));
     let on = taken(&log);
-    assert_eq!(on.woken, vec![("painter", vec![Wake::Allocated])]);
+    assert!(
+        on.woken.is_empty(),
+        "the allocation decided while off wakes nothing: {:?}",
+        on.woken
+    );
     assert_eq!(on.ran, vec![("painter", StrategyId::Balanced)]);
 }
 
-/// **An agent whose family is off is lent the allocation once it is on.**
-/// While the script is off, the allocation naming it is lent to the renderer
-/// but not to the script, which does not run; switched on, the allocation
-/// still in force is lent to the script at that frame's start, before it
-/// runs, and the renderer is not lent it twice.
+/// **An agent whose family is off is lent only what is taken after it is
+/// on.** While the script is off, the allocation naming it is lent to the
+/// renderer but not to the script, which does not run; switched on, that
+/// allocation — still in force — is not lent to it: it runs on nothing lent,
+/// at its own price. The next allocation naming it is lent before it runs,
+/// and the renderer is never lent one twice.
 #[test]
-fn an_agent_whose_family_is_off_is_lent_the_allocation_once_it_is_on() {
+fn an_agent_whose_family_is_off_is_lent_only_what_is_taken_after_it_is_on() {
     let log = SharedLog::default();
     let registry = Arc::new(Mutex::new(AgentRegistry::new()));
     let mut scheduler = scheduler_over(&registry);
@@ -235,6 +239,7 @@ fn an_agent_whose_family_is_off_is_lent_the_allocation_once_it_is_on() {
     let (runtime, activation) = runtime_with(&[AgentId::new("renderer"), SCRIPT]);
     switch(&activation, SCRIPT, false);
     let mut world = World::new();
+    let ran = |log: &SharedLog| log.lock().expect("the log lock").ran.clone();
 
     channel.publish(allocation(1, &[("renderer", 3_000), ("script", 2_000)]));
     scheduler.run_frame(&mut world, Arc::clone(&runtime));
@@ -244,32 +249,37 @@ fn an_agent_whose_family_is_off_is_lent_the_allocation_once_it_is_on() {
         "a family off runs nothing, and is lent nothing"
     );
     assert!(
-        !log.lock()
-            .expect("the log lock")
-            .ran
-            .iter()
-            .any(|(agent, _)| *agent == SCRIPT),
+        !ran(&log).iter().any(|(agent, _)| *agent == SCRIPT),
         "and does not run"
     );
 
     switch(&activation, SCRIPT, true);
     scheduler.run_frame(&mut world, Arc::clone(&runtime));
-    assert_eq!(
-        lent_to(&log, "script"),
-        vec![(Epoch(1), envelope(2_000))],
-        "lent once it is on"
+    assert!(
+        lent_to(&log, "script").is_empty(),
+        "the allocation in force was decided while it was off"
     );
     assert!(
-        log.lock()
-            .expect("the log lock")
-            .ran
-            .contains(&(SCRIPT, Some(Epoch(1)))),
+        ran(&log).contains(&(SCRIPT, None)),
+        "it runs on nothing lent: {:?}",
+        ran(&log)
+    );
+
+    channel.publish(allocation(2, &[("renderer", 3_000), ("script", 2_000)]));
+    scheduler.run_frame(&mut world, Arc::clone(&runtime));
+    assert_eq!(
+        lent_to(&log, "script"),
+        vec![(Epoch(2), envelope(2_000))],
+        "the next allocation is lent"
+    );
+    assert!(
+        ran(&log).contains(&(SCRIPT, Some(Epoch(2)))),
         "and lent before it runs"
     );
     assert_eq!(
         lent_to(&log, "renderer").len(),
-        1,
-        "the renderer is not lent the same allocation twice"
+        2,
+        "the renderer is lent each allocation once"
     );
 }
 

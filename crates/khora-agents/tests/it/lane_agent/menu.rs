@@ -160,7 +160,7 @@ fn a_pin_off_the_menu_keeps_the_current_row() {
 
     agent.apply(
         Epoch(2),
-        &host_envelope(250),
+        Some(&host_envelope(250)),
         Some(StrategyId::Custom(99)),
         None,
     );
@@ -257,8 +257,8 @@ fn timing_comes_from_the_registration() {
 
     let timing = agent.execution_timing();
 
-    assert_eq!(timing.allowed_phases, vec![ExecutionPhase::TRANSFORM]);
-    assert_eq!(timing.default_phase, ExecutionPhase::TRANSFORM);
+    assert_eq!(timing.phase, ExecutionPhase::TRANSFORM);
+    assert_eq!(timing.phase, ExecutionPhase::TRANSFORM);
     assert_eq!(timing.importance, AgentImportance::Critical);
     assert_eq!(place_step(&agent), Some(FIXED_STEP));
     let after: Vec<AgentId> = timing.dependencies.iter().map(|d| d.target).collect();

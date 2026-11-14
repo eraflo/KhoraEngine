@@ -64,10 +64,8 @@ impl ControlPlanePanel {
         let mut row_y = y + 46.0;
         for phase in ExecutionPhase::DEFAULT_ORDER {
             let phase_color = phase_color_for(*phase, theme);
-            let in_phase: Vec<&AgentSnapshot> = agents
-                .iter()
-                .filter(|a| a.default_phase == *phase)
-                .collect();
+            let in_phase: Vec<&AgentSnapshot> =
+                agents.iter().filter(|a| a.phase == *phase).collect();
 
             // Phase header
             ui.paint_circle_filled([x + 16.0, row_y + 8.0], 3.5, phase_color);

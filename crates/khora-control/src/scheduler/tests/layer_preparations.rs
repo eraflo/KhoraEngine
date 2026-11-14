@@ -159,7 +159,7 @@ impl Agent for Sculptor {
     fn apply(
         &mut self,
         epoch: Epoch,
-        _envelope: &Envelope,
+        _envelope: Option<&Envelope>,
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {
