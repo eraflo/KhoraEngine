@@ -1,0 +1,109 @@
+<svg id="fig-trust-guard" class="kp-figure" viewBox="0 0 760 350" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-trust-guard-title kp-trust-guard-desc">
+  <title id="kp-trust-guard-title">Every file a project holds passes the guard's four checks, in order, before a byte of it is used</title>
+  <desc id="kp-trust-guard-desc">A file asks to be read. The guard checks, in order: that its real path stays inside the project, that it fits the size cap of its kind at the project's trust, that its first bytes are what its name says, and that it decodes within its limits. A path leaving the project is refused and never quarantined. A file over its size cap is refused before a byte is read and quarantined by its size and date. A file whose bytes are refused is quarantined by the hash of its content. A file that passes every check is read.</desc>
+  <style>
+    #fig-trust-guard { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-trust-guard .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-trust-guard .kp-check { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-trust-guard .kp-file { fill: var(--k-bg-2, #181e2b); stroke: var(--k-silver, #b4cfe2); stroke-width: 1.25; }
+    #fig-trust-guard .kp-card { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-trust-guard .kp-shelf { fill: none; stroke: var(--k-line, #383d48); stroke-width: 1; stroke-dasharray: 4 4; }
+    #fig-trust-guard .kp-stop { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 2; }
+    #fig-trust-guard .kp-pass { fill: none; stroke: var(--k-silver, #b4cfe2); stroke-width: 1.5; }
+    #fig-trust-guard .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 17px; }
+    #fig-trust-guard .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-trust-guard .kp-strong { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+    #fig-trust-guard .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+    #fig-trust-guard .kp-mono { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-trust-guard .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="350" rx="8"/>
+  <!-- The file asking to be read -->
+  <text class="kp-note" x="40" y="30">a file asks to be read</text>
+  <rect class="kp-file" x="40" y="40" width="320" height="34" rx="6"/>
+  <text class="kp-mono" x="54" y="62" data-on="1 5">assets/textures/wall.png</text>
+  <text class="kp-mono" x="54" y="62" data-on="2">assets/../../secrets.txt</text>
+  <text class="kp-mono" x="54" y="62" data-on="3">assets/textures/huge.png · 300 MiB</text>
+  <text class="kp-mono" x="54" y="62" data-on="4">assets/textures/odd.png</text>
+  <!-- The four checks -->
+  <rect class="kp-check" x="40" y="92" width="320" height="38" rx="5"/>
+  <rect class="kp-check" x="40" y="138" width="320" height="38" rx="5"/>
+  <rect class="kp-check" x="40" y="184" width="320" height="38" rx="5"/>
+  <rect class="kp-check" x="40" y="230" width="320" height="38" rx="5"/>
+  <text class="kp-strong" x="54" y="116">1 · stays inside the project</text>
+  <text class="kp-strong" x="54" y="162">2 · fits its size cap</text>
+  <text class="kp-strong" x="54" y="208">3 · is what its name says</text>
+  <text class="kp-strong" x="54" y="254">4 · decodes within its limits</text>
+  <text class="kp-note" x="350" y="116" text-anchor="end">real path</text>
+  <text class="kp-note" x="350" y="162" text-anchor="end">kind × trust</text>
+  <text class="kp-note" x="350" y="208" text-anchor="end">first 512 bytes</text>
+  <text class="kp-note" x="350" y="254" text-anchor="end">pixels, count</text>
+  <!-- Passed checks -->
+  <g data-on="3 4 5">
+    <rect class="kp-pass" x="36" y="88" width="328" height="46" rx="7"/>
+  </g>
+  <g data-on="4 5">
+    <rect class="kp-pass" x="36" y="134" width="328" height="46" rx="7"/>
+  </g>
+  <g data-on="5">
+    <rect class="kp-pass" x="36" y="180" width="328" height="46" rx="7"/>
+    <rect class="kp-pass" x="36" y="226" width="328" height="46" rx="7"/>
+  </g>
+  <!-- The check that refuses -->
+  <rect class="kp-stop" x="36" y="88" width="328" height="46" rx="7" data-on="2"/>
+  <rect class="kp-stop" x="36" y="134" width="328" height="46" rx="7" data-on="3"/>
+  <rect class="kp-stop" x="36" y="180" width="328" height="46" rx="7" data-on="4"/>
+  <!-- Where it ends -->
+  <rect class="kp-shelf" x="40" y="286" width="320" height="40" rx="6"/>
+  <text class="kp-label" x="54" y="311" data-on="1">read, or refused</text>
+  <text class="kp-label" x="54" y="311" data-on="2">refused · not quarantined</text>
+  <text class="kp-gold" x="54" y="311" data-on="3">quarantined · by size and date</text>
+  <text class="kp-gold" x="54" y="311" data-on="4">quarantined · by its content's hash</text>
+  <text class="kp-strong" x="54" y="311" data-on="5">read — the asset loads</text>
+  <!-- The explanation card -->
+  <rect class="kp-card" x="390" y="40" width="340" height="286" rx="8"/>
+  <g data-on="1">
+    <text class="kp-station" x="410" y="74">The guard</text>
+    <text class="kp-label" x="410" y="104">Every file a project holds is read</text>
+    <text class="kp-label" x="410" y="124">through it, at the project's trust:</text>
+    <text class="kp-strong" x="410" y="150">trusted, or restricted.</text>
+    <text class="kp-label" x="410" y="184">Four checks, in order. The first</text>
+    <text class="kp-label" x="410" y="204">that fails refuses the file, and</text>
+    <text class="kp-label" x="410" y="224">nothing of it is used.</text>
+  </g>
+  <g data-on="2">
+    <text class="kp-station" x="410" y="74">A path that leaves</text>
+    <text class="kp-gold" x="410" y="100">refused — whatever it holds</text>
+    <text class="kp-label" x="410" y="134">A path climbing out with .., an</text>
+    <text class="kp-label" x="410" y="154">absolute path, a link pointing out:</text>
+    <text class="kp-label" x="410" y="174">the real path must stay inside.</text>
+    <text class="kp-label" x="410" y="208">Never quarantined: there is no file</text>
+    <text class="kp-label" x="410" y="228">to remember, the path itself is wrong.</text>
+  </g>
+  <g data-on="3">
+    <text class="kp-station" x="410" y="74">Too large</text>
+    <text class="kp-gold" x="410" y="100">refused before a byte is read</text>
+    <text class="kp-label" x="410" y="134">A texture's cap is 256 MiB in a trusted</text>
+    <text class="kp-label" x="410" y="154">project, 64 MiB in a restricted one.</text>
+    <text class="kp-label" x="410" y="188">Quarantined by its size and date: it is</text>
+    <text class="kp-label" x="410" y="208">released as soon as it can be read —</text>
+    <text class="kp-label" x="410" y="228">trimmed, or the project trusted.</text>
+  </g>
+  <g data-on="4">
+    <text class="kp-station" x="410" y="74">Not what it says</text>
+    <text class="kp-gold" x="410" y="100">refused for its bytes</text>
+    <text class="kp-label" x="410" y="134">Its first bytes are not a PNG, or its</text>
+    <text class="kp-label" x="410" y="154">decoder goes past its limits, or fails.</text>
+    <text class="kp-label" x="410" y="188">Quarantined by its content's hash: it</text>
+    <text class="kp-label" x="410" y="208">stays refused while it holds those</text>
+    <text class="kp-label" x="410" y="228">bytes, and only those.</text>
+  </g>
+  <g data-on="5">
+    <text class="kp-station" x="410" y="74">Read</text>
+    <text class="kp-strong" x="410" y="100">every check passed</text>
+    <text class="kp-label" x="410" y="134">The asset loads. A file the quarantine</text>
+    <text class="kp-label" x="410" y="154">held under these same bytes would still</text>
+    <text class="kp-label" x="410" y="174">be refused: the guard hashes a file</text>
+    <text class="kp-label" x="410" y="194">whenever the quarantine holds its path.</text>
+  </g>
+</svg>

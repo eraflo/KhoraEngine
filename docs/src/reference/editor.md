@@ -20,10 +20,11 @@ The editor application — panels, gizmos, play mode, scene I/O.
 8. Gizmos and selection
 9. Build Game
 10. The Control Plane
-11. For game developers
-12. For engine contributors
-13. Decisions
-14. Open questions
+11. Restricted projects
+12. For game developers
+13. For engine contributors
+14. Decisions
+15. Open questions
 
 ---
 
@@ -380,6 +381,41 @@ The second Spine mode is the **Control Plane** — a workspace dedicated to the 
 The Control Plane is not a profiler popup. It is a first-class workspace. The whole pitch of Khora is the self-optimizing architecture; the editor surfaces that intelligence as a place you go to, not a window you launch.
 
 Full design in [Editor design system](../design/editor.md), section 09.
+
+## 11 — Restricted projects
+
+A project you did not make opens **restricted** until you trust it: you can read
+and edit everything, but nothing of it runs, and its files are read under the
+strict size caps. Why, and how files are checked, is in [Trust](../concepts/trust.md).
+
+**Deciding.** Opening a project nothing was decided of asks first — in the hub
+or in the editor: *Close project*, *Open restricted* or *Trust and open*. A
+project created in the hub is trusted without asking. The hub marks a restricted
+project's card with a **Restricted** chip, and its *More* menu offers *Trust
+this project…* or *Restrict this project*.
+
+**In a restricted project**, the editor shows a **restricted bar** under the top
+bar — a lock, *Restricted mode*, and *Trust this project…*. What does not run is
+refused with a message:
+
+- **Play** is refused — the project's scripts would run. A project that turns
+  restricted during Play is stopped.
+- **Build Game** is refused — building compiles and runs the project's code.
+- A **shader overlay** is ignored, and listed as a warning in the Problems panel.
+
+**Trusting** — *Trust this project…* — first shows what it will let run, counted
+from the project: its scripts under `assets/scripts`, its shader overlays under
+`assets`, a `Cargo.toml` at its root, and the files its size caps refused.
+*Trust and reopen* then reopens the project: every reader is rebuilt at the new
+trust, the files refused for their size are released, and the Restricted
+warnings are cleared. A file refused for what it holds, or downloaded from the
+internet, stays refused.
+
+**Quarantined files.** A refused file shows a lock on its tile in the asset
+browser. Selected, the inspector's quarantine card says what refused it (the
+file guard, a decoder, the type check, the pack), the trust it was read at, and
+what it was kept by — its content's hash, or its size and date. **Release**
+takes it out of the quarantine and loads it again; refused again, it goes back.
 
 ---
 

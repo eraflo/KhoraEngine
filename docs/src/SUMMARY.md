@@ -54,6 +54,7 @@
 - [Audio](./concepts/audio.md)
 - [UI](./concepts/ui.md)
 - [Assets](./concepts/assets.md)
+- [Trust](./concepts/trust.md)
 - [Serialization](./concepts/serialization.md)
 - [Scenes and game saves](./concepts/saves.md)
 - [Prefabs](./concepts/prefabs.md)

@@ -26,6 +26,8 @@ Each is a trait in `khora-core` with a default backend in `khora-infra`:
 - [Rendering](./rendering.md) · [Physics](./physics.md) · [Audio](./audio.md) · [UI](./ui.md)
 - [Assets](./assets.md) · [Serialization](./serialization.md) · [Telemetry](./telemetry.md)
 
+And one that is not a subsystem but guards them all: [Trust](./trust.md) — what a project you did not make may do, and how its files are checked.
+
 ---
 
 Unfamiliar with a term? The [Glossary](../reference/glossary.md) defines the

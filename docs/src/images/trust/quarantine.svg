@@ -1,0 +1,81 @@
+<svg id="fig-trust-quarantine" class="kp-figure" viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-trust-quarantine-title kp-trust-quarantine-desc">
+  <title id="kp-trust-quarantine-title">A quarantined file is remembered by what it held: its content's hash, or its size and date when it was refused unread</title>
+  <desc id="kp-trust-quarantine-desc">A file refused for its bytes is kept on the quarantine shelf under the hash of its content. Edited, it reads again and the entry is set aside. If the refused bytes come back, the file is refused again. A file refused for its size, unread, is kept under its size and date, and released as soon as it can be read.</desc>
+  <style>
+    #fig-trust-quarantine { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-trust-quarantine .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-trust-quarantine .kp-file { fill: var(--k-bg-2, #181e2b); stroke: var(--k-silver, #b4cfe2); stroke-width: 1.25; }
+    #fig-trust-quarantine .kp-entry { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-trust-quarantine .kp-entry-gone { fill: none; stroke: var(--k-line, #383d48); stroke-width: 1; stroke-dasharray: 3 4; }
+    #fig-trust-quarantine .kp-shelf { fill: none; stroke: var(--k-line, #383d48); stroke-width: 1; stroke-dasharray: 4 4; }
+    #fig-trust-quarantine .kp-stop { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 2; }
+    #fig-trust-quarantine .kp-card { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-trust-quarantine .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 17px; }
+    #fig-trust-quarantine .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-trust-quarantine .kp-strong { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+    #fig-trust-quarantine .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+    #fig-trust-quarantine .kp-mono { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-trust-quarantine .kp-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-trust-quarantine .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="320" rx="8"/>
+  <!-- The file on disk -->
+  <text class="kp-note" x="40" y="30">on disk</text>
+  <rect class="kp-file" x="40" y="40" width="320" height="34" rx="6"/>
+  <text class="kp-mono" x="54" y="62" data-on="1 3">odd.png · bytes #a3f9</text>
+  <text class="kp-mono" x="54" y="62" data-on="2">odd.png · bytes #7c21 (edited)</text>
+  <text class="kp-mono" x="54" y="62" data-on="4">huge.png · 300 MiB, 10:42</text>
+  <rect class="kp-stop" x="36" y="36" width="328" height="42" rx="8" data-on="1 3 4"/>
+  <!-- The quarantine shelf -->
+  <text class="kp-note" x="40" y="112">the quarantine</text>
+  <rect class="kp-shelf" x="40" y="122" width="320" height="170" rx="8"/>
+  <g data-on="1 3">
+    <rect class="kp-entry" x="56" y="138" width="288" height="40" rx="5"/>
+    <text class="kp-strong" x="70" y="163">odd.png</text>
+    <text class="kp-mono" x="330" y="163" text-anchor="end">content #a3f9</text>
+  </g>
+  <g data-on="2">
+    <rect class="kp-entry-gone" x="56" y="138" width="288" height="40" rx="5"/>
+    <text class="kp-dim" x="70" y="163">odd.png — set aside</text>
+    <text class="kp-dim" x="330" y="163" text-anchor="end">#a3f9</text>
+  </g>
+  <g data-on="4">
+    <rect class="kp-entry" x="56" y="138" width="288" height="40" rx="5"/>
+    <text class="kp-strong" x="70" y="163">huge.png</text>
+    <text class="kp-mono" x="330" y="163" text-anchor="end">size + date</text>
+  </g>
+  <text class="kp-note" x="56" y="270">kept by real path, shared by every run</text>
+  <!-- The explanation card -->
+  <rect class="kp-card" x="390" y="40" width="340" height="252" rx="8"/>
+  <g data-on="1">
+    <text class="kp-station" x="410" y="74">Refused for its bytes</text>
+    <text class="kp-gold" x="410" y="100">kept under its content's hash</text>
+    <text class="kp-label" x="410" y="134">The shelf remembers what the file</text>
+    <text class="kp-label" x="410" y="154">held, not just its name. It stays</text>
+    <text class="kp-label" x="410" y="174">refused while it holds those bytes —</text>
+    <text class="kp-label" x="410" y="194">across runs, and after a restart.</text>
+  </g>
+  <g data-on="2">
+    <text class="kp-station" x="410" y="74">Edited</text>
+    <text class="kp-strong" x="410" y="100">other bytes: it reads again</text>
+    <text class="kp-label" x="410" y="134">The file now holds something else.</text>
+    <text class="kp-label" x="410" y="154">It passes the guard, and its entry is</text>
+    <text class="kp-label" x="410" y="174">set aside: no longer shown, but kept.</text>
+  </g>
+  <g data-on="3">
+    <text class="kp-station" x="410" y="74">The old bytes come back</text>
+    <text class="kp-gold" x="410" y="100">refused again</text>
+    <text class="kp-label" x="410" y="134">An undo, a sync, a copy over it: the</text>
+    <text class="kp-label" x="410" y="154">refused content is back, and so is the</text>
+    <text class="kp-label" x="410" y="174">refusal: the entry set aside was kept</text>
+    <text class="kp-label" x="410" y="194">for this.</text>
+  </g>
+  <g data-on="4">
+    <text class="kp-station" x="410" y="74">Refused unread</text>
+    <text class="kp-gold" x="410" y="100">kept under its size and date</text>
+    <text class="kp-label" x="410" y="134">Too large to read, so there is no hash.</text>
+    <text class="kp-label" x="410" y="154">Released as soon as the file can be</text>
+    <text class="kp-label" x="410" y="174">read: trimmed under its cap, or the</text>
+    <text class="kp-label" x="410" y="194">project trusted, which raises the cap.</text>
+  </g>
+</svg>

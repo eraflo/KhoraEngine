@@ -27,6 +27,29 @@ That is what lets a save made today load into the script as it is next month.
 
 After a restore, `OnLoad` runs first; the restored body waits behind it.
 
+### Timers and waits
+
+What a save keeps of a timer is **what is left of it**, not when it was set:
+an `after 10s` saved with four seconds to go loads with four seconds to go, not
+ten, and not "already past" because the clock moved while the game was closed. A
+spent `after` is recorded as spent, not as zero left — otherwise
+`after 10s => this.Despawn()` would be an entity that dies twice. An `await`
+saved part-way through its wait keeps what is left of the wait, the same way.
+
+A schedule whose body was part-way through is recorded rearmed, not due. When
+the body resumes, nothing is lost; when a load or an edit has to abandon the
+body, the schedule waits its interval instead of running the body again from
+the top. A part-way `OnLoad`, or an `OnSpawn` in front of a restored body, is not
+written at all: it runs again on the next load.
+
+Every frame, the engine writes what changed back into the behavior's state
+companion, so a save taken on any frame finds it current. A frame on which a
+behavior spent no fuel ran none of its code, so it writes nothing — that is what
+keeps writing back every frame cheap. A countdown is the exception: it moves
+without costing fuel. A behavior with an `every`, an `after` still counting or an
+`await` still waiting therefore has no quiet frames; that is the price of a
+timer that keeps exactly what is left of it.
+
 A system is saved the same way, on [its one entity](./behaviors-and-systems.md#its-one-entity): the save
 holds that entity, its fields and its companion — its timers, a sweep it was
 part-way through, a fault. A scene never does.

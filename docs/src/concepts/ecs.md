@@ -93,6 +93,40 @@ What these change on disk, and why a removed type has to be declared retired, is
 covered in [Serialization](./serialization.md) and
 [How-to: add a component](../how-to/add-a-component.md).
 
+### Provenance
+
+A component's **provenance** says who writes it, and so what the engine may do
+with it on your behalf:
+
+| Provenance | Example | Offered in *Add Component* | Copied when an entity is duplicated | Saved |
+|---|---|---|---|---|
+| `Authored` (default) | `Transform`, `Collider` | yes | yes | in scenes |
+| `ToolAuthored` | `Parent`, set by dragging in the scene tree | no | yes | in scenes |
+| `Derived` | `GlobalTransform`, recomputed from `Transform` and `Parent` | no | no | never |
+| `Runtime` | `PhysicsDebugData` | no | no | in game saves, if `resumable` |
+
+Provenance is a different question from the [domain](#semantic-domains), which
+says who *reads* a component. `Transform` and `GlobalTransform` share a domain —
+both spatial — but a person writes one and the engine recomputes the other each
+frame. `Collider` and `PhysicsDebugData` share the physics domain, but one is an
+input and the other debug output. Without provenance, *Add Component*, duplicate
+and scene save would each keep their own list of what to leave out, and none of
+them would know a component defined outside the engine.
+
+A tool-authored component is saved and copied, but never offered by hand: an
+empty `Parent` added from a menu means nothing. A derived one is never copied,
+because a copy would be stale until recomputed — wrong at best.
+
+### Registration
+
+A component is stored only if its type is registered — by the derive, or in
+`World::new` for the few written by hand. `World::spawn` panics on one that is
+not, and on a bundle naming a component twice; `World::try_spawn` returns the
+error instead, before anything is allocated. An unregistered component, stored,
+would sit in a page nothing can reach: invisible to `get` and to every query,
+never removed by `despawn`. It is a programming error, the same every time the
+code runs, so it is refused at once rather than left to be found later.
+
 **Pages** are the heart of it. Components are grouped by archetype — the exact set
 of component types an entity has — and each archetype's data lives in one or more
 contiguous pages, stored struct-of-arrays. Adding a `RigidBody` to an entity moves
