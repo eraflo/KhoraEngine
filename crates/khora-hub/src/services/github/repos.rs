@@ -6,16 +6,12 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! The signed-in user and the repositories created on their behalf.
+//! The repositories created on the signed-in user's behalf.
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
-/// The authenticated GitHub user — subset of `GET /user`.
-#[derive(Debug, Clone, Deserialize)]
-pub struct AuthenticatedUser {
-    pub login: String,
-}
+pub use super::authenticated_user::get_authenticated_user;
 
 /// A GitHub repository — subset of the `POST /user/repos` response we care about.
 #[derive(Debug, Clone, Deserialize)]
@@ -24,7 +20,8 @@ pub struct CreatedRepo {
     pub clone_url: String,
 }
 
-fn authed_client(token: &str) -> Result<reqwest::blocking::Client> {
+/// An HTTP client that sends `token` as a bearer to the GitHub API.
+pub(super) fn authed_client(token: &str) -> Result<reqwest::blocking::Client> {
     use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue};
 
     let mut headers = HeaderMap::new();
@@ -44,21 +41,6 @@ fn authed_client(token: &str) -> Result<reqwest::blocking::Client> {
         .default_headers(headers)
         .build()
         .context("Failed to build authenticated HTTP client")
-}
-
-/// Fetches the authenticated user via `GET /user`.
-pub fn get_authenticated_user(token: &str) -> Result<AuthenticatedUser> {
-    let client = authed_client(token)?;
-    let response = client
-        .get("https://api.github.com/user")
-        .send()
-        .context("Failed to call GitHub /user")?;
-
-    if !response.status().is_success() {
-        anyhow::bail!("GitHub /user returned status {}", response.status());
-    }
-
-    response.json().context("Failed to parse GitHub user JSON")
 }
 
 /// Creates a new repository under the authenticated user via `POST /user/repos`.

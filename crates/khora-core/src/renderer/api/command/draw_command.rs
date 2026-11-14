@@ -14,9 +14,7 @@
 
 //! Opaque handles and basic command structures.
 
-/// An opaque handle to a recorded command buffer that is ready for submission.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct CommandBufferId(pub u64);
+pub use super::command_buffer_id::CommandBufferId;
 
 /// A generalized draw command containing all necessary state and bindings for a single draw call.
 #[derive(Debug, Clone)]

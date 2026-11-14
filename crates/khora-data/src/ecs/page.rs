@@ -12,65 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::any::Any;
-
 use khora_core::ecs::entity::EntityId;
 
 use crate::ecs::{ColumnMap, ColumnTicks, ComponentKey, Tick};
 
-/// An internal helper trait to perform vector operations on a type-erased `Box<dyn Any>`.
-///
-/// This allows us to call methods like `swap_remove` on component columns without
-/// needing to know their concrete `Vec<T>` type at compile time.
-pub trait AnyVec: Any + Send + Sync {
-    /// Casts the trait object to `&dyn Any`.
-    fn as_any(&self) -> &dyn Any;
-
-    /// Casts the trait object to `&mut dyn Any`.
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-
-    /// Performs a `swap_remove` on the underlying column, removing the element at `index`.
-    fn swap_remove_any(&mut self, index: usize);
-
-    /// The number of rows the column holds.
-    fn len(&self) -> usize;
-
-    /// Whether the column holds no row.
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-}
-
-// We implement this trait for any `Vec<T>` where T is `'static`.
-impl<T: 'static + Send + Sync> AnyVec for Vec<T> {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
-    fn swap_remove_any(&mut self, index: usize) {
-        self.swap_remove(index);
-    }
-
-    fn len(&self) -> usize {
-        Vec::len(self)
-    }
-}
-
-/// A logical address pointing to an entity's component data within a specific `ComponentPage`.
-///
-/// This struct is the core of the relational aspect of our ECS. It decouples an entity's
-/// identity from the physical storage of its data by acting as a coordinate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct PageIndex {
-    /// The unique identifier of the `ComponentPage` that stores the component data.
-    pub page_id: u32,
-    /// The index of the row within the page where this entity's components are stored.
-    pub row_index: u32,
-}
+pub use super::any_vec::AnyVec;
+pub use super::page_index::PageIndex;
 
 /// A page of memory that stores the component data for multiple entities
 /// in a Structure of Arrays (SoA) layout.

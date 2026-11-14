@@ -18,7 +18,12 @@
 
 use crate::math::{Quat, Vec3};
 
+mod character_controller_options;
+mod collider_desc;
+mod collider_handle;
 mod collision;
+mod collision_event;
+mod contact_batch;
 mod debug;
 mod desc;
 mod handle;

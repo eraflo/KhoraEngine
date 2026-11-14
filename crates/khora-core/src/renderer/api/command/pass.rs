@@ -14,8 +14,8 @@
 
 //! Descriptors and types for render and compute passes.
 
+pub use super::compute_pass_descriptor::{ComputePassDescriptor, PassTimestampWrites};
 use crate::math::LinearRgba;
-use crate::renderer::api::device::gpu_hook::GpuHook;
 use crate::renderer::api::resource::TextureViewId;
 
 /// Describes the operation to perform on an attachment at the start of a render pass.
@@ -84,22 +84,4 @@ pub struct RenderPassDescriptor<'a> {
     pub color_attachments: &'a [RenderPassColorAttachment<'a>],
     /// An optional depth/stencil attachment for this pass.
     pub depth_stencil_attachment: Option<RenderPassDepthStencilAttachment<'a>>,
-}
-
-/// Describes a request to write a timestamp at specific points within a pass.
-#[derive(Debug, Default)]
-pub struct PassTimestampWrites<'a> {
-    /// The abstract hook representing the timestamp to be recorded at the beginning of the pass.
-    pub beginning_of_pass_hook: Option<&'a GpuHook>,
-    /// The abstract hook representing the timestamp to be recorded at the end of the pass.
-    pub end_of_pass_hook: Option<&'a GpuHook>,
-}
-
-/// A descriptor for a compute pass.
-#[derive(Debug, Default)]
-pub struct ComputePassDescriptor<'a> {
-    /// An optional debug label for the compute pass.
-    pub label: Option<&'a str>,
-    /// Optional timestamp recording requests for this pass, used for profiling.
-    pub timestamp_writes: Option<PassTimestampWrites<'a>>,
 }

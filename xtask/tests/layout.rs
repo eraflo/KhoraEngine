@@ -88,6 +88,7 @@ const RATCHETED_CHECKS: &[&str] = &[
     "retired_file_names",
     "constants_come_before_the_code",
     "private_helpers_come_after_the_primary_type_impls",
+    "each_file_holds_one_primary_type",
     "functions_under_200_lines",
 ];
 
@@ -4459,6 +4460,9 @@ struct TopItem {
     /// A `mod` whose body is written in place (`mod x { … }`), not in a file
     /// of its own (`mod x;`).
     inline: bool,
+    /// The item's code, its outer attributes included, with comments and the
+    /// contents of literals blanked.
+    code: String,
 }
 
 impl TopItem {
@@ -4584,6 +4588,7 @@ fn top_level_items(text: &str) -> Vec<TopItem> {
             private,
             cfg_test: attrs.iter().any(|attr| is_cfg_test(attr)),
             inline: kind == ItemKind::Mod && chars.get(stop) == Some(&'{'),
+            code: attrs.concat() + &chars[i..end].iter().collect::<String>(),
         });
         attrs.clear();
         line += newlines(&chars[i..end]);
@@ -4989,6 +4994,179 @@ fn helpers_after_impls_violations(root: &Path) -> Violations {
     violations
 }
 
+/// Per non-test file under `root`: the file's **families**, when it holds
+/// more than one — one detail string, `<n> primary types: `struct Foo` (line
+/// N), `enum Bar` (line M)`, each family by its representative, in line
+/// order (see [`type_families`]).
+///
+/// A file's top-level items are joined into families by naming: a type and
+/// its impls are one node, and any item (another type, a free `fn`, a
+/// `const`, a `static`, an alias, a macro call) that names a type as a whole
+/// word joins it — comments and literal contents blanked, `use` and `mod`
+/// items and `#[cfg(test)]` ones aside, an enum's variant names not read as
+/// types. A family is a group holding a type with a visibility; one is the
+/// file's primary type with what serves it.
+fn primary_type_violations(root: &Path) -> Violations {
+    let mut violations = Violations::new();
+    for (path, items) in order_scanned_files(root) {
+        let families = type_families(&items);
+        if families.len() > 1 {
+            let listed: Vec<String> = families
+                .iter()
+                .map(|ty| format!("`{}` (line {})", ty.label(), ty.line))
+                .collect();
+            add(
+                &mut violations,
+                path,
+                format!("{} primary types: {}", families.len(), listed.join(", ")),
+            );
+        }
+    }
+    violations
+}
+
+/// The families of a file's top-level `items`, each by its representative,
+/// in line order. Every item but a `use`, a `mod` and a `#[cfg(test)]` one is
+/// a node, a type's impls joined to it; an item naming a type joins it. A
+/// family is a connected group holding a non-private type; its
+/// representative is its first non-private type that no other type of the
+/// group names, else its first non-private type.
+fn type_families(items: &[TopItem]) -> Vec<&TopItem> {
+    let is_type = |item: &TopItem| {
+        matches!(
+            item.kind,
+            ItemKind::Struct | ItemKind::Enum | ItemKind::Union | ItemKind::Trait
+        )
+    };
+    let items: Vec<&TopItem> = items
+        .iter()
+        .filter(|item| !item.cfg_test && !matches!(item.kind, ItemKind::Use | ItemKind::Mod))
+        .collect();
+    let enums: Vec<&str> = (items.iter())
+        .filter(|item| item.kind == ItemKind::Enum)
+        .map(|item| item.name.as_str())
+        .collect();
+    // Each item's node: a type's own; an impl joins the type it is for, when
+    // the file declares it; any other item a node of its own.
+    let types: Vec<usize> = (0..items.len()).filter(|&i| is_type(items[i])).collect();
+    let node_of = |i: usize| -> usize {
+        if items[i].kind == ItemKind::Impl {
+            if let Some(&ty) = types.iter().find(|&&ty| items[ty].name == items[i].name) {
+                return ty;
+            }
+        }
+        i
+    };
+    let mut parent: Vec<usize> = (0..items.len()).collect();
+    fn find(parent: &mut [usize], mut at: usize) -> usize {
+        while parent[at] != at {
+            parent[at] = parent[parent[at]];
+            at = parent[at];
+        }
+        at
+    }
+    // `named[ty]`: whether another type of the file (its declaration or its
+    // impls) names `ty`.
+    let mut named = vec![false; items.len()];
+    for (i, item) in items.iter().enumerate() {
+        let node = node_of(i);
+        let code = if item.kind == ItemKind::Enum {
+            blank_variant_names(&item.code)
+        } else {
+            item.code.clone()
+        };
+        for &ty in &types {
+            if ty == node || !names_type(&code, &items[ty].name, &enums) {
+                continue;
+            }
+            let (a, b) = (find(&mut parent, node), find(&mut parent, ty));
+            parent[a] = b;
+            if is_type(items[node]) {
+                named[ty] = true;
+            }
+        }
+    }
+    let mut families: Vec<&TopItem> = Vec::new();
+    let mut seen: Vec<usize> = Vec::new();
+    for &ty in &types {
+        let group = find(&mut parent, ty);
+        if seen.contains(&group) {
+            continue;
+        }
+        let members: Vec<usize> = (types.iter().copied())
+            .filter(|&other| !items[other].private && find(&mut parent, other) == group)
+            .collect();
+        let Some(&first) = members.first() else {
+            continue;
+        };
+        seen.push(group);
+        let representative = (members.iter().copied())
+            .find(|&other| !named[other])
+            .unwrap_or(first);
+        families.push(items[representative]);
+    }
+    families.sort_by_key(|item| item.line);
+    families
+}
+
+/// Whether `code` names the type `word`: as a whole identifier, not as a
+/// variant of an enum of `enums` (`Kind::Word`).
+fn names_type(code: &str, word: &str, enums: &[&str]) -> bool {
+    code.match_indices(word).any(|(at, _)| {
+        let before = code[..at].chars().next_back();
+        let after = code[at + word.len()..].chars().next();
+        let whole = !before.is_some_and(is_ident_char) && !after.is_some_and(is_ident_char);
+        let variant = (code[..at].strip_suffix("::"))
+            .is_some_and(|path| enums.iter().any(|name| names_suffix(path, name)));
+        whole && !variant
+    })
+}
+
+/// Whether `path` ends with the whole identifier `name`.
+fn names_suffix(path: &str, name: &str) -> bool {
+    path.strip_suffix(name)
+        .is_some_and(|rest| !rest.chars().next_back().is_some_and(is_ident_char))
+}
+
+/// An enum's `code` with the name of each of its variants blanked, where it
+/// is declared: what a variant is called names no type.
+fn blank_variant_names(code: &str) -> String {
+    let chars: Vec<char> = code.chars().collect();
+    let Some(open) = chars.iter().position(|&ch| ch == '{') else {
+        return code.to_owned();
+    };
+    let mut out = chars.clone();
+    let mut depth = 0usize;
+    let mut expect_name = true;
+    let mut i = open + 1;
+    while i < chars.len() {
+        let ch = chars[i];
+        match ch {
+            '#' if depth == 0 && chars.get(i + 1) == Some(&'[') => {
+                i = closing_bracket(&chars, i + 1);
+                continue;
+            }
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' => depth = depth.saturating_sub(1),
+            '}' if depth == 0 => break,
+            '}' => depth -= 1,
+            ',' if depth == 0 => expect_name = true,
+            _ if expect_name && depth == 0 && is_ident_char(ch) => {
+                let start = i;
+                while i < chars.len() && is_ident_char(chars[i]) {
+                    i += 1;
+                }
+                out[start..i].iter_mut().for_each(|blank| *blank = ' ');
+                expect_name = false;
+                continue;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    out.into_iter().collect()
+}
+
 /// Tests come last in a file: after the test module — an inline
 /// `#[cfg(test)] mod tests { … }`, or `#[cfg(test)] mod tests;` declaring the
 /// file that holds them — nothing but blank lines and comments. Strict.
@@ -5053,6 +5231,20 @@ fn private_helpers_come_after_the_primary_type_impls() {
         "private_helpers_come_after_the_primary_type_impls",
         "private helpers between the primary type and its impls (move them below the last impl)",
         &helpers_after_impls_violations(&repo_root()),
+    );
+}
+
+/// **A file holds one primary type.** Of a file's public types (`struct`,
+/// `enum`, `union`, `trait`, any `pub`), at most one is a root: named by no
+/// other item of the file than its own declaration and impls. The others are
+/// its field and payload types, the types its methods return, the traits it
+/// implements. Keyed by the file.
+#[test]
+fn each_file_holds_one_primary_type() {
+    ratchet(
+        "each_file_holds_one_primary_type",
+        "files holding more than one primary type (split them, one file per type)",
+        &primary_type_violations(&repo_root()),
     );
 }
 
@@ -5501,6 +5693,525 @@ fn after() {}
                 "line 6: `fn also` between `enum Bad` (line 1) and its last impl (line 7)"
                     .to_owned(),
             ]
+        )]
+    );
+}
+
+/// The primary-type check's violations on a fresh tree of `files` (paths
+/// relative to it), as `(path, details)` pairs.
+fn primary_type_list(label: &str, files: &[(&str, &str)]) -> Vec<(String, Vec<String>)> {
+    let dir = order_temp_dir(label);
+    let setup = write_order_tree(&dir, files);
+    let violations = primary_type_violations(&dir);
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+    violation_list(violations)
+}
+
+/// One expected primary-type violation: `path` holding `roots` (each
+/// `` `struct Foo` (line N) ``, in line order).
+fn primary_type_violation(path: &str, roots: &[&str]) -> (String, Vec<String>) {
+    (
+        path.to_owned(),
+        vec![format!(
+            "{} primary types: {}",
+            roots.len(),
+            roots.join(", ")
+        )],
+    )
+}
+
+/// **A type that names its field and payload types is the file's one
+/// root.** `Offer` holds `Vec<OfferRow>`, `OfferRow` holds a `Basis`, a
+/// variant of `Basis` carries a `Unit`: one root, `Offer`, so no violation.
+/// A file of two unrelated types beside it is named, so the check did run.
+#[test]
+fn primary_type_check_passes_a_type_naming_its_field_and_payload_types() {
+    const OFFER: &str = "\
+pub struct Offer {
+    pub rows: Vec<OfferRow>,
+}
+pub struct OfferRow {
+    pub basis: Basis,
+}
+pub enum Basis {
+    Time(Unit),
+    Memory,
+}
+pub struct Unit;
+";
+    let list = primary_type_list(
+        "primary-fields",
+        &[
+            ("crates/alpha/src/lib.rs", "mod offer;\nmod control;\n"),
+            ("crates/alpha/src/offer.rs", OFFER),
+            (
+                "crates/alpha/src/control.rs",
+                "pub struct One;\npub struct Two;\n",
+            ),
+        ],
+    );
+    assert_eq!(
+        list,
+        vec![primary_type_violation(
+            "crates/alpha/src/control.rs",
+            &["`struct One` (line 1)", "`struct Two` (line 2)"]
+        )]
+    );
+}
+
+/// **Two unrelated public types are two roots, named with their lines.**
+/// `BufferId` and `BufferDescriptor` name nothing of each other: the file is
+/// named, each root at the line of its keyword (below its doc and
+/// attributes). An `enum` and a `pub(crate) union` count as types too.
+#[test]
+fn primary_type_check_names_two_unrelated_types_with_their_lines() {
+    const BUFFER: &str = "\
+//! Buffers.
+
+/// A buffer's id.
+#[derive(Debug)]
+pub struct BufferId(u64);
+pub struct BufferDescriptor {
+    pub size: u64,
+}
+";
+    const MODES: &str = "\
+pub enum Mode {
+    Fast,
+}
+pub(crate) union Bits {
+    a: u32,
+}
+";
+    let list = primary_type_list(
+        "primary-unrelated",
+        &[
+            ("crates/alpha/src/lib.rs", "mod buffer;\nmod modes;\n"),
+            ("crates/alpha/src/buffer.rs", BUFFER),
+            ("crates/alpha/src/modes.rs", MODES),
+        ],
+    );
+    assert_eq!(
+        list,
+        vec![
+            primary_type_violation(
+                "crates/alpha/src/buffer.rs",
+                &[
+                    "`struct BufferId` (line 5)",
+                    "`struct BufferDescriptor` (line 6)"
+                ]
+            ),
+            primary_type_violation(
+                "crates/alpha/src/modes.rs",
+                &["`enum Mode` (line 1)", "`union Bits` (line 4)"]
+            ),
+        ]
+    );
+}
+
+/// **A type named in another type's impl is secondary; a type named only in
+/// its own impls is not.** `ReadinessHold` appears only as the return type of
+/// a method in `impl Readiness`: one root. `Left` and `Right<T>` each appear
+/// only in their own impls (`impl Left`, `impl<T: Clone> Clone for
+/// Right<T>`): two roots.
+#[test]
+fn primary_type_check_counts_another_types_impl_but_not_a_types_own() {
+    const READINESS: &str = "\
+pub struct Readiness;
+impl Readiness {
+    pub fn hold(&self) -> ReadinessHold {
+        ReadinessHold
+    }
+}
+pub struct ReadinessHold;
+";
+    const OWN_IMPLS: &str = "\
+pub struct Left;
+impl Left {
+    pub fn new() -> Left {
+        Left
+    }
+}
+pub struct Right<T>(T);
+impl<T: Clone> Clone for Right<T> {
+    fn clone(&self) -> Right<T> {
+        Right(self.0.clone())
+    }
+}
+";
+    let list = primary_type_list(
+        "primary-impls",
+        &[
+            (
+                "crates/alpha/src/lib.rs",
+                "mod readiness;\nmod own_impls;\n",
+            ),
+            ("crates/alpha/src/readiness.rs", READINESS),
+            ("crates/alpha/src/own_impls.rs", OWN_IMPLS),
+        ],
+    );
+    assert_eq!(
+        list,
+        vec![primary_type_violation(
+            "crates/alpha/src/own_impls.rs",
+            &["`struct Left` (line 1)", "`struct Right` (line 7)"]
+        )]
+    );
+}
+
+/// **A trait another type of the file implements is secondary.**
+/// `impl Validate for Foo` names `Validate`: `Foo` is the one root. Beside an
+/// unrelated `Other`, the roots are `Foo` and `Other`, never the trait; a
+/// trait nothing implements is a root of its own.
+#[test]
+fn primary_type_check_counts_a_trait_implemented_by_another_type_as_secondary() {
+    const VALIDATE: &str = "\
+pub trait Validate {
+    fn validate(&self) -> bool;
+}
+pub struct Foo;
+impl Validate for Foo {
+    fn validate(&self) -> bool {
+        true
+    }
+}
+";
+    let list = primary_type_list(
+        "primary-trait",
+        &[
+            (
+                "crates/alpha/src/lib.rs",
+                "mod validate;\nmod with_stray;\nmod trait_root;\n",
+            ),
+            ("crates/alpha/src/validate.rs", VALIDATE),
+            (
+                "crates/alpha/src/with_stray.rs",
+                "pub trait Check {}\npub struct Foo;\nimpl Check for Foo {}\npub struct Other;\n",
+            ),
+            (
+                "crates/alpha/src/trait_root.rs",
+                "pub trait Draw {}\npub struct Canvas;\n",
+            ),
+        ],
+    );
+    assert_eq!(
+        list,
+        vec![
+            primary_type_violation(
+                "crates/alpha/src/trait_root.rs",
+                &["`trait Draw` (line 1)", "`struct Canvas` (line 2)"]
+            ),
+            primary_type_violation(
+                "crates/alpha/src/with_stray.rs",
+                &["`struct Foo` (line 2)", "`struct Other` (line 4)"]
+            ),
+        ]
+    );
+}
+
+/// **Only a type, or a free item naming several types, joins types into one
+/// family.** `Main` names `ByField` by a field and `ByBound` by a bound in its
+/// impl: one family, `Main`. A free function, a macro call, a `const`, a
+/// `static` or a type alias naming a single type does not join it to
+/// another: `ByFn`, `ByMacro`, `ByConst`, `ByStatic`, `ByAlias` are a family
+/// each, as is the unrelated `Stray`. The free function `both` names
+/// `JoinedA` and `JoinedB`: one family, represented by `JoinedA`, the first by
+/// line. Eight families, each named by its representative.
+#[test]
+fn primary_type_check_counts_every_kind_of_item_naming_a_type() {
+    const KINDS: &str = "\
+pub struct Main {
+    pub field: ByField,
+}
+pub struct ByField;
+pub struct ByFn;
+pub struct ByMacro;
+pub struct ByConst;
+pub struct ByStatic;
+pub struct ByAlias;
+pub trait ByBound {}
+pub struct Stray;
+pub struct JoinedA;
+pub struct JoinedB;
+impl<T: ByBound> From<T> for Main {
+    fn from(_: T) -> Self {
+        Main { field: ByField }
+    }
+}
+pub fn by_fn(_: ByFn) {}
+inventory::submit! { ByMacro }
+const DEFAULT: ByConst = ByConst;
+static GLOBAL: Option<ByStatic> = None;
+type Short = ByAlias;
+pub fn both(_: JoinedA, _: JoinedB) {}
+";
+    let list = primary_type_list(
+        "primary-kinds",
+        &[
+            ("crates/alpha/src/lib.rs", "mod kinds;\n"),
+            ("crates/alpha/src/kinds.rs", KINDS),
+        ],
+    );
+    assert_eq!(
+        list,
+        vec![primary_type_violation(
+            "crates/alpha/src/kinds.rs",
+            &[
+                "`struct Main` (line 1)",
+                "`struct ByFn` (line 5)",
+                "`struct ByMacro` (line 6)",
+                "`struct ByConst` (line 7)",
+                "`struct ByStatic` (line 8)",
+                "`struct ByAlias` (line 9)",
+                "`struct Stray` (line 11)",
+                "`struct JoinedA` (line 12)",
+            ]
+        )]
+    );
+}
+
+/// **A name in a comment or a literal names nothing.** `B` appears in a line
+/// comment, in a doc comment on `A`, in a string, a raw string and a char
+/// literal held by `const` items: `A` and `B` are both roots.
+#[test]
+fn primary_type_check_ignores_names_in_comments_and_literals() {
+    const LITERALS: &str = "\
+// B is mentioned here only.
+const S: &str = \"B\";
+const R: &str = r#\"B\"#;
+const C: char = 'B';
+/// See [`B`].
+pub struct A;
+pub struct B;
+";
+    let list = primary_type_list(
+        "primary-literals",
+        &[
+            ("crates/alpha/src/lib.rs", "mod literals;\n"),
+            ("crates/alpha/src/literals.rs", LITERALS),
+        ],
+    );
+    assert_eq!(
+        list,
+        vec![primary_type_violation(
+            "crates/alpha/src/literals.rs",
+            &["`struct A` (line 6)", "`struct B` (line 7)"]
+        )]
+    );
+}
+
+/// **A name counts as a whole word only.** `GpuMesh`, `MeshSource` and
+/// `Mesh_` do not name `Mesh`; `GpuMeshPool` does not name `GpuMesh`: both
+/// are roots.
+#[test]
+fn primary_type_check_matches_whole_words_only() {
+    const MESH: &str = "\
+pub struct Mesh;
+pub struct GpuMesh {
+    pub source: MeshSource,
+}
+pub fn upload(_: &GpuMeshPool, _: Mesh_) {}
+";
+    let list = primary_type_list(
+        "primary-words",
+        &[
+            ("crates/alpha/src/lib.rs", "mod mesh;\n"),
+            ("crates/alpha/src/mesh.rs", MESH),
+        ],
+    );
+    assert_eq!(
+        list,
+        vec![primary_type_violation(
+            "crates/alpha/src/mesh.rs",
+            &["`struct Mesh` (line 1)", "`struct GpuMesh` (line 2)"]
+        )]
+    );
+}
+
+/// **Private types and test items are not types of the file.** A private
+/// `Helper` named nowhere beside `pub struct Main`: no violation. A
+/// `#[cfg(test)] pub struct Fixture` and a `pub struct T` in the inline
+/// `#[cfg(test)] mod tests` beside `Main`: no violation either. A file of
+/// two unrelated types beside them is named, so the check did run.
+#[test]
+fn primary_type_check_ignores_private_types_and_test_items() {
+    const CFG_TEST: &str = "\
+pub struct Main;
+#[cfg(test)]
+pub struct Fixture;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    pub struct T;
+}
+";
+    let list = primary_type_list(
+        "primary-private",
+        &[
+            (
+                "crates/alpha/src/lib.rs",
+                "mod private;\nmod cfg_test;\nmod control;\n",
+            ),
+            (
+                "crates/alpha/src/private.rs",
+                "struct Helper;\npub struct Main;\n",
+            ),
+            ("crates/alpha/src/cfg_test.rs", CFG_TEST),
+            (
+                "crates/alpha/src/control.rs",
+                "pub struct One;\npub struct Two;\n",
+            ),
+        ],
+    );
+    assert_eq!(
+        list,
+        vec![primary_type_violation(
+            "crates/alpha/src/control.rs",
+            &["`struct One` (line 1)", "`struct Two` (line 2)"]
+        )]
+    );
+}
+
+/// **A `use` or a `mod` naming a type does not make it secondary.** `pub use
+/// crate::prelude::B;` names `B`, an inline `mod extra` imports and uses `A`:
+/// `A` and `B` are still both roots.
+#[test]
+fn primary_type_check_ignores_use_and_mod_items() {
+    const USES: &str = "\
+pub use crate::prelude::B;
+pub struct A;
+pub struct B;
+mod extra {
+    use super::A;
+    pub fn f(_: A) {}
+}
+";
+    let list = primary_type_list(
+        "primary-uses",
+        &[
+            ("crates/alpha/src/lib.rs", "mod uses;\n"),
+            ("crates/alpha/src/uses.rs", USES),
+        ],
+    );
+    assert_eq!(
+        list,
+        vec![primary_type_violation(
+            "crates/alpha/src/uses.rs",
+            &["`struct A` (line 2)", "`struct B` (line 3)"]
+        )]
+    );
+}
+
+/// **Test files are not read.** A `tests.rs`, a file under a `tests/` folder,
+/// a `#![cfg(test)]` file and a file declared by `#[cfg(test)] mod` each hold
+/// two unrelated types: only the non-test `real.rs` is named.
+#[test]
+fn primary_type_check_skips_test_files() {
+    const TWO: &str = "pub struct One;\npub struct Two;\n";
+    let list = primary_type_list(
+        "primary-test-files",
+        &[
+            (
+                "crates/alpha/src/lib.rs",
+                "mod real;\nmod gated;\n#[cfg(test)]\nmod support;\n#[cfg(test)]\nmod tests;\n",
+            ),
+            ("crates/alpha/src/real.rs", TWO),
+            ("crates/alpha/src/tests.rs", TWO),
+            ("crates/alpha/src/tests/fixtures.rs", TWO),
+            ("crates/alpha/src/support.rs", TWO),
+            (
+                "crates/alpha/src/gated.rs",
+                "#![cfg(test)]\npub struct One;\npub struct Two;\n",
+            ),
+        ],
+    );
+    assert_eq!(
+        list,
+        vec![primary_type_violation(
+            "crates/alpha/src/real.rs",
+            &["`struct One` (line 1)", "`struct Two` (line 2)"]
+        )]
+    );
+}
+
+/// **Unrelated types named only by items that are not types are still more
+/// than one primary type.** `SimSteps` and `SubSteps` are each returned by a
+/// free function of their own; `ScenePassSlot` and `UiPassSlot` are each
+/// submitted by a macro call, and `FrameGraph` is named by a type alias. No
+/// type of either file names another, yet each file is left with no root at
+/// all: both files are named.
+#[test]
+fn primary_type_check_names_unrelated_types_named_only_by_free_items() {
+    const SIM_STEPS: &str = "\
+pub struct SimSteps {
+    pub count: u32,
+}
+pub struct SubSteps {
+    pub count: u32,
+}
+pub fn compute_sim_steps(dt: f32) -> SimSteps {
+    SimSteps { count: dt as u32 }
+}
+pub fn compute_sub_steps(dt: f32) -> SubSteps {
+    SubSteps { count: dt as u32 }
+}
+";
+    const FRAME_GRAPH: &str = "\
+pub struct FrameGraph;
+pub struct ScenePassSlot;
+pub struct UiPassSlot;
+pub type SharedFrameGraph = std::sync::Arc<FrameGraph>;
+inventory::submit! { ScenePassSlot }
+inventory::submit! { UiPassSlot }
+";
+    let list = primary_type_list(
+        "primary-free-items",
+        &[
+            (
+                "crates/alpha/src/lib.rs",
+                "mod sim_steps;\nmod frame_graph;\n",
+            ),
+            ("crates/alpha/src/sim_steps.rs", SIM_STEPS),
+            ("crates/alpha/src/frame_graph.rs", FRAME_GRAPH),
+        ],
+    );
+    let named: Vec<&str> = list.iter().map(|(path, _)| path.as_str()).collect();
+    assert_eq!(
+        named,
+        vec![
+            "crates/alpha/src/frame_graph.rs",
+            "crates/alpha/src/sim_steps.rs"
+        ]
+    );
+}
+
+/// **An enum variant named like a type does not name the type.** `SourceKind`
+/// has a variant `Locked`; the struct `Locked` beside it is named by nothing:
+/// `SourceKind` and `Locked` are both roots.
+#[test]
+fn primary_type_check_does_not_read_a_variant_as_the_type_of_its_name() {
+    const SOURCE: &str = "\
+pub enum SourceKind {
+    Locked,
+    Free,
+}
+pub struct Locked {
+    pub depth: u32,
+}
+";
+    let list = primary_type_list(
+        "primary-variant",
+        &[
+            ("crates/alpha/src/lib.rs", "mod source;\n"),
+            ("crates/alpha/src/source.rs", SOURCE),
+        ],
+    );
+    assert_eq!(
+        list,
+        vec![primary_type_violation(
+            "crates/alpha/src/source.rs",
+            &["`enum SourceKind` (line 1)", "`struct Locked` (line 5)"]
         )]
     );
 }

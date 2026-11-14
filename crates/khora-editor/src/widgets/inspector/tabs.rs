@@ -34,6 +34,8 @@ use super::instance_band::render_instance_band;
 use super::tag_chips::render_tag_chips;
 use super::walker::{render_value_marked, FieldAction, Marks};
 
+pub use super::debug_tab::DebugTab;
+
 /// Per-tab context handed to [`InspectorTab::render`]. Locked once by the
 /// caller and passed through.
 pub struct InspectorTabContext<'a> {
@@ -347,41 +349,5 @@ fn render_removed_component(
             value: value.clone(),
         }],
         None => restored(entity, type_name, prefab),
-    }
-}
-
-/// Debug tab — undo / redo stack inspection.
-pub struct DebugTab;
-
-impl InspectorTab for DebugTab {
-    fn label(&self) -> &str {
-        "Debug"
-    }
-
-    fn render(
-        &mut self,
-        ui: &mut dyn UiBuilder,
-        body_rect: [f32; 4],
-        ctx: &mut InspectorTabContext<'_>,
-    ) {
-        let theme = ctx.theme.clone();
-        let history = ctx.history.clone();
-        let undo_desc = history
-            .lock()
-            .ok()
-            .and_then(|h| h.undo_description().map(|s| s.to_owned()))
-            .unwrap_or_else(|| "(none)".to_owned());
-        let redo_desc = history
-            .lock()
-            .ok()
-            .and_then(|h| h.redo_description().map(|s| s.to_owned()))
-            .unwrap_or_else(|| "(none)".to_owned());
-        ui.region_at("inspector-debug", body_rect, &mut |ui_inner| {
-            ui_inner.colored_label(theme.text_dim, "Command history:");
-            ui_inner.colored_label(
-                theme.text_muted,
-                &format!("Undo: {} | Redo: {}", undo_desc, redo_desc),
-            );
-        });
     }
 }

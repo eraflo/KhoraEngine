@@ -16,6 +16,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub use super::collider_handle::ColliderHandle;
+
 /// Opaque handle to a rigid body in the physics engine.
 ///
 /// Carries the backend's slot **and its generation**. A backend that recycles
@@ -24,13 +26,6 @@ use serde::{Deserialize, Serialize};
 /// somebody else's body rather than fail. See [`SlotId`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RigidBodyHandle(pub u64);
-
-/// Opaque handle to a collider in the physics engine.
-///
-/// Carries the slot and its generation, for the reason [`RigidBodyHandle`]
-/// gives.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ColliderHandle(pub u64);
 
 /// A backend slot and the generation that says which occupant is meant.
 ///
@@ -61,13 +56,6 @@ impl SlotId {
 }
 
 impl RigidBodyHandle {
-    /// The slot and generation this addresses.
-    pub const fn slot(self) -> SlotId {
-        SlotId::unpack(self.0)
-    }
-}
-
-impl ColliderHandle {
     /// The slot and generation this addresses.
     pub const fn slot(self) -> SlotId {
         SlotId::unpack(self.0)

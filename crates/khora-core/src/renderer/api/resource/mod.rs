@@ -15,8 +15,15 @@
 //! GPU data handles and descriptors.
 
 pub mod buffer;
+mod buffer_id;
+mod index_format;
+mod sampler_descriptor;
+mod sampler_id;
 pub mod texture;
 pub mod texture_format;
+mod texture_id;
+mod texture_view_descriptor;
+mod texture_view_id;
 pub mod view;
 
 pub use self::buffer::*;

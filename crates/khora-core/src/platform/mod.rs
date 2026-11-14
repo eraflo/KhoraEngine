@@ -22,6 +22,7 @@ pub mod input;
 pub mod input_map;
 pub mod machine;
 pub mod window;
+mod window_handle;
 
 pub use input::{input_channel, InputEvent, KeyCode, MouseButton, INPUT_BACKLOG};
 pub use input_map::{Action, InputBinding, InputMap, InputSnapshot};

@@ -42,11 +42,13 @@
 //! ```
 
 pub mod audio;
+mod audio_playback_writeback;
 mod behaviors;
 pub mod camera;
 pub mod companion;
 mod flow_context;
 pub mod physics;
+mod physics_step_result;
 pub mod prefab_catalog;
 mod registration;
 pub mod render;

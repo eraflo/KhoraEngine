@@ -14,7 +14,7 @@
 
 //! Defines data structures for graphics backend selection and introspection.
 
-use super::adapter::GraphicsAdapterInfo;
+pub use super::backend_selection_result::BackendSelectionResult;
 use crate::renderer::api::device::GraphicsBackendType;
 use std::time::Duration;
 
@@ -70,21 +70,4 @@ impl Default for BackendSelectionConfig {
             prefer_discrete_gpu: true,
         }
     }
-}
-
-/// The successful result of a backend selection operation.
-///
-/// This struct contains the chosen adapter handle (`TAdapter`), which is a generic
-/// type provided by the specific backend implementation (e.g., `wgpu::Adapter`),
-/// along with metadata about the selection process.
-#[derive(Debug)]
-pub struct BackendSelectionResult<TAdapter> {
-    /// The handle to the selected graphics adapter (GPU).
-    pub adapter: TAdapter,
-    /// Detailed information about the selected adapter.
-    pub adapter_info: GraphicsAdapterInfo,
-    /// The total time taken for the selection process, in milliseconds.
-    pub selection_time_ms: u64,
-    /// A list of all backend APIs that were attempted during the selection process.
-    pub attempted_backends: Vec<GraphicsBackendType>,
 }

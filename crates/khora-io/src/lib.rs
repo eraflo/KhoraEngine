@@ -19,7 +19,9 @@
 //! in GORNA strategy negotiation.
 
 pub mod asset;
+mod asset_prefabs;
 pub mod profiles;
+mod reader_prefabs;
 pub mod scene_loads;
 pub mod script;
 pub mod serialization;

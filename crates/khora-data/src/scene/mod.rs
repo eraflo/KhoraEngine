@@ -32,6 +32,7 @@ pub mod encoding;
 mod entity_refs;
 pub mod file;
 pub mod inspector_json;
+mod kept;
 pub mod load_catalog;
 pub mod loading;
 pub mod positional;
@@ -43,6 +44,7 @@ pub mod save;
 pub mod scene_record;
 pub mod schema;
 pub mod snapshot;
+mod staged_value;
 
 pub use component_registration::*;
 pub use material_registration::*;

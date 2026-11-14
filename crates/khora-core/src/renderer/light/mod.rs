@@ -18,7 +18,9 @@
 //! in a scene. These types are used by the ECS components in `khora-data` and by
 //! the render lanes in `khora-lanes` to calculate lighting during rendering.
 
+mod culling_uniforms_data;
 pub mod forward_plus;
+mod gpu_light;
 pub mod uniforms;
 
 pub use self::forward_plus::{ForwardPlusTileConfig, GpuLight, TileSize};

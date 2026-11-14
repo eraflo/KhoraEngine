@@ -15,6 +15,8 @@
 //! What the inspector shows of components a script declared, and what
 //! "+ Add Component" offers.
 
+pub use super::addable_component::{AddableComponent, ComponentOrigin};
+
 /// A component a script declared, as the inspector shows it: its fields in
 /// declaration order, each with its Ergon type, its value and its default.
 #[derive(Debug, Clone, PartialEq)]
@@ -63,27 +65,4 @@ pub struct DeclaredFieldView {
     /// How the inspector presents it: its range, tooltip and section header
     /// as its declaring module gives them — none when it gives none.
     pub hints: crate::script::FieldHints,
-}
-
-/// One entry of "+ Add Component": a component the entity may be given.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AddableComponent {
-    /// The component's name.
-    pub name: String,
-    /// The domain whose pages hold it, where known — what the menu groups by.
-    pub domain: Option<crate::ecs::SemanticDomain>,
-    /// What declares it.
-    pub origin: ComponentOrigin,
-}
-
-/// What declares a component the inspector offers.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ComponentOrigin {
-    /// A Rust type.
-    Rust,
-    /// A script.
-    Script {
-        /// The `.erg` module declaring it, relative to the script root.
-        module: String,
-    },
 }

@@ -19,6 +19,7 @@ mod command;
 mod conversions;
 mod device;
 mod flag_bridge;
+mod gpu_health;
 pub(crate) mod graphics_context;
 mod pipeline_system;
 mod profiler;

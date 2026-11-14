@@ -18,6 +18,7 @@
 //! eframe backend behind the trait.
 
 pub mod app_context;
+mod app_lifecycle;
 pub mod runtime;
 
 pub use app_context::AppContext;

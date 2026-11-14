@@ -118,7 +118,8 @@ was at most `s`. ∎
 
 | Piece | File |
 |---|---|
-| `Tick`, `ColumnTicks`, `QUIET_ROW_TICKS` | `crates/khora-data/src/ecs/tick.rs` |
+| `Tick`, `QUIET_ROW_TICKS` | `crates/khora-data/src/ecs/tick.rs` |
+| `ColumnTicks` | `crates/khora-data/src/ecs/column_ticks.rs` |
 | the clock, stamps, freeing, domain epochs | `crates/khora-data/src/ecs/world/clock.rs`, `world/mod.rs` |
 | `Mut<T>` | `crates/khora-data/src/ecs/mut_guard.rs` |
 | `Changed<T>`, `FetchContext` | `crates/khora-data/src/ecs/query/changed.rs`, `query/fetch_context.rs` |

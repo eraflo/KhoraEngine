@@ -30,14 +30,15 @@ use crate::event::Supersedes;
 use crate::lane::context_keys::ClearColor;
 use crate::lane::contract::Lane;
 use crate::lane::family::LaneFamily;
-use crate::lane::guard::{InputRefusal, OutputRefusal, Reason, SinkKind, SourceKind};
+use crate::lane::guard::{InputRefusal, SourceKind};
 use crate::lane::io::{
-    Budget, Declaration, FixedStep, InputSource, Locked, OutputSink, Pass, PassSlot, SceneTarget,
-    Target, TargetKey,
+    Budget, Declaration, FixedStep, InputSource, Locked, SceneTarget, Target, TargetKey,
 };
-use crate::lane::reserve::Staged;
-use crate::lane::LaneError;
 use crate::residency::{Residency, Resident};
+
+pub use super::output_ops::{
+    deck_output_field, pass_field, staged_field, DeckOutputField, OutputOps, PassField, StagedField,
+};
 
 /// What the derive does with one input field.
 pub struct InputOps<'f, T> {
@@ -47,16 +48,6 @@ pub struct InputOps<'f, T> {
     pub fetch: fn(&mut InputSource<'f>, &'static str) -> Result<T, InputRefusal>,
     /// The target the field names, for a `#[frame] Target`.
     pub target: fn(&T) -> Option<TargetKey>,
-}
-
-/// What the derive does with one output field.
-pub struct OutputOps<'f, T> {
-    /// Declares the field's sink.
-    pub declare: fn(&mut Declaration, &'static str),
-    /// Opens the field for one record.
-    pub open: fn(&mut OutputSink<'f>, &'static str) -> Result<T, LaneError>,
-    /// Commits the field into the sink.
-    pub commit: fn(T, &mut OutputSink<'f>, &'static str) -> Result<(), OutputRefusal>,
 }
 
 /// A field that names no target.
@@ -278,110 +269,6 @@ impl FrameField for ClearColor {
     }
 }
 
-/// A field type `#[pass]` accepts: `Pass<'f, P>`.
-#[diagnostic::on_unimplemented(
-    message = "`#[pass]` records into a pass slot: the field must be `Pass<'f, P>`, not `{Self}`",
-    label = "not a pass"
-)]
-pub trait PassField<'f>: Sized {
-    /// Declares the pass slot written.
-    fn declare(d: &mut Declaration, field: &'static str);
-    /// Opens the pass for one record.
-    fn open(sink: &mut OutputSink<'f>, field: &'static str) -> Result<Self, LaneError>;
-    /// Closes the pass into its slot.
-    fn commit(self, sink: &mut OutputSink<'f>, field: &'static str) -> Result<(), OutputRefusal>;
-}
-impl<'f, P: PassSlot> PassField<'f> for Pass<'f, P> {
-    fn declare(d: &mut Declaration, field: &'static str) {
-        d.write::<P>(field, SinkKind::Pass);
-    }
-    fn open(sink: &mut OutputSink<'f>, field: &'static str) -> Result<Self, LaneError> {
-        let device = sink.device().ok_or_else(|| LaneError::MissingResource {
-            kind: "pass encoder",
-            key: format!("`{field}` ({}): no device lent", std::any::type_name::<P>()),
-        })?;
-        Ok(Pass::open(device).lending(sink.pipelines()))
-    }
-    fn commit(self, sink: &mut OutputSink<'f>, field: &'static str) -> Result<(), OutputRefusal> {
-        let closed = self.close().ok_or(OutputRefusal {
-            field,
-            sink: SinkKind::Pass,
-            reason: Reason::PassNotClosed,
-        })?;
-        sink.put_pass(field, closed)
-    }
-}
-
-/// A field type output `#[deck]` accepts: an owned value a later phase reads.
-#[diagnostic::on_unimplemented(
-    message = "`#[deck]` writes a slot for a later phase: `{Self}` must be owned, `Default`, `Clone`, `Send` and `Sync`",
-    label = "not an owned slot value"
-)]
-pub trait DeckOutputField<'f>: Sized {
-    /// Declares the slot written.
-    fn declare(d: &mut Declaration, field: &'static str);
-    /// Opens the slot's value for one record: what it holds this frame, or
-    /// its default.
-    fn open(sink: &mut OutputSink<'f>, field: &'static str) -> Result<Self, LaneError>;
-    /// Writes the value into its slot.
-    fn commit(self, sink: &mut OutputSink<'f>, field: &'static str) -> Result<(), OutputRefusal>;
-}
-impl<'f, T: Default + Clone + Any + Send + Sync> DeckOutputField<'f> for T {
-    fn declare(d: &mut Declaration, field: &'static str) {
-        d.write::<T>(field, SinkKind::Deck);
-    }
-    fn open(sink: &mut OutputSink<'f>, _field: &'static str) -> Result<Self, LaneError> {
-        Ok(sink.opening::<T>())
-    }
-    fn commit(self, sink: &mut OutputSink<'f>, field: &'static str) -> Result<(), OutputRefusal> {
-        sink.put(field, self)
-    }
-}
-
-/// A field type output `#[staged]` accepts: `Vec<T>` or [`Leases<T>`] of a
-/// [`Staged`] output, kept in the family's reserve across frames.
-#[diagnostic::on_unimplemented(
-    message = "`#[staged]` writes to the family's reserve: the field must be `Vec<T>` or `Leases<T>` of a `Staged` output, not `{Self}`",
-    label = "not staged outputs"
-)]
-pub trait StagedField<'f>: Sized {
-    /// Declares the output staged.
-    fn declare(d: &mut Declaration, field: &'static str);
-    /// Opens the field for one record: nothing staged yet.
-    fn open(sink: &mut OutputSink<'f>, field: &'static str) -> Result<Self, LaneError>;
-    /// Stages what the lane wrote.
-    fn commit(self, sink: &mut OutputSink<'f>, field: &'static str) -> Result<(), OutputRefusal>;
-}
-impl<'f, T: Staged> StagedField<'f> for Vec<T> {
-    fn declare(d: &mut Declaration, field: &'static str) {
-        d.write::<T>(field, SinkKind::Staged);
-    }
-    fn open(_sink: &mut OutputSink<'f>, _field: &'static str) -> Result<Self, LaneError> {
-        Ok(Vec::new())
-    }
-    fn commit(self, sink: &mut OutputSink<'f>, field: &'static str) -> Result<(), OutputRefusal> {
-        sink.stage(field, self)
-    }
-}
-
-impl<'f, T: Staged> StagedField<'f> for crate::lane::Leases<T> {
-    fn declare(d: &mut Declaration, field: &'static str) {
-        d.write::<T>(field, SinkKind::Staged);
-    }
-    fn open(_sink: &mut OutputSink<'f>, _field: &'static str) -> Result<Self, LaneError> {
-        Ok(Self::default())
-    }
-    fn commit(self, sink: &mut OutputSink<'f>, field: &'static str) -> Result<(), OutputRefusal> {
-        for (items, lease) in self.into_groups() {
-            match lease {
-                Some(lease) => sink.stage_while(field, items, lease)?,
-                None => sink.stage(field, items)?,
-            }
-        }
-        Ok(())
-    }
-}
-
 /// Checks a `#[bus]` field's type.
 pub const fn bus_field<'f, T: BusField<'f>>() -> InputOps<'f, T> {
     InputOps {
@@ -446,32 +333,6 @@ pub const fn frame_field<'f, T: FrameField>() -> InputOps<'f, T> {
         target: <T as FrameField>::target_key,
     }
 }
-/// Checks a `#[pass]` field's type.
-pub const fn pass_field<'f, T: PassField<'f>>() -> OutputOps<'f, T> {
-    OutputOps {
-        declare: <T as PassField<'f>>::declare,
-        open: <T as PassField<'f>>::open,
-        commit: <T as PassField<'f>>::commit,
-    }
-}
-/// Checks an output `#[deck]` field's type.
-pub const fn deck_output_field<'f, T: DeckOutputField<'f>>() -> OutputOps<'f, T> {
-    OutputOps {
-        declare: <T as DeckOutputField<'f>>::declare,
-        open: <T as DeckOutputField<'f>>::open,
-        commit: <T as DeckOutputField<'f>>::commit,
-    }
-}
-
-/// Checks an output `#[staged]` field's type.
-pub const fn staged_field<'f, T: StagedField<'f>>() -> OutputOps<'f, T> {
-    OutputOps {
-        declare: <T as StagedField<'f>>::declare,
-        open: <T as StagedField<'f>>::open,
-        commit: <T as StagedField<'f>>::commit,
-    }
-}
-
 /// Checks that lane `L` writes family `F`'s outputs: every lane of one agent
 /// shares its family's outputs.
 pub const fn lane_of_family<F: LaneFamily, L: Lane<Family = F>>() {}

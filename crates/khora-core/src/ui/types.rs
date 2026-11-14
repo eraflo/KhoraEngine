@@ -14,9 +14,12 @@
 
 //! Core UI data types used for layout and rendering.
 
-use crate::asset::AssetUUID;
-use crate::math::{Vec2, Vec4};
 use serde::{Deserialize, Serialize};
+
+pub use super::ui_border::{UiBorder, UiColor};
+pub use super::ui_image::UiImage;
+pub use super::ui_text::UiText;
+pub use super::ui_transform::UiTransform;
 
 /// Length units for UI elements
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
@@ -90,67 +93,4 @@ pub struct UiNode {
     pub flex_grow: f32,
     /// Shrink factor in flex layout
     pub flex_shrink: f32,
-}
-
-/// The computed screen-space transform of a UI element.
-#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
-pub struct UiTransform {
-    /// Absolute position of the top-left corner in screen coordinates
-    pub pos: Vec2,
-    /// Absolute size in screen coordinates
-    pub size: Vec2,
-    /// The Z-index for rendering order. Higher values are rendered on top.
-    pub z_index: i32,
-}
-
-/// Visual color of a UI element.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct UiColor(pub Vec4);
-
-impl Default for UiColor {
-    fn default() -> Self {
-        Self(Vec4::ONE) // White by default
-    }
-}
-
-/// Visual image of a UI element.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct UiImage {
-    /// The ID of the image asset.
-    pub texture: AssetUUID,
-}
-
-/// Border specification for a UI element.
-#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
-pub struct UiBorder {
-    /// Width of the border for each side.
-    pub width: UiRect<f32>,
-    /// Color of the border.
-    pub color: UiColor,
-    /// Corner radius for rounded borders.
-    pub radius: f32,
-}
-
-/// Typography settings for a text element.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct UiText {
-    /// The string to display.
-    pub content: String,
-    /// The font asset ID.
-    pub font: AssetUUID,
-    /// Font size in pixels.
-    pub size: f32,
-    /// Text color RGBA.
-    pub color: Vec4,
-}
-
-impl Default for UiText {
-    fn default() -> Self {
-        Self {
-            content: String::new(),
-            font: AssetUUID::default(),
-            size: 16.0,
-            color: Vec4::new(0.0, 0.0, 0.0, 1.0), // Black
-        }
-    }
 }

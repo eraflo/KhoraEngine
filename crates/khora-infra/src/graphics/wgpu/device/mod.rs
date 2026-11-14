@@ -43,6 +43,15 @@ mod map_async;
 mod pipelines;
 mod textures;
 pub mod vram_probe;
+mod wgpu_bind_group_entry;
+mod wgpu_bind_group_layout_entry;
+mod wgpu_buffer_entry;
+mod wgpu_compute_pipeline_entry;
+mod wgpu_pipeline_layout_entry;
+mod wgpu_render_pipeline_entry;
+mod wgpu_sampler_entry;
+mod wgpu_texture_entry;
+mod wgpu_texture_view_entry;
 
 /// Build the wgpu descriptor for an empty buffer.
 ///

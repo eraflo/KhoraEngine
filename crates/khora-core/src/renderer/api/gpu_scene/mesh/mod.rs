@@ -14,13 +14,16 @@
 
 //! Defines data structures for mesh representation.
 
+mod gpu_mesh;
+
+pub use self::gpu_mesh::GpuMesh;
+
 use crate::asset::Asset;
 use crate::math::{Aabb, Vec2, Vec3, Vec4};
 use crate::renderer::api::pipeline::{
     PrimitiveTopology, VertexAttributeDescriptor, VertexBufferLayoutDescriptor, VertexFormat,
     VertexStepMode,
 };
-use crate::renderer::api::resource::{BufferId, IndexFormat};
 use std::borrow::Cow;
 
 /// Represents a complete mesh with vertex data and indices.
@@ -183,22 +186,6 @@ fn unweld<T: Copy>(attribute: &Option<Vec<T>>, corners: &[usize]) -> Option<Vec<
             .collect()
     })
 }
-
-/// A GPU-ready representation of a mesh, containing buffer IDs and draw parameters.
-pub struct GpuMesh {
-    /// The vertex buffer ID containing interleaved vertex data.
-    pub vertex_buffer: BufferId,
-    /// The index buffer ID, if the mesh uses indexed drawing.
-    pub index_buffer: BufferId,
-    /// The number of vertices or indices to draw.
-    pub index_count: u32,
-    /// The format of indices in the index buffer.
-    pub index_format: IndexFormat,
-    /// The topology of primitives to render (e.g., TriangleList, TriangleStrip).
-    pub primitive_topology: PrimitiveTopology,
-}
-
-impl Asset for GpuMesh {}
 
 #[cfg(test)]
 mod tests;

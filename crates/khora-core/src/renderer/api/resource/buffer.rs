@@ -14,6 +14,8 @@
 
 //! Defines data structures related to GPU buffer resources.
 
+pub use super::buffer_id::BufferId;
+pub use super::index_format::IndexFormat;
 use crate::khora_bitflags;
 use std::borrow::Cow;
 
@@ -61,20 +63,4 @@ pub struct BufferDescriptor<'a> {
     /// If `true`, the buffer will be created in a mapped state, ready for immediate
     /// CPU access. This is useful for staging buffers that will be written to from the CPU.
     pub mapped_at_creation: bool,
-}
-
-/// An opaque handle to a GPU buffer resource.
-///
-/// This ID is returned by [`GraphicsDevice::create_buffer`] and is used to reference
-/// the buffer in all subsequent operations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BufferId(pub usize);
-
-/// Specifies the data type of indices in an index buffer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum IndexFormat {
-    /// Indices are 16-bit unsigned integers.
-    Uint16,
-    /// Indices are 32-bit unsigned integers.
-    Uint32,
 }

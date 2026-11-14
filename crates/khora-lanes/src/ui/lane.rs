@@ -33,7 +33,7 @@ use khora_core::lane::io::{Target, TargetKey};
 use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::LaneError;
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::math::{Extent2D, Mat4, Vec4};
+use khora_core::math::{Extent2D, Mat4};
 use khora_core::renderer::api::command::{
     BindGroupDescriptor, BindGroupEntry, BindGroupId, BindGroupLayoutId, BindingResource, LoadOp,
     Operations, RenderPassColorAttachment, RenderPassDescriptor, StoreOp,
@@ -59,6 +59,9 @@ use super::pipeline::{
     UI_ATLAS_LAYOUT_LABEL, UI_GLOBAL_LAYOUT_LABEL, UI_GLYPH_ATLAS_LAYOUT_LABEL,
     UI_INSTANCE_LAYOUT_LABEL,
 };
+use super::ui_instance_data::instances_of;
+
+pub(super) use super::ui_instance_data::UiInstanceData;
 
 /// UI nodes the instance storage holds before it first grows.
 const UI_CAPACITY: usize = 1024;
@@ -77,19 +80,6 @@ const NODE_GPU: Duration = Duration::from_nanos(100);
 const GLYPH_CPU: Duration = Duration::from_nanos(60);
 /// What drawing one glyph's quad costs on the device.
 const GLYPH_GPU: Duration = Duration::from_nanos(30);
-
-/// Data for a single UI instance sent to the GPU — matches `UiInstance` in
-/// `ui.wgsl` and `GlyphInstance` in `ui_text.wgsl`.
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub(super) struct UiInstanceData {
-    pub(super) pos: [f32; 2],
-    pub(super) size: [f32; 2],
-    pub(super) color: [f32; 4],
-    pub(super) params: [f32; 4],
-    pub(super) uv_min: [f32; 2],
-    pub(super) uv_max: [f32; 2],
-}
 
 /// The UI lane. Holds what it built on the device; `None` before the first
 /// prepare and after shutdown.
@@ -368,36 +358,6 @@ impl Lane for UiLane {
 
 // ─── Free functions (CLAD: no inherent methods on the lane struct) ───
 
-/// One instance per node, in the scene's order: its rectangle, colour
-/// (white when it has none), corner radius, left border width, whether it
-/// samples an image, and the image's rect in the atlas (the whole atlas for
-/// an image not placed yet).
-fn instances_of(scene: &UiScene, atlas: &UiImageAtlas) -> Vec<UiInstanceData> {
-    scene
-        .nodes
-        .iter()
-        .map(|node| {
-            let color = node.color.map(|c| c.0).unwrap_or(Vec4::ONE);
-            let radius = node.border.map(|b| b.radius).unwrap_or(0.0);
-            let border = node.border.map(|b| b.width.left.max(0.0)).unwrap_or(0.0);
-            let has_image = if node.image.is_some() { 1.0 } else { 0.0 };
-            let (uv_min, uv_max) = node
-                .image
-                .and_then(|image| atlas.get_rect(&image.texture))
-                .map(|rect| (rect.min.into(), rect.max.into()))
-                .unwrap_or(([0.0, 0.0], [1.0, 1.0]));
-            UiInstanceData {
-                pos: node.pos.into(),
-                size: node.size.into(),
-                color: color.into(),
-                params: [radius, border, has_image, 0.0],
-                uv_min,
-                uv_max,
-            }
-        })
-        .collect()
-}
-
 /// The layouts, the projection and the first instance storage, and the
 /// sampler. A refusal halfway gives back what came before it.
 fn build_ui_gpu(
@@ -612,12 +572,6 @@ pub(crate) fn ui_projection(target: Extent2D) -> Option<Mat4> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn ui_instances_are_sixty_four_bytes() {
-        // Sixteen floats, the stride of `UiInstance` in `ui.wgsl`.
-        assert_eq!(std::mem::size_of::<UiInstanceData>(), 64);
-    }
 
     #[test]
     fn a_target_without_area_has_no_projection() {

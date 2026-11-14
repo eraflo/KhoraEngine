@@ -51,7 +51,6 @@ constants_come_before_the_code crates/khora-control/src/evaluation/scenarios.rs 
 constants_come_before_the_code crates/khora-control/src/evaluation/simulation.rs  # a const or static below the code; moved above it in P7
 constants_come_before_the_code crates/khora-control/src/gorna/cost_book.rs  # a const or static below the code; moved above it in P7
 constants_come_before_the_code crates/khora-control/src/governor/mod.rs  # a const or static below the code; moved above it in P7
-constants_come_before_the_code crates/khora-control/src/scheduler/sim_steps.rs  # a const or static below the code; moved above it in P7
 constants_come_before_the_code crates/khora-core/src/physics/collision.rs  # a const or static below the code; moved above it in P7
 constants_come_before_the_code crates/khora-core/src/platform/input.rs  # a const or static below the code; moved above it in P7
 constants_come_before_the_code crates/khora-core/src/renderer/light/uniforms.rs  # a const or static below the code; moved above it in P7
@@ -59,7 +58,6 @@ constants_come_before_the_code crates/khora-core/src/script/event.rs  # a const 
 constants_come_before_the_code crates/khora-core/src/script/field/mod.rs  # a const or static below the code; moved above it in P7
 constants_come_before_the_code crates/khora-data/src/ecs/components/audio/source.rs  # a const or static below the code; moved above it in P7
 constants_come_before_the_code crates/khora-data/src/ecs/components/camera.rs  # a const or static below the code; moved above it in P7
-constants_come_before_the_code crates/khora-data/src/ecs/tick.rs  # a const or static below the code; moved above it in P7
 constants_come_before_the_code crates/khora-data/src/ecs/world/mod.rs  # a const or static below the code; moved above it in P7
 constants_come_before_the_code crates/khora-data/src/flow/shadow.rs  # a const or static below the code; moved above it in P7
 constants_come_before_the_code crates/khora-data/src/gpu/ibl/mod.rs  # a const or static below the code; moved above it in P7
@@ -94,7 +92,6 @@ constants_come_before_the_code crates/khora-io/src/asset/signing.rs  # a const o
 constants_come_before_the_code crates/khora-io/src/asset/watcher.rs  # a const or static below the code; moved above it in P7
 constants_come_before_the_code crates/khora-io/src/bin/khora-pack.rs  # a const or static below the code; moved above it in P7
 constants_come_before_the_code crates/khora-io/src/profiles.rs  # a const or static below the code; moved above it in P7
-constants_come_before_the_code crates/khora-io/src/serialization.rs  # a const or static below the code; moved above it in P7
 constants_come_before_the_code crates/khora-io/src/systems/shader_hot_reload.rs  # a const or static below the code; moved above it in P7
 constants_come_before_the_code crates/khora-io/src/trust/mod.rs  # a const or static below the code; moved above it in P7
 constants_come_before_the_code crates/khora-io/src/trust/quarantine.rs  # a const or static below the code; moved above it in P7
@@ -144,3 +141,6 @@ private_helpers_come_after_the_primary_type_impls crates/khora-editor/src/app/mo
 private_helpers_come_after_the_primary_type_impls crates/khora-editor/src/panels/problems/mod.rs  # a private helper between the type and its impls; moved below them in P7
 private_helpers_come_after_the_primary_type_impls crates/khora-sdk/src/run_default/mod.rs  # a private helper between the type and its impls; moved below them in P7
 private_helpers_come_after_the_primary_type_impls crates/khora-sdk/src/runtime_config.rs  # a private helper between the type and its impls; moved below them in P7
+
+# --- each_file_holds_one_primary_type -----------------------------------------
+

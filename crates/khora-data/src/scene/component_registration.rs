@@ -26,6 +26,9 @@ use std::any::TypeId;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
+pub(crate) use super::kept::Kept;
+pub use super::staged_value::StagedValue;
+
 /// Writes row `row` of a page column positionally into the buffer, entity
 /// references through the writer — see
 /// [`ComponentRegistration::column_to_snapshot`].
@@ -167,22 +170,6 @@ pub trait PendingComponent: Send {
     fn commit(self: Box<Self>, world: &mut World, entity: EntityId) -> Result<(), String>;
 }
 
-/// A typed component waiting to be added.
-pub struct StagedValue<T>(pub T);
-
-impl<T: crate::ecs::Component> PendingComponent for StagedValue<T> {
-    fn push_into(self: Box<Self>, column: &mut dyn AnyVec) {
-        self.0.push_into_column(column);
-    }
-
-    fn commit(self: Box<Self>, world: &mut World, entity: EntityId) -> Result<(), String> {
-        world
-            .add_component(entity, self.0)
-            .map(|_| ())
-            .map_err(|error| format!("{error:?}"))
-    }
-}
-
 /// The component `reg` describes on `entity`, written as a record — the
 /// column row it occupies, read through the registration. `None` when the
 /// entity does not have it.
@@ -254,26 +241,6 @@ impl ComponentRegistration {
     /// declared with `#[component(resumable)]`.
     pub fn is_resumed(&self) -> bool {
         self.resumable
-    }
-}
-
-/// Which components a document keeps.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Kept {
-    /// A scene: what an author or a tool wrote.
-    Scene,
-    /// A game save: that, and the state the engine wrote while running that
-    /// play needs to resume.
-    Game,
-}
-
-impl Kept {
-    /// Whether this kind of document keeps `reg`'s component.
-    pub(crate) fn keeps(self, reg: &ComponentRegistration) -> bool {
-        match self {
-            Self::Scene => reg.is_saved(),
-            Self::Game => reg.is_saved() || reg.is_resumed(),
-        }
     }
 }
 

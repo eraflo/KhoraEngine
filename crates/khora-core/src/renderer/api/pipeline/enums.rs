@@ -14,6 +14,16 @@
 
 //! Enums for pipeline configuration.
 
+pub use super::blend_factor::BlendFactor;
+pub use super::blend_operation::BlendOperation;
+pub use super::compare_function::CompareFunction;
+pub use super::cull_mode::CullMode;
+pub use super::front_face::FrontFace;
+pub use super::polygon_mode::PolygonMode;
+pub use super::primitive_topology::PrimitiveTopology;
+pub use super::stencil_operation::StencilOperation;
+pub use super::vertex_step_mode::VertexStepMode;
+
 /// The memory format of a single vertex attribute's data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VertexFormat {
@@ -115,131 +125,4 @@ impl VertexFormat {
             VertexFormat::Float16x4 => 8,
         }
     }
-}
-
-/// Defines how often the GPU advances to the next element in a vertex buffer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum VertexStepMode {
-    /// The GPU advances to the next element for each vertex.
-    Vertex,
-    /// The GPU advances to the next element only for each new instance being rendered.
-    Instance,
-}
-
-/// Defines how vertices are connected to form a geometric primitive.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PrimitiveTopology {
-    /// Vertices are rendered as a list of isolated points.
-    PointList,
-    /// Vertices are rendered as a list of isolated lines (every two vertices form a line).
-    LineList,
-    /// Vertices are rendered as a connected line strip.
-    LineStrip,
-    /// Vertices are rendered as a list of isolated triangles (every three vertices form a triangle).
-    TriangleList,
-    /// Vertices are rendered as a connected triangle strip.
-    TriangleStrip,
-}
-
-/// Defines which face of a triangle to cull (not render).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum CullMode {
-    /// No culling is performed.
-    None,
-    /// Cull front-facing triangles.
-    Front,
-    /// Cull back-facing triangles.
-    Back,
-}
-
-/// Defines which vertex winding order considers a triangle to be "front-facing".
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum FrontFace {
-    /// Counter-clockwise winding order is the front face (e.g., OpenGL default).
-    Ccw,
-    /// Clockwise winding order is the front face (e.g., DirectX default).
-    Cw,
-}
-
-/// Defines how polygons are rasterized.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PolygonMode {
-    /// Polygons are filled. This is the normal rendering mode.
-    Fill,
-    /// Polygons are rendered as outlines (wireframe).
-    Line,
-    /// Polygon vertices are rendered as points.
-    Point,
-}
-
-/// The comparison function used for depth and stencil testing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum CompareFunction {
-    /// The test never passes.
-    Never,
-    /// The test passes if the new value is less than the existing value.
-    Less,
-    /// The test passes if the new value is equal to the existing value.
-    Equal,
-    /// The test passes if the new value is less than or equal to the existing value.
-    LessEqual,
-    /// The test passes if the new value is greater than the existing value.
-    Greater,
-    /// The test passes if the new value is not equal to the existing value.
-    NotEqual,
-    /// The test passes if the new value is greater than or equal to the existing value.
-    GreaterEqual,
-    /// The test always passes.
-    #[default]
-    Always,
-}
-
-/// An operation to perform on a stencil buffer value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum StencilOperation {
-    /// Keep the existing stencil value.
-    #[default]
-    Keep,
-    /// Set the stencil value to 0.
-    Zero,
-    /// Replace the stencil value with the reference value.
-    Replace,
-    /// Bitwise invert the stencil value.
-    Invert,
-    /// Increment the stencil value, clamping at the maximum value.
-    IncrementClamp,
-    /// Decrement the stencil value, clamping at 0.
-    DecrementClamp,
-    /// Increment the stencil value, wrapping to 0 on overflow.
-    IncrementWrap,
-    /// Decrement the stencil value, wrapping to the maximum value on underflow.
-    DecrementWrap,
-}
-
-/// A factor in a blend equation, determining how much a source or destination color contributes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum BlendFactor {
-    /// The factor is `0.0`.
-    Zero,
-    /// The factor is `1.0`.
-    One,
-    /// The factor is the source alpha component (`src.a`).
-    SrcAlpha,
-    /// The factor is `1.0 - src.a`.
-    OneMinusSrcAlpha,
-}
-
-/// The operation used to combine source and destination colors in a blend equation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum BlendOperation {
-    /// The result is `source + destination`.
-    Add,
-    /// The result is `source - destination`.
-    Subtract,
-    /// The result is `destination - source`.
-    ReverseSubtract,
-    /// The result is `min(source, destination)`.
-    Min,
-    /// The result is `max(source, destination)`.
-    Max,
 }

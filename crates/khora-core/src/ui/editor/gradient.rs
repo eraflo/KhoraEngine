@@ -20,6 +20,8 @@
 //! distance from a centre through the same stops — an SVG `<radialGradient>`
 //! whose focal point is its centre.
 
+pub use super::radial_gradient::RadialGradient;
+
 /// One colour on a gradient's axis.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GradientStop {
@@ -62,43 +64,10 @@ impl LinearGradient<'_> {
     }
 }
 
-/// A radial gradient in window-space coordinates: offset 0 at `center`,
-/// offset 1 on the circle of `radius` around it.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct RadialGradient<'a> {
-    /// Where offset 0 lies.
-    pub center: [f32; 2],
-    /// Distance from `center` at which offset 1 lies.
-    pub radius: f32,
-    /// The colour stops, sorted by offset.
-    pub stops: &'a [GradientStop],
-}
-
-impl RadialGradient<'_> {
-    /// Distance of `p` from `center` divided by `radius`: 0 at the centre, 1
-    /// on the circle; not clamped. A radius ≤ 0 gives 1.0.
-    pub fn offset_at(&self, p: [f32; 2]) -> f32 {
-        if self.radius <= 0.0 {
-            return 1.0;
-        }
-        let d = [p[0] - self.center[0], p[1] - self.center[1]];
-        (d[0] * d[0] + d[1] * d[1]).sqrt() / self.radius
-    }
-
-    /// The colour at `p`, with the same stop semantics as
-    /// [`LinearGradient::color_at`]: clamped to the first / last stop outside
-    /// them, linear (componentwise) between stops. No stops gives
-    /// `[0.0; 4]`, one stop gives its colour, and a radius ≤ 0 gives the last
-    /// stop's colour.
-    pub fn color_at(&self, p: [f32; 2]) -> [f32; 4] {
-        color_at_offset(self.stops, self.offset_at(p))
-    }
-}
-
 /// The colour of `stops` at offset `t`: clamped to the first / last stop
 /// outside them, linear (componentwise) between stops; the later of two stops
 /// sharing an offset wins at that offset. No stops gives `[0.0; 4]`.
-fn color_at_offset(stops: &[GradientStop], t: f32) -> [f32; 4] {
+pub(super) fn color_at_offset(stops: &[GradientStop], t: f32) -> [f32; 4] {
     let (Some(first), Some(last)) = (stops.first(), stops.last()) else {
         return [0.0; 4];
     };

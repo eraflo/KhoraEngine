@@ -12,6 +12,7 @@
 //! `github::GithubRelease`, `github::fetch_releases_async`, … directly.
 
 pub mod auth;
+mod authenticated_user;
 pub mod releases;
 pub mod repos;
 

@@ -15,6 +15,7 @@
 //! Main pipeline descriptors.
 
 use super::layout::PipelineLayoutId;
+pub use super::render_pipeline_id::RenderPipelineId;
 use super::state::*;
 use crate::renderer::api::resource::SampleCount;
 use crate::renderer::api::shader::ShaderModuleId;
@@ -59,7 +60,3 @@ pub struct MultisampleStateDescriptor {
     /// If `true`, enables alpha-to-coverage, using the fragment's alpha value to determine coverage.
     pub alpha_to_coverage_enabled: bool,
 }
-
-/// An opaque handle to a compiled render pipeline state object.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct RenderPipelineId(pub usize);

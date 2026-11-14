@@ -21,30 +21,35 @@
 //! [`Contention`] follows. A lane never sees the `World`, the whole deck or the
 //! whole runtime — only the fields it named, fetched from an [`InputSource`].
 
-use std::any::{Any, TypeId};
-use std::sync::{Arc, MutexGuard};
-use std::time::Duration;
+use std::any::TypeId;
+use std::sync::Arc;
 
 use crate::agent::Contention;
 use crate::lane::context_keys::ClearColor;
-use crate::lane::guard::{InputRefusal, OutputRefusal, SinkKind, SourceKind};
-use crate::lane::LaneError;
+use crate::lane::guard::{InputRefusal, SinkKind, SourceKind};
 use crate::math::Extent2D;
-use crate::renderer::api::command::CommandBufferId;
 use crate::renderer::api::frame::FrameContext;
 use crate::renderer::api::resource::{TextureFormat, TextureViewId};
-use crate::renderer::traits::{CommandEncoder, PipelineSystem};
-use crate::renderer::GraphicsDevice;
 
+mod budget;
+mod fixed_step;
+mod frame_id;
 mod input_source;
+mod lane_outputs;
+mod locked;
 mod output_sink;
+mod pass;
+mod scene_target;
 
+pub use budget::Budget;
+pub use fixed_step::FixedStep;
+pub use frame_id::FrameId;
 pub use input_source::{InputSource, LOCK_WAIT, MAX_LOCK_WAIT};
+pub use lane_outputs::LaneOutputs;
+pub use locked::Locked;
 pub use output_sink::OutputSink;
-
-/// A frame's number, stamped on what is published for it.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct FrameId(pub u64);
+pub use pass::{Pass, PassSlot};
+pub use scene_target::SceneTarget;
 
 /// What a target is, for a lane building pipelines for it: when it changes the
 /// lane is prepared again.
@@ -69,143 +74,6 @@ pub struct Target {
     pub size: Extent2D,
     /// Its formats and samples.
     pub key: TargetKey,
-}
-
-/// The frame's target, read by a lane that depth-tests what it draws: the
-/// target with its depth attachment. A frame whose target has no depth is
-/// refused at the fetch, as a [`Reason::BadTarget`](crate::lane::guard::Reason).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SceneTarget {
-    /// The colour attachment.
-    pub color: TextureViewId,
-    /// The depth attachment.
-    pub depth: TextureViewId,
-    /// Its size in pixels.
-    pub size: Extent2D,
-    /// Its formats and samples.
-    pub key: TargetKey,
-}
-
-/// The simulated time one run of a fixed-step lane advances: its agent's
-/// step, so the lane integrates by exactly the time the scheduler cut.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FixedStep(pub Duration);
-
-/// The share of the frame a lane was given.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Budget {
-    /// The time the lane may spend.
-    pub time: Duration,
-}
-
-/// A runtime entry registered as `Arc<Mutex<T>>`, locked for one record.
-///
-/// Declared as a lock of the registered `Arc<Mutex<T>>`.
-pub struct Locked<'f, T: ?Sized> {
-    guard: MutexGuard<'f, T>,
-}
-
-impl<'f, T: ?Sized> Locked<'f, T> {
-    /// Wraps the guard of a lock taken for one record.
-    pub fn new(guard: MutexGuard<'f, T>) -> Self {
-        Self { guard }
-    }
-}
-
-impl<T: ?Sized> std::ops::Deref for Locked<'_, T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        &self.guard
-    }
-}
-
-impl<T: ?Sized> std::ops::DerefMut for Locked<'_, T> {
-    fn deref_mut(&mut self) -> &mut T {
-        &mut self.guard
-    }
-}
-
-/// The encoder of pass slot `P`, opened for one record and closed on commit.
-///
-/// Opened on the device the agent lends its sink, with the slot's
-/// descriptor; the lane records into [`encoder`](Self::encoder), may amend
-/// the descriptor, and the commit finishes the encoder into the slot. The
-/// engine submits the slot's command buffer in the registered pass order —
-/// a lane never submits.
-pub struct Pass<'f, P: PassSlot> {
-    encoder: Box<dyn CommandEncoder>,
-    device: &'f dyn GraphicsDevice,
-    pipelines: Option<&'f dyn PipelineSystem>,
-    descriptor: P::Descriptor,
-}
-
-/// A pass slot a `#[pass]` output closes into: what the frame graph orders
-/// the pass by, and how the slot holds the finished pass.
-///
-/// khora-core cannot name the frame graph's types; the slot, defined beside
-/// them, says what its descriptor is and how it is built.
-pub trait PassSlot: Default + Any + Send + Sync {
-    /// What the frame graph orders the pass by. The lane may amend it while
-    /// it records.
-    type Descriptor: Send;
-
-    /// The descriptor a pass of this slot opens with.
-    fn descriptor() -> Self::Descriptor;
-
-    /// The slot holding the closed pass: its descriptor and the command
-    /// buffer its encoder finished into.
-    fn close(descriptor: Self::Descriptor, command_buffer: CommandBufferId) -> Self;
-}
-
-impl<'f, P: PassSlot> Pass<'f, P> {
-    /// Opens a pass of slot `P` on `device`.
-    pub fn open(device: &'f dyn GraphicsDevice) -> Self {
-        Self {
-            encoder: device.create_command_encoder(Some(std::any::type_name::<P>())),
-            device,
-            pipelines: None,
-            descriptor: P::descriptor(),
-        }
-    }
-
-    /// The same pass, lending `pipelines` to the lane recording into it.
-    pub fn lending(mut self, pipelines: Option<&'f dyn PipelineSystem>) -> Self {
-        self.pipelines = pipelines;
-        self
-    }
-
-    /// The encoder the lane records the pass into.
-    pub fn encoder(&mut self) -> &mut dyn CommandEncoder {
-        self.encoder.as_mut()
-    }
-
-    /// The device the pass records for: what the lane uploads its per-pass
-    /// uniforms through.
-    pub fn device(&self) -> &'f dyn GraphicsDevice {
-        self.device
-    }
-
-    /// The pipeline system the agent lent the sink the pass opened on, when it
-    /// lent one: what a lane resolves the pipelines it draws with through
-    /// while it records.
-    pub fn pipelines(&self) -> Option<&'f dyn PipelineSystem> {
-        self.pipelines
-    }
-
-    /// The descriptor the pass closes with.
-    pub fn descriptor_mut(&mut self) -> &mut P::Descriptor {
-        &mut self.descriptor
-    }
-
-    /// Finishes the encoder into the slot; `None` when the encoder gives no
-    /// command buffer.
-    pub fn close(self) -> Option<P> {
-        let descriptor = self.descriptor;
-        self.encoder
-            .finish()
-            .map(|command_buffer| P::close(descriptor, command_buffer))
-    }
 }
 
 /// One source or sink a lane named.
@@ -338,16 +206,4 @@ pub trait LaneInputs<'f>: Sized {
     fn give_back(self, src: &mut InputSource<'f>) {
         let _ = src;
     }
-}
-
-/// A family's outputs, derived with `#[derive(LaneOutputs)]`.
-pub trait LaneOutputs<'f>: Sized {
-    /// Declares every field's sink.
-    fn declare(d: &mut Declaration);
-
-    /// Opens every field for one record.
-    fn open(sink: &mut OutputSink<'f>) -> Result<Self, LaneError>;
-
-    /// Commits every field into `sink`, running the output guards.
-    fn commit(self, sink: &mut OutputSink<'f>) -> Result<(), OutputRefusal>;
 }

@@ -15,9 +15,11 @@
 //! Asset I/O and decoding services.
 
 mod asset_service;
+mod asset_writer;
 mod change;
 mod container;
 mod decoder;
+mod decoder_registration;
 mod decoder_registry;
 pub mod decoders;
 mod defaults;
@@ -40,6 +42,7 @@ mod reader;
 mod requested;
 pub mod root_path;
 pub mod signing;
+mod sub_asset_lister_registration;
 mod watch;
 mod watcher;
 

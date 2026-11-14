@@ -27,11 +27,13 @@
 //! ```
 
 mod dispatcher;
+mod file_system_resolver;
 mod gltf;
 mod gltf_checks;
 mod gltf_container;
 mod gltf_resources;
 mod gltf_scene;
+mod no_op_resource_resolver;
 mod obj;
 mod packed_resolver;
 mod resource_resolver;

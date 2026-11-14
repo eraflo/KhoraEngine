@@ -35,6 +35,8 @@ use khora_script::vm::Value;
 use khora_script::vm::{BehaviorLayout, Machine, Program};
 use serde::{Deserialize, Serialize};
 
+pub use super::fuel_demand::FuelDemand;
+
 /// One behavior instance's state.
 #[derive(Debug, Default)]
 pub struct Instance {
@@ -196,15 +198,6 @@ pub enum Body {
         /// The timer slot's value once the body finishes.
         rearm: Value,
     },
-}
-
-/// The fuel a frame's due instances need.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct FuelDemand {
-    /// Every due instance's.
-    pub all: u64,
-    /// The `[Critical]` behaviors' instances' alone.
-    pub critical: u64,
 }
 
 /// What a reload did to one behavior's instances.

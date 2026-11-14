@@ -24,6 +24,7 @@ use std::any::TypeId;
 mod changed;
 mod columns;
 mod fetch_context;
+mod native_row_plan;
 mod read;
 mod without;
 mod write;
@@ -32,6 +33,7 @@ pub use changed::Changed;
 pub use columns::Soa;
 pub use fetch_context::FetchContext;
 pub(crate) use fetch_context::Writable;
+pub(crate) use native_row_plan::NativeRowPlan;
 pub use read::Query;
 pub use without::Without;
 pub use write::QueryMut;
@@ -101,26 +103,6 @@ fn has_foreign_excluded(
                 .is_ok()
         })
     })
-}
-
-/// The per-row work a Native query needs beyond reading its driver row, decided
-/// once at query construction by `World::native_row_plan`.
-///
-/// A Native query iterates the pages of its driver domain, but a `Without` or
-/// `Option` term may name a component registered in another domain, stored in
-/// another page than the driver row. The default (empty) plan — every term in
-/// the driver domain — keeps the per-row path check-free.
-#[derive(Debug, Default)]
-pub(crate) struct NativeRowPlan {
-    /// `Without` types registered outside the driver domain, with their domain,
-    /// checked per row by `has_foreign_excluded`.
-    pub(crate) foreign_without: Vec<(SemanticDomain, TypeId)>,
-    /// An `Option` term names a type registered outside the driver domain: the
-    /// page-row `fetch` would read it from the driver page, which never holds
-    /// it, so each live row's item is joined through the entity's live
-    /// locations with `fetch_from_world` instead (which also checks every
-    /// `Without` term, so `foreign_without` is left empty).
-    pub(crate) fetch_from_world: bool,
 }
 
 // ------------------------- //

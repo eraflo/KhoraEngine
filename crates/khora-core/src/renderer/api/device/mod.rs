@@ -16,7 +16,9 @@
 //! backend chosen for it, its settings, its statistics, and the profiling hook.
 
 pub mod adapter;
+mod adapter_identity;
 pub mod backend;
+mod backend_selection_result;
 pub mod gpu_hook;
 pub mod settings;
 pub mod stats;

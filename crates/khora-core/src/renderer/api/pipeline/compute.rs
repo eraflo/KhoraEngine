@@ -20,15 +20,9 @@
 
 use std::borrow::Cow;
 
+pub use super::compute_pipeline_id::ComputePipelineId;
 use crate::renderer::api::pipeline::layout::PipelineLayoutId;
 use crate::renderer::api::shader::module::ShaderModuleId;
-
-/// An opaque handle to a compiled compute pipeline state object.
-///
-/// This ID is returned by [`GraphicsDevice::create_compute_pipeline`] and is used
-/// to reference the pipeline when recording compute dispatches.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ComputePipelineId(pub u64);
 
 /// A descriptor used to create a [`ComputePipelineId`].
 ///
@@ -50,24 +44,6 @@ pub struct ComputePipelineDescriptor<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn compute_pipeline_id_creation_and_equality() {
-        let id1 = ComputePipelineId(1);
-        let id2 = ComputePipelineId(2);
-        let id1_again = ComputePipelineId(1);
-
-        assert_eq!(id1, id1_again);
-        assert_ne!(id1, id2);
-    }
-
-    #[test]
-    fn compute_pipeline_id_ordering() {
-        let id1 = ComputePipelineId(1);
-        let id2 = ComputePipelineId(2);
-
-        assert!(id1 < id2);
-    }
 
     #[test]
     fn compute_pipeline_descriptor_creation() {

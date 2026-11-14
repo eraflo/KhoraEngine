@@ -43,22 +43,6 @@ pub enum RemoveComponentError {
     ComponentNotPresent,
 }
 
-/// Errors that can occur when spawning an entity with a bundle of components.
-#[derive(Debug, PartialEq, Eq)]
-pub enum SpawnError {
-    /// A component type of the bundle is not registered in the ECS: it has no
-    /// domain, so nothing could ever find it once stored.
-    ComponentNotRegistered {
-        /// The name of the unregistered component type.
-        component: &'static str,
-    },
-    /// The bundle names one component type twice: an entity holds one of each.
-    ComponentNamedTwice {
-        /// The name of the repeated component type.
-        component: &'static str,
-    },
-}
-
 impl World {
     /// Registers a component type with a specific semantic domain.
     ///

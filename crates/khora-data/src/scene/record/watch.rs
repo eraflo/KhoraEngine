@@ -22,6 +22,9 @@
 
 use super::Record;
 
+pub(super) use super::blind::Blind;
+pub(super) use super::tree::{Node, Tree};
+
 /// How the reader got from a value to one inside it.
 #[derive(Debug, Clone)]
 pub(super) enum Step {
@@ -57,52 +60,4 @@ pub(super) trait Watcher {
     fn child(&mut self, parent: usize, step: Step) -> usize;
     /// Notes `event` at `node`.
     fn note(&mut self, node: usize, event: Event);
-}
-
-/// A watcher that keeps nothing: a plain read pays nothing for the report.
-pub(super) struct Blind;
-
-impl Watcher for Blind {
-    fn child(&mut self, _parent: usize, _step: Step) -> usize {
-        0
-    }
-    fn note(&mut self, _node: usize, _event: Event) {}
-}
-
-/// One value the reader went through.
-#[derive(Debug, Default)]
-pub(super) struct Node {
-    pub events: Vec<Event>,
-    pub children: Vec<(Step, usize)>,
-}
-
-/// The whole read, as a tree rooted at node 0.
-#[derive(Debug)]
-pub(super) struct Tree {
-    pub nodes: Vec<Node>,
-}
-
-impl Tree {
-    pub fn new() -> Self {
-        Self {
-            nodes: vec![Node::default()],
-        }
-    }
-}
-
-impl Watcher for Tree {
-    fn child(&mut self, parent: usize, step: Step) -> usize {
-        let id = self.nodes.len();
-        self.nodes.push(Node::default());
-        if let Some(node) = self.nodes.get_mut(parent) {
-            node.children.push((step, id));
-        }
-        id
-    }
-
-    fn note(&mut self, node: usize, event: Event) {
-        if let Some(node) = self.nodes.get_mut(node) {
-            node.events.push(event);
-        }
-    }
 }

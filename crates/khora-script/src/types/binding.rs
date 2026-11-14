@@ -27,6 +27,8 @@ use crate::diagnostics::Span;
 use super::structs::is_data_constant;
 use super::{Checker, Context, Ty};
 
+pub(crate) use super::call_site::CallSite;
+
 /// Where one parameter's value comes from, at a call that names an argument
 /// or leaves one out.
 #[derive(Debug, Clone)]
@@ -95,19 +97,6 @@ pub struct FnInfo {
     pub names: Vec<String>,
     /// Each parameter's default, what a call that leaves it out passes.
     pub defaults: Vec<Option<Expr>>,
-}
-
-/// A call as its arguments are checked: what is written between its
-/// parentheses, and where it stands.
-pub(crate) struct CallSite<'a> {
-    /// The arguments, in the order written.
-    pub args: &'a [crate::ast::Expr],
-    /// The name each is given — empty when none is.
-    pub labels: &'a [Option<crate::ast::Label>],
-    /// The whole call.
-    pub span: Span,
-    /// Its address in the module checked: what its binding is recorded by.
-    pub at: usize,
 }
 
 impl FnInfo {

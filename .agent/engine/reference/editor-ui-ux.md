@@ -46,8 +46,8 @@ transform gizmos, dock layout, theme, and the egui/Taffy plumbing.
   `row_mut().write_fields` / `add_runtime_component` / `remove_component_by_key`), `addable_declared`,
   prefab rows (`paired_rows`, `conformed` — the prefab's row read under the world's current declaration —
   `field_overrides`, `rebound_fields`), `system_of` (the hierarchy names a system's entity `system:Name`).
-  Types in `khora-core/src/ui/editor/declared.rs` (`DeclaredCard`, `DeclaredFieldView`, `AddableComponent`,
-  `ComponentOrigin`); `InspectedEntity::declared`, `InspectedPrefab::prefab_declared`,
+  Types in `khora-core/src/ui/editor/declared.rs` (`DeclaredCard`, `DeclaredFieldView`) and
+  `addable_component.rs` (`AddableComponent`, `ComponentOrigin`); `InspectedEntity::declared`, `InspectedPrefab::prefab_declared`,
   `EditorState::addable_components` (filled by `extract_inspected`; the add menu never queries the world).
 - UI: `widgets/inspector/declared/` (`mod.rs` cards + provenance line + header actions; `fields.rs` widgets by
   `ErgonType` — Duration in s, Angle in deg (stored rad), `T?` Set / *Set to none*, arrays, structs, entity

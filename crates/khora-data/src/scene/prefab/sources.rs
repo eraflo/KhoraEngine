@@ -23,6 +23,8 @@ use khora_core::asset::AssetUUID;
 use super::super::scene_record::SceneRecord;
 use super::PrefabSource;
 
+pub(super) use super::except::Except;
+
 /// A source that reads each prefab once: an expansion asks for the same
 /// prefab under every instance of it, and at every level it nests.
 pub(super) struct ReadOnce<'a> {
@@ -47,21 +49,5 @@ impl PrefabSource for ReadOnce<'_> {
         let read = self.source.prefab(id);
         self.read.borrow_mut().insert(id, read.clone());
         read
-    }
-}
-
-/// A source that refuses one prefab — the one being written: a prefab never
-/// links to itself, so an instance of it inside it is written whole.
-pub(super) struct Except<'a> {
-    pub(super) source: &'a dyn PrefabSource,
-    pub(super) written: AssetUUID,
-}
-
-impl PrefabSource for Except<'_> {
-    fn prefab(&self, id: AssetUUID) -> Result<SceneRecord, String> {
-        if id == self.written {
-            return Err(format!("{id} is the prefab being written"));
-        }
-        self.source.prefab(id)
     }
 }

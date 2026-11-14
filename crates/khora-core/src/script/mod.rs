@@ -35,6 +35,7 @@ pub mod batch;
 pub mod buffer;
 pub mod catalog;
 pub mod command;
+mod engine_event;
 pub mod event;
 pub mod field;
 pub mod frozen;

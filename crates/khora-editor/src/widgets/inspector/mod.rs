@@ -22,6 +22,7 @@
 pub mod add_component;
 pub mod asset_pane;
 pub mod card;
+mod debug_tab;
 pub mod declared;
 pub mod display;
 pub mod header;

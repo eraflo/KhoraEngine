@@ -20,7 +20,9 @@ use khora_core::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
 use khora_core::script::{ErgonType, ScriptValue};
 
 mod column;
+mod field_error;
 pub(crate) use column::retyped;
+pub use field_error::FieldError;
 
 pub(crate) use column::{PackedColumn, PackedColumns};
 
@@ -422,15 +424,4 @@ pub enum LayoutError {
         /// The type of the default it was given (`ScriptValue::type_name`).
         found: String,
     },
-}
-
-/// A value refused by a run-time component's field: not of the field's kind.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FieldError {
-    /// The field written.
-    pub field: String,
-    /// The kind it holds.
-    pub expected: FieldKind,
-    /// The type of the value offered (`ScriptValue::type_name`).
-    pub found: String,
 }

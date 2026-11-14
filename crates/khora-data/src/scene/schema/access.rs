@@ -16,132 +16,14 @@
 //! elements, a sequence's one element, a map's one entry, an enum's chosen
 //! variant — each read in its own slot, its format written down.
 
-use serde::de::{
-    DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess, VariantAccess, Visitor,
-};
+use serde::de::{DeserializeSeed, EnumAccess, IntoDeserializer, VariantAccess, Visitor};
 
-use super::trace::{child, Slot, TraceError, Tracer, MAP};
+use super::trace::{child, TraceError, Tracer};
 use super::{Fields, Format, Key, Payload};
 
-/// The fixed elements of a struct, a tuple or a variant, each in its slot.
-pub(super) struct Elements<'t, 's, 'f> {
-    pub(super) tracer: &'t mut Tracer<'s>,
-    pub(super) parent: Slot,
-    pub(super) owner: Key,
-    pub(super) variant: &'static str,
-    pub(super) next: usize,
-    pub(super) count: usize,
-    pub(super) formats: &'f mut Vec<Format>,
-}
-
-impl<'de> SeqAccess<'de> for Elements<'_, '_, '_> {
-    type Error = TraceError;
-
-    fn next_element_seed<T: DeserializeSeed<'de>>(
-        &mut self,
-        seed: T,
-    ) -> Result<Option<T::Value>, TraceError> {
-        if self.next == self.count {
-            return Ok(None);
-        }
-        let slot = child(self.parent, self.owner, self.variant, self.next);
-        self.next += 1;
-        let result = self
-            .tracer
-            .at(slot, |tracer| seed.deserialize(&mut *tracer));
-        self.formats
-            .push(std::mem::replace(&mut self.tracer.out, Format::Unknown));
-        result.map(Some)
-    }
-
-    fn size_hint(&self) -> Option<usize> {
-        Some(self.count - self.next)
-    }
-}
-
-/// A sequence of one element — its type traced — or of none, if that
-/// element would recurse, or if the run reads in shadow.
-pub(super) struct One<'t, 's, 'f> {
-    pub(super) tracer: &'t mut Tracer<'s>,
-    pub(super) slot: Slot,
-    pub(super) done: bool,
-    pub(super) format: &'f mut Format,
-}
-
-impl<'de> SeqAccess<'de> for One<'_, '_, '_> {
-    type Error = TraceError;
-
-    fn next_element_seed<T: DeserializeSeed<'de>>(
-        &mut self,
-        seed: T,
-    ) -> Result<Option<T::Value>, TraceError> {
-        if std::mem::replace(&mut self.done, true) {
-            return Ok(None);
-        }
-        let result = self
-            .tracer
-            .at(self.slot, |tracer| seed.deserialize(&mut *tracer));
-        *self.format = std::mem::replace(&mut self.tracer.out, Format::Unknown);
-        match result {
-            Ok(value) => Ok(Some(value)),
-            Err(TraceError::Recursion) => Ok(None),
-            Err(error) => Err(error),
-        }
-    }
-
-    fn size_hint(&self) -> Option<usize> {
-        Some(usize::from(!self.done))
-    }
-}
-
-/// A map of one entry, or of none if its key would recurse, or if the run
-/// reads in shadow.
-pub(super) struct Entry<'t, 's, 'f> {
-    pub(super) tracer: &'t mut Tracer<'s>,
-    pub(super) slot: Slot,
-    pub(super) done: bool,
-    pub(super) key: &'f mut Format,
-    pub(super) value: &'f mut Format,
-}
-
-impl<'de> MapAccess<'de> for Entry<'_, '_, '_> {
-    type Error = TraceError;
-
-    fn next_key_seed<K: DeserializeSeed<'de>>(
-        &mut self,
-        seed: K,
-    ) -> Result<Option<K::Value>, TraceError> {
-        if std::mem::replace(&mut self.done, true) {
-            return Ok(None);
-        }
-        let slot = child(self.slot, MAP, "", 0);
-        let result = self
-            .tracer
-            .at(slot, |tracer| seed.deserialize(&mut *tracer));
-        *self.key = std::mem::replace(&mut self.tracer.out, Format::Unknown);
-        match result {
-            Ok(key) => Ok(Some(key)),
-            Err(TraceError::Recursion) => Ok(None),
-            Err(error) => Err(error),
-        }
-    }
-
-    fn next_value_seed<V: DeserializeSeed<'de>>(
-        &mut self,
-        seed: V,
-    ) -> Result<V::Value, TraceError> {
-        let slot = child(self.slot, MAP, "", 1);
-        let result = self
-            .tracer
-            .at(slot, |tracer| seed.deserialize(&mut *tracer));
-        *self.value = std::mem::replace(&mut self.tracer.out, Format::Unknown);
-        result
-    }
-
-    fn size_hint(&self) -> Option<usize> {
-        Some(usize::from(!self.done))
-    }
-}
+pub(super) use super::elements::Elements;
+pub(super) use super::entry::Entry;
+pub(super) use super::one::One;
 
 /// The variant a run chose for an enum.
 pub(super) struct Variant<'t, 's> {

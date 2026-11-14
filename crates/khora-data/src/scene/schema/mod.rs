@@ -28,6 +28,9 @@
 //! recursive type — is written as its name alone.
 
 mod access;
+mod elements;
+mod entry;
+mod one;
 mod trace;
 
 use std::collections::BTreeMap;

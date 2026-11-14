@@ -14,9 +14,8 @@
 
 //! Collisions: the events a backend reports and the channel they travel on.
 
-use serde::{Deserialize, Serialize};
-
-use super::handle::ColliderHandle;
+pub use super::collision_event::CollisionEvent;
+pub use super::contact_batch::ContactBatch;
 
 /// Two entities beginning or ending contact.
 ///
@@ -64,24 +63,4 @@ pub const COLLISION_BACKLOG: usize = 4096;
 /// A channel for the contacts the physics lane reports.
 pub fn collision_channel() -> crate::event::Channel<Collision> {
     crate::event::Channel::bounded(COLLISION_BACKLOG, crate::event::WhenFull::DropOldest)
-}
-
-/// What one physics step reported, on its way from the lane to the channel.
-///
-/// A deck slot, because that is the sanctioned road out of a lane: a lane that
-/// wrote the shared channel directly would be a lane reaching engine state, and
-/// the scheduler would have no way to know it had.
-#[derive(Debug, Clone, Default)]
-pub struct ContactBatch {
-    /// The contacts, in the order the backend reported them.
-    pub contacts: Vec<Collision>,
-}
-
-/// Events representing collision start/end.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum CollisionEvent {
-    /// Collision between two colliders started.
-    Started(ColliderHandle, ColliderHandle),
-    /// Collision between two colliders stopped.
-    Stopped(ColliderHandle, ColliderHandle),
 }

@@ -14,9 +14,17 @@
 
 //! Defines data structures related to GPU texture and sampler resources.
 
+pub use super::sampler_descriptor::{
+    AddressMode, FilterMode, MipmapFilterMode, SamplerBorderColor, SamplerDescriptor,
+};
+pub use super::sampler_id::SamplerId;
+pub use super::texture_id::TextureId;
+pub use super::texture_view_descriptor::{
+    ImageAspect, TextureViewDescriptor, TextureViewDimension,
+};
+pub use super::texture_view_id::TextureViewId;
 use crate::khora_bitflags;
 use crate::math::Extent3D;
-use crate::renderer::api::pipeline::CompareFunction;
 use crate::renderer::api::resource::TextureFormat;
 use std::borrow::Cow;
 
@@ -29,76 +37,6 @@ pub enum TextureDimension {
     D2,
     /// A three-dimensional (volumetric) texture.
     D3,
-}
-
-/// The dimensionality of a texture view.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum TextureViewDimension {
-    /// A view of a 1D texture.
-    D1,
-    /// A view of a 2D texture.
-    D2,
-    /// A view of a 2D texture array.
-    D2Array,
-    /// A view of a cubemap texture (6 faces of a 2D texture).
-    Cube,
-    /// A view of a cubemap texture array.
-    CubeArray,
-    /// A view of a 3D texture.
-    D3,
-}
-
-/// Defines which aspects of a texture are accessed by a view.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ImageAspect {
-    /// Access all aspects (color, depth, and stencil).
-    All,
-    /// Access only the stencil component of a depth/stencil texture.
-    StencilOnly,
-    /// Access only the depth component of a depth/stencil texture.
-    DepthOnly,
-}
-
-/// Defines how texture coordinates are handled when sampling outside the `[0, 1]` range.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum AddressMode {
-    /// Coordinates wrap around. `1.1` becomes `0.1`.
-    Repeat,
-    /// Coordinates are clamped to the edge. `1.1` becomes `1.0`.
-    ClampToEdge,
-    /// Coordinates wrap around, mirroring at each integer boundary.
-    MirrorRepeat,
-    /// Coordinates outside the range are given a fixed border color.
-    ClampToBorder,
-}
-
-/// Defines the filtering mode for texture sampling.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum FilterMode {
-    /// Point sampling. Returns the value of the nearest texel.
-    Nearest,
-    /// Linear interpolation. Returns a weighted average of the four nearest texels.
-    Linear,
-}
-
-/// Defines the filtering mode between mipmap levels.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MipmapFilterMode {
-    /// Use the nearest mipmap level.
-    Nearest,
-    /// Linearly interpolate between the two nearest mipmap levels.
-    Linear,
-}
-
-/// The border color to use when `AddressMode::ClampToBorder` is active.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SamplerBorderColor {
-    /// A transparent black color `[0.0, 0.0, 0.0, 0.0]`.
-    TransparentBlack,
-    /// An opaque black color `[0.0, 0.0, 0.0, 1.0]`.
-    OpaqueBlack,
-    /// An opaque white color `[1.0, 1.0, 1.0, 1.0]`.
-    OpaqueWhite,
 }
 
 khora_bitflags! {
@@ -138,58 +76,6 @@ pub struct TextureDescriptor<'a> {
     pub usage: TextureUsage,
     /// A list of texture formats that views of this texture can have.
     pub view_formats: Cow<'a, [TextureFormat]>,
-}
-
-/// A descriptor used to create a [`TextureViewId`].
-/// A view describes a specific way to access a texture's data.
-#[derive(Debug, Clone)]
-pub struct TextureViewDescriptor<'a> {
-    /// An optional debug label.
-    pub label: Option<Cow<'a, str>>,
-    /// The format of the texture view.
-    pub format: Option<TextureFormat>,
-    /// The dimensionality of the texture view.
-    pub dimension: Option<TextureViewDimension>,
-    /// The aspects of the texture to be accessed.
-    pub aspect: ImageAspect,
-    /// The first mipmap level to be accessed by the view.
-    pub base_mip_level: u32,
-    /// The number of mipmap levels to include in the view.
-    pub mip_level_count: Option<u32>,
-    /// The first array layer to be accessed by the view.
-    pub base_array_layer: u32,
-    /// The number of array layers to include in the view.
-    pub array_layer_count: Option<u32>,
-}
-
-/// A descriptor used to create a [`SamplerId`].
-/// A sampler defines how a shader will sample from a texture.
-#[derive(Debug, Clone)]
-pub struct SamplerDescriptor<'a> {
-    /// An optional debug label.
-    pub label: Option<Cow<'a, str>>,
-    /// The address mode for the U (or S) texture coordinate.
-    pub address_mode_u: AddressMode,
-    /// The address mode for the V (or T) texture coordinate.
-    pub address_mode_v: AddressMode,
-    /// The address mode for the W (or R) texture coordinate.
-    pub address_mode_w: AddressMode,
-    /// The filter mode for magnification (when the texture is larger on screen than its resolution).
-    pub mag_filter: FilterMode,
-    /// The filter mode for minification (when the texture is smaller on screen than its resolution).
-    pub min_filter: FilterMode,
-    /// The filter mode to use between mipmap levels.
-    pub mipmap_filter: MipmapFilterMode,
-    /// The minimum level of detail (LOD) to use for mipmapping.
-    pub lod_min_clamp: f32,
-    /// The maximum level of detail (LOD) to use for mipmapping.
-    pub lod_max_clamp: f32,
-    /// If `Some`, creates a comparison sampler for tasks like shadow mapping.
-    pub compare: Option<CompareFunction>,
-    /// The maximum anisotropy level to use.
-    pub anisotropy_clamp: u16,
-    /// The border color to use if any address mode is `ClampToBorder`.
-    pub border_color: Option<SamplerBorderColor>,
 }
 
 /// A CPU-side representation of a decoded texture, ready to be uploaded to the GPU.
@@ -288,18 +174,6 @@ impl CpuTexture {
         self.size.width as usize * bytes_per_pixel as usize
     }
 }
-
-/// An opaque handle to a GPU texture resource.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TextureId(pub usize);
-
-/// An opaque handle to a GPU texture view resource.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TextureViewId(pub usize);
-
-/// An opaque handle to a GPU sampler resource.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SamplerId(pub usize);
 
 #[cfg(test)]
 mod tests {

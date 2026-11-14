@@ -19,16 +19,10 @@ use super::stmt::Block;
 use super::types::TypeRef;
 use crate::diagnostics::Span;
 
-/// `import "combat/damage.erg";` or `import "ai/steering.erg" as Steering;`
-#[derive(Debug, Clone, PartialEq)]
-pub struct Import {
-    /// The quoted path, relative to the project's script root.
-    pub path: String,
-    /// The `as` prefix, when one is given.
-    pub alias: Option<String>,
-    /// Covers the whole statement, so a circular-import error can point at it.
-    pub span: Span,
-}
+pub use super::event_decl::EventDecl;
+pub use super::function_decl::FunctionDecl;
+pub use super::import::Import;
+pub use super::label::Label;
 
 /// `struct Loot { string name; int value; }`
 #[derive(Debug, Clone, PartialEq)]
@@ -115,23 +109,6 @@ pub enum OverloadableOp {
     GreaterEq,
 }
 
-/// `fn float Distance(Vec3 a, Vec3 b) { … }`
-#[derive(Debug, Clone, PartialEq)]
-pub struct FunctionDecl {
-    /// Function name.
-    pub name: String,
-    /// Where the name sits.
-    pub name_span: Span,
-    /// Return type; `void` is a [`TypeRef::Void`].
-    pub return_ty: TypeRef,
-    /// Parameters.
-    pub params: Vec<Param>,
-    /// Body.
-    pub body: Block,
-    /// The whole declaration.
-    pub span: Span,
-}
-
 /// One parameter.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Param {
@@ -142,29 +119,6 @@ pub struct Param {
     /// `= constant`: what a call that leaves it out passes.
     pub default: Option<Expr>,
     /// The whole parameter, its default included.
-    pub span: Span,
-}
-
-/// The name an argument is given at a call: `speed:` in `Move(1, speed: 2)`.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Label {
-    /// The parameter it names.
-    pub name: String,
-    /// Where the name is written.
-    pub span: Span,
-}
-
-/// `event Damaged(int amount, Entity source);` — what a raise names and a
-/// handler takes: its name is its identity, its parameters its signature.
-#[derive(Debug, Clone, PartialEq)]
-pub struct EventDecl {
-    /// Event name.
-    pub name: String,
-    /// Where the name sits.
-    pub name_span: Span,
-    /// What it carries, in order.
-    pub params: Vec<Param>,
-    /// The whole declaration.
     pub span: Span,
 }
 

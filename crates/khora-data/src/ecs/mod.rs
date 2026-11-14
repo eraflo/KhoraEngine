@@ -24,11 +24,14 @@
 //!
 //! The primary entry point for interacting with the ECS is the [`World`] struct.
 
+mod any_vec;
 mod bitset;
 mod bundle;
 mod check;
 mod column_ops;
+mod column_ticks;
 pub mod component;
+mod component_domain_registration;
 mod component_key;
 mod component_registry;
 mod components;
@@ -37,8 +40,10 @@ mod entity_store;
 pub mod layout;
 pub mod maintenance;
 mod mut_guard;
+mod observer;
 pub(crate) mod packed;
 mod page;
+mod page_index;
 mod planner;
 mod query;
 mod query_plan;

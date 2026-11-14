@@ -18,6 +18,9 @@
 use crate::asset::AssetUUID;
 use crate::ecs::entity::EntityId;
 
+pub use super::prefab_apply_scope::PrefabApplyScope;
+pub use super::property_edit::PropertyEdit;
+
 /// Snapshot of one component on an inspected entity, captured generically
 /// as JSON via the macro-generated `to_json` on `ComponentRegistration`.
 ///
@@ -130,70 +133,4 @@ pub struct ComponentOverride {
     /// The paths of the fields whose values differ from the prefab's, from
     /// the component's root.
     pub fields: Vec<Vec<String>>,
-}
-
-/// What of an instance an apply-to-prefab writes into its prefab.
-#[derive(Debug, Clone, PartialEq)]
-pub enum PrefabApplyScope {
-    /// One field of one component of the inspected entity.
-    Field {
-        /// The component's registered type name.
-        type_name: String,
-        /// Field names from the component's root.
-        path: Vec<String>,
-    },
-    /// One component of the inspected entity, whole.
-    Component {
-        /// The component's registered type name.
-        type_name: String,
-    },
-    /// Every override of the instance the entity belongs to.
-    Instance,
-}
-
-/// A property edit to apply back to the ECS world.
-///
-/// Components are mutated through a single generic round-trip via
-/// `ComponentRegistration::from_json`: the inspector walks each field of
-/// the component's JSON shape, lets the user edit it, and ships the whole
-/// patched `serde_json::Value` back through `SetComponentJson`. There is
-/// no per-component editor variant — adding a new component costs zero
-/// editor code.
-#[derive(Debug, Clone)]
-#[allow(missing_docs)]
-pub enum PropertyEdit {
-    /// Rename the entity (`Name` component is special — it shows up in the
-    /// inspector header rather than as a component card).
-    SetName(EntityId, String),
-    /// Replace the entire JSON value of one component on `entity`. The
-    /// editor looks up the registration by `type_name` and calls
-    /// `from_json` to commit.
-    SetComponentJson {
-        entity: EntityId,
-        type_name: String,
-        value: serde_json::Value,
-    },
-    /// Remove a component from `entity`. The editor looks up the
-    /// registration by `type_name` and calls `remove` to commit.
-    RemoveComponent { entity: EntityId, type_name: String },
-    /// Add the component `type_name` to `entity` and set it to `value` — a
-    /// removed component brought back with the value it is to have.
-    InsertComponentJson {
-        entity: EntityId,
-        type_name: String,
-        value: serde_json::Value,
-    },
-    /// Write one field of the declared component `component` on `entity` —
-    /// all or nothing: a value the field refuses leaves the row as it was.
-    SetDeclaredField {
-        entity: EntityId,
-        component: String,
-        field: String,
-        value: crate::script::ScriptValue,
-    },
-    /// Add the declared component `component` to `entity`, at its defaults.
-    AddDeclared { entity: EntityId, component: String },
-    /// Remove the declared component `component` from `entity` — a
-    /// behavior's state companion along with it.
-    RemoveDeclared { entity: EntityId, component: String },
 }

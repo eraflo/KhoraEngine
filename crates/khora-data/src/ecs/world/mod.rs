@@ -36,6 +36,7 @@ mod clock;
 mod column_write;
 mod compaction;
 mod component_access;
+mod domain_stats;
 mod hierarchy;
 mod identity;
 mod migration;
@@ -44,25 +45,18 @@ mod queries;
 mod reservations;
 mod rows;
 mod runtime;
+mod spawn_error;
 
 pub use column_write::ColumnWriteReport;
 pub use component_access::AddComponentError;
 pub use component_access::RemoveComponentError;
-pub use component_access::SpawnError;
+pub use domain_stats::DomainStats;
 pub use hierarchy::HierarchyWrite;
 pub(crate) use hierarchy::LoadedHierarchy;
 pub use projection::BehaviorComponent;
 pub use rows::{RowMut, RowRef};
 pub use runtime::{RegisterError, RelayoutReport, RowError, RuntimeComponentDecl};
-
-/// Simple statistics for a semantic domain.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct DomainStats {
-    /// Total number of entities in this domain.
-    pub entity_count: u32,
-    /// Total number of pages allocated for this domain.
-    pub page_count: u32,
-}
+pub use spawn_error::SpawnError;
 
 /// The central container for the entire ECS, holding all entities, components, and metadata.
 pub struct World {

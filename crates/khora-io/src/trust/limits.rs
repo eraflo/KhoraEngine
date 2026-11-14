@@ -17,6 +17,8 @@
 
 use super::{size_cap, FileKind, Trust};
 
+pub use super::limit_exceeded::LimitExceeded;
+
 /// One mebibyte.
 const MIB: u64 = 1 << 20;
 
@@ -78,20 +80,3 @@ impl Limits {
         Limits::of(FileKind::Text, Trust::Restricted)
     }
 }
-
-/// A limit a decoder stopped at.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LimitExceeded {
-    /// What went past its limit.
-    pub what: String,
-    /// The limit it went past.
-    pub limit: u64,
-}
-
-impl std::fmt::Display for LimitExceeded {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} passes its limit of {}", self.what, self.limit)
-    }
-}
-
-impl std::error::Error for LimitExceeded {}

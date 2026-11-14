@@ -14,11 +14,8 @@
 
 //! Pipeline layout descriptors.
 
+pub use super::pipeline_layout_id::PipelineLayoutId;
 use std::borrow::Cow;
-
-/// An opaque handle to a pipeline layout.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct PipelineLayoutId(pub usize);
 
 /// A descriptor for a [`PipelineLayoutId`].
 /// Defines the set of resource bindings (e.g., uniform buffers, textures) a pipeline can access.

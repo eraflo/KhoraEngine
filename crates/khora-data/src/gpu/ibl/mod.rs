@@ -43,8 +43,11 @@ use khora_core::renderer::GraphicsDevice;
 use resources::{normalized_or_default, IblResources};
 
 mod bake;
+mod environment_map;
 mod pipelines;
 mod resources;
+
+pub use environment_map::EnvironmentMap;
 
 /// Env-cube face resolution. 256² is ample for a smooth procedural sky and as
 /// the source the irradiance convolution / specular prefilter sample.
@@ -88,32 +91,6 @@ const PREFILTER_LAYOUT: &str = "ibl_prefilter";
 /// Direction **toward** the sun used when the scene has no directional light —
 /// a high afternoon sun, so the default environment still reads as a sky.
 const DEFAULT_SUN_DIRECTION: Vec3 = Vec3::new(0.35, 0.78, 0.52);
-
-/// Selects the scene's environment source for the IBL bake.
-///
-/// Registered as a shared resource by the host application. When it names an
-/// equirectangular texture asset (an HDR `.hdr`/`.exr` keeps the dynamic range
-/// that makes reflections read well), the bake projects it onto the environment
-/// cube; absent — or naming an asset that has not been loaded — the procedural
-/// sky is baked instead, so a scene without an authored environment still
-/// lights correctly.
-///
-/// The selection is read every tick: selecting another texture, or the
-/// selected texture changing in the store, bakes again.
-#[derive(Debug, Default, Clone)]
-pub struct EnvironmentMap {
-    /// Equirectangular environment texture, as a loaded `CpuTexture` asset.
-    pub texture: Option<AssetUUID>,
-}
-
-impl EnvironmentMap {
-    /// Points the environment at an equirectangular texture asset.
-    pub fn from_asset(texture: AssetUUID) -> Self {
-        Self {
-            texture: Some(texture),
-        }
-    }
-}
 
 /// What an IBL bake was made from: the environment the scene selected and the
 /// exact texture handle the bake read.

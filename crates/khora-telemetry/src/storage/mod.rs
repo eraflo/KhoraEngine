@@ -15,4 +15,5 @@
 //! Storage backends for telemetry data.
 
 pub mod backend;
+mod backend_stats;
 pub mod memory_backend;

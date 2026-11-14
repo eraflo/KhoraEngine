@@ -14,6 +14,7 @@
 
 //! Lighting uniform structures.
 
+pub use super::culling_uniforms_data::CullingUniformsData;
 use crate::math::LinearRgba;
 use crate::renderer::api::shader::defs::ShaderDefs;
 
@@ -87,27 +88,6 @@ pub struct LightingUniforms {
     pub num_point_lights: u32,
     /// Number of active spot lights.
     pub num_spot_lights: u32,
-    /// Padding for 16-byte alignment.
-    pub _padding: u32,
-}
-
-/// Data for the light culling compute shader.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct CullingUniformsData {
-    /// The combined view-projection matrix (world → clip); the shader
-    /// extracts each tile's planes from it.
-    pub view_projection: [[f32; 4]; 4],
-    /// The dimensions of the screen in pixels.
-    pub screen_dimensions: [f32; 2],
-    /// The number of tiles in the X and Y dimensions.
-    pub tile_count: [u32; 2],
-    /// The total number of lights in the scene.
-    pub num_lights: u32,
-    /// The size of a tile in pixels.
-    pub tile_size: u32,
-    /// How many lights a tile may list; the shader clamps it to its stride.
-    pub max_lights_per_tile: u32,
     /// Padding for 16-byte alignment.
     pub _padding: u32,
 }

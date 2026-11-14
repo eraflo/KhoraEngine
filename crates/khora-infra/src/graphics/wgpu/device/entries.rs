@@ -17,57 +17,17 @@
 use std::sync::Arc;
 use wgpu;
 
-use khora_core::renderer::api::resource::texture::{self as api_tex};
+pub(crate) use super::wgpu_bind_group_entry::WgpuBindGroupEntry;
+pub(crate) use super::wgpu_bind_group_layout_entry::WgpuBindGroupLayoutEntry;
+pub(crate) use super::wgpu_buffer_entry::WgpuBufferEntry;
+pub(crate) use super::wgpu_compute_pipeline_entry::WgpuComputePipelineEntry;
+pub(crate) use super::wgpu_pipeline_layout_entry::WgpuPipelineLayoutEntry;
+pub(crate) use super::wgpu_render_pipeline_entry::WgpuRenderPipelineEntry;
+pub(crate) use super::wgpu_sampler_entry::WgpuSamplerEntry;
+pub(crate) use super::wgpu_texture_entry::WgpuTextureEntry;
+pub(crate) use super::wgpu_texture_view_entry::WgpuTextureViewEntry;
 
 #[derive(Debug)]
 pub(crate) struct WgpuShaderModuleEntry {
     pub(super) wgpu_module: Arc<wgpu::ShaderModule>,
-}
-
-#[derive(Debug)]
-pub(crate) struct WgpuRenderPipelineEntry {
-    pub(crate) wgpu_pipeline: Arc<wgpu::RenderPipeline>,
-}
-
-#[derive(Debug)]
-pub(crate) struct WgpuComputePipelineEntry {
-    pub(crate) wgpu_pipeline: Arc<wgpu::ComputePipeline>,
-}
-
-#[derive(Debug)]
-pub(crate) struct WgpuBufferEntry {
-    pub(crate) wgpu_buffer: Arc<wgpu::Buffer>,
-    pub(crate) size: u64, // To track VRAM accurately on destruction
-}
-
-#[derive(Debug)]
-pub(crate) struct WgpuTextureEntry {
-    pub(crate) wgpu_texture: Arc<wgpu::Texture>,
-    pub(crate) size: u64, // To track VRAM accurately on destruction
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct WgpuTextureViewEntry {
-    pub(crate) wgpu_view: Arc<wgpu::TextureView>,
-    pub(crate) source_texture_id: Option<api_tex::TextureId>,
-}
-
-#[derive(Debug)]
-pub(crate) struct WgpuSamplerEntry {
-    pub(crate) wgpu_sampler: Arc<wgpu::Sampler>,
-}
-
-#[derive(Debug)]
-pub(crate) struct WgpuBindGroupLayoutEntry {
-    pub(crate) wgpu_layout: Arc<wgpu::BindGroupLayout>,
-}
-
-#[derive(Debug)]
-pub(crate) struct WgpuBindGroupEntry {
-    pub(crate) wgpu_bind_group: Arc<wgpu::BindGroup>,
-}
-
-#[derive(Debug)]
-pub(crate) struct WgpuPipelineLayoutEntry {
-    pub(crate) wgpu_layout: Arc<wgpu::PipelineLayout>,
 }

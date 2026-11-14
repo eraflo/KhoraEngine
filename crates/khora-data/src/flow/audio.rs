@@ -40,6 +40,8 @@ use crate::flow::{Flow, Selection};
 use crate::register_flow;
 use khora_core::asset::AssetHandle;
 
+pub use super::audio_playback_writeback::{AudioPlaybackUpdate, AudioPlaybackWriteback};
+
 /// Per-source snapshot fed to `SpatialMixingLane::mix`.
 #[derive(Debug, Clone)]
 pub struct AudioSourceSnapshot {
@@ -61,26 +63,6 @@ pub struct AudioSourceSnapshot {
     /// Mutations made by the lane go through
     /// [`AudioPlaybackWriteback`].
     pub state: Option<PlaybackState>,
-}
-
-/// Update emitted by `SpatialMixingLane` for a single source — applied
-/// back to its `AudioSource` component by the
-/// `audio_playback_writeback` DataSystem.
-#[derive(Debug, Clone)]
-pub struct AudioPlaybackUpdate {
-    /// Target entity.
-    pub entity: EntityId,
-    /// New playback state. `None` means "stopped" (cursor reset).
-    pub new_state: Option<PlaybackState>,
-}
-
-/// Slot type written into [`OutputDeck`](khora_core::lane::OutputDeck)
-/// by `SpatialMixingLane`. Drained in `Maintenance` by the
-/// `audio_playback_writeback` DataSystem.
-#[derive(Debug, Default, Clone)]
-pub struct AudioPlaybackWriteback {
-    /// One update per source touched this frame.
-    pub updates: Vec<AudioPlaybackUpdate>,
 }
 
 /// View published by [`AudioFlow`] into the

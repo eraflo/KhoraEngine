@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 mod guard;
+mod limit_exceeded;
 mod limits;
 mod project;
 mod quarantine;

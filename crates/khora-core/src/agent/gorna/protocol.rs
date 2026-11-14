@@ -20,11 +20,17 @@
 //! decides *how* (its row within the envelope).
 
 use serde::{Deserialize, Serialize};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use super::{AgentId, StrategyId};
 use crate::agent::Agent;
-use crate::lane::cost::{Cost, Device, PerDevice};
+use crate::lane::cost::PerDevice;
+
+pub use super::frame_report::FrameReport;
+pub use super::offer::{CostBasis, Offer, OfferRow};
+pub use super::offer_request::OfferRequest;
+pub use super::report::Report;
+pub use super::why::{BindingConstraint, DecidedBy, Rejected, Why};
 
 /// One round of negotiation: an allocation holds from its epoch until the next.
 #[derive(
@@ -55,60 +61,6 @@ pub enum Trigger {
     Refresh,
     /// The emergency: every envelope is its agent's floor.
     Safety,
-}
-
-/// The DCC's request for an offer.
-#[derive(Debug, Clone)]
-pub struct OfferRequest {
-    /// The epoch the offer is for.
-    pub epoch: Epoch,
-    /// The frame's target time.
-    pub target: Duration,
-    /// How hard the machine is pressed, from `0.0` (not at all) to `1.0`.
-    pub pressure: f32,
-    /// An offer made after this keeps the agent's envelope.
-    pub reply_by: Instant,
-}
-
-/// How far an offered cost can be trusted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum CostBasis {
-    /// Measured on a run of the row.
-    Measured,
-    /// Quoted by the lane on this frame's inputs.
-    Quoted,
-    /// Not priced: the row's memory alone, no time.
-    Assumed,
-}
-
-/// One row an agent offers.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct OfferRow {
-    /// The row's id, unique within the agent.
-    pub id: StrategyId,
-    /// What the row costs one frame.
-    pub cost: Cost,
-    /// What the row's result is worth, from `0.0` to `1.0`.
-    pub quality: f32,
-    /// How far `cost` can be trusted.
-    pub confidence: CostBasis,
-}
-
-/// An agent's answer to an [`OfferRequest`].
-#[derive(Debug, Clone, PartialEq)]
-pub struct Offer {
-    /// The offering agent.
-    pub agent: AgentId,
-    /// The epoch the offer is for.
-    pub epoch: Epoch,
-    /// Every row the agent can run.
-    pub rows: Vec<OfferRow>,
-    /// The row the agent falls back to when nothing fits.
-    pub floor: StrategyId,
-    /// The row running now.
-    pub current: StrategyId,
-    /// The agent's health, from `0.0` to `1.0`.
-    pub health: f32,
 }
 
 /// What the DCC lends one agent for an epoch.
@@ -167,130 +119,5 @@ impl Allocation {
         }
         agent.apply(self.epoch, envelope, pin, allowed);
         true
-    }
-}
-
-/// Why the DCC decided an allocation as it did: what decided it, why the
-/// round opened, what stopped it from lending more, and the upgrades it
-/// refused.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Why {
-    /// What decided the rows the allocation plans.
-    pub by: DecidedBy,
-    /// Why the round opened, as decided: `Trigger::Safety` when the floors
-    /// did not fit.
-    pub trigger: Trigger,
-    /// The constraint that refused the last upgrade tried; `None` when every
-    /// agent reached its best allowed row, or the round opened as
-    /// `Trigger::Safety`.
-    pub binding: Option<BindingConstraint>,
-    /// The upgrades found not to fit, each with the constraint it broke.
-    pub rejected: Vec<Rejected>,
-}
-
-impl Default for Why {
-    /// Decided by the floors, the first round, nothing binding, nothing
-    /// rejected: what a journal written before the DCC kept its reasons
-    /// reads back as.
-    fn default() -> Self {
-        Self {
-            by: DecidedBy::Floors,
-            trigger: Trigger::Initial,
-            binding: None,
-            rejected: Vec::new(),
-        }
-    }
-}
-
-/// What decided an allocation's rows.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum DecidedBy {
-    /// No proposal was accepted: every agent runs the row admission planned.
-    #[default]
-    Floors,
-    /// The Q-RAM pass: upgrades by weighed quality gained per microsecond.
-    Greedy,
-    /// A search over the rows, bounded by a node budget.
-    Exact,
-    /// A plan over several epochs, weighing the cost of a switch.
-    Planner,
-}
-
-/// A constraint a plan can break.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum BindingConstraint {
-    /// The critical path's time on a device, over the frame's target.
-    Time(Device),
-    /// The memory held on a device, over what it has.
-    Memory(Device),
-    /// The envelope a `Stable` policy keeps the agent under, on a device: a
-    /// policy, not the frame, refused the row.
-    Ceiling(Device),
-}
-
-/// An upgrade the DCC found not to fit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct Rejected {
-    /// The agent the upgrade was for.
-    pub agent: AgentId,
-    /// The row it would have moved to.
-    pub row: StrategyId,
-    /// The constraint it broke.
-    pub over: BindingConstraint,
-}
-
-/// What an agent ran on its last frame.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Report {
-    /// The reporting agent.
-    pub agent: AgentId,
-    /// The epoch it ran in.
-    pub epoch: Epoch,
-    /// The row it ran.
-    pub row: StrategyId,
-    /// The time the run took on each device.
-    pub measured: PerDevice<Duration>,
-    /// The share of its work the run did, from `0.0` to `1.0`.
-    pub done: f32,
-    /// The agent's health, from `0.0` to `1.0`.
-    pub health: f32,
-    /// Whether no row fitted the envelope, so the floor ran.
-    pub over_budget: bool,
-    /// Whether the agent could not progress: a lane that stalled, a script
-    /// that faulted.
-    pub stalled: bool,
-    /// How much work the run did, as its lane priced it: the host time, in
-    /// µs, its own level quoted on the run's inputs. The DCC's cost book
-    /// learns each row's measured time against it, and its cost model is
-    /// read at it. `None` when the run priced nothing: nothing is learnt
-    /// from it.
-    pub workload: Option<f64>,
-    /// How long preparing the layer that ran took, on the first run after it
-    /// was swapped in at its family's place; `None` on every other run. What
-    /// a switch of row costs.
-    pub switch: Option<Duration>,
-    /// What the run had to say — its lane's message, a refused input, a
-    /// failure; `None` when it said nothing.
-    pub message: Option<String>,
-}
-
-/// What one frame cost the engine: the time it kept each device busy, waits
-/// for the display excluded. Sent to the DCC once per frame, after the frame.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub struct FrameReport {
-    /// The time the frame kept each device busy; `None` for a device the
-    /// frame did not measure (never zero for "unknown").
-    pub busy: PerDevice<Option<Duration>>,
-}
-
-impl FrameReport {
-    /// The frame's critical path: the longest busy time among the measured
-    /// devices; `None` when no device was measured.
-    pub fn critical(&self) -> Option<Duration> {
-        let busy = &self.busy;
-        [busy.cpu, busy.gpu, busy.npu, busy.other]
-            .into_iter()
-            .flatten()
-            .max()
     }
 }

@@ -24,6 +24,7 @@ use std::{
     collections::HashMap,
 };
 
+pub use super::component_domain_registration::ComponentDomainRegistration;
 pub use khora_core::ecs::SemanticDomain;
 
 /// Who is allowed to write a component — the axis orthogonal to
@@ -549,24 +550,6 @@ pub(crate) fn short_name(path: &str) -> String {
     flush(&mut token, &mut name);
     name
 }
-
-/// Inventory entry submitted by `#[derive(Component)]` when the type carries a
-/// `#[component(domain = ...)]` attribute.
-///
-/// Each entry registers one concrete component type into a [`crate::ecs::World`]
-/// with its declared [`SemanticDomain`], so domain assignment is a **property of
-/// the type** (single source of truth) instead of a hand-maintained list in
-/// `World::new`. Collected via [`inventory`] and replayed by `World::new`.
-///
-/// It is the storage half of a Rust component; its persistence half is its
-/// `ComponentRegistration`. The world's [`ComponentRegistry`] joins both into
-/// one [`ComponentVTable`].
-pub struct ComponentDomainRegistration {
-    /// Registers the component into `world` (calls `World::register_component`).
-    pub register: fn(&mut crate::ecs::World),
-}
-
-inventory::collect!(ComponentDomainRegistration);
 
 /// Moves a registry's `generation`, and publishes it.
 fn move_generation(generation: &mut u64, published: &std::sync::atomic::AtomicU64) {

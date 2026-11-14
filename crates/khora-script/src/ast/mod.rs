@@ -33,7 +33,11 @@
 //! value, and [`types`] for written types.
 
 pub mod decl;
+mod event_decl;
 pub mod expr;
+mod function_decl;
+mod import;
+mod label;
 pub mod stmt;
 pub mod types;
 

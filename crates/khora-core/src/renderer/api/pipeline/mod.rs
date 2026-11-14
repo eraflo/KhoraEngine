@@ -14,12 +14,28 @@
 
 //! Pipeline configuration.
 
+mod blend_factor;
+mod blend_operation;
+mod color_target_state_descriptor;
+mod compare_function;
 pub mod compute;
+mod compute_pipeline_id;
+mod compute_pipeline_spec;
+mod cull_mode;
+mod depth_stencil_state_descriptor;
 pub mod descriptor;
 pub mod enums;
+mod front_face;
 pub mod layout;
+mod pipeline_layout_id;
+mod polygon_mode;
+mod primitive_topology;
+mod render_pipeline_id;
 pub mod spec;
 pub mod state;
+mod stencil_operation;
+mod vertex_buffer_layout_descriptor;
+mod vertex_step_mode;
 
 pub use self::compute::*;
 pub use self::descriptor::*;
@@ -27,7 +43,3 @@ pub use self::enums::*;
 pub use self::layout::*;
 pub use self::spec::*;
 pub use self::state::*;
-
-// `ComputePipelineId` is defined alongside the compute command types; re-export
-// it here so compute pipeline specs + the `PipelineSystem` trait can reference
-// it under the `pipeline` module like `RenderPipelineId`.

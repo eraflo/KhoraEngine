@@ -22,6 +22,10 @@
 //! A lane reads the clear colour through a `#[frame]` field of its typed
 //! inputs; every camera takes its aspect from the target's size.
 
+mod clear_color;
+
+pub use clear_color::ClearColor;
+
 /// Size, in pixels, of the colour target the current frame renders into —
 /// the swapchain, or the editor's offscreen viewport.
 ///
@@ -42,35 +46,5 @@ impl ColorTargetSize {
     }
 }
 
-/// Clear color for the current frame.
-#[derive(Debug, Clone, Copy)]
-pub struct ClearColor(pub crate::math::LinearRgba);
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::math::Extent2D;
-
-    fn size(width: u32, height: u32) -> ColorTargetSize {
-        ColorTargetSize(Extent2D { width, height })
-    }
-
-    /// The aspect of a target is its width over its height: a 1024×768
-    /// window is 4:3.
-    #[test]
-    fn a_color_target_aspect_is_width_over_height() {
-        assert_eq!(size(1024, 768).aspect(), 4.0 / 3.0);
-        assert_eq!(size(1920, 1080).aspect(), 16.0 / 9.0);
-        assert_eq!(size(800, 800).aspect(), 1.0);
-        assert_eq!(size(768, 1024).aspect(), 0.75);
-    }
-
-    /// A target with no width or no height (a minimised window) has no
-    /// shape to follow; its aspect is 1, never 0, infinite or NaN.
-    #[test]
-    fn a_color_target_with_a_zero_side_has_aspect_one() {
-        assert_eq!(size(0, 768).aspect(), 1.0);
-        assert_eq!(size(1024, 0).aspect(), 1.0);
-        assert_eq!(size(0, 0).aspect(), 1.0);
-    }
-}
+mod tests;

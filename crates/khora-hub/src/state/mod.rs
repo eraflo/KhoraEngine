@@ -11,6 +11,7 @@
 
 pub mod auth;
 pub mod banner;
+mod engine_choice;
 pub mod engine_manager;
 pub mod home;
 pub mod new_project;

@@ -23,6 +23,12 @@ pub mod layout_view;
 mod scene;
 pub mod systems;
 pub mod text_layout;
+mod ui_border;
+mod ui_image;
+mod ui_interaction;
+mod ui_style;
+mod ui_text;
+mod ui_transform;
 
 pub use components::*;
 pub use glyph_atlas::{GlyphAtlas, GlyphSlot};

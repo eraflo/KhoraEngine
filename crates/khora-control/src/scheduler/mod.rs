@@ -43,6 +43,7 @@ mod lending;
 mod panic_guard;
 mod pooled_run;
 mod sim_steps;
+mod sub_steps;
 mod waves;
 
 /// How often (in frames) the scheduler samples per-component access stats for

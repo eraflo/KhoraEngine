@@ -14,6 +14,7 @@
 
 //! Defines data structures for representing shader modules.
 
+pub use super::shader_module_id::ShaderModuleId;
 use std::borrow::Cow;
 
 /// Represents the source code for a shader module.
@@ -38,27 +39,10 @@ pub struct ShaderModuleDescriptor<'a> {
     pub source: ShaderSourceData<'a>,
 }
 
-/// An opaque handle to a compiled shader module.
-///
-/// This ID is returned by [`GraphicsDevice::create_shader_module`] and is used to
-/// reference the shader in a [`RenderPipelineDescriptor`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ShaderModuleId(pub usize);
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::borrow::Cow;
-
-    #[test]
-    fn shader_module_id_creation_and_equality() {
-        let id1 = ShaderModuleId(1);
-        let id2 = ShaderModuleId(2);
-        let id1_again = ShaderModuleId(1);
-
-        assert_eq!(id1, id1_again);
-        assert_ne!(id1, id2);
-    }
 
     #[test]
     fn shader_module_descriptor_creation() {

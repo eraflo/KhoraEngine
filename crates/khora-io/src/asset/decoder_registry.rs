@@ -14,7 +14,7 @@
 
 //! Decoder registry — type-erased dispatch for asset decoding.
 
-use super::{AssetDecoder, AssetService};
+use super::AssetDecoder;
 use crate::trust::{LimitExceeded, Limits, Trust};
 use anyhow::{anyhow, Result};
 use khora_core::asset::Asset;
@@ -22,40 +22,7 @@ use khora_telemetry::metrics::{CounterHandle, HistogramHandle};
 use khora_telemetry::{MetricsRegistry, ScopedMetricTimer};
 use std::{any::Any, collections::HashMap, path::Path, sync::Arc};
 
-/// Inventory entry for an `AssetDecoder` that wants to be auto-registered
-/// against an [`AssetService`] at startup.
-///
-/// Mirrors the existing pattern used by `MaterialRegistration`
-/// (`crates/khora-data/src/scene/material_registration.rs`),
-/// `DataSystemRegistration`, and `FlowRegistration`.
-///
-/// Use this for decoder slots with **a single canonical implementation**
-/// (e.g. `texture`, `font`). Slots where multiple backends compete (`audio`,
-/// `mesh`) deliberately stay explicit at the call site — see the rationale
-/// in `decoders/audio/mod.rs` and `decoders/mesh/mod.rs`.
-///
-/// ```ignore
-/// inventory::submit! {
-///     DecoderRegistration {
-///         type_name: "texture",
-///         register: |svc| {
-///             svc.register_decoder::<CpuTexture>("texture", TextureDecoder);
-///         },
-///     }
-/// }
-/// ```
-pub struct DecoderRegistration {
-    /// Asset type name the decoder handles. Must match what
-    /// `IndexBuilder::asset_type_for_extension` returns for the relevant
-    /// file extensions (e.g. `"texture"`).
-    pub type_name: &'static str,
-    /// Function that performs the registration on an [`AssetService`].
-    /// Plain function pointer — no captures — so the entry can be embedded
-    /// in `inventory::submit!` (which needs `'static`).
-    pub register: fn(&mut AssetService),
-}
-
-inventory::collect!(DecoderRegistration);
+pub use super::decoder_registration::DecoderRegistration;
 
 trait AnyDecoder: Send + Sync {
     fn sniff(&self, head: &[u8]) -> bool;

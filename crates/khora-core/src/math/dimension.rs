@@ -18,12 +18,10 @@
 //! regions within them. They use integer (`u32`) components, making them suitable
 //! for representing pixel-based coordinates and sizes.
 
-/// A one-dimensional extent, typically representing a width.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct Extent1D {
-    /// The width component of the extent.
-    pub width: u32,
-}
+pub use super::extent_1d::Extent1D;
+pub use super::extent_3d::Extent3D;
+pub use super::origin_2d::Origin2D;
+pub use super::origin_3d::Origin3D;
 
 /// A two-dimensional extent, typically representing width and height.
 ///
@@ -34,42 +32,4 @@ pub struct Extent2D {
     pub width: u32,
     /// The height component of the extent.
     pub height: u32,
-}
-
-/// A three-dimensional extent, representing width, height, and depth.
-///
-/// This is used for 3D textures, texture arrays, or cubemaps.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct Extent3D {
-    /// The width component of the extent.
-    pub width: u32,
-    /// The height component of the extent.
-    pub height: u32,
-    /// The depth or number of array layers.
-    pub depth_or_array_layers: u32,
-}
-
-/// A two-dimensional origin, typically representing an (x, y) offset.
-///
-/// This is often used to specify the top-left corner of a rectangular region.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct Origin2D {
-    /// The x-coordinate of the origin.
-    pub x: u32,
-    /// The y-coordinate of the origin.
-    pub y: u32,
-}
-
-/// A three-dimensional origin, representing an (x, y, z) offset.
-///
-/// This is often used to specify the corner of a 3D volume or an offset
-/// into a texture array.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct Origin3D {
-    /// The x-coordinate of the origin.
-    pub x: u32,
-    /// The y-coordinate of the origin.
-    pub y: u32,
-    /// The z-coordinate or array layer of the origin.
-    pub z: u32,
 }

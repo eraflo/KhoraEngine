@@ -24,7 +24,7 @@ snapshot, atomic loads, game saves and prefab links.
   (`prepare`/`Prepared`/`Identity`), `encoding/`, `snapshot/`, `save.rs` (`SaveRecord`), `prefab/`,
   `file.rs` (`SceneFileReadError`), `retired.rs`.
 - Identity: `crates/khora-core/src/ecs/persistent_id.rs` (`PersistentId`).
-- Service: `crates/khora-io/src/serialization.rs` (`SerializationService`, `AssetPrefabs`).
+- Service: `crates/khora-io/src/serialization.rs` (`SerializationService`); prefab sources `asset_prefabs.rs` (`AssetPrefabs`), `reader_prefabs.rs`.
 
 ## Hard rules
 - `#[derive(Component)]` for every component (auto `SerializableX` + `From` + `inventory` registration).

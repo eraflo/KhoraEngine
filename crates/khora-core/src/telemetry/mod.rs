@@ -23,8 +23,12 @@
 //! it, and `khora-infra` provides the concrete implementations for collecting it.
 
 pub mod event;
+mod host_monitors;
+mod memory_report;
 pub mod metrics;
 pub mod monitoring;
+mod vram_provider;
+mod vram_report;
 
 pub use self::event::TelemetryEvent;
 pub use self::metrics::{Metric, MetricId, MetricValue, MetricsError, MetricsResult};

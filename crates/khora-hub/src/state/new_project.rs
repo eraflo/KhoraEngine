@@ -6,37 +6,14 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! New Project form state + the `EngineChoice` that drives the engine
-//! combo.
+//! New Project form state. The `EngineChoice` that drives the engine combo
+//! lives beside it.
 
-use crate::services::config::EngineInstall;
 use crate::services::download;
 use crate::services::github;
 use std::sync::mpsc;
 
-/// One row of the New Project engine combo.
-#[derive(Debug, Clone)]
-pub enum EngineChoice {
-    /// Already-installed engine (or the dev one).
-    Installed(EngineInstall),
-    /// Remote release that would be downloaded on demand.
-    Remote {
-        version: String,
-        download_url: String,
-        size: u64,
-        runtime_url: Option<String>,
-        runtime_size: Option<u64>,
-    },
-}
-
-impl EngineChoice {
-    pub fn version(&self) -> &str {
-        match self {
-            Self::Installed(e) => &e.version,
-            Self::Remote { version, .. } => version,
-        }
-    }
-}
+pub use super::engine_choice::EngineChoice;
 
 /// New Project form state.
 pub struct NewProjectState {

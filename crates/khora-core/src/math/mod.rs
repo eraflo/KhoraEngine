@@ -45,10 +45,15 @@ mod basis;
 pub mod color;
 pub mod cube;
 pub mod dimension;
+mod extent_1d;
+mod extent_3d;
 pub mod geometry;
 pub mod matrix;
+mod origin_2d;
+mod origin_3d;
 pub mod quaternion;
 pub mod ray;
+mod rect_2d;
 pub mod simd;
 pub mod vector;
 

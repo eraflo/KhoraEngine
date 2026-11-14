@@ -20,6 +20,7 @@
 //! same tint for the two severities, and the severity is an icon as well as a
 //! colour.
 
+mod tile_badge;
 pub(crate) mod view;
 
 use std::path::Path;

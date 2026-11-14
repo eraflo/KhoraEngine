@@ -26,6 +26,7 @@
 
 use std::borrow::Cow;
 
+pub use super::compute_pipeline_spec::{ComputePipelineKey, ComputePipelineSpec};
 use crate::renderer::api::command::{BindGroupLayoutEntry, BindingType, BufferBindingType};
 use crate::renderer::api::pipeline::enums::CullMode;
 use crate::renderer::api::pipeline::{
@@ -224,45 +225,6 @@ pub struct PipelineKey {
     /// `AlphaMode::Blend`, so two pipelines can never differ in one without
     /// differing in the other.
     pub blend: bool,
-}
-
-/// Declarative description of a compute pipeline. Mirrors [`PipelineSpec`] for
-/// the compute path (no vertex / depth / color state). The backend resolves the
-/// bind-group layouts, compiles the compute shader for the variant, and builds +
-/// caches the pipeline keyed by [`ComputePipelineKey`]. Used by Forward+ light
-/// culling.
-#[derive(Debug, Clone)]
-pub struct ComputePipelineSpec {
-    /// Debug label.
-    pub label: &'static str,
-    /// Logical shader module name (e.g. `"khora::pipelines::light_culling"`).
-    pub shader: &'static str,
-    /// Shader specialization. `empty()` default.
-    pub variant: ShaderVariantKey,
-    /// Bind-group layouts, in group order (0..N).
-    pub bind_group_layouts: Vec<LayoutSpec>,
-    /// Compute shader entry point.
-    pub entry_point: &'static str,
-}
-
-impl ComputePipelineSpec {
-    /// The cache key: `(shader, variant)`. For a given shader + variant the
-    /// rest of the compute config is fixed.
-    pub fn key(&self) -> ComputePipelineKey {
-        ComputePipelineKey {
-            shader: self.shader,
-            variant: self.variant.clone(),
-        }
-    }
-}
-
-/// Cache identity for a compute pipeline.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ComputePipelineKey {
-    /// Logical shader name.
-    pub shader: &'static str,
-    /// Shader variant.
-    pub variant: ShaderVariantKey,
 }
 
 #[cfg(test)]

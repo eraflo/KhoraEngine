@@ -20,6 +20,8 @@ use std::path::{Path, PathBuf};
 use khora_sdk::khora_core::ecs::entity::EntityId;
 use khora_sdk::khora_core::problems::{Problem, ProblemSeverity};
 
+pub(crate) use super::tile_badge::{tile_badge, TileBadge};
+
 /// One module's problems — or, for the scene's data, one component's — as
 /// the tab lists them.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,15 +71,6 @@ pub(crate) enum ProblemAction {
     SelectEntity(EntityId),
     /// Nothing to go to.
     Nothing,
-}
-
-/// The badge an `.erg` tile wears.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TileBadge {
-    /// The worst of what the module has.
-    pub severity: ProblemSeverity,
-    /// How many of that severity.
-    pub count: usize,
 }
 
 /// `problems` grouped by module, each entity named by `name_of`: the modules
@@ -177,23 +170,6 @@ pub(crate) fn tab_title(problems: &[Problem]) -> String {
             count(errors, "error", "errors"),
             count(warnings, "warning", "warnings")
         ),
-    }
-}
-
-/// The badge of a module with `counts` — its errors and warnings, as
-/// `Problems::of_module` gives them; `None` with neither. An error
-/// outranks any number of warnings.
-pub(crate) fn tile_badge(counts: (usize, usize)) -> Option<TileBadge> {
-    match counts {
-        (0, 0) => None,
-        (0, warnings) => Some(TileBadge {
-            severity: ProblemSeverity::Warning,
-            count: warnings,
-        }),
-        (errors, _) => Some(TileBadge {
-            severity: ProblemSeverity::Error,
-            count: errors,
-        }),
     }
 }
 

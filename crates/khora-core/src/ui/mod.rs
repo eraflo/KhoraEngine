@@ -24,15 +24,23 @@
 //! The `editor` submodule layers the editor-specific framework (panels, dock,
 //! viewport handle, paint `UiBuilder`) on top.
 
+mod align2;
 pub mod app;
 pub mod color_scheme;
+mod corner_radius;
 pub mod editor;
 pub mod fonts;
 pub mod geometry;
+mod glyph_rasterizer;
 pub mod layout;
+mod stroke;
 pub mod text;
 pub mod theme;
 pub mod types;
+mod ui_border;
+mod ui_image;
+mod ui_text;
+mod ui_transform;
 
 pub use app::{App, AppContext, AppLifecycle};
 pub use color_scheme::ColorScheme;

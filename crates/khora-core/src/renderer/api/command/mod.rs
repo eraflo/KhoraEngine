@@ -15,6 +15,10 @@
 //! Command recording and pass execution.
 
 pub mod bind_group;
+mod bind_group_id;
+mod bind_group_layout_descriptor;
+mod command_buffer_id;
+mod compute_pass_descriptor;
 pub mod draw_command;
 pub mod pass;
 

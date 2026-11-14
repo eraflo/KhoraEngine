@@ -21,6 +21,7 @@ mod glyphs;
 mod lane;
 mod pipeline;
 mod registration;
+mod ui_instance_data;
 
 pub use family::*;
 pub use lane::*;

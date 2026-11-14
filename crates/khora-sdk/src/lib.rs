@@ -75,7 +75,9 @@ mod runtime_config;
 pub mod scripts;
 mod traits;
 mod vessel;
+mod window_provider;
 pub mod winit_adapters;
+mod winit_window_provider;
 
 pub use engine::{EngineBootstrap, EngineCore};
 pub use engine::{Readiness, ReadinessHold, ReadinessProgress, ReadinessState, ReadinessTicket};

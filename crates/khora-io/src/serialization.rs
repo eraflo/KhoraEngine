@@ -20,7 +20,7 @@
 //! the same for a game in progress, as its differences from the scene it
 //! started from. No GORNA negotiation — the goal is the caller's to state.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use khora_core::asset::AssetUUID;
 use khora_core::ecs::ReservationHold;
@@ -39,10 +39,16 @@ use khora_data::scene::{
     SceneFileReadError, SceneRecord, TextEncoding,
 };
 
-use crate::asset::{AssetReader, AssetService, PrefabAsset};
+use crate::asset::{AssetService, PrefabAsset};
+
+pub use super::asset_prefabs::AssetPrefabs;
+pub use super::reader_prefabs::ReaderPrefabs;
 
 /// Scene format version produced by today's writers.
 pub const CURRENT_SCENE_VERSION: u32 = SCENE_FORMAT_VERSION as u32;
+
+/// The index type of a prefab.
+pub(crate) const PREFAB: &str = "prefab";
 
 /// An error that can occur within the `SerializationService`.
 #[derive(Debug)]
@@ -387,67 +393,6 @@ impl SerializationService {
     }
 }
 
-/// The prefabs of a project, read through its [`AssetService`]: a prefab is
-/// the `.kprefab` its asset id names, decoded once and kept until the service
-/// invalidates it.
-pub struct AssetPrefabs {
-    assets: Arc<Mutex<AssetService>>,
-}
-
-impl AssetPrefabs {
-    /// Reads prefabs through `assets`.
-    pub fn new(assets: Arc<Mutex<AssetService>>) -> Self {
-        Self { assets }
-    }
-}
-
-impl PrefabSource for AssetPrefabs {
-    fn prefab(&self, id: AssetUUID) -> Result<SceneRecord, String> {
-        let mut assets = self
-            .assets
-            .lock()
-            .map_err(|_| "the asset service is poisoned".to_owned())?;
-        read_prefab(&mut assets, id)
-    }
-}
-
-/// The prefabs of a project, read through a shared [`AssetReader`]: on any
-/// thread, without the [`AssetService`]'s lock, and without its cache — a
-/// prefab is decoded from its file each time it is read.
-pub struct ReaderPrefabs {
-    reader: Arc<AssetReader>,
-}
-
-impl ReaderPrefabs {
-    /// Reads prefabs through `reader`.
-    pub fn new(reader: Arc<AssetReader>) -> Self {
-        Self { reader }
-    }
-}
-
-impl PrefabSource for ReaderPrefabs {
-    fn prefab(&self, id: AssetUUID) -> Result<SceneRecord, String> {
-        match self.reader.index().get_metadata(&id) {
-            Some(metadata) if metadata.asset_type_name == PREFAB => {}
-            Some(metadata) => {
-                return Err(format!(
-                    "the asset {id} is a {}, not a prefab",
-                    metadata.asset_type_name
-                ))
-            }
-            None => return Err(format!("the project holds no asset {id}")),
-        }
-        let decoded = self
-            .reader
-            .decode(&id, std::any::TypeId::of::<PrefabAsset>())
-            .value?;
-        decoded
-            .downcast::<PrefabAsset>()
-            .map(|prefab| prefab.0)
-            .map_err(|_| format!("the asset {id} did not decode as a prefab"))
-    }
-}
-
 /// The prefab `id` names in `assets`, decoded once and kept until `assets`
 /// invalidates it — refused when `id` names no asset, or one of another type.
 pub fn read_prefab(assets: &mut AssetService, id: AssetUUID) -> Result<SceneRecord, String> {
@@ -466,9 +411,6 @@ pub fn read_prefab(assets: &mut AssetService, id: AssetUUID) -> Result<SceneReco
         .map_err(|error| error.to_string())?;
     Ok(prefab.0.clone())
 }
-
-/// The index type of a prefab.
-const PREFAB: &str = "prefab";
 
 /// The identities of every prefab `assets` indexes: the assets whose index
 /// type is `"prefab"`.

@@ -17,6 +17,7 @@
 
 pub mod defs;
 pub mod module;
+mod shader_module_id;
 pub mod source;
 pub mod stage;
 pub mod variant;

@@ -51,6 +51,7 @@ use super::scene_record::{InstanceRecord, SceneRecord};
 use crate::ecs::{PrefabInstance, SerializablePrefabInstance, World};
 
 mod catalog;
+mod except;
 mod library;
 mod overrides;
 mod rekey;

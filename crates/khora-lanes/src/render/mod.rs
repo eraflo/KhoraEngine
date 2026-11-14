@@ -22,12 +22,14 @@ mod culling;
 mod family;
 mod forward_plus;
 mod lit_forward;
+mod lit_inputs;
 mod neutral;
 mod recording;
 mod registration;
 mod scene_load;
 mod shader_complexity;
 mod simple_unlit;
+mod unlit_inputs;
 pub mod util;
 
 /// Squared distance from the camera to a model's origin — the sort key the lit

@@ -17,6 +17,7 @@
 //! All types here are backend-agnostic. Concrete implementations (egui, etc.)
 //! live in `khora-infra`.
 
+mod addable_component;
 pub mod declared;
 mod font_family_hint;
 pub mod gizmo;
@@ -27,6 +28,10 @@ mod inspected;
 pub mod interaction;
 pub mod overlay;
 pub mod panel;
+mod panel_location;
+mod prefab_apply_scope;
+mod property_edit;
+mod radial_gradient;
 pub mod shell;
 pub mod state;
 mod text_align;

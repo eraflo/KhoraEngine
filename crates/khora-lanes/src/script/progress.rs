@@ -12,36 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What one behavior's turn reads, and where its instance has got to: the
-//! invocation the frame hands a turn, and the progress the turn advances and
+//! Where a behavior's instance has got to: the progress a turn advances and
 //! hands back.
-
-use khora_core::script::EventQueue;
-use khora_script::vm::Program;
 
 use super::runtime::{Body, Pending};
 
-/// Everything one behavior's turn reads, other than the host it runs against.
-///
-/// Grouped rather than passed loose: they describe a single invocation and
-/// always travel together, so a call site cannot get two of them out of order.
-pub(super) struct Invocation<'a> {
-    pub(super) program: &'a Program,
-    pub(super) behavior: &'a str,
-    pub(super) entity: khora_core::ecs::entity::EntityId,
-    pub(super) events: &'a EventQueue,
-    pub(super) fuel: u64,
-    /// The seconds since the instance's last turn — the frame's, or more
-    /// when a rate or the fuel kept it out of some: what its countdowns and
-    /// waits count down, before anything runs.
-    pub(super) delta: f32,
-    /// What its `Update` is given: `delta`, and whatever earlier turns that
-    /// stopped before their `Update` left owed to it.
-    pub(super) update_delta: f32,
-    /// The seconds since the previous frame: what the watchdog counts a body
-    /// as running, whatever it was owed.
-    pub(super) frame_delta: f32,
-}
+pub(super) use super::invocation::Invocation;
 
 /// Where an instance has got to — what a turn advances.
 ///

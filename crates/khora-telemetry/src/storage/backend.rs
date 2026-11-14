@@ -19,6 +19,8 @@ use khora_core::telemetry::{
 };
 use std::fmt::Debug;
 
+pub use super::backend_stats::BackendStats;
+
 /// Trait defining the interface for metrics storage backends
 pub trait MetricsBackend: Send + Sync + Debug + 'static {
     /// Get a reference to this object as Any for downcasting
@@ -116,21 +118,6 @@ pub trait MetricsBackend: Send + Sync + Debug + 'static {
             }),
         }
     }
-}
-
-/// Statistics about the metrics backend
-#[derive(Debug, Clone)]
-pub struct BackendStats {
-    /// Total number of metrics stored
-    pub total_metrics: usize,
-    /// Number of counters
-    pub counter_count: usize,
-    /// Number of gauges
-    pub gauge_count: usize,
-    /// Number of histograms
-    pub histogram_count: usize,
-    /// Approximate memory usage in bytes
-    pub estimated_memory_bytes: usize,
 }
 
 #[cfg(test)]

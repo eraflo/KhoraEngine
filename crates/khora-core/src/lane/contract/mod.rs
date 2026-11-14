@@ -15,8 +15,13 @@
 //! What a lane is: the [`Lane`] trait, its family, levels and costs, its typed
 //! inputs and outputs, and the checks that hold it to them.
 
+mod device;
 mod error;
+mod input_warning;
 mod lane;
+mod output_ops;
+mod output_refusal;
+mod validate;
 
 pub mod compile_check;
 pub mod cost;

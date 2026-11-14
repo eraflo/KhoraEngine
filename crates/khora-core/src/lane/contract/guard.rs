@@ -26,6 +26,10 @@
 
 use crate::problems::ProblemSeverity;
 
+pub use super::input_warning::InputWarning;
+pub use super::output_refusal::{OutputRefusal, SinkKind};
+pub use super::validate::Validate;
+
 /// Where an input field is read from — one variant per `LaneInputs` field
 /// attribute.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -49,19 +53,6 @@ pub enum SourceKind {
     Take,
     /// `#[scope]`: the parallel scope.
     Scope,
-}
-
-/// Where an output field is written — one variant per `LaneOutputs` field
-/// attribute.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum SinkKind {
-    /// `#[pass]`: GPU commands for a pass slot.
-    Pass,
-    /// `#[deck]`: CPU data for another domain.
-    Deck,
-    /// `#[staged]`: outputs kept in the family's reserve across frames,
-    /// applied at a frame's `Boundary`.
-    Staged,
 }
 
 /// Why a field was refused.
@@ -98,17 +89,6 @@ pub struct InputRefusal {
     pub reason: Reason,
 }
 
-/// An output field that could not be committed, and why.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct OutputRefusal {
-    /// The field's name in the `LaneOutputs` struct.
-    pub field: &'static str,
-    /// Where it is written.
-    pub sink: SinkKind,
-    /// Why it was refused.
-    pub reason: Reason,
-}
-
 /// One problem a value's own check found in one of its fields.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValueProblem {
@@ -120,20 +100,6 @@ pub struct ValueProblem {
     pub message: String,
 }
 
-/// A value's own check, opted into with `#[bus(validate)]` or
-/// `#[deck(validate)]`.
-///
-/// It names what is wrong and never rewrites it: a problem warns, the lane
-/// still runs on the value as it is.
-#[diagnostic::on_unimplemented(
-    message = "`validate` checks `{Self}` with its `Validate` impl, and `{Self}` has none",
-    label = "no `Validate` impl"
-)]
-pub trait Validate {
-    /// Every problem in `self`; empty when nothing is wrong.
-    fn validate(&self) -> Vec<ValueProblem>;
-}
-
 /// What a guard says about one field.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Verdict {
@@ -143,15 +109,4 @@ pub enum Verdict {
     Warn(Vec<ValueProblem>),
     /// The lane cannot run this frame.
     Refuse(InputRefusal),
-}
-
-/// A warning a fetch raised on one field, kept for `Problems`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InputWarning {
-    /// The field's name in the `LaneInputs` struct.
-    pub field: &'static str,
-    /// Where it was read from.
-    pub source: SourceKind,
-    /// What its check found.
-    pub problems: Vec<ValueProblem>,
 }
