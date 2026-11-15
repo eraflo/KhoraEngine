@@ -15,6 +15,7 @@
 //! A graphics device that records what the projection and the eviction ask
 //! of it, so their effect on GPU resources is readable without a GPU.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use khora_core::math::dimension::{Extent3D, Origin3D};
@@ -60,6 +61,7 @@ struct Log {
     bind_groups: Vec<Vec<BoundEntry>>,
     destroyed_textures: Vec<TextureId>,
     destroyed_views: Vec<TextureViewId>,
+    samplers: Vec<SamplerId>,
 }
 
 impl Log {
@@ -69,10 +71,12 @@ impl Log {
     }
 }
 
-/// Records every resource created and destroyed; creation always succeeds.
+/// Records every resource created and destroyed; creation succeeds, but for a
+/// sampler while told to refuse them (`refuse_samplers`).
 #[derive(Debug, Default)]
 pub(crate) struct RecordingDevice {
     log: Mutex<Log>,
+    refuse_samplers: AtomicBool,
 }
 
 impl RecordingDevice {
@@ -114,6 +118,16 @@ impl RecordingDevice {
 
     pub fn destroyed_views(&self) -> Vec<TextureViewId> {
         self.log().destroyed_views.clone()
+    }
+
+    /// Every sampler created, in creation order.
+    pub fn samplers(&self) -> Vec<SamplerId> {
+        self.log().samplers.clone()
+    }
+
+    /// Makes the device refuse every sampler (`true`) or accept them again.
+    pub fn refuse_samplers(&self, refuse: bool) {
+        self.refuse_samplers.store(refuse, Ordering::Relaxed);
     }
 }
 
@@ -247,8 +261,13 @@ impl GraphicsDevice for RecordingDevice {
         Ok(())
     }
     fn create_sampler(&self, _d: &SamplerDescriptor) -> Result<SamplerId, ResourceError> {
-        let id = self.log().next();
-        Ok(SamplerId(id))
+        if self.refuse_samplers.load(Ordering::Relaxed) {
+            return Err(ResourceError::BackendError("no room for a sampler".into()));
+        }
+        let mut log = self.log();
+        let id = SamplerId(log.next());
+        log.samplers.push(id);
+        Ok(id)
     }
     fn destroy_sampler(&self, _id: SamplerId) -> Result<(), ResourceError> {
         Ok(())

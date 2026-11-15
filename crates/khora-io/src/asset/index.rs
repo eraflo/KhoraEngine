@@ -24,6 +24,8 @@ use std::collections::HashMap;
 #[derive(Debug)]
 pub struct AssetIndex {
     index: HashMap<AssetUUID, AssetMetadata>,
+    /// How many entries the file held, two sharing a UUID counted twice.
+    entries_read: usize,
 }
 
 /// The most bytes an index may hold, and its decode may allocate.
@@ -42,18 +44,30 @@ impl AssetIndex {
         let (metadata_vec, _): (Vec<AssetMetadata>, _) =
             bincode::serde::decode_from_slice(index_bytes, config)?;
 
-        let index = metadata_vec
-            .into_iter()
-            .map(|meta| (meta.uuid, meta))
-            .collect();
+        let entries_read = metadata_vec.len();
+        let mut index: HashMap<AssetUUID, AssetMetadata> = HashMap::with_capacity(entries_read);
+        for meta in metadata_vec {
+            let (uuid, path) = (meta.uuid, meta.source_path.clone());
+            if let Some(hidden) = index.insert(uuid, meta) {
+                log::warn!(
+                    "Two assets share the UUID {uuid}: {} hides {}",
+                    path.display(),
+                    hidden.source_path.display()
+                );
+            }
+        }
 
-        Ok(Self { index })
+        Ok(Self {
+            index,
+            entries_read,
+        })
     }
 
     /// An index of no asset.
     pub(crate) fn empty() -> Self {
         Self {
             index: HashMap::new(),
+            entries_read: 0,
         }
     }
 
@@ -70,6 +84,12 @@ impl AssetIndex {
     /// Returns the total number of indexed assets.
     pub fn asset_count(&self) -> usize {
         self.index.len()
+    }
+
+    /// Returns how many entries the index file held, two sharing a UUID
+    /// counted twice: what a pack's header counts.
+    pub fn entries_read(&self) -> usize {
+        self.entries_read
     }
 }
 
@@ -126,5 +146,22 @@ mod tests {
 
         let index = AssetIndex::new(&encoded(&[entry("a.wgsl")])).expect("a real index reads");
         assert_eq!(index.asset_count(), 1);
+    }
+
+    /// **Two entries sharing a UUID are both counted as read, one indexed.**
+    ///
+    /// The later entry hides the earlier: `asset_count` is 1, `entries_read`
+    /// 2 — what a pack's header counts.
+    #[test]
+    fn entries_sharing_a_uuid_are_counted_as_read_and_indexed_once() {
+        let index =
+            AssetIndex::new(&encoded(&[entry("old.wgsl"), entry("new.wgsl")])).expect("reads");
+
+        assert_eq!(index.asset_count(), 1);
+        assert_eq!(index.entries_read(), 2);
+        let kept = index
+            .get_metadata(&AssetUUID::new_v5("a.wgsl"))
+            .expect("the UUID is indexed");
+        assert_eq!(kept.source_path, PathBuf::from("new.wgsl"));
     }
 }

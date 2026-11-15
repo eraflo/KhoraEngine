@@ -99,16 +99,6 @@ fn tonemap_reinhard(color: vec3<f32>) -> vec3<f32> {
     return color / (color + vec3<f32>(1.0));
 }
 
-// Hemispheric ambient: a sky and a ground colour mixed by the normal's up
-// component, a cheap stand-in for indirect light. The lit pipelines take
-// `ibl_ambient` instead.
-const AMBIENT_SKY: vec3<f32> = vec3<f32>(0.16, 0.18, 0.22);
-const AMBIENT_GROUND: vec3<f32> = vec3<f32>(0.06, 0.055, 0.05);
-fn hemisphere_ambient(n: vec3<f32>) -> vec3<f32> {
-    let t = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
-    return mix(AMBIENT_GROUND, AMBIENT_SKY, t);
-}
-
 // The highest mip index of the prefiltered specular cube (PREFILTER_MIPS - 1).
 // Roughness maps linearly to this LOD range.
 const IBL_MAX_MIP: f32 = 4.0;

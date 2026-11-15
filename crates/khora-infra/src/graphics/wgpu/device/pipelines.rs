@@ -455,7 +455,7 @@ fn color_target_states(
                         operation: b.alpha.operation.into_wgpu(),
                     },
                 }),
-                write_mask: wgpu::ColorWrites::from_bits_truncate(cts.write_mask.bits() as u32), // Bitflags conversion
+                write_mask: cts.write_mask.into_wgpu(),
             })
         })
         .collect()

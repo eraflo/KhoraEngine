@@ -91,7 +91,12 @@ impl LayoutSystem for TaffyLayoutSystem {
                     log::error!("TaffyLayoutSystem: compute_layout failed: {e}");
                     continue;
                 }
-                self.update_transforms(root, view, 0); // 0 Z-Index base
+                // Taffy leaves a root at the origin and keeps its margin aside.
+                let origin = match self.taffy.layout(root_node) {
+                    Ok(layout) => Vec2::new(layout.margin.left, layout.margin.top),
+                    Err(_) => Vec2::new(0.0, 0.0),
+                };
+                self.update_transforms(root, view, 0, origin);
             }
         }
     }
@@ -105,11 +110,14 @@ impl LayoutSystem for TaffyLayoutSystem {
     }
 }
 
-// SAFETY: TaffyTree contains *const () which makes it !Send/!Sync.
-// However, we only access it from the ISA thread in a deterministic way.
-// In Taffy 0.5+ it should be Send+Sync if we use the default generic.
-// If it still complains, we might need these:
+// SAFETY: `TaffyTree` is `!Send`/`!Sync` only because a `CompactLength` may
+// carry a `*const ()`, the pointer of a `calc()` length, set by
+// `CompactLength::calc` alone. This system never builds one (`convert_style`
+// maps every value to points, a percent or auto), so every length in the tree
+// is a tagged number and no pointer is ever moved or shared. The tree owns all
+// its data, and is changed only through `&mut self`.
 unsafe impl Send for TaffyLayoutSystem {}
+// SAFETY: as for `Send` above.
 unsafe impl Sync for TaffyLayoutSystem {}
 
 impl TaffyLayoutSystem {
@@ -134,25 +142,32 @@ impl TaffyLayoutSystem {
         }
     }
 
-    fn update_transforms(&self, entity: EntityId, view: &mut dyn UiLayoutView, z_index: i32) {
+    /// Writes `entity`'s screen-space transform, `origin` being its parent's
+    /// screen position, then its children's.
+    fn update_transforms(
+        &self,
+        entity: EntityId,
+        view: &mut dyn UiLayoutView,
+        z_index: i32,
+        origin: Vec2,
+    ) {
+        let mut pos = origin;
         if let Some(&node_id) = self.entity_to_node.get(&entity) {
             if let Ok(layout) = self.taffy.layout(node_id) {
+                // Taffy places a node relative to its parent.
+                pos = origin + Vec2::new(layout.location.x, layout.location.y);
                 let transform = UiTransform {
-                    pos: Vec2::new(layout.location.x, layout.location.y),
+                    pos,
                     size: Vec2::new(layout.size.width, layout.size.height),
                     z_index,
                 };
-
-                // Taffy gives the position relative to the parent, but `UiTransform::pos`
-                // is in screen coordinates: a nested node lands at its parent-relative
-                // position until the parent's offset is added.
                 view.set_transform(entity, transform);
             }
         }
 
         let children = view.get_children(entity);
         for child_id in children {
-            self.update_transforms(child_id, view, z_index + 1);
+            self.update_transforms(child_id, view, z_index + 1, pos);
         }
     }
 
@@ -214,5 +229,149 @@ impl TaffyLayoutSystem {
             UiVal::Percent(v) => percent(v / 100.0),
             UiVal::Auto => auto(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use khora_core::ui::types::UiRect;
+
+    /// A UI tree held in memory: its nodes in order, each parent's children,
+    /// and the transforms the layout wrote back.
+    #[derive(Default)]
+    struct Tree {
+        nodes: Vec<(EntityId, UiNode)>,
+        children: HashMap<EntityId, Vec<EntityId>>,
+        transforms: HashMap<EntityId, UiTransform>,
+    }
+
+    impl Tree {
+        /// Adds `node` as entity `index`, under `parent` if any.
+        fn add(&mut self, index: u32, node: UiNode, parent: Option<EntityId>) -> EntityId {
+            let entity = EntityId {
+                index,
+                generation: 0,
+            };
+            self.nodes.push((entity, node));
+            if let Some(parent) = parent {
+                self.children.entry(parent).or_default().push(entity);
+            }
+            entity
+        }
+
+        /// The position the layout wrote for `entity`.
+        fn pos(&self, entity: EntityId) -> Vec2 {
+            self.transforms
+                .get(&entity)
+                .unwrap_or_else(|| panic!("no transform was written for {entity:?}"))
+                .pos
+        }
+    }
+
+    impl UiLayoutView for Tree {
+        fn get_all_ui_entities(&self) -> Vec<EntityId> {
+            self.nodes.iter().map(|(entity, _)| *entity).collect()
+        }
+        fn get_node(&self, entity: EntityId) -> Option<UiNode> {
+            self.nodes
+                .iter()
+                .find(|(e, _)| *e == entity)
+                .map(|(_, node)| node.clone())
+        }
+        fn get_children(&self, entity: EntityId) -> Vec<EntityId> {
+            self.children.get(&entity).cloned().unwrap_or_default()
+        }
+        fn has_parent(&self, entity: EntityId) -> bool {
+            self.children.values().any(|kids| kids.contains(&entity))
+        }
+        fn set_transform(&mut self, entity: EntityId, transform: UiTransform) {
+            self.transforms.insert(entity, transform);
+        }
+    }
+
+    /// A node of `width` × `height` pixels, with `padding` on every side and
+    /// no margin.
+    ///
+    /// The default margin is `Auto`, which would centre the node in its parent.
+    fn sized(width: f32, height: f32, padding: f32) -> UiNode {
+        UiNode {
+            width: UiVal::Px(width),
+            height: UiVal::Px(height),
+            padding: UiRect::all(UiVal::Px(padding)),
+            margin: UiRect::all(UiVal::Px(0.0)),
+            ..Default::default()
+        }
+    }
+
+    /// **A nested node lands at its ancestors' positions plus its own offset.**
+    ///
+    /// A 200 × 200 root at the origin with a padding of 20 stacks two children
+    /// in a column: `first` (100 × 50) at (20, 20), `second` (100 × 60, padding
+    /// 10) below it at (20, 70). `second` holds `inner` (40 × 40, left margin
+    /// 5), offset (15, 10) inside it: on screen `inner` is at (35, 80), not at
+    /// its offset from its parent.
+    #[test]
+    fn a_nested_node_is_placed_at_its_parents_position_plus_its_own_offset() {
+        let mut tree = Tree::default();
+        let root = tree.add(0, sized(200.0, 200.0, 20.0), None);
+        let first = tree.add(1, sized(100.0, 50.0, 0.0), Some(root));
+        let second = tree.add(2, sized(100.0, 60.0, 10.0), Some(root));
+        let inner = tree.add(
+            3,
+            UiNode {
+                margin: UiRect {
+                    left: UiVal::Px(5.0),
+                    right: UiVal::Px(0.0),
+                    top: UiVal::Px(0.0),
+                    bottom: UiVal::Px(0.0),
+                },
+                ..sized(40.0, 40.0, 0.0)
+            },
+            Some(second),
+        );
+
+        TaffyLayoutSystem::new().compute_layouts(&mut tree);
+
+        assert_eq!(tree.pos(root), Vec2::new(0.0, 0.0), "the root");
+        assert_eq!(
+            tree.pos(first),
+            Vec2::new(20.0, 20.0),
+            "the first child, inside the root's padding"
+        );
+        assert_eq!(
+            tree.pos(second),
+            Vec2::new(20.0, 70.0),
+            "the second child, below the first"
+        );
+        assert_eq!(
+            tree.pos(inner),
+            Vec2::new(35.0, 80.0),
+            "the grandchild: its parent's (20, 70) plus its own (15, 10)"
+        );
+    }
+
+    /// **A root's margin moves it, and its children, away from the screen's corner.**
+    ///
+    /// A 200 × 200 root with a margin of 10 on every side holds a 50 × 50
+    /// child: on screen the root's top-left corner is at (10, 10), and the
+    /// child, at the start of the root's content, is there too.
+    #[test]
+    fn a_root_with_a_margin_is_placed_past_its_margin() {
+        let mut tree = Tree::default();
+        let root = tree.add(
+            0,
+            UiNode {
+                margin: UiRect::all(UiVal::Px(10.0)),
+                ..sized(200.0, 200.0, 0.0)
+            },
+            None,
+        );
+        let child = tree.add(1, sized(50.0, 50.0, 0.0), Some(root));
+
+        TaffyLayoutSystem::new().compute_layouts(&mut tree);
+
+        assert_eq!(tree.pos(root), Vec2::new(10.0, 10.0), "the root");
+        assert_eq!(tree.pos(child), Vec2::new(10.0, 10.0), "its child");
     }
 }

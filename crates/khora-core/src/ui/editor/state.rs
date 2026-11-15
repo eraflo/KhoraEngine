@@ -299,18 +299,12 @@ pub struct EditorState {
     /// The id is typically `"<entity_index>::<title>"`, so cards of two
     /// entities never share a state.
     pub inspector_card_open: std::collections::HashMap<String, bool>,
-    /// Inspector card on/off toggle state, kept by the UI only.
-    pub inspector_card_enabled: std::collections::HashMap<String, bool>,
     /// Current git branch name, read from the project folder's `.git/HEAD`.
     ///
     /// `None` if the project is not a git repository or the file is unreadable.
     pub current_git_branch: Option<String>,
     /// Entities the user hid with the scene tree's eye icon, kept by the UI only.
     pub hidden_entities: HashSet<EntityId>,
-    /// Pending visibility toggle from the scene tree's eye icon.
-    ///
-    /// No engine component holds visibility, so nothing drains it.
-    pub pending_visibility_toggle: Option<EntityId>,
 
     // ── Prefab workflow ────────────────────────────────
     /// The entity to save as a `.kprefab`, set by "Save as Prefab" in the scene tree.
@@ -425,7 +419,6 @@ impl EditorState {
         self.renaming_entity = None;
         self.rename_buffer.clear();
         self.inspector_card_open.clear();
-        self.inspector_card_enabled.clear();
         self.scene_roots.clear();
         self.entity_count = 0;
     }

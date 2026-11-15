@@ -1046,6 +1046,125 @@ fn an_index_over_its_limit_is_refused_before_it_is_read() {
     );
 }
 
+/// The whole numbers written in `text`, in order.
+fn numbers_in(text: &str) -> Vec<u64> {
+    text.split(|c: char| !c.is_ascii_digit())
+        .filter_map(|run| run.parse().ok())
+        .collect()
+}
+
+/// **A pack whose header counts other entries than its index is refused.**
+///
+/// The `index.bin` of a pack holding only the scene, signed again with the
+/// game's key, put in place of the two-entry index: the seal holds, but
+/// `data.pack`'s header still counts 2 entries against the index's 1. The
+/// runtime does not start, and the error names both counts.
+#[test]
+fn a_pack_whose_index_lost_an_entry_is_refused_naming_both_counts() {
+    let game = GameDir::new("count-index-short");
+    let exe_dir = game.packed(SEALED);
+    let other_game = GameDir::new("count-index-short-other");
+    let other_exe = other_game.packed_unsigned(&SEALED[..1]);
+    let shorter_index = std::fs::read(other_exe.join("index.bin")).expect("the shorter index");
+    let mut manifest = PackManifest::new();
+    let (rel, bytes) = SEALED[0];
+    manifest.insert(AssetUUID::new_v5(rel), bytes);
+    let resealed = game
+        .signer()
+        .sign(&manifest, &shorter_index)
+        .and_then(|signed| signed.encode())
+        .expect("the manifest is signed again over the shorter index");
+    std::fs::write(exe_dir.join("index.bin"), &shorter_index).expect("the index is replaced");
+    std::fs::write(exe_dir.join("manifest.bin"), resealed).expect("the manifest is replaced");
+
+    let refused = build_asset_service(
+        &exe_dir,
+        Arc::new(MetricsRegistry::new()),
+        None,
+        Some(game.pack_key()),
+    )
+    .err()
+    .expect("a pack whose header counts 2 entries over an index of 1 is refused");
+    assert_eq!(
+        seal_error(&refused),
+        None,
+        "refused for its count, not its seal: {refused:#}"
+    );
+    let numbers = numbers_in(&format!("{refused:#}"));
+    assert!(
+        numbers.contains(&2) && numbers.contains(&1),
+        "the error names the header's 2 and the index's 1: {refused:#}"
+    );
+}
+
+/// **A pack whose header count was rewritten is refused.**
+///
+/// The header of a signed two-entry pack is rewritten to count 7 entries; the
+/// header is outside the seal, which holds. The runtime does not start, and
+/// the error names both counts.
+#[test]
+fn a_pack_whose_header_count_was_rewritten_is_refused_naming_both_counts() {
+    let game = GameDir::new("count-header-rewritten");
+    let exe_dir = game.packed(SEALED);
+    let pack_path = exe_dir.join("data.pack");
+    let mut pack = std::fs::read(&pack_path).expect("data.pack reads");
+    // `asset_count` is the little-endian u32 at bytes 12..16 of the header.
+    pack[12..16].copy_from_slice(&7u32.to_le_bytes());
+    std::fs::write(&pack_path, pack).expect("data.pack is rewritten");
+
+    let refused = build_asset_service(
+        &exe_dir,
+        Arc::new(MetricsRegistry::new()),
+        None,
+        Some(game.pack_key()),
+    )
+    .err()
+    .expect("a pack whose header counts 7 entries over an index of 2 is refused");
+    assert_eq!(
+        seal_error(&refused),
+        None,
+        "refused for its count, not its seal: {refused:#}"
+    );
+    let numbers = numbers_in(&format!("{refused:#}"));
+    assert!(
+        numbers.contains(&7) && numbers.contains(&(SEALED.len() as u64)),
+        "the error names the header's 7 and the index's {}: {refused:#}",
+        SEALED.len()
+    );
+}
+
+/// **A pack built from a project whose renamed asset's old path was reused starts the runtime.**
+///
+/// `textures/hero.png` is renamed `textures/hero_old.png` in the editor, which
+/// freezes the old path's UUID onto the new one, then a new
+/// `textures/hero.png` is created: both paths resolve to one UUID. The pack is
+/// built and signed from that one project, so its header and index come from
+/// one build, and the runtime starts on it.
+#[test]
+fn a_pack_whose_paths_share_a_uuid_after_a_rename_starts_the_runtime() {
+    let game = GameDir::new("count-rename-reused");
+    let project = game.path().join("project");
+    let mut registry = crate::AssetIdRegistry::load(&project);
+    registry.rename("textures/hero.png", "textures/hero_old.png");
+    registry.save().expect("the registry saves");
+    let exe_dir = game.packed(&[
+        ("scenes/sealed.kscene", b"sealed scene bytes"),
+        ("textures/hero_old.png", b"the renamed texture"),
+        ("textures/hero.png", b"the new texture at the old path"),
+    ]);
+
+    let started = build_asset_service(
+        &exe_dir,
+        Arc::new(MetricsRegistry::new()),
+        None,
+        Some(game.pack_key()),
+    );
+
+    if let Err(refused) = started {
+        panic!("a pack built from one project is refused: {refused:#}");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Starting by ticket
 // ---------------------------------------------------------------------------

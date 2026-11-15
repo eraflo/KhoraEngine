@@ -596,10 +596,6 @@ impl WgpuRenderSystem {
     }
 }
 
-unsafe impl Send for WgpuRenderSystem {}
-
-unsafe impl Sync for WgpuRenderSystem {}
-
 /// Tells `device` the surface `gc` is configured to: its format and size.
 fn describe_surface(device: &WgpuDevice, gc: &WgpuGraphicsContext) {
     device.set_surface_format(
@@ -634,3 +630,6 @@ fn adapter_info_of(
         },
     }
 }
+
+#[cfg(test)]
+mod tests;

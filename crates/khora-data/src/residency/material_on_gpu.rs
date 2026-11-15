@@ -87,10 +87,13 @@ impl ProjectionRegistry {
         device: &dyn GraphicsDevice,
         pipeline_system: &dyn PipelineSystem,
     ) {
+        let Some(sampler) = self.sampler(device) else {
+            return;
+        };
         let projector = MaterialProjector {
             device,
             pipeline_system,
-            sampler: self.sampler(device),
+            sampler,
         };
         let material_cache = self.store.store::<GpuMaterial>();
         let cpu_textures = self.store.store::<CpuTexture>();
@@ -174,33 +177,35 @@ impl ProjectionRegistry {
         }
     }
 
-    /// Returns the shared material sampler, creating it on first call.
-    ///
-    /// # Panics
-    ///
-    /// If the device refuses the sampler.
-    fn sampler(&self, device: &dyn GraphicsDevice) -> SamplerId {
+    /// Returns the shared material sampler, creating it on first call; `None`,
+    /// logged, while the device refuses it.
+    fn sampler(&self, device: &dyn GraphicsDevice) -> Option<SamplerId> {
         if let Some(s) = self.sampler.get() {
-            return *s;
+            return Some(*s);
         }
-        let sampler = device
-            .create_sampler(&SamplerDescriptor {
-                label: Some(Cow::Borrowed("khora_material_sampler")),
-                address_mode_u: AddressMode::Repeat,
-                address_mode_v: AddressMode::Repeat,
-                address_mode_w: AddressMode::Repeat,
-                mag_filter: FilterMode::Linear,
-                min_filter: FilterMode::Linear,
-                mipmap_filter: MipmapFilterMode::Linear,
-                lod_min_clamp: 0.0,
-                lod_max_clamp: 100.0,
-                compare: None,
-                anisotropy_clamp: 1,
-                border_color: None,
-            })
-            .expect("Failed to create material sampler");
+        let created = device.create_sampler(&SamplerDescriptor {
+            label: Some(Cow::Borrowed("khora_material_sampler")),
+            address_mode_u: AddressMode::Repeat,
+            address_mode_v: AddressMode::Repeat,
+            address_mode_w: AddressMode::Repeat,
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
+            mipmap_filter: MipmapFilterMode::Linear,
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 100.0,
+            compare: None,
+            anisotropy_clamp: 1,
+            border_color: None,
+        });
+        let sampler = match created {
+            Ok(sampler) => sampler,
+            Err(e) => {
+                log::error!("No material sampler, so no material is uploaded: {e}");
+                return None;
+            }
+        };
         let _ = self.sampler.set(sampler);
-        *self.sampler.get().unwrap_or(&sampler)
+        Some(*self.sampler.get().unwrap_or(&sampler))
     }
 }
 
@@ -745,6 +750,59 @@ mod tests {
                 },
             ],
             "uniform, specular at 6, specular colour at 7, sampler at 8"
+        );
+    }
+
+    // --- The shared sampler ------------------------------------------------
+
+    /// **A device refusing the material sampler uploads no material and panics nowhere.**
+    ///
+    /// An entity holds a plain material; the device refuses the sampler every
+    /// material binds. The sync uploads nothing, caches nothing and tags no
+    /// entity. Once the device accepts, the next sync creates the sampler and
+    /// tags the entity with a material bound to it.
+    #[test]
+    fn a_refused_material_sampler_uploads_nothing_until_the_device_accepts() {
+        use crate::AssetStore;
+
+        let store = AssetStore::new();
+        let projection = ProjectionRegistry::new(store.clone());
+        let device = RecordingDevice::default();
+        device.refuse_samplers(true);
+        let uuid = AssetUUID::new_v5("materials/plain.kmat");
+        let mut world = World::new();
+        let entity = world.spawn(HandleComponent {
+            handle: AssetHandle::new(Box::new(StandardMaterial::default()) as Box<dyn Material>),
+            uuid,
+        });
+
+        projection.sync_materials(&mut world, &device, &LayoutOnlyPipelines);
+        assert!(
+            world.get::<HandleComponent<GpuMaterial>>(entity).is_none(),
+            "a material with no sampler is not tagged"
+        );
+        assert!(
+            !store
+                .store::<GpuMaterial>()
+                .read()
+                .expect("the gpu material store")
+                .contains(&uuid),
+            "a material with no sampler is not cached"
+        );
+        assert!(
+            device.buffers_with_data().is_empty() && device.bind_groups().is_empty(),
+            "nothing is uploaded without the sampler"
+        );
+
+        device.refuse_samplers(false);
+        projection.sync_materials(&mut world, &device, &LayoutOnlyPipelines);
+        let Some(tagged) = world.get::<HandleComponent<GpuMaterial>>(entity) else {
+            panic!("the material is uploaded once the device accepts its sampler");
+        };
+        assert_eq!(
+            device.samplers(),
+            vec![tagged.handle.sampler],
+            "the sampler is created once the device accepts it, and the material binds it"
         );
     }
 }

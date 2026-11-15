@@ -78,7 +78,18 @@ fn build_asset_service(
         let loader = PackLoader::new(pack_file)
             .context("Pack header validation failed — refusing to start")?;
         let manifest = read_manifest(exe_dir, &bytes, pack_key)?;
+        let counted = loader.header().asset_count;
         let mut svc = AssetService::new(&bytes, Box::new(loader), metrics, Some(manifest))?;
+        // A pack and an index from two builds do not go together.
+        let indexed = svc.index().entries_read();
+        if counted as usize != indexed {
+            return Err(anyhow!(
+                "{} counts {counted} entries but {} holds {indexed}: the pair does not \
+                 come from one build",
+                pack.display(),
+                idx.display()
+            ));
+        }
         if let Some(refusals) = refusals {
             svc.set_refusals(refusals);
         }
