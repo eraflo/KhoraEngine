@@ -12,21 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Physics Lane.
+//! The physics family: its lane, which steps the provider, and its registration.
 //!
-//! [`StandardPhysicsLane`] is a thin wrapper around
-//! [`PhysicsProvider::step`](khora_core::physics::PhysicsProvider::step): it does **no** World queries and
-//! **no** structural mutations. The surrounding work is split into three
-//! Substrate-Pass stages:
-//!
-//! 1. [`khora_data::flow::PhysicsFlow::adapt`] — AGDF detach/reattach
-//!    plus the `ECS → provider` sync (`sync_to_world`-equivalent) that
-//!    feeds the simulation its inputs.
-//! 2. **This lane** — `provider.step(dt)`. Pure simulation, no World
-//!    access at all.
-//! 3. [`khora_data::ecs::systems::physics_world_writeback`] — pulls the
-//!    new transforms, kinematic results, and collision events back into
-//!    the World during the `Maintenance` phase.
+//! See the book: concepts/physics.md, "How it plugs into a frame".
 
 mod family;
 mod registration;

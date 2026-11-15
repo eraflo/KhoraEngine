@@ -26,13 +26,11 @@ pub(crate) const WORDMARK: &str = "wordmark";
 /// The egui family name [`FontFamilyHint::Icons`](khora_core::ui::editor::FontFamilyHint::Icons) resolves to.
 pub(crate) const ICONS: &str = "icons";
 
-/// egui's font definitions for `pack`: each family's faces in pack order —
-/// the first is the family's primary face, the rest its fallbacks — ahead of
-/// egui's built-in faces.
+/// egui's font definitions for `pack`, each family's faces in pack order ahead
+/// of egui's built-in ones (the first face primary, the rest fallbacks).
 ///
-/// Every named family resolves to glyphs even when the pack brings no face for
-/// it, because epaint panics on text asking for a `FontFamily::Name` bound to
-/// no fonts: display falls back to the proportional faces, the wordmark to
+/// epaint panics on a `FontFamily::Name` bound to no font, so every named
+/// family falls back: display to the proportional faces, the wordmark to
 /// display then proportional, the icons to proportional (tofu, not a crash).
 pub(crate) fn font_definitions(pack: &FontPack) -> egui::FontDefinitions {
     let mut defs = egui::FontDefinitions::default();

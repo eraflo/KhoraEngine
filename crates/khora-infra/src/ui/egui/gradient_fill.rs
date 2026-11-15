@@ -14,19 +14,11 @@
 
 //! Gradient colouring of a tessellated egui mesh.
 //!
-//! egui fills a mesh by interpolating vertex colours across each triangle, so
-//! a triangle that spans a gradient stop would blend straight past the stop's
-//! colour. [`split_at_stops`] first cuts every such triangle along the stop's
-//! line; [`tint`] then gives each vertex the gradient's colour at its position
-//! while keeping the coverage the tessellator's feathering put in its alpha.
-//!
-//! A hard edge — two stops at one offset — has two colours on its line, one
-//! per side. The split gives each side its own vertices there, and the tint
-//! colours them with that side's stop.
-//!
-//! A radial gradient's stops lie on circles, which no straight cut follows:
-//! [`subdivide`] instead refines the mesh until every edge is short, so the
-//! per-vertex colours [`tint`] gives sample the field finely.
+//! egui interpolates vertex colours across each triangle, so a triangle that
+//! spans a gradient stop would blend straight past its colour. A linear
+//! gradient's triangles are cut along its stop lines ([`split_at_stops`]); a
+//! radial one's are refined until short ([`subdivide_radial`]), as no straight
+//! cut follows a circle. [`tint`] then colours each vertex, keeping its coverage.
 
 use khora_core::ui::editor::{GradientStop, LinearGradient, RadialGradient};
 
@@ -34,11 +26,12 @@ use khora_core::ui::editor::{GradientStop, LinearGradient, RadialGradient};
 /// triangle counts as crossing the line.
 const STOP_EPSILON: f32 = 1e-4;
 
-/// Splits every triangle of `mesh` that straddles a stop of `gradient` —
-/// the first and last stops included, since the colour is held past them —
-/// so no triangle spans one. New vertices interpolate position, uv and colour
-/// linearly along the cut edge; the covered area is unchanged. On a hard edge
-/// the two sides keep separate vertices.
+/// Splits every triangle of `mesh` that straddles a stop of `gradient`, so no
+/// triangle spans one.
+///
+/// The first and last stops count, as the colour is held past them. New
+/// vertices interpolate position, uv and colour along the cut edge; the covered
+/// area is unchanged. On a hard edge the two sides keep separate vertices.
 pub(crate) fn split_at_stops(mesh: &mut egui::epaint::Mesh, gradient: &LinearGradient<'_>) {
     let mut previous: Option<f32> = None;
     for stop in gradient.stops {
@@ -54,8 +47,9 @@ pub(crate) fn split_at_stops(mesh: &mut egui::epaint::Mesh, gradient: &LinearGra
 }
 
 /// Cuts every triangle of `mesh` crossing the line `offset_at == stop` into a
-/// fan on each side of it. Both fans share the crossing vertices, so the cut
-/// leaves no crack.
+/// fan on each side of it.
+///
+/// Both fans share the crossing vertices, so the cut leaves no crack.
 fn split_along(mesh: &mut egui::epaint::Mesh, gradient: &LinearGradient<'_>, stop: f32) {
     let indices = std::mem::take(&mut mesh.indices);
     let mut out = Vec::with_capacity(indices.len());
@@ -172,11 +166,11 @@ const MAX_TRIANGLES: usize = 65_536;
 /// change nothing on screen.
 const FINEST: f32 = 0.5;
 
-/// Splits every triangle of `mesh` whose longest edge exceeds `max_edge`, at
-/// edge midpoints and recursively, until no edge is longer. New vertices
-/// interpolate position, uv and colour linearly; the covered area is
-/// unchanged. A `max_edge` that is not a positive number leaves the mesh
-/// alone.
+/// Splits the triangles of `mesh` at edge midpoints until no edge is longer
+/// than `max_edge`.
+///
+/// New vertices interpolate position, uv and colour; the covered area is
+/// unchanged. A `max_edge` that is not a positive number leaves the mesh alone.
 #[cfg(test)]
 pub(crate) fn subdivide(mesh: &mut egui::epaint::Mesh, max_edge: f32) {
     if !(max_edge.is_finite() && max_edge > 0.0) {
@@ -185,10 +179,12 @@ pub(crate) fn subdivide(mesh: &mut egui::epaint::Mesh, max_edge: f32) {
     subdivide_by(mesh, |_| Some(max_edge));
 }
 
-/// Subdivides `mesh` where `gradient` changes colour: a sixteenth of the
-/// radius between the first and last stop circles, half a point across a
-/// hard edge (two stops at one offset), nothing where the colour is constant
-/// (inside the first stop circle, outside the last).
+/// Subdivides `mesh` where `gradient` changes colour.
+///
+/// Edges go down to a sixteenth of the radius between the first and last stop
+/// circles, and to half a point across a hard edge (two stops at one offset).
+/// Where the colour is constant (inside the first circle, outside the last),
+/// the mesh is left alone.
 pub(crate) fn subdivide_radial(mesh: &mut egui::epaint::Mesh, gradient: &RadialGradient<'_>) {
     let r = gradient.radius;
     let (Some(first), Some(last)) = (gradient.stops.first(), gradient.stops.last()) else {
@@ -220,9 +216,11 @@ pub(crate) fn subdivide_radial(mesh: &mut egui::epaint::Mesh, gradient: &RadialG
     });
 }
 
-/// Splits every triangle whose longest edge exceeds `limit(triangle)` (`None`:
-/// leave it), at edge midpoints, recursively. Neighbours share the midpoint of
-/// a shared edge. A triangle with a non-finite corner is left as it is.
+/// Splits at edge midpoints every triangle whose longest edge exceeds
+/// `limit(triangle)`, recursively.
+///
+/// `None` leaves a triangle as it is, as does a non-finite corner. Neighbours
+/// share the midpoint of a shared edge.
 fn subdivide_by(mesh: &mut egui::epaint::Mesh, limit: impl Fn(&[[f32; 2]; 3]) -> Option<f32>) {
     let mut midpoints = std::collections::HashMap::new();
     let triangles: Vec<[u32; 3]> = mesh.indices.as_chunks::<3>().0.to_vec();
@@ -332,11 +330,12 @@ impl GradientField for RadialGradient<'_> {
     }
 }
 
-/// Recolours every vertex of `mesh`: rgb from `gradient` at the vertex
-/// position, alpha the gradient's alpha multiplied by the vertex's existing
-/// alpha (the anti-aliasing coverage). A vertex on a hard edge takes the stop
-/// on its triangle's side: the first stop at that offset before it, the last
-/// one past it.
+/// Recolours every vertex of `mesh` with `gradient` at its position, keeping
+/// its coverage.
+///
+/// The alpha is the gradient's times the vertex's own (the anti-aliasing
+/// coverage). A vertex on a hard edge takes the stop on its triangle's side:
+/// the first stop at that offset before it, the last one past it.
 pub(crate) fn tint<G: GradientField + ?Sized>(mesh: &mut egui::epaint::Mesh, gradient: &G) {
     let mut colors: Vec<[f32; 4]> = mesh
         .vertices
@@ -837,8 +836,10 @@ mod tests {
     }
 
     /// A 128 × 8 quad of two triangles whose red channel equals x and whose
-    /// uv is linear in position. Midpoint splits only ever land on even x, so
-    /// an interpolated vertex's colour is exact.
+    /// uv is linear in position.
+    ///
+    /// Midpoint splits only ever land on even x, so an interpolated vertex's
+    /// colour is exact.
     fn ramp_quad() -> Mesh {
         let mut mesh = Mesh::default();
         for (x, y) in [(0.0, 0.0), (128.0, 0.0), (128.0, 8.0), (0.0, 8.0)] {
@@ -921,9 +922,11 @@ mod tests {
         }
     }
 
-    /// Runs `body` in a child test process (the test named `test` re-run with
-    /// `KHORA_TEST_CHILD` set) and reports whether it finished within
-    /// `limit` — a runaway loop is killed instead of hanging the run.
+    /// Runs `body` in a child test process and reports whether it finished
+    /// within `limit`.
+    ///
+    /// The child is the test named `test`, re-run with `KHORA_TEST_CHILD` set;
+    /// a runaway loop is killed instead of hanging the run.
     fn finishes_within(test: &str, limit: std::time::Duration, body: impl FnOnce()) -> bool {
         if std::env::var_os("KHORA_TEST_CHILD").is_some() {
             body();

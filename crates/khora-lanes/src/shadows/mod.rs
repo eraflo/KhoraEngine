@@ -12,13 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The shadows family's lane.
+//! The shadows family: its lane, which fills the shadow atlases, and its registration.
 //!
-//! [`ShadowsLane`] renders every shadowed light's depth into a 2D atlas
-//! (directional and spot lights) and a cube atlas (point lights). Its three
-//! levels are three resolutions of the same atlases, from [`TIERS`]; the lit
-//! lanes never need to know which one ran. The atlases, the passes and the
-//! device resources live in [`algo`].
+//! See the book: concepts/rendering.md, "Strategies and shadows".
 
 pub(crate) mod algo;
 mod family;

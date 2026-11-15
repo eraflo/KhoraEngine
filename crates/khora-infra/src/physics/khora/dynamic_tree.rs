@@ -14,8 +14,7 @@
 
 //! # Dynamic AABB Tree
 //!
-//! A high-performance spatial partitioning structure for broad-phase collision detection.
-//! It uses an incrementally balanced binary tree of AABBs.
+//! The broad phase: an incrementally balanced binary tree of AABBs.
 
 use khora_core::math::Aabb;
 use khora_core::math::Vec3;
@@ -91,8 +90,10 @@ impl<T: Clone> DynamicTree<T> {
         self.deallocate_node(leaf);
     }
 
-    /// Updates a leaf with a new AABB.
-    /// If the new AABB is still within the "fat" AABB, no tree update is needed.
+    /// Updates a leaf with a new AABB, returning whether the tree changed.
+    ///
+    /// A leaf whose new AABB still fits its fattened one stays in place, unless
+    /// `force_update` is set.
     pub fn update(
         &mut self,
         leaf: i32,
@@ -109,9 +110,9 @@ impl<T: Clone> DynamicTree<T> {
 
         self.remove_leaf(leaf);
 
-        // Fatten the AABB
+        // Fattened, so small moves stay inside it and leave the tree alone.
         let mut fat_aabb = aabb;
-        let extension = Vec3::ONE * 0.1; // Magic constant for fattening
+        let extension = Vec3::ONE * 0.1;
         fat_aabb.min = fat_aabb.min - extension;
         fat_aabb.max = fat_aabb.max + extension;
 

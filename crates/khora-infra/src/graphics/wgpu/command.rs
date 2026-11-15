@@ -28,8 +28,7 @@ use crate::graphics::wgpu::profiler::WgpuTimestampProfiler;
 use super::conversions::IntoWgpu;
 use super::device::WgpuDevice;
 
-// --- Implémentations concrètes ---
-
+/// A render pass being recorded, resolving Khora ids through the device.
 pub struct WgpuRenderPass<'a> {
     pub(crate) pass: wgpu::RenderPass<'a>,
     pub(crate) device: &'a WgpuDevice,
@@ -109,6 +108,7 @@ impl<'pass> RenderPass<'pass> for WgpuRenderPass<'pass> {
     }
 }
 
+/// A compute pass being recorded, resolving Khora ids through the device.
 pub struct WgpuComputePass<'a> {
     pub(crate) pass: wgpu::ComputePass<'a>,
     pub(crate) device: &'a WgpuDevice,
@@ -148,34 +148,30 @@ impl<'pass> ComputePass<'pass> for WgpuComputePass<'pass> {
     }
 }
 
+/// A wgpu command encoder behind the [`CommandEncoder`] trait.
 pub struct WgpuCommandEncoder {
     pub(crate) encoder: Option<wgpu::CommandEncoder>,
     pub(crate) device: WgpuDevice,
 }
 
 impl WgpuCommandEncoder {
-    /// Provides mutable access to the underlying `wgpu::CommandEncoder`.
-    /// This is an "escape hatch" for backend-specific operations like
-    /// timestamp profiling that are not fully abstracted yet.
-    /// Returns `None` if the encoder has already been consumed by `finish()`.
+    /// Returns the underlying `wgpu::CommandEncoder`, or `None` once finished.
+    ///
+    /// An escape hatch for backend work the trait does not cover, such as
+    /// timestamp profiling.
     pub fn wgpu_encoder_mut(&mut self) -> Option<&mut wgpu::CommandEncoder> {
         self.encoder.as_mut()
     }
 }
 
-/// Mutable access to the live `wgpu::CommandEncoder` held in `slot`.
+/// Returns the live encoder held in `slot`.
 ///
-/// Invariant: the encoder is `Some` for the whole lifetime of a
-/// `WgpuCommandEncoder` and only becomes `None` inside `finish()`, which
-/// consumes the boxed encoder (`self: Box<Self>`). No `&mut self` method can
-/// therefore observe a consumed encoder: once `finish()` has taken the encoder
-/// there is no value left to call its methods on. This is an internal backend
-/// invariant, not user input, so a violation is a programming bug rather than a
-/// recoverable runtime condition.
+/// Takes the field rather than `&mut self`, so the returned pass can still
+/// borrow the sibling `device`.
 ///
-/// Takes the field directly (not `&mut self`) so the disjoint borrow leaves
-/// the encoder's sibling `device` field free for the returned render/compute
-/// pass to borrow.
+/// # Panics
+///
+/// After `finish()`, which no caller can reach: it consumes the boxed encoder.
 fn encoder_mut(slot: &mut Option<wgpu::CommandEncoder>) -> &mut wgpu::CommandEncoder {
     slot.as_mut()
         .expect("command encoder used after finish() — passes must be created before finish()")
@@ -186,7 +182,7 @@ impl CommandEncoder for WgpuCommandEncoder {
         &'encoder mut self,
         descriptor: &RenderPassDescriptor<'encoder>,
     ) -> Box<dyn RenderPass<'encoder> + 'encoder> {
-        // Collect all views and resolve targets first to ensure their lifetimes are valid
+        // The views live here, outside the loop, because the pass descriptor borrows them.
         let mut views: Vec<wgpu::TextureView> = Vec::new();
         let mut resolve_targets: Vec<Option<wgpu::TextureView>> = Vec::new();
 
@@ -243,7 +239,6 @@ impl CommandEncoder for WgpuCommandEncoder {
             })
             .collect();
 
-        // Handle depth/stencil attachment
         let depth_view: Option<wgpu::TextureView> =
             descriptor.depth_stencil_attachment.as_ref().and_then(|ds| {
                 self.device

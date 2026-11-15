@@ -29,11 +29,12 @@ pub(super) struct TurnPosition {
     pub(super) ended: usize,
 }
 
-/// `held`'s update, its changed fields those that differ from `row` — what
-/// its turn started from: the World's row with the `Set`s of it queued
-/// earlier in the frame. Another script's write to another field survives,
-/// and a field the turn only read is not one it wrote. `turn` is where it
-/// stood among the frame's commands — see [`BehaviorUpdate`].
+/// Returns `held`'s update, its changed fields those that differ from `row`.
+///
+/// `row` is what its turn started from: the World's row with the `Set`s of it
+/// queued earlier in the frame. Another script's write to another field
+/// survives, and a field the turn only read is not one it wrote. `turn` is
+/// where it stood among the frame's commands; see [`BehaviorUpdate`].
 pub(super) fn update_of(
     held: &Instance,
     layout: &BehaviorLayout,
@@ -80,9 +81,10 @@ pub(super) fn update_of(
     }
 }
 
-/// The fields of `behavior`'s component on `entity` that `commands` — the
-/// frame's, so far — `Set`, the later over the earlier: what a turn starts
-/// from, as a script reads its own writes of a component within the frame.
+/// Returns the fields of `behavior`'s component on `entity` that the frame's
+/// `commands` so far `Set`, the later over the earlier.
+///
+/// What a turn starts from, as a script reads its own writes within the frame.
 pub(super) fn sets_on(
     commands: &khora_core::script::CommandBuffer,
     entity: khora_core::ecs::entity::EntityId,

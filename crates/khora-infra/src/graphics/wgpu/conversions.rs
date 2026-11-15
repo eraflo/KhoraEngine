@@ -29,8 +29,9 @@ use khora_core::renderer::api::resource::texture::{
 use khora_core::renderer::api::resource::{IndexFormat, SampleCount, TextureFormat};
 use khora_core::renderer::api::shader::ShaderStage;
 
-/// A local extension trait to convert our engine's types into WGPU-compatible types.
-/// This avoids Rust's orphan rules while keeping an idiomatic `.into_wgpu()` syntax.
+/// Converts an engine type into its wgpu counterpart.
+///
+/// A local trait, since the orphan rules forbid `From` between two foreign crates' types.
 pub trait IntoWgpu<T> {
     /// Consumes self and converts it into a WGPU-compatible type.
     fn into_wgpu(self) -> T;
@@ -205,10 +206,8 @@ impl IntoWgpu<wgpu::TextureFormat> for TextureFormat {
 
 /// Converts a WGPU texture format into its Khora equivalent.
 ///
-/// This is a free function because we cannot implement `From` due to orphan
-/// rules. Returns `None` for any `wgpu::TextureFormat` Khora does not model
-/// (compressed, packed, and exotic formats are intentionally unsupported);
-/// callers decide how to degrade rather than crashing the frame loop.
+/// Returns `None` for a format Khora does not model (compressed, packed,
+/// exotic): the caller degrades rather than crashing the frame loop.
 pub fn from_wgpu_texture_format(format: wgpu::TextureFormat) -> Option<TextureFormat> {
     let mapped = match format {
         wgpu::TextureFormat::R8Unorm => TextureFormat::R8Unorm,
@@ -440,8 +439,7 @@ impl IntoWgpu<wgpu::LoadOp<u32>> for LoadOp<u32> {
 
 // --- Adapter ---
 
-/// What identifies the adapter `info` describes: its name, vendor id,
-/// device id, driver and driver info, carried as wgpu reports them.
+/// Returns what identifies the adapter `info` describes, as wgpu reports it.
 pub(crate) fn adapter_identity_of(
     info: &wgpu::AdapterInfo,
 ) -> khora_core::renderer::api::device::AdapterIdentity {
@@ -460,11 +458,8 @@ mod tests {
     use khora_core::math::{Extent2D, Extent3D, Origin3D};
     use khora_core::renderer::api::device::AdapterIdentity;
 
-    /// **The adapter identity keeps vendor, device and driver.** What wgpu
-    /// says of an adapter — its name, vendor id, device id, driver and driver
-    /// info — is carried whole into the engine's `AdapterIdentity`, none of
-    /// it dropped; what does not name the adapter (its backend, its bus, its
-    /// subgroup sizes) is left out.
+    /// The identity keeps name, vendor, device, driver and driver info whole,
+    /// and leaves out what does not name the adapter (backend, bus, subgroups).
     #[test]
     fn the_adapter_identity_keeps_vendor_device_and_driver() {
         let info = wgpu::AdapterInfo {

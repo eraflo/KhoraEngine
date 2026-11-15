@@ -35,7 +35,6 @@ impl EguiUiBuilder<'_> {
     ) -> bool {
         let inner = self.ui.horizontal(|ui| {
             ui.label(label);
-            // A value outside the bounds is shown as it is until edited.
             ui.add(
                 egui::DragValue::new(value)
                     .speed(speed)
@@ -55,13 +54,10 @@ impl EguiUiBuilder<'_> {
 
     /// A row of three dragged numbers, each after its axis letter.
     pub(super) fn edit_vec3(&mut self, label: &str, value: &mut [f32; 3], speed: f32) -> bool {
-        // The axis colour rides on the *letter*, not on a filled badge behind
-        // it. Three saturated badges per row turn a transform-heavy inspector
-        // into a rainbow; a tinted letter says the same thing and lets the
-        // numbers stay the loudest part of the row.
-        //
-        // Colours come from the active theme (stashed by `apply_theme`), so
-        // the inspector's X/Y/Z always match the viewport gizmo's.
+        // The axis colour rides on the letter, not on a filled badge: three
+        // saturated badges per row would turn the inspector into a rainbow.
+        // The colours come from the active theme (stashed by `apply_theme`),
+        // so they match the viewport gizmo's.
         let axes = self
             .ui
             .ctx()
@@ -114,10 +110,9 @@ impl EguiUiBuilder<'_> {
     ) -> bool {
         let selected_text = options.get(*current).copied().unwrap_or("");
         let mut changed = false;
-        // Salted explicitly rather than by label: `from_label` derives the id
-        // from the label text, so two combo boxes labelled the same — which the
-        // inspector's generic enum walker produces for every switchable enum —
-        // shared one popup and one open state.
+        // Salted explicitly, not by label: two combo boxes labelled the same,
+        // as the inspector's enum walker makes, would share one popup and one
+        // open state.
         let out = egui::ComboBox::new(("khora_combo", id_salt), label)
             .selected_text(selected_text)
             .show_ui(self.ui, |ui| {

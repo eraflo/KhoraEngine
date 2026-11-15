@@ -27,9 +27,10 @@ pub(super) struct Invocation<'a> {
     pub(super) entity: khora_core::ecs::entity::EntityId,
     pub(super) events: &'a EventQueue,
     pub(super) fuel: u64,
-    /// The seconds since the instance's last turn — the frame's, or more
-    /// when a rate or the fuel kept it out of some: what its countdowns and
-    /// waits count down, before anything runs.
+    /// The seconds since the instance's last turn, which its countdowns and
+    /// waits count down before anything runs.
+    ///
+    /// More than the frame's when a rate or the fuel kept it out of some.
     pub(super) delta: f32,
     /// What its `Update` is given: `delta`, and whatever earlier turns that
     /// stopped before their `Update` left owed to it.

@@ -23,14 +23,10 @@ use super::rebuild::inject_float_defs;
 use super::{backend_err, compose_err, Inner, LIB_MODULES};
 use naga_oil::compose::{ComposableModuleDescriptor, ShaderLanguage};
 
-/// Re-registers a dirty lib module with the composer using its overlay (or
-/// embedded) source, replacing the previous registration. `naga_oil` allows
-/// re-adding a composable module under the same import path.
+/// Registers a dirty lib module again, from its overlay or embedded source.
 ///
-/// A watched file the lib table does not know and that declares no
-/// `#define_import_path` is not a lib module but a whole shader (the
-/// `standalone/` ones, handed to their consumers as raw strings): there is
-/// nothing to re-register, so it is skipped rather than failed.
+/// A watched file outside the lib table that declares no `#define_import_path`
+/// is a whole shader (`standalone/`), not a lib module: it is skipped, not failed.
 pub(super) fn readd_lib_module(inner: &mut Inner, path: &str) -> Result<(), RenderError> {
     let source = resolve_lib_source(inner, path)
         .ok_or_else(|| backend_err(&format!("lib module `{path}` has no source")))?;
@@ -126,9 +122,10 @@ pub(super) fn pipeline_depends_on(inner: &Inner, name: &str, dirty: &HashSet<&st
     false
 }
 
-/// Extracts the imported module paths from a WGSL source: every `#import
-/// khora::a::b[::item]` yields the module path `khora::a::b` (the path minus
-/// any trailing imported-item / `{...}` selector).
+/// Returns the module path of every `#import` in a WGSL source.
+///
+/// An item import (`khora::std::material_textures::sample_albedo`) collapses to
+/// its module: the longest registered lib path it starts with.
 pub(super) fn parse_imports(source: &str) -> Vec<String> {
     let mut out = Vec::new();
     for line in source.lines() {
@@ -146,10 +143,6 @@ pub(super) fn parse_imports(source: &str) -> Vec<String> {
         if token.is_empty() {
             continue;
         }
-        // A `khora::std::material_textures::sample_albedo` import names a
-        // function inside `khora::std::material_textures`; the module path is
-        // every segment that maps to a registered lib. Map by longest known
-        // lib-path prefix so item imports collapse to their module.
         out.push(longest_lib_prefix(token).unwrap_or_else(|| token.to_string()));
     }
     out

@@ -76,7 +76,7 @@ fn tick(runtime: &mut ScriptRuntime, host: &mut Host, delta: f32) {
 // ─── Update ─────────────────────────────────────────────────────────────────
 
 /// **The hook the whole language is written around.** Every canonical Ergon
-/// example has an `Update`; before this it compiled and never ran.
+/// example has an `Update`.
 #[test]
 fn update_runs_once_per_frame() {
     let mut runtime = runtime_of(TICKER);
@@ -151,9 +151,10 @@ fn update_sees_what_this_frames_events_did() {
 }
 
 /// A state's `Update` is the state's, which is what `state` exists to give: a
-/// guard patrolling and a guard chasing do not share a body. A state that
-/// declares none falls back to the behavior's, so the shared part is written
-/// once rather than repeated in every state.
+/// guard patrolling and a guard chasing do not share a body.
+///
+/// A state that declares none falls back to the behavior's, so the shared part
+/// is written once rather than repeated in every state.
 ///
 /// An instance starts in the **first** declared state, which is why `Patrol` is
 /// written above `Chase` here rather than beside it.
@@ -215,9 +216,11 @@ fn on_spawn_runs_exactly_once() {
     assert_eq!(field(&runtime, 1), Some(1));
 }
 
-/// **What separates it from the field defaults.** A hot-reload gives a field
-/// the edit adds its default, because the new program declares it. It must
-/// not re-run this: an edit to a script is not a new entity.
+/// **What separates it from the field defaults.**
+///
+/// A hot-reload gives a field the edit adds its default, because the new
+/// program declares it. It must not re-run this: an edit to a script is not a
+/// new entity.
 #[test]
 fn a_hot_reload_does_not_spawn_the_entity_again() {
     let mut runtime = runtime_of(TICKER);
@@ -248,9 +251,10 @@ behavior Guard {
 event Damaged(int amount);
 "#;
 
-/// **Why the farewell runs when the despawn is decided.** A frame later the
-/// entity is gone from the view, and a hook that cannot see its own entity is
-/// no use for the thing it exists for.
+/// **Why the farewell runs when the despawn is decided.**
+///
+/// A frame later the entity is gone from the view, and a hook that cannot see
+/// its own entity is no use for the thing it exists for.
 #[test]
 fn a_script_that_despawns_itself_says_goodbye_in_the_same_frame() {
     let mut runtime = runtime_of(DYING);
@@ -315,8 +319,10 @@ fn a_farewell_already_said_is_not_said_again() {
 }
 
 /// An entity removed by something that is not a script — the editor, another
-/// system — is noticed the frame after it left the view. Late, but not silent:
-/// that is the earliest a lane reading a projection can know.
+/// system — is noticed the frame after it left the view.
+///
+/// Late, but not silent: that is the earliest a lane reading a projection can
+/// know.
 #[test]
 fn an_entity_removed_from_outside_still_gets_its_farewell() {
     let mut runtime = runtime_of(

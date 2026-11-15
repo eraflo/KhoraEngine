@@ -19,10 +19,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use sysinfo::{Components, System};
 
-/// The battery level one battery reports, from its `state` and its `charge`
-/// (a fraction in `[0, 1]`): on mains (charging, full, paused at a charge
-/// limit) it is [`BatteryLevel::Mains`]; discharging, `High` above 50 %,
-/// `Low` above 15 %, `Critical` at or under 15 %.
+/// The level one battery reports, from its `state` and its `charge` in `[0, 1]`.
+///
+/// On mains (charging, full, paused at a charge limit) it is
+/// [`BatteryLevel::Mains`]; discharging, `High` above 50 %, `Low` above 15 %,
+/// `Critical` at or under 15 %.
 pub fn battery_level_of(state: starship_battery::State, charge: f32) -> BatteryLevel {
     use starship_battery::State;
     match state {
@@ -42,9 +43,10 @@ pub fn battery_level_of(state: starship_battery::State, charge: f32) -> BatteryL
     }
 }
 
-/// The level of the machine's batteries: [`BatteryLevel::Mains`] without a
-/// battery or when one is on mains, else the lowest of them; `Mains` too when
-/// the platform cannot be asked, said once.
+/// The level of the machine's batteries: the lowest of them, or
+/// [`BatteryLevel::Mains`] when one is on mains.
+///
+/// `Mains` too without a battery, or when the platform cannot be asked (said once).
 fn batteries_level(warned: &AtomicBool) -> BatteryLevel {
     let batteries = starship_battery::Manager::new().and_then(|manager| manager.batteries());
     let batteries = match batteries {
@@ -80,12 +82,10 @@ fn batteries_level(warned: &AtomicBool) -> BatteryLevel {
     .unwrap_or(BatteryLevel::Mains)
 }
 
-/// A hardware monitor that uses the `sysinfo` crate.
+/// The engine's hardware monitor: heat, battery and the CPU's load, through `sysinfo`.
 ///
-/// The engine's hardware monitor, read by the DCC's thread: heat, battery,
-/// the CPU's load — the situation the DCC's heuristics shape the frame
-/// target from. Reading the sensors is slow (milliseconds, more the first
-/// time), which is why it is never read on the frame's thread.
+/// Read by the DCC's thread, never the frame's: the sensors take milliseconds
+/// to read. See the book: concepts/telemetry.md, "The hardware".
 #[derive(Debug)]
 pub struct SysinfoMonitor {
     system: Arc<Mutex<System>>,
@@ -97,8 +97,9 @@ pub struct SysinfoMonitor {
 }
 
 impl SysinfoMonitor {
-    /// A monitor that has read the CPU once. It reads no process and no
-    /// disk: the hardware's health is all it is asked.
+    /// Creates a monitor that has read the CPU once.
+    ///
+    /// It reads no process and no disk: the hardware's health is all it is asked.
     pub fn new() -> Self {
         let mut system = System::new();
         system.refresh_cpu_usage();
@@ -172,9 +173,10 @@ mod tests {
     use super::*;
     use starship_battery::State;
 
-    /// **A battery on mains is mains, whatever its charge.** Charging, full,
-    /// or paused at a charge limit, the machine draws from the wall: the
-    /// level is `Mains`, even nearly empty.
+    /// **A battery on mains is mains, whatever its charge.**
+    ///
+    /// Charging, full, or paused at a charge limit, the machine draws from the
+    /// wall: the level is `Mains`, even nearly empty.
     #[test]
     fn a_battery_on_mains_is_mains_whatever_its_charge() {
         for state in [State::Charging, State::Full, State::Paused] {
@@ -244,10 +246,10 @@ mod tests {
         assert_eq!(battery_level_of(State::Empty, 0.0), BatteryLevel::Critical);
     }
 
-    /// **The sysinfo monitor is no telemetry monitor.** The sensors cost
-    /// milliseconds to read, and the telemetry service runs inside the frame:
-    /// the monitor is read by the DCC, on its own thread, as a
-    /// [`HardwareMonitor`], never registered as a [`ResourceMonitor`].
+    /// **The sysinfo monitor is no telemetry monitor.**
+    ///
+    /// The DCC reads it on its own thread as a [`HardwareMonitor`]; as a
+    /// [`ResourceMonitor`] it would be read inside the frame.
     #[test]
     fn the_sysinfo_monitor_is_no_telemetry_monitor() {
         use khora_core::telemetry::monitoring::ResourceMonitor;
@@ -279,9 +281,9 @@ mod tests {
     }
 
     /// **A refreshed sysinfo monitor reads the CPU's load as a fraction.**
-    /// Refreshed as a [`HardwareMonitor`] — as the DCC refreshes it — its CPU
-    /// load is in `[0, 1]`, and still is after a second refresh, once the
-    /// load is measured between two of them.
+    ///
+    /// It is in `[0, 1]` after one refresh, and after a second, once the load
+    /// is measured between the two.
     #[test]
     fn a_refreshed_sysinfo_monitor_reads_the_cpu_load_as_a_fraction() {
         let monitor = SysinfoMonitor::new();

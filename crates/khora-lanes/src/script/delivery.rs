@@ -24,9 +24,10 @@ use super::park::leave_part_way;
 use super::progress::{Invocation, Progress};
 use super::runtime::Body;
 
-/// Offers the instance what it has been told this frame, as far as the fuel
-/// goes: how many of its events it got through, or the outcome that ends the
-/// turn.
+/// Offers the instance the events it was told this frame, as far as the fuel
+/// goes.
+///
+/// Returns how many it got through, or the outcome that ends the turn.
 pub(super) fn deliver_events(
     call: &Invocation<'_>,
     progress: &mut Progress,
@@ -52,11 +53,10 @@ pub(super) fn deliver_events(
                 match done.outcome {
                     Run::Completed => delivered += 1,
                     Run::Suspended(why) => {
-                        // The handler is kept and resumes next — when the wait
-                        // elapses, or next frame if it ran out of fuel. The
-                        // event now lives in that machine, so it counts as
-                        // delivered: putting it back as well would run its
-                        // handler a second time once the first one finishes.
+                        // The handler is kept and resumes next. The event now
+                        // lives in that machine, so it counts as delivered:
+                        // putting it back as well would run its handler a
+                        // second time once the first one finishes.
                         return Err(match done.suspended {
                             Some(machine) => {
                                 let stopped = (machine, Body::Sequence, why);

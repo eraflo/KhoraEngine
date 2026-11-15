@@ -17,9 +17,8 @@
 use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::renderer::api::pipeline::PipelineSpec;
 
-/// Asserts that a mesh pipeline binds exactly one vertex buffer laid out as
-/// the engine mesh vertex ([`Mesh::VERTEX_ATTRIBUTES`], [`Mesh::VERTEX_STRIDE`]),
-/// i.e. the layout [`Mesh::vertex_buffer_layout`] returns.
+/// Asserts that a mesh pipeline binds exactly one vertex buffer, laid out as
+/// [`Mesh::vertex_buffer_layout`] returns.
 pub(crate) fn assert_binds_the_mesh_vertex(spec: &PipelineSpec) {
     assert_eq!(
         spec.vertex_buffers.len(),

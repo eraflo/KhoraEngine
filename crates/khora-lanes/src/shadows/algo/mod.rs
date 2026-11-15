@@ -12,11 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Shadow rendering algorithm — the atlases, the depth passes, and the
-//! device resources a level of the shadows lane builds.
-//!
-//! Every function takes its dimensions from the level's [`Tier`]: the lane
-//! **is** its quality, no config struct is injected.
+//! The atlases, the depth passes and the device resources a level of the
+//! shadows lane builds, each sized by the level's [`Tier`].
 
 pub mod atlas_2d;
 pub mod atlas_cube;

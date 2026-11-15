@@ -12,35 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Between what a scene stores and what the VM runs.
-//!
-//! A behavior's state is part of a game save: a guard saved at forty health
-//! loads at forty, not at the hundred its author typed. The behavior's
-//! component — `Guard` — holds its fields, and its state companion —
-//! `Guard#state` — what the engine keeps to resume it, both **by name**, while
-//! the VM addresses them by slot.
-//!
-//! # Why the scene keeps names and the machine keeps slots
-//!
-//! They answer to different pressures. Running code reads a field thousands of
-//! times a second, so it reads an index. A scene file is read once and has to
-//! survive the script being edited between the save and the load — the same
-//! reason hot-reload matches by name, and the same conversion.
-//!
-//! A saved field the script no longer declares is dropped; one the script
-//! declares but the save does not have takes its default. Neither is an error:
-//! that is simply a scene older than the script, which is the normal state of a
-//! project between two edits.
-//!
-//! # What a field can be
-//!
-//! Whatever [`bridge`] says — this module no longer decides. It once carried its
-//! own translation of a value, which is how the engine ended up with four of
-//! them and how two of them stopped agreeing. A list is still refused, and
-//! refused **loudly**: a conversion that silently dropped one would put a guard
-//! at the origin after a reload with nothing said.
-//!
-//! [`bridge`]: khora_script::bridge
+//! Between what a scene stores, by name, and what the VM runs, by slot: a
+//! behavior's fields and its state companion. What a field can hold is
+//! [`khora_script::bridge`]'s to say.
 
 use khora_core::script::{
     PendingBody, PendingSequence, ScriptSnapshot, ScriptValue, TimerRemaining,
@@ -50,14 +24,12 @@ use khora_script::vm::{BehaviorLayout, Program, TimerKind, Value};
 
 use super::{Body, Pending};
 
-/// What an instance starts from the first frame it appears: its fields as its
-/// component holds them, and — restored — the state its companion recorded:
-/// its state, its countdowns, a sequence stopped at an `await`.
+/// Returns what an instance starts from the first frame it appears.
 ///
-/// The component is both what was authored and what the game made of it: one
-/// value per field, so nothing is merged here. A field the game left alone
-/// that the author edited since reaches it through the game save's own merge,
-/// field by field, against its scene.
+/// Its fields as its component holds them and, restored, what its companion
+/// recorded: its state, its countdowns, a sequence stopped at an `await`.
+/// Nothing is merged here: an author's later edit reaches a field the game
+/// left alone through the game save's own merge against its scene.
 pub fn arrived(arrival: &khora_data::flow::ScriptArrival) -> ScriptSnapshot {
     let mut snapshot = arrival.observed.clone().unwrap_or_default();
     snapshot.fields = arrival.fields.clone();
@@ -66,16 +38,10 @@ pub fn arrived(arrival: &khora_data::flow::ScriptArrival) -> ScriptSnapshot {
 
 /// Builds an instance's store from what a scene saved.
 ///
-/// Starts from the layout's own data — every field at its default, the first
-/// state, the countdowns armed — and puts what was saved on top, by name.
-/// Fields the layout does not declare are ignored — the script dropped them
-/// since the save. Fields the layout declares but the save lacks keep their
-/// declared default.
-///
-/// The same for a state the script no longer has and a schedule it no longer
-/// declares: what is gone is gone, and what is new takes what the new script
-/// says. Neither is an error — that is simply a scene older than its script,
-/// which is the normal condition of a project between two edits.
+/// Starts from the layout's data (every field at its default, the first state,
+/// the countdowns armed) and puts what was saved on top, by name. A field,
+/// state or schedule the script no longer declares is dropped, and one new to
+/// it takes what the script says: a scene older than its script is no error.
 pub fn store_from_snapshot(layout: &BehaviorLayout, saved: &ScriptSnapshot) -> PersistentStore {
     let mut store = layout.fresh_store();
 
@@ -161,7 +127,7 @@ fn restore_state_fields(
     }
 }
 
-/// The schedule a saved countdown belongs to.
+/// Returns the schedule a saved countdown belongs to.
 ///
 /// Matched on what the author wrote — `every 0.5s`, and where they wrote it —
 /// then on which one among schedules written identically. Position alone would
@@ -181,10 +147,9 @@ fn timer_index(layout: &BehaviorLayout, saved: &TimerRemaining) -> Option<usize>
 
 /// What makes one schedule the same schedule as another across a save.
 ///
-/// One definition for both directions. The two sides used to spell it out
-/// separately — the reader as a three-way comparison, the writer as a tuple —
-/// and a fourth component added to one and not the other would not fail to
-/// compile. It would quietly hand a saved countdown to the wrong schedule.
+/// The one definition the reader and the writer share: a component added to
+/// one side only would compile, and quietly hand a saved countdown to the
+/// wrong schedule.
 fn identity_of(
     layout: &BehaviorLayout,
     timer: &khora_script::vm::TimerLayout,
@@ -343,15 +308,12 @@ fn countdowns(layout: &BehaviorLayout, store: &PersistentStore) -> Vec<TimerRema
         .collect()
 }
 
-/// What a scene records for an instance: its store, and the body it is
+/// Returns what a scene records for an instance: its store, and the body it is
 /// part-way through, if any.
 ///
-/// A schedule whose body is part-way through is recorded as that body will
-/// leave it — rearmed — rather than as the running store holds it, still due.
-/// Nothing is lost when the body resumes, since finishing it rearms the
-/// schedule again; and a load that has to abandon the body (the script was
-/// edited since) finds a schedule that waits its interval instead of one that
-/// is due, whose body would run a second time from the top.
+/// A schedule whose body is part-way through is recorded rearmed, as that body
+/// will leave it, not due. See the book: concepts/scripting/saves-and-edits.md,
+/// "Timers and waits".
 pub fn snapshot_of(
     layout: &BehaviorLayout,
     fields: &PersistentStore,
@@ -380,16 +342,12 @@ fn settled_snapshot(
     }
 }
 
-/// An instance's store carried across a hot reload, from the `old` layout to
-/// the `new` one.
+/// Returns an instance's store carried across a hot reload, from the `old`
+/// layout to the `new` one.
 ///
-/// By name, never by position, the way a save is read: fields by name, the
-/// current state by name and its data by slot name, each countdown by its
-/// schedule's identity. A field, state or schedule the edit removed is
-/// dropped; a new one starts at its declared default. A schedule
-/// whose body is part-way crosses rearmed, as a save writes it: finishing the
-/// body rearms it again, and a body the edit abandons leaves a schedule that
-/// waits its interval rather than one still due.
+/// By name, as a save is read; a schedule whose body is part-way crosses
+/// rearmed, as a save writes it. See the book:
+/// concepts/scripting/saves-and-edits.md, "Fields, by name".
 pub fn carried_across(
     old: &BehaviorLayout,
     new: &BehaviorLayout,
@@ -401,14 +359,12 @@ pub fn carried_across(
 
 /// Writes a suspended sequence down, so a save can hold it.
 ///
-/// Records what the program's code looked like alongside the machine, because a
-/// machine is a *position* in that code — see
-/// [`resumption::resume`](super::resumption::resume) for what that buys.
-/// The machine goes down in the engine's own terms ([`FrozenMachine`](khora_core::script::FrozenMachine)),
-/// so every scene encoding writes it natively and a text save shows it.
-/// `None` when the machine does not belong to `program` — suspended in other
-/// code, which a load would only abandon — losing the sequence rather than the
-/// save.
+/// Records the program's fingerprint beside the machine, a position in that
+/// code, and the machine in the engine's own terms
+/// ([`FrozenMachine`](khora_core::script::FrozenMachine)), which every scene
+/// encoding writes natively. Returns `None` when the machine does not belong
+/// to `program`: a load would only abandon it, so the sequence is lost rather
+/// than the save.
 pub fn suspend(
     pending: &Pending,
     program: &Program,
@@ -432,8 +388,8 @@ pub fn suspend(
     })
 }
 
-/// What finishing a body owes, in the scene's terms. A schedule is named by
-/// the function its body compiled to.
+/// Returns what finishing a body owes, in the scene's terms; a schedule is
+/// named by the function its body compiled to.
 pub(super) fn frozen_body(
     body: &Body,
     program: &Program,
@@ -453,8 +409,8 @@ pub(super) fn frozen_body(
     })
 }
 
-/// What finishing a body owes, back in the lane's terms — if `layout` can owe
-/// it.
+/// Returns what finishing a body owes, back in the lane's terms, if `layout`
+/// can owe it.
 ///
 /// A save is input nobody sized. Finishing a timer body writes its schedule's
 /// slot, so a schedule the behavior does not have would grow the store to
@@ -631,8 +587,10 @@ mod tests {
     }
 
     /// A store longer than the layout is what a script that lost a field
-    /// leaves behind. Writing the orphan back would resurrect it in the scene
-    /// file the next time it loaded.
+    /// leaves behind.
+    ///
+    /// Writing the orphan back would resurrect it in the scene file the next
+    /// time it loaded.
     #[test]
     fn an_orphan_slot_is_not_written_back() {
         let layout = layout(&["health"]);
@@ -663,8 +621,8 @@ mod tests {
 
     // ─── What cannot travel ─────────────────────────────────────────────────
 
-    /// A `Vec3` travels now that a register holds one, which is what makes a
-    /// patrol target survive a save rather than resetting to the origin.
+    /// A `Vec3` travels, so a patrol target survives a save rather than
+    /// resetting to the origin.
     #[test]
     fn a_vector_field_round_trips() {
         let layout = layout(&["target"]);
@@ -705,10 +663,11 @@ mod tests {
         );
     }
 
-    /// Refused loudly rather than dropped: a guard silently back at the origin
-    /// after a reload is far harder to trace than a warning. A value its
-    /// declared type cannot hold — a list in an `int`, ints in a `string[]` —
-    /// leaves the field at its default.
+    /// A value its declared type cannot hold (a list in an `int`, ints in a
+    /// `string[]`) is refused with a warning and leaves the field at its default.
+    ///
+    /// A guard silently back at the origin after a reload is far harder to
+    /// trace than a warning.
     #[test]
     fn a_value_that_cannot_be_stored_is_refused_rather_than_dropped() {
         let ints = ScriptValue::Array(vec![ScriptValue::Int(1), ScriptValue::Int(2)]);

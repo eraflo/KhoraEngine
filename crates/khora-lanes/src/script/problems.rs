@@ -12,13 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What is wrong with the running instances, for a tool to show: each frame
-//! the scripting world changed, the `Running` source of the project's
-//! [`Problems`] is rebuilt from it — an error for every instance a fault
-//! disabled, a warning for every body running past the watchdog's first
-//! limit, and one for every event an instance was sent with a payload its
-//! handler could not take. An instance re-enabled, or gone, leaves the list
-//! with it.
+//! What is wrong with the running instances, for a tool to show: the
+//! `Running` source of the project's [`Problems`], rebuilt from the faulted,
+//! long-running and mis-sent instances of the scripting world.
 
 use std::sync::{Arc, Mutex};
 
@@ -32,7 +28,7 @@ use super::runtime::{member_of, Instance, ScriptRuntime};
 use super::watchdog::WATCHDOG_WARN;
 
 impl ScriptRuntime {
-    /// What is wrong with the instances held now, in entity order.
+    /// Returns what is wrong with the instances held now, in entity order.
     pub fn running_problems(&self) -> Vec<Problem> {
         let mut held: Vec<_> = self.instances.iter().collect();
         held.sort_by(|((a, a_name), _), ((b, b_name), _)| {
@@ -62,7 +58,7 @@ impl ScriptRuntime {
             .collect()
     }
 
-    /// An instance's fault or long-running body, if it has one.
+    /// Returns an instance's fault or long-running body, if it has one.
     fn instance_problem(
         &self,
         entity: EntityId,

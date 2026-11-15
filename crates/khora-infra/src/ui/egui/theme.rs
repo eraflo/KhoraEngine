@@ -12,19 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Convert [`UiTheme`] to egui [`Visuals`] and apply to an egui context.
+//! The translation of a [`UiTheme`] into egui [`Visuals`](egui::Visuals) and style.
 
 use khora_core::ui::{ColorScheme, UiTheme};
 
 /// Key under which [`apply_theme`] stashes the X/Y/Z axis colours in the egui
 /// context.
 ///
-/// `UiBuilder::vec3_editor` is a stock widget with no access to a [`UiTheme`],
-/// but it must tint its axes with the theme's own tokens — otherwise the
-/// inspector's X/Y/Z and the viewport gizmo's X/Y/Z drift apart, and the two
-/// stop reading as the same thing. Rather than widen the trait or hard-code a
-/// second copy of the palette in this backend, the theme leaves the colours
-/// here for the widget to pick up.
+/// `UiBuilder::vec3_editor` has no [`UiTheme`], yet must tint its axes as the
+/// viewport gizmo does: the theme leaves the colours here for it, rather than
+/// widening the trait or copying the palette.
 pub(crate) const AXIS_COLORS_KEY: &str = "khora.axis_colors";
 
 fn c(color: [f32; 4]) -> egui::Color32 {
@@ -36,7 +33,7 @@ fn c(color: [f32; 4]) -> egui::Color32 {
     )
 }
 
-/// Applies an [`UiTheme`] to the given egui context.
+/// Applies `theme` to the egui context `ctx`.
 pub fn apply_theme(ctx: &egui::Context, theme: &UiTheme) {
     // The theme's scheme picks egui's base visuals, and pins egui to it so
     // an OS switch between light and dark cannot swap in stock visuals.
@@ -131,9 +128,8 @@ pub fn apply_theme(ctx: &egui::Context, theme: &UiTheme) {
     style.spacing.scroll.bar_width = 8.0;
     style.spacing.window_margin = egui::Margin::same(8);
     style.spacing.menu_margin = egui::Margin::symmetric(8, 6);
-    // Make panel resize handles much easier to grab. The default 4px hot
-    // zone is hard to hit and our panel content paints right up to the
-    // edge, so users were reporting the resize "didn't work".
+    // Wider grab zones for panel resize handles: the default 4 px is hard to
+    // hit, and panel content paints right up to the edge.
     style.interaction.resize_grab_radius_side = 8.0;
     style.interaction.resize_grab_radius_corner = 10.0;
 

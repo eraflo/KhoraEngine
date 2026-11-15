@@ -41,24 +41,22 @@ pub(super) struct Progress {
     /// The events this turn dropped, a payload their handler could not take:
     /// each event and why.
     pub(super) dropped: Vec<(String, String)>,
-    /// The fixed steps this turn is to call `FixedUpdate` for and has not,
-    /// each the step it was taken at: what it hands back, owed to the next
-    /// turn.
+    /// The fixed steps this turn has yet to call `FixedUpdate` for, each the
+    /// step it was taken at; what is left is owed to the next turn.
     pub(super) fixed_left: Vec<f32>,
-    /// The time its `Update` is owed and has not been handed this turn —
-    /// `Invocation::update_delta` until `Update` is called: what it keeps,
-    /// owed to the next turn, when the turn stops before it.
+    /// The time its `Update` is owed and not yet handed this turn; owed to the
+    /// next turn when the turn stops before `Update`.
     pub(super) update_left: f32,
 }
 
-/// `OnLoad` has finished: the body the load restored is the one owed next.
+/// Marks `OnLoad` finished: the body the load restored is owed next.
 pub(super) fn finish_load(progress: &mut Progress) {
     progress.loading = false;
     progress.pending = progress.after_load.take();
 }
 
-/// A hook in front of a restored body has finished — or been abandoned: that
-/// body is owed next.
+/// Marks a hook in front of a restored body finished or abandoned: that body
+/// is owed next.
 pub(super) fn finish_hook(progress: &mut Progress, body: &Body) {
     match body {
         Body::Load => finish_load(progress),

@@ -14,27 +14,10 @@
 
 //! The device called from many threads at once, on a real adapter.
 //!
-//! Lanes create, grow, write and release resources inside concurrent waves,
-//! so every `GraphicsDevice` and `PipelineSystem` method may be entered by
-//! several threads at the same time. A device whose locks are taken in
-//! conflicting orders (one method takes A then B, another B then A) deadlocks
-//! there. These tests hammer the device from eight threads in shuffled orders
-//! and fail, instead of hanging, if the threads have not all come back within
-//! [`WATCHDOG`].
-//!
-//! # Why a panic and not an abort
-//!
-//! On a deadlock the test thread panics with the names of the threads still
-//! stuck and leaves them detached. Under libtest the test is reported failed
-//! with that message and the other tests of the binary still run and report;
-//! the binary then exits, and exiting a Rust process does not wait for
-//! detached threads. Under nextest each test is its own process, so the panic
-//! fails exactly that test. `std::process::abort` would instead take down
-//! every test of a libtest binary with it and show up as a crash rather than a
-//! failure carrying the message.
-//!
-//! Without any adapter (a CI runner without a GPU) each test logs why and
-//! returns.
+//! Lanes call the device from concurrent waves; this is the guard RULES §5 asks
+//! for. A device whose locks were taken in conflicting orders would deadlock
+//! here: each test then fails instead of hanging, and without an adapter logs
+//! why and returns.
 
 use std::borrow::Cow;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -88,9 +71,9 @@ const TEXTURE_SIDE: u32 = 16;
 
 // ─── A real device, or none ─────────────────────────────────────────────────
 
-/// A wgpu device and queue, plus every error wgpu reported on them, and the
-/// test's turn on the GPU — declared last, so it is given back after the
-/// device is dropped.
+/// A wgpu device and queue, every error wgpu reported on them, and the test's turn on the GPU.
+///
+/// The turn is declared last, so it is given back after the device drops.
 struct Gpu {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -99,9 +82,10 @@ struct Gpu {
 }
 
 impl Drop for Gpu {
-    /// Waits for the work still queued: the queue must never be dropped with
-    /// work in flight, as wgpu panics there after a few seconds, and a panic
-    /// while a failed test unwinds aborts the process.
+    /// Waits for the work still queued before the queue drops.
+    ///
+    /// wgpu panics a few seconds after a queue drops with work in flight, and a
+    /// panic while a failed test unwinds aborts the process.
     fn drop(&mut self) {
         if let Err(e) = self.device.poll(wgpu::PollType::Wait {
             submission_index: None,
@@ -212,9 +196,12 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
     }
 }
 
-/// Runs every worker on a thread of its own and waits for all of them for at
-/// most [`WATCHDOG`]. Fails with the stuck threads' names on a timeout (they
-/// stay detached), and with each worker's error or panic otherwise.
+/// Runs every worker on its own thread and waits at most [`WATCHDOG`] for all of them.
+///
+/// On a timeout it panics with the stuck threads' names and leaves them
+/// detached: a panic fails this test alone, where an abort would take down
+/// every test of the binary without the message. Otherwise it fails with each
+/// worker's error or panic.
 fn run_watched(what: &str, workers: Vec<(String, Worker)>) {
     let (sender, receiver) = mpsc::channel::<(usize, Result<(), String>)>();
     let names: Vec<String> = workers.iter().map(|(name, _)| name.clone()).collect();
@@ -376,9 +363,8 @@ fn grid_camera_layout_entries() -> Vec<BindGroupLayoutEntry> {
 
 const GRID_CAMERA_LAYOUT_LABEL: &str = "grid_camera_layout";
 
-/// The grid lane's pipeline spec (`khora-lanes` `overlay_lane/grid.rs`,
-/// `grid_pipeline_spec`), for a target of `color` and `depth` formats with
-/// `samples` per pixel, culling `cull`.
+/// The grid lane's pipeline spec (`khora-lanes` `grid_pipeline_spec`) for a
+/// target of `color` and `depth` formats, `samples` per pixel, culling `cull`.
 fn grid_pipeline_spec(
     color: TextureFormat,
     depth: TextureFormat,
@@ -853,11 +839,10 @@ fn resource_worker(device: Arc<dyn GraphicsDevice>, thread: usize) -> Worker {
 
 // ─── The tests ──────────────────────────────────────────────────────────────
 
-/// Eight threads create, write, bind, encode, submit and destroy buffers,
-/// textures, views, samplers, layouts and bind groups in shuffled orders, all
-/// on one device. They all come back, every call succeeds, wgpu reports no
-/// error, and once every thread gave its resources back the device tracks no
-/// memory.
+/// The device survives every call from eight threads at once, in shuffled orders.
+///
+/// Every call succeeds, wgpu reports no error, and once every resource is given
+/// back the device tracks no memory.
 #[test]
 fn the_device_survives_every_call_from_many_threads_at_once() {
     let test = "the_device_survives_every_call_from_many_threads_at_once";
@@ -889,11 +874,11 @@ fn the_device_survives_every_call_from_many_threads_at_once() {
     );
 }
 
-/// Four threads build bind-group layouts and grid pipelines for 48 target
-/// shapes through one shared `WgpuPipelineSystem`; one builds a fresh
-/// pipeline system and its pipeline every turn (every lookup a miss); three
-/// others create, write and destroy resources on the same device. They all
-/// come back, every pipeline builds, and wgpu reports no error.
+/// Pipelines and resources built from many threads at once do not deadlock.
+///
+/// Four threads build layouts and grid pipelines for 48 target shapes through
+/// one `WgpuPipelineSystem`, one builds a fresh pipeline system every turn, and
+/// three churn resources on the same device.
 #[test]
 fn pipelines_and_resources_built_from_many_threads_do_not_deadlock() {
     let test = "pipelines_and_resources_built_from_many_threads_do_not_deadlock";
@@ -1002,12 +987,10 @@ const SUBMITS_PER_THREAD: usize = 1;
 /// submission is still running on the GPU when the one before it is done.
 const SUBMIT_COPY_BYTES: u64 = 32 * 1024 * 1024;
 
-/// Eight threads submit a copy each at once, round after round, while other
-/// threads keep the registry busy (as a thread the OS preempts inside a lookup
-/// does), so submitters come back from the queue in any order. Once a round
-/// is over, `wait_for_last_submission` — what the render system calls before
-/// the next acquire — returns only when every submission of the round is
-/// done on the GPU, never after an earlier one alone.
+/// `wait_for_last_submission` waits for every concurrent submission, never an earlier one alone.
+///
+/// Eight threads submit a copy each per round while others keep the registry
+/// busy, so submitters come back from the queue in any order.
 #[test]
 fn waiting_for_the_last_submission_waits_for_every_concurrent_submission() {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -1160,10 +1143,10 @@ fn waiting_for_the_last_submission_with_nothing_submitted_returns() {
     );
 }
 
-/// The render system asks the device it holds (`Arc<WgpuDevice>`) with method
-/// syntax, as `WgpuRenderSystem::supports_feature` does. A device built
-/// without `POLYGON_MODE_POINT` answers no to that feature, and no to a name
-/// it does not know, whichever way it is asked.
+/// A feature the device lacks, or a name it does not know, is unsupported
+/// whichever way it is asked.
+///
+/// The render system asks through `Arc<WgpuDevice>` with method syntax.
 #[test]
 fn a_feature_the_device_lacks_is_unsupported_whichever_way_it_is_asked() {
     let test = "a_feature_the_device_lacks_is_unsupported_whichever_way_it_is_asked";
@@ -1192,11 +1175,9 @@ fn a_feature_the_device_lacks_is_unsupported_whichever_way_it_is_asked() {
     );
 }
 
-/// Threads bind, write and build pipeline layouts from buffers and
-/// bind-group layouts that other threads destroy at the same moment. Each
-/// call either succeeds (it cloned the resource out before it was removed) or
-/// is refused `NotFound` — never another error, never a panic, never a wgpu
-/// error.
+/// A resource another thread destroys at the same moment is either found or refused `NotFound`.
+///
+/// Never another error, never a panic, never a wgpu error.
 #[test]
 fn a_resource_destroyed_by_another_thread_is_found_or_not_found() {
     use khora_core::renderer::api::pipeline::PipelineLayoutDescriptor;

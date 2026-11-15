@@ -12,14 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Gizmo overlay lane — editor / debug line gizmos.
-//!
-//! Reads the [`GizmoView`] the host publishes and draws each
-//! `GizmoLineInstance` as an alpha-blended line list on top of the frame's
-//! colour, with no depth test: gizmos are always on top. The host
-//! application (editor, debug tooling) is the sole producer of the lines;
-//! the engine only provides the mechanism — no `EditorAgent` in the engine,
-//! per CLAD.
+//! The gizmo family's lane: the host's editor and debug lines, drawn on top.
 
 use std::time::Duration;
 
@@ -50,7 +43,7 @@ use crate::render::util::Block;
 /// Line instances the storage buffer holds before it first grows.
 const GIZMO_CAPACITY: usize = 4096;
 
-/// Stable cache labels for the gizmo lane's bespoke layouts.
+/// The cache labels of the gizmo lane's own layouts.
 const GIZMO_CAMERA_LAYOUT_LABEL: &str = "gizmo_camera_layout";
 const GIZMO_STORAGE_LAYOUT_LABEL: &str = "gizmo_storage_layout";
 
@@ -63,11 +56,14 @@ const LINE_GPU: Duration = Duration::from_nanos(20);
 const START_BYTES: u64 = (std::mem::size_of::<CameraUniformData>()
     + GIZMO_CAPACITY * std::mem::size_of::<GizmoLineInstance>()) as u64;
 
-/// Editor / debug gizmo overlay lane. Holds what it built on the device;
-/// `None` before the first prepare and after shutdown.
+/// A lane that draws the lines the host publishes in its [`GizmoView`], always on top.
+///
+/// One level. The lines are alpha-blended and never depth-tested; the host
+/// (the editor, debug tooling) is their only producer.
 #[derive(Debug)]
 pub struct GizmoLane {
     levels: [Level; 1],
+    /// What it built on the device; `None` before the first prepare and after shutdown.
     gpu: Option<GizmoGpu>,
 }
 
@@ -131,8 +127,8 @@ impl Lane for GizmoLane {
         &self.levels
     }
 
-    /// Every line is uploaded and drawn: its time on each device. Without a
-    /// camera nothing is drawn, and nothing costs time.
+    /// Prices every line's upload and draw; without a camera nothing is drawn
+    /// and nothing costs time.
     fn cost(&self, _level: usize, inputs: &GizmoInputs<'_>) -> Cost {
         let draws = !inputs.render_world.views.is_empty();
         let lines = inputs.gizmos.0.lines.len() as u32 * u32::from(draws);
@@ -147,9 +143,8 @@ impl Lane for GizmoLane {
         }
     }
 
-    /// Builds the camera block and the line storage once, and the pipeline
-    /// for the target's colour format and samples: the gizmos test no depth,
-    /// so a depth change builds nothing.
+    /// Builds the camera block and the line storage once, and a pipeline per
+    /// colour format and sample count; a depth change builds nothing.
     fn prepare(
         &mut self,
         _level: usize,
@@ -183,9 +178,10 @@ impl Lane for GizmoLane {
         Ok(())
     }
 
-    /// Draws every line the host published, from the first view; no line or
-    /// no view leaves the pass empty. A frame with more lines than the
-    /// storage holds grows it first.
+    /// Draws every line the host published, seen from the first view.
+    ///
+    /// No line or no view leaves the pass empty. A frame with more lines than
+    /// the storage holds grows it first.
     fn record(
         &mut self,
         _level: usize,
@@ -241,10 +237,9 @@ impl Lane for GizmoLane {
     }
 }
 
-// ─── Free functions (CLAD: no inherent methods on the lane struct) ───
-
-/// The camera block and the first line storage. A refusal halfway gives
-/// back what came before it.
+/// Builds the camera block and the first line storage.
+///
+/// A refusal halfway gives back what came before it.
 fn build_gizmo_gpu(
     device: &dyn GraphicsDevice,
     pipelines: &dyn khora_core::renderer::traits::PipelineSystem,
@@ -329,8 +324,9 @@ fn storage_layout_entries() -> Vec<BindGroupLayoutEntry> {
     }]
 }
 
-/// The declarative pipeline spec for the gizmos on a target of `color`
-/// with `samples` — line-list, alpha blended, no depth (always on top).
+/// Returns the gizmos' pipeline for a target of `color` with `samples`.
+///
+/// A line list, alpha-blended, with no depth: always on top.
 fn gizmo_pipeline_spec((color, samples): (TextureFormat, u32)) -> PipelineSpec {
     use khora_core::renderer::api::pipeline::enums::{
         BlendFactor, BlendOperation, PrimitiveTopology,
@@ -393,8 +389,7 @@ fn gizmo_pipeline_spec((color, samples): (TextureFormat, u32)) -> PipelineSpec {
     }
 }
 
-/// The gizmo pass — `LoadOp::Load` preserves the frame's colour; no depth
-/// attachment.
+/// Records the gizmo pass, keeping the frame's colour; no depth attachment.
 fn draw_gizmos(
     encoder: &mut dyn CommandEncoder,
     color: TextureViewId,

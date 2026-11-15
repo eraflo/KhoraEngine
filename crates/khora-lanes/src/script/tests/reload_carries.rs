@@ -222,9 +222,10 @@ fn remaining(snapshot: &ScriptSnapshot, interval: f32) -> Option<f32> {
         .map(|seconds| (seconds * 1000.0).round() / 1000.0)
 }
 
-/// **In `Chase`, still in `Chase`.** An edit that does not touch the state
-/// leaves the guard where it was, with the chase's own data — not back in
-/// the first state with every default.
+/// **In `Chase`, still in `Chase`.**
+///
+/// An edit that does not touch the state leaves the guard where it was, with
+/// the chase's own data — not back in the first state with every default.
 #[test]
 fn a_reload_keeps_the_current_state() {
     let (mut runtime, mut host) = chasing();
@@ -275,9 +276,10 @@ fn a_reload_keeps_what_is_left_of_a_countdown() {
 }
 
 /// **A state the edit removed is dropped, never re-resolved by position.**
-/// The guard starts over in the first state with that state's defaults — not
-/// in `Search`, which took `Chase`'s index, holding a chase's data — while
-/// what the edit kept (a field, the countdown) still crosses by name.
+///
+/// The guard starts over in the first state with that state's defaults — not in
+/// `Search`, which took `Chase`'s index, holding a chase's data — while what
+/// the edit kept (a field, the countdown) still crosses by name.
 #[test]
 fn a_reload_drops_a_state_the_edit_removed() {
     let (mut runtime, mut host) = chasing();
@@ -304,9 +306,10 @@ fn a_reload_drops_a_state_the_edit_removed() {
     );
 }
 
-/// **A schedule the edit added starts full**, and inserting it above an
-/// existing one does not hand it that one's countdown: the old one keeps
-/// what was left of it, matched by what its author wrote.
+/// **A schedule the edit added starts full.**
+///
+/// Inserting it above an existing one does not hand it that one's countdown:
+/// the old one keeps what was left of it, matched by what its author wrote.
 #[test]
 fn a_timer_added_by_the_edit_starts_full() {
     let (mut runtime, mut host) = half_run_countdown();
@@ -371,6 +374,7 @@ event Spotted(int by);
 "#;
 
 /// **Data the edit added to the current state starts at its own default.**
+///
 /// The guard stays in `Chase` across the edit and keeps `missed` by name; the
 /// `spotted` the edit declared in `Chase` is new, so it starts at the `4` its
 /// author wrote — not at whatever the first state's entry left in that slot.
@@ -420,9 +424,10 @@ behavior Guard {
 }
 "#;
 
-/// **A spent `after` stays spent.** It fired before the edit; the new
-/// layout arms every schedule — but the carried countdown says "spent", so it
-/// does not fire a second time.
+/// **A spent `after` stays spent.**
+///
+/// It fired before the edit; the new layout arms every schedule — but the
+/// carried countdown says "spent", so it does not fire a second time.
 #[test]
 fn an_after_spent_before_a_reload_does_not_fire_again() {
     let mut runtime = runtime_of(ONE_SHOT);
@@ -472,9 +477,11 @@ behavior Guard {
 event Spotted(int by);
 "#;
 
-/// **A reload that changes nothing changes nothing.** The same frames, with
-/// and without an identical recompile in the middle — while chasing, with a
-/// schedule's body waiting part-way — leave the guard identical.
+/// **A reload that changes nothing changes nothing.**
+///
+/// The same frames, with and without an identical recompile in the middle —
+/// while chasing, with a schedule's body waiting part-way — leave the guard
+/// identical.
 #[test]
 fn a_reload_that_changes_nothing_leaves_the_instance_as_it_was() {
     let run = |reload: bool| {

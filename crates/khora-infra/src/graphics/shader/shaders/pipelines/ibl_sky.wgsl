@@ -42,7 +42,7 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> VsOut {
 
 // Linear-space sky colors. The zenith is a saturated blue and the horizon haze
 // is a narrow bright band, so the gradient reads as sky rather than as flat
-// grey. Placeholder environment until an authored HDR map replaces it.
+// grey. The environment when no authored HDR map is given.
 const ZENITH: vec3<f32> = vec3<f32>(0.09, 0.22, 0.56);
 const HORIZON: vec3<f32> = vec3<f32>(0.52, 0.60, 0.72);
 const GROUND: vec3<f32> = vec3<f32>(0.16, 0.14, 0.12);

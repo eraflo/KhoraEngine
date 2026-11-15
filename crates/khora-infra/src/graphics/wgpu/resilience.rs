@@ -12,21 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Pure decision logic for GPU surface-acquisition and device-loss resilience.
+//! The surface-acquire and device-loss decisions, free of wgpu handles so they test headless.
 //!
-//! The functions here are intentionally free of any live wgpu handle so they
-//! can be unit-tested headless in CI. The render system maps a real
-//! `wgpu::CurrentSurfaceTexture` (and device-loss flag) onto these classifiers
-//! and then performs the side effects (reconfigure / skip / error) that each
-//! decision prescribes.
+//! See the book: concepts/rendering.md, "Device-loss resilience".
 
 pub(crate) use super::gpu_health::GpuHealth;
 
 /// The status of a swapchain acquire attempt, decoupled from the wgpu handle.
 ///
-/// Mirrors the discriminants of [`wgpu::CurrentSurfaceTexture`] so the
-/// classification policy can be exercised without a GPU. The render system
-/// maps the real enum onto this before consulting [`classify_acquire`].
+/// Mirrors the variants of [`wgpu::CurrentSurfaceTexture`], so the policy of
+/// [`classify_acquire`] runs without a GPU.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SurfaceAcquireStatus {
     /// A usable texture was acquired (`Success` or `Suboptimal`).
@@ -51,20 +46,17 @@ pub(crate) enum AcquireAction {
     /// Reconfigure the surface with the current size, then retry the acquire
     /// within the same frame (the swapchain is recoverable in place).
     ReconfigureAndRetry,
-    /// Skip this frame silently-ish (a `log::warn`/`debug` is fine) and try
-    /// again next frame. No error is surfaced to the host.
+    /// Skip this frame and try again next frame; at most a warning is logged,
+    /// no error reaches the host.
     SkipFrame,
-    /// A non-fatal acquisition error: skip the frame and report it upward, but
-    /// the host may keep running.
+    /// Skip the frame and report a non-fatal error; the host keeps running.
     NonFatalError,
 }
 
-/// Classify a swapchain acquire status into the action the render system takes.
+/// Classifies a swapchain acquire status into the action the render system takes.
 ///
-/// `has_valid_size` is `false` when the stored surface dimensions are zero
-/// (a minimized / zero-size window). In that case a lost/outdated surface
-/// cannot be reconfigured, so we skip the frame instead of spamming a hard
-/// error every frame until a real resize event arrives.
+/// `has_valid_size` is `false` for a zero-size (minimized) window: a lost
+/// surface then skips the frame, as there is no size to reconfigure to.
 pub(crate) fn classify_acquire(
     status: SurfaceAcquireStatus,
     has_valid_size: bool,
@@ -75,8 +67,6 @@ pub(crate) fn classify_acquire(
             if has_valid_size {
                 AcquireAction::ReconfigureAndRetry
             } else {
-                // Zero-size window: nothing to reconfigure to. Wait for a
-                // resize event rather than erroring every frame.
                 AcquireAction::SkipFrame
             }
         }
@@ -93,9 +83,9 @@ pub(crate) fn classify_acquire(
     }
 }
 
-/// Whether a render frame should be attempted at all given the current surface
-/// dimensions. A zero in either axis (minimized window) means there is no
-/// renderable surface — the caller skips the frame without logging an error.
+/// Whether a surface of this size can be rendered: a zero axis (minimized window) cannot.
+///
+/// The caller skips such a frame without logging an error.
 pub(crate) fn surface_is_renderable(width: u32, height: u32) -> bool {
     width > 0 && height > 0
 }

@@ -12,17 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What scripting keeps between frames.
-//!
-//! The compiled programs and each instance's fields — everything that outlives a
-//! frame but is not part of the scene. It is deliberately **not** in the
-//! `World`: a lane may not touch that (`RULES.md` §3), and putting the fields
-//! there would mean either the lane writing them or the whole store crossing the
-//! boundary twice a frame.
-//!
-//! Nor is it shared beyond what the lane declares: the script lane locks it
-//! as one of its inputs, so it runs beside any family that does not lock it
-//! too.
+//! What scripting keeps between frames, outside the `World`: the compiled
+//! programs and each instance's state, locked by the script lane as an input.
+//! See the book: concepts/scripting/under-the-hood.md, "Who owns what".
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -68,26 +60,14 @@ pub struct Instance {
     /// and spend the budget doing it.
     pub disabled: bool,
 
-    /// A member stopped part-way through an `await`, and when to resume it.
+    /// A body stopped part-way, by an `await` or by fuel, and when to resume it.
     ///
-    /// The machine is kept whole rather than the continuation being rebuilt:
-    /// what a suspension captured is a program counter, a register file and a
-    /// call stack, and re-deriving those would mean knowing where the code had
-    /// got to — which is exactly what the machine already records.
-    ///
-    /// One per instance, not one per call. A behavior can be part-way through
-    /// one sequence at a time; a second `await` starting while the first is
-    /// pending would mean two answers to "where is this behavior", and the
-    /// language has no syntax for asking which.
-    ///
-    /// Any body can be that sequence — an event handler, `OnSpawn`, `Update`,
-    /// a timer — cut short by an `await` or by fuel; [`Pending::body`] says
-    /// what finishing it completes.
+    /// One per instance: a behavior is part-way through one sequence at a time,
+    /// whatever body it is. [`Pending::body`] says what finishing it completes.
     pub pending: Option<Pending>,
 
-    /// The fault that disabled the instance, stamped with the program it
-    /// faulted in — recorded, so a save keeps the instance disabled until the
-    /// code changes.
+    /// The fault that disabled the instance, stamped with the code it faulted
+    /// in: a save keeps the instance disabled until that code changes.
     pub fault: Option<khora_core::script::RecordedFault>,
 
     /// Whether `OnLoad` is owed or part-way: the instance was restored from a
@@ -106,59 +86,50 @@ pub struct Instance {
     /// each owed its own `OnResumeFailed`, oldest first, one a turn.
     pub resume_failed: Vec<String>,
 
-    /// The program its fields are laid out for — what it last ran, or what a
-    /// reload carried it into. A reload carries from this layout, not from
-    /// whatever the module held just before: a module saved without the
+    /// The program its fields are laid out for: what it last ran, or what a
+    /// reload carried it into.
+    ///
+    /// A reload carries from this layout, so a module saved without the
     /// behavior in between leaves the instance's store as it was.
     pub built_for: Option<Arc<Program>>,
 
-    /// Whether a carry into another program has left the World's record of it
-    /// — its state companion — behind what it now is: written the frame of
-    /// the carry, whether or not it runs.
+    /// Whether a carry into another program left its state companion in the
+    /// World behind it, to be written that frame whether or not it runs.
     pub rewritten: bool,
 
-    /// Game seconds that passed since its last turn — what its next turn is
-    /// handed as its `delta`: a frame a rate skipped, or the fuel could not
-    /// reach, is not lost time.
+    /// Game seconds since its last turn, handed to its next turn as its
+    /// `delta`: a frame a rate skipped or the fuel missed is not lost time.
     pub owed: f32,
 
-    /// Game seconds its `Update` is owed past `owed`: time an earlier turn
-    /// counted down its countdowns with but stopped — cut by the fuel, busy
-    /// waiting, or its events deferred — before its `Update` ran. Its next
-    /// `Update` is handed them.
+    /// Game seconds its next `Update` is owed past `owed`: time an earlier turn
+    /// counted its countdowns down with but stopped before its `Update` ran.
     pub update_owed: f32,
 
-    /// The fixed steps its `FixedUpdate` has not been called for yet, each
-    /// the step it was taken at, oldest first, at most the engine's step cap:
-    /// they run first, on its next turn.
+    /// The fixed steps its `FixedUpdate` is owed, each the step it was taken
+    /// at, oldest first, up to the engine's step cap; they run first next turn.
     pub fixed_owed: Vec<f32>,
 
-    /// For a rate-limited behavior, the seconds until its next turn is due —
-    /// started, the first time it is seen, at a phase its entity decides, so
-    /// that its instances spread over the period.
+    /// For a rate-limited behavior, the seconds until its next turn is due;
+    /// first set at a phase its entity decides, spreading its instances.
     pub until: Option<f32>,
 
-    /// The fuel its last whole turn took, from the turn's start to where it
-    /// finished — the pieces of a turn cut across frames summed: what its
-    /// next turn is priced at. `None` before its first whole turn.
+    /// The fuel its last whole turn took, pieces cut across frames summed: what
+    /// its next turn is priced at. `None` before its first whole turn.
     pub full_turn: Option<u64>,
 
     /// The fuel the turn part-way through has spent so far, across the
     /// frames it was cut over.
     pub piece_spent: u64,
 
-    /// The events it was sent with a payload its handler could not take —
-    /// dropped, not run — by event, the last such delivery's reason: what a
-    /// tool shows, one line per event however often it happened.
+    /// The events it was sent with a payload its handler could not take, each
+    /// with the last such delivery's reason: one line per event, for a tool.
     pub dropped: std::collections::BTreeMap<String, String>,
 }
 
 /// A suspended member and how long is left of its wait.
 ///
-/// Serialisable, which is what makes saving a scene mid-sequence possible: an
-/// `async` attack half-way through its wind-up loads half-way through it. That
-/// was proven of the machine before any syntax existed; this is where the
-/// promise is finally kept.
+/// Serialisable, so an `async` attack saved half-way through its wind-up loads
+/// half-way through it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Pending {
     /// The frozen machine.
@@ -168,9 +139,10 @@ pub struct Pending {
     pub remaining: f32,
     /// What finishing the machine completes.
     pub body: Body,
-    /// The program the machine stopped in. A machine is a position in that
-    /// code; a hot reload that changes it carries the machine into the new code
-    /// through [`resumption::carry`](super::resumption::carry), which
+    /// The fingerprint of the program the machine stopped in.
+    ///
+    /// A hot reload that changes the program carries the machine into the new
+    /// code through [`resumption::carry`](super::resumption::carry), which
     /// restamps this.
     pub fingerprint: u64,
     /// Game seconds the body has run without finishing since it started or
@@ -231,45 +203,28 @@ impl ReloadReport {
 
 /// Compiled programs and live instances.
 ///
-/// A program is held behind an [`Arc`] because a thousand guards run *one*
-/// `Guard`: the lane needs the program while the runtime is borrowed mutably for
-/// the instance's fields, and cloning a `Vec<Instruction>` per instance per
-/// frame to get it would make the frame cost scale with the code's size for no
-/// reason. The reference count is the whole cost instead.
+/// A program is held behind an [`Arc`]: a thousand guards run one `Guard`, and
+/// the lane keeps it while the runtime is borrowed mutably for their fields.
 #[derive(Debug)]
 pub struct ScriptRuntime {
     programs: HashMap<String, Arc<Program>>,
     pub(super) instances: HashMap<(EntityId, String), Instance>,
     /// What behaviors raised for each other, waiting for the next frame.
     ///
-    /// Held here rather than routed through the `World` and back: an event from
-    /// one behavior to another never leaves scripting, and the round trip would
-    /// cost two frames of latency and a deck slot nothing else reads.
-    /// Engine-raised events arrive the other way, through a
-    /// `Channel<ScriptEvent>` the engine fills and the agent drains.
-    ///
-    /// It lives on the runtime and not on the agent because an agent that
-    /// buffers its own output is an agent that has stopped being a strategist
-    /// (`RULES.md` §8). This *is* the scripting world's pending mail, and the
-    /// runtime is the scripting world.
+    /// The scripting world's own mail, never routed through the `World`.
+    /// See the book: concepts/scripting/events.md,
+    /// "An event is never delivered in the frame it was raised".
     pub(super) pending: EventQueue,
     /// What the last run did, which the lane prices its next run from.
-    ///
-    /// Same reason: per-frame numbers do not live as agent state, and these
-    /// are counters only the lane can produce.
     last_report: ScriptRunReport,
     /// How many instances the last run found with no compiled module.
     ///
-    /// Kept only so the warning fires on a *transition*: an entity naming a
-    /// module nobody compiled would otherwise print once per frame, which is
-    /// how a real message becomes noise somebody filters out.
+    /// Kept so the warning fires on a transition, not once per frame, where it
+    /// would become noise somebody filters out.
     last_unloaded: usize,
     /// Measured instructions per millisecond on this machine.
     ///
-    /// The lane corrects it from what a run actually cost, and the agent reads
-    /// it to turn a time budget into fuel. It lives here because only the lane
-    /// knows how many instructions were spent, and an agent that measured its
-    /// own execution would be doing the lane's job.
+    /// Corrected from what each run cost; it turns a time budget into fuel.
     pub(super) rate: f64,
     /// Measured time a lane run costs besides its turns — the frame's
     /// bookkeeping, which no fuel buys. `None` before the first run.
@@ -290,10 +245,7 @@ pub struct ScriptRuntime {
 
 /// Instructions per millisecond, before anything has been measured.
 ///
-/// Only ever the starting point: the first frame that runs corrects it. A
-/// constant that stayed fixed would be wrong on every machine but the one it
-/// was written on, and wrong in the direction that matters — too generous on a
-/// slow machine is exactly where the budget needed to hold.
+/// Only the starting point: the first frame that runs corrects it.
 pub const INITIAL_RATE: f64 = 50_000.0;
 
 /// What a turn is priced at before one has run whole: a guess, corrected by
@@ -326,7 +278,7 @@ impl Default for ScriptRuntime {
 }
 
 impl ScriptRuntime {
-    /// An empty runtime.
+    /// Creates an empty runtime.
     pub fn new() -> Self {
         Self::default()
     }
@@ -352,15 +304,13 @@ impl ScriptRuntime {
 
     /// Puts mail back, to be delivered by a frame that can.
     ///
-    /// The failure path matters more than the happy one: a frame that bails
-    /// after taking the queue must return it, or everything raised last frame
-    /// vanishes — silently, because an event nobody was told about looks
-    /// exactly like one nobody raised.
+    /// A frame that bails after taking the queue must hand it back, or what was
+    /// raised last frame vanishes without a word.
     pub fn set_pending(&mut self, pending: EventQueue) {
         self.pending = pending;
     }
 
-    /// How much mail is waiting. For tests and for an inspector.
+    /// Returns how much mail is waiting, for tests and an inspector.
     pub fn pending_len(&self) -> usize {
         self.pending.len()
     }
@@ -370,17 +320,12 @@ impl ScriptRuntime {
         self.last_report = report;
     }
 
-    /// What the last run did.
+    /// Returns what the last run did.
     pub fn last_report(&self) -> &ScriptRunReport {
         &self.last_report
     }
 
     /// Reports instances whose module is not compiled, when the count changes.
-    ///
-    /// The failure it names is the one that hid for a long time: the channel
-    /// carrying compiled programs was only ever filled by one binary, so in the
-    /// editor and the sandbox this table stayed empty and every instance was
-    /// passed over without a word.
     pub fn report_unloaded(&mut self, unloaded: usize) {
         if unloaded == self.last_unloaded {
             return;
@@ -399,7 +344,7 @@ impl ScriptRuntime {
         }
     }
 
-    /// Measured instructions per millisecond, for turning a budget into fuel.
+    /// Returns the measured instructions per millisecond.
     pub fn rate(&self) -> f64 {
         self.rate
     }
@@ -409,23 +354,11 @@ impl ScriptRuntime {
         self.programs.insert(module.into(), Arc::new(program));
     }
 
-    /// Replaces a module, carrying every live instance's state across.
+    /// Replaces a module, carrying every live instance's state across by name.
     ///
-    /// The point of hot-reload, and the part that is not plumbing: an author
-    /// edits a guard's `Update` while ten guards are patrolling, and the ten
-    /// should still be where they were, with the health they had. Restarting
-    /// them would make the feature useless for exactly the thing it is for.
-    ///
-    /// Fields are matched **by name**, because a slot means nothing across a
-    /// recompile — inserting one field at the top shifts every slot after it,
-    /// and a positional carry-over would silently move a guard's health into
-    /// its speed. A field that survived the edit keeps its value; one that is
-    /// new starts at its declared default; one that is gone is
-    /// dropped.
-    ///
-    /// Returns what changed, so the caller can say so rather than reloading in
-    /// silence — an author who renamed a field and lost its value should be
-    /// told, not left to discover it.
+    /// Returns what changed for each behavior, so the caller can tell an author
+    /// whose renamed field lost its value. See the book:
+    /// concepts/scripting/saves-and-edits.md, "Fields, by name".
     pub fn reload(&mut self, module: &str, program: Program) -> Vec<ReloadReport> {
         let previous = self.programs.get(module).cloned();
         let program = Arc::new(program);
@@ -474,29 +407,29 @@ impl ScriptRuntime {
         reports
     }
 
-    /// Takes `module` out of the runtime: its program, and any version of it
-    /// waiting for a frame. Its instances stay, fields and all, for the module
-    /// coming back.
+    /// Takes `module` out of the runtime: its program and any version of it
+    /// waiting for a frame.
+    ///
+    /// Its instances stay, fields and all, for the module coming back.
     pub fn withdraw(&mut self, module: &str) {
         self.programs.remove(module);
         self.deferred.retain(|reload| reload.module != module);
     }
 
-    /// The program compiled from `module`.
+    /// Returns the program compiled from `module`.
     ///
-    /// Handed out as the `Arc` rather than a borrow so a caller can keep it
-    /// while the runtime is borrowed again for an instance's fields — which is
-    /// the ordinary shape of running a behavior, not an unusual one.
+    /// The `Arc`, so a caller keeps it while the runtime is borrowed again for
+    /// an instance's fields.
     pub fn program(&self, module: &str) -> Option<&Arc<Program>> {
         self.programs.get(module)
     }
 
-    /// Every loaded program.
+    /// Returns every loaded program.
     pub fn programs(&self) -> impl Iterator<Item = &Arc<Program>> {
         self.programs.values()
     }
 
-    /// The reloads waiting for a frame that projects what they read, taken.
+    /// Takes the reloads waiting for a frame that projects what they read.
     pub(crate) fn take_deferred(&mut self) -> Vec<khora_script::reload::ScriptReload> {
         std::mem::take(&mut self.deferred)
     }
@@ -506,46 +439,44 @@ impl ScriptRuntime {
         self.deferred.push(reload);
     }
 
-    /// Whether a compiled program of `module` waits for the frame that
+    /// Returns whether a compiled program of `module` waits for the frame that
     /// projects what it reads.
     pub(crate) fn is_waiting(&self, module: &str) -> bool {
         self.deferred.iter().any(|reload| reload.module == module)
     }
 
-    /// The reloads waiting, as they are.
+    /// Returns the reloads waiting.
     pub(crate) fn deferred(&self) -> &[khora_script::reload::ScriptReload] {
         &self.deferred
     }
 
-    /// How many modules are loaded.
-    ///
-    /// Named for what it counts, beside `instance_count`: a bare `len` on a
-    /// runtime holding both modules and instances says which of the two only by
-    /// convention, and the two numbers are rarely the same.
+    /// Returns how many modules are loaded.
     pub fn module_count(&self) -> usize {
         self.programs.len()
     }
 
-    /// The state of one entity's behavior, created empty if it is new.
+    /// Returns the state of one entity's behavior, created empty if it is new.
     pub fn instance(&mut self, entity: EntityId, behavior: &str) -> &mut Instance {
         self.instances
             .entry((entity, behavior.to_owned()))
             .or_default()
     }
 
-    /// The state of one entity's behavior, if it has any.
+    /// Returns the state of one entity's behavior, if it has any.
     pub fn peek(&self, entity: EntityId, behavior: &str) -> Option<&Instance> {
         self.instances.get(&(entity, behavior.to_owned()))
     }
 
-    /// How many instances are held.
+    /// Returns how many instances are held.
     pub fn instance_count(&self) -> usize {
         self.instances.len()
     }
 
-    /// The instances held, each weighed by the share of `frame`-long frames
-    /// it takes a turn in: one for an instance with no rate, `rate × frame`
-    /// for a rate-limited one, never more than one.
+    /// Returns the instances held, each weighed by the share of `frame`-long
+    /// frames it takes a turn in.
+    ///
+    /// One for an instance with no rate, `rate × frame`, at most one, for a
+    /// rate-limited one.
     pub fn weighted_instances(&self, frame: f32) -> f32 {
         self.instances
             .iter()
@@ -560,8 +491,8 @@ impl ScriptRuntime {
     }
 }
 
-/// The member a pending body runs: its outermost function, without the
-/// behavior.
+/// Returns the member a pending body runs: its outermost function, without
+/// the behavior.
 pub(super) fn member_of(pending: &Pending, program: &Program) -> String {
     pending
         .machine
@@ -577,8 +508,8 @@ pub(super) fn member_of(pending: &Pending, program: &Program) -> String {
         .unwrap_or_default()
 }
 
-/// What a reload from `old` to `layout` keeps, adds and drops of a behavior's
-/// fields.
+/// Returns what a reload from `old` to `layout` keeps, adds and drops of a
+/// behavior's fields.
 fn reload_report(old: &BehaviorLayout, layout: &BehaviorLayout) -> ReloadReport {
     ReloadReport {
         behavior: layout.name.clone(),

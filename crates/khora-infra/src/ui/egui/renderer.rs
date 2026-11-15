@@ -12,18 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Custom egui renderer for wgpu 28.0.
-//!
-//! This module renders egui's [`ClippedPrimitive`] output using the engine's
-//! wgpu backend. It manages its own render pipeline, textures, and per-frame
-//! vertex/index buffers.
+//! The wgpu renderer of egui's [`ClippedPrimitive`]s, with its own pipeline,
+//! textures and per-frame vertex and index buffers.
 
 use egui::epaint::{ClippedPrimitive, ImageDelta, Primitive, Vertex};
 use egui::{ImageData, TextureId, TexturesDelta};
 use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 
-/// Per-frame render state passed from [`EguiOverlay`] to the renderer.
+/// Per-frame render state passed from [`EguiOverlay`](super::EguiOverlay) to the renderer.
 pub struct EguiRenderState<'a> {
     /// The wgpu device.
     pub device: &'a wgpu::Device,
@@ -39,7 +36,7 @@ pub struct EguiRenderState<'a> {
     pub height_px: u32,
 }
 
-/// Custom wgpu renderer for egui primitives.
+/// The wgpu renderer of egui's primitives.
 pub struct EguiWgpuRenderer {
     pipeline: Option<wgpu::RenderPipeline>,
     screen_uniform_buffer: Option<wgpu::Buffer>,
@@ -294,12 +291,11 @@ impl EguiWgpuRenderer {
             ],
         });
 
-        // Use a user-managed texture ID (egui::TextureId::User).
         let id = TextureId::User(self.next_user_texture_id);
         self.next_user_texture_id += 1;
 
-        // We store a dummy wgpu::Texture — only the bind_group matters for
-        // external textures. Create a 1×1 placeholder.
+        // Only the bind group matters for an external texture: the texture
+        // kept is a 1×1 placeholder.
         let placeholder = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("egui_ext_placeholder"),
             size: wgpu::Extent3d {
@@ -385,13 +381,11 @@ impl EguiWgpuRenderer {
             return;
         };
 
-        // Update screen size uniform
         let screen_size = [state.width_px as f32, state.height_px as f32];
         state
             .queue
             .write_buffer(screen_buf, 0, bytemuck::cast_slice(&screen_size));
 
-        // Collect all vertex/index data and build draw calls
         let mut vertices: Vec<u8> = Vec::new();
         let mut indices: Vec<u32> = Vec::new();
         let mut draw_calls: Vec<DrawCall> = Vec::new();
@@ -406,11 +400,9 @@ impl EguiWgpuRenderer {
                     let vertex_offset = vertices.len() / std::mem::size_of::<Vertex>();
                     let index_offset = indices.len();
 
-                    // Append vertices as raw bytes
                     let vertex_bytes: &[u8] = bytemuck::cast_slice(&mesh.vertices);
                     vertices.extend_from_slice(vertex_bytes);
 
-                    // Append indices with offset
                     for &idx in &mesh.indices {
                         indices.push(idx + vertex_offset as u32);
                     }
@@ -453,7 +445,6 @@ impl EguiWgpuRenderer {
             return;
         }
 
-        // Create GPU buffers
         let vertex_buffer = state
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {

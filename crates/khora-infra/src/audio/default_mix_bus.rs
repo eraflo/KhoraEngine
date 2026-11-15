@@ -20,10 +20,9 @@ use std::sync::Mutex;
 
 use khora_core::audio::{AudioMixBus, StreamInfo};
 
-/// Mutex-backed ringbuffer impl of [`AudioMixBus`].
+/// A mutex-guarded ring buffer of samples, the default [`AudioMixBus`].
 ///
-/// Performance is adequate for now; a lock-free queue can replace it behind
-/// the same trait.
+/// A lock-free queue could replace it behind the same trait.
 pub struct DefaultMixBus {
     info: StreamInfo,
     capacity_samples: usize,
@@ -31,8 +30,9 @@ pub struct DefaultMixBus {
 }
 
 impl DefaultMixBus {
-    /// `capacity_frames` is the high-water mark in *frames* (not samples).
-    /// Samples beyond that are dropped from the head — newest wins.
+    /// Creates a bus holding at most `capacity_frames` frames (not samples).
+    ///
+    /// Past that, the oldest samples are dropped: the newest win.
     #[must_use]
     pub fn new(info: StreamInfo, capacity_frames: usize) -> Self {
         let capacity_samples = capacity_frames * info.channels as usize;
@@ -54,8 +54,7 @@ impl AudioMixBus for DefaultMixBus {
             return;
         };
         q.extend(samples.iter().copied());
-        // Trim from the head once we exceed capacity — keep the newest
-        // data; old samples are stale and worse than silence in real time.
+        // The oldest go first: in real time a stale sample is worse than silence.
         while q.len() > self.capacity_samples {
             q.pop_front();
         }

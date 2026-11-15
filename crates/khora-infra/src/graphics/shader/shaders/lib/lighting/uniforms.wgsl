@@ -2,11 +2,9 @@
 
 #import khora::lighting::structs::{DirectionalLight, PointLight, SpotLight}
 
-// Aggregate lighting uniform bound at @group(3) @binding(0). Array
-// sizes come from `ShaderDefs` (`MAX_DIRECTIONAL_LIGHTS`,
-// `MAX_POINT_LIGHTS`, `MAX_SPOT_LIGHTS`) injected as `#define`s by the
-// `ShaderRegistry` at compose time — bump them in Rust and every
-// shader that imports this module recompiles with the new sizes.
+// Aggregate lighting uniform bound at @group(3) @binding(0). Its array sizes
+// are `ShaderDefs`' `MAX_*_LIGHTS`, injected as `#define`s by the
+// `PipelineSystem` at compose time.
 
 struct LightingUniforms {
     directional_lights: array<DirectionalLight, #{MAX_DIRECTIONAL_LIGHTS}>,

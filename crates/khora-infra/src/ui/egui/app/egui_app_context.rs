@@ -21,20 +21,19 @@ use crate::ui::egui::ui_builder::EguiUiBuilder;
 /// Constructed once per frame by [`super::run_native`] and handed to
 /// the user's [`khora_core::ui::App::update`] implementation.
 ///
-/// Holds a `Ui` rather than a `Context` because eframe hands the app a root
-/// `Ui` to paint *into*; panels nest inside it with `show_inside`. The
-/// `Context` is still reachable through it for the theme, fonts and viewport
-/// commands, which are context-wide rather than panel-local.
+/// It holds a `Ui`, not a `Context`: eframe hands the app a root `Ui` to paint
+/// into, and the context stays reachable through it for the theme, fonts and
+/// viewport commands.
 pub struct EguiAppContext<'a> {
     ui: &'a mut egui::Ui,
     frame: &'a mut eframe::Frame,
-    /// No viewport textures for tool apps — empty map, kept so we can
-    /// reuse `EguiUiBuilder::new`.
+    /// Always empty: tool apps have no viewport textures, but
+    /// `EguiUiBuilder::new` takes the map.
     viewport_textures: HashMap<ViewportTextureHandle, egui::TextureId>,
 }
 
 impl<'a> EguiAppContext<'a> {
-    /// Build a context from the per-frame egui handles.
+    /// Builds a context from the frame's egui handles.
     pub fn new(ui: &'a mut egui::Ui, frame: &'a mut eframe::Frame) -> Self {
         Self {
             ui,

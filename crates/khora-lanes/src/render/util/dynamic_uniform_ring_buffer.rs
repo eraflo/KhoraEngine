@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Persistent dynamic ring buffer for per-mesh or varying GPU uniform data.
+//! A ring of uniform buffers written many times a frame, each element bound at
+//! its own dynamic offset.
 
 use khora_core::renderer::api::command::{
     BindGroupDescriptor, BindGroupEntry, BindGroupId, BindGroupLayoutId, BindingResource,
@@ -24,13 +25,13 @@ use khora_core::renderer::error::ResourceError;
 use khora_core::renderer::traits::GraphicsDevice;
 use std::borrow::Cow;
 
-/// Default minimum uniform alignment required by most APIs
+/// The uniform offset alignment most devices require, in bytes.
 pub const MIN_UNIFORM_ALIGNMENT: u32 = 256;
 
-/// Default capacity for a dynamic uniform buffer chunk.
+/// The elements a first chunk holds by default.
 pub const DEFAULT_MAX_ELEMENTS: u32 = 1000;
 
-/// A chunk of memory representing a single buffer allocation within a slot.
+/// One buffer of a slot, and the bind group over one element of it.
 #[derive(Debug)]
 struct BufferChunk {
     buffer: BufferId,
@@ -39,17 +40,17 @@ struct BufferChunk {
     current_offset: u32,
 }
 
-/// A single slot in the dynamic ring buffer spanning one frame in flight.
-/// It contains multiple chunks that expand dynamically when capacity is reached.
+/// One frame in flight's chunks; a larger one is added when they are full.
 #[derive(Debug)]
 struct DynamicRingSlot {
     chunks: Vec<BufferChunk>,
     active_chunk_index: usize,
 }
 
-/// A persistent ring buffer for GPU uniform data that needs to be updated many times per frame.
-/// Uses `has_dynamic_offset` to allow binding single elements within a larger uniform buffer.
-/// Robustly allocates exponentially growing chunks when running out of space.
+/// A uniform ring written many times a frame, each element bound at its own dynamic offset.
+///
+/// Each frame in flight has its own chunks. A full chunk is followed by one at
+/// least twice as large, kept for the later frames on that slot.
 #[derive(Debug)]
 pub struct DynamicUniformRingBuffer {
     slots: Vec<DynamicRingSlot>,
@@ -62,21 +63,15 @@ pub struct DynamicUniformRingBuffer {
 }
 
 impl DynamicUniformRingBuffer {
-    /// Creates a new dynamic uniform ring buffer.
+    /// Creates the ring: per frame in flight, one chunk of `max_elements` elements.
     ///
-    /// # Arguments
+    /// Each element is `element_size` bytes, padded to `alignment`; its bind
+    /// group binds one element at `binding` of `layout`.
     ///
-    /// * `device` - The graphics device to use.
-    /// * `layout` - The bind group layout to use.
-    /// * `binding` - The binding index to use.
-    /// * `element_size` - The size of each element.
-    /// * `max_elements` - The maximum number of elements.
-    /// * `alignment` - The alignment of each element.
-    /// * `label` - The label for the buffer.
+    /// # Errors
     ///
-    /// # Returns
-    ///
-    /// A `Result` containing the dynamic uniform ring buffer or a `ResourceError`.
+    /// Returns a [`ResourceError`] if a buffer or a bind group is refused; what
+    /// was made before it is given back.
     pub fn new(
         device: &dyn GraphicsDevice,
         layout: BindGroupLayoutId,
@@ -132,7 +127,7 @@ impl DynamicUniformRingBuffer {
         })
     }
 
-    /// Advances the ring buffer to the next frame.
+    /// Moves to the next frame's slot and empties it.
     pub fn advance(&mut self) {
         self.current_index = (self.current_index + 1) % self.slots.len();
         let slot = &mut self.slots[self.current_index];
@@ -142,18 +137,23 @@ impl DynamicUniformRingBuffer {
         slot.active_chunk_index = 0;
     }
 
-    /// Pushes data to the current buffer and returns the dynamic offset.
+    /// Writes `data` into the current slot and returns its dynamic offset.
+    ///
+    /// The offset is into the chunk [`current_bind_group`](Self::current_bind_group)
+    /// returns right after the push.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ResourceError`] if a new chunk or the write is refused.
     pub fn push(&mut self, device: &dyn GraphicsDevice, data: &[u8]) -> Result<u32, ResourceError> {
         let aligned_size = (data.len() as u32 + self.alignment - 1) & !(self.alignment - 1);
         let slot = &mut self.slots[self.current_index];
 
-        // Handle auto-allocation out of capacity bounds
         if slot.chunks[slot.active_chunk_index].current_offset + aligned_size
             > slot.chunks[slot.active_chunk_index].capacity
         {
             let mut chunk_found = false;
 
-            // Check if the next chunk has enough capacity
             if slot.active_chunk_index + 1 < slot.chunks.len()
                 && slot.chunks[slot.active_chunk_index + 1].capacity >= aligned_size
             {
@@ -161,7 +161,6 @@ impl DynamicUniformRingBuffer {
                 chunk_found = true;
             }
 
-            // If no chunk is found, create a new one
             if !chunk_found {
                 let current_capacity = slot.chunks[slot.active_chunk_index].capacity;
                 let new_capacity = (current_capacity * 2).max(aligned_size * 100);
@@ -194,15 +193,15 @@ impl DynamicUniformRingBuffer {
         Ok(offset)
     }
 
-    /// Returns the current bind group.
+    /// Returns the bind group of the chunk the last push landed in.
     pub fn current_bind_group(&self) -> &BindGroupId {
         let slot = &self.slots[self.current_index];
         &slot.chunks[slot.active_chunk_index].bind_group
     }
 
-    /// The bytes a ring built by [`new`](Self::new) with these arguments
-    /// holds: one chunk of `max_elements` aligned elements per frame in
-    /// flight.
+    /// Returns the bytes a ring built by [`new`](Self::new) with these arguments holds.
+    ///
+    /// That is one chunk of `max_elements` aligned elements per frame in flight.
     pub const fn first_bytes(element_size: u32, max_elements: u32, alignment: u32) -> u64 {
         let aligned = (element_size + alignment - 1) & !(alignment - 1);
         aligned as u64 * max_elements as u64 * MAX_FRAMES_IN_FLIGHT as u64
@@ -222,7 +221,7 @@ impl DynamicUniformRingBuffer {
         self.current_index
     }
 
-    /// Destroys the dynamic uniform ring buffer.
+    /// Gives every chunk of every slot back to the device.
     pub fn destroy(&self, device: &dyn GraphicsDevice) {
         for slot in &self.slots {
             destroy_slot(device, slot, self.label);
@@ -230,9 +229,9 @@ impl DynamicUniformRingBuffer {
     }
 }
 
-/// One chunk: a uniform buffer of `capacity` bytes and the bind group over
-/// it. A refused bind group gives the buffer back, so a refusal leaves
-/// nothing behind.
+/// Makes one chunk: a uniform buffer of `capacity` bytes and its bind group.
+///
+/// A refused bind group gives the buffer back, so a refusal leaves nothing behind.
 fn make_chunk(
     device: &dyn GraphicsDevice,
     layout: BindGroupLayoutId,
@@ -609,9 +608,8 @@ mod tests {
         vec![tag; ELEMENT as usize]
     }
 
-    /// Successive pushes land one aligned stride apart in the same buffer, and
-    /// each push writes its bytes at the offset it returns — the dynamic
-    /// offset a draw binds with.
+    /// Successive pushes land one aligned stride apart in the same buffer, each
+    /// written at the offset it returns.
     #[test]
     fn pushes_land_at_aligned_offsets_in_one_buffer() {
         let device = RecordingDevice::default();
@@ -666,9 +664,8 @@ mod tests {
         assert_eq!(device.last_write().0, first_slot_buffer);
     }
 
-    /// Pushing past a chunk's capacity grows the slot with a larger chunk and
-    /// its own bind group; the next frame on that slot reuses the grown chunk
-    /// rather than allocating yet another.
+    /// Pushing past a chunk's capacity adds a larger chunk with its own bind
+    /// group, which the next frame on that slot reuses instead of growing again.
     #[test]
     fn overflow_grows_a_chunk_that_later_frames_reuse() {
         let device = RecordingDevice::default();

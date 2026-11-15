@@ -11,11 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//! What one run of the lane did.
-//!
-//! Its own file because it is the lane's answer to the agent, and what the
-//! agent reports of the run is built from nothing else. Everything here is read by
-//! somebody outside this module; everything in the siblings is not.
+//! What one run of the lane did: its answer to the agent, and what the
+//! agent reports of the run is built from.
 
 use khora_core::script::{BehaviorUpdate, EventQueue};
 use khora_script::vm::{Abandoned, ResumeTier};
@@ -35,8 +32,9 @@ pub struct Resumed {
 }
 
 /// A body that has run past [`WATCHDOG_WARN`](super::WATCHDOG_WARN) game
-/// seconds without finishing — reported once per run of the body, for the
-/// editor to show.
+/// seconds without finishing.
+///
+/// Reported once per run of the body, for the editor to show.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Slow {
     /// The entity whose instance runs the body.
@@ -51,9 +49,8 @@ pub struct Slow {
 
 /// What one run of the lane did.
 ///
-/// Returned through the context rather than logged, so the agent can report a
-/// truthful status — an agent that says "healthy" while half its behaviors were
-/// deferred is worse than one that says nothing.
+/// Returned rather than logged, so the agent reports a truthful status.
+/// See the book: concepts/scripting/turns.md, "Degrading defers whole behaviors".
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ScriptRunReport {
     /// Behaviors that ran to completion.
@@ -64,12 +61,9 @@ pub struct ScriptRunReport {
     pub faulted: usize,
     /// Instances whose module is not in the runtime's program table.
     ///
-    /// An entity naming a script nobody compiled. This used to be a silent
-    /// `continue`, on the assumption that whatever failed to supply the module
-    /// would say so — and nothing did. The scripting channel was, for most of
-    /// this engine's life, never filled outside one binary: a correct `.erg` on
-    /// a correct entity produced no behaviour and **no message**, which is the
-    /// hardest kind of failure to find.
+    /// An entity naming a script nobody compiled, or whose program never
+    /// reached the runtime. Counted, never skipped in silence: a correct `.erg`
+    /// that runs nothing and says nothing is the hardest failure to find.
     pub unloaded: usize,
     /// Fuel actually spent.
     pub spent: u64,
@@ -78,23 +72,19 @@ pub struct ScriptRunReport {
     pub turns_time: std::time::Duration,
     /// What this frame's scripts raised, for the next frame to deliver.
     ///
-    /// Carried out rather than written to the deck: an event between two
-    /// behaviors never leaves scripting, and routing it through the `World` and
-    /// back would add two frames of latency and a slot nothing else reads.
+    /// Carried out, never written to the deck: an event between two behaviors
+    /// never leaves scripting. See the book: concepts/scripting/events.md,
+    /// "An event is never delivered in the frame it was raised".
     pub raised: EventQueue,
     /// What no behavior was told, because its turn did not happen.
     ///
-    /// A frame that runs out of fuel defers behaviors, and deferring is the
-    /// design working rather than failing — but an event dropped along with the
-    /// turn made it lossy: under budget pressure a `Damaged` vanished, and
-    /// nothing said so. These go back into the agent's inbox for the frame that
-    /// can deliver them.
+    /// Put back into the mail for the frame that can deliver it, so a deferred
+    /// turn loses no event.
     pub undelivered: EventQueue,
     /// State for the scene to record, for the instances that did work.
     ///
-    /// Carried in the report rather than written to the deck inside the loop so
-    /// the run is one thing and its delivery another — which is also what lets
-    /// [`run_behaviors`] be tested without a deck to write into.
+    /// Carried in the report, not written to the deck, so the run and its
+    /// delivery are apart and [`run_behaviors`](super::run_behaviors) is tested without a deck.
     pub state: Vec<BehaviorUpdate>,
     /// Suspended bodies a load took back below the exact tier, or abandoned.
     pub resumes: Vec<Resumed>,

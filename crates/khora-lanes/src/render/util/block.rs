@@ -40,9 +40,9 @@ pub(crate) struct Block {
 }
 
 impl Block {
-    /// A buffer of `size` bytes with `usage`, bound by a bind group of
-    /// `layout`. A refused bind group gives the buffer back, so a refusal
-    /// leaves nothing behind.
+    /// Creates a buffer of `size` bytes with `usage`, bound by a bind group of `layout`.
+    ///
+    /// A refused bind group gives the buffer back, so a refusal leaves nothing behind.
     pub fn new(
         device: &dyn GraphicsDevice,
         layout: BindGroupLayoutId,

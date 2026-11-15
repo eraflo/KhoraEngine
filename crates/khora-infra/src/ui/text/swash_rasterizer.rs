@@ -25,7 +25,7 @@ use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 use swash::zeno::{Format, Vector};
 use swash::FontRef;
 
-/// Rasterises UI glyphs with swash. Built with `Font::BUILT_IN` registered
+/// The UI glyph rasteriser over swash, built with `Font::BUILT_IN` registered
 /// with [`DEFAULT_FONT`](super::DEFAULT_FONT).
 ///
 /// One leaf lock around the fonts and swash's scaling context: held for one
@@ -67,7 +67,7 @@ const SOURCES: [Source; 3] = [
 ];
 
 impl SwashRasterizer {
-    /// A rasteriser with `Font::BUILT_IN` already registered.
+    /// Creates a rasteriser with `Font::BUILT_IN` already registered.
     pub fn new() -> Self {
         let rasterizer = Self {
             state: Mutex::new(State {
@@ -119,11 +119,9 @@ impl GlyphRasterizer for SwashRasterizer {
 
 impl SwashRasterizer {
     /// Reads a font file by the rule the shaper reads it by; its first face
-    /// is the one drawn. Outside any lock.
+    /// is the one drawn.
     fn read_font(&self, data: Arc<[u8]>) -> Result<Registered, FontError> {
-        // Read outside the lock: only the insertion is under it. The file is
-        // a font by the rule the shaper reads it by, and its first face is
-        // the one drawn.
+        // Read outside the lock: only the insertion is under it.
         super::register_first_face(
             &mut parley::fontique::Collection::new(Default::default()),
             Arc::clone(&data),

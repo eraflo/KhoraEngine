@@ -92,9 +92,10 @@ fn shaped(shaper: &ParleyShaper, text: &str, size_px: f32) -> ShapedText {
         .unwrap_or_else(|e| panic!("{text:?} at {size_px} px was refused: {e}"))
 }
 
-/// The key of `glyph` of `font` at `size_px` (a whole number of quarter
-/// pixels) in subpixel bin `bin`, built field by field so the rasteriser's
-/// tests do not go through `GlyphKey::new`.
+/// The key of `glyph` of `font` at `size_px` (whole quarter pixels) in
+/// subpixel bin `bin`.
+///
+/// Built field by field, so the rasteriser's tests do not go through `GlyphKey::new`.
 fn key(font: AssetUUID, glyph: u16, size_px: f32, bin: u8) -> GlyphKey {
     GlyphKey {
         font,

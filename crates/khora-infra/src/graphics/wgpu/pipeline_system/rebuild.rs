@@ -33,9 +33,10 @@ use super::{backend_err, compose_err, Inner};
 use naga::valid::{Capabilities, ValidationFlags, Validator};
 use naga_oil::compose::{NagaModuleDescriptor, ShaderDefValue, ShaderType};
 
-/// Rebuilds a single cached render pipeline in place under `key`. On a compose
-/// failure (e.g. the user just typed invalid WGSL), logs the error and keeps
-/// the previously-working pipeline — the cache is never poisoned.
+/// Rebuilds one cached render pipeline in place under `key`.
+///
+/// On any failure (WGSL half typed, say) it logs and keeps the last working
+/// pipeline: the cache is never poisoned.
 pub(super) fn rebuild_render_pipeline(
     inner: &mut Inner,
     device: &dyn GraphicsDevice,
@@ -122,8 +123,8 @@ pub(super) fn rebuild_render_pipeline(
     log::info!("shader hot-reload: rebuilt pipeline `{}`", spec.label);
 }
 
-/// Rebuilds a single cached compute pipeline in place under `key`. Same
-/// keep-last-good resilience as [`rebuild_render_pipeline`].
+/// Rebuilds one cached compute pipeline in place under `key`, keeping the
+/// last working one on failure.
 pub(super) fn rebuild_compute_pipeline(
     inner: &mut Inner,
     device: &dyn GraphicsDevice,
@@ -293,8 +294,9 @@ pub(super) fn layout_label(key: LayoutKey) -> &'static str {
     }
 }
 
-/// `naga_oil` `ShaderDefValue` is integer/bool only; float consts (e.g.
-/// `SHADOW_CUBE_NEAR`) are injected textually as a `const` at the source head.
+/// Prepends the float shader constants (`SHADOW_CUBE_NEAR`) to a source as `const`s.
+///
+/// A `naga_oil` shader def holds only integers and booleans.
 pub(super) fn inject_float_defs(source: &str) -> String {
     let mut out = String::with_capacity(source.len() + 64);
     out.push_str(&format!(

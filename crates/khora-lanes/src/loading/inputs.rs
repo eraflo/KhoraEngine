@@ -22,9 +22,10 @@ use khora_data::scene::loading::{SceneLoadRequest, SceneLoading};
 use khora_macros::LaneInputs;
 use khora_script::toolchain::{CompileRequest, ScriptCompiler};
 
-/// What a load reads: the requests of each kind waiting, taken; who prepares,
-/// compiles and decodes them; its budget. Nothing of a frame — a run may span
-/// several. What a run leaves in a `#[take]` field goes back to its channel.
+/// What a load reads: the requests waiting, who handles each kind, its budget.
+///
+/// Nothing of a frame: a run may span several. What a run leaves in a
+/// `#[take]` field goes back to its channel.
 #[derive(LaneInputs)]
 pub struct LoadingInputs<'f> {
     /// The project indexes filed since the last run.

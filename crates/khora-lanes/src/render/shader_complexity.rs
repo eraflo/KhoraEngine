@@ -14,30 +14,20 @@
 
 //! How much lighting work a lit lane's shader does per fragment.
 
-/// Shader complexity levels for resource budgeting and GORNA negotiation.
-///
-/// This enum represents the relative computational cost of different shader
-/// configurations, allowing the rendering system to communicate workload
-/// estimates to the resource allocation system.
+/// How much lighting work a lit shader does per fragment, as a relative cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum ShaderComplexity {
-    /// No lighting calculations, vertex colors only.
-    /// Fastest rendering path.
+    /// No lighting, vertex colours only: the cheapest.
     Unlit,
-    /// Basic Lambertian diffuse + simple specular.
-    /// Moderate performance cost.
+    /// Lambertian diffuse and a simple specular.
     #[default]
     SimpleLit,
-    /// Full PBR with Cook-Torrance BRDF.
-    /// Highest quality, highest cost.
+    /// Full PBR with a Cook-Torrance BRDF: the dearest.
     FullPBR,
 }
 
 impl ShaderComplexity {
-    /// Returns a cost multiplier for the given complexity level.
-    ///
-    /// This multiplier is applied to the base rendering cost to estimate
-    /// the total GPU workload for different shader configurations.
+    /// Returns the factor this complexity multiplies a base rendering cost by.
     pub fn cost_multiplier(&self) -> f32 {
         match self {
             ShaderComplexity::Unlit => 1.0,

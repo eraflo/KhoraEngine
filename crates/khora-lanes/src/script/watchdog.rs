@@ -12,16 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! How long a body may run without finishing.
-//!
-//! The VM bounds each frame; the watchdog bounds the *body*: one that keeps
-//! running, frame after frame, never reaching its end nor an `await` — a loop
-//! with no way out, cut by the fuel every frame. What it counts is game time
-//! the body *ran*: a frame it is advanced, spends and is cut again adds that
-//! frame's `dt`; a frame it waits on an `await`, or is not run at all, adds
-//! nothing, and an `await` starts the count again. Past [`WATCHDOG_WARN`] it
-//! is reported, once; past [`WATCHDOG_FAULT`] it faults like any body that
-//! faults — the instance stops until an edit to its module.
+//! How long a body may run without finishing: the game time it ran, reported
+//! at [`WATCHDOG_WARN`] and faulted at [`WATCHDOG_FAULT`].
+//! See the book: concepts/scripting/turns.md, "A body that never finishes".
 
 use khora_core::script::RecordedFault;
 
@@ -46,11 +39,12 @@ pub(super) enum Watch {
     Fault(String),
 }
 
-/// A frame `held`'s behavior sat out repaying fuel its pending body overdrew:
-/// run time of that body, `delta` more seconds of it — counted now, so the
-/// body is reported and stopped when its count says, not when the debt is
-/// paid. A body the watchdog stops is released as one whose code faulted:
-/// its timer waits its interval, the body a hook stood in front of is next.
+/// Counts a frame `held`'s behavior sat out repaying fuel its pending body
+/// overdrew as `delta` more seconds of that body's run time.
+///
+/// Counted now, so the body is reported and stopped when its count says, not
+/// when the debt is paid. A body stopped is released as one whose code
+/// faulted: its timer waits its interval, the body a hook stood before is next.
 pub(super) fn sit_out(
     held: &mut super::runtime::Instance,
     program: &khora_script::vm::Program,
@@ -109,10 +103,11 @@ pub(super) enum SatOut {
     Fault(String),
 }
 
-/// Adds `delta` to a pending body's `running` count and says what that makes
-/// it; `site` names where the body stands. The report is made as the count
-/// crosses the limit, so it is made once per run of the body — and a body
-/// loaded or carried past it is not reported again.
+/// Adds `delta` to a pending body's `running` count and returns what that
+/// makes it; `site` names where the body stands.
+///
+/// The report is made as the count crosses the limit: once per run of the
+/// body, and not again for a body loaded or carried past it.
 pub(super) fn watch(running: &mut f32, delta: f32, site: impl FnOnce() -> String) -> Watch {
     let before = *running;
     *running += delta.max(0.0);
@@ -129,9 +124,11 @@ pub(super) fn watch(running: &mut f32, delta: f32, site: impl FnOnce() -> String
     Watch::Quiet
 }
 
-/// A frame `instance` sat out repaying the fuel its pending body overdrew,
-/// counted by the watchdog as it passes — reported, or the instance stopped,
-/// this frame — and recorded, so a save in between keeps the count.
+/// Counts a frame `instance` sat out repaying the fuel its pending body
+/// overdrew, as it passes.
+///
+/// The body is reported or the instance stopped this frame, and the count is
+/// recorded so a save in between keeps it.
 pub(super) fn sat_out(
     runtime: &mut ScriptRuntime,
     instance: &khora_data::flow::ScriptInstance,

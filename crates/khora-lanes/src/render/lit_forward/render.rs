@@ -39,9 +39,10 @@ use khora_data::assets::Assets;
 use khora_data::render::RenderWorld;
 
 impl LitGpu {
-    /// Records the frame: a clear when the world has no camera; else the
-    /// opaque meshes into the scene pass, grouped by pipeline, and the
-    /// blended ones into the transparent pass, farthest first.
+    /// Records the frame: the opaque meshes grouped by pipeline, then the
+    /// blended ones farthest first.
+    ///
+    /// Without a camera the scene pass only clears.
     pub(super) fn record(
         &mut self,
         inputs: &LitInputs<'_>,
@@ -202,8 +203,8 @@ impl LitGpu {
     }
 }
 
-/// The lighting uniforms of the frame: each light up to the pass's caps,
-/// with its shadow entry when the shadows family drew one.
+/// Returns the frame's lighting uniforms: each light up to the pass's caps, with
+/// its shadow entry when the shadows family drew one.
 fn lighting_uniforms(world: &RenderWorld, shadows: &ShadowEntries) -> LightingUniforms {
     let mut uniforms = LightingUniforms {
         directional_lights: [DirectionalLightUniform {

@@ -173,8 +173,9 @@ fn the_states_own_data_survives() {
     );
 }
 
-/// A state the reloaded script no longer declares is dropped rather than
-/// resolved to whichever state now sits at that index — that would put a guard
+/// A state the reloaded script no longer declares is dropped.
+///
+/// Resolved to whichever state now sits at that index, it would put a guard
 /// into a state nobody put it in.
 #[test]
 fn a_state_the_script_dropped_does_not_become_a_different_one() {
@@ -207,9 +208,11 @@ fn a_state_the_script_dropped_does_not_become_a_different_one() {
 
 // ─── Countdowns ─────────────────────────────────────────────────────────────
 
-/// **Why a countdown and not a deadline.** What is left survives a save exactly;
-/// an absolute time would resume either instantly or after the whole gap,
-/// depending only on how long the game was closed.
+/// **Why a countdown and not a deadline.**
+///
+/// What is left survives a save exactly; an absolute time would resume either
+/// instantly or after the whole gap, depending only on how long the game was
+/// closed.
 #[test]
 fn a_countdown_keeps_what_is_left_of_it() {
     let mut runtime = runtime_of(GUARD);
@@ -226,9 +229,10 @@ fn a_countdown_keeps_what_is_left_of_it() {
     assert!(timer.repeating, "`every`, not `after`");
 }
 
-/// **A spent `after` is spent.** Recording it as zero would make loading the
-/// save fire it a second time, which for `after 10s => this.Despawn()` is an
-/// entity that dies twice.
+/// **A spent `after` is spent.**
+///
+/// Recording it as zero would make loading the save fire it a second time,
+/// which for `after 10s => this.Despawn()` is an entity that dies twice.
 #[test]
 fn a_countdown_that_fired_does_not_fire_again_on_load() {
     let source = r#"
@@ -314,10 +318,12 @@ fn a_sequence_stopped_at_an_await_survives_a_save() {
     );
 }
 
-/// **Refused, not trusted.** A machine holds a position in code. An edit that
-/// moves code around that position is followed by name; one that removes the
-/// member the body started in leaves nothing to resume into — resuming anyway
-/// would run whatever now sits there, chosen by an edit nobody connected to it.
+/// **Refused, not trusted.**
+///
+/// A machine holds a position in code. An edit that moves code around that
+/// position is followed by name; one that removes the member the body started
+/// in leaves nothing to resume into — resuming anyway would run whatever now
+/// sits there, chosen by an edit nobody connected to it.
 #[test]
 fn a_sequence_is_abandoned_when_its_handler_is_gone() {
     let saved = caught_mid_attack();
@@ -352,9 +358,10 @@ fn a_sequence_is_abandoned_when_its_handler_is_gone() {
 }
 
 /// An edit that only retunes a value outside the attack still resumes it —
-/// throwing it away would punish an author for changing a number. The program
-/// is a different one now, so the load reports the attack as resumed
-/// `Unchanged`: every function on its stack is the same code.
+/// throwing it away would punish an author for changing a number.
+///
+/// The program is a different one now, so the load reports the attack as
+/// resumed `Unchanged`: every function on its stack is the same code.
 #[test]
 fn a_sequence_survives_an_edit_that_only_changes_a_literal() {
     let saved = caught_mid_attack();
@@ -391,9 +398,10 @@ fn a_sequence_survives_an_edit_that_only_changes_a_literal() {
 
 // ─── Loading is not spawning ────────────────────────────────────────────────
 
-/// `OnSpawn` announced the entity in the run that was saved. Loading must not
-/// announce it again — a chest that drops its loot on `OnSpawn` would refill
-/// itself every time the player reloaded.
+/// `OnSpawn` announced the entity in the run that was saved.
+///
+/// Loading must not announce it again — a chest that drops its loot on
+/// `OnSpawn` would refill itself every time the player reloaded.
 #[test]
 fn loading_a_save_does_not_run_on_spawn_again() {
     let source = r#"
@@ -449,8 +457,10 @@ event Spotted(int by);
 "#;
 
 /// **Data an edit added to the state a save caught starts at its own
-/// default** — not at the first state's, which a fresh store enters on the
-/// way and which shares those slots.
+/// default.**
+///
+/// Not at the first state's, which a fresh store enters on the way and which
+/// shares those slots.
 #[test]
 fn data_added_to_the_saved_state_since_the_save_starts_at_its_declared_default() {
     let mut runtime = runtime_of(GUARD);
@@ -511,10 +521,12 @@ behavior Guard {
 event Spotted(int by);
 "#;
 
-/// **Entering the saved state, whatever the slice.** A guard saved chasing,
-/// with its chase's countdown part-spent, is loaded under every budget: its
-/// store is built from the layout and the save before its first turn, with no
-/// fuel spent, so it ends exactly where an uncut load does.
+/// **Entering the saved state, whatever the slice.**
+///
+/// A guard saved chasing, with its chase's countdown part-spent, is loaded
+/// under every budget: its store is built from the layout and the save before
+/// its first turn, with no fuel spent, so it ends exactly where an uncut load
+/// does.
 #[test]
 fn entering_the_saved_state_ends_the_same_under_every_fuel_slice() {
     // Saved before the edit that gave the chase `spotted`.

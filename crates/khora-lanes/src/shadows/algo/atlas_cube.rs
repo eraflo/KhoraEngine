@@ -12,11 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Cube shadow atlas — point lights.
-//!
-//! The `texture_depth_cube_array` atlas the lit lanes sample for
-//! omnidirectional shadow casters. Six layers per shadow-casting point light
-//! (one per cube face). The face resolution is the lane level's.
+//! The cube shadow atlas: a `texture_depth_cube_array` with six layers, one per
+//! face, per shadow-casting point light.
 
 use std::borrow::Cow;
 
@@ -40,16 +37,17 @@ pub struct AtlasCube {
     /// The `CubeArray` view bound by the lit shader at
     /// [`khora_core::renderer::api::shadow::bindings::binding::ATLAS_CUBE`].
     pub view: TextureViewId,
-    /// Per-face 2D views used as depth render targets. Indexed
-    /// `cube_layer * 6 + face_index` (with `face_index` matching
-    /// [`khora_core::math::CubeFace::index`]).
+    /// The face views rendered into, indexed `cube_layer * 6 + face_index`.
+    ///
+    /// `face_index` is [`khora_core::math::CubeFace::index`].
     pub face_views: Vec<TextureViewId>,
 }
 
 impl AtlasCube {
-    /// Creates the cube depth atlas, its cube-array view and its face views:
-    /// `face_resolution` texels a side, `max_cubes` cubes. Whatever was made
-    /// before a refusal is given back.
+    /// Creates the cube depth atlas, its cube-array view and its face views.
+    ///
+    /// `face_resolution` is in texels a side. Whatever was made before a
+    /// refusal is given back.
     pub fn create(
         device: &dyn GraphicsDevice,
         face_resolution: u32,
@@ -112,8 +110,10 @@ impl AtlasCube {
     }
 }
 
-/// The cube-array view and the face views of `texture`, each recorded in
-/// `made` as it is created, so a refusal can give back the ones before it.
+/// Makes the cube-array view and the face views of `texture`.
+///
+/// Each view is recorded in `made` as it is created, so a refusal can give
+/// back the ones before it.
 fn make_views(
     device: &dyn GraphicsDevice,
     texture: TextureId,
@@ -152,7 +152,7 @@ fn make_views(
     Ok((view, face_views))
 }
 
-/// Records six shadow passes for one point light (one per cube face).
+/// Collects six shadow passes for one point light, one per cube face.
 #[allow(clippy::too_many_arguments)]
 pub fn collect_passes(
     cube_face_views: &[TextureViewId],
@@ -193,11 +193,9 @@ pub fn collect_passes(
 
         let draw_cmds = build_draw_cmds(device, render_world, gpu_meshes, model_ring);
         passes.push(AttachmentPass {
-            // The depth attachment path recreates the render target from the
-            // source texture + this layer index (it ignores the view's own
-            // layer), so it MUST be the absolute cube-array layer — passing 0
-            // would collapse every face of every cube into layer 0. Matches the
-            // 2D atlas, which passes its real cascade layer.
+            // The depth attachment is rebuilt from the source texture and this
+            // layer, ignoring the view's own: it must be the absolute
+            // cube-array layer, or every face of every cube lands in layer 0.
             target_view: face_view,
             base_array_layer: face_view_index as u32,
             camera_bg,

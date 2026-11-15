@@ -12,18 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Wireframe overlay lane — debug visualization drawing every scene mesh as
-//! edge lines for triangle-edge visibility.
-//!
-//! The pipeline is composed from `khora::pipelines::wireframe` and uses a
-//! barycentric edge-detection fragment shader (it does not rely on
-//! `Features::POLYGON_MODE_LINE`, which is not part of wgpu's downlevel-safe
-//! baseline).
-//!
-//! Opt-in like the grid: a host application enables the [`WireframeView`]
-//! it publishes (the editor drives it from a viewport toggle; the sandbox
-//! leaves it off). The lane loads the scene's colour and reads its depth,
-//! drawing after the scene pass so the wireframe overlays the lit image.
+//! The wireframe family's lane: every scene mesh's triangle edges, drawn over the scene.
 
 use std::time::Duration;
 
@@ -54,8 +43,7 @@ use khora_macros::LaneInputs;
 use super::WireframeOutputs;
 use crate::render::util::Block;
 
-/// Wireframe material uniform — matches `WireframeMaterialUniforms` in
-/// `wireframe.wgsl` (line color + width, padded to 16 bytes).
+/// The line colour and width, laid out as `WireframeMaterialUniforms` in `wireframe.wgsl`.
 #[repr(C, align(16))]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct WireframeMaterialUniforms {
@@ -82,11 +70,16 @@ const BLOCK_BYTES: u64 = (std::mem::size_of::<CameraUniformData>()
         crate::render::util::dynamic_uniform_ring_buffer::MIN_UNIFORM_ALIGNMENT,
     );
 
-/// Wireframe debug overlay lane. Holds what it built on the device; `None`
-/// before the first prepare and after shutdown.
+/// A lane that draws the edges of every mesh on the GPU over the scene, hidden edges occluded.
+///
+/// One level. It draws only when the host enabled the [`WireframeView`] it
+/// publishes, the world has a camera and the target has depth. Edges are found
+/// barycentrically in the fragment shader: `POLYGON_MODE_LINE` is not in
+/// wgpu's downlevel baseline.
 #[derive(Debug)]
 pub struct WireframeLane {
     levels: [Level; 1],
+    /// What it built on the device; `None` before the first prepare and after shutdown.
     gpu: Option<WireframeGpu>,
 }
 
@@ -114,8 +107,7 @@ impl Default for WireframeLane {
 struct WireframeGpu {
     camera: Block,
     material: Block,
-    /// Per-mesh model transforms — one buffer, a per-draw dynamic offset,
-    /// same machinery the lit lanes use.
+    /// Per-mesh model transforms: one buffer, a dynamic offset per draw.
     model_ring: DynamicUniformRingBuffer,
     /// The pipeline and the target it was built for; `None` for a target
     /// without depth, which the wireframe cannot test against.
@@ -145,9 +137,8 @@ struct Draw {
     count: u32,
 }
 
-/// What the wireframe lane reads each frame: whether the host shows the
-/// wireframe and how, the meshes and the camera, the target, and the meshes
-/// on the GPU.
+/// What the wireframe lane reads each frame: the host's settings, the meshes
+/// and camera, the target and the meshes on the GPU.
 #[derive(LaneInputs)]
 pub struct WireframeInputs<'f> {
     /// The host's wireframe switch, colour and width.
@@ -172,9 +163,8 @@ impl Lane for WireframeLane {
         &self.levels
     }
 
-    /// One draw per mesh on the GPU: its time on each device. A wireframe
-    /// that draws nothing — off, without a camera or without depth — costs
-    /// no time.
+    /// Prices one draw per mesh on the GPU; a wireframe that draws nothing
+    /// costs no time.
     fn cost(&self, _level: usize, inputs: &WireframeInputs<'_>) -> Cost {
         let draws = inputs.wireframe.0.enabled
             && !inputs.render_world.views.is_empty()
@@ -200,9 +190,8 @@ impl Lane for WireframeLane {
         }
     }
 
-    /// Builds the camera and material blocks and the model ring once, and
-    /// the pipeline for the target's formats: a new target builds a new
-    /// pipeline, a target without depth none.
+    /// Builds the camera and material blocks and the model ring once, and a
+    /// pipeline for the target's formats; none for a target without depth.
     fn prepare(
         &mut self,
         _level: usize,
@@ -236,9 +225,8 @@ impl Lane for WireframeLane {
         Ok(())
     }
 
-    /// Draws the edges of every mesh already on the GPU when the host enabled
-    /// the wireframe, the world has a camera and the target has depth;
-    /// otherwise the pass stays empty.
+    /// Draws the edges of every mesh already on the GPU, or leaves the pass
+    /// empty when the wireframe draws nothing.
     fn record(
         &mut self,
         _level: usize,
@@ -312,8 +300,6 @@ impl Lane for WireframeLane {
     }
 }
 
-// ─── Free functions (CLAD: no inherent methods on the lane struct) ───
-
 /// Pushes the model of every mesh on the GPU into the ring, in the world's
 /// order, and returns their draws.
 fn push_models(
@@ -350,8 +336,9 @@ fn push_models(
     Ok(draws)
 }
 
-/// The camera and material blocks and the model ring. A refusal halfway
-/// gives back what came before it.
+/// Builds the camera and material blocks and the model ring.
+///
+/// A refusal halfway gives back what came before it.
 fn build_wireframe_gpu(
     device: &dyn GraphicsDevice,
     pipelines: &dyn PipelineSystem,
@@ -363,9 +350,8 @@ fn build_wireframe_gpu(
     use khora_core::renderer::api::shader::ShaderVariantKey;
     use khora_core::renderer::api::util::ShaderStageFlags;
 
-    // Group 0 (camera) + group 2 (material) are single bespoke uniforms;
-    // group 1 (per-mesh model) reuses the canonical dynamic Model layout so
-    // the ring matches the pipeline byte-for-byte. Layouts belong to the
+    // The model group reuses the shared dynamic Model layout, so the ring
+    // matches the pipeline byte for byte. Layouts belong to the
     // PipelineSystem, which caches them.
     let camera_layout = pipelines.inline_layout(
         device,
@@ -425,9 +411,10 @@ fn uniform_layout_entries(
     crate::render::util::single_uniform_layout(visibility, false)
 }
 
-/// The declarative pipeline spec for the wireframe on a target of `key`'s
-/// formats — the mesh vertex layout, alpha blended, depth-tested
-/// (LessEqual) against the scene, never writing depth.
+/// Returns the wireframe's pipeline for a target of `key`'s formats.
+///
+/// The mesh vertex layout, alpha-blended, depth-tested (LessEqual) against the
+/// scene, never writing depth.
 fn wireframe_pipeline_spec(key: TargetKey) -> PipelineSpec {
     use khora_core::renderer::api::gpu_scene::Mesh;
     use khora_core::renderer::api::pipeline::enums::CompareFunction;
@@ -465,8 +452,6 @@ fn wireframe_pipeline_spec(key: TargetKey) -> PipelineSpec {
         primitive: PrimitiveStateDescriptor::default(),
         depth_stencil: key.depth.map(|format| DepthStencilStateDescriptor {
             format,
-            // Overlay: depth-test against the scene so hidden edges are
-            // occluded, but never write depth.
             depth_write_enabled: false,
             depth_compare: CompareFunction::LessEqual,
             stencil_front: StencilFaceState::default(),
@@ -488,8 +473,7 @@ fn wireframe_pipeline_spec(key: TargetKey) -> PipelineSpec {
     }
 }
 
-/// The wireframe pass — `LoadOp::Load` preserves the scene's colour and
-/// depth.
+/// Records the wireframe pass, keeping the scene's colour and depth.
 fn draw_wireframe(
     encoder: &mut dyn CommandEncoder,
     color: TextureViewId,

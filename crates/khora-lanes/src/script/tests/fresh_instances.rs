@@ -119,6 +119,7 @@ behavior Guard {
 }";
 
 /// **A fresh instance holds its registered defaults, and they cost nothing.**
+///
 /// On a frame of one unit of fuel the guard takes its turn: every field reads
 /// the default its component registered — the runtime's default *is* the
 /// registered one — and no fuel was spent, since no code ran to produce them.
@@ -224,10 +225,11 @@ fn home_of(snapshot: &ScriptSnapshot) -> Option<&ScriptValue> {
     snapshot.field("home")
 }
 
-/// **A starting value read from the world is read once, in `OnSpawn`.** The
-/// guard appears at x = 3 and records it; loaded where the game had since
-/// moved it, x = 5, it keeps 3; edited and reloaded at x = 7, still 3 —
-/// neither a load nor a reload spawns the entity again.
+/// **A starting value read from the world is read once, in `OnSpawn`.**
+///
+/// The guard appears at x = 3 and records it; loaded where the game had since
+/// moved it, x = 5, it keeps 3; edited and reloaded at x = 7, still 3 — neither
+/// a load nor a reload spawns the entity again.
 #[test]
 fn a_starting_value_computed_in_on_spawn_survives_a_save_and_a_reload() {
     let three = ScriptValue::Vec3(Vec3::new(3.0, 0.0, 0.0));
@@ -335,9 +337,10 @@ fn a_field_a_reload_adds_takes_its_default_without_spending_fuel() {
     );
 }
 
-/// **A save from before a field existed loads it at its default**: the guard
-/// saved at 40 health, by a script with no `armour`, arrives holding 40 and
-/// the 5 the script now declares — on one unit of fuel, none spent.
+/// **A save from before a field existed loads it at its default.**
+///
+/// The guard saved at 40 health, by a script with no `armour`, arrives holding
+/// 40 and the 5 the script declares, on one unit of fuel, none spent.
 #[test]
 fn a_save_missing_a_field_loads_it_at_its_default() {
     let mut runtime = runtime_holding(compile(AFTER));
@@ -370,9 +373,11 @@ fn a_save_missing_a_field_loads_it_at_its_default() {
 }
 
 /// **A save in a state other than the first loads that state's data defaults
-/// under its saved values**: a guard saved chasing, by a script whose `Chase`
-/// had no `missed`, holds `missed` at the 7 `Chase` declares — not whatever
-/// the first state left in the slot they share.
+/// under its saved values.**
+///
+/// A guard saved chasing, by a script whose `Chase` had no `missed`, holds
+/// `missed` at the 7 `Chase` declares, not whatever the first state left in
+/// the slot they share.
 #[test]
 fn a_save_in_a_later_state_loads_that_states_data_defaults() {
     let mut runtime = runtime_holding(compile(MACHINE));

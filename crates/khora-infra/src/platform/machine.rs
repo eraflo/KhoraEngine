@@ -18,9 +18,10 @@
 use khora_core::platform::MachineIdentity;
 use khora_core::renderer::api::device::AdapterIdentity;
 
-/// The machine the engine runs on: `gpu`, the adapter the graphics device
-/// reported (`None` without one), with the CPU's brand and core count and
-/// the operating system's long version, read through `sysinfo`.
+/// Reads the machine the engine runs on, `gpu` being the adapter the graphics
+/// device reported (`None` without one).
+///
+/// The CPU's brand and core count and the OS's long version come from `sysinfo`.
 pub fn read_machine(gpu: Option<AdapterIdentity>) -> MachineIdentity {
     let mut system = sysinfo::System::new();
     system.refresh_cpu_all();
@@ -53,9 +54,9 @@ pub fn read_machine(gpu: Option<AdapterIdentity>) -> MachineIdentity {
 mod tests {
     use super::*;
 
-    /// **The machine identity reads the CPU and the OS.** Read on the machine
-    /// running the test, the CPU and the OS are named and the CPU has cores;
-    /// without a graphics device there is no GPU, and the adapter a device
+    /// **The machine identity reads the CPU and the OS.**
+    ///
+    /// Without a graphics device there is no GPU, and the adapter a device
     /// reported is kept as it was given.
     #[test]
     fn the_machine_identity_reads_the_cpu_and_os() {
@@ -82,10 +83,9 @@ mod tests {
     }
 
     /// **The machine identity names the OS's version, not only its name.**
-    /// An OS update can change what a frame costs, so the machine's `os`
-    /// carries the version the platform reports (`sysinfo`'s `os_version`,
-    /// e.g. `11 (26200)` on Windows, `22.04` on Ubuntu, `14.0` on macOS) —
-    /// two builds of one OS are two machines.
+    ///
+    /// An OS update can change what a frame costs, so two builds of one OS
+    /// (`11 (26200)` on Windows, `22.04` on Ubuntu) are two machines.
     #[test]
     fn the_machine_identity_names_the_os_version() {
         let machine = read_machine(None);

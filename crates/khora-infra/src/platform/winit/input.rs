@@ -12,12 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Adapter layer: translates winit window events into Khora's abstract input events.
-//!
-//! The abstract types (`InputEvent`, `KeyCode`, `MouseButton`) live in
-//! `khora_core::platform::input`. This module only provides the
-//! `winit`-specific translation function plus the 1-to-1 winit→Khora
-//! `KeyCode` table.
+//! The translation of winit window events into the input events of
+//! `khora_core::platform::input`, and the winit-to-Khora `KeyCode` table.
 
 use std::sync::OnceLock;
 
@@ -87,12 +83,10 @@ pub fn translate_winit_input(event: &WindowEvent) -> Option<InputEvent> {
 
 // --- Private Helper Functions ---
 
-/// 1-to-1 mapping from `winit::keyboard::KeyCode` to Khora's typed
-/// [`KeyCode`]. Names line up exactly with the W3C UI Events `code`
-/// attribute on both sides. Anything we miss (winit gains a new variant,
-/// platform reports something exotic) lands on
-/// [`KeyCode::Unidentified`] with a one-shot warning so the gap is
-/// observable.
+/// Maps a `winit::keyboard::KeyCode` to Khora's [`KeyCode`], one to one.
+///
+/// Both sides name keys by the W3C UI Events `code` attribute. A key with no
+/// counterpart lands on [`KeyCode::Unidentified`], with a one-shot warning.
 pub(crate) fn map_keycode(keycode: WinitKeyCode) -> KeyCode {
     match keycode {
         WinitKeyCode::Backquote => KeyCode::Backquote,
@@ -289,10 +283,8 @@ pub(crate) fn map_keycode(keycode: WinitKeyCode) -> KeyCode {
         WinitKeyCode::F33 => KeyCode::F33,
         WinitKeyCode::F34 => KeyCode::F34,
         WinitKeyCode::F35 => KeyCode::F35,
-        // winit::KeyCode is `#[non_exhaustive]` — newer winit releases may
-        // add variants we don't yet know about. Rather than fall through
-        // silently, emit a one-shot warning and surface the gap to the
-        // engine via `KeyCode::Unidentified`.
+        // winit's `KeyCode` is `#[non_exhaustive]`: a newer release may add
+        // variants, and the gap is said once rather than hidden.
         other => {
             static WARNED: OnceLock<()> = OnceLock::new();
             if WARNED.set(()).is_ok() {

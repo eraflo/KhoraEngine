@@ -12,14 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Concrete [`EditorShell`] backed by egui native panels.
+//! The egui [`EditorShell`]: a generic host that applies a theme, lays out the
+//! [`PanelLocation`] slots, and hands each slot to the application's [`EditorPanel`]s.
 //!
-//! Generic host: the shell knows nothing about Khora branding, menus, toolbars
-//! or status-bar contents. It just applies a theme, lays out the slots
-//! defined by [`PanelLocation`], and forwards each slot's `egui::Ui` to the
-//! application-supplied [`EditorPanel`]s.
-//!
-//! Slot layout (all registered panels are routed here):
 //! ```text
 //! ┌──────────────────────────────────────────────────────┐
 //! │  TopBar (stack, fixed height)                        │
@@ -50,10 +45,10 @@ const DEFAULT_TOPBAR_HEIGHT: f32 = 32.0;
 const DEFAULT_SPINE_WIDTH: f32 = 56.0;
 const DEFAULT_STATUSBAR_HEIGHT: f32 = 24.0;
 
-/// Proportional defaults relative to screen size. The [`EditorPanel`]'s own
-/// `preferred_size` is treated as a fallback for very small screens — the
-/// proportional rule wins above the per-panel minimum so the dock looks the
-/// same on a 1080p laptop and a 4K display.
+/// Default slot sizes, as fractions of the screen.
+///
+/// They win over a panel's `preferred_size` above the per-panel minimum, so the
+/// dock looks the same on a 1080p laptop and a 4K display.
 const LEFT_FRAC: f32 = 0.16;
 const RIGHT_FRAC: f32 = 0.20;
 const BOTTOM_FRAC: f32 = 0.26;
@@ -73,11 +68,10 @@ struct FloatingEntry {
     panel: Box<dyn EditorPanel>,
 }
 
-/// Cached, one-shot proportional defaults — computed the first frame the
-/// shell sees a non-zero screen rect and never recomputed. egui persists
-/// the user's resize between frames; recomputing the default each frame
-/// would risk overriding it (and was the source of the "panels snap back"
-/// bug users reported earlier).
+/// The proportional defaults, computed once, the first frame with a non-zero screen.
+///
+/// egui persists the user's resizes; recomputing the defaults each frame could
+/// override them.
 #[derive(Default, Clone, Copy)]
 struct CachedDefaults {
     left_w: Option<f32>,
@@ -154,9 +148,10 @@ impl EguiEditorShell {
         self.viewport_textures.get(&handle).copied()
     }
 
-    /// Returns the most recent [`StatusBarData`] passed via [`set_status`].
-    /// Editor-side status-bar panels read this through their own state, but
-    /// debug shells / tests can introspect it here.
+    /// Returns the most recent [`StatusBarData`] passed via [`EditorShell::set_status`].
+    ///
+    /// The editor's status-bar panels read it from their own state; debug
+    /// shells and tests read it here.
     pub fn last_status(&self) -> &StatusBarData {
         &self.status
     }
@@ -255,11 +250,9 @@ impl EditorShell for EguiEditorShell {
         let ctx = self.ctx.clone();
         let vt = &self.viewport_textures;
 
-        // Panels nest inside a `Ui`; there is no top-level-against-a-`Context`
-        // form any more. `Context::run_ui` builds this root for apps that let
-        // egui drive the pass, but this overlay drives `begin_pass` /
-        // `end_pass` itself so the wgpu render can sit between them — so we
-        // build the same root here, exactly as `run_ui` does.
+        // Panels nest inside a root `Ui`. This overlay drives `begin_pass` and
+        // `end_pass` itself, so the wgpu render sits between them, and builds
+        // that root as `Context::run_ui` does.
         let mut root_ui = egui::Ui::new(
             ctx.clone(),
             egui::Id::new((ctx.viewport_id(), "__top_ui")),
@@ -273,18 +266,9 @@ impl EditorShell for EguiEditorShell {
         );
         let root_ui = &mut root_ui;
 
-        // No mode special-case here any more. The application hosts its
-        // working panels in a dock that keeps one layout per workspace, so
-        // switching modes swaps the whole arrangement — the shell used to
-        // reach into `EditorState::active_mode` to hide one slot, which put
-        // application knowledge inside a host that is meant to be generic.
-
-        // Compute proportional defaults the FIRST frame we see a real
-        // screen rect, then cache them. Recomputing each frame would risk
-        // overwriting the user's resize — egui persists `PanelState` and
-        // checks our `default_width` only when no state exists, but feeding
-        // it shifting values frame-to-frame is brittle and was reported as
-        // panels "snapping back" after a resize.
+        // Computed once, then cached: egui reads `default_width` only while no
+        // `PanelState` exists, and values shifting frame to frame would make
+        // panels snap back after a resize.
         let screen = ctx.content_rect();
         let screen_w = screen.width();
         let screen_h = screen.height();
@@ -333,9 +317,8 @@ impl EditorShell for EguiEditorShell {
         }
 
         // ── Spine (fixed left strip) ──────────────────
-        // First spine panel wins (the layout assumes one spine). Additional
-        // spine panels are rendered as a vertical stack inside the same panel
-        // for now — easy to revisit if real apps need more.
+        // The layout assumes one spine: further spine panels stack inside the
+        // first one's panel.
         if !self.spine_panels.is_empty() {
             let width = self.spine_panels[0]
                 .preferred_size()
@@ -367,12 +350,9 @@ impl EditorShell for EguiEditorShell {
                 .max_size(bottom_max.max(default_h + 1.0))
                 .resizable(true)
                 .show_inside(root_ui, |ui| {
-                    // Force the inner UI to span the full panel rect —
-                    // otherwise our paint-only panels (no cursor allocation)
-                    // make `inner_response.response.rect` shrink to
-                    // `width_range.min`, and egui stores THAT in PanelState,
-                    // so the panel snaps back to the minimum on every drag
-                    // release.
+                    // The inner UI spans the whole panel rect: a paint-only
+                    // panel allocates nothing, so egui would store the minimum
+                    // in `PanelState` and snap the panel back on every release.
                     ui.set_min_size(ui.max_rect().size());
                     if panels.len() > 1 {
                         ui.horizontal(|ui| {
@@ -389,11 +369,9 @@ impl EditorShell for EguiEditorShell {
                     }
 
                     if let Some(panel) = panels.get_mut(*active_tab) {
-                        // Hand the panel ONLY the area below the tab bar
-                        // — without this, the panel's `panel_rect()` is
-                        // still the full bottom-panel rect, so its header
-                        // strip paints over the tab bar and the content
-                        // (logs / asset grid) ends up clipped or hidden.
+                        // Only the area below the tab bar, or the panel's
+                        // header would paint over the tabs and its content be
+                        // clipped.
                         let remaining = ui.available_rect_before_wrap();
                         let mut child = ui.new_child(
                             egui::UiBuilder::new()
@@ -418,10 +396,8 @@ impl EditorShell for EguiEditorShell {
                 .max_size(left_max.max(default_w + 1.0))
                 .resizable(true)
                 .show_inside(root_ui, |ui| {
-                    // See the bottom panel above for the rationale —
-                    // without `set_min_size` the resize drag is reverted on
-                    // mouse release because PanelState stores the painted
-                    // content rect (small) instead of the panel rect.
+                    // As for the bottom panel: without `set_min_size`, a
+                    // resize is reverted on release.
                     ui.set_min_size(ui.max_rect().size());
                     for panel in panels.iter_mut() {
                         let mut builder = EguiUiBuilder::new(ui, vt);
@@ -482,14 +458,9 @@ impl EditorShell for EguiEditorShell {
         }
 
         // ── Cover (full screen, above everything) ─────
-        // A loading or splash screen: painted last, in the tooltip order above
-        // the floating overlays, over the whole screen, and it allocates that
-        // screen so nothing under it takes a click. It shows at once, from its
-        // first frame: the area only claims its layer and the screen's
-        // clicks, while the panel paints in a `Ui` of its own on that layer —
-        // a new area's own content is hidden on its first frame, the pass in
-        // which egui measures it, and a loading screen must cover the window
-        // from the first frame shown.
+        // A loading or splash screen, taking every click. Its panel paints in a
+        // `Ui` of its own on the area's layer: a new area's content is hidden on
+        // its first frame, while egui measures it, and a cover shows at once.
         let screen = ctx.content_rect();
         for panel in &mut self.cover_panels {
             let area_id = egui::Id::new(("editor_cover", panel.id()));

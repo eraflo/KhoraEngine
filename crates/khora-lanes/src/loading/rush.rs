@@ -23,7 +23,7 @@ use khora_core::lane::{Lane, LaneReport};
 use super::work::{load, Waiting};
 use super::{LoadingFamily, LoadingInputs, LoadingOutputs};
 
-/// Loads every request it takes and stages each result under its lease.
+/// A lane that loads every request filed in one run, whatever it costs.
 #[derive(Debug, Default)]
 pub struct RushLane;
 

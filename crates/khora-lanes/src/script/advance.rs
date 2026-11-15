@@ -23,9 +23,11 @@ use super::outcome::Outcome;
 use super::progress::{finish_hook, Invocation, Progress};
 use super::runtime::{Body, Pending};
 
-/// Carries a body part-way through on, as far as this turn goes. `None` once
-/// it has finished — what finishing it completes is done — or been abandoned;
-/// otherwise the outcome that ends the turn with it still part-way.
+/// Carries a body part-way through on, as far as this turn goes.
+///
+/// Returns `None` once it has finished (what finishing it completes is done)
+/// or been abandoned; otherwise the outcome that ends the turn with it still
+/// part-way.
 pub(super) fn advance(
     mut pending: Pending,
     call: &Invocation<'_>,
@@ -132,10 +134,11 @@ pub(super) fn advance(
     }
 }
 
-/// What a body part-way through that faulted leaves owed: its timer waits its
-/// interval again, as one whose body faulted at once does; a hook in front of
-/// a restored body hands its place to that body, which an edit re-enabling
-/// the instance resumes.
+/// Settles what a body that faulted part-way through leaves owed.
+///
+/// Its timer waits its interval again, as one whose body faulted at once does;
+/// a hook in front of a restored body hands its place to that body, which an
+/// edit re-enabling the instance resumes.
 pub(super) fn release(
     progress: &mut Progress,
     pending: Pending,

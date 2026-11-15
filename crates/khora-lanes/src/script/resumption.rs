@@ -12,12 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Taking a suspended body back into the script as it is now.
-//!
-//! A load reads one from a save; a hot reload carries one from the program it
-//! stopped in to the program that replaces it. Both go through the VM's tiers
-//! ([`khora_script::vm::resume`]) the same way, so an edit between a save and a
-//! load and an edit while the game runs are taken back alike.
+//! Taking a suspended body back into the script as it is now, from a save or
+//! across a hot reload, in the same tiers. See the book:
+//! concepts/scripting/saves-and-edits.md, "A body part-way through, in tiers".
 
 use khora_core::script::{FrozenMachine, PendingBody, ScriptSnapshot};
 use khora_script::vm::{Abandoned, BehaviorLayout, Program, ResumeTier};
@@ -27,14 +24,11 @@ use super::{Body, Pending};
 
 /// Reads a suspended sequence back into the script as it is now.
 ///
-/// `None` when the save holds no sequence. Otherwise the sequence comes back in
-/// the best tier the edit since the save allows ([`khora_script::vm::resume`]):
-/// exactly, unchanged, rebuilt at its site, or restarted from its member's
-/// entry — or it is abandoned, and the caller owes the behavior its
-/// `OnResumeFailed`.
-///
-/// Every machine goes through the VM's checks against `program` once, here,
-/// before anything runs it: a save is input nobody sized.
+/// Returns `None` when the save holds no sequence; otherwise the sequence in
+/// the best tier the edit since allows ([`khora_script::vm::resume()`]), or
+/// abandoned, the caller then owing the behavior its `OnResumeFailed`. Every
+/// machine is checked against `program` here, before anything runs it: a save
+/// is input nobody sized.
 pub fn resume(
     saved: &ScriptSnapshot,
     program: &Program,
@@ -53,11 +47,11 @@ pub fn resume(
     ))
 }
 
-/// A body part-way through, carried from the program it stopped in to the one
-/// a hot reload replaces it with.
+/// Carries a body part-way through from the program it stopped in to the one a
+/// hot reload replaces it with.
 ///
 /// The same tiers as a load, through the same written-down form: the machine
-/// is frozen against `old` — every position named — and resumed into `new`.
+/// is frozen against `old`, every position named, and resumed into `new`.
 pub fn carry(
     pending: &Pending,
     old: &Program,
@@ -91,8 +85,8 @@ pub fn carry(
     )
 }
 
-/// `frozen` as a body of `program`, owing `body` — `None` when the schedule it
-/// finishes is gone, which abandons it.
+/// Takes `frozen` back as a body of `program`, owing `body`; a `None` body (the
+/// schedule it finishes is gone) abandons it.
 fn taken_back(
     frozen: &FrozenMachine,
     body: Option<Body>,
@@ -153,8 +147,8 @@ fn taken_back(
     }
 }
 
-/// The member a frozen body belongs to: its outermost function, without the
-/// behavior.
+/// Returns the member a frozen body belongs to: its outermost function, without
+/// the behavior.
 fn member_path(frozen: &FrozenMachine) -> String {
     frozen
         .frames

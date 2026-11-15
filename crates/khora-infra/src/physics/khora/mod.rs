@@ -22,26 +22,11 @@
 //! narrow phase ([`NarrowPhase`](collision::NarrowPhase)) and a contact solver
 //! ([`ImpulseSolver`](solver::ImpulseSolver)) — but nothing stitches them into
 //! a world that the engine can step. [`rapier`](super::rapier) is the backend
-//! the engine actually runs.
+//! the engine actually runs. The contract stays in `khora-core`: this backend
+//! will implement [`PhysicsProvider`] with [`ColliderShape`] and [`BodyType`],
+//! as the Rapier one does.
 //!
-//! Saying so here matters: these modules have no callers, and code with no
-//! callers reads as abandoned unless something says otherwise. This is the
-//! start of a second backend, kept because Rapier is a general-purpose engine
-//! and the intent is to eventually do things it does not do.
-//!
-//! # Why it lives here and not in `khora-core`
-//!
-//! It used to sit in `khora-core::physics`, beside the [`PhysicsProvider`]
-//! trait it will one day implement. That put concrete simulation code — a
-//! restitution coefficient of `0.2`, a Baumgarte factor, a BVH free-list — in
-//! the crate whose whole job is to depend on nothing and declare contracts, and
-//! `khora-sdk` re-exports `khora_core`, so every game shipped with a solver it
-//! never called in its public API.
-//!
-//! Here it sits beside `rapier`, which is where a backend belongs and where the
-//! two must be for a choice between them to mean anything. The contract stays
-//! in `khora-core`: this backend will import [`PhysicsProvider`],
-//! [`ColliderShape`] and [`BodyType`] exactly as the Rapier one does.
+//! See the book: concepts/physics.md, "The in-house one — started, not finished".
 //!
 //! [`PhysicsProvider`]: khora_core::physics::PhysicsProvider
 //! [`ColliderShape`]: khora_core::physics::ColliderShape

@@ -96,9 +96,10 @@ fn a_live_instance_keeps_its_state_across_an_edit() {
     );
 }
 
-/// **Why by name and never by position.** Inserting one field at the top shifts
-/// every slot after it; a positional carry would have moved the guard's health
-/// into its armour without a word.
+/// **Why by name and never by position.**
+///
+/// Inserting one field at the top shifts every slot after it; a positional
+/// carry would have moved the guard's health into its armour without a word.
 #[test]
 fn a_field_inserted_above_does_not_steal_the_value_below_it() {
     let (mut runtime, mut host) = hurt_one_guard();
@@ -153,9 +154,10 @@ fn the_edited_code_is_what_runs_afterwards() {
 
 // ─── What the author is told ────────────────────────────────────────────────
 
-/// **What an author most needs told.** A rename looks like one field dropped
-/// and one added, and the value did not travel — reloading in silence would
-/// leave them to discover it.
+/// **What an author most needs told.**
+///
+/// A rename looks like one field dropped and one added, and the value did not
+/// travel — reloading in silence would leave them to discover it.
 #[test]
 fn a_renamed_field_is_reported_as_lost() {
     let (mut runtime, _) = hurt_one_guard();
@@ -549,9 +551,8 @@ mod awaiting {
         );
     }
 
-    /// **The promise from before any syntax existed.** A suspended machine
-    /// survives leaving the process — so a scene saved mid-sequence loads
-    /// mid-sequence.
+    /// **A suspended machine survives leaving the process**, so a scene saved
+    /// mid-sequence loads mid-sequence.
     #[test]
     fn a_pending_sequence_survives_serialization() {
         let mut runtime = ScriptRuntime::new();

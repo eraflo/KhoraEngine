@@ -18,7 +18,8 @@ use super::WgpuRenderSystem;
 use khora_core::renderer::RenderError;
 
 impl WgpuRenderSystem {
-    /// Creates an [`EguiOverlay`] backed by the current wgpu graphics context.
+    /// Creates an [`EguiOverlay`](crate::ui::egui::overlay::EguiOverlay) on the
+    /// current graphics context.
     ///
     /// Must be called after [`RenderSystem::init`](khora_core::renderer::traits::RenderSystem::init).
     pub fn create_editor_overlay(
@@ -41,13 +42,12 @@ impl WgpuRenderSystem {
         ))
     }
 
-    /// Creates an [`EguiOverlay`] **and** an [`EguiEditorShell`] that share
-    /// the same `egui::Context`, plus an offscreen viewport target.
+    /// Creates the editor overlay and shell, sharing one `egui::Context`, plus
+    /// the offscreen target the viewport panel shows.
     ///
-    /// The overlay handles input / rendering while the shell manages the
-    /// dock layout, menu bar, toolbar, and panel dispatch. The viewport
-    /// target is an offscreen texture used to display the 3D scene inside
-    /// an egui panel.
+    /// The overlay is an [`EguiOverlay`](crate::ui::egui::overlay::EguiOverlay),
+    /// the shell an [`EguiEditorShell`](crate::ui::egui::shell::EguiEditorShell).
+    /// Must be called after [`RenderSystem::init`](khora_core::renderer::traits::RenderSystem::init).
     pub fn create_editor_overlay_and_shell(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
@@ -63,12 +63,7 @@ impl WgpuRenderSystem {
     > {
         let mut overlay = self.create_editor_overlay(event_loop, shader_source)?;
 
-        // Create an offscreen viewport target (initial 800×600).
         let egui_id = self.create_viewport_target(800, 600, &mut overlay)?;
-
-        // Grid + gizmo rendering are owned by the engine-side `GridLane`
-        // / `GizmoLane` (the grid and gizmo families) — no render-strategy
-        // pipeline is created on the backend.
 
         let mut shell = crate::ui::egui::shell::EguiEditorShell::new(overlay.context(), theme);
         shell.register_viewport_texture(viewport_handle, egui_id);

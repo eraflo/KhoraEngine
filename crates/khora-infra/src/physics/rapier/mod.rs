@@ -27,12 +27,10 @@ pub use world::RapierPhysicsWorld;
 
 // --- Internal Helpers ---
 
-/// Both directions carry Rapier's generation, which they used to drop.
+/// Converts a body handle to Rapier's, generation included.
 ///
-/// `from_raw_parts(index, 0)` resolved a handle to whatever now sits in the
-/// slot: a stale handle moved somebody else's body instead of failing, and only
-/// once Rapier had recycled that slot — so never in a short session and
-/// reliably in a long one.
+/// The conversions in both directions keep the generation, so a stale handle
+/// fails instead of reaching whatever body Rapier has since put in its slot.
 fn to_rapier_rb_handle(handle: RigidBodyHandle) -> rapier3d::dynamics::RigidBodyHandle {
     let slot = handle.slot();
     rapier3d::dynamics::RigidBodyHandle::from_raw_parts(slot.index, slot.generation)
@@ -57,17 +55,14 @@ pub(super) fn from_rapier_cl_handle(handle: rapier3d::geometry::ColliderHandle) 
 
 /// Set when the low 64 bits hold an entity.
 ///
-/// A flag rather than treating zero as absent: `EntityId { index: 0,
-/// generation: 0 }` is the first entity a fresh `World` hands out, and it packs
-/// to zero. Reading that back as "no owner" made the first entity in a scene
-/// the one a collision could never name — silently, and only that one.
+/// A flag rather than zero as absent: `EntityId { index: 0, generation: 0 }`,
+/// the first entity a fresh `World` hands out, packs to zero.
 const OWNED: u128 = 1 << 64;
 
 /// Packs an entity into the `u128` Rapier carries on every collider.
 ///
-/// The identity travels **with the collider**, so there is no index to keep in
-/// step with the world and nothing to invalidate when an entity dies: the
-/// collider dies with it.
+/// The identity travels with the collider, so no index has to be kept in step
+/// with the world: when the entity dies, its collider dies with it.
 fn stamp_owner(entity: Option<khora_core::ecs::entity::EntityId>) -> u128 {
     match entity {
         Some(entity) => OWNED | ((entity.generation as u128) << 32) | entity.index as u128,

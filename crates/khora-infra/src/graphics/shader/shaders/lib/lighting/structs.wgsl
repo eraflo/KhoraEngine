@@ -1,9 +1,7 @@
 #define_import_path khora::lighting::structs
 
 // Light struct layouts mirroring `khora_core::renderer::light::*LightUniform`
-// (`#[repr(C)]`). The bytemuck-derived size on the Rust side and the
-// WGSL std140 layout must match exactly — verified by the
-// `ShaderRegistry` validation pass at boot.
+// (`#[repr(C)]`): the Rust size and the WGSL std140 layout must match exactly.
 
 struct DirectionalLight {
     direction: vec4<f32>,

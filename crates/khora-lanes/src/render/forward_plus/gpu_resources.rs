@@ -25,66 +25,59 @@ use khora_core::renderer::error::ResourceError;
 use khora_core::renderer::{ForwardPlusTileConfig, GraphicsDevice};
 use std::borrow::Cow;
 
-/// Light slots per tile in the culling shader's light-index list: the
-/// `MAX_LIGHTS_PER_TILE` constant of `light_culling.wgsl`, which indexes the
-/// list at `tile * MAX_LIGHTS_PER_TILE`. Kept equal to it by a test.
+/// Light slots per tile in the culling shader's light-index list.
+///
+/// It is `MAX_LIGHTS_PER_TILE` of `light_culling.wgsl`, which indexes the list
+/// at `tile * MAX_LIGHTS_PER_TILE`; a test keeps them equal.
 pub(crate) const CULLING_SHADER_LIGHTS_PER_TILE: u32 = 128;
 
-// --- ForwardPlusLane ---
-
-/// GPU resource handles for the Forward+ compute pass.
-///
-/// These are created during lane initialization and used each frame
-/// for light culling and rendering.
+/// The buffers, layouts, rings and pipelines Forward+ culls and draws with.
 #[derive(Debug, Default)]
 pub struct ForwardPlusGpuResources {
-    /// Buffer containing all GpuLight instances.
+    /// Every light of the frame, as `GpuLight`.
     pub light_buffer: Option<BufferId>,
-    /// Buffer containing per-tile light index lists.
+    /// Each tile's list of light indices.
     pub light_index_buffer: Option<BufferId>,
-    /// Buffer containing (offset, count) pairs per tile.
+    /// Each tile's (offset, count) pair into the light indices.
     pub light_grid_buffer: Option<BufferId>,
-    /// Buffer containing tile info for the fragment shader.
+    /// The tile grid the fragment shader reads.
     pub tile_info_buffer: Option<BufferId>,
-    /// Uniform buffer for culling parameters.
+    /// The culling pass's parameters.
     pub culling_uniforms_buffer: Option<BufferId>,
-    /// Storage buffer with per-light 2D shadow view-projection matrices,
-    /// indexed identically to the `light_buffer`.
+    /// Each light's 2D shadow view-projection, indexed as `light_buffer` is.
     pub shadow_view_projs_buffer: Option<BufferId>,
 
-    /// Bind group layout for Group 0 (Camera).
+    /// The group-0 (camera) layout.
     pub camera_layout: Option<BindGroupLayoutId>,
-    /// Bind group layout for Group 1 (Model).
+    /// The group-1 (model) layout.
     pub model_layout: Option<BindGroupLayoutId>,
-    /// Bind group layout for Group 2 (Material).
+    /// The group-2 (material) layout.
     pub material_layout: Option<BindGroupLayoutId>,
-    /// Bind group layout for Group 3 — the lighting domain: light list,
-    /// shadow atlases, per-tile culling results + shadow view-projs.
+    /// The group-3 (lighting) layout: lights, shadows, culling results and IBL.
     pub lighting_layout: Option<BindGroupLayoutId>,
-    /// Bind group layout for Culling compute pass.
+    /// The culling pass's layout.
     pub culling_layout: Option<BindGroupLayoutId>,
 
-    /// Ring buffer for camera uniforms.
+    /// The camera uniforms, one buffer per frame in flight.
     pub camera_ring: Option<UniformRingBuffer>,
-    /// Ring buffer for model uniforms.
+    /// The model uniforms, one element per draw.
     pub model_ring: Option<DynamicUniformRingBuffer>,
 
-    /// Bind group for the culling compute shader.
+    /// The culling pass's bind group.
     pub culling_bind_group: Option<BindGroupId>,
     /// How many tiles the light-index and light-grid buffers hold (0 = none).
     pub tile_capacity: u32,
-    /// Compute pipeline for light culling.
+    /// The light-culling compute pipeline.
     pub culling_pipeline: Option<ComputePipelineId>,
-    /// Render pipeline for the Forward+ pass.
+    /// The plain surface's render pipeline, warmed when the lane is prepared.
     pub render_pipeline: Option<RenderPipelineId>,
 }
 
 impl ForwardPlusGpuResources {
-    /// Returns true once the lane's GPU initialisation has run.
+    /// Returns whether the lane's buffers, layouts and culling pipeline are built.
     ///
-    /// The light-index and light-grid buffers are not part of it: their size
-    /// depends on the colour target, so the first frame allocates them
-    /// ([`ensure_tile_buffers`](Self::ensure_tile_buffers)).
+    /// The light lists are not part of it: their size follows the target, so the
+    /// first frame makes them (`ensure_tile_buffers`).
     pub fn is_initialized(&self) -> bool {
         self.light_buffer.is_some()
             && self.culling_uniforms_buffer.is_some()
@@ -92,9 +85,14 @@ impl ForwardPlusGpuResources {
             && self.culling_pipeline.is_some()
     }
 
-    /// Grows the light-index and light-grid buffers (and the culling bind
-    /// group over them) so they hold `grid`; a grid they already hold keeps
-    /// them. On error the previous buffers are left in place.
+    /// Grows the light lists and the culling bind group over them to hold `grid`.
+    ///
+    /// A grid they already hold keeps them.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ResourceError`] before the lane is built, or when the device
+    /// refuses a buffer or the bind group; the previous lists stay in place.
     pub(crate) fn ensure_tile_buffers(
         &mut self,
         device: &dyn GraphicsDevice,

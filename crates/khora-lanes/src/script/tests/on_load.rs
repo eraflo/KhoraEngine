@@ -29,9 +29,10 @@ use khora_script::native::Host;
 use super::{compile, entity, runtime_of, MODULE};
 use crate::script::{run_behaviors, Body, ScriptRunReport, ScriptRuntime};
 
-/// Every hook the turn runs announces itself with an event, so the order of
-/// the events it raised is the order the turn ran them in. `OnLoad` carries
-/// the health it saw.
+/// Every hook the turn runs announces itself with an event, so the order of the
+/// events it raised is the order the turn ran them in.
+///
+/// `OnLoad` carries the health it saw.
 const ORDERED: &str = r#"
 behavior Guard {
     int health = 100;
@@ -225,8 +226,9 @@ fn caught_mid_attack(source: &str) -> ScriptSnapshot {
 
 // ─── OnLoad ─────────────────────────────────────────────────────────────────
 
-/// **First, and with what was restored.** `OnLoad` runs after the
-/// restore — it sees the restored health, not the
+/// **First, and with what was restored.**
+///
+/// `OnLoad` runs after the restore — it sees the restored health, not the
 /// declared one — and before everything else the turn runs: `OnSpawn` still
 /// owed, the body the save caught part-way, the timers, the events, `Update`.
 #[test]
@@ -273,9 +275,10 @@ fn on_load_runs_after_restore_before_resume() {
     assert_eq!(count(&raised, "Loaded"), 1, "once");
 }
 
-/// **A fresh start is not a load.** An instance that arrives with nothing
-/// observed — a scene loaded, the world after Stop, an entity spawned — runs
-/// `OnSpawn` once and never `OnLoad`.
+/// **A fresh start is not a load.**
+///
+/// An instance that arrives with nothing observed — a scene loaded, the world
+/// after Stop, an entity spawned — runs `OnSpawn` once and never `OnLoad`.
 #[test]
 fn on_load_does_not_run_on_scene_load_or_stop() {
     const ANNOUNCER: &str = r#"
@@ -308,9 +311,11 @@ fn on_load_does_not_run_on_scene_load_or_stop() {
     assert_eq!(count(&raised, "Loaded"), 0, "and loads nothing");
 }
 
-/// **`OnLoad` may wait.** Cut short by an `await`, it is the body part-way
-/// (`Body::Load`); the attack the save caught part-way waits behind it and
-/// finishes once `OnLoad` has — each exactly once.
+/// **`OnLoad` may wait.**
+///
+/// Cut short by an `await`, it is the body part-way (`Body::Load`); the attack
+/// the save caught part-way waits behind it and finishes once `OnLoad` has —
+/// each exactly once.
 #[test]
 fn on_load_can_suspend_and_resume() {
     let saved = caught_mid_attack(SETTLER);
@@ -360,9 +365,10 @@ fn on_load_can_suspend_and_resume() {
     assert_eq!(int_of(&runtime, "fired"), Some(1));
 }
 
-/// **An `OnLoad` part-way is not saved.** A save taken while it waits holds
-/// the body the load restored — the attack — and loading that save runs
-/// `OnLoad` again, from its start.
+/// **An `OnLoad` part-way is not saved.**
+///
+/// A save taken while it waits holds the body the load restored — the attack —
+/// and loading that save runs `OnLoad` again, from its start.
 #[test]
 fn an_on_load_cut_short_is_saved_as_the_body_it_restored_and_reruns() {
     let saved = caught_mid_attack(SETTLER);
@@ -426,10 +432,11 @@ fn faulted_guard() -> ScriptSnapshot {
     recorded(&report)
 }
 
-/// **A fault is a fact about the code.** Recorded with the program it
-/// happened in, it keeps the instance disabled across a save loaded under the
-/// same code; under other code — a fix shipped — the instance runs again and
-/// the fault is gone.
+/// **A fault is a fact about the code.**
+///
+/// Recorded with the program it happened in, it keeps the instance disabled
+/// across a save loaded under the same code; under other code — a fix shipped —
+/// the instance runs again and the fault is gone.
 #[test]
 fn a_fault_survives_a_save_until_the_code_changes() {
     let saved = faulted_guard();
@@ -515,10 +522,11 @@ fn a_hot_reload_clears_the_fault() {
 
 // ─── What the lane records ──────────────────────────────────────────────────
 
-/// **Spawning is a change worth writing.** A behavior with nothing to hold
-/// and no `OnSpawn` changes only its lifecycle on its first frame — the lane
-/// still writes it, or a save taken then would spawn it again on load. A
-/// later frame that changes nothing writes nothing.
+/// **Spawning is a change worth writing.**
+///
+/// A behavior with nothing to hold and no `OnSpawn` changes only its lifecycle
+/// on its first frame — the lane still writes it, or a save taken then would
+/// spawn it again on load. A later frame that changes nothing writes nothing.
 #[test]
 fn a_spawn_with_no_on_spawn_is_still_recorded() {
     let mut runtime = runtime_of("behavior Guard { }");

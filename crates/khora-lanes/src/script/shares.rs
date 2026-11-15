@@ -12,32 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! How a frame's fuel is shared among behaviors, and what each behavior
-//! carries from one frame to the next to keep the sharing fair.
+//! How a frame's fuel is shared among behaviors, and what each carries from
+//! frame to frame to keep it fair: its share, its debt and its cursor.
 //!
-//! Behaviors run in a fixed order, so on one entity the earlier always runs
-//! first. Fixed order alone would let the first behaviors take everything; a
-//! share each keeps them from it. What a behavior is owed or owes is carried
-//! here:
-//!
-//! - a **share** of the frame's fuel, the same for every behavior that can
-//!   spend; the units that do not divide go to each behavior in turn, frame
-//!   after frame, so a frame with less fuel than behaviors still reaches them
-//!   all;
-//! - a **debt**, for a behavior that spent past what it was handed — a turn
-//!   cannot stop inside one instruction, so it may. It pays it back from its
-//!   next shares, and what it pays passes on to the behaviors after it: one
-//!   that overdrafts every frame cannot keep the next out of every frame;
-//! - a **cursor**, the first of its instances a frame had no fuel for, where
-//!   it starts the next frame.
-//!
-//! What a behavior declares bends the shares, never the order:
-//!
-//! - a `[Critical]` behavior claims first — what it spent last frame, set
-//!   aside before the others share the rest. A pool too short even for that
-//!   goes to the critical behaviors alone; the budget is never exceeded;
-//! - a `[Budget(d)]` behavior is handed no more than its ceiling, `d` at the
-//!   lane's measured rate; what it does not take goes to the others.
+//! What a debtor repays passes on to the behaviors after it, so one that
+//! overdraws every frame cannot keep the next one out every frame.
+//! See the book: concepts/scripting/turns.md, "Degrading defers whole behaviors".
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -99,10 +79,8 @@ pub struct FuelShares {
 }
 
 impl FuelShares {
-    /// Shares `pool` among `behaviors`, in order, each with whether it can
-    /// spend this frame: `None` for one that cannot — its program is not
-    /// loaded, or every instance of it faulted — so that no fuel is set
-    /// aside for it.
+    /// Shares `pool` among `behaviors`, in order: `None` for one that cannot
+    /// spend this frame, so no fuel is set aside for it.
     ///
     /// Forgets what it carried for a behavior not in `behaviors`: a frame with
     /// no instance of it has nowhere for that behavior to start.
@@ -192,11 +170,12 @@ impl FuelShares {
             .collect()
     }
 
-    /// Where a behavior whose instances are `entities`, in order, starts this
-    /// frame: at its cursor, or — the instance there has gone — at the next
-    /// entity after it, so the rotation carries on rather than starting over;
-    /// past the last, at the first. Entity order, not the view's: the view may
-    /// list one behavior's instances in more than one run.
+    /// Returns where a behavior whose instances are `entities` starts this
+    /// frame.
+    ///
+    /// At its cursor or, that instance gone, at the next entity after it (past
+    /// the last, at the first), so the rotation carries on. Entity order, not
+    /// the view's: the view may list one behavior's instances in several runs.
     pub(super) fn start(&self, module: &str, behavior: &str, entities: &[EntityId]) -> usize {
         let Some(cursor) = self.cursors.get(&(module.to_owned(), behavior.to_owned())) else {
             return 0;
@@ -218,12 +197,12 @@ impl FuelShares {
             .unwrap_or(0)
     }
 
-    /// What a behavior leaves for the next frame: where it starts — the first
-    /// of its instances this one had no fuel for, or its beginning — and what
-    /// it spent past what it was handed, added to its debt.
+    /// Records what a behavior leaves for the next frame: where it starts, and
+    /// what it spent past what it was handed, added to its debt.
     ///
-    /// `debtor` is the instance whose turn overspent: the frames the behavior
-    /// sits out repaying it are that body's run time, no other's.
+    /// It starts at the first instance this frame had no fuel for, or at its
+    /// beginning. `debtor` is the instance whose turn overspent: the frames the
+    /// behavior sits out repaying it are that body's run time, no other's.
     pub(super) fn settle(
         &mut self,
         module: &str,
@@ -262,8 +241,8 @@ impl FuelShares {
         }
     }
 
-    /// What a turn of `module`'s `behavior` cost, the last frame it ran one;
-    /// nothing before its first.
+    /// Returns what a turn of `module`'s `behavior` cost, the last frame it ran
+    /// one; nothing before its first.
     pub(super) fn turn_cost(&self, module: &str, behavior: &str) -> u64 {
         self.turn_cost
             .get(&(module.to_owned(), behavior.to_owned()))
@@ -271,10 +250,11 @@ impl FuelShares {
             .unwrap_or(0)
     }
 
-    /// Whether `remaining` is too little to start another turn of
-    /// `module`'s `behavior`, `turns` of it run this frame already: less than
-    /// half of what one costs. An instance always handed the frame's remainder
-    /// would never finish; it starts the next frame instead.
+    /// Returns whether `remaining` is less than half a turn of `module`'s
+    /// `behavior`, `turns` of it run this frame already.
+    ///
+    /// An instance always handed the frame's remainder would never finish; it
+    /// starts the next frame instead.
     pub(super) fn too_short(
         &self,
         module: &str,
@@ -285,7 +265,7 @@ impl FuelShares {
         turns > 0 && remaining.saturating_mul(2) < self.turn_cost(module, behavior)
     }
 
-    /// The instance whose overspending `module`'s `behavior` is repaying.
+    /// Returns the instance whose overspending `module`'s `behavior` repays.
     pub(super) fn debtor(&self, module: &str, behavior: &str) -> Option<EntityId> {
         self.debtors
             .get(&(module.to_owned(), behavior.to_owned()))
@@ -293,7 +273,8 @@ impl FuelShares {
     }
 }
 
-/// The fuel mark a behavior with `share` stops at, starting at `spent_before`:
+/// Returns the fuel mark a behavior with `share` stops at, from `spent_before`.
+///
 /// `share_end`, but a budgeted behavior spends no more than its ceiling,
 /// whatever the behaviors before it passed on.
 pub(super) fn capped(share: Option<Share>, share_end: u64, spent_before: u64) -> u64 {
@@ -303,8 +284,9 @@ pub(super) fn capped(share: Option<Share>, share_end: u64, spent_before: u64) ->
     }
 }
 
-/// Shares `pool` equally among `members`, each no more than its ceiling —
-/// what a capped one cannot take goes to the others; the units that do not
+/// Shares `pool` equally among `members`, each no more than its ceiling.
+///
+/// What a capped one cannot take goes to the others; the units that do not
 /// divide go to each in turn, from `first`, frame after frame.
 fn fill(own: &mut [u64], members: &[usize], behaviors: &[Claim<'_>], pool: u64, first: u64) {
     let mut open: Vec<usize> = members.to_vec();
@@ -335,9 +317,11 @@ fn fill(own: &mut [u64], members: &[usize], behaviors: &[Claim<'_>], pool: u64, 
     }
 }
 
-/// The frame's behaviors in their fixed order — the view's program order —
-/// each with its instances in the order it runs them this frame, from its
-/// cursor round to it, and its share of `pool`.
+/// Returns the frame's behaviors in their fixed order, with their shares of
+/// `pool`.
+///
+/// Each comes with its instances in the order it runs them this frame, from
+/// its cursor round to it.
 pub(super) fn behaviors<'v>(
     view: &'v ScriptView,
     runtime: &mut ScriptRuntime,
@@ -421,9 +405,10 @@ pub(super) fn behaviors<'v>(
         .collect()
 }
 
-/// Whether an instance will not run whatever the fuel: disabled by a fault,
-/// with no arrival to start it again, and already laid out for `program` —
-/// carried into another, an edit's answer to the fault, it runs again.
+/// Returns whether an instance will not run whatever the fuel.
+///
+/// Disabled by a fault, with no arrival to start it again, and still laid out
+/// for `program`: carried into another, an edit's answer to the fault, it runs.
 pub(super) fn idle(instance: Option<&Instance>, program: Option<&Arc<Program>>) -> bool {
     matches!(instance, Some(state)
     if state.disabled

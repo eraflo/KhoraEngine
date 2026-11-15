@@ -59,14 +59,9 @@ fn srgb_to_linear(c: f32) -> f32 {
     return pow((c + 0.055) / 1.055, 2.4);
 }
 
-// Vertex colors from egui's tessellator are **premultiplied sRGB**
-// (RGB bytes have already been multiplied by alpha/255 before normalization).
-// To decode correctly:
-//   1. Unpremultiply: recover straight sRGB channels (rgb / a).
-//   2. Apply sRGB → linear per-channel.
-//   3. Re-premultiply: multiply linear RGB by alpha.
-// This preserves correct blending for fully-opaque pixels and for the
-// anti-aliased feathering edge pixels (alpha < 1) that dominate small shapes.
+// egui's vertex colours are premultiplied sRGB: the decode to linear must
+// unpremultiply first and premultiply again after, or the anti-aliased edge
+// pixels (alpha < 1) that dominate small shapes blend wrong.
 fn linear_from_premult_srgb(c: vec4<f32>) -> vec4<f32> {
     let a = c.a;
     if a < 0.0001 { return vec4<f32>(0.0); }
@@ -81,6 +76,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let tex_color = textureSample(t_egui, s_egui, in.uv);
     // Decode premultiplied sRGB vertex color to premultiplied linear.
     let linear = linear_from_premult_srgb(in.color);
-    // Both operands are now in linear premultiplied space; the sRGB surface encodes the result.
+    // Both operands are linear premultiplied; the sRGB surface encodes the result.
     return linear * tex_color;
 }

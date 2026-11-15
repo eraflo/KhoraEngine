@@ -50,7 +50,6 @@ impl WgpuDevice {
 
         let label = descriptor.label;
 
-        // Create the shader module using the wgpu device
         let wgpu_module_arc = self.with_wgpu_device(|device| {
             log::debug!(
                 "WgpuDevice: Creating wgpu::ShaderModule with label: {:?}",
@@ -63,7 +62,6 @@ impl WgpuDevice {
             Ok(Arc::new(device.create_shader_module(wgpu_descriptor)))
         })?;
 
-        // Create a new shader module entry and insert it into the shader_modules map
         let id = self.generate_shader_id();
         self.with_registry(|r| {
             r.shader_modules.insert(
@@ -139,12 +137,10 @@ impl WgpuDevice {
         };
         let fs_wgpu_module_opt = fs_module.as_ref();
 
-        // Convert vertex buffers layout
         let wgpu_vertex_attributes_storage = vertex_attributes(descriptor);
         let wgpu_vertex_buffers_layouts =
             vertex_buffer_layouts(descriptor, &wgpu_vertex_attributes_storage);
 
-        // 3.–6. The fixed-function states.
         let primitive_state = primitive_state(descriptor);
         let depth_stencil_state = depth_stencil_state(descriptor);
         let color_target_states = color_target_states(descriptor);
@@ -154,7 +150,6 @@ impl WgpuDevice {
             alpha_to_coverage_enabled: descriptor.multisample_state.alpha_to_coverage_enabled,
         };
 
-        // Create pipeline layout and render pipeline
         let (wgpu_render_pipeline_arc, id) = self.with_wgpu_device(|device| {
             let layout_entry_opt = layout_arc.clone();
 
@@ -185,7 +180,6 @@ impl WgpuDevice {
                 cache: None,
             };
 
-            // Future improvement: wrap in push_error_scope/pop_error_scope for richer diagnostics
             let pipeline = device.create_render_pipeline(&wgpu_pipeline_descriptor);
             let new_id = self.generate_pipeline_id();
             Ok((Arc::new(pipeline), new_id))
@@ -296,7 +290,6 @@ impl WgpuDevice {
             id: descriptor.shader_module,
         })?;
 
-        // Create compute pipeline
         let wgpu_pipeline =
             self.wgpu_device()
                 .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -308,7 +301,6 @@ impl WgpuDevice {
                     cache: None,
                 });
 
-        // Store and return ID
         let id = ComputePipelineId(
             self.internal
                 .next_compute_pipeline_id
@@ -480,10 +472,8 @@ fn fragment_entry_point<'d>(
             descriptor.fragment_shader_module,
             descriptor.label
         );
-        // Called only when the fragment module is present, so by
-        // construction `descriptor.fragment_shader_module` is also `Some` —
-        // but defensively fall back to a sentinel ID rather than panic if
-        // that invariant ever breaks (no `unwrap()` on GPU paths).
+        // The caller holds a fragment module, so the id is `Some`; a sentinel
+        // stands in rather than an `unwrap()` on the GPU path.
         ResourceError::Pipeline(PipelineError::MissingEntryPointForFragmentShader {
             pipeline_label: descriptor.label.as_deref().map(String::from),
             shader_id: descriptor

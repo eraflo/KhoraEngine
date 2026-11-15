@@ -12,24 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Persistent ring buffer for GPU uniform data.
-//!
-//! The [`UniformRingBuffer`] eliminates per-frame GPU buffer allocation by pre-allocating
-//! a set of buffers (one per frame-in-flight) and cycling through them. Each frame,
-//! the next buffer slot is selected and its contents updated via `write_buffer()`,
-//! ensuring the GPU can still read from a previous frame's data while the CPU writes
-//! new data to the current slot.
-//!
-//! # Architecture
-//!
-//! ```text
-//! Frame N:     [Slot 0: GPU reads] ← render pass uses this bind group
-//! Frame N+1:   [Slot 1: CPU writes] → write_buffer() updates this slot
-//! Frame N+2:   [Slot 0: CPU writes] → cycle back, GPU finished reading
-//! ```
-//!
-//! Each slot has its own GPU buffer and pre-created bind group, avoiding both
-//! buffer allocation and bind group creation during the render hot path.
+//! A uniform buffer per frame in flight, cycled so the CPU writes one while the
+//! GPU still reads another.
 
 use khora_core::renderer::api::command::{
     BindGroupDescriptor, BindGroupEntry, BindGroupId, BindGroupLayoutId, BindingResource,
@@ -50,16 +34,11 @@ struct RingSlot {
     bind_group: BindGroupId,
 }
 
-/// A persistent ring buffer for GPU uniform data that eliminates per-frame allocation.
+/// A uniform buffer and its bind group per frame in flight, cycled frame after frame.
 ///
-/// Instead of creating and destroying GPU buffers every frame, the ring buffer
-/// pre-allocates [`MAX_FRAMES_IN_FLIGHT`] buffer slots during initialization.
-/// Each frame, [`advance()`](UniformRingBuffer::advance) moves to the next slot,
-/// and [`write()`](UniformRingBuffer::write) updates the current slot's buffer contents.
-///
-/// The associated bind group for each slot is also pre-created, so the render pass
-/// can simply call [`current_bind_group()`](UniformRingBuffer::current_bind_group)
-/// without any per-frame resource creation.
+/// The frame calls [`advance`](UniformRingBuffer::advance) once, then
+/// [`write`](UniformRingBuffer::write): the GPU may still read the previous
+/// frame's slot. Nothing is created after [`new`](UniformRingBuffer::new).
 ///
 /// # Example
 ///
@@ -98,22 +77,15 @@ fn give_back(device: &dyn GraphicsDevice, slots: &[RingSlot], label: &str) {
 }
 
 impl UniformRingBuffer {
-    /// Creates a new `UniformRingBuffer` with pre-allocated GPU resources.
+    /// Creates the ring: one zeroed buffer of `data_size` bytes and its bind group
+    /// per frame in flight ([`MAX_FRAMES_IN_FLIGHT`]).
     ///
-    /// This allocates [`MAX_FRAMES_IN_FLIGHT`] GPU buffers and creates a bind group
-    /// for each one. The buffers are initialized with zeroed data.
-    ///
-    /// # Arguments
-    ///
-    /// * `device` - The graphics device to allocate GPU resources on.
-    /// * `layout` - The bind group layout that the bind groups should conform to.
-    /// * `binding` - The binding index within the bind group layout.
-    /// * `data_size` - The size of the uniform data in bytes.
-    /// * `label` - A debug label for the buffer (e.g., "Camera", "Lighting").
+    /// Each bind group binds its buffer at `binding` of `layout`.
     ///
     /// # Errors
     ///
-    /// Returns a [`ResourceError`] if buffer or bind group creation fails.
+    /// Returns a [`ResourceError`] if a buffer or a bind group is refused; what
+    /// was made before it is given back.
     pub fn new(
         device: &dyn GraphicsDevice,
         layout: BindGroupLayoutId,
@@ -176,19 +148,18 @@ impl UniformRingBuffer {
         })
     }
 
-    /// Advances to the next slot in the ring buffer.
-    ///
-    /// This should be called once at the beginning of each frame, before writing
-    /// new uniform data. It cycles through the slots so the GPU can still read
-    /// from the previous frame's data.
+    /// Moves to the next slot; called once a frame, before the frame writes.
     pub fn advance(&mut self) {
         self.current_index = (self.current_index + 1) % self.slots.len();
     }
 
-    /// Writes uniform data to the current slot's GPU buffer.
+    /// Writes `data` into the current slot's buffer.
     ///
-    /// Uses `write_buffer()` to update the persistent buffer contents without
-    /// reallocating. The data must be exactly `data_size` bytes.
+    /// `data` must be exactly `data_size` bytes.
+    ///
+    /// # Panics
+    ///
+    /// In debug builds, when `data` is not `data_size` bytes.
     ///
     /// # Errors
     ///
@@ -207,10 +178,7 @@ impl UniformRingBuffer {
         device.write_buffer(slot.buffer, 0, data)
     }
 
-    /// Returns the bind group for the current slot.
-    ///
-    /// This bind group is pre-created and references the current slot's buffer.
-    /// It can be passed directly to `set_bind_group()` on the render pass.
+    /// Returns the bind group over the current slot's buffer.
     pub fn current_bind_group(&self) -> &BindGroupId {
         &self.slots[self.current_index].bind_group
     }
@@ -235,10 +203,7 @@ impl UniformRingBuffer {
         self.data_size
     }
 
-    /// Destroys all GPU resources owned by this ring buffer.
-    ///
-    /// This must be called during shutdown to release GPU memory. After calling
-    /// this method, the ring buffer should not be used again.
+    /// Gives every slot back to the device; the ring is not used after.
     pub fn destroy(&self, device: &dyn GraphicsDevice) {
         for slot in &self.slots {
             if let Err(e) = device.destroy_bind_group(slot.bind_group) {

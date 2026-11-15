@@ -18,12 +18,11 @@ use khora_core::renderer::api::command::BindGroupId;
 use khora_core::renderer::error::ResourceError;
 use khora_core::renderer::GraphicsDevice;
 
-/// Bind groups keyed by what they bind, at most `capacity` of them: one is
-/// made the first time its key is seen and kept while the key comes back;
-/// past the capacity the oldest is given back to the device.
+/// Bind groups keyed by what they bind, at most `capacity` of them.
 ///
-/// A lane whose uniforms rotate through a ring of buffers keeps one per
-/// buffer of the ring.
+/// One is made the first time its key is seen and kept while the key comes
+/// back; past the capacity the oldest is given back to the device. A lane whose
+/// uniforms rotate through a ring of buffers keeps one per buffer of the ring.
 #[derive(Debug)]
 pub(crate) struct KeptBindGroups<K> {
     capacity: usize,

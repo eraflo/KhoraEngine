@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Platform abstraction implementation
+//! Platform backends: the machine and hardware probes, and the winit window.
 
 pub mod machine;
 pub mod sysinfo_impl;

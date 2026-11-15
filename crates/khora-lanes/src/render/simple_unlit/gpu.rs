@@ -37,15 +37,13 @@ use khora_core::renderer::error::RenderError;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
 
-// ─── Free functions (CLAD: declarative pipeline spec + bespoke layouts) ───
-
-/// Stable cache label for the unlit per-draw model layout.
+/// The cache label of the unlit per-draw model layout.
 const UNLIT_MODEL_LAYOUT_LABEL: &str = "simple_unlit_model_layout";
 
-/// Stable cache label for the unlit per-draw material layout.
+/// The cache label of the unlit per-draw material layout.
 const UNLIT_MATERIAL_LAYOUT_LABEL: &str = "simple_unlit_material_layout";
 
-/// Bespoke group-1 (model) layout: a single dynamic-offset uniform buffer.
+/// The group-1 (model) layout: one dynamic-offset uniform buffer.
 fn unlit_model_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
     use khora_core::renderer::api::command::{
         BindGroupLayoutEntry, BindingType, BufferBindingType,
@@ -63,9 +61,9 @@ fn unlit_model_layout_entries() -> Vec<khora_core::renderer::api::command::BindG
     }]
 }
 
-/// Bespoke group-2 (material) layout: a single dynamic-offset uniform buffer
-/// (unlit has no PBR textures, so it does not use the canonical material
-/// layout).
+/// The group-2 (material) layout: one dynamic-offset uniform buffer.
+///
+/// The unlit material has no textures, so it does not use the shared material layout.
 fn unlit_material_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry>
 {
     use khora_core::renderer::api::command::{
@@ -86,9 +84,10 @@ fn unlit_material_layout_entries() -> Vec<khora_core::renderer::api::command::Bi
     }]
 }
 
-/// The pipeline spec of the unlit lane for a target of `key`: the canonical
-/// camera layout, and the lane's own model and material layouts shared with
-/// its rings.
+/// Returns the unlit lane's pipeline for a target of `key`.
+///
+/// The shared camera layout, then the lane's own model and material layouts,
+/// which its rings are built against.
 fn pipeline_spec(key: TargetKey) -> PipelineSpec {
     PipelineSpec {
         label: "SimpleUnlit Pipeline",
@@ -124,14 +123,14 @@ pub(super) struct UnlitGpu {
     pub(super) camera_ring: UniformRingBuffer,
     pub(super) model_ring: DynamicUniformRingBuffer,
     pub(super) material_ring: DynamicUniformRingBuffer,
-    /// The pipeline and the key it was built for; `None` until a target is
-    /// known.
+    /// The pipeline and the key it was built for; `None` until a target is known.
     pub(super) pipeline: Option<(TargetKey, RenderPipelineId)>,
 }
 
 impl UnlitGpu {
-    /// Builds the rings against the layouts the pipeline system holds; a
-    /// ring the device refuses gives back the ones already built.
+    /// Builds the rings against the layouts the pipeline system holds.
+    ///
+    /// A ring the device refuses gives back the ones already built.
     pub(super) fn build(
         device: &dyn GraphicsDevice,
         pipelines: &dyn PipelineSystem,
@@ -196,8 +195,7 @@ impl UnlitGpu {
         })
     }
 
-    /// The pipeline for a target of `key`: the one built while the key
-    /// holds, else a new one.
+    /// Builds the pipeline for a target of `key`, unless the one built holds.
     pub(super) fn retarget(
         &mut self,
         device: &dyn GraphicsDevice,
@@ -211,8 +209,9 @@ impl UnlitGpu {
         Ok(())
     }
 
-    /// Gives the rings back to the device. The layouts and the pipeline
-    /// belong to the pipeline system.
+    /// Gives the rings back to the device.
+    ///
+    /// The layouts and the pipeline belong to the pipeline system.
     pub(super) fn destroy(self, device: &dyn GraphicsDevice) {
         self.camera_ring.destroy(device);
         self.model_ring.destroy(device);

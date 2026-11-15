@@ -12,19 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! One behavior's turn.
-//!
-//! The order inside a turn is the whole design, and it is not arbitrary:
-//! `OnLoad`, then `OnSpawn`, then a body resuming where it stopped, then the
-//! timers, then the events, then `Update` last so it sees this frame's
-//! consequences rather than predicting them. The instance's fields exist
-//! before its first turn — its defaults are data, and no code runs for them.
-//!
-//! Any body may stop part-way — out of fuel, or on an `await` — and every one
-//! resumes where it stopped rather than starting over: what ran before the cut
-//! has already happened, and running it again would make it happen twice. A
-//! behavior does one thing at a time, so a cut ends the turn; the next turn
-//! picks the body up before anything new starts.
+//! One behavior's turn: what happened to it, what it was doing, what is due,
+//! then `Update`, as far as the fuel goes.
+//! See the book: concepts/scripting/turns.md, "One turn".
 
 use khora_script::dispatch::{count_down, count_rearm, tick_timers};
 use khora_script::lifecycle;
@@ -65,10 +55,7 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
         }
     }
 
-    // Once per entity, before anything else can observe the instance. A
-    // hot reload keeps it: an edit to the script is not a new entity, and a
-    // guard should not announce itself again because its author changed a
-    // number.
+    // Once per entity, and a hot reload keeps it: an edit is not a new entity.
     // A system's entity is the engine's: it never spawns as an instance does,
     // so no farewell is ever owed to it, whatever the name becomes.
     let system = call
@@ -96,11 +83,9 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
         }
     }
 
-    // A body part-way through resumes before anything else runs. Before the
-    // timers and the events, because it is *already* the behavior's turn — it
-    // never finished — and letting something new start while an old body is
-    // still owed its continuation would interleave two answers to what the
-    // behavior is doing.
+    // A body part-way through resumes before anything new starts: letting
+    // something start while an old body is owed its continuation would
+    // interleave two answers to what the behavior is doing.
     if let Some(pending) = progress.pending.take() {
         if let Some(outcome) = advance(pending, call, progress, host, &mut spent) {
             return outcome;
@@ -160,8 +145,8 @@ fn count_time(call: &Invocation<'_>, progress: &mut Progress, host: &mut Host) {
     count_down(call.program, call.behavior, host, delta, &held);
 }
 
-/// `OnLoad`, resumed when it stopped part-way, or called; the outcome that
-/// ends the turn early, if one does.
+/// Runs `OnLoad`, resumed when it stopped part-way, or called; returns the
+/// outcome that ends the turn early, if one does.
 fn announce_load(
     call: &Invocation<'_>,
     progress: &mut Progress,
@@ -190,8 +175,8 @@ fn announce_load(
     }
 }
 
-/// `OnSpawn`, once per instance; the outcome that ends the turn early, if one
-/// does.
+/// Runs `OnSpawn`, once per instance; returns the outcome that ends the turn
+/// early, if one does.
 fn announce_spawn(
     call: &Invocation<'_>,
     progress: &mut Progress,
@@ -224,8 +209,8 @@ fn announce_spawn(
     }
 }
 
-/// `OnResumeFailed`, told the `member` an edit left nothing of; the outcome
-/// that ends the turn early, if one does.
+/// Calls `OnResumeFailed` with the `member` an edit left nothing of; returns
+/// the outcome that ends the turn early, if one does.
 fn answer_resume_failed(
     member: String,
     call: &Invocation<'_>,
@@ -260,8 +245,8 @@ fn answer_resume_failed(
     }
 }
 
-/// The timers that are due, counted down already; the outcome that ends the
-/// turn early, if one does.
+/// Runs the timers that are due, counted down already; returns the outcome
+/// that ends the turn early, if one does.
 fn run_due_timers(
     call: &Invocation<'_>,
     progress: &mut Progress,
@@ -284,8 +269,8 @@ fn run_due_timers(
     Some(leave_part_way(stopped, (*spent, 0), call, progress, host))
 }
 
-/// `Update`, handed the time it is owed, once `delivered` of the instance's
-/// events were; the outcome that ends the turn early, if one does.
+/// Calls `Update` with the time it is owed, `delivered` of the instance's
+/// events delivered; returns the outcome that ends the turn early, if any.
 fn run_update(
     call: &Invocation<'_>,
     progress: &mut Progress,
@@ -323,10 +308,11 @@ fn run_update(
     }
 }
 
-/// What a lifecycle hook's call leaves of the turn: nothing when it ran or is
-/// absent — what it cost is spent — otherwise the outcome that ends the turn,
-/// its fault, or the hook stopped part-way and kept as `body`, before any of
-/// the instance's events were delivered.
+/// Returns what a lifecycle hook's call leaves of the turn.
+///
+/// Nothing when it ran or is absent, its cost spent; otherwise the outcome
+/// that ends the turn: its fault, or the hook stopped part-way and kept as
+/// `body`, before any of the instance's events were delivered.
 fn settle(
     hook: Hook,
     body: Body,

@@ -26,13 +26,13 @@ use khora_core::renderer::api::pipeline::{
 use khora_core::renderer::api::resource::{TextureFormat, TextureViewDimension};
 use khora_core::renderer::api::util::ShaderStageFlags;
 
-/// Stable cache label for the UI global uniform layout (set 0).
+/// The cache label of the UI global uniform layout (set 0).
 pub(super) const UI_GLOBAL_LAYOUT_LABEL: &str = "ui_global_layout";
-/// Stable cache label for the UI instance storage layout (set 1).
+/// The cache label of the UI instance storage layout (set 1).
 pub(super) const UI_INSTANCE_LAYOUT_LABEL: &str = "ui_instance_layout";
-/// Stable cache label for the UI atlas texture + sampler layout (set 2).
+/// The cache label of the UI atlas texture and sampler layout (set 2).
 pub(super) const UI_ATLAS_LAYOUT_LABEL: &str = "ui_atlas_layout";
-/// Stable cache label for the glyph atlases + sampler layout (set 2 of the
+/// The cache label of the glyph atlases and sampler layout (set 2 of the
 /// glyph pipeline).
 pub(super) const UI_GLYPH_ATLAS_LAYOUT_LABEL: &str = "ui_glyph_atlas_layout";
 
@@ -135,8 +135,8 @@ pub(super) fn ui_glyph_atlas_layout_entries() -> Vec<BindGroupLayoutEntry> {
     ]
 }
 
-/// The declarative pipeline spec for the UI's quads on a target of `color`
-/// with `samples` — instanced, no vertex buffer, no depth.
+/// Returns the pipeline of the UI's quads for a target's colour format and
+/// sample count.
 pub(super) fn ui_pipeline_spec(formats: (TextureFormat, u32)) -> PipelineSpec {
     instanced_spec(
         "UI Render Pipeline",
@@ -147,8 +147,8 @@ pub(super) fn ui_pipeline_spec(formats: (TextureFormat, u32)) -> PipelineSpec {
     )
 }
 
-/// The declarative pipeline spec for the UI's glyphs on a target of `color`
-/// with `samples` — the quads' shape, over the glyph atlases.
+/// Returns the pipeline of the UI's glyphs for a target's colour format and
+/// sample count: the quads' shape, over the glyph atlases.
 pub(super) fn ui_text_pipeline_spec(formats: (TextureFormat, u32)) -> PipelineSpec {
     instanced_spec(
         "UI Text Pipeline",
@@ -159,9 +159,10 @@ pub(super) fn ui_text_pipeline_spec(formats: (TextureFormat, u32)) -> PipelineSp
     )
 }
 
-/// An instanced pipeline of `shader` over the projection (set 0), an
-/// instance storage (set 1) and the textures `textures` lays out (set 2):
-/// four vertices a quad from no vertex buffer, no depth, alpha-blended.
+/// Returns an instanced pipeline of `shader` over the projection, the
+/// instance storage and `textures` (sets 0 to 2).
+///
+/// Four vertices a quad from no vertex buffer, no depth, alpha-blended.
 fn instanced_spec(
     label: &'static str,
     shader: &'static str,

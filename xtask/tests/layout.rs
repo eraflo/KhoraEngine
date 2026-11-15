@@ -5982,6 +5982,60 @@ pub fn both(_: JoinedA, _: JoinedB) {}
     );
 }
 
+/// **A book heading a comment cites is not a plan label.** A book page's
+/// heading that numbers its steps, quoted by a citation, is not reported; the
+/// same words outside a citation are.
+#[test]
+fn plan_label_check_reads_no_label_in_a_cited_heading() {
+    const CITES: &str = "\
+// See the book: how-to/x.md, \"Step 2 — Register it\".
+pub fn a() {}
+// Step 2: register it.
+pub fn b() {}
+";
+    let problems = comment_problems(
+        "plan-label-cited-heading",
+        &[("crates/alpha/src/lib.rs", CITES)],
+        plan_label_problems,
+    );
+    assert_problems(&problems, &[("crates/alpha/src/lib.rs", 3, "Step 2")]);
+}
+
+/// **A cited heading wrapped onto the next line is no plan label either.** A
+/// heading too long for its line opens its quote on one comment line and
+/// closes it on the next; the step number it holds is still the book's text.
+#[test]
+fn plan_label_check_reads_no_label_in_a_cited_heading_that_wraps() {
+    const CITES: &str = "\
+// See the book: how-to/add-a-shader.md, \"Step 3 — Respect the
+// four-bind-group budget\".
+pub fn a() {}
+";
+    let problems = comment_problems(
+        "plan-label-cited-heading-wraps",
+        &[("crates/alpha/src/lib.rs", CITES)],
+        plan_label_problems,
+    );
+    assert_problems(&problems, &[]);
+}
+
+/// **Only a citation's heading is spared, not any quote after it.** A
+/// citation that names no heading, followed on its line by a quoted plan
+/// label, is reported.
+#[test]
+fn plan_label_check_names_a_quoted_label_after_a_citation_without_a_heading() {
+    const CITES: &str = "\
+// See the book: how-to/x.md; this is the \"Phase 2\" rewrite.
+pub fn a() {}
+";
+    let problems = comment_problems(
+        "plan-label-quote-after-citation",
+        &[("crates/alpha/src/lib.rs", CITES)],
+        plan_label_problems,
+    );
+    assert_problems(&problems, &[("crates/alpha/src/lib.rs", 1, "Phase 2")]);
+}
+
 /// **A name in a comment or a literal names nothing.** `B` appears in a line
 /// comment, in a doc comment on `A`, in a string, a raw string and a char
 /// literal held by `const` items: `A` and `B` are both roots.
@@ -6246,11 +6300,24 @@ pub struct Locked {
 fn plan_label_problems(root: &Path) -> Vec<String> {
     let mut problems = Vec::new();
     for (path, text) in comment_scanned_files(root) {
-        for comment in comments_of(&text) {
-            let numbered =
-                comment.kind == CommentKind::Line && opens_on_numbered_step(&comment.text);
-            if numbered || names_plan_label(&comment.text) {
-                problems.push(format!("{path}:{}: {}", comment.line, comment.text.trim()));
+        let comments = comments_of(&text);
+        for run in runs(&comments) {
+            // A run is read whole, so a cited heading that wraps is blanked whole.
+            let mut joined = String::new();
+            let mut spans = Vec::with_capacity(run.len());
+            for comment in run {
+                let start = joined.len();
+                joined.push_str(&comment.text);
+                spans.push(start..joined.len());
+                joined.push(' ');
+            }
+            let blanked = without_cited_headings(&joined);
+            for (comment, span) in run.iter().zip(spans) {
+                let numbered =
+                    comment.kind == CommentKind::Line && opens_on_numbered_step(&comment.text);
+                if numbered || names_plan_label(&blanked[span]) {
+                    problems.push(format!("{path}:{}: {}", comment.line, comment.text.trim()));
+                }
             }
         }
     }
@@ -6481,6 +6548,49 @@ fn comment_scanned_files(root: &Path) -> Vec<(String, String)> {
     }
     files.sort();
     files
+}
+
+/// `comment` with the quoted heading of each book citation blanked: a book
+/// page's heading that numbers its steps is its text, not a plan label.
+fn without_cited_headings(comment: &str) -> String {
+    let mut out = comment.to_owned();
+    for (open, close) in cited_heading_spans(comment) {
+        out.replace_range(open..close, &" ".repeat(close - open));
+    }
+    out
+}
+
+/// The byte span of each heading `comment` cites, quotes aside: the quoted text
+/// right after a cited page as `, "…"`, as [`book_citations`] reads it.
+fn cited_heading_spans(comment: &str) -> Vec<(usize, usize)> {
+    let path_len = |text: &str| -> Option<usize> {
+        let path: String = text
+            .chars()
+            .take_while(|&ch| ch.is_alphanumeric() || matches!(ch, '/' | '-' | '_' | '.'))
+            .collect();
+        path.find(".md").map(|end| end + 3)
+    };
+    let heading_after = |from: usize| -> Option<(usize, usize)> {
+        let rest = &comment[from..];
+        let ticks = rest.len() - rest.trim_start_matches('`').len();
+        let open = from + ticks + rest[ticks..].strip_prefix(", \"").map(|_| 3)?;
+        let close = open + comment[open..].find('"')?;
+        Some((open, close))
+    };
+    let mut spans = Vec::new();
+    for (at, _) in comment.match_indices("docs/src/") {
+        if let Some(len) = path_len(&comment[at..]) {
+            spans.extend(heading_after(at + len));
+        }
+    }
+    for (at, marker) in comment.match_indices("See the book:") {
+        let after = at + marker.len();
+        let start = after + (comment[after..].len() - comment[after..].trim_start().len());
+        if let Some(len) = path_len(&comment[start..]) {
+            spans.extend(heading_after(start + len));
+        }
+    }
+    spans
 }
 
 /// Whether `comment` names a plan or review label: a phase, a step or a

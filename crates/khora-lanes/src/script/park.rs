@@ -24,10 +24,11 @@ use super::outcome::Outcome;
 use super::progress::{Invocation, Progress};
 use super::runtime::{Body, Pending};
 
-/// Leaves a body that has just stopped part-way for the next turn, once the
-/// watchdog has counted the frame it ran — the frame it started in counts as
-/// any other — and ends the turn with `busy`; or, past the watchdog's last
-/// limit already, with the fault.
+/// Leaves a body that has just stopped part-way for the next turn, and ends
+/// the turn with `busy`.
+///
+/// The watchdog counts the frame it ran first, the frame it started in as any
+/// other; a body past the watchdog's last limit ends the turn with the fault.
 pub(super) fn park(
     progress: &mut Progress,
     mut pending: Pending,
@@ -88,9 +89,10 @@ pub(super) fn kept(
     }
 }
 
-/// Ends the turn on a body that has just stopped part-way, `why` it did: kept
-/// as `body` and parked for the next turn, the turn busy with what it spent and
-/// how many of its events it got through.
+/// Ends the turn on a body that has just stopped part-way, `why` it did.
+///
+/// The body is kept as `body` and parked for the next turn; the turn is busy
+/// with what it spent and how many of its events it got through.
 pub(super) fn leave_part_way(
     (machine, body, why): (Machine, Body, Suspension),
     (spent, delivered): (u64, usize),

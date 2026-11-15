@@ -6,13 +6,8 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! `run_native` — boots an [`khora_core::ui::App`] under eframe.
-//!
-//! This is the concrete equivalent of `eframe::run_native`: it sets
-//! the window title / icon / size from a [`WindowConfig`], drives the
-//! per-frame `update` against the user's `App` impl through an
-//! [`EguiAppContext`] adapter, and surfaces a friendly error type on
-//! boot failure.
+//! [`run_native`]: boots a [`khora_core::ui::App`] under eframe, each frame
+//! handed to it through an [`EguiAppContext`].
 
 use anyhow::{anyhow, Result};
 
@@ -20,8 +15,7 @@ use khora_core::ui::App;
 
 use super::EguiAppContext;
 
-/// Bridge struct that adapts a `Box<dyn App>` to the `eframe::App`
-/// trait so we can hand it to `eframe::run_native`.
+/// A `Box<dyn App>` adapted to `eframe::App`, for `eframe::run_native`.
 struct AppAdapter {
     inner: Box<dyn App>,
     started: bool,
@@ -38,14 +32,9 @@ impl eframe::App for AppAdapter {
             }
             self.started = true;
 
-            // `on_start` is where the app installs its fonts, but
-            // `Context::set_fonts` only takes effect at the *next* pass — we
-            // are already inside this one. Painting now would lay text out
-            // against egui's built-in fonts, and any widget asking for a named
-            // family (`icons`, `display`) would panic because that family does
-            // not exist yet. So skip drawing this frame and come straight back
-            // with the real fonts loaded. One blank frame at startup, and no
-            // app has to know about the ordering.
+            // The fonts `on_start` installs take effect at the next pass only:
+            // a widget asking now for a named family (`icons`, `display`)
+            // would panic. The first frame is left blank.
             ui.ctx().request_repaint();
             return;
         }
@@ -65,11 +54,13 @@ impl eframe::App for AppAdapter {
     }
 }
 
-/// Boot a tool app on the egui+eframe backend.
+/// Boots a tool app on the egui and eframe backend.
 ///
-/// `factory` is called once after the renderer is up and must return
-/// the `App` instance. Mirrors `eframe::run_native`'s creation
-/// callback shape but receives the neutral context type.
+/// `factory` runs once, after the renderer is up, and returns the app.
+///
+/// # Errors
+///
+/// Fails when eframe cannot open the window or start its renderer.
 pub fn run_native<F>(window: WindowConfigInput, factory: F) -> Result<()>
 where
     F: FnOnce() -> Box<dyn App> + 'static,
@@ -103,9 +94,9 @@ where
     Ok(())
 }
 
-/// Owned-data window config — mirrors fields of `WindowConfig` but
-/// stays in `khora-infra` so we don't drag the platform module
-/// definition all the way down to `khora-core` for tool-only use.
+/// A tool window's title, size and icon, owned.
+///
+/// Mirrors `WindowConfig`, kept here so tool-only settings stay out of `khora-core`.
 #[derive(Debug, Clone)]
 pub struct WindowConfigInput {
     /// Window title.
@@ -129,7 +120,7 @@ impl Default for WindowConfigInput {
     }
 }
 
-/// RGBA8 pixel buffer + dimensions for the window icon.
+/// The window icon, as RGBA8 pixels and their size.
 #[derive(Debug, Clone)]
 pub struct WindowIconInput {
     /// Row-major RGBA8 pixels.

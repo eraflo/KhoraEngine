@@ -157,7 +157,7 @@ impl WgpuDevice {
             })?
             .ok_or(ResourceError::NotFound)?;
 
-        // Now create wgpu entries with references to the Arc'd resources
+        // The wgpu entries borrow the `Arc`s held above.
         let wgpu_entries: Vec<wgpu::BindGroupEntry> = resource_arcs
             .iter()
             .map(|resource| match resource {

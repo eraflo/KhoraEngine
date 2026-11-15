@@ -22,9 +22,8 @@ use winit::dpi::PhysicalSize;
 
 use super::resilience::GpuHealth;
 
-/// Holds the core WGPU state objects required for rendering.
-/// This structure manages the connection to the graphics API for a specific surface.
-/// It is initialized with a pre-selected adapter, making it a passive component.
+/// The wgpu state a window's surface renders with: adapter, device, queue and
+/// swapchain configuration.
 #[derive(Debug)]
 pub struct WgpuGraphicsContext {
     pub surface: wgpu::Surface<'static>,
@@ -32,34 +31,29 @@ pub struct WgpuGraphicsContext {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
 
-    // Configuration for the surface's swapchain behavior
     pub surface_config: wgpu::SurfaceConfiguration,
 
-    // Store info for easy access
+    // The adapter's description and the device's capabilities, read once at creation.
     pub adapter_name: String,
     pub adapter_backend: wgpu::Backend,
     pub adapter_device_type: wgpu::DeviceType,
     pub active_device_features: wgpu::Features,
     pub device_limits: wgpu::Limits,
 
-    /// Lock-free device-health flags raised by the wgpu error callbacks
-    /// (uncaptured-error and device-lost). The render system reads these once
-    /// per frame to decide whether the device is still usable. Shared by Arc so
-    /// the callback closures can outlive any single borrow of the context.
+    /// Device-health flags raised by the wgpu error callbacks, read by the
+    /// render system before it submits.
     pub(crate) health: Arc<GpuHealth>,
 }
 
 impl WgpuGraphicsContext {
-    /// Asynchronously initializes the graphics context for a given window surface.
+    /// Creates the device on a pre-selected adapter and configures the window's surface.
     ///
-    /// ## Arguments
-    /// * `instance` - A reference to the shared `wgpu::Instance`.
-    /// * `window` - A reference to any object that can provide a raw window handle.
-    /// * `adapter` - The pre-selected `wgpu::Adapter` to use.
-    /// * `window_size` - The initial physical size of the window surface.
+    /// The window behind `window_handle` must outlive the context.
     ///
-    /// ## Returns
-    /// * `Result<Self>` - A result containing the initialized `WgpuGraphicsContext` or an error.
+    /// # Errors
+    ///
+    /// Fails when the surface or the device cannot be created, or when the
+    /// surface offers no texture format.
     pub async fn new(
         instance: &Instance,
         window_handle: KhoraWindowHandle,
@@ -68,7 +62,6 @@ impl WgpuGraphicsContext {
     ) -> Result<Self> {
         log::info!("Initializing WGPU Graphics Context with pre-selected adapter...");
 
-        // --- 1. Create Surface ---
         // SAFETY: `from_window` reads the raw window/display handles out of
         // `window_handle`. `KhoraWindowHandle` is an
         // `Arc<dyn WindowHandle + Send + Sync + 'static>`, so the underlying
@@ -96,7 +89,6 @@ impl WgpuGraphicsContext {
             adapter_info.backend
         );
 
-        // --- 2. Create Logical Device and Command Queue from Adapter ---
         let required_features_for_engine: Features = wgpu::Features::TIMESTAMP_QUERY;
         let features_to_enable: Features = adapter.features() & required_features_for_engine;
 
@@ -113,10 +105,8 @@ impl WgpuGraphicsContext {
             .map_err(|e| anyhow!("Failed to create logical device: {}", e))?;
         log::info!("Logical device and command queue created.");
 
-        // Shared health flags: the error/device-lost callbacks run on wgpu's
-        // own threads and must not hold a borrow of the context, so they
-        // capture an `Arc<GpuHealth>` clone. The render system reads the same
-        // flags each frame to decide whether the device is still usable.
+        // The error callbacks run on wgpu's own threads and outlive any borrow
+        // of the context: each holds its own `Arc` of the flags.
         let health = Arc::new(GpuHealth::default());
 
         let uncaptured_health = Arc::clone(&health);
@@ -138,9 +128,8 @@ impl WgpuGraphicsContext {
             }
         }));
 
-        // Device-lost callback: a driver crash/reset/destroy surfaces here. We
-        // raise the sticky `device_lost` flag so the next frame stops
-        // submitting and reports a fatal, non-panicking error to the host.
+        // A driver crash, reset or destroy lands here: the sticky flag stops
+        // the next frame's submission with a fatal, non-panicking error.
         let lost_health = Arc::clone(&health);
         device.set_device_lost_callback(move |reason, message| {
             log::error!("WGPU device lost ({reason:?}): {message}");
@@ -152,7 +141,6 @@ impl WgpuGraphicsContext {
         log::info!("Active device features: {active_device_features:?}");
         log::info!("Device limits: {device_limits:?}");
 
-        // --- 3. Configure Surface ---
         let surface_caps = surface.get_capabilities(&adapter);
         // A surface with no format to offer (a window not shown yet, on some
         // backends) cannot be configured: an error, never a panic.
@@ -212,33 +200,28 @@ impl WgpuGraphicsContext {
         }
     }
 
-    /// Returns the current surface texture for rendering.
-    /// This is useful for obtaining the texture to render into.
-    ///
-    /// ## Returns
-    /// * `wgpu::CurrentSurfaceTexture` - The result of acquiring the next swapchain frame.
-    ///   See [`wgpu::CurrentSurfaceTexture`] for how each variant should be handled.
+    /// Acquires the next swapchain texture; each outcome is a
+    /// [`wgpu::CurrentSurfaceTexture`] variant.
     pub fn get_current_texture(&self) -> wgpu::CurrentSurfaceTexture {
         self.surface.get_current_texture()
     }
 
+    /// Returns the logical device.
     pub fn device(&self) -> &wgpu::Device {
         &self.device
     }
 
+    /// Returns the device's command queue.
     pub fn queue(&self) -> &wgpu::Queue {
         &self.queue
     }
 
+    /// Returns the swapchain's current configuration.
     pub fn surface_configuration(&self) -> &wgpu::SurfaceConfiguration {
         &self.surface_config
     }
 
-    /// Returns the clear color used for rendering.
-    /// This is the color used to clear the screen before rendering.
-    ///
-    /// ## Returns
-    /// * `wgpu::Color` - The clear color used for rendering.
+    /// Returns the colour the screen is cleared to before a frame.
     pub fn get_clear_color(&self) -> wgpu::Color {
         wgpu::Color {
             r: 0.01,
@@ -248,11 +231,7 @@ impl WgpuGraphicsContext {
         }
     }
 
-    /// Returns the size of the surface configuration.
-    /// This is the size of the swapchain surface used for rendering.
-    ///
-    /// ## Returns
-    /// * `(u32, u32)` - A tuple containing the width and height of the surface configuration.
+    /// Returns the swapchain's size in pixels, as `(width, height)`.
     pub fn get_size(&self) -> (u32, u32) {
         (self.surface_config.width, self.surface_config.height)
     }

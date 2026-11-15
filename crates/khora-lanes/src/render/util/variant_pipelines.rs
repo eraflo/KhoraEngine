@@ -60,8 +60,9 @@ pub(crate) struct VariantPipelines {
 }
 
 impl VariantPipelines {
-    /// Keeps what was asked for while the target is `key`; a new key forgets
-    /// it all. The pipelines themselves belong to the `PipelineSystem`.
+    /// Keeps what was asked for while the target is `key`; a new key forgets it all.
+    ///
+    /// The pipelines themselves belong to the `PipelineSystem`.
     pub fn retarget(&mut self, key: TargetKey) {
         if self.key != Some(key) {
             self.built.clear();
@@ -69,9 +70,11 @@ impl VariantPipelines {
         }
     }
 
-    /// The pipeline for `surface` on the current key: the one kept, else the
-    /// one `pipelines` builds from `spec`. `None` before a key is set, or
-    /// when no pipeline system is lent and none was kept.
+    /// Returns the pipeline for `surface` on the current key: the one kept, else
+    /// the one `pipelines` builds from `spec`.
+    ///
+    /// `None` before a key is set, or when no pipeline system is lent and none
+    /// was kept.
     pub fn get(
         &mut self,
         surface: &Surface,

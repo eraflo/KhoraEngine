@@ -30,9 +30,10 @@ use khora_core::renderer::GraphicsDevice;
 /// The label the lane's resources are named by.
 const LABEL: &str = "Forward+";
 
-/// What a group-3 bind group binds besides the lane's fixed light buffers:
-/// the light lists (rebuilt when the target outgrows them), the shadow
-/// atlases and the environment.
+/// What a group-3 bind group binds besides the fixed light buffers.
+///
+/// The light lists (rebuilt when the target outgrows them), the shadow atlases
+/// and the environment.
 pub(super) type LightingKey = (BufferId, ShadowGpuBindings, IblGpuBindings);
 
 /// Forward+'s buffers, its neutral bindings, the pipelines it drew with on

@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # UI Layout System
-//!
-//! Computes layouts for all entities with a `UiNode` and writes the results to `UiTransform`.
+//! The Taffy [`LayoutSystem`]: lays out every entity with a `UiNode` and
+//! writes its `UiTransform`.
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::math::Vec2;
@@ -25,7 +24,7 @@ use std::any::Any;
 use std::collections::HashMap;
 use taffy::prelude::*;
 
-/// Layout system implementation using the Taffy layout engine.
+/// The UI layout system over Taffy.
 pub struct TaffyLayoutSystem {
     taffy: TaffyTree,
     entity_to_node: HashMap<EntityId, NodeId>,
@@ -52,11 +51,9 @@ impl LayoutSystem for TaffyLayoutSystem {
         self.taffy.clear();
         self.entity_to_node.clear();
 
-        // Real layout viewport, resolved from the view (falls back to the
-        // trait default when the view has no live surface size).
+        // The trait's default size when the view has no live surface.
         let (viewport_w, viewport_h) = view.viewport_size();
 
-        // First pass: Create taffy nodes for all UI entities
         let entities = view.get_all_ui_entities();
         for entity in entities.iter() {
             if let Some(ui_node) = view.get_node(*entity) {
@@ -72,7 +69,6 @@ impl LayoutSystem for TaffyLayoutSystem {
             }
         }
 
-        // Second pass: Build hierarchy
         let mut roots = Vec::new();
 
         for &entity in entities.iter() {
@@ -147,12 +143,9 @@ impl TaffyLayoutSystem {
                     z_index,
                 };
 
-                // Add parent's absolute position logic?
-                // Taffy layout is relative to parent by default in some configurations.
-                // In our implementation we assume absolute screen coordinates are needed.
-                // However, Taffy gives local coords.
-
-                // Writing transform back
+                // Taffy gives the position relative to the parent, but `UiTransform::pos`
+                // is in screen coordinates: a nested node lands at its parent-relative
+                // position until the parent's offset is added.
                 view.set_transform(entity, transform);
             }
         }

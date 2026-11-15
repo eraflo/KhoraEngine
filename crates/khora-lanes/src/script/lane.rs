@@ -12,32 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Running gameplay inside a frame budget.
-//!
-//! The reason Ergon exists rather than an off-the-shelf language. The DCC hands
-//! out fuel; the lane spends it and stops. What it must never do is run *some*
-//! of a behavior and lose the rest — the VM suspends on an instruction boundary
-//! and the machine that suspended is kept, so next frame resumes rather than
-//! restarts.
-//!
-//! # Degrading is a choice about *what*, not *how much*
-//!
-//! A budget that will not cover every behavior forces one of two answers. The
-//! lane could give each behavior a smaller slice — every guard thinks a little
-//! less, uniformly. Or it could run some to completion and defer the rest.
-//!
-//! It defers. A behavior half-run is a behavior whose decision this frame is
-//! based on a partial read of the world, and a hundred of those is a hundred
-//! subtly wrong decisions. A behavior deferred is one that acts a frame late,
-//! which gameplay absorbs — that is what a frame *is*. The order it defers in
-//! is the view's, which is the scene's, so the same entities are not starved
-//! every time.
-//!
-//! # What it may touch
-//!
-//! The [`ScriptView`] from the bus, its own [`ScriptRuntime`], and the
-//! [`CommandBuffer`] slot on the deck. Not the `World` — which is what makes
-//! the whole thing schedulable in parallel.
+//! The script lane: runs the frame's behaviours within the fuel its budget
+//! buys, deferring whole turns past it. See the book:
+//! concepts/scripting/turns.md, "Degrading defers whole behaviors".
 
 use super::{levels, run_behaviors, ScriptFamily, ScriptOutputs, ScriptRunReport, ScriptRuntime};
 use std::sync::Arc;
@@ -57,15 +34,14 @@ use khora_script::native::Host;
 pub struct BudgetedScriptLane;
 
 impl BudgetedScriptLane {
-    /// A lane ready to run.
+    /// Creates the lane.
     pub fn new() -> Self {
         Self
     }
 }
 
-/// What the script lane reads each frame: the Views the script flows
-/// published, the scripting world, locked for the run, and the time its agent
-/// lent it.
+/// What the script lane reads each frame: the script flows' Views, the
+/// scripting world, and the time its agent lent it.
 #[derive(LaneInputs)]
 pub struct ScriptInputs<'f> {
     /// The behaviours the frame runs, and what they may read.
@@ -119,12 +95,10 @@ impl khora_core::lane::Lane for BudgetedScriptLane {
             fuel = fuel.min(levels::need(runtime, view).critical);
         }
 
-        // What the engine handed the scripting world — recompiled modules and
-        // its events — was taken in before the flow projected, by the
-        // `script_intake` data system: the lane runs behaviours alone.
-        //
-        // A view that holds nothing while instances are still held has just
-        // lost its last ones: they are told goodbye like any that leave.
+        // Recompiled modules and engine events were taken in by the
+        // `script_intake` data system before the flow projected. An empty view
+        // while instances are still held has just lost its last ones: the run
+        // goes on, so they are told goodbye like any that leave.
         if view.is_empty() && (view.resumed || runtime.instance_count() == 0) {
             // Resuming on an empty scene still forgets what left while it was
             // away — or a later frame would bid it farewell.
@@ -137,11 +111,9 @@ impl khora_core::lane::Lane for BudgetedScriptLane {
             return Ok(report_of(&ScriptRunReport::default()));
         }
 
-        // One queue, two producers: what scripts raised last frame, and what
-        // the engine raised through its channel, joined by the intake. Neither
-        // is delivered in the frame it was produced — an event handled where it
-        // was raised opens a cascade with no bound, and a budget that cannot
-        // bound the work is not a budget.
+        // Scripts' mail from last frame and the engine's, joined by the intake.
+        // See the book: concepts/scripting/events.md,
+        // "An event is never delivered in the frame it was raised".
         let events = runtime.take_pending();
 
         let clock = Stopwatch::new();
@@ -187,11 +159,9 @@ impl khora_core::lane::Lane for BudgetedScriptLane {
         // how many it reported last time.
         runtime.report_unloaded(report.unloaded);
 
-        // Held for the next frame. Both halves: what this frame's behaviors
-        // raised, and what the frame could not tell a behavior because its turn
-        // was deferred or it was mid-`await`. Keeping only the first made
-        // deferring lossy — under budget pressure an event vanished, silently,
-        // which contradicts deferring being the design working.
+        // Held for the next frame: what this frame's behaviors raised, and what
+        // a turn deferred or mid-`await` was not told. Dropping the second
+        // would lose events under budget pressure, silently.
         let mut waiting = std::mem::take(&mut report.raised);
         for event in report.undelivered.drain() {
             waiting.push(event);
@@ -203,7 +173,7 @@ impl khora_core::lane::Lane for BudgetedScriptLane {
     }
 }
 
-/// What a run tells its agent: the share of its turns that ran, whether a
+/// Returns what a run tells its agent: the share of its turns that ran, whether a
 /// behaviour faulted, and which `[Critical]` behaviours waited.
 fn report_of(report: &ScriptRunReport) -> LaneReport {
     let attempted = report.completed + report.deferred;

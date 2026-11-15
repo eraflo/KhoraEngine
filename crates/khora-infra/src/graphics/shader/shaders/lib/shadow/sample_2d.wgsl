@@ -31,11 +31,8 @@ fn sample_shadow_pcf(
 
     let depth = light_ndc.z - bias;
 
-    // PCF texel size is hardcoded against the StandardShadowsLane atlas
-    // size (2048²). LowResShadowsLane uses a different atlas size but
-    // PCF stays in normalized UV space, so a slightly larger relative
-    // step on a smaller atlas is acceptable. A future iteration can
-    // inject this via `#define` based on the active strategy.
+    // The texel size of the standard 2048² atlas: on a smaller atlas the PCF
+    // step, in UV space, is a little wider, which is acceptable.
     let texel_size = 1.0 / 2048.0;
     var shadow = 0.0;
     for (var y = -1; y <= 1; y++) {

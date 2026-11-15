@@ -12,14 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `WgpuPipelineSystem` — the concrete [`PipelineSystem`] backend.
-//!
-//! Wraps `naga_oil` (shader composition + variant specialization) and the
-//! abstract `GraphicsDevice` (layout / pipeline creation), with three caches:
-//! bind-group layouts (by `LayoutCacheKey`), shader modules (by
-//! `(name, variant)`), and render pipelines (by `PipelineKey`). The `.wgsl`
-//! sources live in `graphics/shader/shaders/` (`lib/` modules, `pipelines/`
-//! entry points), embedded at compile time.
+//! The [`PipelineSystem`] backend: composes the engine's WGSL with `naga_oil`
+//! and caches layouts, shader modules and pipelines.
+//! See the book: how-to/add-a-shader.md, "Add a shader".
 
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
@@ -185,16 +180,14 @@ struct Inner {
     /// Hot-reload overrides: logical path (lib import path or pipeline name)
     /// → new source. Consulted before the embedded `include_str!` source.
     overlays: HashMap<String, String>,
-    /// Every logical path overlaid since the overlays were last cleared —
-    /// one whose overlay failed to compose included, which the composer may
-    /// still hold: what a clear gives back to the engine.
+    /// Every path overlaid since the last clear, failed ones included, as the
+    /// composer may still hold them: what a clear gives back to the engine.
     overlaid: HashSet<String>,
     /// Logical module names whose source changed and whose dependent
     /// pipelines must recompose on the next [`PipelineSystem::recompose_dirty`].
     dirty: HashSet<String>,
-    /// The composer was built afresh from the engine's sources (the
-    /// overlays cleared): every cached pipeline recomposes on the next
-    /// [`PipelineSystem::recompose_dirty`].
+    /// The composer was rebuilt from the engine's sources: every cached
+    /// pipeline recomposes on the next [`PipelineSystem::recompose_dirty`].
     rebuilt: bool,
 }
 
@@ -217,15 +210,21 @@ fn engine_composer(base_defs: &HashMap<String, ShaderDefValue>) -> Result<Compos
     Ok(composer)
 }
 
-/// The wgpu/naga_oil [`PipelineSystem`] backend. Injected via
-/// `runtime.backends` as `Arc<dyn PipelineSystem>`.
+/// The wgpu/naga_oil [`PipelineSystem`] backend, put in `runtime.backends`
+/// as `Arc<dyn PipelineSystem>`.
+///
+/// Holds its one lock across device calls: the device's lock is the leaf below
+/// it, and the device never calls back into this system.
 pub struct WgpuPipelineSystem {
     inner: Mutex<Inner>,
 }
 
 impl WgpuPipelineSystem {
-    /// Builds the system: registers every lib module with the composer (fails
-    /// fast on a compose error). No graphics device needed at construction.
+    /// Builds the system with every engine lib module composed; needs no graphics device.
+    ///
+    /// # Errors
+    ///
+    /// Fails when an engine lib module does not compose.
     pub fn new() -> Result<Self, RenderError> {
         let base_defs: HashMap<String, ShaderDefValue> = HashMap::from([
             (
@@ -323,7 +322,6 @@ impl PipelineSystem for WgpuPipelineSystem {
             return Ok(*id);
         }
 
-        // Resolve bind-group layouts in order.
         let mut layout_ids: Vec<BindGroupLayoutId> =
             Vec::with_capacity(spec.bind_group_layouts.len());
         for ls in &spec.bind_group_layouts {
@@ -331,7 +329,6 @@ impl PipelineSystem for WgpuPipelineSystem {
             layout_ids.push(id);
         }
 
-        // Pipeline layout.
         let pipeline_layout = device
             .create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some(Cow::Borrowed(spec.label)),
@@ -339,7 +336,6 @@ impl PipelineSystem for WgpuPipelineSystem {
             })
             .map_err(RenderError::ResourceError)?;
 
-        // Shader module (composed for the variant).
         let module = make_module(&mut inner, device, spec.shader, &spec.variant)?;
 
         let desc = RenderPipelineDescriptor {
@@ -374,7 +370,6 @@ impl PipelineSystem for WgpuPipelineSystem {
             return Ok(*id);
         }
 
-        // Resolve bind-group layouts in order.
         let mut layout_ids: Vec<BindGroupLayoutId> =
             Vec::with_capacity(spec.bind_group_layouts.len());
         for ls in &spec.bind_group_layouts {
@@ -461,10 +456,8 @@ impl PipelineSystem for WgpuPipelineSystem {
         let dirty: Vec<String> = inner.dirty.drain().collect();
         let rebuilt = std::mem::take(&mut inner.rebuilt);
 
-        // Re-register any dirty lib modules with the composer so subsequent
-        // composition picks up their new source. A lib path is one the
-        // composer knows about (it has a `khora::...::` lib import path) — i.e.
-        // not a pipeline entry-point name.
+        // A dirty path that is no pipeline name is a lib module: register it
+        // again so composition picks up its new source.
         for path in &dirty {
             if !inner.pipelines.contains_key(path.as_str()) {
                 if let Err(e) = readd_lib_module(&mut inner, path) {
@@ -480,9 +473,8 @@ impl PipelineSystem for WgpuPipelineSystem {
             }
         }
 
-        // Compute the set of cached pipelines whose module graph includes any
-        // dirty source, then rebuild each in place under the same key.
-        // Built afresh, every cached pipeline recomposes.
+        // Each affected pipeline is rebuilt in place under its key. A rebuilt
+        // composer affects every cached pipeline.
         let (affected_render, affected_compute) = if rebuilt {
             inner.modules.clear();
             (
@@ -496,8 +488,7 @@ impl PipelineSystem for WgpuPipelineSystem {
             )
         };
 
-        // Drop cached module entries for every dirty name (all variants) so
-        // `make_module` recomposes them on the next build.
+        // Every variant of a dirty module recomposes on its next build.
         for path in &dirty {
             inner.modules.retain(|(name, _), _| name != path);
         }

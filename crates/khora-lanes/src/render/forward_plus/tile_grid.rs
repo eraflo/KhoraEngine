@@ -17,8 +17,9 @@
 use khora_core::math::Extent2D;
 use khora_core::renderer::ForwardPlusTileConfig;
 
-/// The tiles Forward+ culls lights into for one frame: the colour target cut
-/// into square tiles of the configured size (the last row/column may be partial).
+/// The colour target cut into square tiles of the configured size, for one frame.
+///
+/// The last row and column may be partial.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TileGrid {
     /// The colour target the grid covers, in pixels.
@@ -64,9 +65,11 @@ impl TileGrid {
     }
 }
 
-/// How many tiles the light-list buffers must be regrown to hold, or `None`
-/// when `capacity` already holds `needed`. Grow-only: a shrinking target keeps
-/// its buffers, so a resize drag does not reallocate every frame.
+/// Returns how many tiles the light lists must grow to hold, or `None` when
+/// `capacity` already holds `needed`.
+///
+/// Grow-only: a shrinking target keeps its buffers, so a resize drag does not
+/// reallocate every frame.
 pub(crate) fn grown_tile_capacity(capacity: u32, needed: u32) -> Option<u32> {
     (needed > capacity).then_some(needed)
 }

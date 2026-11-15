@@ -51,11 +51,9 @@ fn geometry_smith(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, roughness: f32) -> f
         * geometry_schlick_ggx(n_dot_l, roughness);
 }
 
-// Cook-Torrance BRDF contribution for a single light, multiplied by
-// `n_dot_l * radiance`. `albedo` is the base color, `metallic` and
-// `roughness` come from the material, `dielectric` from
-// `dielectric_specular`. `radiance` is `light.color * light.intensity *
-// attenuation`.
+// Cook-Torrance BRDF contribution of one light, multiplied by `n_dot_l *
+// radiance`, where `radiance` is `light.color * light.intensity * attenuation`
+// and `dielectric` comes from `dielectric_specular`.
 fn cook_torrance(
     n: vec3<f32>,
     v: vec3<f32>,
@@ -93,23 +91,17 @@ fn cook_torrance(
     return (diffuse + specular) * radiance * n_dot_l;
 }
 
-// Reinhard tone-map — the single output curve shared by every lit lane (and
-// the skybox) so their final pixels match.
+// Reinhard tone-map, the one output curve of every lit lane and the skybox.
 //
-// Returns a LINEAR value. It must NOT gamma-encode: the swapchain is an sRGB
-// format (the backend explicitly selects one), so the hardware applies the
-// linear→sRGB transfer function on write. Encoding here as well would apply
-// the curve twice, crushing contrast and saturation into a pale wash.
+// Returns a LINEAR value: the swapchain is sRGB, so the hardware encodes on
+// write, and encoding here too would apply the curve twice (a pale wash).
 fn tonemap_reinhard(color: vec3<f32>) -> vec3<f32> {
     return color / (color + vec3<f32>(1.0));
 }
 
-// Hemispheric ambient: a cheap directional stand-in for indirect sky/ground
-// light until full IBL lands. Interpolates a sky and a ground color by the
-// surface normal's up component, so upward faces catch cool sky light and
-// downward faces catch warmer bounce. The call site multiplies this by albedo
-// and the AO factor. These are the scene-default environment colors; a
-// configurable / image-based environment replaces them with IBL.
+// Hemispheric ambient: a sky and a ground colour mixed by the normal's up
+// component, a cheap stand-in for indirect light. The lit pipelines take
+// `ibl_ambient` instead.
 const AMBIENT_SKY: vec3<f32> = vec3<f32>(0.16, 0.18, 0.22);
 const AMBIENT_GROUND: vec3<f32> = vec3<f32>(0.06, 0.055, 0.05);
 fn hemisphere_ambient(n: vec3<f32>) -> vec3<f32> {

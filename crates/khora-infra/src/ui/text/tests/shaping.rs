@@ -202,9 +202,9 @@ fn shaping_is_deterministic() {
     assert_eq!(first, elsewhere, "two shapers");
 }
 
-/// A `max_width` the caller computed from bad data (a NaN layout width) must
-/// not panic the frame: Parley asserts on a NaN line width, so the shaper has
-/// to keep it from reaching Parley.
+/// A NaN `max_width`, computed from bad data, does not panic the frame.
+///
+/// Parley asserts on a NaN line width, so the shaper keeps it from reaching Parley.
 #[test]
 fn a_max_width_that_is_nan_shapes_without_panicking() {
     let shaper = ParleyShaper::new();
@@ -220,10 +220,9 @@ fn a_max_width_that_is_nan_shapes_without_panicking() {
     );
 }
 
-/// A size that is not a positive, finite number of pixels draws nothing: no
-/// glyph to key, rasterise and place, and no NaN in what comes back. (Today a
-/// NaN or infinite size gives NaN pen positions on two lines, and a negative
-/// one runs the pen leftwards above the text's top edge.)
+/// A size that is not a positive, finite number of pixels draws nothing.
+///
+/// No glyph comes back to key, rasterise and place, and no NaN either.
 #[test]
 fn a_size_that_is_not_a_positive_finite_number_shapes_into_no_glyph() {
     let shaper = ParleyShaper::new();
@@ -244,8 +243,9 @@ fn a_size_that_is_not_a_positive_finite_number_shapes_into_no_glyph() {
     }
 }
 
-/// A tab is whitespace: it advances the pen and draws nothing. The default
-/// font has no glyph for U+0009, so the tab must not come back as the font's
+/// A tab is whitespace: it advances the pen and draws nothing.
+///
+/// The default font has no glyph for U+0009: the tab must not come back as its
 /// `.notdef` (glyph 0), which rasterises into a visible box.
 #[test]
 fn a_tab_shapes_into_no_notdef_glyph() {

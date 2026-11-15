@@ -101,11 +101,9 @@ fn sample_specular_color(uv: vec2<f32>) -> vec3<f32> {
 }
 
 #ifdef HAS_NORMAL_MAP
-// Perturbs the geometric normal with the tangent-space normal map,
-// building the TBN basis from screen-space derivatives (no per-vertex
-// tangent attribute required). Christian Schüler's cotangent frame.
-// Only compiled for materials that declare a normal map; without one the
-// fragment shader uses the interpolated geometric normal directly.
+// Perturbs the geometric normal with the tangent-space normal map, the TBN
+// basis built from screen-space derivatives (Christian Schüler's cotangent
+// frame), so no tangent attribute is needed. Compiled only under `HAS_NORMAL_MAP`.
 fn apply_normal_map(
     geometric_normal: vec3<f32>,
     world_pos: vec3<f32>,

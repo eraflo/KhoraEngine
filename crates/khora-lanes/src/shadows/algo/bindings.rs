@@ -12,13 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Bundles the lane's atlas resources into the
-//! [`khora_core::renderer::api::shadow::ShadowGpuBindings`] type that lit consumer
-//! lanes read from the shadows family's `ShadowFrame`.
-//!
-//! Living next to the atlases keeps the binding-construction concern
-//! local — lit lanes only ever see the bundle, not the individual
-//! 2D / cube view ids.
+//! The lane's atlases, bundled as the
+//! [`ShadowGpuBindings`]
+//! the lit lanes read from the shadows family's `ShadowFrame`.
 
 use khora_core::renderer::api::resource::SamplerId;
 use khora_core::renderer::api::shadow::ShadowGpuBindings;

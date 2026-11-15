@@ -11,14 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//! Calling the members the engine calls, and saying goodbye.
-//!
-//! `OnSpawn`, `Update` and `OnDespawn` are members a behavior may or may not
-//! declare, and the ordinary answer is that it does not — so the absence is a
-//! variant here rather than an error every caller has to remember to ignore.
-//!
-//! [`despawns_itself`] sits with them because it exists only to decide whether
-//! the farewell runs at all.
+//! Calling the members the engine calls (`OnSpawn`, `Update`, `OnDespawn`),
+//! and deciding whether a turn's farewell runs.
 
 use khora_core::script::{CommandBuffer, WorldCommand};
 use khora_script::dispatch::{invoke, NotDelivered};
@@ -46,9 +40,10 @@ pub(super) enum Hook {
     },
 }
 
-/// Where a turn's commands, events and working-set writes start — what a turn
-/// that faults gives back, so it leaves nothing, as a load that fails leaves
-/// the world as it was.
+/// Where a turn's commands, events and working-set writes start.
+///
+/// A turn that faults gives back everything past it, so it leaves nothing.
+/// See the book: concepts/scripting/writing.md, "A faulted turn leaves nothing".
 #[derive(Debug, Clone, Copy)]
 pub(super) struct TurnStart {
     /// The first command the turn queues.
@@ -114,11 +109,10 @@ pub(super) fn call_hook(
 
 /// Runs `OnDespawn`, returning what it cost.
 ///
-/// Called at the point the despawn is decided rather than performed, which is
-/// the only moment the entity is both doomed and still there. A fault is logged
-/// rather than returned: disabling a behavior that is about to stop existing
-/// would be a status nobody reads. A farewell that faults leaves nothing, as
-/// any turn that faults: what it queued, raised and wrote is dropped.
+/// Called when the despawn is decided, the only moment the entity is both
+/// doomed and still there. A fault is logged, not returned (nobody reads the
+/// status of a behavior about to stop existing), and leaves nothing, as any
+/// faulted turn.
 pub(super) fn say_goodbye(
     program: &khora_script::vm::Program,
     behavior: &str,
@@ -138,7 +132,7 @@ pub(super) fn say_goodbye(
     }
 }
 
-/// Whether the commands this behavior queued include its own despawn.
+/// Returns whether the commands this behavior queued include its own despawn.
 ///
 /// Scanned from where its turn began, so an earlier behavior despawning it does
 /// not read as this one deciding to go — the farewell belongs to the entity, but

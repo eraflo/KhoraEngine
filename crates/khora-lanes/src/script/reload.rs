@@ -23,15 +23,11 @@ use crate::script::ScriptRuntime;
 
 /// Applies the modules recompiled this frame, reporting what each cost.
 ///
-/// The reporting is the point of doing it here rather than inside the runtime:
-/// a rename drops a field's value, and an author who is not told is left to
-/// discover it in whatever the guard does next.
-///
-/// A program whose reads `demand` does not cover waits for a later frame,
-/// whose projection will hold them — its first `Get` must not read `null` for
-/// a component that exists. What was announced before the script flow runs
-/// is projected that frame, so a program the pump announced lands at once.
-/// Without a demand, nothing projects, so nothing waits.
+/// Reported here so an author hears that a rename dropped a field's value. A
+/// program whose reads `demand` does not cover waits for a frame whose
+/// projection holds them, so its first `Get` never reads `null` for a
+/// component that exists; without a demand nothing waits. See the book:
+/// concepts/scripting/saves-and-edits.md, "Edits while running".
 pub(crate) fn apply_reloads(
     runtime: &mut ScriptRuntime,
     reloads: &[ScriptReload],
@@ -93,13 +89,11 @@ fn apply(runtime: &mut ScriptRuntime, reload: &ScriptReload) {
     }
 }
 
-/// Announces to `demand` every component the loaded programs read — and the
-/// waiting ones, so the script flow, which runs next, projects what they
-/// need.
+/// Announces to `demand` every component the loaded and waiting programs read,
+/// for the script flow, which runs next, to project.
 ///
-/// Recomputed every frame from the programs themselves rather than only on a
-/// reload: a handful of programs is cheap to walk, and a program installed any
-/// other way is not missed.
+/// Recomputed every frame from the programs themselves, so a program installed
+/// any other way than a reload is not missed.
 pub(crate) fn publish_reads(runtime: &ScriptRuntime, demand: &Interest<ScriptReads>) {
     let reads: Vec<ComponentName> = runtime
         .programs()

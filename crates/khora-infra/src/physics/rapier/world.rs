@@ -200,16 +200,10 @@ impl PhysicsProvider for RapierPhysicsWorld {
             rb.set_body_type(rb_type, true);
             rb.set_additional_mass(desc.mass, true);
             rb.enable_ccd(desc.ccd_enabled);
-            // **Not the velocity.** This runs every frame from
-            // `physics_provider_sync`, and `desc.linear_velocity` is the
-            // authored component — an *initial condition*, set once at
-            // `add_body`. Writing it here meant gravity accumulated for exactly
-            // one step and was then thrown away: a body fell a fraction of a
-            // millimetre per frame forever instead of falling.
-            //
-            // Setting a velocity on purpose is a deliberate act, like
-            // teleporting is, and wants a method of its own rather than a
-            // side-effect of the frame's sync.
+            // Not the velocity: this runs every frame from `physics_provider_sync`,
+            // and `desc.linear_velocity` is an initial condition applied once at
+            // `add_body`. Rewriting it each frame would discard what gravity added.
+            // Setting a velocity on purpose wants a method of its own.
         }
     }
 
@@ -233,11 +227,10 @@ impl PhysicsProvider for RapierPhysicsWorld {
         let Some(cl) = self.collider_set.get(cl_handle) else {
             return;
         };
-        // An attached collider's pose is its offset from its body, and only
-        // that is written. `set_position` on an attached collider overwrites
-        // the world pose the solver derives from the body, so the contacts of
-        // a step were found at one pose and solved at another — a stack of
-        // boxes gained energy from nowhere and blew apart.
+        // An attached collider is written its offset from its body only:
+        // `set_position` would overwrite the world pose the solver derives from
+        // the body, so a step's contacts would be solved at another pose than
+        // the one they were found at, and a stack of boxes would blow apart.
         let pose = Pose::from_parts(to_rapier_vec(desc.position), to_rapier_quat(desc.rotation));
         let attached = cl.position_wrt_parent().is_some();
         let pose_differs = match cl.position_wrt_parent() {
@@ -443,11 +436,11 @@ impl RapierPhysicsWorld {
             .any(|pair| pair.manifolds.iter().any(|m| !m.points.is_empty()))
     }
 
-    /// Gives an engine handle a new Rapier collider built from `desc`, so a
-    /// resized collider's contacts are found from scratch — Rapier would keep
-    /// the old shape's points (see [`super::collider_aliases`]). Only a
-    /// collider holding contact points is replaced; any other takes the new
-    /// shape in place.
+    /// Gives an engine handle a new Rapier collider built from `desc`.
+    ///
+    /// A resized collider's contacts are then found from scratch, where Rapier
+    /// would keep the old shape's points (see [`super::collider_aliases`]).
+    /// Only a collider holding contact points needs it.
     fn replace_collider(
         &mut self,
         handle: ColliderHandle,
@@ -553,9 +546,10 @@ fn same_shape(current: &dyn Shape, wanted: &ColliderShape) -> bool {
     }
 }
 
-/// The events a collider raises. A sensor exists to say what enters it, so it
-/// always reports: one that stayed silent until somebody also asked for
-/// events would be a trigger that never triggers.
+/// The events a collider raises; a sensor always reports them.
+///
+/// A sensor exists to say what enters it: a silent one would be a trigger
+/// that never triggers.
 fn events_of(desc: &ColliderDesc) -> ActiveEvents {
     if desc.active_events || desc.is_sensor {
         ActiveEvents::COLLISION_EVENTS
@@ -564,9 +558,10 @@ fn events_of(desc: &ColliderDesc) -> ActiveEvents {
     }
 }
 
-/// A sensor weighs nothing: it is a volume that notices, not matter, so it
-/// must not shift its body's mass or centre of mass. A solid collider keeps
-/// Rapier's default density.
+/// A collider's density: zero for a sensor, Rapier's default otherwise.
+///
+/// A sensor is a volume that notices, not matter: it must not shift its
+/// body's mass or centre of mass.
 fn density_of(is_sensor: bool) -> f32 {
     if is_sensor {
         0.0
@@ -578,13 +573,11 @@ fn density_of(is_sensor: bool) -> f32 {
 /// Which pairs a collider is tested against — a pair is kept when either side
 /// asks for it.
 ///
-/// Rapier's default skips every pair with no dynamic body. A sensor also
-/// wants kinematic bodies (a moving platform entering a trigger). A
-/// character's collider has no body and is moved by hand, so Rapier counts it
-/// as fixed, like the level: it asks for fixed pairs itself, which lets a
-/// trigger — fixed too — see it. A sensor does **not** ask for fixed pairs: a
-/// trigger placed against the floor, or overlapping another trigger, would
-/// report the level at spawn though nothing entered it.
+/// Rapier's default skips pairs with no dynamic body. A sensor also wants
+/// kinematic bodies (a platform entering a trigger) but not fixed ones, or a
+/// trigger against the floor would report the level at spawn. A character's
+/// collider has no body, so Rapier counts it as fixed: it asks for fixed pairs
+/// itself, so that a fixed trigger sees it.
 fn collision_types_of(desc: &ColliderDesc) -> ActiveCollisionTypes {
     let mut types = ActiveCollisionTypes::default();
     if desc.is_sensor {

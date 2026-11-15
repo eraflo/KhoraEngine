@@ -37,13 +37,11 @@ impl ScriptRuntime {
         });
     }
 
-    /// Instances whose entity the predicate no longer keeps, and which have not
-    /// yet said goodbye.
+    /// Returns the instances whose entity the predicate no longer keeps, and
+    /// which have not yet said goodbye, as `(entity, behavior, module)`.
     ///
-    /// Returned as `(entity, behavior, module)` rather than acted on here: the
-    /// farewell is a *run*, which needs a host and a budget, and neither belongs
-    /// to a store of state. The caller runs them and then calls
-    /// [`retain_live`](Self::retain_live) to drop them.
+    /// The farewell is a run, which needs a host and a budget: the caller runs
+    /// them, then drops them with [`retain_live`](Self::retain_live).
     pub fn departed(&self, alive: impl Fn(EntityId) -> bool) -> Vec<(EntityId, String, String)> {
         self.departed_behaviors(|entity, _| alive(entity))
     }
@@ -100,11 +98,9 @@ impl ScriptRuntime {
 
 /// Runs `OnDespawn` for every instance whose entity has left the view.
 ///
-/// The other half of the farewell: a script that despawns itself is told at the
-/// moment it decides, and everything else — an editor deletion, another system's
-/// despawn — is noticed here, one frame later. That lateness is not an oversight
-/// but the earliest a lane reading a projection can know, and it is why the
-/// script-initiated path exists at all.
+/// A script that despawns itself is told at the moment it decides; any other
+/// despawn (an editor deletion, another system's) is noticed here, one frame
+/// later: the earliest a lane reading a projection can know.
 pub(super) fn farewell_departed(
     live: &impl Fn(khora_core::ecs::entity::EntityId, &str) -> bool,
     positions: &std::collections::HashMap<
@@ -127,10 +123,8 @@ pub(super) fn farewell_departed(
 
         host.entity = Some(entity);
         // An entity that has left the view has no pose to give: `Position()`
-        // faults rather than answering with where it used to be — the other
-        // half of why a script that despawns itself is told at the moment it
-        // decides. A behavior detached from an entity still in the view reads
-        // where it is.
+        // faults rather than answering with where it used to be. A behavior
+        // detached from an entity still in the view reads where it is.
         host.position = positions.get(&entity).copied();
         host.fields = std::mem::take(&mut runtime.instance(entity, &behavior).fields);
         let ran = std::time::Instant::now();

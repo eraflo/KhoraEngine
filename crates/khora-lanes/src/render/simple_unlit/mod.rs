@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The unlit lane: every mesh in its material's base colour, no light, no
-//! shadow, nothing blended — the cheapest image of the scene, the render
-//! family's floor.
+//! The render family's unlit lane: every mesh in its base colour, the family's
+//! floor.
 
 use khora_core::agent::gorna::StrategyId;
 use khora_core::gpu::GpuSetup;
@@ -47,7 +46,11 @@ const LEVELS: [Level; 1] = [Level {
     },
 }];
 
-/// The unlit lane.
+/// A lane that draws every mesh in its material's base colour: no light, no
+/// shadow, no blending.
+///
+/// One level, the family's `LowPower` floor: the cheapest image of the scene,
+/// a difference a player sees ([`Impact::Major`]).
 #[derive(Default)]
 pub struct SimpleUnlitLane {
     /// What the lane built on the device; `None` before the first prepare
@@ -90,8 +93,8 @@ impl Lane for SimpleUnlitLane {
         Ok(())
     }
 
-    /// Each mesh recorded on the host; its triangles and the target's pixels
-    /// filled flat on the device.
+    /// Prices each mesh on the host; its triangles and the target's pixels,
+    /// filled flat, on the device.
     fn cost(&self, _level: usize, inputs: &UnlitInputs<'_>) -> Cost {
         let load = SceneLoad::of(inputs.render_world, &inputs.target);
         Cost {

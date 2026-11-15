@@ -15,6 +15,7 @@
 use rapier3d::prelude::*;
 use std::sync::{Arc, Mutex};
 
+/// Rapier's event handler, collecting collision starts and stops as engine events.
 pub struct RapierEventHandler {
     pub events: Arc<Mutex<Vec<khora_core::physics::CollisionEvent>>>,
 }

@@ -18,8 +18,8 @@
 use khora_core::math::Vec4;
 use khora_data::ui::{UiImageAtlas, UiScene};
 
-/// Data for a single UI instance sent to the GPU — matches `UiInstance` in
-/// `ui.wgsl` and `GlyphInstance` in `ui_text.wgsl`.
+/// One quad as the GPU reads it, laid out as `UiInstance` in `ui.wgsl` and
+/// `GlyphInstance` in `ui_text.wgsl`.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub(super) struct UiInstanceData {
@@ -31,10 +31,10 @@ pub(super) struct UiInstanceData {
     pub(super) uv_max: [f32; 2],
 }
 
-/// One instance per node, in the scene's order: its rectangle, colour
-/// (white when it has none), corner radius, left border width, whether it
-/// samples an image, and the image's rect in the atlas (the whole atlas for
-/// an image not placed yet).
+/// Returns one instance per node of `scene`, in the scene's order.
+///
+/// A node without a colour is white; an image not placed in the atlas yet
+/// spans the whole atlas.
 pub(super) fn instances_of(scene: &UiScene, atlas: &UiImageAtlas) -> Vec<UiInstanceData> {
     scene
         .nodes

@@ -14,12 +14,6 @@
 
 //! What the shadows lane builds on the device for one level, and the frame's
 //! shadow rendering.
-//!
-//! [`ShadowGpu`] is built whole by the lane's `prepare` — the depth pipeline,
-//! the two uniform rings, the two atlases at the level's resolution, the
-//! comparison sampler — and given back whole by its `shutdown`, or when a
-//! level of another resolution replaces it. The lane holds it by value and
-//! records through `&mut self`: no lock.
 
 use crate::render::util::DynamicUniformRingBuffer;
 use khora_core::renderer::api::gpu_scene::{GpuMesh, ModelUniforms};
@@ -59,7 +53,7 @@ impl Tier {
     }
 }
 
-/// Everything a level builds on the device.
+/// Everything a level builds on the device, built and given back whole.
 pub struct ShadowGpu {
     /// The level it was built for.
     pub tier: Tier,
@@ -72,8 +66,10 @@ pub struct ShadowGpu {
 }
 
 impl ShadowGpu {
-    /// Builds a level's resources. A refusal halfway gives back what was
-    /// made before it, so a retried prepare leaks nothing.
+    /// Builds a level's resources.
+    ///
+    /// A refusal halfway gives back what was made before it, so a retried
+    /// prepare leaks nothing.
     pub fn build(
         device: &dyn GraphicsDevice,
         pipelines: &dyn PipelineSystem,
@@ -186,9 +182,11 @@ impl ShadowGpu {
         super::bindings::build_bindings(&self.atlas_2d, &self.atlas_cube, self.sampler)
     }
 
-    /// Renders one frame's shadows into `encoder` and fills `entries` with
-    /// each shadowed light's: the frame's 2D casters up to the level's
-    /// capacity, then its point casters up to its own.
+    /// Renders one frame's shadows into `encoder`, and each shadowed light's entry
+    /// into `entries`.
+    ///
+    /// The 2D casters and the point casters are each taken up to the level's
+    /// capacity; a caster beyond it casts no shadow this frame.
     #[allow(clippy::too_many_arguments)] // one parameter per render input; a config struct would obscure the call sites
     pub fn render(
         &mut self,
@@ -292,8 +290,9 @@ impl ShadowGpu {
         }
     }
 
-    /// Gives every resource back to the device. The pipeline and the
-    /// layouts are the `PipelineSystem`'s, so they stay.
+    /// Gives every resource back to the device.
+    ///
+    /// The pipeline and the layouts are the `PipelineSystem`'s, so they stay.
     pub fn destroy(self, device: &dyn GraphicsDevice) {
         self.camera_ring.destroy(device);
         self.model_ring.destroy(device);
@@ -330,15 +329,12 @@ pub(crate) fn shadow_sampler_descriptor(
     }
 }
 
-// ─── Free functions (CLAD: declarative spec + bespoke layouts) ───
-
-/// Stable cache label for the shadow camera (light view-projection) layout.
+/// The cache label of the shadow camera (light view-projection) layout.
 const SHADOW_CAMERA_LAYOUT_LABEL: &str = "shadow_camera_layout";
-/// Stable cache label for the shadow model-uniform layout.
+/// The cache label of the shadow model-uniform layout.
 const SHADOW_MODEL_LAYOUT_LABEL: &str = "shadow_model_layout";
 
-/// Bespoke shadow camera layout: a single dynamic-offset uniform buffer
-/// (vertex stage only).
+/// The shadow camera layout: one dynamic-offset uniform buffer, vertex stage only.
 fn shadow_camera_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
     crate::render::util::single_uniform_layout(
         khora_core::renderer::api::util::ShaderStageFlags::VERTEX,
@@ -346,14 +342,12 @@ fn shadow_camera_layout_entries() -> Vec<khora_core::renderer::api::command::Bin
     )
 }
 
-/// Bespoke shadow model layout: a single dynamic-offset uniform buffer
-/// (vertex stage only).
+/// The shadow model layout: the same shape as the camera's.
 fn shadow_model_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
     shadow_camera_layout_entries()
 }
 
-/// The declarative depth-only pipeline spec for the shadow pass — built each
-/// call, deduped by the `PipelineSystem`. No fragment / color state.
+/// Returns the depth-only pipeline of the shadow pass: no fragment stage, no colour.
 fn shadow_pipeline_spec() -> khora_core::renderer::api::pipeline::PipelineSpec {
     use khora_core::renderer::api::gpu_scene::Mesh;
     use khora_core::renderer::api::pipeline::enums::{CompareFunction, PrimitiveTopology};

@@ -12,13 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Graphics backend selection with fallback support.
-//!
-//! This module implements robust graphics backend selection that attempts to initialize
-//! backends in order of preference (Vulkan, DX12 on Windows, Metal on macOS) and falls
-//! back to more compatible options (OpenGL/GLES via ANGLE) if preferred backends fail.
-//!
-//! This module implements the GraphicsBackendSelector trait for WGPU.
+//! The wgpu [`GraphicsBackendSelector`]: tries the preferred backends in order
+//! and keeps the first that yields an adapter.
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -40,18 +35,16 @@ pub struct SelectedAdapter {
     pub adapter: Adapter,
 }
 
-/// WGPU-specific implementation of the GraphicsBackendSelector trait.
+/// The wgpu [`GraphicsBackendSelector`], making one instance per backend it tries.
 ///
-/// It makes one instance per backend it tries, asking for that backend alone:
-/// an instance on every backend loads every backend's driver (the D3D12 debug
-/// layer, the OpenGL driver), whichever is used.
+/// An instance on every backend would load every backend's driver (the D3D12
+/// debug layer, the OpenGL driver), whichever is used.
 pub struct WgpuBackendSelector {
     make_instance: Box<dyn Fn(wgpu::Backends) -> Instance + Send + Sync>,
 }
 
 impl WgpuBackendSelector {
-    /// A selector making each instance it tries with `make_instance`, given
-    /// the one backend it is for.
+    /// Creates a selector making each instance with `make_instance`, given its one backend.
     pub fn new(make_instance: impl Fn(wgpu::Backends) -> Instance + Send + Sync + 'static) -> Self {
         Self {
             make_instance: Box::new(make_instance),
@@ -188,7 +181,6 @@ impl GraphicsBackendSelector<SelectedAdapter> for WgpuBackendSelector {
                     });
                 }
                 Err(_) => {
-                    // Log failure and continue to next backend
                     log::warn!("Failed to initialize {:?} backend.", backend_type);
                     continue;
                 }
@@ -288,10 +280,10 @@ mod tests {
         Instance::new(descriptor)
     }
 
-    /// A selector whose factory records each set of backends it is asked
-    /// for, and makes a real instance only for those `real` allows — any
-    /// other is an instance on no backend, which yields no adapter and loads
-    /// no driver.
+    /// A selector whose factory records each set of backends it is asked for.
+    ///
+    /// Only the backends `real` allows get a real instance; any other gets an
+    /// instance on no backend, which yields no adapter and loads no driver.
     fn recording(real: Backends) -> (WgpuBackendSelector, Arc<Mutex<Vec<Backends>>>) {
         let asked = Arc::new(Mutex::new(Vec::new()));
         let record = Arc::clone(&asked);
@@ -329,11 +321,10 @@ mod tests {
         .is_ok()
     }
 
-    /// **The selector asks one backend per instance, in the preferred
-    /// order.** With every backend yielding no adapter, it asks its factory
-    /// for each backend it tries, one at a time — never several on one
-    /// instance — in the config's order, then fails. No driver is loaded:
-    /// every instance it gets is on no backend.
+    /// The selector asks one backend per instance, in the preferred order.
+    ///
+    /// No backend yields an adapter here, so it tries each in turn, then fails.
+    /// No driver loads: every instance it gets is on no backend.
     #[test]
     fn the_selector_asks_one_backend_per_instance_in_the_preferred_order() {
         let (selector, asked) = recording(Backends::empty());
@@ -363,13 +354,10 @@ mod tests {
         );
     }
 
-    /// **The selector stops at the first backend that yields an adapter, on
-    /// that backend's own instance.** Preferring OpenGL — whose instance
-    /// here yields nothing — then the platform's own backend, then DX12: the
-    /// factory is asked for OpenGL, then the native backend, and nothing
-    /// after. The adapter selected is of the native backend, and so is every
-    /// adapter the instance handed back with it can reach: the instance was
-    /// made for that backend alone.
+    /// The selector stops at the first backend that yields an adapter.
+    ///
+    /// OpenGL yields nothing here, so the native backend is selected and DX12
+    /// never asked; the instance handed back reaches only native adapters.
     #[test]
     fn the_selector_stops_at_the_first_backend_that_yields_an_adapter() {
         let _gpu = exclusive_gpu();
@@ -427,9 +415,9 @@ mod tests {
         );
     }
 
-    /// **Listing a backend's adapters asks for that backend alone.** The
-    /// factory is asked once, for the native backend, and every adapter
-    /// listed is of it.
+    /// Listing a backend's adapters asks for that backend alone.
+    ///
+    /// The factory is asked once, and every adapter listed is of that backend.
     #[test]
     fn listing_adapters_asks_only_the_backend_listed() {
         let _gpu = exclusive_gpu();
@@ -450,9 +438,9 @@ mod tests {
         );
     }
 
-    /// **Listing an unsupported backend makes no instance.** WebGPU is the
-    /// browser's: on a native build, the selector lists nothing for it and
-    /// never asks its factory.
+    /// Listing an unsupported backend makes no instance.
+    ///
+    /// WebGPU is the browser's: a native build lists nothing for it.
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn listing_an_unsupported_backend_makes_no_instance() {

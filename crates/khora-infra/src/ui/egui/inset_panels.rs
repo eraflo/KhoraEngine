@@ -60,11 +60,9 @@ impl EguiUiBuilder<'_> {
         f: &mut dyn FnMut(&mut dyn UiBuilder),
     ) {
         let vt = self.viewport_textures;
-        // Salted by name, not by position. Deriving the id from the rect's
-        // screen coordinates meant moving a panel by one pixel — a splitter
-        // drag, a window resize — renumbered every widget inside, so egui
-        // dropped focus and edit state mid-typing; and two regions landing on
-        // the same integer coordinate collided outright.
+        // Salted by name, not by position: an id from the rect's coordinates
+        // would renumber every widget inside when a splitter or a resize moves
+        // the panel by a pixel, dropping focus mid-typing.
         let id_salt = ("khora_region", id_salt);
         let mut child = self.ui.new_child(
             egui::UiBuilder::new()
@@ -115,9 +113,10 @@ impl EguiUiBuilder<'_> {
         });
     }
 
-    /// Modal implementation lives outside the `UiBuilder` impl block so
-    /// `Self::ui` can be re-borrowed across the egui `Window::show`
-    /// call without colliding with the trait method's generics.
+    /// Shows a modal dialog over a dimmed screen, with `f` building its content.
+    ///
+    /// Outside the `UiBuilder` impl, so `self.ui` can be re-borrowed across
+    /// egui's `Window::show` without colliding with the trait method's generics.
     pub(super) fn show_modal_dialog(
         &mut self,
         id: &str,
@@ -127,12 +126,9 @@ impl EguiUiBuilder<'_> {
         let ctx = self.ui.ctx().clone();
         let vt_clone = self.viewport_textures.clone();
 
-        // Backdrop: dim the whole screen with a foreground-layer
-        // painter. The egui Window itself sits in `Order::Foreground`
-        // so the backdrop must be just *under* it; we use
-        // `Order::Middle` so other content sinks below.
-        // In the UI's own points: the viewport's `inner_rect` is the window's
-        // place on the desktop, and would dim only part of it.
+        // The backdrop sits on `Order::Middle`, just under the dialog's
+        // `Order::Foreground`. It is measured in the UI's own points: the
+        // viewport's `inner_rect` is the window's place on the desktop.
         let screen = ctx.content_rect();
         let layer = egui::LayerId::new(
             egui::Order::Middle,

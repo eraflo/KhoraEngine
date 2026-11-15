@@ -19,9 +19,10 @@ use khora_core::script::EventQueue;
 use super::report::ScriptRunReport;
 use super::runtime::ScriptRuntime;
 
-/// Puts back what an instance was never told: into the frame's mail for an
-/// entity running one behavior, held for this instance alone for one
-/// running several.
+/// Puts back what an instance was never told.
+///
+/// Into the frame's mail for an entity running one behavior; held for this
+/// instance alone for one running several.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn keep(
     events: &EventQueue,
@@ -40,7 +41,7 @@ pub(super) fn keep(
     }
 }
 
-/// A frame `instance` does not run: its record follows what it is now owed,
+/// Sits `instance` out of the frame: its record follows what it is now owed,
 /// and what it was sent waits for the turn that will listen.
 pub(super) fn sit_out(
     events: &EventQueue,

@@ -51,9 +51,10 @@ fn not_built(what: &str) -> RenderError {
 }
 
 impl PlusGpu {
-    /// Records the frame: a clear when the world has no camera; else the
-    /// culling of every tile of the target, then the opaque meshes into the
-    /// scene pass and the blended ones into the transparent pass.
+    /// Records the frame: the tile culling, then the opaque and the blended
+    /// meshes into their passes.
+    ///
+    /// Without a camera the scene pass only clears.
     pub(super) fn record(
         &mut self,
         config: &ForwardPlusTileConfig,

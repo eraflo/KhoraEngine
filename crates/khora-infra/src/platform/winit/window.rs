@@ -26,11 +26,9 @@ use winit::{
     window::{Icon, Window},
 };
 
-/// A wrapper around a `winit::window::Window` that implements the `KhoraWindow` trait.
+/// A desktop [`KhoraWindow`] over a `winit` window.
 ///
-/// This struct provides a concrete window implementation for desktop platforms,
-/// abstracting the engine's core logic from the specifics of the `winit` crate.
-/// It uses an `Arc` internally to allow for cheap cloning and shared ownership.
+/// Cloning is cheap: clones share one window.
 #[derive(Debug, Clone)]
 pub struct WinitWindow {
     inner: Arc<Window>,
@@ -42,17 +40,14 @@ impl WinitWindow {
         &self.inner
     }
 
-    /// Returns a clone of the inner `Arc<Window>` so the window can be
-    /// shared with subsystems that need a long-lived handle (e.g., an egui
-    /// overlay that calls `begin_frame` each tick).
+    /// Returns a shared handle to the window, for a subsystem that keeps one
+    /// (an egui overlay calling `begin_frame` each tick).
     pub fn clone_winit_arc(&self) -> Arc<Window> {
         Arc::clone(&self.inner)
     }
 }
 
-/// A builder for creating `WinitWindow` instances.
-///
-/// This follows the builder pattern to provide an ergonomic API for window creation.
+/// A builder of [`WinitWindow`]s.
 pub struct WinitWindowBuilder {
     title: String,
     width: u32,
@@ -95,8 +90,9 @@ impl WinitWindowBuilder {
         self
     }
 
-    /// Sets whether the window is shown as it is built. A window built hidden
-    /// is shown later, once it has something to show.
+    /// Sets whether the window is shown as it is built.
+    ///
+    /// A window built hidden is shown later, once it has something to show.
     pub fn with_visible(mut self, visible: bool) -> Self {
         self.visible = visible;
         self

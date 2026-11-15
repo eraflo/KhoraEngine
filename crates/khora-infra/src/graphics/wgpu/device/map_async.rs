@@ -21,13 +21,13 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Poll, Waker};
 
+/// What a buffer's map callback shares with the future awaiting it.
 pub(super) struct MapAsyncFutureState {
     pub(super) result: Mutex<Option<Result<(), ResourceError>>>,
-    // The Waker to wake up the Future when the result is ready
     pub(super) waker: Mutex<Option<Waker>>,
 }
 
-// Custom Future implementation to wrap the MapAsyncFutureState
+/// A future that resolves when the map callback reports its result.
 pub(super) struct MapAsyncOperationFuture {
     pub(super) state: Arc<MapAsyncFutureState>,
 }
@@ -47,9 +47,8 @@ impl Future for MapAsyncOperationFuture {
         if let Some(res) = result_guard.take() {
             Poll::Ready(res)
         } else {
-            // Store the waker so the callback can wake this Future later.
-            // If the waker mutex is poisoned, the callback won't be able
-            // to schedule us — treat that as a fatal map_async failure.
+            // A poisoned waker mutex means the callback can never wake this
+            // future: fail the map rather than hang.
             match self.state.waker.lock() {
                 Ok(mut waker_guard) => {
                     *waker_guard = Some(cx.waker().clone());

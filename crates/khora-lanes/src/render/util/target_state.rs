@@ -26,9 +26,10 @@ use khora_core::renderer::api::pipeline::{
 
 use super::sample_count;
 
-/// The depth test of a scene draw into a target of `key`: `Less`, writing
-/// depth unless the draw blends — two blended surfaces composite only if
-/// neither writes depth. `None` for a target without depth.
+/// Returns the depth test of a scene draw into a target of `key`; `None` without depth.
+///
+/// `Less`, writing depth unless the draw blends: two blended surfaces
+/// composite only if neither writes depth.
 pub(crate) fn scene_depth_state(
     key: TargetKey,
     blend: bool,

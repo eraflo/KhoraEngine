@@ -12,18 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The `loading` family: scenes, scripts and assets loaded off the frame.
+//! The `loading` family: scenes, scripts and assets loaded off the frame, each
+//! result staged under its lease for a frame's boundary.
 //!
-//! Hosts file a [`SceneLoadRequest`], the hot-reload pump a
-//! [`CompileRequest`], the asset service a [`DecodeRequest`]; the family's
-//! lanes, at `ExecutionPhase::BACKGROUND`, take them and stage each result
-//! under its lease for the landings at a frame's boundary. Its two lanes are
-//! two ways of loading the same requests: [`RushLane`] loads everything
-//! filed, [`PacedLane`] only what its budget covers.
-//!
-//! [`SceneLoadRequest`]: khora_data::scene::loading::SceneLoadRequest
-//! [`CompileRequest`]: khora_script::toolchain::CompileRequest
-//! [`DecodeRequest`]: khora_core::asset::DecodeRequest
+//! [`RushLane`] loads everything filed; [`PacedLane`] only what its budget covers.
 
 mod family;
 mod inputs;

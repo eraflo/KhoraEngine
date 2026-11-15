@@ -12,27 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Handing a lane's draw batches to the GPU.
+//! Recording a lane's draw batches: the opaque scene pass and the blended one.
 //!
-//! The lit lanes each produce two batches — the opaque draws, grouped by
-//! pipeline, and the blended ones, sorted farthest-first. This module records
-//! them, and owns the reason they are **two render passes into two command
-//! buffers** rather than one loop.
-//!
-//! # Why the scene is split
-//!
-//! A blended surface must not write depth: two of them could not composite if
-//! it did. So it leaves the pixel at the far plane — and the skybox paints
-//! exactly the pixels left at the far plane. With the whole scene in one pass
-//! the sky ran afterwards and repainted the glass, so a transparent sphere
-//! against the sky vanished while the half of it overlapping the floor
-//! survived, because there the floor had written depth.
-//!
-//! Splitting lets the engine fold the sky **between** the opaque draws that
-//! give it a depth buffer to test against and the blended draws that composite
-//! over it. See
-//! [`TransparentPassSlot`](khora_data::render::TransparentPassSlot) for why the
-//! alternative — drawing the sky first — was rejected on SAA grounds.
+//! The scene is two passes so the engine can fold the sky between them. See the
+//! book: concepts/rendering.md, "Transparency, and the order it needs".
 
 use khora_core::lane::io::SceneTarget;
 use khora_core::math::LinearRgba;
@@ -77,9 +60,10 @@ pub(crate) fn scene_depth(
     }
 }
 
-/// Records a scene pass that only clears `target`: its colour to `clear`,
-/// its depth to the far plane. A frame with no camera still shows the clear
-/// colour.
+/// Records a scene pass that only clears `target`: its colour to `clear`, its
+/// depth to the far plane.
+///
+/// A frame with no camera still shows the clear colour.
 pub(crate) fn record_clear(
     encoder: &mut dyn CommandEncoder,
     target: &SceneTarget,
@@ -98,10 +82,8 @@ pub(crate) fn record_clear(
 
 /// Records a batch of draw commands into an open render pass.
 ///
-/// Each lit lane calls it twice — once for the opaque batch, once for the
-/// blended one, into two different passes. Setting the pipeline only when it
-/// changes relies on the caller having sorted by pipeline (opaque) or by
-/// depth (transparent, where correct compositing outranks batching).
+/// The pipeline is set only when it changes, so the caller sorts the batch: by
+/// pipeline (opaque) or by depth (blended, where compositing outranks batching).
 pub(crate) fn record_draws<'a>(
     pass: &mut dyn RenderPass<'a>,
     commands: impl Iterator<Item = &'a DrawCommand>,

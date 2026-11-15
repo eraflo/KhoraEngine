@@ -51,31 +51,27 @@ impl ScriptRuntime {
         self.rate = self.rate * (1.0 - RATE_BLEND) + observed * RATE_BLEND;
     }
 
-    /// The measured time a lane run costs besides its turns; zero before the
-    /// first run.
+    /// Returns the measured time a lane run costs besides its turns; zero
+    /// before the first run.
     pub fn overhead(&self) -> Duration {
         self.overhead.unwrap_or_default()
     }
 
-    /// The fuel `time` buys: what is left of it once the overhead is paid, at
-    /// the measured rate. The one definition of a budget's fuel.
+    /// Returns the fuel `time` buys: what is left once the overhead is paid,
+    /// at the measured rate. The one definition of a budget's fuel.
     pub fn fuel_for(&self, time: Duration) -> u64 {
         let left = time.saturating_sub(self.overhead());
         (left.as_secs_f64() * 1_000.0 * self.rate) as u64
     }
 
-    /// The fuel the due instances need in a `frame`-long frame: each at
-    /// what its last whole turn took — never a piece of one, or a budget cut
-    /// would lower the price that buys it back. An instance with no whole
-    /// turn yet is priced at what its behavior's other instances took, and
-    /// at [`UNKNOWN_TURN`] when none of them has finished one either — or at
-    /// twice what its turn in progress has spent, when that is more, up to what
-    /// one frame may spend on an instance: a turn heavier than the guess is
-    /// bought back in a few frames, never starved by a guess that stays the
-    /// same, and one that never finishes costs a frame's worth. An instance whose module is not compiled
-    /// runs nothing and costs nothing. A rate-limited instance counts for the
-    /// share of frames it runs, as in
-    /// [`weighted_instances`](Self::weighted_instances).
+    /// Returns the fuel the due instances need in a `frame`-long frame.
+    ///
+    /// Each is priced at its last whole turn, never a piece of one, or a budget
+    /// cut would lower the price that buys it back. With none yet, at its
+    /// behavior's other instances' mean, else at [`UNKNOWN_TURN`] or twice what
+    /// its turn in progress spent, capped at one frame's spend on an instance.
+    /// An uncompiled module costs nothing; a rate-limited instance counts for
+    /// the share of frames it runs, as in [`weighted_instances`](Self::weighted_instances).
     pub fn demand(&self, frame: f32) -> FuelDemand {
         let unknown = UNKNOWN_TURN.as_secs_f64() * 1_000.0 * self.rate;
         let known = self.known_turns();
@@ -113,9 +109,9 @@ impl ScriptRuntime {
                 Some(cost) if cost <= 0.0 && mailed.contains(entity) => None,
                 cost => cost,
             };
-            // Doubled toward what the turn may need, never past what one
-            // frame may spend on an instance: a turn that never finishes is
-            // priced at a frame's worth, not at everything it has spent.
+            // Doubled so a turn heavier than the guess is bought back in a few
+            // frames; capped so one that never finishes is priced at a frame's
+            // worth, not at everything it has spent.
             let unfinished = || {
                 unknown
                     .max(2.0 * instance.piece_spent as f64)
@@ -133,9 +129,10 @@ impl ScriptRuntime {
         }
     }
 
-    /// The share of the due instances that are `[Critical]`, each counted as
-    /// in [`demand`](Self::demand): how much of the frame's turns the floor
-    /// serves on time. `0.0` with no instance.
+    /// Returns the share of the due instances that are `[Critical]`, counted
+    /// as in [`demand`](Self::demand); `0.0` with no instance.
+    ///
+    /// It is how much of the frame's turns the critical floor serves on time.
     pub fn critical_share(&self, frame: f32) -> f32 {
         let (mut all, mut critical) = (0.0_f32, 0.0_f32);
         for ((_, behavior), instance) in &self.instances {
@@ -162,8 +159,8 @@ impl ScriptRuntime {
         }
     }
 
-    /// Whether every due instance's price is measured rather than guessed:
-    /// it, or another instance of its behavior, has run a whole turn.
+    /// Returns whether every due instance's price is measured rather than
+    /// guessed: it, or another instance of its behavior, ran a whole turn.
     pub fn demand_is_measured(&self) -> bool {
         let known = self.known_turns();
         self.instances
@@ -240,12 +237,10 @@ pub(super) fn price_turn(held: &mut Instance, end: TurnEnd, cost: u64) {
     }
 }
 
-/// Whether this frame advanced any of the behavior's countdowns.
+/// Returns whether this frame advanced any of the behavior's countdowns.
 ///
-/// Its own question because a countdown is the one part of an instance that
-/// changes without the behavior running: `count_down` decrements what is armed
-/// whether or not anything comes due, so fuel spent is not the whole test of
-/// "did this instance change".
+/// A countdown is the one part of an instance that changes without the
+/// behavior running, so fuel spent is not the whole test of a change.
 pub(super) fn delta_moved_a_countdown(
     program: &khora_script::vm::Program,
     behavior: &str,

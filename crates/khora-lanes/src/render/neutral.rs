@@ -14,14 +14,6 @@
 
 //! What a lit lane binds at group 3 when the frame has no shadows or no
 //! image-based lighting: objects of its own that light nothing.
-//!
-//! A frame may come without the shadows family's atlases (it failed, or the
-//! engine runs it at no level) and before the first IBL bake. The pipeline
-//! still declares those bindings, so the lane binds its own: a 1×1 depth atlas
-//! of each kind with a comparison sampler — every light it shades has no
-//! shadow entry, so the shader never samples them — and two black cubes, a
-//! zero BRDF lookup and a filtering sampler, so the environment adds no light.
-//! Textures are zeroed when the device creates them.
 
 use std::borrow::Cow;
 
@@ -45,7 +37,12 @@ const CUBE_FORMAT: TextureFormat = TextureFormat::Rgba16Float;
 /// The format of the neutral BRDF lookup, the bake's.
 const LUT_FORMAT: TextureFormat = TextureFormat::Rg16Float;
 
-/// A lit lane's own shadow and environment bindings.
+/// A lit lane's own shadow and environment bindings, which light nothing.
+///
+/// The pipeline declares them even when the shadows family drew no atlas or no
+/// IBL bake exists yet. No light has a shadow entry, so the 1×1 atlases are
+/// never sampled; the black cubes and the zero BRDF lookup (the device zeroes
+/// the textures it creates) add no light.
 pub(crate) struct NeutralBindings {
     /// What group 3 binds in place of the shadows family's atlases.
     pub shadows: ShadowGpuBindings,

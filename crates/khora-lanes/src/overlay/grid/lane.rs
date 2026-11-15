@@ -12,16 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Grid overlay lane — the infinite editor ground grid.
-//!
-//! Renders `khora::pipelines::grid` (a fullscreen-triangle infinite grid) on
-//! top of the frame's target, depth-tested against the scene so closer
-//! geometry occludes it; it reads the depth and never writes it. The grid
-//! family runs in the OUTPUT phase after the renderer, and `LoadOp::Load`
-//! preserves what the scene drew.
-//!
-//! The grid is editor viz: a host application opts in by enabling the
-//! [`GridView`] it publishes. The sandbox leaves it disabled — no grid.
+//! The grid family's lane: the infinite editor ground grid, drawn over the scene.
 
 use std::time::Duration;
 
@@ -45,7 +36,7 @@ use khora_macros::LaneInputs;
 use super::GridOutputs;
 use crate::render::util::Block;
 
-/// Stable cache label for the grid camera layout.
+/// The cache label of the grid camera layout.
 const GRID_CAMERA_LAYOUT_LABEL: &str = "grid_camera_layout";
 
 /// What recording the grid's two triangles costs on the host.
@@ -66,11 +57,14 @@ const LEVEL: Level = Level {
     },
 };
 
-/// Infinite editor ground-grid overlay lane. Holds what it built on the
-/// device; `None` before the first prepare and after shutdown.
+/// A lane that draws the infinite ground grid over the scene, occluded by closer geometry.
+///
+/// One level. It draws only when the host enabled the [`GridView`] it
+/// publishes, the world has a camera and the target has depth.
 #[derive(Debug)]
 pub struct GridLane {
     levels: [Level; 1],
+    /// What it built on the device; `None` before the first prepare and after shutdown.
     gpu: Option<GridGpu>,
 }
 
@@ -115,9 +109,8 @@ impl Lane for GridLane {
         &self.levels
     }
 
-    /// Two triangles on the host; on the device, every pixel of the target
-    /// is shaded. A grid that draws nothing — off, without a camera or
-    /// without depth — costs no time.
+    /// Prices two triangles on the host and every pixel of the target on the
+    /// device; a grid that draws nothing costs no time.
     fn cost(&self, _level: usize, inputs: &GridInputs<'_>) -> Cost {
         let draws = inputs.grid.0.enabled
             && !inputs.render_world.views.is_empty()
@@ -140,9 +133,8 @@ impl Lane for GridLane {
         }
     }
 
-    /// Builds the camera block once, and the pipeline for the target's
-    /// formats: a new target builds a new pipeline, a target without depth
-    /// none.
+    /// Builds the camera block once, and a pipeline for the target's formats;
+    /// none for a target without depth.
     fn prepare(
         &mut self,
         _level: usize,
@@ -227,8 +219,6 @@ impl Lane for GridLane {
     }
 }
 
-// ─── Free functions (CLAD: no inherent methods on the lane struct) ───
-
 /// Group-0 camera layout: a single uniform buffer (vertex + fragment).
 fn camera_layout_entries() -> Vec<BindGroupLayoutEntry> {
     crate::render::util::single_uniform_layout(
@@ -238,9 +228,10 @@ fn camera_layout_entries() -> Vec<BindGroupLayoutEntry> {
     )
 }
 
-/// The declarative pipeline spec for the grid on a target of `key`'s
-/// formats — fullscreen triangles, alpha-blended, depth-tested (LessEqual)
-/// against the scene buffer, which it never writes.
+/// Returns the grid's pipeline for a target of `key`'s formats.
+///
+/// Alpha-blended, depth-tested (LessEqual) against the scene, whose depth it
+/// never writes.
 fn grid_pipeline_spec(key: TargetKey) -> PipelineSpec {
     use khora_core::renderer::api::pipeline::enums::{
         BlendFactor, BlendOperation, CompareFunction, PrimitiveTopology,
@@ -311,7 +302,7 @@ fn grid_pipeline_spec(key: TargetKey) -> PipelineSpec {
     }
 }
 
-/// The grid pass — `LoadOp::Load` preserves the scene's colour and depth.
+/// Records the grid pass, keeping the scene's colour and depth.
 fn draw_grid(
     encoder: &mut dyn CommandEncoder,
     color: TextureViewId,

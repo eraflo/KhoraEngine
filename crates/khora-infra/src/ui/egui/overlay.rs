@@ -12,12 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Concrete [`EditorOverlay`] implementation backed by egui + custom wgpu renderer.
-//!
-//! This struct manages:
-//! - An [`egui::Context`] for UI building (shared with `khora-editor`)
-//! - An [`egui_winit::State`] for input event translation
-//! - A custom [`EguiWgpuRenderer`] for rendering egui output with wgpu 28
+//! The egui [`EditorOverlay`]: an [`egui::Context`] shared with the editor,
+//! winit input translated by [`egui_winit::State`], drawn by [`EguiWgpuRenderer`].
 
 use super::renderer::{EguiRenderState, EguiWgpuRenderer};
 use crate::graphics::wgpu::graphics_context::WgpuGraphicsContext;
@@ -41,16 +37,17 @@ pub struct EguiFrameRenderState {
     pub width_px: u32,
     /// Height of `target_view`, in physical pixels.
     pub height_px: u32,
-    /// Registered textures whose view changed since the last frame (a
-    /// resized viewport target): each id is re-pointed at its new view
-    /// before anything is painted, so this frame already shows it.
+    /// Registered textures whose view changed since the last frame (a resized
+    /// viewport target).
+    ///
+    /// Each is re-pointed at its new view before anything is painted, so this
+    /// frame already shows it.
     pub retargets: Vec<(egui::TextureId, wgpu::TextureView)>,
 }
 
-/// Egui-based editor overlay implementation.
+/// The editor overlay over egui, created once at engine start.
 ///
-/// Created once during engine initialization and stored in the `ServiceRegistry`.
-/// The editor application accesses the shared `egui::Context` to build its UI.
+/// The editor builds its UI on the shared `egui::Context`.
 pub struct EguiOverlay {
     ctx: egui::Context,
     winit_state: egui_winit::State,
@@ -58,13 +55,8 @@ pub struct EguiOverlay {
 }
 
 impl EguiOverlay {
-    /// Creates a new `EguiOverlay`.
-    ///
-    /// # Arguments
-    /// * `event_loop` - The winit event loop (needed by `egui_winit::State`).
-    /// * `surface_format` - The wgpu surface texture format.
-    /// * `device` - The wgpu device for pipeline initialization.
-    /// * `shader_source` - The WGSL shader source for egui rendering.
+    /// Creates an overlay drawing to `surface_format` with the egui shader
+    /// `shader_source`.
     pub fn new(
         event_loop: &winit::event_loop::ActiveEventLoop,
         surface_format: wgpu::TextureFormat,
@@ -91,9 +83,7 @@ impl EguiOverlay {
         }
     }
 
-    /// Returns a clone of the egui context (cheap — internally Arc'd).
-    ///
-    /// The editor application stores this to build UI during `update()`.
+    /// Returns the shared egui context; the clone is cheap.
     pub fn context(&self) -> egui::Context {
         self.ctx.clone()
     }
@@ -101,7 +91,7 @@ impl EguiOverlay {
     /// Registers an external wgpu texture view with the egui renderer.
     ///
     /// Returns the egui `TextureId` that can later be mapped to a
-    /// [`ViewportTextureHandle`].
+    /// [`ViewportTextureHandle`](khora_core::ui::editor::viewport_texture::ViewportTextureHandle).
     pub fn register_viewport_texture(
         &mut self,
         device: &wgpu::Device,
@@ -110,8 +100,7 @@ impl EguiOverlay {
         self.renderer.register_external_texture(device, view)
     }
 
-    /// Updates an existing viewport texture to point to a new wgpu view
-    /// (e.g. after a resize).
+    /// Points a registered viewport texture at a new view, after a resize.
     pub fn update_viewport_texture(
         &mut self,
         device: &wgpu::Device,
@@ -153,36 +142,30 @@ impl EditorOverlay for EguiOverlay {
     fn end_frame_and_render(&mut self, render_state: &mut dyn Any) -> Result<(), OverlayError> {
         let output = self.ctx.end_pass();
 
-        // Tessellate
         let pixels_per_point = output.pixels_per_point;
         let primitives = self.ctx.tessellate(output.shapes, pixels_per_point);
         let textures_delta = output.textures_delta;
 
-        // Get the typed render state
         let state = render_state
             .downcast_mut::<EguiFrameRenderState>()
             .ok_or_else(|| OverlayError("Expected EguiFrameRenderState".to_string()))?;
 
-        // Lock the graphics context for device/queue access
         let gc = state
             .graphics_context
             .lock()
             .map_err(|_| OverlayError("Failed to lock graphics context".to_string()))?;
 
-        // Update textures
         self.renderer
             .update_textures(&gc.device, &gc.queue, &textures_delta);
         for (id, view) in state.retargets.drain(..) {
             self.renderer.update_external_texture(&gc.device, id, &view);
         }
 
-        // Get a mutable reference to the encoder
         let encoder = state
             .encoder
             .as_mut()
             .ok_or_else(|| OverlayError("No command encoder available".to_string()))?;
 
-        // Render
         let mut egui_render_state = EguiRenderState {
             device: &gc.device,
             queue: &gc.queue,

@@ -12,18 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The time an instance is owed, and `[Rate(f)]`.
-//!
-//! Every frame adds its delta to what each instance is owed; a turn is handed
-//! all of it — its `Update`'s `dt`, its countdowns, its waits — and owes
-//! nothing after. A frame the instance does not run, for its rate or for
-//! fuel, is therefore not lost time: the next turn makes it up.
-//!
-//! A rate-limited instance takes a turn once a period. Its first is due at a
-//! phase its entity decides, so a thousand guards at `10hz` spread over the
-//! period's frames instead of all running on one; after a turn the next is
-//! due a period later, on the same phase. A frame it skips is not a deferral:
-//! it keeps its mail and is told it on its turn.
+//! The time an instance is owed, and `[Rate(f)]`: a turn is handed all the
+//! time since its last, and a rate-limited instance takes one a period, at a
+//! phase its entity decides. See the book: reference/ergon.md, "Scheduling".
 
 use khora_core::ecs::entity::EntityId;
 use khora_data::flow::{ScriptInstance, ScriptProgram};
@@ -35,9 +26,10 @@ use super::runtime::{Instance, ScriptRuntime};
 /// non-binary period (`1/10 s`) loses to rounding over a few frames.
 const DUE_SLACK: f32 = 1e-5;
 
-/// Adds the frame's `delta` to what the instance is owed; whether it skips
-/// this frame for its rate. A skipped frame's owed time is recorded, so a
-/// save in between keeps it.
+/// Adds the frame's `delta` to what the instance is owed, and returns whether
+/// it skips this frame for its rate.
+///
+/// A skipped frame's owed time is recorded, so a save in between keeps it.
 pub(super) fn skips(
     runtime: &mut ScriptRuntime,
     instance: &ScriptInstance,
@@ -89,8 +81,8 @@ pub(super) fn skips(
     skipped
 }
 
-/// Whether `instance` takes a turn this frame as far as its rate goes — what
-/// [`skips`] will decide, asked before it does, without changing anything.
+/// Returns whether `instance` takes a turn this frame as far as its rate goes:
+/// what [`skips`] will decide, asked before it does, changing nothing.
 pub(super) fn due(
     runtime: &ScriptRuntime,
     instance: &ScriptInstance,
@@ -109,10 +101,12 @@ pub(super) fn due(
     }
 }
 
-/// A turn is about to run: it is handed what the instance is owed — its time,
-/// its `Update`'s time (the same, and what earlier turns that stopped before
-/// their `Update` left it) and its fixed steps — which is then nothing; a
-/// rate-limited instance's next turn is due a period on.
+/// Hands a turn about to run what the instance is owed: its time, its
+/// `Update`'s time and its fixed steps.
+///
+/// `Update`'s time adds what earlier turns stopped before their `Update` left
+/// it. The instance then owes nothing; a rate-limited one is next due a
+/// period on.
 pub(super) fn take_turn(held: &mut Instance, schedule: Schedule) -> (f32, f32, Vec<f32>) {
     if let (Some(period), Some(until)) = (period(schedule), held.until.as_mut()) {
         if *until <= DUE_SLACK {
@@ -132,9 +126,8 @@ pub(super) fn take_turn(held: &mut Instance, schedule: Schedule) -> (f32, f32, V
     (delta, update, std::mem::take(&mut held.fixed_owed))
 }
 
-/// Whether a frame that did not run `instance` changed what it is owed in a
-/// way its record must keep: steps its `FixedUpdate` now waits for. Marks it
-/// recorded, so a save in between keeps them.
+/// Marks `instance` rewritten when a frame that did not run it changed what
+/// it is owed, so a save in between keeps it.
 pub(super) fn note_sat_out(
     runtime: &mut ScriptRuntime,
     instance: &ScriptInstance,
@@ -151,8 +144,8 @@ pub(super) fn note_sat_out(
     }
 }
 
-/// Whether `program`'s behavior declares a `FixedUpdate`, in itself or in a
-/// state.
+/// Returns whether `program`'s behavior declares a `FixedUpdate`, in itself or
+/// in a state.
 fn declares_fixed_update(runtime: &ScriptRuntime, program: &ScriptProgram) -> bool {
     let Some(compiled) = runtime.program(&program.module) else {
         return false;
@@ -165,8 +158,8 @@ fn declares_fixed_update(runtime: &ScriptRuntime, program: &ScriptProgram) -> bo
         .any(|function| function.name.starts_with(&own) && function.name.ends_with(&member))
 }
 
-/// The schedule `program`'s behavior declares, as the runtime's program holds
-/// it.
+/// Returns the schedule `program`'s behavior declares, as the runtime's program
+/// holds it.
 pub(super) fn schedule_of(runtime: &ScriptRuntime, program: &ScriptProgram) -> Schedule {
     runtime
         .program(&program.module)
@@ -182,9 +175,10 @@ fn period(schedule: Schedule) -> Option<f32> {
         .map(|rate| 1.0 / rate)
 }
 
-/// Where in the period `entity`'s first turn falls: a fraction of it from the
-/// entity's index, spread so consecutive entities land far apart, and in
-/// 1/1024ths so a period that is a binary fraction stays exact.
+/// Returns where in the period `entity`'s first turn falls.
+///
+/// A fraction from the entity's index, spread so consecutive entities land far
+/// apart, in 1/1024ths so a period that is a binary fraction stays exact.
 fn phase(entity: EntityId, period: f32) -> f32 {
     let spread = u64::from(entity.index).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 54;
     period * spread as f32 / 1024.0

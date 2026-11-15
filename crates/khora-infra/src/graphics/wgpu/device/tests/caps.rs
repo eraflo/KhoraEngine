@@ -22,11 +22,10 @@ use khora_core::renderer::GraphicsDevice;
 use super::super::WgpuDevice;
 use crate::graphics::wgpu::resilience::GpuHealth;
 
-/// **The wgpu device reports storage buffers on this machine's GPU.** The
-/// device is requested with the limits the engine asks for
-/// (`wgpu::Limits::default()`, as the graphics context does), which allow
-/// storage buffers in the vertex and fragment stages: the device's caps say
-/// so, so a lane needing storage buffers stays on its family's menu.
+/// The wgpu device reports storage buffers on this machine's GPU.
+///
+/// The device gets the engine's limits (`wgpu::Limits::default()`), which allow
+/// them, so a lane needing storage buffers stays on its family's menu.
 #[test]
 fn the_wgpu_device_reports_storage_buffers() {
     let _turn = crate::graphics::wgpu::tests::gpu::exclusive_gpu();
@@ -70,10 +69,10 @@ fn the_wgpu_device_reports_storage_buffers() {
     );
 }
 
-/// **The wgpu device reports compute shaders on this machine's GPU.** An
-/// adapter whose downlevel capabilities include compute shaders gives a
-/// device whose caps say so, so Forward+, which culls its lights in a compute
-/// pass, stays on the render family's menu.
+/// The wgpu device reports compute shaders on this machine's GPU.
+///
+/// So Forward+, which culls its lights in a compute pass, stays on the render
+/// family's menu.
 #[test]
 fn the_wgpu_device_reports_compute() {
     let _turn = crate::graphics::wgpu::tests::gpu::exclusive_gpu();

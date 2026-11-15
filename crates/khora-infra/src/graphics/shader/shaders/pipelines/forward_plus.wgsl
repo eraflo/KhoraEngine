@@ -6,8 +6,8 @@
 // `lit_forward`: both lit lanes render the same image; this one iterates only
 // the lights its tile's culling list selected.
 //
-// Bind-group layout — the engine's canonical 4-group render convention
-// (see .agent/conventions.md). Group 3 is the *lighting domain*: it
+// Bind-group layout — the engine's four-group render convention
+// (see the book: how-to/add-a-shader.md). Group 3 is the *lighting domain*: it
 // holds every lighting input — the light list, the per-tile culling
 // results, the shadow atlases. Forward+ packs its data around the
 // shadow bindings (1/2/3) imposed by `khora::shadow::bindings`:
@@ -89,17 +89,14 @@ var<storage, read> light_grid: array<u32>;
 @group(3) @binding(6)
 var<uniform> tile_info: TileInfo;
 
-// Parallel array indexed identically to `lights`. Entry `i` is the
-// view-projection matrix the shadow lane used for that light's 2D
-// atlas slice. Unused / point-light entries hold the identity matrix —
-// they are bypassed via the `shadow_map_index < 0` early-out inside
-// `sample_shadow_pcf`.
+// Indexed like `lights`: entry `i` is the view-projection the shadow lane used
+// for that light's 2D atlas slice. Unused and point-light entries hold the
+// identity, never read past `sample_shadow_pcf`'s `shadow_map_index < 0` exit.
 @group(3) @binding(7)
 var<storage, read> light_shadow_view_projs: array<mat4x4<f32>>;
 
 // Image-based lighting — Forward+ packs its culling buffers at 4..8, so IBL
-// follows at 8..12. Diffuse-only for now (prefiltered @9 and BRDF LUT @10 are
-// in the layout but not yet sampled; Inc 4 adds specular).
+// follows at 8..12.
 @group(3) @binding(8) var ibl_irradiance: texture_cube<f32>;
 @group(3) @binding(9) var ibl_prefiltered: texture_cube<f32>;
 @group(3) @binding(10) var ibl_brdf_lut: texture_2d<f32>;
@@ -195,12 +192,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         let light_index = light_indices[light_offset + i];
         let light = lights[light_index];
 
-        // Shadow factor — branch on light type:
-        //   - directional (0) / spot (2): 2D PCF against `shadow_atlas`
-        //     using the per-light view-projection from
-        //     `light_shadow_view_projs`.
-        //   - point (1): cube PCF against `shadow_cube_atlas`, depth
-        //     reconstructed from the light-to-fragment distance.
+        // A point light samples the cube atlas by distance; directional and
+        // spot lights the 2D atlas through `light_shadow_view_projs`.
         var shadow_factor = 1.0;
         if (light.light_type == 1u) {
             shadow_factor = sample_point_shadow_params(

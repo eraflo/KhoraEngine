@@ -13,6 +13,7 @@
 // limitations under the License.
 
 //! `RenderSystem` for the wgpu backend: frames, resize, stats.
+//! See the book: concepts/rendering.md, "The frame lifecycle".
 
 use super::WgpuRenderSystem;
 use crate::graphics::wgpu::conversions::from_wgpu_texture_format;
@@ -75,7 +76,6 @@ impl RenderSystem for WgpuRenderSystem {
         }
         let stopwatch = Stopwatch::new();
 
-        // Update camera uniform buffer with the current ViewInfo
         self.update_camera_uniforms(view_info);
 
         self.last_frame_stats.cpu_preparation_time_ms = stopwatch.elapsed_ms().unwrap_or(0) as f32;
@@ -97,8 +97,7 @@ impl RenderSystem for WgpuRenderSystem {
         // Bail out early (non-panicking) on a lost / out-of-memory device.
         self.check_device_health()?;
 
-        // Poll the device to process any pending GPU-to-CPU callbacks, such as
-        // those from the profiler's `map_async` calls. This is crucial.
+        // Runs the profiler's `map_async` callbacks, so it can read a past frame.
         device.poll_device_non_blocking();
 
         let gc = self
@@ -110,10 +109,8 @@ impl RenderSystem for WgpuRenderSystem {
             p.try_read_previous_frame();
         }
 
-        // --- Follow the window's size, once it has settled ---
         self.settle_swapchain_size(&gc);
 
-        // --- 1. Acquire Frame from Swap Chain (resilient) ---
         device.wait_for_last_submission();
         let output_surface_texture = match self.acquire_surface_texture(&gc)? {
             Some(texture) => texture,
@@ -126,7 +123,6 @@ impl RenderSystem for WgpuRenderSystem {
 
         let command_recording_timer = Stopwatch::new();
 
-        // --- 2. Create a managed, abstract view for the swap chain texture ---
         if let Some(old_id) = self.current_frame_view_id.take() {
             device.destroy_texture_view(old_id)?;
         }
@@ -136,10 +132,8 @@ impl RenderSystem for WgpuRenderSystem {
         )?;
         self.current_frame_view_id = Some(target_view_id);
 
-        // --- 3. Create an abstract Command Encoder ---
         let mut command_encoder = device.create_command_encoder(Some("Khora Main Command Encoder"));
 
-        // --- 4. Profiler Pass A (records start timestamps) ---
         if settings.enable_gpu_timestamps {
             if let Some(profiler) = self.gpu_profiler.as_ref() {
                 let _pass_a = command_encoder.begin_profiler_compute_pass(
@@ -150,7 +144,6 @@ impl RenderSystem for WgpuRenderSystem {
             }
         }
 
-        // --- 5. Main Render Pass (drawing all objects) ---
         {
             let gc_guard = gc
                 .lock()
@@ -174,7 +167,6 @@ impl RenderSystem for WgpuRenderSystem {
                 base_mip_level: 0,
             };
 
-            // Create depth/stencil attachment if depth texture is available
             use khora_core::renderer::api::command::RenderPassDepthStencilAttachment;
             let depth_attachment = self.depth_texture_view.as_ref().map(|depth_view| {
                 RenderPassDepthStencilAttachment {
@@ -211,11 +203,10 @@ impl RenderSystem for WgpuRenderSystem {
             self.last_frame_stats.triangles_rendered = triangles;
         }
 
-        // --- 6. Profiler Pass B and Timestamp Resolution ---
         if settings.enable_gpu_timestamps {
             if let Some(profiler) = self.gpu_profiler.as_ref() {
-                // This scope ensures the compute pass ends, releasing its mutable borrow on the encoder,
-                // before we try to mutably borrow the encoder again for resolve/copy.
+                // The pass must end, freeing its borrow of the encoder, before
+                // the resolve and the copy borrow it again.
                 {
                     let _pass_b = command_encoder.begin_profiler_compute_pass(
                         Some("Timestamp Pass B"),
@@ -228,7 +219,6 @@ impl RenderSystem for WgpuRenderSystem {
             }
         }
 
-        // --- 7. Finalize and Submit Commands ---
         let submission_timer = Stopwatch::new();
         let submission_ms = match command_encoder.finish() {
             Some(command_buffer) => {
@@ -249,10 +239,8 @@ impl RenderSystem for WgpuRenderSystem {
             }
         }
 
-        // --- 8. Present the final image to the screen ---
         output_surface_texture.present();
 
-        // --- 9. Update final frame statistics ---
         self.frame_count += 1;
         if let Some(p) = self.gpu_profiler.as_ref() {
             self.last_frame_stats.gpu_main_pass_time_ms = p.last_main_pass_ms();
@@ -277,7 +265,7 @@ impl RenderSystem for WgpuRenderSystem {
         // out-of-memory: there is no point acquiring or submitting any work.
         self.check_device_health()?;
 
-        // Process any pending GPU-to-CPU callbacks (profiler map_async, etc.).
+        // Runs the profiler's `map_async` callbacks, so it can read a past frame.
         device.poll_device_non_blocking();
         // Block until the previous submission is consumed so the acquire
         // semaphore is guaranteed to be unsignaled.
@@ -292,7 +280,6 @@ impl RenderSystem for WgpuRenderSystem {
             p.try_read_previous_frame();
         }
 
-        // --- Follow the window's size, once it has settled ---
         self.settle_swapchain_size(&gc);
 
         // The surface's format, known before anything is acquired: a format
@@ -308,20 +295,17 @@ impl RenderSystem for WgpuRenderSystem {
             })?
         };
 
-        // --- Acquire swapchain texture (resilient: see acquire_surface_texture) ---
         let output_surface_texture = match self.acquire_surface_texture(&gc)? {
             Some(texture) => texture,
             None => {
-                // Transient skip (minimized / timeout / occluded / reconfigure
-                // in flight). Not an error — report a non-fatal acquisition
-                // failure so the engine skips this frame and retries next one.
+                // A transient skip, reported as a non-fatal failure so the
+                // engine skips this frame and retries the next.
                 return Err(RenderError::SurfaceAcquisitionFailed(
                     "frame skipped (surface not ready)".to_string(),
                 ));
             }
         };
 
-        // --- Create texture view for the frame ---
         if let Some(old_id) = self.current_frame_view_id.take() {
             device.destroy_texture_view(old_id)?;
         }
@@ -337,7 +321,6 @@ impl RenderSystem for WgpuRenderSystem {
         // size has settled — before anything is drawn into it this frame.
         self.settle_viewport_size();
 
-        // Compute targets for the engine: choose between swapchain and viewport.
         let (color, depth, (width, height), color_format) = if self.render_to_viewport {
             let c = self
                 .viewport_color_view_id
@@ -378,10 +361,8 @@ impl RenderSystem for WgpuRenderSystem {
         // error instead of presenting a texture from a dead device.
         self.check_device_health()?;
 
-        // `SurfaceTexture::present()` is infallible in this wgpu version: if a
-        // present fails internally it is reported through the device error
-        // callback (handled by `check_device_health`), and an un-presented
-        // texture is discarded on drop rather than panicking.
+        // `present()` cannot fail: a failure inside it reaches the device error
+        // callback, which `check_device_health` reads next frame.
         if let Some(texture) = self.active_frame_texture.take() {
             texture.present();
         }
@@ -403,7 +384,7 @@ impl RenderSystem for WgpuRenderSystem {
             .ok_or(RenderError::NotInitialized)?
             .clone();
 
-        // Create encoder and target view while holding the lock, then release.
+        // The overlay takes the context's lock itself: release it before.
         let (encoder, target_view, (width_px, height_px)) = {
             let gc = gc_arc
                 .lock()
@@ -451,7 +432,6 @@ impl RenderSystem for WgpuRenderSystem {
             return Err(RenderError::RenderingFailed(e.to_string()));
         }
 
-        // Submit the encoder
         let encoder = render_state.encoder.take().ok_or_else(|| {
             RenderError::RenderingFailed("Encoder consumed during overlay render".into())
         })?;
@@ -516,14 +496,9 @@ impl RenderSystem for WgpuRenderSystem {
     }
 
     fn graphics_device(&self) -> Arc<dyn GraphicsDevice> {
-        // Invariant: `wgpu_device` is populated during render-system
-        // initialization (adapter + device creation) and is only cleared on
-        // shutdown. The bootstrap path calls `graphics_device()` exactly once,
-        // right after a successful init and long before shutdown — so the
-        // device is always present here. The trait returns a bare
-        // `Arc<dyn GraphicsDevice>` (no fallible variant), and there is no
-        // sound placeholder device to substitute, so a `None` at this point is
-        // an init-ordering bug rather than a recoverable runtime condition.
+        // The device lives from `init` to `shutdown`, and the boot asks for it
+        // once, right after `init`: a `None` here is an ordering bug, and the
+        // infallible trait has no placeholder device to give instead.
         self.wgpu_device.clone().expect(
             "WgpuRenderSystem::graphics_device called before initialization or after shutdown",
         )

@@ -3,18 +3,13 @@
 #import khora::lighting::structs::PointLight
 #import khora::shadow::bindings::{shadow_cube_atlas, shadow_sampler}
 
-/// Core cube-atlas sampling with explicit per-light parameters.
+/// Samples the cube shadow atlas with 5-tap PCF (the centre and four around it), from
+/// explicit per-light parameters.
 ///
-/// Reproduces the same non-linear depth value the shadow pass wrote:
-///   depth(d) = far/(far - near) - (near*far)/((far - near)*d)
-/// where `near = SHADOW_CUBE_NEAR` (injected by ShaderRegistry, must
-/// match `Mat4::cube_face_view_proj`'s NEAR constant) and `far` is the
-/// per-light far plane. `textureSampleCompareLevel` does cube-face
-/// selection in hardware, so the 4-tap PCF around `dir` falls onto the
-/// right neighbour without seams.
-///
-/// Consumers that do not have a `PointLight` struct (e.g. Forward+'s
-/// unified `GpuLight`) call this directly with the individual fields.
+/// Reproduces the shadow pass's depth, `far/(far - near) - (near*far)/((far - near)*d)`,
+/// with `near = SHADOW_CUBE_NEAR` (it must match `Mat4::cube_face_view_proj`'s).
+/// The hardware picks the cube face, so the taps cross faces without seams.
+/// For callers without a `PointLight`, such as Forward+'s `GpuLight`.
 fn sample_point_shadow_params(
     light_pos: vec3<f32>,
     cube_index: i32,

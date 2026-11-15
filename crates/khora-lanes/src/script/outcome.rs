@@ -24,9 +24,10 @@ pub(super) enum Outcome {
         spent: u64,
         /// How many of this instance's events it got through first.
         delivered: usize,
-        /// Whether it stopped because the budget ran out, rather than on an
-        /// `await`. A starved turn is budget pressure the DCC must see; a
-        /// waiting one is a script doing what it says.
+        /// Whether it stopped because the budget ran out, not on an `await`.
+        ///
+        /// A starved turn is budget pressure the DCC must see; a waiting one is
+        /// a script doing what it says.
         starved: bool,
     },
     Completed {

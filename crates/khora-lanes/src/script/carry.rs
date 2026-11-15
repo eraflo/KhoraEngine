@@ -25,16 +25,15 @@ use super::report::Resumed;
 use super::resumption;
 use super::runtime::{member_of, Instance};
 
-/// Carries `instance` of `behavior` from `old_program` — what its fields are
-/// laid out for — into `program`, and returns how each body part-way came
-/// back below the exact tier. Nothing to carry when either program lacks the
-/// behavior.
+/// Carries `instance` of `behavior` from `old_program`, which its fields are
+/// laid out for, into `program`.
 ///
-/// By name: inserting one field at the top shifts every slot after it, and
-/// carrying values positionally would move a guard's health into its speed.
-/// The state it is in, that state's data and every countdown cross by name
-/// too, so an edit does not send a chasing guard back to patrol; a field the
-/// edit added starts at its default — the layout's data.
+/// Fields, the current state, its data and every countdown cross by name; a
+/// field the edit added starts at its default. Nothing is carried when either
+/// program lacks the behavior. Returns how each body part-way through came
+/// back below the exact tier.
+///
+/// See the book: concepts/scripting/saves-and-edits.md, "Fields, by name".
 pub(super) fn carry_instance(
     instance: &mut Instance,
     old_program: &Arc<Program>,
@@ -48,11 +47,10 @@ pub(super) fn carry_instance(
     let mut resumes = Vec::new();
     instance.fields =
         persistence::carried_across(old, layout, &instance.fields, instance.pending.as_ref());
-    // A body part-way through is a position in the old code. It is carried
-    // into the new code here, in whatever tier the edit allows, rather than
-    // when it would next run, so that nothing — a save taken in between,
-    // above all — goes on holding a position the program no longer has. The
-    // body a load restored, waiting behind its `OnLoad`, likewise.
+    // A body part-way through (and one a load restored behind its `OnLoad`)
+    // is a position in the old code. Carried now rather than when it next
+    // runs, so nothing, a save taken in between above all, goes on holding a
+    // position the program no longer has.
     for slot in [&mut instance.pending, &mut instance.after_load] {
         let Some(pending) = slot.take() else {
             continue;

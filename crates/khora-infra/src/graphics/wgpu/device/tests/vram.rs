@@ -12,10 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The video memory the platform gives the device: the device-local heaps'
-//! sum, then the probe and the device's report on this machine's adapter.
-//! Without any adapter (a CI runner without a GPU) the adapter tests log why
-//! and return.
+//! The video memory the platform gives the device: the heaps' sum, the probe,
+//! the device's report. Without an adapter the adapter tests log why and return.
 
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -33,9 +31,7 @@ const GIB: u64 = 1024 * MIB;
 
 // ─── The device-local heaps' sum ────────────────────────────────────────────
 
-/// **Only the device-local heaps count.** A 4 GiB local heap with a 3 GiB
-/// budget of which 1 GiB is used, beside a 16 GiB host heap with budgets of
-/// its own: the sum is the local heap's alone.
+/// Only the device-local heaps count: a host heap's budget is left out.
 #[test]
 fn only_the_device_local_heaps_count() {
     let heaps = [
@@ -46,10 +42,7 @@ fn only_the_device_local_heaps_count() {
     assert_eq!(device_local_sum(&heaps), Some((3 * GIB, Some(GIB))));
 }
 
-/// **The local heaps' budgets and usages are summed when each has them.**
-/// A 4 GiB heap (3 GiB budget, 1 GiB used) and a 256 MiB heap (200 MiB
-/// budget, 50 MiB used), both local: 3 GiB + 200 MiB of budget, 1 GiB +
-/// 50 MiB used.
+/// The local heaps' budgets and usages are summed when each heap has them.
 #[test]
 fn the_local_budgets_and_usages_are_summed_when_each_heap_has_them() {
     let heaps = [
@@ -63,9 +56,7 @@ fn the_local_budgets_and_usages_are_summed_when_each_heap_has_them() {
     );
 }
 
-/// **A host heap without a budget does not stop the local budgets' sum.**
-/// Only the local heaps must all carry a budget: a host heap without one is
-/// left out like any host heap.
+/// A host heap without a budget does not stop the local budgets' sum.
 #[test]
 fn a_host_heap_without_a_budget_leaves_the_local_budgets_summed() {
     let heaps = [
@@ -86,9 +77,9 @@ fn without_a_local_heap_there_is_no_sum() {
     assert_eq!(device_local_sum(&[]), None, "no heap at all");
 }
 
-/// **A local heap without a budget falls back to the heaps' sizes.** When
-/// one local heap carries no budget, the sum is every local heap's size and
-/// no usage — never a budget that leaves a heap out.
+/// A local heap without a budget falls back to the local heaps' sizes, with no usage.
+///
+/// Never a budget that leaves a heap out.
 #[test]
 fn a_local_heap_without_a_budget_gives_the_sizes_and_no_usage() {
     let heaps = [
@@ -112,9 +103,10 @@ struct Adapted {
 }
 
 impl Drop for Adapted {
-    /// Waits for the work still queued: the queue must never be dropped with
-    /// work in flight, as wgpu panics there after a few seconds, and a panic
-    /// while a failed test unwinds aborts the process.
+    /// Waits for the work still queued before the queue drops.
+    ///
+    /// wgpu panics a few seconds after a queue drops with work in flight, and a
+    /// panic while a failed test unwinds aborts the process.
     fn drop(&mut self) {
         if let Err(e) = self.device.poll(wgpu::PollType::Wait {
             submission_index: None,
@@ -157,9 +149,9 @@ fn adapted(test: &str) -> Option<Adapted> {
     })
 }
 
-/// **The probe gives a budget or says nothing.** On this machine's adapter
-/// the probe either does not know, or reads a budget of some bytes; a budget
-/// summed from the heaps' sizes carries no usage.
+/// The probe gives a budget or says nothing.
+///
+/// A budget summed from the heaps' sizes carries no usage.
 #[test]
 fn the_probe_gives_a_budget_or_says_nothing() {
     let Some(gpu) = adapted("the_probe_gives_a_budget_or_says_nothing") else {
@@ -180,9 +172,7 @@ fn the_probe_gives_a_budget_or_says_nothing() {
     }
 }
 
-/// **Without the adapter the probe still gives a budget or says nothing.**
-/// A device whose adapter is not known is probed without it: the probe
-/// never fails, and what it reads is a budget of some bytes.
+/// Without the adapter the probe still gives a budget or says nothing; it never fails.
 #[test]
 fn without_the_adapter_the_probe_gives_a_budget_or_says_nothing() {
     let Some(gpu) = adapted("without_the_adapter_the_probe_gives_a_budget_or_says_nothing") else {
@@ -197,12 +187,10 @@ fn without_the_adapter_the_probe_gives_a_budget_or_says_nothing() {
     }
 }
 
-/// **The device reports the platform's budget as its capacity.** A device
-/// given the adapter it runs on, holding a 256-byte buffer: when the probe
-/// reads a budget, the device's usage report carries it as its capacity
-/// (and, without a usage from the platform, its own count as the bytes in
-/// use); when the probe says nothing, the report has no capacity and counts
-/// the device's own bytes. Either way its peak is its own.
+/// The device reports the platform's budget as its capacity.
+///
+/// Without a usage from the platform it counts its own bytes in use; without a
+/// budget it reports no capacity. Either way its peak is its own.
 #[test]
 fn the_device_reports_the_platforms_budget_as_its_capacity() {
     let test = "the_device_reports_the_platforms_budget_as_its_capacity";
@@ -269,10 +257,10 @@ fn the_device_reports_the_platforms_budget_as_its_capacity() {
     }
 }
 
-/// This machine's adapter on `backends` only and a device on it, or `None`
-/// (logged) when that backend has no adapter or no device. The instance runs
-/// without wgpu's debug flags: with them, a DX12 device can refuse to be
-/// made ("Parent device is lost") where the engine's own would be.
+/// This machine's adapter on `backends` alone and a device on it, or `None` (logged).
+///
+/// No wgpu debug flags: with them, a DX12 device can refuse to be made
+/// ("Parent device is lost") where the engine's own would be.
 fn adapted_on(test: &str, backends: wgpu::Backends) -> Option<Adapted> {
     let turn = crate::graphics::wgpu::tests::gpu::exclusive_gpu();
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
@@ -310,10 +298,7 @@ fn adapted_on(test: &str, backends: wgpu::Backends) -> Option<Adapted> {
     })
 }
 
-/// **The device reports the platform's usage as its bytes in use.** A device
-/// given its adapter, holding a 256-byte buffer, on a platform that says what
-/// the process uses: the report's bytes in use are the platform's figure
-/// (read just before and just after), never the device's own 256 bytes.
+/// The device reports the platform's usage as its bytes in use, not its own count.
 #[test]
 fn the_device_reports_the_platforms_usage_as_its_bytes_in_use() {
     let test = "the_device_reports_the_platforms_usage_as_its_bytes_in_use";
@@ -354,10 +339,10 @@ fn the_device_reports_the_platforms_usage_as_its_bytes_in_use() {
     );
 }
 
-/// **The device's peak is never below its bytes in use.** A peak is the
-/// most ever in use at once, so the report it sits in never says more is in
-/// use now: on a platform that counts the swapchain and the driver, the
-/// device's own 256-byte peak is below what the platform reports in use.
+/// The device's peak is never below its bytes in use.
+///
+/// The platform counts the swapchain and the driver, so its figure runs above
+/// the device's own peak.
 #[test]
 fn the_device_reports_a_peak_no_lower_than_its_bytes_in_use() {
     let test = "the_device_reports_a_peak_no_lower_than_its_bytes_in_use";
@@ -394,9 +379,8 @@ fn the_device_reports_a_peak_no_lower_than_its_bytes_in_use() {
     }
 }
 
-/// **On Vulkan with `VK_EXT_memory_budget` the probe reads the system's
-/// budget.** A Vulkan device that enabled the extension is probed for the
-/// heaps' budgets and usages, never their bare sizes.
+/// On Vulkan with `VK_EXT_memory_budget` the probe reads the system's budget,
+/// never the heaps' bare sizes.
 #[cfg(any(
     windows,
     target_os = "linux",
@@ -446,9 +430,7 @@ fn on_dx12_the_probe_reads_the_systems_budget() {
     assert!(reading.usage.is_some(), "{reading:?}");
 }
 
-/// **On OpenGL the probe gives a budget or says nothing.** A GL device is
-/// probed through its context's lock: the NVIDIA extension's figures, or
-/// nothing.
+/// On OpenGL the probe gives the NVIDIA extension's figures or says nothing.
 #[cfg(any(
     windows,
     target_os = "linux",

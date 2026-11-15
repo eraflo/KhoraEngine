@@ -13,9 +13,8 @@
 // limitations under the License.
 
 //! The script lane's two levels and their prices: the `[Critical]` behaviours'
-//! turns, or every due one. A cut defers a turn and never changes what a turn
-//! computes, so both levels keep the result; what the critical level gives up
-//! is the share of the frame's turns it serves.
+//! turns, or every due one. A cut defers a turn, never changes what it
+//! computes: the critical level gives up only the share of turns it serves.
 
 use std::time::Duration;
 
@@ -61,8 +60,8 @@ pub(super) const LEVELS: [Level; 2] = [
 /// of a few statements.
 const PER_ROW: Duration = Duration::from_nanos(200);
 
-/// The frame the view is for, in seconds: its measured delta. A frame of no
-/// length — the first — counts every rate-limited behaviour as due.
+/// Returns the view's frame in seconds; a frame of no length (the first) is
+/// infinite, so every rate-limited behaviour counts as due.
 fn frame_of(view: &ScriptView) -> f32 {
     if view.delta_seconds > 0.0 {
         view.delta_seconds
@@ -71,9 +70,7 @@ fn frame_of(view: &ScriptView) -> f32 {
     }
 }
 
-/// What the frame's due turns need: the fuel of all of them and of the
-/// `[Critical]` ones, the critical share of the turns, and whether every
-/// price was measured.
+/// What the frame's due turns need.
 pub(super) struct Need {
     /// Every due turn's fuel.
     pub all: u64,
@@ -85,9 +82,10 @@ pub(super) struct Need {
     pub measured: bool,
 }
 
-/// What the frame's due turns need: what the scripting world knows of its
-/// instances, and each instance of the view it has not met yet — arriving
-/// this frame — at its behaviour's measured turn, or a turn not yet measured.
+/// Returns what the frame's due turns need.
+///
+/// An instance of the view the scripting world has not met yet (arriving this
+/// frame) is priced at its behaviour's measured turn, or at a guess.
 pub(super) fn need(runtime: &ScriptRuntime, view: &ScriptView) -> Need {
     let frame = frame_of(view);
     let demand = runtime.demand(frame);
@@ -147,9 +145,11 @@ pub(super) fn need(runtime: &ScriptRuntime, view: &ScriptView) -> Need {
     }
 }
 
-/// The price of `level` on this frame's view: the run's overhead, the fuel its
-/// turns need at the measured rate, and the rows the systems' queries took
-/// last frame — a system is one instance however many rows it sweeps.
+/// Returns the price of `level` on this frame's view.
+///
+/// The run's overhead, the fuel its turns need at the measured rate, and the
+/// rows the systems' queries took last frame: a system is one instance however
+/// many rows it sweeps.
 pub(super) fn price(level: usize, runtime: &ScriptRuntime, view: &ScriptView) -> Cost {
     let need = need(runtime, view);
     let rate = runtime.rate().max(1.0);

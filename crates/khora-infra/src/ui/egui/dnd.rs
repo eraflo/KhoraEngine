@@ -21,9 +21,8 @@ use super::ui_builder::EguiUiBuilder;
 impl EguiUiBuilder<'_> {
     /// Publishes `payload` while the last item is being dragged.
     pub(super) fn attach_drag_payload(&mut self, payload: u64) {
-        // Attach to the response left by the last `interact_rect` call.
-        // That response was created with `Sense::click_and_drag()`, so
-        // egui already detects drags — we just need to publish the payload.
+        // The last `interact_rect` response senses click-and-drag, so egui
+        // already detects the drag.
         if let Some(response) = self.last_response.as_ref() {
             if response.dragged() {
                 response.dnd_set_drag_payload::<u64>(payload);

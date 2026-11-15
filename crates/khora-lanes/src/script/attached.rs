@@ -13,14 +13,8 @@
 // limitations under the License.
 
 //! What the lane keeps across frames beside its instances: what it last saw
-//! of each component-attached instance's row, the events an instance of an
-//! entity running several behaviors has yet to hear.
-//!
-//! A behavior attached by its component is stored in the `World`, and the
-//! lane is handed its row every frame. Comparing that row with what the lane
-//! last saw or wrote is how it tells a field written outside it — an edit
-//! during play, another script's write — from its own, and takes the first
-//! without discarding the rest of what the instance holds.
+//! of each component-attached instance's row, and the events an instance has
+//! yet to hear.
 
 use std::collections::HashMap;
 
@@ -31,6 +25,10 @@ use khora_core::script::{ScriptEvent, ScriptValue};
 type Key = (EntityId, String);
 
 /// The lane's memory of the instances a component attaches.
+///
+/// Comparing the row the lane is handed with what it last saw or wrote tells a
+/// field written outside it (an edit during play, another script's write) from
+/// its own, so the lane takes the first without discarding the rest.
 #[derive(Debug, Default)]
 pub struct Attached {
     /// Each instance's row as the lane last saw or wrote it.
@@ -48,8 +46,8 @@ impl Attached {
             .retain(|(entity, behavior), _| alive(*entity, behavior));
     }
 
-    /// The fields of `row` that differ from what the lane last saw of the
-    /// instance — nothing for one it has not seen.
+    /// Returns the fields of `row` that differ from what the lane last saw of
+    /// the instance, and nothing for one it has not seen.
     pub(super) fn changed_outside(
         &self,
         entity: EntityId,
@@ -79,7 +77,7 @@ impl Attached {
         self.seen.insert((entity, behavior.to_owned()), row);
     }
 
-    /// The events the instance has yet to hear, taken.
+    /// Takes the events the instance has yet to hear.
     pub(super) fn take_held(&mut self, entity: EntityId, behavior: &str) -> Vec<ScriptEvent> {
         self.held
             .remove(&(entity, behavior.to_owned()))

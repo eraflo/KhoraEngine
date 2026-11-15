@@ -12,16 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The UI lane: every UI node as one instanced quad, then every glyph of the
-//! frame's texts as one, drawn over the frame's colour.
+//! The UI family's lane: every UI node and every glyph of the frame's texts,
+//! drawn over the frame's colour.
 //!
-//! The UI Flow publishes the UI as a [`UiScene`]; the lane uploads one
-//! instance per node and one per glyph, and draws them in one pass as
-//! triangle strips of four vertices each — the quads first, the glyphs over
-//! them with a pipeline of their own. Image nodes sample the shared
-//! [`UiImageAtlas`], which the `image_on_gpu` residency fills, and glyphs
-//! the [`GlyphAtlas`], which `glyphs_on_gpu` fills, both before any agent
-//! runs — the lane only reads them.
+//! See the book: concepts/ui.md, "How it plugs into a frame".
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -81,11 +75,15 @@ const GLYPH_CPU: Duration = Duration::from_nanos(60);
 /// What drawing one glyph's quad costs on the device.
 const GLYPH_GPU: Duration = Duration::from_nanos(30);
 
-/// The UI lane. Holds what it built on the device; `None` before the first
-/// prepare and after shutdown.
+/// A lane that draws each UI node as an instanced quad, then each glyph over them.
+///
+/// One level. Image nodes sample the [`UiImageAtlas`] and glyphs the
+/// [`GlyphAtlas`]; residency DataSystems fill both before any agent runs, and
+/// the lane only reads them.
 #[derive(Debug)]
 pub struct UiLane {
     levels: [Level; 1],
+    /// What it built on the device; `None` before the first prepare and after shutdown.
     gpu: Option<UiGpu>,
 }
 
@@ -122,8 +120,7 @@ pub(super) struct UiGpu {
     pub(super) atlas_layout: BindGroupLayoutId,
     pub(super) glyph_atlas_layout: BindGroupLayoutId,
     pub(super) sampler: SamplerId,
-    /// The two pipelines and the colour format and samples they were built
-    /// for.
+    /// The two pipelines and the colour format and samples they were built for.
     pipelines: Option<((TextureFormat, u32), UiPipelines)>,
     /// The quads' set-2 bind group and the atlas view it binds, rebuilt only
     /// when the view changes.
@@ -196,9 +193,8 @@ impl Lane for UiLane {
         &self.levels
     }
 
-    /// Every node is one quad and every glyph one: their time on each
-    /// device, whatever number of texts the glyphs are in. An empty UI costs
-    /// no time.
+    /// Prices one quad per node and one per glyph, whatever texts the glyphs
+    /// are in; an empty UI costs no time.
     fn cost(&self, _level: usize, inputs: &UiInputs<'_>) -> Cost {
         let nodes = inputs.scene.nodes.len() as u32;
         let glyphs: u32 = inputs
@@ -218,10 +214,8 @@ impl Lane for UiLane {
         }
     }
 
-    /// Builds the projection, the node and glyph storages, their bind groups
-    /// and the sampler once, and the two pipelines for the target's colour
-    /// format and samples: the UI tests no depth, so a depth change builds
-    /// nothing.
+    /// Builds the projection, the storages and the sampler once, and the two
+    /// pipelines per colour format and sample count; a depth change builds nothing.
     fn prepare(
         &mut self,
         _level: usize,
@@ -261,10 +255,10 @@ impl Lane for UiLane {
         Ok(())
     }
 
-    /// Draws every node as a quad, then every glyph over them, into the
-    /// frame's colour. Everything the frame needs on the device is built and
-    /// uploaded before the pass is recorded, so a frame that fails records
-    /// nothing.
+    /// Draws every node as a quad, then every glyph over them, into the frame's colour.
+    ///
+    /// Everything is built and uploaded before the pass is recorded, so a
+    /// frame that fails records nothing.
     fn record(
         &mut self,
         _level: usize,
@@ -356,10 +350,9 @@ impl Lane for UiLane {
     }
 }
 
-// ─── Free functions (CLAD: no inherent methods on the lane struct) ───
-
-/// The layouts, the projection and the first instance storage, and the
-/// sampler. A refusal halfway gives back what came before it.
+/// Builds the layouts, the projection, the first instance storages and the sampler.
+///
+/// A refusal halfway gives back what came before it.
 fn build_ui_gpu(
     device: &dyn GraphicsDevice,
     pipelines: &dyn PipelineSystem,
@@ -443,9 +436,9 @@ fn instance_block(
     )
 }
 
-/// Replaces the instance storage `block` by one holding at least `needed`
-/// bytes, twice the instances it held at least; the old one is given back
-/// once the new stands.
+/// Replaces the instance storage `block` by one holding at least `needed` bytes.
+///
+/// It at least doubles; the old one is given back once the new stands.
 fn grow(
     block: &mut Block,
     device: &dyn GraphicsDevice,
@@ -461,9 +454,11 @@ fn grow(
     Ok(())
 }
 
-/// The set-2 bind group over the atlas's view, or over a one-texel fallback
-/// while the atlas has no texture. It is kept while the view it binds stays
-/// the same, and the one it replaces is given back.
+/// Returns the set-2 bind group over the atlas's view, or the fallback's while
+/// the atlas has no texture.
+///
+/// It is kept while the view it binds stays the same; the one it replaces is
+/// given back.
 fn atlas_bind_group(
     built: &mut UiGpu,
     device: &dyn GraphicsDevice,
@@ -514,9 +509,9 @@ struct Draw<'b> {
     count: u32,
 }
 
-/// The UI pass — `LoadOp::Load` preserves what the scene drew; no depth.
-/// Each draw, in order, over the one projection; none at all records no
-/// pass.
+/// Records the UI pass over what the scene drew: each draw, in order.
+///
+/// No depth. No draw at all records no pass.
 fn draw_ui(
     encoder: &mut dyn CommandEncoder,
     color: TextureViewId,

@@ -204,9 +204,10 @@ const ARCHIVO_REGULAR: &[u8] =
 const ARCHIVO_SEMIBOLD: &[u8] =
     include_bytes!("../../../../../khora-tool-ui/assets/fonts/Archivo-SemiBold.ttf");
 
-/// A font collection (`.ttc`) holding `faces` in this order: the `ttcf`
-/// header, then each face's file with its table offsets moved to where the
-/// face now starts.
+/// A font collection (`.ttc`) holding `faces` in this order.
+///
+/// The `ttcf` header, then each face's file with its table offsets moved to
+/// where the face now starts.
 fn collection(faces: &[&[u8]]) -> Arc<[u8]> {
     fn be32(bytes: &[u8], at: usize) -> u32 {
         u32::from_be_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]])
@@ -233,11 +234,11 @@ fn collection(faces: &[&[u8]]) -> Arc<[u8]> {
     Arc::from(out)
 }
 
-/// A collection registers as one font: the shaper and the rasteriser must use
-/// the **same face** of it, or the glyphs are placed at one face's advances
-/// and drawn with another face's outlines. Here the collection holds
-/// SemiBold then Regular; the shaper picks Regular (the weight it asks
-/// for), the rasteriser always takes the file's first face, SemiBold.
+/// The shaper and the rasteriser use the same face of a collection.
+///
+/// Otherwise glyphs are placed at one face's advances and drawn with another's
+/// outlines. The collection holds SemiBold then Regular, and the shaper would
+/// pick Regular, the weight it asks for.
 #[test]
 fn both_backends_use_the_same_face_of_a_font_collection() {
     let shaper = ParleyShaper::new();
@@ -291,10 +292,10 @@ fn both_backends_use_the_same_face_of_a_font_collection() {
     );
 }
 
-/// The two backends agree on what is a font: a file cut short (a download
-/// that stopped, a partial write) that the shaper refuses as unreadable is
-/// refused by the rasteriser too, instead of registering a font that draws
-/// nothing.
+/// The two backends agree on what is a font.
+///
+/// A file cut short (a download that stopped, a partial write) that the shaper
+/// refuses is refused by the rasteriser too, not registered to draw nothing.
 #[test]
 fn a_truncated_font_is_refused_by_the_rasterizer_as_by_the_shaper() {
     let shaper = ParleyShaper::new();

@@ -14,7 +14,10 @@
 
 //! # Khora Lanes
 //!
-//! Hot-path execution pipelines optimized for performance-critical operations.
+//! The engine's lanes: the hot-path work of each family, grouped by family,
+//! with each family's outputs and its registration.
+//!
+//! See the book: concepts/agents-and-lanes.md, "Lanes are layers".
 
 #![warn(missing_docs)]
 

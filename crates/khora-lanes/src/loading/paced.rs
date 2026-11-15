@@ -24,9 +24,10 @@ use khora_core::lane::{Lane, LaneReport};
 use super::work::{load, Waiting};
 use super::{LoadingFamily, LoadingInputs, LoadingOutputs};
 
-/// Loads, in turn, the units whose cost stays within its budget — always at
-/// least one: the scenes first, then the script roots, then the assets, each
-/// kind in filing order. What it does not take goes back.
+/// A lane that loads the units its budget covers, always at least one.
+///
+/// The project indexes go first, then the scenes, the script roots and the
+/// assets, each kind in filing order. What it does not take waits for the next run.
 #[derive(Debug, Default)]
 pub struct PacedLane;
 

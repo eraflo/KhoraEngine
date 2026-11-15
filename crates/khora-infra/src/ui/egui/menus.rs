@@ -23,11 +23,8 @@ use super::ui_builder::EguiUiBuilder;
 impl EguiUiBuilder<'_> {
     /// The last item's context menu, with `f` building its content.
     pub(super) fn open_context_menu_last(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
-        // Borrow rather than take — the egui `Response::context_menu` API
-        // takes `&self`, and removing the response from `last_response`
-        // would prevent any follow-up call (`tooltip_for_last`, etc.) from
-        // working in the same widget's lifecycle. Cloning is cheap (it's
-        // mostly Arc-internal in egui).
+        // Cloned, not taken: the response must stay the last one for a
+        // following call such as `tooltip_for_last`. The clone is cheap.
         if let Some(response) = self.last_response.clone() {
             let vt = self.viewport_textures;
             response.context_menu(|ui| {

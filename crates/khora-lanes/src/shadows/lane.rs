@@ -34,8 +34,7 @@ use khora_macros::LaneInputs;
 use super::algo::{ShadowGpu, Tier};
 use super::family::{ShadowsFamily, ShadowsOutputs};
 
-/// The levels' resolutions, cheapest first: a quarter, a half and the full
-/// resolution of the atlases, for the same casters.
+/// The levels' atlas resolutions, cheapest first: a quarter, a half and the full one.
 pub const TIERS: [Tier; 3] = [
     Tier {
         atlas_2d_resolution: 512,
@@ -104,7 +103,11 @@ const DRAW_GPU: Duration = Duration::from_micros(2);
 /// The label the lane's resources are named by.
 const LABEL: &str = "Shadows";
 
-/// The shadows lane. Its three levels are three atlas resolutions.
+/// A lane that renders each shadowed light's depth into the 2D and the cube atlas.
+///
+/// The 2D atlas holds directional and spot lights, the cube atlas point lights.
+/// Its three levels are three resolutions of the same atlases, for the same
+/// casters; the lit lanes never know which one ran.
 #[derive(Default)]
 pub struct ShadowsLane {
     /// What the current level built on the device; `None` before the first
@@ -135,9 +138,8 @@ impl Lane for ShadowsLane {
         &LEVELS
     }
 
-    /// The depth passes this frame's casters need at `level`, the 2D and cube
-    /// atlases capped at the level's capacity: each pass fills its share of
-    /// texels on the device and draws every mesh.
+    /// Prices the depth passes this frame's casters need at `level`, up to the
+    /// level's capacity: each fills its share of texels and draws every mesh.
     fn cost(&self, level: usize, inputs: &ShadowsInputs<'_>) -> Cost {
         let Some(tier) = TIERS.get(level) else {
             return Cost::default();
@@ -167,8 +169,8 @@ impl Lane for ShadowsLane {
         }
     }
 
-    /// Builds the level's atlases, and gives back the previous level's once
-    /// the new ones stand: a level of the same resolution builds nothing.
+    /// Builds the level's atlases, giving back the previous level's once the new
+    /// ones stand; a level of the same resolution builds nothing.
     fn prepare(
         &mut self,
         level: usize,

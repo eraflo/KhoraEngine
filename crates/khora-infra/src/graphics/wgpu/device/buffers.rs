@@ -41,7 +41,6 @@ impl WgpuDevice {
         let wgpu_buffer = self.wgpu_device().create_buffer(&wgpu_buffer_descriptor);
         let id = self.generate_buffer_id();
 
-        // Track VRAM usage
         self.internal
             .vram_allocated_bytes
             .fetch_add(descriptor.size as usize, Ordering::Relaxed);
@@ -50,7 +49,6 @@ impl WgpuDevice {
             .vram_peak_bytes
             .fetch_max(current_vram, Ordering::Relaxed);
 
-        // Insert the buffer into the map
         self.with_registry(|r| {
             r.buffers.insert(
                 id,
@@ -89,11 +87,9 @@ impl WgpuDevice {
                     usage: descriptor.usage.into_wgpu(),
                 });
 
-        // Use the existing ID generation and storage system.
         let id = self.generate_buffer_id();
         let buffer_size = data.len() as u64;
 
-        // Track VRAM usage
         self.internal
             .vram_allocated_bytes
             .fetch_add(buffer_size as usize, Ordering::Relaxed);
@@ -102,7 +98,6 @@ impl WgpuDevice {
             .vram_peak_bytes
             .fetch_max(current_vram, Ordering::Relaxed);
 
-        // Store the buffer
         self.with_registry(|r| {
             r.buffers.insert(
                 id,
@@ -125,7 +120,6 @@ impl WgpuDevice {
     /// Removes a buffer from the registry and gives its size back to the
     /// VRAM count.
     pub(super) fn release_buffer(&self, id: api_buf::BufferId) -> Result<(), ResourceError> {
-        // Remove the buffer from the map and track VRAM usage
         if let Some(entry) = self.with_registry(|r| r.buffers.remove(&id))? {
             self.internal
                 .vram_allocated_bytes
@@ -145,19 +139,16 @@ impl WgpuDevice {
         offset: u64,
         data: &[u8],
     ) -> Result<(), ResourceError> {
-        // The buffer, cloned out of the registry.
         let wgpu_buffer = self
             .with_registry(|r| r.buffers.get(&id).map(|e| Arc::clone(&e.wgpu_buffer)))?
             .ok_or(ResourceError::NotFound)?;
 
-        // Check the bounds
         let buffer_size = wgpu_buffer.size();
         let end_offset = offset + data.len() as u64;
         if end_offset > buffer_size {
             return Err(ResourceError::OutOfBounds);
         }
 
-        // Write directly. No padding, no allocation. It's simple and efficient.
         self.wgpu_queue().write_buffer(&wgpu_buffer, offset, data);
 
         log::debug!(
@@ -185,28 +176,24 @@ impl WgpuDevice {
                 Err(error) => return Box::new(async { Err(error) }),
             };
 
-        // Data needs to be owned by the future to be 'static.
-        // This involves a copy, which is a common trade-off for true async operations.
-        let owned_data = data.to_vec(); // One copy, owned by the future
+        // The callback is `'static`, so it owns a copy of the data.
+        let owned_data = data.to_vec();
 
-        // Create a shared state for the Future and the WGPU callback
         let shared_state = Arc::new(MapAsyncFutureState {
             result: Mutex::new(None),
             waker: Mutex::new(None),
         });
 
-        // Clones and moves for the `map_async` callback's `move` closure
         let future_state_for_callback = Arc::clone(&shared_state);
         let buffer_id_for_callback = id;
         let entry_wgpu_buffer_for_callback = Arc::clone(&entry_wgpu_buffer);
         let owned_data_for_callback = owned_data;
 
-        // Schedule the WGPU map_async operation
         let buffer_slice =
             entry_wgpu_buffer.slice(offset..(offset + owned_data_for_callback.len() as u64));
 
         buffer_slice.map_async(wgpu::MapMode::Write, move |result| {
-            // This closure runs on WGPU's internal callback thread/executor
+            // Runs on wgpu's callback thread: it must never panic.
             let final_result = if let Err(e) = result {
                 log::error!(
                     "Failed to map buffer asynchronously for ID {buffer_id_for_callback:?}: {e:?}"
@@ -215,23 +202,21 @@ impl WgpuDevice {
                     "WGPU map_async failed: {e:?}"
                 )))
             } else {
-                // Mapping was successful. Now perform the actual data copy.
-                // Re-slice the buffer from the entry_wgpu_buffer_for_callback as the original buffer_slice
-                // would have been dropped or moved.
+                // The slice that scheduled the map is gone; slice the buffer again.
                 let buffer_slice_for_copy = entry_wgpu_buffer_for_callback
                     .slice(offset..(offset + owned_data_for_callback.len() as u64));
                 let mut mapped_range = buffer_slice_for_copy.get_mapped_range_mut();
-                mapped_range.copy_from_slice(&owned_data_for_callback); // This is the actual data write
-                drop(mapped_range); // Explicitly unmap the buffer by dropping the guard
-                entry_wgpu_buffer_for_callback.unmap(); // Ensure WGPU knows it's unmapped
+                mapped_range.copy_from_slice(&owned_data_for_callback);
+                // The mapped range must be dropped before the buffer unmaps.
+                drop(mapped_range);
+                entry_wgpu_buffer_for_callback.unmap();
                 log::debug!(
                     "WgpuDevice: Async map_async copy complete for buffer ID: {buffer_id_for_callback:?}"
                 );
                 Ok(())
             };
 
-            // Signal the Future that the operation is complete. If the
-            // mutex is poisoned the future is unreachable anyway — log and
+            // A poisoned mutex leaves the future unreachable anyway: log and
             // give up rather than panic on the callback thread.
             match future_state_for_callback.result.lock() {
                 Ok(mut g) => *g = Some(final_result),
@@ -244,7 +229,6 @@ impl WgpuDevice {
                 }
             }
 
-            // Wake the Future if a waker was stored.
             match future_state_for_callback.waker.lock() {
                 Ok(mut g) => {
                     if let Some(waker) = g.take() {
@@ -260,7 +244,6 @@ impl WgpuDevice {
             }
         });
 
-        // Return a Future that will wait for the callback to complete
         Box::new(MapAsyncOperationFuture {
             state: shared_state,
         })

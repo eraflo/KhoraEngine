@@ -157,10 +157,11 @@ fn a_glyph_the_font_does_not_have_rasterises_into_nothing() {
     }
 }
 
-/// A key whose size quantised to zero (a size under ⅛ px, or a negative or
-/// NaN one through `GlyphKey::new`) draws nothing. swash reads a size of 0 as
-/// "unscaled", so passing it through draws the glyph in font units — Inter's
-/// `H` comes back about 1162 × 1490 px.
+/// A key whose size quantised to zero draws nothing.
+///
+/// Such a size is under ⅛ px, or negative or NaN through `GlyphKey::new`.
+/// swash reads a size of 0 as "unscaled": Inter's `H` would come back about
+/// 1162 × 1490 px.
 #[test]
 fn a_key_of_size_zero_rasterises_into_nothing() {
     let rasterizer = SwashRasterizer::new();
@@ -184,10 +185,10 @@ fn a_key_of_size_zero_rasterises_into_nothing() {
     }
 }
 
-/// The default font is variable (weights 100 to 900). Built with no
-/// variation, the rasteriser must draw its default instance — Regular,
-/// `wght` 400, the weight the shaper's advances are measured at — and not a
-/// thinner or bolder master.
+/// The variable default font is drawn at its default instance, Regular.
+///
+/// Weights run from 100 to 900; the shaper's advances are measured at
+/// `wght` 400, so a thinner or bolder master would not match them.
 #[test]
 fn the_default_font_rasterises_at_its_regular_weight() {
     use swash::scale::{Render, ScaleContext, Source};

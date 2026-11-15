@@ -40,12 +40,10 @@ pub enum VramSource {
     Heaps,
 }
 
-/// The video memory the platform gives `device`, or `None` when its backend
-/// does not say — or says a budget of nothing, as a software adapter may.
+/// Returns the video memory the platform gives `device`, or `None` when its
+/// backend does not say or says a budget of nothing (a software adapter may).
 ///
-/// DX12 asks DXGI for the adapter's budget, which needs `adapter`; Vulkan
-/// asks for the memory heaps' budgets; Metal for the working set the
-/// system recommends; OpenGL for what NVIDIA's extension reports.
+/// DX12 needs `adapter` to ask DXGI. See the book: concepts/telemetry.md, "Video memory".
 pub fn probe(adapter: Option<&wgpu::Adapter>, device: &wgpu::Device) -> Option<VramReading> {
     let reading = None
         .or_else(|| adapter.and_then(dx12::probe))
@@ -59,10 +57,10 @@ pub fn probe(adapter: Option<&wgpu::Adapter>, device: &wgpu::Device) -> Option<V
 /// the device, and its `(budget, usage)` when `VK_EXT_memory_budget` gives them.
 pub type Heap = (u64, bool, Option<(u64, u64)>);
 
-/// The device-local heaps' budget and usage summed, from `(size, local,
-/// (budget, usage))` per heap; `None` without any local heap. When every
-/// local heap carries a budget, the sum is of budgets and usages; when one
-/// does not, of the local heaps' sizes, with no usage.
+/// Sums the device-local heaps' budgets and usages; `None` without a local heap.
+///
+/// When a local heap carries no budget, the sum is of the local heaps' sizes,
+/// with no usage.
 pub fn device_local_sum(heaps: &[Heap]) -> Option<(u64, Option<u64>)> {
     let local: Vec<_> = heaps.iter().filter(|(_, local, _)| *local).collect();
     if local.is_empty() {

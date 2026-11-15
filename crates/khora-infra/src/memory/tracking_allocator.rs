@@ -18,11 +18,12 @@ use khora_core::memory::*;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-/// `counter` moved to what `update` makes of it, when `update` gives a value:
-/// `Ok(previous)`, or `Err(current)` and the counter left as it is. What
-/// `AtomicUsize::fetch_update` does with relaxed orderings — written out, as
-/// that method is deprecated in newer Rust under a name the workspace's
-/// minimum version does not have yet.
+/// Moves `counter` to what `update` makes of it, as `AtomicUsize::fetch_update`
+/// does with relaxed orderings.
+///
+/// Returns `Ok(previous)`, or `Err(current)` with the counter untouched when
+/// `update` gives nothing. Written out because that method is deprecated in
+/// newer Rust under a name the workspace's minimum version lacks.
 fn checked_update(
     counter: &AtomicUsize,
     update: impl Fn(usize) -> Option<usize>,
@@ -42,20 +43,14 @@ const LARGE_ALLOCATION_THRESHOLD: usize = 1024 * 1024; // 1MB
 /// The size, in bytes, below which an allocation is considered "small".
 const SMALL_ALLOCATION_THRESHOLD: usize = 1024; // 1KB
 
-/// A wrapper around a `GlobalAlloc` implementation (like `std::alloc::System`)
-/// that intercepts allocation calls to update the global memory counters defined
-/// in `khora_core::memory`.
+/// A [`GlobalAlloc`] wrapper that counts every allocation in the counters of
+/// `khora_core::memory`.
 ///
-/// This allocator is the key to enabling the SAA's memory monitoring. By registering
-/// it as the `#[global_allocator]`, all heap allocations made by the application
-/// will be tracked, providing essential telemetry to the Dynamic Context Core (DCC).
+/// `A` performs the allocations (`System` by default). Installed as the
+/// `#[global_allocator]`, it feeds the DCC's memory telemetry. See the book:
+/// concepts/telemetry.md, "The tracking allocator".
 ///
-/// # Type Parameters
-///
-/// * `A`: The underlying allocator that will perform the actual memory allocation.
-///   Defaults to `System`, the standard Rust allocator.
-///
-/// # Usage
+/// # Examples
 ///
 /// ```rust,ignore
 /// use khora_infra::SaaTrackingAllocator;
@@ -76,12 +71,11 @@ impl<A> SaaTrackingAllocator<A> {
 }
 
 unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
-    /// Allocates memory and updates tracking counters.
+    /// Allocates through the inner allocator and counts the block.
     ///
     /// # Safety
     ///
-    /// This function is unsafe because it is part of the `GlobalAlloc` trait.
-    /// The caller must ensure that `layout` has a non-zero size.
+    /// As [`GlobalAlloc::alloc`]: `layout` has a non-zero size.
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let ptr = self.inner.alloc(layout);
         if !ptr.is_null() {
@@ -110,12 +104,11 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
         ptr
     }
 
-    /// Deallocates memory and updates tracking counters.
+    /// Releases a block through the inner allocator and uncounts it.
     ///
     /// # Safety
     ///
-    /// This function is unsafe because it is part of the `GlobalAlloc` trait.
-    /// The caller must ensure that `ptr` was allocated by this allocator with the same `layout`.
+    /// As [`GlobalAlloc::dealloc`]: `ptr` was allocated by this allocator with `layout`.
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         let size = layout.size();
         let result = checked_update(&CURRENTLY_ALLOCATED_BYTES, |current| {
@@ -132,11 +125,11 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
         self.inner.dealloc(ptr, layout);
     }
 
-    /// Allocates zero-initialized memory and updates tracking counters.
+    /// Allocates zeroed memory through the inner allocator and counts the block.
     ///
     /// # Safety
     ///
-    /// This function is unsafe for the same reasons as `alloc`.
+    /// As [`GlobalAlloc::alloc_zeroed`].
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         let ptr = self.inner.alloc_zeroed(layout);
         if !ptr.is_null() {
@@ -165,11 +158,11 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
         ptr
     }
 
-    /// Reallocates memory and updates tracking counters.
+    /// Resizes a block through the inner allocator and counts the difference.
     ///
     /// # Safety
     ///
-    /// This function is unsafe for the same reasons as `realloc` in `GlobalAlloc`.
+    /// As [`GlobalAlloc::realloc`].
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         let old_size = layout.size();
         let new_ptr = self.inner.realloc(ptr, layout, new_size);
@@ -240,11 +233,11 @@ mod tests {
         }
     }
 
-    /// Every allocation made through the allocator is counted, sized into its
-    /// class, and given back on release: alloc, grow, free, and the zeroed and
-    /// small and large paths. The counters are process-wide, so this is the one
-    /// test that drives them; the test binary does not install the allocator
-    /// as its global allocator, so nothing else moves them.
+    /// Every allocation through the allocator is counted, sized into its class,
+    /// and given back on release.
+    ///
+    /// The counters are process-wide and this test binary does not install the
+    /// allocator globally, so this is the one test that moves them.
     #[test]
     fn allocations_through_the_allocator_are_counted_and_released() {
         let allocator = SaaTrackingAllocator::new(System);

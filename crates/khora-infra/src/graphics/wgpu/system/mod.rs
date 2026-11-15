@@ -46,13 +46,10 @@ mod render_system;
 
 mod resize_debounce;
 
-/// The concrete, WGPU-based implementation of the [`RenderSystem`](khora_core::renderer::traits::RenderSystem) trait.
+/// The wgpu [`RenderSystem`](khora_core::renderer::traits::RenderSystem).
 ///
-/// This struct encapsulates all the state necessary to drive rendering with WGPU,
-/// including the graphics context, the logical device, GPU profiler, and complex
-/// state for handling window resizing gracefully.
-///
-/// It acts as the primary rendering backend for the engine when the WGPU feature is enabled.
+/// Owns the graphics context, the device, the GPU profiler, the depth and
+/// viewport targets, and the debounced resizes of the window and the viewport.
 pub struct WgpuRenderSystem {
     graphics_context_shared: Option<Arc<Mutex<WgpuGraphicsContext>>>,
     wgpu_device: Option<Arc<WgpuDevice>>,
@@ -88,8 +85,7 @@ pub struct WgpuRenderSystem {
     viewport_depth_view: Option<wgpu::TextureView>,
     viewport_width: u32,
     viewport_height: u32,
-    /// Registered abstract view IDs for the viewport (returned by `begin_frame` when
-    /// `render_to_viewport == true`).
+    /// The viewport's views as ids, returned by `begin_frame` when rendering to the viewport.
     viewport_color_view_id: Option<khora_core::renderer::api::resource::TextureViewId>,
     viewport_depth_view_id: Option<khora_core::renderer::api::resource::TextureViewId>,
     /// The size the viewport's panel asks for, until it settles.
@@ -101,9 +97,6 @@ pub struct WgpuRenderSystem {
     /// When true, `begin_frame` returns viewport targets instead of the swapchain
     /// and the engine skips its own present (caller manages the viewport).
     render_to_viewport: bool,
-    // Grid + gizmo rendering moved to the engine-side `GridLane` /
-    // `GizmoLane` (the grid and gizmo families) — the backend owns no
-    // render-strategy pipelines.
 }
 
 impl fmt::Debug for WgpuRenderSystem {
@@ -194,13 +187,9 @@ impl WgpuRenderSystem {
         }
         log::info!("WgpuRenderSystem: Initializing...");
 
-        // wgpu 29 requires the display handle to be registered with the Instance up
-        // front — surfaces created later are validated against it. Hand the window's
-        // Arc directly; it implements `HasDisplayHandle + Debug + Send + Sync + 'static`,
-        // which satisfies `wgpu::WgpuHasDisplayHandle`.
-        // One instance per backend tried, each on that backend alone: the
-        // surface and the device come from the instance the adapter was
-        // found on.
+        // wgpu validates a surface against the display handle its instance was
+        // given, and the window's `Arc` is that handle. The surface and the
+        // device come from the instance the adapter was found on.
         let display = window_handle.clone();
         let backend_selector = WgpuBackendSelector::new(move |backends| {
             let mut descriptor =
@@ -265,21 +254,14 @@ impl WgpuRenderSystem {
         let vram_monitor = device_arc as Arc<dyn ResourceMonitor>;
         let created_monitors: Vec<Arc<dyn ResourceMonitor>> = vec![vram_monitor];
 
-        // Initialize camera uniform resources
         self.initialize_camera_uniforms()?;
 
-        // Initialize depth texture for depth buffering
         self.create_depth_texture()?;
 
         Ok(created_monitors)
     }
 
-    /// Initializes the camera uniform buffer and bind group.
-    ///
-    /// This creates:
-    /// - A uniform buffer to hold camera data (view-projection matrix and camera position)
-    /// - A bind group layout describing the shader resource binding
-    /// - A bind group that binds the buffer to group 0, binding 0
+    /// Creates the camera's uniform buffer, its layout and its bind group (group 0, binding 0).
     fn initialize_camera_uniforms(&mut self) -> Result<(), RenderError> {
         use khora_core::renderer::api::command::{
             BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor, BindGroupLayoutEntry,
@@ -295,7 +277,6 @@ impl WgpuRenderSystem {
 
         let buffer_size = std::mem::size_of::<CameraUniformData>() as u64;
 
-        // Create the uniform buffer using the abstract API
         let buffer_descriptor = BufferDescriptor {
             label: Some(std::borrow::Cow::Borrowed("Camera Uniform Buffer")),
             size: buffer_size,
@@ -310,7 +291,6 @@ impl WgpuRenderSystem {
             ))
         })?;
 
-        // Create the bind group layout using the abstract API
         let layout_entry = BindGroupLayoutEntry {
             binding: 0,
             visibility: ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
@@ -335,7 +315,6 @@ impl WgpuRenderSystem {
                 ))
             })?;
 
-        // Create the bind group using the abstract API
         let bind_group_entry = BindGroupEntry {
             binding: 0,
             resource: BindingResource::Buffer(BufferBinding {
@@ -370,17 +349,13 @@ impl WgpuRenderSystem {
         Ok(())
     }
 
-    /// Updates the camera uniform buffer with the current ViewInfo data.
-    ///
-    /// This method is called every frame to upload the latest camera matrices
-    /// to the GPU uniform buffer.
+    /// Uploads the camera matrices of `view_info` to the uniform buffer, every frame.
     fn update_camera_uniforms(&mut self, view_info: &ViewInfo) {
         use khora_core::renderer::api::resource::CameraUniformData;
 
         let uniform_data = CameraUniformData::from_view_info(view_info);
 
         if let (Some(device), Some(buffer_id)) = (&self.wgpu_device, &self.camera_uniform_buffer) {
-            // Write the uniform data to the buffer using the abstract API
             if let Err(e) =
                 device.write_buffer(*buffer_id, 0, bytemuck::cast_slice(&[uniform_data]))
             {
@@ -389,9 +364,9 @@ impl WgpuRenderSystem {
         }
     }
 
-    /// Reconfigures the surface — and its depth texture — to the window's
-    /// size once that size has settled (see `ResizeDebounce`). Called at the
-    /// start of a frame, before the swapchain is acquired.
+    /// Reconfigures the surface and its depth texture once the window's size has settled.
+    ///
+    /// Called at the start of a frame, before the swapchain is acquired.
     fn settle_swapchain_size(&mut self, gc: &Arc<Mutex<WgpuGraphicsContext>>) {
         let configured = match gc.lock() {
             Ok(gc) => (gc.surface_config.width, gc.surface_config.height),
@@ -418,10 +393,9 @@ impl WgpuRenderSystem {
         }
     }
 
-    /// Creates or recreates the depth texture for depth buffering.
+    /// Creates the depth texture at the window's size, destroying the previous one.
     ///
-    /// This method should be called during initialization and whenever the window is resized.
-    /// It destroys any existing depth texture resources before creating new ones.
+    /// Does nothing at a zero size.
     fn create_depth_texture(&mut self) -> Result<(), RenderError> {
         use khora_core::math::Extent3D;
         use std::borrow::Cow;
@@ -430,12 +404,10 @@ impl WgpuRenderSystem {
             RenderError::InitializationFailed("WGPU device not initialized".to_string())
         })?;
 
-        // Skip if dimensions are zero
         if self.current_width == 0 || self.current_height == 0 {
             return Ok(());
         }
 
-        // Destroy old depth texture resources if they exist
         if let Some(old_view) = self.depth_texture_view.take() {
             let _ = device.destroy_texture_view(old_view);
         }
@@ -443,7 +415,6 @@ impl WgpuRenderSystem {
             let _ = device.destroy_texture(old_tex);
         }
 
-        // Create new depth texture
         let texture_desc = TextureDescriptor {
             label: Some(Cow::Borrowed("Depth Texture")),
             size: Extent3D {
@@ -463,7 +434,6 @@ impl WgpuRenderSystem {
             RenderError::InitializationFailed(format!("Failed to create depth texture: {:?}", e))
         })?;
 
-        // Create depth texture view
         let view_desc = TextureViewDescriptor {
             label: Some(Cow::Borrowed("Depth Texture View")),
             format: Some(TextureFormat::Depth32Float),
@@ -496,12 +466,10 @@ impl WgpuRenderSystem {
         Ok(())
     }
 
-    /// Checks the device-health flags raised by the wgpu error callbacks.
+    /// Returns a fatal, non-panicking error once the device was lost or ran out of memory.
     ///
-    /// Returns a fatal, non-panicking [`RenderError`] when the device has been
-    /// lost or has run out of memory so the host can tear down cleanly. The
-    /// frame loop calls this before any GPU submission; once a fatal condition
-    /// is observed the system stops acquiring/submitting work.
+    /// Checked before any submission, so the host can tear down cleanly.
+    /// See the book: concepts/rendering.md, "Device-loss resilience".
     fn check_device_health(&self) -> Result<(), RenderError> {
         let Some(device) = self.wgpu_device.as_ref() else {
             return Ok(());
@@ -517,18 +485,17 @@ impl WgpuRenderSystem {
         Ok(())
     }
 
-    /// Acquires the swapchain texture with full resilience.
+    /// Acquires the swapchain texture; `Ok(None)` means skip this frame, not an error.
     ///
-    /// Covers every [`wgpu::CurrentSurfaceTexture`] outcome via the pure
-    /// [`classify_acquire`] policy:
-    /// - `Success`/`Suboptimal` → return the texture.
-    /// - `Lost`/`Outdated` with a valid size → reconfigure and retry in-frame.
-    /// - `Lost`/`Outdated` at zero size, `Timeout`, `Occluded` → skip the frame
-    ///   (returns `Ok(None)`), no error spam.
-    /// - `Validation`/unknown → non-fatal [`RenderError::SurfaceAcquisitionFailed`].
+    /// Each outcome is decided by [`classify_acquire`]; a lost surface is
+    /// reconfigured and acquired once more within the frame.
+    /// See the book: concepts/rendering.md, "Device-loss resilience".
     ///
-    /// `Ok(None)` means "skip this frame, retry next frame"; the caller must
-    /// not treat it as an error.
+    /// # Errors
+    ///
+    /// A non-fatal [`RenderError::SurfaceAcquisitionFailed`] on a validation
+    /// error or an outcome wgpu adds later; [`RenderError::Internal`] when the
+    /// graphics context's lock is poisoned.
     fn acquire_surface_texture(
         &mut self,
         gc: &Arc<Mutex<WgpuGraphicsContext>>,
@@ -563,10 +530,7 @@ impl WgpuRenderSystem {
                 wgpu::CurrentSurfaceTexture::Timeout => (SurfaceAcquireStatus::Timeout, None),
                 wgpu::CurrentSurfaceTexture::Occluded => (SurfaceAcquireStatus::Occluded, None),
                 wgpu::CurrentSurfaceTexture::Validation => (SurfaceAcquireStatus::Validation, None),
-                // Forward-compat: should wgpu add a swapchain-status variant in
-                // a future release, classify it as a non-fatal unknown hiccup
-                // rather than failing to compile or panicking. Unreachable today
-                // because the enum is currently exhaustive.
+                // A status a later wgpu adds is a non-fatal hiccup, not a build break.
                 #[allow(unreachable_patterns)]
                 _ => (SurfaceAcquireStatus::Unknown, None),
             };

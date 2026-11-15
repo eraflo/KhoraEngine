@@ -19,5 +19,6 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub(crate) struct WgpuTextureEntry {
     pub(crate) wgpu_texture: Arc<wgpu::Texture>,
-    pub(crate) size: u64, // To track VRAM accurately on destruction
+    // Kept so destroying the texture gives back exactly what it counted in VRAM.
+    pub(crate) size: u64,
 }

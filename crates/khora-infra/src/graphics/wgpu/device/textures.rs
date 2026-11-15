@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The wgpu device's textures, texture views and samplers: allocating
-//! textures (with the VRAM they count), writing to them, building views and
-//! samplers, removing each.
+//! The wgpu device's textures, texture views and samplers, and the VRAM the
+//! textures count.
 
 use khora_core::math::dimension;
 use khora_core::renderer::api::pipeline::enums::CompareFunction;
@@ -53,12 +52,10 @@ impl WgpuDevice {
                 .collect::<Vec<_>>(),
         };
 
-        // Create the texture using the wgpu device with the specified descriptor
         let wgpu_texture = self.wgpu_device().create_texture(&wgpu_texture_descriptor);
         let id = self.generate_texture_id();
         let size_in_bytes = Self::calculate_texture_size_in_bytes(descriptor);
 
-        // Track VRAM usage
         self.internal
             .vram_allocated_bytes
             .fetch_add(size_in_bytes as usize, Ordering::Relaxed);
@@ -67,7 +64,6 @@ impl WgpuDevice {
             .vram_peak_bytes
             .fetch_max(current_vram, Ordering::Relaxed);
 
-        // Insert the texture into the map
         self.with_registry(|r| {
             r.textures.insert(
                 id,
@@ -94,7 +90,6 @@ impl WgpuDevice {
     /// Removes a texture from the registry and gives its size back to the
     /// VRAM count.
     pub(super) fn release_texture(&self, id: api_tex::TextureId) -> Result<(), ResourceError> {
-        // Remove the texture from the map and track VRAM usage
         if let Some(entry) = self.with_registry(|r| r.textures.remove(&id))? {
             self.internal
                 .vram_allocated_bytes
@@ -126,9 +121,9 @@ impl WgpuDevice {
         self.wgpu_queue().write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &wgpu_texture,
-                mip_level: 0, // Assuming base mip for now
+                mip_level: 0,
                 origin: offset.into_wgpu(),
-                aspect: wgpu::TextureAspect::All, // Assuming all aspects for now
+                aspect: wgpu::TextureAspect::All,
             },
             data,
             wgpu::TexelCopyBufferLayout {
@@ -176,7 +171,6 @@ impl WgpuDevice {
             usage: None,
         };
 
-        // Create the texture view using the wgpu texture
         let wgpu_view = Arc::new(wgpu_texture.create_view(&wgpu_view_descriptor));
         let id = self.generate_texture_view_id();
         self.with_registry(|r| {
@@ -206,7 +200,6 @@ impl WgpuDevice {
         &self,
         id: api_tex::TextureViewId,
     ) -> Result<(), ResourceError> {
-        // Remove the texture view from the map
         if self
             .with_registry(|r| r.texture_views.remove(&id))?
             .is_some()
@@ -240,7 +233,6 @@ impl WgpuDevice {
                 .and_then(|c: api_tex::SamplerBorderColor| c.into_wgpu()),
         };
 
-        // Create the sampler using the wgpu device
         let wgpu_sampler = Arc::new(self.wgpu_device().create_sampler(&wgpu_sampler_descriptor));
         let id = self.generate_sampler_id();
         self.with_registry(|r| r.samplers.insert(id, WgpuSamplerEntry { wgpu_sampler }))?;
@@ -258,7 +250,6 @@ impl WgpuDevice {
 
     /// Removes a sampler from the registry.
     pub(super) fn remove_sampler(&self, id: api_tex::SamplerId) -> Result<(), ResourceError> {
-        // Remove the sampler from the map
         if self.with_registry(|r| r.samplers.remove(&id))?.is_some() {
             log::debug!("WgpuDevice: Destroyed sampler with ID: {id:?}");
             Ok(())

@@ -12,10 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `GraphicsDevice` for the wgpu device. Resource creation, writes and
-//! removal delegate to the device's inherent methods, one sibling file per
-//! kind of resource (`pipelines`, `buffers`, `textures`, `bind_groups`);
-//! the device queries and command submission are answered here.
+//! The wgpu device's [`GraphicsDevice`] impl: each resource kind is a sibling
+//! file; the device queries and command submission are answered here.
 
 use khora_core::gpu::DeviceCaps;
 use khora_core::math::dimension;
@@ -195,18 +193,18 @@ impl GraphicsDevice for WgpuDevice {
             })
     }
 
-    /// Who made the adapter the device runs on, which device and driver, as
-    /// wgpu reports them; `None` until the render system gave the adapter.
+    /// Returns the adapter's maker, device and driver as wgpu reports them;
+    /// `None` until the render system gave the adapter.
     fn adapter_identity(&self) -> Option<khora_core::renderer::api::device::AdapterIdentity> {
         (self.internal.adapter_handle.get()).map(|adapter| {
             crate::graphics::wgpu::conversions::adapter_identity_of(&adapter.get_info())
         })
     }
 
-    /// Read from the device's limits: storage buffers are there when a
-    /// shader stage may bind at least one, compute shaders when a dispatch may
-    /// run at least one workgroup of one invocation (a downlevel device, such
-    /// as WebGL2, allows neither).
+    /// Reads the device's capabilities from its limits.
+    ///
+    /// Storage buffers need one per shader stage, compute one workgroup of one
+    /// invocation; a downlevel device such as WebGL2 allows neither.
     fn caps(&self) -> DeviceCaps {
         let limits = self.wgpu_device().limits();
         DeviceCaps {

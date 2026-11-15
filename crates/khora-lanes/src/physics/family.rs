@@ -32,9 +32,10 @@ impl LaneFamily for PhysicsFamily {
     type Outputs<'f> = PhysicsOutputs;
 }
 
-/// What every physics lane writes: the step it advanced, drained by the
-/// `physics_world_writeback` DataSystem, and the contacts it reported,
-/// drained by `collision_dispatch`.
+/// What every physics lane writes: the step it advanced and the contacts it reported.
+///
+/// The `physics_world_writeback` DataSystem drains the step; `collision_dispatch`
+/// the contacts.
 #[derive(LaneOutputs)]
 pub struct PhysicsOutputs {
     /// The step the simulation advanced.

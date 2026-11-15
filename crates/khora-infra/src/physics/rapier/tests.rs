@@ -37,8 +37,7 @@ fn a_box(owner: Option<EntityId>) -> ColliderDesc {
     }
 }
 
-/// **What unblocks a collision anybody can act on.** A contact names two
-/// colliders; this is what turns one back into the entity gameplay knows.
+/// A collider names the entity that made it, so a contact can be acted on.
 #[test]
 fn a_collider_remembers_the_entity_that_made_it() {
     let mut world = RapierPhysicsWorld::default();
@@ -61,10 +60,8 @@ fn a_recycled_entity_index_is_not_mistaken_for_the_old_one() {
     assert_eq!(world.entity_of(new), Some(entity(4, 1)));
 }
 
-/// **The first entity a `World` hands out is `{ index: 0, generation: 0 }`,
-/// which packs to zero.** Treating zero as "no owner" made that one entity
-/// the one a collision could never name — and only that one, so a scene
-/// whose floor happened to be spawned first lost every contact with it.
+/// The first entity a `World` hands out, `{ index: 0, generation: 0 }`, packs
+/// to zero yet still names its collider's owner.
 #[test]
 fn the_zeroth_entity_is_still_an_entity() {
     let mut world = RapierPhysicsWorld::default();

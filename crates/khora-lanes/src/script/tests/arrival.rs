@@ -128,10 +128,11 @@ fn first_frame(source: &str, arrival: ScriptArrival) -> (ScriptRuntime, Host) {
     (runtime, host)
 }
 
-/// **Its fields from its component, its state from its companion.** A
-/// restored guard takes every field from the row it arrives with and the state
-/// it was in from what was observed of it. Fields an observed snapshot still
-/// carries are not the guard's: its component is.
+/// **Its fields from its component, its state from its companion.**
+///
+/// A restored guard takes every field from the row it arrives with and the
+/// state it was in from what was observed of it. Fields an observed snapshot
+/// still carries are not the guard's: its component is.
 #[test]
 fn a_restored_arrival_takes_its_fields_from_its_row_and_its_state_from_its_companion() {
     let observed = ScriptSnapshot {
@@ -225,9 +226,10 @@ fn caught_mid_attack() -> ScriptSnapshot {
         .expect("the guard did work")
 }
 
-/// **A guard saved mid-attack loads mid-attack.** A pending sequence in the
-/// observed state resumes where it stopped, beside authored fields, and
-/// finishes exactly once.
+/// **A guard saved mid-attack loads mid-attack.**
+///
+/// A pending sequence in the observed state resumes where it stopped, beside
+/// authored fields, and finishes exactly once.
 #[test]
 fn an_observed_pending_sequence_resumes() {
     let saved = caught_mid_attack();
@@ -294,11 +296,11 @@ fn homing_frame(
     report.state.first().map(|update| update.snapshot.clone())
 }
 
-/// **A starting value read from the world is not read again on a load.** The
-/// guard appeared at x = 1 and recorded it as `home` in `OnSpawn`; loaded
-/// where the game had since moved it, x = 5, it keeps the `home` its row
-/// holds — a loaded instance has spawned already, and its fields are the
-/// loaded ones.
+/// **A starting value read from the world is not read again on a load.**
+///
+/// The guard appeared at x = 1 and recorded it as `home` in `OnSpawn`; loaded
+/// where the game had since moved it, x = 5, it keeps the `home` its row holds
+/// — a loaded instance has spawned already, and its fields are the loaded ones.
 #[test]
 fn a_starting_value_read_from_the_world_survives_a_save_unchanged() {
     let mut first = runtime_of(HOMING);
@@ -335,11 +337,12 @@ fn a_starting_value_read_from_the_world_survives_a_save_unchanged() {
 }
 
 /// **An instance the lane does not hold, and that brings no arrival, starts
-/// from its row.** The flow sends an arrival once, the frame a behavior
-/// appears; were the lane to forget the instance later — while the flow still
-/// lists it — the instance would otherwise start over from its declared
-/// defaults, and its writeback would put them over the values its component
-/// holds.
+/// from its row.**
+///
+/// The flow sends an arrival once, the frame a behavior appears; were the lane
+/// to forget the instance later — while the flow still lists it — the instance
+/// would otherwise start over from its declared defaults, and its writeback
+/// would put them over the values its component holds.
 #[test]
 fn an_instance_the_lane_forgot_starts_from_its_row_not_its_defaults() {
     let mut runtime = runtime_of(GUARD);

@@ -14,12 +14,9 @@
 
 //! The shaper and the rasteriser called from many threads at once.
 //!
-//! The text backends are reached from concurrent waves (RULES §5): a
-//! DataSystem shapes and rasterises while another registers a reloaded font.
-//! Each backend holds one leaf lock; one that called out while holding it, or
-//! took two locks in conflicting orders, would deadlock here. These tests
-//! hammer one shaper and one rasteriser from eight threads in shuffled orders
-//! and fail, instead of hanging, if the threads have not all come back within
+//! A DataSystem may shape and rasterise while another registers a reloaded
+//! font. Eight threads call one shaper and one rasteriser in shuffled orders,
+//! and a test fails, instead of hanging, if they have not all come back within
 //! [`WATCHDOG`] (see `graphics/wgpu/device/tests/concurrency.rs` for why a
 //! panic and not an abort).
 
@@ -95,9 +92,11 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
     }
 }
 
-/// Runs every worker on a thread of its own and waits for all of them for at
-/// most [`WATCHDOG`]. Fails with the stuck threads' names on a timeout (they
-/// stay detached), and with each worker's error or panic otherwise.
+/// Runs every worker on a thread of its own and waits at most [`WATCHDOG`]
+/// for all of them.
+///
+/// Fails with the stuck threads' names on a timeout (they stay detached), and
+/// with each worker's error or panic otherwise.
 fn run_watched(what: &str, workers: Vec<(String, Worker)>) {
     let (sender, receiver) = mpsc::channel::<(usize, Result<(), String>)>();
     let names: Vec<String> = workers.iter().map(|(name, _)| name.clone()).collect();
@@ -178,9 +177,11 @@ fn shape_once(shaper: &dyn TextShaper, font: AssetUUID, rng: &mut XorShift) -> R
     Ok(())
 }
 
-/// One rasterising call of `rng`'s choosing. In the built-in font a letter must
-/// give an image and a space none; in `font` (Inter or IBM Plex Mono, possibly
-/// being replaced, so the ids name other glyphs) the call only has to return.
+/// One rasterising call of `rng`'s choosing.
+///
+/// In the built-in font a letter must give an image and a space none; in
+/// `font` (possibly being replaced, so the ids name other glyphs) the call
+/// only has to return.
 fn rasterize_once(
     rasterizer: &dyn GlyphRasterizer,
     font: AssetUUID,
@@ -227,9 +228,10 @@ fn every_call_ran(calls: &[(&str, usize)]) -> Result<(), String> {
 
 // ─── The tests ──────────────────────────────────────────────────────────────
 
+/// Threads shaping while others register fonts all come back, every call a success.
+///
 /// Eight threads shape texts in the built-in font and in a shared font while
-/// they register Inter or IBM Plex Mono over that shared font and under ids of
-/// their own. They all come back and every call succeeds.
+/// they register Inter or IBM Plex Mono over it and under ids of their own.
 #[test]
 fn the_shaper_called_from_many_threads_at_once_always_returns() {
     let shaper = Arc::new(ParleyShaper::new());
@@ -275,10 +277,11 @@ fn the_shaper_called_from_many_threads_at_once_always_returns() {
     run_watched("the shaper", workers);
 }
 
-/// Eight threads rasterise letters and spaces of the built-in font and of a
-/// shared font at every size and bin while they register Inter or IBM Plex
-/// Mono over that shared font and under ids of their own. They all come back
-/// and every letter of the built-in font gives an image.
+/// Threads rasterising while others register fonts all come back, every
+/// built-in letter with an image.
+///
+/// Eight threads rasterise letters and spaces at every size and bin while they
+/// register Inter or IBM Plex Mono over a shared font and under ids of their own.
 #[test]
 fn the_rasterizer_called_from_many_threads_at_once_always_returns() {
     let rasterizer = Arc::new(SwashRasterizer::new());
@@ -328,10 +331,11 @@ fn the_rasterizer_called_from_many_threads_at_once_always_returns() {
     run_watched("the rasterizer", workers);
 }
 
-/// Four threads shape a text and rasterise every glyph of it, as the glyph
-/// residency does; four others register a font over the one they use, with
-/// both backends, in shuffled orders. They all come back and every call
-/// succeeds.
+/// Shaping and rasterising as the glyph residency does, beside registrations,
+/// never deadlocks.
+///
+/// Four threads shape a text and rasterise each of its glyphs; four others
+/// register a font over the one they use, with both backends, in shuffled orders.
 #[test]
 fn shaping_and_rasterising_together_from_many_threads_do_not_deadlock() {
     let shaper = Arc::new(ParleyShaper::new());

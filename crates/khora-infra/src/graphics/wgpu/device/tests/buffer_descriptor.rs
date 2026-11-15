@@ -25,14 +25,9 @@ fn a_descriptor(usage: api_buf::BufferUsage) -> api_buf::BufferDescriptor<'stati
     }
 }
 
-/// **Issue #279.** Reported from the outside against a Metal build: a
-/// vertex buffer reached the driver marked as an index buffer.
+/// A vertex buffer reaches wgpu as a vertex buffer, never an index one.
 ///
-/// The cause was `wgpu::BufferUsages::from_bits_truncate(usage.bits())`
-/// here, where Khora numbers `VERTEX` at bit 4 and wgpu numbers it at
-/// bit 5. The conversion that does it properly already existed and was
-/// used by `create_buffer_init` fifty lines below; this path simply did
-/// not call it.
+/// Khora numbers `VERTEX` at bit 4, wgpu at bit 5: a raw bit copy swaps them.
 #[test]
 fn a_vertex_buffer_stays_a_vertex_buffer() {
     let source = a_descriptor(api_buf::BufferUsage::VERTEX);
@@ -54,19 +49,9 @@ fn an_index_buffer_stays_an_index_buffer() {
     assert!(!built.usage.contains(wgpu::BufferUsages::VERTEX));
 }
 
-/// **The reporter's case, with their workaround removed.**
+/// A vertex buffer that is also a copy target keeps `VERTEX` with no `INDEX` bit.
 ///
-/// `lana-khora-spike` asked for `VERTEX | INDEX | COPY_DST` on a vertex
-/// buffer so that the raw bit copy would yield wgpu `INDEX | VERTEX`, and
-/// the `VERTEX` flag would survive whichever way the bits landed. Their
-/// comment says to drop the `INDEX` bit once `create_buffer` calls
-/// `into_wgpu`. This is that call, without the bit.
-///
-/// The engine asks for the same combination in its own text renderer
-/// (`khora-infra/src/graphics/text/standard.rs`), which is why the defect was not
-/// specific to their project — it simply never surfaced there, because
-/// nothing queues text in the sandbox and the buffer is bound only when
-/// something does.
+/// The engine's text renderer asks for this combination.
 #[test]
 fn a_vertex_buffer_that_is_also_a_copy_target() {
     let source = a_descriptor(api_buf::BufferUsage::VERTEX | api_buf::BufferUsage::COPY_DST);
@@ -79,9 +64,7 @@ fn a_vertex_buffer_that_is_also_a_copy_target() {
     );
 }
 
-/// The rest of the descriptor is carried across unchanged — a fix that
-/// quietly dropped the label or the mapping flag would trade one silent
-/// failure for another.
+/// The label, the size and the mapping flag are carried across unchanged.
 #[test]
 fn the_rest_of_the_descriptor_is_carried_across() {
     let mut source = a_descriptor(api_buf::BufferUsage::UNIFORM);

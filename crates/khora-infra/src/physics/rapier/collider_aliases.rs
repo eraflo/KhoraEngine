@@ -14,19 +14,11 @@
 
 //! Engine collider handles that outlive the Rapier collider they first named.
 //!
-//! Rapier 0.32 keeps a contact pair's points across `set_shape`: it drops the
-//! pair's workspace but not its manifolds, and the contact generator's spatial
-//! coherence then reuses the old shape's points for as long as the two
-//! colliders do not move — a body resting on the ground and grown in place
-//! stayed sunk in it. The backend therefore *replaces* a collider that holds
-//! contact points when its shape changes: a new collider has no pairs, so its
-//! contacts are found from scratch.
-//!
-//! The engine never sees the swap. Its handle keeps naming the collider through
-//! the table here, and the step that re-finds the contacts drops the
-//! `Stopped`/`Started` the swap raises with whatever the collider touched and
-//! still touches — a script must not hear a crate leave a floor it never left.
-//! A Rapier workaround; an engine with its own solver has no use for it.
+//! Rapier 0.32 keeps a contact pair's old points across `set_shape`, so a body
+//! grown in place stays sunk in the ground. A collider holding contacts is
+//! therefore replaced when its shape changes; its engine handle names the new
+//! one through the table here, and the `Stopped`/`Started` the swap raises with
+//! what it still touches is dropped, so no script hears a false leave.
 
 use std::collections::HashMap;
 

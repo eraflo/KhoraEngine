@@ -12,37 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Forward+ (Tiled Forward) rendering lane implementation.
-//!
-//! This module implements a Forward+ rendering strategy that uses a compute shader
-//! to perform per-tile light culling before the main render pass. This approach
-//! significantly reduces the number of lights processed per fragment, making it
-//! ideal for scenes with many lights (>20).
-//!
-//! # Architecture
-//!
-//! The Forward+ pipeline works in two stages:
-//!
-//! 1. **Light Culling (Compute Pass)**: The screen is divided into tiles (16x16 pixels).
-//!    For each tile, the compute shader determines which lights intersect the tile's
-//!    frustum and builds a list of affecting light indices.
-//!
-//! 2. **Rendering (Render Pass)**: Each fragment looks up its tile's light list and
-//!    only evaluates lighting for those specific lights, rather than all lights in the scene.
-//!
-//! # Performance Characteristics
-//!
-//! - **O(tiles × lights)** for light culling (compute pass)
-//! - **O(fragments × lights_per_tile)** for shading (render pass)
-//! - **Suitable for**: Scenes with many lights (>20)
-//! - **Break-even point**: ~20 lights (vs standard forward rendering)
-//!
-//! # As a lane of the render family
-//!
-//! Forward+ is the family's `HighPerformance` level: the reference image,
-//! however many lights the scene holds up to its light buffer's capacity. It
-//! needs storage buffers and compute shaders, so a device without them never
-//! offers it.
+//! The render family's Forward+ lane: the lights culled per screen tile, then
+//! each fragment shaded by its tile's lights only.
 
 use std::time::Duration;
 
@@ -95,11 +66,10 @@ const LIGHT_TILE_GPU_SECS: f64 = 1e-9;
 /// pixel. A tile keeps about the square root of the scene's lights.
 const LIGHT_SHADING: f64 = 0.15;
 
-/// Binding indices inside the group-3 *lighting* bind group, mirroring
-/// `forward_plus.wgsl`. Bindings 1/2/3 belong to the shared shadow
-/// contract (`khora_core::renderer::api::shadow::bindings::binding`) — Forward+
-/// owns 0, 4, 5, 6, 7 around them. See the canonical render bind-group
-/// convention in `.agent/conventions.md`.
+/// Binding indices of the group-3 lighting bind group, as in `forward_plus.wgsl`.
+///
+/// Bindings 1 to 3 are the shared shadow contract
+/// (`khora_core::renderer::api::shadow::bindings::binding`); Forward+ owns the others.
 mod g3 {
     /// `lights` storage buffer.
     pub const LIGHTS: u32 = 0;
@@ -113,8 +83,12 @@ mod g3 {
     pub const SHADOW_VIEW_PROJS: u32 = 7;
 }
 
-/// The Forward+ lane: lights culled per tile of the target by a compute
-/// pass, then every mesh shaded by its tile's lights.
+/// A lane that culls the lights per tile of the target, then shades each mesh
+/// by its tile's lights.
+///
+/// One level, the family's `HighPerformance` one: the reference image up to its
+/// light buffer's capacity, worth its compute pass from about 20 lights. A device
+/// without storage buffers or compute shaders never offers it.
 #[derive(Default)]
 pub struct ForwardPlusLane {
     /// The tiles the target is cut into and the lights each holds.
@@ -163,10 +137,10 @@ impl Lane for ForwardPlusLane {
         Ok(())
     }
 
-    /// Each mesh recorded on the host; on the device the culling of every
-    /// tile against every light, the triangles, and every pixel shaded by
-    /// the lights its tile keeps. Past the light buffer's capacity the frame
-    /// is not the reference image.
+    /// Prices each mesh on the host; on the device, the tile culling, the
+    /// triangles and each pixel shaded by its tile's lights.
+    ///
+    /// Past the light buffer's capacity the frame is not the reference image.
     fn cost(&self, _level: usize, inputs: &LitInputs<'_>) -> Cost {
         let load = SceneLoad::of(inputs.render_world, &inputs.target);
         let lights = load.lights().min(gpu::LIGHT_BUFFER_CAPACITY);
@@ -192,9 +166,8 @@ impl Lane for ForwardPlusLane {
         }
     }
 
-    /// Culls the lights of every tile, then records the opaque meshes into
-    /// the scene pass — a clear without a camera — and the blended ones into
-    /// the transparent pass.
+    /// Culls every tile's lights, then records the opaque and the blended meshes
+    /// into their passes; without a camera the scene pass only clears.
     fn record(
         &mut self,
         _level: usize,

@@ -15,6 +15,7 @@
 use khora_core::math::Vec3;
 use rapier3d::prelude::*;
 
+/// The line list Rapier's debug renderer draws, as segments of vertex pairs.
 #[derive(Default)]
 pub struct RapierDebugBackend {
     pub vertices: Vec<Vec3>,

@@ -14,10 +14,8 @@
 
 //! What a unit of each kind of load costs and does, whichever lane loads it.
 //!
-//! A unit is one project index, one scene load, one script root — every
-//! waiting request of that root, merged into one compile — or one asset
-//! decode. The lanes differ only
-//! in how many units a run takes.
+//! A unit is one project index, one scene load, one script root (its waiting
+//! requests merged into one compile) or one asset decode.
 
 use std::time::Duration;
 
@@ -100,11 +98,11 @@ impl Waiting {
         }
     }
 
-    /// The units taken in turn — the project indexes, which the scenes and the
-    /// assets are read through, then the scenes, the script roots and the
-    /// assets — while their cost stays within `budget`, and always the first;
-    /// everything without a budget. The first unit that does not fit stops
-    /// the taking, so what is left keeps its order.
+    /// Returns the units taken in turn while their cost stays within `budget`.
+    ///
+    /// The first unit is always taken; without a budget, every unit. The project
+    /// indexes go first, since the scenes and assets are read through them. The
+    /// first unit that does not fit stops the taking, so what is left keeps its order.
     pub(super) fn within(&self, budget: Option<Duration>) -> Taking {
         let Some(budget) = budget else {
             return self.all();
@@ -182,9 +180,10 @@ fn roots(scripts: &[CompileRequest]) -> Vec<Vec<usize>> {
     roots
 }
 
-/// Loads the units `taking` names from the front of each field, staging each
-/// result under its lease; what it does not take stays in its field, in
-/// order, and goes back to its mailbox after the run.
+/// Loads the units `taking` names from the front of each field.
+///
+/// Each result is staged under its lease. What it does not take stays in its
+/// field, in order, and goes back to its mailbox after the run.
 pub(super) fn load(
     taking: Taking,
     inputs: &mut LoadingInputs<'_>,

@@ -25,8 +25,7 @@
 #import khora::shadow::sample_cube::sample_point_shadow
 
 // Image-based lighting (group 3, bindings 4..8 after the lighting uniform @0
-// and shadow @1/2/3). Diffuse-only for now — the prefiltered cube (@5) and
-// BRDF LUT (@6) are in the layout but not yet sampled (Inc 4 adds specular).
+// and shadow @1/2/3).
 @group(3) @binding(4) var ibl_irradiance: texture_cube<f32>;
 @group(3) @binding(5) var ibl_prefiltered: texture_cube<f32>;
 @group(3) @binding(6) var ibl_brdf_lut: texture_2d<f32>;

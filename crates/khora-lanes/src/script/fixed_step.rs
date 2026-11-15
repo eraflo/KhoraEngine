@@ -12,13 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `FixedUpdate`, once per fixed step a turn is owed.
-//!
-//! The fixed clock is the behavior's own, like its timers: its steps run
-//! after its schedule and before what happens to it — its events, its
-//! `Update`. Each is handed the step it was taken at. A step the fuel does not
-//! reach is handed back, owed; a step cut part-way resumes as a body, counted
-//! when it began.
+//! `FixedUpdate`, once per fixed step a turn is owed, each handed the step it
+//! was taken at; a step cut part-way resumes as a body.
+//! See the book: concepts/scripting/turns.md, "A fixed clock".
 
 use khora_script::lifecycle;
 use khora_script::native::Host;
@@ -28,8 +24,9 @@ use super::hooks::{call_hook, Hook};
 use super::runtime::Body;
 use super::turn::{kept, park, Invocation, Outcome, Progress};
 
-/// Runs the steps `progress` is owed, as far as the turn's fuel goes; the
-/// outcome that ends the turn early, if one does.
+/// Runs the steps `progress` is owed, as far as the turn's fuel goes.
+///
+/// Returns the outcome that ends the turn early, if one does.
 pub(super) fn run_steps(
     call: &Invocation<'_>,
     progress: &mut Progress,

@@ -12,15 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The forward lane: every mesh shaded by every light in one pass, with its
-//! shadows and the image-based lighting — the reference image, as long as the
-//! scene holds no more lights than the pass shades.
-//!
-//! The pass shades at most [`MAX_DIRECTIONAL_LIGHTS`] directional,
-//! [`MAX_POINT_LIGHTS`] point and [`MAX_SPOT_LIGHTS`] spot lights. A frame
-//! with more is drawn without the ones past the caps, and the lane's quote
-//! says so: its impact is [`Impact::Minor`], so the agent prefers a lane that
-//! keeps them.
+//! The render family's forward lane: every mesh shaded by every light in one
+//! pass, with its shadows and the image-based lighting.
 
 use khora_core::agent::gorna::StrategyId;
 use khora_core::gpu::GpuSetup;
@@ -56,7 +49,12 @@ const LEVELS: [Level; 1] = [Level {
     },
 }];
 
-/// The forward lane.
+/// A lane that shades every mesh by every light in one pass, with shadows and IBL.
+///
+/// One level, the family's `Balanced` one: the reference image while the scene
+/// holds at most [`MAX_DIRECTIONAL_LIGHTS`] directional, [`MAX_POINT_LIGHTS`]
+/// point and [`MAX_SPOT_LIGHTS`] spot lights. Past those caps the frame drops
+/// the extra lights and the quote says [`Impact::Minor`].
 #[derive(Default)]
 pub struct LitForwardLane {
     /// What the lane built on the device; `None` before the first prepare
@@ -98,9 +96,10 @@ impl Lane for LitForwardLane {
         Ok(())
     }
 
-    /// Each mesh recorded on the host; on the device its triangles, and
-    /// every pixel shaded by each light the pass keeps. Past the light caps
-    /// the frame is not the reference image.
+    /// Prices each mesh on the host; on the device, its triangles and each pixel
+    /// shaded by every light the pass keeps.
+    ///
+    /// Past the light caps the frame is not the reference image.
     fn cost(&self, _level: usize, inputs: &LitInputs<'_>) -> Cost {
         let load = SceneLoad::of(inputs.render_world, &inputs.target);
         let shaded = load.suns.min(MAX_DIRECTIONAL_LIGHTS)
@@ -121,8 +120,8 @@ impl Lane for LitForwardLane {
         }
     }
 
-    /// Records the opaque meshes into the scene pass — a clear without a
-    /// camera — and the blended ones into the transparent pass.
+    /// Records the opaque and the blended meshes into their passes; without a
+    /// camera the scene pass only clears.
     fn record(
         &mut self,
         _level: usize,

@@ -53,16 +53,10 @@ mod wgpu_sampler_entry;
 mod wgpu_texture_entry;
 mod wgpu_texture_view_entry;
 
-/// Build the wgpu descriptor for an empty buffer.
+/// Builds the wgpu descriptor for an empty buffer.
 ///
-/// A free function rather than three lines inside `create_buffer`, and that is
-/// the whole point: the bug this fixes (issue #279) lived at the call site, not
-/// in the conversion it should have used. `IntoWgpu for BufferUsage` was always
-/// correct; `create_buffer` reinterpreted the raw bits instead of calling it,
-/// and no test could see the difference because there was nothing to call.
-///
-/// Now there is. A regression here fails `a_vertex_buffer_stays_a_vertex_buffer`
-/// on any machine, with no GPU.
+/// A function of its own so a test checks, with no GPU, that the usage crosses
+/// through `IntoWgpu` and never as raw bits (`a_vertex_buffer_stays_a_vertex_buffer`).
 fn buffer_descriptor<'a>(
     descriptor: &'a api_buf::BufferDescriptor<'a>,
 ) -> wgpu::BufferDescriptor<'a> {
@@ -82,11 +76,8 @@ use crate::graphics::wgpu::resilience::GpuHealth;
 
 /// Every id table of the device, behind the device's one lock.
 ///
-/// Reached only through [`WgpuDevice::with_registry`], whose closure gets the
-/// registry and nothing else: it looks entries up and clones their `Arc`s
-/// out, inserts, removes, and returns. It never calls wgpu and never takes
-/// another lock, so the registry's lock is a leaf — held by nobody who waits
-/// for anything — and no two calls of the device can ever wait on each other.
+/// Reached only through [`WgpuDevice::with_registry`]. Its lock is a leaf: held
+/// only to look up, insert or remove, never across a wgpu call or another lock.
 #[derive(Debug, Default)]
 pub(crate) struct Registry {
     pub(crate) shader_modules: HashMap<ShaderModuleId, WgpuShaderModuleEntry>,
@@ -111,12 +102,11 @@ struct SurfaceInfo {
     size: (u32, u32),
 }
 
-/// The internal, non-clonable state of the WgpuDevice.
+/// The shared state behind a [`WgpuDevice`].
 ///
-/// wgpu's device and queue are thread-safe, so they are held as they are;
-/// the id tables sit in one [`Registry`] behind one lock. Lanes call the
-/// device from many threads at once (they prepare and record in concurrent
-/// waves), so no call may wait while holding anything.
+/// Lanes call the device from many threads at once, so no call waits while it
+/// holds a lock: wgpu's device and queue are thread-safe, the id tables sit in
+/// one leaf [`Registry`].
 #[derive(Debug)]
 pub struct WgpuDeviceInternal {
     device: wgpu::Device,
@@ -152,15 +142,13 @@ pub struct WgpuDeviceInternal {
     /// A thread-safe counter to generate unique command buffer IDs.
     command_buffer_id_counter: AtomicU64,
 
-    /// Lock-free device-health flags shared with the graphics context. Raised
-    /// by the wgpu error/device-lost callbacks; read by the render system each
-    /// frame to detect a lost or out-of-memory device.
+    /// Device-health flags shared with the graphics context, raised by the
+    /// wgpu error callbacks.
     health: Arc<super::resilience::GpuHealth>,
 }
 
-/// A clonable, thread-safe handle to the WGPU graphics device.
-/// It wraps the actual device state (`WgpuDeviceInternal`) in an Arc,
-/// allowing it to be shared across threads and with command encoders.
+/// A clonable, thread-safe handle to the wgpu graphics device; clones share
+/// one [`WgpuDeviceInternal`].
 #[derive(Clone, Debug)]
 pub struct WgpuDevice {
     internal: Arc<WgpuDeviceInternal>,
@@ -233,10 +221,15 @@ impl WgpuDevice {
         }
     }
 
-    /// The device's one lock. The closure gets the registry and nothing
-    /// else: it looks up and clones out, inserts or removes, and returns —
+    /// Runs `operation` on the registry, under the device's one lock.
+    ///
+    /// The closure looks up and clones out, inserts or removes, and returns:
     /// never a wgpu call, never another lock. What it removes it returns, so
-    /// the entry is dropped, and wgpu releases it, once the lock is free.
+    /// wgpu releases the entry once the lock is free.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the registry's mutex is poisoned.
     pub(crate) fn with_registry<R>(
         &self,
         operation: impl FnOnce(&mut Registry) -> R,
@@ -323,9 +316,8 @@ impl WgpuDevice {
         operation(&self.internal.device)
     }
 
-    /// Helper to calculate texture size in bytes
+    /// Returns a texture's size in bytes, ignoring mips, block compression and padding.
     fn calculate_texture_size_in_bytes(descriptor: &api_tex::TextureDescriptor) -> u64 {
-        // This is a simplified calculation. Real engines consider block compression, padding, etc.
         let bytes_per_pixel = descriptor.format.bytes_per_pixel();
         let num_pixels = descriptor.size.width as u64
             * descriptor.size.height as u64
@@ -390,12 +382,10 @@ impl WgpuDevice {
         .flatten()
     }
 
-    /// Polls the underlying wgpu::Device in a blocking manner.
-    /// This is primarily used during shutdown to ensure all pending operations
-    /// and callbacks are completed before resources are destroyed, preventing panics.
+    /// Blocks until the GPU has done all submitted work and run its callbacks.
+    ///
+    /// Called at shutdown, so no resource is destroyed under a pending callback.
     pub fn poll_device_blocking(&self) {
-        // PollType::Wait is blocking and will wait for the queue to be empty
-        // and for all `on_submitted_work_done` callbacks to be processed.
         if let Err(e) = self.internal.device.poll(wgpu::PollType::Wait {
             submission_index: None,
             timeout: None,
@@ -404,20 +394,17 @@ impl WgpuDevice {
         }
     }
 
-    /// Polls the underlying wgpu::Device in a non-blocking manner.
-    /// This is essential to process pending `map_async` callbacks from the GPU,
-    /// allowing systems like the GpuProfiler to receive data.
+    /// Runs the callbacks of finished GPU work, such as `map_async`, without blocking.
     pub fn poll_device_non_blocking(&self) {
-        // PollType::Poll is non-blocking. It processes any completed work
-        // but returns immediately if there is none.
         if let Err(e) = self.internal.device.poll(wgpu::PollType::Poll) {
             log::warn!("Failed to poll device (non-blocking): {:?}", e);
         }
     }
 
-    /// Waits for every `queue.submit()` so far to be processed by the GPU.
-    /// Must be called before `get_current_texture()` to avoid Vulkan semaphore
-    /// validation errors (VUID-vkAcquireNextImageKHR-semaphore-01286).
+    /// Waits until the GPU has processed every submission so far.
+    ///
+    /// Call it before `get_current_texture()`: acquiring sooner trips Vulkan's
+    /// VUID-vkAcquireNextImageKHR-semaphore-01286.
     pub fn wait_for_last_submission(&self) {
         // Every submission so far, not one remembered index: submissions come
         // from many threads, and on one queue waiting for all of them is
@@ -430,12 +417,9 @@ impl WgpuDevice {
         }
     }
 
-    /// Returns `true` if the underlying device has been reported lost
-    /// (driver crash/reset/destroy) or hit an internal device error.
+    /// Returns `true` once the device was reported lost or hit an internal error.
     ///
-    /// Raised asynchronously by the wgpu device-lost / uncaptured-error
-    /// callbacks; the render system polls this each frame to stop submitting
-    /// work and surface a fatal, non-panicking error.
+    /// See the book: concepts/rendering.md, "Device-loss resilience".
     pub fn is_device_lost(&self) -> bool {
         self.internal.health.is_device_lost()
     }
@@ -469,10 +453,9 @@ impl WgpuDevice {
         Ok(id)
     }
 
-    /// (crate-internal) Registers a finished wgpu::CommandBuffer, storing it
-    /// in a map and returning an abstract ID for it. Returns `None` if the
-    /// pending-buffer registry mutex is poisoned (the caller treats this
-    /// as a backend failure).
+    /// Keeps a finished command buffer until it is submitted, and returns its id.
+    ///
+    /// Returns `None` when the registry's mutex is poisoned.
     pub(crate) fn register_command_buffer(
         &self,
         buffer: wgpu::CommandBuffer,
@@ -510,17 +493,20 @@ impl WgpuDevice {
 
 impl ResourceMonitor for WgpuDevice {
     fn monitor_id(&self) -> Cow<'static, str> {
-        Cow::Borrowed("WgpuDevice_VRAM_Monitor") // Simple to begin (TODO: use dynamic adapter name)
+        // One device per process, so a fixed name is unique.
+        Cow::Borrowed("WgpuDevice_VRAM_Monitor")
     }
 
     fn resource_type(&self) -> MonitoredResourceType {
         MonitoredResourceType::Vram
     }
 
-    /// What the device holds, and — once it knows its adapter — what the
-    /// platform lets it hold: the budget as the capacity, and the platform's
-    /// count of what is used, which sees what Khora does not allocate itself
-    /// (the swapchain, the driver).
+    /// Reports what the device holds and, once it knows its adapter, the
+    /// platform's budget as the capacity.
+    ///
+    /// The platform's count of what is used includes what Khora does not
+    /// allocate (the swapchain, the driver).
+    /// See the book: concepts/telemetry.md, "Video memory".
     fn get_usage_report(&self) -> ResourceUsageReport {
         let own = self.internal.vram_allocated_bytes.load(Ordering::Relaxed) as u64;
         let reading = self
@@ -567,8 +553,7 @@ impl VramProvider for WgpuDevice {
     }
 
     fn get_vram_capacity_mb(&self) -> Option<f32> {
-        // TODO: Implement VRAM capacity detection if available from adapter info
-        // For now, return None as this information is not easily available in WGPU
+        // The platform's budget reaches telemetry through `get_usage_report`.
         None
     }
 }

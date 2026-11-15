@@ -20,9 +20,9 @@ use khora_core::renderer::api::shader::ShaderDefScalar;
 use naga::valid::{Capabilities, ValidationFlags, Validator};
 use naga_oil::compose::{NagaModuleDescriptor, ShaderType};
 
-/// Smoke test: every registered pipeline composes + validates + emits WGSL
-/// at the empty variant (catches import-graph / `#define_import_path` drift
-/// at boot, no GPU needed).
+/// Every registered pipeline composes, validates and emits WGSL at the empty variant.
+///
+/// Catches import-graph and `#define_import_path` drift at boot, with no GPU.
 #[test]
 fn composes_every_pipeline() {
     let sys = WgpuPipelineSystem::new().expect("system init");
@@ -51,11 +51,10 @@ fn composes_every_pipeline() {
     }
 }
 
-/// Composes the lit pipelines for every combination of material texture
-/// variant flags, catching `#ifdef`-gated binding / import drift in the
-/// material-textures lib at boot (no GPU needed). The full power set of
-/// the five `HAS_*` flags exercises each gated declaration in isolation
-/// and together.
+/// The lit pipelines compose for every combination of the five `HAS_*` texture flags.
+///
+/// Each `#ifdef`-gated declaration of the material-textures lib is exercised
+/// alone and together, with no GPU.
 #[test]
 fn composes_lit_pipelines_for_texture_variants() {
     use khora_core::renderer::api::material::bindings::flag;
@@ -189,10 +188,8 @@ fn pipeline_dependency_tracking_is_transitive_and_precise() {
     ));
 }
 
-/// Setting an overlay for a lib marks it dirty and re-registering it with
-/// the composer (the device-free half of `recompose_dirty`) succeeds for a
-/// trivially-different-but-valid source; a dependent pipeline still
-/// composes against the overlaid lib.
+/// An overlaid lib registers again with the composer, and a pipeline importing it
+/// still composes: the device-free half of `recompose_dirty`.
 #[test]
 fn overlay_lib_recomposes_and_dependent_pipeline_still_composes() {
     let sys = WgpuPipelineSystem::new().expect("system init");
@@ -264,12 +261,11 @@ fn compose_lit_forward(inner: &mut Inner) -> Result<naga::Module, String> {
         .map_err(|e| e.to_string())
 }
 
-/// **Clearing the overlays restores the engine's module.** A project's
-/// overlay of `khora::std::camera` that drops the `camera` binding is set
-/// and recomposed: `lit_forward`, which imports it, no longer composes.
-/// Once the overlays are cleared, the camera lib's source is the engine's
-/// again and it is marked for the next recompose; recomposed, `lit_forward`
-/// composes from the engine's source as before the overlay.
+/// Clearing the overlays restores the engine's module.
+///
+/// An overlay of `khora::std::camera` without the `camera` binding breaks
+/// `lit_forward`; cleared and recomposed, `lit_forward` composes from the
+/// engine's source again.
 #[test]
 fn clear_overlays_restores_the_engines_module() {
     let sys = WgpuPipelineSystem::new().expect("system init");
@@ -316,14 +312,11 @@ fn clear_overlays_restores_the_engines_module() {
         .expect("lit_forward composes from the engine's camera lib again");
 }
 
-/// **Clearing the overlays restores a module whose last overlay failed to
-/// compose.** A project's overlay of `khora::std::camera` with no `camera`
-/// binding is set and recomposed: the composer holds it. The project then
-/// saves a broken version: `recompose_dirty` fails to re-register it, keeps
-/// the composer's previous module — the project's first overlay — and drops
-/// the broken one from the overlays. Once the overlays are cleared and
-/// recomposed (the project restricted or closed), the camera lib the
-/// composer holds must be the engine's: `lit_forward` composes again.
+/// Clearing the overlays restores a module whose last overlay failed to compose.
+///
+/// When the project's broken overlay fails, the composer keeps its first one;
+/// cleared and recomposed (the project restricted or closed), the camera lib is
+/// the engine's and `lit_forward` composes.
 #[test]
 fn clear_overlays_restores_a_module_whose_last_overlay_failed_to_compose() {
     let sys = WgpuPipelineSystem::new().expect("system init");
@@ -362,12 +355,10 @@ fn clear_overlays_restores_a_module_whose_last_overlay_failed_to_compose() {
     );
 }
 
-/// **Clearing the overlays removes a module only a project brought.** A
-/// project's overlay declares a lib module the engine does not have,
-/// `khora::project::extra`, and it is recomposed: the composer holds it.
-/// Once the overlays are cleared and recomposed (the project restricted or
-/// closed), nothing of that project is left: the composer no longer holds
-/// the module, so no later pipeline can import it.
+/// Clearing the overlays removes a module only a project brought.
+///
+/// Once cleared and recomposed, the composer holds nothing of the project's
+/// `khora::project::extra`, so no later pipeline can import it.
 #[test]
 fn clear_overlays_removes_a_module_only_a_project_brought() {
     let sys = WgpuPipelineSystem::new().expect("system init");
@@ -402,13 +393,12 @@ fn clear_overlays_removes_a_module_only_a_project_brought() {
     );
 }
 
-/// **Clearing the overlays restores a built-in module a project file of
-/// another name replaced.** A project's `shaders/lib/evil.wgsl` — logical
-/// path `khora::evil` — declares `#define_import_path khora::std::camera`,
-/// with no `camera` binding: recomposed, the composer's camera lib is the
-/// project's, and `lit_forward` no longer composes. Once the overlays are
-/// cleared and recomposed (the project restricted or closed), the camera lib
-/// must be the engine's again: `lit_forward` composes.
+/// Clearing the overlays restores a built-in module a project file of another
+/// name overrode.
+///
+/// The project's `khora::evil` declares `#define_import_path khora::std::camera`
+/// without the `camera` binding; cleared and recomposed, the camera lib is the
+/// engine's again and `lit_forward` composes.
 #[test]
 fn clear_overlays_restores_a_builtin_module_a_file_of_another_name_replaced() {
     let sys = WgpuPipelineSystem::new().expect("system init");
@@ -433,14 +423,11 @@ fn clear_overlays_restores_a_builtin_module_a_file_of_another_name_replaced() {
         .expect("lit_forward composes from the engine's camera lib once the overlays are cleared");
 }
 
-/// **Clearing the overlays keeps every built-in module a project overlaid.**
-/// A project overlays `khora::lighting::structs` with a version importing a
-/// lib of its own, `khora::project::extra`, then `khora::lighting::uniforms`
-/// (which imports `structs`) with the engine's source and a comment. Once
-/// the overlays are cleared and recomposed, both built-in libs are in the
-/// composer again, from the engine's source — whatever order the clear and
-/// the recompose visit them in (run twenty times over, each with its own
-/// hash order).
+/// Clearing the overlays keeps every built-in module a project overlaid.
+///
+/// The project overlays `structs` with a version importing a lib of its own,
+/// then `uniforms`, which imports `structs`. Cleared and recomposed, both come
+/// from the engine's source whatever the hash order (run twenty times).
 #[test]
 fn clear_overlays_keeps_every_builtin_module_a_project_overlaid() {
     let source = |path: &str| {
@@ -657,11 +644,10 @@ impl GraphicsDevice for NoDevice {
     }
 }
 
-/// The sandbox hot-reloads every `.wgsl` under `shader/shaders/`, and the
-/// watcher names a pipeline file `khora::pipelines::<stem>`. A file in
-/// `pipelines/` that the table does not know is taken by `recompose_dirty`
-/// for a lib module and handed to the composer. So every file in the watched
-/// `pipelines/` directory must be a registered pipeline — or live elsewhere.
+/// Every watched pipeline file is a registered pipeline, or lives elsewhere.
+///
+/// The watcher names a file of `pipelines/` `khora::pipelines::<stem>`, and
+/// `recompose_dirty` takes one the table does not know for a lib module.
 #[test]
 fn every_watched_pipeline_file_is_a_registered_pipeline() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -791,9 +777,10 @@ const MESH_PIPELINES: [&str; 5] = [
     "khora::pipelines::shadow_pass",
 ];
 
-/// A mesh pipeline's vertex shader may only ask for attributes the engine
-/// mesh vertex provides, each with the width the buffer holds — otherwise the
-/// pipeline either fails to build or reads garbage.
+/// A mesh pipeline's vertex shader asks only for attributes the mesh vertex
+/// provides, at the width the buffer holds.
+///
+/// Otherwise the pipeline fails to build or reads garbage.
 #[test]
 fn mesh_pipeline_vertex_inputs_are_in_the_mesh_vertex() {
     use khora_core::renderer::api::gpu_scene::Mesh;
@@ -994,9 +981,10 @@ fn fragment_reads_member(
     reaches(module, fs_main(module), &found, &mut HashSet::new())
 }
 
-/// Each specular map is declared, at its binding, exactly when its flag is
-/// set, and the fragment samples it then; the sampler sits at 8 in every
-/// variant. Each new flag alone, every flag together, and none.
+/// Each specular map is declared at its binding, and sampled, exactly when its flag is set.
+///
+/// The sampler sits at 8 in every variant; checked for each flag alone, all
+/// together, and none.
 #[test]
 fn lit_pipelines_bind_and_sample_each_specular_map_only_under_its_flag() {
     use khora_core::renderer::api::material::bindings::flag;
@@ -1331,12 +1319,10 @@ fn reaches_unweighted(
         .any(|operand| reaches_unweighted(function, calls, operand, target, weight))
 }
 
-/// A specular strength of 0 removes a non-metal's reflection, the
-/// environment's included: in the split-sum `f0·A + f90·B`, the LUT's bias
-/// `B` (`brdf.y`) is scaled by the grazing reflectance as the scale is, so no
-/// path carries `brdf.y` to the ambient result without a factor computed
-/// from the dielectric reflectance. At the default strength that factor is
-/// exactly 1, so today's image is unchanged.
+/// A specular strength of 0 removes a non-metal's reflection, the environment's included.
+///
+/// In the split-sum, the LUT's bias `B` (`brdf.y`) is scaled by the grazing
+/// reflectance as the scale is; at the default strength that factor is exactly 1.
 #[test]
 fn the_ibl_split_sum_bias_is_scaled_by_the_specular_strength() {
     let sys = WgpuPipelineSystem::new().expect("system init");
@@ -1383,13 +1369,9 @@ fn the_ibl_split_sum_bias_is_scaled_by_the_specular_strength() {
 
 // ─── The UI quad's corners, evaluated on the composed vertex shader ─────────
 //
-// The UI lane draws each quad as a four-vertex triangle strip, so vertex `i`
-// of an instance must land on corner (0,0), (1,0), (0,1), (1,1) in that order.
-// Rather than pin the WGSL text (which any equivalent rewrite would break), the
-// composed `vs_main` is run on the CPU by the small evaluator below, for a
-// mock instance at the origin of size 1 whose UVs span [0, 1] and an identity
-// projection: the vertex's UV and its clip-space position are then the corner
-// itself.
+// The composed `vs_main` runs on the CPU, for a unit instance at the origin with
+// UVs over [0, 1] and an identity projection: a vertex's UV and clip position
+// are then its corner. Pinning the WGSL text would break on any equivalent rewrite.
 
 /// A value of the vertex-shader evaluator.
 #[derive(Debug, Clone, PartialEq)]
@@ -1441,9 +1423,8 @@ fn scalar_zero(kind: naga::ScalarKind) -> Val {
     }
 }
 
-/// A value of type `ty`: zero everywhere when `mock` is false; otherwise the
-/// mock inputs — matrices are the identity, and a vector named `size` or
-/// `uv_max` is all ones.
+/// A value of type `ty`: zero, or with `mock` the mock inputs (identity
+/// matrices, all ones in a vector named `size` or `uv_max`).
 fn value_of(
     module: &naga::Module,
     ty: naga::Handle<naga::Type>,
@@ -2030,10 +2011,9 @@ fn floats(value: &Val) -> Option<Vec<f32>> {
     }
 }
 
-/// The corner `vs_main` of the composed UI pipeline puts vertex `vertex_index`
-/// of a unit quad on: read from its UV (`@location(0)`, with UVs spanning
-/// [0, 1]) and checked against its clip-space position (instance at the origin
-/// of size 1, identity projection), which must agree.
+/// Returns the corner of a unit quad the composed UI `vs_main` puts vertex `vertex_index` on.
+///
+/// Read from its UV and checked against its clip-space position, which must agree.
 fn ui_corner(module: &naga::Module, vertex_index: u32) -> (f32, f32) {
     let entry = module
         .entry_points
@@ -2076,9 +2056,9 @@ fn ui_corner(module: &naga::Module, vertex_index: u32) -> (f32, f32) {
     (uv[0], uv[1])
 }
 
-/// The UI lane draws each quad as a four-vertex triangle strip: vertex 0..3
-/// must be (0,0), (1,0), (0,1), (1,1), so that triangles (0,1,2) and (1,2,3)
-/// cover the quad with no gap and no overlap.
+/// UI quad vertices 0..3 follow strip order: (0,0), (1,0), (0,1), (1,1).
+///
+/// So triangles (0,1,2) and (1,2,3) cover the quad with no gap and no overlap.
 #[test]
 fn ui_shader_corners_follow_strip_order() {
     let module = compose_pipeline("khora::pipelines::ui");
@@ -2092,10 +2072,8 @@ fn ui_shader_corners_follow_strip_order() {
     );
 }
 
-/// **`khora::pipelines::ui_text` composes and validates.** The UI lane draws
-/// its glyphs with it: it is registered, composes at the empty variant,
-/// validates, and has the vertex and fragment entry points the quad pipeline
-/// has, `vs_main` and `fs_main`.
+/// `khora::pipelines::ui_text` composes and validates, with the quad
+/// pipeline's entry points `vs_main` and `fs_main`.
 #[test]
 fn the_ui_text_pipeline_composes_and_validates() {
     let module = compose_pipeline("khora::pipelines::ui_text");
@@ -2118,11 +2096,11 @@ fn the_ui_text_pipeline_composes_and_validates() {
     );
 }
 
-/// **The `ui_text` shader binds exactly what the UI lane's layout declares**:
-/// the projection uniform at 0.0, the glyph instance storage at 1.0, the mask
-/// atlas at 2.0, the colour atlas at 2.1 and their sampler at 2.2 — and
-/// nothing else. The lane's own test (`khora-lanes` `ui::text`) pins its
-/// pipeline layout to the same set.
+/// The `ui_text` shader binds exactly what the UI lane's layout declares.
+///
+/// Projection at 0.0, glyph instances at 1.0, mask atlas at 2.0, colour atlas
+/// at 2.1, sampler at 2.2; the lane's own test (`khora-lanes` `ui::text`) pins
+/// the same set.
 #[test]
 fn the_ui_text_shader_binds_exactly_what_the_ui_lane_layout_declares() {
     let module = compose_pipeline("khora::pipelines::ui_text");
@@ -2157,9 +2135,8 @@ fn the_ui_text_shader_binds_exactly_what_the_ui_lane_layout_declares() {
     assert_eq!(bound, expected);
 }
 
-/// The UI lane draws each glyph as a four-vertex triangle strip, as it does
-/// a quad: vertex 0..3 of `ui_text`'s `vs_main` must be (0,0), (1,0), (0,1),
-/// (1,1), each sampling the corner of the glyph's rect it is drawn at.
+/// Glyph vertices 0..3 of `ui_text` follow strip order, each sampling its
+/// corner of the glyph's rect.
 #[test]
 fn ui_text_shader_corners_follow_strip_order() {
     let module = compose_pipeline("khora::pipelines::ui_text");
@@ -2173,10 +2150,10 @@ fn ui_text_shader_corners_follow_strip_order() {
     );
 }
 
-/// **`ui_text`'s `GlyphInstance` is the UI lane's 64-byte instance**: the
-/// lane uploads sixteen floats a glyph — `pos` at 0, `size` at 8, `color` at
-/// 16, `params` at 32, `uv_min` at 48, `uv_max` at 56 — so the storage array
-/// the shader reads at 1.0 strides 64 bytes and lays its members there.
+/// `ui_text`'s `GlyphInstance` is the UI lane's 64-byte instance.
+///
+/// `pos` at 0, `size` 8, `color` 16, `params` 32, `uv_min` 48, `uv_max` 56: the
+/// storage array the shader reads at 1.0 strides 64 bytes.
 #[test]
 fn the_ui_text_glyph_instance_mirrors_the_ui_lane_instance_layout() {
     let module = compose_pipeline("khora::pipelines::ui_text");

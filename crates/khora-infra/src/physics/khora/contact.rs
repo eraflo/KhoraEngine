@@ -18,13 +18,9 @@ use khora_core::math::Vec3;
 
 /// Detailed information about a contact between two colliders.
 ///
-/// The currency between [`collision`](super::collision) and [`solver`](super::solver) — the narrow phase
-/// produces one per contact, the solver consumes it. It is not part of the
-/// [`PhysicsProvider`](khora_core::physics::PhysicsProvider) contract, so it
-/// belongs to this backend rather than to the engine's vocabulary.
-///
-/// Not serializable: it describes one contact during one step, and the derives
-/// it used to carry in `khora-core` had no callers.
+/// The narrow phase ([`collision`](super::collision)) produces one per contact
+/// and the [`solver`](super::solver) consumes it, within one step. It is not
+/// part of the [`PhysicsProvider`](khora_core::physics::PhysicsProvider) contract.
 #[derive(Debug, Clone, Copy)]
 pub struct ContactManifold {
     /// Normal vector pointing from entity A to entity B.

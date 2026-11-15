@@ -14,14 +14,6 @@
 
 //! The frame's texts as glyph instances, and the bind group over the glyph
 //! atlases they sample.
-//!
-//! A glyph is looked up by the key `glyphs_on_gpu` placed it under — its
-//! font, id and size, and the subpixel bin of its shaped x — and drawn at
-//! whole pixels: the text's origin rounded, the pen the whole pixel its
-//! key's bin is counted from ([`GlyphKey::whole_pixel`]; the bin's fraction
-//! is already in the image), the baseline its shaped y rounded. The image then
-//! sits `left` right of the pen and `top` above the baseline, as large as it
-//! is, so each of its texels lands on one pixel.
 
 use khora_core::math::Vec2;
 use khora_core::renderer::api::command::{
@@ -39,9 +31,10 @@ use super::lane::{UiGpu, UiInstanceData};
 /// Glyphs the glyph storage holds before it first grows.
 pub(super) const GLYPH_CAPACITY: usize = 1024;
 
-/// One instance per glyph of the scene's texts that has a slot, text after
-/// text in the scene's order, each text's glyphs in their shaped order. A
-/// glyph not resident yet, or one that draws nothing, has none.
+/// Returns one instance per glyph of the scene's texts that has a slot.
+///
+/// Texts follow the scene's order, glyphs their shaped order. A glyph not
+/// resident yet, or one that draws nothing, has none.
 pub(super) fn glyph_instances_of(scene: &UiScene, atlas: &GlyphAtlas) -> Vec<UiInstanceData> {
     let mut instances = Vec::new();
     for text in &scene.texts {
@@ -60,8 +53,12 @@ fn key_of(text: &ExtractedUiText, glyph: &ShapedGlyph) -> GlyphKey {
     GlyphKey::new(text.font, glyph.id, text.size_px, glyph.x)
 }
 
-/// The instance of `glyph`, of `text` at the whole-pixel `origin`, whose
-/// image is in `slot`.
+/// Returns the instance of `glyph` of `text`, from the whole-pixel `origin`,
+/// its image in `slot`.
+///
+/// The pen is the whole pixel the key's subpixel bin counts from
+/// ([`GlyphKey::whole_pixel`]; the bin's fraction is in the image) and the
+/// baseline is rounded, so each texel lands on one pixel.
 fn instance_of(
     text: &ExtractedUiText,
     glyph: &ShapedGlyph,
@@ -85,11 +82,12 @@ fn instance_of(
     }
 }
 
-/// The set-2 bind group of the glyph pipeline: the mask atlas's view, the
-/// colour atlas's, and the sampler — the lane's one-texel fallback for an
-/// atlas not made yet. It is kept while the two views it binds stay the
-/// same (an atlas rebuilt is a new view), and the one it replaces is given
-/// back.
+/// Returns the glyph pipeline's set-2 bind group: the mask and colour atlas
+/// views, and the sampler.
+///
+/// An atlas not made yet binds the lane's fallback. The group is kept while
+/// both views stay the same (a rebuilt atlas is a new view); the one it
+/// replaces is given back.
 pub(super) fn glyph_bind_group(
     built: &mut UiGpu,
     device: &dyn GraphicsDevice,

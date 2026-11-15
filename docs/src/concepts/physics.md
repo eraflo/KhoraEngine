@@ -26,19 +26,21 @@ physics library.
 
 ## How it plugs into a frame
 
-Physics is one slice of the per-frame descent (`Control → Agent → Lane → Data`).
-The data layer projects a physics View from the ECS into the LaneBus; the physics
-lane consumes that View, syncs the relevant bodies and colliders into the provider,
-calls `step`, and reads the updated transforms back. As with every domain, the lane
-reads a projected View — never the World directly — and the provider is reached only
-through its trait.
+Physics is one slice of the per-frame descent (`Control → Agent → Lane → Data`),
+in three parts. Before the agents run, the `physics_provider_sync` DataSystem
+registers the world's bodies and colliders with the provider. The physics lane then
+locks the provider, calls `step` and resolves the step's contacts to entities; it
+reads no View and never the World, and reaches the provider only through its trait.
+`PhysicsFlow` publishes the physics statistics. At the
+end of the frame, the `physics_world_writeback` DataSystem reads the new poses back
+into the World.
 
 ```
 ECS (bodies, colliders, transforms)
-  ↓ physics Flow projects a View into the LaneBus
+  ↓ physics_provider_sync (PreExtract): bodies and colliders into the provider
 physics lane
-  ↓ sync into the provider, then PhysicsProvider::step(dt)
-  ↓ read updated poses back out
+  ↓ PhysicsProvider::step(dt), contacts resolved to entities
+  ↓ physics_world_writeback (Maintenance): poses back into the World
 ```
 
 A debug lane that visualizes collision shapes is opt-in and switched on from the

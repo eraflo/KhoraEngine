@@ -12,13 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Audio devices — one subfolder per backend.
-//!
-//! Same shape as [`graphics`](crate::graphics), [`physics`](crate::physics)
-//! and [`ui`](crate::ui): a backend is a subfolder named after what it wraps.
-//! This used to carry an extra `backends/` level that named nothing the parent
-//! module did not already say. Beside them, the default [`AudioMixBus`]
-//! implementation the backends drain.
+//! Audio devices, one subfolder per backend, and the default [`AudioMixBus`]
+//! the backends drain.
 //!
 //! [`AudioMixBus`]: khora_core::audio::AudioMixBus
 

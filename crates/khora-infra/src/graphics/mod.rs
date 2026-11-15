@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! WGPU graphics backend implementation
+//! The graphics backend: the engine's WGSL sources and their wgpu implementation.
 
 pub mod shader;
 pub mod wgpu;

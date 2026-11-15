@@ -32,14 +32,10 @@ mod simple_unlit;
 mod unlit_inputs;
 pub mod util;
 
-/// Squared distance from the camera to a model's origin — the sort key the lit
-/// lanes use to order alpha-blended draws back-to-front.
+/// Returns the squared distance from `camera` to a model's origin: the key blended
+/// draws are sorted back to front by.
 ///
-/// The model's world position is the translation column of its matrix. Squared
-/// distance suffices for ordering (the square root is monotonic) and avoids a
-/// per-draw `sqrt`. Sorting per *object* rather than per fragment is the
-/// standard approximation: exact for separated objects, still approximate for
-/// intersecting or concave transparent geometry.
+/// See the book: concepts/rendering.md, "Transparency, and the order it needs".
 pub(crate) fn camera_distance_sq(
     model_matrix: &khora_core::math::Mat4,
     camera: khora_core::math::Vec3,

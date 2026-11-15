@@ -141,10 +141,11 @@ fn an_event_a_script_raised_reaches_the_handler_next_frame() {
     assert_eq!(field(&runtime, "Guard", 1), Some(1), "exactly once");
 }
 
-/// **Why the frame of latency is the design, not a shortcut.** An event handled
-/// where it was raised opens a cascade with no bound — a guard that answers a
-/// hit with a hit would never let the frame end. Deferring makes each frame's
-/// work exactly what the previous one produced.
+/// **Why the frame of latency is the design, not a shortcut.**
+///
+/// An event handled where it was raised opens a cascade with no bound — a guard
+/// that answers a hit with a hit would never let the frame end. Deferring makes
+/// each frame's work exactly what the previous one produced.
 #[test]
 fn an_event_is_not_delivered_in_the_frame_it_was_raised() {
     let view = one_guard();
@@ -212,6 +213,7 @@ fn raising_an_event_nobody_handles_is_quiet() {
 }
 
 /// **What the checker cannot catch is dropped, not a fault of the receiver.**
+///
 /// An event the engine hands over is checked against its declaration at
 /// delivery: a payload that does not fit it never runs the handler, and the
 /// behavior that would have heard it is not disabled for it.
@@ -315,14 +317,10 @@ fn text(runtime: &ScriptRuntime, slot: usize) -> Option<String> {
     }
 }
 
-/// **The bug a single value bridge exists to make impossible.**
+/// **An event carries a `Vec3` from its raise to its handler.**
 ///
-/// `Raise` *can* carry a `Vec3` — the emitting side maps it. The delivery side
-/// cannot take one, because its conversion was written without that arm. The
-/// mismatch is not a dropped event: it is an `UnsupportedArgument`, which the
-/// lane reads as a fault, which disables the target behavior **for good**.
-///
-/// Two halves of one translation, written weeks apart, that never agreed.
+/// Both ends go through one value bridge, so a value a raise can carry is one
+/// its handler can take.
 #[test]
 fn an_event_can_carry_a_vector() {
     let view = one_guard();
@@ -360,9 +358,8 @@ fn an_event_can_carry_a_vector() {
     );
 }
 
-/// The same for text, and the same cause. A string reaching a register has to be
-/// allocated somewhere — which is precisely why the old conversion refused it
-/// rather than doing it.
+/// The same for text, which a register holds only once it is allocated in
+/// frame memory.
 #[test]
 fn an_event_can_carry_text() {
     let view = one_guard();
@@ -398,9 +395,10 @@ fn an_event_can_carry_text() {
 
 // ─── Typed events, end to end ───────────────────────────────────────────────
 
-/// `source` compiled the way a project compiles it — through the module
-/// pipeline, from a loader serving nothing but that one module — and a
-/// runtime holding it.
+/// `source` compiled the way a project compiles it, and a runtime holding it.
+///
+/// Through the module pipeline, from a loader serving nothing but that one
+/// module.
 fn project_of(source: &str) -> (ScriptRuntime, khora_script::vm::Program) {
     let loader = khora_script::MemoryLoader::new().with(MODULE, source);
     let result = khora_script::compile_module(&loader, MODULE);
@@ -473,8 +471,9 @@ fn a_typed_raise_reaches_its_handler_next_frame_with_its_payload() {
 }
 
 /// **A handler with no parameter list hears its event** and ignores the
-/// payload — it is neither skipped nor faulted for the payload it did not
-/// take.
+/// payload.
+///
+/// It is neither skipped nor faulted for the payload it did not take.
 #[test]
 fn a_handler_with_no_parameters_receives_its_event() {
     let view = one_guard();
@@ -502,10 +501,11 @@ fn a_handler_with_no_parameters_receives_its_event() {
     assert_eq!(field(&runtime, "Guard", 0), Some(1), "the handler ran once");
 }
 
-/// **A contact still reaches a behavior that imports nothing.** `Touched` is
-/// the engine's event — declared by it, in scope without an import — and the
-/// engine raises it by name with the other entity, as `collision_to_script`
-/// does.
+/// **A contact still reaches a behavior that imports nothing.**
+///
+/// `Touched` is the engine's event — declared by it, in scope without an import
+/// — and the engine raises it by name with the other entity, as
+/// `collision_to_script` does.
 #[test]
 fn touched_reaches_a_behavior_handling_it_without_importing_anything() {
     let (mut runtime, program) = project_of(
@@ -586,9 +586,10 @@ fn problems_about(runtime: &ScriptRuntime, subject: EntityId) -> Vec<Problem> {
         .collect()
 }
 
-/// **A behavior handed a payload it cannot take keeps running**: no fault in
-/// the frame it arrived or after, its `Update` still runs every frame, and
-/// its fields are untouched by the event that was dropped.
+/// **A behavior handed a payload it cannot take keeps running.**
+///
+/// No fault in the frame it arrived or after, its `Update` still runs every
+/// frame, and its fields are untouched by the event that was dropped.
 #[test]
 fn a_behavior_sent_a_payload_it_cannot_take_keeps_running() {
     let view = one_guard();
@@ -674,9 +675,10 @@ fn a_dropped_event_does_not_keep_the_next_from_its_handler() {
     );
 }
 
-/// **An engine-raised event named like a member never runs it** — a plain
-/// method, or a lifecycle hook: none is an event of the program, so each is
-/// "no handler" — no fault, and nothing to report.
+/// **An engine-raised event named like a member never runs it.**
+///
+/// A plain method or a lifecycle hook is no event of the program, so each is
+/// "no handler": no fault, and nothing to report.
 #[test]
 fn an_engine_event_named_like_a_member_never_runs_it() {
     let view = one_guard();
@@ -733,9 +735,11 @@ fn an_engine_event_named_like_a_member_never_runs_it() {
     );
 }
 
-/// **A dropped payload is a running warning** naming the entity, the
-/// behavior, the event, its declared signature and what came — and a
-/// payload that fits is no problem at all.
+/// **A dropped payload is a running warning**, and a payload that fits is no
+/// problem at all.
+///
+/// The warning names the entity, the behavior, the event, its declared
+/// signature and what came.
 #[test]
 fn a_dropped_payload_is_reported_as_a_running_warning() {
     let view = one_guard();
@@ -869,9 +873,11 @@ fn a_mismatch_report_leaves_with_its_entity() {
 }
 
 /// **Mail queued before a reload changed its event is dropped and reported,
-/// never a fault** — the case the payload check exists for: a script raised
-/// `Damaged(25)` under `event Damaged(int amount)`, and the edit that landed
-/// before it was delivered made it `event Damaged(string why)`.
+/// never a fault.**
+///
+/// The case the payload check exists for: a script raised `Damaged(25)` under
+/// `event Damaged(int amount)`, and the edit that landed before it was
+/// delivered made it `event Damaged(string why)`.
 #[test]
 fn mail_queued_before_a_reload_changed_its_event_is_dropped_and_reported() {
     let view = one_guard();

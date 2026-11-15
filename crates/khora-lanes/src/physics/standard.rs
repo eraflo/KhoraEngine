@@ -28,12 +28,12 @@ use khora_macros::LaneInputs;
 
 use super::family::{PhysicsFamily, PhysicsOutputs};
 
-/// The standard physics lane: one step of the provider by the agent's fixed
-/// step, and the contacts that step reported.
+/// A lane that steps the provider by the family's fixed step and reports its contacts.
+///
+/// One level: a simulation family may not trade its result for time.
 #[derive(Debug, Default)]
 pub struct StandardPhysicsLane;
 
-/// The one level: a simulation family may not trade its result for time.
 const LEVELS: [Level; 1] = [Level {
     id: StrategyId::Balanced,
     name: "standard",
@@ -115,7 +115,7 @@ impl Lane for StandardPhysicsLane {
         // The step marks the simulation as having advanced this frame: the
         // `physics_world_writeback` DataSystem pulls fresh transforms only
         // when it is there. The contacts open on what the frame's earlier
-        // sub-steps reported, so every sub-step's reach the game.
+        // sub-steps reported, so every sub-step's contacts reach the game.
         out.step = PhysicsStepResult { dt };
         out.contacts.contacts.extend(contacts);
         Ok(LaneReport {

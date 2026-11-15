@@ -18,11 +18,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Shared, lock-free health flags for a GPU device.
 ///
-/// Populated by the wgpu device error callbacks (uncaptured-error and
-/// device-lost) registered at device creation, and read by the render system
-/// once per frame to decide whether to keep submitting work. The flags are
-/// sticky: once raised they stay raised, because the device cannot recover
-/// these conditions in place.
+/// Raised by the device's error callbacks, read by the render system before it
+/// submits. Sticky: the device cannot recover these conditions in place.
+/// See the book: concepts/rendering.md, "Device-loss resilience".
 #[derive(Debug, Default)]
 pub(crate) struct GpuHealth {
     /// Set when the device was reported lost (driver crash/reset/destroy) or an

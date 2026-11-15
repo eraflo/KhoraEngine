@@ -12,19 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The engine's WGSL sources, under `shaders/`: `lib/` modules and
-//! `pipelines/` entry points, composed by the wgpu `PipelineSystem` backend
-//! ([`WgpuPipelineSystem`](crate::graphics::wgpu::WgpuPipelineSystem)) and
-//! looked up by name.
+//! The engine's WGSL sources: `lib/` modules and `pipelines/` entry points,
+//! composed by [`WgpuPipelineSystem`](crate::graphics::wgpu::WgpuPipelineSystem).
 //!
-//! One shader is handed over as a raw string instead, because its consumer,
-//! the egui editor overlay, takes WGSL source rather than a pipeline handle.
-//! It is a whole shader, not composed, so it sits in `standalone/` rather
-//! than `pipelines/`. It is the only `_WGSL` constant; a new pipeline goes
-//! through the backend's table.
+//! `EGUI_WGSL` is the one raw string: the egui overlay takes WGSL source, not a pipeline handle.
 
-/// Shader for the egui editor overlay. Consumed by
-/// `WgpuRenderSystem::create_editor_overlay_and_shell` as a raw `&str`.
+/// WGSL source of the egui editor overlay, a whole shader that is never composed.
 pub const EGUI_WGSL: &str = include_str!("shaders/standalone/egui.wgsl");
 
 #[cfg(test)]

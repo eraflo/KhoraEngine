@@ -77,8 +77,9 @@ pub(super) fn runtime_of(source: &str) -> ScriptRuntime {
 }
 
 /// How a load hands a saved guard back: its fields as its component's row
-/// holds them, everything else as its companion recorded it — a companion
-/// holds none of the behavior's own fields.
+/// holds them, everything else as its companion recorded it.
+///
+/// A companion holds none of the behavior's own fields.
 pub(super) fn loaded(saved: khora_core::script::ScriptSnapshot) -> khora_data::flow::ScriptArrival {
     khora_data::flow::ScriptArrival {
         fields: saved.fields.clone(),
@@ -199,9 +200,10 @@ fn a_frame_with_no_events_completes_everything() {
 
 // ─── Degrading ──────────────────────────────────────────────────────────────
 
-/// **The property degrading must not break.** The behaviors that ran under a
-/// tight budget produce exactly what they would have with no budget — lateness
-/// is the cost, never a different answer.
+/// **The property degrading must not break.**
+///
+/// The behaviors that ran under a tight budget produce exactly what they would
+/// have with no budget — lateness is the cost, never a different answer.
 #[test]
 fn what_runs_under_a_tight_budget_is_what_would_have_run_anyway() {
     let view = view_of(6);

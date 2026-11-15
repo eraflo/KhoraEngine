@@ -25,7 +25,7 @@ use khora_core::ui::text::{
 };
 use parley::{FontContext, LayoutContext, PositionedLayoutItem, StyleProperty};
 
-/// Shapes UI text with Parley. Built with `Font::BUILT_IN` registered with
+/// The UI text shaper over Parley, built with `Font::BUILT_IN` registered with
 /// [`DEFAULT_FONT`](super::DEFAULT_FONT).
 ///
 /// One leaf lock around Parley's contexts: held for one registration or one
@@ -34,9 +34,10 @@ pub struct ParleyShaper {
     state: Mutex<State>,
 }
 
-/// Parley's contexts. Each font gets a font context of its own, holding it
-/// alone: two fonts of one family — the same file under two ids, or a font
-/// and its reload — can never be mistaken for each other.
+/// Parley's contexts, with one font context per font.
+///
+/// Alone in its context, a font is never mistaken for another of its family:
+/// the same file under two ids, or a font and its reload.
 struct State {
     fonts: HashMap<AssetUUID, Registered>,
     layout: LayoutContext<()>,
@@ -49,7 +50,7 @@ struct Registered {
 }
 
 impl ParleyShaper {
-    /// A shaper with `Font::BUILT_IN` already registered.
+    /// Creates a shaper with `Font::BUILT_IN` already registered.
     pub fn new() -> Self {
         let shaper = Self {
             state: Mutex::new(State {
@@ -162,9 +163,10 @@ impl TextShaper for ParleyShaper {
     }
 }
 
-/// The text as it is drawn: a tab is whitespace four spaces wide (fonts have
-/// no glyph for it, so it would come back as the box of `.notdef`), and the
-/// other control characters but line breaks are not drawn at all.
+/// The text as it is drawn: a tab as four spaces, and no other control
+/// character but line breaks.
+///
+/// Fonts have no glyph for a tab: it would come back as the box of `.notdef`.
 fn drawable_text(text: &str) -> std::borrow::Cow<'_, str> {
     let drawn = |c: char| !c.is_control() || c == '\n' || c == '\r';
     if text.chars().all(drawn) {

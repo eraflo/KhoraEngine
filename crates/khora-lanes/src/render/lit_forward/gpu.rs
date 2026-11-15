@@ -54,9 +54,9 @@ pub(super) const IBL_BASE: u32 = 4;
 /// the shadow atlases and the environment.
 pub(super) type LightingKey = (BufferId, ShadowGpuBindings, IblGpuBindings);
 
-/// The pipeline spec of the forward lane for `surface` drawn into a target
-/// of `key`: the canonical four layouts, the group-2 one resolving to the
-/// material variant's textures.
+/// Returns the forward lane's pipeline for `surface` drawn into a target of `key`.
+///
+/// The four shared layouts; group 2 resolves to the material variant's textures.
 pub(super) fn pipeline_spec(surface: &Surface, key: TargetKey) -> PipelineSpec {
     PipelineSpec {
         label: "LitForward Pipeline",
@@ -183,6 +183,7 @@ impl LitGpu {
     }
 
     /// Gives back the rings, the neutral bindings and the kept bind groups.
+    ///
     /// The layouts and the pipelines belong to the pipeline system.
     pub(super) fn destroy(mut self, device: &dyn GraphicsDevice) {
         self.lighting_groups.destroy(device);

@@ -12,13 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Shared types and helpers for the canonical shadow lane's depth passes.
-//!
-//! Both the 2D atlas (directional / spot) and the cube atlas (point) emit
-//! identical depth-only render passes; only the target view changes. This
-//! module factors the per-pass record types and the `record_depth_pass`
-//! helper so [`super::atlas_2d`] and [`super::atlas_cube`] stay focused on
-//! their own data flow.
+//! The depth-only passes both shadow atlases record: only their target differs.
 
 use khora_core::renderer::api::command::{
     BindGroupId, LoadOp, Operations, RenderPassDepthStencilAttachment, RenderPassDescriptor,
@@ -29,11 +23,10 @@ use khora_core::renderer::api::resource::IndexFormat;
 use khora_core::renderer::api::resource::{BufferId, TextureViewId};
 use khora_core::renderer::traits::CommandEncoder;
 
-/// Pre-collected draw command for one mesh within a shadow pass.
+/// One mesh's draw within a shadow pass, collected before the pass is recorded.
 #[derive(Debug, Clone, Copy)]
 pub struct ShadowDrawCmd {
-    /// Bind group bound at slot 1 carrying the model uniforms (with a
-    /// dynamic offset to address this mesh's slot in the model ring).
+    /// The model-ring bind group, bound at slot 1.
     pub model_bg: BindGroupId,
     /// Dynamic offset into the model ring buffer.
     pub model_offset: u32,
@@ -47,17 +40,14 @@ pub struct ShadowDrawCmd {
     pub index_format: IndexFormat,
 }
 
-/// One render pass's worth of state — used for both 2D atlas slots and
-/// individual cube faces, hence the generic name.
+/// One depth pass, into a 2D atlas layer or a cube face.
 pub struct AttachmentPass {
     /// Depth target view this pass writes into.
     pub target_view: TextureViewId,
-    /// Layer to render into within `target_view`. For 2D atlas passes
-    /// this is the light's slot in the array; for cube faces the per-face
-    /// view already targets the right layer so this is `0`.
+    /// The layer rendered into: the light's slot in the 2D atlas, or the face's
+    /// absolute cube-array layer.
     pub base_array_layer: u32,
-    /// Bind group bound at slot 0 carrying the camera (light view-proj)
-    /// uniforms with a dynamic offset.
+    /// The camera-ring bind group (the light's view-projection), bound at slot 0.
     pub camera_bg: BindGroupId,
     /// Dynamic offset into the camera ring buffer.
     pub camera_offset: u32,
@@ -65,11 +55,7 @@ pub struct AttachmentPass {
     pub draw_cmds: Vec<ShadowDrawCmd>,
 }
 
-/// Records one depth-only render pass into `encoder`.
-///
-/// Pulled out so [`super::atlas_2d`] and [`super::atlas_cube`] can drive
-/// the GPU recorder identically — only their pass-collection step
-/// differs.
+/// Records one depth-only render pass into `encoder`, clearing its layer first.
 pub fn record_depth_pass(
     encoder: &mut dyn CommandEncoder,
     pipeline: &RenderPipelineId,
@@ -102,12 +88,10 @@ pub fn record_depth_pass(
     }
 }
 
-/// Helper used by both atlas modules: builds the per-mesh draw command
-/// list for one pass by pushing model uniforms into the shared model
-/// ring buffer.
+/// Builds one pass's draws, pushing each mesh's model uniforms into `model_ring`.
 ///
-/// Each pass needs its own list because the ring-buffer push offsets
-/// differ between passes — even though the mesh transforms are identical.
+/// Each pass needs its own list: its ring offsets differ, though the
+/// transforms are the same. A mesh whose transform does not invert is skipped.
 pub fn build_draw_cmds(
     device: &dyn khora_core::renderer::GraphicsDevice,
     render_world: &khora_data::render::RenderWorld,

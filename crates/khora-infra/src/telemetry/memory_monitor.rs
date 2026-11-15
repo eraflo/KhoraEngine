@@ -12,10 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! System Memory Resource Monitor
-//!
-//! Provides memory monitoring capabilities through integration with
-//! the SaaTrackingAllocator for heap allocation tracking.
+//! The system-memory [`ResourceMonitor`], reading the tracking allocator's counters.
 
 use std::borrow::Cow;
 use std::sync::Mutex;
@@ -25,10 +22,9 @@ use khora_core::telemetry::monitoring::{
     MemoryReport, MonitoredResourceType, ResourceMonitor, ResourceUsageReport,
 };
 
-/// System memory resource monitor.
+/// A heap-memory monitor fed by the counters of `SaaTrackingAllocator`.
 ///
-/// Tracks heap allocation statistics through the SaaTrackingAllocator
-/// and provides real-time memory usage information.
+/// Without that allocator installed as the global one, every figure reads zero.
 #[derive(Debug)]
 pub struct MemoryMonitor {
     id: String,
@@ -72,7 +68,6 @@ impl MemoryMonitor {
         let current_usage = get_currently_allocated_bytes();
         let extended_stats = get_extended_memory_stats();
 
-        // Update peak tracking
         let mut peak = self
             .peak_usage_bytes
             .lock()
@@ -81,7 +76,6 @@ impl MemoryMonitor {
             *peak = current_usage;
         }
 
-        // Calculate allocation delta
         let mut last_alloc = self
             .last_allocation_bytes
             .lock()
@@ -89,18 +83,15 @@ impl MemoryMonitor {
         let allocation_delta = current_usage.saturating_sub(*last_alloc);
         *last_alloc = current_usage;
 
-        // Update sample count
         let mut count = self.sample_count.lock().unwrap_or_else(|e| e.into_inner());
         *count += 1;
 
-        // Create comprehensive report with extended statistics
         let report = MemoryReport {
             current_usage_bytes: current_usage,
             peak_usage_bytes: *peak,
             allocation_delta_bytes: allocation_delta,
             sample_count: *count,
 
-            // Extended statistics from allocator
             total_allocations: extended_stats.total_allocations,
             total_deallocations: extended_stats.total_deallocations,
             total_reallocations: extended_stats.total_reallocations,
@@ -151,9 +142,8 @@ impl ResourceMonitor for MemoryMonitor {
     )> {
         use khora_core::telemetry::metrics::{MetricId, MetricValue};
         let stats = get_extended_memory_stats();
-        // Named gauges flow through the standard push pipeline into the DCC's
-        // metric store, where the heuristics read `memory.current_bytes` for
-        // pressure + allocation-churn signals (the allocator finally has teeth).
+        // The DCC's heuristics read `memory.current_bytes` from its metric store
+        // for pressure and allocation-churn signals.
         vec![
             (
                 MetricId::new("memory", "current_bytes"),

@@ -30,20 +30,16 @@ use super::runtime::ScriptRuntime;
 
 /// Takes in what the engine handed `scripts` since its last frame.
 ///
-/// Takes `reloads` and drains `events`; the events join the runtime's mail.
-/// Applies each reload whose program's reads `demand` covers — one whose reads it
-/// does not cover waits for a later frame, and a newer reload of the same
-/// module replaces a waiting one; a reload with no program withdraws its
-/// module. Then announces to `demand`, as [`ScriptReads::LOADED`], what the
-/// installed programs and the waiting ones read, and withdraws the
-/// [`ScriptReads::incoming`] entry of each module installed or gone. Without
-/// a demand nothing waits.
+/// Installs each reload whose program's reads `demand` covers; the others wait,
+/// a newer reload of a module replacing a waiting one, and a reload with no
+/// program withdraws its module. Announces what the installed and waiting
+/// programs read as [`ScriptReads::LOADED`], and withdraws the
+/// [`ScriptReads::incoming`] entry of each module installed or gone. Without a
+/// demand nothing waits. The drained `events` join the runtime's mail.
 ///
-/// `resumed` is true on a run that starts the scripts over (the system's
-/// `SystemContext::resumed`: its first run, or its first after the family was
-/// off): the scripting world's own mail is cleared, and what the channel
-/// held joins the mail — the frame boundary emptied it while the family was
-/// off, so what it holds was sent for this session.
+/// `resumed` (`SystemContext::resumed`) clears the runtime's own mail first;
+/// the channel's is kept, the frame boundary having emptied it while the
+/// family was off.
 pub fn take_in(
     scripts: &mut ScriptRuntime,
     reloads: Vec<ScriptReload>,
@@ -76,12 +72,11 @@ pub fn take_in(
     scripts.set_pending(mail);
 }
 
-/// The intake over the engine's scripting world, when there is one; without
-/// it, the reserve and the event channel keep what they hold. It reads the
-/// runtime only: the world and the deck it is handed stay untouched. The
-/// reloads the `loading` family staged wait in the reserve while the scripting
-/// family is off — this system does not run then — and are installed on the
-/// first frame back.
+/// The intake over the engine's scripting world, when there is one.
+///
+/// Without one, the reserve and the event channel keep what they hold. While
+/// the family is off this system does not run: the reloads the `loading`
+/// family staged wait in the reserve for the first frame back.
 fn script_intake(runtime: &Runtime, ctx: SystemContext) {
     let Some(scripts) = runtime.look_up::<Arc<Mutex<ScriptRuntime>>>() else {
         return;

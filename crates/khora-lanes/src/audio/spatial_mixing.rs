@@ -14,25 +14,7 @@
 
 //! The audio family's lane: the frame's sources, spatialised and mixed.
 //!
-//! The lane reads the [`AudioView`](khora_data::flow::AudioView) the
-//! `AudioFlow` projected, mixes one block into a buffer it keeps from frame to
-//! frame, and pushes it into the shared
-//! [`AudioMixBus`](khora_core::audio::AudioMixBus), which the audio backend's
-//! callback drains on its real-time thread. It never touches the hardware
-//! buffer and never reads the `World`.
-//!
-//! # Voices
-//!
-//! Each level mixes at most a number of voices (8, 32, 128). When more
-//! sources play, the most audible ones — the highest priority first, then the
-//! loudest at the listener — are mixed; the others are **virtual**: their
-//! playback advances exactly as a mixed voice's would, so a virtual voice that
-//! becomes audible again resumes where it would have been.
-//!
-//! Every source's playback state lands, in View order, in the family's
-//! [`AudioPlaybackWriteback`](khora_data::flow::AudioPlaybackWriteback); the
-//! `audio_playback_writeback` DataSystem patches the `AudioSource` components
-//! from it in `Maintenance`.
+//! See the book: concepts/audio.md, "How sound reaches the speakers".
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -50,8 +32,8 @@ use khora_macros::LaneInputs;
 
 use super::family::{AudioFamily, AudioOutputs};
 
-/// Number of frames the lane mixes per record. Sized to comfortably cover one
-/// display frame at 60 Hz / 48 kHz (~800 frames) with headroom.
+/// The frames mixed per record: one display frame at 60 Hz and 48 kHz (about
+/// 800), with headroom.
 const FRAMES_PER_TICK: usize = 1024;
 
 /// What mixing one voice for one block costs on the host.
@@ -84,7 +66,13 @@ const LEVELS: [Level; 3] = [
 ];
 const VOICE_CAPS: [usize; 3] = [8, 32, 128];
 
-/// A lane that performs spatialized audio mixing.
+/// A lane that spatialises the frame's playing sources and mixes them into the mix bus.
+///
+/// A level mixes at most 8, 32 or 128 voices, the most audible first: the highest
+/// priority, then the loudest at the listener. The others are virtual: their playback
+/// advances as a mixed voice's would, so one that becomes audible resumes in place.
+/// Every source's state lands, in View order, in the family's
+/// [`AudioPlaybackWriteback`](khora_data::flow::AudioPlaybackWriteback).
 #[derive(Default)]
 pub struct SpatialMixingLane {
     /// The block mixed this frame, kept so a steady frame allocates nothing.
@@ -223,9 +211,10 @@ impl SpatialMixingLane {
     }
 }
 
-/// Whether `source` plays this frame: it is started (or starts by itself),
-/// has a sound to play and is not past its end, and sits at a finite place
-/// with a finite volume — a source that cannot be placed is not heard.
+/// Whether `source` is heard this frame.
+///
+/// It is started or plays by itself, has frames left, and sits at a finite
+/// place with a finite volume.
 fn plays(source: &AudioSourceSnapshot) -> bool {
     let frames = frames_of(source);
     let before_its_end = match &source.state {
@@ -258,9 +247,11 @@ fn starting_state(source: &AudioSourceSnapshot) -> Option<PlaybackState> {
     }
 }
 
-/// The gain and the pan `source` is heard with: the inverse-square fall-off
-/// with the distance to the listener, and where it sits across the
-/// listener's right. Without a listener, its own volume, centred.
+/// Returns the gain and the pan `source` is heard with at `listener`.
+///
+/// The gain falls off with the inverse square of the distance; the pan is
+/// where it sits across the listener's right. Without a listener: its own
+/// volume, centred.
 fn gain_and_pan(source: &AudioSourceSnapshot, listener: Option<AffineTransform>) -> (f32, f32) {
     let Some(listener) = listener else {
         return (source.volume, 0.5);

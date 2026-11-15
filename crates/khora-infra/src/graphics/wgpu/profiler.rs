@@ -21,14 +21,11 @@ use std::sync::{
     Arc,
 };
 
-/// WgpuTimestampProfiler encapsulates GPU timestamp query logic.
-/// Frame-lag model: timestamps written during frame N are read at the start of frame N+2.
-/// Layout (two-pass scheme):
-///   Pass A (frame start / main pass begin):   begin-> index 0 (frame_start), end-> index 1 (main_pass_begin)
-///   Pass B (main pass end / frame end):       begin-> index 2 (main_pass_end),  end-> index 3 (frame_end)
-/// Durations derived:
-///   main_pass = index2 - index1
-///   frame_total = index3 - index0
+/// GPU timings of the frame and its main pass, from timestamp queries, smoothed.
+///
+/// Four queries: frame start (0), main-pass begin (1), main-pass end (2), frame
+/// end (3); the main pass lasts 2 − 1, the frame 3 − 0. Frame N's timestamps
+/// are read at the start of frame N + 2.
 #[derive(Debug)]
 pub struct WgpuTimestampProfiler {
     query_set: wgpu::QuerySet,
@@ -51,8 +48,9 @@ impl WgpuTimestampProfiler {
         features.contains(wgpu::Features::TIMESTAMP_QUERY)
     }
 
-    /// Creates a new profiler. The `set_timestamp_period` method must be called
-    /// afterwards with the period from the wgpu::Queue.
+    /// Creates the profiler's query set and buffers.
+    ///
+    /// Call [`set_timestamp_period`](Self::set_timestamp_period) next, with the queue's period.
     pub fn new(device: &wgpu::Device) -> Option<Self> {
         let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
             label: Some("Khora GPU Timestamp QuerySet"),
@@ -99,13 +97,13 @@ impl WgpuTimestampProfiler {
         })
     }
 
-    /// Updates the timestamp period. This must be called after initialization.
+    /// Sets the queue's timestamp period, in nanoseconds per tick.
     pub fn set_timestamp_period(&mut self, period_ns: f32) {
         self.period_ns = period_ns;
         log::info!("GPU Timestamp Profiler period set to {:.3} ns.", period_ns);
     }
 
-    // These crate-public methods are implementation details for the WGPU backend.
+    /// The timestamp writes of the pass opening the frame: queries 0 and 1.
     pub(crate) fn compute_pass_a_timestamp_writes(&self) -> wgpu::ComputePassTimestampWrites<'_> {
         wgpu::ComputePassTimestampWrites {
             query_set: &self.query_set,
@@ -114,6 +112,7 @@ impl WgpuTimestampProfiler {
         }
     }
 
+    /// The timestamp writes of the pass closing the frame: queries 2 and 3.
     pub(crate) fn compute_pass_b_timestamp_writes(&self) -> wgpu::ComputePassTimestampWrites<'_> {
         wgpu::ComputePassTimestampWrites {
             query_set: &self.query_set,
@@ -122,12 +121,10 @@ impl WgpuTimestampProfiler {
         }
     }
 
-    /// Cleans up the profiler's resources. This is crucial to prevent panics
-    /// from dropping mapped buffers.
+    /// Waits for the device, then unmaps any staging buffer still pending:
+    /// dropping a mapped buffer panics.
     pub fn shutdown(&mut self, device: &WgpuDevice) {
         log::debug!("Shutting down WgpuTimestampProfiler...");
-        // This function will need access to the raw wgpu::Device to poll.
-        // We'll add a helper method to WgpuDevice to expose this cleanly.
         device.poll_device_blocking();
 
         // After waiting, any pending callbacks should have completed.
@@ -149,7 +146,6 @@ impl GpuProfiler for WgpuTimestampProfiler {
         for i in 0..self.staging_pending.len() {
             if self.staging_pending[i] && self.staging_ready[i].load(Ordering::SeqCst) {
                 let slice = self.staging_buffers[i].slice(..);
-                // The buffer is mapped now, so we can get its contents.
                 let data = slice.get_mapped_range();
                 let timestamps: [u64; 4] = bytemuck::pod_read_unaligned(&data[..32]);
                 drop(data); // Data guard is dropped, which is a prerequisite for unmapping.
@@ -265,8 +261,7 @@ mod tests {
     use super::WgpuTimestampProfiler;
     use khora_core::renderer::traits::GpuProfiler;
 
-    // Helper function to create a wgpu Device and Queue for testing purposes.
-    // Returns None if a suitable adapter cannot be found.
+    /// A device with timestamp queries when the adapter has them; `None` without an adapter.
     fn create_test_device() -> Option<(wgpu::Device, wgpu::Queue, wgpu::Features)> {
         let adapter = crate::graphics::wgpu::tests::gpu::test_adapter()?;
 
@@ -304,11 +299,9 @@ mod tests {
             return;
         }
 
-        // Create the profiler using the new signature.
         let mut profiler = WgpuTimestampProfiler::new(&device)
             .expect("Profiler creation should succeed when feature is available.");
 
-        // Set the timestamp period, which is now a separate step.
         let period = queue.get_timestamp_period();
         profiler.set_timestamp_period(period);
 

@@ -12,22 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! When a requested render-target size is applied.
-//!
-//! Recreating a target every frame while a dock splitter or a window edge is
-//! dragged would allocate and free GPU textures at the frame rate. A
-//! [`ResizeDebounce`] applies a new size at once when nothing was applied for
-//! [`ResizeDebounce::QUIET`] (a maximize, a first layout); a size that keeps
-//! changing faster is held until it is requested
-//! [`ResizeDebounce::STABLE_REQUESTS`] more times unchanged, has been pending
-//! for [`ResizeDebounce::MAX_PENDING_POLLS`] polls, or `QUIET` has passed
-//! since the last apply — so a drag is followed a few times a second, and a
-//! released one a few frames later. Time is passed in, so the policy is a pure
-//! function of its calls.
+//! When a requested render-target size is applied, so a dragged window edge or
+//! dock splitter does not reallocate GPU textures every frame.
 
 use std::time::{Duration, Instant};
 
 /// Holds a requested target size until it is time to apply it.
+///
+/// A size is applied at once after [`QUIET`](Self::QUIET) with no apply (a
+/// maximize, a first layout); one that keeps changing waits for the first of
+/// [`STABLE_REQUESTS`](Self::STABLE_REQUESTS) repeats,
+/// [`MAX_PENDING_POLLS`](Self::MAX_PENDING_POLLS) polls or the quiet time.
+/// Time is passed in, so the policy is a pure function of its calls.
 #[derive(Debug, Default)]
 pub(crate) struct ResizeDebounce {
     pending: Option<Pending>,
@@ -123,9 +119,10 @@ mod tests {
         Duration::from_millis(millis)
     }
 
-    /// A debounce that has just applied `A`, and the instant it did. From then
-    /// on the target's size is `A`. The apply happens a quiet time after the
-    /// request, so it holds under any leading-edge rule.
+    /// A debounce that has just applied `A`, and the instant it did.
+    ///
+    /// The apply comes a quiet time after the request, so it holds under any
+    /// leading-edge rule.
     fn just_applied_a() -> (ResizeDebounce, Instant) {
         let start = Instant::now();
         let mut debounce = ResizeDebounce::new();
@@ -187,9 +184,8 @@ mod tests {
         assert_eq!(debounce.poll(CURRENT, now), Some(A));
     }
 
-    /// Only the debounce's own applies count: a poll with nothing pending and
-    /// a request cancelled because it matched the target are not applies, so
-    /// the next request on a debounce that never applied is still immediate.
+    /// Only the debounce's own applies count: a poll with nothing pending and a
+    /// request cancelled by matching the target leave the next one immediate.
     #[test]
     fn polls_without_an_apply_leave_the_leading_edge_open() {
         let start = Instant::now();
@@ -260,12 +256,10 @@ mod tests {
         );
     }
 
-    /// A splitter dragged at 60 Hz (a new size every 16 ms): the first size
-    /// shows at once, then one size per quiet time — frame 8 (128 ms after
-    /// the first apply) and frame 16 (128 ms after that one), each the size
-    /// requested that frame. Frame 7 (112 ms) and frame 15 (112 ms after the
-    /// apply at frame 8) are still inside the quiet time; no size repeats, and
-    /// no pending size reaches ten polls.
+    /// A splitter dragged at 60 Hz applies its first size at once, then one per quiet time.
+    ///
+    /// Frames 8 and 16, each 128 ms after the previous apply, apply that frame's
+    /// size; frames 7 and 15 (112 ms) are still inside the quiet time.
     #[test]
     fn a_drag_at_sixty_hertz_applies_its_first_size_then_one_per_quiet_time() {
         let start = Instant::now();
@@ -291,9 +285,8 @@ mod tests {
         }
     }
 
-    /// A drag faster than the quiet time can fill (a new size every 5 ms)
-    /// still reaches the target every tenth poll: frame 10 (50 ms after the
-    /// apply), then frame 20 (ten polls after that).
+    /// A drag faster than the quiet time can fill (a size every 5 ms) still
+    /// reaches the target every tenth poll: frames 10 and 20.
     #[test]
     fn a_fast_drag_is_applied_every_tenth_poll() {
         let (mut debounce, applied_at) = just_applied_a();
@@ -314,9 +307,9 @@ mod tests {
 
     // --- Held sizes (within the quiet time after an apply) ---------------
 
-    /// The first request of a size is not a stable one; each identical
-    /// request after it is. The fourth request in a row — three repeats —
-    /// applies it, well within the quiet time after the last apply.
+    /// A size requested three more times unchanged is applied within the quiet time.
+    ///
+    /// The first request of a size is not a stable one; each identical one after it is.
     #[test]
     fn a_size_requested_three_more_times_unchanged_is_applied() {
         let (mut debounce, applied_at) = just_applied_a();
@@ -332,9 +325,8 @@ mod tests {
         assert_eq!(debounce.poll(A, now), Some(B), "three repeats");
     }
 
-    /// A drag that never settles still reaches the target: a size changing
-    /// every frame, with no time passing, is applied by the tenth poll — the
-    /// latest size, not the first.
+    /// A drag that never settles still reaches the target: with sizes changing
+    /// every frame and no time passing, the latest is applied by the tenth poll.
     #[test]
     fn sizes_changing_every_frame_are_applied_by_the_tenth_poll() {
         let (mut debounce, applied_at) = just_applied_a();
@@ -350,9 +342,8 @@ mod tests {
         assert_eq!(debounce.poll(A, now), Some(last), "tenth poll");
     }
 
-    /// One request, never repeated, held because an apply just happened, is
-    /// applied by the first poll a quiet time after that apply — not a quiet
-    /// time after the request.
+    /// One held request is applied a quiet time after the last apply, not a
+    /// quiet time after the request.
     #[test]
     fn a_single_held_request_is_applied_a_quiet_time_after_the_last_apply() {
         let (mut debounce, applied_at) = just_applied_a();
@@ -454,9 +445,8 @@ mod tests {
         assert_eq!(debounce.poll(B, next), Some(C), "C, three repeats");
     }
 
-    /// Dragging away and back before the debounce fires leaves the target as
-    /// it is: the request for the current size cancels the pending one, and
-    /// nothing is applied later either.
+    /// Dragging away and back before the debounce fires cancels the pending
+    /// size: nothing is applied, then or later.
     #[test]
     fn a_request_back_to_the_current_size_cancels_the_pending_one() {
         let (mut debounce, applied_at) = just_applied_a();
@@ -477,10 +467,8 @@ mod tests {
 
     // --- The target changed by something other than the debounce ---------
 
-    /// The surface can be reconfigured outside the debounce (a lost or
-    /// outdated swapchain is reconfigured to the wanted size at acquire).
-    /// A held size the target reached that way is dropped, not applied a
-    /// second time once the quiet time ends.
+    /// A held size the target reached another way (an acquire reconfiguring a
+    /// lost swapchain) is dropped, not applied a second time.
     #[test]
     fn a_held_size_the_target_reached_another_way_is_not_applied_again() {
         let (mut debounce, applied_at) = just_applied_a();
@@ -501,10 +489,8 @@ mod tests {
         }
     }
 
-    /// The other way round: the debounce applied A, then the target was set
-    /// to some other size behind its back while A is still wanted. The
-    /// debounce brings it back to A — held within the quiet time after its
-    /// apply, then applied.
+    /// A target moved behind the debounce's back while `A` is still wanted is
+    /// brought back to `A` once the quiet time after the apply ends.
     #[test]
     fn a_target_moved_away_from_the_wanted_size_is_brought_back() {
         let (mut debounce, applied_at) = just_applied_a();

@@ -12,31 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Skybox lane — draws the IBL environment cube as the scene background.
+//! The skybox family's lane: the IBL environment cube, painted behind the scene.
 //!
-//! Renders `khora::pipelines::skybox` (a fullscreen triangle pinned to the far
-//! plane) into the frame's colour target. It is depth-tested (`LessEqual`)
-//! against the scene's depth buffer with depth-write disabled, so it paints
-//! only the pixels **the opaque geometry left at the far plane**. The visible
-//! sky is therefore exactly the environment the lit surfaces reflect.
-//!
-//! # Where it sits, and why that word matters
-//!
-//! Between the scene's two passes: after the opaque draws that give it a depth
-//! buffer to test against, and **before** the blended ones.
-//!
-//! A blended surface must not write depth — two of them could not composite
-//! if it did — so it leaves the pixel at the far plane, and a sky drawn after
-//! it would repaint it: a glass sphere against the sky would vanish while the
-//! half of it overlapping the floor survived. The scene is therefore two
-//! contributions ([`ScenePassSlot`](khora_data::render::ScenePassSlot) and
-//! [`TransparentPassSlot`](khora_data::render::TransparentPassSlot)) and this
-//! pass is folded between them.
-//!
-//! The family registers in the OUTPUT phase, after the renderer; its pass
-//! slot writes the colour and reads the depth, and `LoadOp::Load` preserves
-//! what the opaque pass drew. The pipeline is built for the target's formats,
-//! so the editor's viewport and the window each get the one they need.
+//! Its pass sits between the opaque and the blended draws. See the book:
+//! concepts/rendering.md, "Transparency, and the order it needs".
 
 use super::{SkyboxFamily, SkyboxOutputs};
 use std::time::Duration;
@@ -59,14 +38,15 @@ use khora_data::render::RenderWorld;
 use khora_data::IblBaker;
 use khora_macros::LaneInputs;
 
-/// Stable cache label for the group-0 (inverse-VP + camera) layout.
+/// The cache label of the group-0 (inverse view-projection and camera) layout.
 const SKY_UNIFORM_LAYOUT_LABEL: &str = "skybox_uniform_layout";
-/// Stable cache label for the group-1 (env cube + sampler) layout.
+/// The cache label of the group-1 (environment cube and sampler) layout.
 const SKY_ENV_LAYOUT_LABEL: &str = "skybox_env_layout";
 
-/// Skybox uniform block — matches `SkyUniforms` in `skybox.wgsl`. The inverse
-/// view-projection lets the fragment recover each pixel's world-space view ray;
-/// `camera_pos` is the ray origin.
+/// The sky's uniform block, laid out as `SkyUniforms` in `skybox.wgsl`.
+///
+/// The inverse view-projection gives each pixel its world-space view ray;
+/// `camera_pos` is the ray's origin.
 #[repr(C, align(16))]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct SkyUniforms {
@@ -92,10 +72,12 @@ const RECORD_CPU: Duration = Duration::from_micros(20);
 /// What painting one pixel of sky costs on the device.
 const PIXEL_GPU_SECS: f64 = 5e-11;
 
-/// Environment-background lane. Holds what it built on the device; `None`
-/// before the first prepare and after shutdown.
+/// A lane that paints the environment cube where the opaque geometry left the far plane.
+///
+/// One level. The visible sky is the environment the lit surfaces reflect.
 #[derive(Debug, Default)]
 pub struct SkyboxLane {
+    /// What it built on the device; `None` before the first prepare and after shutdown.
     gpu: Option<SkyGpu>,
 }
 
@@ -138,8 +120,8 @@ impl Lane for SkyboxLane {
         &LEVELS
     }
 
-    /// One triangle on the host; on the device, every pixel of the target is
-    /// tested and the sky's share painted.
+    /// Prices one triangle on the host and a depth test of every pixel of the
+    /// target on the device.
     fn cost(&self, _level: usize, inputs: &SkyboxInputs<'_>) -> Cost {
         let size = inputs.target.size;
         let pixels = f64::from(size.width) * f64::from(size.height);
@@ -154,9 +136,8 @@ impl Lane for SkyboxLane {
         }
     }
 
-    /// Builds the uniform block once, and the pipeline for the target's
-    /// formats: a new target builds a new pipeline, a target without depth
-    /// none.
+    /// Builds the uniform block once, and a pipeline for the target's formats;
+    /// none for a target without depth.
     fn prepare(
         &mut self,
         _level: usize,
@@ -189,9 +170,8 @@ impl Lane for SkyboxLane {
         Ok(())
     }
 
-    /// Paints the sky when the bake has published its cube, the world has a
-    /// camera whose view-projection inverts, and the target has depth; any
-    /// of them missing leaves the pass empty.
+    /// Paints the sky, or leaves the pass empty without a baked cube, a camera
+    /// whose view-projection inverts, or a target with depth.
     fn record(
         &mut self,
         _level: usize,
@@ -247,10 +227,9 @@ impl Lane for SkyboxLane {
     }
 }
 
-// ─── Free functions (CLAD: no inherent methods on the lane struct) ───
-
-/// Builds the layouts, the uniform block and its bind group. A refused bind
-/// group gives the buffer back.
+/// Builds the layouts, the uniform block and its bind group.
+///
+/// A refused bind group gives the buffer back.
 fn build_sky_gpu(
     device: &dyn GraphicsDevice,
     pipeline_system: &dyn PipelineSystem,
@@ -308,8 +287,9 @@ fn build_sky_gpu(
     }
 }
 
-/// Gives back what the lane built. The pipeline and the layouts are the
-/// `PipelineSystem`'s, so they stay.
+/// Gives back what the lane built.
+///
+/// The pipeline and the layouts are the `PipelineSystem`'s, so they stay.
 fn destroy_sky_gpu(sky: SkyGpu, device: &dyn GraphicsDevice) {
     if let Some((_, group)) = sky.env_bind_group {
         if let Err(e) = device.destroy_bind_group(group) {
@@ -324,8 +304,7 @@ fn destroy_sky_gpu(sky: SkyGpu, device: &dyn GraphicsDevice) {
     }
 }
 
-/// Group-0 layout: a single uniform buffer (fragment-only — the vertex shader
-/// derives clip positions from `vertex_index`).
+/// Group-0 layout: one uniform buffer, seen by the fragment stage only.
 fn sky_uniform_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
     use khora_core::renderer::api::command::{
         BindGroupLayoutEntry, BindingType, BufferBindingType,
@@ -367,9 +346,10 @@ fn env_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayo
     ]
 }
 
-/// The declarative pipeline spec for the skybox on a target of `key`'s
-/// formats — fullscreen triangle, no vertex buffer, depth-tested `LessEqual`
-/// with **no depth write** so it sits behind every mesh.
+/// Returns the skybox's pipeline for a target of `key`'s formats.
+///
+/// A fullscreen triangle, depth-tested `LessEqual` without writing depth, so it
+/// sits behind every mesh.
 fn skybox_pipeline_spec(key: TargetKey) -> khora_core::renderer::api::pipeline::PipelineSpec {
     use khora_core::renderer::api::pipeline::enums::{CompareFunction, PrimitiveTopology};
     use khora_core::renderer::api::pipeline::state::{
@@ -403,9 +383,8 @@ fn skybox_pipeline_spec(key: TargetKey) -> khora_core::renderer::api::pipeline::
             topology: PrimitiveTopology::TriangleList,
             ..Default::default()
         },
-        // Depth-tested against the scene buffer (LessEqual); the sky is emitted
-        // at the far plane (clip z = 1) and writes NO depth, so it fills only
-        // the background pixels the geometry left untouched.
+        // The sky is emitted at the far plane (clip z = 1): LessEqual passes
+        // only the background pixels the geometry left untouched.
         depth_stencil: key.depth.map(|format| DepthStencilStateDescriptor {
             format,
             depth_write_enabled: false,
@@ -429,9 +408,9 @@ fn skybox_pipeline_spec(key: TargetKey) -> khora_core::renderer::api::pipeline::
     }
 }
 
-/// The env-cube bind group for `ibl`'s env cube: the cached one while the
-/// cube is the same, else a new one (the previous is destroyed — its cube
-/// belongs to a bake that was replaced).
+/// Returns the bind group over `ibl`'s environment cube, kept while the cube stays the same.
+///
+/// A new cube destroys the previous group: its cube belongs to a replaced bake.
 fn env_bind_group(
     sky: &mut SkyGpu,
     device: &dyn GraphicsDevice,
@@ -469,9 +448,10 @@ fn env_bind_group(
     Ok(group)
 }
 
-/// The background pass — `LoadOp::Load` preserves the scene's colour and
-/// depth; the depth buffer is loaded (not cleared) so the `LessEqual` test
-/// rejects pixels the geometry already owns. Depth is not written.
+/// Records the background pass over the scene's colour and depth.
+///
+/// The depth is loaded, not cleared, so the test rejects the pixels the
+/// geometry already owns.
 fn draw_sky(
     encoder: &mut dyn CommandEncoder,
     color: TextureViewId,

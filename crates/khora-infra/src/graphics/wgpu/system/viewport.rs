@@ -22,13 +22,11 @@ use khora_core::renderer::{GraphicsDevice, RenderError};
 use std::time::Instant;
 
 impl WgpuRenderSystem {
-    /// Creates an offscreen render target for the editor viewport and
-    /// registers it as an egui texture.
+    /// Creates the editor viewport's offscreen target and registers it as an egui texture.
     ///
-    /// Returns the `egui::TextureId` that can be displayed via
-    /// [`UiBuilder::viewport_image`]. The target then follows the size asked
-    /// with [`request_viewport_size`](Self::request_viewport_size); the
-    /// returned id keeps showing it across every resize.
+    /// The returned id keeps showing the target across every resize asked with
+    /// [`request_viewport_size`](Self::request_viewport_size); a panel shows it with
+    /// [`viewport_image`](khora_core::ui::editor::ui_builder::UiBuilder::viewport_image).
     pub fn create_viewport_target(
         &mut self,
         width: u32,
@@ -54,10 +52,11 @@ impl WgpuRenderSystem {
         Ok(egui_id)
     }
 
-    /// Asks for the viewport target to be `width` × `height` physical pixels:
-    /// the size of the panel that shows it. Called once per frame by whoever
-    /// lays the panel out; the target follows once the size has settled
-    /// (see `ResizeDebounce`), at the start of a frame.
+    /// Asks for the viewport target to be `width` × `height` physical pixels,
+    /// the size of its panel.
+    ///
+    /// Called once per frame by whoever lays the panel out; the target follows
+    /// at the start of a frame, once the size has settled.
     pub fn request_viewport_size(&mut self, width: u32, height: u32) {
         self.viewport_resize
             .request((width, height), Instant::now());
@@ -103,9 +102,10 @@ impl WgpuRenderSystem {
         Some((id, view))
     }
 
-    /// Creates the viewport's colour and depth textures at `width` × `height`
-    /// and registers their views, replacing (and unregistering) any previous
-    /// ones. The egui binding is not touched.
+    /// Creates the viewport's colour and depth textures and registers their views,
+    /// unregistering the previous ones.
+    ///
+    /// The egui binding is left as it is.
     fn build_viewport_textures(&mut self, width: u32, height: u32) -> Result<(), RenderError> {
         let gc = self
             .graphics_context_shared
@@ -118,7 +118,7 @@ impl WgpuRenderSystem {
             .clone()
             .ok_or(RenderError::NotInitialized)?;
 
-        // Use RGBA8 so the viewport texture is always bindable in shaders.
+        // RGBA8, so the panel can always bind the texture in a shader.
         let format = wgpu::TextureFormat::Rgba8UnormSrgb;
         let size = wgpu::Extent3d {
             width,
@@ -126,7 +126,6 @@ impl WgpuRenderSystem {
             depth_or_array_layers: 1,
         };
 
-        // --- Color texture ---
         let color_tex = gc.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("viewport_color"),
             size,
@@ -139,7 +138,6 @@ impl WgpuRenderSystem {
         });
         let color_view = color_tex.create_view(&wgpu::TextureViewDescriptor::default());
 
-        // --- Depth texture ---
         let depth_tex = gc.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("viewport_depth"),
             size,
@@ -159,9 +157,8 @@ impl WgpuRenderSystem {
             .register_texture_view(&depth_tex, Some("viewport_depth_view"))
             .map_err(|e| RenderError::Internal(format!("register viewport depth view: {e}")))?;
 
-        // The previous views are no longer handed out; the GPU keeps the old
-        // textures alive for as long as submitted work or egui's bind group
-        // still references them.
+        // Only the ids go: the GPU keeps the old textures alive while
+        // submitted work or egui's bind group still references them.
         for old in [
             self.viewport_color_view_id.take(),
             self.viewport_depth_view_id.take(),
@@ -187,11 +184,9 @@ impl WgpuRenderSystem {
         Ok(())
     }
 
-    /// Renders a clear pass to the offscreen viewport target.
+    /// Clears the viewport target's colour and depth.
     ///
-    /// Call this once per frame (after `begin_frame()`, before
-    /// `render_overlay()`). The cleared image will be visible in the
-    /// egui viewport panel.
+    /// Call it once per frame, after `begin_frame()` and before `render_overlay()`.
     pub fn render_viewport_clear(&mut self, clear_color: LinearRgba) -> Result<(), RenderError> {
         let color_view = self
             .viewport_view
@@ -244,7 +239,7 @@ impl WgpuRenderSystem {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            // Pass drops here — the clear is all we need for now.
+            // The pass only clears: its load ops do the work.
         }
 
         gc.queue.submit(std::iter::once(encoder.finish()));

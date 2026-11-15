@@ -12,21 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! One test at a time owns a GPU device, on one backend.
-//!
-//! Several devices driven at once from several threads crash the Khronos
-//! Vulkan validation layer (seen with SDK 1.3.283 on Windows: access
-//! violations inside `vulkan_layer_chassis::SetDebugUtilsObjectNameEXT` while
-//! `Queue::submit` begins its encoder, and inside buffer and bind-group-layout
-//! creation). One device hammered by many threads holds, and so does every
-//! device in turn: the engine itself builds one device per process. So a test
-//! that builds or drives a device holds [`exclusive_gpu`] for as long as the
-//! device is alive — validation and object labels stay on, the concurrency
-//! *within* each test is untouched, and the tests that use no GPU still run
-//! side by side.
+//! One test at a time owns a GPU device, on one backend: a test holds
+//! [`exclusive_gpu`] for as long as its device is alive.
 
 use std::sync::{Mutex, MutexGuard};
 
+// Several devices driven at once crash the Khronos Vulkan validation layer
+// (SDK 1.3.283, Windows, in `SetDebugUtilsObjectNameEXT`). One device per
+// process holds, as in the engine, however many threads drive it.
 static GPU: Mutex<()> = Mutex::new(());
 
 /// The process's turn on the GPU, held until dropped. A test that panicked

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! WGPU-specific graphics backend implementation.
+//! The wgpu graphics backend: device, pipeline system, render system and their support.
 
 mod backend;
 mod command;

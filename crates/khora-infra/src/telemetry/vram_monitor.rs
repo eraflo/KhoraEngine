@@ -12,11 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! VRAM Resource Monitor
-//!
-//! Provides monitoring capabilities for video memory (VRAM) usage through the
-//! ResourceMonitor trait interface. This allows the core monitoring system
-//! to track VRAM usage without depending on specific renderer implementations.
+//! A [`ResourceMonitor`] reporting video memory through a [`VramProvider`].
 
 use khora_core::telemetry::monitoring::{
     MonitoredResourceType, ResourceMonitor, ResourceUsageReport, VramProvider,
@@ -24,18 +20,16 @@ use khora_core::telemetry::monitoring::{
 use std::borrow::Cow;
 use std::sync::Weak;
 
-/// VRAM Monitor that interfaces with graphics devices to provide
-/// memory usage statistics through the unified ResourceMonitor interface.
+/// A video-memory monitor reading a graphics device's [`VramProvider`].
 #[derive(Debug)]
 pub struct VramMonitor {
-    /// Weak reference to the VRAM provider to avoid circular dependencies
+    /// Weak, so the monitor never keeps the device alive.
     vram_provider: Weak<dyn VramProvider>,
-    /// Unique identifier for this monitor instance
     monitor_id: String,
 }
 
 impl VramMonitor {
-    /// Create a new VRAM monitor
+    /// Creates a monitor of `vram_provider`, reported as `monitor_id`.
     pub fn new(vram_provider: Weak<dyn VramProvider>, monitor_id: String) -> Self {
         Self {
             vram_provider,
@@ -43,7 +37,6 @@ impl VramMonitor {
         }
     }
 
-    /// Helper to convert megabytes to bytes
     fn mb_to_bytes(mb: f32) -> u64 {
         (mb * 1024.0 * 1024.0) as u64
     }
@@ -70,7 +63,7 @@ impl ResourceMonitor for VramMonitor {
                 total_capacity_bytes: capacity_mb.map(Self::mb_to_bytes),
             }
         } else {
-            // VRAM provider is no longer available
+            // The device has been dropped.
             ResourceUsageReport::default()
         }
     }
@@ -80,7 +73,6 @@ impl ResourceMonitor for VramMonitor {
     }
 
     fn update(&self) {
-        // VRAM monitor updates are handled automatically by the graphics system
-        // through the VramProvider interface, so no additional work needed here
+        // The provider's figures are live: there is nothing to refresh.
     }
 }

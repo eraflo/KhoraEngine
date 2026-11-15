@@ -43,8 +43,9 @@ impl EguiUiBuilder<'_> {
     }
 
     /// A painter on the top foreground layer, clipped only to the whole screen.
-    /// Used for overlay affordances (drag ghosts) that must stay visible when
-    /// the cursor leaves the current panel's clip rect.
+    ///
+    /// For overlay affordances (drag ghosts) that stay visible when the cursor
+    /// leaves the current panel's clip rect.
     pub(super) fn overlay_painter(&self) -> egui::Painter {
         self.ui.ctx().layer_painter(egui::LayerId::new(
             egui::Order::Foreground,
@@ -97,8 +98,7 @@ impl EguiUiBuilder<'_> {
     /// The size `text` takes laid out on one line, in points.
     pub(super) fn text_size(&self, text: &str, size: f32, family: FontFamilyHint) -> [f32; 2] {
         let font_id = font_id_for(family, size);
-        // Use the painter's helper to lay out text — handles fonts atlas
-        // mutability internally in egui 0.33.
+        // The painter's helper handles the font atlas's mutability (egui 0.33).
         let galley =
             self.ui
                 .painter()

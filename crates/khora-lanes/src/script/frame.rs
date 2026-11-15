@@ -11,11 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//! The frame: every behavior in turn, until the fuel is gone.
-//!
-//! What this file owns that [`turn`](super::turn) does not is the *accounting*
-//! — whose turn it is, what each cost, who was deferred, and what has to be
-//! written back. A turn knows only about itself.
+//! The frame: every behavior in turn, until the fuel is gone. It keeps the
+//! accounting (whose turn it is, what each cost, who was deferred, what is
+//! written back); a [`turn`](super::turn) knows only about itself.
 
 use khora_core::script::{EventQueue, RecordedFault};
 use khora_data::flow::ScriptView;
@@ -40,9 +38,8 @@ pub(super) const FUEL_PER_BEHAVIOR: u64 = 100_000;
 
 /// Runs every behavior the view lists, until the fuel is gone.
 ///
-/// Separate from the lane's `record` so it can be tested without assembling
-/// its inputs — the interesting behavior is here, and a test of it should not
-/// have to build the plumbing that delivers it.
+/// Kept apart from the lane's `record` so a test runs it without assembling
+/// the lane's inputs.
 pub fn run_behaviors(
     view: &ScriptView,
     events: &EventQueue,
@@ -66,11 +63,6 @@ pub fn run_behaviors(
 
     let mut report = ScriptRunReport::default();
 
-    // Farewells first, so an entity removed by something other than a script —
-    // the editor, another system — still gets its `OnDespawn`, and so whatever
-    // that queues is in the frame's commands alongside everything else. Then the
-    // instances are dropped, which is how a despawned entity's fields are
-    // released without anyone having to report the despawn.
     // An entity that left while the game was not running left without the
     // game: no `OnDespawn` for it, only forgetting.
     if view.resumed {
@@ -86,6 +78,9 @@ pub fn run_behaviors(
         .iter()
         .map(|instance| (instance.entity, instance.translation))
         .collect();
+    // Farewells before any turn, so what an `OnDespawn` queues is among the
+    // frame's commands; dropping the departed then releases their fields
+    // without anyone having to report the despawn.
     farewell_departed(&is_live, &positions, runtime, host, fuel, &mut report);
     runtime.retain_behaviors(is_live);
 
@@ -95,11 +90,10 @@ pub fn run_behaviors(
     for instance in &view.instances {
         *counts.entry(instance.entity).or_default() += 1;
     }
-    // Behaviors in their fixed order, each with its share of what the frame
-    // has left — what one does not spend passes on to the next — and each
-    // from its own cursor, so a frame short of fuel leaves no behavior, and no
-    // instance of one, out every frame; and on one entity the earlier
-    // behavior always runs first, whatever the fuel.
+    // Behaviors in their fixed order, so on one entity the earlier always runs
+    // first; each with its share and its cursor, so a frame short of fuel leaves
+    // no instance out every frame. See the book:
+    // concepts/scripting/turns.md, "Degrading defers whole behaviors".
     let pool = fuel.saturating_sub(report.spent);
     let mut granted = report.spent;
 
@@ -152,12 +146,10 @@ pub fn run_behaviors(
                 None
             };
             let events = held.as_ref().unwrap_or(events);
-            // Held on the instance until its first turn: a frame that has no fuel
-            // left for it, or no program yet, must not lose what it brings — the
-            // flow hands an arrival over once.
-            // An instance the lane does not hold and the flow sends no arrival
-            // for — the lane forgot it while the flow did not — is what its
-            // row says, never its defaults.
+            // Held on the instance until its first turn: the flow hands an
+            // arrival over once, and a frame with no fuel or program for it must
+            // not lose it. One the lane forgot while the flow did not is what
+            // its row says, never its defaults.
             let forgotten = (instance.arrival.is_none()
                 && !instance.row.is_empty()
                 && runtime.peek(instance.entity, &program.behavior).is_none())
@@ -251,16 +243,10 @@ pub fn run_behaviors(
             }
 
             let Some(compiled) = runtime.program(&program.module) else {
-                // The module is not in the program table — nobody compiled it, or
-                // nobody wired the channel that carries compiled programs here.
-                //
-                // Counted rather than passed over. The comment that used to sit
-                // here said both causes were "reported by whatever failed to supply
-                // it"; neither was, and that assumption hid a subsystem that looked
-                // wired and was not.
-                //
-                // A program compiled and waiting a frame for the components it
-                // reads is neither: it runs from the next frame.
+                // Not compiled, or no channel carries its program here: counted
+                // rather than passed over, so nothing that looks wired hides
+                // that it is not. A program waiting a frame for the components
+                // it reads is neither, and runs from the next frame.
                 if !runtime.is_waiting(&program.module) {
                     report.unloaded += 1;
                 }
@@ -441,8 +427,6 @@ pub fn run_behaviors(
             });
             report.turns_time += ran.elapsed();
 
-            // The fields go back whatever happened, so a fault does not lose the
-            // state the behavior had before it.
             if let Some((member, site)) = progress.slow.take() {
                 log::warn!(
                     "script `{}` on {:?}: `{member}` has run {} s of game time without finishing — at {site}; the watchdog stops it at {} s",
@@ -459,6 +443,8 @@ pub fn run_behaviors(
                 });
             }
             let state = runtime.instance(instance.entity, &program.behavior);
+            // The fields go back whatever happened, so a fault does not lose the
+            // state the behavior had before it.
             state.fields = std::mem::take(&mut host.fields);
             // Where the turn got to goes back whatever happened, so a turn that
             // stopped early loses no body part-way through.
@@ -509,10 +495,9 @@ pub fn run_behaviors(
                     );
                 }
                 // Part-way through a body, which carries on next turn. On an
-                // `await` it counts as completed: the script did exactly what it
-                // says, and reporting it as deferred would make the agent's health
-                // score fall for a script working as written. Out of fuel it counts
-                // as deferred: that is budget pressure, and the DCC has to see it.
+                // `await` it counts as completed: the script does what it says.
+                // Out of fuel it counts as deferred: that is budget pressure, and
+                // the DCC has to see it.
                 Outcome::Busy {
                     spent,
                     delivered,
@@ -561,21 +546,10 @@ pub fn run_behaviors(
                 outcome_cost,
             );
 
-            // Last, because a suspended machine is only known after the match — and
-            // a save taken this frame has to record the guard mid-attack, not the
-            // guard about to start one.
-            //
-            // A behavior that spent no fuel handled no event and ran no code, so its
-            // state is what it was. That is what makes writing back every frame
-            // affordable: a quiet frame writes nothing at all.
-            //
-            // Except for a countdown, which moves without costing anything — the
-            // clock is not the behavior's work. A behavior with an `every` therefore
-            // has no quiet frames, and that is the price of an `after 10s` that
-            // still has ten seconds left when the game is loaded rather than
-            // whenever it was last hurt. The same for an `await` still waiting: its
-            // countdown moves for free too, and a save taken part-way through the
-            // wait has to record what is left of it, not the wait as it began.
+            // Last, as a suspended machine is known only after the match. A frame
+            // that spent no fuel writes nothing, unless a countdown or a wait moved.
+            // See the book: concepts/scripting/saves-and-edits.md,
+            // "Timers and waits".
             let ticked = super::fuel::delta_moved_a_countdown(
                 &compiled,
                 &program.behavior,

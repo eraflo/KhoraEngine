@@ -1,7 +1,6 @@
 #define_import_path khora::lighting::attenuation
 
-// Distance-and-cone attenuation helpers shared by every shading model
-// (Blinn-Phong, PBR, future variants).
+// Distance-and-cone attenuation helpers shared by every shading model.
 
 /// Smooth distance attenuation that reaches zero at `range`.
 ///
@@ -16,12 +15,9 @@ fn calculate_attenuation(distance: f32, range: f32) -> f32 {
 /// Spotlight cone attenuation: full light inside the inner cone, none past the
 /// outer one, a smooth fade between.
 ///
-/// The fade is `smoothstep`'s, written out: `smoothstep(low, high, x)` is
-/// undefined in WGSL when `low >= high`, and equal cones are a legitimate
-/// author's choice — a hard-edged spot (and both cosines round to 1 for a cone
-/// under about 3e-4 rad). With no span between the cones the edge is hard;
-/// with any span, however narrow, the fade is exactly `smoothstep`'s. The
-/// authored angles are never changed.
+/// The fade is `smoothstep`'s, written out: WGSL leaves `smoothstep` undefined
+/// when `low >= high`, and equal cones are an author's hard-edged spot (both
+/// cosines also round to 1 under about 3e-4 rad). The angles are never changed.
 fn calculate_spot_attenuation(
     light_dir: vec3<f32>,
     spot_direction: vec3<f32>,

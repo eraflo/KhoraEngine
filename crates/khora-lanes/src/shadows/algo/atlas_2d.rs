@@ -12,11 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! 2D shadow atlas — directional and spot lights.
-//!
-//! The `texture_depth_2d_array` atlas the lit lanes sample for non-point
-//! shadow casters. One layer per shadow-casting directional / spot light.
-//! The resolution is the lane level's.
+//! The 2D shadow atlas: a `texture_depth_2d_array` with one layer per
+//! shadow-casting directional or spot light.
 
 use std::borrow::Cow;
 
@@ -43,9 +40,10 @@ pub struct Atlas2D {
 }
 
 impl Atlas2D {
-    /// Creates the depth atlas and its array view: `resolution` texels a
-    /// side, one layer per light up to `max_lights`. A view the device
-    /// refuses gives back the texture already made.
+    /// Creates the depth atlas and its array view, one layer per light up to `max_lights`.
+    ///
+    /// `resolution` is in texels a side. A view the device refuses gives back
+    /// the texture already made.
     pub fn create(
         device: &dyn GraphicsDevice,
         resolution: u32,
@@ -104,12 +102,10 @@ impl Atlas2D {
     }
 }
 
-/// Records one shadow pass for a directional or spot light.
+/// Collects one shadow pass for a directional or spot light, for
+/// [`super::pass::record_depth_pass`] to replay.
 ///
-/// Pushes the camera UBO into the camera ring, builds the draw command
-/// list, and returns an [`AttachmentPass`] ready to be replayed by
-/// [`super::pass::record_depth_pass`]. Returns `None` if the camera
-/// uniform push fails.
+/// Returns `None` when the light's camera uniform cannot be pushed.
 #[allow(clippy::too_many_arguments)]
 pub fn collect_pass(
     atlas_view: TextureViewId,

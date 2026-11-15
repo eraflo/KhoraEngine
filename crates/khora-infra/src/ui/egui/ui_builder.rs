@@ -12,12 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Concrete [`UiBuilder`] backed by `egui::Ui`.
-//!
-//! The trait's methods are answered here, those that take more than a few
-//! egui calls by inherent methods in sibling files: `editors` (multi-part
-//! value editors), `paint` (direct painting), `menus` (popup menus),
-//! `inset_panels` (nested areas and the modal), `dnd` (drag and drop);
+//! The egui [`UiBuilder`]. Methods taking more than a few egui calls live in
+//! sibling files (`editors`, `paint`, `menus`, `inset_panels`, `dnd`), and
 //! `convert` maps the neutral values to egui's.
 
 use khora_core::platform::input::KeyCode;
@@ -152,10 +148,8 @@ impl UiBuilder for EguiUiBuilder<'_> {
     fn text_edit_singleline(&mut self, text: &mut String) -> bool {
         let r = self.ui.text_edit_singleline(text);
         let changed = r.changed();
-        // Storing the response is what makes `is_last_item_enter_pressed` and
-        // `is_last_item_escape_pressed` work at all: without it they inspect a
-        // `None` and report `false` forever, which is why Enter and Escape did
-        // nothing in the command palette.
+        // Stored for `is_last_item_enter_pressed` and
+        // `is_last_item_escape_pressed`, which read it.
         self.last_response = Some(r);
         changed
     }
@@ -257,13 +251,10 @@ impl UiBuilder for EguiUiBuilder<'_> {
         size: [f32; 2],
     ) -> Option<[f32; 2]> {
         let egui_id = self.viewport_textures.get(&handle)?;
-        // IMPORTANT: use `Sense::hover()` rather than click_and_drag here.
-        // egui-winit's `consumed = wants_pointer_input()` short-circuits
-        // every mouse press while the cursor is over a click-sensing
-        // widget — which previously meant clicks/drags on the 3D viewport
-        // were swallowed before the engine's input handler could orbit /
-        // pan the camera. Hover sense still drives `Response::hovered()`,
-        // which is all `viewport_hovered` needs.
+        // Hover sense, not click-and-drag: egui-winit consumes every press
+        // over a click-sensing widget, so the engine's input handler would
+        // never see the viewport's orbit and pan. `viewport_hovered` needs
+        // only `Response::hovered()`.
         let image = egui::Image::new(egui::load::SizedTexture::new(
             *egui_id,
             egui::vec2(size[0], size[1]),
@@ -661,10 +652,10 @@ impl UiBuilder for EguiUiBuilder<'_> {
 mod tests {
     use super::*;
 
-    /// A small glow painted over a whole 1440 × 900 screen: the colour
-    /// varies only inside the 20-unit disc and is the last stop's
-    /// everywhere else, so the mesh stays the size of a small fill instead
-    /// of growing with the screen area over the square of the radius.
+    /// A small glow painted over a whole 1440 × 900 screen keeps a small mesh.
+    ///
+    /// The colour varies only inside the 20-unit disc, so the mesh grows with
+    /// that disc, not with the screen area.
     #[test]
     fn a_small_radial_glow_over_a_large_polygon_paints_a_bounded_mesh() {
         use khora_core::ui::editor::GradientStop;

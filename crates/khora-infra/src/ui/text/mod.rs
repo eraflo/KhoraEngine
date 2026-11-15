@@ -22,15 +22,18 @@ pub mod swash_rasterizer;
 pub use parley_shaper::ParleyShaper;
 pub use swash_rasterizer::SwashRasterizer;
 
-/// The engine's default UI font (Inter 4.1, variable), registered under
-/// `Font::BUILT_IN` by every text backend. SIL Open Font License 1.1; the
-/// licence sits beside the file in `assets/fonts/`.
+/// The engine's default UI font, Inter 4.1 (variable), registered under
+/// `Font::BUILT_IN` by every text backend.
+///
+/// SIL Open Font License 1.1; the licence sits beside the file in `assets/fonts/`.
 pub const DEFAULT_FONT: &[u8] = include_bytes!("../../../assets/fonts/InterVariable.ttf");
 
-/// The family a font file declares, its first face registered into
-/// `collection` alone — the one rule both backends read a font file by, so
-/// that they agree on what is a font (a file cut short is refused by both)
-/// and on which face of a collection (`.ttc`) is drawn: its first.
+/// Registers a font file's first face alone into `collection`, and returns the
+/// family it declares.
+///
+/// Both text backends read a font file by this rule, so they agree on what is
+/// a font (a file cut short is refused by both) and on which face of a
+/// collection (`.ttc`) is drawn.
 pub(crate) fn register_first_face(
     collection: &mut parley::fontique::Collection,
     data: std::sync::Arc<[u8]>,

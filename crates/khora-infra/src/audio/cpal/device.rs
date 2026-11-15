@@ -12,13 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! CPAL-backed [`AudioDevice`] / [`AudioStream`].
-//!
-//! `CpalAudioDevice` is a zero-state factory: opening it consumes the box,
-//! grabs the host's default output device, builds a CPAL stream whose
-//! callback pulls from the supplied [`AudioMixBus`], and returns a
-//! [`CpalAudioStream`] handle that keeps the stream alive (via
-//! `Box<dyn AudioStream>` ownership) until dropped.
+//! CPAL-backed [`AudioDevice`] and [`AudioStream`]: the host's default output
+//! device, fed from an [`AudioMixBus`].
 
 use std::sync::Arc;
 
@@ -81,11 +76,9 @@ impl AudioDevice for CpalAudioDevice {
     }
 }
 
-/// Live CPAL output stream. Keeps the underlying `cpal::Stream` alive
-/// via owned storage; `Drop` stops the stream.
+/// A live CPAL output stream; dropping it stops the sound.
 pub struct CpalAudioStream {
-    // Field is read implicitly via `Drop` — its sole purpose is to keep
-    // the CPAL stream alive for the lifetime of this handle.
+    // Never read: held so the stream plays as long as this handle lives.
     _stream: cpal::Stream,
     info: StreamInfo,
 }
