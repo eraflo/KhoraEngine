@@ -66,15 +66,9 @@ pub struct World {
     pub(crate) storage: StorageManager,
     /// Manages query planning and caching.
     pub(crate) planner: QueryPlanner,
-    /// Per-domain change epochs, indexed by [`SemanticDomain::index`]: the
-    /// latest tick at which a value of the domain was written or a row of
-    /// one of its pages changed place. Raised wherever a column summary σ
-    /// rises (a stamped write, a pushed row) or a page's order ω moves
-    /// (despawn, migration, compaction), never by handing out writable
-    /// access alone. Flows compare epochs across frames to decide whether a
-    /// cached View is still valid; raising too much is harmless, missing a
-    /// raise would mean stale Views. Representation-only changes (AGDF
-    /// layout) raise nothing.
+    /// Per-domain change epochs, indexed by [`SemanticDomain::index`].
+    ///
+    /// See the book: concepts/change-detection-formal.md, "Domain epochs".
     domain_epochs: [u64; SemanticDomain::COUNT],
     /// The persistent identity of each live entity that has been given one.
     identity: identity::IdentityCell,
@@ -84,10 +78,7 @@ pub struct World {
     /// Ids a script reserves in its turn, for this world to commit or take
     /// back at the frame's end.
     reserver: std::sync::Arc<khora_core::ecs::EntityReserver>,
-    /// Process-unique id of this `World` instance. Folded into Flow cache
-    /// keys so a freshly created World (whose epochs restart at zero, e.g.
-    /// a play-mode snapshot restore) can never alias a previous World's
-    /// epoch values and serve a stale cached View.
+    /// Process-unique id of this `World` instance; see [`World::instance_id`].
     instance_id: u64,
     /// The world's clock, the keys observers watch, and each observer's
     /// last-seen tick.
@@ -101,7 +92,7 @@ pub struct World {
 static WORLD_INSTANCE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl World {
-    /// (Internal) Allocates a new or recycled `EntityId` and reserves its metadata slot.
+    /// Allocates a new or recycled `EntityId` and reserves its metadata slot.
     fn create_entity(&mut self) -> EntityId {
         // What a script reserved first, so a spawn here never takes an index
         // a reservation already holds.
@@ -132,29 +123,16 @@ impl World {
         entity
     }
 
-    /// (Internal) Finds a page suitable for the given `ComponentBundle`, or creates one if none exists.
     fn find_or_create_page_for_bundle<B: ComponentBundle>(&mut self) -> u32 {
         self.storage.find_or_create_page_for_bundle::<B>()
     }
 
-    /// (Internal) Removes a single physical row from a page via `swap_remove`,
-    /// patching the moved entity's metadata so every domain that referenced the
-    /// vacated slot now points at it.
+    /// Swap-removes the row at `location`, repointing the moved entity's locations at it.
     ///
-    /// Takes a row, not an entity, and deliberately: **whose** row it was never
-    /// mattered, and taking the entity invited comparing identities where rows
-    /// were meant — which is exactly the bug this signature closes.
-    ///
-    /// A mixed-domain bundle is stored in one page but registered under several
-    /// domain keys in [`EntityMetadata::locations`](crate::ecs::EntityMetadata::locations), all addressing the same
-    /// `(page_id, row_index)`. The moved (last-row) entity may likewise reference
-    /// this page under more than one domain, so every one of its locations that
-    /// pointed at the page's old last row is repointed at `location` — patching a
-    /// single domain would leave the others dangling. O(domains) per page, no scan.
-    ///
-    /// The moved row may be a migration orphan whose owner is dead (despawned, or
-    /// its index recycled under a newer generation): there is no live metadata to
-    /// patch, so it is left for compaction.
+    /// Takes a row, not an entity: whose row it was never matters. Every
+    /// location of the moved entity that addressed the old last row is
+    /// repointed, one per domain of a mixed-domain bundle. A moved migration
+    /// orphan whose owner is dead is left for compaction.
     fn remove_from_page(&mut self, location: PageIndex) {
         let page = &mut self.storage.pages[location.page_id as usize];
         if page.entities.is_empty() {
@@ -171,22 +149,10 @@ impl World {
             return;
         }
 
-        // The last row moved into the vacated slot. Repoint every location of the
-        // moved entity that addressed this page's old last row at the new slot.
-        //
-        // The test is **which row was removed**, not whose entity it was. Those
-        // are not the same question, and reading one for the other was a real
-        // bug: an entity that leaves a page and comes back — `add_component`
-        // then `remove_component`, which is what a `Teleported` marker does
-        // every frame — leaves an orphan row *and* holds a live row in the same
-        // page, both under its own id. When compaction reclaimed the orphan and
-        // the live row happened to be last, an id comparison concluded "nothing
-        // moved" and skipped the patch. The entity kept a row index into a page
-        // that had just got shorter, and the next migration read past the end of
-        // a column.
-        //
-        // `get_metadata_mut` checks the generation, so a dead or recycled owner
-        // yields `None` and its orphan row is left for compaction.
+        // Compared by row, never by entity id: an entity that left this page
+        // and came back holds an orphan row and a live row here, both under
+        // its id. A dead or recycled owner fails the generation check and its
+        // orphan row is left for compaction.
         if let Some(metadata) = self.entities.get_metadata_mut(moved_entity) {
             for loc in metadata.locations.values_mut() {
                 if loc.page_id == location.page_id && loc.row_index == old_last_row {
@@ -196,7 +162,7 @@ impl World {
         }
     }
 
-    /// Finds or creates a page for the given signature (sorted component keys).
+    /// Finds or creates the page of `signature`, sorted component keys.
     fn find_or_create_page_for_signature(&mut self, signature: &[ComponentKey]) -> u32 {
         self.storage.find_or_create_page_for_signature(signature)
     }
@@ -230,10 +196,8 @@ impl World {
             }
         }
         // Generic and hand-implemented components can't self-register via the
-        // derive (generics have no single `TypeId`; `MaterialRef` holds a trait
-        // object and has a manual `Component` impl), so they stay explicit.
-        // CollisionPairs is **not** an ECS component — it lives in `Resources`
-        // as `Arc<Mutex<CollisionPairs>>`.
+        // derive: generics have no single `TypeId`, and `MaterialRef` has a
+        // manual `Component` impl.
         world.register_component::<HandleComponent<Mesh>>(SemanticDomain::Render);
         world.register_component::<HandleComponent<GpuMesh>>(SemanticDomain::Render);
         world.register_component::<HandleComponent<GpuMaterial>>(SemanticDomain::Render);
@@ -242,9 +206,7 @@ impl World {
         world.register_component::<MaterialRef>(SemanticDomain::Render);
         world.register_component::<MeshRef>(SemanticDomain::Render);
 
-        // Auto-register every component that declares its domain via
-        // `#[derive(Component)]` + `#[component(domain = ...)]`. Idempotent with the
-        // explicit calls above (same type, same domain → same id).
+        // Idempotent with the explicit calls above: same type, same domain.
         for reg in inventory::iter::<crate::ecs::ComponentDomainRegistration> {
             (reg.register)(&mut world);
         }
@@ -252,39 +214,37 @@ impl World {
         world
     }
 
-    /// Returns the [`SemanticDomain`] a component type was registered with,
-    /// or `None` if it isn't registered (yet) on this world. Used by the
-    /// editor to categorise components in the "Add Component" menu and the
-    /// inspector without hard-coding a per-type table.
+    /// Returns the [`SemanticDomain`] a component type was registered with, if any.
     pub fn component_domain(&self, type_id: TypeId) -> Option<SemanticDomain> {
         self.storage.registry.get_domain(type_id)
     }
 
-    /// The [`LayoutPolicy`] a component type is currently stored with. Defaults
-    /// to `Soa`; the layout-adaptation pass may change it.
+    /// Returns the [`LayoutPolicy`] a component type is currently stored with.
+    ///
+    /// `Soa` by default; the layout-adaptation pass may change it.
     pub fn component_layout(&self, type_id: TypeId) -> Option<LayoutPolicy> {
         self.storage.registry.layout_of(type_id)
     }
 
-    /// Online access stats `(query_count, rows_scanned)` for a component type —
-    /// the DCC / telemetry read these to drive memory-layout adaptation. The DCC
-    /// only *observes*; it never mutates the layout (Data self-optimizes).
+    /// Returns a component type's access stats as `(query_count, rows_scanned)`.
+    ///
+    /// Read to drive layout adaptation. See the book: concepts/agdf.md,
+    /// "Layer 1 — observe and advise".
     pub fn component_access_stats(&self, type_id: TypeId) -> Option<(u64, u64)> {
         self.storage.registry.access_stats(type_id)
     }
 
-    /// The number of live entities — the coarse workload size `n` the DCC's
-    /// cost model fits agent execution time against. Kept as a count, so
-    /// reading it costs nothing however many slots have died.
+    /// Returns the number of live entities, in O(1).
+    ///
+    /// The coarse workload size `n` the DCC's cost model fits execution time against.
     pub fn entity_count(&self) -> usize {
         self.entities.alive()
     }
 
-    /// A snapshot of every registered component's access pattern as
-    /// `(name, size_bytes, query_count, rows_scanned)`, by the component's one
-    /// short name. The hot path samples this at a low rate and publishes it
-    /// through the observation tunnel; the DCC turns it into a read-only
-    /// layout recommendation.
+    /// Returns every registered component's `(name, size_bytes, query_count, rows_scanned)`.
+    ///
+    /// Keyed by the component's short name. See the book: concepts/agdf.md,
+    /// "Layer 1 — observe and advise".
     pub fn component_access_snapshot(&self) -> Vec<(String, usize, u64, u64)> {
         self.storage
             .registry
@@ -294,51 +254,36 @@ impl World {
             .collect()
     }
 
-    /// Current change epoch of `domain`: the latest tick at which one of its
-    /// values was written or a row of one of its pages changed place —
-    /// monotone, read in O(1). Equal epochs across two reads guarantee the
-    /// domain's data (and its query iteration order) is unchanged: every
-    /// reader runs at a tick of its own, and whatever changes after it
-    /// carries a later one. A different value only means "possibly changed".
-    /// Handing out writable access moves nothing until something is written.
-    /// Flows use this to validate cached Views.
+    /// Returns `domain`'s change epoch: monotone, read in O(1).
+    ///
+    /// Equal epochs across two reads guarantee the domain's data and its
+    /// iteration order are unchanged; a different value means only "possibly
+    /// changed". See the book: concepts/change-detection-formal.md, "Domain epochs".
     pub fn domain_epoch(&self, domain: SemanticDomain) -> u64 {
         self.domain_epochs[domain.index()]
     }
 
-    /// Process-unique identifier of this `World` instance. Cache keys
-    /// derived from [`domain_epoch`](Self::domain_epoch) must include it so
-    /// that epochs from two different World instances never compare equal.
+    /// Returns the process-unique identifier of this `World` instance.
+    ///
+    /// A cache key built from [`domain_epoch`](Self::domain_epoch) includes it,
+    /// so epochs of two worlds (a fresh one restarts at zero) never compare equal.
     pub fn instance_id(&self) -> u64 {
         self.instance_id
     }
 
-    /// (Internal) Notes that `domain` changed now: its epoch rises to the
-    /// clock's tick. O(1).
+    /// Raises `domain`'s epoch to the clock's tick.
     pub(crate) fn bump_domain_epoch(&mut self, domain: SemanticDomain) {
         let epoch = &mut self.domain_epochs[domain.index()];
         *epoch = (*epoch).max(self.clock.tick.0);
     }
 
-    /// Spawns a new entity with the given bundle of components.
-    ///
-    /// This is the primary method for creating entities. It orchestrates the entire process:
-    /// 1. Allocates a new `EntityId`.
-    /// 2. Finds or creates a suitable `ComponentPage` for the component bundle.
-    /// 3. Pushes the component data into the page's columns.
-    /// 4. Updates the entity's metadata to point to the new data's location.
-    /// 5. Updates domain bitsets and stats for the newly created entity components.
-    ///
-    /// Returns the `EntityId` of the newly created entity.
+    /// Spawns a new entity holding `bundle` and returns its id.
     ///
     /// # Panics
     ///
-    /// On a component type that is not registered — one that neither derives
-    /// `Component` with a domain nor is registered in `World::new`. Stored, it
-    /// would sit in a page nothing can reach: invisible to `get` and to every
-    /// join, never removed by `despawn`. That is a programming error, the same
-    /// one every time the code runs; [`try_spawn`](Self::try_spawn) is the
-    /// fallible form.
+    /// If a component type of `bundle` is not registered, or `bundle` names one
+    /// type twice; [`try_spawn`](Self::try_spawn) returns the error instead.
+    /// See the book: concepts/ecs.md, "Registration".
     pub fn spawn<B: ComponentBundle>(&mut self, bundle: B) -> EntityId {
         match self.try_spawn(bundle) {
             Ok(entity) => entity,
@@ -351,9 +296,12 @@ impl World {
         }
     }
 
-    /// Spawns a new entity with the given bundle of components, refusing —
-    /// before anything is allocated or stored — a bundle holding a component
-    /// type that is not registered, as `add_component` refuses one.
+    /// Spawns a new entity holding `bundle`, or refuses it before anything is allocated.
+    ///
+    /// # Errors
+    ///
+    /// [`SpawnError`] if a component type of `bundle` is not registered, or
+    /// `bundle` names one type twice.
     pub fn try_spawn<B: ComponentBundle>(&mut self, bundle: B) -> Result<EntityId, SpawnError> {
         if let Some(component) = B::unregistered(&self.storage.registry) {
             return Err(SpawnError::ComponentNotRegistered { component });
@@ -361,8 +309,7 @@ impl World {
         if let Some(component) = B::repeated() {
             return Err(SpawnError::ComponentNamedTwice { component });
         }
-        // Allocate a new EntityId. Its persistent identity waits until
-        // something asks for it.
+        // Its persistent identity waits until something asks for it.
         let entity_id = self.create_entity();
         self.place(entity_id, bundle);
         Ok(entity_id)
@@ -373,12 +320,10 @@ impl World {
         self.place(entity_id, ());
     }
 
-    /// The rest of a spawn, past its id, for an entity whose id is already allocated.
+    /// Stores `bundle` as the row of an entity whose id is already allocated.
     fn place<B: ComponentBundle>(&mut self, entity_id: EntityId, bundle: B) {
-        // Find or create a page for this bundle.
         let page_id = self.find_or_create_page_for_bundle::<B>();
 
-        // Push component data into the page.
         let row_index;
         {
             let page = &mut self.storage.pages[page_id as usize];
@@ -396,12 +341,10 @@ impl World {
         }
         self.note_page_changed(page_id);
 
-        // Update the entity's metadata.
         let location = PageIndex { page_id, row_index };
         let metadata = self.entities.get_metadata_mut(entity_id).unwrap();
         B::update_metadata(metadata, location, &self.storage.registry);
 
-        // Update domain bitsets and stats for the newly created entity components.
         for domain in metadata.locations.keys() {
             self.storage
                 .domain_bitsets
@@ -415,17 +358,13 @@ impl World {
                 .or_default()
                 .entity_count += 1;
 
-            // A new entity appeared in this domain — invalidate cached
-            // Views. Inline field access: `metadata` still borrows
-            // `self.entities`, so `bump_domain_epoch(&mut self)` can't be
-            // called here.
+            // `bump_domain_epoch` inlined: `metadata` still borrows `self.entities`.
             let epoch = &mut self.domain_epochs[domain.index()];
             *epoch = (*epoch).max(self.clock.tick.0);
         }
     }
 
-    /// The page column holding `entity`'s component of type `type_id`, and the
-    /// row it occupies there.
+    /// Returns the page column holding `entity`'s component `type_id`, and its row there.
     pub(crate) fn component_cell(
         &self,
         entity: EntityId,
@@ -446,15 +385,12 @@ impl World {
         Some((column.as_ref(), location.row_index as usize))
     }
 
-    /// Places a row for `entity` in the page of `signature` (sorted, deduped
-    /// keys of registered components), `fill` pushing exactly one value
-    /// into each of the page's columns — what a spawn does for a bundle,
-    /// for a signature only known at run time. How a load builds a page: one
-    /// row per entity, in place, without migrating anything.
+    /// Places a row for `entity` in the page of a run-time `signature`, as a spawn does.
     ///
-    /// Returns `false`, touching nothing, when `entity` is not alive, a key
-    /// is not registered, or the entity already holds a component of one of
-    /// the signature's domains.
+    /// `signature` holds sorted, deduped keys of registered components; `fill`
+    /// pushes exactly one value into each column. Returns `false`, touching
+    /// nothing, when `entity` is not alive, a key is not registered, or the
+    /// entity already holds a component of one of the signature's domains.
     pub(crate) fn place_row(
         &mut self,
         entity: EntityId,
@@ -510,8 +446,7 @@ impl World {
         true
     }
 
-    /// Whether row `row` of page `page_id` is `entity`'s current row there —
-    /// not one it left behind, which waits for compaction.
+    /// Returns whether row `row` of page `page_id` is `entity`'s live row, not one it left behind.
     pub(crate) fn is_live_row_of(&self, page_id: u32, row: usize, entity: EntityId) -> bool {
         match self.entities.get(entity.index as usize) {
             Some((id, Some(metadata))) if *id == entity => metadata
@@ -522,13 +457,10 @@ impl World {
         }
     }
 
-    /// Whether `entity_id` names a live entity.
+    /// Returns whether `entity_id` names a live entity, generation included.
     ///
-    /// The generation half of the check is the point. An index alone is
-    /// recycled, so a handle kept across frames — a script's, an editor
-    /// selection's, an undo entry's — can end up naming a *different* entity
-    /// than the one it was made for. Asking is how a caller avoids writing to a
-    /// stranger; the alternative is finding out afterwards.
+    /// An index is recycled, so a handle kept across frames may name another
+    /// entity than the one it was made for; this tells the two apart.
     pub fn contains(&self, entity_id: EntityId) -> bool {
         match self.entities.get(entity_id.index as usize) {
             Some((id_in_world, metadata_slot)) => {
@@ -538,36 +470,23 @@ impl World {
         }
     }
 
-    /// Despawns an entity, removing all its components and freeing its ID for recycling.
+    /// Despawns an entity, removing all its components and freeing its index for reuse.
     ///
-    /// This method performs the following steps:
-    /// 1. Verifies that the `EntityId` is valid by checking its index and generation.
-    /// 2. Removes the entity's component data from all pages where it is stored.
-    /// 3. Marks the entity's metadata slot as vacant and adds its index to the free list.
-    ///
-    /// Returns `true` if the entity was valid and despawned, `false` otherwise.
+    /// Returns `false`, touching nothing, if `entity_id` is not alive at its generation.
     pub fn despawn(&mut self, entity_id: EntityId) -> bool {
-        // Kill the entity — only one that is alive, at this
-        // generation — taking its metadata and freeing its index.
         let Some(metadata) = self.entities.despawn(entity_id) else {
             return false;
         };
         self.forget_identity(entity_id);
 
-        // Remove the entity's data and update per-domain bookkeeping.
-        // A mixed-domain bundle lives in one page but is registered under several
-        // domain keys that all address the same `(page_id, row_index)`. The
-        // physical row must be `swap_remove`d exactly once — calling it per domain
-        // key would remove the moved survivor's data on the second pass — while the
-        // bitset/stats/epoch bookkeeping still runs for every domain the entity
-        // belonged to.
+        // A mixed-domain row sits under several domain keys: removed once, or
+        // the second pass would remove the moved survivor's row.
         let mut removed_rows: HashSet<PageIndex> = HashSet::new();
         for (domain, location) in metadata.locations {
             if removed_rows.insert(location) {
                 self.remove_from_page(location);
             }
 
-            // Clear the entity's bit in the domain bitset and update stats.
             if let Some(bitset) = self.storage.domain_bitsets.get_mut(&domain) {
                 bitset.clear(entity_id.index);
             }
@@ -575,8 +494,6 @@ impl World {
                 stats.entity_count = stats.entity_count.saturating_sub(1);
             }
 
-            // An entity left this domain (and `remove_from_page` may have
-            // reordered the page) — invalidate cached Views.
             self.bump_domain_epoch(domain);
         }
         true

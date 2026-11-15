@@ -48,10 +48,11 @@ fn every_registration_is_named_as_its_vtable() {
     }
 }
 
-/// A Rust type whose short name a declared component already holds is
-/// refused — and the refusal says a declared component holds it, not a Rust
-/// one: a diagnostic that blames a Rust component that does not exist sends
-/// the author looking for the wrong type.
+/// A Rust type whose short name a declared component holds is refused, the refusal naming
+/// the declared holder.
+///
+/// A diagnostic blaming a Rust component that does not exist sends the author looking for
+/// the wrong type.
 #[test]
 fn a_rust_component_named_like_a_declared_one_is_refused_for_that_reason() {
     let mut world = World::new();

@@ -12,43 +12,42 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines the `AudioSource` component for emitting sound.
+//! [`AudioSource`], an entity that emits sound.
 
 use crate::assets::SoundData;
 use khora_core::asset::AssetHandle;
 use khora_macros::Component;
 use serde::{Deserialize, Serialize};
 
-/// The internal playback state of an active sound.
-/// This will be managed by the `AudioMixingLane`.
+/// Where a playing sound is in its samples, written back from the audio mixing lane.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlaybackState {
-    /// The current position in the sample data, in frames. An `f64`: an
-    /// `f32` position rounds a block's advance once a track runs past a few
-    /// minutes, and the voice drifts off its rate.
+    /// The position in the sample data, in frames.
+    ///
+    /// An `f64`: in `f32`, a block's advance rounds once a track runs past a
+    /// few minutes, and the voice drifts off its rate.
     pub cursor: f64,
 }
 
-/// An ECS component that makes an entity an emitter of sound.
+/// A sound emitted from its entity's position, heard through the `AudioListener`.
 #[derive(Debug, Clone, Component)]
 #[component(domain = Audio)]
 pub struct AudioSource {
-    /// A handle to the sound data to be played.
+    /// The sound to play; not saved.
     #[component(skip)]
     pub handle: AssetHandle<SoundData>,
-    /// The volume of the sound, where 1.0 is normal volume.
+    /// The gain applied to the sound: `1.0` plays it as recorded, `0.0` silences it.
     pub volume: f32,
-    /// Whether the sound should loop back to the beginning when it finishes.
+    /// Whether the sound starts over when it ends.
     pub looping: bool,
-    /// Whether the sound should start playing automatically when this component is added.
+    /// Whether the sound starts playing as soon as the component is added.
     pub autoplay: bool,
-    /// How much the source matters when more sources play than the mixer has
-    /// voices for: a higher priority keeps its voice before any lower one,
-    /// however loud. Sources of equal priority are ranked by how loud they
-    /// are at the listener. The default, 128, sits in the middle.
+    /// Which sources keep a voice when more play than the mixer has voices for.
+    ///
+    /// A higher priority wins however loud the others are; equal priorities
+    /// are ranked by loudness at the listener. Default [`DEFAULT_PRIORITY`] (128).
     pub priority: u8,
-    /// The internal playback state. This should be treated as read-only
-    /// by most systems outside of the audio engine itself.
+    /// The playback position, `None` until the sound plays; owned by the audio engine, not saved.
     #[component(skip)]
     pub state: Option<PlaybackState>,
 }
@@ -70,7 +69,7 @@ impl Default for AudioSource {
 pub const DEFAULT_PRIORITY: u8 = 128;
 
 impl AudioSource {
-    /// Creates a new `AudioSource`.
+    /// Creates a source of `handle` at full volume that plays as soon as it is added.
     pub fn new(handle: AssetHandle<SoundData>) -> Self {
         Self {
             handle,

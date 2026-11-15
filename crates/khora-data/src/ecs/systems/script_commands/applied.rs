@@ -20,9 +20,8 @@ use std::collections::HashMap;
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{WorldCommand, WriteTargetRef};
 
-/// For each component field, the positions among the frame's commands of the
-/// writes to it that applied, in order — and for each component written
-/// whole, the position of the last such write.
+/// The positions among the frame's commands of the applied writes to each
+/// component field, and of the last whole write of each component.
 #[derive(Debug, Default)]
 pub struct AppliedWrites {
     fields: HashMap<(EntityId, String, String), Vec<usize>>,

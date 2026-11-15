@@ -12,15 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `GlyphAtlas` — the rasterised glyphs of every text, on the GPU.
-//!
-//! A runtime resource, like [`UiImageAtlas`](super::UiImageAtlas): two
-//! [`TextureAtlas`]es — an R8 one for coverage masks, an RGBA one for colour
-//! glyphs — each made the first time a glyph of its kind needs it, and the
-//! slot of every glyph placed in them. The `glyphs_on_gpu` DataSystem fills
-//! it before any agent runs; the UI lane only reads it.
-//!
-//! Not a `Resident<R>`: a glyph is not an asset.
+//! [`GlyphAtlas`]: every text's rasterised glyphs on the GPU, a runtime
+//! resource the `glyphs_on_gpu` DataSystem fills before the agents run. Not a
+//! `Resident<R>`: a glyph is not an asset.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, MutexGuard};
@@ -56,13 +50,12 @@ pub struct GlyphSlot {
 /// # Locks
 ///
 /// One `Mutex` over the two atlases and the slots, above the device's leaf
-/// lock in the one order RULES §5 allows: held to look up, insert or remove,
-/// and across the device calls that upload into or replace its own textures
-/// — never across a call to the rasteriser, nor anything that calls back.
+/// lock: held across the device calls that upload into or replace its own
+/// textures, never across a call to the rasteriser or anything that calls back.
 pub struct GlyphAtlas {
     /// The side of each atlas, in pixels.
     size: u32,
-    /// The atlases and the slots, behind the one leaf lock.
+    /// The atlases and the slots, behind the one lock.
     state: Mutex<GlyphAtlasState>,
 }
 
@@ -75,9 +68,10 @@ struct GlyphAtlasState {
     /// Every glyph rasterised: its slot, or `None` for a glyph that draws
     /// nothing (a space), so it is not rasterised again.
     slots: HashMap<GlyphKey, Option<GlyphSlot>>,
-    /// The glyphs in use a full atlas left out, with their kind, and the
-    /// glyphs in use when they were: tried again once one of those is no
-    /// longer in use — only a glyph going away makes room.
+    /// The glyphs a full atlas left out, and the glyphs in use then.
+    ///
+    /// Tried again once one of those is no longer in use: only a glyph going
+    /// away makes room.
     left_out: Option<LeftOut>,
 }
 
@@ -103,7 +97,8 @@ pub(crate) enum Placement {
 }
 
 impl GlyphAtlas {
-    /// An empty atlas whose two textures, when made, are `size` pixels square.
+    /// Creates an empty atlas whose two textures, once made, are `size` pixels
+    /// square.
     #[must_use]
     pub fn new(size: u32) -> Self {
         Self {
@@ -123,14 +118,15 @@ impl GlyphAtlas {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// The slot of the glyph `key` names, if it is placed in an atlas. `None`
-    /// for a glyph not rasterised yet and for one that draws nothing.
+    /// Returns the slot of the glyph `key` names, if it is placed.
+    ///
+    /// `None` for a glyph not rasterised yet and for one that draws nothing.
     pub fn slot(&self, key: &GlyphKey) -> Option<GlyphSlot> {
         self.state().slots.get(key).copied().flatten()
     }
 
-    /// The views of the two atlases, `(mask, colour)`; `None` for an atlas not
-    /// made yet.
+    /// Returns the views of the two atlases, `(mask, colour)`; `None` for one
+    /// not made yet.
     pub fn views(&self) -> (Option<TextureViewId>, Option<TextureViewId>) {
         let state = self.state();
         (
@@ -139,8 +135,8 @@ impl GlyphAtlas {
         )
     }
 
-    /// The number of glyphs placed in an atlas (a glyph that draws nothing
-    /// is not one).
+    /// Returns the number of glyphs placed; one that draws nothing is not
+    /// counted.
     pub fn len(&self) -> usize {
         self.state()
             .slots
@@ -149,13 +145,13 @@ impl GlyphAtlas {
             .count()
     }
 
-    /// Whether no glyph is placed in an atlas.
+    /// Returns whether no glyph is placed.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    /// Whether the glyph `key` names was rasterised: placed, or known to
-    /// draw nothing.
+    /// Returns whether the glyph `key` names was rasterised: placed, or known
+    /// to draw nothing.
     pub(crate) fn knows(&self, key: &GlyphKey) -> bool {
         self.state().slots.contains_key(key)
     }
@@ -165,14 +161,16 @@ impl GlyphAtlas {
         self.state().slots.insert(key, None);
     }
 
-    /// Forgets every glyph of `font` — its file changed, so they are made
-    /// again. Their room in the atlas is not given back: a shelf packer
-    /// cannot free; a full atlas is rebuilt instead.
+    /// Forgets every glyph of `font`, whose file changed, so they are made again.
+    ///
+    /// Their room is not given back: a shelf packer cannot free, so a full
+    /// atlas is rebuilt instead.
     pub(crate) fn forget_font(&self, font: AssetUUID) {
         self.state().slots.retain(|key, _| key.font != font);
     }
 
-    /// The slot of the glyph `key` names, as far as the atlas knows it:
+    /// Returns what the atlas knows of the glyph `key` names.
+    ///
     /// `None` not rasterised, `Some(None)` drawn by nothing, `Some(Some(_))`
     /// placed.
     pub(crate) fn known(&self, key: &GlyphKey) -> Option<Option<GlyphSlot>> {
@@ -209,7 +207,7 @@ impl GlyphAtlas {
         Placement::Placed
     }
 
-    /// The glyphs a full atlas left out, and the glyphs in use then.
+    /// Returns the glyphs a full atlas left out, and the glyphs in use then.
     pub(crate) fn left_out(&self) -> Option<LeftOut> {
         self.state().left_out.clone()
     }
@@ -220,11 +218,11 @@ impl GlyphAtlas {
         self.state().left_out = (!left_out.glyphs.is_empty()).then_some(left_out);
     }
 
-    /// Builds the atlas of `kind` again with `images` alone — the glyphs of
-    /// that kind the current layouts use — and destroys the old texture and
-    /// its view. Every slot of the old atlas goes. Returns the images left
-    /// out: those a fresh atlas has no room for once the others are placed (a
-    /// glyph larger than an empty atlas is noted as drawn by nothing).
+    /// Builds the atlas of `kind` again with `images` alone, destroying the old
+    /// texture and its view.
+    ///
+    /// Every slot of the old atlas goes. Returns the images a fresh atlas has
+    /// no room for; one larger than an empty atlas is noted as drawn by nothing.
     pub(crate) fn rebuild(
         &self,
         device: &dyn GraphicsDevice,
@@ -277,7 +275,7 @@ impl GlyphAtlas {
 }
 
 impl GlyphAtlasState {
-    /// The atlas of `kind`, made on first need.
+    /// Returns the atlas of `kind`, made on first need.
     fn atlas_mut(
         &mut self,
         device: &dyn GraphicsDevice,
@@ -305,7 +303,7 @@ impl GlyphAtlasState {
     }
 }
 
-/// Bytes per pixel of an image of `kind`.
+/// Returns the bytes per pixel of an image of `kind`.
 fn bytes_per_pixel(kind: GlyphKind) -> u32 {
     match kind {
         GlyphKind::Mask => 1,
@@ -313,7 +311,7 @@ fn bytes_per_pixel(kind: GlyphKind) -> u32 {
     }
 }
 
-/// The slot of `image` placed at `rect`.
+/// Returns the slot of `image` placed at `rect`.
 fn slot_of(image: &GlyphImage, rect: AtlasRect) -> GlyphSlot {
     GlyphSlot {
         kind: image.kind,

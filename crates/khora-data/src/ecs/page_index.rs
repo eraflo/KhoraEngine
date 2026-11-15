@@ -14,14 +14,11 @@
 
 //! The address of an entity's row in a component page.
 
-/// A logical address pointing to an entity's component data within a specific `ComponentPage`.
-///
-/// This struct is the core of the relational aspect of our ECS. It decouples an entity's
-/// identity from the physical storage of its data by acting as a coordinate.
+/// The address of an entity's row: a page and a row in it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PageIndex {
-    /// The unique identifier of the `ComponentPage` that stores the component data.
+    /// The `ComponentPage` holding the row.
     pub page_id: u32,
-    /// The index of the row within the page where this entity's components are stored.
+    /// The row within the page.
     pub row_index: u32,
 }

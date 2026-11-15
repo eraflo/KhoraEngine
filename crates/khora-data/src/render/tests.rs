@@ -140,10 +140,11 @@ fn assert_vec_close(actual: Vec3, expected: Vec3, what: &str) {
 /// The scales the scaled-camera tests run over: uniform, non-uniform.
 const SCALES: [Vec3; 2] = [Vec3::new(2.0, 2.0, 2.0), Vec3::new(0.5, 3.0, 1.5)];
 
-/// The view the renderer is handed (`extract_active_camera_view`) and the
-/// view the lit pass and the shadow cascades are built around
-/// (`primary_view`) agree for a camera on a scaled entity: same
-/// view-projection at the same aspect, same position.
+/// The view the renderer is handed and the view the lit pass is built around
+/// agree for a scaled camera.
+///
+/// `extract_active_camera_view` and `primary_view` give the same
+/// view-projection at the same aspect, and the same position.
 #[test]
 fn a_scaled_camera_gives_the_same_view_proj_on_both_paths() {
     for scale in SCALES {
@@ -222,9 +223,10 @@ fn an_unscaled_camera_keeps_the_inverse_of_its_pose_as_its_view() {
     assert_vec_close(primary.position, POSE_TRANSLATION, "primary position");
 }
 
-/// `camera_view_matrix` of a scaled transform takes the camera's position
-/// to the view-space origin and is rigid: determinant one, and a unit
-/// direction stays a unit direction.
+/// `camera_view_matrix` of a scaled transform is rigid.
+///
+/// It takes the camera's position to the view-space origin, its determinant is
+/// one, and a unit direction stays a unit direction.
 #[test]
 fn the_view_of_a_scaled_camera_is_rigid_and_centred_on_it() {
     let unit_directions = [
@@ -298,8 +300,9 @@ fn the_extracted_view_is_the_camera_view_matrix() {
     }
 }
 
-/// A camera under a tiny uniform scale (a millimetre asset nested in a
-/// centimetre one) keeps its rotation: its view is that of the pose
+/// A camera under a tiny uniform scale keeps its rotation.
+///
+/// A millimetre asset nested in a centimetre one: its view is that of the pose
 /// without the scale.
 #[test]
 fn a_camera_under_a_tiny_uniform_scale_keeps_its_rotation() {
@@ -331,10 +334,11 @@ fn a_camera_flattened_on_one_axis_keeps_its_rotation() {
     assert_mat_close(flat, unscaled, "view of a camera flattened on Z");
 }
 
-/// A posed camera under a parent stretched to twice its height has a
-/// sheared world basis. It looks exactly where its world forward axis
-/// points: every point straight ahead of it along that axis (the camera
-/// looks down −Z) lands on the view's −Z axis, at its distance.
+/// A camera under a parent stretched to twice its height looks where its world
+/// forward axis points.
+///
+/// Its world basis is sheared; every point straight ahead along that axis (the
+/// camera looks down −Z) lands on the view's −Z axis, at its distance.
 #[test]
 fn a_camera_under_a_stretched_parent_looks_down_its_world_forward_axis() {
     let parent = Mat4::from_scale(Vec3::new(1.0, 2.0, 1.0));
@@ -436,9 +440,10 @@ fn broken_camera() -> Camera {
     Camera::new_perspective(FRAC_PI_4, 0.0, 100.0)
 }
 
-/// The first active camera is chosen before it is checked: when it is
-/// broken, it is reported as broken, and the valid active camera after
-/// it is not picked in its place.
+/// The first active camera is chosen before it is checked.
+///
+/// When it is broken, it is reported as broken, and the valid active camera
+/// after it is not picked in its place.
 #[test]
 fn a_broken_active_camera_is_reported_not_skipped() {
     let mut world = World::new();
@@ -499,9 +504,10 @@ fn no_active_camera_is_none() {
     assert!(extract_active_camera_view(&world, FALLBACK_ASPECT).is_none());
 }
 
-/// A broken active camera renders nothing: `primary_view` is `None`, and
-/// the editor's override — the fallback for *no* active camera — is not
-/// used in its place.
+/// A broken active camera renders nothing.
+///
+/// `primary_view` is `None`, and the editor's override, the fallback for *no*
+/// active camera, is not used in its place.
 #[test]
 fn primary_view_of_a_broken_camera_ignores_the_editor_override() {
     let mut world = World::new();

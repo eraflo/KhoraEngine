@@ -14,14 +14,10 @@
 
 //! An exponentially decaying event counter.
 
-/// An **evaporating** access tally — a counter that is added to on access and
-/// decays geometrically over time.
+/// An evaporating access tally: added to on access, decaying geometrically each tick.
 ///
-/// This is recency-weighting for free: a steady stream of accesses holds the
-/// value up, a burst that stops fades away, so the value tracks *current*
-/// pressure without a separate windowing scheme. (Stigmergy: the same mechanic
-/// as ant-trail pheromones — deposit on use, evaporate over time — and the
-/// discounted-count cousin of [`SlidingWindowUcb1`](super::SlidingWindowUcb1).)
+/// A steady stream of accesses holds the value up and a burst that stops fades
+/// away, so it tracks current pressure without a window.
 #[derive(Debug, Clone, Copy)]
 pub struct DecayCounter {
     value: f64,
@@ -29,8 +25,7 @@ pub struct DecayCounter {
 }
 
 impl DecayCounter {
-    /// Creates a counter starting at zero with per-tick retention `decay`,
-    /// clamped to `[0, 1]` (e.g. `0.9` keeps 90 % of the value each tick).
+    /// Creates a counter at zero keeping `decay` of its value each tick, clamped to `[0, 1]`.
     pub fn new(decay: f64) -> Self {
         Self {
             value: 0.0,
@@ -50,7 +45,7 @@ impl DecayCounter {
         self.value *= self.decay;
     }
 
-    /// The current (recency-weighted) value.
+    /// Returns the current, recency-weighted value.
     pub fn value(&self) -> f64 {
         self.value
     }

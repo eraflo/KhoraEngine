@@ -15,26 +15,23 @@
 use khora_core::math::{Mat4, Quaternion, Vec3};
 use khora_macros::Component;
 
-/// A component that describes an entity's position, rotation, and scale
-/// relative to its `Parent`. If the entity has no `Parent`, this is relative
-/// to the world origin.
+/// An entity's authored position, rotation and scale, relative to its `Parent` or the world.
 ///
-/// This is the component that users and other systems should modify. A dedicated
-/// transform propagation system will use this component's value to calculate
-/// the final `GlobalTransform`.
+/// This is the pose to edit; the engine composes it into the `GlobalTransform`.
+/// A simulated body's pose lives in `SimulatedTransform` instead.
 #[derive(Debug, Clone, Copy, PartialEq, Component)]
 #[component(domain = Spatial)]
 pub struct Transform {
-    /// The translation (position) of the entity.
+    /// The position, in world units, in the parent's space.
     pub translation: Vec3,
-    /// The rotation of the entity, represented as a quaternion.
+    /// The rotation, as a unit quaternion.
     pub rotation: Quaternion,
-    /// The scale of the entity.
+    /// The scale along each local axis; `1` leaves the size unchanged.
     pub scale: Vec3,
 }
 
 impl Transform {
-    /// Creates a new `Transform` with a given translation, rotation, and scale.
+    /// Creates a `Transform` from a translation, a rotation and a scale.
     pub fn new(translation: Vec3, rotation: Quaternion, scale: Vec3) -> Self {
         Self {
             translation,
@@ -43,7 +40,7 @@ impl Transform {
         }
     }
 
-    /// Creates a new `Transform` with a given translation, and identity rotation/scale.
+    /// Creates a `Transform` that only translates.
     pub fn from_translation(translation: Vec3) -> Self {
         Self {
             translation,
@@ -52,8 +49,7 @@ impl Transform {
         }
     }
 
-    /// Creates a new identity `Transform`, with no translation, rotation, or scaling.
-    /// This represents the origin.
+    /// Creates the identity `Transform`: at the origin, unrotated, unscaled.
     pub fn identity() -> Self {
         Self {
             translation: Vec3::ZERO,
@@ -62,12 +58,8 @@ impl Transform {
         }
     }
 
-    /// Calculates the `Mat4` transformation matrix from this component's
-    /// translation, rotation, and scale.
-    ///
-    /// The final matrix is calculated in the standard `Scale -> Rotate -> Translate` order.
+    /// Returns the matrix that scales, then rotates, then translates.
     pub fn to_mat4(&self) -> Mat4 {
-        // T * R * S
         Mat4::from_translation(self.translation)
             * Mat4::from_quat(self.rotation)
             * Mat4::from_scale(self.scale)

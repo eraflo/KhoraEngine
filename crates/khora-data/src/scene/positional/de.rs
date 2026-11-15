@@ -28,7 +28,7 @@ use serde::de::{
 use super::{unzigzag, FREE_ELEMENTS};
 use crate::scene::record::{EntityRef, RecordError, ReferenceReader, ENTITY_NAME, MAX_DEPTH};
 
-/// The deserializer.
+/// The positional deserializer, over bytes from a file.
 pub(super) struct Reader<'de, 'r> {
     input: &'de [u8],
     at: usize,
@@ -113,10 +113,10 @@ impl<'de, 'r> Reader<'de, 'r> {
         T::try_from(value).map_err(|_| error(format!("{value} does not fit a {what}")))
     }
 
-    /// A count of things, refused when the bytes left could not hold that
-    /// many. An element may take no bytes at all — a unit, a marker — so a
-    /// count may pass the bytes left by [`FREE_ELEMENTS`], never more: a
-    /// count no input backs is still refused before anything loops over it.
+    /// Reads a count, refused when the bytes left could not hold that many.
+    ///
+    /// An element may take no bytes (a unit, a marker), so a count may pass the
+    /// bytes left by [`FREE_ELEMENTS`], never more.
     fn count(&mut self) -> Result<usize, RecordError> {
         let count = self.varint()?;
         let count = usize::try_from(count).map_err(|_| error("a count too large"))?;

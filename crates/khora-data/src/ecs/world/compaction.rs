@@ -20,14 +20,10 @@ use super::World;
 use crate::ecs::{page::PageIndex, SemanticDomain};
 
 impl World {
-    /// Returns `true` if any of `entity`'s live metadata locations references
-    /// `(page_id, row)`. Domain-**agnostic** on purpose: in a multi-domain page a
-    /// physical row is dead only when *no* domain still points at it, so a
-    /// per-domain check (like the query layer's `is_live_row`) would wrongly
-    /// classify a row still live for another domain as an orphan and destroy it.
+    /// Returns whether any live location of `entity`, in any domain, references `(page_id, row)`.
     ///
-    /// A dead/recycled entity (generation mismatch or vacated metadata) counts as
-    /// not referencing the row, so its leftover row is reclaimable.
+    /// Domain-agnostic: a row of a mixed page is dead only when no domain
+    /// points at it. A dead or recycled entity references nothing.
     fn entity_references_row(&self, entity: EntityId, page_id: u32, row: usize) -> bool {
         let Some((slot_id, metadata_opt)) = self.entities.get(entity.index as usize) else {
             return false;
@@ -44,16 +40,10 @@ impl World {
             .any(|loc| loc.page_id == page_id && loc.row_index as usize == row)
     }
 
-    /// Compacts a single page: physically drops every row no live entity
-    /// references (a migration orphan), preserving order for the surviving rows.
+    /// Drops every row of page `page_id` no live entity references (migration orphans).
     ///
-    /// Reuses [`remove_from_page`](Self::remove_from_page) as the removal
-    /// primitive, so the survivor moved into each hole has its metadata repaired
-    /// across **all** its domains — the validation the former `cleanup_orphan_at`
-    /// lacked. Representation-only, but reordering rows changes query iteration
-    /// order, so the page's domain epochs are bumped when at least one row is
-    /// removed (order-sensitive Views — index-aligned light/audio lists — depend
-    /// on the bump). No bump when nothing was removed.
+    /// Removing a row reorders the page, so the epochs of its domains rise
+    /// when at least one row went; order-sensitive Views depend on it.
     pub(crate) fn compact_page(&mut self, page_id: u32) {
         match self.storage.pages.get(page_id as usize) {
             Some(page) if !page.entities.is_empty() => {}
@@ -69,12 +59,9 @@ impl World {
             }
             let entity = self.storage.pages[page_id as usize].entities[row];
             if self.entity_references_row(entity, page_id, row) {
-                // Live for some domain — keep it and advance.
                 row += 1;
             } else {
-                // Orphan: `remove_from_page` swap-removes it and repoints the
-                // survivor moved into the slot (across all its domains). The
-                // swapped-in row now sits at `row`, so re-check the same index.
+                // The swapped-in row now sits at `row`: checked next.
                 self.remove_from_page(PageIndex {
                     page_id,
                     row_index: row as u32,
@@ -84,7 +71,6 @@ impl World {
         }
 
         if removed_any {
-            // Iteration order for every domain this page participates in changed.
             let mut domains: Vec<SemanticDomain> = {
                 let page = &self.storage.pages[page_id as usize];
                 page.keys
@@ -98,19 +84,17 @@ impl World {
                 self.bump_domain_epoch(domain);
             }
 
-            // If compaction drained the page completely, recycle its slot so a
-            // later allocation reuses it instead of growing the pages vec.
+            // A drained page's slot is reused rather than growing the pages.
             if self.storage.pages[page_id as usize].entities.is_empty() {
                 self.storage.mark_page_free(page_id);
             }
         }
     }
 
-    /// Drains up to `budget` dirty pages and compacts each, returning the number
-    /// of pages processed. Called once per frame by
-    /// [`EcsMaintenance`](crate::ecs::EcsMaintenance) in `TickPhase::Maintenance`.
-    /// Pages beyond the budget stay queued for the next frame — harmless, since
-    /// the query layer already skips orphan rows via `is_live_row`.
+    /// Compacts up to `budget` dirty pages and returns how many it processed.
+    ///
+    /// Pages beyond the budget stay queued; queries skip orphan rows meanwhile.
+    /// See the book: concepts/ecs.md, "Maintenance is a service, not an agent".
     pub(crate) fn run_compaction(&mut self, budget: usize) -> usize {
         if budget == 0 || self.storage.dirty_pages.is_empty() {
             return 0;

@@ -12,33 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Recording live behavior state back into the scene.
+//! Writes what the script lane made of each running behavior back to the
+//! World: its changed fields, and its state companion.
 //!
-//! The counterpart of [`script_commands`]: that one applies what a script asked
-//! for, this one applies what the engine observed. Both drain a deck slot at the
-//! frame boundary, which is where the `World` may be written.
-//!
-//! # Why the component has to be current at every moment
-//!
-//! A save can happen at any frame, and it reads the `World` — so the entity has
-//! to already hold what the lane has made of the behavior. Waiting for a "save
-//! is coming" signal would put the answer one frame behind the question, and a
-//! save is synchronous.
-//!
-//! # Why two components
-//!
-//! What a turn changed of the behavior's fields goes into the behavior's own
-//! component — the fields a scene holds, edited by the game as it plays —
-//! and what the engine keeps to resume the instance goes into its state
-//! companion, `Guard#state`, which only a game save holds. Writing the
-//! engine's state into the authored component would make every scene saved
-//! after a run carry that run.
-//!
-//! It is affordable because the lane sends only the instances that spent fuel:
-//! a behavior that handled no event ran no code and changed nothing, so a quiet
-//! frame writes nothing at all.
-//!
-//! [`script_commands`]: super::script_commands
+//! A save may read the World at any frame, so this runs every frame; the lane
+//! sends only the instances that spent fuel, so a quiet frame writes nothing.
+//! See the book: concepts/scripting/saves-and-edits.md, "Saved mid-sentence".
 
 use crate::ecs::SystemContext;
 use khora_core::lane::OutputDeck;
@@ -67,9 +46,8 @@ inventory::submit! {
     DataSystemRegistration {
         name: "behavior_writeback",
         phase: TickPhase::Maintenance,
-        // After `script_commands` (20): a despawn the script asked for should
-        // have happened before its state is written, so the write finds nothing
-        // rather than recording state for an entity about to vanish.
+        // After `script_commands` (20): a despawn a script asked for lands
+        // first, so no state is recorded for an entity about to vanish.
         order_hint: 30,
         run: behavior_writeback,
         runs_after: &[],

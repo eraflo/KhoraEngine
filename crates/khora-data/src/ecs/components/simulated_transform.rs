@@ -12,46 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Where the simulation put an entity, as opposed to where its author did.
+//! [`SimulatedTransform`]: where the simulation put an entity, as opposed to
+//! where its author did.
 //!
-//! # Why this is not `Transform`
-//!
-//! `ComponentProvenance` says who has the right to **write** a component, and
-//! `Transform` is `Authored`: a human, a tool, or game code. The physics
-//! writeback used to overwrite it every frame anyway, so one field held two
-//! different facts — what the designer declared, and what gravity made of it —
-//! and nothing could tell them apart. Everything downstream inherited the
-//! ambiguity: saving a scene mid-play recorded the simulated pose over the
-//! authored one, the inspector showed a number the designer never typed, and a
-//! gizmo drag anchored on wherever the body had fallen to.
-//!
-//! # Why `Runtime` and not `Derived`
-//!
-//! `Derived` means *recomputed by the engine from `Authored` state* — that is
-//! why a duplicate must not carry a copy, and why `GlobalTransform` is one. A
-//! pose after five seconds of falling is **not** recomputable from the authored
-//! data: it depends on the path taken, on every contact along the way, on the
-//! integrator. That is `Runtime` exactly as the axis defines it — *per-run
-//! transient state that no one authors and nothing recomputes from authored
-//! data* — and it is what keeps this out of scene files without a single line
-//! of filtering, because the serializer already honours the axis.
-//!
-//! # It is a world pose
-//!
-//! The provider reports where a body is in the world, and this holds that
-//! verbatim. It is deliberately **not** composed with a parent: a body parented
-//! to a moving platform is simulated in world space, and the old code's habit of
-//! writing the world pose into the *local* `Transform` and letting propagation
-//! multiply it by the parent again is what made a parented body drift by its
-//! parent's transform every single frame.
+//! See the book: concepts/physics.md, "Who owns a pose".
 
 use khora_core::math::{AffineTransform, Mat4, Quat, Vec3};
 use khora_macros::Component;
 use serde::{Deserialize, Serialize};
 
-/// The world pose the simulation currently gives an entity.
+/// The world pose the simulation currently gives an entity, never composed with a parent.
 ///
-/// Present only while something simulates it. [`transform_propagation`] prefers
+/// Runtime state, never saved. Present only while something simulates the
+/// entity. [`transform_propagation`] prefers
 /// it over the authored `Transform` when it is there; [`physics_release`]
 /// removes it once the entity has neither a body nor a character controller,
 /// handing the pose back to the `Transform`.
@@ -63,23 +36,22 @@ use serde::{Deserialize, Serialize};
 pub struct SimulatedTransform(pub AffineTransform);
 
 impl SimulatedTransform {
-    /// The pose a provider just reported.
+    /// Creates the pose a provider just reported.
     ///
-    /// No scale: a solver moves and turns a body, it does not resize one, and
-    /// inventing a scale here would overwrite the author's on the way to
-    /// `GlobalTransform`.
+    /// It holds no scale: a solver never resizes a body, and a scale here would
+    /// overwrite the author's on the way to `GlobalTransform`.
     pub fn from_parts(translation: Vec3, rotation: Quat) -> Self {
         Self(AffineTransform(
             Mat4::from_translation(translation) * Mat4::from_quat(rotation),
         ))
     }
 
-    /// Where it is.
+    /// Returns the world position.
     pub fn translation(&self) -> Vec3 {
         self.0.translation()
     }
 
-    /// How it is oriented.
+    /// Returns the world rotation.
     pub fn rotation(&self) -> Quat {
         self.0.rotation()
     }

@@ -29,15 +29,9 @@ use serde_json::{Map, Value as Json};
 
 /// How one table row becomes JSON.
 ///
-/// Three rows answer for themselves. `Bool` and `Int` are cheaper as their own
-/// JSON kinds than through serde, and a `Float` has to **refuse** a NaN with a
-/// message naming the field — `serde_json` turns one into `null`, which
-/// deserializes as a missing field and leaves the author hunting a write that
-/// appeared to succeed. Everything else derives `Serialize`, so its JSON shape
-/// is by construction the one the mirror expects.
-///
-/// Matching on the literal variant before the general arm is how
-/// `ergon_type!` already spells an exception in a generated table.
+/// `Bool` and `Int` are cheaper as their own JSON kinds than through serde, and
+/// a `Float` must refuse a NaN. Every other row derives `Serialize`, so its
+/// shape is the one the mirror expects.
 macro_rules! json_of {
     (Bool, $inner:expr) => {
         Json::Bool(*$inner)
@@ -58,10 +52,7 @@ macro_rules! define_to_json {
         /// Converts a script value into JSON the component mirror can read.
         ///
         /// Generated from [`script_value_table`](khora_core::script_value_table)
-        /// rather than listed. Six of the nine rows were spelled out here — the
-        /// fifth conversion of the same universe, and the one the value bridge
-        /// was written to remove. There is no `_` arm: a row added to the table
-        /// has to break this file, not slip past it.
+        /// with no `_` arm, so a row added to the table breaks this file.
         pub(super) fn to_json(value: &ScriptValue) -> Result<Json, String> {
             Ok(match value {
                 $(ScriptValue::$variant(inner) => json_of!($variant, inner),)*
@@ -93,9 +84,10 @@ fn encode<T: serde::Serialize>(value: &T) -> Result<Json, String> {
     serde_json::to_value(value).map_err(|error| error.to_string())
 }
 
-/// JSON numbers are finite, so a NaN or an infinity is refused rather than
-/// quietly becoming `null` — which would deserialize as a missing field and
-/// leave the author looking for a write that appeared to succeed.
+/// Returns `number` as a JSON number, refusing a NaN or an infinity.
+///
+/// `serde_json` would make it `null`, which deserializes as a missing field:
+/// a write that seems to succeed and changes nothing.
 fn number_from_float(number: f32) -> Result<Json, String> {
     serde_json::Number::from_f64(number as f64)
         .map(Json::Number)

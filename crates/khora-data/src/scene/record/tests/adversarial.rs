@@ -48,10 +48,11 @@ struct Sprite {
     size: u32,
 }
 
-/// A save written before `color` existed and while `size` was `scale`: the
-/// read renamed `size` and defaulted `color`. The report must say exactly
-/// that — not that `color` was read from `scale` and `size` defaulted, which
-/// tells the author the size they saved was lost.
+/// A save from before `color`, while `size` was `scale`, reports `size`
+/// renamed and `color` defaulted.
+///
+/// Never `color` read from `scale` and `size` defaulted: that tells the author
+/// the size they saved was lost.
 #[test]
 fn an_alias_sorting_after_an_absent_earlier_field_is_paired_with_its_owner() {
     let old = structure("Sprite", vec![("scale", Record::U64(4))]);
@@ -77,9 +78,8 @@ struct Slot {
     weight: f32,
 }
 
-/// A map keyed by entity — how the engine keys per-entity data — reports
-/// what the read dropped inside its values, like a map keyed by number or by
-/// name does.
+/// A map keyed by entity reports what the read dropped inside its values, as
+/// a map keyed by number or by name does.
 #[test]
 fn a_dropped_field_inside_a_map_keyed_by_entity_is_reported() {
     let mut table = IdTable::default();
@@ -134,10 +134,9 @@ fn a_dropped_field_inside_a_map_entry_under_a_renamed_key_is_reported() {
     );
 }
 
-/// Two entries whose keys become equal once read — an old name and the new
-/// name of the same variant — cannot both survive: one value is lost. The
-/// read either refuses the save or says something was lost; it never
-/// reports a clean load that silently threw an entry away.
+/// Two entries whose keys become equal once read (an old and a new variant name) never load clean.
+///
+/// One value is lost: the read either refuses the save or says so.
 #[test]
 fn map_entries_merged_by_a_key_rename_are_not_lost_silently() {
     let old = Record::Map(vec![
@@ -159,9 +158,8 @@ fn map_entries_merged_by_a_key_rename_are_not_lost_silently() {
     }
 }
 
-/// A byte string read into a fixed-size array holds exactly as many bytes as
-/// the array; more is a value the code cannot keep, and is refused like
-/// surplus elements of a list are.
+/// A byte string longer than the fixed-size array it is read into is refused,
+/// as surplus elements of a list are.
 #[test]
 fn surplus_bytes_read_into_a_fixed_size_value_are_refused() {
     let four = Record::Bytes(vec![1, 2, 3, 4]);
@@ -181,9 +179,8 @@ fn surplus_bytes_read_into_a_fixed_size_value_are_refused() {
     );
 }
 
-/// A frozen machine in the compact form of a self-describing binary format,
-/// where a struct is written as the list of its fields, reads back as the
-/// machine it was.
+/// A frozen machine written by a binary format that lists a struct's fields
+/// reads back as the machine it was.
 #[test]
 fn a_frozen_machine_round_trips_through_compact_messagepack() {
     let machine = FrozenMachine {
@@ -205,9 +202,7 @@ struct Box2 {
     size: u32,
 }
 
-/// A field read from the save is not a default: whatever the report calls a
-/// field whose read and write names differ, it must not tell the author the
-/// value they saved was replaced by a default.
+/// A field whose read and write names differ is never reported as defaulted.
 #[test]
 fn a_field_read_under_its_deserialize_name_is_not_called_defaulted() {
     let saved = structure("Box2", vec![("extent", Record::U64(9))]);
@@ -233,9 +228,8 @@ impl Default for Pair2 {
     }
 }
 
-/// A struct read from the list of its fields — a form the reader accepts —
-/// that stops short of the last one: the missing field took its default, and
-/// the report says so as it does for a struct read by name.
+/// A struct read from a list of its fields that stops short reports the
+/// missing field defaulted, as a struct read by name does.
 #[test]
 fn a_struct_read_from_a_short_list_reports_the_defaulted_field() {
     let saved = Record::Seq(vec![Record::U64(1)]);

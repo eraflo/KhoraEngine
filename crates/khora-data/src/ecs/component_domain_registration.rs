@@ -12,24 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The `ComponentDomainRegistration` inventory entry: how a derived component
-//! registers itself into a world with its declared domain.
+//! The inventory entry by which a derived component registers itself into a world.
 
-/// Inventory entry submitted by `#[derive(Component)]` when the type carries a
-/// `#[component(domain = ...)]` attribute.
+/// The storage half of a derived component, with its declared domain.
 ///
-/// Each entry registers one concrete component type into a [`crate::ecs::World`]
-/// with its declared [`SemanticDomain`](crate::ecs::SemanticDomain), so domain
-/// assignment is a **property of the type** (single source of truth) instead of
-/// a hand-maintained list in `World::new`. Collected via [`inventory`] and
-/// replayed by `World::new`.
-///
-/// It is the storage half of a Rust component; its persistence half is its
-/// `ComponentRegistration`. The world's
+/// Collected via [`inventory`] and replayed by `World::new`. Its persistence
+/// half is its `ComponentRegistration`; the world's
 /// [`ComponentRegistry`](crate::ecs::ComponentRegistry) joins both into one
 /// [`ComponentVTable`](crate::ecs::ComponentVTable).
+/// See the book: concepts/ecs.md, "Registration".
 pub struct ComponentDomainRegistration {
-    /// Registers the component into `world` (calls `World::register_component`).
+    /// Registers the component into `world`.
     pub register: fn(&mut crate::ecs::World),
 }
 

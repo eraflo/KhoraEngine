@@ -12,22 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A behavior's state companion, read as a [`ScriptSnapshot`] and written
-//! from one.
-//!
-//! The companion `Guard#state` holds what the engine keeps of a running
-//! instance — its state by name, that state's data, its countdowns, a
-//! suspended sequence, its lifecycle — in the same fixed fields for every
-//! behavior. The behavior's own fields are not part of it: they are the
-//! behavior's component, `Guard`.
+//! A behavior's state companion (`Guard#state`): the fixed fields the engine
+//! keeps of a running instance beside the behavior's own, read as a
+//! [`ScriptSnapshot`] and written from one.
 
 use khora_core::script::value_serde::{from_value, to_value, ValueSerdeError};
 use khora_core::script::{InstanceLifecycle, ScriptSnapshot, ScriptValue};
 
-/// The companion's fields, by name, in its layout's order, recording
-/// `snapshot`'s state, state data, countdowns, suspended sequence and
-/// lifecycle. The snapshot's `fields` are the behavior's component's, and are
-/// left out.
+/// Returns the companion's fields, in its layout's order, recording `snapshot`.
+///
+/// The snapshot's `fields` are the behavior's component's, and are left out.
+///
+/// # Errors
+///
+/// When a countdown, a suspended sequence or a fault does not convert to a
+/// script value.
 pub fn companion_row(
     snapshot: &ScriptSnapshot,
 ) -> Result<Vec<(String, ScriptValue)>, ValueSerdeError> {
@@ -71,9 +70,13 @@ pub fn companion_row(
     ])
 }
 
-/// What a companion's fields record: the snapshot, its own fields empty.
-/// A field the companion no longer declares — `initialised`, from before an
-/// instance's defaults were data — is ignored.
+/// Returns the snapshot a companion's fields record, its `fields` empty.
+///
+/// A field the companion does not declare is ignored.
+///
+/// # Errors
+///
+/// When a required field is missing or holds the wrong type.
 pub fn companion_snapshot(
     row: &[(String, ScriptValue)],
 ) -> Result<ScriptSnapshot, ValueSerdeError> {
@@ -119,12 +122,12 @@ pub fn companion_snapshot(
             spawned: flag("spawned")?,
             fault: from_value(field("fault")?)?,
             resume_failed: from_value(field("resume_failed")?)?,
-            // A companion from before owed time was kept owes none.
+            // The owed times are optional: a companion saved without them
+            // owes none.
             owed: match row.iter().find(|(known, _)| known == "owed") {
                 Some((_, ScriptValue::Float(owed))) => *owed,
                 _ => 0.0,
             },
-            // Nor one from before an `Update` kept the time it was not handed.
             update_owed: match row.iter().find(|(known, _)| known == "update_owed") {
                 Some((_, ScriptValue::Float(owed))) => *owed,
                 _ => 0.0,

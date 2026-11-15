@@ -17,19 +17,15 @@
 
 use super::*;
 
-/// `record` as this build reads it: loaded into a world of its own, among
-/// `entities`, and written down again — components by today's names, fields
-/// by today's names, every value at today's type.
+/// Returns `record` as this build reads it, and what the reading adapted.
 ///
-/// `entities` are every entity the values may refer to, so a reference to
-/// one the record has no row for is still a reference, not an outside one.
+/// Components and fields come back by today's names, values at today's type.
+/// `entities` lists every entity the values may refer to, so a reference to one
+/// without a row stays a reference. A script-declared component is read under
+/// its declaration in `under` when there is one, else under the record's own.
 ///
-/// A component declared while the engine ran is read under `under` where it
-/// names it — the declaration the record is compared against — and under the
-/// record's own otherwise.
-///
-/// With it, what the reading adapted: a value read at today's type is no
-/// longer the one the file holds.
+/// # Errors
+/// The record cannot be loaded or captured again.
 pub(super) fn as_read(
     record: &SceneRecord,
     entities: Vec<PersistentId>,
@@ -59,7 +55,7 @@ pub(super) fn as_read(
         })
 }
 
-/// `scene` as this build reads it, its declared components under `under`.
+/// Returns `scene` as this build reads it, its declared components under `under`.
 pub(crate) fn scene_as_read(
     scene: &SceneRecord,
     under: &[DeclaredRecord],
@@ -80,15 +76,12 @@ pub(super) struct Read {
     pub(super) created: HashSet<PersistentId>,
     pub(super) listed: HashSet<PersistentId>,
     pub(super) removed: HashMap<PersistentId, Vec<String>>,
-    /// What reading the scene, the save's changes and its before-image
-    /// adapted, for the load to report: the merge sees only the values as
-    /// read.
+    /// What reading the scene, the changes and the before-image adapted, for the load to report.
     pub(super) report: Vec<ReportEntry>,
 }
 
 impl Read {
-    /// Every declaration the records read describe — the scene's last, so it
-    /// wins: the save was read under it.
+    /// Returns every declaration the records describe, the scene's last so it wins.
     pub(super) fn declarations(&self) -> impl Iterator<Item = &DeclaredRecord> {
         self.before
             .declared
@@ -97,8 +90,10 @@ impl Read {
             .chain(&self.base.declared)
     }
 
-    /// Reads `save` against `base`. What cannot be read is the error, with
-    /// the record that could not.
+    /// Reads `save` against `base`.
+    ///
+    /// # Errors
+    /// The record that cannot be read, with why.
     pub(super) fn new(base: &SceneRecord, save: &SaveRecord) -> Result<Read, Unreadable> {
         let (base, base_report) =
             scene_as_read(base, &[]).map_err(|failure| Box::new((base.clone(), failure)))?;
@@ -134,12 +129,10 @@ impl Read {
         let (before, before_report) =
             as_read(&save.before, everyone.clone(), Kept::Scene, &base.declared)
                 .map_err(|failure| unreadable(&save.before, failure))?;
-        // A reference to an entity no record holds is read as it was written,
-        // and the load reports it where it lands; everything else the reading
-        // adapted is gone from the values the merge sees. An unusable value is
-        // judged on what the merge composes, not on any one record: the load
-        // that stages the composed value reports it, once — a value one record
-        // holds broken may be fixed by another.
+        // The merge sees only the values as read, so their adaptations are kept
+        // here. Dead references and unusable values are left to the load of the
+        // composed record, which reports each once where it lands: a value one
+        // record holds broken may be fixed by another.
         let report: Vec<ReportEntry> = [base_report, changes_report, before_report]
             .into_iter()
             .flat_map(|read| read.entries)
@@ -175,20 +168,21 @@ impl Read {
         })
     }
 
-    /// Whether the save says anything of `id`, one of the scene's entities.
+    /// Returns whether the save says anything of `id`, one of the scene's entities.
     pub(super) fn diverged(&self, id: PersistentId) -> bool {
         self.listed.contains(&id) || self.removed.contains_key(&id)
     }
 
-    /// The components the game removed from `id`, by today's names.
+    /// Returns the components the game removed from `id`, by today's names.
     pub(super) fn removed_from(&self, id: PersistentId) -> &[String] {
         self.removed.get(&id).map_or(&[][..], Vec::as_slice)
     }
 
-    /// The order the merged world lists its entities in: the save's, less
-    /// what the scene lost, with what the scene gained since right after the
-    /// entity before it in the scene. Reports each entity the save changed
-    /// that the scene no longer has.
+    /// Returns the order of the merged world's entities, reporting what the scene lost.
+    ///
+    /// The save's order, less what the scene lost, with each entity the scene
+    /// gained since right after its predecessor in the scene. Each entity the
+    /// save changed that the scene no longer has is reported `RemovedFromScene`.
     pub(super) fn order(
         &self,
         save: &SaveRecord,
@@ -232,8 +226,7 @@ impl Read {
     }
 }
 
-/// Lays out the entities the author added to the scene after `key`, each
-/// followed by the ones added after it.
+/// Lays out the entities the author added after `key`, each followed by those added after it.
 pub(super) fn follow(
     key: Option<PersistentId>,
     after: &mut HashMap<Option<PersistentId>, Vec<PersistentId>>,

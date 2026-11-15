@@ -12,35 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Telling behaviors that something touched them.
+//! Raises a [`ScriptEvent`] for each side of this frame's collisions that runs
+//! a behavior.
 //!
-//! The first producer the engine has ever had for
-//! [`ScriptEvent`](khora_core::script::ScriptEvent). The queue and the drain
-//! were written frames apart and both worked; nothing filled the queue, so
-//! `on Touched(...)` was a handler a script could declare and never see fire.
-//!
-//! ```text
-//!   Channel<Collision>  ──►  this  ──►  Channel<ScriptEvent>  ──►  agent
-//!   (physics, this frame)                                    (next frame)
-//! ```
-//!
-//! # One contact, up to two events
-//!
-//! A collision names two entities and neither is the subject: a behavior asks
-//! "what touched *me*", so each side gets its own event carrying the other.
-//!
-//! # Only for entities that run a behavior
-//!
-//! A contact between two pieces of scenery would otherwise put two events in a
-//! bounded channel for nobody to handle, and a busy frame of scenery would drop
-//! the events that had a handler waiting. The check is a behavior's component,
-//! which is what makes an entity one the scripting agent will run at all.
-//!
-//! # Delivery is next frame
-//!
-//! Because it is a channel, and because that is the rule everywhere in
-//! scripting: an event handled where it was raised opens a cascade with no
-//! bound, and a budget that cannot bound the work it pays for is not a budget.
+//! Each side gets its own event, carrying the other entity. Scenery gets none:
+//! its events would crowd the bounded channel and drop the ones a handler
+//! waits for. See the book: concepts/scripting/events.md,
+//! "An event is never delivered in the frame it was raised".
 
 use crate::ecs::SystemContext;
 use khora_core::event::Channel;
@@ -51,10 +29,10 @@ use khora_core::Runtime;
 
 use crate::ecs::{DataSystemRegistration, TickPhase, World};
 
-/// What a behavior declares to hear that something started touching it.
+/// The event a behavior declares to hear that something started touching it.
 pub const TOUCHED: &str = khora_core::script::event::TOUCHED.name;
 
-/// And to hear that it stopped.
+/// The event a behavior declares to hear that something stopped touching it.
 pub const SEPARATED: &str = khora_core::script::event::SEPARATED.name;
 
 fn collision_to_script(
@@ -181,8 +159,7 @@ mod tests {
         );
     }
 
-    /// **The first producer this queue has ever had.** Before it, `on Touched`
-    /// was a handler a script could declare and never see fire.
+    /// A contact reaches the scripted side as `Touched`, carrying the other.
     #[test]
     fn a_contact_becomes_an_event_for_the_scripted_side() {
         let (mut world, scripted, plain) = a_world();
@@ -225,9 +202,8 @@ mod tests {
         assert!(raised.iter().any(|e| e.target == other));
     }
 
-    /// **The bounded channel is why this filters.** Two pieces of scenery
-    /// grinding together would otherwise fill it with events nobody handles,
-    /// and drop the ones that had a handler waiting.
+    /// **Scenery raises nothing**: its events would fill the bounded channel and
+    /// drop the ones a handler waits for.
     #[test]
     fn scenery_touching_scenery_raises_nothing() {
         let mut world = World::new();
@@ -333,9 +309,8 @@ mod tests {
         events.drain()
     }
 
-    /// **A behavior is a component.** Adding `Guard` to an entity is what
-    /// attaches the behavior, so holding it is what makes
-    /// the entity hear that something touched it.
+    /// **A behavior is a component**: holding `Guard` is what makes an entity
+    /// hear that something touched it.
     #[test]
     fn an_entity_holding_a_behavior_component_hears_it_was_touched() {
         let mut world = World::new();
@@ -394,9 +369,8 @@ mod tests {
             .any(|e| e.target == other && e.args == vec![ScriptValue::Entity(one)]));
     }
 
-    /// A declared component with no role is data, not a program: an entity
-    /// holding only that runs nothing, so an event for it would only take a
-    /// place in the bounded channel.
+    /// A declared component with no role is data, not a program: its holder
+    /// runs nothing, so it hears nothing.
     #[test]
     fn an_entity_holding_only_a_plain_declared_component_hears_nothing() {
         let mut world = World::new();
@@ -407,9 +381,8 @@ mod tests {
         assert!(raised_by(&mut world, CollisionKind::Started, holder, plain).is_empty());
     }
 
-    /// A state companion is what the engine keeps of a behavior, not the
-    /// behavior: left alone on an entity (its behavior removed), it runs
-    /// nothing.
+    /// A state companion left alone on an entity (its behavior removed) runs
+    /// nothing, so it hears nothing.
     #[test]
     fn an_entity_holding_only_a_state_companion_hears_nothing() {
         let mut world = World::new();
@@ -443,9 +416,8 @@ mod tests {
         assert!(raised_by(&mut world, CollisionKind::Started, holder, plain).is_empty());
     }
 
-    /// An entity running two behaviors is one subject: one event per side
-    /// of the contact, which the lane hands to each behavior it runs, never
-    /// two in the channel.
+    /// An entity running two behaviors is one subject: one event per side, which
+    /// the lane hands to each behavior it runs.
     #[test]
     fn an_entity_holding_two_behaviors_hears_a_contact_once() {
         let mut world = World::new();
@@ -501,9 +473,8 @@ mod tests {
         assert!(raised.is_empty(), "{raised:?}");
     }
 
-    /// An orphaned behavior — no script declares it any more, its role and
-    /// data kept — is still one the flow projects, so its holder still hears
-    /// contacts: who is told follows who runs.
+    /// An orphaned behavior (no script declares it any more) still runs, so its
+    /// holder still hears contacts.
     #[test]
     fn an_orphaned_behavior_holder_still_hears_a_contact() {
         let mut world = World::new();
@@ -529,10 +500,8 @@ mod tests {
         run(&mut world, &runtime);
     }
 
-    /// **Who is told follows who runs, under a scope too.** The scripts are
-    /// limited to `Preview`: a contact between an unmarked scripted entity and
-    /// a marked one tells the marked one only — the unmarked one is not run,
-    /// and its event would only take a place in the bounded channel.
+    /// **Who is told follows who runs, under a scope too**: with the scripts
+    /// limited to `Preview`, only the marked side of a contact is told.
     #[test]
     fn a_scoped_contact_tells_only_the_entity_in_the_scope() {
         let mut world = World::new();

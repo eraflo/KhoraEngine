@@ -12,13 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The world's clock and the components its observers watch.
+//! The world's clock, one tick per run and never going back, and the components
+//! its observers watch.
 //!
-//! A `World` counts runs: one tick per run of a system, a flow or a wave,
-//! from one (zero means "never ran"), never going back. And it knows which
-//! components are watched for change — the ones a `DataSystem` or a `Flow`
-//! declares it `observes`, and the declared ones a script asks to be watched
-//! while the engine runs.
+//! See the book: concepts/change-detection.md, "The clock".
 
 use crate::ecs::SystemContext;
 use khora_core::lane::OutputDeck;
@@ -163,9 +160,8 @@ fn every_world_has_its_own_clock() {
 
 // --- the observed keys ---
 
-/// The registrations are where a world learns what is watched: a new world
-/// observes every key a `DataSystem` or a `Flow` declares it `observes`, and
-/// none other.
+/// A new world observes every key a `DataSystem` or a `Flow` declares it
+/// `observes`, and none other.
 #[test]
 fn observed_keys_come_from_the_registrations() {
     let world = World::new();

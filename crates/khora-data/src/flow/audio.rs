@@ -12,20 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `AudioFlow` — projects the ECS audio domain into a per-tick
-//! [`AudioView`] consumed by `SpatialMixingLane`.
-//!
-//! Replaces the previous design where the lane queried `World` directly
-//! (and mutated `AudioSource.state.cursor` in place from the audio
-//! callback thread). Per CLAD, lanes consume Views from the
-//! [`LaneBus`](khora_core::lane::LaneBus) and write outputs into the
-//! [`OutputDeck`](khora_core::lane::OutputDeck) — they do not query the
-//! World.
-//!
-//! The matching `audio_playback_writeback` `DataSystem`
-//! ([`crate::ecs::systems::audio_playback_writeback`], `Maintenance`
-//! phase) drains the writeback slot the lane wrote into and applies the
-//! new playback states back to the `AudioSource` components.
+//! `AudioFlow`: the listener and every playing source, projected into the
+//! [`AudioView`] `SpatialMixingLane` mixes.
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::math::affine_transform::AffineTransform;
@@ -59,19 +47,17 @@ pub struct AudioSourceSnapshot {
     pub autoplay: bool,
     /// How much the source matters when it competes for a voice.
     pub priority: u8,
-    /// Current playback state, copied from the component each frame.
-    /// Mutations made by the lane go through
-    /// [`AudioPlaybackWriteback`].
+    /// Playback state, copied from the component each frame.
+    ///
+    /// The lane's changes go back through [`AudioPlaybackWriteback`].
     pub state: Option<PlaybackState>,
 }
 
-/// View published by [`AudioFlow`] into the
-/// [`LaneBus`](khora_core::lane::LaneBus). Carries the listener pose
-/// and a snapshot of every active `AudioSource`.
+/// The listener's pose and a snapshot of every admitted source, published
+/// by [`AudioFlow`].
 #[derive(Debug, Default, Clone)]
 pub struct AudioView {
-    /// Number of `AudioSource` components in the world (kept for
-    /// backwards-compat telemetry).
+    /// Number of `AudioSource` components in the world, admitted or not.
     pub source_count: usize,
     /// World-space translation of the first `AudioListener`, if any.
     pub listener_position: Option<Vec3>,
@@ -82,7 +68,8 @@ pub struct AudioView {
     pub sources: Vec<AudioSourceSnapshot>,
 }
 
-/// Audio domain Flow — read-only projection of the audio domain.
+/// Publishes [`AudioView`], from the audio sources, the first listener and
+/// their `GlobalTransform`s.
 #[derive(Default)]
 pub struct AudioFlow;
 
@@ -93,10 +80,8 @@ impl Flow for AudioFlow {
     const NAME: &'static str = "audio";
     const ROLE: crate::ecs::Role = crate::ecs::Role::Serves(khora_core::audio::AUDIO);
 
-    /// The projection below reads only `AudioSource` / `AudioListener`
-    /// (Audio domain) and `GlobalTransform` (Spatial domain) — no runtime
-    /// state — so those two epochs (plus the World instance id) fully
-    /// determine the view.
+    /// Keyed by the Audio and Spatial epochs: the projection reads no runtime
+    /// state.
     fn cache_key(&self, world: &World, _runtime: &Runtime) -> Option<u64> {
         Some(crate::flow::combine_cache_key([
             world.instance_id(),
@@ -116,10 +101,6 @@ impl Flow for AudioFlow {
         // The listener is the scene's, scoped or not: a sound previewed is
         // heard from where the scene is heard. The sources are those the
         // family's scope admits.
-        //
-        // Snapshot every source so the mixing lane never needs to touch
-        // the World. The snapshot copy is cheap because `state` is a
-        // small `Option<PlaybackState>` and `handle` is an `Arc`.
         let mut sources = Vec::with_capacity(source_count);
         // The entity keys the writeback: the playback update lands on the
         // source it was made for, whichever sources the View leaves out.
@@ -172,10 +153,11 @@ mod tests {
             .collect()
     }
 
-    /// **An unchanged key means an unchanged view.** A source whose row is
-    /// shared with a Render component (one mixed bundle) moves page when a
-    /// Render component is added to it; its sources come out in another order,
-    /// so the cached view, in the old one, must not be served.
+    /// **An unchanged key means an unchanged view.**
+    ///
+    /// A source whose row is shared with a Render component (one mixed bundle)
+    /// moves page when a Render component is added to it; its sources come out
+    /// in another order, so the cached view, in the old one, must not be served.
     #[test]
     fn a_source_moved_by_a_render_migration_invalidates_the_audio_cache() {
         let mut world = World::new();

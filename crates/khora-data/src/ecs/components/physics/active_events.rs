@@ -15,14 +15,11 @@
 use khora_macros::Component;
 use serde::{Deserialize, Serialize};
 
-/// Indicates that an entity should receive collision events.
-/// By default, the physics engine does not report collisions for every entity
-/// to save on performance. Adding this component enables reporting for this entity.
-// `Authored`, the default, and deliberately: a designer adds this to say "report
-// this collider's contacts". It was `#[component(no_serializable)]`, which does
-// not mean "runtime state" — it removes the `ComponentRegistration` entirely, so
-// no serializer ever knew the type existed. Saving a scene and loading it back
-// silently dropped it, and the collider went quiet.
+/// Marks a collider whose contacts are reported as collision events.
+///
+/// Contacts are not reported by default, to save the cost. A sensor reports
+/// what enters and leaves it without this marker.
+// `Authored`, hence saved: a designer adds it to say "report this collider's contacts".
 #[derive(Debug, Clone, Copy, Default, Component, Serialize, Deserialize)]
 #[component(domain = Physics)]
 pub struct ActiveEvents;

@@ -17,11 +17,9 @@
 use khora_core::asset::{Asset, AssetHandle, AssetUUID};
 use std::collections::HashMap;
 
-/// A central, in-memory cache for a specific type of asset `A`.
+/// The in-memory cache of loaded assets of type `A`, keyed by UUID.
 ///
-/// This structure maps a unique `AssetUUID` to a shared `AssetHandle<A>`.
-/// This ensures that any given asset is loaded only once. Subsequent requests
-/// for the same asset will receive a clone of the cached handle.
+/// One handle per UUID: every request for a cached asset gets a clone of it.
 #[derive(Default)]
 pub struct Assets<A: Asset> {
     storage: HashMap<AssetUUID, AssetHandle<A>>,
@@ -43,19 +41,12 @@ impl<A: Asset> Assets<A> {
         }
     }
 
-    /// Inserts an asset handle into the storage, associated with its UUID.
-    /// If an asset with the same UUID already exists, it will be replaced.
-    /// This operation is always successful.
-    ///
-    /// # Arguments
-    /// * `uuid` - The unique identifier for the asset.
-    /// * `handle` - The handle to the asset to be stored.
+    /// Caches `handle` under `uuid`, replacing any handle already there.
     pub fn insert(&mut self, uuid: AssetUUID, handle: AssetHandle<A>) {
         self.storage.insert(uuid, handle);
     }
 
-    /// Retrieves a reference to the asset handle associated with the given UUID.
-    /// Returns `None` if no asset with the specified UUID is found.
+    /// Returns the handle cached under `uuid`, if any.
     pub fn get(&self, uuid: &AssetUUID) -> Option<&AssetHandle<A>> {
         self.storage.get(uuid)
     }
@@ -67,25 +58,18 @@ impl<A: Asset> Assets<A> {
 
     /// Drops the cached handle for `uuid`, returning it if present.
     ///
-    /// Used by `AssetService::invalidate` (in `khora-io`) when a hot-reload
-    /// event invalidates a cached asset. Note that any outstanding clones of
-    /// the returned handle keep the *old* asset alive until they themselves
-    /// drop — that's by design: in-flight readers don't see a half-loaded
-    /// replacement. The next `AssetService::load` for the same UUID re-runs
-    /// the IO + decoder pipeline and produces a fresh handle.
+    /// Clones already handed out keep the old asset alive until they drop, so
+    /// a reader in flight never sees a half-loaded replacement.
     pub fn remove(&mut self, uuid: &AssetUUID) -> Option<AssetHandle<A>> {
         self.storage.remove(uuid)
     }
 
-    /// Returns an iterator over every `AssetUUID` currently cached.
-    ///
-    /// Used by the asset-eviction maintenance pass to diff the cached set
-    /// against the set of UUIDs still referenced by live entities.
+    /// Returns an iterator over every cached UUID.
     pub fn keys(&self) -> impl Iterator<Item = AssetUUID> + '_ {
         self.storage.keys().copied()
     }
 
-    /// The number of assets currently cached.
+    /// Returns the number of cached assets.
     pub fn len(&self) -> usize {
         self.storage.len()
     }

@@ -12,12 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Every text is shaped, and reshaped only when it changes.
-//!
-//! The `ui_text_layout` DataSystem turns each entity's `UiText` into a
-//! [`UiTextLayout`](crate::ui::UiTextLayout) through the runtime's
-//! `TextShaper`, for the entities whose `UiText` or `HandleComponent<Font>`
-//! changed since its last run.
+//! The `ui_text_layout` DataSystem: each `UiText` shaped into a
+//! [`UiTextLayout`] through the runtime's `TextShaper`,
+//! and shaped again only when the text or its font changes.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -161,9 +158,11 @@ pub(crate) fn ui_text_layout(
     }
 }
 
-/// The font `entity`'s text is shaped with: the built-in one, or the font its
-/// own handle holds when that handle names the text's font. `None` while the
-/// font is not resolved on the entity, or without a text.
+/// Returns the font `entity`'s text is shaped with, `None` while it is not
+/// resolved.
+///
+/// The built-in font, or the one the entity's own handle holds when that
+/// handle names the text's font.
 fn font_of(world: &World, entity: EntityId) -> Option<AssetUUID> {
     let text = world.get::<UiText>(entity)?;
     if text.font == Font::BUILT_IN {
@@ -173,16 +172,13 @@ fn font_of(world: &World, entity: EntityId) -> Option<AssetUUID> {
     (handle.uuid == text.font).then_some(text.font)
 }
 
-/// The fonts whose file is new since `since`: each font a changed
-/// `HandleComponent<Font>` holds a file of that no handle left unchanged
-/// since then holds. A text spawned in a font shares the handle the others
-/// hold (the same `Arc`), so it brings no new file; a reload replaces the
-/// handle on every entity with a new one. `Font::BUILT_IN` is never new — it
-/// is the engine's, never a handle's to replace.
+/// Returns the fonts whose file is new since `since`, each once, with its
+/// first changed handle in page order.
 ///
-/// Each font once, with the first changed handle in page order speaking for
-/// it. The rule both text systems register fonts by: the shaper's
-/// (`ui_text_layout`) and the rasteriser's (`glyphs_on_gpu`).
+/// New: a changed `HandleComponent<Font>` holds a file no unchanged handle
+/// holds. A text spawned in a font shares its handle; a reload replaces it on
+/// every entity. `Font::BUILT_IN` is never new. Both text systems register
+/// fonts by this rule.
 pub(crate) fn new_fonts(world: &World, since: Tick) -> Vec<(AssetUUID, AssetHandle<Font>)> {
     let changed: Vec<(EntityId, AssetUUID, AssetHandle<Font>)> = world
         .query::<(

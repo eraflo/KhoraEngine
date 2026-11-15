@@ -41,10 +41,9 @@ fn resolved<T: Serialize + DeserializeOwned>(record: &Record) -> (T, Vec<ReportE
     resolve(record, &mut NoEntities).unwrap_or_else(|e| panic!("does not resolve: {e}"))
 }
 
-/// A fixed-size value — an array, a tuple — holds exactly as many elements as
-/// its type says. A save holding more has a value the code cannot keep: the
-/// read either refuses it or reports what it left behind, never returns a
-/// clean read that silently lost an element.
+/// A fixed-size value saved with more elements than its type holds never reads clean.
+///
+/// The read either refuses it or reports what it left behind.
 #[test]
 fn surplus_elements_of_a_fixed_size_value_are_not_lost_silently() {
     let four = Record::Seq(vec![
@@ -80,10 +79,10 @@ struct Beacon {
     visible: bool,
 }
 
-/// A field the code removed and a field it added are two facts — one value
-/// lost, one value invented — even when the lost value happens to equal the
-/// new field's default. Calling that a rename tells the author the save's
-/// value was kept, which it was not.
+/// A removed field and an added one are a drop and a default, never a rename.
+///
+/// Even when the lost value equals the new field's default: a rename would
+/// tell the author the save's value was kept.
 #[test]
 fn a_dropped_field_equal_to_a_new_default_is_not_a_rename() {
     let old = structure(
@@ -122,10 +121,9 @@ struct Holder {
     settings: Settings,
 }
 
-/// A renamed field whose value also changed shape inside — here, a nested
-/// field the code no longer has — was still read through its alias. The
-/// report names the rename and the nested drop; it does not claim the whole
-/// value was defaulted and the old one thrown away.
+/// A renamed field whose value lost a nested field reports the rename and the nested drop.
+///
+/// Never that the whole value was defaulted and the old one thrown away.
 #[test]
 fn a_renamed_field_whose_value_also_evolved_is_still_a_rename() {
     let old = structure(
@@ -164,8 +162,7 @@ struct Pair {
 }
 
 /// Two renamed fields holding the same value are two renames, each from its
-/// own old name — not from whichever old name the save happened to write
-/// first.
+/// own old name.
 #[test]
 fn two_renamed_fields_with_equal_values_keep_their_own_old_names() {
     let old = structure(
@@ -228,9 +225,8 @@ struct Walker {
     mode: Mode,
 }
 
-/// A unit variant written as its bare name — the form a self-describing
-/// format gives it, and one the reader accepts — is renamed through its alias
-/// like any other variant, and the report says so.
+/// A unit variant written as its bare name is renamed through its alias, and
+/// the report says so.
 #[test]
 fn a_renamed_unit_variant_written_as_a_name_is_reported() {
     let old = structure("Walker", vec![("mode", text("Idle"))]);

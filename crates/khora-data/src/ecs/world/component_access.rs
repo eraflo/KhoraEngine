@@ -44,43 +44,29 @@ pub enum RemoveComponentError {
 }
 
 impl World {
-    /// Registers a component type with a specific semantic domain.
-    ///
-    /// This is a crucial setup step. Before a component of type `T` can be used
-    /// in a bundle, it must be registered with the world to define which semantic
-    /// page group its data will be stored in.
+    /// Registers component type `T` in `domain`, which decides the pages that store it.
     ///
     /// Registering a type again in the domain it already has changes nothing.
     ///
     /// # Panics
     ///
-    /// When the type is already registered in another domain — every value
-    /// stored so far is reached through the domain it was stored under, and
-    /// moving the type would hide them all — or when another Rust type has
-    /// its short name, the one name scenes, the editor and scripts know it by.
-    /// [`try_register_component`](Self::try_register_component) is the
-    /// fallible form.
+    /// If the type is already registered in another domain (its stored values
+    /// would be hidden), or another Rust type has its short name.
+    /// [`try_register_component`](Self::try_register_component) returns the error instead.
     pub fn register_component<T: Component>(&mut self, domain: SemanticDomain) {
         if let Err(error) = self.try_register_component::<T>(domain) {
             panic!("{error}");
         }
     }
 
-    /// This operation is designed to be fast. It performs the necessary data
-    /// migration to move the entity's components for the given `SemanticDomain`
-    /// to a new `ComponentPage` that matches the new layout.
+    /// Adds `component` to an entity, migrating its row of that domain to a matching page.
     ///
-    /// Crucially, it does NOT clean up the "hole" left in the old page. Instead,
-    /// it returns the location of the orphaned data, delegating the cleanup task
-    /// to an asynchronous garbage collection system.
+    /// Returns the old row it left behind, if it migrated; compaction reclaims it.
     ///
-    /// # Returns
+    /// # Errors
     ///
-    /// - `Ok(Option<PageIndex>)`: On success. The `Option` contains the location of
-    ///   orphaned data if a migration occurred, which should be sent to a garbage collector.
-    ///   It is `None` if no migration was needed (e.g., adding to a new domain).
-    /// - `Err(AddComponentError)`: If the operation failed (e.g., entity not alive,
-    ///   component not registered, or component already present).
+    /// [`AddComponentError`] if the entity is not alive, the type is not
+    /// registered, or the entity already holds one.
     pub fn add_component<C: Component>(
         &mut self,
         entity_id: EntityId,
@@ -93,30 +79,16 @@ impl World {
         })
     }
 
-    /// Removes a **single** component `C` from `entity`, preserving every
-    /// other component the entity carries (in any domain).
+    /// Removes component `C` from an entity, keeping every other component it holds.
     ///
-    /// Mirrors [`add_component`](Self::add_component) in reverse: rebuilds
-    /// the entity's domain page signature without `C`, finds-or-creates a
-    /// page matching the new signature, and copies the surviving
-    /// same-domain components there. The old slot is orphaned and reported
-    /// for the GC, exactly like an add migration.
+    /// Returns the old row it left behind, as [`add_component`](Self::add_component)
+    /// does. Unlike [`remove_component_domain`](Self::remove_component_domain),
+    /// the entity's other components of the same domain stay.
     ///
-    /// Use this — not [`remove_component_domain`](Self::remove_component_domain) —
-    /// for surgical component removal (editor "delete component" button,
-    /// `set_parent` unparenting, AGDF demotion). `remove_component_domain`
-    /// is a low-level primitive that drops the entire domain bucket and
-    /// should be reserved for entity teardown / GC paths.
+    /// # Errors
     ///
-    /// # Returns
-    ///
-    /// - `Ok(Some(PageIndex))` — old location to send to the GC.
-    /// - `Ok(None)` — should not happen in practice (kept for symmetry with
-    ///   `add_component`).
-    /// - `Err(RemoveComponentError::EntityNotFound)` — entity dead or stale.
-    /// - `Err(RemoveComponentError::ComponentNotRegistered)` — type unknown.
-    /// - `Err(RemoveComponentError::ComponentNotPresent)` — entity didn't
-    ///   carry this component to begin with.
+    /// [`RemoveComponentError`] if the entity is not alive, the type is not
+    /// registered, or the entity does not hold one.
     pub fn remove_component<C: Component>(
         &mut self,
         entity_id: EntityId,
@@ -124,78 +96,51 @@ impl World {
         self.detach(entity_id, ComponentKey::of::<C>())
     }
 
-    /// Logically removes all components belonging to a specific `SemanticDomain` from an entity.
+    /// Removes every component of `C`'s domain from an entity, in O(1).
     ///
-    /// This is an extremely fast, O(1) operation that only modifies the entity's
-    /// metadata. It does not immediately deallocate or move any component data.
-    /// The component data is "orphaned" and will be cleaned up later by a
-    /// garbage collection process.
-    ///
-    /// This method is generic over a component `C` to determine which domain to remove.
-    ///
-    /// # Returns
-    ///
-    /// - `Some(PageIndex)`: Contains the location of the orphaned data if the
-    ///   components were successfully removed. This can be sent to a garbage collector.
-    /// - `None`: If the entity is not alive or did not have any components in the
-    ///   specified `SemanticDomain`.
+    /// Only the entity's metadata changes; the row left behind is returned and
+    /// waits for compaction. `None` if the entity is not alive or holds nothing
+    /// in that domain.
     pub fn remove_component_domain<C: Component>(
         &mut self,
         entity_id: EntityId,
     ) -> Option<PageIndex> {
-        // Validate the entity ID to ensure we're acting on a live entity.
         let (id_in_world, metadata_slot) = self.entities.get_mut(entity_id.index as usize)?;
         if id_in_world.generation != entity_id.generation || metadata_slot.is_none() {
             return None;
         }
 
-        // Use the registry to find the component's domain.
         let domain = self.storage.registry.get_domain(TypeId::of::<C>())?;
 
-        // Remove the location entry from the entity's metadata.
-        // `HashMap::remove` returns the value that was at that key, which is exactly what we need.
         let metadata = metadata_slot.as_mut().unwrap();
         let location = metadata.locations.remove(&domain);
 
-        // Clear the domain bitset if a component was removed.
         if let Some(loc) = location {
             if let Some(bitset) = self.storage.domain_bitsets.get_mut(&domain) {
                 bitset.clear(entity_id.index);
             }
-            // The entity left this domain — invalidate cached Views.
             self.bump_domain_epoch(domain);
-            // The row is orphaned (metadata no longer references it) — schedule
-            // its page for compaction.
             self.orphan_row(loc.page_id);
         }
 
         location
     }
 
-    /// Gets writable access to a single component `T` for a given entity: a
-    /// [`Mut`] guard, which stamps the row on its first write.
+    /// Returns a [`Mut`] guard over an entity's component `T`, stamping the row on its first write.
     ///
-    /// This provides direct, "random" access to a component, which can be less
-    /// performant than querying but is useful for targeted modifications.
-    ///
-    /// # Returns
-    ///
-    /// `None` if the entity is not alive or does not have the requested component.
+    /// `None` if the entity is not alive or does not hold the component.
     pub fn get_mut<T: Component>(&mut self, entity_id: EntityId) -> Option<Mut<'_, T>> {
-        // Validate the entity ID. An out-of-range index means "not alive"
-        // (e.g. a stale or malformed EntityId), so return None rather than panic.
         let (id_in_world, metadata_opt) = self.entities.get(entity_id.index as usize)?;
         if id_in_world.generation != entity_id.generation || metadata_opt.is_none() {
             return None;
         }
         let metadata = metadata_opt.as_ref().unwrap();
 
-        // Use the registry to find the component's domain and its location.
         let domain = self.storage.registry.get_domain(TypeId::of::<T>())?;
         let location = *metadata.locations.get(&domain)?;
 
-        // Get the component data from the page, through the page buffer's
-        // pointer, which the guard notes its write through.
+        // Reached through the page buffer's pointer, which the guard notes its
+        // write through.
         let key = ComponentKey::of::<T>();
         let observed = self.clock.observed.contains(&key);
         let tick = self.clock.tick;
@@ -227,17 +172,10 @@ impl World {
         }
     }
 
-    /// Gets writable access to components of type `T` for multiple entities
-    /// simultaneously: one [`Mut`] guard each, which stamps its row on its
-    /// first write.
+    /// Returns one [`Mut`] guard over component `T` per entity of `ids`, all held at once.
     ///
-    /// This is safer than `get_mut` in a loop because it allows retrieving multiple
-    /// disjoint mutable references to components of the same type.
-    ///
-    /// # Returns
-    ///
-    /// An array of `Option<Mut<T>>`. If any entity is not found, does not have the component,
-    /// or if there are duplicate requests for the same component instance, that entry will be `None`.
+    /// An entry is `None` if its entity is not alive or lacks the component.
+    /// If two ids reach the same value, every entry is `None`.
     pub fn get_many_mut<T: Component, const N: usize>(
         &mut self,
         ids: [EntityId; N],
@@ -250,13 +188,11 @@ impl World {
             None => return results,
         };
 
-        // Collect locations and check for duplicates
         let mut locations = [(0u32, 0u32); N];
         let mut found_mask = [false; N];
 
         for i in 0..N {
             if let Some((stored_id, Some(metadata))) = self.entities.get(ids[i].index as usize) {
-                // Ensure the EntityId matches (including generation)
                 if *stored_id == ids[i] {
                     if let Some(loc) = metadata.locations.get(&domain) {
                         locations[i] = (loc.page_id, loc.row_index);
@@ -266,14 +202,13 @@ impl World {
             }
         }
 
-        // Check for collisions in (page, row) to prevent aliasing
+        // Two guards over one (page, row) would alias.
         for i in 0..N {
             if !found_mask[i] {
                 continue;
             }
             for j in (i + 1)..N {
                 if found_mask[j] && locations[i] == locations[j] {
-                    // Collision detected: return all None for safety
                     return std::array::from_fn(|_| None);
                 }
             }
@@ -286,10 +221,9 @@ impl World {
         // at a time.
         let epoch = unsafe { World::domain_epoch_slot(self, domain) };
 
-        // Retrieve the guards through raw pointers to bypass split_at_mut
-        // complexity: the pages through the page buffer's pointer, never a
-        // reference to one, which the next would invalidate — the guards note
-        // their writes through theirs.
+        // Pages reached through the buffer's pointer, never a reference to
+        // one, which the next would invalidate: the guards note their writes
+        // through theirs.
         let page_count = self.storage.pages.len();
         let pages = self.storage.pages.as_mut_ptr();
         for i in 0..N {
@@ -327,31 +261,23 @@ impl World {
         results
     }
 
-    /// Gets an immutable reference to a single component `T` for a given entity.
+    /// Returns a reference to an entity's component `T`.
     ///
-    /// This provides direct, "random" access to a component.
-    ///
-    /// # Returns
-    ///
-    /// `None` if the entity is not alive or does not have the requested component.
+    /// `None` if the entity is not alive, does not hold the component, or
+    /// stores it field-SoA; [`clone_component`](Self::clone_component) reads any layout.
     pub fn get<T: Component>(&self, entity_id: EntityId) -> Option<&T> {
-        // Validate the entity ID. An out-of-range index means "not alive"
-        // (e.g. a stale or malformed EntityId), so return None rather than panic.
         let (id_in_world, metadata_opt) = self.entities.get(entity_id.index as usize)?;
         if id_in_world.generation != entity_id.generation || metadata_opt.is_none() {
             return None;
         }
         let metadata = metadata_opt.as_ref().unwrap();
 
-        // Use the registry to find the component's domain and its location.
         let domain = self.storage.registry.get_domain(TypeId::of::<T>())?;
         let location = metadata.locations.get(&domain)?;
 
-        // Get the component data from the page.
         let type_id = TypeId::of::<T>();
         let page = self.storage.pages.get(location.page_id as usize)?;
 
-        // Return the immutable reference.
         let vec = page
             .columns
             .get(&ComponentKey::Rust(type_id))?
@@ -360,13 +286,10 @@ impl World {
         vec.get(location.row_index as usize)
     }
 
-    /// Reads a component by **value**, working for *any* physical layout (AoS or
-    /// field-SoA). This is the layout-agnostic read path: a field-SoA component
-    /// can't hand out `&T` (its bytes aren't a contiguous `T`), so callers that
-    /// must work regardless of layout — the serialization recipe, the `Soa<T>`
-    /// query — go through here. For AoS it simply clones the `&T`.
+    /// Returns a copy of an entity's component `T`, whatever its layout.
     ///
-    /// `None` if the entity is not alive or lacks the component.
+    /// A field-SoA column holds no contiguous `T` to lend. `None` if the
+    /// entity is not alive or lacks the component.
     pub fn clone_component<T: Component>(&self, entity_id: EntityId) -> Option<T> {
         let (id_in_world, metadata_opt) = self.entities.get(entity_id.index as usize)?;
         if id_in_world.generation != entity_id.generation {
@@ -383,10 +306,9 @@ impl World {
         ))
     }
 
-    /// Writes a component by **value**, working for any physical layout. The
-    /// layout-agnostic write path (AoS assigns the slot; field-SoA scatters into
-    /// its lanes). Returns `false` if the entity is not alive or lacks the
-    /// component (nothing is written).
+    /// Writes an entity's component `T` by value, whatever its layout, and stamps the row.
+    ///
+    /// Returns `false`, writing nothing, if the entity is not alive or lacks the component.
     pub fn set_component<T: Component>(&mut self, entity_id: EntityId, value: T) -> bool {
         let Some((id_in_world, metadata_opt)) = self.entities.get(entity_id.index as usize) else {
             return false;
@@ -418,13 +340,11 @@ impl World {
         true
     }
 
-    /// Runs `f` over every field-SoA column of component `T` in the world — the
-    /// bulk SIMD entry point. Each call hands the kernel a [`FieldSoaColumn`](crate::ecs::FieldSoaColumn)
-    /// whose per-field `f32` lanes are contiguous, so it can tile them into
-    /// `f32x8` without gather (the resident layout that reaches ~4×).
+    /// Runs `f` over every field-SoA column of component `T`, one page at a time.
     ///
-    /// Iterates per page so each lane slice is a single archetype's run. A
-    /// no-op for any page whose `T` column is not field-SoA.
+    /// Each [`FieldSoaColumn`](crate::ecs::FieldSoaColumn) has contiguous
+    /// per-field `f32` lanes, for SIMD kernels; every row of a column handed
+    /// out counts as written. Pages whose `T` column is not field-SoA are skipped.
     pub fn for_each_soa_column_mut<T: crate::ecs::SoaLayout>(
         &mut self,
         mut f: impl FnMut(&mut crate::ecs::FieldSoaColumn<T>),

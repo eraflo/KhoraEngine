@@ -12,16 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! IBL environment bake, wired as a data-driven system.
+//! Bakes the IBL environment with the [`IblBaker`] whenever the scene's
+//! environment source differs from the one it was baked from.
 //!
-//! Runs in [`TickPhase::PreExtract`] so the baked environment is ready before
-//! any lit lane renders. Each tick it reads the scene's environment source —
-//! the selected texture and the handle the store holds for it — and the
-//! [`IblBaker`] bakes when that source differs from the one it baked from: the
-//! first frame, a texture repainted on disk (hot reload replaces the store's
-//! handle), another texture selected, or a late-loading environment replacing
-//! the procedural fallback. Otherwise a tick is one uuid and one pointer
-//! compare.
+//! It runs in [`TickPhase::PreExtract`], so the bake is ready before any lit
+//! lane renders. A hot-reloaded texture counts as another source.
 
 use crate::ecs::SystemContext;
 use std::sync::Arc;
@@ -39,14 +34,12 @@ use crate::ecs::{DataSystemRegistration, TickPhase, World};
 use crate::ecs::{GlobalTransform, Light};
 use crate::{AssetStore, EnvironmentMap, IblBaker, IblSource};
 
-/// Returns the world-space unit direction **toward** the scene's first
-/// directional light that shines ([`shining_lights`](crate::render::shining_lights)),
-/// or `Vec3::ZERO` when there is none (the bake then falls back to its own
-/// default sun).
+/// Returns the unit world direction toward the first directional light that
+/// shines, or `Vec3::ZERO` when none does.
 ///
-/// The light's travel direction is the one the render extraction publishes;
-/// the sun sits opposite that. A first sun whose values make no light never
-/// hides a second one, nor poisons the sky.
+/// The sun sits opposite the travel direction the render extraction
+/// publishes ([`shining_lights`](crate::render::shining_lights)). On
+/// `Vec3::ZERO` the bake uses its own default sun.
 fn sun_direction(world: &World) -> Vec3 {
     crate::render::shining_lights(world)
         .into_iter()
@@ -67,9 +60,9 @@ enum Decision {
     Bake,
 }
 
-/// Decides what this tick does with `source` — keep the bake, wait for the
-/// selected environment to load, or bake. Spends one tick of the baker's
-/// bounded environment wait when it waits.
+/// Decides whether this tick keeps the bake, waits for `source` to load, or bakes.
+///
+/// A wait spends one tick of the baker's bounded environment wait.
 fn bake_decision(baker: &IblBaker, source: &IblSource) -> Decision {
     if baker.is_baked_from(source) {
         return Decision::Skip;
@@ -283,10 +276,8 @@ mod tests {
         );
     }
 
-    /// The sun the environment is baked with sits exactly opposite the
-    /// direction the render extraction lights the scene with — under a
-    /// stretched parent too, where the light's world direction leans with
-    /// the sheared basis rather than turning with its rotation alone.
+    /// **The baked sun sits opposite the rendered light's direction**, under a
+    /// stretched parent too, where that direction leans with the sheared basis.
     #[test]
     fn the_baked_sun_sits_opposite_the_rendered_light_under_a_stretched_parent() {
         use crate::flow::{Flow, RenderFlow, Selection};
@@ -321,9 +312,8 @@ mod tests {
         );
     }
 
-    /// A first sun pointing nowhere (an infinite direction) does not hide the
-    /// valid sun after it: the sky is baked toward the second — its
-    /// direction negated, unit.
+    /// **A first sun pointing nowhere does not hide the valid one after it**:
+    /// the sky is baked toward the second.
     #[test]
     fn the_sky_takes_the_first_sun_that_shines() {
         use khora_core::renderer::light::DirectionalLight;

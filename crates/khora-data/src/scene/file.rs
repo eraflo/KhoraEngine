@@ -59,7 +59,11 @@ impl std::fmt::Display for SceneFileReadError {
 
 impl std::error::Error for SceneFileReadError {}
 
-/// `record`, written with `encoding` behind a scene header.
+/// Writes `record` with `encoding` behind a scene header.
+///
+/// # Errors
+///
+/// When the encoding fails, or its id is longer than the header's 32 bytes.
 pub fn write_scene_file(
     record: &SceneRecord,
     encoding: &dyn SceneEncoding,
@@ -67,12 +71,12 @@ pub fn write_scene_file(
     scene_file(encoding.id(), encoding.encode(record)?)
 }
 
-/// `payload`, behind a scene header naming `encoding_id`.
+/// Wraps `payload` in a scene header naming `encoding_id`.
 pub(super) fn scene_file(encoding_id: &str, payload: Vec<u8>) -> Result<SceneFile, EncodingError> {
     file_with(HEADER_MAGIC_BYTES, encoding_id, payload)
 }
 
-/// `payload`, behind a header of `magic` naming `encoding_id`.
+/// Wraps `payload` in a header of `magic` naming `encoding_id`.
 pub(super) fn file_with(
     magic: [u8; 8],
     encoding_id: &str,
@@ -98,7 +102,7 @@ pub(super) fn file_with(
     })
 }
 
-/// The encoding a scene file's header names.
+/// Returns the encoding id a scene file's header names.
 pub fn encoding_of(file: &SceneFile) -> String {
     String::from_utf8_lossy(&file.header.encoding_id)
         .trim_end_matches('\0')
@@ -134,7 +138,13 @@ fn check_version(file: &SceneFile) -> Result<(), SceneFileReadError> {
     Ok(())
 }
 
-/// The record a scene file holds.
+/// Returns the record a scene file holds.
+///
+/// # Errors
+///
+/// When the file is not a scene (a game save or anything else), is of another
+/// format version, names an encoding this build does not have, or its payload
+/// does not decode under that encoding.
 pub fn read_scene_file(file: &SceneFile) -> Result<SceneRecord, SceneFileReadError> {
     check_format(file)?;
     let id = encoding_of(file);

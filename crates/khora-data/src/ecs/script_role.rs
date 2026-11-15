@@ -16,29 +16,23 @@
 
 /// The part a component plays for scripts, when it plays one.
 ///
-/// A behavior is a component: adding `Guard` to an entity is what attaches
-/// the behavior, and its state companion `Guard#state` is what the engine
-/// writes of it while it runs. The registry records which is which, so the
-/// script flow finds the behaviors a world holds — and the module whose
-/// program runs each — from its components alone.
+/// Adding the behavior `Guard` to an entity attaches it; its state companion
+/// `Guard#state` is what the engine writes of it while it runs. Recorded so
+/// the script flow finds a world's behaviors from its components alone.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ScriptRole {
     /// The component a behavior is: its authored fields.
     Behavior {
-        /// The module that declares the behavior, relative to the script
-        /// root.
+        /// The module that declares the behavior, relative to the script root.
         module: String,
-        /// Where the behavior sits among the behaviors and systems of its
-        /// module, in source order.
+        /// Its place in source order among its module's behaviors and systems.
         order: u32,
     },
-    /// The component a system is: its fields, held by the system's one
-    /// runtime entity.
+    /// The component a system is: its fields, held by the system's one runtime entity.
     System {
         /// The module that declares the system, relative to the script root.
         module: String,
-        /// Where the system sits among the behaviors and systems of its
-        /// module, in source order.
+        /// Its place in source order among its module's behaviors and systems.
         order: u32,
     },
     /// A behavior's state companion: what the engine keeps of an instance.
@@ -49,8 +43,7 @@ pub enum ScriptRole {
 }
 
 impl ScriptRole {
-    /// The module and the source order of a component a program runs — a
-    /// behavior's or a system's; `None` for a state companion.
+    /// Returns the module and source order of a behavior or a system, `None` for a state companion.
     pub fn runs(&self) -> Option<(&str, u32)> {
         match self {
             Self::Behavior { module, order } | Self::System { module, order } => {

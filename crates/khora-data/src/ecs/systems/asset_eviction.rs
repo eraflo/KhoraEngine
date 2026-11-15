@@ -12,15 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! GPU asset eviction — reclaims orphaned GPU meshes/materials each frame.
+//! GPU asset eviction: frees the GPU meshes and materials no live entity
+//! references any more.
 //!
-//! The insert-only projection never removes a `GpuMesh`/`GpuMaterial` once
-//! uploaded, so despawns and inline material edits leak GPU memory. This system
-//! runs the [`AssetEviction`] pass in [`TickPhase::Maintenance`] — after
-//! `ecs_maintenance` compacts orphan rows — to diff the cache against live
-//! entity references and free the orphans. The [`AssetEviction`] state and the
-//! [`AssetStore`] both live in the [`ServiceRegistry`], so the system fetches
-//! and ticks them without any manual wiring.
+//! The projection only ever inserts, so without this pass a despawn or an
+//! inline material edit would leak GPU memory.
 
 use crate::ecs::SystemContext;
 use std::sync::{Arc, Mutex};

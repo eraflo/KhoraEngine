@@ -12,16 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The epoch of a domain, made exact: `World::domain_epoch(domain)` is the
-//! latest tick at which a value of `domain` was written or a row of a page
-//! holding its columns changed place.
-//!
-//! It is raised to the tick a change carries wherever a column's summary σ
-//! rises (a write, a pushed row) or a page's order version ω moves (a
-//! despawn, a migration, a removal, a compaction); it stays when writable
-//! access is handed out and nothing is written, when only another domain
-//! changes, and when nothing happens. It never goes down and never runs
-//! ahead of the clock. A compaction changes the order of rows, never a value.
+//! `World::domain_epoch` is the latest tick a value of the domain was written or a row of its
+//! pages changed place, never lower, never ahead of the clock.
+//! See the book: concepts/change-detection-formal.md, "Domain epochs".
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::ScriptValue;
@@ -58,9 +51,8 @@ fn others(world: &World, domain: SemanticDomain) -> Vec<u64> {
         .collect()
 }
 
-/// A world storing `Position` and `Velocity` (Spatial), `RenderId` and
-/// `RenderTag` (Render); `Position` and `RenderId` are watched, so their
-/// columns keep row ticks, the other two do not.
+/// A world storing `Position` and `Velocity` (Spatial), `RenderId` and `RenderTag` (Render);
+/// only `Position` and `RenderId` are watched, so keep row ticks.
 fn world() -> World {
     let mut world = World::new();
     world.register_component::<Position>(SemanticDomain::Spatial);
@@ -95,9 +87,9 @@ fn assert_raised(world: &World, domain: SemanticDomain, before: u64, what: &str)
     );
 }
 
-/// The same operations on two worlds give the same epochs: an epoch is a tick
-/// of the world's own clock, never a count of accesses nor anything a map's
-/// iteration order or the world's instance could change.
+/// The same operations on two worlds give the same epochs, ticks of each world's own clock.
+///
+/// Never a count of accesses, nor anything a map's order or the world's instance could change.
 #[test]
 fn domain_epoch_is_the_same_for_two_worlds_built_alike() {
     let build = || {
@@ -115,8 +107,7 @@ fn domain_epoch_is_the_same_for_two_worlds_built_alike() {
     assert_eq!(epochs(&first), epochs(&second));
 }
 
-/// **Handing out `&mut` is not a write.** `get_mut`, `query_mut`,
-/// `get_many_mut` and `row_mut` taken and only read, a read-only query, and
+/// **Handing out `&mut` is not a write**: writable access only read, a read-only query and
 /// runs that touch nothing leave every domain's epoch as it was.
 #[test]
 fn domain_epoch_stays_when_nothing_is_written() {
@@ -287,9 +278,8 @@ fn domain_epoch_moves_on_a_runtime_field_write_of_its_domain_only() {
     assert_eq!(others(&world, SemanticDomain::Physics), rest);
 }
 
-/// Rows that arrive, leave or change page raise their domain's epoch to the
-/// tick they moved at: a spawn into a page that already holds rows, a
-/// despawn, a migration and a removal.
+/// Rows that arrive, leave or change page (spawn, despawn, migration, removal) raise their
+/// domain's epoch to the tick they moved at.
 #[test]
 fn domain_epoch_moves_on_spawn_despawn_and_migration() {
     let mut world = world();
@@ -403,12 +393,8 @@ fn changed<T: crate::ecs::Component>(world: &World, since: Tick) -> Vec<EntityId
     entities
 }
 
-/// **A compaction changes order, not values.** Reclaiming a row left behind
-/// moves the surviving rows within their page: the page's order version ω
-/// moves and its domain's epoch rises to the compaction's tick, no column's
-/// summary σ does, and a reader
-/// that has seen everything up to the compaction finds nothing changed —
-/// whether its column keeps row ticks (`RenderId`) or not (`Velocity`).
+/// **A compaction changes order, not values**: the domain's epoch rises, no column's summary
+/// does, and a reader up to date before it finds nothing changed, row ticks kept or not.
 #[test]
 fn compaction_changes_order_not_values() {
     let mut world = world();
@@ -511,10 +497,8 @@ fn compaction_changes_order_not_values() {
     }
 }
 
-/// **An epoch never goes down, nor runs ahead of the clock.** Over a
-/// sequence of writes, spawns, despawns, migrations, removals, accesses that
-/// write nothing, compactions and row-tick frees, run after run, every
-/// domain's epoch is at least what it was and at most the current tick.
+/// **An epoch never goes down, nor runs ahead of the clock**, over a sequence of every write,
+/// move, idle access, compaction and row-tick free, run after run.
 #[test]
 fn domain_epoch_never_goes_down() {
     let mut world = world();
@@ -586,11 +570,10 @@ fn render_order(world: &World) -> Vec<EntityId> {
         .collect()
 }
 
-/// **A migration moves every domain its row carries.** A mixed bundle's row
-/// holds the columns of two domains in one page; a component added in one of
-/// them moves the whole row to another page, so the other domain's rows change
-/// place — and order — too. Its epoch must rise with them, or a view keyed on
-/// it is served in the old order.
+/// **A migration moves every domain its row carries**, or a view keyed on the other domain's
+/// epoch is served in the old order.
+///
+/// A mixed bundle's row holds two domains' columns in one page, and moves whole.
 #[test]
 fn a_migration_raises_the_epoch_of_every_domain_its_row_carries() {
     let mut world = world();
@@ -644,11 +627,10 @@ fn a_removal_raises_the_epoch_of_every_domain_its_row_carries() {
     );
 }
 
-/// **A despawn moves every domain whose rows its swap-remove moves.** An
-/// entity that left the Render domain (`remove_component_domain`) still holds
-/// its row of a mixed page for the Spatial one; despawning it swap-removes
-/// that row, and the page's last row — a live Render row of another entity —
-/// takes its place.
+/// **A despawn moves every domain whose rows its swap-remove moves.**
+///
+/// An entity that left Render still holds its mixed-page row for Spatial; despawning it
+/// moves another entity's live Render row into its place.
 #[test]
 fn a_despawn_raises_the_epoch_of_every_domain_whose_rows_it_moves() {
     let mut world = world();
@@ -705,9 +687,9 @@ fn a_write_through_a_joined_optional_term_raises_its_own_domain() {
     assert_eq!(world.domain_epoch(SemanticDomain::Spatial), spatial);
 }
 
-/// Guards of two domains held together and of one `get_many_mut`, written in
-/// any order, with further `next` calls between the writes: each write raises
-/// its own domain (and Miri finds no aliasing violation).
+/// Guards of two domains held together, written in any order, each raise their own domain.
+///
+/// Further `next` calls run between the writes; Miri finds no aliasing violation.
 #[test]
 fn guards_held_together_raise_their_domains_in_any_order() {
     let mut world = world();
@@ -808,10 +790,8 @@ impl Lcg {
     }
 }
 
-/// **Equal epochs mean an unchanged domain**, over random sequences of every
-/// write and move a world knows: a reader of a domain that runs at a tick of
-/// its own and finds the epoch it last saw finds the rows it last saw, in the
-/// same order.
+/// **Equal epochs mean an unchanged domain**: over random writes and moves, a reader finding
+/// the epoch it last saw finds the rows it last saw, in the same order.
 #[test]
 fn equal_epochs_mean_an_unchanged_domain() {
     let checked = [

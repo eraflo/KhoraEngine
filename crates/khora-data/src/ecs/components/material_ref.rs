@@ -12,20 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Authored, serialized reference to a material.
-//!
-//! `MaterialRef` is the *only* serialized material form. It is an explicit
-//! discriminator the developer/editor sets:
-//!
-//! - [`MaterialRef::Inline`] embeds an ad-hoc material value (editor- or
-//!   code-created) directly in the scene.
-//! - [`MaterialRef::Asset`] references a `.kmat` file in the VFS by its stable
-//!   `AssetUUID`.
-//!
-//! A registered resolver `DataSystem` (in `khora-io`) turns a `MaterialRef`
-//! into the runtime-only [`MaterialHandle`] (a `HandleComponent<Box<dyn
-//! Material>>`), which the GPU projection consumes. `MaterialRef` itself never
-//! touches the GPU and never carries a resolved handle.
+//! [`MaterialRef`], the authored reference to a material, and its registration
+//! for scenes, snapshots and the inspector.
 
 use khora_core::asset::{AssetUUID, Material, StandardMaterial};
 
@@ -35,44 +23,32 @@ use crate::scene::{
     material_from_json, material_from_record, material_to_json, material_to_record,
 };
 
-/// Runtime-only resolved material: a shared handle to the type-erased material
-/// data plus its identifying `AssetUUID`. Produced by the resolver, consumed by
-/// the GPU material projection. A readable alias for call sites.
+/// A resolved material and its `AssetUUID`, runtime only; the GPU projection reads it.
 pub type MaterialHandle = HandleComponent<Box<dyn Material>>;
 
-/// Authored reference to a material — the only serialized material form.
+/// An authored reference to a material: the only form a material is saved in.
 ///
-/// The enum *is* the discriminator: `Inline` embeds the material value,
-/// `Asset` carries the stable UUID of a `.kmat` in the VFS.
-///
-/// Both arms carry an *identity UUID* — the content-derived UUID for `Inline`,
-/// the stable asset UUID for `Asset`. The resolver compares this identity
-/// against the resolved handle's UUID every tick: a mismatch (or a missing
-/// handle) means the authored reference changed and must be re-resolved. The
-/// `Inline` UUID is never serialized; it is recomputed from the material
-/// content on deserialize via [`MaterialRef::inline`] so it stays purely
-/// content-derived. Construct `Inline` through [`MaterialRef::inline`] so the
-/// UUID and the material value can never disagree.
+/// A resolver `DataSystem` (in `khora-io`) turns it into a [`MaterialHandle`],
+/// and again whenever its [`uuid`](Self::uuid) no longer matches the handle's.
+/// Build `Inline` with [`MaterialRef::inline`], so its UUID matches its content.
 pub enum MaterialRef {
-    /// Ad-hoc material data created in code or the editor, embedded inline.
-    /// The `uuid` is content-derived; build via [`MaterialRef::inline`].
+    /// A material made in code or the editor, saved inside the scene.
     Inline {
         /// The embedded material value.
         material: Box<dyn Material>,
-        /// Content-derived identity UUID (the same content hash the GPU
-        /// projection keys on). Not serialized — recomputed on load.
+        /// The identity derived from the content; never saved, recomputed on load.
         uuid: AssetUUID,
     },
-    /// Reference to a `.kmat` asset in the VFS, resolved by UUID.
+    /// A `.kmat` asset in the VFS, by its stable UUID.
     Asset(AssetUUID),
 }
 
 impl MaterialRef {
-    /// Builds an `Inline` reference from a material value, deriving its identity
-    /// UUID from the material content. Two inline references holding equal
-    /// material content get the same UUID, so they dedup to one resolved handle
-    /// (and one `GpuMaterial`). On a serialization failure the UUID falls back
-    /// to a fresh random value (logged) rather than panicking.
+    /// Returns an `Inline` reference whose UUID is derived from the material's content.
+    ///
+    /// Equal contents share one UUID, hence one resolved handle and one
+    /// `GpuMaterial`. A material that cannot be serialized gets a random UUID
+    /// (logged) and is shared with nothing.
     pub fn inline(material: Box<dyn Material>) -> Self {
         // Hashed from the material's JSON form: deterministic for equal
         // content, and the same form the inspector and `.kmat` files use.
@@ -90,9 +66,7 @@ impl MaterialRef {
         Self::Inline { material, uuid }
     }
 
-    /// Returns the identity UUID: the content-derived UUID for `Inline`, the
-    /// stable asset UUID for `Asset`. The resolver compares this against the
-    /// resolved handle's UUID to detect an authored change.
+    /// Returns the identity UUID: derived from the content for `Inline`, the asset's for `Asset`.
     pub fn uuid(&self) -> AssetUUID {
         match self {
             Self::Inline { uuid, .. } => *uuid,
@@ -251,9 +225,9 @@ enum MaterialRefSnapshot {
     Asset(AssetUUID),
 }
 
-/// The fingerprint of a material reference's positional form: its own shape
-/// and every registered material's, since an inline one is any of them.
-/// Complete only if its own shape and every registered material's are.
+/// Returns the fingerprint of a material reference's positional form, and whether it is complete.
+///
+/// It covers every registered material's shape, since an inline one may be any of them.
 fn material_ref_schema() -> (u64, bool) {
     static SCHEMA: std::sync::OnceLock<(u64, bool)> = std::sync::OnceLock::new();
     *SCHEMA.get_or_init(|| {

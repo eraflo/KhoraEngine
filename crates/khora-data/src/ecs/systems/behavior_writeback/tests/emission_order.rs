@@ -15,15 +15,7 @@
 //! A turn's field changes and the scripts' `Set`s of the same fields, in the
 //! order they were made.
 //!
-//! The frame boundary runs `script_commands`, then `behavior_writeback`, over
-//! one deck. A `Set` of a behavior's field queued before the turn
-//! (`BehaviorUpdate::emitted_after`) was read by the turn: the turn's value is
-//! the later word, and nothing was lost. A `Set` queued at the turn's position
-//! or after it, and applied, is the later word: the turn's value of that field
-//! is dropped and the loss reported — "the last write wins, the others are
-//! lost". A `Set` refused, or a turn value its field refuses, takes nothing
-//! from the other. A behavior removed or its entity despawned after the turn
-//! receives nothing of it.
+//! See the book: concepts/scripting/writing.md, "A script never writes the world".
 
 use std::cell::RefCell;
 use std::sync::Once;
@@ -247,9 +239,8 @@ fn system(name: &str) -> fn(&mut World, &Runtime, &mut OutputDeck, crate::ecs::S
         .run
 }
 
-/// The frame boundary over a deck holding `commands` and `turns`, as the
-/// engine runs it: the scripts' commands, then the writeback. Returns the
-/// lost writes it reported.
+/// Runs the frame boundary over a deck holding `commands` and `turns`, the
+/// scripts' commands then the writeback, and returns the lost writes reported.
 fn boundary(
     world: &mut World,
     commands: Vec<WorldCommand>,
@@ -285,10 +276,11 @@ fn boundary(
 
 // ─── Before or after the turn ───────────────────────────────────────────────
 
-/// **The turn's position decides.** A `Set` queued before the turn was read
-/// by it: the turn's value stands and nothing was lost. A `Set` queued at the
-/// turn's position or after it is the last word: it stands, and the turn's
-/// lost value is reported, once.
+/// **The turn's position decides.**
+///
+/// A `Set` queued before the turn was read by it: the turn's value stands and
+/// nothing was lost. A `Set` queued at the turn's position or after it is the
+/// last word: it stands, and the turn's lost value is reported, once.
 #[test]
 fn a_set_before_the_turn_is_read_and_a_set_after_it_wins() {
     let mut world = World::new();
@@ -387,9 +379,11 @@ fn a_set_of_a_field_the_turn_did_not_change_lands_beside_it() {
 
 // ─── What was refused takes nothing ─────────────────────────────────────────
 
-/// **Only a write that applied wins.** A `Set` after the turn that its
-/// component refused writes nothing: the turn's value stands and is not
-/// reported lost — while an applied one beside it wins.
+/// **Only a write that applied wins.**
+///
+/// A `Set` after the turn that its component refused writes nothing: the
+/// turn's value stands and is not reported lost, while an applied one beside
+/// it wins.
 #[test]
 fn a_refused_set_after_the_turn_takes_nothing_from_it() {
     let mut world = World::new();
@@ -422,9 +416,8 @@ fn a_refused_set_after_the_turn_takes_nothing_from_it() {
     assert!(names(&reports[0], applied, "health"), "{reports:?}");
 }
 
-/// A turn value its field refuses — a `speed` computed infinite — leaves the
-/// `Set` the turn read as it stands, and is no lost write; the turn's field
-/// a later `Set` took is.
+/// A turn value its field refuses (an infinite `speed`) is no lost write and
+/// leaves the `Set` it read; the turn's field a later `Set` took is lost.
 #[test]
 fn a_turn_value_its_field_refuses_leaves_the_set_it_read() {
     let mut world = World::new();

@@ -14,13 +14,9 @@
 
 //! What a `QueryMut` hands out may be held together.
 //!
-//! An iterator's items outlive the `next` call that made them: a caller may
-//! collect every `&mut T` a `QueryMut` yields and write through them in any
-//! order. Making the next item must therefore never claim the memory of an
-//! earlier one, and no two items may name the same component. Run these under
-//! Miri too (`cargo +nightly miri test -p khora-data --lib query_mut_aliasing`):
-//! a reference invalidated by a later one is undefined behaviour even when the
-//! plain run reads back the right values.
+//! A caller may collect every item and write through them in any order, so no
+//! item may claim an earlier one's memory or name a component twice. Run under
+//! Miri too (`cargo +nightly miri test -p khora-data --lib query_mut_aliasing`).
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
@@ -92,9 +88,10 @@ fn transversal_query_mut_items_held_together_stay_writable() {
     assert_eq!(values, vec![(101, 110), (102, 120), (103, 130)]);
 }
 
-/// Runs `Q` over a world of one `Position`, and reports whether any item held
-/// two references to the same component — refusing the query outright (a
-/// panic) is fine; handing out an alias is not.
+/// Whether `Q`, run over a world of one `Position`, yields an item holding two
+/// references to one component.
+///
+/// Refusing the query outright (a panic) is fine; handing out an alias is not.
 fn yields_an_alias<Q, F>(addresses: F) -> bool
 where
     Q: WorldQuery,

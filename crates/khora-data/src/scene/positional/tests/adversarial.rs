@@ -143,9 +143,9 @@ fn nest(depth: usize) -> Nest {
     value
 }
 
-/// A modest nesting round-trips; one past `MAX_DEPTH` is refused on write,
-/// and bytes claiming a nesting far deeper than any stack are refused on read
-/// without exhausting it.
+/// A nesting past `MAX_DEPTH` is refused on write, and on read without exhausting the stack.
+///
+/// A modest nesting still round-trips.
 #[test]
 fn depth_is_bounded() {
     let shallow = nest(20);

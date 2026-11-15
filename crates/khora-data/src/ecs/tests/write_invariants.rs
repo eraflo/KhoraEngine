@@ -12,24 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! No write is ever lost in the page's ticks, whichever path wrote it.
+//! No write is ever lost in the page's ticks, whichever path wrote it: I1 and
+//! I2 checked after each operation of random sequences of moves and writes.
 //!
-//! Random sequences mix the moves the page ticks already survive — spawns,
-//! despawns, a declared component attached and detached, compactions, clock
-//! runs, keys newly watched — with writes through every path the `World`
-//! writes by: `set_component`, `get_mut`, `get_many_mut`, `query_mut` (a
-//! `&mut T` term and an `Option<&mut T>` one), `write_column`,
-//! `RowMut::{write_fields, set_field}`, `relayout` and
-//! `for_each_soa_column_mut`, between runs and inside them. After every
-//! operation they are checked against a model that remembers, for each live
-//! component, the tick it was last written at — `last(c, r)`:
-//!
-//! - **I1** `last(c, r) ≤ σ(c)`;
-//! - **I2** `last(c, r) ≤ max(τ(c, r), φ(c))`, τ read as 0 when the column
-//!   keeps no row ticks;
-//!
-//! and beside them: one tick per row, no summary ahead of the clock, and no
-//! write moves a page's order version.
+//! See the book: concepts/change-detection-formal.md, "Invariants".
 
 use std::collections::HashMap;
 
@@ -553,9 +539,8 @@ fn no_sequence_of_writes_breaks_i1_or_i2() {
     }
 }
 
-/// A long sequence, where pages are recycled, the declared component is
-/// relaid out many times and columns go from unwatched to watched halfway
-/// through their life.
+/// A long sequence: pages recycled, the declared component relaid out many
+/// times, columns going from unwatched to watched halfway through.
 #[test]
 fn a_long_sequence_of_writes_keeps_i1_and_i2() {
     run_sequence(0x5EED_F00D, 3000);

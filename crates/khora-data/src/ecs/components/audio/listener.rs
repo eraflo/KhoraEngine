@@ -12,20 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines the `AudioListener` component for 3D spatial audio.
+//! [`AudioListener`], the point a scene is heard from.
 
 use khora_macros::Component;
 use serde::{Deserialize, Serialize};
 
-/// An ECS component that defines the point of audition in the scene.
+/// The point a scene is heard from, placed by its entity's `GlobalTransform`.
 ///
-/// There should typically be only one `AudioListener` in a `World`, attached
-/// to the entity that represents the player or the main camera. Its `GlobalTransform`
-/// will be used by the audio system to calculate 3D audio spatialization effects
-/// like panning and attenuation.
-// `Authored`: a scene has an ear because somebody placed one. It was
-// `#[component(no_serializable)]`, which removed its registration outright, so a
-// saved scene came back deaf.
+/// Keep one per world, usually on the player or the main camera; panning and
+/// attenuation are computed from its pose.
+// `Authored`, hence saved: a scene has an ear because somebody placed one.
 #[derive(Debug, Default, Clone, Copy, Component, Serialize, Deserialize)]
 #[component(domain = Audio)]
 pub struct AudioListener;

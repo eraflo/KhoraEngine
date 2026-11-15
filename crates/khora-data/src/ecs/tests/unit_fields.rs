@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A `Duration` and an `Angle` field: the layout keeps the
-//! unit in the field's Ergon type, so the inspector can show `s` and `deg`,
-//! and stores the value as the float it is — the same bytes as a `float`
-//! field, so what was saved as a `float` still reads.
+//! `Duration` and `Angle` fields keep their unit in the field's Ergon type, for
+//! the inspector, and store the value as a float, so what was saved as a
+//! `float` still reads.
 
 use khora_core::script::{ErgonType, ScriptValue};
 
@@ -67,9 +66,8 @@ fn a_layout_keeps_the_unit_of_a_duration_and_an_angle_field() {
     assert_eq!(layout.admit(1, &ScriptValue::Str("left".to_owned())), None);
 }
 
-/// **A `float` field becoming a `Duration` keeps its values**: the unit is
-/// how the value is read, not what is stored — a row written before the
-/// script said `Duration` still holds its number, not the default.
+/// **A `float` field becoming a `Duration` keeps its values**: the unit is how
+/// the value is read, not what is stored.
 #[test]
 fn a_float_field_becoming_a_duration_keeps_its_values() {
     let mut world = World::new();
@@ -119,9 +117,8 @@ fn timer_of(t: ErgonType) -> ErgonType {
     }
 }
 
-/// **A `float` inside a struct field becoming a `Duration` keeps its
-/// values**, as a top-level one does: the struct's bytes are the same — a
-/// row written before the struct said `Duration` still holds its number.
+/// **A `float` inside a struct field becoming a `Duration` keeps its values**,
+/// as a top-level one does: the struct's bytes are the same.
 #[test]
 fn a_float_inside_a_struct_field_becoming_a_duration_keeps_its_values() {
     let mut world = World::new();

@@ -33,7 +33,7 @@ pub struct PrefabCatalogView {
     pub prefabs: Option<Arc<BTreeSet<AssetUUID>>>,
 }
 
-/// Publishes [`PrefabCatalogView`].
+/// Publishes [`PrefabCatalogView`], from the runtime's `PrefabCatalog`.
 #[derive(Debug, Default)]
 pub struct PrefabCatalogFlow;
 

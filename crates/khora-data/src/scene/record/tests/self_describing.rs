@@ -155,9 +155,8 @@ fn an_option_is_null_or_its_bare_value() {
     assert_eq!(json_of(&Record::Some(Box::new(Record::I64(-4)))), json!(-4));
 }
 
-/// The two reference kinds carry a marker key no field is named, and reading
-/// the text back recovers them for what they are — an entity, an entity
-/// outside the save, an asset — not as a map that happens to look like one.
+/// References carry a marker key no field is named, and read back as what they
+/// are: an entity, an entity outside the save, an asset.
 #[test]
 fn references_keep_their_markers() {
     let texture = AssetUUID::new_v5("textures/wall.png");
@@ -207,9 +206,8 @@ fn a_marker_with_the_wrong_payload_is_an_error() {
     }
 }
 
-/// JSON prints an `f32` as the shortest decimal that names it — `0.1`, not
-/// `0.10000000149011612` — and reading that decimal back into an `f32` must
-/// give the very same bits.
+/// The shortest decimal JSON prints for an `f32` (`0.1`) reads back into the
+/// very same bits.
 #[test]
 fn an_f32_keeps_its_shortest_decimal() {
     assert_eq!(
@@ -237,11 +235,10 @@ fn an_f32_keeps_its_shortest_decimal() {
     }
 }
 
-/// A JSON number with a fraction is decimal text, not a double: it reads as a
-/// decimal record, which reads into an `f32` as the `f32` the text names and
-/// into an `f64` as the `f64` — refused only when it fits no `f32` at all. A
-/// double a binary form holds stays a double, and the double nearest 0.1 is
-/// no `f32`.
+/// A JSON number with a fraction is a decimal, read at its field's width.
+///
+/// It is refused only when it fits no `f32` at all. A double a binary form
+/// holds stays a double, and the double nearest 0.1 is no `f32`.
 #[test]
 fn a_json_fraction_is_a_decimal_read_at_the_field_width() {
     assert_eq!(record_of("0.1"), Record::Decimal(0.1));
@@ -333,10 +330,8 @@ fn busy_snapshot(target: EntityId) -> ScriptSnapshot {
     }
 }
 
-/// The text and MessagePack encodings write records in this form, so every
-/// persisted type must come back through it exactly — structs from maps,
-/// variants from their tags, newtypes and markers from what is left of them,
-/// entities and assets from their markers.
+/// Every persisted type comes back exactly through the form the text and
+/// MessagePack encodings write.
 #[test]
 fn every_persisted_type_survives_the_self_describing_form() {
     let target = entity(5, 2);

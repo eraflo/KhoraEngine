@@ -12,17 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The one place two declarations of a field disagree without its values
-//! showing it: the kind of an asset.
+//! The one disagreement between two declarations a value's shape cannot show: an asset's kind.
 //!
-//! A cell says what it holds by its shape — a number, a text, a struct of
-//! named fields — and a load checks the shape against the field it lands in.
-//! An asset reference is sixteen bytes whatever its kind: a `Prefab` and a
-//! `Sound` look alike. So where the declaration a value was written under
-//! gives a field another asset kind than the one it is read into, a value
-//! holding an asset is dropped and the field keeps its default — what a hot
-//! reload retyping the field does. Everything else still reads by shape: an
-//! `int` widens onto a `float`, a `null` fits any optional.
+//! A cell holding an asset, read into a field of another asset kind, is dropped and reported.
 
 use khora_core::script::{ErgonType, ScriptValue};
 
@@ -30,8 +22,7 @@ use super::declared::DeclaredRecord;
 use super::record::{Record, ReportEntry, ReportKind, VariantPayload};
 use super::scene_record::SceneRecord;
 
-/// Whether `a` and `b` give an asset — anywhere inside them — two different
-/// kinds.
+/// Whether `a` and `b` give an asset, anywhere inside them, two different kinds.
 pub(crate) fn kinds_conflict(a: &ErgonType, b: &ErgonType) -> bool {
     match (a, b) {
         (ErgonType::Asset(a), ErgonType::Asset(b)) => a != b,
@@ -107,13 +98,11 @@ pub(crate) fn conflicting_fields(from: &DeclaredRecord, to: &DeclaredRecord) -> 
         .collect()
 }
 
-/// `record`'s cells as `declared` reads them: a field whose asset kind
-/// `declared` gives otherwise than `record` does loses the value it holds
-/// where that value holds an asset — each one reported dropped.
+/// Returns `record`'s cells as `declared` reads them, with what was dropped.
 ///
-/// What a prefab's cells go through before they join the scene that links
-/// to it: the scene's declarations describe the whole expanded record, so no
-/// cell may keep an asset of a kind it was not written as.
+/// A cell holding an asset in a field `declared` gives another asset kind loses
+/// that value, reported `Dropped`. A prefab's cells go through it before joining
+/// the scene linking to it, whose declarations describe the whole expanded record.
 pub(crate) fn read_as(
     mut record: SceneRecord,
     declared: &[DeclaredRecord],
@@ -169,14 +158,12 @@ fn dropped_entry(
     }
 }
 
-/// `record` as `world` declares the components it declares: a cell holding
-/// an asset of another kind than the world's declaration gives its field
-/// loses it, reported dropped, and the record then describes those
-/// components as the world does — so the prefabs it links to, expanded
-/// after, are read into the world's declarations too, and every cell lands
-/// in the declaration it was read as.
+/// Returns `record` read under the declarations of `catalog`'s world, with what was dropped.
 ///
-/// Reads nothing of the world but `catalog`, so it runs off the frame.
+/// A cell holding an asset of another kind than the world's declaration gives
+/// its field loses it. The record then describes those components as the world
+/// does, so the prefabs it links to are read the same way. Reads nothing of the
+/// world but `catalog`, so it runs off the frame.
 pub fn read_into(
     catalog: &super::load_catalog::LoadCatalog,
     record: SceneRecord,

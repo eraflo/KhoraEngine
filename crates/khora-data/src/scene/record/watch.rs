@@ -12,13 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What a read did, noted as it happens.
+//! What a read did, noted as it happens on a tree that mirrors the record.
 //!
-//! Only the reader knows whether a field it met was used or skipped, whether a
-//! number reached a wider type, which variant name a save used. Guessing those
-//! afterwards from values goes wrong exactly where it matters — a dropped
-//! `false` looks like a defaulted `false`. So the reader notes them, on a tree
-//! that mirrors the record, and the report is read off that tree.
+//! Guessed afterwards from the values, it would go wrong where it matters: a
+//! dropped `false` looks like a defaulted `false`.
 
 use super::Record;
 

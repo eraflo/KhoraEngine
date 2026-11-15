@@ -15,36 +15,31 @@
 use khora_core::math::{affine_transform::AffineTransform, Mat4};
 use khora_macros::Component;
 
-/// A component that stores the final, calculated, world-space transformation of an entity.
+/// An entity's world-space pose: its `Transform` composed with its ancestors'.
 ///
-/// This component's value is the result of combining the entity's local `Transform`
-/// with the `GlobalTransform` of its `Parent`, recursively up to the root of the scene.
-///
-/// It is intended to be **read-only** for most systems (like rendering and physics).
-/// It should only be written to by the dedicated transform propagation system.
-/// This acts as a cache to avoid re-calculating the full transform hierarchy every time
-/// it's needed.
+/// Derived and never saved. Only the transform propagation system writes it;
+/// rendering and physics read it.
 #[derive(Debug, Clone, Copy, PartialEq, Component)]
 #[component(domain = Spatial, provenance = Derived)]
 pub struct GlobalTransform(pub AffineTransform);
 
 impl GlobalTransform {
-    /// Creates a new `GlobalTransform` from a `Mat4`.
+    /// Creates a `GlobalTransform` from a world matrix.
     pub fn new(matrix: Mat4) -> Self {
         Self(AffineTransform(matrix))
     }
 
-    /// Creates a new identity `GlobalTransform`.
+    /// Creates an identity `GlobalTransform`.
     pub fn identity() -> Self {
         Self(AffineTransform::IDENTITY)
     }
 
-    /// Returns the inner `Mat4` representation.
+    /// Returns the world matrix.
     pub fn to_matrix(&self) -> Mat4 {
         self.0.into()
     }
 
-    /// Creates a `GlobalTransform` representing a translation.
+    /// Creates a `GlobalTransform` that only translates to `position`.
     pub fn at_position(position: khora_core::math::Vec3) -> Self {
         Self::new(Mat4::from_translation(position))
     }

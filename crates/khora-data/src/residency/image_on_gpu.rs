@@ -12,15 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `ImageOnGpu` — UI images placed in the GPU atlas.
-//!
-//! Every image a `UiImage` names is uploaded into the
-//! [`UiImageAtlas`](crate::ui::UiImageAtlas) before the agents run, and placed
-//! again when its file changes: the atlas's [`Resident`] store remembers which
-//! decoded copy each rect was made from, and the asset reload replaces that
-//! copy. The UI agent only reads the rects.
-//!
-//! [`Resident`]: khora_core::residency::Resident
+//! `ImageOnGpu`: every image a `UiImage` names, placed in the
+//! [`UiImageAtlas`] before the agents run, and placed
+//! again when its file changes.
 
 use crate::ecs::SystemContext;
 use std::collections::HashSet;

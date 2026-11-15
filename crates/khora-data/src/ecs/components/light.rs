@@ -12,10 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines the Light component for the ECS.
-//!
-//! This component represents a light source attached to an entity in the scene.
-//! The entity's `GlobalTransform` provides the position and orientation of the light.
+//! The [`Light`] component and the rules its values are checked against.
 
 use khora_core::math::{Mat4, Vec3, FRAC_PI_2};
 use khora_core::problems::ProblemSeverity;
@@ -24,10 +21,7 @@ use khora_macros::Component;
 
 use crate::ecs::FieldProblem;
 
-/// A component that adds a light source to an entity.
-///
-/// This component works in conjunction with the entity's `GlobalTransform`
-/// to determine the light's world-space position and orientation.
+/// A light source, placed and oriented by its entity's `GlobalTransform`.
 ///
 /// # Examples
 ///
@@ -44,13 +38,10 @@ use crate::ecs::FieldProblem;
 #[derive(Debug, Clone, Component)]
 #[component(domain = Render, check = Light::check)]
 pub struct Light {
-    /// The type and properties of the light source.
+    /// The kind of light (directional, point, spot) and its properties.
     pub light_type: LightType,
 
-    /// Whether the light is currently active.
-    ///
-    /// Disabled lights are not extracted for rendering and have no
-    /// performance impact on the scene.
+    /// Whether the light shines; a disabled light is not extracted and costs nothing.
     pub enabled: bool,
 }
 
@@ -93,8 +84,9 @@ impl Light {
         ))
     }
 
-    /// What this light's values cannot be used for, field by field — never
-    /// rewritten, never refused.
+    /// Returns what this light's values cannot be used for, field by field.
+    ///
+    /// The values are never rewritten nor refused.
     ///
     /// Each problem names the field by its path in the light's serialized
     /// form (`light_type.<Variant>.<field>`) and the value in its message:
@@ -443,10 +435,8 @@ mod tests {
         }
     }
 
-    /// Ordinary values off the defaults are fine too: a range just past the
-    /// shadow near plane with shadows on, a tiny range without shadows, a
-    /// cone whose inner angle is 0 or equals the outer, a sun direction that
-    /// is not normalized.
+    /// Ordinary values off the defaults are fine too: small ranges, a cone
+    /// edge case, a sun direction that is not normalized.
     #[test]
     fn usable_lights_off_the_defaults_have_no_problem() {
         for light in [
@@ -464,9 +454,8 @@ mod tests {
         }
     }
 
-    /// A point or spot light whose range is 0 or negative reaches nothing:
-    /// one `Error` on its range, naming the value — with or without shadows
-    /// (no extra shadow warning for a range that is not positive).
+    /// A range of 0 or less is one `Error` on it, naming the value, with no
+    /// extra shadow warning.
     #[test]
     fn a_zero_or_negative_range_is_an_error() {
         for (range, shown) in [(0.0, "0"), (-0.0, "0"), (-1.0, "-1"), (-25.5, "-25.5")] {
@@ -497,9 +486,8 @@ mod tests {
         }
     }
 
-    /// A shadow-casting light whose range does not reach past the shadow
-    /// near plane (0.1) still lights, but casts no shadow: one `Warning` on
-    /// its range that says so. The same light without shadows is fine.
+    /// A shadow-casting range not past the shadow near plane (0.1) is one
+    /// `Warning` on it; without shadows it is fine.
     #[test]
     fn a_small_shadow_casting_range_is_a_warning() {
         for range in [0.05, 0.1, 1e-6] {
@@ -525,9 +513,8 @@ mod tests {
         }
     }
 
-    /// A spot cone half-angle of 90° or more opens a half-space the spot's
-    /// perspective cannot hold: an `Error` on the outer angle. So is a cone
-    /// that is closed, reversed or not a number.
+    /// An outer cone of 90° or more, closed, reversed or not a number is an
+    /// `Error` on the outer angle.
     #[test]
     fn a_spot_cone_of_ninety_degrees_or_more_is_an_error() {
         for outer in [FRAC_PI_2, FRAC_PI_2 + 0.01, 2.0, PI] {
@@ -565,9 +552,8 @@ mod tests {
         }
     }
 
-    /// A sun direction that is tiny but not zero still points somewhere (the
-    /// engine makes it unit): no problem, even where its squared length
-    /// underflows to 0.
+    /// A tiny non-zero sun direction still points (the engine makes it unit),
+    /// even where its squared length underflows to 0.
     #[test]
     fn a_tiny_non_zero_sun_direction_is_no_problem() {
         for direction in [Vec3::new(1e-30, 0.0, 0.0), Vec3::new(0.0, -1e-25, 1e-25)] {
@@ -593,9 +579,8 @@ mod tests {
         }
     }
 
-    /// Every field a problem names is a path to a value in the light's
-    /// serialized form — the JSON the inspector walks — so the inspector can
-    /// mark the row it shows the value on.
+    /// Every field a problem names resolves in the light's serialized form,
+    /// the JSON the inspector walks to mark the row.
     #[test]
     fn field_paths_match_the_serialized_form() {
         let registration = registration_for(TypeId::of::<Light>()).expect("Light registers itself");
@@ -675,9 +660,8 @@ mod tests {
         ]
     }
 
-    /// An intensity that is not a number, infinite or negative is one `Error`
-    /// on `light_type.<Variant>.intensity`, for every kind of light. An
-    /// intensity of 0 (a light switched down to dark) is fine.
+    /// A non-finite or negative intensity is one `Error` on it, for every
+    /// kind of light; an intensity of 0 is fine.
     #[test]
     fn a_non_finite_or_negative_intensity_is_an_error() {
         for intensity in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -1.0] {
@@ -694,9 +678,8 @@ mod tests {
         }
     }
 
-    /// A colour holding a channel that is not a number, infinite or negative
-    /// is one `Error` on `light_type.<Variant>.color` — one for the colour,
-    /// however many of its channels are broken. A black colour is fine.
+    /// A colour with any non-finite or negative channel is one `Error` on the
+    /// colour; black is fine.
     #[test]
     fn a_non_finite_or_negative_colour_is_an_error() {
         for color in [

@@ -12,15 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Writing a world, or part of one, down as a scene record — page by page.
+//! Writing a world, or a subtree, down as a scene record: live rows, page by page, values by name.
 //!
-//! The page is the unit CRPECS stores and serializes in, so capture walks the
-//! pages: for each, the rows that are live (a page may hold rows an entity
-//! has left, waiting for compaction), and for each component worth saving, its
-//! column read row by row. The values are written by name through the
-//! component's registration — or, for a component declared while the engine
-//! runs, field by field through its declaration, which the record then
-//! carries; how the column is laid out in memory never reaches the record.
+//! See the book: concepts/serialization.md, "Pages, persistent ids, provenance".
 
 use std::any::TypeId;
 
@@ -77,18 +71,19 @@ impl std::fmt::Display for SaveError {
 
 impl std::error::Error for SaveError {}
 
-/// Every entity of `world` but a system's own, and the components worth
-/// saving.
+/// Returns a scene record of every entity of `world` but a system's own.
 ///
-/// Listed tree by tree, each parent's children in their `Children` order: a
-/// load derives every list from the order the record names its children in,
-/// so this is what keeps siblings in the order the scene had them.
+/// Entities are listed tree by tree, children in `Children` order: a load
+/// rebuilds sibling order from the record's order.
+///
+/// # Errors
+///
+/// When a component's value cannot be written as a record.
 pub fn capture_world(world: &World) -> Result<SceneRecord, SaveError> {
     capture(world, &scene_entities(world), None, Kept::Scene)
 }
 
-/// Every entity a scene holds, in tree order: all of `world`'s but the
-/// systems' own — whatever the encoding.
+/// Returns every entity a scene holds, in tree order: all `world`'s but the systems' own.
 pub(super) fn scene_entities(world: &World) -> Vec<EntityId> {
     // A system's own entity is the engine's, made while the game runs: no
     // scene holds it — whatever its name is now. An authored entity holding a
@@ -108,14 +103,13 @@ pub(super) fn scene_entities(world: &World) -> Vec<EntityId> {
         .collect()
 }
 
-/// Every entity of `world`, in tree order, and the components a game save
-/// keeps: what a scene keeps, and the state play resumes from.
+/// Returns a record of every entity of `world` in tree order, with what a game
+/// save keeps: what a scene keeps, and the state play resumes from.
 pub(super) fn capture_game(world: &World) -> Result<SceneRecord, SaveError> {
     capture(world, &world_in_tree_order(world), None, Kept::Game)
 }
 
-/// Every entity of `world`, tree by tree, each parent's children in their
-/// `Children` order — the order a save lists them in.
+/// Returns every entity of `world` tree by tree, children in `Children` order.
 pub(super) fn world_in_tree_order(world: &World) -> Vec<EntityId> {
     let roots = world
         .iter_entities()
@@ -133,9 +127,14 @@ pub(super) fn world_in_tree_order(world: &World) -> Vec<EntityId> {
     entities
 }
 
-/// `root` and everything under it. A reference to an entity outside the
-/// subtree is written as outside, and the root's own parent is left out: the
-/// subtree is placed wherever it is instantiated.
+/// Returns a record of `root` and everything under it.
+///
+/// A reference outside the subtree is written as outside, and the root's own
+/// parent is left out, so the subtree lands wherever it is instantiated.
+///
+/// # Errors
+///
+/// When `root` is not alive, or a component's value cannot be written as a record.
 pub fn capture_subtree(world: &World, root: EntityId) -> Result<SceneRecord, SaveError> {
     if !world.contains(root) {
         return Err(SaveError::NoSuchEntity(root));
@@ -144,10 +143,9 @@ pub fn capture_subtree(world: &World, root: EntityId) -> Result<SceneRecord, Sav
     capture(world, &entities, Some(root), Kept::Scene)
 }
 
-/// `roots` and everything under them, breadth first, each parent's children
-/// in their `Children` order. Each entity once, however the lists name it: a
-/// list that repeats a child, or names an ancestor, does not make the walk
-/// loop.
+/// Returns `roots` and everything under them, breadth first, children in `Children` order.
+///
+/// Each entity once: a list repeating a child, or naming an ancestor, does not loop.
 fn descend(world: &World, roots: Vec<EntityId>, seen: &mut HashSet<EntityId>) -> Vec<EntityId> {
     let mut entities: Vec<EntityId> = roots
         .into_iter()
@@ -262,10 +260,9 @@ pub(super) struct CapturedPage<'w, V> {
     pub(super) columns: Vec<Vec<V>>,
 }
 
-/// Walks `world`'s live page rows of `entities`, writing each saved
-/// component's value with `write` — a record, positional bytes — and
-/// grouping rows of the same saved signature into one page. The identities
-/// of `entities`, in order, and the pages.
+/// Writes each saved component of `entities`' live rows with `write`, one page per signature.
+///
+/// Returns the identities of `entities`, in order, and the pages.
 pub(super) fn capture_pages<'w, V>(
     world: &'w World,
     entities: &[EntityId],

@@ -17,30 +17,25 @@ use khora_core::physics::{BodyType, RigidBodyHandle};
 use khora_macros::Component;
 use serde::{Deserialize, Serialize};
 
-/// Component representing a rigid body in the physics simulation.
+/// A body the physics simulation moves: dynamic, static or kinematic.
 #[derive(Debug, Clone, Component, Serialize, Deserialize)]
 #[component(domain = Physics)]
 pub struct RigidBody {
-    /// Opaque handle used by the physics provider.
+    /// The physics provider's handle, set while the body exists there; not saved.
     #[component(skip)]
     pub handle: Option<RigidBodyHandle>,
-    /// Global type of the body (Static, Dynamic, Kinematic).
+    /// How the body moves: by forces (dynamic), never (static), or by code (kinematic).
     pub body_type: BodyType,
-    /// Mass of the body in kilograms.
+    /// The mass, in kilograms; only a dynamic body uses it.
     pub mass: f32,
-    /// Whether to enable Continuous Collision Detection (CCD).
+    /// Whether continuous collision detection keeps a fast, small body from tunnelling.
     pub ccd_enabled: bool,
-    /// The linear velocity the body starts with.
+    /// The linear velocity the body starts with, in metres per second.
     ///
-    /// An **initial condition**, applied once when the body is created — not
-    /// what it is doing now. The two were one field documented as "current"
-    /// while being `Authored` and serialized, and the sync could not tell which
-    /// it held: it pushed the authored value into the solver every frame, so
-    /// gravity accumulated for exactly one step and was then erased. What the
-    /// body is doing lives in [`BodyMotion`](crate::ecs::BodyMotion).
+    /// Applied once, when the body is created. What the body is doing now is
+    /// its [`BodyMotion`](crate::ecs::BodyMotion).
     pub initial_velocity: Vec3,
-    /// The angular velocity the body starts with, for the reason
-    /// [`initial_velocity`](Self::initial_velocity) gives.
+    /// The angular velocity the body starts with, in radians per second; applied once.
     pub initial_angular_velocity: Vec3,
 }
 
@@ -58,7 +53,7 @@ impl Default for RigidBody {
 }
 
 impl RigidBody {
-    /// Creates a new dynamic rigid body.
+    /// Creates a dynamic body of `mass` kilograms.
     pub fn new_dynamic(mass: f32) -> Self {
         Self {
             handle: None,
@@ -70,7 +65,7 @@ impl RigidBody {
         }
     }
 
-    /// Creates a new static rigid body.
+    /// Creates a static body.
     pub fn new_static() -> Self {
         Self {
             handle: None,

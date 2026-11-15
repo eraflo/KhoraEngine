@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines asset types and their associated data structures.
+//! Asset types and the caches that hold their loaded handles.
 
 mod audio;
 pub(crate) mod procedural_mesh;

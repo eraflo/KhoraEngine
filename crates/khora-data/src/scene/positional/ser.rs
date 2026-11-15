@@ -22,7 +22,7 @@ use crate::scene::record::{
     to_record, EntityRef, Record, RecordError, ReferenceWriter, ENTITY_NAME, MAX_DEPTH,
 };
 
-/// The serializer.
+/// The positional serializer.
 pub(super) struct Writer<'o, 'r> {
     out: &'o mut Vec<u8>,
     references: &'r mut dyn ReferenceWriter,

@@ -12,15 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! [`ProjectionRegistry`] — the store of what the GPU holds for the world's
-//! meshes and materials, and the mesh upload.
-//!
-//! Created once at boot and kept as a runtime resource. `sync_all` is the
-//! [`MeshOnGpu`] residency's work: every entity with a `HandleComponent<Mesh>`
-//! gets a `HandleComponent<GpuMesh>`, idempotently (entities already holding
-//! one are skipped by the `Without<HandleComponent<GpuMesh>>` filter). The
-//! material upload is the `gpu_material_sync` residency's
-//! (`residency/material_on_gpu.rs`).
+//! [`ProjectionRegistry`], the store of what the GPU holds for the world's
+//! meshes and materials, and the mesh upload the [`MeshOnGpu`] residency runs.
 
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
@@ -58,19 +51,15 @@ impl ProjectionRegistry {
         }
     }
 
-    /// Uploads any newly loaded CPU meshes to the GPU and tags their ECS entities.
+    /// Uploads newly loaded meshes and gives each entity its
+    /// `HandleComponent<GpuMesh>`.
     ///
-    /// For each entity that has `HandleComponent<Mesh>` but not yet
-    /// `HandleComponent<GpuMesh>`:
-    /// 1. Checks whether the UUID is already in the `AssetStore` (shared across agents).
-    /// 2. If not, uploads vertex + index buffers via `device`.
-    /// 3. Inserts the result into the `AssetStore`.
-    /// 4. Adds `HandleComponent<GpuMesh>` to the entity so subsequent frames skip it.
-    ///
-    /// This method is idempotent and safe to call every frame.
+    /// Idempotent: a tagged entity is skipped, a mesh shared by several
+    /// entities is uploaded once, and a mesh the device refuses is tried again
+    /// on the next call.
     pub fn sync_all(&self, world: &mut World, device: &dyn GraphicsDevice) {
         let cache = self.store.store::<GpuMesh>();
-        // Collect the pending uploads (read-only ECS borrow).
+        // Collected first: the query borrows the world the tags are added to.
         let mut pending: HashMap<EntityId, HandleComponent<GpuMesh>> = HashMap::new();
 
         {
@@ -104,7 +93,6 @@ impl ProjectionRegistry {
                     }
                 }
 
-                // Schedule the ECS component addition.
                 if let Some(handle) = cache.read().unwrap_or_else(|e| e.into_inner()).get(&uuid) {
                     pending.insert(
                         entity_id,
@@ -117,7 +105,6 @@ impl ProjectionRegistry {
             }
         }
 
-        // Then mutate the ECS world (no longer borrowed by the query above).
         for (entity_id, component) in pending {
             // The ECS query skips stale orphan rows, so an entity reaches this loop
             // only when it genuinely lacks the handle — any failure is unexpected.

@@ -12,13 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Broadphase collision-pair scratch.
-//!
-//! Plain data (never an ECS component, to keep it out of the editor scene
-//! tree and off the structural-mutation path) meant to live as an
-//! `Arc<Mutex<CollisionPairs>>` [`Resource`](khora_core::Resources). It has
-//! no consumer today — the experimental native broadphase/solver lanes that
-//! used it were removed — but is kept as a reusable serializable type.
+//! Broadphase collision pairs: plain data shared through
+//! [`Resources`](khora_core::Resources), never an ECS component, so it stays
+//! out of the scene tree and off the structural-mutation path.
 
 use khora_core::ecs::entity::EntityId;
 use serde::{Deserialize, Serialize};
@@ -32,11 +28,10 @@ pub struct CollisionPair {
     pub entity_b: EntityId,
 }
 
-/// Sink of potential collision pairs identified during broadphase.
+/// The potential collision pairs a broadphase pass found this frame.
 ///
-/// Intended to live in [`khora_core::Resources`] as
-/// `Arc<Mutex<CollisionPairs>>`: a broadphase pass overwrites the inner
-/// `pairs` vector each frame and a resolution pass reads it.
+/// Lives in [`khora_core::Resources`] as `Arc<Mutex<CollisionPairs>>`; the
+/// broadphase overwrites `pairs` each frame.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CollisionPairs {
     /// List of potential collision pairs detected this frame.

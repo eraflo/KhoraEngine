@@ -17,16 +17,16 @@
 pub use super::column_ticks::ColumnTicks;
 pub use super::observer::Observer;
 
-/// The silence, in ticks, after which `ecs_maintenance` frees a column's row
-/// ticks ([`World::free_quiet_row_ticks`](crate::ecs::World::free_quiet_row_ticks)):
-/// about five seconds of frames at 60 frames a second — a frame of the
-/// sandbox scene runs 43 ticks (one per `DataSystem` and `Flow` that runs;
-/// agents never write the world, so they open no run). A count of ticks, not
-/// of seconds: a column is freed once that much of the world's work went by
-/// without writing it.
+/// The silence, in ticks, after which `ecs_maintenance` frees a column's row ticks.
+///
+/// About five seconds of the sandbox scene at 60 frames a second, counted in
+/// work rather than time: see
+/// [`World::free_quiet_row_ticks`](crate::ecs::World::free_quiet_row_ticks).
+/// See the book: concepts/change-detection.md, "Forgetting quietly".
 pub const QUIET_ROW_TICKS: u64 = 12_900;
 
-/// A moment of a [`World`](crate::ecs::World)'s clock: one tick per run — of
-/// a `DataSystem`, of a `Flow`. A `u64` that never wraps.
+/// A moment of a [`World`](crate::ecs::World)'s clock: one tick per `DataSystem` or `Flow` run.
+///
+/// A `u64` that never wraps. See the book: concepts/change-detection.md, "The clock".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Tick(pub u64);

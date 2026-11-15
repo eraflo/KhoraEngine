@@ -39,14 +39,12 @@ use khora_core::renderer::error::RenderError;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
 
-/// Runs the full one-time bake: env cube → diffuse irradiance cube → prefiltered
-/// specular cube + BRDF LUT, plus the shared sampler.
+/// Bakes the environment, irradiance and specular cubes, the BRDF table and
+/// the shared sampler.
 ///
-/// The env cube is filled either by projecting an authored equirectangular map
-/// (`env_source`) or by the procedural sky. Everything downstream reads the
-/// cube and is identical in both cases.
-///
-/// A bake that fails partway frees every object it had created.
+/// The env cube comes from an authored equirectangular map (`env_source`) or
+/// the procedural sky; what follows reads it alike. A bake that fails partway
+/// frees every object it created.
 pub(super) fn bake(
     device: &dyn GraphicsDevice,
     pipeline_system: &dyn PipelineSystem,
@@ -84,7 +82,6 @@ fn record_bake(
     let (_, brdf_view) = create_brdf_lut(device, objects)?;
     let sampler = create_ibl_sampler(device, objects)?;
 
-    // Pipelines + inline layouts.
     let irr_pipeline = pipeline_system.pipeline(device, &irradiance_pipeline_spec())?;
     let irr_layout =
         pipeline_system.inline_layout(device, IRRADIANCE_LAYOUT, &irradiance_layout_entries())?;
@@ -96,11 +93,8 @@ fn record_bake(
     let sky_bufs = create_face_basis_buffers(device, sun, objects)?;
     let irr_bufs = create_face_basis_buffers(device, sun, objects)?;
 
-    // Environment source — an authored equirectangular map when the scene
-    // supplies one, else the procedural sky. Both paths write the same six env
-    // cube faces with the same per-face basis uniforms. The equirect source is
-    // only read during the bake, but it must outlive the submission that
-    // samples it, so it is recorded with the rest.
+    // The equirect source is read only during the bake, but it must outlive
+    // the submission that samples it, so it is recorded with the rest.
     let (env_pipeline, env_bgs) = match env_source {
         Some(cpu) => {
             let (_, view) = upload_equirect(device, cpu, objects)?;
@@ -177,11 +171,9 @@ fn record_bake(
         }
     }
 
-    // Submission 1: sky → env cube. The convolution + prefilter SAMPLE the env
-    // cube, so it must fully complete first; cross-submission ordering on the
-    // queue guarantees that (a single encoder would leave the write→read hazard
-    // unsynchronised — nothing else in the engine writes then reads a texture
-    // within one encoder).
+    // The env cube is submitted on its own: the convolution and the prefilter
+    // sample it, and the queue orders a submission's writes before the next
+    // one's reads, which a single encoder would not.
     let mut sky_encoder = device.create_command_encoder(Some("IBL Env Bake"));
     record_face_passes(
         &mut *sky_encoder,
@@ -195,8 +187,6 @@ fn record_bake(
         None => log::error!("IBL: sky bake encoder finish returned None; skipping submit"),
     }
 
-    // Submission 2: irradiance + prefiltered specular (both read env) + the
-    // environment-independent BRDF LUT.
     let mut encoder = device.create_command_encoder(Some("IBL Filter Bake"));
     record_face_passes(
         &mut *encoder,
@@ -313,10 +303,9 @@ fn record_face_passes(
 
 /// A bind group of (source texture @0, sampler @1, per-face basis uniform @2).
 ///
-/// Shared by every bake pass that reads a texture per face: the irradiance
-/// convolution and the specular prefilter (which bind the env **cube**), and
-/// the equirectangular projection (which binds a **2D** lat-long map). Only the
-/// layout's declared view dimension differs; the entry shape is identical.
+/// Shared by the irradiance convolution and the specular prefilter (a cube) and
+/// the equirectangular projection (a 2D map); only the layout's view dimension
+/// differs.
 fn sampled_texture_bind_group(
     device: &dyn GraphicsDevice,
     layout: khora_core::renderer::api::command::BindGroupLayoutId,

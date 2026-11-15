@@ -12,12 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What a component's own check says about the values it holds.
-//!
-//! A component that can hold values the engine cannot use (a camera whose
-//! near plane sits at its eye, …) declares a `check`. The check never
-//! rewrites nor refuses a value: it names the field and says what is wrong,
-//! and each boundary that asks it (a load, the running world) reports it.
+//! What a component's own check says about the values it holds: the field,
+//! and what is wrong with it. A check never rewrites nor refuses a value.
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::problems::ProblemSeverity;
@@ -27,9 +23,9 @@ use crate::ecs::{Component, World};
 /// One problem a component's check found in one of its fields.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldProblem {
-    /// The dotted path of the field in the component's serialized (JSON)
-    /// form — the keys the inspector walks: `"z_near"`,
-    /// `"projection.Perspective.fov_y_radians"`, `"light_type.Spot.range"`.
+    /// The field's dotted path in the component's JSON form, as the inspector walks it.
+    ///
+    /// For example `"z_near"`, `"projection.Perspective.fov_y_radians"`.
     pub field: &'static str,
     /// How much the problem matters.
     pub severity: ProblemSeverity,
@@ -38,10 +34,9 @@ pub struct FieldProblem {
     pub message: String,
 }
 
-/// Every problem `check` finds in every `T` of `world`, each with the entity
-/// holding the value — what a registration's `check` hook runs.
+/// Returns every problem `check` finds in every `T` of `world`, with the entity holding it.
 ///
-/// Reads only: no value is rewritten.
+/// What a registration's `check` hook runs. Reads only.
 pub fn check_all<T: Component>(
     world: &World,
     check: fn(&T) -> Vec<FieldProblem>,

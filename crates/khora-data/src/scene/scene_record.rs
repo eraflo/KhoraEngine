@@ -12,15 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A scene, written down page by page.
+//! A scene written down page by page, values by name, never a column's memory.
 //!
-//! CRPECS stores entities in pages — one signature, rows, a column per
-//! component — and the page is its unit of iteration, compaction and
-//! serialization. A scene record keeps that shape: each page record is a
-//! signature, the entities of its rows, and one column of values per
-//! component. Capturing reads a page's columns; loading builds a page's rows
-//! in one go. What a page record holds is the WHAT — component names and
-//! values by name — never the memory a column happens to occupy.
+//! See the book: concepts/serialization.md, "Pages, persistent ids, provenance".
 
 use khora_core::ecs::PersistentId;
 
@@ -37,23 +31,19 @@ use super::save::SaveRecord;
 /// Everything a scene, a prefab or a save holds.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SceneRecord {
-    /// Every entity, in the order they were captured — including any that
-    /// has no component worth saving, which still exists.
+    /// Every entity in capture order, including one with no component worth saving.
     pub entities: Vec<PersistentId>,
     /// The pages their components are stored in.
     pub pages: Vec<PageRecord>,
-    /// The prefab instances the record keeps as links: each one's entities
-    /// are not in `pages`, they are the prefab's, with the instance's
-    /// differences on top.
+    /// The prefab instances kept as links; their entities are not in `pages`.
     pub instances: Vec<InstanceRecord>,
-    /// The declaration of every component declared while the engine ran
-    /// that `pages` hold, sorted by name: no registration knows such a
-    /// component, so the record describes it.
+    /// The declarations, sorted by name, of the run-time-declared components `pages` hold.
+    ///
+    /// No registration knows such a component, so the record describes it.
     pub declared: Vec<DeclaredRecord>,
 }
 
-/// A prefab instance, kept as a link: the prefab, the identity of its root,
-/// and how the instance differs from the prefab.
+/// A prefab instance kept as a link: the prefab, its root's identity, its differences.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstanceRecord {
@@ -78,12 +68,10 @@ pub struct PageRecord {
     pub columns: Vec<Vec<Record>>,
 }
 
-/// Written as `{"entities": [..], "pages": [{"rows": [..], "columns": {"Name":
-/// [value per row], ..}}, ..]}` — a page's components are the keys of its
-/// columns, in signature order: a text save reads as the pages the scene is
-/// stored in. A record linking to prefabs adds `"instances": [..]`; one
-/// holding components declared while the engine ran adds their
-/// `"declared": [..]`.
+/// Written as `{"entities": [..], "pages": [{"rows": [..], "columns": {"Name": [..]}}]}`.
+///
+/// Columns are keyed by component name in signature order; `instances` and
+/// `declared` appear only when not empty. See the book: reference/formats.md, "The scene record".
 impl Serialize for SceneRecord {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let linked = !self.instances.is_empty();
@@ -178,9 +166,9 @@ impl<'de> Deserialize<'de> for SceneRecord {
     }
 }
 
-/// Reads a record that cannot link to prefabs — what a save or an instance
-/// holds of its differences. Refusing `instances` there is also what keeps a
-/// file from nesting links inside links without end.
+/// Reads a record that cannot link to prefabs: a save's or an instance's differences.
+///
+/// Refusing `instances` there keeps a file from nesting links without end.
 pub(super) fn plain_record<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<SceneRecord, D::Error> {

@@ -31,25 +31,25 @@ pub struct RowRef<'w> {
 }
 
 impl<'w> RowRef<'w> {
-    /// The component.
+    /// Returns the component's key.
     pub fn key(&self) -> ComponentKey {
         self.vtable.key
     }
 
-    /// The component's vtable.
+    /// Returns the component's vtable.
     pub fn vtable(&self) -> &'w ComponentVTable {
         self.vtable
     }
 
-    /// The value of the field at `slot`, `None` for one a script cannot
-    /// reach.
+    /// Returns the value of the field at `slot`, `None` for one a script cannot reach.
     pub fn field(&self, slot: usize) -> Option<ScriptValue> {
         self.vtable.columns.read_field(self.column, self.row, slot)
     }
 }
 
-/// One entity's row of one component, written by id. A write accepted
-/// stamps the row with the clock's tick; a write refused is not a write.
+/// One entity's row of one component, written by id.
+///
+/// A write accepted stamps the row with the clock's tick; a write refused is not a write.
 pub struct RowMut<'w> {
     vtable: &'w ComponentVTable,
     column: &'w mut dyn AnyVec,
@@ -66,26 +66,24 @@ pub struct RowMut<'w> {
 }
 
 impl<'w> RowMut<'w> {
-    /// The component.
+    /// Returns the component's key.
     pub fn key(&self) -> ComponentKey {
         self.vtable.key
     }
 
-    /// The component's vtable.
+    /// Returns the component's vtable.
     pub fn vtable(&self) -> &ComponentVTable {
         self.vtable
     }
 
-    /// The value of the field at `slot`, `None` for one a script cannot
-    /// reach.
+    /// Returns the value of the field at `slot`, `None` for one a script cannot reach.
     pub fn field(&self, slot: usize) -> Option<ScriptValue> {
         self.vtable
             .columns
             .read_field(&*self.column, self.row, slot)
     }
 
-    /// Writes the fields the patch names, by slot — all or nothing: every
-    /// value is checked before any is written.
+    /// Writes the fields the patch names, by slot, all or nothing.
     pub fn write_fields(&mut self, patch: &[(usize, &ScriptValue)]) -> Result<(), FieldWriteError> {
         self.vtable
             .columns
@@ -98,8 +96,7 @@ impl<'w> RowMut<'w> {
     ///
     /// # Panics
     ///
-    /// When `slot` is not a field of the component: a slot comes from the
-    /// component the row is read with.
+    /// If `slot` is not a field of the component.
     pub fn set_field(&mut self, slot: usize, value: &ScriptValue) -> Result<(), FieldError> {
         self.write_field(slot, value)?;
         self.stamp();
@@ -115,7 +112,7 @@ impl<'w> RowMut<'w> {
         *self.epoch = (*self.epoch).max(self.tick.0);
     }
 
-    /// [`set_field`](Self::set_field), the row left unstamped.
+    /// Writes the field as [`set_field`](Self::set_field) does, leaving the row unstamped.
     fn write_field(&mut self, slot: usize, value: &ScriptValue) -> Result<(), FieldError> {
         let row = self.row;
         if let Some(column) = self.column.as_any_mut().downcast_mut::<PackedColumn>() {
@@ -149,7 +146,7 @@ impl<'w> RowMut<'w> {
 }
 
 impl World {
-    /// `entity`'s row of component `key`.
+    /// Returns `entity`'s row of component `key`.
     pub fn row(&self, entity: EntityId, key: ComponentKey) -> Option<RowRef<'_>> {
         let (vtable, location) = self.row_location(entity, key)?;
         let column = self.storage.pages[location.page_id as usize]
@@ -162,9 +159,10 @@ impl World {
         })
     }
 
-    /// `entity`'s row of component `key`, writable. A write accepted through it
-    /// stamps the row and raises the domain's change epoch; taking it changes
-    /// nothing.
+    /// Returns `entity`'s row of component `key`, writable.
+    ///
+    /// Taking it changes nothing; a write accepted through it stamps the row
+    /// and raises the domain's change epoch.
     pub fn row_mut(&mut self, entity: EntityId, key: ComponentKey) -> Option<RowMut<'_>> {
         let (vtable, location) = self.row_location(entity, key)?;
         let domain = vtable.domain;
@@ -194,7 +192,7 @@ impl World {
         })
     }
 
-    /// The vtable of `key` and `entity`'s live row in its domain.
+    /// Returns the vtable of `key` and `entity`'s live row in its domain.
     fn row_location(
         &self,
         entity: EntityId,

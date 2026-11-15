@@ -20,19 +20,17 @@ use std::sync::{Arc, PoisonError, RwLock};
 
 use khora_core::asset::AssetUUID;
 
-/// The prefab identities a project holds: a `Runtime` resource, replaced
-/// whole when the project's assets are indexed again.
+/// The prefab identities a project holds, a `Runtime` resource replaced whole on reindex.
 ///
-/// Read through a shared snapshot: a frame takes the set as it is and keeps
-/// it, so a reindex mid-frame never changes what one turn sees. A clone is
-/// the same catalog — what the runtime holds and what refreshes it share it.
+/// A frame reads one shared snapshot, so a reindex mid-frame never changes what
+/// one turn sees. A clone shares the same catalog.
 #[derive(Debug, Default, Clone)]
 pub struct PrefabCatalog {
     prefabs: Arc<RwLock<Arc<BTreeSet<AssetUUID>>>>,
 }
 
 impl PrefabCatalog {
-    /// A catalog holding no prefab.
+    /// Returns a catalog holding no prefab.
     pub fn new() -> Self {
         Self::default()
     }
@@ -44,12 +42,12 @@ impl PrefabCatalog {
         *self.prefabs.write().unwrap_or_else(PoisonError::into_inner) = prefabs;
     }
 
-    /// Whether the catalog holds the prefab `uuid`.
+    /// Returns whether the catalog holds the prefab `uuid`.
     pub fn holds(&self, uuid: AssetUUID) -> bool {
         self.snapshot().contains(&uuid)
     }
 
-    /// The catalog as it is now, shared.
+    /// Returns the catalog as it is now, shared.
     pub fn snapshot(&self) -> Arc<BTreeSet<AssetUUID>> {
         Arc::clone(&self.prefabs.read().unwrap_or_else(PoisonError::into_inner))
     }

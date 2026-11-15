@@ -16,12 +16,10 @@
 
 use crate::ecs::{ComponentKey, Tick};
 
-/// What a query's items are fetched with: the tick a write through a
-/// writable item carries — the world's [`current_tick`](crate::ecs::World::current_tick)
-/// —, the query's writable terms (whether some observer watches each, whose
-/// columns then gain row ticks on their first write, and its domain's change
-/// epoch), and the tick its
-/// [`Changed`](super::Changed) terms compare against.
+/// What a query's items are fetched with: a write tick, the writable terms, and a `since` tick.
+///
+/// A write carries the world's [`current_tick`](crate::ecs::World::current_tick);
+/// the [`Changed`](super::Changed) terms compare against `since`.
 #[derive(Debug, Clone, Copy)]
 pub struct FetchContext<'s> {
     pub(crate) tick: Tick,
@@ -39,7 +37,7 @@ pub(crate) struct Writable {
 }
 
 impl FetchContext<'_> {
-    /// The context of a query that writes nothing.
+    /// Returns the context of a query that writes nothing.
     pub(crate) fn read_only(tick: Tick, since: Tick) -> Self {
         FetchContext {
             tick,
@@ -48,9 +46,9 @@ impl FetchContext<'_> {
         }
     }
 
-    /// Whether `key` is observed, and its domain's change epoch. Every
-    /// writable term of a `query_mut` is listed; a term listed nowhere — a
-    /// read-only query fetches none — raises no epoch.
+    /// Returns whether `key` is observed, and its domain's change epoch.
+    ///
+    /// A key that is not a writable term gets a null epoch, which no write raises.
     pub(super) fn writable(&self, key: ComponentKey) -> (bool, *mut u64) {
         self.writable
             .iter()

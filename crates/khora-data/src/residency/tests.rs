@@ -23,12 +23,13 @@ fn data_system(name: &str) -> Option<&'static DataSystemRegistration> {
         .find(|system| system.name == name)
 }
 
-/// **Residencies run before the agents, after the reload.** The UI images,
-/// the meshes and the materials are made resident in `PreExtract`, before
-/// the Flows project and the agents draw, and after `asset_reload` replaced
-/// the copies of whatever changed — so a changed asset reaches the device the
-/// frame it changed. The mesh and material residencies keep the names they
-/// were registered under before, which saves and telemetry know them by.
+/// **Residencies run before the agents, after the reload.**
+///
+/// The UI images, the meshes and the materials are made resident in
+/// `PreExtract`, before the Flows project and the agents draw, and after
+/// `asset_reload` replaced the copies of whatever changed, so a changed asset
+/// reaches the device the frame it changed. The mesh and material residencies
+/// keep their registered names, which saves and telemetry know them by.
 #[test]
 fn residency_runs_before_agents() {
     for name in ["image_on_gpu", "gpu_mesh_sync", "gpu_material_sync"] {
@@ -48,10 +49,11 @@ fn residency_runs_before_agents() {
     }
 }
 
-/// **Materials are made resident after meshes.** `gpu_material_sync` orders
-/// after `gpu_mesh_sync`, so every entity it projects already carries its
-/// `HandleComponent<GpuMesh>`; both order after the resolver, which binds
-/// this frame's asset handles.
+/// **Materials are made resident after meshes.**
+///
+/// `gpu_material_sync` orders after `gpu_mesh_sync`, so every entity it
+/// projects already carries its `HandleComponent<GpuMesh>`; both order after
+/// the resolver, which binds this frame's asset handles.
 #[test]
 fn the_material_residency_runs_after_the_mesh_residency() {
     let Some(materials) = data_system("gpu_material_sync") else {
@@ -278,9 +280,10 @@ mod mesh_on_gpu {
         }
     }
 
-    /// **A mesh the device refuses leaves nothing behind.** When the index
-    /// buffer is refused, the make fails and names it, and the vertex buffer
-    /// already made for that mesh goes back to the device.
+    /// **A mesh the device refuses leaves nothing behind.**
+    ///
+    /// When the index buffer is refused, the make fails and names it, and the
+    /// vertex buffer already made for that mesh goes back to the device.
     #[test]
     fn a_refused_index_buffer_gives_the_vertex_buffer_back() {
         let device = IndexRefusing::refusing();
@@ -300,9 +303,11 @@ mod mesh_on_gpu {
         );
     }
 
-    /// **A refused mesh is tried again.** `gpu_mesh_sync` leaves an entity
-    /// whose mesh the device refused without a GPU mesh, and caches nothing
-    /// for it; once the device accepts, the next sync uploads and tags it.
+    /// **A refused mesh is tried again.**
+    ///
+    /// `gpu_mesh_sync` leaves an entity whose mesh the device refused without a
+    /// GPU mesh, and caches nothing for it; once the device accepts, the next
+    /// sync uploads and tags it.
     #[test]
     fn a_refused_mesh_is_uploaded_once_the_device_accepts() {
         let store = AssetStore::new();

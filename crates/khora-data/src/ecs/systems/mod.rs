@@ -12,13 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Invariant systems of the Data layer (Substrate Pass).
+//! The data layer's invariant systems: each module submits one
+//! [`crate::ecs::DataSystemRegistration`], run in its [`crate::ecs::TickPhase`].
 //!
-//! Each module here defines one [`crate::ecs::DataSystemRegistration`] that
-//! gets dispatched by the engine in its declared [`crate::ecs::TickPhase`].
-//! The dispatcher in `khora-control` discovers them automatically through
-//! `inventory`; nothing else needs to know about a new system except its
-//! own file.
+//! See the book: concepts/the-frame.md, "The Substrate Pass".
 
 pub mod asset_eviction;
 pub mod audio_playback_writeback;

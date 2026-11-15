@@ -14,9 +14,9 @@
 
 //! Who watches the world's changes: a `DataSystem` or a `Flow`.
 
-/// Someone who watches the world's changes: a `DataSystem` or a `Flow`, by
-/// its registered name. Both kinds may share a name, so the kind is part of
-/// who it is.
+/// A watcher of the world's changes: a `DataSystem` or a `Flow`, by its registered name.
+///
+/// Both kinds may share a name, so the kind is part of who it is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Observer {
     /// A `DataSystem`, by its `DataSystemRegistration::name`.

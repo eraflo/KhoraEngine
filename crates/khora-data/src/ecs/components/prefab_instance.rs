@@ -15,11 +15,11 @@
 use khora_core::asset::AssetUUID;
 use khora_macros::Component;
 
-/// Marks the root of a prefab instance: the entities under it are the
-/// prefab's, each known by the root's identity and its own id in the prefab.
+/// Marks the root of a prefab instance, whose entities under it are the prefab's.
 ///
 /// Placed by the tools when a prefab is instantiated; a scene saves the
 /// instance as this link and its overrides, not as the prefab's entities.
+/// See the book: concepts/prefabs.md, "A link, not a copy".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Component)]
 #[component(domain = Spatial, provenance = ToolAuthored)]
 pub struct PrefabInstance {

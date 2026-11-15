@@ -26,9 +26,10 @@ use super::super::save::{RemovedComponents, SaveRecord};
 use super::super::scene_record::{InstanceRecord, PageRecord, SceneRecord};
 use super::{read_prefab, PrefabSource, Stack};
 
-/// The id an entity of a prefab's record takes in an instance rooted at
-/// `root`: the prefab's root is the instance root, every other entity is
-/// known within it.
+/// Returns the id a prefab entity takes in an instance rooted at `root`.
+///
+/// The prefab's root becomes `root`; every other entity is `within(root, id)`,
+/// whose namespace is fixed forever: changing it re-keys every saved instance.
 pub(super) fn rekeyed(
     id: PersistentId,
     prefab_root: PersistentId,
@@ -41,9 +42,10 @@ pub(super) fn rekeyed(
     }
 }
 
-/// Every entity of an instance of `prefab` rooted at `root`, by its path in
-/// the prefab — its own id, preceded by the roots of the instances it sits
-/// in — and the id it takes there.
+/// Returns every entity of an instance of `prefab` rooted at `root`, with its id there.
+///
+/// Each entity is keyed by its path in the prefab: its own id, preceded by the
+/// roots of the nested instances it sits in.
 pub(super) fn members(
     prefab: AssetUUID,
     root: PersistentId,
@@ -73,7 +75,7 @@ pub(super) fn members(
     Ok(all)
 }
 
-/// The re-keying that moves an instance of `prefab` from `from` to `to`.
+/// Returns the re-keying that moves an instance of `prefab` from `from` to `to`.
 pub(super) fn moved(
     prefab: AssetUUID,
     from: PersistentId,
@@ -90,7 +92,7 @@ pub(super) fn moved(
         .collect())
 }
 
-/// `value` with every entity it refers to re-keyed through `map`.
+/// Returns `value` with every entity it refers to re-keyed through `map`.
 pub(super) fn remap_value(value: &Record, map: &HashMap<PersistentId, PersistentId>) -> Record {
     let all = |items: &[Record]| items.iter().map(|item| remap_value(item, map)).collect();
     let named = |fields: &[(String, Record)]| {
@@ -152,8 +154,9 @@ pub(super) fn remap_ids(
         .collect()
 }
 
-/// `record` with every entity — its ids, its references, its instances'
-/// roots and differences — re-keyed through `map`.
+/// Returns `record` with every entity it names re-keyed through `map`.
+///
+/// That covers its ids, its references, its instances' roots and their differences.
 pub(super) fn remap_record(
     record: &SceneRecord,
     map: &HashMap<PersistentId, PersistentId>,
@@ -208,9 +211,10 @@ pub(super) fn remap_save(
     }
 }
 
-/// `record` re-keyed so its instances' differences name the members of
-/// instances rooted where `map` puts their roots: every id the record names,
-/// and every member of every instance it links to.
+/// Returns `record` re-keyed through `map`, its instances' members moved with their roots.
+///
+/// `map` is extended with the members of every instance whose root it moves,
+/// so the instances' differences name the members at their new place.
 pub(super) fn moved_record(
     record: &SceneRecord,
     map: &mut HashMap<PersistentId, PersistentId>,

@@ -15,17 +15,10 @@
 use khora_macros::Component;
 use std::collections::BTreeSet;
 
-/// Free-form string tags attached to an entity for grouping and querying.
+/// Free-form, case-sensitive string tags for grouping and finding entities.
 ///
-/// `BTreeSet` (rather than `HashSet`) gives a stable iteration order, which
-/// the inspector relies on to render chips deterministically and the
-/// serializer relies on for byte-for-byte stable output. Tags are
-/// case-sensitive on storage; query helpers in
-/// [`crate::ecs::world_ext`] do exact matching.
-///
-/// Note: this is the **entity-side** tag system. There is also
-/// [`khora_core::asset::AssetMetadata::tags`] for asset-side tags — they
-/// are not unified and serve different domains.
+/// Iterated in sorted order, so the inspector and saved scenes are stable.
+/// Asset tags ([`khora_core::asset::AssetMetadata::tags`]) are a separate set.
 #[derive(Debug, Clone, PartialEq, Eq, Component, Default)]
 #[component(domain = Spatial)]
 pub struct Tag(pub BTreeSet<String>);

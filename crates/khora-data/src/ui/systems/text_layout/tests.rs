@@ -54,9 +54,11 @@ struct Request {
     max_width: Option<f32>,
 }
 
-/// A `TextShaper` that records every call. It knows `Font::BUILT_IN` from the
-/// start, as the real backends do, and every font registered with readable
-/// data after; it refuses to shape in any other font.
+/// A `TextShaper` that records every call.
+///
+/// It knows `Font::BUILT_IN` from the start, as the real backends do, and every
+/// font registered with readable data after; it refuses to shape in any other
+/// font.
 struct FakeShaper {
     registered: Mutex<Vec<(AssetUUID, Vec<u8>)>>,
     shaped: Mutex<Vec<Request>>,
@@ -133,9 +135,10 @@ impl TextShaper for FakeShaper {
     }
 }
 
-/// What the fake shaper returns: one glyph per character but `'\n'`, its id
-/// the character's code, half an em wide, on a baseline one em below its
-/// line's top.
+/// What the fake shaper returns: one glyph per character but `'\n'`.
+///
+/// Its id is the character's code, half an em wide, on a baseline one em below
+/// its line's top.
 fn fake_shape(text: &str, size_px: f32) -> ShapedText {
     let mut glyphs = Vec::new();
     let mut widest = 0usize;
@@ -451,9 +454,10 @@ fn a_text_whose_font_is_not_resolved_has_no_layout() {
     assert_eq!(scene.layout(entity), None);
 }
 
-/// **A text needs its own handle**, not only a shaper that knows the font: a
-/// text whose handle has not arrived yet has no layout, though another text
-/// had the same font registered.
+/// **A text needs its own handle.**
+///
+/// Not only a shaper that knows the font: a text whose handle has not arrived
+/// yet has no layout, though another text had the same font registered.
 #[test]
 fn a_text_without_its_own_font_handle_has_no_layout_though_another_loaded_the_font() {
     let mut scene = Scene::new();
@@ -493,9 +497,11 @@ fn a_text_waiting_for_its_font_is_shaped_when_the_handle_arrives() {
     );
 }
 
-/// **A handle naming another font is not the text's font.** Between an edit
-/// of the font and the resolver's next run, the entity still holds the old
-/// font's handle: the text has no layout until the new handle arrives.
+/// **A handle naming another font is not the text's font.**
+///
+/// Between an edit of the font and the resolver's next run, the entity still
+/// holds the old font's handle: the text has no layout until the new handle
+/// arrives.
 #[test]
 fn a_text_whose_handle_names_another_font_has_no_layout_until_its_own_arrives() {
     let mut scene = Scene::new();
@@ -540,9 +546,11 @@ fn two_texts_sharing_a_font_register_it_once_in_a_run() {
     assert_eq!(scene.shaper.registrations().len(), 1, "not again");
 }
 
-/// **A replaced font handle is a reload.** The resolver replaces the handle
-/// on every text using the font (`set_component`); the next run registers the
-/// new data once and reshapes those texts, and no other.
+/// **A replaced font handle is a reload.**
+///
+/// The resolver replaces the handle on every text using the font
+/// (`set_component`); the next run registers the new data once and reshapes
+/// those texts, and no other.
 #[test]
 fn a_replaced_font_handle_re_registers_the_font_once_and_reshapes_its_texts() {
     let mut scene = Scene::new();
@@ -644,9 +652,10 @@ fn without_a_shaper_the_system_does_nothing() {
     assert_eq!(scene.layout(loaded), None);
 }
 
-/// **A refusal is not retried every frame.** A font the shaper cannot read
-/// leaves its text without a layout; the runs after, where nothing changed,
-/// ask the shaper nothing.
+/// **A refusal is not retried every frame.**
+///
+/// A font the shaper cannot read leaves its text without a layout; the runs
+/// after, where nothing changed, ask the shaper nothing.
 #[test]
 fn a_shaper_refusal_is_not_retried_every_frame() {
     let mut scene = Scene::new();
@@ -689,10 +698,11 @@ fn a_refused_reshape_removes_the_old_layout() {
 
 // --- the registration ---
 
-/// **Registered in `PreExtract`, after the asset resolver, observing the
-/// text and its font handle**: the resolver attaches and replaces the font
-/// handles this system reads, and the two observed components are what it
-/// reads `Changed` of.
+/// **Registered in `PreExtract`, after the asset resolver, observing the text
+/// and its font handle.**
+///
+/// The resolver attaches and replaces the font handles this system reads, and
+/// the two observed components are what it reads `Changed` of.
 #[test]
 fn the_registration_runs_in_pre_extract_after_the_asset_resolver_observing_text_and_font() {
     let registration = inventory::iter::<DataSystemRegistration>
@@ -719,14 +729,15 @@ fn the_registration_runs_in_pre_extract_after_the_asset_resolver_observing_text_
 
 // --- a font registered again ---
 
-/// **A font registered again reshapes every text laid out in it.** The shaper
-/// holds one font per id, so registering new data under an id changes the
-/// font of every text naming it — not only of the entity whose handle
-/// brought the data. That happens when a text is spawned after its font's
-/// file changed: the resolver loads the new file for the new text, while the
-/// older texts keep the handle they had. Their layouts were made from data
-/// the shaper no longer holds, and the glyph ids in them name glyphs of the
-/// old file.
+/// **A font registered again reshapes every text laid out in it.**
+///
+/// The shaper holds one font per id, so registering new data under an id
+/// changes the font of every text naming it — not only of the entity whose
+/// handle brought the data. That happens when a text is spawned after its
+/// font's file changed: the resolver loads the new file for the new text, while
+/// the older texts keep the handle they had. Their layouts were made from data
+/// the shaper no longer holds, and the glyph ids in them name glyphs of the old
+/// file.
 #[test]
 fn a_font_registered_again_reshapes_every_text_laid_out_in_it() {
     let mut scene = Scene::new();
@@ -778,12 +789,13 @@ fn a_refused_font_lays_its_text_out_once_a_readable_handle_replaces_it() {
 
 // --- order and moves ---
 
-/// **Laying texts out keeps them in the order they were spawned.** Attaching
-/// a layout moves the entity's Ui row to another page, so the order the
-/// layouts are attached in becomes the order every Ui query reads those
+/// **Laying texts out keeps them in the order they were spawned.**
+///
+/// Attaching a layout moves the entity's Ui row to another page, so the order
+/// the layouts are attached in becomes the order every Ui query reads those
 /// entities in — and the UI flow's sort by `z_index` is stable, so texts of
-/// equal `z_index` are drawn in it. That order must not depend on a hash
-/// seed: the same world must lay out, and draw, the same way every time.
+/// equal `z_index` are drawn in it. That order must not depend on a hash seed:
+/// the same world must lay out, and draw, the same way every time.
 #[test]
 fn laying_texts_out_keeps_them_in_the_order_they_were_spawned() {
     for _ in 0..4 {
@@ -803,9 +815,10 @@ fn laying_texts_out_keeps_them_in_the_order_they_were_spawned() {
     }
 }
 
-/// **An edit is seen though the text moved page before the run**: gaining
-/// another Ui component between the edit and the run moves the text's row,
-/// and the row carries its edit with it.
+/// **An edit is seen though the text moved page before the run.**
+///
+/// Gaining another Ui component between the edit and the run moves the text's
+/// row, and the row carries its edit with it.
 #[test]
 fn an_edit_is_seen_though_the_text_moved_page_before_the_run() {
     let mut scene = Scene::new();
@@ -850,12 +863,13 @@ fn a_layout_is_derived_and_never_saved() {
     assert!(!registration.is_resumed(), "never in a game save");
 }
 
-/// **A text spawned in a font already registered reshapes it alone.** The
-/// resolver hands every text naming a font the same handle; a new text's
-/// handle is new on its entity, but the font's data is what the shaper
-/// already holds. Registering it again, and reshaping every text in the font,
-/// would make each text spawned in a custom font — a chat line, a damage
-/// number — cost a parse of the font file and a reshape of all its texts.
+/// **A text spawned in a font already registered reshapes it alone.**
+///
+/// The resolver hands every text naming a font the same handle; a new text's
+/// handle is new on its entity, but the font's data is what the shaper already
+/// holds. Registering it again, and reshaping every text in the font, would
+/// make each text spawned in a custom font — a chat line, a damage number —
+/// cost a parse of the font file and a reshape of all its texts.
 #[test]
 fn a_text_spawned_in_a_font_already_registered_reshapes_it_alone() {
     let mut scene = Scene::new();
@@ -891,11 +905,12 @@ fn a_text_spawned_in_a_font_already_registered_reshapes_it_alone() {
     );
 }
 
-/// **A handle named after the built-in font does not replace it.** The
-/// built-in face is no asset: every text naming it shapes with the one the
-/// shaper was built with, whatever handle some entity carries under its id.
-/// A refused registration under that id would drop the built-in face from
-/// the shaper, and every built-in text with it.
+/// **A handle named after the built-in font does not replace it.**
+///
+/// The built-in face is no asset: every text naming it shapes with the one the
+/// shaper was built with, whatever handle some entity carries under its id. A
+/// refused registration under that id would drop the built-in face from the
+/// shaper, and every built-in text with it.
 #[test]
 fn a_handle_named_after_the_built_in_font_does_not_replace_it() {
     let mut scene = Scene::new();
@@ -1008,9 +1023,10 @@ fn a_replaced_handle_brings_its_font_once_whatever_the_number_of_its_texts() {
     );
 }
 
-/// **A text spawned with a new file of a held font brings that file**: the
-/// resolver loaded the font again for it, the older texts keep the file they
-/// had.
+/// **A text spawned with a new file of a held font brings that file.**
+///
+/// The resolver loaded the font again for it, the older texts keep the file
+/// they had.
 #[test]
 fn a_text_spawned_with_a_new_file_of_a_held_font_brings_it() {
     let mut scene = Scene::new();

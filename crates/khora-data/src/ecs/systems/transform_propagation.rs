@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Transform propagation — `Transform` → `GlobalTransform` for the scene
-//! hierarchy. Runs in [`TickPhase::PostSimulation`], after `app.update` has
-//! mutated local `Transform`s and before extraction reads `GlobalTransform`.
+//! Transform propagation: composes each `GlobalTransform` down the scene
+//! hierarchy, in [`TickPhase::PostSimulation`] before extraction reads it.
+//!
+//! See the book: concepts/physics.md, "Who owns a pose".
 
 use crate::ecs::SystemContext;
 use std::collections::{HashMap, VecDeque};
@@ -29,34 +30,23 @@ use crate::ecs::{
     Transform, Without, World,
 };
 
-/// Propagates local `Transform` changes through the scene hierarchy to
-/// compute the final `GlobalTransform` for each entity.
+/// Writes each placed entity's `GlobalTransform` from its parent's and its own
+/// `Transform`.
 ///
-/// Performs a Breadth-First Search (BFS) traversal: parent transforms are
-/// computed before their children, ensuring correctness in a single pass.
+/// A [`SimulatedTransform`] is taken whole, with the authored scale, unless the
+/// entity is [`Teleported`] this frame. Only a changed value is written.
 pub fn transform_propagation_system(world: &mut World) {
-    // Whose pose the simulation owns this frame.
-    //
-    // Collected first because the queries below take the world mutably, and
-    // consulted at every step because a simulated pose is **taken whole**: it
-    // is already a world pose, so composing it with a parent would apply that
-    // parent's transform twice. That is precisely what used to happen — the
-    // writeback wrote the provider's world pose into the *local* `Transform`
-    // and this system then multiplied it by the parent again, so a parented
-    // body drifted by its parent's transform every single frame.
-    // An entity somebody just moved is **not** in this map, however simulated
-    // it is: the author's placement wins the frame they made it, and the
-    // physics sync reads the world pose computed here to push it into the
-    // provider. Without the exception the simulated pose would win, the sync
-    // would push it straight back, and the move would be invisible.
+    // Whose pose the simulation owns this frame: already a world pose, so it is
+    // never composed with a parent. A `Teleported` entity is left out: the
+    // author's move wins its frame, and the physics sync pushes the pose
+    // computed here into the provider.
     let simulated: HashMap<EntityId, AffineTransform> = world
         .query::<(EntityId, &SimulatedTransform)>()
         .filter(|(id, _)| world.get::<Teleported>(*id).is_none())
         .map(|(id, pose)| (id, pose.0))
         .collect();
 
-    // Stage 1: initialize the work queue with all root entities.
-    // A root has `Transform` and `GlobalTransform` but no `Parent`.
+    // Roots first: a `Transform` and a `GlobalTransform`, no `Parent`.
     let mut queue: VecDeque<EntityId> = VecDeque::new();
     for (id, transform, mut global_transform, _) in
         world.query_mut::<(EntityId, &Transform, &mut GlobalTransform, Without<Parent>)>()
@@ -71,17 +61,13 @@ pub fn transform_propagation_system(world: &mut World) {
         queue.push_back(id);
     }
 
-    // Stage 2: build a parent -> children map for efficient traversal.
     let mut children_map: HashMap<EntityId, Vec<EntityId>> = HashMap::new();
     for (child_id, parent) in world.query::<(EntityId, &Parent)>() {
         children_map.entry(parent.0).or_default().push(child_id);
     }
 
-    // Stage 3: BFS through the hierarchy.
-    //
-    // Defensive against partial hierarchies (entities created mid-frame
-    // without `GlobalTransform`, recently reparented nodes whose page
-    // migration is in progress, etc.): every fetch is guarded.
+    // Breadth first, so a parent is written before its children. Every fetch
+    // is guarded: an entity spawned or reparented mid-frame may lack one.
     let mut head = 0;
     while let Some(&parent_id) = queue.get(head) {
         head += 1;
@@ -133,10 +119,6 @@ fn with_scale_of(pose: &AffineTransform, placed: &AffineTransform) -> AffineTran
     (Mat4::from(*pose) * Mat4::from_scale(scale)).into()
 }
 
-/// Wrapper to match the `DataSystemRegistration::run` signature
-/// `fn(&mut World, &Runtime, &mut OutputDeck)`. Transform propagation
-/// needs neither the runtime containers nor the output deck, so the
-/// trailing args are unused.
 fn transform_propagation_entry(
     world: &mut World,
     _runtime: &khora_core::Runtime,
@@ -216,13 +198,8 @@ mod tests {
         assert_matrix_approx_eq(child_global_transform.0.into(), expected_matrix);
     }
 
-    /// **The bug a parented rigid body had, every single frame.**
-    ///
-    /// A solver places a body in the world. The old writeback wrote that world
-    /// pose into the *local* `Transform`, and this system then multiplied it by
-    /// the parent again — so the entity drifted by its parent's transform on
-    /// every frame, and the physics sync's "teleport detection" fired each time
-    /// and snapped it back. A simulated pose is taken whole.
+    /// **A simulated pose is taken whole**: composed with the parent again, a
+    /// parented body would drift by its parent's transform every frame.
     #[test]
     fn a_simulated_child_ignores_its_parents_transform() {
         let mut world = World::new();
@@ -271,10 +248,8 @@ mod tests {
         );
     }
 
-    /// **A simulated body rendered at scale 1.** A solver gives a pose —
-    /// translation and rotation — and never a size; the size is the author's.
-    /// Taking the simulated pose whole as the world matrix dropped the
-    /// `Transform`'s scale from the first simulated frame on.
+    /// **A simulated body keeps its authored scale**: a solver gives a pose,
+    /// never a size.
     #[test]
     fn a_simulated_root_keeps_its_authored_scale() {
         let mut world = World::new();
@@ -299,9 +274,8 @@ mod tests {
         );
     }
 
-    /// A simulated child takes the scale the hierarchy would have given it —
-    /// its parent's world scale times its own — while its position stays the
-    /// solver's: the parent's scale reaches the size, never the placement.
+    /// A simulated child takes the scale the hierarchy would give it, while its
+    /// position stays the solver's.
     #[test]
     fn a_simulated_child_inherits_its_parents_scale_but_not_its_placement() {
         let mut world = World::new();
@@ -334,8 +308,7 @@ mod tests {
     }
 
     /// A mirror is part of the authored size, not of the pose: a simulated root
-    /// authored with scale (−1, 1, 1) is drawn mirrored, as its unsimulated
-    /// composition would draw it.
+    /// authored with scale (−1, 1, 1) is drawn mirrored.
     #[test]
     fn a_simulated_root_keeps_its_authored_mirror() {
         let mut world = World::new();
@@ -384,10 +357,8 @@ mod tests {
         );
     }
 
-    /// A solver moves and turns a body; it does not resize it. The scale the
-    /// author gave the body — a mirror included — survives the simulated pose
-    /// on its way to `GlobalTransform`, so a mirrored rigid body is still
-    /// drawn mirrored (and at its size) once physics owns it.
+    /// A solver does not resize a body: a mirrored rigid body is still drawn
+    /// mirrored, at its size, once physics owns it.
     #[test]
     fn a_simulated_body_keeps_its_authored_scale_and_mirror() {
         let mut world = World::new();
@@ -435,10 +406,11 @@ mod tests {
         /// that order.
         type Keys = [Option<u64>; 3];
 
-        /// A scene nothing moves in: a camera, a shadow-casting light, a mesh
-        /// with a child mesh, a sound and a listener, each placed by a
-        /// `Transform` away from the origin. Returns the world and the root
-        /// mesh.
+        /// Returns a scene nothing moves in, placed away from the origin, and
+        /// its root mesh.
+        ///
+        /// A camera, a shadow-casting light, a mesh with a child mesh, a sound
+        /// and a listener.
         fn static_scene() -> (World, EntityId) {
             let mut world = World::new();
             let at = |x: f32, y: f32, z: f32| {
@@ -485,9 +457,8 @@ mod tests {
             (world, root)
         }
 
-        /// One frame as the substrate runs it: `transform_propagation` as a
-        /// DataSystem, then the three flows, each a run of its own. Returns
-        /// the cache keys the flows were asked for.
+        /// Runs one frame as the substrate does, propagation then the three
+        /// flows, and returns the cache keys the flows were asked for.
         fn frame(world: &mut World, runtime: &Runtime) -> Keys {
             let system = Observer::DataSystem("transform_propagation");
             let ctx = SystemContext {
@@ -525,11 +496,8 @@ mod tests {
             keys
         }
 
-        /// **A propagation that changes nothing writes nothing.** Once the
-        /// first frame has placed every `GlobalTransform`, a frame in which
-        /// no `Transform` moved leaves the Spatial domain as it was, so the
-        /// cached views of `RenderFlow`, `ShadowFlow` and `AudioFlow` stay
-        /// valid; moving one `Transform` invalidates all three.
+        /// **A propagation that changes nothing writes nothing**, so the flows'
+        /// cached views stay valid; moving one `Transform` invalidates them.
         #[test]
         fn transform_propagation_writing_nothing_leaves_the_render_cache_valid() {
             let (mut world, root) = static_scene();
@@ -569,8 +537,9 @@ mod tests {
             }
         }
 
-        /// **Each real change invalidates the caches that read it, and only
-        /// those.** Over the static scene: a light switched off (Render), a
+        /// **Each real change invalidates the caches that read it, and only those.**
+        ///
+        /// Over the static scene: a light switched off (Render), a
         /// mesh handle swapped by value (Render), a sound's volume (Audio),
         /// and a mesh despawned (Render and Spatial).
         #[test]

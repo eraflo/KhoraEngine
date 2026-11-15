@@ -79,10 +79,10 @@ pub struct PackedLayout {
     stride: usize,
     /// Out-of-line slots per row.
     boxed: usize,
-    /// Whether a non-finite number is refused. Authored data is finite, the
-    /// rule a Rust component's field follows; what the engine writes — a
-    /// behavior's suspended machine, whose registers may hold `0.0 / 0.0` —
-    /// is kept as computed. Set by the world from the component's provenance.
+    /// Whether a non-finite number is refused, as for authored data.
+    ///
+    /// Engine-written state, such as a suspended behavior's registers, is kept
+    /// as computed. Set from the component's provenance.
     finite: bool,
 }
 
@@ -96,8 +96,11 @@ pub(crate) enum Place {
 }
 
 impl PackedLayout {
-    /// A layout of `fields`, refusing a name used twice or a default that is not
-    /// of its field's kind.
+    /// Creates a layout of `fields`.
+    ///
+    /// # Errors
+    ///
+    /// A [`LayoutError`] for a name used twice or a default not of its field's kind.
     pub fn new(mut fields: Vec<PackedField>) -> Result<Self, LayoutError> {
         let mut places = Vec::with_capacity(fields.len());
         let (mut stride, mut boxed) = (0, 0);
@@ -145,10 +148,14 @@ impl PackedLayout {
         })
     }
 
-    /// A layout of `fields`, each of the Ergon type at its position in
-    /// `types` — what a script's declaration gives. A value of another type
-    /// is then refused where a row is read from a file, and a field whose
-    /// type changed is defaulted where the layout changes.
+    /// Creates a layout of `fields`, each of the Ergon type at its position in `types`.
+    ///
+    /// A value of another type is then refused where a row is read from a
+    /// file, and a field whose type changed is defaulted where the layout changes.
+    ///
+    /// # Errors
+    ///
+    /// As [`new`](Self::new).
     pub fn typed(fields: Vec<PackedField>, types: Vec<ErgonType>) -> Result<Self, LayoutError> {
         let mut layout = Self::new(fields)?;
         for (slot, ty) in types.into_iter().enumerate().take(layout.types.len()) {
@@ -162,8 +169,9 @@ impl PackedLayout {
         self.types.get(slot).and_then(Option::as_ref)
     }
 
-    /// `value` as field `slot` stores it, or `None` when its kind refuses it —
-    /// or, where this layout keeps authored data, when it is not finite.
+    /// Returns `value` as field `slot` stores it, or `None` when its kind refuses it.
+    ///
+    /// A layout keeping authored data also refuses a non-finite number.
     pub(crate) fn accept(&self, slot: usize, value: &ScriptValue) -> Option<ScriptValue> {
         let kind = self.fields.get(slot)?.kind;
         if self.finite {
@@ -184,9 +192,9 @@ impl PackedLayout {
         self.fields == other.fields && self.types == other.types
     }
 
-    /// `value` as field `slot` keeps it — `None` when its kind refuses it,
-    /// or its type is known and is another. An `int` where the type holds a
-    /// float, at any depth, is kept as that float.
+    /// Returns `value` as field `slot` keeps it, or `None` when its kind or known type refuses it.
+    ///
+    /// An `int` where the type holds a float, at any depth, is kept as that float.
     pub fn admit(&self, slot: usize, value: &ScriptValue) -> Option<ScriptValue> {
         let accepted = self.accept(slot, value)?;
         match self.ty(slot) {
@@ -196,11 +204,10 @@ impl PackedLayout {
         }
     }
 
-    /// `value`, read from a file written under another declaration, as field
-    /// `slot` holds it — and whether it was widened. Stricter than
-    /// [`admit`](Self::admit): an `int` is taken as a `float` only where it
-    /// converts exactly. What a load reads, and what anything comparing with
-    /// a load must read the same way.
+    /// Returns a `value` read from a file as field `slot` holds it, and whether it was widened.
+    ///
+    /// Stricter than [`admit`](Self::admit): an `int` becomes a `float` only
+    /// where it converts exactly. Anything comparing with a load reads through it.
     pub fn fit(&self, slot: usize, value: &ScriptValue) -> Option<(ScriptValue, bool)> {
         let kind = self.fields.get(slot)?.kind;
         match (kind, value) {
@@ -286,16 +293,17 @@ impl FieldKind {
         }
     }
 
-    /// Whether a value of this kind may be kept, converted, when its field
-    /// becomes of kind `to`: the same kind, or an `int` becoming a `float` —
-    /// each value kept only where it [converts losslessly](Self::widened).
+    /// Returns whether a value of this kind may be kept when its field becomes of kind `to`.
+    ///
+    /// Same kind, or `int` to `float`, each value kept only where it
+    /// [converts losslessly](Self::widened).
     pub(crate) fn widens(self, to: FieldKind) -> bool {
         self == to || (self == Self::Int && to == Self::Float)
     }
 
-    /// `value`, of this kind, as a field of kind `to` keeps it — `None` when
-    /// it cannot be kept: another kind, or an `int` past what a `float` holds
-    /// exactly (2^24), which would be rounded.
+    /// Returns `value`, of this kind, as a field of kind `to` keeps it.
+    ///
+    /// `None` for another kind, or an `int` a `float` would round (past 2^24).
     pub(crate) fn widened(self, to: FieldKind, value: &ScriptValue) -> Option<ScriptValue> {
         match (self, to, value) {
             (Self::Int, Self::Float, ScriptValue::Int(v)) => {
@@ -307,15 +315,14 @@ impl FieldKind {
         }
     }
 
-    /// `value` as this kind stores it, or `None` when it is not one: an
-    /// `int` is taken as the float it names, and a non-finite number is
-    /// refused — the rule a Rust component's field follows.
+    /// Returns `value` as this kind stores it, refusing a non-finite number as a Rust field does.
+    ///
+    /// An `int` is taken as the float it names.
     pub(crate) fn accept(self, value: &ScriptValue) -> Option<ScriptValue> {
         self.stored(value).filter(ScriptValue::is_finite)
     }
 
-    /// `value` as this kind stores it, or `None` when it is not one — finite
-    /// or not.
+    /// Returns `value` as this kind stores it, finite or not; `None` when it is not one.
     pub(crate) fn stored(self, value: &ScriptValue) -> Option<ScriptValue> {
         match (self, value) {
             (Self::Float, ScriptValue::Int(v)) => Some(ScriptValue::Float(*v as f32)),

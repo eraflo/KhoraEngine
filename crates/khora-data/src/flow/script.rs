@@ -12,22 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What the script lane is allowed to see.
-//!
-//! The read half of the script bridge; [`script_commands`] is the write half. A
-//! lane may not query the `World` (`RULES.md` §3), so everything a behavior can
-//! read this frame has to arrive through this projection. That is a constraint
-//! worth taking literally: what is not here is not reachable, which is how the
-//! engine surface stays a deliberate list rather than whatever happened to be in
-//! scope.
-//!
-//! # Programs are listed once, instances many times
-//!
-//! A thousand guards run one `Guard` behavior. Copying `"ai/guard.erg"` and
-//! `"Guard"` into a thousand instances would allocate two strings per entity per
-//! frame — enough on its own to miss the frame budget the whole language exists
-//! to respect. The distinct programs are deduplicated into
-//! [`ScriptView::programs`] and each instance carries an index.
+//! [`ScriptFlow`]: everything a behavior may read this frame, the read half of
+//! the script bridge ([`script_commands`] is the write half). What is not
+//! projected here is not reachable from a script.
 //!
 //! [`script_commands`]: crate::ecs::systems::script_commands
 
@@ -61,21 +48,22 @@ pub struct ScriptInstance {
     /// Index into [`ScriptView::programs`].
     pub program: u32,
 
-    /// What the world holds for this instance, **only the first frame it
-    /// appears**: the authored fields and, apart, what was observed of it
-    /// before — never merged here. The lane composes them.
+    /// What the world holds for this instance, only the first frame it appears.
+    ///
+    /// The authored fields and, apart, what was observed of it before; the
+    /// lane composes them.
     pub arrival: Option<ScriptArrival>,
 
-    /// The behavior's component row this frame, its fields by name. Handed
-    /// over every frame, so the lane takes a field written outside it since:
-    /// an edit during play, another script's write.
+    /// The behavior's component row this frame, its fields by name.
+    ///
+    /// Handed over every frame, so the lane takes a field written outside it
+    /// since: an edit during play, another script's write.
     pub row: Vec<(String, ScriptValue)>,
 
     /// Where the entity is, this frame.
     ///
-    /// Carried rather than looked up because the lane has no `World` to look it
-    /// up in — and reading its own position is the single most common thing a
-    /// behavior does.
+    /// Carried because the lane has no `World` to look it up in, and reading
+    /// its own position is what a behavior does most.
     pub translation: Vec3,
     /// How the entity is oriented, this frame.
     pub rotation: Quaternion,
@@ -101,8 +89,7 @@ pub struct ScriptArrival {
 pub struct ScriptView {
     /// The seconds since the previous frame.
     ///
-    /// Carried here rather than read by the lane, for the same reason a
-    /// transform is: the lane has no `Runtime` to read it from. It is what
+    /// Carried because the lane has no `Runtime` to read it from. It is what
     /// `every` and `after` count down.
     pub delta_seconds: f32,
 
@@ -112,25 +99,26 @@ pub struct ScriptView {
     /// The fixed simulation step, in seconds: what a `FixedUpdate` is given.
     pub fixed_delta_seconds: f32,
 
-    /// Whether this is the first frame the scripts run after frames they did
-    /// not — the scripting family switched back on, an editor's Play. What
-    /// left meanwhile left while nothing was playing: it is forgotten, not bid
-    /// farewell.
+    /// Whether the scripts run this frame after frames they did not, as on an
+    /// editor's Play.
+    ///
+    /// What left meanwhile is forgotten, not bid farewell.
     pub resumed: bool,
     /// The instances that left the scripting family's scope this frame, by
-    /// entity and behavior: still attached, so not despawned — forgotten,
-    /// not bid farewell.
+    /// entity and behavior.
+    ///
+    /// Still attached, so not despawned: forgotten, not bid farewell.
     pub left_scope: Vec<(EntityId, String)>,
     /// The distinct behaviors in the scene, referenced by index.
+    ///
+    /// Listed once, so a thousand instances of one behavior copy no string
+    /// per frame.
     pub programs: Vec<ScriptProgram>,
     /// Every entity running one, in a stable order.
     pub instances: Vec<ScriptInstance>,
     /// What the player is holding, this frame.
     ///
-    /// Projected rather than read, for the same reason a transform is: the lane
-    /// declares no `InputMap`, so it cannot ask one anything. A `Flow` is exactly the thing that turns engine state into
-    /// something a lane may read, and until this field `InputMap` was published
-    /// every frame with no consumer anywhere in the CLAD descent.
+    /// Projected because the lane declares no `InputMap` to ask.
     pub input: khora_core::platform::InputSnapshot,
     /// The components some loaded program reads, projected for this frame —
     /// empty when nothing reads.
@@ -138,42 +126,43 @@ pub struct ScriptView {
 }
 
 impl ScriptView {
-    /// The program an instance runs.
+    /// Returns the program an instance runs.
     pub fn program_of(&self, instance: &ScriptInstance) -> Option<&ScriptProgram> {
         self.programs.get(instance.program as usize)
     }
 
-    /// How many behaviors will run this frame.
+    /// Returns how many behaviors will run this frame.
     pub fn len(&self) -> usize {
         self.instances.len()
     }
 
-    /// Whether nothing will run.
+    /// Returns whether nothing will run.
     pub fn is_empty(&self) -> bool {
         self.instances.is_empty()
     }
 }
 
-/// Projects the scene's scripts into a [`ScriptView`].
+/// Publishes [`ScriptView`]: the behavior instances, the frame's clock and
+/// input, and the components loaded programs read.
 #[derive(Default)]
 pub struct ScriptFlow {
-    /// Whether this run starts the scripts over, as the substrate said: the
-    /// flow's first run, or its first after frames the scripting family was
-    /// off and the flow was skipped. Nothing is remembered while it is
-    /// skipped: an entity seen before carries on when the scripts resume, and
-    /// one that appeared meanwhile arrives then.
+    /// Whether this run starts the scripts over, as the substrate said.
+    ///
+    /// Nothing is remembered while the flow is skipped: an entity seen before
+    /// carries on when the scripts resume, one that appeared meanwhile arrives.
     resumed: bool,
     /// The `(entity, behavior)` pairs a behavior's component attaches, as
     /// last seen.
     ///
-    /// The flow is the only place that can know which are new: it sees every
-    /// frame's entity set, and the lane sees only what it is given. Replaced
-    /// rather than extended, so a despawned entity is forgotten and an index
-    /// that comes back — with a new generation — is a newcomer again.
+    /// Kept here because only the flow sees every frame's entity set. Replaced,
+    /// not extended, so a despawned entity is forgotten and a recycled index is
+    /// a newcomer again.
     attached: HashSet<(EntityId, String)>,
     /// The attached pairs whose entity held the behavior's state companion
-    /// last frame: one that holds it no more was detached and attached again
-    /// between two frames, and arrives afresh.
+    /// last frame.
+    ///
+    /// One that holds it no more was detached and attached again between two
+    /// frames, and arrives afresh.
     with_state: HashSet<(EntityId, String)>,
     /// The pairs attached for the first time this frame, computed in
     /// `select` for `project` — which is `&self` and cannot work it out.
@@ -181,9 +170,10 @@ pub struct ScriptFlow {
     /// The pairs that left the family's scope this frame while still
     /// attached: forgotten, not bid farewell — they were not despawned.
     left_scope: Vec<(EntityId, String)>,
-    /// The pairs outside the scope since they left it, still attached. One
-    /// that comes back arrives afresh: the state companion its last run in
-    /// the scope left is not a save it is loaded from.
+    /// The pairs outside the scope since they left it, still attached.
+    ///
+    /// One that comes back arrives afresh: the companion its last run in the
+    /// scope left is not a save it is loaded from.
     out_of_scope: HashSet<(EntityId, String)>,
     /// The newcomers this frame that are such a return, computed in `select`.
     returning: HashSet<(EntityId, String)>,
@@ -292,10 +282,9 @@ impl Flow for ScriptFlow {
         view
     }
 
-    // Deliberately uncached, like `PhysicsFlow`. The projection reads every
-    // entity's `Transform`, which changes every frame the game is not paused —
-    // a cache key folding the Spatial epoch would miss on essentially every
-    // frame while still costing the hash.
+    // Uncached: the projection reads every entity's `Transform`, which moves
+    // every frame the game is not paused, so a key would miss while still
+    // costing the hash.
 }
 
 register_flow!(ScriptFlow);
@@ -305,9 +294,10 @@ mod tests {
     use super::*;
     use crate::ecs::Transform;
 
-    /// Runs both stages, the way the registration trampoline does — `select`
-    /// is where the flow works out which entities are new, so a test that
-    /// skipped it would never see an authored field.
+    /// Runs both stages, the way the registration trampoline does.
+    ///
+    /// `select` is where the flow works out which entities are new, so a test
+    /// that skipped it would never see an authored field.
     fn project(world: &World) -> ScriptView {
         let mut flow = ScriptFlow::default();
         let first = FlowContext {
@@ -319,8 +309,10 @@ mod tests {
     }
 
     /// Registers the behavior `name` that `module` declares, with an `int`
-    /// field `health` of default 0, as the scripts' registration does:
-    /// authored, in `Script`, a behavior for scripts.
+    /// field `health` of default 0.
+    ///
+    /// As the scripts' registration does: authored, in `Script`, a behavior for
+    /// scripts.
     fn declare_behavior(world: &mut World, module: &str, name: &str) -> ComponentKey {
         let key = world
             .register_runtime_component(RuntimeComponentDecl {
@@ -463,9 +455,11 @@ mod tests {
         flow.project(world, &selection, &runtime)
     }
 
-    /// **The view says it resumes when the substrate says so.** The first run
-    /// is a resumption, the next is not; a run handed `resumed` after frames
-    /// the flow was skipped is one again, and the run after it is not.
+    /// **The view says it resumes when the substrate says so.**
+    ///
+    /// The first run is a resumption, the next is not; a run handed `resumed`
+    /// after frames the flow was skipped is one again, and the run after it is
+    /// not.
     #[test]
     fn the_view_resumes_when_the_substrate_says_it_resumes() {
         let mut world = World::new();
@@ -484,11 +478,13 @@ mod tests {
         assert!(!run(&mut flow, &world, false).resumed);
     }
 
-    /// **Returning to play carries on.** A game whose scripts go off — a
-    /// tool, a photo mode — and come back finds its instances where it left
-    /// them: an entity already seen does not arrive again, and the first frame
-    /// back says it is a resumption. An entity spawned while the scripts were
-    /// off is new, and arrives with its authored fields.
+    /// **Returning to play carries on.**
+    ///
+    /// A game whose scripts go off — a tool, a photo mode — and come back finds
+    /// its instances where it left them: an entity already seen does not arrive
+    /// again, and the first frame back says it is a resumption. An entity
+    /// spawned while the scripts were off is new, and arrives with its authored
+    /// fields.
     #[test]
     fn returning_to_play_carries_on_without_arriving_again() {
         let mut world = World::new();
@@ -551,8 +547,9 @@ mod tests {
         runtime
     }
 
-    /// **The view carries the frame's fixed steps and the fixed step**, as
-    /// the frame's `Time` publishes them: what a behavior's `FixedUpdate` is
+    /// **The view carries the frame's fixed steps and the fixed step.**
+    ///
+    /// As the frame's `Time` publishes them: what a behavior's `FixedUpdate` is
     /// called by — that many times, given that step. A frame of no step says
     /// so, and so does a host with no clock at all.
     #[test]
@@ -696,10 +693,11 @@ mod tests {
             .collect()
     }
 
-    /// **Zero work when nothing reads.** A read component is projected — its
-    /// column copied — and once nobody wants it, nothing is, and no page is
-    /// touched: no row is even cloned. A runtime with no demand at all
-    /// projects nothing either.
+    /// **Zero work when nothing reads.**
+    ///
+    /// A read component is projected — its column copied — and once nobody
+    /// wants it, nothing is, and no page is touched: no row is even cloned. A
+    /// runtime with no demand at all projects nothing either.
     #[test]
     fn nothing_is_projected_when_nothing_reads() {
         let mut world = world_with_tally();
@@ -734,9 +732,10 @@ mod tests {
         assert_eq!(clones(), 0);
     }
 
-    /// **Only what is read is projected.** A program reading `RigidBody` gets
-    /// every holder of it, and nothing of `Collider` or `Tally`, held by the
-    /// same scene.
+    /// **Only what is read is projected.**
+    ///
+    /// A program reading `RigidBody` gets every holder of it, and nothing of
+    /// `Collider` or `Tally`, held by the same scene.
     #[test]
     fn only_read_components_are_projected() {
         let mut world = world_with_tally();
@@ -773,8 +772,9 @@ mod tests {
         assert_eq!(bodies.get(other), None);
     }
 
-    /// **The flow projects what the demand wants, whoever wants it**: the
-    /// installed programs' reads and an incoming module's together, each
+    /// **The flow projects what the demand wants, whoever wants it.**
+    ///
+    /// The installed programs' reads and an incoming module's together, each
     /// once; once the module's entry is withdrawn — its program installed,
     /// reading nothing more — only the installed programs' reads are.
     #[test]
@@ -817,10 +817,12 @@ mod tests {
             .sum()
     }
 
-    /// **An orphan row is nobody's.** An entity that migrated away from a
-    /// page leaves its row there until compaction: one that dropped its rigid
-    /// body is not a holder, and one that moved to another page holding it is
-    /// indexed once, at its live row — the value it holds now.
+    /// **An orphan row is nobody's.**
+    ///
+    /// An entity that migrated away from a page leaves its row there until
+    /// compaction: one that dropped its rigid body is not a holder, and one
+    /// that moved to another page holding it is indexed once, at its live row —
+    /// the value it holds now.
     #[test]
     fn orphan_rows_are_not_projected() {
         let mut world = world_with_tally();
@@ -947,10 +949,11 @@ mod tests {
         );
     }
 
-    /// **A read component nobody holds is still answered**: it is projected
-    /// with no holder — and with its default row, which an `Add` in the
-    /// working set starts from. A name no component has gets an entry too, so
-    /// "is it projected" never depends on the scene.
+    /// **A read component nobody holds is still answered.**
+    ///
+    /// It is projected with no holder — and with its default row, which an
+    /// `Add` in the working set starts from. A name no component has gets an
+    /// entry too, so "is it projected" never depends on the scene.
     #[test]
     fn a_read_component_nobody_holds_is_projected_empty() {
         let world = world_with_tally();

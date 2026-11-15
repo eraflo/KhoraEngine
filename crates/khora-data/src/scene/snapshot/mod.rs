@@ -12,21 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A world as a snapshot: the fastest file to load, bound to the schema that
-//! wrote it.
+//! A world as a snapshot: the fastest file to load, bound to the schema that wrote it.
 //!
-//! Values are positional — no names, no record tree, no name resolution on
-//! load — and every component is listed with its schema fingerprint. A
-//! snapshot whose fingerprints differ from the running registrations is
-//! refused whole: it is the same build's cache of a stable save, never its
-//! only copy.
-//!
-//! Payload: `version: u8`; the component table — a count, then each name
-//! (length and UTF-8) and its fingerprint (`u64` LE); the entities — a
-//! count, then each persistent id (`u64` LE); the pages — a count, then for
-//! each its components (a count, then table indices), its rows (a count,
-//! then persistent ids) and its values column after column, each value its
-//! length then its bytes. Counts and lengths are LEB128 varints.
+//! A same-build cache of a stable save, never its only copy.
+//! See the book: reference/formats.md, "Snapshot layout".
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -49,20 +38,21 @@ pub const SNAPSHOT_ENCODING_ID: &str = "KH_SNAPSHOT_V1";
 
 /// The payload layout this module writes and reads.
 ///
-/// Version 2 lists, beside each Rust component and its fingerprint, each
-/// component declared while the engine runs with its fields — read back onto
-/// the world's declaration by name, since a hot reload may have given it new
-/// fields since the snapshot was taken.
+/// Version 2 adds the components declared while the engine runs, with their
+/// fields; version 1 still reads.
 const VERSION: u8 = 2;
 
-/// A table entry naming a Rust component, guarded by its fingerprint —
-/// the only entry layout 1, which still reads, has.
+/// A table entry naming a Rust component, guarded by its fingerprint; layout 1's only kind.
 const RUST_ENTRY: u8 = 0;
 /// A table entry describing a component declared while the engine runs.
 const DECLARED_ENTRY: u8 = 1;
 
-/// Writes every entity a scene of `world` holds and its saved components as
-/// a snapshot.
+/// Writes every entity a scene of `world` holds, with its saved components, as a snapshot.
+///
+/// # Errors
+///
+/// A component whose schema cannot be traced in full ([`SaveError::Unguarded`]),
+/// or a value that cannot be written by position.
 pub fn write_snapshot(world: &World) -> Result<SceneFile, SaveError> {
     let entities = scene_entities(world);
     let (ids, pages) = capture_pages(
@@ -181,9 +171,16 @@ pub fn write_snapshot(world: &World) -> Result<SceneFile, SaveError> {
     scene_file(SNAPSHOT_ENCODING_ID, payload).map_err(|error| SaveError::Encoding(error.0))
 }
 
-/// Reads and checks the snapshot `file` holds against `world`'s
-/// registrations, reserving an id for each of its entities, without adding
-/// anything — committed through the shared [`Prepared::commit`].
+/// Reads and checks the snapshot `file` holds against `world`, reserving its entities' ids.
+///
+/// Adds nothing to the world until [`Prepared::commit`].
+///
+/// # Errors
+///
+/// A damaged file, one that is not a `KH_SNAPSHOT_V1` snapshot or is of another
+/// format version, a component whose fingerprint is not this build's, a declared
+/// entry named like a Rust component or listed twice, or pages that do not fit
+/// together: the snapshot is refused whole.
 pub fn prepare_snapshot(world: &mut World, file: &SceneFile) -> Result<Prepared, LoadFailure> {
     let snapshot = parse(file)?;
     // As many ids made ready as the snapshot holds entities, so restores in
@@ -192,8 +189,11 @@ pub fn prepare_snapshot(world: &mut World, file: &SceneFile) -> Result<Prepared,
     prepare_parsed(&catalog, hold, snapshot)
 }
 
-/// [`prepare_snapshot`], without the world: what it reads of the world is
-/// `catalog`, and the ids it reserves are held by `hold`.
+/// Does [`prepare_snapshot`] without the world: it reads the catalog and reserves through `hold`.
+///
+/// # Errors
+///
+/// As [`prepare_snapshot`].
 pub fn prepare_snapshot_with(
     world: &crate::scene::LoadCatalog,
     hold: khora_core::ecs::ReservationHold,
@@ -497,8 +497,7 @@ fn registration_for(
     Ok(reg)
 }
 
-/// A cursor over the payload. Every count is checked against the bytes left
-/// before anything is sized from it: a count is the file's claim.
+/// A cursor over the payload, checking each count against the bytes left before sizing from it.
 struct Input<'p> {
     bytes: &'p [u8],
     at: usize,
@@ -555,7 +554,7 @@ impl<'p> Input<'p> {
         Err("a number too large for 64 bits".to_owned())
     }
 
-    /// A count of things each taking at least `each` bytes.
+    /// Reads a count of things each taking at least `each` bytes, refused past the bytes left.
     fn count(&mut self, each: usize) -> Result<usize, String> {
         let count = self.varint()?;
         let count = usize::try_from(count).map_err(|_| "a count too large".to_owned())?;

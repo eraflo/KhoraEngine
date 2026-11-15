@@ -12,16 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Render-data layer — the per-frame extracted scene representation.
-//!
-//! Per CLAD this module is a **data** responsibility. The per-frame
-//! projection of the scene is now owned by
-//! [`RenderFlow`](crate::flow::RenderFlow), which publishes a
-//! [`RenderWorld`] into the
-//! [`LaneBus`](khora_core::lane::LaneBus) during the Substrate Pass.
-//!
-//! Render lanes consume that view from the bus; they no longer query the
-//! ECS World directly.
+//! The render data: the [`RenderWorld`] View the render lanes draw from, the
+//! overlays a host hands the engine, the frame graph, and the camera views
+//! they are all built around.
 
 mod editor_view;
 mod frame_graph;
@@ -60,13 +53,12 @@ pub type ShadowResult = (khora_core::math::Mat4, i32);
 /// GPU-free run has no image to take a shape from).
 pub const FALLBACK_ASPECT: f32 = 1.0;
 
-/// The aspect of the image this frame renders into: the
-/// [`ColorTargetSize`] the engine publishes in the [`FrameContext`] once the
-/// frame's target is acquired, or [`FALLBACK_ASPECT`] when there is none.
+/// Returns the aspect of the image this frame renders into, or
+/// [`FALLBACK_ASPECT`].
 ///
-/// Every camera projection takes its aspect from here, so a camera fills the
-/// window — or the editor's viewport — without being stretched, whatever its
-/// shape and however often it is resized.
+/// Read from the [`ColorTargetSize`] in the [`FrameContext`]. Every camera
+/// projection takes its aspect from here, so a camera fills the window or the
+/// editor's viewport without being stretched.
 pub fn target_aspect(runtime: &Runtime) -> f32 {
     runtime
         .resources
@@ -75,33 +67,22 @@ pub fn target_aspect(runtime: &Runtime) -> f32 {
         .map_or(FALLBACK_ASPECT, |size| size.aspect())
 }
 
-/// The view matrix (world → view) of a camera placed at `global`: the inverse
-/// of its rigid pose (rotation and translation). The entity's scale is
-/// ignored — a camera's zoom is its projection's job, never its transform's.
+/// Returns the view matrix (world to view) of a camera placed at `global`.
 ///
-/// Every view of a scene camera is built here — [`extract_active_camera_view`]
-/// and [`primary_view`] alike — so what the renderer is handed and what the
-/// flows slice their data around are the same view.
+/// The inverse of its rigid pose: the entity's scale is ignored, a camera's
+/// zoom being its projection's job. Every scene camera view is built here, so
+/// the renderer and the flows agree on it.
 pub fn camera_view_matrix(global: &GlobalTransform) -> Mat4 {
     Mat4::from_quat(global.0.rotation().inverse()) * Mat4::from_translation(-global.0.translation())
 }
 
-/// Extracts the first **active** camera as a [`ViewInfo`] suitable for
-/// pushing to the renderer, projected for an image whose width over height
-/// is `aspect` (usually [`target_aspect`]). Its view is the
-/// [`camera_view_matrix`] of the camera's entity: scale is ignored.
+/// Returns the first active camera's [`ViewInfo`], projected at `aspect`
+/// (usually [`target_aspect`]).
 ///
-/// The first active camera is chosen **before** it is checked:
-/// - `None` — no entity has an active camera (editor edit mode, empty
-///   scene, etc.); callers can fall back to a default `ViewInfo`.
-/// - `Some(Err(problem))` — the active camera's values make no image (see
-///   [`Camera::problems`](crate::ecs::Camera::problems)); it renders
-///   nothing, and no other camera is picked in its place.
-/// - `Some(Ok(view))` — the active camera's view.
-///
-/// Lives outside the [`RenderFlow`](crate::flow::RenderFlow) because it is
-/// also used by the editor for non-render concerns (camera prepare, gizmo
-/// space, etc.).
+/// The first active camera is chosen before it is checked: `None` when no
+/// camera is active, `Some(Err(problem))` when its values make no image (see
+/// [`Camera::problems`](crate::ecs::Camera::problems)), and then no other
+/// camera is picked in its place.
 pub fn extract_active_camera_view(
     world: &World,
     aspect: f32,
@@ -119,16 +100,13 @@ pub fn extract_active_camera_view(
         })
 }
 
-/// Returns the primary [`ExtractedView`] for the frame: the first active
-/// scene `Camera`, projected at the [`target_aspect`], or — if none is
-/// active — the editor's [`EditorViewportOverride`]. An active camera whose
-/// values make no image gives `None`: it renders nothing, and the override
-/// does not stand in for it.
+/// Returns the frame's primary view: the first active camera's, else the
+/// [`EditorViewportOverride`].
 ///
-/// Shared by [`RenderFlow`](crate::flow::RenderFlow) and
-/// [`ShadowFlow`](crate::flow::ShadowFlow) so both flows agree on which
-/// view their data is built around (CSM frustum slicing in particular
-/// needs the same camera the lit pass will sample shadows from).
+/// An active camera whose values make no image gives `None`; the override does
+/// not stand in for it. [`RenderFlow`](crate::flow::RenderFlow) and
+/// [`ShadowFlow`](crate::flow::ShadowFlow) both build around it, so the shadow
+/// cascades are sliced for the camera the lit pass samples them from.
 pub fn primary_view(world: &World, runtime: &Runtime) -> Option<ExtractedView> {
     match extract_active_camera_view(world, target_aspect(runtime)) {
         Some(Ok(view)) => {
@@ -146,12 +124,10 @@ pub fn primary_view(world: &World, runtime: &Runtime) -> Option<ExtractedView> {
         .and_then(|o| o.get())
 }
 
-/// Bit-level fingerprint of the [`EditorViewportOverride`] as seen by
-/// [`primary_view`]: distinguishes "no override" from "override present"
-/// and any change in the override's value (editor camera moves do not
-/// mutate the ECS, so flows that consult `primary_view` must fold this
-/// into their cache key or they would serve stale views while the editor
-/// camera flies).
+/// Fingerprints the [`EditorViewportOverride`] bit for bit; 0 when there is none.
+///
+/// The editor camera moves without touching the ECS, so a flow caching on
+/// [`primary_view`] folds this into its key.
 pub(crate) fn editor_override_fingerprint(runtime: &Runtime) -> u64 {
     use std::hash::{Hash, Hasher};
 

@@ -12,25 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `EditorViewportOverride` — fallback view consumed by [`RenderFlow`] when
-//! no active scene `Camera` exists.
-//!
-//! Tools that drive their own camera outside the ECS (the editor in
-//! Editing mode, headless screenshot tools, …) write the desired
-//! [`ExtractedView`] here once per frame **before** the scheduler runs.
-//! `RenderFlow` reads it during `project()` and appends it to
-//! `RenderWorld.views` if the world produced none of its own.
-//!
-//! A tool that sets its whole camera with [`set_camera`] also hands
-//! [`CameraFlow`] the [`ViewInfo`] the renderer is prepared with when no scene
-//! camera is active.
-//!
-//! The type is intentionally generic — it lives in the data layer so that
-//! [`RenderFlow`] does not need to know about any editor crate.
+//! The view [`RenderFlow`] and [`CameraFlow`] fall back to when no scene
+//! camera is active, set by a tool that drives its own camera outside the ECS.
 //!
 //! [`RenderFlow`]: crate::flow::RenderFlow
 //! [`CameraFlow`]: crate::flow::CameraFlow
-//! [`set_camera`]: EditorViewportOverride::set_camera
 
 use std::sync::{Arc, RwLock};
 
@@ -46,10 +32,10 @@ struct Override {
     camera: Option<ViewInfo>,
 }
 
-/// Shared, mutable per-frame view override.
+/// The view the flows fall back to when the world has no active camera.
 ///
-/// Cloning shares the inner state — every `Arc` clone observes the same
-/// override.
+/// A tool sets it before the frame runs; it is used only when the world
+/// yields no view of its own. Clones share one override.
 #[derive(Clone, Default)]
 pub struct EditorViewportOverride(Arc<RwLock<Override>>);
 

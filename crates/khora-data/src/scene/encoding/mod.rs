@@ -12,11 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The forms a scene record is written in.
+//! The byte forms a scene record is written in; each carries the same record.
 //!
-//! One record, several encodings: which one is a matter of how the file will
-//! be used — read by people, kept small, read by other tools — never of what
-//! it holds.
+//! See the book: concepts/serialization.md, "Goals and encodings".
 
 mod compact;
 
@@ -86,11 +84,10 @@ impl SceneEncoding for TextEncoding {
         serde_json::to_vec_pretty(record).map_err(|error| EncodingError(error.to_string()))
     }
     fn decode(&self, bytes: &[u8]) -> Result<SceneRecord, EncodingError> {
-        // serde_json's own recursion limit also counts the scene document's
-        // fixed levels (pages, columns, rows), so it would cut a value off
-        // below `MAX_DEPTH`. It is disabled: every value is read through the
-        // record reader, which enforces `MAX_DEPTH` itself, as every
-        // encoding does.
+        // serde_json's recursion limit also counts the document's fixed levels
+        // (pages, columns, rows), so it would cut a value off below `MAX_DEPTH`.
+        // The record reader every value goes through enforces `MAX_DEPTH`
+        // itself, as in every encoding.
         let mut reader = serde_json::Deserializer::from_slice(bytes);
         reader.disable_recursion_limit();
         let record = SceneRecord::deserialize(&mut reader)
@@ -135,7 +132,7 @@ impl SceneEncoding for MsgPackEncoding {
     }
 }
 
-/// The encoding a file header names.
+/// Returns the encoding a file header names, if it is one of the record encodings.
 pub fn encoding_named(id: &str) -> Option<&'static dyn SceneEncoding> {
     [
         &CompactEncoding as &'static dyn SceneEncoding,

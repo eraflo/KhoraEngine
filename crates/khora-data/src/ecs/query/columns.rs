@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `Soa<T>`: a query over a field-split component, yielding its field arrays.
+//! `Soa<T>`: a query over a field-split component, yielding each row by value.
 
 use khora_core::ecs::entity::EntityId;
 
@@ -25,12 +25,9 @@ use std::{any::TypeId, marker::PhantomData};
 
 /// A query that reads a field-SoA component **by value**.
 ///
-/// A component stored field-SoA (`#[component(layout = "soa")]`) cannot be
-/// borrowed as `&T` — its bytes are split across per-field lanes, not laid out
-/// as a contiguous `T` — so it is queried as `Soa<T>`, which yields an owned
-/// `T` reconstructed (gathered) from the lanes. For the bulk SIMD path that is
-/// the *point* of the layout, use [`World::for_each_soa_column_mut`] instead;
-/// `Soa<T>` is the per-row, mix-with-other-components access.
+/// A field-SoA component (`#[component(layout = "soa")]`) has no contiguous `T`
+/// to borrow, so each row is gathered into an owned `T`. For bulk work over
+/// the fields, use [`World::for_each_soa_column_mut`] instead.
 ///
 /// [`World::for_each_soa_column_mut`]: crate::ecs::World::for_each_soa_column_mut
 pub struct Soa<T: SoaLayout>(PhantomData<T>);

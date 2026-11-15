@@ -16,25 +16,28 @@
 
 use super::tick::Tick;
 
-/// The ticks a page keeps beside one of its columns, under the column's own
-/// [`ComponentKey`](crate::ecs::ComponentKey): what was written to it, and
-/// when.
+/// The ticks a page keeps beside one of its columns: what was written to it, and when.
+///
+/// Keyed by the column's own [`ComponentKey`](crate::ecs::ComponentKey).
+/// See the book: concepts/change-detection-formal.md, "Notation".
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ColumnTicks {
     /// σ — the latest tick a row of the column was written at.
     pub summary: Tick,
-    /// φ — the tick at which the column's row history was dropped: every row
-    /// counts as written at least this late.
+    /// φ — the tick the column's row history was dropped at.
+    ///
+    /// Every row counts as written at least this late.
     pub floor: Tick,
-    /// τ — one tick per row, in row order, for a column some observer
-    /// watches while it moves; `None` otherwise (every row then reads 0).
+    /// τ — one tick per row, in row order, while some observer watches the column.
+    ///
+    /// `None` otherwise: every row then reads 0.
     pub rows: Option<Vec<u64>>,
 }
 
 impl ColumnTicks {
-    /// The tick a row is known to have been written by at the latest:
-    /// `max(τ, φ)` — exact while the row holds its own tick, the floor once
-    /// its history was dropped. What a row carries when it moves.
+    /// Returns the latest tick `row` may have been written at: `max(τ, φ)`.
+    ///
+    /// Exact while the row holds its own tick. What a row carries when it moves.
     pub fn carried(&self, row: usize) -> Tick {
         let own = self
             .rows
@@ -45,11 +48,10 @@ impl ColumnTicks {
         Tick(own.max(self.floor.0))
     }
 
-    /// Notes a row pushed at the end of the column, written at `tick`. An
-    /// observed column keeps one tick per row — materialising the array, the
-    /// rows before reading 0 under the floor — an unobserved one only its
-    /// summary and its floor, which then follows the summary so that every
-    /// row stays covered.
+    /// Notes a row pushed at the end of the column, written at `tick`.
+    ///
+    /// An `observed` column keeps one tick per row; an unobserved one only its
+    /// summary and its floor, raised to cover the new row.
     pub(crate) fn push(&mut self, tick: Tick, rows_before: usize, observed: bool) {
         match (&mut self.rows, observed) {
             (Some(rows), _) => rows.push(tick.0),
@@ -63,9 +65,7 @@ impl ColumnTicks {
         self.summary = self.summary.max(tick);
     }
 
-    /// Notes a write of `row` at `tick`: the row's own tick when the column
-    /// keeps them, the floor otherwise, so that the row stays covered; the
-    /// summary in both cases.
+    /// Notes a write of `row` at `tick`, in the row's own tick or else the floor.
     pub(crate) fn stamp(&mut self, row: usize, tick: Tick) {
         match self.rows.as_mut().and_then(|rows| rows.get_mut(row)) {
             Some(own) => *own = (*own).max(tick.0),
@@ -83,10 +83,10 @@ impl ColumnTicks {
         self.summary = self.summary.max(tick);
     }
 
-    /// Whether `row` may have been written after `since`: never when the
-    /// column's summary is not past it; by its own tick when the column keeps
-    /// row ticks and `since` is at or above the floor; otherwise yes — the
-    /// row's history was dropped above `since`, so it is not known.
+    /// Returns whether `row` may have been written after `since`.
+    ///
+    /// Yes when the row's history was dropped above `since`, since it is not known.
+    /// See the book: concepts/change-detection-formal.md, "The answer a reader gets".
     pub fn changed_since(&self, row: usize, since: Tick) -> bool {
         if self.summary <= since {
             return false;
@@ -97,8 +97,9 @@ impl ColumnTicks {
         }
     }
 
-    /// Gives a column without row ticks one per row, each reading 0 — under
-    /// the floor, which still covers them. A column that has them keeps them.
+    /// Gives a column without row ticks one per row, each reading 0 under the floor.
+    ///
+    /// A column that has them keeps them.
     pub(crate) fn materialize(&mut self, row_count: usize) {
         if self.rows.is_none() {
             self.rows = Some(vec![0; row_count]);
@@ -112,8 +113,7 @@ impl ColumnTicks {
         self.floor = self.floor.max(self.summary);
     }
 
-    /// Removes `row` by moving the last row into its place, as the column
-    /// does.
+    /// Removes `row` by moving the last row into its place, as the column does.
     pub(crate) fn swap_remove(&mut self, row: usize) {
         if let Some(rows) = &mut self.rows {
             if row < rows.len() {

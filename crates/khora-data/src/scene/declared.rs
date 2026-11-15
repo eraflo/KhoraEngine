@@ -12,22 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Components declared while the engine runs, in a file.
+//! Components declared while the engine runs, described by the file that holds them.
 //!
-//! Such a component has no Rust type, so no registration knows its name: a
-//! file holding one also holds its declaration — name, domain, fields — the
-//! way a page describes itself. A world that never heard of it registers it
-//! from the file; a world that declares it differently reads the file's
-//! fields onto its own by name.
-//!
-//! A value is written field by field, by name, each field as the tagged
-//! script value it is — `{"Int": 42}`, `{"Vec3": …}` — so a cell reads back
-//! as what it was whatever declaration its reader has: records written under
-//! two declarations of one component (a prefab saved before its scene, a game
-//! saved before its scene was) merge, and every cell still says what it
-//! holds. The file's declaration only registers the component where the
-//! world has none; a cell is read onto the live declaration by name and by
-//! value.
+//! See the book: concepts/serialization.md, "How components serialize".
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -61,9 +48,9 @@ pub struct DeclaredRecord {
     pub domain: SemanticDomain,
     /// Its fields, in declaration order.
     pub fields: Vec<DeclaredFieldRecord>,
-    /// Whether a game save keeps it although a scene does not: a behavior's
-    /// state companion. A declaration written before there were any reads
-    /// as not.
+    /// Whether a game save keeps it although a scene does not: a behavior's state companion.
+    ///
+    /// Absent from the file, it reads as `false`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub resumable: bool,
 }
@@ -123,9 +110,9 @@ pub(super) fn declaration(
     }
 }
 
-/// The declarations among `pool` that `pages` hold, sorted by name: what a
-/// record built of those pages describes. Of two declarations of one name,
-/// the later in `pool` is kept — the newer record's.
+/// Returns the declarations among `pool` that `pages` hold, sorted by name.
+///
+/// Of two declarations of one name, the later in `pool`, the newer record's, is kept.
 pub(crate) fn described<'a>(
     pages: &[PageRecord],
     pool: impl IntoIterator<Item = &'a DeclaredRecord>,
@@ -237,7 +224,7 @@ pub(crate) fn declaration_from_record(record: &Record) -> Result<DeclaredRecord,
                 })
             })
             .collect::<Result<_, String>>()?,
-        // Written only when true: a file of components only reads as before.
+        // Written only when true, so a file without resumable components is unchanged.
         resumable: matches!(record_part(record, "resumable"), Some(Record::Bool(true))),
     })
 }
@@ -307,9 +294,7 @@ pub(crate) fn register_all(world: &mut World, declared: &[DeclaredRecord]) {
     }
 }
 
-/// Whether a document `kept` keeps `vtable`'s component, one declared while
-/// the engine runs: a scene what someone authored, a game save that and the
-/// state play resumes from (a behavior's state companion).
+/// Whether a document `kept` keeps `vtable`'s component, one declared while the engine runs.
 pub(super) fn is_saved_declared(vtable: &ComponentVTable, kept: Kept) -> bool {
     vtable.rust.is_none()
         && (vtable.provenance.is_copied_on_duplicate() || (kept == Kept::Game && vtable.resumable))
@@ -379,9 +364,10 @@ pub(crate) struct DeclaredLoad {
     /// The file's fields, in its declaration's order: what a snapshot's
     /// positional row holds.
     file_fields: Vec<String>,
-    /// The fields the world gives another asset kind than the file does: a
-    /// value read for one holding an asset names an asset of the file's kind,
-    /// so the field keeps its default, as a hot reload retyping it would.
+    /// The fields the world gives another asset kind than the file does.
+    ///
+    /// A value holding an asset there keeps the field's default, as a hot
+    /// reload retyping the field would.
     rekinded_fields: Vec<String>,
     /// The declaration to register when the world has none.
     pub(crate) register: Option<RuntimeComponentDecl>,
@@ -389,8 +375,11 @@ pub(crate) struct DeclaredLoad {
     pub(crate) resumable: bool,
 }
 
-/// Plans reading the file's `declared` component into `world`. Refused when
-/// its name is a Rust component's.
+/// Plans reading the file's `declared` component into `world`.
+///
+/// # Errors
+///
+/// When its name is a Rust component's, or the declaration does not read.
 pub(crate) fn plan(world: &LoadCatalog, declared: &DeclaredRecord) -> Result<DeclaredLoad, String> {
     let name = declared.name.as_str();
     let fields = declared
@@ -421,10 +410,14 @@ pub(crate) fn plan(world: &LoadCatalog, declared: &DeclaredRecord) -> Result<Dec
     )
 }
 
-/// Plans reading a declared component a file describes as `fields` of
-/// `types` (each where known), stored in `file_domain` — runtime state a
-/// game save resumes from when `resumable` — into `world`. Refused when its
-/// name is a Rust component's.
+/// Plans reading into `world` a declared component the file describes.
+///
+/// It has `fields` of `types` (each where known), stored in `file_domain`;
+/// `resumable` marks runtime state a game save resumes from.
+///
+/// # Errors
+///
+/// When its name is a Rust component's.
 pub(crate) fn plan_fields(
     world: &LoadCatalog,
     name: &str,
@@ -553,10 +546,10 @@ impl DeclaredLoad {
         self.staged(named)
     }
 
-    /// A row of `values` by field name, onto the planned fields, and what
-    /// reading it adapted: a field the row lacks takes its default, a value
-    /// no field takes is dropped, an `int` for a `float` field is converted
-    /// where it converts exactly.
+    /// Reads a row of `values` by field name onto the planned fields, with what it adapted.
+    ///
+    /// A missing field takes its default, a value no field takes is dropped, and
+    /// an `int` for a `float` field is converted where it converts exactly.
     fn staged(&self, values: Vec<(String, ScriptValue)>) -> StagedComponent {
         let mut report: Vec<ReportEntry> = Vec::new();
         let entry = |report: &mut Vec<ReportEntry>, path: &str, kind: ReportKind| {
@@ -610,9 +603,9 @@ fn fit(layout: &PackedLayout, slot: usize, value: ScriptValue) -> Option<(Script
     layout.fit(slot, &value)
 }
 
-/// A declared component's row, read: its values by field name, the rest its
-/// defaults — placed by the fields of the column it lands in, which are the
-/// world's when the load commits.
+/// A declared component's row, read: its values by field name, the rest its defaults.
+///
+/// Placed by the fields of the column it lands in, the world's when the load commits.
 struct StagedDeclared {
     key: ComponentKey,
     values: Vec<(String, ScriptValue)>,

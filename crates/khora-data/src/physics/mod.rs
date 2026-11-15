@@ -12,12 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Physics-domain data types that are **not** ECS components.
-//!
-//! ECS components live in [`crate::ecs::components::physics`]. This
-//! module hosts physics-domain types that flow through `Resources` or
-//! lane outputs — values the engine shares between systems but that
-//! have no per-entity identity.
+//! Physics data shared between systems that has no per-entity identity; the
+//! physics components (`RigidBody`, `Collider`, …) live in [`crate::ecs`].
 
 pub mod collision;
 

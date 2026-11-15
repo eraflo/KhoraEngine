@@ -91,11 +91,11 @@ fn everything() -> Everything {
     }
 }
 
-/// A record is serde's data model written down, names included: that is what
-/// lets a later read match by name instead of by position. Integers widen to
-/// the two 64-bit kinds, an `f32` keeps its own width so it reads back
-/// bit-exact, tuples and arrays are sequences, and each struct and enum keeps
-/// its serde name and its field and variant names.
+/// A record is serde's data model written down, names included.
+///
+/// Integers widen to the two 64-bit kinds, an `f32` keeps its own width,
+/// tuples and arrays are sequences, and structs and enums keep their serde,
+/// field and variant names.
 #[test]
 fn the_serializer_writes_serdes_data_model_by_name() {
     let expected = structure(

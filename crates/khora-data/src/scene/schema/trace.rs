@@ -12,25 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The tracing deserializer behind [`schema_of`](super::schema_of).
+//! The tracing deserializer behind [`schema_of`](super::schema_of): it
+//! answers every request with a placeholder and writes the request down.
 //!
-//! A deserializer that has no input: every value a type asks for is answered
-//! with a placeholder, and the request itself — a struct with these fields,
-//! a sequence of this — is written down. One run visits one variant of each
-//! enum it meets, so the type is run again until every variant has been
-//! visited.
-//!
-//! A type may refuse a placeholder — a UUID wants sixteen bytes, not none.
-//! The run that met the refusal answers that place differently the next
-//! time, until the type takes one, so no field is left out of the trace.
-//!
-//! A recursive type would run forever. A container met again while it is
-//! being traced is read once more in **shadow**: nothing is written down,
-//! every option answers `None`, every sequence and map is empty, every enum
-//! takes a variant known to end — the smallest value the type has, so the
-//! trace goes on past it and every field after it is traced. Only a type
-//! with no such value (one that always contains itself) stops the run; an
-//! option or a map holding one is answered `None` or empty on the next run.
+//! See the book: reference/formats.md, "Snapshot layout".
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -77,10 +62,10 @@ impl de::Error for TraceError {
     }
 }
 
-/// Where a value sits: the path from the root to it — each container, the
-/// variant if any, the position — folded into one number. The same in
-/// every run, whatever the variants chosen, and different for any two
-/// places.
+/// Where a value sits: its path from the root, folded into one number.
+///
+/// The path is each container, the variant if any, and the position: the same
+/// in every run, whatever the variants chosen, and different for any two places.
 pub(super) type Slot = u64;
 
 /// The slot of position `index` of `owner` / `variant` under `parent`.
@@ -223,9 +208,10 @@ pub(super) struct Tracer<'s> {
     pub(super) state: &'s mut State,
     /// The containers being traced, outermost first.
     open: Vec<Key>,
-    /// How many containers deep the run is reading in shadow — a container
-    /// met again inside itself, read for its smallest value, written down
-    /// nowhere.
+    /// How many containers deep the run is reading in shadow.
+    ///
+    /// A container met again inside itself is read for its smallest value, so
+    /// the trace goes on past it; nothing read in shadow is written down.
     pub(super) shadow: usize,
     /// Where the value being read sits.
     pub(super) slot: Slot,
@@ -285,9 +271,12 @@ impl Tracer<'_> {
         (result, formats)
     }
 
-    /// Opens `key`: traced if it is not open, in shadow if it is — and a
-    /// recursion if it is already open in shadow, a type with no value that
-    /// ends.
+    /// Opens `key`: traced if it is not open, in shadow if it is.
+    ///
+    /// # Errors
+    ///
+    /// [`TraceError::Recursion`] if `key` is met again while in shadow: the type
+    /// has no value that ends.
     fn enter(&mut self, key: Key) -> Result<Entered, TraceError> {
         if !self.open.contains(&key) {
             self.open.push(key);

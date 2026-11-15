@@ -14,10 +14,7 @@
 
 use khora_macros::Component;
 
-/// A component providing a human-readable name for an entity.
-///
-/// Used by the editor scene tree and debug utilities to display entities
-/// with meaningful identifiers instead of raw `EntityId` values.
+/// A human-readable name for an entity, shown by the editor's scene tree and in logs.
 #[derive(Debug, Clone, PartialEq, Eq, Component, Default)]
 #[component(domain = Spatial)]
 pub struct Name(pub String);

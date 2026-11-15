@@ -38,18 +38,11 @@ pub use read::Query;
 pub use without::Without;
 pub use write::QueryMut;
 
-/// Returns `true` if `row` in `page_id` is the entity's **live** location for
-/// `domain` — i.e. not a stale orphan row left behind by a migration.
+/// Returns `true` if `row` of `page_id` is the live entity's row for `domain`.
 ///
-/// `add_component` / `remove_component` move an entity's domain row to a new
-/// page but leave the old row in place (reclaimed later by the maintenance GC),
-/// and the old page's signature is unchanged, so `find_matching_pages` keeps
-/// matching it. Only the row the entity's metadata points to is real; any other
-/// row bearing the same entity is a stale orphan (holding outdated component
-/// values) that must not be yielded. A row whose entity is dead is never live:
-/// the generation check keeps a recycled index from resolving a dead orphan to
-/// the new entity. Both the Native and the Transversal iterators call this per
-/// driver-page row.
+/// A migration leaves the old row in place until compaction, and its page
+/// still matches the query: only the row the metadata points to is real. A
+/// dead entity's row is never live, even once its index is recycled.
 fn is_live_row(
     world: &World,
     page_id: u32,
@@ -62,8 +55,7 @@ fn is_live_row(
         .is_some_and(|loc| loc.page_id == page_id && loc.row_index as usize == row)
 }
 
-/// Returns `entity`'s metadata if it is alive — its slot's generation matches —
-/// or `None` for a dead `EntityId`, even when its index has been recycled.
+/// Returns `entity`'s metadata, or `None` if it is dead, even with its index recycled.
 fn live_metadata(world: &World, entity: EntityId) -> Option<&EntityMetadata> {
     world
         .entities
@@ -72,9 +64,9 @@ fn live_metadata(world: &World, entity: EntityId) -> Option<&EntityMetadata> {
         .and_then(|(_, meta)| meta.as_ref())
 }
 
-/// Returns the live location of `entity`'s row in the domain component `T` is
-/// registered in, or `None` if the entity is dead, `T` is unregistered, or the
-/// entity has no row in that domain.
+/// Returns the live location of `entity`'s row in `T`'s domain.
+///
+/// `None` if the entity is dead, `T` is unregistered, or it has no row there.
 fn live_location<T: 'static>(world: &World, entity: EntityId) -> Option<PageIndex> {
     let domain = world.storage.registry.get_domain(TypeId::of::<T>())?;
     live_metadata(world, entity)?
@@ -83,10 +75,10 @@ fn live_location<T: 'static>(world: &World, entity: EntityId) -> Option<PageInde
         .copied()
 }
 
-/// Returns `true` if the live `entity` holds any of `filters`' types in its row
-/// of that type's domain — the per-row half of a Native `Without` filter whose
-/// type lives outside the driver domain (see [`NativeRowPlan::foreign_without`]),
-/// which the page-level exclusion of `find_matching_pages` cannot see.
+/// Returns `true` if the live `entity` holds any of `filters`' types, each in its domain's row.
+///
+/// The per-row half of a Native `Without` filter outside the driver domain
+/// (see [`NativeRowPlan::foreign_without`]), which page exclusion cannot see.
 fn has_foreign_excluded(
     world: &World,
     entity: EntityId,
@@ -105,80 +97,68 @@ fn has_foreign_excluded(
     })
 }
 
-// ------------------------- //
-// ---- WorldQuery Part ---- //
-// ------------------------- //
-
-/// A trait implemented by types that can be used to query data from the `World`.
+/// A term of a `World` query: a component reference, `EntityId`, a filter, or a tuple of terms.
 ///
-/// This "sealed" trait provides the necessary information for the query engine to
-/// find the correct pages and safely access component data. It is implemented for
-/// component references (`&T`, `&mut T`), `EntityId`, filters like `Without<T>`,
-/// and tuples of other `WorldQuery` types.
+/// See the book: concepts/ecs.md, "Queries and SoA versus AoSoA".
 pub trait WorldQuery {
-    /// The type of item that the query iterator will yield (e.g., `(&'a Position, &'a mut Velocity)`).
+    /// The item the query yields, such as `(&'a Position, Mut<'a, Velocity>)`.
     type Item<'a>;
 
-    /// Returns the sorted list of `TypeId`s for the components to be INCLUDED in the query.
-    /// This signature is used to find `ComponentPage`s that contain all these components.
+    /// Returns the sorted components a matching page must hold.
     fn type_ids() -> Vec<TypeId>;
 
-    /// Every component the items reach, once per term that reaches it — not
-    /// deduplicated, so a query naming one component twice can be told from
-    /// one naming it once.
+    /// Returns every component the items reach, once per term that reaches it.
+    ///
+    /// Not deduplicated, so a query naming one component twice can be told apart.
     fn accessed_type_ids() -> Vec<TypeId> {
         let mut ids = Self::type_ids();
         ids.extend(Self::optional_type_ids());
         ids
     }
 
-    /// Returns the sorted list of `TypeId`s for components to be EXCLUDED from the query.
-    /// Used to filter out pages that contain these components.
+    /// Returns the sorted components a matching page must not hold.
     fn without_type_ids() -> Vec<TypeId> {
         Vec::new()
     }
 
-    /// Returns the `TypeId`s of the components read by `Option` terms. They do
-    /// not constrain which pages match, but the query engine must know their
-    /// domains to read them from the right page.
+    /// Returns the components read by `Option` terms.
+    ///
+    /// They do not constrain which pages match; their domains say which page to read them from.
     fn optional_type_ids() -> Vec<TypeId> {
         Vec::new()
     }
 
-    /// Returns the `TypeId`s of the components this query accesses **mutably**
-    /// (`&mut T` / `Option<&mut T>` terms). [`World::query_mut`] uses this to
-    /// mark the matching domains changed once per query construction.
-    /// Read-only terms and filters return nothing (the default).
+    /// Returns the components this query writes (`&mut T`, `Option<&mut T>`).
+    ///
+    /// [`World::query_mut`] makes them the writable terms, whose guards stamp what they write.
     fn mutable_type_ids() -> Vec<TypeId> {
         Vec::new()
     }
 
-    /// Whether the rows of `page` may pass this query's filters: `false`
-    /// skips the page whole. Asked of a Native iteration's driver pages only,
-    /// whose every column is the live row of the entities it holds live; a
-    /// term without a column on the page passes it.
+    /// Returns `false` if no row of `page` can pass this query's filters.
+    ///
+    /// Asked of a Native iteration's driver pages only; a term without a
+    /// column on the page passes it.
     fn page_passes(_page: &ComponentPage, _since: Tick) -> bool {
         true
     }
 
-    /// Whether row `row` of `page` passes this query's filters, judged from
-    /// the page alone — asked, as `page_passes` is, of a Native iteration's
-    /// live driver rows only. Elsewhere `fetch_from_world` judges.
+    /// Returns whether row `row` of `page` passes this query's filters, judged from the page alone.
+    ///
+    /// Asked of a Native iteration's live driver rows only; elsewhere
+    /// `fetch_from_world` judges.
     fn row_passes(_page: &ComponentPage, _row: usize, _since: Tick) -> bool {
         true
     }
 
-    /// Fetches the query's item from a specific row in a `ComponentPage`.
+    /// Fetches the query's item from row `row_index` of a page, with `ctx` (see [`FetchContext`]).
     ///
     /// # Safety
     ///
-    /// This function is unsafe because the caller (the `Query` iterator) must guarantee
-    /// several invariants:
+    /// The caller (the query iterator) guarantees that:
     /// 1. The page pointed to by `page_ptr` is valid and matches the query's signature.
     /// 2. `row_index` is a valid index within the page's columns.
     /// 3. Aliasing rules are not violated (e.g., no two `&mut T` to the same data).
-    ///
-    /// `ctx` is what the item is fetched with (see [`FetchContext`]).
     unsafe fn fetch<'a>(
         page_ptr: *const ComponentPage,
         row_index: usize,
@@ -197,7 +177,6 @@ pub trait WorldQuery {
     ) -> Option<Self::Item<'a>>;
 }
 
-// Implementation for a query of a single, immutable component reference.
 impl<T: Component> WorldQuery for &T {
     type Item<'a> = &'a T;
 
@@ -215,20 +194,10 @@ impl<T: Component> WorldQuery for &T {
         row_index: usize,
         _ctx: FetchContext<'_>,
     ) -> Self::Item<'a> {
-        // Get a reference to the `ComponentPage`.
         let page = &*page_ptr;
-
-        // Get the type-erased column for the component `T`.
-        // We can unwrap because the caller guarantees the column exists.
+        // The caller guarantees the column exists and holds the row.
         let column: &dyn AnyVec = &**page.columns.get(&ComponentKey::of::<T>()).unwrap();
-
-        // Downcast the column to its concrete `Vec<T>` type.
-        // First, cast to `&dyn Any`, then `downcast_ref`.
         let vec: &Vec<T> = column.as_any().downcast_ref::<Vec<T>>().unwrap();
-
-        // Get the component from the vector at the specified row.
-        // We use `get_unchecked` for performance, as the caller guarantees the
-        // index is in bounds. This avoids a bounds check.
         vec.get_unchecked(row_index)
     }
 
@@ -238,11 +207,7 @@ impl<T: Component> WorldQuery for &T {
         _ctx: FetchContext<'_>,
     ) -> Option<Self::Item<'a>> {
         let world = &*world;
-
-        // Get the entity's live row in `T`'s domain (`None` if it is dead).
         let location = live_location::<T>(world, entity_id)?;
-
-        // Get the page for the entity.
         let page = &world.storage.pages[location.page_id as usize];
         let column = page.columns.get(&ComponentKey::of::<T>())?;
         let vec = column.as_any().downcast_ref::<Vec<T>>()?;
@@ -250,7 +215,6 @@ impl<T: Component> WorldQuery for &T {
     }
 }
 
-// Implementation for a query of a single, mutable component reference.
 impl<T: Component> WorldQuery for &mut T {
     type Item<'a> = Mut<'a, T>;
 
@@ -314,12 +278,11 @@ impl<T: Component> WorldQuery for &mut T {
     }
 }
 
-// Implementation for an optional immutable component reference.
 impl<T: Component> WorldQuery for Option<&T> {
     type Item<'a> = Option<&'a T>;
 
     fn type_ids() -> Vec<TypeId> {
-        // Optional components do NOT drive the query signature.
+        // An optional term does not narrow which pages match.
         Vec::new()
     }
 
@@ -361,7 +324,6 @@ impl<T: Component> WorldQuery for Option<&T> {
     }
 }
 
-// Implementation for an optional mutable component reference.
 impl<T: Component> WorldQuery for Option<&mut T> {
     type Item<'a> = Option<Mut<'a, T>>;
 
@@ -424,7 +386,7 @@ impl<T: Component> WorldQuery for Option<&mut T> {
     }
 }
 
-/// The page `page_id` of `world`, through the page buffer's pointer.
+/// Returns the page `page_id` of `world`, through the page buffer's pointer.
 ///
 /// Never `&mut world.storage.pages[page_id]`: a pointer cast from a reference
 /// to one page is invalidated by the next reference made to it, and the
@@ -440,7 +402,7 @@ unsafe fn page_of_world(world: *const World, page_id: u32) -> Option<*mut Compon
     ((page_id as usize) < pages.len()).then(|| pages.as_mut_ptr().add(page_id as usize))
 }
 
-/// The pointer to item `row` of `vec`, through the buffer's pointer.
+/// Returns the pointer to item `row` of `vec`, through the buffer's pointer.
 ///
 /// Never `vec.get_mut(row)`: that reborrows the whole column as `&mut [T]`,
 /// which invalidates every item an earlier fetch handed out from the same
@@ -455,9 +417,7 @@ unsafe fn column_item<T>(vec: &mut Vec<T>, row: usize) -> Option<*mut T> {
     (row < vec.len()).then(|| vec.as_mut_ptr().add(row))
 }
 
-// Implementation for tuples of WorldQuery types.
-// We use a macro to avoid "infinity" of manual implementations while maintaining
-// the same rigorous safety standards as the single-component cases.
+// A tuple of terms, up to twelve.
 macro_rules! impl_query_tuple {
     ($($Q:ident),*) => {
         impl<$($Q: WorldQuery),*> WorldQuery for ($($Q,)*) {
@@ -467,7 +427,7 @@ macro_rules! impl_query_tuple {
                 let mut ids = Vec::new();
                 $(ids.extend($Q::type_ids());)*
                 ids.sort();
-                ids.dedup(); // Ensure unique TypeIds for canonical signature
+                ids.dedup();
                 ids
             }
 
@@ -475,7 +435,7 @@ macro_rules! impl_query_tuple {
                 let mut ids = Vec::new();
                 $(ids.extend($Q::without_type_ids());)*
                 ids.sort();
-                ids.dedup(); // Ensure unique TypeIds for canonical signature
+                ids.dedup();
                 ids
             }
 
@@ -617,18 +577,13 @@ impl_read_only_tuple!(Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9, Q10);
 impl_read_only_tuple!(Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9, Q10, Q11);
 impl_read_only_tuple!(Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9, Q10, Q11, Q12);
 
-// To fetch an entity's ID, we need to access the page's own entity list.
-// We also need to query for the entity ID itself.
+// The entity id, read from the page's own entity list.
 impl WorldQuery for EntityId {
     type Item<'a> = EntityId;
 
-    // EntityId is not a component, it doesn't have a TypeId in the page signature.
     fn type_ids() -> Vec<TypeId> {
         Vec::new()
     }
-
-    // It doesn't have a `without` filter either.
-    // The default implementation is sufficient.
 
     unsafe fn fetch<'a>(
         page_ptr: *const ComponentPage,
@@ -636,7 +591,6 @@ impl WorldQuery for EntityId {
         _ctx: FetchContext<'_>,
     ) -> Self::Item<'a> {
         let page = &*page_ptr;
-        // The entity ID is fetched from the page's own list of entities.
         *page.entities.get_unchecked(row_index)
     }
 
@@ -645,7 +599,6 @@ impl WorldQuery for EntityId {
         entity_id: EntityId,
         _ctx: FetchContext<'_>,
     ) -> Option<Self::Item<'a>> {
-        // We already have the entity ID, just return it.
         Some(entity_id)
     }
 }

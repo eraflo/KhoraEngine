@@ -34,19 +34,13 @@ pub struct ShiningLight<'w> {
     pub direction: Vec3,
 }
 
-/// The lights that shine in `world`, in query order.
+/// Returns the lights that shine in `world`, in query order.
 ///
-/// This is the single place that says which lights exist for a frame:
-/// index `i` in the returned list is the light index every consumer shares
-/// (`RenderWorld.lights[i]`, `ShadowView.matrices[&i]`).
-///
-/// A light shines when it is `enabled`, its [`Light::check`] holds no
-/// `Error` (a `Warning` still shines), its world position is finite, and —
-/// for a directional or spot light — its world direction
-/// (`transform_direction` of the authored one) is finite and not zero. The
-/// direction is published as a unit vector (divided by its largest absolute
-/// component, then normalized, so a tiny direction still points). A point
-/// light's direction is `Vec3::ZERO`.
+/// Index `i` is the light index every consumer shares (`RenderWorld.lights[i]`,
+/// `ShadowView.matrices[&i]`). A light shines when it is `enabled`, its
+/// [`Light::check`] holds no `Error`, its world position is finite and, for a
+/// sun or a spot, its world direction is finite and not zero. That direction
+/// is published as a unit vector, however small; a point light's is zero.
 pub fn shining_lights(world: &World) -> Vec<ShiningLight<'_>> {
     world
         .query::<(&Light, &GlobalTransform)>()
@@ -54,7 +48,7 @@ pub fn shining_lights(world: &World) -> Vec<ShiningLight<'_>> {
         .collect()
 }
 
-/// `light` placed by `global`, when it shines.
+/// Returns `light` placed by `global`, when it shines.
 fn shining<'w>(light: &'w Light, global: &GlobalTransform) -> Option<ShiningLight<'w>> {
     if !light.enabled {
         return None;
@@ -84,10 +78,7 @@ fn shining<'w>(light: &'w Light, global: &GlobalTransform) -> Option<ShiningLigh
     })
 }
 
-/// `direction` as a unit vector, or `None` when it points nowhere (zero, or
-/// holding a NaN or an infinity). Divided by its largest component first, so
-/// a direction however small still points, where its squared length would
-/// underflow.
+/// Returns `direction` as a unit vector, or `None` when it is zero or not finite.
 fn unit(direction: Vec3) -> Option<Vec3> {
     if !is_finite(direction) {
         return None;
@@ -97,6 +88,8 @@ fn unit(direction: Vec3) -> Option<Vec3> {
         .abs()
         .max(direction.y.abs())
         .max(direction.z.abs());
+    // Scaled by its largest component first: a tiny direction's squared
+    // length would underflow to zero.
     (largest > 0.0).then(|| (direction / largest).normalize())
 }
 
@@ -220,9 +213,11 @@ mod tests {
         assert_eq!(shining[0].position, MARKER_AT, "{what}: the marker shines");
     }
 
-    /// A light whose own values hold an `Error` — a range of 0 or NaN, a
-    /// cone of 90° or more or NaN, a zero or NaN direction, a NaN intensity,
-    /// a negative colour — does not shine; the usable light beside it does.
+    /// A light whose own values hold an `Error` does not shine; the usable
+    /// light beside it does.
+    ///
+    /// The errors: a range of 0 or NaN, a cone of 90° or more or NaN, a zero
+    /// or NaN direction, a NaN intensity, a negative colour.
     #[test]
     fn a_light_with_an_error_does_not_shine() {
         for (what, light) in broken_lights() {
@@ -289,9 +284,9 @@ mod tests {
         );
     }
 
-    /// A light whose own values are clean but whose entity sits at a NaN or
-    /// infinite place does not shine — and its check stays clean: the
-    /// transform's problem is not the light's.
+    /// A clean light whose entity sits at a NaN or infinite place does not shine.
+    ///
+    /// Its check stays clean: the transform's problem is not the light's.
     #[test]
     fn a_light_under_a_broken_transform_does_not_shine() {
         let broken_transforms = [
@@ -334,9 +329,10 @@ mod tests {
         }
     }
 
-    /// A sun or spot authored with a tiny direction still points: it is
-    /// published as a unit vector — under the identity, and under a parent
-    /// scaled down to 1e-20.
+    /// A sun or spot authored with a tiny direction still points.
+    ///
+    /// It is published as a unit vector, under the identity and under a
+    /// parent scaled down to 1e-20.
     #[test]
     fn a_shining_direction_is_unit_even_when_tiny() {
         let cases = [
@@ -383,12 +379,13 @@ mod tests {
         }
     }
 
+    /// A light shines exactly when it is enabled, clean and finite.
+    ///
     /// Swept over usable and broken lights, enabled or not, under usable and
-    /// broken transforms: a light shines exactly when it is enabled, its
-    /// check holds no `Error`, and its world position — and, for a sun or a
-    /// spot, its world direction — are finite (the direction not zero).
-    /// Every value a shining light publishes is finite; a sun's or a spot's
-    /// direction is a unit vector, a point light's is zero.
+    /// broken transforms: its check holds no `Error`, and its world position
+    /// and, for a sun or a spot, its world direction are finite (the direction
+    /// not zero). Every value a shining light publishes is finite; a sun's or a
+    /// spot's direction is a unit vector, a point light's is zero.
     #[test]
     fn shines_exactly_when_enabled_clean_and_finite() {
         let mut lights: Vec<Light> = broken_lights().into_iter().map(|(_, l)| l).collect();

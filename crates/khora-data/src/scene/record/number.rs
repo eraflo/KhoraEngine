@@ -12,14 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Numbers read at the width a field asks for, when that loses nothing.
-//!
-//! A save may hold a number at another width than the field now reading it —
-//! a count that became a float, a float that became a double. A conversion
-//! that loses nothing is allowed — a widening, or a narrowing whose value is
-//! exact; one that would round, truncate or saturate is refused, because a
-//! value that changes on load is data lost without a word. Decimal text is the
-//! one exception: it is read at the field's width, as the text would be.
+//! Numbers read at the width a field asks for, when that loses nothing; decimal
+//! text is the exception, read at the field's width as the text would be.
+//! See the book: concepts/serialization.md, "Why records".
 
 use super::Record;
 

@@ -15,11 +15,7 @@
 //! `Mut`, the guard writable access hands out, on its own: one value and the
 //! ticks of the column it is a row of.
 //!
-//! Reading through the guard is not a change. The first write through it
-//! stamps its row τ with the guard's tick and raises the column's summary σ;
-//! over a column that keeps no row ticks it raises σ and the floor φ, so the
-//! row stays covered. `set_if_neq` writes — and stamps — only a value that
-//! differs; `bypass_change_detection` writes without stamping.
+//! See the book: concepts/change-detection.md, "Writing: the guard".
 
 use std::ptr;
 
@@ -144,9 +140,10 @@ fn bypass_change_detection_writes_without_stamping() {
     assert_eq!(ticks, three_rows(), "a bypassed write is not stamped");
 }
 
-/// Over a column that keeps no row ticks, the write raises the summary and
-/// the floor with it — the row stays covered (I2) — and no row array
-/// appears.
+/// Over a column without row ticks, a write raises the summary and the floor.
+///
+/// The row stays covered (I2) and no row array appears. See the book:
+/// concepts/change-detection-formal.md, "Invariants".
 #[test]
 fn a_guard_over_a_column_without_row_ticks_raises_its_summary_and_floor() {
     let mut value = Position(4);

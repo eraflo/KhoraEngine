@@ -12,15 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A component as the editor's inspector reads and writes it: JSON, with the
-//! floats JSON has no number for kept.
+//! A component as the editor's inspector reads and writes it: JSON, non-finite floats kept.
 //!
-//! JSON writes an infinity or a NaN as `null`, and reads `null` back as no
-//! float at all — so a component holding one (a camera loaded with an
-//! infinite far plane) could be neither shown nor edited, not even to fix it.
-//! Such a float is written as the marker the self-describing record form
-//! already uses, `{"$float": "inf"}` (`"-inf"`, `"nan"`), and read back from
-//! it. Every other value is plain `serde_json`.
+//! An infinity or a NaN, which JSON writes as `null`, is written as the record's
+//! marker `{"$float": "inf"}` (`"-inf"`, `"nan"`), so it can be shown and edited.
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::PersistentId;

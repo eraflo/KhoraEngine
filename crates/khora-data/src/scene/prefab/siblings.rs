@@ -22,8 +22,7 @@ use khora_core::ecs::PersistentId;
 use super::super::entity_refs::parent_in;
 use super::super::record::Record;
 
-/// Each parent's children, in the order `entities` lists them, by the
-/// `Parent` their rows hold.
+/// Returns each parent's children, by the `Parent` their rows hold, in `entities`' order.
 pub(super) fn children_of(
     entities: &[PersistentId],
     rows: &HashMap<PersistentId, Vec<(String, Record)>>,
@@ -37,10 +36,10 @@ pub(super) fn children_of(
     children
 }
 
-/// Puts each parent's children named in `order` back in the order it names
-/// them, within the places they already hold in `entities` — a hierarchy
-/// rebuilds a parent's children in the order its record lists them, so that
-/// is all a sibling order needs.
+/// Puts the children named in `order` back in that order, within their places in `entities`.
+///
+/// Reordering the record is enough: a hierarchy rebuilds a parent's children in
+/// the order its record lists them.
 pub(super) fn restore_sibling_order(
     entities: &mut [PersistentId],
     rows: &HashMap<PersistentId, Vec<(String, Record)>>,

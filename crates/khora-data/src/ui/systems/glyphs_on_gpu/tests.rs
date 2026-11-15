@@ -75,9 +75,10 @@ const COLOR_HEIGHT: u32 = 6;
 const COLOR_LEFT: i32 = -1;
 const COLOR_TOP: i32 = 9;
 
-/// The side of the atlases the tests that fill one use. Its shelves (a 2 px
-/// padding, starting 2 px in) hold 4 masks a row on 3 rows — 12 masks — and
-/// 3 colour glyphs a row on 3 rows — 9 colour glyphs.
+/// The side of the atlases the tests that fill one use.
+///
+/// Its shelves (a 2 px padding, starting 2 px in) hold 4 masks a row on 3 rows,
+/// 12 masks, and 3 colour glyphs a row on 3 rows, 9 colour glyphs.
 const TINY: u32 = 32;
 /// How many masks a [`TINY`] atlas holds.
 const TINY_MASKS: usize = 12;
@@ -596,8 +597,9 @@ fn every_glyph_of_a_layout_is_resident_after_one_run() {
     assert_eq!(scene.atlas.len(), 3);
 }
 
-/// **A glyph is keyed by its layout's font and size and its own x.** The
-/// text's origin is snapped to whole pixels when drawn, so the subpixel bin
+/// **A glyph is keyed by its layout's font and size and its own x.**
+///
+/// The text's origin is snapped to whole pixels when drawn, so the subpixel bin
 /// comes from the glyph's x within the layout, and the size from the layout.
 #[test]
 fn a_glyph_is_keyed_by_its_layout_s_font_and_size_and_its_own_x() {
@@ -903,12 +905,13 @@ fn a_slot_holds_the_image_s_size_and_offset() {
 
 // --- a full atlas ---
 
-/// **A full atlas is rebuilt with only the glyphs in use.** A [`TINY`]
-/// atlas holds 12 masks: 8 are placed, then one text is laid out again in 8
-/// new glyphs. The 5th does not fit, so a new mask atlas is made holding the
-/// 10 glyphs the layouts now use — the unchanged text's 2 among them — the
-/// old texture and its view are destroyed, the glyphs no text uses any more
-/// have no slot, and the mask view is the new one.
+/// **A full atlas is rebuilt with only the glyphs in use.**
+///
+/// A [`TINY`] atlas holds 12 masks: 8 are placed, then one text is laid out
+/// again in 8 new glyphs. The 5th does not fit, so a new mask atlas is made
+/// holding the 10 glyphs the layouts now use — the unchanged text's 2 among
+/// them — the old texture and its view are destroyed, the glyphs no text uses
+/// any more have no slot, and the mask view is the new one.
 #[test]
 fn a_full_atlas_is_rebuilt_with_only_the_glyphs_in_use() {
     let mut scene = Scene::with_atlas_size(TINY);
@@ -995,8 +998,9 @@ fn rebuilding_the_mask_atlas_leaves_the_colour_atlas_alone() {
     assert_eq!(scene.atlas.slot(&emoji), Some(emoji_slot));
 }
 
-/// **A full colour atlas is rebuilt without touching the mask atlas.** A
-/// [`TINY`] atlas holds 9 colour glyphs: 6 are placed, then their text is
+/// **A full colour atlas is rebuilt without touching the mask atlas.**
+///
+/// A [`TINY`] atlas holds 9 colour glyphs: 6 are placed, then their text is
 /// laid out again in 6 new ones.
 #[test]
 fn a_full_colour_atlas_is_rebuilt_without_touching_the_mask_atlas() {
@@ -1045,9 +1049,10 @@ fn a_full_colour_atlas_is_rebuilt_without_touching_the_mask_atlas() {
     );
 }
 
-/// **More glyphs in use than an empty atlas holds neither hangs nor
-/// panics**: an atlas built again from what is in use is full again, and
-/// building it once more would not make room. What fits is placed.
+/// **More glyphs in use than an empty atlas holds neither hangs nor panics.**
+///
+/// An atlas built again from what is in use is full again, and building it once
+/// more would not make room. What fits is placed.
 #[test]
 fn more_glyphs_in_use_than_an_empty_atlas_holds_neither_hangs_nor_panics() {
     let mut scene = Scene::with_atlas_size(TINY);
@@ -1067,10 +1072,11 @@ fn more_glyphs_in_use_than_an_empty_atlas_holds_neither_hangs_nor_panics() {
 // --- fonts ---
 
 /// **A reloaded font registers with the rasteriser once, and its glyphs are
-/// rasterised again.** The resolver replaces the handle on every text in the
-/// font, and `ui_text_layout` lays those texts out again; the glyphs of the
-/// old file are not drawn for the new one. A text in another font keeps its
-/// glyphs.
+/// rasterised again.**
+///
+/// The resolver replaces the handle on every text in the font, and
+/// `ui_text_layout` lays those texts out again; the glyphs of the old file are
+/// not drawn for the new one. A text in another font keeps its glyphs.
 #[test]
 fn a_reloaded_font_registers_once_and_its_glyphs_are_rasterised_again() {
     let mut scene = Scene::new();
@@ -1114,8 +1120,9 @@ fn a_reloaded_font_registers_once_and_its_glyphs_are_rasterised_again() {
     assert_eq!(scene.rasterizer.registrations().len(), 2, "not again");
 }
 
-/// **A text spawned in a font already registered registers nothing**: it
-/// shares the handle the other texts hold, so its font's file is not new,
+/// **A text spawned in a font already registered registers nothing.**
+///
+/// It shares the handle the other texts hold, so its font's file is not new,
 /// and the glyphs it shares with them are not made again.
 #[test]
 fn a_text_spawned_in_a_font_already_registered_registers_nothing() {
@@ -1232,10 +1239,11 @@ fn without_an_atlas_nothing_happens() {
 
 // --- the registration ---
 
-/// **Registered in `PreExtract`, after `ui_text_layout`, observing the
-/// layout and the font handle**: the layouts it reads are written by
-/// `ui_text_layout` the same tick, and the two observed components are what
-/// it reads `Changed` of.
+/// **Registered in `PreExtract`, after `ui_text_layout`, observing the layout
+/// and the font handle.**
+///
+/// The layouts it reads are written by `ui_text_layout` the same tick, and the
+/// two observed components are what it reads `Changed` of.
 #[test]
 fn the_registration_runs_in_pre_extract_after_ui_text_layout_observing_layout_and_font() {
     let registration = inventory::iter::<DataSystemRegistration>
@@ -1294,11 +1302,12 @@ impl GlyphRasterizer for TallRasterizer {
     }
 }
 
-/// **A glyph no atlas can hold does not rebuild the atlas.** A [`TINY`]
-/// atlas cannot hold a 40 px glyph, whatever is in it, so that glyph is not
-/// a sign the atlas is full. When its text is edited, the mask atlas is kept,
-/// the glyphs of a text left alone keep their slots and are not rasterised
-/// again.
+/// **A glyph no atlas can hold does not rebuild the atlas.**
+///
+/// A [`TINY`] atlas cannot hold a 40 px glyph, whatever is in it, so that glyph
+/// is not a sign the atlas is full. When its text is edited, the mask atlas is
+/// kept, the glyphs of a text left alone keep their slots and are not
+/// rasterised again.
 #[test]
 fn a_glyph_no_atlas_can_hold_does_not_rebuild_the_atlas() {
     let mut scene = Scene::with_atlas_size(TINY);
@@ -1341,8 +1350,9 @@ fn a_glyph_no_atlas_can_hold_does_not_rebuild_the_atlas() {
     );
 }
 
-/// **Glyphs a full atlas left out are placed once there is room.** A
-/// [`TINY`] atlas holds 12 masks. A text of 12 fills it; a second text of 8
+/// **Glyphs a full atlas left out are placed once there is room.**
+///
+/// A [`TINY`] atlas holds 12 masks. A text of 12 fills it; a second text of 8
 /// is spawned, and the 20 glyphs in use do not all fit, so some go without a
 /// slot. The first text is then cleared: the 8 glyphs still in use fit an
 /// atlas, and each is resident after the next run.
@@ -1367,6 +1377,7 @@ fn glyphs_a_full_atlas_left_out_are_placed_once_there_is_room() {
 }
 
 /// **Rebuilding the mask atlas rasterises no colour glyph nor space again.**
+///
 /// Only masks go into the atlas built again; a colour glyph and a space keep
 /// what was made of them.
 #[test]
@@ -1391,11 +1402,12 @@ fn rebuilding_the_mask_atlas_rasterises_no_colour_glyph_nor_space_again() {
     assert_eq!(scene.rasterizer.times_asked(&space), 1, "the space once");
 }
 
-/// **Attaching a layout to a text does not make its font new.** The font's
-/// file was registered when its handle arrived; `ui_text_layout` attaching
-/// the text's first layout later moves the entity's row, which is not a new
-/// file: the rasteriser is not handed the font again, and its glyphs are not
-/// made again.
+/// **Attaching a layout to a text does not make its font new.**
+///
+/// The font's file was registered when its handle arrived; `ui_text_layout`
+/// attaching the text's first layout later moves the entity's row, which is not
+/// a new file: the rasteriser is not handed the font again, and its glyphs are
+/// not made again.
 #[test]
 fn attaching_a_layout_to_a_text_does_not_make_its_font_new() {
     let mut scene = Scene::new();
@@ -1419,11 +1431,12 @@ fn attaching_a_layout_to_a_text_does_not_make_its_font_new() {
     assert_eq!(scene.rasterizer.times_asked(&key(BODY, b'a' as u16)), 1);
 }
 
-/// **A rebuild places every glyph in use that fits, past one that does
-/// not.** A text whose one glyph no [`TINY`] atlas can hold comes first; a
-/// second text is laid out again in 8 new masks and fills the atlas, which
-/// is built again: the 8 masks in use fit a fresh atlas, so each is
-/// resident, whatever stands before them.
+/// **A rebuild places every glyph in use that fits, past one that does not.**
+///
+/// A text whose one glyph no [`TINY`] atlas can hold comes first; a second text
+/// is laid out again in 8 new masks and fills the atlas, which is built again:
+/// the 8 masks in use fit a fresh atlas, so each is resident, whatever stands
+/// before them.
 #[test]
 fn a_rebuild_places_every_glyph_in_use_that_fits_past_one_that_does_not() {
     let mut scene = Scene::with_atlas_size(TINY);
@@ -1444,10 +1457,11 @@ fn a_rebuild_places_every_glyph_in_use_that_fits_past_one_that_does_not() {
     }
 }
 
-/// **Glyphs in use that only grew rebuild no atlas.** Once a full atlas has
-/// left glyphs out, a text appearing in glyphs that take no room in the mask
-/// atlas — a space, an emoji — frees nothing there: the mask atlas is kept,
-/// and its glyphs are not rasterised again.
+/// **Glyphs in use that only grew rebuild no atlas.**
+///
+/// Once a full atlas has left glyphs out, a text appearing in glyphs that take
+/// no room in the mask atlas — a space, an emoji — frees nothing there: the
+/// mask atlas is kept, and its glyphs are not rasterised again.
 #[test]
 fn glyphs_in_use_that_only_grew_rebuild_no_atlas() {
     let mut scene = Scene::with_atlas_size(TINY);
@@ -1470,9 +1484,9 @@ fn glyphs_in_use_that_only_grew_rebuild_no_atlas() {
 }
 
 /// **A glyph is rasterised once in a run that rebuilds the other atlas.**
-/// A text laid out again in new masks and an emoji fills the mask atlas,
-/// which is built again; the emoji, new too, is rasterised once all the
-/// same.
+///
+/// A text laid out again in new masks and an emoji fills the mask atlas, which
+/// is built again; the emoji, new too, is rasterised once all the same.
 #[test]
 fn a_glyph_is_rasterised_once_in_a_run_that_rebuilds_the_other_atlas() {
     let mut scene = Scene::with_atlas_size(TINY);

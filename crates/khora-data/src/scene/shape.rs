@@ -12,38 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What a component looks like to something that cannot read Rust.
+//! What a component looks like to what cannot read Rust: Ergon mirrors, an editor.
 //!
-//! # Why the registry publishes this
-//!
-//! Three consumers need a component's shape, and none of them can read Rust:
-//!
-//! - the **Ergon mirrors**, so a script can name `Transform.translation` and be
-//!   told at compile time when it misspells one;
-//! - the **projection**, which decides what a frame must hand a behaviour;
-//! - an **editor** rendering a component whose crate it does not link.
-//!
-//! Each could have guessed the shape by serialising a `default()` to JSON. That
-//! guess is fragile on options, enums and nesting, and it yields a *value* where
-//! a *type* was wanted. `#[derive(Component)]` already walks the fields to build
-//! the `Serializable` mirror, so it has the answer exactly where the question is
-//! asked — and honouring `#[component(skip)]` falls out for free, because one
-//! list feeds both.
+//! The derive builds it from the list the `Serializable` mirror is built from, so
+//! `#[component(skip)]` holds for both.
 
 /// What a component looks like from outside Rust.
 ///
-/// Two answers, and keeping them apart is the whole value: a component with no
-/// fields and a component whose shape the field model cannot express are
-/// different facts. Conflating them would let a generator emit a fieldless
-/// mirror for an enum and call it done.
+/// A marker (no fields) and an opaque shape (an enum) are different answers: a
+/// generator must not emit a fieldless mirror for an enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComponentShape {
     /// A struct — these fields, in declaration order, minus anything
     /// `#[component(skip)]` omits. Empty means a marker component.
     Fields(&'static [FieldSchema]),
-    /// Not describable as a list of fields. An enum, today: `MaterialRef` and
-    /// `MeshRef` are one-of rather than all-of, and pretending otherwise would
-    /// let a mirror claim a shape the type does not have.
+    /// Not describable as a list of fields: an enum, one-of rather than all-of.
     Opaque,
 }
 
@@ -54,18 +37,14 @@ pub struct FieldSchema {
     pub name: &'static str,
     /// The declared Rust type, verbatim — `f32`, `Vec3`, `Option<EntityId>`.
     ///
-    /// Deliberately the source spelling rather than a normalised one: a
-    /// generator that cannot express a type must be able to say *which* type it
-    /// could not express, and a lossy encoding takes that away.
+    /// Kept verbatim so a generator can name the type it could not express.
     pub ty: &'static str,
 }
 
 impl ComponentShape {
-    /// The fields, or an empty slice for a shape the field model cannot express.
+    /// Returns the fields, or an empty slice for an opaque shape.
     ///
-    /// For a consumer that only wants to iterate. Anything that must *report* on
-    /// an unexpressible component should match on the variant instead — that is
-    /// the distinction this type exists to keep.
+    /// To report on an opaque component, match on the variant instead.
     pub fn fields(&self) -> &'static [FieldSchema] {
         match self {
             Self::Fields(fields) => fields,
@@ -102,10 +81,10 @@ mod tests {
         );
     }
 
-    /// **What `#[component(skip)]` removes, it removes here too.** The schema is
-    /// built from the very list that feeds the `Serializable` mirror, so a field
-    /// the scene file never sees is a field a script and an inspector never see
-    /// either. Deriving the two separately is how they would drift.
+    /// **What `#[component(skip)]` removes, it removes here too.**
+    ///
+    /// The schema and the `Serializable` mirror are built from one list, so a
+    /// field a scene file never sees, a script and an inspector never see.
     #[test]
     fn a_skipped_field_is_absent_from_the_schema() {
         let fields = field_names("RigidBody");

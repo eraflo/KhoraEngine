@@ -12,24 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The material residency, `gpu_material_sync`: each entity's material
-//! (uniforms, PBR textures, the group-2 bind group) uploaded to the GPU, and
-//! the entity tagged with `HandleComponent<GpuMaterial>`.
-//!
-//! Runs in `TickPhase::PreExtract`, after the asset reload, the resolver and
-//! `gpu_mesh_sync` (so every rendered entity already has a
-//! `HandleComponent<GpuMesh>`), before `RenderFlow` projects the world.
-//! Decoded CPU textures are read from the `Assets<CpuTexture>` sub-store of
-//! the [`AssetStore`](crate::assets::AssetStore), filled by the layer that
-//! owns the `AssetService`: this residency loads no asset.
-//!
-//! Materials are projected per variant with **no fallback textures**: a
-//! material's [`ShaderVariantKey`] is exactly the set of maps it declares, and
-//! its group-2 bind group is built against the same
-//! `(LayoutKey::Material, variant)` layout the lit pipeline binds. A mesh with
-//! no resolved material handle (and no pending `MaterialRef`), or a material
-//! referencing a texture absent from `Assets<CpuTexture>`, is logged and
-//! skipped rather than silently substituted.
+//! The material residency, `gpu_material_sync`: each entity's material uploaded
+//! (uniforms, PBR textures, the group-2 bind group) and the entity tagged with
+//! its `HandleComponent<GpuMaterial>`, with no fallback for what is missing.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -88,26 +73,14 @@ crate::register_residency!(
 );
 
 impl ProjectionRegistry {
-    /// Uploads any newly-needed materials to the GPU and tags their ECS
-    /// entities with a `HandleComponent<GpuMaterial>`.
+    /// Uploads newly needed materials and gives each entity its
+    /// `HandleComponent<GpuMaterial>`.
     ///
-    /// Runs once per frame in `TickPhase::PreExtract`, after `sync_all`
-    /// (so every rendered entity already has a `HandleComponent<GpuMesh>`)
-    /// and before `RenderFlow` projects the world. Idempotent: entities
-    /// already carrying a `HandleComponent<GpuMaterial>` are skipped.
-    ///
-    /// Only entities with a resolved `HandleComponent<Box<dyn Material>>` are
-    /// projected. Each material's [`ShaderVariantKey`] is exactly the maps it
-    /// declares; the group-2 bind group is built against the matching
-    /// `pipeline_system.layout(device, LayoutKey::Material, &variant)` — the
-    /// SAME layout the lit pipeline binds for that variant. There is no
-    /// fallback: a mesh entity without any material reference is logged and
-    /// skipped, and a material referencing a texture absent from
-    /// `Assets<CpuTexture>` is deferred (a missing decode is logged once it
-    /// has clearly stalled — see [`MaterialProjector::resolve_texture`]).
-    ///
-    /// This call performs no asset loading — the `Assets<CpuTexture>` sub-store
-    /// is populated by the SDK layer that owns the `AssetService`.
+    /// Idempotent. A material's [`ShaderVariantKey`] is exactly the maps it
+    /// declares, and its bind group is built against the layout the lit
+    /// pipeline binds for that variant. Nothing is substituted: a material whose
+    /// textures are not decoded yet waits, and a mesh with no material reference
+    /// is logged and skipped.
     pub fn sync_materials(
         &self,
         world: &mut World,
@@ -173,12 +146,9 @@ impl ProjectionRegistry {
             }
         }
 
-        // A mesh entity that references no material at all has nothing to
-        // project — there is no default. An entity with an unresolved
-        // `MaterialRef` is NOT materialless (the resolver will produce its
-        // handle on a later tick), so it is excluded from the warning. Log +
-        // skip so a truly materialless entity is visibly absent rather than
-        // silently substituted (SAA: never invent game state).
+        // A mesh with no material reference has nothing to project: there is
+        // no default. One with an unresolved `MaterialRef` is still waiting for
+        // the resolver, so it is not warned about.
         {
             let query = world.query::<(
                 EntityId,
@@ -205,6 +175,10 @@ impl ProjectionRegistry {
     }
 
     /// Returns the shared material sampler, creating it on first call.
+    ///
+    /// # Panics
+    ///
+    /// If the device refuses the sampler.
     fn sampler(&self, device: &dyn GraphicsDevice) -> SamplerId {
         if let Some(s) = self.sampler.get() {
             return *s;
@@ -230,10 +204,11 @@ impl ProjectionRegistry {
     }
 }
 
-/// The alpha-mask cutoff written to `pbr_factors.z`: the shader discards a
-/// fragment whose output alpha is below it. Only [`AlphaMode::Mask`] masks;
-/// `Opaque` and `Blend` never discard, so the cutoff is `0.0` (an alpha in
-/// `[0, 1]` is never `< 0.0`).
+/// Returns the alpha below which the shader discards a fragment
+/// (`pbr_factors.z`).
+///
+/// Only [`AlphaMode::Mask`] masks; the others give `0.0`, which no alpha is
+/// below.
 fn alpha_mask_cutoff(mode: AlphaMode) -> f32 {
     match mode {
         AlphaMode::Mask(cutoff) => cutoff,
@@ -253,10 +228,11 @@ fn material_textures_ready(
         .all(|uuid| cpu_textures.contains(uuid))
 }
 
-/// Builds the [`ShaderVariantKey`] for a material: one `HAS_*` flag per
-/// declared texture slot. This is the single place the four texture flags
-/// are derived, so the layout, the WGSL `#ifdef`s, and the bind group all
-/// agree.
+/// Returns a material's [`ShaderVariantKey`]: one `HAS_*` flag per declared
+/// texture.
+///
+/// The one place the flags are derived, so the layout, the WGSL `#ifdef`s and
+/// the bind group agree.
 fn material_variant(material: &dyn Material) -> ShaderVariantKey {
     let mut variant = ShaderVariantKey::empty();
     if material.base_color_texture().is_some() {
@@ -292,11 +268,10 @@ struct MaterialProjector<'a> {
 }
 
 impl MaterialProjector<'_> {
-    /// Builds a [`GpuMaterial`] from a concrete material: derives the variant
-    /// from its declared maps, uploads each referenced texture (role-correct
-    /// sRGB/linear), and builds the group-2 bind group against the matching
-    /// per-variant layout. Returns `None` (after logging a clear error) if a
-    /// declared texture cannot be uploaded or the layout / bind group fails.
+    /// Builds a [`GpuMaterial`] from a material, uploading each declared texture.
+    ///
+    /// `None`, after logging why, when a declared texture, the layout or the
+    /// bind group fails.
     fn build_gpu_material(
         &self,
         material: &dyn Material,
@@ -321,11 +296,9 @@ impl MaterialProjector<'_> {
             },
         };
 
-        // Color maps decode as sRGB; data maps (normal, metallic-roughness)
-        // must stay linear or lighting is wrong. A declared-but-unuploadable
-        // texture aborts the build (no silent fallback). Each slot resolves to
-        // the `(texture, view)` pair so the material owns both — the view for
-        // binding, the texture so eviction can free it.
+        // Colour maps decode as sRGB; data maps (normal, metallic-roughness)
+        // stay linear or the lighting is wrong. Each slot keeps its texture
+        // beside its view, so eviction frees both.
         use TextureColorSpace::{Linear, Srgb};
         let base_color = self.resolve_texture(material.base_color_texture(), Srgb, cpu_textures)?;
         let metallic_roughness =
@@ -413,17 +386,11 @@ impl MaterialProjector<'_> {
         })
     }
 
-    /// Resolves an optional texture slot to an optional `(texture, view)` pair:
-    /// - `None` slot → `Ok(None)` (the variant omits this binding).
-    /// - `Some(uuid)` decoded + uploaded → `Some(Some((texture, view)))`.
-    /// - `Some(uuid)` absent from the store, or an upload failure → `None`
-    ///   (the whole build aborts after a clear log), never a fallback.
+    /// Resolves an optional texture slot to its uploaded `(texture, view)`.
     ///
-    /// Returns `Option<Option<(TextureId, TextureViewId)>>` so the caller's `?`
-    /// aborts the build on a hard failure while still distinguishing "no
-    /// texture declared" from "texture present". The `TextureId` is carried
-    /// alongside the view so the built [`GpuMaterial`] owns both and eviction
-    /// can free the underlying texture, not just its view.
+    /// `Some(None)` for a slot the material leaves empty; `None`, after logging
+    /// why, when the texture is not decoded or its upload fails, so the
+    /// caller's `?` aborts the build.
     fn resolve_texture(
         &self,
         slot: Option<AssetUUID>,
@@ -447,15 +414,9 @@ impl MaterialProjector<'_> {
     /// Uploads a decoded [`CpuTexture`] to the GPU and returns the created
     /// texture together with a sampleable view.
     ///
-    /// The upload format combines what the decoder produced (`cpu.format` — the
-    /// pixel layout, 8-bit or float/HDR) with `color_space`, which the material
-    /// slot supplies (color maps are sRGB, data maps linear). Float layouts keep
-    /// their format regardless, since HDR values are linear by construction. The
-    /// row stride follows the resolved format rather than assuming 4 bytes per
-    /// pixel, so an HDR texture uploads correctly.
-    ///
-    /// The `TextureId` is returned so the owning material can free it on
-    /// eviction — destroying the view alone would leak the texture.
+    /// The format is the decoder's pixel layout in the slot's `color_space`
+    /// (a float layout stays linear). The texture is returned so its material
+    /// can free it on eviction: freeing the view alone would leak it.
     fn upload_texture(
         &self,
         cpu: &CpuTexture,
@@ -532,9 +493,11 @@ mod tests {
         assert!(material_variant(&with_ao).has_flag(flag::HAS_OCCLUSION_MAP));
     }
 
-    /// A material whose texture list is its own (a type that overrides
-    /// `Material::textures` rather than the per-slot accessors). Readiness
-    /// must follow that list, the single source of a material's textures.
+    /// A material that overrides `Material::textures` rather than the per-slot
+    /// accessors.
+    ///
+    /// Readiness must follow that list, the single source of a material's
+    /// textures.
     #[derive(Clone)]
     struct ListedTexturesMaterial {
         textures: Vec<AssetUUID>,

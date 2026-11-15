@@ -14,31 +14,10 @@
 
 //! Hands an entity back to its author when the simulation lets go of it.
 //!
-//! An entity is simulated while it has a `RigidBody`, or is a character (a
-//! `KinematicCharacterController` with a `Collider`). Its pose then lives in
-//! [`SimulatedTransform`], which `transform_propagation` prefers over the
-//! authored `Transform`. Nothing used to remove it: an entity that lost its
-//! body kept the last simulated pose forever, drawn there whatever its
-//! `Transform` said, and a later move of it did nothing.
-//!
-//! # Where it is, not where it started
-//!
-//! Released, the entity stays **where it is**: its `Transform` is rewritten to
-//! the pose it is drawn at, in its parent's frame, and the runtime components
-//! go. This is the one write of an `Authored` component the physics makes, and
-//! it happens once, at a release an author caused by removing the body. The
-//! alternatives are worse:
-//!
-//! - dropping the simulated pose would send the entity back to its authored
-//!   one — a system that detaches far bodies and re-attaches near ones would
-//!   teleport every far crate to where the level placed it;
-//! - keeping the simulated pose would leave a runtime component nothing
-//!   maintains, a released child that does not follow its parent, and a save
-//!   that reloads the entity somewhere it is not drawn.
-//!
-//! Runs in `PostSimulation` **after** `transform_propagation`, so the frame of
-//! the release is drawn from the simulated pose like the one before it, and the
-//! parent's world pose read here is this frame's.
+//! The entity stays where it is drawn: its `Transform` takes that pose in its
+//! parent's frame, and [`SimulatedTransform`] and `BodyMotion` go. This is the
+//! only write physics makes to an `Authored` component. Dropping the pose
+//! instead would send a released body back to where the level placed it.
 
 use crate::ecs::SystemContext;
 use khora_core::ecs::entity::EntityId;
@@ -179,6 +158,8 @@ inventory::submit! {
         phase: TickPhase::PostSimulation,
         run: physics_release_entry,
         order_hint: 0,
+        // The release frame is drawn from the simulated pose, and the parent's
+        // world pose read here is this frame's.
         runs_after: &["transform_propagation"],
         observes: &[],
         role: crate::ecs::Role::Upkeep,

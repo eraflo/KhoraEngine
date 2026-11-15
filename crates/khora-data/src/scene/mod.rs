@@ -12,12 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Scenes written down and brought back.
+//! Scenes as records: a world captured into a [`SceneRecord`], and applied back atomically.
 //!
-//! A world is captured as a [`SceneRecord`] — its entities by persistent
-//! identity, their components by name — and a record is applied back
-//! atomically. How a record becomes bytes is an [`encoding`]; which one is
-//! a matter of how the file will be used, never of what it holds.
+//! An [`encoding`] changes how a record is written, never what it holds.
+//! See the book: concepts/serialization.md, "The whole path at a glance".
 
 pub mod component_registration;
 pub mod material_registration;

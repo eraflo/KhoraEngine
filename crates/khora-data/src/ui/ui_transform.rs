@@ -12,13 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The computed screen-space transform of a UI element.
+//! The screen-space transform of a UI element.
 
 use khora_core::math::Vec2;
 use khora_macros::Component;
 
-/// The computed screen-space transform of a UI element.
-/// Authored today; a layout system that evaluates the `taffy` tree would fill it.
+/// The screen-space rectangle and draw order of a UI element.
 #[derive(Debug, Clone, Copy, PartialEq, Component)]
 #[component(domain = Ui)]
 pub struct UiTransform {
@@ -61,12 +60,12 @@ impl Default for UiTransform {
 }
 
 impl UiTransform {
-    /// Get the bounding rect for this transform
+    /// Returns the top-left and bottom-right corners.
     pub fn rect(&self) -> (Vec2, Vec2) {
         (self.pos, self.pos + self.size)
     }
 
-    /// Check if a point is within this transform's bounds
+    /// Returns whether `point` lies within the bounds, edges included.
     pub fn contains(&self, point: Vec2) -> bool {
         point.x >= self.pos.x
             && point.x <= self.pos.x + self.size.x

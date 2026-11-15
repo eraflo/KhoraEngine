@@ -33,29 +33,27 @@ use khora_core::renderer::api::util::ShaderStageFlags;
 use khora_core::renderer::error::RenderError;
 use khora_core::renderer::GraphicsDevice;
 
-/// Per-face basis uploaded to the bake shaders: `forward` / `right` / `up` in
-/// world space (w unused). The fragment reconstructs a texel's world direction
-/// as `normalize(forward + ndc.x*right + ndc.y*up)`.
+/// The per-face basis the bake shaders read, in world space.
+///
+/// A texel's direction is `normalize(forward + ndc.x*right + ndc.y*up)`.
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub(super) struct FaceBasisUniform {
     pub(super) forward: [f32; 4],
     pub(super) right: [f32; 4],
     pub(super) up: [f32; 4],
-    /// xyz = unit direction **toward** the sun in world space (w unused). Read
-    /// only by the sky bake, which draws the sun disk there so the procedural
-    /// sky agrees with the scene's directional light. The convolution and
-    /// prefilter shaders declare only the first three fields and ignore it (a
-    /// uniform buffer larger than the shader's struct is valid).
+    /// The unit direction toward the sun (w unused), where the sky bake draws
+    /// its disk.
+    ///
+    /// The other bake shaders declare only the first three fields: a uniform
+    /// buffer larger than the shader's struct is valid.
     pub(super) sun: [f32; 4],
 }
 
-/// The six cube faces in wgpu layer order (+X, -X, +Y, -Y, +Z, -Z), each as
-/// `[forward, right, up]`. Chosen so `normalize(forward + ndc.x*right +
-/// ndc.y*up)` reproduces the direction wgpu's cube sampling maps to that
-/// texel, keeping the baked cubes correctly oriented for later sampling.
-/// `sun` is a placeholder here — the bake stamps the real direction into each
-/// copy before upload.
+/// The six cube faces in wgpu layer order (+X, -X, +Y, -Y, +Z, -Z).
+///
+/// Each basis gives a texel the direction wgpu's cube sampling maps to it, so
+/// the baked cubes sample the right way round. `sun` is stamped in before upload.
 pub(super) const FACE_BASES: [FaceBasisUniform; 6] = [
     FaceBasisUniform {
         forward: [1.0, 0.0, 0.0, 0.0],
@@ -95,17 +93,16 @@ pub(super) const FACE_BASES: [FaceBasisUniform; 6] = [
     }, // -Z
 ];
 
-/// The views of a color cubemap the bake needs (the texture itself is recorded
-/// in the bake's objects): one `Cube` view for sampling and one `D2`
-/// render-target view per face.
+/// The views of a colour cubemap the bake samples and renders to: one `Cube`
+/// view and one `D2` view per face.
 pub(super) struct Cube {
     pub(super) cube_view: TextureViewId,
     pub(super) face_views: Vec<TextureViewId>,
 }
 
-/// Every GPU object one bake creates, recorded as each one is made: a bake
-/// that fails partway frees what it made, and a bake another replaces frees
-/// all of it.
+/// Every GPU object one bake creates, recorded as it is made.
+///
+/// A bake that fails partway frees what it made; a replaced bake frees all of it.
 #[derive(Default)]
 pub(super) struct BakeObjects {
     pub(super) textures: Vec<TextureId>,
@@ -116,9 +113,10 @@ pub(super) struct BakeObjects {
 }
 
 impl BakeObjects {
-    /// Frees every recorded object. Work already submitted that reads them
-    /// completes first (the backend defers the release); teardown errors are
-    /// logged, never fatal.
+    /// Frees every recorded object; errors are logged.
+    ///
+    /// Work already submitted that reads them completes first: the backend
+    /// defers the release.
     pub(super) fn destroy(&self, device: &dyn GraphicsDevice) {
         for &bind_group in &self.bind_groups {
             if let Err(e) = device.destroy_bind_group(bind_group) {
@@ -148,10 +146,10 @@ impl BakeObjects {
     }
 }
 
-/// A finished bake: the bindings the lit lanes read, and every GPU object it
-/// created. They live as long as the bake is the current one (the bake
-/// submission reads them asynchronously, and the cubes are sampled every
-/// frame) and are freed together when another bake replaces it.
+/// A finished bake: the bindings the lit lanes read and every GPU object it
+/// created.
+///
+/// Freed together when another bake replaces it.
 pub(super) struct IblResources {
     pub(super) bindings: IblGpuBindings,
     pub(super) objects: BakeObjects,
@@ -275,9 +273,8 @@ pub(super) fn create_face_basis_buffers(
     Ok(buffers)
 }
 
-/// The filtering sampler shared by the IBL cubes + LUT: trilinear, edge-clamped
-/// (no cube-face seams), LOD range wide enough for the future prefiltered mip
-/// chain.
+/// Creates the trilinear sampler the IBL cubes and table share, edge-clamped so
+/// cube faces show no seams.
 pub(super) fn create_ibl_sampler(
     device: &dyn GraphicsDevice,
     objects: &mut BakeObjects,
@@ -302,11 +299,10 @@ pub(super) fn create_ibl_sampler(
     Ok(sampler)
 }
 
-/// Creates a mipmapped color cubemap (6 layers, `mips` levels) with a `Cube`
-/// sampling view spanning all mips. Per-(mip, face) render targets are not
-/// pre-created: the backend recreates the target from the attachment's
-/// `base_array_layer` + `base_mip_level`, so one view (for its source texture)
-/// suffices.
+/// Creates a mipmapped colour cubemap with one `Cube` view over all its mips.
+///
+/// No per-(mip, face) view: the backend makes each target from the
+/// attachment's layer and mip.
 pub(super) fn create_mip_cube(
     device: &dyn GraphicsDevice,
     face_size: u32,
@@ -412,8 +408,8 @@ pub(super) fn create_prefilter_basis_buffers(
     Ok(buffers)
 }
 
-/// Sampler for the equirectangular source: longitude **wraps** (the map is
-/// seamless in u), latitude clamps at the poles. Linear filtering, mip 0 only.
+/// Creates the equirectangular source's sampler: longitude wraps, latitude
+/// clamps at the poles, mip 0 only.
 pub(super) fn create_equirect_sampler(
     device: &dyn GraphicsDevice,
     objects: &mut BakeObjects,

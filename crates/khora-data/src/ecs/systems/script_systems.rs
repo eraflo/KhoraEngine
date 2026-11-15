@@ -12,17 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The one entity each script system runs on.
+//! Keeps the one entity each script system runs on, named `system:Name`
+//! ([`PersistentId::named`]), while a script declares that system.
 //!
-//! A `system` is a behavior with no subject: it runs as an instance of its
-//! component on an entity of its own, which nothing authors — named
-//! `system:Name` ([`PersistentId::named`]) so a game save keeps it and a load
-//! finds it again rather than making a second. It exists while gameplay runs:
-//! spawned holding the system's component at its defaults (the script lane
-//! gives it its state companion as it gives any behavior's), and despawned
-//! once the name is no longer a system a script declares. Its components are
-//! runtime state, so no scene ever holds it; the editor's Stop, which puts
-//! back the world Play started from, takes it away.
+//! See the book: concepts/scripting/behaviors-and-systems.md, "Its one entity".
 
 use crate::ecs::SystemContext;
 use khora_core::ecs::PersistentId;
@@ -32,7 +25,7 @@ use khora_core::Runtime;
 
 use crate::ecs::{ComponentKey, DataSystemRegistration, ScriptRole, TickPhase, World};
 
-/// What a system's entity is named: `system:` and the system's name.
+/// Returns the identity of a system's entity: `system:` and the system's name.
 pub fn singleton_id(system: &str) -> PersistentId {
     PersistentId::named(&format!("system:{system}"))
 }
@@ -111,9 +104,8 @@ mod tests {
     use super::*;
     use crate::ecs::Role;
 
-    /// **Script systems serve the scripting family**: the runner, not the
-    /// system, keeps them from running while scripts are off — and hands them
-    /// `resumed` when scripts come back on.
+    /// **Script systems serve the scripting family**, so the runner keeps them
+    /// off while scripts are off.
     #[test]
     fn script_systems_serve_the_scripting_family() {
         let registration = inventory::iter::<DataSystemRegistration>

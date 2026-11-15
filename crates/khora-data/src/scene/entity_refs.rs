@@ -21,7 +21,7 @@ use khora_core::ecs::PersistentId;
 use super::record::Record;
 use super::scene_record::SceneRecord;
 
-/// Every entity `value` refers to, added to `found`.
+/// Adds to `found` every entity `value` refers to.
 fn entities_in(value: &Record, found: &mut HashSet<PersistentId>) {
     use super::record::{EntityRef, VariantPayload};
     match value {
@@ -51,7 +51,7 @@ fn entities_in(value: &Record, found: &mut HashSet<PersistentId>) {
     }
 }
 
-/// Every entity `record`'s values refer to.
+/// Returns every entity `record`'s values refer to.
 pub(crate) fn referenced(record: &SceneRecord) -> Vec<PersistentId> {
     let mut found = HashSet::new();
     for value in record
@@ -64,7 +64,7 @@ pub(crate) fn referenced(record: &SceneRecord) -> Vec<PersistentId> {
     found.into_iter().collect()
 }
 
-/// The entity an entity's `Parent` names, if it has one.
+/// Returns the entity an entity's `Parent` names, if it has one.
 pub(crate) fn parent_in(components: &[(String, Record)]) -> Option<PersistentId> {
     let (_, parent) = components.iter().find(|(name, _)| name == "Parent")?;
     let mut found = HashSet::new();

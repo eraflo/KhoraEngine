@@ -18,56 +18,45 @@ use khora_core::problems::ProblemSeverity;
 use khora_macros::Component;
 use serde::{Deserialize, Serialize};
 
-/// Defines the type of camera projection.
+/// How a camera projects the world: perspective or orthographic.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum ProjectionType {
-    /// Perspective projection with field of view.
+    /// A perspective projection, nearer things drawn larger.
     Perspective {
-        /// The vertical field of view in radians.
+        /// The vertical field of view, in radians; must lie in `(0, π)`.
         fov_y_radians: f32,
     },
-    /// Orthographic projection with a fixed vertical extent.
+    /// An orthographic projection of a fixed vertical extent.
     ///
-    /// Its width is not stored: it is `height` times the aspect of the image
-    /// the camera fills, so the view widens with the window instead of
-    /// stretching.
+    /// Its width is `height` times the aspect of the image the camera fills,
+    /// so the view widens with the window instead of stretching.
     Orthographic {
-        /// The height of the orthographic view volume, in world units.
+        /// The height of the view volume, in world units; must be `> 0`.
         height: f32,
     },
 }
 
-/// A component that defines a camera's projection parameters.
+/// A camera's projection: how the world is drawn onto the image it fills.
 ///
-/// This component is used to configure how the 3D world is projected onto the 2D screen.
-/// It supports both perspective and orthographic projections.
-///
-/// A camera has no aspect ratio of its own. The aspect is the shape of the
-/// image it fills — the window, or the editor's viewport — and whoever
-/// projects the camera reads it from that image every frame
-/// ([`projection_matrix`](Self::projection_matrix) takes it as an argument).
-/// A stored aspect could only disagree with the image, and an image drawn at
-/// an aspect other than its own is stretched. A frame of a fixed shape on a
-/// window of another shape is letterboxing: the camera fills a sub-rectangle
-/// of the target, whose own shape then gives the aspect.
+/// A camera has no aspect ratio of its own: the aspect is the shape of the
+/// image it fills (the window, the editor's viewport, or a letterboxed
+/// sub-rectangle), passed to [`projection_matrix`](Self::projection_matrix)
+/// every frame, so the image is never stretched.
 #[derive(Debug, Clone, Copy, PartialEq, Component)]
 #[component(domain = Render, check = Camera::check)]
 pub struct Camera {
-    /// The type of projection (perspective or orthographic).
+    /// The projection, perspective or orthographic.
     pub projection: ProjectionType,
 
-    /// The distance to the near clipping plane.
-    /// Objects closer than this will not be rendered.
-    /// Should be a small positive value (e.g., 0.1).
+    /// The near clipping plane, in world units; nothing closer is drawn.
+    ///
+    /// Perspective: must be `> 0` (e.g. 0.1). Orthographic: may be negative.
     pub z_near: f32,
 
-    /// The distance to the far clipping plane.
-    /// Objects farther than this will not be rendered.
-    /// Should be larger than `z_near` (e.g., 1000.0).
+    /// The far clipping plane, in world units; must be finite and beyond `z_near`.
     pub z_far: f32,
 
-    /// Whether this camera is the active/primary camera.
-    /// Only one camera should be active at a time.
+    /// Whether the scene is drawn from this camera; the first active one is used.
     pub is_active: bool,
 }
 
@@ -112,17 +101,17 @@ impl Camera {
         Self::new_orthographic(1080.0, -1.0, 1000.0)
     }
 
-    /// Calculates the projection matrix for this camera, filling an image
-    /// whose width over height is `aspect`.
+    /// Returns the projection matrix filling an image whose width over height
+    /// is `aspect`.
     ///
-    /// This uses a right-handed coordinate system with a [0, 1] depth range,
-    /// which is standard for modern rendering APIs like Vulkan and WebGPU.
+    /// Right-handed, with a `[0, 1]` depth range (Vulkan and WebGPU). The
+    /// camera's values are never changed.
     ///
-    /// A camera whose values make no image is an `Err`, never a panic: the
-    /// first of its [`problems`](Self::problems), or
+    /// # Errors
+    ///
+    /// The first of the camera's [`problems`](Self::problems), or
     /// [`CameraProblem::Unprojectable`] when every field is usable but the
     /// projection still cannot be built (an overflow, or a bad `aspect`).
-    /// The camera's values are never changed.
     pub fn projection_matrix(&self, aspect: f32) -> Result<Mat4, CameraProblem> {
         if let Some(problem) = self.problems().first() {
             return Err(*problem);
@@ -151,10 +140,9 @@ impl Camera {
         }
     }
 
-    /// Every problem in this camera's values, in field order
-    /// (`projection`, `z_near`, `z_far`). Empty when the camera can be
-    /// projected.
+    /// Returns every problem in this camera's values; empty when it can be projected.
     ///
+    /// In field order (`projection`, `z_near`, `z_far`).
     /// Perspective: a non-finite `fov_y_radians`, `z_near` or `z_far` is
     /// [`CameraProblem::NotFinite`]; a field of view outside `(0, π)` is
     /// [`CameraProblem::FieldOfView`]; a near plane `<= 0` is
@@ -207,9 +195,9 @@ impl Camera {
         problems
     }
 
-    /// The camera's [`problems`](Self::problems) as [`FieldProblem`]s, each
-    /// on the dotted path of its field in the serialized form, with severity
-    /// `Error` and the problem's message.
+    /// Returns the camera's [`problems`](Self::problems) as `Error` [`FieldProblem`]s.
+    ///
+    /// Each names its field by its dotted path in the serialized form.
     pub fn check(&self) -> Vec<FieldProblem> {
         self.problems()
             .into_iter()
@@ -261,9 +249,9 @@ pub enum CameraProblem {
 }
 
 impl CameraProblem {
-    /// The dotted path, in the camera's serialized form, of the field this
-    /// problem is about: `"z_near"`, `"z_far"`,
-    /// `"projection.Perspective.fov_y_radians"`,
+    /// Returns the dotted path of this problem's field in the camera's serialized form.
+    ///
+    /// One of `"z_near"`, `"z_far"`, `"projection.Perspective.fov_y_radians"`,
     /// `"projection.Orthographic.height"`, or `"projection"` for
     /// [`CameraProblem::Unprojectable`].
     pub fn field(&self) -> &'static str {
@@ -426,9 +414,8 @@ mod tests {
         );
     }
 
-    /// On a 1024×768 target, a point one unit right of the view axis and a
-    /// point one unit above it, at the same depth, land the same number of
-    /// pixels from the image centre — a sphere is drawn round, not as an egg.
+    /// On a 1024×768 target, one unit right and one unit up land equally far
+    /// from the image centre: a sphere is drawn round, not as an egg.
     #[test]
     fn a_perspective_camera_draws_round_on_a_four_by_three_target() {
         let (width, height) = (1024.0, 768.0);
@@ -569,9 +556,8 @@ mod tests {
         problems.iter().map(|problem| problem.field).collect()
     }
 
-    /// `camera` has exactly the one problem `expected`: `problems` lists it
-    /// alone, `check` reports it once as an `Error` on its field with its
-    /// message, and `projection_matrix` refuses with it.
+    /// Asserts `camera` has exactly the one problem `expected`, in `problems`,
+    /// `check` (as an `Error` on its field) and `projection_matrix`.
     fn assert_one_problem(camera: Camera, expected: CameraProblem) {
         assert_eq!(camera.problems(), vec![expected], "problems of {camera:?}");
         let check = camera.check();
@@ -630,9 +616,8 @@ mod tests {
         }
     }
 
-    /// The default orthographic camera (near −1) and orthographic cameras
-    /// whose planes sit behind the eye have no problem: an orthographic near
-    /// plane may be negative.
+    /// Orthographic cameras whose planes sit behind the eye have no problem:
+    /// an orthographic near plane may be negative.
     #[test]
     fn a_valid_orthographic_camera_has_no_problem() {
         for camera in [
@@ -752,9 +737,8 @@ mod tests {
         }
     }
 
-    /// An orthographic camera with no height, a negative or a non-finite
-    /// one, or with no depth between its planes, has a problem on that
-    /// field.
+    /// An orthographic camera with a bad height, or no depth between its
+    /// planes, has a problem on that field.
     #[test]
     fn an_orthographic_camera_without_height_or_depth_is_a_problem() {
         for height in [0.0, -0.0, -1.0] {
@@ -820,9 +804,8 @@ mod tests {
         );
     }
 
-    /// A camera every field of which passes, but whose projection still
-    /// overflows (a field of view so narrow its focal length is infinite),
-    /// is one problem on `projection`.
+    /// A camera whose fields pass but whose projection overflows (a subnormal
+    /// field of view) is one problem on `projection`.
     #[test]
     fn an_unprojectable_camera_is_a_problem_on_its_projection() {
         let fov = 1e-39_f32;
@@ -835,9 +818,8 @@ mod tests {
         assert_eq!(fields(&camera.check()), vec!["projection"]);
     }
 
-    /// A valid camera handed an aspect that makes no image — flat, negative,
-    /// not a number — cannot be projected, and says so instead of
-    /// panicking.
+    /// A valid camera handed an aspect that makes no image (flat, negative,
+    /// not a number) is unprojectable, never a panic.
     #[test]
     fn a_bad_aspect_makes_a_valid_camera_unprojectable() {
         for camera in [
@@ -854,10 +836,8 @@ mod tests {
         }
     }
 
-    /// Over a grid of planes and fields of view — zero, negative zero,
-    /// negatives, NaN, infinities, near == far, a closed, a half-turn and a
-    /// subnormal field of view — for both projection kinds, a camera checks
-    /// clean exactly when it can be projected.
+    /// Over a grid of edge-case planes, fields of view and heights, a camera
+    /// checks clean exactly when it can be projected.
     #[test]
     fn the_check_and_the_projection_agree() {
         let planes = [
@@ -943,9 +923,8 @@ mod tests {
         )
     }
 
-    /// Checking or projecting a broken camera changes none of its values:
-    /// the authored value stays exactly what was authored, NaN and negative
-    /// zero included.
+    /// Checking or projecting a broken camera changes none of its values,
+    /// NaN and negative zero included.
     #[test]
     fn a_broken_camera_keeps_its_values() {
         for camera in [
@@ -964,9 +943,8 @@ mod tests {
         }
     }
 
-    /// Every field a problem names is a path to a value in the camera's
-    /// serialized form — the JSON the inspector walks — so the inspector can
-    /// mark the row it shows the value on.
+    /// Every field a problem names resolves in the camera's serialized form,
+    /// the JSON the inspector walks to mark the row.
     #[test]
     fn field_paths_match_the_serialized_form() {
         let registration =

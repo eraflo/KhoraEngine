@@ -12,20 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Bringing a scene record into a world — all of it, or none of it, a page at
-//! a time.
+//! Bringing a scene record into a world, all of it or none, a page at a time.
 //!
-//! A load reads everything before it changes anything: every component name
-//! is checked, an entity id is reserved for every recorded entity, and every
-//! value is read into a staged component with its references pointing at the
-//! reserved ids. Only once all of that succeeded is anything added — so a
-//! file that cannot be loaded leaves the world exactly as it was, instead of
-//! half-populated.
-//!
-//! Adding is page by page, the unit CRPECS stores data in: each page record
-//! becomes rows of the page for its signature, every value pushed straight
-//! into its column. No entity is migrated from page to page on the way, so a
-//! load leaves no orphan row behind for compaction.
+//! See the book: concepts/serialization.md, "Atomic loading".
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -51,9 +40,8 @@ use crate::ecs::{
 /// Which identities the entities brought in take.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Identity {
-    /// The ones the record holds, wherever the world does not already use
-    /// them — a taken one is replaced by a fresh identity of its kind: a scene
-    /// being opened.
+    /// The ones the record holds, a taken one replaced by a fresh identity of
+    /// its kind: a scene being opened.
     Keep,
     /// New authored ones: a prefab instance, a duplicate.
     Fresh,
@@ -87,6 +75,10 @@ impl std::error::Error for LoadFailure {}
 
 /// Brings `record` into `world`, atomically: on failure the world is left
 /// exactly as it was.
+///
+/// # Errors
+///
+/// As [`prepare`].
 pub fn apply(
     world: &mut World,
     record: &SceneRecord,
@@ -106,13 +98,13 @@ pub struct Prepared {
     /// The id reserved before the load, which giving up does not release.
     pub(super) given: Option<EntityId>,
     pub(super) pages: Vec<PreparedPage>,
-    /// Values of components declared while the engine runs that this world
-    /// keeps in another domain than the file did: attached once the pages
-    /// are placed, each into its entity's page of the world's domain.
+    /// Declared components this world keeps in another domain than the file did.
+    ///
+    /// Attached once the pages are placed, each into its entity's page of the world's domain.
     pub(super) moved: Vec<(EntityId, ComponentKey, Box<dyn PendingComponent>)>,
-    /// The hierarchy the record brings: each loaded child and its loaded
-    /// parent, checked for cycles. A `Parent` naming anything else — gone,
-    /// outside the record — is not kept.
+    /// Each loaded child and its loaded parent, checked for cycles.
+    ///
+    /// A `Parent` naming an entity outside the record is not kept.
     pub(super) hierarchy: LoadedHierarchy,
     /// The declarations the file describes and the world does not have yet:
     /// registered when the load commits, never before.
@@ -123,10 +115,9 @@ pub struct Prepared {
     pub(super) hold: ReservationHold,
     /// The generation of the catalogue the load was prepared against.
     pub(super) generation: u64,
-    /// What a load prepared off the frame was read from, to prepare it again
-    /// against the world as it is when it commits, should its components
-    /// have changed in between. `None` for a load prepared and committed in
-    /// one go, which nothing can change in between.
+    /// What a load prepared off the frame was read from; `None` for one prepared on it.
+    ///
+    /// Kept to prepare the load again should the world's components change before it commits.
     pub(super) source: Option<Source>,
 }
 
@@ -219,24 +210,34 @@ pub(super) fn to_register<'n>(
 
 /// Reads and checks `record` against `world`'s registrations, reserving an id
 /// for each of its entities, without adding anything.
+///
+/// # Errors
+///
+/// When the record still links to prefabs (expand it first), a component name
+/// is unknown, a file declaration is refused (named like a Rust component,
+/// declared twice, or unreadable), the pages do not fit together, a value cannot
+/// be read, or the hierarchy has a cycle. The failure carries the report so far.
 pub fn prepare(world: &mut World, record: &SceneRecord) -> Result<Prepared, LoadFailure> {
     prepare_kept(world, record, Kept::Scene)
 }
 
-/// What a load reads of `world` to be prepared, and a hold for the ids it
-/// reserves: the synchronous loads prepare as the off-frame ones do. The
-/// `wanted` ids a load of that many entities reserves are made ready from
-/// slots despawns freed first, so loads in a row with no frame between them
-/// reuse the store rather than grow it.
+/// Returns what a load reads of `world`, and a hold for the `wanted` ids it reserves.
+///
+/// The ids are made ready from slots despawns freed, so loads in a row with no
+/// frame between them reuse the store rather than grow it.
 pub(super) fn readings(world: &mut World, wanted: usize) -> (Arc<LoadCatalog>, ReservationHold) {
     world.ready_reservations(wanted);
     (world.load_catalog(), world.hold_reservations())
 }
 
-/// [`prepare`], without the world: what it reads of the world is `catalog`,
-/// and the ids it reserves are held by `hold` until the load is committed,
-/// abandoned or dropped. Runs on any thread; only
-/// [`commit`](Prepared::commit) needs the world.
+/// [`prepare`] without the world: it reads `catalog`, and `hold` holds the ids it reserves.
+///
+/// Runs on any thread; only [`commit`](Prepared::commit) needs the world. The
+/// ids stay held until the load is committed, abandoned or dropped.
+///
+/// # Errors
+///
+/// As [`prepare`].
 pub fn prepare_with(
     catalog: &LoadCatalog,
     hold: ReservationHold,
@@ -330,11 +331,8 @@ fn prepare_given(
                 ));
             }
             match registration_named(name) {
-                // What the engine derives or keeps while running is rebuilt,
-                // never read: a recorded copy could only disagree with what
-                // it comes from. A save holding one — written before the
-                // component stopped being saved, or by a tool — loses
-                // nothing by skipping it, and says so.
+                // Derived or runtime state is rebuilt, never read: a recorded
+                // copy could only disagree with its source. Skipped, reported.
                 Some(reg) if !kept.keeps(reg) => {
                     for id in &page.rows {
                         report.entries.push(ReportEntry {
@@ -386,6 +384,7 @@ fn prepare_given(
                         });
                     }
                 }
+                // A name nothing registers, declares or retires fails the whole load.
                 None => {
                     let named = page.rows.first().map_or_else(
                         || "a page".to_owned(),
@@ -433,19 +432,18 @@ fn prepare_given(
     Ok(prepared)
 }
 
-/// One page of a load, its names resolved: its rows' identities and, for
-/// each column it keeps, the column's position in the file and how it is
-/// read.
+/// One page of a load, its names resolved.
+///
+/// Its rows' identities and, per kept column, its position in the file and how it is read.
 pub(super) struct PagePlan<'r> {
     pub(super) rows: &'r [PersistentId],
     pub(super) columns: Vec<(usize, Loaded)>,
 }
 
-/// What every load does once its names are resolved, whatever the file
-/// held its values as: checks that the pages fit together, reserves an id
-/// per entity, stages every value through `stage` — given the registration,
-/// the page, the column's position in the file and the row — and reads the
-/// hierarchy. On any failure, nothing stays reserved.
+/// Prepares a load whose names are resolved, whatever its values are held as.
+///
+/// `stage` reads one value, given its component, page, file column and row.
+/// On any failure, nothing stays reserved.
 pub(super) fn prepare_pages(
     world: &LoadCatalog,
     hold: ReservationHold,
@@ -654,9 +652,9 @@ impl Prepared {
         self.entities.iter().map(|(_, entity)| *entity).collect()
     }
 
-    /// The generation of the catalogue the load was prepared against: a
-    /// load prepared before the world's components changed carries an older
-    /// one than [`World::load_catalog`] gives now.
+    /// Returns the generation of the catalogue the load was prepared against.
+    ///
+    /// Older than [`World::load_catalog`]'s once the world's components changed.
     pub fn generation(&self) -> u64 {
         self.generation
     }

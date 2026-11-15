@@ -12,17 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Tag-based query helpers over [`World`].
-//!
-//! Tags are exposed as the [`Tag`] component (a `BTreeSet<String>`); these
-//! free functions provide the ergonomic "give me every entity that has tag
-//! X" query without forcing every caller to write the full
-//! `iter_entities + get_component + contains` chain.
-//!
-//! Cost is O(N) over entities — adequate for editor-side and gameplay
-//! queries that fire a handful of times per frame. A future indexed
-//! `TagIndex` resource can replace these helpers without changing the
-//! signature.
+//! Finds the entities carrying given [`Tag`]s, in O(N) over the world's entities.
 
 use crate::ecs::components::Tag;
 use crate::ecs::World;
@@ -41,8 +31,7 @@ pub fn entities_with_tag(world: &World, tag: &str) -> Vec<EntityId> {
         .collect()
 }
 
-/// Returns every entity that carries **any** of the given tags (logical OR).
-/// An empty `tags` slice yields an empty result.
+/// Returns every entity that carries **any** of the given tags; none for an empty `tags`.
 pub fn entities_with_any_tag(world: &World, tags: &[&str]) -> Vec<EntityId> {
     if tags.is_empty() {
         return Vec::new();
@@ -58,9 +47,9 @@ pub fn entities_with_any_tag(world: &World, tags: &[&str]) -> Vec<EntityId> {
         .collect()
 }
 
-/// Returns every entity that carries **all** the given tags (logical AND).
-/// An empty `tags` slice matches every entity that has any `Tag` component
-/// at all (vacuous truth).
+/// Returns every entity that carries **all** the given tags.
+///
+/// An empty `tags` matches every entity that has a `Tag` component.
 pub fn entities_with_all_tags(world: &World, tags: &[&str]) -> Vec<EntityId> {
     world
         .iter_entities()

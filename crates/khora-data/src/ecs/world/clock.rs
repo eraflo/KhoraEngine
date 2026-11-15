@@ -29,9 +29,9 @@ pub(super) struct WorldClock {
     pub(super) observed: std::collections::HashSet<ComponentKey>,
     /// Each observer's last-seen tick on this world.
     pub(super) last_seen: std::collections::HashMap<Observer, Tick>,
-    /// The observers that were skipped since they last ran: their next run
-    /// resumes. Their last-seen tick stays, so that run sees what changed
-    /// while they were away.
+    /// The observers skipped since they last ran, whose next run resumes.
+    ///
+    /// Their last-seen tick stays, so that run sees what changed meanwhile.
     pub(super) skipped: std::collections::HashSet<Observer>,
 }
 
@@ -49,43 +49,42 @@ impl Default for WorldClock {
 }
 
 impl World {
-    /// Starts a run on this world's clock and returns its tick: everything
-    /// the run writes carries it. The substrate starts one run per
-    /// `DataSystem` and per `Flow`; agents never write the world, so they
-    /// open none.
+    /// Starts a run on this world's clock and returns its tick, which its writes carry.
+    ///
+    /// See the book: concepts/change-detection.md, "The clock".
     pub fn begin_run(&mut self) -> Tick {
         self.clock.tick
     }
 
-    /// Ends the run in progress: the clock moves past its tick, so whatever
-    /// is written next — by the next run, or between runs (the app's update,
-    /// an editor edit) — carries a tick no observer has seen yet.
+    /// Ends the run in progress, moving the clock past its tick.
+    ///
+    /// Whatever is written next, in a run or between runs, carries a tick no
+    /// observer has seen yet.
     pub fn end_run(&mut self) {
         self.clock.tick = Tick(self.clock.tick.0 + 1);
     }
 
-    /// The tick a write made now carries. It is always strictly greater than
-    /// every observer's last-seen tick; a new world starts at `Tick(1)`, so
-    /// `Tick(0)` means "never ran".
+    /// Returns the tick a write made now carries.
+    ///
+    /// Strictly greater than every observer's last-seen tick; a new world
+    /// starts at `Tick(1)`, so `Tick(0)` means "never ran".
     pub fn current_tick(&self) -> Tick {
         self.clock.tick
     }
 
-    /// Records `key` as observed: some observer watches its changes. Called
-    /// for every key a registration `observes`, and at run time for a
-    /// declared (Ergon) component.
+    /// Records `key` as observed: some observer watches its changes.
     pub fn observe(&mut self, key: ComponentKey) {
         self.clock.observed.insert(key);
     }
 
-    /// Whether `key` is observed on this world.
+    /// Returns whether `key` is observed on this world.
     pub fn is_observed(&self, key: ComponentKey) -> bool {
         self.clock.observed.contains(&key)
     }
 
-    /// The tick at which `observer` last ran on this world — what it has seen
-    /// of its changes; `Tick(0)` if it never ran here. The ledger lives in the
-    /// world, so a new world restarts every observer.
+    /// Returns the tick at which `observer` last ran on this world, or `Tick(0)`.
+    ///
+    /// The ledger lives in the world, so a new world restarts every observer.
     pub fn observer_last_seen(&self, observer: Observer) -> Tick {
         self.clock
             .last_seen
@@ -94,9 +93,7 @@ impl World {
             .unwrap_or_default()
     }
 
-    /// Leaves a row of page `page_id` behind: no live entity reads it any
-    /// more. The page's live rows changed, so its order version moves; the
-    /// row waits for compaction.
+    /// Leaves a row of page `page_id` behind for compaction, moving the page's order version.
     pub(crate) fn orphan_row(&mut self, page_id: u32) {
         if let Some(page) = self.storage.pages.get_mut(page_id as usize) {
             page.order += 1;
@@ -105,11 +102,9 @@ impl World {
         self.note_page_changed(page_id);
     }
 
-    /// Raises, to now, the change epoch of every domain page `page_id` holds
-    /// columns of: one of its rows was pushed, moved or left behind, so the
-    /// rows of each of those domains — a mixed page holds several — are no
-    /// longer where they were. Called wherever a page's order ω moves or a
-    /// row is pushed onto it.
+    /// Raises to now the epoch of every domain page `page_id` holds columns of.
+    ///
+    /// Called wherever a row is pushed onto the page or its order ω moves.
     pub(crate) fn note_page_changed(&mut self, page_id: u32) {
         let Some(page) = self.storage.pages.get(page_id as usize) else {
             return;
@@ -123,8 +118,7 @@ impl World {
         }
     }
 
-    /// A pointer to `domain`'s change epoch in `world`, for a writable guard
-    /// to raise when it is written through.
+    /// Returns a pointer to `domain`'s change epoch in `world`, for a writable guard to raise.
     ///
     /// # Safety
     ///
@@ -139,17 +133,17 @@ impl World {
         unsafe { std::ptr::addr_of_mut!((*world).domain_epochs[domain.index()]) }
     }
 
-    /// Raises the change epoch of `key`'s domain to now: a value of it was
-    /// written.
+    /// Raises the change epoch of `key`'s domain to now.
     fn note_written(&mut self, key: ComponentKey) {
         if let Some(domain) = self.storage.registry.domain_of(key) {
             self.bump_domain_epoch(domain);
         }
     }
 
-    /// Notes a write of row `row` of `key` in page `page_id`, now. An observed
-    /// column without row ticks gains them first, so that the write is known
-    /// for that row alone.
+    /// Notes a write of row `row` of `key` in page `page_id`, now.
+    ///
+    /// An observed column without row ticks gains them first, so the write is
+    /// known for that row alone.
     pub(crate) fn stamp_row(&mut self, page_id: u32, key: ComponentKey, row: usize) {
         let observed = self.clock.observed.contains(&key);
         let tick = self.clock.tick;
@@ -179,20 +173,17 @@ impl World {
         self.note_written(key);
     }
 
-    /// Drops the row ticks of every page column that has been silent at least
-    /// `quiet` ticks (`current_tick − σ ≥ quiet`) and that every observer
-    /// which ran on this world has seen (`last_seen ≥ σ`): the column keeps
-    /// its summary σ, its floor rises to σ, its rows read 0 under it. The
-    /// next write of an observed key gives it row ticks again, zeroed. A
-    /// page's order version never moves. Returns how many columns it freed.
+    /// Drops the row ticks of every quiet column every observer has seen; returns how many.
+    ///
+    /// A column qualifies when `current_tick − σ ≥ quiet` and `last_seen ≥ σ`
+    /// for every observer that is not skipped. Its floor rises to σ; no page's
+    /// order version moves. See the book: concepts/change-detection.md,
+    /// "Forgetting quietly".
     pub fn free_quiet_row_ticks(&mut self, quiet: u64) -> usize {
         let now = self.clock.tick;
-        // What every observer has seen: the least last-seen tick of the
-        // ledger. An observer that never ran here holds nothing back — it
-        // reads every row on its first run anyway — and neither does one
-        // skipped since it last ran: freed rows read as written at the
-        // column's floor, which it has not seen, so its resuming run still
-        // sees every one of them changed.
+        // A skipped observer holds nothing back: freed rows read as written
+        // at the column's floor, which it has not seen, so its resuming run
+        // still sees every one of them changed.
         let seen = self
             .clock
             .last_seen
@@ -220,20 +211,19 @@ impl World {
         self.clock.skipped.remove(&observer);
     }
 
-    /// Records that `observer` was due and did not run — outside the engine
-    /// modes it runs in. Its last-seen tick stays where it was.
+    /// Records that `observer` was due and did not run; its last-seen tick stays.
     pub fn note_observer_skip(&mut self, observer: Observer) {
         self.clock.skipped.insert(observer);
     }
 
-    /// Whether `observer`'s next run on this world resumes: it never ran
-    /// here, or it was skipped since it last did.
+    /// Returns whether `observer`'s next run here resumes: it never ran, or was skipped since.
     pub fn observer_resumes(&self, observer: Observer) -> bool {
         !self.clock.last_seen.contains_key(&observer) || self.clock.skipped.contains(&observer)
     }
 
-    /// The tick the row of `key` on `entity` is known to have been written by
-    /// at the latest (`max(τ, φ)`); `Tick(0)` when it has none.
+    /// Returns the latest tick the row of `key` on `entity` is known written by (`max(τ, φ)`).
+    ///
+    /// `Tick(0)` when it has none.
     pub(crate) fn carried_tick(&self, entity: EntityId, key: ComponentKey) -> Tick {
         let Some(domain) = self.storage.registry.domain_of(key) else {
             return Tick::default();

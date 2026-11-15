@@ -49,9 +49,8 @@ fn a_load_report_is_clean_only_when_empty() {
     }
 }
 
-/// Reading back exactly what was written adapts nothing, so it reports
-/// nothing — entity and asset references included, whatever the ids they
-/// map to in the world being loaded.
+/// Reading back exactly what was written reports nothing, entity and asset
+/// references included.
 #[test]
 fn a_faithful_read_reports_nothing() {
     let mut table = IdTable::default();
@@ -85,11 +84,10 @@ struct Kit {
     loadout: Loadout,
 }
 
-/// A report names where each adaptation happened: field names joined by
-/// dots, list elements by their index in brackets, enum variants by their
-/// name — so `loadout.items[1].weight` and
-/// `loadout.lens.Perspective.fov_x_radians` say exactly which value an author
-/// has to look at. A list at the top of a value starts its paths at `[i]`.
+/// A report names each place by its path, as `loadout.lens.Perspective.fov_x_radians`.
+///
+/// Fields are joined by dots, list elements indexed in brackets, enum
+/// variants named; a list at the top of a value starts its paths at `[i]`.
 #[test]
 fn a_report_path_names_fields_elements_and_variants() {
     let record = structure(

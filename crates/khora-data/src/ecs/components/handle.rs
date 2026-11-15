@@ -12,39 +12,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines a generic component for attaching asset handles to entities.
+//! [`HandleComponent`], the component that attaches a loaded asset to an entity.
 
 use khora_core::asset::{Asset, AssetHandle, AssetUUID};
 use std::ops::Deref;
 
 use crate::ecs::Component;
 
-/// A generic ECS component that associates an entity with a shared asset resource.
-/// It holds both a handle to the loaded data and the asset's unique identifier.
+/// A loaded asset attached to an entity: a shared handle and the asset's UUID.
+///
+/// Derefs to the asset itself; cloning shares the data and needs no `T: Clone`.
 pub struct HandleComponent<T: Asset> {
-    /// A shared, reference-counted pointer to the asset's data.
+    /// The shared, reference-counted asset data.
     pub handle: AssetHandle<T>,
-    /// The unique, persistent identifier of the asset.
+    /// The asset's stable identifier.
     pub uuid: AssetUUID,
 }
 
-/// Implement the `Component` trait to make `HandleComponent` usable by the ECS.
 impl<T: Asset> Component for HandleComponent<T> {}
 
-/// Manual implementation of `Clone`.
-/// This is cheap as it only clones the reference-counted pointer and the UUID.
-/// It correctly does NOT require `T` to be `Clone`.
+// Written by hand: a derive would require `T: Clone`.
 impl<T: Asset> Clone for HandleComponent<T> {
     fn clone(&self) -> Self {
         Self {
             handle: self.handle.clone(),
-            uuid: self.uuid, // AssetUUID is Copy
+            uuid: self.uuid,
         }
     }
 }
 
-/// Implement `Deref` to the inner `AssetHandle` for ergonomic access to the asset data.
-/// This allows calling methods of `T` directly on the component (e.g., `my_mesh_component.vertex_size()`).
 impl<T: Asset> Deref for HandleComponent<T> {
     type Target = T;
 

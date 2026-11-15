@@ -14,11 +14,8 @@
 
 //! A spawn at an id reserved in the turn, as the frame boundary applies it.
 //!
-//! Every frame the `script_commands` system settles the reservations, applies
-//! the commands in order — a `Spawn` commits its reserved id when every
-//! component is accepted, and releases it otherwise — and then releases every
-//! id handed out and never committed. That last step runs whatever the deck
-//! holds, a frame with no command included: no reservation outlives its frame.
+//! A `Spawn` commits its id only when every component is accepted, and no
+//! reservation outlives its frame, even a frame with no command.
 
 use std::collections::HashSet;
 
@@ -90,10 +87,11 @@ fn anyone_named(world: &World, text: &str) -> bool {
         .any(|entity| name_of(world, entity) == Some(text))
 }
 
-/// Takes ids until `index` comes back, over a few frames — reserved and
-/// committed, and spawned directly, each entity named "Reuse" so a write
-/// through a stale id would have a component to land on — and returns every
-/// id found at it.
+/// Takes ids over a few frames until `index` comes back, and returns every id
+/// found at it.
+///
+/// Ids are reserved and committed, and spawned directly, each entity named
+/// "Reuse" so a write through a stale id would have a component to land on.
 fn next_uses_of(world: &mut World, index: u32) -> Vec<EntityId> {
     let mut found = Vec::new();
     for _ in 0..4 {
@@ -120,7 +118,9 @@ fn next_uses_of(world: &mut World, index: u32) -> Vec<EntityId> {
     found
 }
 
-/// **The id the turn held is the entity the frame made.** A spawn at a
+/// **The id the turn held is the entity the frame made.**
+///
+/// A spawn at a
 /// reserved id lives at exactly that id, placed where it was asked, carrying
 /// what it was given.
 #[test]
@@ -165,8 +165,10 @@ fn a_command_after_a_spawn_reaches_the_spawned_entity() {
     assert_eq!(name_of(&world, entity), Some("Crater"));
 }
 
-/// **No reservation outlives its frame** — a frame in which no script ran
-/// included. The id is released, a spawn naming it later is refused, and its
+/// **No reservation outlives its frame**, a frame in which no script ran
+/// included.
+///
+/// The id is released, a spawn naming it later is refused, and its
 /// index comes back with a newer generation.
 #[test]
 fn an_unspent_reservation_is_released_even_by_a_frame_without_scripts() {
@@ -226,7 +228,9 @@ fn reservations_past_the_ready_ids_all_commit() {
     assert_eq!(live, reserved.iter().copied().collect::<HashSet<_>>());
 }
 
-/// **A refused spawn never existed.** One component refuses its value: no
+/// **A refused spawn never existed.**
+///
+/// One component refuses its value: no
 /// entity is made — not even with the components that were accepted — the
 /// id is released, a second spawn naming it is refused, and its index comes
 /// back with a newer generation.
@@ -283,7 +287,9 @@ fn a_second_spawn_at_a_committed_id_is_refused() {
     assert!(!anyone_named(&world, "Second"));
 }
 
-/// **A despawned spawn never names another entity.** Committed, then
+/// **A despawned spawn never names another entity.**
+///
+/// Committed, then
 /// despawned, its index comes back with a newer generation, and a write
 /// through the old id reaches nothing.
 #[test]
@@ -313,7 +319,9 @@ fn a_spawned_then_despawned_id_never_names_another_entity() {
     );
 }
 
-/// **A reservation is its world's.** An id another world reserved names
+/// **A reservation is its world's.**
+///
+/// An id another world reserved names
 /// nothing this world handed out, so a spawn at it is refused — however
 /// alike the two worlds' histories, and however many ids this world has
 /// ready.
@@ -350,7 +358,9 @@ fn a_reservation_from_another_world_is_refused() {
     );
 }
 
-/// **A command naming a refused spawn's entity reaches nothing.** A spawn at
+/// **A command naming a refused spawn's entity reaches nothing.**
+///
+/// A spawn at
 /// an id this world never handed out is refused, and what the turn queued
 /// after it for that entity — which it believes it just made — must not land
 /// on the live entity that happens to hold the same index and generation.

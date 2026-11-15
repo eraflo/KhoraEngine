@@ -14,7 +14,9 @@
 
 //! # Khora Data
 //!
-//! Data management systems including layouts, assets, and streaming.
+//! The data layer: the CRPECS ECS and scene persistence, the domain Flows that
+//! project the World into Views for the lanes, and the asset caches and GPU
+//! residency those Views draw from.
 
 #![warn(missing_docs)]
 
@@ -31,4 +33,3 @@ pub mod ui;
 pub use assets::AssetStore;
 pub use gpu::{AssetEviction, EnvironmentMap, IblBaker, IblSource, ProjectionRegistry};
 pub use ui::components::*;
-// pub use ui::layout_view::*; // Temporarily commented out if unused or fix path

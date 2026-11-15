@@ -49,9 +49,9 @@ fn bullet() -> AssetUUID {
     AssetUUID::new_v5("prefabs/bullet.kprefab")
 }
 
-/// **An asset field is stored out of line, as a `Value`** — bare or
-/// optional, of every kind: an asset field is always `T?`, and an optional
-/// is out of line already.
+/// **An asset field is stored out of line, as a `Value`**, bare or optional, of every kind.
+///
+/// An asset field is always `T?`, and an optional is out of line already.
 #[test]
 fn an_asset_field_is_stored_as_a_value() {
     for kind in AssetKind::ALL {

@@ -25,42 +25,37 @@ use crate::ecs::{AnyVec, Component};
 /// The column operations of a component's
 /// [`ComponentVTable`](crate::ecs::ComponentVTable).
 ///
-/// Pages hold type-erased columns (`Box<dyn AnyVec>`); creating a column or
-/// moving a row between pages goes through these operations, so storage never
-/// knows a column's concrete type. A trait object rather than `fn` pointers so
-/// the operations can carry data: a declared component's columns need its
-/// fields. A Rust component's carry none — one zero-sized `RustColumns<T>` per
-/// type.
+/// Storage never knows a column's concrete type. A trait object rather than
+/// `fn` pointers so the operations can carry data: a declared component's
+/// fields. See the book: concepts/ecs.md, "The storage model".
 pub trait ColumnOps: Send + Sync {
-    /// A new, empty column for this component.
+    /// Creates a new, empty column for this component.
     fn create_column(&self) -> Box<dyn AnyVec>;
 
-    /// Copies row `row` of `src` onto the end of `dst`, both columns of this
-    /// component.
+    /// Copies row `row` of `src` onto the end of `dst`, both columns of this component.
     fn copy_row(&self, src: &dyn AnyVec, row: usize, dst: &mut dyn AnyVec);
 
-    /// The size of one row, in bytes.
+    /// Returns the size of one row, in bytes.
     fn size_bytes(&self) -> usize;
 
-    /// The fields of a declared component, `None` for a Rust one.
+    /// Returns the fields of a declared component, `None` for a Rust one.
     fn packed(&self) -> Option<&PackedLayout> {
         None
     }
 
-    /// The slot of the field a script names `name`, if the component has one.
+    /// Returns the slot of the field a script names `name`, if the component has one.
     fn field_slot(&self, name: &str) -> Option<usize>;
 
-    /// The Ergon type of the field at `slot`, `None` for one a script cannot
-    /// reach. Default: none.
+    /// Returns the Ergon type of the field at `slot`, `None` for one a script cannot reach.
     fn field_type(&self, _slot: usize) -> Option<khora_core::script::ErgonType> {
         None
     }
 
-    /// The value of the field at `slot` of row `row` of `column`, `None` for a
-    /// field a script cannot reach.
+    /// Returns the field at `slot` of row `row` of `column`, `None` if a script cannot reach it.
     fn read_field(&self, column: &dyn AnyVec, row: usize, slot: usize) -> Option<ScriptValue>;
 
     /// Writes the fields of row `row` of `column` the patch names, by slot.
+    ///
     /// All or nothing: every value is checked before any is written.
     fn write_fields(
         &self,
@@ -69,13 +64,14 @@ pub trait ColumnOps: Send + Sync {
         patch: &[(usize, &ScriptValue)],
     ) -> Result<(), FieldWriteError>;
 
-    /// A copy of the column, readable row by row without the `World`.
+    /// Returns a copy of the column, readable row by row without the `World`.
     fn snapshot(&self, column: &dyn AnyVec) -> Box<dyn ColumnSnapshot>;
 
-    /// Writes many rows of `column`: for each `(row, values)`, `values[i]`
-    /// into the field at `slots[i]`. Each row is all or nothing, as
-    /// [`Self::write_fields`] is; a refused row is skipped and the others are
-    /// written. Pushes each row written onto `written`, in order.
+    /// Writes, for each `(row, values)`, `values[i]` into the field at `slots[i]`.
+    ///
+    /// Each row is all or nothing, as [`Self::write_fields`] is; a refused row
+    /// is skipped and the others are written. Pushes each row written onto
+    /// `written`, in order.
     fn write_rows(
         &self,
         column: &mut dyn AnyVec,
@@ -111,7 +107,7 @@ pub enum FieldWriteError {
 }
 
 /// The column operations of a Rust component: its own column hooks, so a
-/// field-SoA component keeps its `FieldSoaColumn`.
+/// field-SoA component keeps its `FieldSoaColumn`. Zero-sized.
 pub(crate) struct RustColumns<T: Component>(PhantomData<fn() -> T>);
 
 impl<T: Component> RustColumns<T> {
@@ -183,10 +179,10 @@ impl<T: Component> ColumnOps for RustColumns<T> {
         Ok(())
     }
 
-    /// In place where the column is an array of `T`: each row's values are
-    /// checked whole ([`Component::check_field`]), then written where they
-    /// sit — no copy of a row is made, and a refused row is left untouched. A
-    /// field-split column takes the copy road of [`Self::write_fields`].
+    /// Writes in place where the column is an array of `T`, without copying a row.
+    ///
+    /// Each row's values are checked whole ([`Component::check_field`]) first.
+    /// A field-split column takes the copy road of [`Self::write_fields`].
     fn write_rows(
         &self,
         column: &mut dyn AnyVec,

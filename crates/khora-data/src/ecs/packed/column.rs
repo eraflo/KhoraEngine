@@ -126,12 +126,11 @@ impl PackedColumn {
         self.rows += 1;
     }
 
-    /// The column rebuilt under `layout`: each field kept by name where its
-    /// kind is unchanged or [widens](FieldKind::widens) to the new one,
-    /// converted; its new default otherwise.
+    /// Returns the column rebuilt under `layout`, each field matched by name.
     ///
-    /// A field whose Ergon type changed takes its default too, though its
-    /// kind did not: a `string?` that became an `int?` holds no `int`.
+    /// A field keeps its values where its kind is unchanged or
+    /// [widens](FieldKind::widens), and takes its new default otherwise, or
+    /// when its Ergon type changed: a `string?` that became an `int?` holds no `int`.
     pub(crate) fn relaid(&self, layout: &Arc<PackedLayout>) -> PackedColumn {
         let mut column = PackedColumn::new(layout.clone());
         let kept: Vec<Option<(usize, FieldKind)>> = layout
@@ -297,11 +296,10 @@ impl ColumnSnapshot for PackedColumn {
     }
 }
 
-/// Whether a field's Ergon type changed from `from` to `to` in a way that
-/// leaves its values meaningless — anything but an `int` becoming a `float`,
-/// or a `float` becoming a `Duration` or an `Angle` (and back): those are
-/// floats in a unit, stored as floats. A field whose type is not known on
-/// both sides is judged by its kind.
+/// Returns whether a field's Ergon type changed from `from` to `to` in a way that voids its values.
+///
+/// `int` to `float`, and between `float`, `Duration` and `Angle` (floats in a
+/// unit), keep them. A type not known on both sides is left to the kind.
 pub(crate) fn retyped(
     from: Option<&khora_core::script::ErgonType>,
     to: Option<&khora_core::script::ErgonType>,
@@ -314,7 +312,7 @@ pub(crate) fn retyped(
     }
 }
 
-/// `ty` as its values are stored: a unit's floats as floats.
+/// Returns `ty` as its values are stored: a unit's floats as floats.
 fn stored(ty: &khora_core::script::ErgonType) -> khora_core::script::ErgonType {
     use khora_core::script::ErgonType;
     match ty {

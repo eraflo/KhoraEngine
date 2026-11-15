@@ -12,20 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `ShadowFlow` — derives, per shadow-casting light, the view-projection
-//! matrix the shadow pass will use to render its depth slice.
-//!
-//! Lives in the Substrate Pass: pure data derivation, no GPU work. The
-//! [`ShadowPassLane`] reads the resulting [`ShadowView`] from the
-//! [`LaneBus`](khora_core::lane::LaneBus) and only handles atlas allocation
-//! and depth rendering — the math has moved to where it belongs (Data).
-//!
-//! # Index alignment
-//!
-//! Light indices in [`ShadowView::matrices`] match light positions in
-//! `RenderWorld.lights`: both are the positions in one list,
-//! [`shining_lights`](crate::render::shining_lights). The shadow lane and the
-//! lit lanes therefore agree on which `i` refers to which light.
+//! `ShadowFlow`: the view-projections each shadow-casting light renders its
+//! depth slice with, indexed like `RenderWorld.lights` since both come from
+//! [`shining_lights`](crate::render::shining_lights).
 
 use std::collections::HashMap;
 
@@ -40,17 +29,11 @@ use crate::flow::{Flow, Selection};
 use crate::register_flow;
 use crate::render::{primary_view, ExtractedView};
 
-/// View-projection matrices a single shadow-casting light publishes.
+/// The view-projections one shadow-casting light publishes.
 ///
-/// Two variants reflect the two atlas binding surfaces consumed by the lit
-/// shader: directional / spot use a single matrix sampled against the 2D
-/// depth-array atlas, point lights use six matrices sampled against the
-/// cubemap atlas.
-///
-/// `Cube` is significantly larger than `Single` (6 × `Mat4` ≈ 384 B vs
-/// `Mat4` ≈ 64 B). The variants are boxed to even out memory usage, since
-/// most lights are directional / spot and a fat enum would inflate the
-/// per-frame `HashMap<usize, ShadowMatrices>`.
+/// A sun or a spot has one, sampled from the depth-array atlas; a point light
+/// six, sampled from the cube atlas. The six are boxed, so a map of mostly
+/// single matrices stays small.
 #[derive(Debug, Clone)]
 pub enum ShadowMatrices {
     /// One view-projection — directional or spot light.
@@ -60,19 +43,19 @@ pub enum ShadowMatrices {
     Cube(Box<[Mat4; 6]>),
 }
 
-/// Output of [`ShadowFlow`].
+/// The shadow view-projections of the lights that shine, published by
+/// [`ShadowFlow`].
 #[derive(Debug, Default, Clone)]
 pub struct ShadowView {
-    /// Number of lights that shine this frame — the length of
-    /// [`shining_lights`](crate::render::shining_lights) — whether they cast
-    /// a shadow or not.
+    /// Number of lights that shine this frame, casting a shadow or not.
     pub light_count: usize,
     /// Per-light shadow data, keyed by the light's position in
     /// `RenderWorld.lights`. Only shadow-casting lights have an entry.
     pub matrices: HashMap<usize, ShadowMatrices>,
 }
 
-/// Computes shadow view-projection matrices.
+/// Publishes [`ShadowView`], from the lights that shine and the frame's
+/// primary view.
 #[derive(Default)]
 pub struct ShadowFlow;
 
@@ -84,10 +67,8 @@ impl Flow for ShadowFlow {
     const NAME: &'static str = "shadow";
     const ROLE: crate::ecs::Role = crate::ecs::Role::Upkeep;
 
-    /// Same inputs as `RenderFlow`: `Light` / `Camera` (Render domain),
-    /// `GlobalTransform` (Spatial domain), `primary_view`'s editor viewport
-    /// override (runtime state, fingerprinted bit-for-bit), and the target
-    /// aspect the camera is projected at (cascades slice that frustum).
+    /// Keyed by the Render and Spatial epochs, the editor view and the aspect
+    /// of the frustum the cascades slice.
     fn cache_key(&self, world: &World, runtime: &Runtime) -> Option<u64> {
         Some(crate::flow::combine_cache_key([
             world.instance_id(),
@@ -122,9 +103,6 @@ impl Flow for ShadowFlow {
 
             match &light.light_type {
                 LightType::Point(p) => {
-                    // Six view-proj matrices, one per cube face. The math
-                    // (90° FOV, near `SHADOW_NEAR`, far = light range, wgpu
-                    // cubemap basis) lives in `Mat4::try_cube_face_view_projs`.
                     // A range that makes no cube casts no shadow; the light's
                     // own check reports why.
                     let Some(faces) = Mat4::try_cube_face_view_projs(position, p.range) else {
@@ -169,8 +147,6 @@ impl Flow for ShadowFlow {
 
 register_flow!(ShadowFlow);
 
-// ─── pure shadow-matrix math (moved out of `ShadowPassLane`) ─────────
-
 /// Whether every entry of `m` is finite.
 fn is_finite(m: &Mat4) -> bool {
     m.cols
@@ -178,6 +154,8 @@ fn is_finite(m: &Mat4) -> bool {
         .all(|c| c.x.is_finite() && c.y.is_finite() && c.z.is_finite() && c.w.is_finite())
 }
 
+/// Returns a sun's cascade or a spot's perspective view-projection; `None`
+/// when the spot's cone or range makes no projection.
 fn compute_single_shadow_view_proj(
     light_type: &LightType,
     position: Vec3,
@@ -212,18 +190,13 @@ fn compute_single_shadow_view_proj(
 /// World-space distance the directional shadow cascade covers, measured
 /// from the camera near plane along each frustum edge.
 ///
-/// A directional light has no position, so the shadow map must be fitted
-/// to a *bounded* slice of the camera frustum: fitting the full near→far
-/// range (cameras commonly use a 1000-unit far plane) spreads the 2048²
-/// atlas across ~2000 world units — roughly one world unit per texel —
-/// which is far too coarse to resolve sub-unit casters, so their shadows
-/// vanish entirely. Capping the cascade concentrates the texels near the
-/// viewer where shadows read; casters beyond this distance are covered by
-/// the ortho z-padding but not finely shadowed. This is a shadow-quality
-/// (representation) constant, not a scene-semantics value.
+/// A directional light has no position, so its map is fitted to a bounded
+/// slice of the frustum: over a 1000-unit far plane, a 2048² atlas gives about
+/// one unit per texel and small casters lose their shadows. A quality
+/// constant, not a scene value.
 const SHADOW_CASCADE_DISTANCE: f32 = 60.0;
 
-/// CSM (cascaded shadow map) view-projection for a directional light.
+/// Returns the cascaded shadow map's view-projection for a directional light.
 fn directional_shadow_view_proj(direction: Vec3, camera: &ExtractedView) -> Mat4 {
     // Camera frustum corners in world space. Each (x, y) edge yields a
     // near (z=0) and far (z=1) corner; the far corner is pulled back along
@@ -310,9 +283,10 @@ mod tests {
     use crate::render::EditorViewportOverride;
     use khora_core::renderer::light::{DirectionalLight, PointLight};
 
-    /// A world holding, in this order, a shadow-casting directional light
-    /// (index 0), a shadow-casting point light (index 1), and one active
-    /// camera whose near plane sits at its eye.
+    /// Returns a world holding a shadow-casting sun (index 0), a shadow-casting
+    /// point light (index 1) and a broken camera.
+    ///
+    /// The camera is active, its near plane at its eye.
     fn lights_and_a_broken_camera() -> World {
         let mut world = World::new();
         world.spawn((
@@ -338,10 +312,12 @@ mod tests {
         world
     }
 
-    /// A broken active camera gives the directional light no frustum to fit
-    /// its shadow to: the flow runs without panicking, the directional light
-    /// gets no matrix, and the point light — which needs no camera — keeps
-    /// its six, at its own index.
+    /// A broken active camera gives the directional light no frustum to fit its
+    /// shadow to.
+    ///
+    /// The flow runs without panicking, the directional light gets no matrix,
+    /// and the point light, which needs no camera, keeps its six at its own
+    /// index.
     #[test]
     fn shadow_flow_survives_a_broken_camera() {
         let world = lights_and_a_broken_camera();
@@ -361,9 +337,10 @@ mod tests {
         );
     }
 
-    /// The editor's override stands in only for *no* active camera: with a
-    /// broken active camera, the directional light does not fit its shadow
-    /// to the override's view.
+    /// The editor's override stands in only for *no* active camera.
+    ///
+    /// With a broken active camera, the directional light does not fit its
+    /// shadow to the override's view.
     #[test]
     fn shadow_flow_with_a_broken_camera_ignores_the_editor_override() {
         let world = lights_and_a_broken_camera();
@@ -439,9 +416,10 @@ mod tests {
         })
     }
 
-    /// Projects `lights` with and without the light at `tiny`, and checks the
-    /// tiny light casts no shadow while every other light publishes exactly
-    /// what it publishes when the tiny one is gone.
+    /// Checks the light at `tiny` casts no shadow, and every other light
+    /// publishes what it does without it.
+    ///
+    /// Projects `lights` with and without the light at `tiny`.
     ///
     /// Where the others sit depends on the tiny light's check:
     /// - only Warnings (or nothing): the tiny light still shines — it is
@@ -510,10 +488,11 @@ mod tests {
         }
     }
 
-    /// A shadow-casting spot light whose range (0.05) does not reach past
-    /// the shadow near plane: the flow runs without panicking, the spot gets
-    /// no matrix, and the sun, the other spot and the point light keep
-    /// theirs at their own indices.
+    /// A shadow-casting spot whose range (0.05) does not reach past the shadow
+    /// near plane gets no matrix.
+    ///
+    /// The flow runs without panicking, and the sun, the other spot and the
+    /// point light keep theirs at their own indices.
     #[test]
     fn a_tiny_spot_light_casts_no_shadow_and_does_not_panic() {
         assert_tiny_light_casts_no_shadow(
@@ -543,10 +522,12 @@ mod tests {
     }
 
     /// Ranges a shadow cannot be built from give no matrix and no panic, for
-    /// spot and point lights alike. Exactly the shadow near plane is only a
-    /// Warning: the light still shines and is counted. Zero, negative, not a
-    /// number or infinite is an Error: the light does not shine, is not
-    /// counted, and the light after it moves down to its index.
+    /// spot and point lights alike.
+    ///
+    /// Exactly the shadow near plane is only a Warning: the light still shines
+    /// and is counted. Zero, negative, not a number or infinite is an Error:
+    /// the light does not shine, is not counted, and the light after it moves
+    /// down to its index.
     #[test]
     fn a_light_with_an_unusable_range_casts_no_shadow() {
         for range in [0.1, 0.0, -2.0, f32::NAN, f32::INFINITY] {
@@ -563,10 +544,12 @@ mod tests {
         }
     }
 
-    /// A spot cone of 90° (a 180° field of view) cannot be held by a
-    /// perspective: an Error, so the spot does not shine — it is not counted
-    /// and casts no shadow rather than a garbage matrix; the spot after it
-    /// moves down to its index.
+    /// A spot cone of 90° (a 180° field of view) is an Error: the spot does not
+    /// shine.
+    ///
+    /// A perspective cannot hold it, so the spot is not counted and casts no
+    /// shadow rather than a garbage matrix; the spot after it moves down to its
+    /// index.
     #[test]
     fn a_spot_light_with_a_half_space_cone_casts_no_shadow() {
         let wide = Light::new(LightType::Spot(SpotLight {
@@ -583,9 +566,10 @@ mod tests {
             1,
         );
     }
-    /// Every matrix a light publishes is finite — a narrow but usable spot
-    /// cone (1e-38 rad) projected from a light off the origin overflows the
-    /// product of its projection and its view.
+    /// Every matrix a light publishes is finite.
+    ///
+    /// A narrow but usable spot cone (1e-38 rad) projected from a light off the
+    /// origin overflows the product of its projection and its view.
     #[test]
     fn a_published_shadow_matrix_is_finite() {
         let narrow = Light::new(LightType::Spot(SpotLight {
@@ -612,9 +596,10 @@ mod tests {
         }
     }
 
-    /// A shadow-casting point or spot light whose check is clean (no error,
-    /// no warning) gets its shadow, and one whose check is not gets none —
-    /// swept over ranges and cone angles, subnormal cones included.
+    /// A shadow-casting point or spot light gets its shadow exactly when its
+    /// check is clean.
+    ///
+    /// Swept over ranges and cone angles, subnormal cones included.
     #[test]
     fn a_light_casts_a_shadow_exactly_when_its_check_is_clean() {
         use khora_core::problems::ProblemSeverity;
@@ -675,10 +660,11 @@ mod tests {
         assert!(disagreements.is_empty(), "{}", disagreements.join("\n"));
     }
 
-    /// A sun or a spot whose direction is zero or not a number points
-    /// nowhere — an Error, so it does not shine: it is not counted and casts
-    /// no shadow rather than one rendered through an arbitrary view; the
-    /// light after it moves down to its index.
+    /// A sun or a spot whose direction is zero or not a number points nowhere,
+    /// and does not shine.
+    ///
+    /// An Error: it is not counted and casts no shadow rather than one rendered
+    /// through an arbitrary view; the light after it moves down to its index.
     #[test]
     fn a_light_with_no_direction_casts_no_shadow() {
         for direction in [Vec3::ZERO, Vec3::new(f32::NAN, 0.0, 0.0)] {
@@ -710,10 +696,12 @@ mod tests {
     use crate::flow::RenderFlow;
     use crate::render::shining_lights;
 
-    /// A shadow-casting sun, a shadow-casting point light whose range is 0
-    /// (it does not shine), and a shadow-casting spot: two lights are
-    /// counted, and the spot's matrix sits at index 1 — the one it publishes
-    /// when the broken light is not there at all.
+    /// A light that does not shine leaves no gap in the shadow indices.
+    ///
+    /// A shadow-casting sun, a shadow-casting point light whose range is 0, and
+    /// a shadow-casting spot: two lights are counted, and the spot's matrix
+    /// sits at index 1, the one it publishes when the broken light is not there
+    /// at all.
     #[test]
     fn shadow_indices_follow_the_lights_that_shine() {
         let sun = (shadowed_sun(), Vec3::new(0.0, 10.0, 0.0));
@@ -754,10 +742,12 @@ mod tests {
         assert_eq!(published(&with, 0), published(&without, 0), "the sun's");
     }
 
+    /// The render extraction, the shadow derivation and the shining list count
+    /// the same lights.
+    ///
     /// Over a world mixing usable, broken, disabled and misplaced lights, the
-    /// render extraction, the shadow derivation and the list of lights that
-    /// shine count the same lights, and the matrix at every shadow index is
-    /// the one the light at that index of the list publishes alone.
+    /// matrix at every shadow index is the one the light at that index of the
+    /// list publishes alone.
     #[test]
     fn render_and_shadow_agree_on_every_light_index() {
         let mut disabled_spot = shadowed_spot(15.0);

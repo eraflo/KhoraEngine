@@ -12,14 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Entity ids reserved through a shared reference.
-//!
-//! A world-free lane cannot spawn, but it can hold its world's
-//! [`EntityReserver`] and take ids from it without a lock. The world settles
-//! them at its next exclusive moment: the fresh ones become reserved slots, and
-//! whatever was handed out and never committed is released. Until a spawn
-//! commits it, a reserved id names nothing alive — and it is never the id of
-//! another entity, live, reserved, or the one a reference to nothing names.
+//! Entity ids reserved without a lock through the world's [`EntityReserver`], settled at the
+//! world's next exclusive moment; an unspent reservation is released.
 //!
 //! [`EntityReserver`]: khora_core::ecs::EntityReserver
 
@@ -30,10 +24,9 @@ use khora_core::ecs::entity::EntityId;
 
 use crate::ecs::{Transform, World};
 
-/// A world that has lived a little: five entities spawned, two despawned,
-/// and one frame's reservations settled — so the reserver hands out recycled
-/// indices as well as fresh ones. Its nowhere entity is the one it was made
-/// with.
+/// A world whose reserver hands out recycled indices as well as fresh ones.
+///
+/// Five entities spawned, two despawned, one frame settled; its nowhere entity is its first.
 fn lived_in() -> (World, Vec<EntityId>) {
     let mut world = World::new();
     let spawned: Vec<EntityId> = (0..5).map(|_| world.spawn(Transform::identity())).collect();
@@ -45,10 +38,8 @@ fn lived_in() -> (World, Vec<EntityId>) {
     (world, live)
 }
 
-/// **A reservation is an id of its own.** However many are taken, each is
-/// distinct, none is a live entity's or the one a reference to nothing names,
-/// and none is alive — before settlement, after it, and once the frame
-/// released what it did not spend.
+/// **A reservation is an id of its own**: distinct, never a live entity's nor the nowhere
+/// entity, and not alive, before settlement, after it, and once the frame released it.
 #[test]
 fn reserved_ids_are_distinct_and_none_is_alive() {
     let (mut world, live) = lived_in();
@@ -143,9 +134,8 @@ fn the_reserver_is_the_worlds_own() {
     assert!(!Arc::ptr_eq(&world.reserver(), &other.reserver()));
 }
 
-/// **A released id never names another entity.** An id reserved and never
-/// spent is released at the end of its frame; when its index is handed out
-/// again — to a reservation or a spawn — it comes with a newer generation.
+/// **A released id never names another entity**: an unspent reservation's index comes back,
+/// to a reservation or a spawn, with a newer generation.
 #[test]
 fn a_released_index_comes_back_with_a_newer_generation() {
     let (mut world, _) = lived_in();
@@ -176,9 +166,8 @@ fn a_released_index_comes_back_with_a_newer_generation() {
     }
 }
 
-/// **A spawn made directly, between a reservation and its settlement, takes
-/// no reserved id**: the fresh indices a reserver counted past the end of the
-/// store are held, even before they are slots.
+/// **A direct spawn between a reservation and its settlement takes no reserved id**, even a
+/// fresh index the reserver counted past the end of the store.
 #[test]
 fn a_direct_spawn_before_settlement_takes_no_reserved_id() {
     let mut world = World::new();
@@ -201,11 +190,10 @@ fn a_direct_spawn_before_settlement_takes_no_reserved_id() {
     assert_eq!(world.entity_count(), spawned.len());
 }
 
-/// **Spawning through the reserver reuses what was despawned.** A game that
-/// spawns and despawns the same number of entities every frame — bullets —
-/// holds that many alive at most, so the indices it is handed stay within a
-/// bound however long it plays: a despawned index comes back to the reserver,
-/// and the store does not grow by a frame's spawns every frame.
+/// **Spawning through the reserver reuses what was despawned**, so the store stays bounded.
+///
+/// A game that spawns and despawns as many entities every frame (bullets) is handed indices
+/// within a bound however long it plays.
 #[test]
 fn a_steady_spawn_and_despawn_rate_keeps_the_indices_bounded() {
     const PER_FRAME: usize = 64;
@@ -234,11 +222,10 @@ fn a_steady_spawn_and_despawn_rate_keeps_the_indices_bounded() {
     );
 }
 
-/// **A world is made with its nowhere entity**, the one a reference to
-/// nothing loads as: no load has to make it, so preparing a load never
-/// changes the world. It is not alive, has no identity, is handed to no
-/// reservation and no spawn, cannot be brought to life nor released, and
-/// asking for it again gives the same entity.
+/// **A world is made with its nowhere entity**, the one a reference to nothing loads as.
+///
+/// So preparing a load never changes the world. It is not alive, has no identity, is never
+/// handed out, cannot be brought to life nor released, and is always the same entity.
 #[test]
 fn a_new_world_has_its_nowhere_entity() {
     let mut world = World::new();

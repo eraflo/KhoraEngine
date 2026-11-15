@@ -179,10 +179,8 @@ fn busy_snapshot(target: EntityId) -> ScriptSnapshot {
     }
 }
 
-/// A save is only as good as its worst type: every component the engine
-/// persists — through the mirror its derive generates, which is what a scene
-/// holds — and every type nested in one must come back from a record exactly
-/// as it went in, entities and assets included.
+/// Every persisted component mirror, and every type nested in one, comes back
+/// from a record exactly as it went in.
 #[test]
 fn every_persisted_type_round_trips() {
     let target = entity(5, 2);

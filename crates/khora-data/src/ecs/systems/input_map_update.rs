@@ -12,30 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Folding this frame's OS input into the action map.
+//! Folds this frame's input from the
+//! [`Channel<InputEvent>`](khora_core::event::Channel) into the [`InputMap`].
 //!
-//! [`InputMap`] is a **derived view** over
-//! [`Channel<InputEvent>`](khora_core::event::Channel): the channel is what
-//! happened, the map is the answer to "is jump held". Deriving it is a tick
-//! invariant like any other, so it is a `DataSystem` and not a call somewhere
-//! in the engine's frame method — `RULES.md` §3: *engine-tick wiring is
-//! data-driven; never wire a system manually in engine code.*
-//!
-//! # Why `PreSimulation`
-//!
-//! The phase's own documentation asks for exactly this — *"input-driven
-//! mutations, scene events, anything that should be visible to agents at the
-//! start of their frame"* — and until this system it had no production
-//! registration at all. An agent that reads the map reads it after this ran,
-//! which is the whole point of the phase existing.
-//!
-//! # Why it reads rather than drains
-//!
-//! Its cursor is its own. The app-facing `update(world, inputs)` hook reads the
-//! same stream under another name, and a future agent will read it under a
-//! third; a drain here would empty it for whichever of them ran second. That is
-//! the bug the channel's per-reader cursors exist to prevent, and it would be a
-//! quiet one — input that works until the day two things want it.
+//! It reads under its own cursor rather than draining the channel: the app's
+//! `update` hook reads the same stream, and a drain would empty it for
+//! whichever ran second.
 
 use crate::ecs::SystemContext;
 use std::sync::{Arc, Mutex};
@@ -54,8 +36,7 @@ fn input_map_update(
     _ctx: SystemContext,
 ) {
     let Some(events) = runtime.resources.get::<Channel<InputEvent>>() else {
-        // A headless host, or a test harness with no window. Nothing produces
-        // input, so there is nothing to derive.
+        // A headless host or a test harness: nothing produces input.
         return;
     };
     let Some(map) = runtime.resources.get::<Arc<Mutex<InputMap>>>() else {
@@ -77,9 +58,8 @@ inventory::submit! {
         name: "input_map_update",
         phase: TickPhase::PreSimulation,
         run: input_map_update,
-        // First in the phase. Anything else registered here reacts to input —
-        // that is what the phase is for — and reacting to the previous frame's
-        // held actions is a frame of lag nobody asked for.
+        // First in the phase: what else runs here reacts to input, and reading
+        // the previous frame's actions would be a frame of lag.
         order_hint: -100,
         runs_after: &[],
         observes: &[],
@@ -130,9 +110,8 @@ mod tests {
         assert!(map.lock().expect("not poisoned").is_pressed("jump"));
     }
 
-    /// **The reason it reads rather than drains.** The app hook and any agent
-    /// read the same stream under their own names; a drain here would empty it
-    /// for whichever ran second.
+    /// **It reads rather than drains**, so another reader of the stream still
+    /// sees this frame's input.
     #[test]
     fn what_it_read_is_still_there_for_another_reader() {
         let (runtime, events, _map) = wired();

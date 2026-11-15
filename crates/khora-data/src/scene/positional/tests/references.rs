@@ -33,9 +33,9 @@ fn entity(index: u32, generation: u32) -> EntityId {
     EntityId { index, generation }
 }
 
-/// Every entity a value holds — a field, a list, an option, a script value,
-/// a frozen register — is written through the writer and read back as the
-/// entity the reader resolves, never as the raw id it had.
+/// Every entity a value holds goes through the reference hooks, never as its raw id.
+///
+/// Covers a field, a list, an option, a script value and a frozen register.
 #[test]
 fn an_entity_reference_goes_through_the_hooks() {
     let (a, b, c, d, gone) = (

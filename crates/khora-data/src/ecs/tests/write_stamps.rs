@@ -13,18 +13,10 @@
 // limitations under the License.
 
 //! Every write stamps the rows it wrote, through every path the `World`
-//! writes by.
+//! writes by. See the book: concepts/change-detection.md, "Writing: the guard".
 //!
-//! A write made at the clock's tick — inside a run, the run's; between runs,
-//! `current_tick()` — sets the written row's τ to it when the column keeps
-//! row ticks, and raises the column's summary σ; a column no observer
-//! watches keeps no row ticks, so its floor φ follows σ. A row read but not
-//! written is not stamped, a value refused is not a write, and no write moves
-//! a page's order version ω.
-//!
-//! The writable items are handled through `Deref`/`DerefMut` alone (see
-//! [`assign`]), so these tests read the same whether the `World` hands out
-//! `&mut T` or the `Mut<T>` guard.
+//! Writable items are handled through `Deref`/`DerefMut` alone (see [`assign`]),
+//! so these tests read the same whether the `World` hands out `&mut T` or `Mut<T>`.
 
 use std::ops::DerefMut;
 
@@ -75,9 +67,8 @@ fn position() -> ComponentKey {
     ComponentKey::of::<Position>()
 }
 
-/// A world storing `Position` and `Velocity` (Spatial), `Voltage` and
-/// `Glide` (Physics), where `Position`, `Voltage` and `Glide` are watched and
-/// `Velocity` is not.
+/// A world storing `Position`, `Velocity` (Spatial), `Voltage` and `Glide`
+/// (Physics), with all but `Velocity` watched.
 fn world() -> World {
     let mut world = World::new();
     world.register_component::<Position>(SemanticDomain::Spatial);
@@ -100,10 +91,10 @@ fn positions(count: i32) -> (World, Vec<EntityId>) {
     (world, entities)
 }
 
-/// The declared Script component `Ember { amount: int }`, watched, on two
-/// entities placed at tick 3 in two different pages (the second also holds
-/// `Ash`, which nobody watches); a third entity holds `Ash` alone. The
-/// clock then reads 8.
+/// The declared, watched Script component `Ember { amount: int }` on two
+/// entities in two pages, placed at tick 3; the clock then reads 8.
+///
+/// The second also holds `Ash`, which nobody watches; a third holds `Ash` alone.
 fn embers() -> (World, ComponentKey, ComponentKey, [EntityId; 3]) {
     let mut world = World::new();
     let ember = declare(
@@ -192,9 +183,10 @@ fn get_many_mut_stamps_each_row_written() {
     assert_eq!(column.summary, Tick(8));
 }
 
-/// A `query_mut` over many rows that writes a few: only those rows' τ move,
-/// the page's summary is the run's tick, and a page the query wrote nothing
-/// in keeps its summary.
+/// A `query_mut` over many rows that writes a few moves only those rows' τ.
+///
+/// The page's summary is the run's tick; a page the query wrote nothing in
+/// keeps its summary.
 #[test]
 fn query_mut_stamps_only_the_rows_written() {
     let mut world = world();
@@ -459,9 +451,8 @@ fn relayout_of_an_unwatched_component_raises_its_summary_and_floor() {
 
 // --- columns nobody watches, columns newly watched ---
 
-/// A column no observer watches keeps no row ticks: a write raises its
-/// summary and its floor with it, through `set_component` as through the
-/// guard.
+/// A write to a column no observer watches raises its summary and its floor,
+/// through `set_component` as through the guard.
 #[test]
 fn a_write_to_an_unobserved_column_raises_its_summary_and_floor() {
     let mut world = world();
@@ -493,9 +484,10 @@ fn a_write_to_an_unobserved_column_raises_its_summary_and_floor() {
     );
 }
 
-/// A column watched once its rows exist has no row ticks yet; its first
-/// write gives it some — zeroed, under the floor its rows were placed at —
-/// with the written row stamped.
+/// A column watched once its rows exist gains row ticks on its first write.
+///
+/// They come zeroed, under the floor its rows were placed at, with the written
+/// row stamped.
 #[test]
 fn an_observed_column_without_row_ticks_gains_them_on_its_first_write() {
     let mut world = world();
@@ -520,9 +512,8 @@ fn an_observed_column_without_row_ticks_gains_them_on_its_first_write() {
 
 // --- the tick a write carries ---
 
-/// Every write of one run — by value, through `get_mut`, through
-/// `query_mut` — carries the run's tick; a write after the run carries the
-/// next.
+/// Every write of one run carries the run's tick, whatever its path; a write
+/// after the run carries the next.
 #[test]
 fn every_write_of_a_run_carries_the_run_tick() {
     let (mut world, e) = positions(4);

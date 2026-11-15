@@ -14,20 +14,8 @@
 
 //! The compact encoding: every name once, values by position.
 //!
-//! A scene repeats the same few shapes thousands of times — a `Transform`
-//! per entity, each with the same three field names. So the file starts with
-//! a table of every name it uses and a table of every shape (a struct's name
-//! and field names, an enum's name and a variant's), and each value after
-//! that refers to its shape by number and lists its fields in order. Names
-//! are kept — that is what lets a reader match them against today's code —
-//! but each is written once.
-//!
-//! Layout: `version: u8`, the symbol table, the shape table, the entities,
-//! then the pages — each its signature, its rows, and its values column by
-//! column, the way CRPECS stores them. Counts and integers are LEB128 varints
-//! (signed ones zig-zagged); persistent ids and floats are little-endian at
-//! their width. Every count is checked against the bytes left before anything
-//! is allocated for it: a count is the file's claim, not a fact.
+//! A count is the file's claim, checked against the bytes left before anything is sized from it.
+//! See the book: reference/formats.md, "Compact layout".
 
 mod reader;
 
@@ -47,11 +35,8 @@ use crate::scene::scene_record::{InstanceRecord, PageRecord, SceneRecord};
 
 /// The layout version this module writes and reads.
 ///
-/// Version 3 ends with the declarations of the components declared while the
-/// engine ran that the record holds, and is written only by a record holding
-/// one: any other is written as version 2, byte for byte what it always was.
-/// Version 2 ends with the record's prefab instances; version 1, which has
-/// none, still reads.
+/// Only a record holding a declared component is written as 3; versions 2 and 1 still read.
+/// See the book: reference/formats.md, "Compact layout".
 const VERSION: u8 = 3;
 
 /// The version a record with no declared component is written as.
@@ -351,10 +336,7 @@ fn unzigzag(v: u64) -> i64 {
     ((v >> 1) as i64) ^ -((v & 1) as i64)
 }
 
-/// Writes a u64 as a varint to the output buffer.
-/// Varints are a compact, variable-length encoding for unsigned integers.
-/// The least significant 7 bits of each byte are used for the value, and the most significant bit
-/// indicates whether there are more bytes to read.
+/// Appends `v` as a LEB128 varint.
 fn write_varint(out: &mut Vec<u8>, mut v: u64) {
     loop {
         let byte = (v & 0x7f) as u8;
@@ -367,10 +349,9 @@ fn write_varint(out: &mut Vec<u8>, mut v: u64) {
     }
 }
 
-/// Writes a game save compactly: the scene it was taken against, the saved
-/// world's order, the entities destroyed and created, the components
-/// removed — then its changes and the scene's values before them, each as a
-/// record is written, the first behind its length.
+/// Writes a game save compactly.
+///
+/// See the book: reference/formats.md, "Game save".
 pub(super) fn encode_save(save: &SaveRecord) -> Vec<u8> {
     fn ids(out: &mut Vec<u8>, ids: &[PersistentId]) {
         write_varint(out, ids.len() as u64);
@@ -399,7 +380,7 @@ pub(super) fn encode_save(save: &SaveRecord) -> Vec<u8> {
     out
 }
 
-/// Reads a compactly written game save, as checked as a record is.
+/// Reads a compactly written game save, checked as strictly as a record.
 pub(super) fn decode_save(bytes: &[u8]) -> Result<SaveRecord, EncodingError> {
     fn ids(input: &mut Input<'_>) -> Result<Vec<PersistentId>, EncodingError> {
         let count = input.count(8)?;
@@ -443,17 +424,21 @@ pub(super) fn decode_save(bytes: &[u8]) -> Result<SaveRecord, EncodingError> {
     })
 }
 
-/// Whether a record being read may link to prefabs: a scene or a prefab may;
-/// the differences a save or an instance holds may not — which is also what
-/// keeps a file from nesting links inside links without end.
+/// Whether a record being read may link to prefabs.
+///
+/// A scene or a prefab may; the differences a save or an instance holds may
+/// not, which also keeps a file from nesting links inside links without end.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Links {
     Allowed,
     Refused,
 }
 
-/// Reads a compactly written record. A damaged input is an error, never a
-/// panic, and never an allocation sized by a count the input does not back.
+/// Reads a compactly written record.
+///
+/// # Errors
+///
+/// A damaged input; never a panic, nor an allocation sized by a count the input does not back.
 pub(super) fn decode(bytes: &[u8]) -> Result<SceneRecord, EncodingError> {
     decode_record(bytes, Links::Allowed)
 }
@@ -645,8 +630,9 @@ impl<'a> Input<'a> {
         Err(error("a number too large for 64 bits".to_owned()))
     }
 
-    /// A count of things each taking at least `each` bytes: refused when the
-    /// bytes left could not hold that many.
+    /// Reads a count of things each taking at least `each` bytes.
+    ///
+    /// Refused when the bytes left could not hold that many.
     fn count(&mut self, each: usize) -> Result<usize, EncodingError> {
         let count = self.varint()?;
         let count = usize::try_from(count).map_err(|_| error("a count too large".to_owned()))?;

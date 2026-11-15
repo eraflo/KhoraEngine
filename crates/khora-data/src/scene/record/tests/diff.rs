@@ -202,9 +202,10 @@ fn nested_same_named_structs_recurse() {
     );
 }
 
-/// Anything that is not two structs of one name is replaced whole: a list, a
-/// map, an enum variant (even one with named fields), an option, a newtype,
-/// two structs of different names.
+/// Anything that is not two structs of one name is replaced whole.
+///
+/// A list, a map, an enum variant (even one with named fields), an option, a
+/// newtype, two structs of different names.
 #[test]
 fn a_non_struct_is_replaced_whole() {
     let pairs = [
@@ -332,9 +333,7 @@ fn a_change_of_sign_of_zero_is_a_change() {
 }
 
 /// **The law a save rests on.** `patch(base, diff(base, now))` is `now`, over
-/// every kind of value a component holds: structs nested and flat, lists,
-/// maps, variants, options, entity and asset references, and floats that are
-/// not finite.
+/// every kind of value a component holds.
 #[test]
 fn a_patch_of_the_diff_gives_back_now() {
     let entity = |bits: u64| Record::Entity(EntityRef::Id(PersistentId::from_bits(bits)));
@@ -484,8 +483,7 @@ fn a_patch_of_the_diff_gives_back_now() {
 }
 
 /// **What a designer edit relies on.** A field the patch does not name takes
-/// the base's value — the base as it is *now*, edited since the save was
-/// taken — so an edit reaches every value the game did not change.
+/// the base's value as it is *now*, edited since the save was taken.
 #[test]
 fn a_field_the_patch_does_not_name_takes_the_base_value() {
     let base = light(1.0, "red", 5.0);

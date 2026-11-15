@@ -38,8 +38,7 @@ pub struct RuntimeComponentDecl {
     pub domain: SemanticDomain,
     /// Who writes it.
     pub provenance: ComponentProvenance,
-    /// Whether a game save keeps it although a scene does not: state the
-    /// engine wrote while running and reads back to resume.
+    /// Whether a game save keeps it although a scene does not, to resume play.
     pub resumable: bool,
     /// Its fields.
     pub layout: PackedLayout,
@@ -57,8 +56,7 @@ pub struct RelayoutReport {
 /// Why a component could not be registered, or relaid out.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegisterError {
-    /// Another component already has the name — a component's name is unique
-    /// among every component, Rust or declared.
+    /// Another component, Rust or declared, already has the name.
     NameTaken {
         /// The name asked for.
         name: String,
@@ -93,8 +91,7 @@ pub enum RegisterError {
         /// The component.
         name: String,
     },
-    /// Another declared name hashes to the same key — a 1-in-2^128 event,
-    /// refused rather than letting two components share a column.
+    /// Another declared name hashes to the same key, so the two would share a column.
     KeyCollision {
         /// The name asked for.
         name: String,
@@ -173,29 +170,29 @@ pub enum RowError {
     },
 }
 
-/// `column` as a run-time component's.
+/// Returns `column` as a run-time component's.
 fn packed(column: &dyn AnyVec) -> Option<&PackedColumn> {
     column.as_any().downcast_ref::<PackedColumn>()
 }
 
 impl World {
-    /// Every component this world knows.
+    /// Returns every component this world knows.
     pub fn components(&self) -> &ComponentRegistry {
         &self.storage.registry
     }
 
-    /// The generation of this world's load catalogue, published as it
-    /// moves: what a load prepared off the frame watches to learn that the
-    /// components it was prepared against changed. Every call shares the
-    /// same counter.
+    /// Returns the published generation of this world's load catalogue; every call shares it.
+    ///
+    /// A load prepared off the frame watches it to learn that the components
+    /// it was prepared against changed.
     pub fn catalog_generation(&self) -> Arc<std::sync::atomic::AtomicU64> {
         self.storage.registry.published_generation()
     }
 
-    /// What preparing a load reads of this world, as it is now: shared, and
-    /// readable on any thread. Its generation moves whenever a component is
-    /// registered, declared, relaid out, moved to another domain or given
-    /// another provenance.
+    /// Returns what preparing a load reads of this world, readable on any thread.
+    ///
+    /// Its generation moves whenever a component is registered, declared,
+    /// relaid out, moved to another domain or given another provenance.
     pub fn load_catalog(&self) -> Arc<crate::scene::LoadCatalog> {
         let nowhere = self
             .nowhere
@@ -206,8 +203,8 @@ impl World {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         match &*cached {
-            // Built once per change of the components: a load in a frame —
-            // a prefab spawned by a script — pays nothing more.
+            // Built once per change of the components, so a load in a frame
+            // (a prefab a script spawns) pays nothing more.
             Some(catalog) if catalog.generation() == generation => Arc::clone(catalog),
             _ => {
                 let catalog = Arc::new(crate::scene::LoadCatalog::of(
@@ -220,23 +217,26 @@ impl World {
         }
     }
 
-    /// Registers the Rust component `T` in `domain`, refusing a short name
-    /// another Rust type has. Registering it again in the domain it has
-    /// returns its id.
+    /// Registers the Rust component `T` in `domain`, returning its key.
+    ///
+    /// Registering it again in the domain it has returns the same key.
+    ///
+    /// # Errors
+    ///
+    /// [`RegisterError`] if another Rust type has its short name, or it is
+    /// registered in another domain.
     pub fn try_register_component<T: Component>(
         &mut self,
         domain: SemanticDomain,
     ) -> Result<ComponentKey, RegisterError> {
         let known = self.storage.registry.len();
-        // The persistence half of the component — when it has one — says who
-        // writes it.
+        // The component's persistence registration, if any, says who writes it.
         let provenance = registration_for(TypeId::of::<T>())
             .map_or(ComponentProvenance::Authored, |reg| reg.provenance);
         let key = self.storage.registry.register::<T>(domain, provenance)?;
         if self.storage.registry.len() != known {
-            // A plan names the domains its components live in; one made
-            // before this registration would keep looking for `T` where it
-            // is not.
+            // A cached plan names the domains its components live in, so one
+            // made before this registration would look for `T` where it is not.
             self.planner
                 .query_cache
                 .write()
@@ -246,9 +246,7 @@ impl World {
         Ok(key)
     }
 
-    /// Registers a component declared while the engine runs, under the key
-    /// of its name — the same key in every world. Called at the frame
-    /// boundary, where the `World` is mutable.
+    /// Registers a component declared while the engine runs, keyed by its name in every world.
     pub fn register_runtime_component(
         &mut self,
         decl: RuntimeComponentDecl,
@@ -265,14 +263,11 @@ impl World {
         )
     }
 
-    /// Gives a declared component new fields, rebuilding every row of it field
-    /// by field, by name: a field keeps its value where its name and kind are
-    /// unchanged — or where an `int` became a `float` and converts losslessly
-    /// — and takes its default where it is new or changed kind.
+    /// Gives a declared component new fields, rebuilding every row by field name.
     ///
-    /// Where both layouts know a field's Ergon type, a field whose type
-    /// changed takes its default though its kind did not (`string?` to
-    /// `int?`: both any value).
+    /// A field keeps its value where its name and kind are unchanged, or an
+    /// `int` became a `float`; it takes its default where it is new, changed
+    /// kind, or changed Ergon type (`string?` to `int?`).
     pub fn relayout(
         &mut self,
         key: ComponentKey,
@@ -340,23 +335,19 @@ impl World {
         Ok(report)
     }
 
-    /// Records the part declared component `key` plays for scripts — a
-    /// behavior, or a behavior's state companion — as its declaring module
-    /// says; a component a file registered gains it once a module declares
-    /// it.
+    /// Records the part declared component `key` plays for scripts, as its declaring module says.
     pub fn set_script_role(&mut self, key: ComponentKey, role: Option<crate::ecs::ScriptRole>) {
         self.storage.registry.set_script_role(key, role);
     }
 
-    /// Records which module's script declares component `key` now — `None`
-    /// once no script does.
+    /// Records which module's script declares component `key`, `None` once none does.
     pub fn set_declared_by(&mut self, key: ComponentKey, module: Option<String>) {
         self.storage.registry.set_declared_by(key, module);
     }
 
-    /// Records how the inspector presents declared component `key`'s
-    /// fields, as its declaring module gives them — only fields given a
-    /// hint. Never relays the component out: hints are not its layout.
+    /// Records how the inspector presents declared component `key`'s hinted fields.
+    ///
+    /// Never relays the component out: hints are not its layout.
     pub fn set_field_hints(
         &mut self,
         key: ComponentKey,
@@ -365,9 +356,7 @@ impl World {
         self.storage.registry.set_field_hints(key, hints);
     }
 
-    /// Gives declared component `key` a new provenance — whether scenes keep
-    /// it — and says whether a game save does: what a name changing kind on a
-    /// reload takes. Its rows are relaid out for what the provenance keeps.
+    /// Gives declared component `key` a new provenance and resumability, relaying out its rows.
     pub fn set_provenance(
         &mut self,
         key: ComponentKey,
@@ -389,8 +378,7 @@ impl World {
         self.relayout(key, layout).map(|_| ())
     }
 
-    /// Moves a declared component to `domain`: every row of it goes to its
-    /// entity's page of the new domain, values intact.
+    /// Moves a declared component to `domain`, each row to its entity's page there, values intact.
     pub fn move_component_domain(
         &mut self,
         key: ComponentKey,
@@ -410,9 +398,8 @@ impl World {
         if from == domain {
             return Ok(());
         }
-        // Every row read out by name before any moves: a row is detached from
-        // its page and attached to the entity's page of the new domain, which
-        // is the one move a page knows how to make.
+        // Every row read out before any moves: detach then attach is the one
+        // move a page knows how to make.
         let names: Vec<String> = layout.fields().iter().map(|f| f.name.clone()).collect();
         // Each row's tick too: a domain move is a move, not a change.
         let held: Vec<(EntityId, ScriptValue, Tick)> = self
@@ -441,8 +428,6 @@ impl World {
             .unwrap_or_else(|e| e.into_inner())
             .clear();
         for (entity, value, tick) in &held {
-            // The values are the component's own, read from it above, and so
-            // is the tick the row lands with.
             if let Err(error) = self.add_runtime_component_at(*entity, key, value, *tick) {
                 log::error!(
                     "moving a row of `{}` to {domain:?} lost it: {error:?}",
@@ -458,9 +443,10 @@ impl World {
         Ok(())
     }
 
-    /// Attaches a declared component: its defaults, then `value`'s fields (a
-    /// `ScriptValue::Struct`, or `Unit`). Nothing is attached when a field
-    /// refuses its value.
+    /// Attaches a declared component with its defaults, then `value`'s fields.
+    ///
+    /// `value` is a `ScriptValue::Struct` or `Unit`. Nothing is attached when
+    /// a field refuses its value.
     pub fn add_runtime_component(
         &mut self,
         entity: EntityId,
@@ -471,8 +457,8 @@ impl World {
         self.add_runtime_component_at(entity, key, value, now)
     }
 
-    /// [`add_runtime_component`](Self::add_runtime_component), the row noted
-    /// as written at `written_at`.
+    /// Attaches as [`add_runtime_component`](Self::add_runtime_component) does,
+    /// the row noted as written at `written_at`.
     pub(super) fn add_runtime_component_at(
         &mut self,
         entity: EntityId,
@@ -541,11 +527,9 @@ impl World {
         }
     }
 
-    /// Detaches component `key` from `entity` — a Rust component or a
-    /// declared one; `false` when it held none.
+    /// Detaches component `key`, Rust or declared, from `entity`; `false` when it held none.
     ///
-    /// A behavior's state companion leaves with the behavior: what the engine
-    /// kept of an instance belongs to that instance, and a behavior attached
+    /// A behavior's state companion leaves with it, so a behavior attached
     /// again starts afresh.
     pub fn remove_component_by_key(&mut self, entity: EntityId, key: ComponentKey) -> bool {
         let companion = match self

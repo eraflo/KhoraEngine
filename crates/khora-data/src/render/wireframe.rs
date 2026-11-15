@@ -12,15 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Wireframe debug-overlay configuration.
-//!
-//! Drawing every scene mesh as edge lines is a debug view, like the editor
-//! [`GridConfig`](super::GridConfig). Only the contract type lives in
-//! `khora-data`; the GPU work is the engine-side `WireframeLane`'s job.
-//!
-//! A host application opts in by setting an enabled [`WireframeView`] in the
-//! runtime's `HostViews`. Disabled by default — the editor drives it from a
-//! viewport toggle; the sandbox leaves it off.
+//! The wireframe overlay's settings (every scene mesh drawn as edge lines),
+//! which a host application hands the engine's `WireframeLane`; off by default.
 
 use khora_core::math::LinearRgba;
 

@@ -12,17 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Physics debug-render extraction — opt-in DataSystem.
+//! Copies the physics provider's debug geometry into each [`PhysicsDebugData`].
 //!
-//! Lifts the previous `PhysicsDebugLane` (which was registered as a second
-//! lane of the physics agent and *replaced* the simulation when active —
-//! i.e. enabling debug overlay also stopped physics) into a side-channel
-//! [`crate::ecs::DataSystem`] that runs in `PostSimulation` *alongside* the
-//! normal physics step. Per CLAD: debug data extraction is a Data-domain
-//! invariant projection, not an alternative agent strategy.
-//!
-//! Activation is per-entity via [`PhysicsDebugData::enabled`]: when no
-//! entity has the component, the system is a no-op.
+//! It runs beside the simulation, never instead of it, and only for entities
+//! whose [`PhysicsDebugData::enabled`] is set.
 
 use crate::ecs::SystemContext;
 use std::sync::{Arc, Mutex};
@@ -46,9 +39,8 @@ fn physics_debug_extraction(
         return;
     };
 
-    // Cheap pre-check: skip the lock entirely when no entity carries
-    // `PhysicsDebugData`. Avoids contending the physics provider mutex on
-    // every frame in shipping builds.
+    // Without a `PhysicsDebugData` anywhere, skip the provider's lock: a
+    // shipping build would otherwise contend it every frame.
     if world.query::<&PhysicsDebugData>().next().is_none() {
         return;
     }

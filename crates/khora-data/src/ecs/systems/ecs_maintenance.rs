@@ -12,13 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! ECS maintenance — drains the queued cleanup / vacuum work each frame, and
-//! frees the row ticks of columns that stayed quiet.
+//! ECS maintenance: drains the queued cleanup and vacuum work, and frees the
+//! row ticks of columns that stayed quiet.
 //!
-//! Replaces the previous hardcoded `gw.tick_maintenance()` call in the
-//! engine tick. The [`EcsMaintenance`] state lives in the
-//! [`ServiceRegistry`] (inserted at engine init) so the system can fetch
-//! and tick it without any wiring.
+//! See the book: concepts/ecs.md, "Maintenance is a service, not an agent".
 
 use crate::ecs::SystemContext;
 use std::sync::{Arc, Mutex};

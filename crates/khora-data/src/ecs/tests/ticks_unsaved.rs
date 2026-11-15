@@ -12,13 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Ticks are the running world's, never the scene's.
+//! Ticks are the running world's, never the scene's: no tick enters a scene
+//! record or a snapshot, and a load writes what it places at the loader's tick.
 //!
-//! A tick says when a running world wrote a row; a scene says what was
-//! authored. So no tick enters a scene record or a snapshot — two worlds
-//! holding the same scene save the same, whatever their clocks read — and a
-//! load restores none: what it places is written by the world loading it, at
-//! that world's tick.
+//! See the book: concepts/change-detection.md, "What it guarantees, and its limits".
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::PersistentId;
@@ -51,9 +48,11 @@ fn transform_summary(world: &World, entity: EntityId) -> Tick {
     ticks(page, ComponentKey::of::<Transform>()).summary
 }
 
-/// Two worlds, the same scene, different clocks: one placed its entity at
-/// tick 41 and keeps its rows' ticks, the other at tick 1 and keeps only a
-/// summary. Their scene records are the same.
+/// Two worlds holding the same scene under different clocks save the same
+/// scene record.
+///
+/// One placed its entity at tick 41 and keeps its rows' ticks, the other at
+/// tick 1 and keeps only a summary.
 #[test]
 fn a_scene_record_is_the_same_whatever_the_ticks() {
     let (late, late_entity) = one_transform_at(41, true);
@@ -102,9 +101,8 @@ fn loaded_ticks(world: &World) -> (u64, Tick) {
     (row_tick(column, row), column.summary)
 }
 
-/// A scene saved by a world at tick 41 and loaded by one at tick 7: the
-/// loaded row is written by the loading world, now — its tick is 7, never
-/// the 41 the saving world had.
+/// A scene load restores no tick: the loaded row is written at the loading
+/// world's tick, never at the saving world's.
 #[test]
 fn a_scene_load_restores_no_tick() {
     let (source, _) = one_transform_at(41, true);
@@ -137,9 +135,8 @@ fn a_snapshot_load_restores_no_tick() {
     );
 }
 
-/// A loaded hierarchy places each row once, its `Children` list pushed into
-/// the same row as its other values: every watched column keeps exactly one
-/// tick per row, each the loader's.
+/// A loaded hierarchy places each row once: every watched column keeps exactly
+/// one tick per row, each the loader's.
 #[test]
 fn a_loaded_hierarchy_notes_one_tick_per_row() {
     use crate::ecs::{Children, Parent};

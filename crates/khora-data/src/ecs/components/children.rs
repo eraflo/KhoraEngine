@@ -15,14 +15,10 @@
 use khora_core::ecs::entity::EntityId;
 use khora_macros::Component;
 
-/// A component that lists the direct children of an entity.
+/// The direct children of an entity: every entity whose `Parent` is this one.
 ///
-/// This component is typically attached to a parent entity and contains a list
-/// of all `EntityId`s that have this entity as their `Parent`. It is primarily
-/// used for traversing the scene hierarchy downwards (from parent to child).
-///
-/// Note: This component should be managed by a dedicated hierarchy maintenance
-/// system to ensure it stays in sync with `Parent` components on child entities.
+/// Derived from the children's `Parent` and kept in step by
+/// [`World::set_parent`](crate::ecs::World::set_parent); never saved.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Component)]
 #[component(domain = Spatial, provenance = Derived)]
 pub struct Children(pub Vec<EntityId>);

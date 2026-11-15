@@ -18,35 +18,24 @@ use super::{has_foreign_excluded, is_live_row, FetchContext, NativeRowPlan, Worl
 use crate::ecs::{DomainBitset, QueryMode, QueryPlan, Tick, World};
 use std::marker::PhantomData;
 
-// -------------------- //
-// ---- Query Part ---- //
-// -------------------- //
-
 /// An iterator that yields the results of a `WorldQuery`.
 ///
-/// This struct is created by the [`World::query()`] method. It holds a reference
-/// to the world and iterates through all `ComponentPage`s that match the query's
-/// signature, fetching the requested data for each entity in those pages.
+/// This struct is created by the [`World::query()`] method.
 pub struct Query<'a, Q: WorldQuery> {
-    /// A raw pointer to the world. Using a pointer avoids lifetime variance issues
-    /// and gives us the flexibility to provide either mutable or immutable access.
+    /// The world, borrowed shared for `'a` (see `_phantom`).
     world_ptr: *const World,
 
-    /// The list of page indices that match this query (used in Native mode).
+    /// The pages whose signature matches the query.
     matching_page_indices: Vec<u32>,
 
-    /// The execution plan for this query.
     plan: QueryPlan,
 
-    /// The index of the current page we are iterating through.
     current_page_index: usize,
 
-    /// The index of the next row to fetch within the current page (in
-    /// EntityScan mode: the next entity-store slot).
+    /// The next row of the current page (in EntityScan mode: the next entity-store slot).
     current_row_index: usize,
 
-    /// A marker to associate this iterator with the lifetime `'a` and the query type `Q`.
-    /// It tells Rust that our iterator behaves as if it's borrowing `&'a Q` from the world.
+    /// Holds the `&'a World` borrow for the iterator's lifetime.
     _phantom: PhantomData<(&'a (), Q)>,
 
     /// Pre-computed bitset intersection for fast-failing transversal lookups.
@@ -60,11 +49,7 @@ pub struct Query<'a, Q: WorldQuery> {
 }
 
 impl<'a, Q: WorldQuery> Query<'a, Q> {
-    /// (Internal) Creates a new `Query` iterator.
-    ///
-    /// This is intended to be called only by `World::query()`.
-    /// It takes the world, the plan (strategy), the pre-calculated list
-    /// of matching pages, and the Native per-row plan as arguments.
+    /// Creates the iterator `World::query` returns.
     pub(crate) fn new(
         world: &'a World,
         plan: QueryPlan,
@@ -87,10 +72,10 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
 }
 
 impl<'a, Q: WorldQuery> Query<'a, Q> {
-    /// Sets the tick the query's [`Changed`](super::Changed) terms compare
-    /// against: they keep the rows written after it. The default is
-    /// `Tick(0)`, under which every row counts as changed — an observer that
-    /// has seen nothing sees everything.
+    /// Sets the tick the query's [`Changed`](super::Changed) terms compare against.
+    ///
+    /// They keep the rows written after it. Under the default `Tick(0)`, every
+    /// row counts: an observer that has seen nothing sees everything.
     pub fn since(mut self, since: Tick) -> Self {
         self.since = since;
         self
@@ -98,12 +83,9 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
 }
 
 impl<'a, Q: WorldQuery> Iterator for Query<'a, Q> {
-    /// The type of item yielded by this iterator, as defined by the `WorldQuery` trait.
     type Item = Q::Item<'a>;
 
-    /// Advances the iterator and returns the next item.
     fn next(&mut self) -> Option<Self::Item> {
-        // Delegate to the appropriate execution path based on the pre-calculated plan.
         match self.plan.mode {
             QueryMode::Native => self.next_native(),
             QueryMode::Transversal => self.next_transversal(),
@@ -113,13 +95,11 @@ impl<'a, Q: WorldQuery> Iterator for Query<'a, Q> {
 }
 
 impl<'a, Q: WorldQuery> Query<'a, Q> {
-    /// (Internal) Performs a "Native" iteration, fetching data from a single domain.
-    /// This is the most efficient execution path.
+    /// Yields the next item of a query whose terms all live in one domain.
     fn next_native(&mut self) -> Option<Q::Item<'a>> {
         loop {
-            // Check if there are any pages left to iterate through.
             if self.current_page_index >= self.matching_page_indices.len() {
-                return None; // No more pages, iteration is finished.
+                return None;
             }
 
             // SAFETY: `world_ptr` was obtained from the `&'a World` passed to
@@ -128,8 +108,7 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
             // reborrowing it as `&World` here is sound.
             let world = unsafe { &*self.world_ptr };
 
-            // Get the current page; one no row of which can pass the
-            // query's filters is skipped whole.
+            // A page no row of which can pass the query's filters is skipped whole.
             let page_id = self.matching_page_indices[self.current_page_index];
             let page = &world.storage.pages[page_id as usize];
             if self.current_row_index == 0 && !Q::page_passes(page, self.since) {
@@ -138,15 +117,12 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
             }
             let ctx = FetchContext::read_only(world.current_tick(), self.since);
 
-            // Check if there are rows left in the current page.
             if self.current_row_index < page.row_count() {
                 let row = self.current_row_index;
                 self.current_row_index += 1;
 
-                // Skip stale orphan rows (see `is_live_row`): `find_matching_pages`
-                // filters by page signature, which a migration leaves unchanged on
-                // the abandoned old page, so an entity can appear in a matched page
-                // it no longer lives in.
+                // A migration leaves the old page's signature unchanged, so an
+                // entity can appear in a matched page it no longer lives in.
                 if let Some(domain) = self.plan.driver_domain {
                     if !is_live_row(world, page_id, row, page.entities[row], domain) {
                         continue;
@@ -179,15 +155,12 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
                 return Some(item);
             } else {
                 self.current_page_index += 1;
-                self.current_row_index = 0; // Reset the row index for the new page.
-                                            // The `loop` will then re-evaluate with the new page index.
+                self.current_row_index = 0;
             }
         }
     }
 
-    /// (Internal) Performs an "EntityScan" iteration for a query naming no
-    /// component: walks the entity store and yields each live entity once,
-    /// joining every term through the entity's live locations.
+    /// Yields the next item of a query naming no component, once per live entity.
     fn next_entity_scan(&mut self) -> Option<Q::Item<'a>> {
         // SAFETY: same invariant as `next_native` — `world_ptr` came from the
         // `&'a World` given to `Query::new` and that shared borrow is kept
@@ -210,8 +183,7 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
         None
     }
 
-    /// (Internal) Performs a "Transversal" iteration, joining data across domains.
-    /// This uses the driver domain to find entities and then pulls peer data from other domains.
+    /// Yields the next item of a query joining several domains, driven by one domain's pages.
     fn next_transversal(&mut self) -> Option<Q::Item<'a>> {
         // No page or row filter here: a term outside the driver domain may
         // find a column of its own on the driver page — a mixed page left
@@ -231,13 +203,10 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
             let ctx = FetchContext::read_only(world.current_tick(), self.since);
 
             if self.current_row_index < page.row_count() {
-                // In transversal mode, we use the EntityId from the driver page to look up
-                // counterpart components in the peer domains.
                 let row = self.current_row_index;
                 let entity_id = page.entities[row];
                 self.current_row_index += 1;
 
-                // Optimization: Skip metadata lookup if the entity is not in the combined bitset.
                 if let Some(bitset) = &self.combined_bitset {
                     if !bitset.is_set(entity_id.index) {
                         continue;
@@ -262,7 +231,6 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
                 {
                     return Some(item);
                 }
-                // If the join failed for this entity, we continue to the next one.
             } else {
                 self.current_page_index += 1;
                 self.current_row_index = 0;

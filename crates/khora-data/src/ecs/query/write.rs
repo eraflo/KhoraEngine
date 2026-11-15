@@ -18,10 +18,6 @@ use super::{has_foreign_excluded, is_live_row, FetchContext, NativeRowPlan, Worl
 use crate::ecs::{ComponentKey, DomainBitset, QueryMode, QueryPlan, Tick, World};
 use std::marker::PhantomData;
 
-// ------------------------- //
-// ---- QueryMut Part ---- //
-// ------------------------- //
-
 /// An iterator that yields the results of a mutable `WorldQuery`.
 ///
 /// This struct is created by the [`World::query_mut()`] method.
@@ -44,9 +40,7 @@ pub struct QueryMut<'a, Q: WorldQuery> {
 }
 
 impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
-    /// Creates a new `QueryMut` iterator.
-    ///
-    /// This is intended to be called only by `World::query_mut()`.
+    /// Creates the iterator `World::query_mut` returns.
     pub(crate) fn new(
         world: &'a mut World,
         plan: QueryPlan,
@@ -89,9 +83,9 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
 }
 
 impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
-    /// Sets the tick the query's [`Changed`](super::Changed) terms compare
-    /// against: they keep the rows written after it. The default is
-    /// `Tick(0)`, under which every row counts as changed.
+    /// Sets the tick the query's [`Changed`](super::Changed) terms compare against.
+    ///
+    /// They keep the rows written after it; under the default `Tick(0)`, every row counts.
     pub fn since(mut self, since: Tick) -> Self {
         self.since = since;
         self
@@ -172,15 +166,14 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
                     }
                 }
 
-                // The page through the page buffer's pointer, never a reference
-                // to it: the guards handed out earlier note their writes
-                // through theirs, which a new reference would invalidate.
                 // SAFETY: the buffer belongs to the exclusively-held `world`
                 // and `page_id` indexes it (it was checked against
                 // `row_count` above); `matching_page_indices` only lists pages
                 // matching `Q`, so the columns `Q::fetch` reads (and mutably
                 // aliases for `&mut` queries) are present, and `row` is in
                 // bounds.
+                // The page buffer's pointer, never a reference to the page:
+                // that would invalidate the guards handed out earlier.
                 let page = unsafe { world.storage.pages.as_mut_ptr().add(page_id) };
                 let item = unsafe { Q::fetch(page as *const _, row, ctx) };
                 return Some(item);
@@ -251,13 +244,11 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
                 since: self.since,
             };
 
-            // Check if there are rows left in the current page.
             if self.current_row_index < page.row_count() {
                 let row = self.current_row_index;
                 let entity_id = page.entities[row];
                 self.current_row_index += 1;
 
-                // Skip entities that are not in the combined bitset.
                 if let Some(combined) = &self.combined_bitset {
                     if !combined.is_set(entity_id.index) {
                         continue;

@@ -12,32 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Every placed entity has a world pose.
+//! Gives every entity with a `Transform` its [`GlobalTransform`], which no scene
+//! holds because it is `Derived`.
 //!
-//! [`GlobalTransform`] is `provenance = Derived`, so it is **not** written to a
-//! scene file — a duplicate must not carry a stale copy, because the engine
-//! regenerates it. Nothing regenerated it: a scene-loaded entity arrived with a
-//! `Transform` and no `GlobalTransform`, and every system that needs one asks
-//! for it by reference.
-//!
-//! What that cost, all of it silent:
-//!
-//! - `transform_propagation`'s root query is
-//!   `(&Transform, &mut GlobalTransform, Without<Parent>)`, so the entity was
-//!   never propagated — and never given one either, since a query cannot add a
-//!   component.
-//! - `sync_rigid_bodies` queries `&GlobalTransform`, so the entity's body was
-//!   never registered with the physics provider.
-//! - Absent from that frame's `active_bodies`, `cleanup_orphans` then **removed**
-//!   the body it had from a previous run.
-//!
-//! So loading a scene — or pressing Stop, which restores through the same
-//! path — left every rigid body unsimulated. It fell in the editor before Play
-//! and then stopped forever, which reads as physics being broken rather than as
-//! a missing component.
-//!
-//! Regenerating derived state is what `Derived` *means*, and an invariant
-//! restored by a registered `DataSystem` is how `RULES.md` §3 says to do it.
+//! Without one, propagation and the physics sync both skip the entity, so a
+//! loaded rigid body would never be simulated.
+//! See the book: concepts/ecs.md, "Provenance".
 
 use crate::ecs::SystemContext;
 use khora_core::ecs::entity::EntityId;
@@ -61,11 +41,10 @@ fn ensure_global_transform(
         .collect();
 
     for (entity, transform) in missing {
-        // Seeded from the entity's own local pose rather than the identity.
-        // `transform_propagation` overwrites it later in this same phase, but
-        // `capture_previous_transform` reads it first — and recording the
-        // origin as where a newly loaded entity "was" would make the renderer
-        // interpolate it in from nowhere on its first frame.
+        // Seeded from the local pose, not the identity: propagation overwrites
+        // it later, but `capture_previous_transform` reads it first, and the
+        // origin as a loaded entity's previous pose would slide it in from
+        // nowhere on its first frame.
         let _ = world.add_component(entity, GlobalTransform(transform.to_mat4().into()));
     }
 }
@@ -76,8 +55,7 @@ inventory::submit! {
         phase: TickPhase::PostSimulation,
         run: ensure_global_transform,
         // Before `capture_previous_transform` (-10) and `transform_propagation`
-        // (0), which both need the component to exist before they can do
-        // anything with it.
+        // (0), which both need the component to exist.
         order_hint: -20,
         runs_after: &[],
         observes: &[],
@@ -103,8 +81,8 @@ mod tests {
         );
     }
 
-    /// **What a scene load produces.** The Recipe carries `Transform` and skips
-    /// `GlobalTransform`, so this is the exact shape an entity arrives in.
+    /// **What a scene load produces**: a `Transform` without its
+    /// `GlobalTransform`.
     #[test]
     fn a_placed_entity_without_one_is_given_one() {
         let mut world = World::new();
@@ -118,9 +96,8 @@ mod tests {
         assert_eq!(global.0.translation(), Vec3::new(1.0, 2.0, 3.0));
     }
 
-    /// Seeded from the entity's own pose, not the origin: the renderer
-    /// interpolates from the previous world pose, and starting at zero would
-    /// slide a loaded entity in from nowhere on its first frame.
+    /// Seeded from the entity's own pose, not the origin, which would slide a
+    /// loaded entity in from nowhere on its first frame.
     #[test]
     fn the_one_it_is_given_is_where_the_entity_is() {
         let mut world = World::new();

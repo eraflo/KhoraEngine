@@ -12,13 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Scene loads prepared off the frame.
+//! Scene loads prepared off the frame and committed at a frame's boundary.
 //!
-//! A host files a [`SceneLoadRequest`]; the `loading` family's lane takes
-//! it and prepares it off the frame through the runtime's [`SceneLoading`],
-//! staging the [`PreparedLoad`] under a lease on the world's components
-//! staying as they were when it was prepared. A frame's boundary commits it.
-//! A load whose lease broke is abandoned there, and filed again.
+//! A [`PreparedLoad`] leases the world's components as they were; a load whose
+//! lease broke is abandoned and filed again. See the book: concepts/the-frame.md, "Startup, once".
 
 use std::sync::Arc;
 
@@ -34,8 +31,11 @@ use super::record::ReportEntry;
 
 /// Where a scene load's bytes come from, fetched off the frame.
 pub trait SceneFetch: Send + Sync {
-    /// The bytes of the scene file, read off the frame; why not, when they
-    /// cannot be read.
+    /// Returns the scene file's bytes, read off the frame.
+    ///
+    /// # Errors
+    ///
+    /// Why the bytes cannot be read.
     fn fetch(&self) -> Result<Vec<u8>, String>;
 }
 
@@ -121,8 +121,7 @@ pub struct Refile {
     pub request: SceneLoadRequest,
 }
 
-/// A scene load prepared off the frame, staged for a frame's boundary to
-/// commit.
+/// A scene load prepared off the frame, staged for a frame's boundary to commit.
 pub struct PreparedLoad {
     /// The ticket of the request it answers.
     pub ticket: LoadTicket,
@@ -148,9 +147,9 @@ impl std::fmt::Debug for PreparedLoad {
 impl Supersedes for PreparedLoad {}
 
 impl Staged for PreparedLoad {
-    /// Files its request again, ahead of any request filed since and with
-    /// the hold its ids were reserved through: the load is prepared afresh
-    /// against the world as it is now, reusing those ids.
+    /// Files its request again, ahead of any filed since, with the hold of its reserved ids.
+    ///
+    /// The load is then prepared afresh against the world as it is, reusing those ids.
     fn abandon(self) {
         let Self {
             outcome, refile, ..

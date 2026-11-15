@@ -13,14 +13,10 @@
 // limitations under the License.
 
 //! A `QueryMut` writes through the `&mut World` it was given, whatever plan
-//! drives it.
+//! drives it: a plan chooses how to reach a component, never what a write does.
 //!
-//! A query's plan — Native page rows, Native joined through the world, or
-//! Transversal — is a choice of *how* to reach an entity's components. It must
-//! never change *what* a write does. These tests are also meant to run under
-//! Miri (`cargo +nightly miri test -p khora-data --lib query_mut_writes`): a
-//! write through a pointer that only carries read permission is undefined
-//! behaviour even when the plain run happens to produce the right values.
+//! Run under Miri too (`cargo +nightly miri test -p khora-data --lib
+//! query_mut_writes`): a write through a read-only pointer is undefined.
 
 use std::collections::BTreeMap;
 

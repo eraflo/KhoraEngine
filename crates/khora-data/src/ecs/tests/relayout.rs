@@ -14,11 +14,9 @@
 
 //! A run-time component's fields change while rows of it exist.
 //!
-//! When a script is reloaded, the component it declares may gain, lose, rename
-//! or retype fields. `World::relayout` rebuilds every row of it field by field,
-//! by name: a field of the same name and kind keeps its value, a new or retyped
-//! one takes its default, a vanished one is dropped — and the report names
-//! both.
+//! `World::relayout` rebuilds every row by field name: a field of the same name
+//! and kind keeps its value, a new or retyped one takes its default, a vanished
+//! one is dropped, and the report names both.
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::ScriptValue;
@@ -242,9 +240,9 @@ fn relayout_of_a_rust_component_is_refused() {
     );
 }
 
-/// **The int → float widening a reload keeps**. A field
-/// retyped from `int` to `float` keeps each row's value, converted: it is
-/// neither dropped nor defaulted. The other direction stays a retype — see
+/// **The int → float widening a reload keeps**: each row's value, converted.
+///
+/// The other direction stays a retype — see
 /// `relayout_of_a_retyped_field_takes_its_default`.
 #[test]
 fn relayout_keeps_an_int_widened_to_a_float() {

@@ -43,9 +43,10 @@ impl Component for Spin {}
 struct Unregistered(u8);
 impl Component for Unregistered {}
 
-/// Six entities, each a `Transform` beside two declared Spatial components
-/// with out-of-line fields: `Badge { label: Value, n: Int }` and
-/// `Pouch { items: Value }`, entity `i` holding `t{i}`, `i`, `[i]`.
+/// Six entities, each a `Transform` beside the declared Spatial components
+/// `Badge { label: Value, n: Int }` and `Pouch { items: Value }`.
+///
+/// Entity `i` holds `t{i}`, `i`, `[i]`.
 fn crowd() -> (World, ComponentKey, ComponentKey, Vec<EntityId>) {
     let mut world = World::new();
     world.register_component::<Spin>(SemanticDomain::Spatial);
@@ -435,10 +436,11 @@ struct Gearbox {
     revs: u64,
 }
 
-/// A Rust row read by key reads the fields a script reaches — and only those:
-/// a skipped field has no slot, a field of a type no script can hold reads
-/// nothing, a slot past the last field reads nothing, and an entity lacking
-/// the component has no row of it.
+/// A Rust row read by key reads the fields a script reaches, and only those.
+///
+/// A skipped field has no slot; a field of a type no script can hold, or a
+/// slot past the last field, reads nothing; an entity lacking the component
+/// has no row of it.
 #[test]
 fn a_rust_row_reads_only_the_fields_a_script_reaches() {
     let (mut world, _, _, crowd) = crowd();

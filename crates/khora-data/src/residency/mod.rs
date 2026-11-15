@@ -12,16 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Residencies — data made usable by a device, across frames.
-//!
-//! Each residency runs as a `PreExtract` DataSystem after `asset_reload`, so a
-//! changed asset is made resident again the frame its copy is replaced:
-//! `gpu_mesh_sync` (meshes), `gpu_material_sync` (materials) and
-//! `image_on_gpu` (UI images, into the `UiImageAtlas`).
-//!
-//! The contract — [`Residency`](khora_core::residency::Residency) and the
-//! [`Resident`](khora_core::residency::Resident) store — is in `khora-core`.
-//! A residency registers with [`register_residency!`](crate::register_residency).
+//! Residencies: meshes, materials and UI images made usable by the GPU across
+//! frames, each a [`Residency`](khora_core::residency::Residency) registered
+//! with [`register_residency!`](crate::register_residency).
 
 mod image_on_gpu;
 mod material_on_gpu;

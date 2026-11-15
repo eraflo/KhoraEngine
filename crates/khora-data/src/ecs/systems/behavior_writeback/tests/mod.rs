@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What the writeback records, and where: a turn's changed fields go to the
-//! behavior's component, what the engine keeps of the instance to its state
-//! companion, `Guard#state`.
+//! What the writeback records: a turn's changed fields on the behavior's
+//! component, what resumes the instance on its state companion `Guard#state`.
 
 use super::*;
 use crate::ecs::{
@@ -54,9 +53,8 @@ fn register(
         .unwrap_or_else(|error| panic!("`{name}` registers: {error}"))
 }
 
-/// Registers the behavior `name` that `module` declares — `int` fields
-/// `health` and `armor` — and its state companion, as the scripts'
-/// registration does. Returns both keys.
+/// Registers behavior `name`, declared by `module`, with `int` fields `health`
+/// and `armor`, and its state companion; returns both keys.
 fn declare_behavior(world: &mut World, module: &str, name: &str) -> (ComponentKey, ComponentKey) {
     let behavior = register(
         world,
@@ -191,7 +189,9 @@ fn run(world: &mut World, deck: &mut OutputDeck) {
     );
 }
 
-/// **What a save needs to be true.** A turn's changed field is on the
+/// **What a save needs to be true.**
+///
+/// A turn's changed field is on the
 /// behavior's component, and what the engine keeps of the instance is in a
 /// state companion the writeback added.
 #[test]
@@ -264,9 +264,8 @@ fn a_later_update_replaces_the_companion() {
     );
 }
 
-/// An update names the behavior that produced it. An entity that does not
-/// hold that behavior receives nothing of it — neither its fields nor a
-/// companion.
+/// An entity that does not hold the behavior an update names receives nothing
+/// of it: neither its fields nor a companion.
 #[test]
 fn an_update_for_a_behavior_the_entity_does_not_hold_is_not_applied() {
     let mut world = World::new();
@@ -287,7 +286,9 @@ fn an_update_for_a_behavior_the_entity_does_not_hold_is_not_applied() {
     assert!(world.row(entity, chest_state).is_none());
 }
 
-/// **The invariant the writeback keeps.** A companion whose entity no longer
+/// **The invariant the writeback keeps.**
+///
+/// A companion whose entity no longer
 /// holds its behavior — removed by a command or by the editor — is removed,
 /// even on a frame no behavior reported anything: a behavior attached again
 /// starts afresh.
@@ -371,7 +372,9 @@ fn the_slot_is_drained() {
     assert!(!deck.contains::<BehaviorWriteback>());
 }
 
-/// **A scene holds what was authored, never what the engine kept.** After a
+/// **A scene holds what was authored, never what the engine kept.**
+///
+/// After a
 /// writeback, the scene captured from the world holds the behavior's
 /// component and no page holds its state companion.
 #[test]
@@ -400,7 +403,9 @@ fn a_scene_never_holds_the_companion() {
     assert!(names.iter().all(|name| *name != "Guard#state"), "{names:?}");
 }
 
-/// **A save keeps the lifecycle.** What the lane recorded of whether the
+/// **A save keeps the lifecycle.**
+///
+/// What the lane recorded of whether the
 /// instance spawned and of the fault that disabled it reaches the companion
 /// with the rest of the snapshot.
 #[test]

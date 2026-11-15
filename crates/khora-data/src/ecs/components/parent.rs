@@ -15,11 +15,10 @@
 use khora_core::ecs::entity::EntityId;
 use khora_macros::Component;
 
-/// A component that establishes a parent-child relationship.
+/// The entity this one hangs under; its `Transform` is relative to that entity's pose.
 ///
-/// When an entity has a `Parent` component, its transform is considered
-/// relative to the transform of the entity specified by the `EntityId`.
-/// This is the foundational component for building scene hierarchies.
+/// Set it with [`World::set_parent`](crate::ecs::World::set_parent), which keeps
+/// the parent's [`Children`](crate::ecs::Children) in step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Component)]
 #[component(domain = Spatial, provenance = ToolAuthored)]
 pub struct Parent(pub EntityId);

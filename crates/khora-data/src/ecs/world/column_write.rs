@@ -27,8 +27,7 @@ use crate::ecs::ComponentKey;
 pub struct ColumnWriteReport {
     /// Rows written.
     pub written: usize,
-    /// Rows skipped because their entity is gone or does not hold the
-    /// component.
+    /// Rows skipped because their entity is gone or does not hold the component.
     pub missing: usize,
     /// Rows skipped because a field refused its value; nothing of such a row
     /// is written.
@@ -36,12 +35,11 @@ pub struct ColumnWriteReport {
 }
 
 impl World {
-    /// Writes, for every `(entity, values)` row, `values[i]` into the field
-    /// at `slots[i]` of `entity`'s row of component `key`, grouped by page.
-    /// A row of an entity that is gone, or holds no such component, is
-    /// skipped; a row a field refuses is skipped whole; the others apply. Of
-    /// two rows of one entity, the later is the one left written. The
-    /// component's domain epoch rises with the first row written.
+    /// Writes each row's `values[i]` into field `slots[i]` of `entity`'s component `key`.
+    ///
+    /// A row of an entity that is gone or lacks the component is skipped; a
+    /// row a field refuses is skipped whole. Of two rows of one entity, the
+    /// later is left written. The domain epoch rises with the first row written.
     pub fn write_column<'v>(
         &mut self,
         key: ComponentKey,
@@ -59,9 +57,6 @@ impl World {
         };
         let (domain, ops) = (vtable.domain, Arc::clone(&vtable.columns));
 
-        // Each row's place in the component's domain: the page, the row, and
-        // the row of the batch. A gone or stale entity, or one with no row in
-        // the domain, has none.
         let mut placed: Vec<(u32, u32, &'v [ScriptValue])> = Vec::new();
         for (entity, values) in rows {
             // A row holds one value a slot, or none of it is written.
@@ -79,8 +74,8 @@ impl World {
                 None => report.missing += 1,
             }
         }
-        // Page by page, the rows in memory order — a sweep, not random
-        // accesses. Stable: of two rows of one entity, the later stays last.
+        // Memory order, a sweep rather than random accesses. Stable: of two
+        // rows of one entity, the later stays last.
         placed.sort_by_key(|(page, row, _)| (*page, *row));
 
         let mut start = 0;

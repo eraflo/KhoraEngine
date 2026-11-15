@@ -89,11 +89,10 @@ struct Strict {
     second: u32,
 }
 
-/// A record comes from a file, and a file is input: a record of the wrong
-/// shape for the value asked for — a wrong kind, an unknown variant, an
-/// entity where a struct is expected or a raw struct where an entity is,
-/// nesting built to exhaust the stack — is an error the load can report, and
-/// never a panic or an abort that takes the process down with it.
+/// A record of the wrong shape for the value asked for is an error, never a panic or an abort.
+///
+/// Covered: a wrong kind, an unknown variant, an entity where a struct is
+/// expected and the reverse, nesting built to exhaust the stack.
 #[test]
 fn a_damaged_record_is_an_error_not_a_panic() {
     // Wrong kinds.

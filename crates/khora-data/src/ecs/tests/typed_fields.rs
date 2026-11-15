@@ -12,13 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A component's fields, typed, by slot.
+//! A component's fields, typed, by slot: which ones the derive lets a script
+//! reach, and how a component's [`ColumnOps`] reads, writes and copies them.
 //!
-//! `#[derive(Component)]` says which fields a script reaches and how — from the
-//! same list the serializable mirror and the field schema are built from — and
-//! a component's [`ColumnOps`] reads, writes and copies them in a page column
-//! without serde: a Rust component through its type, a declared one through
-//! its layout.
+//! See the book: concepts/ecs.md, "The storage model".
 
 use std::any::TypeId;
 use std::sync::Arc;
@@ -230,9 +227,10 @@ fn fields(pairs: &[(&str, ScriptValue)]) -> ScriptValue {
 
 // ─── What the derive says ───────────────────────────────────────────────────
 
-/// **`skip` holds in the script view too.** A skipped field is absent from the
-/// mirror and the schema; it has no slot either, and the slots of the fields
-/// around it are their positions in that same list.
+/// **`skip` holds in the script view too**: a skipped field has no slot.
+///
+/// The slots of the fields around it are their positions in the list the
+/// mirror and the schema are built from.
 #[test]
 fn skip_fields_are_not_accessible() {
     assert_eq!(Lantern::script_fields(), ["brightness", "lit"]);
@@ -256,10 +254,10 @@ fn skip_fields_are_not_accessible() {
     assert_eq!(names, Lantern::script_fields());
 }
 
-/// **A field type no script can hold does not stop the derive.** `ticks` is a
-/// `u64`: it keeps its slot — it is a field of the component — but has no
-/// script type, reads as nothing, and refuses a write as not accessible
-/// rather than as unknown. `km`, beside it, works.
+/// **A field type no script can hold does not stop the derive.**
+///
+/// Such a field keeps its slot but has no script type, reads as nothing, and
+/// refuses a write as not accessible rather than as unknown.
 #[test]
 fn an_unsupported_field_type_does_not_break_the_derive() {
     assert_eq!(Odometer::script_fields(), ["km", "ticks"]);
@@ -297,10 +295,11 @@ fn an_unsupported_field_type_does_not_break_the_derive() {
     );
 }
 
-/// **The type, not its spelling.** `length` is spelled `Meters` and `stops`
-/// `Stops`; what a script sees is what they are — a `float` and an
-/// `Entity[]` — because the answer comes from the type's `ScriptField` impl,
-/// where the type is known, and the registration carries it to the mirror.
+/// **The type, not its spelling**: a field spelled by an alias is typed as
+/// what the alias stands for.
+///
+/// The answer comes from the type's `ScriptField` impl, where the type is
+/// known, and the registration carries it to the mirror.
 #[test]
 fn the_registration_types_a_field_by_its_trait_not_its_spelling() {
     let reg = registration_for(TypeId::of::<Ruler>()).expect("Ruler registers");
@@ -545,9 +544,8 @@ fn a_declared_component_is_read_and_written_through_its_column_ops() {
 
 // ─── Snapshots ──────────────────────────────────────────────────────────────
 
-/// The names a script reaches component `key` by, in slot order: a Rust
-/// component's from its registration's schema, a declared one's from its
-/// layout.
+/// The names a script reaches component `key` by, in slot order: from its
+/// registration's schema, or from its layout for a declared component.
 fn names_of(world: &World, key: ComponentKey) -> Vec<String> {
     let vtable = world.components().vtable(key).expect("registered");
     if let Some(layout) = vtable.columns.packed() {
@@ -587,11 +585,11 @@ fn struct_from_fields(
     )
 }
 
-/// **A snapshot reads what the world holds.** Every component a world stores
-/// — the engine's, each with its default on an entity of its own, and the
-/// test components and a declared one with values — is snapshotted column by
-/// column, and every row of the copy equals the struct built from the
-/// column's own `read_field`.
+/// **A snapshot reads what the world holds**: every row of the copy equals the
+/// struct built from its column's own `read_field`.
+///
+/// It covers every component the world stores: the engine's, with defaults,
+/// and the test components and a declared one, with values.
 #[test]
 fn snapshot_reads_match_the_world() {
     let mut world = world();
@@ -748,11 +746,8 @@ struct Almanac {
     epoch: u64,
 }
 
-/// **The check is the write, without the write.** For every field and a
-/// spread of values — in and out of a narrow int's range, non-finite
-/// floats and lanes, `null` for an optional, arrays with a bad item, the
-/// wrong kind — `check_field` takes exactly what `write_field` takes, so a
-/// row checked whole is a row that writes whole.
+/// **The check is the write, without the write**: `check_field` takes exactly
+/// what `write_field` takes, so a row checked whole is a row that writes whole.
 #[test]
 fn check_field_takes_exactly_what_write_field_takes() {
     use khora_core::math::Quaternion;

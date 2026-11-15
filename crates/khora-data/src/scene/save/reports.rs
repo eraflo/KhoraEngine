@@ -22,17 +22,12 @@ use super::components_of;
 use crate::scene::record::{ReportEntry, ReportKind};
 use crate::scene::scene_record::SceneRecord;
 
-/// The entries of `entries` about what `record` — what is loaded — holds,
-/// each once, in order.
+/// Returns the entries of `entries` about what `record` loads, each once, in order.
 ///
-/// A load assembles its record in steps — a prefab expanded, a scene read as
-/// this build reads it, a save merged on top — and each step reports what it
-/// adapted. What a later step then discarded — an entity the save destroyed,
-/// a component it removed, a member an instance deleted — is not loaded, so
-/// what was adapted in it is not news. An entity the scene lost is the
-/// exception: [`ReportKind::RemovedFromScene`] says that its changes went. A
-/// retired component is never loaded — that is what [`ReportKind::Retired`]
-/// says — so it is reported where its entity loads.
+/// An adaptation in something a later step discarded (an entity the save
+/// destroyed, a component it removed, a member an instance deleted) is not news
+/// and is dropped. [`ReportKind::RemovedFromScene`] is always kept, and
+/// [`ReportKind::Retired`] wherever its entity loads.
 pub fn about_what_loads(
     record: &SceneRecord,
     entries: impl IntoIterator<Item = ReportEntry>,

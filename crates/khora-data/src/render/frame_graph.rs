@@ -12,13 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Per-frame render graph: agents enqueue declarative passes here, the engine
-//! drains the graph after the scheduler completes and submits the recorded
-//! command buffers in topological order.
-//!
-//! Lives in `khora-data` because it is a *data container* — there is no
-//! GORNA strategy to negotiate, no behavior to swap. The submission step
-//! (`submit_frame_graph`) is invoked directly by `EngineCore`.
+//! The per-frame render graph: the passes lanes record, submitted in dependency
+//! order once the scheduler returns. See the book: concepts/rendering.md,
+//! "The frame lifecycle".
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, HashSet};
@@ -27,11 +23,11 @@ use std::sync::{Arc, Mutex};
 use khora_core::renderer::api::command::CommandBufferId;
 use khora_core::renderer::GraphicsDevice;
 
-/// Logical resource handle in the frame graph — used for declaring reads/writes.
+/// An abstract resource a pass reads or writes, by which the frame graph orders
+/// passes.
 ///
-/// Resources here are *abstract*: the actual GPU views live in the frame's
-/// `Target` (in `FrameContext`) and the shadows family's `ShadowFrame`. The
-/// graph only orders passes; it does not allocate or alias resources yet.
+/// The GPU views live in the frame's `Target` and the shadows family's
+/// `ShadowFrame`; the graph neither allocates nor aliases them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ResourceId {
     /// Swapchain (or offscreen viewport) color attachment.
@@ -40,7 +36,7 @@ pub enum ResourceId {
     Depth,
     /// Shadow atlas — written by the shadows family, read by the render family.
     ShadowAtlas,
-    /// Custom resource keyed by an opaque integer (plugin / future use).
+    /// A custom resource keyed by an opaque integer.
     Custom(u64),
 }
 
@@ -84,16 +80,12 @@ struct RecordedPass {
     command_buffer: CommandBufferId,
 }
 
-/// A render pass an agent contributes for this frame.
+/// A render pass a lane contributes for this frame.
 ///
-/// Instead of locking the shared [`SharedFrameGraph`] to `add_pass` directly,
-/// a recording agent writes its contribution into a per-layer slot on its
-/// [`OutputDeck`](khora_core::lane::OutputDeck) ([`ScenePassSlot`],
-/// [`UiPassSlot`], [`GridPassSlot`], …). The engine folds those slots into the
-/// graph in their registered order (scene → ui → overlays) after the agent
-/// wave —
-/// preserving the previous insertion order while freeing the agents from the
-/// `Mutex<FrameGraph>`, so they can run concurrently.
+/// Written to a pass slot on the [`OutputDeck`](khora_core::lane::OutputDeck)
+/// ([`ScenePassSlot`], [`UiPassSlot`], …) rather than into the
+/// [`SharedFrameGraph`], so recording lanes run concurrently; the engine folds
+/// the slots in [`registered_pass_order`].
 pub struct PassContribution {
     /// The pass's resource read/write declaration.
     pub descriptor: PassDescriptor,
@@ -108,9 +100,11 @@ pub struct ScenePassSlot(pub Option<PassContribution>);
 impl khora_core::lane::io::PassSlot for ScenePassSlot {
     type Descriptor = PassDescriptor;
 
-    /// The opaque draws clear and fill the colour and the depth, sampling
-    /// the shadow atlas — the shadows family's, or the lane's neutral one —
-    /// so the shadow pass is always ordered first.
+    /// The opaque draws clear and fill the colour and the depth, sampling the
+    /// shadow atlas.
+    ///
+    /// The shadows family's atlas, or the lane's neutral one, so the shadow
+    /// pass is always ordered first.
     fn descriptor() -> PassDescriptor {
         PassDescriptor::new("ScenePass")
             .writes(ResourceId::Color)
@@ -148,9 +142,7 @@ impl khora_core::lane::io::PassSlot for UiPassSlot {
     }
 }
 
-/// Deck slot carrying the skybox / environment-background pass, written by
-/// the skybox family. Folded in after the scene pass and before overlays, so the
-/// sky sits behind the geometry (depth-tested) and under the debug overlays.
+/// Deck slot carrying the skybox pass, written by the skybox family.
 #[derive(Default)]
 pub struct SkyboxPassSlot(pub Option<PassContribution>);
 
@@ -172,28 +164,13 @@ impl khora_core::lane::io::PassSlot for SkyboxPassSlot {
     }
 }
 
-/// Deck slot carrying the scene's **transparent** draws, written by
-/// the render family alongside [`ScenePassSlot`].
+/// Deck slot carrying the scene's blended draws, written by the render family
+/// alongside [`ScenePassSlot`].
 ///
-/// # Why the scene is two passes
-///
-/// A blended surface must not write depth — two transparent surfaces could not
-/// composite if it did. So it leaves the pixel at the far plane, and the skybox
-/// paints exactly the pixels left at the far plane. With the whole scene in one
-/// pass, the sky therefore repainted the glass wherever there was no opaque
-/// geometry behind it: a transparent sphere against the sky simply vanished,
-/// while the half of it overlapping the floor survived.
-///
-/// Splitting the scene puts the sky where it belongs — **between** the opaque
-/// draws that give it a depth buffer to test against and the blended draws that
-/// composite over it.
-///
-/// The alternative was to draw the sky first and let it clear the target. That
-/// would have made a background the frame cannot be rendered without: the
-/// skybox agent is `Important`, not `Critical`, and SAA is built so that
-/// dropping work costs quality, never correctness. With the split, an absent
-/// sky costs you the sky — the opaque pass still clears, and the glass still
-/// blends over the clear colour.
+/// The sky is drawn between the two, since blended draws write no depth. The
+/// opaque pass, not the sky, clears the target, so a frame without the
+/// optional skybox family still renders. See the book: concepts/rendering.md,
+/// "Transparency, and the order it needs".
 #[derive(Default)]
 pub struct TransparentPassSlot(pub Option<PassContribution>);
 
@@ -216,8 +193,7 @@ impl khora_core::lane::io::PassSlot for TransparentPassSlot {
     }
 }
 
-/// Deck slot carrying the editor ground grid's pass, written by the grid
-/// family. Submitted after the UI.
+/// Deck slot carrying the editor ground grid's pass, written by the grid family.
 #[derive(Default)]
 pub struct GridPassSlot(pub Option<PassContribution>);
 
@@ -240,7 +216,7 @@ impl khora_core::lane::io::PassSlot for GridPassSlot {
 }
 
 /// Deck slot carrying the wireframe overlay's pass, written by the wireframe
-/// family. Submitted after the grid.
+/// family.
 #[derive(Default)]
 pub struct WireframePassSlot(pub Option<PassContribution>);
 
@@ -263,7 +239,6 @@ impl khora_core::lane::io::PassSlot for WireframePassSlot {
 }
 
 /// Deck slot carrying the line gizmos' pass, written by the gizmo family.
-/// Submitted after the wireframe, last of all.
 #[derive(Default)]
 pub struct GizmoPassSlot(pub Option<PassContribution>);
 
@@ -283,9 +258,7 @@ impl khora_core::lane::io::PassSlot for GizmoPassSlot {
     }
 }
 
-/// Deck slot carrying the shadow-map pass, written by `ShadowAgent`.
-///
-/// Submitted first: every lit pass samples the shadow atlas it fills.
+/// Deck slot carrying the shadow-map pass, written by the shadows family.
 #[derive(Default)]
 pub struct ShadowPassSlot(pub Option<PassContribution>);
 
@@ -388,9 +361,7 @@ pub fn pass_order<'a>(
     Ok(order)
 }
 
-/// Walks the `after` edges among the slots left unplaced — every one of them
-/// waits on another unplaced slot — until a slot repeats; the walk from its
-/// first visit is the cycle.
+/// Returns a cycle among the unplaced slots, each of which waits on another.
 fn find_cycle(
     passes: &[&PassRegistration],
     before: &[Vec<usize>],
@@ -412,8 +383,10 @@ fn find_cycle(
     }
 }
 
-/// [`pass_order`] over every [`PassRegistration`] linked into the binary: the
-/// order the engine submits its passes in, checked once at boot.
+/// Returns the order the engine submits its passes in: [`pass_order`] over
+/// every registration.
+///
+/// Checked once at boot.
 pub fn registered_pass_order() -> Result<Vec<&'static PassRegistration>, PassOrderError> {
     let passes: Vec<&'static PassRegistration> = inventory::iter::<PassRegistration>().collect();
     pass_order(&passes)
@@ -465,10 +438,7 @@ register_pass!(GridPassSlot, after = [UiPassSlot]);
 register_pass!(WireframePassSlot, after = [GridPassSlot]);
 register_pass!(GizmoPassSlot, after = [WireframePassSlot]);
 
-/// Per-frame collection of recorded passes.
-///
-/// Lanes append passes when they record. `submit_frame_graph` drains the
-/// graph in topological order and submits the buffers to the device.
+/// The passes recorded this frame, submitted by [`submit_frame_graph`].
 #[derive(Default)]
 pub struct FrameGraph {
     passes: Vec<RecordedPass>,
@@ -488,29 +458,26 @@ impl FrameGraph {
         });
     }
 
-    /// Number of recorded passes.
+    /// Returns the number of recorded passes.
     pub fn len(&self) -> usize {
         self.passes.len()
     }
 
-    /// Whether the graph has no recorded passes.
+    /// Returns whether the graph has no recorded passes.
     pub fn is_empty(&self) -> bool {
         self.passes.is_empty()
     }
 
-    /// Drops all recorded passes without submitting them — used to recover
-    /// from a frame error before the engine reaches the submit step.
+    /// Drops all recorded passes without submitting them, to recover from a
+    /// frame error before the submit step.
     pub fn clear(&mut self) {
         self.passes.clear();
     }
 
-    /// Drains the graph and returns command buffers in submission order.
+    /// Drains the graph and returns its command buffers in submission order.
     ///
-    /// The order is computed by a stable Kahn's algorithm over read/write
-    /// dependencies: a pass that writes resource `R` must run before any
-    /// pass that reads `R`. Insertion order is the tie-breaker, so when the
-    /// declared order is already valid (the common case) the result equals
-    /// insertion order.
+    /// A pass writing a resource comes before the later passes that read it;
+    /// otherwise insertion order is kept.
     pub fn compile(&mut self) -> Vec<CommandBufferId> {
         let passes = std::mem::take(&mut self.passes);
         sorted_passes(passes)
@@ -523,8 +490,12 @@ impl FrameGraph {
 /// Shared, mutable handle on the per-frame graph — registered as a service.
 pub type SharedFrameGraph = Arc<Mutex<FrameGraph>>;
 
-/// Drains `graph` and submits every recorded command buffer in topological
-/// order. Returns the number of submitted buffers.
+/// Submits every command buffer recorded in `graph`, draining it; returns how
+/// many.
+///
+/// # Panics
+///
+/// If a thread panicked while holding the graph's lock.
 pub fn submit_frame_graph(graph: &SharedFrameGraph, device: &dyn GraphicsDevice) -> usize {
     let buffers = {
         let mut guard = graph.lock().expect("FrameGraph mutex poisoned");
@@ -537,10 +508,8 @@ pub fn submit_frame_graph(graph: &SharedFrameGraph, device: &dyn GraphicsDevice)
     count
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Topological sort — stable Kahn's algorithm
-// ─────────────────────────────────────────────────────────────────────────────
-
+/// Orders `passes` so each writer precedes its later readers, ties kept in
+/// insertion order.
 fn sorted_passes(passes: Vec<RecordedPass>) -> Vec<RecordedPass> {
     let n = passes.len();
     if n <= 1 {
@@ -606,10 +575,12 @@ mod tests {
         CommandBufferId(id)
     }
 
-    /// **The glass-against-the-sky bug.** A blended surface writes no depth,
-    /// and the skybox paints exactly the pixels left at the far plane — so the
-    /// sky must draw *before* the transparent geometry, or it repaints it
-    /// wherever no opaque geometry stood behind.
+    /// **The glass-against-the-sky bug.**
+    ///
+    /// A blended surface writes no depth, and the skybox paints exactly the
+    /// pixels left at the far plane — so the sky must draw *before* the
+    /// transparent geometry, or it repaints it wherever no opaque geometry
+    /// stood behind.
     ///
     /// Insertion order is what expresses this: the topological sort refines it
     /// via declared read/write edges, and insertion order is the tie-breaker.
@@ -646,8 +617,9 @@ mod tests {
         );
     }
 
-    /// **The shadow pass closes as the pass every lit pass waits for.** A
-    /// `#[pass]` output opens on the slot's descriptor and closes into the
+    /// **The shadow pass closes as the pass every lit pass waits for.**
+    ///
+    /// A `#[pass]` output opens on the slot's descriptor and closes into the
     /// slot: the shadow pass writes the shadow atlas, reads nothing, and holds
     /// the buffer its encoder finished into.
     #[test]
@@ -669,9 +641,10 @@ mod tests {
     }
 
     /// **The skybox pass closes between the opaque and the blended draws.**
-    /// It paints the frame's colour where the opaque pass left the depth at
-    /// the far plane: it writes the colour, reads the depth, and holds the
-    /// buffer its encoder finished into.
+    ///
+    /// It paints the frame's colour where the opaque pass left the depth at the
+    /// far plane: it writes the colour, reads the depth, and holds the buffer
+    /// its encoder finished into.
     #[test]
     fn the_skybox_pass_closes_writing_the_colour_and_reading_the_depth() {
         use khora_core::lane::io::PassSlot;
@@ -687,10 +660,12 @@ mod tests {
     }
 
     /// **The scene pass closes writing the colour and the depth, and reading
-    /// the shadow atlas.** The opaque draws clear and fill the frame's colour
-    /// and depth; they always sample the shadow atlas — the shadows family's,
-    /// or the lit lane's neutral one when there is none — so the frame graph
-    /// orders the shadow pass first whatever was drawn.
+    /// the shadow atlas.**
+    ///
+    /// The opaque draws clear and fill the frame's colour and depth; they
+    /// always sample the shadow atlas — the shadows family's, or the lit lane's
+    /// neutral one when there is none — so the frame graph orders the shadow
+    /// pass first whatever was drawn.
     #[test]
     fn the_scene_pass_closes_writing_the_colour_and_depth_and_reading_the_shadow_atlas() {
         use khora_core::lane::io::PassSlot;
@@ -707,9 +682,10 @@ mod tests {
         assert_eq!(pass.command_buffer, buf(14));
     }
 
-    /// **The transparent pass closes writing the colour and reading the
-    /// depth.** A blended surface is depth-tested against the opaque scene
-    /// and writes no depth, so two of them composite.
+    /// **The transparent pass closes writing the colour and reading the depth.**
+    ///
+    /// A blended surface is depth-tested against the opaque scene and writes no
+    /// depth, so two of them composite.
     #[test]
     fn the_transparent_pass_closes_writing_the_colour_and_reading_the_depth() {
         use khora_core::lane::io::PassSlot;
@@ -725,13 +701,15 @@ mod tests {
     }
 
     /// **The registered order folds the closed slots shadows, scene, sky,
-    /// glass.** The engine takes each slot's pass out of the deck in
+    /// glass.**
+    ///
+    /// The engine takes each slot's pass out of the deck in
     /// `registered_pass_order()` and folds them into the frame graph in that
     /// order: the shadow pass is registered before the scene pass that reads
-    /// its atlas, the scene before the sky that tests its depth, the sky
-    /// before the blended draws. The four passes as their slots close them,
-    /// taken and folded that way, compile to that order — whatever order the
-    /// lanes wrote them into the deck.
+    /// its atlas, the scene before the sky that tests its depth, the sky before
+    /// the blended draws. The four passes as their slots close them, taken and
+    /// folded that way, compile to that order — whatever order the lanes wrote
+    /// them into the deck.
     #[test]
     fn the_registered_order_folds_shadows_scene_sky_then_glass() {
         use khora_core::lane::io::PassSlot;
@@ -774,8 +752,9 @@ mod tests {
         assert_eq!(graph.compile(), vec![buf(20), buf(21), buf(22), buf(23)]);
     }
 
-    /// **The grid pass closes writing the colour and reading the depth.** The
-    /// ground grid is depth-tested against the scene, so closer geometry
+    /// **The grid pass closes writing the colour and reading the depth.**
+    ///
+    /// The ground grid is depth-tested against the scene, so closer geometry
     /// hides it: it reads the depth, paints the colour, and holds the buffer
     /// its encoder finished into.
     #[test]
@@ -792,9 +771,10 @@ mod tests {
         assert_eq!(pass.command_buffer, buf(11));
     }
 
-    /// **The wireframe pass closes writing the colour and reading the
-    /// depth.** Hidden edges are occluded by the scene, so it reads the depth
-    /// (and never writes it).
+    /// **The wireframe pass closes writing the colour and reading the depth.**
+    ///
+    /// Hidden edges are occluded by the scene, so it reads the depth (and never
+    /// writes it).
     #[test]
     fn the_wireframe_pass_closes_writing_the_colour_and_reading_the_depth() {
         use khora_core::lane::io::PassSlot;
@@ -810,6 +790,7 @@ mod tests {
     }
 
     /// **The gizmo pass closes writing the colour and reading nothing.**
+    ///
     /// Gizmos are drawn on top of everything, with no depth test, so the pass
     /// declares no read of the depth.
     #[test]
@@ -831,6 +812,7 @@ mod tests {
     }
 
     /// **The overlays fold in their compositing order whatever they declare.**
+    ///
     /// Added after the UI in the order the engine folds the slots — grid,
     /// wireframe, gizmos — with the descriptors their slots open with, the
     /// frame graph keeps that order: the grid and the wireframe read only the
@@ -922,9 +904,10 @@ mod tests {
         None
     }
 
-    /// **A pass order with a cycle is refused, naming both slots.** Two slots
-    /// that each declare they come after the other have no order the frame
-    /// could be submitted in; the engine refuses them at boot rather than
+    /// **A pass order with a cycle is refused, naming both slots.**
+    ///
+    /// Two slots that each declare they come after the other have no order the
+    /// frame could be submitted in; the engine refuses them at boot rather than
     /// guessing one, and the refusal says which two they are.
     #[test]
     fn a_pass_order_cycle_is_refused_at_boot() {

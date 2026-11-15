@@ -12,33 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What a body is doing, as opposed to what it was told to start doing.
+//! [`BodyMotion`]: what a body is doing, as opposed to what it was told to start doing.
 //!
-//! `RigidBody::initial_velocity` used to be documented *"Current linear
-//! velocity"* while being `Authored` and serialized into scene files. Both
-//! could not be true, and the sync could not tell which it held: it wrote the
-//! authored value into the solver every frame, so gravity accumulated for one
-//! step and was then erased. A body fell a fraction of a millimetre per frame,
-//! forever, instead of falling.
-//!
-//! The split is the same one [`SimulatedTransform`](crate::ecs::SimulatedTransform)
-//! makes for the pose, and for the same reason: an author declares a starting
-//! condition, a solver produces a live value, and one field cannot be both.
+//! See the book: concepts/physics.md, "Who owns a pose".
 
 use khora_core::math::Vec3;
 use khora_macros::Component;
 use serde::{Deserialize, Serialize};
 
-/// The velocity a body currently has.
+/// The velocity a body currently has, as the physics provider reports it.
 ///
-/// Written by the physics writeback from what the provider reports, so reading
-/// it tells you what the body is doing rather than what its author typed.
-/// Present only while something simulates the entity.
+/// Runtime state, never saved; present only while something simulates the
+/// entity. The velocity an author gives is `RigidBody::initial_velocity`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Component, Serialize, Deserialize)]
 #[component(domain = Physics, provenance = Runtime)]
 pub struct BodyMotion {
-    /// Metres per second.
+    /// The linear velocity, in metres per second.
     pub linear: Vec3,
-    /// Radians per second, about each axis.
+    /// The angular velocity, in radians per second about each axis.
     pub angular: Vec3,
 }

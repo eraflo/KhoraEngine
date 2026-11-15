@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Behaviors and systems run in one list: by module, then by
-//! where each is written in its module — never by name, which only breaks a
-//! tie — and a system's singleton is found by a named identity that takes
-//! nothing from the numbering of the entities the game creates.
+//! Behaviors and systems run in one list, by module then by source order (a
+//! name only breaks a tie); a system's singleton is found by a named identity
+//! that takes nothing from the created numbering.
 
 use khora_core::ecs::PersistentId;
 use khora_core::script::ScriptValue;
@@ -66,9 +65,8 @@ fn listed(world: &World) -> Vec<(String, String)> {
         .collect()
 }
 
-/// **Behaviors and systems are one list, by module then by source order**:
-/// registered out of order, with names that sort the other way, they are
-/// listed as their modules write them.
+/// **Behaviors and systems are one list, by module then by source order**,
+/// whatever the registration order and however their names sort.
 #[test]
 fn behaviors_and_systems_are_listed_by_module_then_source_order() {
     let mut world = World::new();
@@ -92,8 +90,10 @@ fn behaviors_and_systems_are_listed_by_module_then_source_order() {
     );
 }
 
-/// **The name breaks a tie** — two of one module recorded at the same place,
-/// as an edit moving one before the other leaves them until both are
+/// **The name breaks a tie** between two of one module recorded at the same
+/// place.
+///
+/// An edit moving one before the other leaves them so until both are
 /// registered again.
 #[test]
 fn the_name_breaks_a_tie_between_behaviors_and_systems_of_one_place() {
@@ -135,9 +135,8 @@ fn a_systems_state_companion_is_not_listed() {
     );
 }
 
-/// **A named identity takes nothing from the created numbering**: an entity
-/// given one, the next entity the world numbers is the first created
-/// identity, as in a world without it — and the named entity is found by it.
+/// **A named identity takes nothing from the created numbering**, and the
+/// named entity is found by it.
 #[test]
 fn a_named_identity_does_not_advance_the_created_numbering() {
     let mut fresh = World::new();

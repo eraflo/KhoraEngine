@@ -16,15 +16,7 @@
 //! silent long enough and every observer that ran on the world has seen its
 //! last write.
 //!
-//! `World::free_quiet_row_ticks(quiet)` frees every page column keeping row
-//! ticks whose summary σ is at least `quiet` ticks old and that no observer
-//! of the ledger has yet to see (`last_seen ≥ σ`). A freed column keeps σ,
-//! raises its floor φ to σ and keeps no row ticks; a page's order version ω
-//! never moves; a column without row ticks is never touched. The next write
-//! of an observed key gives the column row ticks again, zeroed under the
-//! floor, so that only the row written is known as changed — to a reader at
-//! or above the floor. A reader under it sees every row. `ecs_maintenance`
-//! frees after `QUIET_ROW_TICKS` of silence, every run.
+//! See the book: concepts/change-detection.md, "Forgetting quietly".
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::OutputDeck;
@@ -45,9 +37,8 @@ const WATCHER: Observer = Observer::DataSystem("watcher");
 /// A second observer, of the other kind.
 const OTHER: Observer = Observer::Flow("other watcher");
 
-/// A world storing `Position` and `Velocity` (Spatial), `RenderId` and
-/// `RenderTag` (Render); `Position` and `RenderId` are watched, the other two
-/// are not.
+/// A world storing `Position`, `Velocity` (Spatial), `RenderId`, `RenderTag`
+/// (Render), with `Position` and `RenderId` watched.
 fn world() -> World {
     let mut world = World::new();
     world.register_component::<Position>(SemanticDomain::Spatial);
@@ -123,10 +114,10 @@ fn run_ecs_maintenance(world: &mut World) {
 
 // --- when a column is freed ---
 
-/// **Freed once every observer has seen it.** A column silent for long is
-/// kept while one observer of the ledger last ran before its latest write;
-/// once that observer runs again, the column is freed: no row ticks, its
-/// floor at its summary.
+/// **Freed once every observer has seen it.**
+///
+/// A long-silent column is kept while one observer of the ledger last ran
+/// before its latest write; once that observer runs again, it is freed.
 #[test]
 fn a_quiet_column_is_freed_once_every_observer_has_seen_it() {
     let mut world = world();
@@ -164,10 +155,10 @@ fn a_quiet_column_is_freed_once_every_observer_has_seen_it() {
     assert_eq!(column.floor, Tick(3), "the floor rises to the summary");
 }
 
-/// **A column an observer has not seen is kept.** The observer ran at 3, the
-/// column was written at 4: however long the silence, and whatever the
-/// `quiet` asked, its row ticks stay — the observer's next read is still
-/// exact.
+/// **A column an observer has not seen is kept.**
+///
+/// The observer ran at 3, the column was written at 4: whatever the silence,
+/// its row ticks stay, so the observer's next read is still exact.
 #[test]
 fn a_column_an_observer_has_not_seen_is_kept() {
     let mut world = world();
@@ -202,10 +193,10 @@ fn a_column_an_observer_has_not_seen_is_kept() {
     );
 }
 
-/// **An observer that never ran does not hold a column back.** Only the
-/// observers that ran on this world are asked; one that never did reads
-/// `Tick(0)` and is not among them. A world on which no observer ever ran
-/// frees its quiet columns too.
+/// **An observer that never ran does not hold a column back.**
+///
+/// It reads `Tick(0)` and is not among the observers asked; a world on which
+/// no observer ever ran frees its quiet columns too.
 #[test]
 fn an_observer_that_never_ran_does_not_hold_a_column_back() {
     let never = Observer::Flow("never ran");
@@ -241,12 +232,10 @@ fn world_with_no_observer_run() -> World {
 }
 
 /// **An observer skipped since it last ran does not hold a column back, and
-/// its resuming read misses nothing.** The watcher ran at 3, then was skipped
-/// — outside its engine modes — while `b` was written at 5. The column is
-/// freed though the watcher has not seen that write: its floor rises to 5, so
-/// the watcher's read since 3, when it resumes, still sees `b` changed. Once
-/// the watcher runs again it holds back as any observer does: a write after
-/// that run keeps the column's row ticks.
+/// its resuming read misses nothing.**
+///
+/// The column's floor rises to the unseen write, so the resuming read still
+/// sees it. Once the watcher runs again, it holds back as any observer does.
 #[test]
 fn a_skipped_observer_does_not_hold_a_column_back_and_its_resuming_read_misses_nothing() {
     let mut world = world();
@@ -298,10 +287,11 @@ fn a_skipped_observer_does_not_hold_a_column_back_and_its_resuming_read_misses_n
     assert_eq!(changed::<Position>(&world, 41), vec![a]);
 }
 
-/// **A column written often is never freed**: each run writes it, so it is
-/// never `quiet` ticks old, even though every observer has seen every write.
-/// A quiet column of another page, in the same world, is freed once, when
-/// its silence reaches `quiet`.
+/// **A column written often is never freed**, though every observer has seen
+/// every write.
+///
+/// A quiet column of another page, in the same world, is freed once its
+/// silence reaches `quiet`.
 #[test]
 fn a_column_written_often_is_never_freed() {
     let mut world = world();
@@ -342,11 +332,10 @@ fn a_column_written_often_is_never_freed() {
 
 // --- what freeing changes ---
 
-/// **Freeing keeps σ and ω and raises φ to σ.** A freed column keeps its
-/// summary — what was written is not forgotten, only which row — its floor
-/// becomes the summary, and its page's order version does not move: no row
-/// changed place. The page's column without row ticks is left exactly as it
-/// was.
+/// **Freeing keeps σ and ω and raises φ to σ.**
+///
+/// What was written is not forgotten, only which row; no row changed place.
+/// The page's column without row ticks is left exactly as it was.
 #[test]
 fn freeing_keeps_the_summary_and_the_order_and_raises_the_floor_to_the_summary() {
     let mut world = world();
@@ -394,9 +383,10 @@ fn freeing_keeps_the_summary_and_the_order_and_raises_the_floor_to_the_summary()
     );
 }
 
-/// **Freeing returns how many columns it dropped**: one per page column
-/// freed, a column written within the silence asked not among them, a
-/// column without row ticks never; nothing the second time.
+/// **Freeing returns how many columns it dropped**, nothing the second time.
+///
+/// A column written within the silence asked, or without row ticks, is not
+/// among them.
 #[test]
 fn freeing_returns_how_many_columns_it_dropped() {
     let mut world = world();
@@ -429,10 +419,11 @@ fn freeing_returns_how_many_columns_it_dropped() {
 
 // --- after a free ---
 
-/// **A freed column recreated by a write reports only that row** — whatever
-/// path wrote it. The write gives the column row ticks again, one per row:
-/// the row written at its tick, every other row at 0, under the floor. A
-/// reader at or above the floor — the observer, here — sees that row alone.
+/// **A freed column recreated by a write reports only that row**, whatever
+/// path wrote it.
+///
+/// The other rows' ticks come back at 0, under the floor, so a reader at or
+/// above the floor sees the row written alone.
 #[test]
 fn a_freed_column_recreated_by_a_write_reports_only_that_row() {
     for path in ["get_mut", "set_component", "query_mut"] {
@@ -486,9 +477,11 @@ fn a_freed_column_recreated_by_a_write_reports_only_that_row() {
     }
 }
 
-/// **A late reader after a free sees the whole column.** A reader whose
-/// `since` is under the floor cannot be told which rows were written: it
-/// gets every row — before the column is written again and after.
+/// **A late reader after a free sees the whole column**, before the column is
+/// written again and after.
+///
+/// A reader whose `since` is under the floor cannot be told which rows were
+/// written.
 #[test]
 fn a_late_reader_after_a_free_sees_the_whole_column() {
     let mut world = world();
@@ -535,9 +528,8 @@ fn a_late_reader_after_a_free_sees_the_whole_column() {
 
 // --- the Maintenance phase ---
 
-/// **`ecs_maintenance` frees quiet columns**, every run, with no
-/// `EcsMaintenance` resource present: after more than `QUIET_ROW_TICKS` of
-/// silence, a column every observer has seen keeps no row ticks.
+/// **`ecs_maintenance` frees quiet columns** with no `EcsMaintenance`
+/// resource present.
 #[test]
 fn ecs_maintenance_frees_quiet_columns_without_an_ecs_maintenance_resource() {
     let mut world = world();
@@ -558,8 +550,7 @@ fn ecs_maintenance_frees_quiet_columns_without_an_ecs_maintenance_resource() {
 }
 
 /// **`ecs_maintenance` waits `QUIET_ROW_TICKS`**: a column silent one tick
-/// less is kept; silent exactly that long, it is freed. The silence is a
-/// real window — some seconds of frames — not zero.
+/// less is kept; silent exactly that long, it is freed.
 #[test]
 fn ecs_maintenance_keeps_a_column_until_it_has_been_quiet_long_enough() {
     const {
@@ -590,11 +581,11 @@ fn ecs_maintenance_keeps_a_column_until_it_has_been_quiet_long_enough() {
 
 // --- the theorem, with frees ---
 
-/// **No change is ever missed when quiet columns are freed**: the random
-/// sequences of `no_change_missed`, observers noted in the world's ledger,
-/// with `free_quiet_row_ticks` at a small random `quiet` among the other
-/// operations. Each free is checked against its rule; every read keeps the
-/// theorem, and is exact where the column keeps row ticks and `since ≥ φ`.
+/// **No change is ever missed when quiet columns are freed** among the random
+/// sequences of `no_change_missed`.
+///
+/// Each free is checked against its rule; every read keeps the theorem, and
+/// is exact where the column keeps row ticks and `since ≥ φ`.
 #[test]
 fn no_change_is_missed_when_quiet_columns_are_freed() {
     let (mut exact, mut caught, mut freed) = (0, 0, 0);

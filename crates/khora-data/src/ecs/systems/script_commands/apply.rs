@@ -14,11 +14,8 @@
 
 //! Performing one command.
 //!
-//! Every failure here is a script's mistake, never the engine's, so none of them
-//! panics and none of them stops the batch. A behavior that writes to a
-//! despawned entity gets one named diagnostic and the rest of the game carries
-//! on — `RULES.md` §4 forbids `unwrap` on fallible work, and a faulty script is
-//! exactly the fallible input this boundary exists to absorb.
+//! Every failure here is a script's mistake, never the engine's: it is returned
+//! as an [`ApplyError`], never a panic, and never stops the batch.
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::math::{Quaternion, Vec3};
@@ -122,8 +119,8 @@ impl std::fmt::Display for ApplyError {
     }
 }
 
-/// Applies one command to the world, and what a column write did with its
-/// rows — nothing, for any other command.
+/// Applies one command to the world and returns what a column write did with
+/// its rows (nothing, for any other command).
 #[cfg(test)]
 pub(super) fn apply(
     world: &mut World,
@@ -132,8 +129,8 @@ pub(super) fn apply(
     apply_with(world, command, None)
 }
 
-/// [`apply`], a prefab spawn reading its prefab from `prefabs` — refused
-/// where there are none.
+/// Applies one command as `apply` does, a prefab spawn reading its prefab
+/// from `prefabs` (refused where there are none).
 pub(super) fn apply_with(
     world: &mut World,
     command: &WorldCommand,
@@ -145,10 +142,11 @@ pub(super) fn apply_with(
     apply_one(world, command, prefabs).map(|()| ColumnWriteReport::default())
 }
 
-/// A batch's rows, its component and fields resolved once: an unknown
-/// component or field refuses the whole batch, as it refuses a `Set`. The
-/// hierarchy is written one entity at a time, through its own invariants —
-/// never in a batch.
+/// Writes a batch's rows, its component and fields resolved once.
+///
+/// An unknown component or field refuses the whole batch, as it refuses a
+/// `Set`. The hierarchy is refused: it is written one entity at a time,
+/// through its own invariants.
 fn write_column(
     world: &mut World,
     component: &str,
@@ -272,19 +270,15 @@ fn apply_one(
     }
 }
 
-/// The local `Transform` — the authored one, not the derived `GlobalTransform`.
-///
-/// `transform_propagation` recomputes the global from this, one phase per frame,
-/// which is the same latency a physics writeback already has. Writing the global
-/// directly would be overwritten on the next propagation anyway.
+/// The local `Transform`, the authored one: the derived `GlobalTransform` would
+/// be overwritten by the next propagation.
 fn transform_mut(world: &mut World, entity: EntityId) -> Result<Mut<'_, Transform>, ApplyError> {
     if !world.contains(entity) {
         return Err(ApplyError::NoSuchEntity(entity));
     }
-    // Marked before the borrow, because a script moving an entity is an
-    // authoring act and the physics sync has to be told: a simulated body would
-    // otherwise be put back where the solver left it, next frame, silently.
-    // Harmless on an entity nothing simulates — the sync clears it either way.
+    // A script moving an entity is an authoring act the physics sync must be
+    // told of, or a simulated body would be put back where the solver left it.
+    // Harmless on an entity nothing simulates: the sync clears it either way.
     let _ = world.add_component(entity, crate::ecs::Teleported);
     world
         .get_mut::<Transform>(entity)
@@ -491,9 +485,8 @@ fn remove_component(
     }
 }
 
-/// A by-name write to the hierarchy, made by the module that owns it — so a
-/// script adding, setting or removing `Parent` moves both halves of the edge.
-/// `Ok(None)` when `component` is not part of the hierarchy.
+/// Writes the hierarchy by name through the module that owns both halves of
+/// the edge; `Ok(None)` when `component` is not part of the hierarchy.
 fn write_hierarchy(
     world: &mut World,
     entity: EntityId,
@@ -524,11 +517,8 @@ pub(super) fn key_of(
         .ok_or_else(|| ApplyError::UnknownComponent(component.to_owned()))
 }
 
-/// Attributes a failure to the component that refused it.
-///
-/// Every step of a generic component write can fail with a reason the component
-/// itself produced, and none of them carries the name — so the name is attached
-/// in one place rather than at each `map_err`.
+/// Attributes a failure to the component that refused it, whose reasons do
+/// not carry its name.
 fn rejected_by(component: &str) -> impl Fn(String) -> ApplyError + '_ {
     move |reason| ApplyError::Rejected {
         component: component.to_owned(),

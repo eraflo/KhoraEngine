@@ -12,15 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A prefab spawned in play, as the frame boundary applies it.
-//!
-//! The `script_commands` system instantiates the prefab — read through the
-//! [`PrefabLibrary`] the runtime holds — as a linked instance whose root sits
-//! at the id the turn reserved. The root is placed where the spawn says,
-//! keeping the prefab's rotation unless the spawn gives one, and the prefab's
-//! scale; each component the spawn wrote merges onto the root's, or is added
-//! when the root has none. Anything refused takes the whole instance with
-//! it: nothing of it remains, and the id names nothing.
+//! A prefab spawned in play, as the frame boundary applies it: a linked
+//! instance read through the [`PrefabLibrary`], its root at the reserved id,
+//! and nothing of it left when anything is refused.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -58,9 +52,10 @@ fn prefab_rotation() -> Quaternion {
 /// The bullet prefab's root scale.
 const PREFAB_SCALE: Vec3 = Vec3::new(2.0, 2.0, 2.0);
 
-/// A bullet prefab: a root — placed far off, turned, scaled, with a heavy
-/// `RigidBody` and no `Name` — and a child named "Trail". Its record and the
-/// trail's id in the prefab.
+/// Returns a bullet prefab's record and its child's id in the prefab.
+///
+/// The root is placed far off, turned, scaled, with a heavy `RigidBody` and no
+/// `Name`; the child is named "Trail".
 fn bullet_prefab() -> (SceneRecord, PersistentId) {
     let mut world = World::new();
     let root = world.spawn((
@@ -160,7 +155,9 @@ fn any_instance(world: &World) -> bool {
         .any(|entity| world.get::<PrefabInstance>(entity).is_some())
 }
 
-/// **The instance lands at the reserved id, linked.** Its root carries the
+/// **The instance lands at the reserved id, linked.**
+///
+/// Its root carries the
 /// link and a created identity; the prefab's child is there under the id
 /// derived from it, parented to the root.
 #[test]
@@ -412,9 +409,8 @@ fn a_missing_prefab_is_refused() {
     assert_eq!(census(&world), before);
 }
 
-/// **A refused prefab spawn never existed**: its id is released at the
-/// frame's end, so a spawn naming it the next frame — the library there now
-/// — is refused too.
+/// **A refused prefab spawn never existed**: its id is released at the frame's
+/// end, so a spawn naming it the next frame, library present, is refused too.
 #[test]
 fn a_refused_prefab_spawn_releases_its_id() {
     let prefab = AssetUUID::new();
@@ -500,9 +496,8 @@ fn a_despawn_after_a_prefab_spawn_takes_the_whole_instance() {
     assert_eq!(census(&world), before);
 }
 
-/// **A prefab whose root has no `Transform` is placed all the same**: it is
-/// given one where the spawn says, turned as the spawn says or not at all,
-/// at scale one.
+/// **A prefab whose root has no `Transform` is placed all the same**, given one
+/// where and as the spawn says, at scale one.
 #[test]
 fn a_prefab_root_without_a_transform_is_given_one() {
     let prefab = AssetUUID::new();

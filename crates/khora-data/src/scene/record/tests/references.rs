@@ -56,9 +56,10 @@ impl ReferenceReader for Relocate<'_> {
     }
 }
 
-/// Writes `value` with a fresh table, then reads it into a world where every
-/// entity moved. Returns the record, the table, what was read and the
-/// references the reader was handed.
+/// Writes `value` with a fresh table, then reads it into a world where every entity moved.
+///
+/// Returns the record, the table, what was read and the references the
+/// reader was handed.
 fn through_hooks<T: Serialize + DeserializeOwned>(
     value: &T,
 ) -> (Record, IdTable, T, Vec<EntityRef>) {
@@ -84,12 +85,11 @@ struct Target {
     fallback: Option<EntityId>,
 }
 
-/// An entity id means nothing outside the world that issued it, so every one
-/// inside a saved value — a parent, a list of children, a script value, a
-/// frozen register, an optional — goes to the writer on the way out and to
-/// the reader on the way back, once per occurrence, wherever it is nested.
-/// The value read back holds the entities the reader chose, not the numbers
-/// that were written.
+/// Every entity inside a saved value goes through the writer and the reader, once per occurrence.
+///
+/// Wherever it is nested: a parent, a list of children, a script value, a
+/// frozen register, an optional. The value read back holds the entities the
+/// reader chose, not the numbers that were written.
 #[test]
 fn an_entity_reference_goes_through_the_hooks() {
     let a = entity(3, 1);
@@ -281,9 +281,8 @@ fn an_entity_outside_the_save_reaches_the_reader_as_outside() {
     assert_eq!(reader.0, vec![EntityRef::Outside]);
 }
 
-/// An asset UUID is already an identity that outlives the world, so it is
-/// kept verbatim — as an asset reference, wherever it sits — and never goes
-/// through the entity hooks.
+/// An asset UUID is kept verbatim as an asset reference, never through the
+/// entity hooks: it already outlives the world.
 #[test]
 fn an_asset_uuid_is_kept_verbatim() {
     let texture = AssetUUID::new_v5("ui/button.png");
@@ -323,9 +322,8 @@ fn an_asset_uuid_is_kept_verbatim() {
     );
 }
 
-/// The editor's inspector reads and writes JSON of these two types. Giving
-/// them reserved serde names for the record codec must not change a byte of
-/// that JSON, nor of any value holding them.
+/// The reserved serde names of the two reference types change no byte of
+/// their JSON, which the editor's inspector reads and writes.
 #[test]
 fn json_of_entity_id_is_unchanged() {
     let id = entity(3, 7);

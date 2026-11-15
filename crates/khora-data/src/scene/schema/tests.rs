@@ -12,26 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Tests of the schema tracer.
+//! Tests of the schema tracer and of the canonical text a fingerprint hashes.
 //!
-//! Each change a snapshot must not survive — a field renamed, retyped,
-//! reordered or added, a variant gained or renamed, a nested type changed —
-//! is a pair of types with the same serde names but for that one change,
-//! declared in sibling modules. Their fingerprints must differ.
-//!
-//! # The canonical text
-//!
-//! The text a [`Schema`] displays is the contract a fingerprint hashes, so it
-//! is pinned here, in this grammar (no spaces):
-//!
-//! - primitives by name: `bool`, `i8` … `i64`, `u8` … `u64`, `f32`, `f64`,
-//!   `char`, `string`, `bytes`, `unit`;
-//! - `option<T>`, `seq<T>`, `map<K,V>`, `tuple(T,U,…)`;
-//! - a struct `struct Name{a:T,b:U}`, a unit struct `struct Name`, a newtype
-//!   or tuple struct `struct Name(T,U)`;
-//! - an enum `enum Name{A,B(T),C(T,U),D{x:T}}`, variants in declaration order;
-//! - a type met again while it is still being traced — a recursive type —
-//!   written as its name alone.
+//! Each change a snapshot must not survive is a pair of types with the same
+//! serde names but for that one change, declared in sibling modules.
 
 #![allow(dead_code)]
 
@@ -83,9 +67,10 @@ struct Pinned {
     weights: BTreeMap<String, f64>,
 }
 
-/// The canonical text of a small struct is fixed — names, order and types,
-/// and nothing a build or a run could change (no `TypeId`, no address, no
-/// Rust path) — and its fingerprint is that text's FNV-1a.
+/// The canonical text of a small struct is fixed, and its fingerprint is that text's FNV-1a.
+///
+/// The text holds names, order and types, and nothing a build or a run could
+/// change: no `TypeId`, no address, no Rust path.
 #[test]
 fn the_canonical_text_is_build_independent() {
     let schema = schema_of::<Pinned>();
@@ -235,9 +220,9 @@ mod enum_variant_kind {
     }
 }
 
-/// An enum that gains or renames a variant, or whose variant carries
-/// something else — the last variant included, so the tracer must visit
-/// every variant, not only the first — is a different schema.
+/// An enum that gains or renames a variant, or whose variant carries something else, differs.
+///
+/// The last variant is changed too, so the tracer must visit every variant.
 #[test]
 fn a_changed_variant_changes_the_fingerprint() {
     assert_differ::<enum_base::Mode, enum_gained::Mode>("a variant gained");
@@ -396,9 +381,7 @@ fn a_recursive_type_terminates() {
     assert_differ::<recursive::Node, recursive_changed::Node>("a recursive type's leaf");
 }
 
-/// Every registered component traces — its registration's fingerprint is
-/// computed without panicking, the same on every call — and no two
-/// components share one.
+/// Every registered component traces to a stable fingerprint, and no two share one.
 #[test]
 fn every_registration_has_its_own_fingerprint() {
     let mut seen: HashMap<u64, &'static str> = HashMap::new();

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! UI components for the Khora Engine.
+//! The UI's ECS components.
 
 pub use khora_core::ui::types::{UiFlexDirection, UiRect, UiVal};
 use khora_macros::Component;
@@ -24,8 +24,7 @@ pub use super::ui_style::{SerializableUiStyle, UiStyle};
 pub use super::ui_text::{SerializableUiText, UiText};
 pub use super::ui_transform::{SerializableUiTransform, UiTransform};
 
-/// Represents the layout definition of a UI element.
-/// Fully Send/Sync ECS component that is later translated to a layout engine (like taffy) internally.
+/// The layout definition of a UI element, handed to the layout backend.
 #[derive(Debug, Clone, PartialEq, Component, Default)]
 #[component(domain = Ui)]
 pub struct UiNode {

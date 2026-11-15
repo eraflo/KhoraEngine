@@ -12,11 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Applier tests.
-//!
-//! The decisive one for this phase: a command moves an entity and the `World`
-//! reflects it. The rest guard the ways a faulty script must fail — loudly, in
-//! one place, without taking the frame's other work with it.
+//! Applier tests: a command changes the `World`, and a faulty one fails loudly,
+//! in one place, without taking the frame's other work with it.
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::math::{Quaternion, Vec3};
@@ -326,9 +323,8 @@ fn spawning_places_the_entity_and_attaches_its_components() {
     );
 }
 
-/// A projectile with no damage is harder to notice than one that never
-/// appeared, so a half-built entity is rolled back rather than left in the
-/// scene.
+/// A half-built entity is rolled back: a projectile with no damage is harder
+/// to notice than one that never appeared.
 #[test]
 fn a_spawn_whose_component_fails_leaves_nothing_behind() {
     let mut world = World::new();
@@ -592,9 +588,8 @@ mod json {
 
 // ─── Typed writes ───────────────────────────────────────────────────────────
 
-/// A script's component writes go field by field, through the component's
-/// typed access — no serde, no copy of the component — and a declared
-/// component takes the same road as a Rust one.
+/// A script's component writes go field by field through the component's typed
+/// access, with no serde, for a declared component as for a Rust one.
 mod typed {
     use std::cell::Cell;
 
@@ -719,9 +714,8 @@ mod typed {
         matches!(error, ApplyError::Rejected { component, .. } if component == name)
     }
 
-    /// **The JSON road is gone.** `Thermostat` panics if it is ever
-    /// serialised; a script sets it, adds it and spawns it without that
-    /// happening, and the values land.
+    /// **No script write serialises**: `Thermostat` panics if ever serialised,
+    /// yet a script sets, adds and spawns it and the values land.
     #[test]
     fn a_script_write_does_not_serialise() {
         let mut world = world();
@@ -1000,7 +994,9 @@ mod typed {
         world.row(entity, key)?.field(slot)
     }
 
-    /// **One road.** `SetComponent` naming a declared component writes its
+    /// **One road.**
+    ///
+    /// `SetComponent` naming a declared component writes its
     /// packed fields — the named one only — and refuses a value of the wrong
     /// kind without writing anything.
     #[test]
@@ -1104,11 +1100,12 @@ mod typed {
 
     // ─── What a typed write accepts ─────────────────────────────────────────
 
-    /// **The language's one widening.** `float m = 1;` holds an `Int` at run
-    /// time — the VM widens it where a float is read — and `e.Set(RigidBody {
-    /// mass: m })` queues that `Int`. The JSON road read it as the float it
-    /// means; the typed road must too, rather than refuse a write the checker
-    /// accepted.
+    /// **The language's one widening.**
+    ///
+    /// `float m = 1;` holds an `Int` at run time (the VM widens it where a
+    /// float is read), so `e.Set(RigidBody { mass: m })` queues an `Int`. The
+    /// write reads it as the float it means, rather than refuse a write the
+    /// checker accepted.
     #[test]
     fn an_int_written_to_a_float_field_lands_as_that_float() {
         let mut world = World::new();
@@ -1132,10 +1129,8 @@ mod typed {
         );
     }
 
-    /// A NaN inside a `Vec3` or a `Quat` is no more a position or a turn than
-    /// a NaN `f32` is a mass: the JSON road refused one (serde reads no `null`
-    /// as an `f32`), and so must the typed road — every system reading the
-    /// transform would inherit it.
+    /// A NaN inside a `Vec3` or a `Quat` is refused, as a NaN `f32` is: every
+    /// system reading the transform would inherit it.
     #[test]
     fn a_non_finite_component_of_an_engine_value_is_refused() {
         let mut world = World::new();
@@ -1222,7 +1217,9 @@ mod typed {
         speed: f32,
     }
 
-    /// **An array is replaced whole.** `waypoints = [a, b]` on a four-point
+    /// **An array is replaced whole.**
+    ///
+    /// `waypoints = [a, b]` on a four-point
     /// route leaves exactly `[a, b]` — not the first two overwritten and the
     /// last two kept — and the field not named keeps its value.
     #[test]
@@ -1282,9 +1279,11 @@ mod typed {
 
 // ─── Column writes ──────────────────────────────────────────────────────────
 
-/// A column write is one command carrying many rows of one component: it
-/// lands in emission order among the other commands, writes only the fields
-/// it names, and skips — and counts — the rows it cannot write.
+/// A column write: many rows of one component in one command, landing in
+/// emission order.
+///
+/// It writes only the fields it names, and skips and counts the rows it
+/// cannot write.
 mod column {
     use std::sync::Arc;
 
@@ -1785,9 +1784,8 @@ mod column {
         );
     }
 
-    /// **The hierarchy is written one entity at a time**, through its own
-    /// invariants: a batch of `Parent` or `Children` is refused, and the
-    /// edges stay as they were.
+    /// **A batch of `Parent` or `Children` is refused**, the edges as they were:
+    /// the hierarchy is written one entity at a time.
     #[test]
     fn a_column_write_of_the_hierarchy_is_refused() {
         let mut world = World::new();
@@ -1881,7 +1879,9 @@ mod column {
         assert!(world.get::<ActiveEvents>(entities[2]).is_some());
     }
 
-    /// **A variable-size field.** A declared `Value` field takes strings of
+    /// **A variable-size field.**
+    ///
+    /// A declared `Value` field takes strings of
     /// any length, longer or shorter than what it held, and the fixed field
     /// beside it keeps its value.
     #[test]
@@ -1966,7 +1966,9 @@ mod column {
         );
     }
 
-    /// **A batch lands where the commands before it left each entity.** Of
+    /// **A batch lands where the commands before it left each entity.**
+    ///
+    /// Of
     /// one buffer: an entity despawned before the batch skips its row — and
     /// the entity spawned in the same buffer, at the id reserved for it, is
     /// not written for it — and an entity moved to another page by an `Add`
@@ -2027,9 +2029,8 @@ mod column {
         assert_eq!(mass(&world, entities[2]), 9.0);
     }
 
-    /// **A batch refused whole skips every row it carried**, and is not an
-    /// applied command; a batch of no field is applied and writes, skips
-    /// and changes nothing.
+    /// **A batch refused whole skips every row it carried** and is no applied
+    /// command; a batch of no field applies and changes nothing.
     #[test]
     fn a_batch_refused_whole_counts_its_rows_as_skipped() {
         let mut world = World::new();

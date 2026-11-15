@@ -25,10 +25,11 @@ use crate::scene::{instantiate_prefab_at, PrefabSource};
 
 use super::apply::{add_component, key_of, set_component, ApplyError};
 
-/// Brings `prefab` in as a linked instance whose root lands at `entity`,
-/// stands at `placed.0`, turned by `placed.1` or as the prefab turns it, each
-/// of `components` merged onto the root's or added where it has none. Any
-/// failure leaves nothing of the instance.
+/// Brings `prefab` in as a linked instance whose root lands at `entity`; any
+/// failure leaves nothing of it.
+///
+/// The root stands at `placed.0`, turned by `placed.1` or as the prefab turns
+/// it; each of `components` merges onto the root's, or is added where it has none.
 pub(super) fn spawn_prefab(
     world: &mut World,
     prefabs: Option<&dyn PrefabSource>,

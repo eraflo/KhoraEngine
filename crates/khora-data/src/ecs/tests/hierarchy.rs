@@ -12,11 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Hierarchy invariant tests.
-//!
-//! The hierarchy is stored twice — `Parent` on the child, `Children` on the
-//! parent — because both directions are walked every frame. Two copies of one
-//! fact is two chances to disagree, so these lock the cases where they used to.
+//! The hierarchy is stored twice — `Parent` on the child, `Children` on the parent — as both
+//! directions are walked every frame; these tests pin the cases where the copies could disagree.
 
 use khora_core::ecs::entity::EntityId;
 
@@ -47,8 +44,8 @@ fn parenting_writes_both_halves_of_the_edge() {
     assert_eq!(children_of(&world, e[0]), Some(vec![e[1]]));
 }
 
-/// The hazard: re-parenting used to leave the child listed under its old parent
-/// as well as its new one, so the old one kept claiming it.
+/// Re-parenting removes the child from its former parent's list, which would otherwise
+/// keep claiming it.
 #[test]
 fn reparenting_removes_the_child_from_its_former_parent() {
     let (mut world, e) = world_with(3);
@@ -97,9 +94,10 @@ fn parenting_an_entity_to_itself_is_refused() {
     assert!(parent_of(&world, e[0]).is_none());
 }
 
-/// A cycle is refused rather than created because every consumer walks the
-/// hierarchy — transform propagation, the scene tree, recursive despawn — and
-/// each would hang on the loop instead of reporting it.
+/// A cycle is refused rather than created.
+///
+/// Every consumer walks the hierarchy (transform propagation, the scene tree, recursive
+/// despawn) and each would hang on the loop instead of reporting it.
 #[test]
 fn parenting_to_a_descendant_is_refused() {
     let (mut world, e) = world_with(3);

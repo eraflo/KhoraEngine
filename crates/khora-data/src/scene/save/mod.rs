@@ -12,23 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A game save: how a running world differs from the scene it started from.
-//!
-//! A scene holds what was authored. A save holds, against that scene, what the
-//! game changed — the components it changed or added on the scene's entities,
-//! the entities it made, the ones it destroyed — plus the state the engine
-//! needs to resume. Loading merges the save into the scene as it is *now*, so
-//! an edit made to the scene since reaches every value the game left alone.
-//!
-//! # A three-way merge
-//!
-//! A changed component is kept whole, beside its value in the scene when the
-//! save was taken. Loading reads both through today's type — a component or
-//! field renamed since, a struct a text format wrote as a map, a number at
-//! another width all come back as today's values — then compares them field
-//! by field, and only the fields the game changed are written over the scene's
-//! current value. A partial value could not be read that way: a field it lacks
-//! is not a field it changed, and a name it has may be one the type gave up.
+//! A game save: how a running world differs from the scene it started from,
+//! merged three-way into the scene as it is now on load.
+//! See the book: concepts/saves.md, "Loading a save: a three-way merge".
 
 use std::collections::{HashMap, HashSet};
 
@@ -56,36 +42,36 @@ pub use reports::about_what_loads;
 
 /// What a game save holds, against the scene it was taken from.
 ///
-/// Page-shaped, as a scene is: `changes` and `before` are scene records, each
-/// entity in the page its components make. An entity `changes` does not list
-/// is the scene's, untouched.
+/// `changes` and `before` are page-shaped scene records; an entity `changes`
+/// does not list is the scene's, untouched.
+/// See the book: concepts/saves.md, "What a save holds".
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SaveRecord {
     /// The scene the save was taken against.
     pub base: AssetUUID,
-    /// Every entity of the saved world, tree by tree, each parent's children
-    /// in their order — what the hierarchy is rebuilt from, so siblings keep
-    /// the order play left them in.
+    /// Every entity of the saved world, tree by tree, each parent's children in order.
+    ///
+    /// The hierarchy is rebuilt from it, so siblings keep the order play left them in.
     pub order: Vec<PersistentId>,
     /// The scene's entities the game destroyed.
     pub destroyed: Vec<PersistentId>,
-    /// The entities the game made. Every other entity `changes` lists is one
-    /// of the scene's.
+    /// The entities the game made; every other entity `changes` lists is the scene's.
     pub created: Vec<PersistentId>,
-    /// The components the game removed from the scene's entities. Named, not
-    /// inferred from what a row lacks: a component the author adds to the
-    /// scene after the save is not one the game removed.
+    /// The components the game removed from the scene's entities, by name.
+    ///
+    /// Named, not inferred from what a row lacks: a component the author adds
+    /// to the scene after the save is not one the game removed.
     pub removed: Vec<RemovedComponents>,
-    /// Every entity that differs from the scene, with the components that
-    /// differ, whole: those the game changed or added on the scene's
-    /// entities, every component of the entities it made.
+    /// Every entity that differs from the scene, with the differing components whole.
+    ///
+    /// Those are the components the game changed or added on the scene's
+    /// entities, and every component of the entities it made.
     #[serde(deserialize_with = "super::scene_record::plain_record")]
     pub changes: SceneRecord,
-    /// The scene's values, when the save was taken, of the components the
-    /// game changed — what a load compares the game's values with, field by
-    /// field, so an edit the author made since to a field the game left alone
-    /// is kept.
+    /// The scene's values, when the save was taken, of the components the game changed.
+    ///
+    /// A load compares the game's values with these, field by field.
     #[serde(deserialize_with = "super::scene_record::plain_record")]
     pub before: SceneRecord,
 }
@@ -103,7 +89,7 @@ pub struct RemovedComponents {
 /// An entity's components in a record, by name, in its page's order.
 pub(super) type Components<'r> = Vec<(&'r str, &'r Record)>;
 
-/// Every entity of `record` that has components, and its components.
+/// Returns every entity of `record` that has components, with its components.
 pub(super) fn components_of(record: &SceneRecord) -> HashMap<PersistentId, Components<'_>> {
     let mut entities: HashMap<PersistentId, Components<'_>> = HashMap::new();
     for page in &record.pages {
@@ -169,27 +155,27 @@ impl Pages {
     }
 }
 
-/// How `world` differs from `base`, the scene it started from, known as
-/// `base_id`.
+/// Returns how `world` differs from `base`, the scene known as `base_id` it started from.
+///
+/// # Errors
+/// `base` cannot be read, or the world cannot be captured.
 pub fn capture_save(
     world: &World,
     base_id: AssetUUID,
     base: &SceneRecord,
 ) -> Result<SaveRecord, SaveError> {
-    // The scene read as the running world declares its components: a
-    // component only redeclared since the scene was saved is not a change the
-    // game made.
-    // Read only to compare: nothing is loaded from it, so what the reading
-    // adapted is not lost.
+    // Read as the running world declares its components: a component only
+    // redeclared since the scene was saved is not a change the game made.
+    // Nothing is loaded from it, so the reading's report is not needed.
     let (base, _) = scene_as_read(base, &declarations_of(world))
         .map_err(|failure| SaveError::Base(failure.message))?;
     let now = capture_game(world)?;
     Ok(differences(base_id, &base, &now))
 }
 
-/// How `now` differs from `base`, two scene records of the components a
-/// scene keeps. Each is read as this build reads it first, among the entities
-/// its values refer to.
+/// Returns how `now` differs from `base`, two records of the components a scene keeps.
+///
+/// Each is first read as this build reads it, among the entities its values refer to.
 pub(super) fn delta_between(
     base_id: AssetUUID,
     base: &SceneRecord,
@@ -214,7 +200,7 @@ pub(super) fn delta_between(
     Ok(differences(base_id, &read(base)?, &read(now)?))
 }
 
-/// What a save of `now` against `base` holds.
+/// Returns what a save of `now` against `base` holds.
 fn differences(base_id: AssetUUID, base: &SceneRecord, now: &SceneRecord) -> SaveRecord {
     let base_components = components_of(base);
     let now_components = components_of(now);
@@ -314,11 +300,10 @@ impl<'r> Sides<'r> {
         }
     }
 
-    /// One of the scene's entities as the save leaves it: the scene's current
-    /// components, less those the game removed; each the game changed merged
-    /// field by field — the game's value where it differs from the scene's at
-    /// the save, the scene's current one everywhere else; each it added,
-    /// whole. A component the author removed since stays removed, reported.
+    /// Returns one of the scene's entities as the save leaves it, merged three-way.
+    ///
+    /// A component the author removed since stays removed, reported as `RemovedFromScene`.
+    /// See the book: concepts/saves.md, "Loading a save: a three-way merge".
     fn merged(
         &self,
         id: PersistentId,
@@ -354,12 +339,10 @@ impl<'r> Sides<'r> {
     }
 }
 
-/// The world `save` describes: `base`'s surviving entities, merged with what
-/// the game changed, and the entities the game created, whole — in the order
-/// the save left them.
+/// Returns the world `save` describes, merged into `base`, in the order the save left it.
 ///
 /// A scene or a save that cannot be read is handed back as the record that
-/// could not: loading it fails the way loading it would.
+/// could not, so loading the result fails the way loading it would.
 pub fn compose(base: &SceneRecord, save: &SaveRecord) -> SceneRecord {
     match composed(base, save) {
         Ok((record, _)) => record,
@@ -367,9 +350,12 @@ pub fn compose(base: &SceneRecord, save: &SaveRecord) -> SceneRecord {
     }
 }
 
-/// [`compose`], and what it had to leave out: what the save changed that the
-/// scene no longer has — the author's removal wins. A scene or a save that
-/// cannot be read is the error.
+/// Does [`compose`], and returns what it left out.
+///
+/// That is what the save changed that the scene no longer has: the author's removal wins.
+///
+/// # Errors
+/// The scene or the save cannot be read.
 pub fn compose_reporting(
     base: &SceneRecord,
     save: &SaveRecord,
@@ -430,13 +416,11 @@ fn composed(
     Ok((record, report))
 }
 
-/// `base`, with what `save` observed of its surviving entities written in as
-/// authored — no created entities, no destructions, no runtime state.
+/// Returns `base` with what `save` observed of its surviving entities written in as authored.
 ///
-/// A run's spawns and kills are what play did, not what the author meant:
-/// only the values of the scene's own entities — their fields, the
-/// components added to or removed from them — are promoted. A scene or a
-/// save that cannot be read promotes nothing.
+/// A run's spawns and kills are what play did, not what the author meant: only
+/// the scene's own entities' values are promoted, never created entities,
+/// destructions or runtime state. A scene or a save that cannot be read promotes nothing.
 pub fn promote(base: &SceneRecord, save: &SaveRecord) -> SceneRecord {
     let Ok(read) = Read::new(base, save) else {
         return base.clone();
@@ -476,15 +460,14 @@ pub fn promote(base: &SceneRecord, save: &SaveRecord) -> SceneRecord {
     }
 }
 
-/// Reads and checks a composed game record against `world`, as
-/// [`prepare`](super::prepare) does, admitting the runtime components a save
-/// keeps to resume.
+/// Reads and checks a composed game record against `world`, as [`prepare`](super::prepare) does.
+///
+/// Unlike a scene, it admits the runtime components a save keeps to resume.
 pub fn prepare_game(world: &mut World, record: &SceneRecord) -> Result<Prepared, LoadFailure> {
     prepare_kept(world, record, Kept::Game)
 }
 
-/// [`prepare_game`], without the world: what it reads of the world is
-/// `catalog`, and the ids it reserves are held by `hold`.
+/// Does [`prepare_game`] without the world, reading `catalog` and reserving ids into `hold`.
 pub fn prepare_game_with(
     catalog: &crate::scene::LoadCatalog,
     hold: khora_core::ecs::ReservationHold,
@@ -493,7 +476,7 @@ pub fn prepare_game_with(
     prepare_kept_with(catalog, hold, record, Kept::Game)
 }
 
-/// `save`, written with `encoding` behind a save header.
+/// Returns `save` written with `encoding` behind a save header.
 pub fn write_save_file(
     save: &SaveRecord,
     encoding: &dyn SceneEncoding,
@@ -501,7 +484,7 @@ pub fn write_save_file(
     file_with(SAVE_MAGIC_BYTES, encoding.id(), encoding.encode_save(save)?)
 }
 
-/// The save a save file holds.
+/// Returns the save a save file holds.
 pub fn read_save_file(file: &SceneFile) -> Result<SaveRecord, SceneFileReadError> {
     check_save_format(file)?;
     let id = encoding_of(file);

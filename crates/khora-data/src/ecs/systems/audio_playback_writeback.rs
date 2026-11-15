@@ -12,16 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Drains the [`AudioPlaybackWriteback`](crate::flow::AudioPlaybackWriteback)
-//! slot the `SpatialMixingLane` wrote into during the CLAD descent and
-//! applies the per-source playback-state updates back to `AudioSource`
-//! components.
-//!
-//! This system is the canonical Lane → Deck → DataSystem writeback
-//! pattern: the lane is a pure strategy that publishes into the typed
-//! `OutputDeck`; the engine threads the same deck through to the
-//! `Maintenance`-phase `DataSystem`s; this system drains the slot and
-//! mutates the World. No subsystem-specific code lives in the engine.
+//! Writes the playback states the `SpatialMixingLane` left in the
+//! [`AudioPlaybackWriteback`] deck slot back to the `AudioSource` components.
 
 use crate::ecs::SystemContext;
 use khora_core::lane::OutputDeck;

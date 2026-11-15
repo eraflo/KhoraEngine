@@ -12,34 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `Flow` — the typed interface between Data and Lanes.
-//!
-//! A [`Flow`] is a *per-domain*, **read-only** presenter of the World. It runs
-//! every tick during the Substrate Pass (before Lanes execute) in two steps:
-//!
-//! 1. **`select`** (read-only) — picks the entities relevant for this domain.
-//! 2. **`project`** (read-only) — builds a typed `View` published into the
-//!    [`LaneBus`](khora_core::lane::LaneBus). Lanes consume the view; they
-//!    never query the World directly.
-//!
-//! A Flow **never mutates the World**. Representation adaptation (AGDF memory
-//! layout) is the Data layer's own self-maintenance; semantic / gameplay
-//! mutation is developer-authored (an opt-in `DataSystem`), never automatic
-//! here. See `.agent/rules.md` — *adapt the HOW, never the WHAT*.
-//!
-//! Each domain (Render, UI, Physics, Audio, Shadow, …) defines its own
-//! `Flow` implementation. Adding a new domain costs **one** registration:
-//!
-//! ```rust,ignore
-//! inventory::submit! {
-//!     khora_data::flow::FlowRegistration {
-//!         name: MyFlow::NAME,
-//!         domain: MyFlow::DOMAIN,
-//!         role: MyFlow::ROLE,
-//!         run: my_flow_runner_trampoline,
-//!     }
-//! }
-//! ```
+//! Flows: the read-only projectors that publish each domain's View of the
+//! World into the [`LaneBus`](khora_core::lane::LaneBus) for its lanes.
+//! See the book: concepts/the-frame.md, "The Substrate Pass".
 
 pub mod audio;
 mod audio_playback_writeback;
@@ -77,20 +52,15 @@ use khora_core::Runtime;
 
 use crate::ecs::{Role, SemanticDomain, World};
 
-/// The typed interface between the Data layer and Lanes.
+/// A domain's read-only projector of the World into the View its lanes read.
 ///
-/// All three stages receive the engine's [`Runtime`] so a Flow can look up
-/// services, backends, or resources its domain genuinely needs (text
-/// renderer, font cache, surface size, editor view overrides, …) without
-/// crossing the CLAD dependency graph in awkward ways.
+/// It never mutates the World. Each stage gets the [`Runtime`], for the
+/// services and resources its domain reads.
 ///
 /// # Examples
 ///
-/// A read-only Flow that projects the World into a typed `View` for its domain's
-/// Lanes. `select` narrows the entities; `project` builds the view published into
-/// the [`LaneBus`](khora_core::lane::LaneBus). (Marked `ignore` because a
-/// compiling impl needs a concrete `View` type and a [`SemanticDomain`] from the
-/// data layer's domain set.)
+/// `select` narrows the entities; `project` builds the View published into the
+/// [`LaneBus`](khora_core::lane::LaneBus).
 ///
 /// ```ignore
 /// use khora_data::ecs::{Role, SemanticDomain, World};
@@ -121,10 +91,9 @@ use crate::ecs::{Role, SemanticDomain, World};
 /// }
 /// ```
 pub trait Flow: Send + Sync {
-    /// The typed view this Flow publishes into the LaneBus. `Clone` so the
-    /// registration trampoline can republish a cached view without
-    /// re-running `select`/`project` (views hold `Arc`s and plain data, so
-    /// cloning is cheap relative to a full re-projection).
+    /// The View this Flow publishes into the LaneBus.
+    ///
+    /// `Clone` so a cached view is republished without projecting again.
     type View: std::any::Any + Send + Sync + Clone + 'static;
 
     /// Domain identifier — matches the agent's domain.
@@ -137,41 +106,37 @@ pub trait Flow: Send + Sync {
     /// [`Role::Serves`] is skipped while its family is off. No default.
     const ROLE: Role;
 
-    /// Stage 1 — read-only selection of relevant entities. `ctx` says whether
-    /// this run starts the Flow over ([`FlowContext::resumed`]) and what its
-    /// family is limited to ([`FlowContext::scope`]): the default selects
-    /// nothing in particular, within the scope, and a Flow of a family projects
-    /// only what the selection [`admits`](Selection::admits).
+    /// Selects the entities this run projects, reading only.
+    ///
+    /// `ctx` says whether this run starts the Flow over and what its family is
+    /// limited to. The default selects no entity in particular, within the
+    /// scope; a Flow of a family projects only what the selection
+    /// [`admits`](Selection::admits).
     fn select(&mut self, world: &World, runtime: &Runtime, ctx: FlowContext) -> Selection {
         let _ = runtime;
         Selection::new().within(world, ctx.scope)
     }
 
-    /// Stage 2 — read-only projection of the world into a View.
+    /// Projects the world into this Flow's View, reading only.
     fn project(&self, world: &World, sel: &Selection, runtime: &Runtime) -> Self::View;
 
-    /// Cache key for view reuse. When `Some(k)` matches the key of the
-    /// previously published view, the registration trampoline republishes
-    /// the cached view without re-running select/project. `None` (default)
-    /// disables caching — correct for flows whose projection depends on
-    /// inputs without a change signal.
+    /// Returns the key under which the last view may be reused, or `None` to
+    /// project every run.
     ///
-    /// Implementations MUST fold every input the projection reads into the
-    /// key: the relevant [`World::domain_epoch`]s, [`World::instance_id`]
-    /// (so a different World instance never aliases a cached key), and a
-    /// bit-level hash of any `runtime` state consulted. A key that misses
-    /// an input produces *stale* views; an over-broad key merely
-    /// re-projects more often, which is always safe.
+    /// When it equals the previous run's key, the cached view is republished.
+    /// It must fold in every input the projection reads: the relevant
+    /// [`World::domain_epoch`]s, the [`World::instance_id`], and a bit-level
+    /// hash of any `runtime` state. A missed input serves stale views; an extra
+    /// one only projects more often.
     fn cache_key(&self, world: &World, runtime: &Runtime) -> Option<u64> {
         let _ = (world, runtime);
         None
     }
 }
 
-/// Folds an ordered sequence of cache-key ingredients (domain epochs,
-/// bit-level hashes of runtime state, the World instance id) into a single
-/// `u64` via the std hasher. Deterministic within a process, which is all a
-/// per-process view cache needs.
+/// Folds cache-key ingredients, in order, into one `u64`.
+///
+/// Deterministic within a process, which is all a view cache needs.
 pub fn combine_cache_key<I: IntoIterator<Item = u64>>(parts: I) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();

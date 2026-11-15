@@ -12,32 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Internal entity storage and ID management.
+//! The entity slots of a world: ids, generations, and each live entity's metadata.
 
 use std::collections::HashSet;
 
 use crate::ecs::entity::EntityMetadata;
 use khora_core::ecs::entity::EntityId;
 
-/// Internal manager for entity slots and metadata.
-///
-/// The `EntityStore` maintains a dense list of entity handles and their associated
-/// metadata. It handles entity creation, recycling of indices via a free list,
-/// and metadata access.
+/// A world's entity slots, each with its id and, while alive, its metadata.
 #[derive(Clone)]
 pub(crate) struct EntityStore {
-    /// A dense list of metadata for every entity slot that has ever been created.
-    /// Each entry contains the current `EntityId` (including generation) and an
-    /// `Option<EntityMetadata>` which is `Some` only if the entity is currently alive.
+    /// Every slot ever created: its current id and, while alive, its metadata.
     pub(crate) entities: Vec<(EntityId, Option<EntityMetadata>)>,
-    /// A list of entity indices available for reuse, enabling $O(1)$ allocation
-    /// for previously despawned entities.
+    /// Indices freed by a despawn, waiting to be reused.
     pub(crate) freed_entities: Vec<u32>,
     /// Indices held back for a load: not alive, not on the free list, so
     /// neither a spawn nor a recycle can hand them out.
     reserved: HashSet<u32>,
-    /// How many slots hold a live entity. Kept rather than counted: the DCC
-    /// reads it every frame as the size of the world's workload.
+    /// How many slots hold a live entity.
+    ///
+    /// Kept rather than counted: the DCC reads it every frame.
     alive: usize,
 }
 
@@ -52,11 +46,7 @@ impl EntityStore {
         }
     }
 
-    /// Allocates a new or recycled `EntityId`.
-    ///
-    /// If there are indices in the `freed_entities` list, one is popped and its
-    /// generation is incremented. Otherwise, a new slot is appended to the `entities` vector.
-    /// In both cases, a default `EntityMetadata` is initialized in the slot.
+    /// Allocates a live `EntityId`, recycling a freed index under a new generation.
     pub fn create_entity(&mut self) -> EntityId {
         self.alive += 1;
         if let Some(index) = self.freed_entities.pop() {
@@ -95,8 +85,7 @@ impl EntityStore {
         id
     }
 
-    /// Brings a reserved id to life. `false` when `id` is not one this store
-    /// is holding back.
+    /// Brings a reserved id to life; `false` when this store is not holding `id` back.
     pub fn commit_reserved(&mut self, id: EntityId) -> bool {
         let held = self.reserved.contains(&id.index)
             && self
@@ -112,16 +101,16 @@ impl EntityStore {
         true
     }
 
-    /// Holds back `id`, a fresh index at the end of the store a reserver
-    /// already handed out: its slot, not alive.
+    /// Holds back `id`, a fresh index at the end of the store a reserver already handed out.
     pub fn hold_fresh(&mut self, id: EntityId) {
         debug_assert_eq!(id.index as usize, self.entities.len());
         self.entities.push((id, None));
         self.reserved.insert(id.index);
     }
 
-    /// Holds back a recycled id for a reserver — `None` when no index is
-    /// free. Its generation moves on, so it never names what lived there.
+    /// Holds back a recycled id for a reserver, `None` when no index is free.
+    ///
+    /// Its generation moves on, so it never names what lived there.
     pub fn reserve_recycled(&mut self) -> Option<EntityId> {
         let index = self.freed_entities.pop()?;
         let (id_slot, _) = &mut self.entities[index as usize];
@@ -131,12 +120,12 @@ impl EntityStore {
         Some(id)
     }
 
-    /// How many slots the store holds: alive, dead and held back.
-    /// Whether a slot freed by a despawn waits to be reused.
+    /// Returns whether a slot freed by a despawn waits to be reused.
     pub fn has_freed(&self) -> bool {
         !self.freed_entities.is_empty()
     }
 
+    /// Returns how many slots the store holds: alive, dead and held back.
     pub fn slots(&self) -> usize {
         self.entities.len()
     }
@@ -152,9 +141,7 @@ impl EntityStore {
         }
     }
 
-    /// Returns a mutable reference to an entity's metadata if the entity is alive.
-    ///
-    /// The generation of the provided `EntityId` must match the current generation in the store.
+    /// Returns the metadata of the live entity `id`, `None` for a stale generation.
     pub fn get_metadata_mut(&mut self, id: EntityId) -> Option<&mut EntityMetadata> {
         self.entities
             .get_mut(id.index as usize)
@@ -167,14 +154,14 @@ impl EntityStore {
             })
     }
 
-    /// The number of live entities.
+    /// Returns the number of live entities.
     pub fn alive(&self) -> usize {
         self.alive
     }
 
-    /// Kills the live entity `id` names: takes its metadata, frees its index
-    /// for recycling and returns the metadata. `None`, changing nothing, when
-    /// `id` names no live entity (dead, stale generation, reserved, unknown).
+    /// Kills the live entity `id`, frees its index and returns its metadata.
+    ///
+    /// `None`, changing nothing, when `id` names no live entity.
     pub fn despawn(&mut self, id: EntityId) -> Option<EntityMetadata> {
         let (slot, metadata) = self.entities.get_mut(id.index as usize)?;
         if *slot != id {
@@ -186,9 +173,7 @@ impl EntityStore {
         Some(metadata)
     }
 
-    /// Returns the total number of entity slots (alive, dead and held back).
-    /// The live count is [`alive`](Self::alive); this one is for tests that
-    /// check slots are recycled rather than added.
+    /// Returns the number of slots, for tests that check slots are recycled.
     #[cfg(test)]
     pub fn len(&self) -> usize {
         self.entities.len()

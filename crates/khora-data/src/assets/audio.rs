@@ -12,20 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines the core asset type for audio data.
+//! The decoded sound asset.
 
 use khora_core::asset::Asset;
 
-/// Represents a sound asset, decoded and ready for playback.
-///
-/// This struct holds audio data in a normalized, interleaved `f32` format,
-/// which is the standard for high-quality audio processing pipelines.
-/// The `AssetAgent` will manage instances of this type in its cache.
+/// A sound decoded to interleaved `f32` samples, ready for playback.
 #[derive(Debug, Clone, Default)]
 pub struct SoundData {
-    /// The raw, interleaved audio samples.
+    /// The interleaved samples, in `[-1.0, 1.0]`.
+    ///
     /// For stereo, samples are ordered `[L, R, L, R, ...]`.
-    /// Values are expected to be in the range `[-1.0, 1.0]`.
     pub samples: Vec<f32>,
     /// The number of channels in the audio data (e.g., 1 for mono, 2 for stereo).
     pub channels: u16,
@@ -33,6 +29,4 @@ pub struct SoundData {
     pub sample_rate: u32,
 }
 
-// By implementing `Asset`, `SoundData` can be used with `AssetHandle<T>`
-// and managed by the `AssetAgent`.
 impl Asset for SoundData {}

@@ -33,7 +33,7 @@ use khora_core::renderer::api::resource::SampleCount;
 use khora_core::renderer::api::shader::ShaderVariantKey;
 use khora_core::renderer::api::util::ShaderStageFlags;
 
-/// The declarative spec for the procedural-sky bake pipeline.
+/// Returns the procedural-sky bake pipeline's spec.
 pub(super) fn sky_pipeline_spec() -> PipelineSpec {
     bake_pipeline_spec(
         "IBL Sky Bake",
@@ -45,8 +45,8 @@ pub(super) fn sky_pipeline_spec() -> PipelineSpec {
     )
 }
 
-/// The declarative spec for the specular prefilter pipeline (same bindings as
-/// the irradiance convolution: env cube + sampler + per-face/roughness basis).
+/// Returns the specular prefilter pipeline's spec; it binds like the
+/// irradiance convolution.
 pub(super) fn prefilter_pipeline_spec() -> PipelineSpec {
     bake_pipeline_spec(
         "IBL Prefilter Bake",
@@ -58,8 +58,7 @@ pub(super) fn prefilter_pipeline_spec() -> PipelineSpec {
     )
 }
 
-/// The declarative spec for the split-sum BRDF LUT pipeline. No bindings — the
-/// integration is pure math over the fragment's (N·V, roughness).
+/// Returns the split-sum BRDF table pipeline's spec, which binds nothing.
 pub(super) fn brdf_pipeline_spec() -> PipelineSpec {
     let mut spec = bake_pipeline_spec("IBL BRDF LUT Bake", BRDF_SHADER, vec![]);
     // The LUT stores (scale, bias) in RG; the shared IBL_FORMAT (Rgba16Float)
@@ -68,8 +67,8 @@ pub(super) fn brdf_pipeline_spec() -> PipelineSpec {
     spec
 }
 
-/// The bind-group layout entries for the irradiance convolution: the env cube
-/// at 0, the sampler at 1, the per-face basis at 2.
+/// Returns the irradiance convolution's layout: the env cube at 0, the sampler
+/// at 1, the per-face basis at 2.
 pub(super) fn irradiance_layout_entries() -> Vec<BindGroupLayoutEntry> {
     vec![
         BindGroupLayoutEntry {
@@ -90,9 +89,8 @@ pub(super) fn irradiance_layout_entries() -> Vec<BindGroupLayoutEntry> {
     ]
 }
 
-/// The bind-group layout entries for the equirectangular projection: the source
-/// lat-long map at 0 (a **2D** texture, unlike the cube the convolution reads),
-/// its sampler at 1, and the per-face basis at 2.
+/// Returns the equirectangular projection's layout: the 2D lat-long map at 0,
+/// its sampler at 1, the per-face basis at 2.
 pub(super) fn equirect_layout_entries() -> Vec<BindGroupLayoutEntry> {
     vec![
         BindGroupLayoutEntry {
@@ -113,7 +111,7 @@ pub(super) fn equirect_layout_entries() -> Vec<BindGroupLayoutEntry> {
     ]
 }
 
-/// The declarative spec for the equirectangular → cube projection pipeline.
+/// Returns the equirectangular-to-cube projection pipeline's spec.
 pub(super) fn equirect_pipeline_spec() -> PipelineSpec {
     bake_pipeline_spec(
         "IBL Equirect Bake",
@@ -125,7 +123,7 @@ pub(super) fn equirect_pipeline_spec() -> PipelineSpec {
     )
 }
 
-/// The declarative spec for the irradiance convolution pipeline.
+/// Returns the irradiance convolution pipeline's spec.
 pub(super) fn irradiance_pipeline_spec() -> PipelineSpec {
     bake_pipeline_spec(
         "IBL Irradiance Bake",
@@ -137,8 +135,8 @@ pub(super) fn irradiance_pipeline_spec() -> PipelineSpec {
     )
 }
 
-/// Shared shape for the bake pipelines: a fullscreen triangle (no vertex
-/// buffer, no depth) writing linear HDR into one target (cube face or 2D LUT).
+/// Returns the shape the bake pipelines share: a fullscreen triangle, no depth,
+/// writing linear HDR into one target.
 fn bake_pipeline_spec(
     label: &'static str,
     shader: &'static str,

@@ -12,13 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! GPU resource management.
-//!
-//! - [`ProjectionRegistry`]: what the GPU holds for the world's meshes and
-//!   materials, in the engine-wide [`AssetStore`](crate::assets::AssetStore);
-//!   the residencies (`crate::residency`) fill it.
-//! - [`AssetEviction`]: frees what the GPU holds for assets no longer used.
-//! - [`ibl`]: image-based lighting bakes.
+//! What the GPU holds for the world's assets ([`ProjectionRegistry`]), its
+//! release once no entity uses them ([`AssetEviction`]), and the image-based
+//! lighting bakes ([`ibl`]).
 
 pub mod eviction;
 pub mod ibl;

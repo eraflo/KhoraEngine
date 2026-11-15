@@ -12,15 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The ticks a page keeps beside its columns.
+//! The ticks a page keeps beside its columns — summary σ, floor φ, row ticks τ —
+//! and its order version ω, read with the page and a key alone.
 //!
-//! Each column of a page carries a summary σ (the latest tick written), a
-//! floor φ (the tick its row history was dropped at) and — for a component
-//! some observer watches — one tick τ per row. A row placed is written at the
-//! clock's tick; a row moved (a swap-remove, a migration, a compaction)
-//! carries its tick and is not a change; a row moved within a page moves the
-//! page's order version ω. Everything is read with the page and a key alone,
-//! never through the `World`.
+//! See the book: concepts/change-detection.md, "Stickers on the rows".
 
 use khora_core::ecs::entity::EntityId;
 
@@ -43,9 +38,8 @@ pub(super) fn advance_to(world: &mut World, tick: u64) {
     }
 }
 
-/// A world storing `Position` and `Velocity` (Spatial) and `RenderId`
-/// (Render), where `Position` is watched by an observer and the other two
-/// are not.
+/// A world storing `Position`, `Velocity` (Spatial) and `RenderId` (Render),
+/// with only `Position` watched by an observer.
 fn world_watching_position() -> World {
     let mut world = World::new();
     world.register_component::<Position>(SemanticDomain::Spatial);
@@ -94,10 +88,9 @@ pub(super) fn row_tick(ticks: &ColumnTicks, row: usize) -> u64 {
 
 // --- reading ---
 
-/// A page answers for its ticks with itself and a key: here the `World` is
-/// gone, its pages taken out of it, and each column of the page still says
-/// when it was written — the founding principle that a page is readable
-/// without its world.
+/// A page answers for its ticks with itself and a key, its `World` gone.
+///
+/// See the book: concepts/ecs.md, "The storage model".
 #[test]
 fn a_page_reads_its_ticks_with_itself_and_a_key() {
     let mut world = world_watching_position();
@@ -132,9 +125,9 @@ fn a_page_reads_its_ticks_with_itself_and_a_key() {
     );
 }
 
-/// Rows placed at different ticks keep their own: each row of a watched
-/// column reads the tick it was placed at, the summary the latest, and the
-/// floor stays where it was — no row history was ever dropped.
+/// Rows placed at different ticks keep their own; the summary reads the latest.
+///
+/// The floor stays where it was: no row history was ever dropped.
 #[test]
 fn rows_placed_at_different_ticks_keep_their_own_ticks() {
     let mut world = world_watching_position();
@@ -159,9 +152,10 @@ fn rows_placed_at_different_ticks_keep_their_own_ticks() {
     }
 }
 
-/// A column nobody watches keeps no tick per row: only its summary, and a
-/// floor that follows it — every row counts as written at the summary, so a
-/// reader asking about it sees all of it or none of it, never too little.
+/// A column nobody watches keeps no tick per row, only its summary and a floor.
+///
+/// The floor follows the summary: every row counts as written at it, so a
+/// reader sees all of the column or none of it, never too little.
 #[test]
 fn an_unobserved_column_holds_only_its_summary() {
     let mut world = world_watching_position();
@@ -191,10 +185,11 @@ fn an_unobserved_column_holds_only_its_summary() {
     );
 }
 
-/// A component watched only from some moment on keeps its rows' ticks from
-/// the next row placed: the column's tick array appears, one tick per row,
-/// the new row at its tick and every earlier row still covered — by its own
-/// tick or by the floor.
+/// A component watched from some moment on keeps its rows' ticks from the
+/// next row placed.
+///
+/// The tick array appears with the new row at its tick; every earlier row
+/// stays covered, by its own tick or by the floor.
 #[test]
 fn a_column_observed_at_run_time_keeps_its_rows_ticks_from_the_next_write() {
     let mut world = World::new();
@@ -226,9 +221,10 @@ fn a_column_observed_at_run_time_keeps_its_rows_ticks_from_the_next_write() {
 
 // --- moving within a page ---
 
-/// A despawn swap-removes its row: the page's last row takes the hole and
-/// its tick comes with it; the order version moves, because a row changed
-/// place; the summary does not, because nothing was written.
+/// A despawn's swap-remove carries the moved row's tick and moves the order
+/// version.
+///
+/// The summary stays: nothing was written.
 #[test]
 fn swap_remove_carries_the_moved_rows_tick_and_bumps_order() {
     let mut world = world_watching_position();
@@ -306,9 +302,10 @@ fn a_despawn_of_the_last_row_bumps_order() {
     );
 }
 
-/// Compaction reclaims a migration's orphan rows: the survivors change place,
-/// so the order version moves — but no survivor is written, so each keeps
-/// its own tick and the summary stays.
+/// Compaction moves the order version but stamps no surviving row.
+///
+/// The survivors change place without being written: each keeps its own
+/// tick, and the summary stays.
 #[test]
 fn compaction_bumps_order_but_no_row_tick() {
     let mut world = world_watching_position();
@@ -360,10 +357,10 @@ fn compaction_bumps_order_but_no_row_tick() {
 
 // --- moving between pages ---
 
-/// Adding a component moves the entity's row to another page: the components
-/// it already had carry their tick there — a migration is not a change, so
-/// the destination's summary is raised to that tick, not to the clock — and
-/// the component added is a fresh row, written now.
+/// A row migrated by an added component carries its tick and is not a change.
+///
+/// The destination's summary rises to the carried tick, not to the clock; the
+/// component added is a fresh row, written now.
 #[test]
 fn a_migrated_row_carries_its_tick_and_is_not_a_change() {
     let mut world = world_watching_position();
@@ -447,9 +444,11 @@ fn a_row_moved_back_by_a_removal_carries_its_tick() {
     );
 }
 
-/// A row leaving a column that kept no row ticks carries the column's floor
-/// — `max(τ, φ)` with τ absent — into a column that keeps them: it is
-/// covered there as it was, and it is still not a change.
+/// A row leaving an unobserved column carries the column's floor into one
+/// that keeps row ticks.
+///
+/// That is `max(τ, φ)` with τ absent: the row is covered there as it was, and
+/// it is still not a change.
 #[test]
 fn a_row_moved_out_of_an_unobserved_column_carries_its_floor() {
     let mut world = World::new();
@@ -513,11 +512,11 @@ fn a_migration_carries_the_ticks_of_every_domain_of_the_row() {
 
 // --- page slots recycled ---
 
-/// A page drained by compaction gives its slot back, and the next page of
-/// any signature takes it. The slot's order version must not start over: a
-/// view that remembered `(page id, ω, rows)` for the page that lived there
-/// would otherwise find the same key on a page holding other entities, and
-/// keep a stale projection.
+/// A page slot freed by compaction and taken again never goes back on its
+/// order version.
+///
+/// A view that remembered `(page id, ω, rows)` for the page that lived there
+/// would otherwise find the same key on a page holding other entities.
 #[test]
 fn a_recycled_page_slot_never_goes_back_on_its_order_version() {
     let mut world = world_watching_position();
@@ -555,10 +554,11 @@ fn a_recycled_page_slot_never_goes_back_on_its_order_version() {
 
 // --- domain moves ---
 
-/// A declared component moved to another domain (a hot reload editing its
-/// `[Domain(..)]`) keeps every value: its rows change page, nothing is
-/// written. Like any move it carries `max(τ, φ)` and is not a change — the
-/// moved column's summary stays at the tick the row was written at.
+/// A declared component moved to another domain carries its rows' ticks and
+/// is not a change.
+///
+/// A hot reload editing its `[Domain(..)]` moves its rows to other pages and
+/// writes nothing: the moved column's summary stays at the row's write tick.
 #[test]
 fn a_domain_move_carries_its_rows_ticks_and_is_not_a_change() {
     use super::runtime_components::{declare, field};
@@ -600,11 +600,11 @@ fn a_domain_move_carries_its_rows_ticks_and_is_not_a_change() {
 
 // --- rows leaving a page ---
 
-/// A row a migration leaves behind stays in its page until compaction, but
-/// it is no longer the entity's: the page's live rows changed. Removing an
-/// entity's only component of a domain touches no other page, so the page
-/// it left is the only place a view can learn that the row went — its order
-/// version must move, as it does for a despawn.
+/// A row left behind by a removal moves its page's order version, as a
+/// despawn does.
+///
+/// Removing an entity's only component of a domain touches no other page, so
+/// the page it left is the only place a view can learn that the row went.
 #[test]
 fn a_row_left_behind_by_a_removal_moves_its_pages_order_version() {
     let mut world = world_watching_position();

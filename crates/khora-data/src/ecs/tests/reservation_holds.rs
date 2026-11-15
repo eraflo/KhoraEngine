@@ -14,11 +14,9 @@
 
 //! Entity ids held across frames for a load prepared off the frame.
 //!
-//! An ordinary reservation is released at the end of its frame. A load
-//! prepared on a worker takes longer than a frame, so it reserves under a
-//! hold: what it holds is released by no frame, handed to no spawn and to no
-//! other reservation, until the load commits it — or gives it back, by being
-//! abandoned or dropped.
+//! What a hold keeps is released by no frame and handed to no spawn or other
+//! reservation until the load commits it, or gives it back by being abandoned
+//! or dropped.
 
 use std::collections::HashSet;
 
@@ -26,10 +24,8 @@ use khora_core::ecs::entity::EntityId;
 
 use crate::ecs::{Transform, World};
 
-/// One frame of a game spawning through scripts and directly: `count` ids
-/// reserved and half of them spawned, `count` entities spawned directly, the
-/// first of the directly spawned despawned, then the frame's end. Returns
-/// every id the frame handed out, spawned or not.
+/// Plays one frame spawning through scripts and directly, with a despawn, and
+/// returns every id it handed out, spawned or not.
 fn busy_frame(world: &mut World, count: usize) -> Vec<EntityId> {
     let reserver = world.reserver();
     let reserved: Vec<EntityId> = (0..count).map(|_| reserver.reserve()).collect();
@@ -45,7 +41,8 @@ fn busy_frame(world: &mut World, count: usize) -> Vec<EntityId> {
     reserved.into_iter().chain(spawned).collect()
 }
 
-/// Asserts what a hold keeps while it holds:
+/// Asserts what a hold keeps while it holds.
+///
 /// - no id of `others` is a held id (index and generation) — an index may be
 ///   handed out again once its previous holder died, with a newer
 ///   generation, and that is no collision;
@@ -71,8 +68,9 @@ fn assert_untouched(world: &World, held: &[EntityId], others: &[EntityId], when:
     }
 }
 
-/// **A held id survives the frame's end.** Over several frames of spawning,
-/// through scripts and directly, with despawns, no frame releases a held
+/// **A held id survives the frame's end.**
+///
+/// Over several frames of spawning and despawning, no frame releases a held
 /// id, and no spawn or reservation is handed its index.
 #[test]
 fn held_ids_survive_the_frames_end_over_several_frames() {
@@ -105,10 +103,10 @@ fn held_ids_survive_the_frames_end_over_several_frames() {
     drop(hold);
 }
 
-/// **A dropped hold gives its ids back, at once.** A hundred holds of eight
-/// ids, each dropped before the next is taken — with no frame in between,
-/// then with one — leave the store as small as one hold needs: the next
-/// reservations are handed the ids given back.
+/// **A dropped hold gives its ids back, at once.**
+///
+/// Holds dropped one after the other, with or without a frame in between,
+/// leave the store as small as one hold needs.
 #[test]
 fn a_dropped_hold_gives_its_ids_back_to_the_next_reservation() {
     let mut world = World::new();
@@ -132,9 +130,9 @@ fn a_dropped_hold_gives_its_ids_back_to_the_next_reservation() {
     assert_eq!(world.entity_count(), 1, "a held id came to life");
 }
 
-/// **A hold reserves on a worker while the world runs its frames.** Ids a
-/// worker reserves under a hold, as frames of spawning go by on the world's
-/// thread, are never handed to a spawn or released by a frame.
+/// **A hold reserves on a worker while the world runs its frames.**
+///
+/// The ids it reserves are never handed to a spawn or released by a frame.
 #[test]
 fn a_hold_reserving_on_a_worker_is_kept_by_the_worlds_frames() {
     let mut world = World::new();
@@ -171,11 +169,10 @@ fn a_hold_reserving_on_a_worker_is_kept_by_the_worlds_frames() {
 }
 
 /// **Every id a hold takes while the world allocates comes to life when the
-/// load commits it.** A worker reserves under a hold while the world's
-/// thread spawns, reserves, despawns, readies recycled ids and ends frames:
-/// the held ids are distinct, none is alive or shares a live entity's
-/// index, and every one is committed — the world then holding exactly its
-/// own entities and the held ones.
+/// load commits it.**
+///
+/// The held ids are distinct, none alive or sharing a live entity's index;
+/// after the commit the world holds exactly its own entities and the held ones.
 #[test]
 fn ids_held_while_the_world_allocates_all_commit() {
     for round in 0..40 {
@@ -275,9 +272,10 @@ fn commit_and_drop_times(count: usize) -> (std::time::Duration, std::time::Durat
     (committed, started.elapsed())
 }
 
-/// **Committing or giving back a load's ids costs in proportion to how many
-/// there are.** A load of four times the entities takes about four times as
-/// long to commit, on the frame, and to give back — not sixteen.
+/// **Committing or giving back a load's ids costs in proportion to their
+/// number.**
+///
+/// Four times the entities take about four times as long, not sixteen.
 #[test]
 fn committing_and_giving_back_held_ids_scales_linearly() {
     let (small_commit, small_drop) = commit_and_drop_times(10_000);
@@ -296,10 +294,10 @@ fn committing_and_giving_back_held_ids_scales_linearly() {
 }
 
 /// **A spawn never takes an id a worker's hold gave back before the world
-/// gave it a slot.** A worker reserves fresh ids under holds and drops them
-/// — giving the ids back, ready, past the end of the store — while the
-/// world's thread spawns and reserves with no slot freed: every entity it
-/// spawns or brings to life is alive, and none twice.
+/// gave it a slot.**
+///
+/// The ids given back sit past the end of the store; every entity the world
+/// spawns or brings to life meanwhile is alive, and none twice.
 #[test]
 fn spawns_racing_given_back_fresh_ids_all_live() {
     for round in 0..200 {
@@ -364,10 +362,9 @@ fn indices(ids: &[EntityId]) -> HashSet<u32> {
     ids.iter().map(|id| id.index).collect()
 }
 
-/// **A hold made from the freed slots hands them out first.** After six
-/// despawns, the hold the world makes of its freed slots reserves exactly
-/// those six slots — each under a newer generation, none alive — before it
-/// reserves any other index.
+/// **A hold made from the freed slots hands them out first.**
+///
+/// Each comes under a newer generation, none alive, before any other index.
 #[test]
 fn a_hold_made_from_freed_slots_hands_them_out_first() {
     let (mut world, freed, alive) = with_freed_slots();
@@ -392,10 +389,10 @@ fn a_hold_made_from_freed_slots_hands_them_out_first() {
     drop(hold);
 }
 
-/// **Freed slots in a hold survive the frame's end.** Over several frames
-/// of spawning, reserving, despawning and ending, no frame takes the held
-/// slots back nor hands one to a spawn or a reservation; the hold still
-/// hands out every one of them afterwards.
+/// **Freed slots in a hold survive the frame's end.**
+///
+/// No frame takes them back nor hands one to a spawn or a reservation; the
+/// hold still hands out every one of them afterwards.
 #[test]
 fn freed_slots_in_a_hold_survive_the_frame_end() {
     let (mut world, freed, _alive) = with_freed_slots();
@@ -427,9 +424,10 @@ fn freed_slots_in_a_hold_survive_the_frame_end() {
     drop(hold);
 }
 
-/// **A dropped hold of freed slots gives them back.** Half of the slots
-/// reserved, the hold dropped: the next spawns are handed every one of the
-/// slots back, rather than indices past the end of the store.
+/// **A dropped hold of freed slots gives them back.**
+///
+/// The next spawns are handed every one of the slots, rather than indices
+/// past the end of the store.
 #[test]
 fn a_dropped_freed_hold_gives_its_slots_back() {
     let (mut world, freed, _alive) = with_freed_slots();

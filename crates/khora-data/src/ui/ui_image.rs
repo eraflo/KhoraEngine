@@ -26,7 +26,7 @@ pub struct UiImage {
 }
 
 impl UiImage {
-    /// Convert to core UI image type.
+    /// Returns the core UI image type.
     pub fn to_core(&self) -> khora_core::ui::types::UiImage {
         khora_core::ui::types::UiImage {
             texture: self.texture,

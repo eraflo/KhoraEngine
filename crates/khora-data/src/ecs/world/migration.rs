@@ -24,16 +24,10 @@ use crate::ecs::page::PageIndex;
 use crate::ecs::{AnyVec, ComponentKey, Tick};
 
 impl World {
-    /// Adds component `key` to `entity`, `push` writing its value as the new
-    /// row of its column.
+    /// Adds component `key` to `entity`, `push` writing its value as the new row of its column.
     ///
-    /// This operation is designed to be fast. It performs the necessary data
-    /// migration to move the entity's row for the component's domain to a new
-    /// `ComponentPage` that matches the new layout.
-    ///
-    /// Crucially, it does NOT clean up the "hole" left in the old page. Instead,
-    /// it returns the location of the orphaned data, delegating the cleanup task
-    /// to the maintenance pass.
+    /// The entity's row migrates to the page of its new signature; the old row
+    /// is returned and left for compaction.
     pub(crate) fn attach(
         &mut self,
         entity_id: EntityId,
@@ -44,8 +38,10 @@ impl World {
         self.attach_at(entity_id, key, push, now)
     }
 
-    /// [`attach`](Self::attach), the added component's row noted as written
-    /// at `added_at` — a component moved rather than added keeps its tick.
+    /// Adds component `key` as [`attach`](Self::attach) does, its row noted as
+    /// written at `added_at`.
+    ///
+    /// A component moved rather than added keeps its tick.
     pub(crate) fn attach_at(
         &mut self,
         entity_id: EntityId,
@@ -53,9 +49,8 @@ impl World {
         push: impl FnOnce(&mut dyn AnyVec),
         added_at: Tick,
     ) -> Result<Option<PageIndex>, AddComponentError> {
-        // Validate EntityId and get metadata — a copy, written back when
-        // the move is done. The slot keeps its metadata meanwhile: an entity
-        // is never seen dead halfway through a change, even one that unwinds.
+        // A copy of the metadata, written back when the move is done: the
+        // entity is never seen dead halfway through, even if it unwinds.
         let Some((id_in_world, Some(current))) = self.entities.get(entity_id.index as usize) else {
             return Err(AddComponentError::EntityNotFound);
         };
@@ -71,7 +66,6 @@ impl World {
 
         let old_location_opt = metadata.locations.get(&domain).copied();
 
-        // Determine old and new page signatures
         let old_keys = old_location_opt.map_or(Vec::new(), |loc| {
             self.storage.pages[loc.page_id as usize].keys.clone()
         });
@@ -81,10 +75,8 @@ impl World {
         let mut new_keys = old_keys.clone();
         new_keys.insert(at, key);
 
-        // Find or create the destination page
         let dest_page_id = self.find_or_create_page_for_signature(&new_keys);
 
-        // Perform the migration
         let dest_row_index;
         {
             let (src_page_opt, dest_page) = match old_location_opt {
@@ -146,16 +138,9 @@ impl World {
         // The whole row moved: every domain of the destination page sees it.
         self.note_page_changed(dest_page_id);
 
-        // Update metadata and put it back.
-        //
-        // The migration copied the entity's *whole* archetype row (every
-        // component in the source page, across all its domains) into the
-        // destination page. A multi-domain entity is stored in one page under
-        // several domain keys all addressing the same `(page, row)` (see
-        // `remove_from_page`), so repoint EVERY co-located domain — not just the
-        // added component's — to keep the entity in one page (the CRPECS
-        // archetype model) and leave the old row fully dead (reclaimable by
-        // compaction) instead of a partial orphan with duplicated columns.
+        // The whole row moved, so every domain addressing it is repointed,
+        // not only the added component's: the old row is left fully dead
+        // rather than a partial orphan.
         let new_location = PageIndex {
             page_id: dest_page_id,
             row_index: dest_row_index,
@@ -168,13 +153,11 @@ impl World {
                     }
                 }
             }
-            // First component in this domain — no prior row to migrate from.
             None => {
                 metadata.locations.insert(domain, new_location);
             }
         }
 
-        // Update the domain bitset for the entity.
         self.storage
             .domain_bitsets
             .entry(domain)
@@ -185,30 +168,24 @@ impl World {
             *slot = metadata;
         }
 
-        // The entity gained a component in this domain — invalidate cached Views.
         self.bump_domain_epoch(domain);
 
-        // Record the abandoned source page so maintenance compacts its
-        // now-orphaned row later (see `StorageManager::dirty_pages`). The
-        // `None` case adds the entity to a domain for the first time, leaving
-        // no orphan behind.
         if let Some(old) = old_location_opt {
             self.orphan_row(old.page_id);
         }
 
-        // Return the old location for cleanup, without performing swap_remove
         Ok(old_location_opt)
     }
 
-    /// Removes component `key` from `entity`, keeping every other component it
-    /// carries (in any domain): the reverse of [`attach`](Self::attach).
+    /// Removes component `key` from `entity`, keeping every other component:
+    /// the reverse of [`attach`](Self::attach).
     pub(crate) fn detach(
         &mut self,
         entity_id: EntityId,
         key: ComponentKey,
     ) -> Result<Option<PageIndex>, RemoveComponentError> {
-        // Validate the entity, and copy its metadata — written back when
-        // the change is done, so the slot is never empty while it runs.
+        // A copy of the metadata, written back when the change is done, so
+        // the slot is never empty while it runs.
         let Some((id_in_world, Some(current))) = self.entities.get(entity_id.index as usize) else {
             return Err(RemoveComponentError::EntityNotFound);
         };
@@ -217,28 +194,23 @@ impl World {
             return Err(RemoveComponentError::EntityNotFound);
         }
 
-        // Resolve the component's domain.
         let Some(domain) = self.storage.registry.domain_of(key) else {
             return Err(RemoveComponentError::ComponentNotRegistered);
         };
 
         let Some(loc) = metadata.locations.get(&domain).copied() else {
-            // Entity isn't in this domain at all.
             return Err(RemoveComponentError::ComponentNotPresent);
         };
 
         let old_keys = &self.storage.pages[loc.page_id as usize].keys;
         let Ok(at) = old_keys.binary_search(&key) else {
-            // Entity is in this domain but doesn't have this component.
             return Err(RemoveComponentError::ComponentNotPresent);
         };
 
-        // Build the new signature (without the component).
         let mut new_keys = old_keys.clone();
         new_keys.remove(at);
 
-        // If it was the last component of the row, just drop the domain
-        // location and bitset bit. No page migration needed.
+        // The last component of the row: nothing to migrate.
         if new_keys.is_empty() {
             metadata.locations.remove(&domain);
             if let Some(bitset) = self.storage.domain_bitsets.get_mut(&domain) {
@@ -247,18 +219,13 @@ impl World {
             if let Some(slot) = self.entities.get_metadata_mut(entity_id) {
                 *slot = metadata;
             }
-            // The entity left this domain entirely — invalidate cached Views.
             self.bump_domain_epoch(domain);
-            // The row is orphaned (metadata no longer references it) — schedule
-            // its page for compaction.
             self.orphan_row(loc.page_id);
             return Ok(Some(loc));
         }
 
-        // Find or create the destination page for the reduced signature.
         let dest_page_id = self.find_or_create_page_for_signature(&new_keys);
 
-        // Migrate every surviving component from src → dest.
         let dest_row_index;
         {
             let (src_page, dest_page) = two_pages(
@@ -304,10 +271,7 @@ impl World {
         // The whole row moved: every domain of the destination page sees it.
         self.note_page_changed(dest_page_id);
 
-        // Update entity metadata to point at the new (page, row). As in
-        // `attach`, the whole archetype row migrated, so repoint every
-        // co-located domain (not just this one) to keep the entity in one page
-        // and leave the old row fully dead.
+        // As in `attach`, every domain addressing the moved row is repointed.
         let new_location = PageIndex {
             page_id: dest_page_id,
             row_index: dest_row_index,
@@ -322,24 +286,18 @@ impl World {
             *slot = metadata;
         }
 
-        // The entity lost a component in this domain — invalidate cached Views.
         self.bump_domain_epoch(domain);
-
-        // Record the abandoned source page so maintenance compacts its
-        // now-orphaned row later.
         self.orphan_row(loc.page_id);
 
-        // Hand the old location off to the GC.
         Ok(Some(loc))
     }
 }
 
-/// Pages `src` and `dest` of `pages`, one shared and one writable.
+/// Returns pages `src` (shared) and `dest` (writable) of `pages`.
 ///
 /// # Panics
 ///
-/// When `src == dest`: a migration always moves a row between two signatures,
-/// so two different pages.
+/// If `src == dest`: a migration moves a row between two signatures, so two pages.
 fn two_pages<T>(pages: &mut [T], src: usize, dest: usize) -> (&T, &mut T) {
     assert_ne!(src, dest, "a migration moves a row between two pages");
     if src < dest {

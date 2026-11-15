@@ -12,33 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Where a script's requests become `World` mutations.
+//! Applies the [`WorldCommand`]s scripts queued in the deck's [`CommandBuffer`]
+//! to the World.
 //!
-//! The other end of [`khora_core::script`]. A script lane cannot write to the
-//! `World` — `RULES.md` §3 — so it queues [`WorldCommand`]s into a
-//! [`CommandBuffer`] slot on the [`OutputDeck`], and this `Maintenance`-phase
-//! `DataSystem` drains the slot and performs them. It is the same
-//! Lane → Deck → DataSystem road the audio and physics writebacks take; nothing
-//! script-specific reaches the engine loop.
-//!
-//! # In emission order, always
-//!
-//! Commands apply exactly in the order they were queued. Grouping them — all the
-//! value writes, then all the structural ones — would run faster on paper and be
-//! wrong: `AddComponent(Health)` followed by `SetComponent(Health, …)` reads as
-//! one thought and would come apart, the write landing before the component
-//! existed. Order is the contract.
-//!
-//! # One bad command is one bad command
-//!
-//! A script that writes to a despawned entity produces a named diagnostic and
-//! the batch continues. Stopping the batch would let one behavior's mistake
-//! silently drop every other behavior's work that frame, which is a far harder
-//! bug to see than the one that caused it.
+//! Commands apply in the order they were queued: an `AddComponent` then a
+//! `SetComponent` of it stay one thought. A failing command is reported and the
+//! batch goes on, so one behavior's mistake never drops the others' work.
+//! See the book: concepts/scripting/writing.md, "A script never writes the world".
 //!
 //! [`WorldCommand`]: khora_core::script::WorldCommand
 //! [`CommandBuffer`]: khora_core::script::CommandBuffer
-//! [`OutputDeck`]: khora_core::lane::OutputDeck
 
 mod applied;
 pub use applied::AppliedWrites;
@@ -55,10 +38,8 @@ use khora_core::Runtime;
 
 use crate::ecs::{DataSystemRegistration, TickPhase, World};
 
-/// Applies every queued command, reporting the ones that fail.
-///
-/// Returns how many were applied, which is what the tests assert on and what a
-/// future telemetry counter would read.
+/// Applies every queued command, logging the ones that fail, and returns how
+/// many applied.
 pub fn apply_all(world: &mut World, buffer: &CommandBuffer) -> usize {
     apply_all_reporting(world, buffer).applied
 }
@@ -92,12 +73,10 @@ fn apply_each(
     use khora_core::script::WorldCommand;
 
     let mut report = ApplyReport::default();
-    // The spawns refused so far. A turn names the entity it spawns at once, so
-    // what it queued after for that id is meant for an entity that never came
-    // to be — never for a live one that happens to hold the same id. Column
-    // writes are not checked row by row: a spawn the world refuses at its own
-    // id is rolled back, so the id names no live entity, and only a reserver
-    // the world does not own hands out an id a live entity holds.
+    // The spawns refused so far: a later command naming one of those ids is
+    // meant for an entity that never came to be, not a live one holding it.
+    // Column writes skip the check: a refused spawn is rolled back, so its id
+    // names no live entity (unless a reserver the world does not own gave it).
     let mut refused: Vec<khora_core::ecs::entity::EntityId> = Vec::new();
     for (index, command) in buffer.iter().enumerate() {
         let names_refused = command.entity().is_some_and(|e| refused.contains(&e))

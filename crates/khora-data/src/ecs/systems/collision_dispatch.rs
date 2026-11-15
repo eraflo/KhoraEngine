@@ -12,35 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Getting this frame's contacts from the deck to whoever listens.
+//! Moves this frame's contacts from the physics lane's [`ContactBatch`] deck
+//! slot into the [`Channel<Collision>`](khora_core::event::Channel).
 //!
-//! The physics lane resolves each contact to two entities and leaves them in a
-//! [`ContactBatch`] deck slot; this drains that slot into the
-//! [`Channel<Collision>`](khora_core::event::Channel) any number of consumers
-//! subscribe to.
-//!
-//! # Why not a component
-//!
-//! Collisions used to be a `CollisionEvents` component, and being one cost more
-//! than it looked. It was **serialized into scene files** — the derive took the
-//! default `Authored` provenance, so a saved scene recorded last frame's
-//! contacts and the editor offered them under "+ Add Component" as editable
-//! JSON. Every entity carrying it received the identical global list rather
-//! than its own contacts. And nothing ever attached it, so every contact Rapier
-//! reported was drained and dropped, every frame.
-//!
-//! Underneath all three: a collision is not a property of an entity. It is a
-//! relation between two, and putting it on one forces a choice of which or a
-//! duplication across both.
-//!
-//! # Why not a callback
-//!
-//! Unity, Unreal and Godot deliver contacts by calling game code from inside
-//! the physics step — reentrant, ordered by nothing in particular, and
-//! impossible to budget, since the engine cannot know what the notification
-//! will cost before it runs. Khora's answer is that a contact is lane output
-//! like any other: it lands on the deck, a data system moves it, and what reads
-//! it does so under a budget it negotiated.
+//! A contact relates two entities, so it is no component; and it is lane
+//! output, not a callback from inside the step, so its readers run under
+//! their own budget.
 
 use crate::ecs::SystemContext;
 use khora_core::event::Channel;
@@ -57,9 +34,8 @@ fn collision_dispatch(
     _ctx: SystemContext,
 ) {
     if !deck.contains::<ContactBatch>() {
-        // The lane did not run this frame — paused, or no provider. Not the
-        // same as "no contacts", and taking the slot would report an empty
-        // frame of physics as a frame of physics with nothing in it.
+        // The lane did not run (paused, or no provider): that is not a frame
+        // with no contacts, and taking the slot would report it as one.
         return;
     }
     let batch = deck.take::<ContactBatch>();
@@ -68,9 +44,7 @@ fn collision_dispatch(
     }
 
     let Some(collisions) = runtime.resources.get::<Channel<Collision>>() else {
-        // No channel installed: a host that does not run physics consumers.
-        // The contacts are dropped here rather than accumulating in the deck,
-        // which is fresh every frame anyway.
+        // A host with no physics consumer: the contacts are dropped.
         return;
     };
     for contact in batch.contacts {
@@ -145,10 +119,8 @@ mod tests {
         assert_eq!(collisions.len(), 1);
     }
 
-    /// **The distinction the old component could not make.** A lane that did
-    /// not run is not a frame with no contacts: one leaves the slot absent, the
-    /// other leaves it empty, and a consumer counting quiet frames needs to
-    /// tell them apart.
+    /// **A lane that did not run is not a frame with no contacts**: its slot is
+    /// absent, not empty, and a consumer counting quiet frames tells them apart.
     #[test]
     fn a_frame_where_physics_did_not_run_reports_nothing() {
         let (runtime, collisions) = wired();

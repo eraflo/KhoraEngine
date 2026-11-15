@@ -12,21 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The components' own checks, run on the world as it is now.
+//! Runs the components' own checks (`#[component(check = …)]`) over the world
+//! and reports what they find to [`Problems`] as [`ProblemSource::Data`].
 //!
-//! A component that can hold values the engine cannot use declares a check
-//! (`#[component(check = …)]`); its registration carries it. Each tick of
-//! [`TickPhase::Maintenance`], after the script commands land, this system
-//! runs every registration's check over the world and reports what they find
-//! to the shared [`Problems`] as [`ProblemSource::Data`]: one problem per
-//! field, located by entity, component and field. The report replaces the
-//! previous one, so a fixed value's problem leaves; reporting the same list
-//! again changes nothing. A problem appearing or leaving is logged once,
-//! never every frame. No value is rewritten.
+//! One problem per field, located by entity, component and field. Each report
+//! replaces the last, so a fixed value's problem leaves. A problem is logged
+//! when it appears and when it leaves, never every frame. No value is rewritten.
 //!
 //! [`Problems`]: khora_core::problems::Problems
 //! [`ProblemSource::Data`]: khora_core::problems::ProblemSource::Data
-//! [`TickPhase::Maintenance`]: crate::ecs::TickPhase::Maintenance
 
 use crate::ecs::SystemContext;
 use std::sync::Arc;
@@ -38,9 +32,8 @@ use khora_core::Runtime;
 use crate::ecs::{DataSystemRegistration, TickPhase, World};
 use crate::scene::ComponentRegistration;
 
-/// Runs every registered component check over `world` and reports what they
-/// find to the runtime's `Arc<Problems>` under `ProblemSource::Data`. A
-/// runtime without `Problems` has nowhere to report: the system returns.
+/// Reports every registered component check's findings on `world` to the
+/// runtime's `Arc<Problems>`; does nothing on a runtime without one.
 pub(crate) fn component_checks(
     world: &mut World,
     runtime: &Runtime,
@@ -388,9 +381,8 @@ mod tests {
         );
     }
 
-    /// A disabled light shines nothing, but its values are still broken —
-    /// enabling it would not light: a disabled spot whose range is 0 is still
-    /// one `Data` problem, on that light's range.
+    /// **A disabled light is still checked**: enabling a spot whose range is 0
+    /// would not light, so it is one `Data` problem on its range.
     #[test]
     fn a_disabled_broken_light_is_still_reported() {
         use crate::ecs::Light;

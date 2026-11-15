@@ -23,9 +23,11 @@ use crate::ecs::page::ComponentPage;
 use crate::ecs::ColumnTicks;
 use crate::ecs::{ComponentKey, Tick};
 
-/// Writable access to one row of one component. Reading through it
-/// (`Deref`) is not a change; the first write through it (`DerefMut`) stamps
-/// the row with the run's tick and raises its column's summary.
+/// Writable access to one row of one component, which notes its first write.
+///
+/// Reading through it (`Deref`) is not a change; the first write through it
+/// (`DerefMut`) stamps the row with the run's tick. See the book:
+/// concepts/change-detection.md, "Writing: the guard".
 ///
 /// Not `Send`: guards over rows of one column note their writes in the same
 /// ticks, so two of them on two threads would race on them.
@@ -44,11 +46,10 @@ enum Ticks {
     /// The column's ticks, reached directly.
     #[cfg(test)]
     Column(*mut ColumnTicks),
-    /// The ticks of column `key` in `page`, looked up when the write is
-    /// noted, so that guards over one column may live together: none of
-    /// them keeps a pointer into the page's ticks while another may write
-    /// them. An `observed` column without row ticks gains them then — in
-    /// this page alone, and only once something is written.
+    /// The ticks of column `key` in `page`, looked up when the write is noted.
+    ///
+    /// Looked up late so guards over one column may live together. An
+    /// `observed` column without row ticks gains them on the first write.
     Page {
         page: *mut ComponentPage,
         key: ComponentKey,
@@ -59,8 +60,7 @@ enum Ticks {
 }
 
 impl<'w, T> Mut<'w, T> {
-    /// A guard over `value`, row `row` of the column whose ticks are `ticks`,
-    /// stamping `tick` on its first write.
+    /// Returns a guard over `value`, row `row` of the column whose ticks are `ticks`.
     ///
     /// # Safety
     ///
@@ -77,11 +77,10 @@ impl<'w, T> Mut<'w, T> {
         Self::with(value, Ticks::Column(ticks), row, tick)
     }
 
-    /// A guard over `value`, row `row` of column `key` in `page`, stamping
-    /// `tick` on its first write — giving the column row ticks first when it
-    /// is `observed` and keeps none — and raising `epoch`, its domain's
-    /// change epoch, to that tick. Guards made this way over one column may
-    /// live together.
+    /// Returns a guard over `value`, row `row` of column `key` in `page`.
+    ///
+    /// Its first write stamps `tick` and raises `epoch`, the domain's change
+    /// epoch. Guards made this way over one column may live together.
     ///
     /// # Safety
     ///
@@ -122,8 +121,7 @@ impl<'w, T> Mut<'w, T> {
         }
     }
 
-    /// Writes `value` only when it differs from the one held, stamping the
-    /// row then; whether it wrote.
+    /// Writes `value` only when it differs from the one held; returns whether it wrote.
     pub fn set_if_neq(&mut self, value: T) -> bool
     where
         T: PartialEq,
@@ -135,16 +133,14 @@ impl<'w, T> Mut<'w, T> {
         true
     }
 
-    /// The value, writable, without stamping the row: a write through it is
-    /// not seen as a change.
+    /// Returns the value writable without stamping the row: the write is not seen as a change.
     pub fn bypass_change_detection(&mut self) -> &mut T {
         // SAFETY: `value` is valid for `'w` and no other reference to it is
         // live (see the constructors); the borrow is tied to `&mut self`.
         unsafe { &mut *self.value }
     }
 
-    /// The value, writable for all of `'w`: the row is stamped now, as
-    /// though written — whoever takes it may write it anywhere after.
+    /// Returns the value writable for all of `'w`, stamping the row now as though written.
     pub fn into_inner(mut self) -> &'w mut T {
         self.stamp();
         // SAFETY: as `bypass_change_detection`; the guard is consumed, so the

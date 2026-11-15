@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! An instance seen against its prefab: which instance an entity belongs
-//! to, what its prefab says, and writing an instance's overrides back into
-//! its prefab.
+//! An instance seen against its prefab: which instance an entity belongs to,
+//! what its prefab says, and writing its overrides back into the prefab.
+//! See the book: concepts/prefabs.md, "Seeing and editing overrides".
 
 use std::collections::{HashMap, HashSet};
 
@@ -70,8 +70,9 @@ pub enum PrefabApply {
     Instance,
 }
 
-/// The innermost prefab instance whose members include `entity` — the
-/// entity itself or one of its ancestors being the root — or `None`.
+/// Returns the innermost prefab instance whose members include `entity`, if any.
+///
+/// The instance root is `entity` itself or one of its ancestors.
 pub fn instance_of(
     world: &World,
     entity: EntityId,
@@ -104,9 +105,12 @@ pub fn instance_of(
     None
 }
 
-/// A scratch world holding `instance`'s prefab expanded under the instance
-/// root's identity: each member is found there by its persistent id, with
-/// the prefab's values.
+/// Returns a scratch world holding `instance`'s prefab expanded under the root's identity.
+///
+/// Each member is found there by its persistent id, with the prefab's values.
+///
+/// # Errors
+/// The instance root is not alive, or the prefab cannot be expanded.
 pub fn prefab_world(
     world: &World,
     instance: &InstanceOf,
@@ -132,9 +136,19 @@ pub fn prefab_world(
 /// rather than describe the prefab: never applied with the whole instance.
 const PLACEMENT: [&str; 2] = ["translation", "rotation"];
 
-/// `instance`'s prefab with `what` written into it from the live world, as
-/// the prefab's file is to hold it: in the prefab's own ids, its nested
-/// instances kept as links, never a link to itself.
+/// Returns `instance`'s prefab with `what` written into it from the live world.
+///
+/// The record is what the prefab's file is to hold: the prefab's own ids, its
+/// nested instances as links, never a link to itself. Applying the whole
+/// instance writes neither the root's placement nor any member's parent; a
+/// component or field applied alone is written as named. A reference to an
+/// entity outside the prefab, other than a parent, is written as naming none.
+/// See the book: concepts/prefabs.md, "Seeing and editing overrides".
+///
+/// # Errors
+/// The instance's root is not alive, the prefab cannot be read, the instance
+/// cannot be captured, an entity is not part of the instance, or a parent would
+/// name an entity outside the prefab.
 pub fn apply_to_prefab(
     world: &World,
     instance: &InstanceOf,
@@ -286,7 +300,7 @@ pub fn apply_to_prefab(
     )
 }
 
-/// Whether `value` names nothing anywhere in it.
+/// Returns whether `value` holds, anywhere in it, a reference to no entity.
 fn names_nothing(value: &Record) -> bool {
     match value {
         Record::Entity(EntityRef::Outside) => true,
@@ -299,7 +313,7 @@ fn names_nothing(value: &Record) -> bool {
     }
 }
 
-/// The live value of `component` on the member known as `live`.
+/// Returns the live value of `component` on the member known as `live`.
 fn live_component(
     rows: &HashMap<PersistentId, Vec<(String, Record)>>,
     live: PersistentId,
@@ -318,8 +332,7 @@ fn set_component(components: &mut Vec<(String, Record)>, name: &str, value: Reco
     }
 }
 
-/// `value` with every reference to an entity outside `held` written as
-/// naming none.
+/// Returns `value` with every reference to an entity outside `held` naming none.
 fn within_prefab(value: &Record, held: &HashSet<PersistentId>) -> Record {
     match value {
         Record::Entity(EntityRef::Id(id)) if !held.contains(id) => {
@@ -380,7 +393,7 @@ fn within_prefab(value: &Record, held: &HashSet<PersistentId>) -> Record {
     }
 }
 
-/// The field `name` of a struct value.
+/// Returns the field `name` of a struct value.
 fn field_of<'r>(value: &'r Record, name: &str) -> Option<&'r Record> {
     match value {
         Record::Struct { fields, .. }
@@ -395,8 +408,7 @@ fn field_of<'r>(value: &'r Record, name: &str) -> Option<&'r Record> {
     }
 }
 
-/// The value at `path` in `value`: struct fields by name, an enum's payload
-/// through its variant's name.
+/// Returns the value at `path` in `value`, an enum's payload reached by its variant's name.
 fn at<'r>(value: &'r Record, path: &[String]) -> Option<&'r Record> {
     let Some((first, rest)) = path.split_first() else {
         return Some(value);
@@ -420,9 +432,10 @@ fn at<'r>(value: &'r Record, path: &[String]) -> Option<&'r Record> {
     }
 }
 
-/// `target` with the value `source` holds at `path` written in at the same
-/// path. Where `path` does not lead through `target` — another variant, a
-/// field it lacks — the field `path` starts with is written whole.
+/// Returns `target` with the value `source` holds at `path` written at the same path.
+///
+/// Where `path` does not lead through `target` (another variant, a field it
+/// lacks), the field `path` starts with is written whole.
 fn with_field(target: &Record, source: &Record, path: &[String]) -> Record {
     match at(source, path) {
         Some(value) => replaced(target, path, value).unwrap_or_else(|| {
@@ -440,7 +453,7 @@ fn with_field(target: &Record, source: &Record, path: &[String]) -> Record {
     }
 }
 
-/// `target` with `value` at `path`, if `path` leads through it.
+/// Returns `target` with `value` at `path`, if `path` leads through it.
 fn replaced(target: &Record, path: &[String], value: &Record) -> Option<Record> {
     let Some((first, rest)) = path.split_first() else {
         return Some(value.clone());

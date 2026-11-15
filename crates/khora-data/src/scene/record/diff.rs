@@ -12,24 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What changed in a value, field by field, and putting it back.
-//!
-//! Two structs of the same name differ field by field: a patch lists only the
-//! fields that changed, recursively through same-named structs. Any other value
-//! is replaced whole. `patch(base, &diff(base, now)) == now` for every pair.
-//!
-//! The base is always a value as this build reads it — named, typed — while
-//! a patch may come back from a format that drops struct names, a struct
-//! written as a map keyed by field name. Against a base struct such a map is
-//! that struct's patch: the base says what the value is. Two maps are never
-//! merged — a map may be a real map, whose removed keys a patch cannot say.
+//! What changed in a value, field by field, and the patch that puts it back.
 
 use super::value::{Record, VariantPayload};
 
-/// The patch that turns `base` into `now`.
+/// Returns the patch that turns `base` into `now`.
 ///
-/// An unchanged struct is an empty patch; an unchanged value of any other kind
-/// is its own value — patching with it changes nothing.
+/// Same-named structs differ field by field, recursively, and an unchanged one
+/// is an empty patch; any other value is replaced whole.
+/// `patch(base, &diff(base, now)) == now` when same-named structs have the same
+/// fields set — both values as this build reads them.
 pub fn diff(base: &Record, now: &Record) -> Record {
     match (base, now) {
         (
@@ -53,8 +45,11 @@ pub fn diff(base: &Record, now: &Record) -> Record {
     }
 }
 
-/// `base`, with `patch` applied: every field the patch names takes the
-/// patch's value, every other keeps the base's.
+/// Returns `base` with `patch` applied: each field the patch names takes its value.
+///
+/// The base says what the value is: against a base struct, a map keyed by field
+/// name is that struct's patch, as a format that drops struct names writes it.
+/// Two maps are never merged: a real map's removed keys cannot be said.
 pub fn patch(base: &Record, patch: &Record) -> Record {
     let Record::Struct {
         name,
@@ -87,9 +82,8 @@ pub fn patch(base: &Record, patch: &Record) -> Record {
     }
 }
 
-/// The fields `patch` sets on a struct named `name`: those of a struct of that
-/// name, or of a map keyed by field name — the struct, written by a format
-/// that drops names.
+/// The fields `patch` sets on a struct named `name`: a same-named struct's, or
+/// a map's keyed by field name.
 fn patch_fields<'r>(name: &str, patch: &'r Record) -> Option<Vec<(&'r str, &'r Record)>> {
     match patch {
         Record::Struct {

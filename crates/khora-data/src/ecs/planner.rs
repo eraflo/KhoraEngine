@@ -12,19 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Internal query planning and caching.
+//! The cache of query plans, by signature.
 
 use crate::ecs::{ComponentKey, QueryPlan};
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-/// Internal manager for query plans and strategies.
-///
-/// The `QueryPlanner` acts as a strategic brain for the ECS, analyzing component
-/// query signatures to determine the most efficient execution path. It caches
-/// generated `QueryPlan`s to avoid redundant analysis for frequently used queries.
+/// The world's query plans, cached by the signature they were made for.
 pub(crate) struct QueryPlanner {
-    /// A thread-safe cache mapping from a set of component keys to an optimized `QueryPlan`.
+    /// The plan of each signature queried so far.
     pub(crate) query_cache: RwLock<HashMap<Vec<ComponentKey>, QueryPlan>>,
 }
 

@@ -12,12 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A declared component changes domain.
-//!
-//! An author edits `[Domain(Script)]` to `[Domain(Physics)]` and reloads: every
-//! row of the component moves to its entity's page of the new domain, its
-//! values intact, beside the entity's other components of that domain — and
-//! the domain is how a script names a domain, `SemanticDomain::name`.
+//! A declared component changes domain: each row moves, values intact, to its entity's page
+//! of the new domain. A script names a domain by `SemanticDomain::name`.
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{ComponentName, ScriptValue};
@@ -68,9 +64,8 @@ fn page_holds(world: &World, entity: EntityId, domain: SemanticDomain, key: Comp
     })
 }
 
-/// A world where `Wake` (Script domain: `strength`, `label`) is held by an
-/// entity that holds nothing else and by one that also holds a `Tick` (Script)
-/// and a `Mass` (Physics).
+/// A world where `Wake` (Script: `strength`, `label`) is held by an entity alone and by one
+/// that also holds a `Tick` (Script) and a `Mass` (Physics).
 fn wakes() -> (World, ComponentKey, EntityId, EntityId) {
     let mut world = World::new();
     world.register_component::<Mass>(SemanticDomain::Physics);
@@ -136,9 +131,8 @@ fn an_unknown_domain_name_is_none() {
 
 // --- moves ---
 
-/// **The rows move, the values stay.** After `Script` → `Physics`, the
-/// component is a Physics component: each holder's Physics page holds its row,
-/// with the values it had, and a Script page it left no longer does.
+/// **The rows move, the values stay**: after `Script` → `Physics`, each holder's Physics
+/// page holds its row with its values, and the Script page it left does not.
 #[test]
 fn a_domain_move_keeps_every_value() {
     let (mut world, wake, alone, crowded) = wakes();

@@ -16,10 +16,7 @@
 
 use std::any::Any;
 
-/// An internal helper trait to perform vector operations on a type-erased `Box<dyn Any>`.
-///
-/// This allows us to call methods like `swap_remove` on component columns without
-/// needing to know their concrete `Vec<T>` type at compile time.
+/// A component column whose concrete type its caller does not know.
 pub trait AnyVec: Any + Send + Sync {
     /// Casts the trait object to `&dyn Any`.
     fn as_any(&self) -> &dyn Any;
@@ -39,7 +36,6 @@ pub trait AnyVec: Any + Send + Sync {
     }
 }
 
-// We implement this trait for any `Vec<T>` where T is `'static`.
 impl<T: 'static + Send + Sync> AnyVec for Vec<T> {
     fn as_any(&self) -> &dyn Any {
         self

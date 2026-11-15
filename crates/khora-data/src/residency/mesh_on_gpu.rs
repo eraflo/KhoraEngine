@@ -12,15 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `MeshOnGpu` — a CPU mesh as vertex and index buffers.
-//!
-//! Its DataSystem is `gpu_mesh_sync`
-//! ([`ProjectionRegistry::sync_all`](crate::ProjectionRegistry::sync_all)),
-//! at `TickPhase::PreExtract` after the asset reload and the resolver, so it
-//! lands before `RenderFlow` projects the world. The
-//! residents live in the `AssetStore`'s `Assets<GpuMesh>`, which the render
-//! lanes read, and the asset reload retires a changed mesh's entry so it is
-//! made again.
+//! `MeshOnGpu`: a CPU mesh as vertex and index buffers, kept in the
+//! `AssetStore`'s `Assets<GpuMesh>` the render lanes read. Its DataSystem runs
+//! [`ProjectionRegistry::sync_all`](crate::ProjectionRegistry::sync_all).
 
 use std::sync::Arc;
 

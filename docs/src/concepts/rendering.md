@@ -134,16 +134,21 @@ there, a sky drawn afterwards would repaint the glass. The frame graph folds the
 passes in this order:
 
 ```
+ShadowPass        fills the shadow atlas every lit pass samples
 ScenePass         opaque draws — clears colour + depth, writes depth
 SkyboxPass        paints where the opaque geometry left the far plane
 TransparentPass   blended draws, farthest first — tests depth, writes none
-OverlayPass       grid, wireframe, gizmos
 UiPass            the UI
+GridPass          the editor grid
+WireframePass     wireframes
+GizmoPass         gizmos
 ```
 
+The opaque pass, not the sky, clears the target, so a frame with no skybox family
+loses only its sky.
+
 Draw a transparent object against the sky and it composites over the sky, as it
-should. Before the passes were split it disappeared there — while the half of it
-overlapping a wall stayed, because the wall had written depth.
+should.
 
 **For glass, set `double_sided: true`.** Otherwise back faces are culled and a
 sphere you can see into looks hollow.

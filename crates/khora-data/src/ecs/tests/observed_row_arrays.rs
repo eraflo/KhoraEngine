@@ -26,10 +26,8 @@ fn position() -> ComponentKey {
     ComponentKey::of::<Position>()
 }
 
-/// One entity holding `Position` alone (its own page), one holding
-/// `Position` and `Velocity` (another page), both placed before anyone
-/// watched `Position` — so neither page keeps row ticks for it — and then
-/// `Position` watched, as a script's component is at run time.
+/// Two pages holding `Position`, one with `Velocity`, both filled before
+/// `Position` is watched late, as a script's component is at run time.
 fn watched_late() -> (World, EntityId, EntityId) {
     let mut world = World::new();
     world.register_component::<Position>(SemanticDomain::Spatial);

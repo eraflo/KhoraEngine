@@ -12,26 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `PhysicsFlow` — read-only projection of the physics domain.
-//!
-//! `Flow::project` publishes a small [`PhysicsView`] (statistics) consumed by
-//! telemetry and the editor. Per CLAD, a Flow never mutates the World.
-//!
-//! The **ECS → physics-provider sync** (registering `RigidBody`s / `Collider`s
-//! with the [`PhysicsProvider`], updating handles, cleaning up orphans) is a
-//! maintenance invariant, so it lives in the `physics_provider_sync`
-//! `DataSystem` below (`PreExtract` phase, before the physics lane steps), not
-//! in the Flow.
-//!
-//! Distance-based *gameplay* gating (detaching a `RigidBody` when far from the
-//! camera) is **not** done here: it changes the simulation, so it is
-//! developer-authored (opt-in), never an automatic engine default. See
-//! `.agent/rules.md` — *adapt the HOW, never the WHAT*.
-//!
-//! The matching `physics_world_writeback` `DataSystem`
-//! ([`crate::ecs::systems::physics_world_writeback`], `Maintenance` phase) runs
-//! after the lane's `provider.step(dt)` and pulls the new transforms, kinematic
-//! results, and collision events from the provider back into the World.
+//! `PhysicsFlow`, which publishes the physics statistics, and the
+//! `physics_provider_sync` DataSystem, which registers the world's bodies and
+//! colliders with the [`PhysicsProvider`] before the physics lane steps.
 
 use crate::ecs::SystemContext;
 use std::collections::{HashMap, HashSet};
@@ -54,25 +37,23 @@ use crate::register_flow;
 
 pub use super::physics_step_result::PhysicsStepResult;
 
-/// View published into the [`LaneBus`](khora_core::lane::LaneBus) by
-/// `PhysicsFlow`. Carries per-frame physics statistics for downstream
-/// consumers (telemetry, editor panels).
+/// This frame's physics statistics, for telemetry and the editor, published
+/// by [`PhysicsFlow`].
 #[derive(Debug, Default, Clone)]
 pub struct PhysicsView {
     /// Number of entities currently carrying an active `RigidBody`.
     pub active_bodies: usize,
-    /// Number of entities whose `RigidBody` has been stashed by AGDF.
+    /// Number of entities whose `RigidBody` is stashed; the engine stashes none
+    /// on its own.
     pub stashed_bodies: usize,
     /// World-space camera position used as the relevance anchor.
     pub camera_anchor: Option<Vec3>,
 }
 
-/// Read-only physics presentation Flow.
+/// Publishes [`PhysicsView`], from the rigid bodies and the active camera.
 ///
-/// Deliberately **uncached** (no `cache_key` override): while the
-/// simulation runs, the per-frame provider sync and transform writeback
-/// mutate the Physics/Spatial domains anyway, so a cache would never hit —
-/// it would only add key computation and a clone to every tick.
+/// Uncached: while the simulation runs, the provider sync and the writeback
+/// move the Physics and Spatial epochs every frame, so a cache would never hit.
 #[derive(Default)]
 pub struct PhysicsFlow;
 
@@ -87,7 +68,7 @@ impl Flow for PhysicsFlow {
         let active_bodies = world.query::<&RigidBody>().count();
         PhysicsView {
             active_bodies,
-            // No automatic AGDF gameplay gating — nothing is stashed.
+            // Stashing a body would change the simulation: never automatic.
             stashed_bodies: 0,
             camera_anchor: active_camera_position(world),
         }
@@ -96,10 +77,11 @@ impl Flow for PhysicsFlow {
 
 register_flow!(PhysicsFlow);
 
-/// `DataSystem` (`PreExtract`) — syncs the ECS physics state into the
-/// [`PhysicsProvider`] backend before the physics lane steps it. This is the
-/// maintenance work that used to live in `PhysicsFlow::adapt`; moving it out
-/// keeps the Flow a read-only projector.
+/// Registers the world's bodies and colliders with the [`PhysicsProvider`]
+/// before the physics lane steps it.
+///
+/// A DataSystem rather than part of the Flow: it writes the handles back into
+/// the components.
 fn physics_provider_sync(
     world: &mut World,
     runtime: &Runtime,
@@ -144,14 +126,11 @@ fn active_camera_position(world: &World) -> Option<Vec3> {
     None
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// ECS → Physics provider sync (was StandardPhysicsLane::sync_to_world)
-// ─────────────────────────────────────────────────────────────────────
-
-/// Registers / updates every `RigidBody` and `Collider` in `world` with
-/// `provider`, and cleans up orphaned handles. Mutates entity component
-/// fields in place (`rb.handle`, `collider.handle`) so the matching
-/// `physics_world_writeback` DataSystem can find them later.
+/// Adds or updates every `RigidBody` and `Collider` with `provider`, and
+/// removes what no entity holds.
+///
+/// Each new handle is written into its component, where the
+/// `physics_world_writeback` DataSystem finds it.
 fn sync_to_provider(world: &mut World, provider: &mut dyn PhysicsProvider) {
     let mut active_bodies = HashSet::new();
     let mut active_colliders = HashSet::new();
@@ -192,13 +171,10 @@ fn sync_rigid_bodies(
         };
 
         let handle = if let Some(handle) = rb.handle {
-            // Told, not guessed. This used to compare the provider's pose to
-            // the entity's and call anything over a centimetre a teleport —
-            // which fires on a fast body's own motion and misses a 3 mm nudge,
-            // because integration drift and a deliberate move produce the same
-            // "they differ". Whoever moves an entity now marks it, and the
-            // marker is cleared below so a body is not dragged back to its
-            // authored pose every frame after.
+            // Told, not guessed: whoever moves an entity marks it, and the
+            // marker is cleared below so the body is not dragged back to its
+            // authored pose every frame after. See the book:
+            // concepts/physics.md, "Moving something is declared, not inferred".
             if teleported.contains(&entity_id) {
                 provider.set_body_transform(handle, current_pos, current_rot);
             }
@@ -287,10 +263,8 @@ fn build_collider_desc(
 ) -> ColliderDesc {
     let (parent_handle, parent_id) = find_parent_body(entity_id, parent_map, rb_map);
 
-    // An attached collider is described in its body's frame — the provider
-    // reads the pose as the offset from the body. Sending the world pose here,
-    // as the common case (collider and body on one entity) used to, put every
-    // shape at twice its distance from the origin.
+    // An attached collider is described in its body's frame: the provider
+    // reads the pose as the offset from the body.
     let (pos, rot) = match parent_id {
         // Centred on the body it belongs to.
         Some(body_id) if body_id == entity_id => (Vec3::ZERO, Quat::IDENTITY),
@@ -328,15 +302,12 @@ fn build_collider_desc(
     }
 }
 
-/// An authored shape at the size the entity is drawn at.
+/// Returns an authored shape at the size the entity is drawn at.
 ///
-/// A `Collider`'s shape is in the entity's local units, like its mesh, so a
-/// crate scaled 2 collides at twice its authored size. A box scales per axis —
-/// its axes are the entity's. A sphere and a capsule's round section stay
-/// round, so they take the largest scale that reaches them; a scale that skews
-/// (a rotated child of a non-uniformly scaled parent) has no exact form in
-/// these shapes and is read axis by axis, as every engine with primitive
-/// colliders does. `scale` is a length per axis, so a mirror changes nothing.
+/// The shape is in the entity's local units, like its mesh. A box scales per
+/// axis; a sphere and a capsule's round section stay round, taking the largest
+/// scale that reaches them. A skewing scale is read axis by axis, and a mirror
+/// changes nothing.
 fn scaled_shape(shape: &ColliderShape, s: Vec3) -> ColliderShape {
     match shape {
         ColliderShape::Box(half) => {
@@ -349,6 +320,8 @@ fn scaled_shape(shape: &ColliderShape, s: Vec3) -> ColliderShape {
     }
 }
 
+/// Returns the body nearest `entity_id` among it and its ancestors, and the
+/// entity holding it.
 fn find_parent_body(
     entity_id: EntityId,
     parent_map: &HashMap<EntityId, EntityId>,

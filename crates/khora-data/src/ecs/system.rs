@@ -12,17 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `DataSystem` — invariant systems of the Data layer.
-//!
-//! A `DataSystem` is a pure function over `&mut World` that runs every tick
-//! at a declared [`TickPhase`]. They are the home of the Data layer's
-//! self-maintenance work — hierarchy fix-ups (e.g. `transform_propagation`),
-//! storage compaction, deferred cleanup — i.e. invariants that *must* hold
-//! before the CLAD descent runs.
-//!
-//! Systems are auto-discovered at link time via [`inventory`]. Adding a new
-//! invariant is a matter of one file plus an [`inventory::submit!`]: zero
-//! changes are required in the engine, scheduler, or any agent.
+//! `DataSystem`s: functions over `&mut World` that keep the data layer's
+//! invariants, run at a declared [`TickPhase`] and registered through [`inventory`].
 //!
 //! # Example
 //!
@@ -45,76 +36,61 @@
 //!     }
 //! }
 //! ```
-//!
-//! # Phases
-//!
-//! See [`TickPhase`] for the available phases and their intended use.
 
 use crate::ecs::{ComponentKey, Role, Tick, World};
 use khora_core::lane::{OutputDeck, Staged};
 use khora_core::Runtime;
 
-/// Tick phases at which [`DataSystem`]s are dispatched.
+/// The moments of a frame at which `DataSystem`s run, in frame order.
 ///
-/// The order below reflects their position in the engine tick:
-/// `Boundary` runs first (the frame boundary, before any agent simulates),
-/// `Maintenance` runs last (after all agent work is finished).
+/// See the book: concepts/the-frame.md, "The six-stage descent".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TickPhase {
-    /// The frame boundary: runs once the families on and off are settled, the
-    /// allocation is lent and the layers are swapped, before
-    /// `PreSimulation`. Where what spans frames lands: a system here takes
-    /// what the background runs staged ([`SystemContext::staged`]), so a
-    /// frame sees background work only as applied at its own boundary.
+    /// The frame boundary, once families are settled and layers swapped.
+    ///
+    /// Where background work lands ([`SystemContext::staged`]), so a frame
+    /// sees it only as applied at its own boundary.
     Boundary,
 
-    /// Runs before any simulation. Input-driven mutations, scene events,
-    /// anything that should be visible to agents at the start of their
-    /// frame.
+    /// Before any simulation: input-driven mutations and scene events.
     PreSimulation,
 
-    /// Runs after simulation, before extraction. Hierarchy fix-ups
-    /// (`transform_propagation`), invariant restoration that the agents
-    /// might have broken.
+    /// After simulation, before extraction: hierarchy fix-ups and other invariants.
     PostSimulation,
 
-    /// Runs right before extraction. Last chance to mutate the world before
-    /// `Flow`s project it to lanes — material syncs, GPU resource sync, etc.
+    /// Right before `Flow`s project the world to lanes: GPU resource syncs.
     PreExtract,
 
-    /// Runs at the end of the tick. Storage compaction, deferred cleanup,
-    /// best-effort idempotent maintenance.
+    /// At the end of the frame: lane writebacks, storage compaction, GPU asset
+    /// eviction, deferred cleanup.
     Maintenance,
 }
 
-/// What the runner hands a [`DataSystem`] beside the world: what it has
-/// already seen of it.
+/// What the runner hands a `DataSystem` beside the world: what it has already seen of it.
 #[derive(Debug, Clone, Copy)]
 pub struct SystemContext {
-    /// The tick at which this system last ran on this world — `Tick(0)` the
-    /// first time. `world.query::<(…, Changed<T>)>().since(ctx.since)` reads
-    /// what changed since its last run.
+    /// The tick at which this system last ran on this world, `Tick(0)` the first time.
+    ///
+    /// `world.query::<(…, Changed<T>)>().since(ctx.since)` reads what changed since.
     pub since: Tick,
-    /// Whether this run starts the system over on this world: its first run
-    /// on it, or its first run after the runner skipped it (it serves a
-    /// family that was off, [`DataSystemRegistration::role`]). `false` on a
-    /// run that follows its previous run with no skip between.
+    /// Whether this run starts the system over: its first, or its first after a skip.
+    ///
+    /// A system is skipped while the family it serves is off ([`DataSystemRegistration::role`]).
     pub resumed: bool,
-    /// The marker the system's family is limited to, when the family is
-    /// scoped (`khora_core::agent::State::Scoped`): a system reading the
-    /// World works on the entities holding it. `None` for a family on
-    /// unscoped, and for an [`Upkeep`](Role::Upkeep) system. A marker name
-    /// the world does not know is the key a component declared under that
-    /// name would have, [`ComponentKey::named`], which no entity holds.
+    /// The marker a scoped family is limited to: the system works on the entities holding it.
+    ///
+    /// `None` for an unscoped family and an [`Upkeep`](Role::Upkeep) system.
+    /// An unknown marker name is still keyed by [`ComponentKey::named`], which
+    /// no entity holds.
     pub scope: Option<ComponentKey>,
 }
 
 impl SystemContext {
-    /// Takes everything the runtime's
-    /// [`Reserve`](khora_core::lane::Reserve) holds of `T`, oldest first:
-    /// what the background runs staged and no boundary took yet. Nothing when
-    /// the runtime holds no reserve. Read in [`TickPhase::Boundary`], where a
-    /// frame applies what spans frames.
+    /// Takes every `T` the background runs staged and no boundary took yet.
+    ///
+    /// Read from the runtime's [`Reserve`](khora_core::lane::Reserve), oldest
+    /// first; nothing when the runtime holds no reserve. Read in
+    /// [`TickPhase::Boundary`].
     pub fn staged<T: Staged>(&self, runtime: &Runtime) -> Vec<T> {
         runtime
             .look_up::<khora_core::lane::Reserve>()
@@ -123,43 +99,28 @@ impl SystemContext {
     }
 }
 
-/// Registration entry for a [`DataSystem`].
+/// The registration of a `DataSystem`, submitted with [`inventory::submit!`].
 ///
-/// One entry per system, submitted via [`inventory::submit!`] at link time.
-/// The dispatcher in `khora-control` discovers all entries, groups them by
-/// [`TickPhase`], topologically sorts within a phase using `runs_after`
-/// (with `order_hint` as tie-breaker), and invokes them sequentially.
+/// Within a phase, systems run one at a time, ordered by `runs_after` and then `order_hint`.
 pub struct DataSystemRegistration {
-    /// Stable identifier — used for `runs_after` references and telemetry.
+    /// The system's stable name, used by `runs_after` and telemetry.
     pub name: &'static str,
     /// Phase this system belongs to.
     pub phase: TickPhase,
-    /// The function to invoke on
-    /// `(&mut World, &Runtime, &mut OutputDeck, SystemContext)`.
+    /// The system itself.
     ///
-    /// - The `Runtime` bundle lets a system fetch typed services / backends /
-    ///   resources it needs (`EcsMaintenance`, `GraphicsDevice`, …).
-    /// - The `OutputDeck` is the per-tick typed deck the lanes wrote into
-    ///   during the CLAD descent. `Maintenance`-phase systems use
-    ///   `deck.take::<MyWriteback>()` to drain typed writeback slots and
-    ///   apply them to ECS components. Pre-scheduler phases receive an
-    ///   empty (transient) deck — systems that don't need it just ignore
-    ///   the third arg.
-    /// - The [`SystemContext`] carries what the system has already seen of
-    ///   this world (`since`).
+    /// The `OutputDeck` is what the lanes wrote this frame; a `Maintenance`
+    /// system drains its writebacks from it. Systems that run before the
+    /// scheduler get an empty deck.
     pub run: fn(&mut World, &Runtime, &mut OutputDeck, SystemContext),
-    /// Tie-breaker used to order systems within a phase when no explicit
-    /// `runs_after` ordering applies. Lower runs first. Default `0`.
+    /// The tie-breaker within a phase where `runs_after` says nothing; lower runs first.
     pub order_hint: i32,
-    /// Names of systems within the same phase that must run before this
-    /// one. Used to topologically sort the phase. Empty by default.
+    /// The systems of the same phase that must run before this one, by name.
     pub runs_after: &'static [&'static str],
-    /// Components this system watches for change, by key. The `World`
-    /// records each as observed ([`World::observe`]); the runner keeps the
-    /// system's last-seen tick. Empty by default.
+    /// The components this system watches for change, recorded with [`World::observe`].
     pub observes: &'static [fn() -> ComponentKey],
     /// Whose work the system is: [`Role::Upkeep`] runs every frame;
-    /// [`Role::Serves`] is skipped while its family is off. No default.
+    /// [`Role::Serves`] is skipped while its family is off.
     pub role: Role,
 }
 

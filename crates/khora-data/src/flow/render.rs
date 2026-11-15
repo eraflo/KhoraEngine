@@ -12,13 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `RenderFlow` — projects the ECS World into a [`RenderWorld`] for the
-//! render lanes to consume from the [`LaneBus`](khora_core::lane::LaneBus).
-//!
-//! This replaces the previous `extract_scene` free function called from the
-//! engine tick. The Flow trait gives us a uniform pattern (select / adapt /
-//! project) and AGDF-ready hooks for future per-domain adaptation (LOD,
-//! frustum culling, etc.).
+//! `RenderFlow`: the World's meshes, lights and camera views, projected into
+//! the [`RenderWorld`] the render lanes draw from.
 
 use khora_core::asset::Material;
 use khora_core::math::Mat4;
@@ -39,8 +34,8 @@ use crate::render::{ExtractedLight, ExtractedMesh, ExtractedView, RenderWorld};
 use khora_core::ecs::entity::EntityId;
 use khora_core::interpolation::{SharedTransformInterpolation, TransformInterpolation};
 
-/// Projects the ECS World into the per-frame [`RenderWorld`] consumed by the
-/// render lanes.
+/// Publishes [`RenderWorld`], from the meshes, the lights that shine and the
+/// active cameras, sim-moved bodies interpolated for this frame.
 #[derive(Default)]
 pub struct RenderFlow;
 
@@ -51,21 +46,16 @@ impl Flow for RenderFlow {
     const NAME: &'static str = "render";
     const ROLE: crate::ecs::Role = crate::ecs::Role::Upkeep;
 
-    /// The projection below reads mesh/material handles, `Light` and
-    /// `Camera` (Render domain), `GlobalTransform` (Spatial domain), and —
-    /// through `primary_view` — the editor viewport override, which is
-    /// runtime state with no ECS epoch. Folding its bit-level fingerprint
-    /// into the key keeps editor camera motion from serving stale views.
+    /// Keyed by the Render and Spatial epochs, and by the runtime state read
+    /// with no epoch: the editor view, the interpolation factor, the aspect.
     fn cache_key(&self, world: &World, runtime: &Runtime) -> Option<u64> {
         Some(crate::flow::combine_cache_key([
             world.instance_id(),
             world.domain_epoch(SemanticDomain::Render),
             world.domain_epoch(SemanticDomain::Spatial),
             crate::render::editor_override_fingerprint(runtime),
-            // Render interpolation makes the projected transforms a function of
-            // the per-frame alpha, which moves without any ECS epoch change.
-            // Fold its bit pattern in so the cached view is never served stale
-            // while bodies visibly interpolate between two sim steps.
+            // The projected transforms follow the interpolation factor, which
+            // moves every frame without an epoch.
             render_interpolation_alpha(runtime).to_bits() as u64,
             // A resize reshapes every camera's projection without touching
             // the ECS.
@@ -75,23 +65,16 @@ impl Flow for RenderFlow {
 
     fn project(&self, world: &World, _sel: &Selection, runtime: &Runtime) -> Self::View {
         let mut rw = RenderWorld::new();
-        // Render-only interpolation factor between the previous and current
-        // simulation step: the fraction of a game tick carried past the last
-        // whole one (0 with no Time resource).
         let alpha = render_interpolation_alpha(runtime);
-        // Engine-owned previous-pose store (resource, not a component): held
-        // read-locked across the mesh extraction. Absent in GPU-free tests.
+        // The previous poses, read-locked across the mesh extraction.
         let interp = runtime.resources.get::<SharedTransformInterpolation>();
         let interp_guard = interp.as_ref().and_then(|shared| shared.read().ok());
         extract_meshes(world, &mut rw, alpha, interp_guard.as_deref());
         extract_lights(world, &mut rw);
         extract_views(world, &mut rw, crate::render::target_aspect(runtime));
 
-        // No active scene Camera (e.g. editor in Editing mode where every
-        // scene Camera is forced inactive)? Fall back to the shared
-        // primary-view resolver, which consults `EditorViewportOverride` —
-        // and gives nothing for an active camera whose values make no image,
-        // so the override never stands in for it.
+        // No view: fall back to the editor's override, which `primary_view`
+        // withholds when an active camera makes no image.
         if rw.views.is_empty() {
             if let Some(view) = crate::render::primary_view(world, runtime) {
                 rw.views.push(view);
@@ -103,12 +86,10 @@ impl Flow for RenderFlow {
 
 register_flow!(RenderFlow);
 
-/// Reads the render-interpolation factor published by the scheduler into the
-/// per-frame [`Time`](khora_core::time::Time) resource — the fraction of a
-/// game tick carried past the last whole one, whatever step physics takes.
-/// Returns `0.0` (no blend — render at the current transform) when the
-/// resource is absent (e.g. GPU-free Flow tests). Only simulated bodies have a
-/// previous pose to blend from, so with no physics the factor changes nothing.
+/// Returns the fraction of a game tick past the last whole one, from the
+/// [`Time`](khora_core::time::Time) resource.
+///
+/// `0.0`, rendering at the current transform, when the resource is absent.
 fn render_interpolation_alpha(runtime: &Runtime) -> f32 {
     runtime
         .resources
@@ -135,11 +116,8 @@ fn extract_meshes(
             .get::<HandleComponent<GpuMaterial>>(entity_id)
             .map(|h| h.handle.clone());
 
-        // Render-only interpolation: when the engine recorded a previous
-        // world-space pose for this entity (it is sim-moved), blend prev →
-        // current by `alpha`. The authoritative `GlobalTransform` is untouched
-        // — only the projected transform is interpolated ("adapt the HOW, not
-        // the WHAT").
+        // Only the projected transform of a sim-moved entity is blended; its
+        // `GlobalTransform` is untouched.
         let transform = match interpolation.and_then(|store| store.previous(entity_id)) {
             Some(prev) => prev.interpolate(&transform.0, alpha),
             None => transform.0,
@@ -161,10 +139,10 @@ fn extract_meshes(
     }
 }
 
-/// The lights that shine ([`shining_lights`](crate::render::shining_lights)),
-/// in its order: position `i` here is light `i` of the shadow view too. A
-/// light whose values make no light is not here — its problem is listed, its
-/// values kept.
+/// Extracts the lights that shine, in
+/// [`shining_lights`](crate::render::shining_lights)'s order.
+///
+/// Position `i` here is light `i` of the shadow view too.
 fn extract_lights(world: &World, render_world: &mut RenderWorld) {
     for shining in crate::render::shining_lights(world) {
         render_world.lights.push(ExtractedLight {
@@ -227,9 +205,9 @@ mod tests {
         trs(Vec3::ZERO, Quaternion::IDENTITY, scale)
     }
 
-    /// Spawns a drawable entity at `pose` — its global transform plus an
-    /// already-uploaded mesh — and returns the entity and the mesh uuid that
-    /// identifies its extracted draw.
+    /// Spawns a drawable entity at `pose`, with an already-uploaded mesh.
+    ///
+    /// Returns the entity and the mesh uuid that identifies its extracted draw.
     fn spawn_drawable(world: &mut World, pose: AffineTransform) -> (EntityId, AssetUUID) {
         let uuid = AssetUUID::new();
         let mesh = HandleComponent {
@@ -351,9 +329,10 @@ mod tests {
         );
     }
 
-    /// A mirrored entity that the simulation moved is drawn interpolated
-    /// between its previous and current poses — both mirrored — and the drawn
-    /// pose is still a mirror, and marked so.
+    /// A mirrored entity the simulation moved is drawn mirrored, and marked so.
+    ///
+    /// It is drawn interpolated between its previous and current poses, both
+    /// mirrored.
     #[test]
     fn a_mirrored_entity_extracted_with_interpolation_stays_mirrored() {
         let mut world = World::new();
@@ -387,9 +366,11 @@ mod tests {
 
     use khora_core::renderer::light::{DirectionalLight, SpotLight};
 
-    /// An obliquely turned light under a parent stretched to three times its
-    /// height: a sheared world basis, whose linear part makes a direction
-    /// lean away from where the rotation alone would turn it.
+    /// Returns an obliquely turned light's pose under a parent stretched to
+    /// three times its height.
+    ///
+    /// A sheared world basis, whose linear part makes a direction lean away
+    /// from where the rotation alone would turn it.
     fn light_under_a_stretched_parent() -> AffineTransform {
         AffineTransform(
             Mat4::from_scale(Vec3::new(1.0, 3.0, 1.0))
@@ -417,10 +398,11 @@ mod tests {
         );
     }
 
-    /// A directional light on an entity under a stretched parent shines
-    /// along its local direction carried by the entity's world basis —
-    /// normalised, leaning as the stretched geometry around it leans — not
-    /// along the rotation alone.
+    /// A directional light under a stretched parent shines along its world
+    /// basis, not along the rotation alone.
+    ///
+    /// Its local direction is carried by the entity's world basis, normalised,
+    /// leaning as the stretched geometry around it leans.
     #[test]
     fn a_directional_light_under_a_stretched_parent_shines_along_its_world_direction() {
         let pose = light_under_a_stretched_parent();
@@ -513,10 +495,11 @@ mod tests {
         }
     }
 
-    /// A camera under a stretched parent (a sheared world basis) is rendered
-    /// through the view the flows slice their data around: `RenderFlow`'s
-    /// view-projection is `primary_view`'s, and both are the camera's
-    /// projection times the `camera_view_matrix` of its entity.
+    /// A camera under a stretched parent is rendered through the view the flows
+    /// slice their data around.
+    ///
+    /// `RenderFlow`'s view-projection is `primary_view`'s, and both are the
+    /// camera's projection times the `camera_view_matrix` of its entity.
     #[test]
     fn a_sheared_camera_renders_the_view_the_flows_slice_around() {
         let global = GlobalTransform(light_under_a_stretched_parent());
@@ -545,10 +528,11 @@ mod tests {
     }
 
     /// A shadow-casting light under a stretched parent casts its shadow along
-    /// the direction it is lit with: a spot light's shadow view looks down the
-    /// extracted direction from the light's position, and a directional
-    /// light's orthographic view sends that direction to its depth axis
-    /// alone.
+    /// the direction it is lit with.
+    ///
+    /// A spot light's shadow view looks down the extracted direction from the
+    /// light's position, and a directional light's orthographic view sends that
+    /// direction to its depth axis alone.
     #[test]
     fn a_shadowed_light_under_a_stretched_parent_casts_along_its_render_direction() {
         let pose = light_under_a_stretched_parent();
@@ -661,9 +645,10 @@ mod tests {
         );
     }
 
-    /// The first active camera is the one rendered from; when it is broken,
-    /// the valid active camera after it is not rendered from in its place —
-    /// the lit lanes read `views.first()`, `primary_view` (and so the shadow
+    /// The first active camera is the one rendered from, even when it is broken.
+    ///
+    /// The valid active camera after it is not rendered from in its place: the
+    /// lit lanes read `views.first()`, and `primary_view` (and so the shadow
     /// cascades) gives nothing.
     #[test]
     fn render_flow_renders_from_no_other_camera_when_the_first_active_one_is_broken() {
@@ -742,10 +727,11 @@ mod tests {
         v.x.is_finite() && v.y.is_finite() && v.z.is_finite()
     }
 
-    /// Swept over broken and usable lights, at usable and broken places:
-    /// every field of every extracted light is finite — position, direction,
-    /// shadow matrix, range, cones, intensity, colour — and a sun's or a
-    /// spot's direction is a unit vector.
+    /// Every field of every extracted light is finite, over broken and usable
+    /// lights at usable and broken places.
+    ///
+    /// Position, direction, shadow matrix, range, cones, intensity, colour; a
+    /// sun's or a spot's direction is a unit vector.
     #[test]
     fn every_extracted_light_value_is_finite() {
         let lights = [
@@ -855,10 +841,12 @@ mod tests {
     }
 
     /// The shadow biases of a light that shines, shadow-casting or not, are
-    /// finite: they reach the shader's shadow lookup as they are (a NaN
-    /// normal bias sends the sample position, and so the shadow, nowhere).
-    /// A light with a non-finite bias has its problem listed on that field,
-    /// and is not extracted.
+    /// finite.
+    ///
+    /// They reach the shader's shadow lookup as they are (a NaN normal bias
+    /// sends the sample position, and so the shadow, nowhere). A light with a
+    /// non-finite bias has its problem listed on that field, and is not
+    /// extracted.
     #[test]
     fn an_extracted_light_has_finite_shadow_biases() {
         let mut lights = Vec::new();
@@ -936,9 +924,10 @@ mod tests {
         );
     }
 
-    /// The radiance a light that shines sends — its colour times its
-    /// intensity, the first product every lit shader takes — is finite. A
-    /// light whose finite intensity and finite colour multiply past the
+    /// The radiance a light that shines sends, its colour times its intensity,
+    /// is finite.
+    ///
+    /// A light whose finite intensity and finite colour multiply past the
     /// largest float has its problem listed on its intensity, and is not
     /// extracted; a bright light whose product stays finite still is.
     #[test]

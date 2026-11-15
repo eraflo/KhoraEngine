@@ -32,7 +32,7 @@ pub struct UiBorder {
 }
 
 impl UiBorder {
-    /// Convert to core UI border type.
+    /// Returns the core UI border type.
     pub fn to_core(&self) -> khora_core::ui::types::UiBorder {
         khora_core::ui::types::UiBorder {
             width: self.width,
@@ -48,7 +48,7 @@ impl UiBorder {
 pub struct UiColor(pub Vec4);
 
 impl UiColor {
-    /// Convert to core UI color type.
+    /// Returns the core UI color type.
     pub fn to_core(&self) -> khora_core::ui::types::UiColor {
         khora_core::ui::types::UiColor(self.0)
     }

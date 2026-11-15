@@ -96,9 +96,11 @@ component, or the whole instance at once — and every other open instance of
 that prefab is brought onto the new prefab immediately, keeping its own
 overrides.
 
-Apply never writes where an instance stands — the root's placement and every
-member's parent belong to the instance — and refuses a value that would point
-outside the prefab, such as a parent that is not one of its members.
+Applying the whole instance never writes where it stands — the root's
+placement and every member's parent belong to the instance. A component or a
+field applied alone is written as named, a parent inside the prefab included.
+Apply refuses a parent that is not one of the prefab's members; any other
+reference to an entity outside the prefab is written as naming none.
 
 ## When a prefab cannot be read
 

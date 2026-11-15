@@ -12,34 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! No change is ever missed: the theorem `Changed_o(c) ⊆ A_o(c)`, read back
-//! through `Changed<T>`.
+//! No change is ever missed: the theorem read back through `Changed<T>`, over
+//! random sequences of moves, runs, late watches and writes through every path.
 //!
-//! Random sequences mix spawns, despawns, components added and removed
-//! (migrations, which leave orphan rows), compactions, clock runs, keys
-//! watched late, and writes through `set_component`, `get_mut`,
-//! `get_many_mut` and `query_mut` (a `&mut T` term, a joined
-//! `Option<&mut T>` one, and `&mut T` filtered by `Changed`), between runs
-//! and inside them. A model remembers, for each live component, the tick it
-//! was last written at — `last(c, r)`. At random checkpoints a reader asks
-//! `Changed<T>` since some tick `s` — alone, through `query_mut`, beside a
-//! term of another domain (Transversal), or joined through a foreign
-//! `Option` term — and the answer is checked:
-//!
-//! - **the theorem**: every row written after `s` is in it;
-//! - **the rule**: an entity is in it exactly when its column's summary is
-//!   past `s` and the column keeps no row ticks, or `s` is under its floor,
-//!   or its row tick is past `s` — so it is exact against the model when
-//!   `s ≥ φ`, the column keeps row ticks and the row's tick is its `last`;
-//! - only live entities holding every required term, each once.
-//!
-//! Observers read as the runners make them: `since` is the tick of their
-//! previous read, each read is a run of its own.
-//!
-//! The freeing sequences (`run_freeing_sequence`, tested in `quiet_columns`)
-//! also note each observer's reads in the world's ledger and free quiet
-//! columns (`free_quiet_row_ticks`, a small random `quiet`) among the other
-//! operations; each free is checked against its rule, column by column.
+//! A model keeps each component's `last(c, r)`; every reader's answer is checked
+//! against it, and against the exact case where the rule gives one. See the
+//! book: concepts/change-detection-formal.md, "The answer a reader gets".
 
 use std::collections::HashMap;
 
@@ -89,7 +67,6 @@ impl Part {
         }
     }
 
-    /// A read part of the other domain, for Transversal and joined reads.
     /// The observer reading this part, in a freeing sequence.
     fn observer(self) -> Observer {
         Observer::Flow(match self {
@@ -100,6 +77,7 @@ impl Part {
         })
     }
 
+    /// A read part of the other domain, for Transversal and joined reads.
     fn foreign(self) -> Part {
         match self.domain() {
             SemanticDomain::Spatial => Part::RenderId,
@@ -526,11 +504,11 @@ impl Sequence {
     }
 
     /// Frees the quiet columns, `quiet` drawn small, and checks each column
-    /// against the rule: a column keeping row ticks, silent at least `quiet`
-    /// ticks and seen by every observer that ran, keeps its summary, its
-    /// floor rises to it and its row ticks go; every other column is left as
-    /// it was; no page's order version moves; the count returned is the
-    /// number freed.
+    /// against the rule.
+    ///
+    /// A column keeping row ticks, silent `quiet` ticks and seen by every
+    /// observer that ran, keeps its summary as its floor and drops its row
+    /// ticks; every other column and every order version stay as they were.
     fn free(&mut self, at: &str) {
         let quiet = self.rng.below(4) as u64;
         let now = self.now();
@@ -679,10 +657,8 @@ pub(super) fn run_freeing_sequence(seed: u64, steps: usize) -> (usize, usize, us
     (sequence.exact, sequence.caught, sequence.freed)
 }
 
-/// **No change is ever missed**, over many random sequences of moves, runs,
-/// late watches and writes through every path, read at random checkpoints
-/// by every kind of reader — and the answer is exact wherever the rule says
-/// it is.
+/// **No change is ever missed** over random sequences, and the answer is
+/// exact wherever the rule says it is.
 #[test]
 fn no_change_is_ever_missed() {
     let (mut exact, mut caught) = (0, 0);

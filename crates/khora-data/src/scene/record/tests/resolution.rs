@@ -124,9 +124,8 @@ fn vec3(x: f32, y: f32, z: f32) -> Record {
     )
 }
 
-/// A save records fields by name so that the order a type declares them in is
-/// free to change: the same fields in another order read the same value, in
-/// a struct, in a component mirror and in a struct variant.
+/// The same fields in another order read the same value, in a struct, a
+/// component mirror and a struct variant.
 #[test]
 fn fields_resolve_by_name_not_position() {
     let reordered = structure(
@@ -192,9 +191,8 @@ fn fields_resolve_by_name_not_position() {
     );
 }
 
-/// A save older than a field lacks it. With a serde default — on the field or
-/// on the whole type — the field takes it, and the read says so at the
-/// field's path; without one, the read is an error rather than a guess.
+/// A field the save predates takes its serde default and is reported; with no
+/// default, the read fails.
 #[test]
 fn a_missing_field_takes_the_default() {
     let old_actor = structure(
@@ -244,9 +242,8 @@ fn a_missing_field_takes_the_default() {
     assert!(resolve::<Lamp>(&no_color, &mut NoEntities).is_err());
 }
 
-/// A save newer than its code, or holding a field since removed, still loads:
-/// the field is ignored, and the read says which one was lost and where —
-/// nested fields and list elements included.
+/// A field the code no longer has is ignored and reported where it was, nested
+/// fields and list elements included.
 #[test]
 fn an_unknown_field_is_dropped_and_reported() {
     let record = structure(
@@ -308,9 +305,10 @@ fn an_unknown_field_is_dropped_and_reported() {
     assert_eq!(entries, vec![entry("[1].legacy", ReportKind::Dropped)]);
 }
 
-/// A renamed field or variant keeps its old name as a serde alias, and an old
-/// save reads through it. The read reports a rename — at the new path, naming
-/// the old name — and neither a dropped old field nor a defaulted new one.
+/// An old save reads a renamed field or variant through its serde alias.
+///
+/// The read reports a rename at the new path, naming the old name, and
+/// neither a dropped old field nor a defaulted new one.
 #[test]
 fn an_alias_reads_the_old_name() {
     let old = structure(
@@ -400,9 +398,8 @@ enum Loose {
     Point { x: f32, y: f32 },
 }
 
-/// An untagged enum has no name to go by: it is read by trying each form
-/// against the record's own shape, which a record has to be able to describe
-/// without being told what to expect.
+/// An untagged enum reads by trying each form against the record's own shape,
+/// which the record describes without being told what to expect.
 #[test]
 fn an_untagged_enum_reads_by_shape() {
     assert_eq!(read::<Loose>(&Record::U64(3)), Ok(Loose::Number(3)));

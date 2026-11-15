@@ -34,11 +34,9 @@ pub enum Record {
     F64(f64),
     /// A number written as decimal text, by a format people read.
     ///
-    /// Not an `f64`, though it is held as one: the text `0.1` a save holds for
-    /// an `f32` field *is* that `f32`, written the shortest way it prints. So a
-    /// decimal is read at the width of the field it lands in, as the text
-    /// would be parsed — while a binary `f64` keeps the rule that a narrowing
-    /// which loses precision is refused.
+    /// Not an `f64`, though held as one: the text `0.1` saved for an `f32`
+    /// field *is* that `f32`. So a decimal is read at its field's width, as the
+    /// text would be parsed, while a binary `f64` that would lose precision is refused.
     Decimal(f64),
     /// `char`.
     Char(char),

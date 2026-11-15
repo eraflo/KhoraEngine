@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines the `ComponentRegistry` and `SemanticDomain` for the CRPECS.
+//! The `ComponentRegistry`: one vtable per component a world stores.
 
 use crate::ecs::column_ops::RustColumns;
 use crate::ecs::{AnyVec, ColumnMap, ColumnOps, Component, ComponentKey, RegisterError};
@@ -27,75 +27,40 @@ use std::{
 pub use super::component_domain_registration::ComponentDomainRegistration;
 pub use khora_core::ecs::SemanticDomain;
 
-/// Who is allowed to write a component — the axis orthogonal to
-/// [`SemanticDomain`].
+/// Who writes a component, and so what the engine may do with it on the author's behalf.
 ///
-/// `SemanticDomain` answers *which subsystem consumes this data* and drives
-/// change epochs, page grouping and `Flow` gating. It deliberately says nothing
-/// about **authorship**: `Transform` and `GlobalTransform` are both `Spatial`,
-/// yet one is written by a human and the other is recomputed every frame by
-/// `transform_propagation`. `Collider` and `PhysicsDebugData` are both
-/// `Physics`, yet one is an input and the other is debug output.
+/// | variant | offered in *Add Component* | copied on duplicate | saved |
+/// |---|---|---|---|
+/// | [`Authored`](Self::Authored) | yes | yes | in scenes |
+/// | [`ToolAuthored`](Self::ToolAuthored) | no | yes | in scenes |
+/// | [`Derived`](Self::Derived) | no | no | never |
+/// | [`Runtime`](Self::Runtime) | no | no | in game saves, if `resumable` |
 ///
-/// Without this axis the same intent gets re-encoded ad hoc at every site that
-/// needs it — which component to offer in "Add Component", which to copy when
-/// duplicating an entity, which to write to a scene file. Each such list is
-/// hand-maintained, so none of them covers components defined outside this
-/// crate.
-///
-/// The four variants encode two independent bits:
-///
-/// | variant | offered to the author | copied on duplicate |
-/// |---|---|---|
-/// | [`Authored`](Self::Authored) | yes | yes |
-/// | [`ToolAuthored`](Self::ToolAuthored) | no | yes |
-/// | [`Derived`](Self::Derived) | no | no |
-/// | [`Runtime`](Self::Runtime) | no | no |
-///
-/// It also decides what is saved: a scene holds `Authored` and `ToolAuthored`
-/// components — `Parent` must persist even though nobody adds it by hand — and
-/// never `Derived` or `Runtime` ones; a game save also keeps a `Runtime`
-/// component declared `resumable`. `#[component(skip)]` leaves a field out of
-/// what is saved.
+/// See the book: concepts/ecs.md, "Provenance".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ComponentProvenance {
-    /// Written by a human through the editor or by game code. Belongs in a
-    /// scene file, survives duplication, and is offered in "Add Component".
-    /// This is the default for any component that does not say otherwise.
+    /// Written by a human through the editor or by game code. The default.
     #[default]
     Authored,
 
-    /// Written by a tool action rather than by hand — `Parent`, whose edge is
-    /// set by dragging in the scene tree. It persists and must survive
-    /// duplication, but adding an empty one by hand is meaningless, so it is
-    /// not offered in the menu.
+    /// Written by a tool action rather than by hand, such as `Parent` set by
+    /// dragging in the scene tree.
     ToolAuthored,
 
-    /// Recomputed by the engine from `Authored` state — `GlobalTransform` from
-    /// `Transform` + `Parent`, or the `HandleComponent<Gpu*>` projections from
-    /// their asset handles. A duplicate must **not** carry a copy: the engine
-    /// regenerates it, and a stale copy would be wrong until it did.
+    /// Recomputed by the engine from authored state, such as `GlobalTransform`.
     Derived,
 
-    /// Per-run transient state that no one authors and nothing recomputes from
-    /// authored data — `PhysicsDebugData`. Never offered, never copied.
+    /// Per-run state no one authors and nothing recomputes, such as `PhysicsDebugData`.
     Runtime,
 }
 
 impl ComponentProvenance {
-    /// Whether the editor should offer this component in "+ Add Component".
-    ///
-    /// Only [`Authored`](Self::Authored) qualifies: everything else is written
-    /// by the engine or by a tool action.
+    /// Returns whether the editor offers this component in *Add Component*.
     pub const fn is_hand_authorable(self) -> bool {
         matches!(self, ComponentProvenance::Authored)
     }
 
-    /// Whether duplicating an entity should copy this component verbatim.
-    ///
-    /// `Derived` and `Runtime` are excluded because the engine produces them:
-    /// copying would install a stale value that the next tick overwrites at
-    /// best, and that reads as corrupt state at worst.
+    /// Returns whether duplicating an entity copies this component verbatim.
     pub const fn is_copied_on_duplicate(self) -> bool {
         matches!(
             self,
@@ -106,13 +71,12 @@ impl ComponentProvenance {
 
 /// How a component column is physically laid out in memory.
 ///
-/// **AGDF** (adaptive data *layout*) adapts this per component as Data
-/// self-maintenance, observed by the DCC. The default is plain `Soa`, so this
-/// descriptor is **inert** until an actual repack happens — adding it changes
-/// no behaviour.
+/// Every component is laid out `Soa` today: AGDF's online repack, which would
+/// adapt it, is deferred, so the policy changes no behaviour yet. See the book:
+/// concepts/agdf.md, "Layer 2 — the field-SoA substrate, and why it is the lever".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LayoutPolicy {
-    /// Structure-of-Arrays: one contiguous `Vec<T>` (today's only layout).
+    /// Structure-of-Arrays: one contiguous `Vec<T>`.
     #[default]
     Soa,
     /// Array-of-Structures-of-Arrays: SIMD-friendly tiles of `lanes` elements.
@@ -124,10 +88,8 @@ pub enum LayoutPolicy {
 
 /// Online access-pattern counters for one component.
 ///
-/// Updated **once per query** (off the per-element hot path), read by the DCC /
-/// telemetry to decide whether a memory-layout repack would pay off. Atomics so
-/// they can be recorded through `&self`. One small entry per component (not
-/// per entity): the memory cost is constant, not proportional to the world.
+/// Updated once per query, never per row; read to decide whether a layout
+/// repack would pay off. Atomic, so they are recorded through `&self`.
 #[derive(Debug, Default)]
 pub struct AccessCounters {
     /// Number of queries that touched this component.
@@ -145,13 +107,9 @@ pub struct RustIdentity {
     pub path: &'static str,
 }
 
-/// A component's vtable: what storage knows about it and does with its
-/// columns, registered once per component.
+/// A component's vtable: what storage knows about it and does with its columns.
 ///
-/// Pages hold type-erased columns; this table says which domain's pages hold
-/// the component, how its columns are laid out, and — through
-/// [`columns`](Self::columns) — how to create one and move a row between
-/// pages, without storage ever knowing the column's type.
+/// See the book: concepts/ecs.md, "The storage model".
 pub struct ComponentVTable {
     /// The key a page's columns know it by.
     pub key: ComponentKey,
@@ -161,29 +119,28 @@ pub struct ComponentVTable {
     pub rust: Option<RustIdentity>,
     /// The semantic domain whose pages hold it.
     pub domain: SemanticDomain,
-    /// Current physical layout of its columns (default `Soa`).
+    /// The current physical layout of its columns.
     pub layout: LayoutPolicy,
     /// Who writes it.
     pub provenance: ComponentProvenance,
     /// Whether a game save keeps it although a scene does not.
     pub resumable: bool,
-    /// The part it plays for scripts — a behavior, or a behavior's state
-    /// companion — `None` for every other component.
+    /// The part it plays for scripts, `None` for a component that plays none.
     pub script: Option<crate::ecs::ScriptRole>,
-    /// The module whose script declares it now — `None` for a Rust
-    /// component, for one only a file declared, and for one no script
-    /// declares any more (an orphan, kept with its data).
+    /// The module whose script declares it, `None` for a Rust component or an orphan.
+    ///
+    /// An orphan is one only a file declared, or one no script declares any more.
     pub declared_by: Option<String>,
-    /// How the inspector presents its fields, by field name — only fields
-    /// given a hint. Editor-only: nothing at run time reads it, and it is
-    /// never part of the layout, a scene or a snapshot.
+    /// How the inspector presents its fields, by field name, for those given a hint.
+    ///
+    /// Editor-only: never part of the layout, a scene or a snapshot.
     pub field_hints: Vec<(String, FieldHints)>,
     /// What storage does with its columns.
     pub columns: Arc<dyn ColumnOps>,
 }
 
 impl ComponentVTable {
-    /// The hints the field `field` is given, `None` when it is given none.
+    /// Returns the hints the field `field` is given, if any.
     pub fn hints(&self, field: &str) -> Option<&FieldHints> {
         self.field_hints
             .iter()
@@ -207,63 +164,62 @@ impl std::fmt::Debug for ComponentVTable {
 
 /// Every component a `World` stores: one vtable each, by key.
 ///
-/// A component is found by its key — its `TypeId`, or its declared name's
-/// hash — or by its one short name. Rust components are registered as the
+/// Found by key or by short name. Rust components are registered as the
 /// world is built; declared components while it runs.
 #[derive(Debug, Default)]
 pub struct ComponentRegistry {
     vtables: HashMap<ComponentKey, ComponentVTable>,
     by_name: HashMap<Arc<str>, ComponentKey>,
-    /// Per-component online access-pattern counters (layout adaptation).
+    /// Access-pattern counters, read by layout adaptation.
     access: HashMap<ComponentKey, AccessCounters>,
-    /// Moves whenever what a load reads of the registry changes: a component
-    /// registered or declared, relaid out, moved, or kept otherwise.
+    /// Moves whenever what a load reads of the registry changes.
     generation: u64,
     /// `generation`, published for a load prepared off the frame to watch.
     published: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl ComponentRegistry {
-    /// The vtable of component `key`, if registered.
+    /// Returns the vtable of component `key`, if registered.
     pub fn vtable(&self, key: ComponentKey) -> Option<&ComponentVTable> {
         self.vtables.get(&key)
     }
 
-    /// The key of the component named `name` (its short name), if registered.
+    /// Returns the key of the component whose short name is `name`, if registered.
     pub fn key_named(&self, name: &str) -> Option<ComponentKey> {
         self.by_name.get(name).copied()
     }
 
+    /// Returns the registry's generation, which a load prepared against it reads.
+    ///
     /// Moves whenever a component is registered or declared, relaid out,
-    /// moved to another domain, or given another provenance: what a load
-    /// prepared against the registry reads.
+    /// moved to another domain, or given another provenance.
     pub fn generation(&self) -> u64 {
         self.generation
     }
 
-    /// [`generation`](Self::generation), shared and kept up to date: what a
-    /// load prepared off the frame reads to learn the registry moved since.
+    /// Returns [`generation`](Self::generation), shared and kept up to date.
+    ///
+    /// A load prepared off the frame reads it to learn the registry moved since.
     pub fn published_generation(&self) -> Arc<std::sync::atomic::AtomicU64> {
         Arc::clone(&self.published)
     }
 
-    /// The number of registered components.
+    /// Returns the number of registered components.
     pub fn len(&self) -> usize {
         self.vtables.len()
     }
 
-    /// Whether no component is registered.
+    /// Returns whether no component is registered.
     pub fn is_empty(&self) -> bool {
         self.vtables.is_empty()
     }
 
-    /// Every registered component, in no particular order.
+    /// Returns every registered component, in no particular order.
     pub fn iter(&self) -> impl Iterator<Item = &ComponentVTable> {
         self.vtables.values()
     }
 
-    /// Registers the Rust component `T` in `domain`. Registering it again in
-    /// the domain it has changes nothing.
+    /// Registers the Rust component `T` in `domain`; again in the same domain, does nothing.
     pub(crate) fn register<T: Component>(
         &mut self,
         domain: SemanticDomain,
@@ -424,12 +380,12 @@ impl ComponentRegistry {
         }
     }
 
-    /// The domain of component `key`, if registered.
+    /// Returns the domain of component `key`, if registered.
     pub fn domain_of(&self, key: ComponentKey) -> Option<SemanticDomain> {
         self.vtables.get(&key).map(|vtable| vtable.domain)
     }
 
-    /// Looks up the `SemanticDomain` of the Rust component `type_id`.
+    /// Returns the `SemanticDomain` of the Rust component `type_id`, if registered.
     pub fn get_domain(&self, type_id: TypeId) -> Option<SemanticDomain> {
         self.domain_of(ComponentKey::Rust(type_id))
     }
@@ -441,18 +397,18 @@ impl ComponentRegistry {
             .map(|vtable| vtable.layout)
     }
 
-    /// Sets the intended [`LayoutPolicy`] for a component. The actual repack of
-    /// stored columns is performed by the layout-adaptation pass; this only
-    /// records the target.
+    /// Records the [`LayoutPolicy`] a component should be stored with.
+    ///
+    /// Stored columns are not repacked here.
     pub fn set_layout(&mut self, type_id: TypeId, layout: LayoutPolicy) {
         if let Some(vtable) = self.vtables.get_mut(&ComponentKey::Rust(type_id)) {
             vtable.layout = layout;
         }
     }
 
-    /// Records one access: increments the query count and adds `rows` to the
-    /// scanned total for every component in `keys`. Lock-free, called once
-    /// per query — never per element.
+    /// Records one query visiting `rows` rows of every component in `keys`.
+    ///
+    /// Lock-free; called once per query, never per row.
     pub fn record_access(&self, keys: &[ComponentKey], rows: u64) {
         for key in keys {
             if let Some(c) = self.access.get(key) {
@@ -472,17 +428,16 @@ impl ComponentRegistry {
         })
     }
 
-    /// The size of one row of a registered component, or `None` if unregistered.
+    /// Returns the size of one row of a registered component, in bytes.
     pub fn size_of(&self, type_id: TypeId) -> Option<usize> {
         self.vtables
             .get(&ComponentKey::Rust(type_id))
             .map(|vtable| vtable.columns.size_bytes())
     }
 
-    /// Snapshot of every registered component's `(name, size_bytes,
-    /// query_count, rows_scanned)` — the input the DCC's layout advisor reads
-    /// (read-only; observation tunnel). Allocates a small `Vec` (one entry per
-    /// component), so it is cheap enough to sample off the hot path.
+    /// Returns every component's `(name, size_bytes, query_count, rows_scanned)`.
+    ///
+    /// What the DCC's layout advisor reads; allocates one entry per component.
     pub fn access_snapshot(&self) -> Vec<(Arc<str>, usize, u64, u64)> {
         self.vtables
             .values()
@@ -498,8 +453,7 @@ impl ComponentRegistry {
             .collect()
     }
 
-    /// (Internal) Creates the empty columns of a signature, through each
-    /// component's vtable.
+    /// Creates the empty columns of a signature, through each component's vtable.
     pub(crate) fn create_columns_for_signature(&self, signature: &[ComponentKey]) -> ColumnMap {
         signature
             .iter()
@@ -513,8 +467,7 @@ impl ComponentRegistry {
             .collect()
     }
 
-    /// (Internal) Copies row `row` of `src` onto the end of `dst`, both
-    /// columns of component `key`.
+    /// Copies row `row` of `src` onto the end of `dst`, both columns of component `key`.
     pub(crate) fn copy_row(
         &self,
         key: ComponentKey,
@@ -528,10 +481,9 @@ impl ComponentRegistry {
     }
 }
 
-/// A type's name with every path stripped, generics included:
-/// `khora_data::ecs::HandleComponent<khora_core::asset::Mesh>` is
-/// `HandleComponent<Mesh>` — for a derived component, the name it was written
-/// with.
+/// Returns a type's name with every path stripped, generics included.
+///
+/// `khora_data::ecs::HandleComponent<khora_core::asset::Mesh>` is `HandleComponent<Mesh>`.
 pub(crate) fn short_name(path: &str) -> String {
     let mut name = String::with_capacity(path.len());
     let mut token = String::new();
@@ -562,9 +514,7 @@ mod tests {
     use super::ComponentProvenance;
     use super::ComponentProvenance::*;
 
-    /// Only author-written components reach the "Add Component" menu — the
-    /// whole point of the axis is that engine-written types opt out by
-    /// construction rather than via a hand-maintained denylist.
+    /// Only author-written components reach the *Add Component* menu.
     #[test]
     fn only_authored_is_hand_authorable() {
         assert!(Authored.is_hand_authorable());
@@ -573,9 +523,8 @@ mod tests {
         assert!(!Runtime.is_hand_authorable());
     }
 
-    /// Duplication copies what a human or a tool put there, and lets the
-    /// engine rebuild the rest. `ToolAuthored` is the variant that separates
-    /// the two bits: not offered in the menu, but still copied.
+    /// Duplication copies what a human or a tool put there; `ToolAuthored` is
+    /// copied though not offered.
     #[test]
     fn engine_written_components_are_not_copied() {
         assert!(Authored.is_copied_on_duplicate());
@@ -584,8 +533,7 @@ mod tests {
         assert!(!Runtime.is_copied_on_duplicate());
     }
 
-    /// A component says nothing about provenance unless it opts out, so the
-    /// default has to be the author's data.
+    /// A component that names no provenance is the author's data.
     #[test]
     fn default_is_authored() {
         assert_eq!(ComponentProvenance::default(), Authored);

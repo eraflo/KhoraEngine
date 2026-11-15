@@ -12,13 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Every glyph of every text, rasterised once and placed in the GPU atlas.
-//!
-//! The `glyphs_on_gpu` DataSystem makes each glyph of each
-//! [`UiTextLayout`](crate::ui::UiTextLayout) resident in the runtime's
-//! [`GlyphAtlas`](crate::ui::GlyphAtlas), rasterising it through the runtime's
-//! `GlyphRasterizer`, before any agent runs. A full atlas is built again from
-//! the glyphs the current layouts use; the old texture is destroyed.
+//! The `glyphs_on_gpu` DataSystem: every glyph of every text rasterised once
+//! and placed in the [`GlyphAtlas`] before the agents
+//! run; a full atlas is built again from the glyphs in use.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -37,9 +33,11 @@ use crate::ecs::{
 use crate::ui::glyph_atlas::{LeftOut, Placement};
 use crate::ui::{GlyphAtlas, UiTextLayout};
 
-/// Registers with the rasteriser the fonts new this run, and makes every
-/// glyph of the layouts that changed since `ctx.since` resident in the glyph
-/// atlas — every layout's when an atlas was built again.
+/// Makes every glyph of the layouts changed since `ctx.since` resident in the
+/// glyph atlas.
+///
+/// It first registers the fonts new this run with the rasteriser. An atlas
+/// built again holds the glyphs of every layout.
 pub(crate) fn glyphs_on_gpu(
     world: &mut World,
     runtime: &Runtime,
@@ -157,8 +155,8 @@ struct Images<'r> {
 }
 
 impl Images<'_> {
-    /// The image of `key`, rasterised the first time it is asked for this
-    /// run; `None` for a glyph that draws nothing.
+    /// Returns the image of `key`, rasterised the first time this run asks;
+    /// `None` for a glyph that draws nothing.
     fn get(&mut self, key: &GlyphKey) -> Option<&GlyphImage> {
         let rasterizer = self.rasterizer;
         self.made
@@ -168,10 +166,11 @@ impl Images<'_> {
     }
 }
 
-/// Builds the atlas of `kind` again from the glyphs in use, rasterising only
-/// those of that kind or not yet rasterised — never a glyph of the other
-/// kind placed already, nor one known to draw nothing. Returns the glyphs
-/// left out.
+/// Builds the atlas of `kind` again from the glyphs in use; returns those left
+/// out.
+///
+/// Rasterises only glyphs of that kind or not yet rasterised, never one of the
+/// other kind already placed nor one known to draw nothing.
 fn rebuild(
     atlas: &GlyphAtlas,
     device: &dyn GraphicsDevice,
@@ -202,10 +201,11 @@ fn rebuild(
         .collect()
 }
 
-/// The keys of the glyphs of every layout `wanted` keeps, once each, in the
-/// order the layouts come: each glyph at its layout's font and size, binned
-/// by its x within the layout (a text's origin is snapped to whole pixels
-/// when drawn).
+/// Returns the keys of the glyphs of every layout `wanted` keeps, once each, in
+/// layout order.
+///
+/// A glyph is keyed at its layout's font and size and binned by its x, since a
+/// text's origin is snapped to whole pixels when drawn.
 fn keys(world: &World, wanted: impl Fn(EntityId, &UiTextLayout) -> bool) -> Vec<GlyphKey> {
     let mut seen = HashSet::new();
     let mut keys = Vec::new();

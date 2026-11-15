@@ -12,13 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Implements a sparse bitset for tracking component presence in semantic domains.
+//! A bitset of the entities that have components in one semantic domain.
 
-/// A simple bitset wrapped around a `Vec<u64>`.
-///
-/// This structure is used to track which entities have components in a specific
-/// `SemanticDomain`. It allows for extremely fast (bitwise) filtering during
-/// transversal queries.
+/// A bitset of entity indices, one per `SemanticDomain`, that filters transversal queries.
 #[derive(Debug, Default, Clone)]
 pub struct DomainBitset {
     pub(crate) bits: Vec<u64>,
@@ -35,7 +31,6 @@ impl DomainBitset {
         let word_idx = (index / 64) as usize;
         let bit_idx = index % 64;
 
-        // Ensure the vector is large enough to hold the bit.
         if word_idx >= self.bits.len() {
             self.bits.resize(word_idx + 1, 0);
         }
@@ -53,8 +48,7 @@ impl DomainBitset {
         }
     }
 
-    /// Returns the 64-bit block at the specified word index.
-    /// Returns 0 if the index is out of bounds.
+    /// Returns the 64-bit block at `word_idx`, 0 past the end.
     pub fn get_block(&self, word_idx: usize) -> u64 {
         self.bits.get(word_idx).copied().unwrap_or(0)
     }
@@ -77,7 +71,7 @@ impl DomainBitset {
         for i in 0..len {
             self.bits[i] &= other.bits[i];
         }
-        // If other is shorter, the rest of self bits must be cleared.
+        // Bits past the end of `other` are clear in it, so cleared here too.
         if self.bits.len() > len {
             self.bits.truncate(len);
         }

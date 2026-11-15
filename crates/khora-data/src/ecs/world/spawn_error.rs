@@ -17,8 +17,7 @@
 /// Errors that can occur when spawning an entity with a bundle of components.
 #[derive(Debug, PartialEq, Eq)]
 pub enum SpawnError {
-    /// A component type of the bundle is not registered in the ECS: it has no
-    /// domain, so nothing could ever find it once stored.
+    /// A component type of the bundle is not registered: once stored, nothing could find it.
     ComponentNotRegistered {
         /// The name of the unregistered component type.
         component: &'static str,

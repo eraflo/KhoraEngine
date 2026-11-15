@@ -12,13 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Whose work a `DataSystem` or a `Flow` is.
+//! Whose work a `DataSystem` or a `Flow` is; every registration says it, with no default.
 //!
-//! Every registration says it, and none has a default: a system either keeps
-//! the data what it must be whoever runs ([`Role::Upkeep`]), or it does a
-//! family's work or makes what that work reads ([`Role::Serves`]), and runs
-//! only while the family is on
-//! ([`Activation`](khora_core::agent::Activation)).
+//! A family's switch is the [`Activation`](khora_core::agent::Activation) resource.
 
 use std::collections::BTreeSet;
 
@@ -29,14 +25,13 @@ use khora_core::agent::gorna::AgentId;
 pub enum Role {
     /// A data invariant: it runs every frame, whichever families are on.
     Upkeep,
-    /// The work of the family named, or what that work produces: it is
-    /// skipped while the family is off, and told it resumes on its first
-    /// run after.
+    /// The work of the family named, or what that work reads: skipped while the family is off.
+    ///
+    /// Its first run after a skip is told it resumes.
     Serves(AgentId),
 }
 
-/// A registration serves a family no agent negotiates as: it would never be
-/// switched, or always be off.
+/// A registration serving a family no agent negotiates as: it would never be switched.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServesUnknownFamily {
     /// The registration, by name.
@@ -55,8 +50,10 @@ impl std::fmt::Display for ServesUnknownFamily {
     }
 }
 
-/// The first of `roles` that serves a family outside `families`, in the
-/// order given.
+/// Checks that every one of `roles` serves a family in `families`.
+///
+/// # Errors
+/// The first, in the order given, that serves another family.
 pub fn check_roles(
     roles: impl IntoIterator<Item = (&'static str, Role)>,
     families: &BTreeSet<AgentId>,
@@ -72,8 +69,7 @@ pub fn check_roles(
         .map_or(Ok(()), Err)
 }
 
-/// Every linked `DataSystem` and `Flow` registration, by name, with its role:
-/// what the boot checks against the registered families.
+/// Returns every linked `DataSystem` and `Flow` registration, by name, with its role.
 pub fn registered_roles() -> Vec<(&'static str, Role)> {
     let systems = inventory::iter::<crate::ecs::DataSystemRegistration>
         .into_iter()

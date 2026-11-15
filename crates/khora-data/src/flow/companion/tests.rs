@@ -43,9 +43,10 @@ fn entity(index: u32, generation: u32) -> EntityId {
     EntityId { index, generation }
 }
 
-/// A guard part-way through everything a companion records: in `Alert`
-/// with its data, two countdowns (one spent), an attack winding up whose
-/// machine holds an entity, spawned, a fault, a body owed its
+/// A guard part-way through everything a companion records.
+///
+/// In `Alert` with its data, two countdowns (one spent), an attack winding up
+/// whose machine holds an entity, spawned, a fault, a body owed its
 /// `OnResumeFailed`.
 fn busy() -> ScriptSnapshot {
     ScriptSnapshot {
@@ -178,9 +179,10 @@ fn a_companion_row_round_trips_a_snapshot() {
     }
 }
 
-/// **The behavior's own fields are not the companion's**: they are its
-/// component's, so a snapshot's fields neither reach the row nor come back
-/// from it.
+/// **The behavior's own fields are not the companion's.**
+///
+/// They are its component's, so a snapshot's fields neither reach the row nor
+/// come back from it.
 #[test]
 fn a_companion_row_keeps_none_of_the_behavior_fields() {
     let snapshot = busy().with_field("hp", ScriptValue::Int(40));
@@ -296,9 +298,11 @@ fn a_companion_row_is_stored_and_read_back_by_the_world() {
     assert_eq!(companion_snapshot(&read).expect("reads back"), busy());
 }
 
-/// **A companion holds no `initialised` flag**: an instance's defaults are
-/// its layout's data, seeded the moment it exists, so nothing records
-/// whether an initialiser ran — and a companion row without one reads back.
+/// **A companion holds no `initialised` flag.**
+///
+/// An instance's defaults are its layout's data, seeded the moment it exists,
+/// so nothing records whether an initialiser ran — and a companion row without
+/// one reads back.
 #[test]
 fn a_companion_row_without_an_initialised_flag_reads_back() {
     let row = vec![
@@ -318,9 +322,9 @@ fn a_companion_row_without_an_initialised_flag_reads_back() {
     );
 }
 
-/// **A companion row written before defaults were data still reads back**:
-/// its `initialised` flag is a field the companion no longer declares, and
-/// is ignored — whichever way it was set, the snapshot is the same.
+/// **A companion row holding an undeclared `initialised` flag still reads back.**
+///
+/// The field is ignored: whichever way it was set, the snapshot is the same.
 #[test]
 fn a_companion_row_still_holding_an_initialised_flag_reads_back() {
     let without = vec![
@@ -344,11 +348,12 @@ fn a_companion_row_still_holding_an_initialised_flag_reads_back() {
     }
 }
 
-/// **The fixed steps an instance is owed round trip through its companion**,
-/// each its own step, oldest first, as a `float[]`: a game saved owing two
+/// **The fixed steps an instance is owed round trip through its companion.**
+///
+/// Each its own step, oldest first, as a `float[]`: a game saved owing two
 /// steps of 1/120 s and one of 1/30 s loads owing exactly those. A row whose
-/// entries are not steps — zero, negative, not a number, not a float —
-/// owes none of them, and one whose field is not an array owes nothing.
+/// entries are not steps — zero, negative, not a number, not a float — owes
+/// none of them, and one whose field is not an array owes nothing.
 #[test]
 fn a_companion_row_round_trips_the_fixed_steps_owed() {
     let owed = vec![1.0 / 120.0, 1.0 / 120.0, 1.0 / 30.0];
@@ -394,9 +399,11 @@ fn a_companion_row_round_trips_the_fixed_steps_owed() {
 }
 
 /// **The time an instance's `Update` is still owed round trips through its
-/// companion**, as a `float`: a game saved while a turn had counted its
-/// countdowns but stopped before its `Update` loads owing that `Update` the
-/// same seconds. A row from before the field existed owes it nothing.
+/// companion.**
+///
+/// As a `float`: a game saved while a turn had counted its countdowns but
+/// stopped before its `Update` loads owing that `Update` the same seconds. A
+/// row without the field owes it nothing.
 #[test]
 fn a_companion_row_round_trips_the_time_update_is_owed() {
     let mut snapshot = busy();

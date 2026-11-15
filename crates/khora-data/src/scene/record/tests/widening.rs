@@ -27,9 +27,9 @@ struct Gauge {
     count: u16,
 }
 
-/// A number whose type changed since the save is read when — and only when —
-/// nothing is lost: the value read back is the value written, exactly. A
-/// fraction, an out-of-range value or an integer a float cannot hold exactly
+/// A number whose type changed since the save reads only when nothing is lost.
+///
+/// A fraction, an out-of-range value or an integer a float cannot hold exactly
 /// is an error, never a rounded or saturated guess.
 #[test]
 fn widening_is_lossless_or_refused() {
@@ -121,8 +121,7 @@ fn widening_is_lossless_or_refused() {
     assert!(read::<Gauge>(&lossy).is_err());
 }
 
-/// A widened read is reported at the field it happened to, so an author
-/// learns the save predates a type change; a number read at its own kind is
+/// A widened read is reported at its field; a number read at its own kind is
 /// not a change.
 #[test]
 fn a_widened_number_is_reported() {

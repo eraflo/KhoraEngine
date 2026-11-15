@@ -12,19 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Values by position: the bytes a snapshot holds.
+//! Values by position, no names: a snapshot's bytes, read only by the schema that wrote them.
 //!
-//! Not self-describing — fields in order, no names — so a value is read only
-//! by the schema that wrote it. Entity and asset references are intercepted
-//! by their reserved serde names, exactly as the record codec does.
-//!
-//! The format: counts and integers are LEB128 varints (signed ones
-//! zig-zagged, a `u8` a raw byte), floats little-endian at their width, a
-//! `bool` and an option's presence one byte that is 0 or 1, a string or a
-//! byte string its length then its bytes, a sequence or a map its count
-//! then its elements, a struct or a tuple its fields in order, an enum its
-//! variant index then its payload. An entity reference is 0 (outside) or 1
-//! followed by its persistent id, 8 bytes little-endian.
+//! An entity reference is 0 (outside) or 1 then its persistent id, 8 bytes
+//! little-endian; a `u8` is one raw byte. See the book: reference/formats.md, "Snapshot layout".
 
 mod de;
 mod ser;
@@ -35,6 +26,11 @@ use serde::Serialize;
 use super::record::{RecordError, ReferenceReader, ReferenceWriter};
 
 /// Appends `value` to `out`, positionally, its entities through `references`.
+///
+/// # Errors
+///
+/// A value the reader would refuse: nested too deep, a sequence of unknown length
+/// or of too many empty elements, a malformed entity. `out` is then left as it was.
 pub fn to_positional<T: Serialize + ?Sized>(
     value: &T,
     out: &mut Vec<u8>,
@@ -49,8 +45,11 @@ pub fn to_positional<T: Serialize + ?Sized>(
     written
 }
 
-/// Reads a `T` from `bytes`, which it must consume exactly, its entities
-/// through `references`. A damaged input is an error, never a panic.
+/// Reads a `T` from `bytes`, which it must consume exactly, its entities through `references`.
+///
+/// # Errors
+///
+/// Damaged or trailing bytes, or a reference `references` refuses; never a panic.
 pub fn from_positional<T: DeserializeOwned>(
     bytes: &[u8],
     references: &mut dyn ReferenceReader,
@@ -74,8 +73,9 @@ pub(crate) fn write_varint(out: &mut Vec<u8>, mut value: u64) {
     }
 }
 
-/// How many elements a sequence may hold beyond the bytes they take: room
-/// for elements that take no bytes (a unit, a marker), and no more. The
+/// How many elements a sequence may hold beyond the bytes they take.
+///
+/// Room for elements that take no bytes (a unit, a marker), and no more. The
 /// writer refuses a longer one, so whatever is written reads back.
 pub(crate) const FREE_ELEMENTS: usize = 256;
 

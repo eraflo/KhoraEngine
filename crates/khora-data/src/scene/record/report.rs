@@ -12,17 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What reading a save changed, said out loud.
+//! What reading a save adapted, entry by entry, named as the code names it today.
 //!
-//! A save older than its code is the normal state of a project, and reading
-//! one adapts it: a field defaults, another is dropped, a third was renamed.
-//! None of that is an error, and none of it may be silent either — an author
-//! who renamed a field and lost its value has to be told. So every read that
-//! adapts something says what, where.
-//!
-//! The reader notes what it does as it goes (see `watch`); the report names
-//! those notes by the value the read produced, written again — the names the
-//! code uses today.
+//! See the book: concepts/serialization.md, "Why records".
 
 use std::collections::HashMap;
 
@@ -80,29 +72,27 @@ pub enum ReportKind {
         /// The name the save used.
         from: String,
     },
-    /// A number was read at another type than it was written, without loss —
-    /// usually a wider one; a narrower one only when the value is exact.
+    /// A number was read at another type than it was written, without loss:
+    /// a wider one, or a narrower one when the value is exact.
     Widened,
     /// The save holds a component type declared retired; it was skipped.
     Retired,
-    /// The save holds a component the engine derives or keeps while
-    /// running, not one a save holds; it was skipped, and is rebuilt.
+    /// The save holds a component the engine derives or keeps while running;
+    /// it was skipped, and is rebuilt.
     NotSaved,
     /// A reference named an entity the save does not hold.
     DeadReference,
     /// A game save changed an entity its scene no longer has: the scene's
     /// removal wins, and the save's changes to it were dropped.
     RemovedFromScene,
-    /// The value was read and kept as written, but the component's own check
-    /// says the engine cannot use it (a camera whose near plane sits at its
-    /// eye). Nothing was rewritten or refused.
+    /// The value was kept as written, but the component's check says the
+    /// engine cannot use it (a camera whose near plane sits at its eye).
     Unusable {
         /// What the check says is wrong, naming the value.
         message: String,
     },
-    /// The load could not land at all and added nothing: prepared for
-    /// another world, or prepared before the world's components changed and
-    /// failing when prepared again against them.
+    /// The load added nothing: it was prepared for another world, or failed
+    /// when prepared again after the world's components changed.
     NotLoaded {
         /// Why it could not.
         reason: String,
@@ -149,13 +139,11 @@ impl std::fmt::Display for ReportEntry {
     }
 }
 
-/// The report entries for what a component's check found in a value just
-/// read: one [`ReportKind::Unusable`] entry per `Error` problem, its `path`
-/// the problem's `field`, carrying the problem's message. A `Warning` is no
-/// entry — the value is usable.
+/// Returns one [`ReportKind::Unusable`] entry per `Error` a component's check found.
 ///
-/// The entries carry paths only; the caller knows the entity and the
-/// component and fills them in, as for [`resolve`].
+/// A `Warning` is no entry: the value is usable. Each entry's `path` is the
+/// problem's `field`; the caller fills in the entity and the component, as
+/// for [`resolve`].
 pub fn unusable_entries(problems: Vec<FieldProblem>) -> Vec<ReportEntry> {
     problems
         .into_iter()
@@ -283,9 +271,10 @@ fn elements(record: &Record) -> &[Record] {
     }
 }
 
-/// Whether a value the save wrote resembles one the read produced: the same
-/// value, allowing for the widths numbers were read at, for fields one side
-/// has and the other not, and for references compared by kind.
+/// Whether a value the save wrote resembles one the read produced.
+///
+/// Numbers compare across widths, fields only one side has are ignored, and
+/// references compare by kind.
 fn resembles(written: &Record, read: &Record) -> bool {
     let written = unwrapped(written);
     let read = unwrapped(read);
@@ -347,9 +336,10 @@ fn key_label(key: &Record) -> String {
     }
 }
 
-/// Reports what the read noted at `node`, naming places by `read` — the
-/// value it produced, written again. `written` is what the save held there:
-/// the tree mirrors it step for step.
+/// Reports what the read noted at `node`, naming places by `read`, the value
+/// it produced written again.
+///
+/// `written` is what the save held there: the tree mirrors it step for step.
 fn walk(
     tree: &Tree,
     node: usize,

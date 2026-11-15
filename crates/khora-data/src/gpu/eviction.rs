@@ -12,30 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! GPU asset-cache eviction — budgeted reclamation of orphaned GPU resources.
-//!
-//! The CPU→GPU projection ([`ProjectionRegistry`](crate::gpu::ProjectionRegistry))
-//! is insert-only: it uploads a `GpuMesh` / `GpuMaterial` the first time an
-//! entity needs one, tags the entity, and never revisits it. Despawning an
-//! entity, or editing a material inline (which mints a fresh asset UUID),
-//! therefore leaves the old cache entry — and the wgpu buffers, textures,
-//! views and bind group it owns — alive forever. `AssetHandle` is a plain
-//! `Arc`: dropping the last clone frees the *struct*, but its fields are
-//! `Copy` id handles into backend slotmaps that only an explicit `destroy_*`
-//! releases. So the cache grew without bound.
-//!
-//! [`AssetEviction`] is the Data-layer self-maintenance that closes the leak,
-//! the GPU-asset twin of [`EcsMaintenance`](crate::ecs::EcsMaintenance). Each
-//! frame, in [`TickPhase::Maintenance`](crate::ecs::TickPhase::Maintenance), it
-//! diffs the cached UUID set against the set still referenced by live entities
-//! and, under a per-frame budget, removes the orphans and destroys their GPU
-//! resources. It only ever removes entries no live entity references, so it
-//! changes representation, never game semantics (adapt the HOW, not the WHAT).
-//!
-//! Maintenance runs at the end of the tick, after the render descent has read
-//! the caches for this frame, so freeing an orphan is safe: nothing projects a
-//! despawned entity next frame, and the ECS query already skips orphan rows so
-//! a not-yet-compacted despawned row never keeps a UUID artificially live.
+//! [`AssetEviction`]: releases, under a per-frame budget, the GPU meshes and
+//! materials no live entity references. The projection only ever inserts, and
+//! a cached entry's GPU resources are freed only by an explicit `destroy_*`.
 
 use std::collections::HashSet;
 
@@ -47,17 +26,18 @@ use khora_core::renderer::GraphicsDevice;
 use crate::assets::AssetStore;
 use crate::ecs::{HandleComponent, World};
 
-/// Default number of orphaned GPU assets reclaimed per frame, shared across
-/// meshes and materials. Bounded like [`EcsMaintenance`] so a burst of
-/// despawns spreads its teardown cost over several frames.
+/// Default number of orphaned GPU assets released per frame, meshes and
+/// materials together.
+///
+/// Bounded so a burst of despawns spreads its teardown over several frames.
 const DEFAULT_MAX_PER_FRAME: usize = 16;
 
-/// Direct GPU asset-cache maintenance service.
+/// The GPU asset caches' maintenance service, the twin of
+/// [`EcsMaintenance`](crate::ecs::EcsMaintenance).
 ///
-/// Evicts up to `max_per_frame` orphaned GPU asset entries each frame,
-/// destroying their backing wgpu resources. Mirrors
-/// [`EcsMaintenance`](crate::ecs::EcsMaintenance) for the GPU asset store:
-/// budgeted, idempotent, and Data-owned.
+/// Ticked in [`TickPhase::Maintenance`](crate::ecs::TickPhase::Maintenance),
+/// after the frame's render has read the caches; it removes only what no live
+/// entity references, so it never changes game semantics.
 pub struct AssetEviction {
     max_per_frame: usize,
     last_evicted_count: usize,
@@ -90,12 +70,12 @@ impl AssetEviction {
         }
     }
 
-    /// Runs one frame of eviction: frees everything [`retire`](Self::retire)d
-    /// since the last tick, then shares `max_per_frame` across orphaned
-    /// materials then meshes. Orphans beyond the budget stay cached for the
-    /// next frame — harmless, since an orphaned entry is simply not yet
-    /// reclaimed. Retired entries are outside the budget: they were named,
-    /// not discovered, and are already out of the cache.
+    /// Frees what [`retire`](Self::retire) queued, then up to `max_per_frame`
+    /// orphans.
+    ///
+    /// Materials come before meshes; orphans beyond the budget wait for the
+    /// next frame. Retired entries are outside the budget: they are already
+    /// out of the cache.
     pub fn tick(&mut self, store: &AssetStore, world: &World, device: &dyn GraphicsDevice) {
         self.last_evicted_count = 0;
         for handle in self.retired_materials.drain(..) {
@@ -161,17 +141,18 @@ impl AssetEviction {
         }
     }
 
-    /// Number of retired GPU assets waiting for the next [`tick`](Self::tick).
+    /// Returns the number of retired GPU assets waiting for the next
+    /// [`tick`](Self::tick).
     pub fn retired_count(&self) -> usize {
         self.retired_meshes.len() + self.retired_materials.len()
     }
 
-    /// Number of GPU assets evicted in the last [`tick`](Self::tick).
+    /// Returns the number of GPU assets freed by the last [`tick`](Self::tick).
     pub fn last_evicted_count(&self) -> usize {
         self.last_evicted_count
     }
 
-    /// The maximum number of GPU assets evicted per frame.
+    /// Returns the maximum number of orphans freed per frame.
     pub fn max_per_frame(&self) -> usize {
         self.max_per_frame
     }
@@ -183,9 +164,10 @@ impl Default for AssetEviction {
     }
 }
 
-/// The set of asset UUIDs still referenced by a live entity's
-/// `HandleComponent<A>`. The ECS query skips orphan rows, so a despawned
-/// entity whose row has not yet been compacted does not keep its UUID live.
+/// Returns the UUIDs a live entity's `HandleComponent<A>` references.
+///
+/// The query skips orphan rows, so a despawned entity not yet compacted keeps
+/// no UUID live.
 fn live_handles<A: khora_core::asset::Asset>(world: &World) -> HashSet<AssetUUID> {
     let mut live = HashSet::new();
     for (handle,) in world.query::<(&HandleComponent<A>,)>() {
@@ -194,10 +176,8 @@ fn live_handles<A: khora_core::asset::Asset>(world: &World) -> HashSet<AssetUUID
     live
 }
 
-/// Removes up to `budget` orphaned entries of type `A` from the store and
-/// returns their handles for teardown. Device-free — the removal *is* the leak
-/// fix; the caller destroys the returned resources. An entry is orphaned when
-/// no live entity references its UUID.
+/// Removes up to `budget` entries of `A` no live entity references, and
+/// returns them for the caller to destroy.
 fn take_orphans<A: khora_core::asset::Asset>(
     store: &AssetStore,
     world: &World,
@@ -227,10 +207,9 @@ fn take_orphans<A: khora_core::asset::Asset>(
         .collect()
 }
 
-/// Frees the wgpu resources a [`GpuMaterial`] exclusively owns: its bind group,
-/// uniform buffer, and each declared texture with its view. The `sampler` is
-/// the engine-shared filtering sampler and is deliberately left intact.
-/// Teardown errors are logged, never fatal (a stale id is harmless).
+/// Frees the GPU resources a [`GpuMaterial`] owns alone; errors are logged.
+///
+/// Its sampler is the engine's shared one, and is left intact.
 fn destroy_gpu_material(material: &GpuMaterial, device: &dyn GraphicsDevice) {
     if let Err(e) = device.destroy_bind_group(material.bind_group) {
         log::warn!("AssetEviction: destroy_bind_group failed: {e:?}");
@@ -272,9 +251,9 @@ fn destroy_gpu_material(material: &GpuMaterial, device: &dyn GraphicsDevice) {
     }
 }
 
-/// Frees the wgpu resources a [`GpuMesh`] owns: its vertex and index buffers.
-/// A non-indexed mesh still holds a real (zero-sized) index buffer, so both are
-/// always destroyed. Teardown errors are logged, never fatal.
+/// Frees a [`GpuMesh`]'s vertex and index buffers; errors are logged.
+///
+/// An unindexed mesh still holds a real, empty index buffer.
 fn destroy_gpu_mesh(mesh: &GpuMesh, device: &dyn GraphicsDevice) {
     if let Err(e) = device.destroy_buffer(mesh.vertex_buffer) {
         log::warn!("AssetEviction: destroy_buffer (mesh vertex) failed: {e:?}");

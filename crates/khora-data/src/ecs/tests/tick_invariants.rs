@@ -12,20 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The page's ticks never lose a write, whatever happens to the rows.
+//! The page's ticks never lose a write, whatever happens to the rows: I1 and I2
+//! checked after each operation of random sequences against a model of `last`.
 //!
-//! Random sequences of spawns, despawns, components added and removed,
-//! compactions, clock runs and keys newly watched, checked after every
-//! operation against a model that remembers, for each live component, the
-//! tick it was last placed at — `last(c, r)`:
-//!
-//! - **I1** `last(c, r) ≤ σ(c)`;
-//! - **I2** `last(c, r) ≤ max(τ(c, r), φ(c))`, τ read as 0 when the column
-//!   keeps no row ticks;
-//!
-//! and beside them what the moves promise: a column's tick array has one
-//! tick per row, no summary is ahead of the clock, a despawn or a compaction
-//! raises no summary, and a page that lost a row moved its order version.
+//! See the book: concepts/change-detection-formal.md, "Invariants".
 
 use std::collections::HashMap;
 
@@ -215,9 +205,8 @@ fn page_state(world: &World) -> Vec<PageState> {
         .collect()
 }
 
-/// A despawn and a compaction move rows and write nothing: no summary of a
-/// page that existed before is raised, and a page that lost rows moved its
-/// order version.
+/// Checks that a despawn or a compaction raised no summary of an older page,
+/// and moved the order version of a page that lost rows.
 fn check_a_move_is_not_a_change(
     before: &[PageState],
     world: &World,

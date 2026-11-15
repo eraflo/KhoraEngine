@@ -20,11 +20,8 @@ use khora_core::ecs::entity::EntityId;
 
 use crate::ecs::{ComponentKey, World};
 
-/// A snapshot of entities selected by a `Flow` for the current tick.
-///
-/// Passed from `Flow::select` to `Flow::adapt` and `Flow::project`. The Flow
-/// is free to attach its own per-domain payload by extending this struct, or
-/// to keep it as just an entity list.
+/// The entities a Flow selected for this tick, and the scope its family is
+/// limited to.
 #[derive(Debug, Default, Clone)]
 pub struct Selection {
     /// Entity IDs deemed relevant for this domain this tick.
@@ -48,27 +45,28 @@ impl Selection {
         }
     }
 
-    /// This selection limited to the entities of `world` holding the marker
-    /// `scope` names ([`FlowContext::scope`](super::FlowContext::scope));
-    /// unlimited when `scope` is `None`.
+    /// Returns this selection limited to the entities of `world` holding `scope`.
+    ///
+    /// Unlimited when `scope` is `None` (see
+    /// [`FlowContext::scope`](super::FlowContext::scope)).
     pub fn within(mut self, world: &World, scope: Option<ComponentKey>) -> Self {
         self.scope = scope.map(|marker| world.holders(marker).into_iter().collect());
         self
     }
 
-    /// Whether the family's scope admits `entity`: always, unscoped.
+    /// Returns whether the family's scope admits `entity`; always when unscoped.
     pub fn admits(&self, entity: EntityId) -> bool {
         self.scope
             .as_ref()
             .is_none_or(|scope| scope.contains(&entity))
     }
 
-    /// Number of selected entities.
+    /// Returns the number of selected entities.
     pub fn len(&self) -> usize {
         self.entities.len()
     }
 
-    /// Whether the selection is empty.
+    /// Returns whether the selection is empty.
     pub fn is_empty(&self) -> bool {
         self.entities.is_empty()
     }

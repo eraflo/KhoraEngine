@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The writes to a behavior's fields lost in a frame, reported: its turn and
-//! the scripts around it wrote in one order, and the last write of a field
-//! won.
+//! Reports the writes to a behavior's fields that a later write of the frame
+//! overwrote.
+//!
+//! See the book: concepts/scripting/writing.md, "A script never writes the world".
 
 use std::collections::{HashMap, HashSet};
 
@@ -24,10 +25,10 @@ use khora_core::script::{BehaviorUpdate, ComponentName, Conflict, WriteTarget};
 use crate::ecs::systems::script_commands::AppliedWrites;
 use crate::ecs::{ScriptRole, World};
 
-/// Reports, once per field, every behavior field written more than once this
-/// frame by writes that each meant to set it: the `Set`s that applied, and
-/// the turn when it changed the field — counting, beside a turn, only the
-/// `Set`s it did not read before it began.
+/// Logs, once per field, each behavior field set more than once this frame.
+///
+/// A write is a `Set` that applied, or the turn when it changed the field;
+/// beside a turn, only the `Set`s it did not read before it began count.
 pub(super) fn report_lost_writes(
     world: &World,
     updates: &[BehaviorUpdate],

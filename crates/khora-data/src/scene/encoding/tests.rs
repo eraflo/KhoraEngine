@@ -210,8 +210,9 @@ fn every_kind() -> Record {
     )
 }
 
-/// A scene holding every kind of value, on entities of both namespaces:
-/// one entity in two pages, one in none, a page of several rows listed in
+/// A scene holding every kind of value, on entities of both namespaces.
+///
+/// One entity sits in two pages, one in none, and a page lists its rows in
 /// another order than the entities.
 fn every_kind_scene() -> SceneRecord {
     let first = PersistentId::authored(0x0123_4567_89ab_cdef);
@@ -267,9 +268,10 @@ fn occurrences(haystack: &[u8], needle: &[u8]) -> usize {
         .count()
 }
 
-/// The compact encoding carries the record's names in its own tables, so it
-/// owes back exactly the record it was given — every kind of value, both
-/// identity namespaces, and two structs that share a name but not a layout.
+/// The compact encoding gives back exactly the record it was given.
+///
+/// Every kind of value, both identity namespaces, and two structs that share a
+/// name but not a layout.
 #[test]
 fn the_compact_encoding_keeps_every_record_exactly() {
     for record in [
@@ -286,10 +288,10 @@ fn the_compact_encoding_keeps_every_record_exactly() {
     }
 }
 
-/// Every encoding keeps a record's layout: the entities in order, and each
-/// page's components, its rows in order and one value per row in each column.
-/// (The values themselves are the next test's business: a self-describing
-/// form keeps what a value means, not the width it was held at.)
+/// Every encoding keeps a record's layout: entities, components, rows and columns in order.
+///
+/// The values themselves are checked elsewhere: a self-describing form keeps
+/// what a value means, not the width it was held at.
 #[test]
 fn every_encoding_keeps_pages_rows_and_columns() {
     for record in [every_kind_scene(), transforms_scene(5), empty_page_scene()] {
@@ -315,10 +317,9 @@ fn every_encoding_keeps_pages_rows_and_columns() {
     }
 }
 
-/// A scene of a hundred transforms says `translation` a hundred times; the
-/// compact encoding writes it once, in its symbol table, and every value after
-/// that by position. That is what makes it compact — a quarter of the text
-/// form at most on this scene.
+/// The compact encoding writes each name once, a quarter of the text form's size at most.
+///
+/// A scene of a hundred transforms says `translation` a hundred times in text.
 #[test]
 fn the_compact_encoding_writes_each_name_once() {
     let record = transforms_scene(100);
@@ -347,12 +348,11 @@ fn the_compact_encoding_writes_each_name_once() {
     );
 }
 
-/// The text encoding is for people: pretty JSON in which a scene reads as the
-/// pages it is stored in. The entities are listed by identity; a page lists
-/// its rows' identities and keys its columns by component type name, one value
-/// per row, fields by field name; a float keeps the decimal it was written as,
-/// and the two reference kinds carry the markers that tell them apart from
-/// data.
+/// The text encoding is pretty JSON in which a scene reads as the pages it is stored in.
+///
+/// Entities by identity, columns keyed by component name, fields by name; a
+/// float keeps its decimal, and references carry the markers that set them
+/// apart from data.
 #[test]
 fn the_text_encoding_is_readable_json() {
     let texture = AssetUUID::new_v5("textures/wall.png");
@@ -517,11 +517,11 @@ fn probe() -> Probe {
     }
 }
 
-/// Struct and variant names are gone from the self-describing encodings — a
-/// struct is a map, a variant a key. What they still owe is that a value
-/// written through them reads back as itself, matched by name: floats at full
-/// precision, integer map keys from the strings JSON wrote them as, entities
-/// and assets as references.
+/// A value written through a self-describing encoding reads back as itself, matched by name.
+///
+/// Struct and variant names are gone (a struct is a map, a variant a key), yet
+/// floats keep full precision, integer map keys come back from JSON's strings,
+/// and entities and assets stay references.
 #[test]
 fn every_encoding_reads_a_value_back_by_name() {
     let value = probe();
@@ -588,9 +588,9 @@ fn a_damaged_file_is_an_error_not_a_panic() {
     }
 }
 
-/// A count read from a file is a claim, not a fact. A damaged byte can claim
-/// billions of entries; the decoder must check the claim against what is left
-/// of the input before it allocates for it, and refuse — not abort, not panic.
+/// A count no input backs is refused before anything is allocated, never an abort or a panic.
+///
+/// A damaged byte can claim billions of entries.
 #[test]
 fn a_huge_declared_count_is_refused_not_allocated() {
     let record = every_kind_scene();

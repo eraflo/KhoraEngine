@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines ECS components related to the audio system.
+//! The audio components: sources and the listener.
 
 mod listener;
 mod source;

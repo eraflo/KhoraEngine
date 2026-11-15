@@ -14,10 +14,8 @@
 
 //! Component types a project no longer has, on purpose.
 //!
-//! A save holding a component whose type is gone is an error — unless the
-//! type was retired deliberately and said so here, in which case the load
-//! skips it and reports it. A removal is a decision, and the decision is
-//! written down.
+//! A save holding an unknown component fails the whole load; a retired one is
+//! skipped and reported as `Retired`.
 
 /// A component type removed on purpose, by the name saves hold it under.
 #[derive(Debug, Clone, Copy)]
@@ -35,9 +33,7 @@ pub fn is_retired(name: &str) -> bool {
         .any(|retired| retired.name == name)
 }
 
-// The two legacy script components: one named the behavior an entity ran,
-// the other held what it was doing. A behavior is now a component of its own,
-// its state a companion beside it; projects were upgraded once — scenes,
-// prefabs and saves rewritten — and the two removed.
+// The script components that named an entity's behavior and held its state;
+// a behavior is a component of its own, its state a companion beside it.
 inventory::submit! { RetiredComponent { name: "Script" } }
 inventory::submit! { RetiredComponent { name: "ScriptState" } }

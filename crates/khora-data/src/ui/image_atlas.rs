@@ -12,13 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `UiImageAtlas` — engine-level resource holding the GPU texture atlas
-//! and the persistent `AssetUUID → AtlasRect` cache used by the UI render
-//! pipeline.
-//!
-//! They live in [`khora_core::Resources`], not on an agent: agents stay
-//! strategists and hold no GPU state. The `image_on_gpu` residency fills
-//! the atlas before any agent runs; the UI lane only reads it.
+//! [`UiImageAtlas`]: the UI images' GPU atlas and the rect of each image in it,
+//! a runtime resource the `image_on_gpu` residency fills before the agents run.
 
 use std::collections::HashSet;
 use std::sync::{Mutex, MutexGuard};
@@ -31,15 +26,11 @@ use khora_core::residency::Resident;
 
 use crate::residency::ImageOnGpu;
 
-/// Resource holding the UI image atlas (GPU texture) and an
-/// `AssetUUID → AtlasRect` cache mapping each uploaded UI image to its
-/// position inside the atlas.
+/// The UI images' GPU atlas, and the rect each image was placed at.
 ///
-/// Registered in [`khora_core::Resources`] at engine init. The `image_on_gpu`
-/// residency allocates the GPU atlas lazily via [`UiImageAtlas::ensure_atlas`]
-/// and places every UI image in it before the agents run; the UI agent borrows
-/// the atlas for rendering through [`UiImageAtlas::lock_atlas`] and reads the
-/// rects with [`UiImageAtlas::get_rect`].
+/// A runtime resource. The `image_on_gpu` residency makes the atlas with
+/// [`ensure_atlas`](Self::ensure_atlas) and fills it; the UI lane reads it
+/// through [`lock_atlas`](Self::lock_atlas) and [`get_rect`](Self::get_rect).
 pub struct UiImageAtlas {
     /// GPU texture atlas, allocated lazily on first call to
     /// `ensure_atlas` once a graphics device is available.
@@ -52,9 +43,8 @@ pub struct UiImageAtlas {
 }
 
 impl UiImageAtlas {
-    /// Creates an empty resource. The GPU atlas itself is allocated
-    /// lazily by [`ensure_atlas`](Self::ensure_atlas) once a device is
-    /// available.
+    /// Creates an empty resource; [`ensure_atlas`](Self::ensure_atlas) makes
+    /// the GPU atlas.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -64,11 +54,9 @@ impl UiImageAtlas {
         }
     }
 
-    /// Allocates the GPU texture atlas if not yet present. Idempotent —
-    /// safe to call every frame, the actual allocation happens once.
+    /// Makes the GPU atlas if it is not made yet; idempotent.
     ///
-    /// Returns `true` when the atlas is available after the call,
-    /// `false` if allocation failed.
+    /// Returns whether the atlas exists after the call.
     pub fn ensure_atlas(&self, device: &dyn GraphicsDevice) -> bool {
         let Ok(mut guard) = self.atlas.lock() else {
             log::error!("UiImageAtlas: mutex poisoned in ensure_atlas");
@@ -92,9 +80,8 @@ impl UiImageAtlas {
     /// Locks the GPU atlas, for the residency's upload or the UI lane's read
     /// of its view.
     ///
-    /// Returns the locked `MutexGuard<Option<TextureAtlas>>`; callers
-    /// dereference twice (`guard.as_mut()`) to reach the optional
-    /// `&mut TextureAtlas`. Hold the guard no longer than the work needs.
+    /// `None` when the lock is poisoned. Hold the guard no longer than the
+    /// work needs.
     pub fn lock_atlas(&self) -> Option<MutexGuard<'_, Option<TextureAtlas>>> {
         match self.atlas.lock() {
             Ok(g) => Some(g),
@@ -116,7 +103,7 @@ impl UiImageAtlas {
         self.residents.insert(id, rect);
     }
 
-    /// The `image_on_gpu` residency's store of rects.
+    /// Returns the `image_on_gpu` residency's store of rects.
     pub fn residents(&self) -> &Resident<ImageOnGpu> {
         &self.residents
     }

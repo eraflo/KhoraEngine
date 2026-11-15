@@ -12,11 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The world's entity reserver, published for the lanes that spawn.
-//!
-//! A handle, not a copy: a script's `Spawn` takes its entity's id from it in
-//! the turn, and the world commits or takes the id back at the frame's end.
-//! Projecting it reads the world and changes nothing.
+//! The world's entity reserver, published for the lanes that spawn: a handle a
+//! script's `Spawn` takes its id from, which the world commits or takes back at
+//! the frame's end.
 
 use std::sync::Arc;
 
@@ -34,7 +32,7 @@ pub struct ReservationView {
     pub reserver: Arc<EntityReserver>,
 }
 
-/// Publishes [`ReservationView`].
+/// Publishes [`ReservationView`], from the world's reserver.
 #[derive(Debug, Default)]
 pub struct ReservationFlow;
 

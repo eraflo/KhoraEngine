@@ -12,36 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # Component
-//!
-//! Components are data structures that are attached to entities in the ECS.
-//! They are used to store data that is associated with an entity.
+//! The `Component` trait: data attached to an entity, and how its column is laid out.
 
 use khora_core::script::{ErgonType, FieldValueError, ScriptValue};
 
 use crate::ecs::page::AnyVec;
 
-/// A marker trait for types that can be used as components in the ECS.
+/// Data an entity can carry; implemented by `#[derive(Component)]`.
 ///
-/// This trait must be implemented for any struct you wish to attach to an entity.
-/// The `'static` lifetime ensures that the component type does not contain any
-/// non-static references, and `Send + Sync` are required to allow the component
-/// data to be safely accessed from multiple threads.
-/// `Clone` is required to allow component data to be moved between pages
-/// during structural changes (like adding or removing components).
-///
-/// ## Physical layout (AGDF)
-///
-/// The three storage hooks below let a component declare *how* its column is
-/// physically laid out — the data-layer twin of GORNA's "adapt the HOW, not the
-/// WHAT". They all default to the canonical **Array-of-Structures** column
-/// (`Vec<Self>`), so existing components are bit-identical to before. A component
-/// that opts into a field-split **Structure-of-Arrays** layout (via
-/// `#[component(layout = "soa")]`) overrides all three to route through its
-/// generated SoA column instead. CRPECS storage stays a `Box<dyn AnyVec>` either
-/// way — only the concrete column type behind it changes.
+/// `Clone` lets a row be copied between pages when the entity changes shape.
+/// The column hooks default to an array-of-structures `Vec<Self>`; a component
+/// with `#[component(layout = "soa")]` overrides them all with its field-split
+/// column. See the book: concepts/agdf.md,
+/// "Layer 2 — the field-SoA substrate, and why it is the lever".
 pub trait Component: Clone + 'static + Send + Sync {
-    /// Creates this component's empty storage column. Default: an AoS `Vec<Self>`.
+    /// Creates this component's empty column.
     fn make_column() -> Box<dyn AnyVec>
     where
         Self: Sized,
@@ -52,8 +37,7 @@ pub trait Component: Clone + 'static + Send + Sync {
     /// Appends `self` as a new row into its column.
     ///
     /// # Panics
-    /// Panics if `column` is not this component's column type — an internal
-    /// invariant the registry/bundle paths uphold (columns are keyed by `TypeId`).
+    /// Panics if `column` is not this component's column type.
     fn push_into_column(self, column: &mut dyn AnyVec)
     where
         Self: Sized,
@@ -65,14 +49,10 @@ pub trait Component: Clone + 'static + Send + Sync {
             .push(self);
     }
 
-    /// Clones row `src_row` from `src` into `dst` (used when an entity migrates
-    /// between pages on a structural change). Both columns are this component's
-    /// column type.
+    /// Clones row `src_row` of `src` onto the end of `dst`, both this component's columns.
     ///
     /// # Panics
-    /// Panics on a column type mismatch (same invariant as [`push_into_column`]).
-    ///
-    /// [`push_into_column`]: Component::push_into_column
+    /// Panics on a column type mismatch.
     fn copy_row_between(src: &dyn AnyVec, src_row: usize, dst: &mut dyn AnyVec)
     where
         Self: Sized,
@@ -88,10 +68,7 @@ pub trait Component: Clone + 'static + Send + Sync {
         dst.push(s[src_row].clone());
     }
 
-    /// Reads row `row` of `column` as an owned value — the uniform by-value
-    /// access path that works for both AoS (clone the `&T`) and field-SoA
-    /// (gather the fields) layouts. Used by `World::clone_component`, the
-    /// `Soa<T>` query, and the serialization recipe.
+    /// Returns row `row` of `column` as an owned value, whatever the column's layout.
     ///
     /// # Panics
     /// Panics on a column type mismatch.
@@ -106,9 +83,7 @@ pub trait Component: Clone + 'static + Send + Sync {
             .clone()
     }
 
-    /// Overwrites row `row` of `column` with `self` — the uniform by-value write
-    /// path for both layouts (AoS assigns the slot; field-SoA scatters into the
-    /// lanes). Used by `World::set_component`.
+    /// Overwrites row `row` of `column` with `self`, whatever the column's layout.
     ///
     /// # Panics
     /// Panics on a column type mismatch.
@@ -123,8 +98,7 @@ pub trait Component: Clone + 'static + Send + Sync {
         v[row] = self;
     }
 
-    /// The names of the fields a script reaches, by slot: a field's slot is
-    /// its position in this list. Default: none.
+    /// Returns the names of the fields a script reaches; a field's slot is its index here.
     fn script_fields() -> &'static [&'static str]
     where
         Self: Sized,
@@ -132,8 +106,7 @@ pub trait Component: Clone + 'static + Send + Sync {
         &[]
     }
 
-    /// The Ergon type of the field at `slot`, `None` for a field a script
-    /// cannot reach. Default: none.
+    /// Returns the Ergon type of the field at `slot`, `None` for one a script cannot reach.
     fn script_type(_slot: usize) -> Option<ErgonType>
     where
         Self: Sized,
@@ -141,16 +114,15 @@ pub trait Component: Clone + 'static + Send + Sync {
         None
     }
 
-    /// The value of the field at `slot`, `None` for a field a script cannot
-    /// reach. Default: none.
+    /// Returns the field at `slot`, `None` for one a script cannot reach.
     fn read_field(&self, _slot: usize) -> Option<ScriptValue> {
         None
     }
 
-    /// Whether the field at `slot` would take `value` — the check
-    /// [`write_field`](Self::write_field) makes, without writing: what lets a
-    /// row be checked whole before any of its fields is written. Default:
-    /// every value refused.
+    /// Checks that the field at `slot` would take `value`, without writing it.
+    ///
+    /// The check [`write_field`](Self::write_field) makes, so a row can be
+    /// checked whole before any field is written. Default: every value refused.
     fn check_field(_slot: usize, value: &ScriptValue) -> Result<(), FieldValueError> {
         Err(FieldValueError {
             expected: "a field a script can write".to_owned(),
@@ -158,8 +130,9 @@ pub trait Component: Clone + 'static + Send + Sync {
         })
     }
 
-    /// Writes the field at `slot`, refusing a value it cannot hold. Default:
-    /// every write refused.
+    /// Writes the field at `slot`, refusing a value it cannot hold.
+    ///
+    /// Default: every write refused.
     fn write_field(&mut self, _slot: usize, value: &ScriptValue) -> Result<(), FieldValueError> {
         Err(FieldValueError {
             expected: "a field a script can write".to_owned(),

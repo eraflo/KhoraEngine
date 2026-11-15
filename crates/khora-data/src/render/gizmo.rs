@@ -12,19 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Per-frame gizmo lines a host application hands the engine.
-//!
-//! Producers (typically the editor application) set a [`GizmoView`] in the
-//! runtime's `HostViews`; the engine-side `GizmoLane` reads it from the bus
-//! and renders the overlay. Empty by default — a frame with no gizmos
-//! triggers no GPU work.
-//!
-//! Only contract types live in `khora-data`, no GPU code.
+//! The gizmo lines a host application hands the engine's `GizmoLane` each
+//! frame; a frame with none does no GPU work.
 
 use khora_core::ui::editor::GizmoLineInstance;
 
-/// Per-frame gizmo lines published by a host application (editor,
-/// debug tooling) and consumed by the engine's `GizmoLane`.
+/// The gizmo lines a host application publishes for one frame.
 #[derive(Debug, Default, Clone)]
 pub struct GizmoFrame {
     /// Line segments to draw this frame.

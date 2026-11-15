@@ -14,10 +14,8 @@
 
 //! A query's plan follows the registrations it was made from.
 //!
-//! The plan (Native or Transversal, and its driver domain) is cached by the
-//! query's component types. It is derived from where those types are
-//! registered, so a registration made after the first run of a query must not
-//! leave that query running a plan for a world that no longer exists.
+//! The plan is cached by the query's component types but derived from where
+//! they are registered, so a later registration must not leave it stale.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 

@@ -16,27 +16,27 @@ use khora_core::math::Vec3;
 use khora_macros::Component;
 use serde::{Deserialize, Serialize};
 
-/// Component for kinematic character movement.
-/// It provides high-level movement resolution (slopes, steps, etc.)
-/// that is more suitable for player characters than raw rigid-body physics.
+/// Moves a character by intent, resolving slopes and steps, rather than by forces.
+///
+/// Suited to player characters, where a dynamic rigid body would be hard to steer.
 #[derive(Debug, Clone, Component, Serialize, Deserialize)]
 #[component(domain = Physics)]
 pub struct KinematicCharacterController {
-    /// The translation to apply in the current frame.
+    /// The move wanted this frame, in world units; reset to zero once applied.
     pub desired_translation: Vec3,
-    /// The offset from obstacles to maintain.
+    /// The gap kept from obstacles, in world units.
     pub offset: f32,
-    /// Maximum angle for climbing slopes (in radians).
+    /// The steepest slope the character climbs, in radians.
     pub max_slope_climb_angle: f32,
-    /// Minimum angle for sliding down a slope (in radians).
+    /// The gentlest slope the character slides down, in radians.
     pub min_slope_slide_angle: f32,
-    /// Maximum height for autostepping.
+    /// The highest step climbed automatically, in world units.
     pub autostep_height: f32,
-    /// Minimum width for autostepping obstacles.
+    /// The narrowest step climbed automatically, in world units.
     pub autostep_min_width: f32,
-    /// Whether autostepping is enabled.
+    /// Whether steps are climbed automatically.
     pub autostep_enabled: bool,
-    /// Whether the character is currently grounded.
+    /// Whether the character stood on the ground after its last move; written by the engine.
     pub is_grounded: bool,
 }
 

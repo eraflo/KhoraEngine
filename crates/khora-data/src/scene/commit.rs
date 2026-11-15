@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Committing a prepared load: everything it read added at once, under the
-//! identities it keeps — or nothing, when it was prepared for another world
-//! or fails when prepared again against components changed since.
+//! Committing a prepared load: everything it read added at once, or nothing.
+//!
+//! See the book: concepts/serialization.md, "Atomic loading".
 
 use std::collections::HashSet;
 
@@ -25,29 +25,33 @@ use super::record::{LoadReport, ReportEntry, ReportKind};
 use crate::ecs::World;
 
 impl Prepared {
-    /// Whether this load was prepared for `world`: its ids are held by
-    /// `world`'s reserver. A load prepared for another world adds nothing.
+    /// Whether this load was prepared for `world`, whose reserver holds its ids.
+    ///
+    /// A load committed into another world adds nothing.
     pub fn is_for(&self, world: &World) -> bool {
         self.hold.is_over(&world.reserver())
     }
 
-    /// Whether `world`'s components are those this load was prepared
-    /// against: a load prepared off the frame before they changed is
-    /// prepared again as it commits.
+    /// Whether `world`'s components are those this load was prepared against.
+    ///
+    /// A load that is not current is prepared again as it commits.
     pub fn is_current(&self, world: &World) -> bool {
         self.generation == world.components().generation()
     }
 
-    /// The hold this load's ids are held by, its ids ready to reserve again:
-    /// what a load prepared again reuses, so it takes no new slots.
+    /// Returns the hold of this load's ids, ready to reserve them again.
+    ///
+    /// A load prepared again reuses it, so it takes no new slots.
     pub fn into_hold(self) -> khora_core::ecs::ReservationHold {
         self.hold.recycle();
         self.hold
     }
 
-    /// Adds everything, giving the entities `identity`'s identities: each
-    /// page built row by row, then the hierarchy rebuilt from each entity's
-    /// `Parent`.
+    /// Adds everything the load read, giving the entities `identity`'s identities.
+    ///
+    /// Never fails: a load prepared for another world, or one that fails when
+    /// prepared again against changed components, adds nothing and reports
+    /// `NotLoaded`.
     pub fn commit(self, world: &mut World, identity: Identity) -> Applied {
         // Ids another world's reserver holds name nothing here — maybe this
         // world's own live entities: the load adds nothing.
@@ -156,17 +160,16 @@ impl Prepared {
         }
     }
 
-    /// Gives every reserved id back, adding nothing: the hold, dropped with
-    /// the load, gives back the ids it holds; the id given before the load
-    /// stays its caller's.
+    /// Gives every reserved id back, adding nothing.
+    ///
+    /// An id the caller gave the load stays the caller's.
     pub fn abandon(self, world: &mut World) {
         let _ = world;
     }
 }
 
 impl Source {
-    /// The load prepared again from what it was read from, against `world`
-    /// as it is now.
+    /// Prepares the load again from its source, against `world` as it is now.
     fn prepare_now(&self, world: &mut World) -> Result<Prepared, LoadFailure> {
         match self {
             Self::Record(record, kept) => prepare_kept(world, record, *kept),
@@ -175,8 +178,7 @@ impl Source {
     }
 }
 
-/// What a load that could not land at all gives back: no entity, and its
-/// report saying why, beside what it found before.
+/// Returns what a load that could not land gives back: no entity, a `NotLoaded` entry saying why.
 fn not_loaded(mut report: LoadReport, reason: String) -> Applied {
     report.entries.push(ReportEntry {
         entity: None,

@@ -24,11 +24,8 @@ use std::{any::TypeId, marker::PhantomData};
 /// A `WorldQuery` filter that matches the entities holding a `T` written
 /// after the query's [`since`](super::Query::since) tick.
 ///
-/// It requires `T`, as `&T` does — an entity without `T` never matches —
-/// and yields `()`. Per page of `T`'s column: a page whose summary is not
-/// past `since` is skipped whole; a column keeping row ticks, read at or
-/// above its floor, keeps the rows whose tick is past `since`; otherwise
-/// every row is kept.
+/// It requires `T`, as `&T` does, and yields `()`. A row it cannot rule out is
+/// kept. See the book: concepts/change-detection.md, "Reading: `Changed<T>`".
 pub struct Changed<T: Component>(PhantomData<T>);
 
 impl<T: Component> WorldQuery for Changed<T> {
@@ -38,8 +35,8 @@ impl<T: Component> WorldQuery for Changed<T> {
         vec![TypeId::of::<T>()]
     }
 
-    /// None: the filter reads `T`'s ticks, never its value, so it may stand
-    /// beside a `&mut T` term.
+    /// Returns nothing: the filter reads `T`'s ticks, never its value, so it
+    /// may stand beside a `&mut T` term.
     fn accessed_type_ids() -> Vec<TypeId> {
         Vec::new()
     }

@@ -23,8 +23,8 @@ use khora_macros::Component;
 pub struct UiStyle {
     /// Background color in RGBA format (0.0 to 1.0)
     pub background_color: Vec4,
-    /// Border radius for rounded corners
-    pub border_radius: Vec4, // (top-left, top-right, bottom-right, bottom-left)
+    /// Corner radii: top-left, top-right, bottom-right, bottom-left.
+    pub border_radius: Vec4,
     /// Border color
     pub border_color: Vec4,
     /// Border width

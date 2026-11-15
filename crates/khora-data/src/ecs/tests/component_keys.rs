@@ -12,16 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A component has one key and one name.
-//!
-//! Every component — a Rust type or one declared at run time — is identified to
-//! storage by a `ComponentKey` that needs no `World`: a Rust component's is its
-//! `TypeId`, a declared one's a stable hash of its name. So a page describes
-//! itself, and a component has the same key in every world. The world's
-//! registry holds one vtable per component, with the single short name
-//! (`Transform`, `HandleComponent<Mesh>`) that scenes, the editor and scripts
-//! all use. Two Rust types that would share a short name are refused at
-//! start-up, naming both full paths.
+//! A component has one key, the same in every world, and one short name; two Rust types
+//! sharing a short name are refused at start-up.
+//! See the book: concepts/ecs.md, "The storage model".
 
 use std::any::{type_name, TypeId};
 use std::panic::{catch_unwind, AssertUnwindSafe};

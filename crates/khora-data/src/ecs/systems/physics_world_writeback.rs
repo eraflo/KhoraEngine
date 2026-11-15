@@ -12,14 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Pulls per-body transforms, kinematic results, and collision events
-//! from the physics provider back into the ECS World.
+//! Writes the physics provider's results back to the World: body poses,
+//! velocities and character moves.
 //!
-//! Replaces `StandardPhysicsLane::sync_from_world` /
-//! `resolve_characters` / `dispatch_events` (which queried the World
-//! directly inside the Lane and violated the CLAD rule). Runs in
-//! `Maintenance` phase, after the scheduler has executed the physics
-//! agent and the lane has called `provider.step(dt)`.
+//! See the book: concepts/physics.md, "Who owns a pose".
 
 use crate::ecs::SystemContext;
 use std::sync::{Arc, Mutex};
@@ -41,10 +37,8 @@ fn physics_world_writeback(
     deck: &mut OutputDeck,
     _ctx: SystemContext,
 ) {
-    // Only writeback if the physics lane actually advanced the simulation
-    // this frame (it publishes a `PhysicsStepResult` slot when it ran).
-    // When the agent is paused, throttled, or the lane was skipped for
-    // any reason, we don't want to pull stale provider state.
+    // Only on a frame the lane stepped: paused, throttled or skipped, the
+    // provider's state is stale.
     if !deck.contains::<PhysicsStepResult>() {
         return;
     }
@@ -70,14 +64,10 @@ fn physics_world_writeback(
     resolve_characters(world, provider);
 }
 
-/// Pull body poses from the provider into [`SimulatedTransform`].
+/// Writes each body's pose into [`SimulatedTransform`] and its velocity into
+/// [`BodyMotion`], never into the authored `Transform`.
 ///
-/// **Not into `Transform`**, which it used to overwrite every frame.
-/// `Transform` is `Authored` — `ComponentProvenance` says an author writes it —
-/// so a designer's placement survived exactly until the first frame of physics.
-/// Saving mid-play recorded the fallen pose over it, the inspector showed a
-/// number nobody typed, and a gizmo anchored wherever gravity had left the body.
-/// The one hand-back to `Transform` happens when the simulation lets go of an
+/// `Transform` is handed back once, when the simulation lets go of the
 /// entity, in [`physics_release`](crate::ecs::systems::physics_release).
 fn sync_from_provider(world: &mut World, provider: &dyn PhysicsProvider) {
     // Read first, write after: adding a component is a structural change, and
@@ -98,9 +88,7 @@ fn sync_from_provider(world: &mut World, provider: &dyn PhysicsProvider) {
 
     for (entity, pose, motion) in observed {
         set_simulated(world, entity, pose);
-        // Read back rather than left to the authored field, which is a starting
-        // condition. Anything asking a body what it is doing used to be told
-        // what its designer typed.
+        // Read back: the authored velocity is only a starting condition.
         match world.get_mut::<BodyMotion>(entity) {
             // Written only when it differs: a body at rest writes nothing.
             Some(mut existing) => {
@@ -126,7 +114,8 @@ fn set_simulated(world: &mut World, entity: EntityId, pose: SimulatedTransform) 
     }
 }
 
-/// Apply kinematic-character-controller movement results.
+/// Moves each kinematic character by what the provider resolved, and records
+/// whether it is grounded.
 fn resolve_characters(world: &mut World, provider: &dyn PhysicsProvider) {
     let mut results = Vec::new();
     {
@@ -148,14 +137,10 @@ fn resolve_characters(world: &mut World, provider: &dyn PhysicsProvider) {
     }
 
     for (id, m, g) in results {
-        // The controller's resolved movement is simulation output like any
-        // other, so it lands where the body pose lands. It moves on from
-        // where the character is drawn this frame — the pose its collider was
-        // synced to and the movement was resolved from. Not from its last
-        // simulated pose: a character somebody moved this frame (`Teleported`)
-        // is drawn at the new place, and adding the movement to the old one
-        // snapped it back the next frame. The authored placement only when
-        // nothing has been drawn yet.
+        // From where the character is drawn, the pose the move was resolved
+        // from: added to its last simulated pose, a character `Teleported`
+        // this frame would snap back. The authored pose only before anything
+        // was drawn.
         let from = world
             .get::<GlobalTransform>(id)
             .map(|drawn| (drawn.0.translation(), drawn.0.rotation()))

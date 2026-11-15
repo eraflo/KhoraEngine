@@ -12,20 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The schema a value is written in, as serde sees it.
+//! The schema a value is written in, as serde sees it, and its fingerprint.
 //!
-//! A snapshot writes values by position, with no names: it can be read only
-//! by the schema that wrote it. The schema is traced from a type's serde
-//! format — struct and field names, their order, their types, enum variants,
-//! nested types — written as canonical text and hashed into a fingerprint
-//! that is the same on every run and every build.
-//!
-//! The canonical text, with no spaces: primitives by name (`bool`, `i8` …
-//! `u64`, `f32`, `f64`, `char`, `string`, `bytes`, `unit`); `option<T>`,
-//! `seq<T>`, `map<K,V>`, `tuple(T,U)`; `struct Name{a:T}`, `struct Name`,
-//! `struct Name(T,U)`; `enum Name{A,B(T),C(T,U),D{x:T}}`, variants in
-//! declaration order. A type met again while it is still being written — a
-//! recursive type — is written as its name alone.
+//! See the book: reference/formats.md, "Snapshot layout".
 
 mod access;
 mod elements;
@@ -38,9 +27,9 @@ use std::fmt;
 
 use serde::de::DeserializeOwned;
 
-/// A container's identity within one trace: its serde name, and the type
-/// of the visitor serde reads it with — two types of the same name are two
-/// containers. Only the name is ever written.
+/// A container's identity within one trace: its serde name and its visitor's type.
+///
+/// Two types of the same name are two containers. Only the name is ever written.
 pub(crate) type Key = (&'static str, &'static str);
 
 /// The format of one value.
@@ -68,9 +57,9 @@ pub(crate) enum Container {
     Enum(Vec<(&'static str, Option<Payload>)>),
 }
 
-/// A struct's fields: the names serde knows it by — each field's, and the
-/// older names it is also read under — and the format of each field, in
-/// order.
+/// A struct's fields: the names serde knows it by, and each field's format in order.
+///
+/// `names` holds the older names a field is also read under, beside the current ones.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Fields {
     pub(crate) names: &'static [&'static str],
@@ -85,8 +74,14 @@ pub(crate) enum Payload {
     Struct(Fields),
 }
 
-/// The serde format of a type: a canonical tree whose `Display` is its
-/// canonical text.
+/// The serde format of a type: a canonical tree whose `Display` is its canonical text.
+///
+/// The text, with no spaces: primitives by name (`bool`, `i8` … `u64`, `f32`,
+/// `f64`, `char`, `string`, `bytes`, `unit`); `option<T>`, `seq<T>`, `map<K,V>`,
+/// `tuple(T,U)`; `struct Name{a:T}`, `struct Name`, `struct Name(T,U)`;
+/// `enum Name{A,B(T),C(T,U),D{x:T}}` in declaration order. A recursive type met
+/// again while it is being written is its name alone. The text, and so the
+/// fingerprint, is the same on every run and every build.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Schema {
     root: Format,
@@ -97,19 +92,18 @@ pub struct Schema {
 }
 
 impl Schema {
-    /// The 64-bit fingerprint of the canonical text (FNV-1a).
+    /// Returns the 64-bit FNV-1a fingerprint of the canonical text.
     pub fn fingerprint(&self) -> u64 {
         fingerprint_of(&self.to_string())
     }
 
-    /// Whether every value of the type was traced.
+    /// Returns whether every value of the type was traced.
     pub fn is_complete(&self) -> bool {
         self.complete
     }
 }
 
-/// The 64-bit FNV-1a of `text`: how a canonical text becomes a fingerprint,
-/// for a schema and for anything built from several.
+/// Returns the 64-bit FNV-1a of `text`, the fingerprint of a schema or of several combined.
 pub fn fingerprint_of(text: &str) -> u64 {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in text.bytes() {
@@ -227,9 +221,10 @@ impl Schema {
         f.write_str(")")
     }
 
-    /// `{a:T,b:U}` — or, for a struct read under older names too, which
-    /// serde lists beside the current ones, every name then the formats:
-    /// `{reserve,points,regen}(f32,f32)`.
+    /// Writes `{a:T,b:U}`, or every name then the formats for a struct with older names.
+    ///
+    /// The second form reads `{reserve,points,regen}(f32,f32)`: serde lists the
+    /// older names beside the current ones, so names and formats do not pair up.
     fn write_fields(
         &self,
         f: &mut fmt::Formatter<'_>,
@@ -252,9 +247,10 @@ impl Schema {
     }
 }
 
-/// `T`'s fingerprint and whether its trace was complete, traced once into
-/// `cell`. An incomplete trace is said out loud: a snapshot of `name` cannot
-/// be guarded, so none is written or read.
+/// Returns `T`'s fingerprint and whether its trace was complete, traced once into `cell`.
+///
+/// An incomplete trace is logged as a warning: a snapshot of `name` cannot be
+/// guarded, so none is written or read.
 pub fn traced_once<T: DeserializeOwned>(
     cell: &std::sync::OnceLock<(u64, bool)>,
     name: &str,
@@ -273,10 +269,8 @@ pub fn traced_once<T: DeserializeOwned>(
 
 /// Traces the serde format of `T`.
 ///
-/// Drives `T::deserialize` with a deserializer that records every format it
-/// is asked for, as many times as it takes to visit every variant of every
-/// enum. Recursion ends where serde lets a value stop: an empty sequence or
-/// map, a `None`, an enum variant already known to end.
+/// A type that cannot be traced in full returns a schema whose
+/// [`is_complete`](Schema::is_complete) is false.
 pub fn schema_of<T: DeserializeOwned>() -> Schema {
     let (root, containers, complete) = trace::trace::<T>();
     Schema {

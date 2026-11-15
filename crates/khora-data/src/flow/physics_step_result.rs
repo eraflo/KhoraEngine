@@ -14,15 +14,12 @@
 
 //! `PhysicsStepResult` — what the physics lane reports after a step.
 
-/// Slot type written into [`OutputDeck`](khora_core::lane::OutputDeck)
-/// by `StandardPhysicsLane` after `provider.step(dt)` completes.
+/// The step the physics lane reports on the
+/// [`OutputDeck`](khora_core::lane::OutputDeck).
 ///
-/// Drained in `Maintenance` by the `physics_world_writeback` DataSystem,
-/// which uses its presence to decide whether the simulation actually
-/// advanced this frame (and therefore whether to pull fresh transforms
-/// out of the provider). When the agent skips its lane (paused agent,
-/// budget exhaustion …) no `PhysicsStepResult` lands in the deck and the
-/// writeback no-ops.
+/// Its presence tells the `physics_world_writeback` DataSystem the simulation
+/// advanced this frame; a frame whose lane did not run has none, and the
+/// writeback does nothing.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PhysicsStepResult {
     /// The simulation timestep that was advanced.

@@ -12,16 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `CameraFlow` — projects the active scene camera into a [`CameraView`] the
-//! engine prepares the frame from.
-//!
-//! The view is the first **active** camera, projected at the aspect of the
-//! frame's colour target ([`target_aspect`](crate::render::target_aspect)),
-//! exactly as [`extract_active_camera_view`](crate::render::extract_active_camera_view)
-//! builds it. With no active camera, it is the camera a tool set with
-//! [`EditorViewportOverride::set_camera`] — the editor's own, while editing.
-//! The SDK reads it once per frame, after the Flows run, and hands it to
-//! `RenderSystem::prepare_frame`: no agent reaches the `World` for it.
+//! `CameraFlow`: the active scene camera, or the tool's own when none is
+//! active, projected into the [`CameraView`] the engine prepares the frame from.
 
 use khora_core::renderer::api::resource::ViewInfo;
 use khora_core::Runtime;
@@ -34,16 +26,15 @@ use crate::render::{extract_active_camera_view, target_aspect, EditorViewportOve
 /// The active scene camera of this frame, as the renderer is prepared with it.
 #[derive(Debug, Clone)]
 pub struct CameraView {
-    /// - `None` — no entity has an active camera, and no tool set a camera of
-    ///   its own.
-    /// - `Some(Err(problem))` — the active camera's values make no image; it
-    ///   prepares nothing, and no other camera is picked in its place.
-    /// - `Some(Ok(view))` — the active camera's view, projected at the frame
-    ///   target's aspect; or, with none active, the tool's camera.
+    /// The camera's view, `None` when no camera is active and no tool set one.
+    ///
+    /// `Some(Err(problem))` when the active camera's values make no image: it
+    /// prepares nothing, and no other camera is picked in its place.
     pub view: Option<Result<ViewInfo, CameraProblem>>,
 }
 
-/// Projects the active scene camera into the frame's [`CameraView`].
+/// Publishes [`CameraView`], from the first active camera or, with none, the
+/// [`EditorViewportOverride`]'s camera.
 #[derive(Default)]
 pub struct CameraFlow;
 
@@ -83,6 +74,7 @@ mod tests {
     }
 
     /// **The camera view is the active camera's, or the reason it has none.**
+    ///
     /// A usable active camera gives the same `ViewInfo` the renderer was
     /// prepared with before (`extract_active_camera_view` at the target's
     /// aspect, here the fallback: a GPU-free run has no target); an active

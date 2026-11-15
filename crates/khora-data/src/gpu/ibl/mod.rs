@@ -12,23 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Image-based lighting (IBL) bake — the data-layer "environment → GPU"
-//! projection.
-//!
-//! [`IblBaker`] runs at startup (driven by the `ibl_bake` DataSystem), and
-//! again whenever the environment it was baked from changes, and produces the
-//! GPU resources image-based lighting samples:
-//! - an environment cubemap (a procedural sky for now, an authored HDR later),
-//! - a diffuse irradiance cube (cosine-convolved environment),
-//! - and — added in a later increment — a prefiltered specular cube + the
-//!   split-sum BRDF LUT (both stand-ins for now).
-//!
-//! Because the bake is occasional and needs render passes, it records into a
-//! **standalone** command encoder ([`GraphicsDevice::create_command_encoder`])
-//! and submits it directly, outside the per-frame loop — no lane or agent
-//! required. The resulting [`IblGpuBindings`] is stored behind interior
-//! mutability (the baker is a shared resource) and consumed by the lit lanes
-//! at group 3 via [`IblBaker::bindings`].
+//! Image-based lighting: [`IblBaker`] bakes the environment, irradiance and
+//! specular cubes and the BRDF table the lit lanes sample at group 3, on its own
+//! encoder outside the frame, and again whenever the environment changes.
 
 use std::sync::{RwLock, RwLockReadGuard};
 
@@ -57,7 +43,7 @@ const ENV_FACE_SIZE: u32 = 256;
 /// tiny cube captures it (sampled with linear filtering).
 const IRRADIANCE_FACE_SIZE: u32 = 32;
 
-/// Linear HDR format for every IBL cube (sky may exceed 1.0 once authored).
+/// Linear HDR format for every IBL cube: an authored sky exceeds 1.0.
 const IBL_FORMAT: TextureFormat = TextureFormat::Rgba16Float;
 
 /// Prefiltered specular cube face resolution (mip 0). Higher-roughness mips
@@ -108,17 +94,16 @@ pub struct IblSource {
 }
 
 impl IblSource {
-    /// The procedural sky: no environment selected, no texture.
+    /// Returns the procedural sky's source: no environment, no texture.
     pub fn procedural() -> Self {
         Self::default()
     }
 }
 
-/// IBL bake service. Registered as a shared resource at bootstrap and driven by
-/// the `ibl_bake` DataSystem, which calls [`ensure_baked`] every frame with the
-/// scene's current [`IblSource`]: the bake runs when the source differs from
-/// the one the current bake was made from (the first frame, a repainted
-/// environment, another environment selected) and is a no-op otherwise.
+/// The IBL bake service, a shared resource the `ibl_bake` DataSystem drives.
+///
+/// [`ensure_baked`] is called every frame with the scene's [`IblSource`], and
+/// bakes only when it differs from the one the current bake was made from.
 ///
 /// [`ensure_baked`]: IblBaker::ensure_baked
 #[derive(Default)]
@@ -143,17 +128,18 @@ impl IblBaker {
         Self::default()
     }
 
-    /// The current bake, poisoning ignored: it is only ever replaced whole.
+    /// Returns the current bake, ignoring poisoning: it is only ever replaced
+    /// whole.
     fn read(&self) -> RwLockReadGuard<'_, Option<(IblSource, IblResources)>> {
         self.baked.read().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// Whether a bake has run.
+    /// Returns whether a bake has run.
     pub fn is_baked(&self) -> bool {
         self.read().is_some()
     }
 
-    /// Whether the current bake was made from exactly `source`.
+    /// Returns whether the current bake was made from exactly `source`.
     pub fn is_baked_from(&self, source: &IblSource) -> bool {
         self.read()
             .as_ref()
@@ -181,9 +167,10 @@ impl IblBaker {
         }
     }
 
-    /// Records one tick spent waiting for the scene's environment asset to
-    /// load. Returns `true` while the caller should keep waiting, and `false`
-    /// once the budget is spent and it must bake the procedural sky instead.
+    /// Records one tick spent waiting for the environment asset; `false` once
+    /// the wait is spent.
+    ///
+    /// The caller then bakes the procedural sky instead.
     pub fn wait_for_environment(&self) -> bool {
         let waited = self
             .env_wait
@@ -194,17 +181,11 @@ impl IblBaker {
     /// Bakes the IBL resources from `source` unless the current bake was made
     /// from it. Safe to call every frame.
     ///
-    /// `sun_direction` points **toward** the sun in world space — the scene's
-    /// directional light, so the procedural sky's sun disk agrees with the
-    /// light that casts the shadows. A zero/degenerate vector falls back to
-    /// [`DEFAULT_SUN_DIRECTION`]. It is captured at each bake.
-    ///
-    /// `source.texture` is an authored equirectangular environment map (see
-    /// [`EnvironmentMap`]); `None` bakes the procedural sky instead. Both fill
-    /// the same env cube, so the rest of the chain is unaffected.
-    ///
-    /// A new bake is published before the previous one is freed, and the
-    /// environment wait starts over; a bake that fails keeps the previous one.
+    /// `sun_direction` points toward the sun, so the procedural sky's disk
+    /// agrees with the light casting the shadows; a degenerate one falls back
+    /// to a high afternoon sun. A new bake is published before the previous
+    /// one is freed, and the environment wait starts over; a failed bake keeps
+    /// the previous one.
     pub fn ensure_baked(
         &self,
         device: &dyn GraphicsDevice,

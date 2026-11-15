@@ -12,11 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The intermediate `RenderWorld` and its associated extracted-data types.
-//!
-//! `RenderWorld` is a per-frame, GPU-friendly snapshot of the scene used by
-//! the rendering lanes.  It is populated by [`extract_scene`](super::extract_scene)
-//! once per frame in the engine's hot loop.
+//! [`RenderWorld`], the View of the scene the render lanes draw from, and the
+//! extracted meshes, lights and views it holds.
 
 use khora_core::asset::{AssetHandle, AssetUUID, Material};
 use khora_core::math::affine_transform::AffineTransform;
@@ -34,21 +31,22 @@ pub struct ExtractedMesh {
     pub cpu_mesh_uuid: AssetUUID,
     /// Handle to the uploaded GPU mesh data.
     pub gpu_mesh: AssetHandle<GpuMesh>,
-    /// Optional CPU-side material handle.  `None` means use a default material.
+    /// The CPU material, `None` for the default material.
     ///
-    /// Still consumed by lanes that branch on the concrete material type
-    /// (e.g. `SimpleUnlitLane` pipeline selection); lit lanes read the
-    /// projected [`gpu_material`](Self::gpu_material) instead.
+    /// Read by lanes that pick their pipeline by material type
+    /// (`SimpleUnlitLane`); the lit lanes read
+    /// [`gpu_material`](Self::gpu_material).
     pub material: Option<AssetHandle<Box<dyn Material>>>,
-    /// Handle to the projected GPU material (uniform buffer + textures +
-    /// group-2 bind group), produced by the material projection.  `None`
-    /// until the projection has uploaded it, or when the entity carries no
-    /// resolved material handle (lit lanes fall back to a default material).
+    /// The GPU material (uniforms, textures, group-2 bind group).
+    ///
+    /// `None` until it is uploaded, or when the entity has no resolved
+    /// material; the lit lanes then draw a default material.
     pub gpu_material: Option<AssetHandle<GpuMaterial>>,
-    /// Whether the drawn world matrix mirrors the mesh: the determinant of
-    /// [`transform`](Self::transform)'s upper 3×3 is negative (an odd number
-    /// of negative scale axes). Its triangles wind the other way on screen,
-    /// so the lit lanes cull front faces instead of back faces for it.
+    /// Whether [`transform`](Self::transform) mirrors the mesh (a negative
+    /// determinant).
+    ///
+    /// Its triangles then wind the other way on screen, so the lit lanes cull
+    /// front faces instead of back faces for it.
     pub mirrored: bool,
 }
 
@@ -78,8 +76,7 @@ pub struct ExtractedView {
 
 /// All scene data needed to render one frame.
 ///
-/// Populated by [`extract_scene`](super::extract_scene).  Consumed by the
-/// render lanes through the shared [`RenderWorldStore`](super::RenderWorldStore).
+/// A View on the bus, published by [`RenderFlow`](crate::flow::RenderFlow).
 #[derive(Default, Clone)]
 pub struct RenderWorld {
     /// Meshes to draw this frame.
@@ -96,7 +93,7 @@ impl RenderWorld {
         Self::default()
     }
 
-    /// Clears all extracted data.  Called at the start of each frame's extraction.
+    /// Clears all extracted data.
     pub fn clear(&mut self) {
         self.meshes.clear();
         self.lights.clear();

@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! User interface subsystem.
-//!
-//! Provides UI components and layout management for the Khora Engine.
+//! The UI's components, the per-frame UI scene, and the atlases its text and
+//! images are drawn from.
 
 pub mod components;
 pub mod glyph_atlas;

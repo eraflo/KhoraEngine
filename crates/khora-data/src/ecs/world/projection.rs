@@ -26,8 +26,7 @@ use super::World;
 use crate::ecs::ComponentKey;
 use crate::scene::component_registration::registration_for;
 
-/// A component a program runs — a behavior's or a system's: its key, and the
-/// module whose program runs it.
+/// A component a program runs, a behavior or a system, and the module that declares it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BehaviorComponent<'w> {
     /// The component.
@@ -39,12 +38,11 @@ pub struct BehaviorComponent<'w> {
 }
 
 impl World {
-    /// Every registered component a program runs — a behavior
-    /// ([`ScriptRole::Behavior`](crate::ecs::ScriptRole::Behavior)) or a
-    /// system ([`ScriptRole::System`](crate::ecs::ScriptRole::System)) — in
-    /// the order they run: by module, then by their place in it, the name
-    /// breaking a tie. A state companion, a declared component with no role
-    /// and a Rust component are run by nothing.
+    /// Returns every registered component a program runs, in the order they run.
+    ///
+    /// A [`ScriptRole::Behavior`](crate::ecs::ScriptRole::Behavior) or
+    /// [`ScriptRole::System`](crate::ecs::ScriptRole::System), ordered by
+    /// module, then place in it, then name.
     pub fn behavior_components(&self) -> Vec<BehaviorComponent<'_>> {
         let mut behaviors: Vec<(u32, BehaviorComponent<'_>)> = self
             .components()
@@ -70,13 +68,10 @@ impl World {
             .collect()
     }
 
-    /// A projection of the components named `names`: one typed copy of every
-    /// page column holding each, and where each live holder's row is.
+    /// Returns a typed copy of every page column holding a component of `names`, indexed by holder.
     ///
-    /// A row a migration left behind is not a holder — only the row the
-    /// entity's location points at is. A name no component has, or a
-    /// component nobody holds, is projected empty, so whether a component is
-    /// projected is a question with an answer.
+    /// Rows a migration left behind are not holders. A name no component has,
+    /// or that nobody holds, is projected empty rather than left out.
     pub fn project_components(&self, names: &[ComponentName]) -> ComponentProjection {
         ComponentProjection::new(
             names
@@ -120,8 +115,7 @@ impl World {
         ProjectedComponent::new(name.clone(), columns, index, default_row(self, key))
     }
 
-    /// Every live row of declared component `key`: its entity and its fields
-    /// by name, read from the pages that hold it and nothing else.
+    /// Returns every live row of declared component `key`, as its entity and its fields by name.
     pub fn declared_rows(&self, key: ComponentKey) -> Vec<(EntityId, Vec<(String, ScriptValue)>)> {
         let registry = &self.storage.registry;
         let Some(vtable) = registry.vtable(key) else {
@@ -157,8 +151,7 @@ impl World {
         rows
     }
 
-    /// Every entity holding component `key` live, from the pages that hold
-    /// it and nothing else — its values not read.
+    /// Returns every entity holding component `key`, without reading its values.
     pub fn holders(&self, key: ComponentKey) -> Vec<EntityId> {
         let Some(domain) = self
             .storage
@@ -184,7 +177,7 @@ impl World {
         holders
     }
 
-    /// `entity`'s row of declared component `key`, its fields by name.
+    /// Returns `entity`'s row of declared component `key`, its fields by name.
     pub fn declared_row(
         &self,
         entity: EntityId,
@@ -207,7 +200,7 @@ impl World {
         )
     }
 
-    /// Whether `row` of page `page_id` is `entity`'s live row in `domain`.
+    /// Returns whether `row` of page `page_id` is `entity`'s live row in `domain`.
     fn holds_at(
         &self,
         entity: EntityId,
@@ -226,8 +219,7 @@ impl World {
     }
 }
 
-/// Component `key`'s default, as a script reads it: a Rust component's from
-/// its registration, a declared one's from its layout.
+/// Returns component `key`'s default as a script reads it, from its registration or its layout.
 fn default_row(world: &World, key: ComponentKey) -> Option<khora_core::script::ScriptValue> {
     match key {
         ComponentKey::Rust(type_id) => {

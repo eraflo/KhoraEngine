@@ -12,16 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `UiFlow` — projects UI ECS data into a per-frame
-//! [`UiScene`](crate::ui::UiScene) published into the
-//! [`LaneBus`](khora_core::lane::LaneBus).
-//!
-//! The flow shapes nothing: each text's glyphs are copied from its
-//! [`UiTextLayout`](crate::ui::UiTextLayout), which the `ui_text_layout`
-//! DataSystem writes when the text changes. Atlas allocation is **not** here
-//! either: it requires GPU device access and produces GPU side effects, so
-//! the image atlas is filled by the UI agent and the glyph atlas by the
-//! `glyphs_on_gpu` DataSystem.
+//! `UiFlow`: the UI nodes and laid-out texts, projected into the
+//! [`UiScene`] the UI lane draws. It shapes no text and
+//! fills no atlas: DataSystems do, since both write.
 
 use std::sync::Arc;
 
@@ -33,14 +26,11 @@ use crate::register_flow;
 use crate::ui::components::{UiBorder, UiColor, UiImage, UiText, UiTransform};
 use crate::ui::{ExtractedUiNode, ExtractedUiText, UiScene, UiTextLayout};
 
-/// UI presentation Flow.
+/// Publishes [`UiScene`], from the UI transforms and looks and each text's
+/// [`UiTextLayout`], sorted by z-index.
 ///
-/// **Uncached** (no `cache_key` override): it re-projects every tick, a copy
-/// of every node and every laid-out text.
-///
-/// The size of the image the UI is drawn into is not part of the view: the
-/// UI lane takes it from the frame's `ColorTargetSize`, alongside the target
-/// itself.
+/// Uncached: it projects every tick. The target's size is not in the view: the
+/// UI lane reads it with the target.
 #[derive(Default)]
 pub struct UiFlow;
 
@@ -163,9 +153,11 @@ mod tests {
     }
 
     /// **A text with a layout projects its glyphs, font, size, colour, layer
-    /// and position**: the flow copies the entity's `UiTextLayout` — its
-    /// glyphs as shaped, the font and the size they were shaped at — with the
-    /// `UiTransform`'s position and layer and the `UiText`'s colour.
+    /// and position.**
+    ///
+    /// The flow copies the entity's `UiTextLayout` (its glyphs as shaped, the
+    /// font and the size they were shaped at) with the `UiTransform`'s position
+    /// and layer and the `UiText`'s colour.
     #[test]
     fn a_text_with_a_layout_projects_its_glyphs_font_size_colour_layer_and_position() {
         let mut world = World::new();
@@ -192,9 +184,10 @@ mod tests {
         );
     }
 
-    /// **A text without a layout is not projected** — its font is not
-    /// resolved yet, or `ui_text_layout` has not run on it: beside a text that
-    /// has one, which is, it is not in the scene.
+    /// **A text without a layout is not projected.**
+    ///
+    /// Its font is not resolved yet, or `ui_text_layout` has not run on it:
+    /// beside a text that has one, which is, it is not in the scene.
     #[test]
     fn a_text_without_a_layout_is_not_projected() {
         let mut world = World::new();
@@ -218,9 +211,10 @@ mod tests {
         );
     }
 
-    /// **The flow reaches no text backend**: on a runtime holding nothing at
-    /// all — no shaper, no rasteriser, no renderer — a laid-out text is
-    /// projected with every one of its glyphs.
+    /// **The flow reaches no text backend.**
+    ///
+    /// On a runtime holding no shaper, rasteriser or renderer, a laid-out text
+    /// is projected with every one of its glyphs.
     #[test]
     fn the_flow_projects_texts_on_a_runtime_holding_no_text_backend() {
         let mut world = World::new();

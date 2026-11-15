@@ -12,20 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Unified, engine-wide GPU/asset resource store.
-//!
-//! [`AssetStore`] is the single home for every projected asset cache —
-//! `Assets<GpuMesh>`, `Assets<GpuMaterial>`, `Assets<CpuTexture>`, and any
-//! future type. It replaces the per-type named wrappers (`GpuCache`,
-//! `GpuMaterialCache`, `CpuTextureCache`) that each existed only to get a
-//! distinct `TypeId` in the runtime resource registry.
-//!
-//! It is the **Data** side of CLAD: a store of resources projected from the
-//! ECS, consumed by the render descent. One `AssetStore` is created at
-//! bootstrap, registered into `runtime.resources`, and shared (cheap `Arc`
-//! clone) by the projection and every consumer. Adding a new asset type
-//! needs zero new wiring: `store.store::<T>()` lazily creates the typed
-//! sub-store on first access.
+//! The engine-wide store of every asset cache (`Assets<GpuMesh>`,
+//! `Assets<GpuMaterial>`, …), one typed sub-store per asset type, created on
+//! first access.
 
 use crate::assets::Assets;
 use khora_core::asset::Asset;
@@ -50,8 +39,12 @@ impl AssetStore {
 
     /// Returns the shared `Assets<T>` sub-store, creating it on first access.
     ///
-    /// The returned `Arc<RwLock<Assets<T>>>` can be held across frames; it is
-    /// the same handle every caller receives for a given `T`.
+    /// Every caller gets the same sub-store for a given `T`; it may be held
+    /// across frames.
+    ///
+    /// # Panics
+    ///
+    /// If a thread panicked while holding the store's lock.
     pub fn store<T: Asset>(&self) -> Arc<RwLock<Assets<T>>> {
         let mut map = self.inner.lock().expect("AssetStore mutex poisoned");
         let entry = map

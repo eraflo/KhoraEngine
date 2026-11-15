@@ -12,15 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What preparing a load reads of a world, frozen so it can be read off the
-//! frame.
-//!
-//! A load is prepared without the `World`: it reads the domain each
-//! component is kept in, the components declared while the engine runs, and
-//! the entity a reference to nothing names. The world publishes those as a
-//! [`LoadCatalog`], an immutable snapshot shared as an `Arc`. Its
-//! `generation` moves whenever what it holds changes, so a load prepared
-//! against an older catalogue can be told apart.
+//! What preparing a load reads of a world, frozen as a [`LoadCatalog`] so a
+//! load can be prepared off the frame, without the `World`.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -29,8 +22,7 @@ use khora_core::ecs::entity::EntityId;
 
 use crate::ecs::{ComponentKey, ComponentRegistry, PackedLayout, SemanticDomain};
 
-/// What a load prepared off the frame reads of a world, as it was when the
-/// catalogue was taken.
+/// What a load prepared off the frame reads of a world, as it was when taken.
 #[derive(Debug)]
 pub struct LoadCatalog {
     generation: u64,
@@ -57,21 +49,22 @@ pub struct CatalogDeclared {
 }
 
 impl LoadCatalog {
-    /// The catalogue's generation: equal for two catalogues taken from one
-    /// world with no change of its components in between, different
-    /// otherwise.
+    /// Returns the catalogue's generation.
+    ///
+    /// Two catalogues of one world have the same generation exactly when its
+    /// components did not change between them.
     pub fn generation(&self) -> u64 {
         self.generation
     }
 
-    /// The domain the world keeps component `key` in, `None` when the world
-    /// does not know it.
+    /// Returns the domain the world keeps component `key` in, `None` when it does not know it.
     pub fn domain_of(&self, key: ComponentKey) -> Option<SemanticDomain> {
         self.domains.get(&key).copied()
     }
 
-    /// The component declared while the engine runs under `name`, `None`
-    /// when the world declares none — a Rust component's name included.
+    /// Returns the component declared under `name` while the engine runs.
+    ///
+    /// `None` for a Rust component's name, or one the world does not declare.
     pub fn declared(&self, name: &str) -> Option<&CatalogDeclared> {
         self.declared.get(name)
     }
@@ -81,14 +74,15 @@ impl LoadCatalog {
         self.rust.contains(name)
     }
 
-    /// The entity a reference to nothing names in the world.
+    /// Returns the entity a reference to nothing names in the world.
     pub fn nowhere(&self) -> EntityId {
         self.nowhere
     }
 
-    /// The declaration a file holds for the component declared under
-    /// `name`, built from this catalogue as the world's registry builds it:
-    /// `None` when the world declares no component of that name.
+    /// Returns the declaration a file holds for the component declared under `name`.
+    ///
+    /// It equals the one the world's registry builds; `None` when the world
+    /// declares no component of that name.
     pub fn declaration_of(&self, name: &str) -> Option<super::declared::DeclaredRecord> {
         let declared = self.declared.get(name)?;
         Some(super::declared::declaration(
@@ -99,8 +93,7 @@ impl LoadCatalog {
         ))
     }
 
-    /// The catalogue of `registry`, a world's, whose reference to nothing
-    /// names `nowhere`.
+    /// Takes the catalogue of a world's `registry`, whose reference to nothing names `nowhere`.
     pub(crate) fn of(registry: &ComponentRegistry, nowhere: EntityId) -> Self {
         let mut domains = HashMap::with_capacity(registry.len());
         let mut declared = HashMap::new();
@@ -154,9 +147,9 @@ mod tests {
         )
     }
 
-    /// A field of every kind a declared component stores, each with a default
-    /// other than its kind's zero and its Ergon type — the default of the
-    /// entity field naming an entity of the world.
+    /// A layout with a field of every kind a declared component stores.
+    ///
+    /// Each default differs from its kind's zero; the entity field's names `someone`.
     fn every_kind(someone: khora_core::ecs::entity::EntityId) -> PackedLayout {
         let optional = |ty: ErgonType| ErgonType::Optional(Box::new(ty));
         let (fields, types): (Vec<PackedField>, Vec<ErgonType>) = vec![
@@ -233,12 +226,12 @@ mod tests {
             .expect("a declared component")
     }
 
-    /// **A declaration built from the catalogue is the registry's.** For a
-    /// declared component holding a field of every kind, each with its type
-    /// and a default — an authored one, and a resumable engine-written one in
-    /// another domain — the catalogue builds, by name, exactly the
-    /// declaration the world's registry builds from the component's vtable.
-    /// A Rust component, or a name nobody declares, has none.
+    /// **A declaration built from the catalogue is the registry's.**
+    ///
+    /// For a declared component with a field of every kind — authored, and
+    /// resumable in another domain — the catalogue builds by name the
+    /// declaration the registry builds from its vtable. A Rust component, or an
+    /// undeclared name, has none.
     #[test]
     fn a_declaration_built_from_the_catalogue_matches_the_registry_one() {
         let mut world = World::new();

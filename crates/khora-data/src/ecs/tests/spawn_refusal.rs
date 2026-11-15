@@ -14,11 +14,7 @@
 
 //! A spawn refuses a component type nobody registered.
 //!
-//! A type with no registered domain has no location an entity's metadata could
-//! record: stored in a page, it would be invisible to `get`, to every query and
-//! to `despawn`, which would leave its row behind. `try_spawn` refuses such a
-//! bundle before allocating anything; `spawn` panics on it, a programming error
-//! caught the first time the code runs.
+//! See the book: concepts/ecs.md, "Registration".
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 

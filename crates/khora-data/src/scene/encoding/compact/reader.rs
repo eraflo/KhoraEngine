@@ -14,12 +14,8 @@
 
 //! Reading one compact value, without recursion.
 //!
-//! A value nests: a list of structs of variants. Reading it by recursion
-//! costs a stack frame per level, and a frame is large in an unoptimised
-//! build — deep enough a value, and a load overflows the thread that runs
-//! it. So the reader keeps the values it has opened and not yet finished on
-//! a stack of its own, on the heap: depth costs a few words per level, and
-//! the only limit is `MAX_DEPTH`, the one every encoding holds to.
+//! Open values wait on a heap stack of their own: a recursive reader's large
+//! unoptimised frames would overflow a load's thread before `MAX_DEPTH`.
 
 use std::cell::Cell;
 
@@ -32,21 +28,16 @@ use crate::scene::record::{EntityRef, Record, VariantPayload, MAX_DEPTH};
 
 /// How many bytes of names a file may decode into, per byte of file.
 ///
-/// A value refers to a name in a byte or two of the file, but the decoded
-/// record holds a full copy of it. Capping the copied bytes per file byte
-/// stops a small file from decoding into a huge record. Real scenes stay far
-/// below it: a name is an identifier, and each reference costs at least a
-/// byte.
+/// A value refers to a name in a byte or two, but the decoded record holds a
+/// full copy: the cap stops a small file from decoding into a huge record.
+/// Real scenes stay far below it.
 pub(super) const NAME_BYTES_PER_FILE_BYTE: usize = 64;
 
 /// How many parts of a value the reader makes room for before reading them.
 ///
-/// A count in the file is a claim, not a promise: each one is checked
-/// against the bytes left, but a value opened inside another is checked
-/// against the same bytes again, so room made for every claim at every
-/// level would multiply a small file into a huge reservation — enough, at
-/// the depth limit, to abort the process instead of failing the load. Past
-/// this many, a value grows as its parts actually arrive.
+/// Nested values check their counts against the same bytes left, so room made
+/// for every claim at every level could abort the process on a small file.
+/// Past this many, a value grows as its parts actually arrive.
 const ROOM_UP_FRONT: usize = 16;
 
 /// Reads values against a file's symbol and shape tables.

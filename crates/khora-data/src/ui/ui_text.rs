@@ -35,7 +35,7 @@ pub struct UiText {
 }
 
 impl UiText {
-    /// Convert to core UI text type.
+    /// Returns the core UI text type.
     pub fn to_core(&self) -> khora_core::ui::types::UiText {
         khora_core::ui::types::UiText {
             content: self.content.clone(),
@@ -52,7 +52,7 @@ impl Default for UiText {
             content: String::new(),
             font: Font::BUILT_IN,
             size: 16.0,
-            color: Vec4::new(0.0, 0.0, 0.0, 1.0), // Black
+            color: Vec4::new(0.0, 0.0, 0.0, 1.0),
         }
     }
 }

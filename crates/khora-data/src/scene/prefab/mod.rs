@@ -14,21 +14,9 @@
 
 //! Prefabs and duplicates: a subtree written down and brought back fresh.
 //!
-//! A prefab instance stays linked to its prefab: its root carries a
-//! [`PrefabInstance`](crate::ecs::PrefabInstance), and each entity inside it
-//! is known by the root's identity and its own id in the prefab
-//! ([`PersistentId::within`]). A record keeps an instance collapsed — the
-//! link and its differences — and a load expands it from the prefab as it is
-//! now: a prefab edit reaches every field an instance did not override.
-//!
-//! # Expanding, and what it is keyed by
-//!
-//! A prefab's record names its entities by its own ids; its root is the
-//! instance root. Expanding an instance under a root `R` re-keys the prefab —
-//! its root becomes `R`, every other entity `x` becomes `within(R, x)` — then
-//! expands the instances the prefab itself links to, under their re-keyed
-//! roots, and merges the instance's differences on top, the way a game save
-//! is merged into its scene.
+//! An instance is collapsed to a link and its differences on save, and expanded
+//! from the prefab as it is now on load.
+//! See the book: concepts/prefabs.md, "A link, not a copy".
 
 use std::collections::{HashMap, HashSet};
 
@@ -67,8 +55,10 @@ use sources::{Except, ReadOnce};
 
 /// Where the prefabs a record links to are read from.
 pub trait PrefabSource {
-    /// The record of the prefab known as `id`, as its file holds it — its own
-    /// nested instances still collapsed — or why it cannot be had.
+    /// Returns the record of the prefab `id` as its file holds it, nested instances collapsed.
+    ///
+    /// # Errors
+    /// Why the prefab cannot be read.
     fn prefab(&self, id: AssetUUID) -> Result<SceneRecord, String>;
 }
 
@@ -82,8 +72,7 @@ impl PrefabSource for NoPrefabs {
     }
 }
 
-/// The component that links an instance root to its prefab, by its
-/// registered name.
+/// The registered name of the component linking an instance root to its prefab.
 const LINK: &str = "PrefabInstance";
 
 fn failed(message: String) -> LoadFailure {
@@ -93,8 +82,7 @@ fn failed(message: String) -> LoadFailure {
     }
 }
 
-/// The prefabs being expanded, outermost first: one met again contains
-/// itself.
+/// The prefabs being expanded, outermost first: one met again contains itself.
 type Stack = Vec<AssetUUID>;
 
 /// Reads the prefab `id`, refusing one that contains itself.
@@ -115,7 +103,6 @@ fn read_prefab(
     Ok(record)
 }
 
-/// The link component's value for `prefab`, as a record.
 fn link_to(prefab: AssetUUID) -> Record {
     struct NoEntities;
     impl ReferenceWriter for NoEntities {
@@ -130,7 +117,6 @@ fn link_to(prefab: AssetUUID) -> Record {
     .unwrap_or(Record::Asset(prefab))
 }
 
-/// The prefab a link component's record names.
 fn linked(value: &Record) -> Option<AssetUUID> {
     match value {
         Record::Asset(id) => Some(*id),
@@ -147,9 +133,9 @@ fn linked(value: &Record) -> Option<AssetUUID> {
     }
 }
 
-/// The prefab `prefab` expanded as an instance rooted at `root`, with no
-/// difference of its own — and without the link on its root, which is the
-/// instance's to carry.
+/// Returns `prefab` expanded as an unchanged instance rooted at `root`.
+///
+/// The link is left off the root: it is the instance's to carry.
 fn prefab_under(
     prefab: AssetUUID,
     root: PersistentId,
@@ -178,7 +164,6 @@ fn prefab_under(
     ))
 }
 
-/// Each entity's components in `record`, owned.
 fn rows_of(record: &SceneRecord) -> HashMap<PersistentId, Vec<(String, Record)>> {
     components_of(record)
         .into_iter()
@@ -186,8 +171,9 @@ fn rows_of(record: &SceneRecord) -> HashMap<PersistentId, Vec<(String, Record)>>
         .collect()
 }
 
-/// A record of `entities`, each with its components from `rows` — those
-/// components the records `rows` came from declared described as they did.
+/// Returns a record of `entities` with their components from `rows`.
+///
+/// Script-declared components are described as the records in `from` describe them.
 fn record_from(
     entities: Vec<PersistentId>,
     mut rows: HashMap<PersistentId, Vec<(String, Record)>>,
@@ -210,7 +196,7 @@ fn record_from(
     }
 }
 
-/// `record` with its instances expanded, and what the merges left out.
+/// Returns `record` with its instances expanded, and what the merges left out.
 fn expand_in(
     record: &SceneRecord,
     prefabs: &dyn PrefabSource,
@@ -289,10 +275,12 @@ fn expand_in(
     Ok((record_from(entities, rows, &sources), report))
 }
 
-/// `record` with every prefab instance it links to brought in from
-/// `prefabs`: each instance's prefab, itself expanded, re-keyed under the
-/// instance root, with the instance's differences on top. A missing prefab
-/// or a prefab that contains itself refuses the whole record.
+/// Returns `record` with every prefab instance it links to expanded from `prefabs`.
+///
+/// See the book: concepts/prefabs.md, "Identity inside an instance".
+///
+/// # Errors
+/// A missing prefab, or one that contains itself, refuses the whole record.
 pub fn expand(
     record: &SceneRecord,
     prefabs: &dyn PrefabSource,
@@ -300,8 +288,10 @@ pub fn expand(
     expand_reporting(record, prefabs).map(|(record, _)| record)
 }
 
-/// [`expand`], and what the merges left out: what an instance changed that
-/// its prefab no longer has — the prefab's removal wins.
+/// Does [`expand`], and returns what the merges left out.
+///
+/// That is what an instance changed that its prefab no longer has: the prefab's
+/// removal wins.
 pub fn expand_reporting(
     record: &SceneRecord,
     prefabs: &dyn PrefabSource,
@@ -311,13 +301,11 @@ pub fn expand_reporting(
     Ok((expanded, report))
 }
 
-/// `record` with every prefab instance not inside another one written as a
-/// link to its prefab and its differences from it; nested instances are part
-/// of their outer instance's differences.
+/// Returns `record` with each outermost instance written as a link and its differences.
 ///
-/// An instance whose prefab cannot be read stays expanded — written whole,
-/// its link still on its root — rather than lost: a later save that can read
-/// the prefab links it again.
+/// A nested instance is part of its outer instance's differences. An instance
+/// whose prefab cannot be read is written whole, its link kept on its root.
+/// See the book: concepts/prefabs.md, "When a prefab cannot be read".
 pub fn collapse(
     record: &SceneRecord,
     prefabs: &dyn PrefabSource,
@@ -400,10 +388,9 @@ pub fn collapse(
         let now = record_from(in_order.clone(), now_rows, &[record]);
         let mut delta = delta_between(*prefab, &base, &now)?;
 
-        // The order of siblings, where it is not the prefab's: a member's
-        // children the author reordered or added to, the children of a scene
-        // entity a member was moved under. Elsewhere none is written, and a
-        // prefab that reorders its own entities is followed.
+        // Sibling order is written only where it is not the prefab's (children
+        // reordered or added by the author, a member moved under a scene
+        // entity), so a prefab that reorders its own entities is followed.
         let base_children = children_of(&base.entities, &rows_of(&base));
         let mut parents: Vec<PersistentId> = in_order
             .iter()
@@ -460,10 +447,10 @@ pub fn collapse(
     Ok(collapsed)
 }
 
-/// Brings `record` into `world` with fresh identities: its plain entities and
-/// instance roots take new authored ids, the members of each instance the
-/// ones derived from its new root. Returns the new id of each of the record's
-/// entities, in order.
+/// Brings `record` into `world` with fresh identities and returns them, in its order.
+///
+/// Plain entities and instance roots take new authored ids; members take the
+/// ids derived from their instance's new root.
 fn bring_fresh(
     world: &mut World,
     record: &SceneRecord,
@@ -483,9 +470,12 @@ fn bring_fresh(
     Ok(fresh.entities)
 }
 
-/// Brings the prefab known as `prefab` into `world` as a new linked
-/// instance — a fresh authored root, members derived from it — and returns
-/// its root. On failure `world` is left as it was.
+/// Brings `prefab` into `world` as a new linked instance and returns its root.
+///
+/// The root takes a fresh authored id; members take ids derived from it.
+///
+/// # Errors
+/// The prefab cannot be expanded; `world` is then left as it was.
 pub fn instantiate_prefab(
     world: &mut World,
     prefab: AssetUUID,
@@ -499,8 +489,7 @@ pub fn instantiate_prefab(
         .ok_or_else(|| failed(format!("the prefab {prefab} brought no root")))
 }
 
-/// A record holding nothing but an instance of `prefab` rooted at `root`,
-/// unchanged from it.
+/// Returns a record holding only an unchanged instance of `prefab` rooted at `root`.
 fn one_instance(root: PersistentId, prefab: AssetUUID) -> SceneRecord {
     SceneRecord {
         declared: Vec::new(),
@@ -522,12 +511,14 @@ fn one_instance(root: PersistentId, prefab: AssetUUID) -> SceneRecord {
     }
 }
 
-/// Brings the prefab known as `prefab` into `world` as a new linked
-/// instance whose root lands at `entity` — an id `world`'s reserver handed
-/// out and nothing committed — with a fresh created identity, its members
-/// keyed within it, and returns every entity of the instance, its root first
-/// where the prefab lists it first. Any other id is refused. On failure
-/// `world` is left as it was.
+/// Brings `prefab` into `world` as a new linked instance rooted at the reserved `entity`.
+///
+/// The root takes a fresh created identity, its members ids within it.
+/// Returns every entity of the instance, in the prefab's order.
+///
+/// # Errors
+/// `entity` is not an id the world's reserver handed out and nothing committed,
+/// or the prefab cannot be expanded. `world` is then left as it was.
 pub fn instantiate_prefab_at(
     world: &mut World,
     entity: EntityId,
@@ -555,9 +546,10 @@ pub fn instantiate_prefab_at(
     Ok(made)
 }
 
-/// `root` and everything under it, as the bytes of a scene file. A prefab
-/// instance inside the subtree is written as a link to its prefab, read from
-/// `prefabs` — or whole, where its prefab cannot be read.
+/// Returns `root` and everything under it as the bytes of a scene file.
+///
+/// A prefab instance inside is written as a link to its prefab, read from
+/// `prefabs`, or whole when the prefab cannot be read.
 pub fn serialize_subtree(
     world: &World,
     root: EntityId,
@@ -569,9 +561,10 @@ pub fn serialize_subtree(
         .map_err(|error| SaveError::Encoding(error.to_string()))
 }
 
-/// [`serialize_subtree`], for the file of the prefab known as `written`: an
-/// instance of that very prefab — or of one that contains it — is written
-/// whole, never as a link to the file it is written into.
+/// Does [`serialize_subtree`] for the file of the prefab `written`.
+///
+/// An instance of `written`, or of a prefab containing it, is written whole,
+/// never as a link to the file it is written into.
 pub fn serialize_prefab(
     world: &World,
     root: EntityId,
@@ -588,10 +581,10 @@ pub fn serialize_prefab(
     )
 }
 
-/// Brings a subtree written by [`serialize_subtree`] into `world` as a new
-/// instance and returns its root: plain entities and prefab instance roots
-/// take new authored identities, the entities inside an instance the ones
-/// derived from its new root, its prefab read from `prefabs`.
+/// Brings a subtree written by [`serialize_subtree`] into `world` and returns its root.
+///
+/// Plain entities and instance roots take new authored ids; an instance's
+/// members take the ids derived from its new root.
 pub fn instantiate_subtree(
     world: &mut World,
     bytes: &[u8],

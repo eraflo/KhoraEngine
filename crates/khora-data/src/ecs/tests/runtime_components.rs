@@ -12,13 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Components with no Rust type.
+//! Components with no Rust type, declared by their fields while the engine runs
+//! and stored in their domain's pages beside the entity's Rust components.
 //!
-//! A run-time component is declared by its fields while the engine runs (by a
-//! script), registered under a name no Rust component holds, and stored in the
-//! page of its declared domain beside the Rust components of the same entity:
-//! it migrates with its entity, survives the swap-remove of a neighbour, and is
-//! read and written by id, one field at a time.
+//! See the book: concepts/ecs.md, "The storage model".
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::math::{LinearRgba, Vec3};

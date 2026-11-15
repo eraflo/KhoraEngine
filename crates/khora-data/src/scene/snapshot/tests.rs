@@ -59,9 +59,9 @@ impl ReferenceReader for Same {
     }
 }
 
-/// Every registration's default value, each on an entity of its own — every
-/// one a world knows how to store: a component declared by a test module for
-/// its own world, with no domain, is not.
+/// Every storable registration's default value, each on an entity of its own.
+///
+/// A component a test module declares for its own world, with no domain, is left out.
 fn every_default(world: &mut World) -> Vec<(&'static ComponentRegistration, EntityId)> {
     let storable: Vec<&'static ComponentRegistration> = inventory::iter::<ComponentRegistration>
         .into_iter()
@@ -97,9 +97,9 @@ fn snapshot_bytes(reg: &ComponentRegistration, world: &World, entity: EntityId) 
     bytes
 }
 
-/// Every registration — derived, hand-written, saved or not — writes its
-/// component from a page column and stages it back from those bytes, equal
-/// as the inspector sees it.
+/// Every registration writes its component from a page column and stages it back equal.
+///
+/// Derived, hand-written, saved or not; equality is as the inspector sees it.
 #[test]
 fn every_registration_round_trips_through_its_snapshot_form() {
     let mut src = World::new();
@@ -164,10 +164,9 @@ fn payloads_read_by(load: impl FnOnce()) -> usize {
     super::PAYLOADS_READ.with(std::cell::Cell::get) - before
 }
 
-/// **A snapshot is parsed once per prepare.** Restoring a snapshot — the
-/// editor's Stop — reads its payload once, whether it is prepared with the
-/// world or off the frame against its catalogue: the count of entities it
-/// reserves for comes from that one reading, not a reading of its own.
+/// **A snapshot is parsed once per prepare**, with the world or off the frame.
+///
+/// The count of entities it reserves for comes from that one reading.
 #[test]
 fn a_snapshot_is_parsed_once_per_prepare() {
     let mut src = World::new();

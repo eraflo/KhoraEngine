@@ -58,9 +58,9 @@ fn companion(world: &mut World, behavior: &str) -> ComponentKey {
     key
 }
 
-/// Every behavior is listed with its key, module and name, ordered by
-/// module and then by name — not by registration order, which a hash map
-/// would scramble anyway.
+/// Every behavior is listed with its key, module and name, ordered by module then name.
+///
+/// Not by registration order, which a hash map would scramble anyway.
 #[test]
 fn every_behavior_is_listed_sorted_by_module_then_name() {
     let mut world = World::new();

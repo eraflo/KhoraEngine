@@ -12,14 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The instances of behaviors attached by their component.
-//!
-//! A behavior is a component: an entity holding `Guard` runs `Guard`. The
-//! flow reads only those components' rows — never the entities that hold
-//! none — and each instance's row every frame, so the lane takes a field
-//! someone else wrote meanwhile (an edit during play, another script's
-//! write). Behaviors come in a fixed order, by module then name, and each
-//! one's entities in entity order, whatever their storage order.
+//! The behavior instances the script flow projects: one per behavior
+//! component an entity holds, its row read every frame so the lane sees another
+//! writer's edit, behaviors by module and name, then entities in entity order.
 
 use std::collections::HashSet;
 
@@ -39,9 +34,10 @@ const STATE_SUFFIX: &str = "#state";
 /// Instances, by entity and behavior.
 type Pairs = HashSet<(EntityId, String)>;
 
-/// Whether `entity`'s row of `behavior` is an instance a program runs: any
-/// holder's of a behavior, only its own entity's of a system — an entity that
-/// held a behavior become a system holds data, not an instance.
+/// Returns whether `entity`'s row of `behavior` is an instance a program runs.
+///
+/// Any holder's is, for a behavior; for a system, only its own entity's: an
+/// entity that held a behavior become a system holds data, not an instance.
 fn runs_on(world: &World, behavior: &BehaviorComponent<'_>, entity: EntityId) -> bool {
     let system = world
         .components()
@@ -50,8 +46,8 @@ fn runs_on(world: &World, behavior: &BehaviorComponent<'_>, entity: EntityId) ->
     !system || world.entity_with_id(singleton_id(behavior.name)) == Some(entity)
 }
 
-/// Every `(entity, behavior)` a component attaches, and those whose entity
-/// holds the behavior's state companion too.
+/// Returns every `(entity, behavior)` a component attaches, and those whose
+/// entity holds the behavior's state companion too.
 pub(super) fn attached(world: &World) -> (Pairs, Pairs) {
     let mut attached = HashSet::new();
     let mut with_state = HashSet::new();
@@ -73,10 +69,11 @@ pub(super) fn attached(world: &World) -> (Pairs, Pairs) {
     (attached, with_state)
 }
 
-/// Adds to `view` an instance per behavior component each entity the
-/// `selection` admits holds, each carrying its row; `newcomers` — the pairs
-/// new this frame — also carry what they arrive with, and those `returning`
-/// into the scope arrive afresh.
+/// Adds to `view` an instance, carrying its row, per behavior an admitted
+/// entity holds.
+///
+/// `newcomers`, the pairs new this frame, also carry what they arrive with;
+/// those `returning` into the scope arrive afresh.
 pub(super) fn project_behaviors(
     world: &World,
     selection: &super::Selection,
@@ -124,10 +121,10 @@ pub(super) fn project_behaviors(
     }
 }
 
-/// What an instance brings the first frame it appears: its row — a
-/// behavior's defaults are data, so its registered default is the one its
-/// instance starts at — and the companion's record of it when it has run
-/// before.
+/// Returns what an instance brings the first frame it appears.
+///
+/// Its row, which starts at the behavior's registered defaults, and its
+/// companion's record when it has run before.
 fn arrival_of(
     world: &World,
     entity: EntityId,

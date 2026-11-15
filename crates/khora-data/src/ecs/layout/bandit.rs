@@ -161,16 +161,10 @@ impl WindowArm {
 
 /// A **sliding-window** UCB1 bandit for *non-stationary* rewards.
 ///
-/// Plain [`Ucb1`] assumes the reward distribution never changes, so its
-/// confidence bound shrinks as `1/√n` forever and old samples pin the estimate
-/// — which is wrong for a game session, where the best layout in a quiet scene
-/// is not the best in a crowded one. This variant scores each arm over only its
-/// most recent `window` rewards (a per-arm ring buffer), so it keeps adapting
-/// when the workload shifts. It is still fully deterministic (no RNG), matching
-/// the reproducibility the adaptive layer requires.
-///
-/// (Garivier & Moulines, *On Upper-Confidence Bound Policies for Non-Stationary
-/// Bandit Problems*, 2011 — the SW-UCB construction.)
+/// Scores each arm over its last `window` rewards only, so it keeps adapting
+/// when the workload shifts; deterministic, like [`Ucb1`]. The SW-UCB of
+/// Garivier & Moulines (2011).
+/// See the book: concepts/agdf.md, "The decision core, and why Layer 3 is deferred".
 #[derive(Debug, Clone)]
 pub struct SlidingWindowUcb1 {
     arms: Vec<WindowArm>,
@@ -262,26 +256,19 @@ impl SlidingWindowUcb1 {
     }
 }
 
-/// Net reward of running under a layout once the cost of *getting there* is
-/// charged against it: `benefit − migration_cost`.
+/// Returns the net reward of a layout once the repack is charged: `benefit − migration_cost`.
 ///
-/// Feeding this (rather than raw benefit) to a bandit is what makes switching
-/// layouts self-limiting — a challenger has to beat the incumbent by *more than
-/// the repack it would cost*, so a learner cannot thrash between layouts for a
-/// marginal gain. (The cost-into-reward form from contextual index-tuning
-/// bandits; the same idea as ski-rental "amortise the one-time cost".)
+/// Fed to a bandit instead of the raw benefit, it keeps a learner from
+/// thrashing between layouts for a gain smaller than the repack.
 #[inline]
 pub fn net_reward(benefit: f64, migration_cost: f64) -> f64 {
     benefit - migration_cost
 }
 
-/// Whether a challenger layout should displace the incumbent, given a
-/// `hysteresis` margin it must clear: `challenger > incumbent + hysteresis`.
+/// Returns whether a challenger layout clears the incumbent by `hysteresis`.
 ///
-/// The margin is the anti-thrash / dwell mechanism (set it to the amortised
-/// repack cost): without it a controller chatters between two near-equal
-/// layouts, paying the switch cost each time. (OREO's α-gate and switched-system
-/// hysteresis converge on the same "switch rarely" rule.)
+/// Set the margin to the amortised repack cost: without it a controller
+/// chatters between two near-equal layouts, paying the switch each time.
 #[inline]
 pub fn should_switch(incumbent_score: f64, challenger_score: f64, hysteresis: f64) -> bool {
     challenger_score > incumbent_score + hysteresis.max(0.0)

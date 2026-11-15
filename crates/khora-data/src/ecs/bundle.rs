@@ -20,59 +20,43 @@ use crate::ecs::entity::EntityMetadata;
 use crate::ecs::page::{ComponentPage, PageIndex};
 use crate::ecs::{ColumnMap, ComponentKey};
 
-/// A trait for any collection of components that can be spawned together as a single unit.
-///
-/// This is a key part of the ECS's public API. It is typically implemented on tuples
-/// of components, like `(Position, Velocity)`. It provides the logic for identifying
-/// its component types and safely writing its data into a `ComponentPage`.
+/// A set of components spawned together as one entity: a single component or a tuple.
 pub trait ComponentBundle {
-    /// Returns the sorted list of `TypeId`s for the components in this bundle.
+    /// Returns the bundle's signature: its component `TypeId`s, sorted and deduplicated.
     ///
-    /// This provides a canonical "signature" for the bundle, which is used to find
-    /// a matching `ComponentPage` in the `World`. Sorting is crucial to ensure that
-    /// tuples with the same components but in a different order (e.g., (A, B) vs (B, A))
-    /// are treated as identical.
+    /// Sorted, so `(A, B)` and `(B, A)` find the same page.
     fn type_ids() -> Vec<TypeId>;
 
-    /// Creates the set of empty, type-erased `Vec<T>` columns required to store
-    /// this bundle's components.
-    ///
-    /// This is called by the `World` when a new `ComponentPage` needs to be
-    /// created for a specific bundle layout.
+    /// Creates one empty column per component, each in the component's own layout.
     fn create_columns() -> ColumnMap;
 
-    /// The first of this bundle's component types `registry` does not know,
-    /// by name — a type that would be stored where nothing can find it.
+    /// Returns the name of the first component type `registry` does not know.
     fn unregistered(registry: &ComponentRegistry) -> Option<&'static str>;
 
-    /// A component type this bundle names more than once, by name — its
-    /// signature holds the type once, so a second value would push one row
+    /// Returns the name of a component type this bundle names more than once.
+    ///
+    /// The signature holds the type once, so a second value would push one row
     /// too many into its column and shift every entity after it.
     fn repeated() -> Option<&'static str> {
         None
     }
 
-    /// Updates the appropriate fields in an `EntityMetadata` struct to point
-    /// to the location of this bundle's data.
-    ///
-    /// This method is called by `World::spawn` to link an entity to its newly
-    /// created component data.
+    /// Points `metadata` at `location` for the domain of each of the bundle's components.
     fn update_metadata(
         metadata: &mut EntityMetadata,
         location: PageIndex,
         registry: &ComponentRegistry,
     );
 
-    /// Adds the components from this bundle into the specified `ComponentPage`.
+    /// Pushes one row of this bundle's components into `page`.
     ///
     /// # Safety
-    /// This function is unsafe because it relies on the caller to guarantee that
-    /// the `ComponentPage` is the correct one for this bundle's exact component layout.
-    /// It performs unsafe downcasting to write to the type-erased `Vec<T>`s.
+    /// `page` must hold exactly this bundle's columns: each is downcast to its
+    /// component's column type.
     unsafe fn add_to_page(self, page: &mut ComponentPage);
 }
 
-/// Implementation for the empty tuple, allowing spawning of empty entities.
+/// The empty bundle: spawns an entity with no component.
 impl ComponentBundle for () {
     fn type_ids() -> Vec<TypeId> {
         Vec::new()
@@ -91,25 +75,20 @@ impl ComponentBundle for () {
         _location: PageIndex,
         _registry: &ComponentRegistry,
     ) {
-        // No components, so no location information to update.
     }
 
-    unsafe fn add_to_page(self, _page: &mut ComponentPage) {
-        // No components to add, so this is a no-op.
-    }
+    unsafe fn add_to_page(self, _page: &mut ComponentPage) {}
 }
 
 // Implementation for a single component.
 impl<C1: Component> ComponentBundle for C1 {
     fn type_ids() -> Vec<TypeId> {
-        // The signature is just the TypeId of the single component.
         vec![TypeId::of::<C1>()]
     }
 
     fn create_columns() -> ColumnMap {
         let mut columns = ColumnMap::default();
-        // Route through the component's layout hook (AoS by default, field-SoA
-        // when opted in) — the column type is the component's choice.
+        // The column type is the component's choice: AoS, or field-SoA when opted in.
         columns.insert(ComponentKey::of::<C1>(), C1::make_column());
         columns
     }
@@ -126,9 +105,7 @@ impl<C1: Component> ComponentBundle for C1 {
         location: PageIndex,
         registry: &ComponentRegistry,
     ) {
-        // Find the domain for this component type in the registry.
         if let Some(domain) = registry.get_domain(TypeId::of::<Self>()) {
-            // Insert or update the location for that domain.
             metadata.locations.insert(domain, location);
         }
     }
@@ -143,9 +120,7 @@ impl<C1: Component> ComponentBundle for C1 {
     }
 }
 
-// Implementation for tuples of components.
-// We use a macro to handle various tuple sizes efficienty, following the
-// same architectural patterns as `WorldQuery`.
+// Tuples of 2 to 12 components.
 macro_rules! impl_bundle_tuple {
     ($(($C:ident, $idx:tt)),*) => {
         impl<$($C: Component),*> ComponentBundle for ($($C,)*) {

@@ -17,11 +17,11 @@
 use khora_macros::Component;
 use serde::{Deserialize, Serialize};
 
-/// Track the interaction capabilities and current state of a UI element.
+/// The interaction capabilities and current state of a UI element.
 #[derive(Debug, Clone, Default, Component)]
 #[component(domain = Ui)]
 pub struct UiInteraction {
-    /// The current interaction state, updated continuously by the input system
+    /// The current interaction state, written by the input system.
     pub state: UiInteractionState,
 
     /// If true, this element can receive focus (e.g., text inputs)
@@ -31,7 +31,7 @@ pub struct UiInteraction {
     pub blocks_input: bool,
 }
 
-/// Represents the interaction state of a UI element.
+/// The interaction state of a UI element.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum UiInteractionState {
     #[default]

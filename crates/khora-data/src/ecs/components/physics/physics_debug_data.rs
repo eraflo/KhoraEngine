@@ -16,14 +16,14 @@ use khora_core::math::Vec3;
 use khora_macros::Component;
 use serde::{Deserialize, Serialize};
 
-/// Component that holds debug rendering data for the physics simulation.
+/// The physics provider's debug wireframe, drawn when enabled; runtime state, never saved.
 #[derive(Debug, Clone, Default, Component, Serialize, Deserialize)]
 #[component(domain = Physics, provenance = Runtime)]
 pub struct PhysicsDebugData {
-    /// Vertices of the debug wireframe.
+    /// The wireframe's vertices, in world space.
     pub vertices: Vec<Vec3>,
-    /// Indices of the lines.
+    /// The wireframe's lines, as pairs of indices into `vertices`.
     pub indices: Vec<[u32; 2]>,
-    /// Whether this debug visualization is enabled.
+    /// Whether the wireframe is drawn.
     pub enabled: bool,
 }

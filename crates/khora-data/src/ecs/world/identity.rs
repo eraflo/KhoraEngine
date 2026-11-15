@@ -12,14 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Each entity's persistent identity, and entity ids reserved ahead of a load.
-//!
-//! The world keeps, beside each live entity, the identity a save knows it
-//! by. It is not a component: identity is not gameplay data, and a query
-//! should never see it. The editor tags what an author creates; a load
-//! restores what it saved; any other entity is given one of the created
-//! namespace the first time something needs it — a save, a lookup — so a
-//! spawn and a despawn nobody identifies cost no identity at all.
+//! Each entity's persistent identity, kept beside it rather than as a
+//! component, and entity ids reserved ahead of a load.
+//! See the book: concepts/ecs.md, "The storage model".
 
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard, PoisonError};
@@ -34,8 +29,7 @@ use super::World;
 pub(crate) struct PersistentIds {
     by_entity: HashMap<EntityId, PersistentId>,
     by_id: HashMap<PersistentId, EntityId>,
-    /// The number the next created identity takes. Always past every created
-    /// identity the world holds, so a spawn never repeats one a load restored.
+    /// The number the next created identity takes, past every created one the world holds.
     next_created: u64,
 }
 
@@ -53,8 +47,7 @@ impl PersistentIds {
         id
     }
 
-    /// The created identity [`Self::assign_created`] would give next, given to
-    /// no one yet: what a load names an entity it brings into being.
+    /// Returns the created identity [`Self::assign_created`] would give next, without giving it.
     pub(crate) fn next_created(&self) -> PersistentId {
         (self.next_created..)
             .map(PersistentId::created)
@@ -90,27 +83,24 @@ impl PersistentIds {
 pub(crate) struct IdentityCell(Mutex<PersistentIds>);
 
 impl IdentityCell {
-    /// The identities, through a shared world. A panic while the lock was
-    /// held leaves the maps whole — every write is one insert or remove —
-    /// so a poisoned lock is taken as it is.
+    /// Locks the identities from a shared world.
+    ///
+    /// A poisoned lock is taken as it is: every write is one insert or
+    /// remove, so a panic leaves the maps whole.
     fn lock(&self) -> MutexGuard<'_, PersistentIds> {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// The identities, through an exclusive world: no lock to take.
+    /// Returns the identities from an exclusive world, taking no lock.
     pub(crate) fn get_mut(&mut self) -> &mut PersistentIds {
         self.0.get_mut().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
 impl World {
-    /// The identity a save knows `entity` by — given now, from the created
-    /// namespace, if `entity` is alive and has none yet. `None` for an entity
-    /// that is not alive.
+    /// Returns the identity a save knows `entity` by, giving it a created one on first ask.
     ///
-    /// Numbering on first ask rather than at spawn keeps spawning free of
-    /// identity work: most entities a game spawns are never saved or looked
-    /// up by identity.
+    /// `None` for an entity that is not alive.
     pub fn persistent_id(&self, entity: EntityId) -> Option<PersistentId> {
         let mut ids = self.identity.lock();
         if let Some(id) = ids.by_entity.get(&entity) {
@@ -119,15 +109,14 @@ impl World {
         self.contains(entity).then(|| ids.assign_created(entity))
     }
 
-    /// A created identity no entity holds — the one the next entity numbered
-    /// on first ask would take — given to no one by asking.
+    /// Returns the created identity the next entity numbered would take, without giving it.
     pub(crate) fn next_created_id(&self) -> PersistentId {
         self.identity.lock().next_created()
     }
 
-    /// The live entity known by `id` — among the entities given an identity.
-    /// One never asked for its identity, saved or loaded has none, so no id
-    /// finds it.
+    /// Returns the live entity known by `id`.
+    ///
+    /// An entity never asked for its identity, saved or loaded has none, so no id finds it.
     pub fn entity_with_id(&self, id: PersistentId) -> Option<EntityId> {
         self.identity.lock().by_id.get(&id).copied()
     }
@@ -165,8 +154,7 @@ impl World {
         }
     }
 
-    /// An entity id held back for a load: not alive, not handed to anyone
-    /// else, until it is spawned or released.
+    /// Reserves an entity id for a load: not alive, and handed to no one until spawned or released.
     pub fn reserve_entity(&mut self) -> EntityId {
         self.settle_reservations();
         let entity = if self.entities.has_freed() {
@@ -190,9 +178,9 @@ impl World {
         entity
     }
 
-    /// Brings a reserved id to life, empty — an entity like a spawned one,
-    /// identified when first asked. Returns `false` when `entity` is not an
-    /// id this world is holding back.
+    /// Brings a reserved id to life as an empty entity.
+    ///
+    /// Returns `false` when `entity` is not an id this world is holding back.
     pub fn spawn_reserved(&mut self, entity: EntityId) -> bool {
         // The entity a reference to nothing names stays nothing.
         if self.nowhere == Some(entity) {
@@ -201,10 +189,9 @@ impl World {
         self.bring_reserved_to_life(entity, true)
     }
 
-    /// Brings a reserved id to life with no identity yet — the load that
-    /// reserved it gives it one next, once it knows which saved identities
-    /// are free. `empty` places it as an entity with nothing on it, otherwise
-    /// it waits for the page rows the load is about to give it.
+    /// Brings a reserved id to life with no identity yet; the load gives it one next.
+    ///
+    /// `empty` places it with nothing on it; otherwise the load places its rows.
     pub(crate) fn bring_reserved_to_life(&mut self, entity: EntityId, empty: bool) -> bool {
         if !self.entities.commit_reserved(entity) {
             return false;
@@ -227,15 +214,11 @@ impl World {
         self.identity.get_mut().forget(entity);
     }
 
-    /// The entity a reference to nothing names.
+    /// Returns the entity a reference to nothing names in this world, if reserved.
     ///
-    /// A load that meets a reference it cannot bind — to an entity the save
-    /// does not hold, or one written as outside a saved subtree — still has
-    /// to give the component an id. It gives this one: reserved once per
-    /// world, never alive, never handed to a spawn, so such a reference can
-    /// never come to name a live entity, however many loads make one.
-    /// The entity a reference to nothing names in this world, if a load has
-    /// made one.
+    /// A load gives it to a reference it cannot bind. It is reserved once per
+    /// world, never alive and never handed to a spawn, so such a reference
+    /// never comes to name a live entity.
     pub fn nowhere_entity(&self) -> Option<EntityId> {
         self.nowhere
     }
@@ -249,8 +232,9 @@ impl World {
         entity
     }
 
-    /// Gives a reserved id back, never having lived. The entity a reference
-    /// to nothing names is never given back: references hold it.
+    /// Gives a reserved id back, never having lived.
+    ///
+    /// The entity a reference to nothing names is never given back: references hold it.
     pub fn release_reserved(&mut self, entity: EntityId) {
         if self.nowhere == Some(entity) {
             return;

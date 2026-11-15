@@ -18,15 +18,10 @@ use khora_core::asset::AssetUUID;
 
 /// Selects the scene's environment source for the IBL bake.
 ///
-/// Registered as a shared resource by the host application. When it names an
-/// equirectangular texture asset (an HDR `.hdr`/`.exr` keeps the dynamic range
-/// that makes reflections read well), the bake projects it onto the environment
-/// cube; absent — or naming an asset that has not been loaded — the procedural
-/// sky is baked instead, so a scene without an authored environment still
-/// lights correctly.
-///
-/// The selection is read every tick: selecting another texture, or the
-/// selected texture changing in the store, bakes again.
+/// A shared resource set by the host. It names an equirectangular texture (an
+/// HDR keeps the range reflections need); absent or not yet loaded, the
+/// procedural sky is baked instead. Selecting another texture, or the texture
+/// changing in the store, bakes again.
 #[derive(Debug, Default, Clone)]
 pub struct EnvironmentMap {
     /// Equirectangular environment texture, as a loaded `CpuTexture` asset.

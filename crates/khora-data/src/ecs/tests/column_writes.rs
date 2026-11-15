@@ -145,9 +145,8 @@ fn a_column_write_moves_its_domain_epoch_only() {
     assert_eq!(world.domain_epoch(SemanticDomain::Spatial), spatial);
 }
 
-/// **Nothing written, nothing changed.** A batch whose every row was
-/// skipped — missing or refused — or that held no row leaves the domain
-/// epoch as it was, so no cached view is thrown away for it.
+/// **Nothing written, nothing changed**: a batch of skipped rows, or of none, leaves the
+/// domain epoch as it was, so no cached view is thrown away for it.
 #[test]
 fn a_column_write_that_wrote_nothing_leaves_the_domain_epoch_alone() {
     let (mut world, key, entities) = gauges(3);
@@ -171,9 +170,8 @@ fn a_column_write_that_wrote_nothing_leaves_the_domain_epoch_alone() {
     assert_eq!(world.domain_epoch(SemanticDomain::Physics), epoch);
 }
 
-/// **In place.** A Rust component's rows are written where they are: no
-/// copy of a row is made to write it, and the fields not named — the
-/// label — keep their values.
+/// **In place**: a Rust component's rows are written where they are, never copied, and the
+/// fields not named (the label) keep their values.
 #[test]
 fn a_rust_column_is_written_in_place() {
     let (mut world, key, entities) = gauges(500);
@@ -248,10 +246,10 @@ struct Dial {
     label: String,
 }
 
-/// **A refused row is left as it was, whatever it held.** A row may hold a
-/// value a script could not write — an infinite `f32` a Rust system put
-/// there — and a refused later field must still put the earlier one back:
-/// the row reads as before, not half written.
+/// **A refused row is left as it was, whatever it held**, never half written.
+///
+/// A row may hold a value a script could not write (an infinite `f32` a Rust system put
+/// there), and a refused later field must still put the earlier one back.
 #[test]
 fn a_refused_rust_row_keeps_a_value_no_script_could_write() {
     let mut world = World::new();
@@ -289,10 +287,8 @@ struct SplitGauge {
     y: f32,
 }
 
-/// **A field-split column takes the copy road.** Its rows are not an array
-/// of `SplitGauge`, so they are written one by one as a `Set` writes them: every
-/// row lands, the field not named keeps its value, and a refused row writes
-/// none of its fields.
+/// **A field-split column is written row by row, as a `Set` writes**: every row lands, the
+/// field not named keeps its value, and a refused row writes none of its fields.
 #[test]
 fn a_field_split_column_is_written_row_by_row() {
     let mut world = World::new();
@@ -352,9 +348,8 @@ fn a_field_split_column_is_written_row_by_row() {
     assert_eq!(drift(entities[3]), (float(13.0), float(23.0)));
 }
 
-/// **One value a slot.** A row holding fewer or more values than the batch
-/// writes is refused and counted, whether or not its entity is still there,
-/// and writes none of them; the rows of the right width land.
+/// **One value a slot**: a row of the wrong width is refused, counted and writes nothing,
+/// whether or not its entity is still there; the rows of the right width land.
 #[test]
 fn a_row_of_another_width_than_the_slots_is_refused() {
     let (mut world, key, entities) = gauges(4);
@@ -459,9 +454,8 @@ fn non_finite_pending() -> ScriptValue {
     ])
 }
 
-/// **Authored data is finite.** A declared component an author writes
-/// refuses a NaN, at the top of a field or nested in one — attached or
-/// written by a column write — and keeps what it held.
+/// **Authored data is finite**: an authored declared component refuses a NaN, top-level or
+/// nested, attached or column-written, and keeps what it held.
 #[test]
 fn an_authored_declared_component_refuses_a_non_finite_number() {
     let (mut world, key, entity) = declared(ComponentProvenance::Authored);
@@ -501,10 +495,8 @@ fn an_authored_declared_component_refuses_a_non_finite_number() {
     assert_eq!(held.field(1), Some(ScriptValue::Null));
 }
 
-/// **What the engine writes keeps what it holds.** A behavior's state
-/// companion, `Runtime`, takes a frozen sequence with a NaN and an infinity
-/// nested in its `pending` through a column write — the writeback's path —
-/// and reads them back as written.
+/// **What the engine writes keeps what it holds**: a `Runtime` state companion takes a NaN
+/// and an infinity nested in a column write, the writeback's path, and reads them back.
 #[test]
 fn a_runtime_companion_keeps_a_non_finite_number_written_by_a_column_write() {
     let (mut world, key, entity) = declared(ComponentProvenance::Runtime);

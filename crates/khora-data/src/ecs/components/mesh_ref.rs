@@ -12,31 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Authored, serialized reference to a mesh.
-//!
-//! `MeshRef` is the *only* serialized mesh form. It is an explicit
-//! discriminator the developer/editor sets:
-//!
-//! - [`MeshRef::Procedural`] carries the kind + generator parameters of a
-//!   primitive (cube, sphere, plane), regenerated on resolution — no
-//!   structural fingerprinting.
-//! - [`MeshRef::Asset`] references an imported mesh file (glTF, OBJ) in the
-//!   VFS by its stable `AssetUUID`.
-//!
-//! A registered resolver `DataSystem` (in `khora-io`) turns a `MeshRef` into
-//! the runtime-only `HandleComponent<Mesh>`, which the GPU mesh projection
-//! consumes. `MeshRef` itself never touches the GPU and never carries a
-//! resolved handle.
-//!
-//! The procedural geometry generators ([`reconstruct_procedural_mesh`] and the
-//! `create_*` builders) live in `assets/procedural_mesh.rs` and are public so the
-//! resolver can rebuild a `Mesh` from a [`MeshRef::Procedural`].
-//!
-//! [`reconstruct_procedural_mesh`]: crate::ecs::reconstruct_procedural_mesh
+//! [`MeshRef`], the authored reference to a mesh, and its registration for
+//! scenes, snapshots and the inspector.
 
 use khora_core::asset::AssetUUID;
 
-/// Identifies a known procedural mesh primitive.
+/// A procedural mesh primitive the engine can generate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ProceduralMeshKind {
     /// Axis-aligned cube primitive.
@@ -47,44 +28,34 @@ pub enum ProceduralMeshKind {
     Plane,
 }
 
-/// Authored reference to a mesh — the only serialized mesh form.
+/// An authored reference to a mesh: the only form a mesh is saved in.
 ///
-/// The enum *is* the discriminator: `Procedural` carries the primitive kind
-/// and its generator parameters; `Asset` carries the stable UUID of an
-/// imported mesh in the VFS.
-///
-/// Both arms carry an *identity UUID* — the content-derived UUID for
-/// `Procedural`, the stable asset UUID for `Asset`. The resolver compares this
-/// against the resolved handle's UUID every tick: a mismatch (or a missing
-/// handle) means the authored reference changed and must be re-resolved. The
-/// `Procedural` UUID is never serialized; it is recomputed from `kind` +
-/// `params` on deserialize via [`MeshRef::procedural`] so it stays purely
-/// content-derived. Construct `Procedural` through [`MeshRef::procedural`] so
-/// the UUID and the parameters can never disagree.
+/// A resolver `DataSystem` (in `khora-io`) turns it into a `HandleComponent<Mesh>`,
+/// and again whenever its [`uuid`](Self::uuid) no longer matches the handle's.
+/// Build `Procedural` with [`MeshRef::procedural`], so its UUID matches its parameters.
 #[derive(Debug, Clone, PartialEq)]
 pub enum MeshRef {
-    /// Procedural primitive — rebuilt from `kind` + `params` by the resolver.
-    /// The `uuid` is content-derived; build via [`MeshRef::procedural`].
+    /// A primitive the resolver generates from `kind` and `params`.
     Procedural {
-        /// Which procedural primitive to regenerate.
+        /// Which primitive to generate.
         kind: ProceduralMeshKind,
-        /// Generator parameters (kind-specific layout, padded with zeros).
+        /// Generator parameters, unused slots zero: cube `[size]`, plane
+        /// `[size, y]`, sphere `[radius, segments, rings]`.
         params: [f32; 4],
-        /// Content-derived identity UUID. Not serialized — recomputed on load.
+        /// The identity derived from `kind` and `params`; never saved, recomputed on load.
         uuid: AssetUUID,
     },
-    /// Reference to an imported mesh asset in the VFS, resolved by UUID.
+    /// An imported mesh (glTF, OBJ) in the VFS, by its stable UUID.
     Asset(AssetUUID),
 }
 
 impl crate::ecs::Component for MeshRef {}
 
 impl MeshRef {
-    /// Builds a `Procedural` reference, deriving its identity UUID from the
-    /// primitive `kind` discriminant plus the raw parameter bytes. Identical
-    /// procedural meshes get the same UUID, so they dedup to one resolved
-    /// handle (and one `GpuMesh`). This is the SAME content hash the GPU
-    /// projection keys on.
+    /// Returns a `Procedural` reference whose UUID is derived from `kind` and `params`.
+    ///
+    /// Identical primitives share one UUID, hence one resolved handle and one
+    /// `GpuMesh`: it is the content hash the GPU projection keys on.
     pub fn procedural(kind: ProceduralMeshKind, params: [f32; 4]) -> Self {
         let mut key = Vec::with_capacity(1 + 16);
         key.push(match kind {
@@ -99,9 +70,8 @@ impl MeshRef {
         Self::Procedural { kind, params, uuid }
     }
 
-    /// Returns the identity UUID: the content-derived UUID for `Procedural`,
-    /// the stable asset UUID for `Asset`. The resolver compares this against the
-    /// resolved handle's UUID to detect an authored change.
+    /// Returns the identity UUID: derived from the parameters for `Procedural`,
+    /// the asset's for `Asset`.
     pub fn uuid(&self) -> AssetUUID {
         match self {
             Self::Procedural { uuid, .. } => *uuid,
@@ -109,27 +79,20 @@ impl MeshRef {
         }
     }
 
-    /// A unit cube — the default authored mesh.
+    /// Returns a unit cube, the default authored mesh.
     pub fn unit_cube() -> Self {
         Self::procedural(ProceduralMeshKind::Cube, [1.0, 0.0, 0.0, 0.0])
     }
 }
 
-/// On-disk form of a [`MeshRef`]. The `Procedural` arm omits the identity
-/// UUID — it is recomputed from `kind` + `params` on load via
-/// [`MeshRef::procedural`] so it always stays content-derived. The `Asset`
-/// arm round-trips its UUID verbatim.
+/// The saved form of a [`MeshRef`]: a procedural UUID is left out, recomputed on load.
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename = "MeshRef")]
 enum SerializableMeshRef {
-    /// Procedural primitive parameters (UUID recomputed on load).
     Procedural {
-        /// Which procedural primitive to regenerate.
         kind: ProceduralMeshKind,
-        /// Generator parameters (kind-specific layout, padded with zeros).
         params: [f32; 4],
     },
-    /// VFS asset UUID, round-tripped unchanged.
     Asset(AssetUUID),
 }
 
@@ -183,8 +146,7 @@ fn stage_mesh_ref(
     })
 }
 
-/// Editor JSON form — the on-disk `MeshRef` shape (UUID omitted for
-/// `Procedural`, recomputed on parse).
+/// Returns the editor JSON form: the saved shape, without a procedural UUID.
 fn mesh_ref_to_json(
     world: &crate::ecs::World,
     entity: khora_core::ecs::entity::EntityId,
@@ -296,7 +258,7 @@ mod tests {
         );
     }
 
-    /// `MeshRef::Asset(uuid)` round-trips with the SAME uuid preserved.
+    /// `MeshRef::Asset(uuid)` round-trips with its UUID unchanged.
     #[test]
     fn asset_mesh_ref_recipe_round_trip_preserves_uuid() {
         let mut src = World::new();

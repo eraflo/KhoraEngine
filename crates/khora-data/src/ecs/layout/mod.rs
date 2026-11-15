@@ -12,31 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Adaptive-layout learner — the decision core of online memory-layout
-//! adaptation.
-//!
-//! Choosing the best physical layout for a component (`Soa` vs an `AoSoA`
-//! tiling, …) can't be known a priori: it depends on the access pattern *and*
-//! the hardware. So the engine treats it as an explore/exploit problem and
-//! **learns** it on the machine it actually runs on — one [`Ucb1`] bandit per
-//! component, arms = candidate layouts, reward = measured iteration throughput.
-//! `UCB1` is deterministic (no RNG), which keeps decisions reproducible.
-//!
-//! This module is the learner only. Wiring it to a *physical* repack the query
-//! path consumes requires CRPECS storage and `WorldQuery::fetch` to become
-//! layout-polymorphic (the column is a type-erased `Vec<T>` today, which only
-//! the `Soa` layout fits) — a larger, hot-path change tracked separately. The
-//! learner is built and tested now so that work has its decision core ready.
-//!
-//! Beyond the textbook [`Ucb1`], this module carries the refinements a *game*
-//! workload needs (all deterministic, so decisions stay reproducible):
-//! [`SlidingWindowUcb1`] for the **non-stationary** reward a session produces
-//! (the best layout in a menu is not the best in a firefight), the
-//! [`net_reward`]/[`should_switch`] helpers that fold the **repack cost** into
-//! the decision so a learner doesn't thrash between layouts, a [`DecayCounter`]
-//! (an evaporating access tally — recency-weighting for free), and the
-//! read-only [`LayoutAdvisor`] that turns live access counters into actionable
-//! layout advice without ever repacking.
+//! The decision core of adaptive memory layout: bandits, switching rules, and
+//! the read-only [`LayoutAdvisor`]. None of it repacks storage.
+//! See the book: concepts/agdf.md, "The decision core, and why Layer 3 is deferred".
 
 mod bandit;
 mod decay;
@@ -52,9 +30,10 @@ pub use decay::DecayCounter;
 pub enum LayoutRecommendation {
     /// Keep the default `Soa` column — nothing observed warrants a change.
     KeepSoa,
-    /// A lean component swept in large batches: a candidate for the field-SoA
-    /// `wide::f32x8` kernels *if* its hot loop is compute-bound and stays
-    /// SoA-resident (see `khora_core::math::simd`).
+    /// A lean component swept in large batches: a candidate for the field-SoA SIMD kernels.
+    ///
+    /// It pays only if its hot loop is compute-bound and stays SoA-resident
+    /// (see `khora_core::math::simd`).
     SimdFieldSoa,
     /// A fat component: a candidate for a hot/cold field split so the per-frame
     /// sweep drags only the hot bytes through cache.
@@ -62,7 +41,7 @@ pub enum LayoutRecommendation {
 }
 
 impl LayoutRecommendation {
-    /// A short, human-readable rationale for the glass-box report.
+    /// Returns a short, human-readable rationale for the glass-box report.
     pub fn reason(self) -> &'static str {
         match self {
             LayoutRecommendation::KeepSoa => {
@@ -78,17 +57,11 @@ impl LayoutRecommendation {
     }
 }
 
-/// Read-only **layout advisor**: turns the live access counters a component has
-/// accumulated into an actionable layout suggestion, *without ever repacking*.
+/// A read-only layout advisor: turns a component's access counters into a layout suggestion.
 ///
-/// This is the glass-box half of AGDF that works today (the physical repack is
-/// deferred): a developer can ask "which of my components would benefit from a
-/// different layout, and why?" and get an answer grounded in observed access,
-/// not a guess. The thresholds below encode the engine's own benchmark findings
-/// (`crates/khora-data/examples/layout_bench.rs`): the field-SoA/SIMD lever pays
-/// on *large, compute-bound* batches, and the hot/cold split pays on *fat*
-/// components — Khora's lean built-ins want neither. They are deliberately
-/// coarse heuristics and meant to be tuned.
+/// It never repacks. Its thresholds are coarse heuristics from
+/// `crates/khora-data/examples/layout_bench.rs`, meant to be tuned.
+/// See the book: concepts/agdf.md, "Layer 1 — observe and advise".
 #[derive(Debug, Clone, Copy)]
 pub struct LayoutAdvisor {
     /// A component at least this large (bytes) is "fat" → hot/cold split.
@@ -111,9 +84,9 @@ impl Default for LayoutAdvisor {
 }
 
 impl LayoutAdvisor {
-    /// Recommends a layout for a component from its size and its
-    /// `(query_count, rows_scanned)` access stats (as returned by
-    /// `World::component_access_stats`).
+    /// Recommends a layout for a component from its size and its access stats.
+    ///
+    /// `query_count` and `rows_scanned` are as `World::component_access_stats` returns them.
     pub fn recommend(
         &self,
         component_bytes: usize,

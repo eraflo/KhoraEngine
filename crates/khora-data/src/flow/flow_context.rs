@@ -20,16 +20,16 @@ use crate::ecs::ComponentKey;
 /// the world: what it needs to know of its own runs.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FlowContext {
-    /// Whether this run starts the Flow over on this world: its first run on
-    /// it, or its first run after the substrate skipped it (it serves a
-    /// family that was off, [`Flow::ROLE`](super::Flow::ROLE)). `false` on a
-    /// run that follows its previous run with no skip between.
+    /// Whether this run starts the Flow over on this world.
+    ///
+    /// True on its first run on it, and on its first run after the substrate
+    /// skipped it because its family was off ([`Flow::ROLE`](super::Flow::ROLE)).
     pub resumed: bool,
-    /// The marker the Flow's family is limited to, when the family is scoped
-    /// (`khora_core::agent::State::Scoped`): the Flow projects only the
-    /// entities holding it. `None` for a family on unscoped, and for an
-    /// [`Upkeep`](crate::ecs::Role::Upkeep) Flow. A marker name the world
-    /// does not know is the key a component declared under that name would
-    /// have, [`ComponentKey::named`], which no entity holds.
+    /// The marker a scoped family is limited to: the Flow projects only the
+    /// entities holding it.
+    ///
+    /// `None` for an unscoped family and for an
+    /// [`Upkeep`](crate::ecs::Role::Upkeep) Flow. A marker the world does not
+    /// know is its [`ComponentKey::named`], which no entity holds.
     pub scope: Option<ComponentKey>,
 }

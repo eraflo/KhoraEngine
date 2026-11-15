@@ -12,15 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Editor grid overlay configuration.
-//!
-//! The infinite ground grid is a debug / editor overlay. Like
-//! [`GizmoFrame`](super::GizmoFrame), only the contract type lives in
-//! `khora-data` — the GPU work is the engine-side `GridLane`'s job.
-//!
-//! A host application opts into the grid by setting an enabled
-//! [`GridView`] in the runtime's `HostViews`. The sandbox leaves it
-//! disabled — no grid; the editor enables it.
+//! The infinite ground grid's settings, which a host application hands the
+//! engine's `GridLane`; off unless the host enables it.
 
 /// Editor grid overlay state.
 #[derive(Debug, Clone, Default)]

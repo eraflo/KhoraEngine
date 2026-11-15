@@ -29,24 +29,26 @@ use super::World;
 const READY: usize = 16;
 
 impl World {
-    /// This world's reserver: ids a world-free caller takes through a shared
-    /// reference, committed or released by this world at the frame boundary.
+    /// Returns this world's reserver, through which a caller without the world takes ids.
+    ///
+    /// The world commits or releases them at the frame boundary.
     pub fn reserver(&self) -> Arc<EntityReserver> {
         Arc::clone(&self.reserver)
     }
 
-    /// A hold over this world's reserver: ids a load prepared off the frame
-    /// reserves through it are not released at a frame's end, until the load
-    /// commits them, or is abandoned or dropped.
+    /// Returns a hold over this world's reserver, for a load prepared off the frame.
+    ///
+    /// Ids reserved through it survive a frame's end until the load commits
+    /// them, or is abandoned or dropped.
     pub fn hold_reservations(&self) -> khora_core::ecs::ReservationHold {
         self.reserver.hold()
     }
 
-    /// A hold over this world's reserver that holds the slots despawns freed:
-    /// it hands those out first, then ids as [`hold_reservations`]'s does.
-    /// The slots are held — no frame's end takes them back, no spawn is
-    /// handed one — until the load commits them; dropping the hold gives
-    /// back every one it did not commit.
+    /// Returns a hold that hands out the slots despawns freed first, then ids
+    /// as [`hold_reservations`]'s does.
+    ///
+    /// The freed slots are kept from frame ends and spawns until the load
+    /// commits them; dropping the hold gives back every one it did not commit.
     ///
     /// [`hold_reservations`]: Self::hold_reservations
     pub fn hold_freed(&mut self) -> khora_core::ecs::ReservationHold {
@@ -56,9 +58,10 @@ impl World {
         self.reserver.hold_these(freed)
     }
 
-    /// Makes at least `wanted` ids ready for the reserver to hand out first,
-    /// from slots despawns freed — none past the end of the store — so the
-    /// reservations a load is about to make reuse the store.
+    /// Readies at least `wanted` recycled ids for the reserver to hand out first.
+    ///
+    /// Only slots despawns freed, none past the end of the store, so a load
+    /// about to reserve reuses the store.
     pub fn ready_reservations(&mut self, wanted: usize) {
         self.settle_reservations();
         let missing = wanted.saturating_sub(self.reserver.ready_len());
@@ -68,7 +71,8 @@ impl World {
         self.reserver.refill(recycled);
     }
 
-    /// Brings `entity`, an id `hold` reserved, to life as a load commits it:
+    /// Brings `entity`, an id `hold` reserved, to life as a load commits it.
+    ///
     /// `false`, changing nothing, for an id the hold does not hold, or one
     /// another world's reserver gave.
     pub(crate) fn commit_held(
@@ -102,10 +106,9 @@ impl World {
     /// Releases every id the reserver handed out and nothing committed, then
     /// refills the ids it hands out next.
     ///
-    /// As many are kept ready as the frame took, never fewer than [`READY`]:
-    /// a game spawning and despawning a steady number a frame is handed back
-    /// what it despawned rather than indices past the end of the store, and
-    /// what a burst held back is freed once the rate falls.
+    /// As many are kept ready as the frame took, never fewer than `READY`: a
+    /// steady spawn rate reuses what it despawned, and a burst's surplus is
+    /// freed once the rate falls.
     pub fn release_unspent(&mut self) {
         self.settle_reservations();
         for id in self.reserver.take_unspent() {
@@ -122,9 +125,10 @@ impl World {
         self.reserver.refill(recycled);
     }
 
-    /// Spawns `bundle` at `entity`, an id this world's reserver handed out —
-    /// `false`, changing nothing, for any other id: one another world's
-    /// reserver gave, one already committed, or one released.
+    /// Spawns `bundle` at `entity`, an id this world's reserver handed out.
+    ///
+    /// `false`, changing nothing, for any other id (another world's, already
+    /// committed, or released) or a bundle `spawn` would refuse.
     pub fn spawn_at<B: ComponentBundle>(&mut self, entity: EntityId, bundle: B) -> bool {
         if B::unregistered(&self.storage.registry).is_some() || B::repeated().is_some() {
             return false;
@@ -140,8 +144,7 @@ impl World {
         true
     }
 
-    /// Keeps the reserver's fresh indices past every slot the store holds —
-    /// after anything that may have added one.
+    /// Keeps the reserver's fresh indices past every slot, after anything that may have added one.
     pub(super) fn after_allocation(&mut self) {
         let _ = self.reserver.fresh_since(self.entities.slots() as u32);
     }

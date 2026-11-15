@@ -12,23 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Snapshots each simulated body's world-space transform into the engine's
-//! [`TransformInterpolation`] store so the render path can interpolate between
-//! the prior and current [`GlobalTransform`] for smooth motion at any frame
-//! rate.
+//! Records each [`RigidBody`]'s previous [`GlobalTransform`] in the
+//! [`TransformInterpolation`] store the renderer blends from.
 //!
-//! Runs in [`TickPhase::PostSimulation`] **before** `transform_propagation`
-//! (lower `order_hint`): it captures the still-current `GlobalTransform` — the
-//! value produced by the previous frame's propagation — *before* propagation
-//! overwrites it with this frame's simulated pose. Render then blends
-//! `previous → current` by the `Time::interpolation_alpha`.
-//!
-//! The snapshots live in [`Runtime::resources`](khora_core::Runtime), NOT in
-//! the ECS: interpolation is a render-only representation ("adapt the HOW,
-//! never the WHAT"), so it carries no game meaning and must not appear in the
-//! editor inspector or scene files. Only simulated entities (those carrying a
-//! [`RigidBody`]) are snapshotted; everything else renders at its current
-//! transform.
+//! See the book: concepts/the-frame.md, "Why interpolation is render-only".
 
 use crate::ecs::SystemContext;
 use std::collections::HashSet;
@@ -39,9 +26,8 @@ use khora_core::interpolation::{SharedTransformInterpolation, TransformInterpola
 use crate::ecs::{DataSystemRegistration, GlobalTransform, RigidBody, TickPhase, World};
 
 fn capture_previous_transform(world: &World, store: &mut TransformInterpolation) {
-    // Record the current world-space transform of every simulated body and
-    // track which ids are still live so despawned/no-longer-simulated entries
-    // can be pruned in the same pass (bounds memory, avoids stale generations).
+    // Bodies seen this pass: the others are pruned, so the store stays bounded
+    // and never holds a stale generation.
     let mut live: HashSet<EntityId> = HashSet::new();
     for (id, gt) in world.query::<(EntityId, &GlobalTransform)>() {
         if world.get::<RigidBody>(id).is_some() {
@@ -52,9 +38,7 @@ fn capture_previous_transform(world: &World, store: &mut TransformInterpolation)
     store.retain_live(&live);
 }
 
-/// Wrapper matching the `DataSystemRegistration::run` signature. Resolves the
-/// shared interpolation store from the runtime; a no-op when it isn't
-/// registered (e.g. headless data-layer tests that don't render).
+/// Does nothing on a runtime with no interpolation store, such as a headless test.
 fn capture_previous_transform_entry(
     world: &mut World,
     runtime: &khora_core::Runtime,
@@ -79,8 +63,8 @@ inventory::submit! {
         name: "capture_previous_transform",
         phase: TickPhase::PostSimulation,
         run: capture_previous_transform_entry,
-        // Must run before transform_propagation (order_hint 0) so it reads the
-        // GlobalTransform from the *previous* frame's propagation.
+        // Before transform_propagation (0), so it reads the GlobalTransform the
+        // previous frame's propagation wrote.
         order_hint: -10,
         runs_after: &[],
         observes: &[],

@@ -12,34 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What a save holds, by name.
+//! What a save holds, by name: a [`Record`] is a value in serde's data model,
+//! with entities and assets kept as references, not as a running world's ids.
 //!
-//! A [`Record`] is a value written down in serde's data model: structs with
-//! their field names, enums with their variant names, and the two kinds of
-//! reference the engine owns — entities and assets — as references rather than
-//! as the numbers a running world happens to use for them.
-//!
-//! # Why serde's data model is the schema
-//!
-//! Every type the engine persists already derives serde, and serde already
-//! describes it by name. Its attributes are the evolution vocabulary a save
-//! needs: `#[serde(default)]` for a field the save predates, `#[serde(alias)]`
-//! for one that was renamed. Reading a record back matches fields **by name**,
-//! so a reordered struct reads the same, a new field takes its default where
-//! the type declares one (`#[derive(Component)]` declares it for every named
-//! field of a component) and a removed one is dropped — the save records the WHAT, and how a type is laid
-//! out in memory or in a file is free to change.
-//!
-//! # References
-//!
-//! [`EntityId`] and [`AssetUUID`] carry reserved serde names
-//! (`khora.EntityId`, `khora.AssetUUID`). The codec recognises them wherever
-//! they sit — a field, a list, a script value, a frozen register — and hands
-//! entities to a [`ReferenceWriter`] or [`ReferenceReader`], which translate
-//! between a running world's ids and the identities a save keeps.
-//!
-//! [`EntityId`]: khora_core::ecs::entity::EntityId
-//! [`AssetUUID`]: khora_core::asset::AssetUUID
+//! See the book: concepts/serialization.md, "Why records".
 
 mod access;
 mod blind;
@@ -70,9 +46,8 @@ pub(crate) const ASSET_NAME: &str = "khora.AssetUUID";
 
 /// How deep a value may nest.
 ///
-/// Far beyond any value the engine persists — a script's nested arrays are a
-/// handful deep — and far below what exhausts a thread's stack. A record comes
-/// from a file, and a file can claim any depth.
+/// A record comes from a file, which can claim any depth: this sits far above
+/// any persisted value and far below what exhausts a thread's stack.
 pub(crate) const MAX_DEPTH: usize = 128;
 
 /// Why a value could not be written to, or read from, a record.

@@ -16,12 +16,9 @@ use std::collections::HashMap;
 
 use crate::ecs::{page::PageIndex, SemanticDomain};
 
-/// Represents the central record for an entity, acting as a "table of contents"
-/// that points to the physical location of its component data across various `ComponentPage`s.
+/// Where an entity's components live: one page row per semantic domain.
 #[derive(Debug, Clone, Default)]
 pub struct EntityMetadata {
-    /// A map from a semantic domain to the location of the component data for that domain.
-    /// This allows an entity to have component data in multiple different pages,
-    /// each specialized for a specific domain (e.g., Spatial, Render).
+    /// The entity's row in each domain it has components in.
     pub(crate) locations: HashMap<SemanticDomain, PageIndex>,
 }

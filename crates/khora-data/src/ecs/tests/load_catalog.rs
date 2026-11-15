@@ -12,14 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The load catalogue: what preparing a load reads of a world, frozen so a
-//! load can be prepared off the frame.
-//!
-//! A catalogue answers the domain of every component the world knows and the
-//! components declared while the engine runs, by name. It is an immutable
-//! snapshot: a change of the world's components gives the world a new
-//! catalogue of another generation, and leaves a catalogue taken before as
-//! it was.
+//! The load catalogue: an immutable snapshot of what preparing a load reads of a world, so a
+//! load can be prepared off the frame. A change of the world's components gives a new
+//! catalogue of another generation.
 
 use std::any::TypeId;
 use std::sync::Arc;
@@ -96,9 +91,8 @@ fn the_load_catalogue_answers_the_domain_of_every_registered_component() {
     );
 }
 
-/// **The catalogue names a declared component as the world keeps it**: its
-/// key, domain, fields and whether a game save keeps it. A Rust
-/// component's name, or a name nobody declared, is no declared component.
+/// **The catalogue names a declared component as the world keeps it**: key, domain, fields
+/// and whether a game save keeps it; any other name is no declared component.
 #[test]
 fn the_load_catalogue_names_each_declared_component_as_the_world_keeps_it() {
     let mut world = World::new();
@@ -117,9 +111,8 @@ fn the_load_catalogue_names_each_declared_component_as_the_world_keeps_it() {
     assert!(catalog.declared("Nobody").is_none(), "an undeclared name");
 }
 
-/// **An unchanged world keeps its catalogue's generation.** Spawning,
-/// writing, despawning and ending frames change no component the catalogue
-/// describes.
+/// **An unchanged world keeps its catalogue's generation**: spawning, writing, despawning and
+/// ending frames change no component the catalogue describes.
 #[test]
 fn an_unchanged_world_keeps_its_catalogue_generation() {
     let mut world = World::new();
@@ -167,9 +160,8 @@ fn registering_a_component_moves_the_catalogue_generation() {
     );
 }
 
-/// **A registration that changes nothing keeps the generation**: a Rust
-/// component registered again in its own domain, a declaration refused
-/// because its name is taken.
+/// **A registration that changes nothing keeps the generation**: a Rust component registered
+/// again in its own domain, a declaration refused because its name is taken.
 #[test]
 fn a_registration_that_changes_nothing_keeps_the_catalogue_generation() {
     let mut world = World::new();
@@ -292,9 +284,8 @@ fn changing_a_declared_components_provenance_moves_the_catalogue_generation() {
     );
 }
 
-/// **The catalogue names the world's nowhere entity**, the one a reference
-/// to nothing loads as: the world has it from the start, so taking the
-/// catalogue reserves nothing.
+/// **The catalogue names the world's nowhere entity**, which the world has from the start,
+/// so taking the catalogue reserves nothing.
 #[test]
 fn the_load_catalogue_names_the_worlds_nowhere_entity() {
     let world = World::new();
@@ -306,12 +297,10 @@ fn the_load_catalogue_names_the_worlds_nowhere_entity() {
     assert_eq!(world.nowhere_entity(), Some(nowhere));
 }
 
-/// **A load that cannot land since the world changed says why.** Prepared
-/// while `Position` was only the name of a component the file declares, the
-/// load is committed after the world registered a Rust component of that
-/// name: a load prepared now fails, naming the clash. The stale load adds
-/// nothing, and what it gives back carries that failure — not the empty
-/// report of a scene with nothing in it.
+/// **A load that cannot land since the world changed says why**, not with an empty report.
+///
+/// Prepared while `Position` was only a name the file declares, committed after the world
+/// registered a Rust `Position`: the stale load adds nothing and carries the clash.
 #[test]
 fn a_stale_load_that_fails_now_reports_the_failure() {
     let mut src = World::new();
@@ -349,10 +338,8 @@ fn a_stale_load_that_fails_now_reports_the_failure() {
     );
 }
 
-/// **The generation watch moves with the registry.** A watch taken once,
-/// before any change, reads the catalogue's generation as each change
-/// moves it — a registration, a declaration, a relayout — and every watch
-/// the world gives is that one counter. Nothing else moves it.
+/// **The generation watch moves with the registry**: one watch, taken before any change,
+/// follows the catalogue's generation through each change, and nothing else moves it.
 #[test]
 fn the_generation_watch_moves_with_the_registry() {
     use std::sync::atomic::Ordering;

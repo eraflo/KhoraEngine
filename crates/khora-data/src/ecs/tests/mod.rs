@@ -58,7 +58,6 @@ use super::world::World;
 // --- DUMMY COMPONENTS FOR TESTING ---
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// Represents a position with a single `i32` value.
 struct Position(i32);
 impl Component for Position {}
 
@@ -134,25 +133,17 @@ fn layout_defaults_to_soa_and_access_is_recorded() {
 
 #[test]
 fn test_spawn_single_entity() {
-    // --- 1. SETUP ---
-    // Create a new, empty world.
     let mut world = World::default();
     world.register_component::<Position>(SemanticDomain::Spatial);
     world.register_component::<Velocity>(SemanticDomain::Spatial);
 
-    // Define the component data we want to spawn.
     let position = Position(10);
     let velocity = Velocity(-5);
     // A fresh world may already hold slots back (its nowhere entity): the
     // spawn adds one slot to whatever it holds.
     let slots_before = world.entities.len();
 
-    // --- 2. ACTION ---
-    // Spawn a new entity with the component bundle.
     let entity_id = world.spawn((position, velocity));
-
-    // --- 3. ASSERTIONS ---
-    // Verify that the world state is exactly as we expect it to be.
 
     // Check the returned EntityId: a slot never used before.
     assert_eq!(
@@ -165,7 +156,6 @@ fn test_spawn_single_entity() {
     );
     assert_eq!(world.entity_count(), 1, "One entity is alive");
 
-    // Check the world's entity list.
     assert_eq!(
         world.entities.len(),
         slots_before + 1,
@@ -176,13 +166,11 @@ fn test_spawn_single_entity() {
 
     let metadata = metadata_opt.as_ref().unwrap();
 
-    // Check that the stored ID and metadata are correct.
     assert_eq!(
         *stored_id, entity_id,
         "The stored ID should match the returned ID"
     );
 
-    // Check the metadata's location pointer.
     assert_eq!(
         metadata.locations.len(),
         1,
@@ -201,7 +189,6 @@ fn test_spawn_single_entity() {
         "Location should point to the first row"
     );
 
-    // Check the world's page list.
     assert_eq!(
         world.storage.pages.len(),
         1,
@@ -209,7 +196,6 @@ fn test_spawn_single_entity() {
     );
     let page = &world.storage.pages[0];
 
-    // Check the page's entity list.
     assert_eq!(page.entities.len(), 1, "The page should track one entity");
     assert_eq!(
         page.entities[0], entity_id,
@@ -219,7 +205,6 @@ fn test_spawn_single_entity() {
 
 #[test]
 fn test_despawn_single_entity() {
-    // --- 1. SETUP ---
     let mut world = World::default();
     world.register_component::<Position>(SemanticDomain::Spatial);
     world.register_component::<Velocity>(SemanticDomain::Spatial);
@@ -227,10 +212,8 @@ fn test_despawn_single_entity() {
     let slots_before = world.entities.len();
     let entity_id = world.spawn((Position(10), Velocity(-5)));
 
-    // --- 2. ACTION ---
     let despawn_result = world.despawn(entity_id);
 
-    // --- 3. ASSERTIONS ---
     assert!(despawn_result);
     assert_eq!(world.entity_count(), 0, "No entity is alive");
 
@@ -247,10 +230,8 @@ fn test_despawn_single_entity() {
     );
     assert_eq!(world.entities.freed_entities, vec![entity_id.index]);
 
-    // Check the page's state.
     assert_eq!(world.storage.pages.len(), 1);
     let page = &world.storage.pages[0];
-    // Use our new helper method to confirm data was removed.
     assert_eq!(
         page.row_count(),
         0,
@@ -260,31 +241,23 @@ fn test_despawn_single_entity() {
 
 #[test]
 fn test_entity_id_recycling_and_aba_protection() {
-    // --- 1. SETUP ---
     let mut world = World::default();
     world.register_component::<Position>(SemanticDomain::Spatial);
     world.register_component::<Velocity>(SemanticDomain::Spatial);
 
-    // --- 2. ACTION & ASSERTIONS ---
-
-    // --- Part A: Spawn and Despawn ---
-    // Spawn the first entity. Its index is whichever slot is free first —
-    // a world may hold a slot back from its start (its nowhere entity).
+    // Its index is whichever slot is free first: a world may hold one back from its start
+    // (its nowhere entity).
     let id_a = world.spawn((Position(1), Velocity(1)));
     let slot = id_a.index as usize;
     assert_eq!(id_a.generation, 0);
 
-    // Despawn it to free up its index.
     let despawn_result_a = world.despawn(id_a);
     assert!(despawn_result_a);
-    assert_eq!(world.entities.freed_entities, vec![id_a.index]); // Its index is now free.
+    assert_eq!(world.entities.freed_entities, vec![id_a.index]);
     assert!(world.entities.get(slot).unwrap().1.is_none());
 
-    // --- Part B: Recycle the ID ---
-    // Spawn a second entity. It should reuse the freed index.
     let id_b = world.spawn((Position(2), Velocity(2)));
 
-    // Assert that the new ID has the same index but an incremented generation.
     assert_eq!(
         id_b.index, id_a.index,
         "The recycled entity should reuse the freed index"
@@ -302,18 +275,14 @@ fn test_entity_id_recycling_and_aba_protection() {
         "The slot should be occupied again"
     );
 
-    // --- Part C: ABA Protection ---
-    // Try to despawn using the old, stale handle (`id_a`).
-    // This should fail because the generation (0) does not match the
-    // world's current generation for this index (1).
+    // A stale handle fails: its generation (0) is not the slot's (1), and the world is
+    // left as it was.
     let despawn_result_stale = world.despawn(id_a);
     assert!(
         !despawn_result_stale,
         "Despawning with a stale ID should fail"
     );
 
-    // Verify that the world state was NOT affected by the failed despawn.
-    // The entity `id_b` should still be alive and well.
     assert!(
         world.entities.get(slot).unwrap().1.is_some(),
         "The slot for id_b should not have been freed"
@@ -324,8 +293,6 @@ fn test_entity_id_recycling_and_aba_protection() {
         "The entity in the world should still be id_b"
     );
 
-    // --- Part D: Successful Despawn with the Correct ID ---
-    // Despawning with the new, correct handle (`id_b`) should succeed.
     let despawn_result_b = world.despawn(id_b);
     assert!(
         despawn_result_b,
@@ -339,17 +306,13 @@ fn test_entity_id_recycling_and_aba_protection() {
 
 #[test]
 fn test_despawn_with_swap_remove_logic() {
-    // --- 1. SETUP ---
     let mut world = World::default();
     world.register_component::<Position>(SemanticDomain::Spatial);
     world.register_component::<Velocity>(SemanticDomain::Spatial);
 
-    // Spawn two entities with the same bundle. This ensures they will be
-    // placed in the same `ComponentPage`.
     let entity_a = world.spawn((Position(1), Velocity(1))); // Will be at row 0
     let entity_b = world.spawn((Position(2), Velocity(2))); // Will be at row 1
 
-    // Pre-action sanity checks
     assert_eq!(
         world.storage.pages.len(),
         1,
@@ -361,7 +324,6 @@ fn test_despawn_with_swap_remove_logic() {
         "The page should have two rows"
     );
 
-    // Check initial metadata for entity B
     let (_, metadata_b_before_opt) = world.entities.get(entity_b.index as usize).unwrap();
     let metadata_b_before = metadata_b_before_opt.as_ref().unwrap();
     let location_b_before = metadata_b_before
@@ -374,16 +336,11 @@ fn test_despawn_with_swap_remove_logic() {
         "Entity B should initially be at row 1"
     );
 
-    // --- 2. ACTION ---
-    // Despawn the *first* entity (entity_a). This will trigger the swap_remove
-    // logic, moving entity_b's data from row 1 to row 0.
+    // Despawning the first entity swap-removes its row, moving entity_b's data from row 1
+    // to row 0: its metadata must follow.
     let despawn_result = world.despawn(entity_a);
     assert!(despawn_result, "Despawn should succeed");
 
-    // --- 3. ASSERTIONS ---
-    // Verify that entity B has been correctly moved and its metadata updated.
-
-    // Check basic world state
     assert_eq!(
         world.storage.pages[0].row_count(),
         1,
@@ -408,7 +365,7 @@ fn test_despawn_with_swap_remove_logic() {
         "Entity B's slot should still be Some"
     );
 
-    // THE CRITICAL CHECK: Verify that entity B's metadata has been updated.
+    // Entity B's metadata follows the move.
     let (_, metadata_b_after_opt) = world.entities.get(entity_b.index as usize).unwrap();
     let metadata_b_after = metadata_b_after_opt.as_ref().unwrap();
     let location_b_after = metadata_b_after
@@ -425,7 +382,6 @@ fn test_despawn_with_swap_remove_logic() {
         "Entity B should have been moved to row 0"
     );
 
-    // Verify that the entity ID stored in the page at the new location is correct
     let page = &world.storage.pages[0];
     assert_eq!(
         page.entities[0], entity_b,
@@ -435,46 +391,35 @@ fn test_despawn_with_swap_remove_logic() {
 
 #[test]
 fn test_simple_query_fetches_correct_components() {
-    // ARRANGE: Set up the world with a variety of entities.
     let mut world = World::default();
     world.register_component::<Position>(SemanticDomain::Spatial);
     world.register_component::<Velocity>(SemanticDomain::Spatial);
 
-    // Spawn an entity that should be found by a `query::<&Position>()`.
     world.spawn(Position(10));
 
-    // Spawn an entity that should *not* be found.
-    // This will create a different ComponentPage based on its unique signature.
+    // Not found: its own signature puts it in another page.
     world.spawn(Velocity(-5));
 
-    // Spawn another entity that should also be found.
     world.spawn(Position(30));
 
-    // ACT: Run the query to collect all `Position` components.
     let mut found_positions = Vec::new();
     for position_ref in world.query::<&Position>() {
         found_positions.push(*position_ref);
     }
 
-    // ASSERT: Verify that the query returned the correct data.
-    // Check that we found the correct number of entities.
     assert_eq!(
         found_positions.len(),
         2,
         "Query should have found exactly 2 entities with a Position"
     );
 
-    // Sort the results to make the test deterministic.
     found_positions.sort_by_key(|p| p.0);
 
-    // Check that we have the correct data.
     assert_eq!(found_positions, vec![Position(10), Position(30)]);
 }
 
 #[test]
 fn test_mutable_query_modifies_components() {
-    // --- 1. ARRANGE ---
-    // Set up a world with some entities that we intend to modify.
     let mut world = World::default();
     world.register_component::<Position>(SemanticDomain::Spatial);
     world.register_component::<Velocity>(SemanticDomain::Spatial);
@@ -483,24 +428,17 @@ fn test_mutable_query_modifies_components() {
     world.spawn(Velocity(-5)); // This one should be ignored.
     world.spawn(Position(30));
 
-    // --- 2. ACT ---
-    // Run a mutable query and modify the `Position` components.
     for mut position_ref in world.query_mut::<&mut Position>() {
-        // Multiply the position's value by 2.
         position_ref.0 *= 2;
     }
 
-    // --- 3. ASSERT ---
-    // Run an immutable query to verify the changes were applied.
     let mut final_positions = Vec::new();
     for position_ref in world.query::<&Position>() {
         final_positions.push(*position_ref);
     }
 
-    // Sort the results for a deterministic test.
     final_positions.sort_by_key(|p| p.0);
 
-    // Check that the values have been updated.
     assert_eq!(
         final_positions,
         vec![Position(20), Position(60)], // 10*2=20, 30*2=60
@@ -510,7 +448,6 @@ fn test_mutable_query_modifies_components() {
 
 #[test]
 fn test_query_with_without_filter() {
-    // --- 1. ARRANGE ---
     let mut world = World::default();
     world.register_component::<Position>(SemanticDomain::Spatial);
     world.register_component::<Velocity>(SemanticDomain::Spatial);
@@ -521,17 +458,12 @@ fn test_query_with_without_filter() {
     // Spawn an entity with only a Position. This one should be FOUND.
     world.spawn(Position(20));
 
-    // --- 2. ACT ---
-    // Query for entities that have a `Position` but `Without` a `Velocity`.
     let mut found_positions = Vec::new();
     for position_ref in world.query::<(&Position, Without<Velocity>)>() {
-        // The query item for a tuple is a tuple, so we destructure it.
-        // The item for `Without<Velocity>` is `()`, which we can ignore.
         let (pos, ()) = position_ref;
         found_positions.push(*pos);
     }
 
-    // --- 3. ASSERT ---
     assert_eq!(
         found_positions.len(),
         1,
@@ -546,7 +478,6 @@ fn test_query_with_without_filter() {
 
 #[test]
 fn test_tuple_query_matches_entities_with_all_components() {
-    // --- 1. ARRANGE ---
     let mut world = World::default();
     world.register_component::<Position>(SemanticDomain::Spatial);
     world.register_component::<Velocity>(SemanticDomain::Spatial);
@@ -560,24 +491,19 @@ fn test_tuple_query_matches_entities_with_all_components() {
     // Spawn another entity with both components. Should be FOUND.
     world.spawn((Position(30), Velocity(300)));
 
-    // --- 2. ACT ---
-    // Query for all entities that have *both* a `Position` and a `Velocity`.
     let mut found_results = Vec::new();
     for (pos_ref, vel_ref) in world.query::<(&Position, &Velocity)>() {
         found_results.push((*pos_ref, *vel_ref));
     }
 
-    // --- 3. ASSERT ---
     assert_eq!(
         found_results.len(),
         2,
         "Query should find exactly two entities with both components"
     );
 
-    // Sort the results by position to make the test deterministic.
     found_results.sort_by_key(|(pos, _vel)| pos.0);
 
-    // Check that we have the correct data.
     assert_eq!(
         found_results,
         vec![(Position(10), Velocity(100)), (Position(30), Velocity(300))]
@@ -586,20 +512,16 @@ fn test_tuple_query_matches_entities_with_all_components() {
 
 #[test]
 fn test_spawn_with_unregistered_component() {
-    // --- 1. ARRANGE ---
     let mut world = World::default();
     // A fresh world may already hold slots back (its nowhere entity).
     let slots_before = world.entities.len();
 
-    // NOTE: We do NOT register the `Position` component.
-    // world.register_component::<Position>(SemanticDomain::Spatial);
+    // `Position` is deliberately left unregistered.
 
-    // --- 2. ACT ---
     // We try to spawn an entity with a component that the world knows nothing
     // about: it has no domain, so no location could ever find it once stored.
     let result = world.try_spawn(Position(10));
 
-    // --- 3. ASSERT ---
     // The spawn is refused, naming the type, before anything is allocated.
     assert!(
         matches!(
@@ -624,17 +546,14 @@ fn test_spawn_with_unregistered_component() {
 
 #[test]
 fn test_add_component_to_new_domain() {
-    // --- 1. ARRANGE ---
     let mut world = World::default();
     world.register_component::<Position>(SemanticDomain::Spatial);
-    world.register_component::<RenderTag>(SemanticDomain::Render); // Register in a different domain
+    world.register_component::<RenderTag>(SemanticDomain::Render);
 
     let entity = world.spawn(Position(100));
 
-    // --- 2. ACT ---
     let orphan_result = world.add_component(entity, RenderTag).unwrap();
 
-    // --- 3. ASSERT ---
     assert!(
         orphan_result.is_none(),
         "Adding to a new domain should not create an orphan"
@@ -671,7 +590,6 @@ fn test_add_component_to_new_domain() {
 
 #[test]
 fn test_add_component_triggers_data_migration() {
-    // --- 1. ARRANGE ---
     let mut world = World::default();
     world.register_component::<Position>(SemanticDomain::Spatial);
     world.register_component::<Velocity>(SemanticDomain::Spatial);
@@ -697,13 +615,9 @@ fn test_add_component_triggers_data_migration() {
         .unwrap();
     assert_eq!(initial_loc_a.page_id, 0);
 
-    // --- 2. ACT ---
     // Add Velocity to entity A. This forces it to migrate and should return the old location.
     let orphan_result = world.add_component(entity_a, Velocity(100)).unwrap();
 
-    // --- 3. ASSERT ---
-
-    // A) Check the result of the operation
     assert!(
         orphan_result.is_some(),
         "Adding to an existing domain SHOULD create an orphan"
@@ -714,7 +628,7 @@ fn test_add_component_triggers_data_migration() {
         "The orphan location should be the original location of entity A"
     );
 
-    // B) Check Page State (before Garbage Collection)
+    // The pages, before compaction.
     assert_eq!(
         world.storage.pages.len(),
         2,
@@ -738,7 +652,7 @@ fn test_add_component_triggers_data_migration() {
         "New page should contain entity A"
     );
 
-    // C) Check Entity A's Metadata and Data
+    // Entity A's metadata and data.
     let (_id, metadata_a_opt) = world.entities.get(entity_a.index as usize).unwrap();
     let metadata_a = metadata_a_opt.as_ref().unwrap();
     let loc_a = metadata_a.locations.get(&SemanticDomain::Spatial).unwrap();
@@ -761,7 +675,7 @@ fn test_add_component_triggers_data_migration() {
     assert_eq!(vel_a.0, 100);
     assert_eq!(non_copy_a.0, "Hello");
 
-    // D) Check Entity B's State (should be completely unchanged by the migration)
+    // Entity B is unchanged by the migration.
     let (_id, metadata_b_opt) = world.entities.get(entity_b.index as usize).unwrap();
     let metadata_b = metadata_b_opt.as_ref().unwrap();
     let loc_b = metadata_b.locations.get(&SemanticDomain::Spatial).unwrap();
@@ -780,20 +694,15 @@ fn test_add_component_triggers_data_migration() {
 
 #[test]
 fn test_simple_mutable_query_modifies_components() {
-    // --- 1. ARRANGE ---
     let mut world = World::default();
     world.register_component::<Position>(SemanticDomain::Spatial);
     world.spawn(Position(10));
     world.spawn(Position(30));
 
-    // --- 2. ACT ---
-    // Run a mutable query to modify the `Position` components.
     for mut position_mut in world.query_mut::<&mut Position>() {
         position_mut.0 *= 2;
     }
 
-    // --- 3. ASSERT ---
-    // Run an immutable query to verify the changes.
     let mut final_positions = Vec::new();
     for position_ref in world.query::<&Position>() {
         final_positions.push(*position_ref);
@@ -804,7 +713,6 @@ fn test_simple_mutable_query_modifies_components() {
 
 #[test]
 fn test_complex_mutable_query_with_filter() {
-    // --- 1. ARRANGE ---
     let mut world = World::default();
     world.register_component::<Position>(SemanticDomain::Spatial);
     world.register_component::<Velocity>(SemanticDomain::Spatial);
@@ -819,21 +727,16 @@ fn test_complex_mutable_query_with_filter() {
     // Entity 3: Should be processed.
     world.spawn((Position(30), Velocity(1)));
 
-    // Entity 4: Should be ignored. Has all components, but the `Without<RenderTag>` filter excludes it.
+    // Entity 4: ignored, `Without<RenderTag>` excludes it.
     world.spawn((Position(40), Velocity(1), RenderTag));
 
-    // --- 2. ACT ---
-    // Query for entities with a mutable Position and an immutable Velocity,
-    // but only if they do NOT have a RenderTag.
-    // The physics system is a classic example of this pattern.
+    // A mutable Position and a read Velocity, without RenderTag: a physics system's shape.
     for (mut pos_mut, vel_ref, ()) in
         world.query_mut::<(&mut Position, &Velocity, Without<RenderTag>)>()
     {
         pos_mut.0 += vel_ref.0;
     }
 
-    // --- 3. ASSERT ---
-    // Check the final state of all entities to ensure only the correct ones were modified.
     let mut final_positions = Vec::new();
     for pos in world.query::<&Position>() {
         final_positions.push(*pos);
@@ -1011,9 +914,8 @@ fn test_transversal_sparse_join() {
         world.spawn(RenderTag);
     }
 
-    // Query for BOTH.
-    // The driver should ideally be Render (Domain B) because it has fewer pages/entities
-    // (though in this small test it might vary, the bitset intersection should fast-skip).
+    // Query for both: the denser domain drives, and the bitset intersection
+    // skips the other's missing rows either way.
     let results: Vec<_> = world
         .query::<(&Position, &RenderTag)>()
         .map(|(p, _)| p.0)
@@ -1284,13 +1186,10 @@ fn read_only_query_does_not_move_the_domain_epoch() {
     assert_eq!(world.domain_epoch(SemanticDomain::Spatial), baseline);
 }
 
-// --- MULTI-DOMAIN DESPAWN REGRESSION TESTS ---
+// --- Multi-domain despawn ---
 //
-// A mixed-domain bundle (e.g. `(Position, RenderId)` with the two components in
-// different semantic domains) is stored in one page but registered under several
-// domain keys, all addressing the same `(page_id, row_index)`. Despawning an
-// entity must `swap_remove` that physical row exactly once; doing it per domain
-// key destroyed the moved survivor's data.
+// A mixed-domain bundle is stored in one page, every domain of it addressing the same
+// `(page_id, row_index)`: a despawn swap-removes that row exactly once.
 
 /// Registers `Position`/`Velocity` (Spatial) and `RenderId` (Render) so a single
 /// bundle spans two domains within one page.
@@ -1455,13 +1354,11 @@ fn despawn_multi_domain_moves_every_domain_epoch() {
     );
 }
 
-// --- PAGE COMPACTION (ORPHAN-ROW RECLAMATION) REGRESSION TESTS ---
+// --- Page compaction (orphan-row reclamation) ---
 //
-// A component migration repoints one domain's location to a new page but leaves
-// the old physical row in place. `World::run_compaction` (driven each frame by
-// `EcsMaintenance`) reclaims the rows no live entity references, while
-// preserving partial orphans (rows still live for another domain in a
-// multi-domain page) and repairing every domain of a moved survivor.
+// A migration leaves the old row in place. `World::run_compaction` reclaims the rows no
+// live entity references, keeps partial orphans (rows still live for another domain) and
+// repairs every domain of a moved survivor.
 
 /// `multi_domain_world` + a second Render component so a migration
 /// (`add_component`) can move an entity between Render pages.
@@ -1598,9 +1495,9 @@ fn migrating_a_multi_domain_entity_keeps_it_co_located_without_dead_columns() {
 fn compaction_moves_page_domains_only_when_a_row_is_removed() {
     let mut world = compaction_world();
     let e = world.spawn(RenderId(10));
-    world.add_component(e, RenderTag).expect("add_component"); // dirties the Render page
-                                                               // The clock moves past the setup, so the change below carries a later
-                                                               // tick than the rows it finds.
+    world.add_component(e, RenderTag).expect("add_component");
+    // The add dirties the Render page. The clock moves past the setup, so the change below
+    // carries a later tick than the rows it finds.
     world.end_run();
 
     let render_before = world.domain_epoch(SemanticDomain::Render);
@@ -1697,13 +1594,10 @@ mod script_domain_migration_tests {
     use khora_core::math::Vec3;
     use khora_core::script::ScriptValue;
 
-    /// **Adding a component in a domain the entity does not yet occupy.**
+    /// **Adding a component in a domain the entity does not yet occupy** migrates it cleanly.
     ///
-    /// Reproduces a panic seen when the sandbox attached a behavior to a
-    /// sphere that already carried `Transform`, `GlobalTransform`, `MeshRef`
-    /// and `MaterialRef`: `copy_row_between` read a row past the end of the
-    /// source column during the archetype migration. The behavior here is a
-    /// component declared in `Script`, as the sandbox's `Hover` is.
+    /// The trap is `copy_row_between` reading past the end of the source column. The component
+    /// is declared in `Script`, on an entity holding Spatial and Render components already.
     #[test]
     fn a_late_domain_component_migrates_cleanly() {
         let mut world = World::new();
@@ -1751,12 +1645,10 @@ mod script_domain_migration_tests {
         );
     }
 
-    /// **A marker added and removed every frame must not corrupt the page.**
+    /// **A marker added and removed every frame keeps the page's columns in step.**
     ///
-    /// `Teleported` is exactly that: whoever moves an entity adds it, and the
-    /// physics sync consumes and removes it in the same frame. Reproduces the
-    /// panic seen once scripts started queueing `SetTranslation` — the second
-    /// add read a source row past the end of a sibling column.
+    /// `Teleported` is one: whoever moves an entity adds it, and the physics sync removes it
+    /// in the same frame.
     #[test]
     fn a_marker_added_and_removed_repeatedly_keeps_rows_in_step() {
         use crate::ecs::components::Teleported;
@@ -1786,13 +1678,10 @@ mod script_domain_migration_tests {
         }
     }
 
-    /// **The frame loop's shape, with a script driving it.**
+    /// **The frame loop's shape: a marker added and removed every frame, then compacted.**
     ///
-    /// A behaviour queueing `SetTranslation` makes the applier add `Teleported`
-    /// every frame, and the physics sync removes it — each add abandons a row
-    /// that compaction later reclaims. Reproduces the panic the sandbox hit the
-    /// moment scripts actually ran: an entity kept a row index into a page
-    /// compaction had since shortened.
+    /// Each add abandons a row that compaction later reclaims; no entity may keep a row index
+    /// into a page compaction has shortened.
     #[test]
     fn add_remove_and_compaction_keep_every_row_index_true() {
         use crate::ecs::components::Teleported;
@@ -1829,10 +1718,9 @@ mod script_domain_migration_tests {
 
 // --- Dead migration orphans vs. `remove_from_page` ---
 //
-// A same-domain migration leaves the entity's old row in its source page until
-// compaction. `despawn` only removes the rows its metadata points at, so that
-// orphan keeps the dead entity's id. Removing any other row of the page later
-// swaps the dead orphan into the hole; its owner has no live metadata to patch.
+// A same-domain migration leaves the old row in its source page until compaction, and
+// `despawn` leaves it holding the dead entity's id. Removing another row of the page swaps
+// the dead orphan into the hole; its owner has no live metadata to patch.
 
 #[test]
 fn compaction_after_despawn_skips_dead_orphan_owner() {
@@ -2126,13 +2014,11 @@ fn model_based_churn_with_partial_compaction() {
     }
 }
 
-// --- Transversal (cross-domain) queries must skip migration orphans ---
+// --- Transversal (cross-domain) queries skip migration orphans ---
 //
-// A same-domain `add_component` leaves the entity's old domain row in its source
-// page until compaction. The Transversal path drives iteration from the driver
-// domain's pages, so it must skip rows that are not the entity's live row there
-// (duplicate item) and rows whose entity is dead (a recycled index would
-// otherwise resolve the dead `EntityId` to the new entity's data).
+// The Transversal path drives from the driver domain's pages, so it skips rows that are not
+// the entity's live row there (a duplicate item) and rows of a dead entity (a recycled index
+// would resolve to the new entity's data).
 
 #[test]
 fn transversal_query_skips_migration_orphan() {

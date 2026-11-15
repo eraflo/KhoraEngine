@@ -12,12 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Open, inventory-based registration system for serializable materials.
-//!
-//! Each concrete material type registers itself via `inventory::submit!` with
-//! a type name and how it is written to, and read from, a record and JSON.
-//! Any custom material (including those from plugins) is saved as long as it
-//! registers itself, with `inventory::submit!`.
+//! The registrations, made through `inventory`, by which any material type, a
+//! plugin's included, is saved and read back by its type name.
 
 use inventory::collect;
 use khora_core::asset::{AssetHandle, AssetUUID, Material, StandardMaterial};
@@ -68,9 +64,7 @@ pub struct MaterialRegistration {
     pub schema_complete: fn() -> bool,
     /// Creates a default instance of this material type (for placeholder handles).
     pub create_default: fn() -> Box<dyn Material>,
-    /// Serializes a `dyn Material` into a serde-JSON value for the editor
-    /// inspector. Returns `None` if the material does not match this
-    /// registration's concrete type.
+    /// Writes a `dyn Material` as editable JSON, `None` if it is not this registration's type.
     pub serialize_json: fn(&dyn Material) -> Option<serde_json::Value>,
     /// Deserializes a serde-JSON value (as produced by `serialize_json`) back
     /// into a `Box<dyn Material>`.
@@ -190,9 +184,8 @@ pub fn material_from_positional(
     (reg.from_positional)(bytes, references)
 }
 
-/// What every registered material's schema is, sorted by name — what a
-/// snapshot holding a material by position can be read by — and whether
-/// every one was traced in full.
+/// Returns every registered material's schema, sorted by name, and whether
+/// each was traced in full: what a snapshot holding a material is read by.
 pub fn materials_schema() -> (String, bool) {
     let mut materials: Vec<(&str, u64, bool)> = inventory::iter::<MaterialRegistration>
         .into_iter()
@@ -217,10 +210,9 @@ fn concrete_stage<M: Material + Serialize + DeserializeOwned + 'static>(
     Ok((Box::new(material) as Box<dyn Material>, report))
 }
 
-/// Serializes a material into an editable serde-JSON object of the form
-/// `{ "type_name": <name>, "material": <concrete material> }` — the same
-/// `(type_name, material)` split a saved record uses. Returns `None` if no
-/// registration claims the material.
+/// Returns a material as editable JSON: `{ "type_name": <name>, "material": <material> }`.
+///
+/// `None` if no registration claims the material.
 pub fn material_to_json(material: &dyn Material) -> Option<serde_json::Value> {
     for reg in inventory::iter::<MaterialRegistration> {
         if let Some(material_json) = (reg.serialize_json)(material) {
@@ -233,9 +225,11 @@ pub fn material_to_json(material: &dyn Material) -> Option<serde_json::Value> {
     None
 }
 
-/// Reconstructs a `(handle, uuid)` pair from a JSON object produced by
-/// [`material_to_json`]. The `type_name` selects the matching registration; the
-/// `material` sub-value is decoded by that registration's `deserialize_json`.
+/// Returns a new handle and id for the material [`material_to_json`] wrote.
+///
+/// # Errors
+///
+/// When the JSON lacks a part, names no registered type, or does not decode.
 pub fn material_from_json(
     value: &serde_json::Value,
 ) -> Result<(AssetHandle<Box<dyn Material>>, AssetUUID), String> {
@@ -263,11 +257,8 @@ pub fn material_from_json(
 
 use khora_core::asset::{EmissiveMaterial, UnlitMaterial, WireframeMaterial};
 
-// The scene + inspector `ComponentRegistration` for the authored material
-// reference lives on `MaterialRef` (see `material_ref.rs`); it reuses the
-// helpers above. The four built-in `MaterialRegistration` entries below are
-// the open type-tag registry those helpers (and the `.kmat` decoder) dispatch
-// through — keep them.
+// The built-in materials: what `MaterialRef`'s registration and the `.kmat`
+// decoder dispatch through by type name.
 
 inventory::submit! {
     MaterialRegistration {

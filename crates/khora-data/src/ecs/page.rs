@@ -19,34 +19,21 @@ use crate::ecs::{ColumnMap, ColumnTicks, ComponentKey, Tick};
 pub use super::any_vec::AnyVec;
 pub use super::page_index::PageIndex;
 
-/// A page of memory that stores the component data for multiple entities
-/// in a Structure of Arrays (SoA) layout.
+/// The rows of the entities that share one signature: one column per component.
 ///
-/// A `ComponentPage` holds one signature, which may span several semantic
-/// domains.
-/// It contains multiple columns, where each column is a `Vec<T>` for a specific
-/// component type `T`. This SoA layout is the key to our high iteration performance,
-/// as it guarantees contiguous data access for native queries.
+/// A signature may span several semantic domains. See the book:
+/// concepts/ecs.md, "The storage model".
 pub struct ComponentPage {
-    /// A map from a component's [`ComponentKey`] to its actual storage column.
-    /// The key is the component's own, the same in every `World`: the page
-    /// describes itself, and reading a column needs nothing but the page.
-    /// The `Box<dyn AnyVec>` is a type-erased `Vec<T>` that knows how to
-    /// perform basic vector operations like `swap_remove`.
+    /// Each component's column, by its own [`ComponentKey`].
     pub(crate) columns: ColumnMap,
 
-    /// A list of the `EntityId`s that own the data in each row of this page.
-    /// The entity at `entities[i]` corresponds to the components at `columns[...][i]`.
-    /// This is crucial for reverse lookups, especially during entity despawning.
+    /// The entity of each row: `entities[i]` owns row `i` of every column.
     pub(crate) entities: Vec<EntityId>,
 
-    /// The sorted list of the keys of the components stored in this page.
-    /// This acts as the page's "signature" for matching with bundles. It is
-    /// kept sorted to ensure that the signature is canonical.
+    /// The page's signature: its component keys, sorted so it is canonical.
     pub(crate) keys: Vec<ComponentKey>,
 
-    /// Each column's ticks, under the column's own key: the page tells what
-    /// changed in it with nothing but itself and a key.
+    /// Each column's ticks, under the column's own key.
     pub(crate) ticks: TickMap,
 
     /// ω — moves on whenever a row changes place, never for a value written.
@@ -61,11 +48,10 @@ pub(crate) type TickMap = std::collections::HashMap<
 >;
 
 impl ComponentPage {
-    /// Adds an entity to this page's entity list.
+    /// Adds an entity to this page's entity list, and a tick per column for its row.
     ///
-    /// This method is called by `World::spawn` and is a crucial part of maintaining
-    /// the invariant that the number of rows in the component columns is always
-    /// equal to the number of entities tracked by the page.
+    /// The caller pushes the row into every column, so each column keeps one
+    /// row per entity.
     pub(crate) fn add_entity(
         &mut self,
         entity_id: EntityId,
@@ -83,22 +69,12 @@ impl ComponentPage {
         }
     }
 
-    /// Performs a `swap_remove` on a specific row across all component columns
-    /// and the entity list.
+    /// Removes row `row_index` from every column, moving the last row into its place.
     ///
-    /// This is the core of an O(1) despawn operation. It removes the data for the entity
-    /// at `row_index` by swapping it with the last element in each column and in the
-    /// entity list.
-    ///
-    /// It's the caller's (`World::despawn`) responsibility to update the metadata of
-    /// the entity that was moved from the last row.
+    /// The caller updates the metadata of the entity moved from the last row.
     pub(crate) fn swap_remove_row(&mut self, row_index: u32) {
-        // Remove the corresponding entity ID from the list. `swap_remove` on a Vec
-        // returns the element that was at that index, but we don't need it here.
         self.entities.swap_remove(row_index as usize);
 
-        // Iterate through all component columns and perform the same swap_remove
-        // on each one, using our `AnyVec` trait.
         for column in self.columns.values_mut() {
             column.swap_remove_any(row_index as usize);
         }
@@ -110,7 +86,7 @@ impl ComponentPage {
         self.order += 1;
     }
 
-    /// Returns the number of rows of data (and entities) this page currently stores.
+    /// Returns the number of rows this page stores.
     pub(crate) fn row_count(&self) -> usize {
         self.entities.len()
     }
@@ -124,14 +100,12 @@ impl ComponentPage {
         }
     }
 
-    /// The ticks of the column `key`, read with nothing but the page and the
-    /// key; `None` when the page holds no such column.
+    /// Returns the ticks of the column `key`, `None` when the page holds no such column.
     pub fn column_ticks(&self, key: ComponentKey) -> Option<&ColumnTicks> {
         self.ticks.get(&key)
     }
 
-    /// ω — the page's order version: moves on whenever a row changes place
-    /// (a swap-remove, a compaction), never for a value written.
+    /// Returns ω, the page's order version: it moves whenever a row changes place.
     pub fn order(&self) -> u64 {
         self.order
     }

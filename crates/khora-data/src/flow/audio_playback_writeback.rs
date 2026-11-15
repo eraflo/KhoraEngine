@@ -19,9 +19,8 @@ use khora_core::ecs::entity::EntityId;
 
 use crate::ecs::PlaybackState;
 
-/// Update emitted by `SpatialMixingLane` for a single source — applied
-/// back to its `AudioSource` component by the
-/// `audio_playback_writeback` DataSystem.
+/// A playback change the mixing lane made to one source, applied to its
+/// `AudioSource` by the `audio_playback_writeback` DataSystem.
 #[derive(Debug, Clone)]
 pub struct AudioPlaybackUpdate {
     /// Target entity.
@@ -30,9 +29,8 @@ pub struct AudioPlaybackUpdate {
     pub new_state: Option<PlaybackState>,
 }
 
-/// Slot type written into [`OutputDeck`](khora_core::lane::OutputDeck)
-/// by `SpatialMixingLane`. Drained in `Maintenance` by the
-/// `audio_playback_writeback` DataSystem.
+/// The playback changes `SpatialMixingLane` writes to the
+/// [`OutputDeck`](khora_core::lane::OutputDeck), applied in `Maintenance`.
 #[derive(Debug, Default, Clone)]
 pub struct AudioPlaybackWriteback {
     /// One update per source touched this frame.

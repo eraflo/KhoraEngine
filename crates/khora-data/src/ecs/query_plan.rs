@@ -12,34 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines the `QueryPlan`, which pre-calculates the most efficient way to execute an ECS query.
+//! The `QueryPlan`: how a query's signature is iterated, decided once and cached.
 
 use crate::ecs::{ComponentKey, SemanticDomain};
 use std::collections::HashSet;
 
-/// Defines whether a query can be executed "natively" or requires a transversal join.
+/// How a query iterates: within one domain, across domains, or over entities.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QueryMode {
-    /// Optimal path: all requested components are in the same domain.
-    /// Iteration happens linearly over matching `ComponentPage`s.
+    /// All requested components are in one domain: the matching pages are walked in order.
     Native,
-    /// Join path: requested components span multiple domains.
-    /// Iteration is "driven" by one domain and peers are looked up via bitsets.
+    /// The components span several domains: one domain drives, peers are joined by bitset.
     Transversal,
-    /// The query names no component (`EntityId`, `Option<&T>`, `Without<T>`
-    /// terms only), so no page signature can drive it: iteration walks the
-    /// entity store and yields each live entity once, joining every term
-    /// through its live locations.
+    /// The query names no component, so no page can drive it: each live entity is visited once.
     EntityScan,
 }
 
-/// A pre-calculated execution strategy for a specific set of component types.
-///
-/// This plan is cached in the `World` to avoid re-analyzing query signatures
-/// on every frame.
+/// How a query over one set of component types iterates; cached in the `World`.
 #[derive(Debug, Clone)]
 pub struct QueryPlan {
-    /// The execution mode (Native or Transversal).
+    /// The execution mode.
     pub mode: QueryMode,
     /// If Transversal, this is the domain that drives the iteration.
     pub driver_domain: Option<SemanticDomain>,

@@ -13,12 +13,8 @@
 // limitations under the License.
 
 //! Parent/child links: reparenting, subtree despawn, ancestry checks, and
-//! the hierarchy a scene load brings in.
-//!
-//! The hierarchy is stored twice — [`Parent`] on the child and [`Children`]
-//! on the parent — so this module is the only one that writes either: an edge
-//! at a time through [`World::set_parent`], a whole loaded scene at once
-//! through [`LoadedHierarchy`] and [`World::place_loaded_row`].
+//! the hierarchy a scene load brings in. The only writer of [`Parent`] and
+//! [`Children`], the two copies of one fact.
 //!
 //! [`Parent`]: crate::ecs::Parent
 //! [`Children`]: crate::ecs::Children
@@ -44,10 +40,8 @@ pub enum HierarchyWrite<'v> {
 
 /// The hierarchy a scene load brings in, checked before anything is placed.
 ///
-/// A save records each child's `Parent`; each parent's `Children` is derived
-/// from those, in the order the save lists the children. Only links between
-/// two entities of the same load count: a `Parent` naming anything else is
-/// not one.
+/// Each parent's `Children` is derived from the saved `Parent`s, in save
+/// order. Only links between two entities of the same load count.
 pub(crate) struct LoadedHierarchy {
     /// Each loaded child, and its loaded parent.
     parents: HashMap<EntityId, EntityId>,
@@ -56,10 +50,11 @@ pub(crate) struct LoadedHierarchy {
 }
 
 impl LoadedHierarchy {
-    /// The hierarchy of `parents` (child → parent, both of the load), each
-    /// parent listing its children in `order`. `Err(entity)` when the links
-    /// loop through `entity`: a save is input, and a cycle would send every
-    /// walk up the hierarchy round forever.
+    /// Builds the hierarchy of `parents` (child → parent), each parent listing
+    /// its children in `order`.
+    ///
+    /// `Err(entity)` when the links loop through `entity`: a save is input,
+    /// and a cycle would hang every walk up the hierarchy.
     pub(crate) fn new(
         parents: HashMap<EntityId, EntityId>,
         order: impl IntoIterator<Item = EntityId>,
@@ -77,10 +72,7 @@ impl LoadedHierarchy {
     }
 }
 
-/// An entity the links loop through, if they do.
-///
-/// Each entity is walked once: a walk stops where an earlier one finished, so
-/// a long chain costs its length, not its length squared.
+/// Returns an entity the links loop through, if they do, walking each entity once.
 fn cycle_in(parents: &HashMap<EntityId, EntityId>) -> Option<EntityId> {
     // `false` while on the walk in progress, `true` once known to reach a root.
     let mut state: HashMap<EntityId, bool> = HashMap::with_capacity(parents.len());
@@ -110,18 +102,10 @@ fn cycle_in(parents: &HashMap<EntityId, EntityId>) -> Option<EntityId> {
 impl World {
     /// Re-parents `child`, or detaches it when `new_parent` is `None`.
     ///
-    /// The hierarchy is stored twice — [`Parent`] on the child and [`Children`]
-    /// on the parent — because both directions are walked every frame. Two
-    /// copies of one fact is two chances to disagree, so the only correct place
-    /// to write either of them is this module, where both move together: here
-    /// for one edge, in [`place_loaded_row`](Self::place_loaded_row) for a
-    /// loaded scene.
-    ///
-    /// Returns `false` when the edge was refused: a missing entity, or a parent
-    /// that is already a descendant of `child`. A cycle is refused rather than
-    /// created because every consumer of the hierarchy walks it — transform
-    /// propagation, the scene tree, recursive despawn — and each of them would
-    /// hang on the loop instead of reporting it.
+    /// Moves [`Parent`] on the child and [`Children`] on the parent together.
+    /// Returns `false` when the edge is refused: a missing entity, or a parent
+    /// already below `child`, since every walk of the hierarchy would hang on
+    /// the cycle.
     ///
     /// [`Parent`]: crate::ecs::Parent
     /// [`Children`]: crate::ecs::Children
@@ -135,8 +119,8 @@ impl World {
             }
         }
 
-        // Detach first, whatever comes next. Skipping this on a re-parent is
-        // what leaves a child listed under both its old and its new parent.
+        // Detached first, even on a re-parent, or the child stays listed
+        // under its old parent too.
         if let Some(former) = self.get::<Parent>(child).map(|p| p.0) {
             if let Some(mut children) = self.get_mut::<Children>(former) {
                 children.0.retain(|listed| *listed != child);
@@ -168,10 +152,8 @@ impl World {
 
     /// Despawns `root` and every entity beneath it, returning how many went.
     ///
-    /// Destroying a parent alone would leave its children holding a [`Parent`]
-    /// that names a recycled index — the ABA problem the generation counter
-    /// exists to catch, reintroduced one level down. A guard holding a weapon as
-    /// a child should not leave the weapon floating where it died.
+    /// Despawning a parent alone would leave its children's [`Parent`] naming
+    /// an index that will be recycled.
     ///
     /// [`Parent`]: crate::ecs::Parent
     pub fn despawn_subtree(&mut self, root: EntityId) -> usize {
@@ -197,18 +179,16 @@ impl World {
             }
         }
 
-        // Detach the root, so its surviving parent's `Children` does not keep an
-        // id pointing at nothing.
+        // The root's surviving parent must not keep it in `Children`.
         self.set_parent(root, None);
         doomed.iter().filter(|e| self.despawn(**e)).count()
     }
 
-    /// Whether `candidate` sits under `ancestor` in the hierarchy.
+    /// Returns whether `candidate` sits under `ancestor` in the hierarchy.
     pub fn is_descendant_of(&self, candidate: EntityId, ancestor: EntityId) -> bool {
         let mut current = candidate;
-        // Every entity on the way up, once: this is the guard against a
-        // malformed hierarchy, so it cannot assume the walk ends — and a
-        // depth bound would let a long enough chain close into a cycle.
+        // This is the guard against a malformed hierarchy, so it cannot
+        // assume the walk ends; a depth bound would miss a long enough cycle.
         let mut seen = std::collections::HashSet::new();
         while seen.insert(current) {
             let Some(parent) = self.get::<Parent>(current) else {
@@ -223,13 +203,9 @@ impl World {
         false
     }
 
-    /// A write to a component **by name** — a script command, the editor's
-    /// inspector — that lands on the hierarchy, made through this module so
-    /// both halves move together: setting or adding `Parent` re-parents
-    /// through [`set_parent`](Self::set_parent) (a cycle is refused), removing
-    /// it detaches, and `Children` — derived from the children's `Parent` — is
-    /// not written by name at all.
+    /// Applies a by-name write of `Parent` through [`set_parent`](Self::set_parent).
     ///
+    /// Removing `Parent` detaches; `Children` is derived and refused by name.
     /// `None` when `type_name` is not part of the hierarchy: the caller writes
     /// it as any other component.
     pub fn write_hierarchy_by_name(
@@ -269,14 +245,12 @@ impl World {
         }
     }
 
-    /// Places a loaded row (see [`place_row`](Self::place_row)) with the
-    /// hierarchy made to agree as it goes: a `Parent` naming an entity outside
-    /// the load is left out of the row, and a parent's `Children` goes into
-    /// the same row when the row holds the hierarchy's domain — so a loaded
-    /// entity lands in its final page, with no migration to gain its list.
+    /// Places a loaded row as [`place_row`](Self::place_row) does, with its
+    /// hierarchy made to agree.
     ///
-    /// `fill` pushes the row's other values; a value for a column the row
-    /// does not have (a `Parent` left out) is the caller's to skip.
+    /// A `Parent` naming an entity outside the load is left out; a parent's
+    /// `Children` joins the row when it holds the hierarchy's domain, so no
+    /// migration follows. `fill` skips values for columns the row lacks.
     pub(crate) fn place_loaded_row(
         &mut self,
         entity: EntityId,
@@ -317,9 +291,9 @@ impl World {
         })
     }
 
-    /// Gives every loaded parent no row took its `Children` on its own — a
-    /// parent with no page in the hierarchy's domain, whose list is a first
-    /// component in that domain, so nothing migrates.
+    /// Adds `Children` to each loaded parent whose row did not take it.
+    ///
+    /// Such a parent has no component in the hierarchy's domain, so nothing migrates.
     pub(crate) fn finish_loaded_hierarchy(&mut self, hierarchy: LoadedHierarchy) {
         for (parent, list) in hierarchy.children {
             if let Err(error) = self.add_component(parent, Children(list)) {

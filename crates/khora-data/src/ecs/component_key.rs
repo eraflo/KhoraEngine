@@ -20,37 +20,33 @@ use std::hash::{BuildHasherDefault, Hash, Hasher};
 
 use crate::ecs::AnyVec;
 
-/// What identifies a component to storage — without any `World`.
+/// What identifies a component to storage, the same in every world.
 ///
-/// A page's columns are keyed by it, so a page describes itself: reading a
-/// column needs the page and the key, never the world that filled it, and a
-/// component has the same key in every world.
+/// A page's columns are keyed by it, so reading a column needs the page and
+/// the key, never the world. See the book: concepts/ecs.md, "The storage model".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ComponentKey {
     /// A Rust component: its `TypeId`, a compile-time constant.
     Rust(TypeId),
-    /// A component declared while the engine runs (by a script): a stable
-    /// 128-bit hash of its name — the same in every world, every process and
-    /// every run.
+    /// A component declared while the engine runs: a stable 128-bit hash of its name.
     Declared(u128),
 }
 
 impl ComponentKey {
-    /// The key of the Rust component `T`.
+    /// Returns the key of the Rust component `T`.
     pub fn of<T: 'static>() -> Self {
         Self::Rust(TypeId::of::<T>())
     }
 
-    /// The key of the component declared under `name`.
+    /// Returns the key of the component declared under `name`.
     pub const fn named(name: &str) -> Self {
         Self::Declared(fnv1a_128(name.as_bytes()))
     }
 }
 
-/// A key is hashed as the one 64-bit word it already is a hash of — a
-/// `TypeId` hashes its own id, a declared key is FNV — so a page finds a
-/// column with one cheap step per row (see [`KeyHasher`]). Keys of the two
-/// kinds may share a hash; equality tells them apart.
+/// Hashes a key as the one 64-bit word it already is a hash of, for [`KeyHasher`].
+///
+/// Keys of the two kinds may share a hash; equality tells them apart.
 impl Hash for ComponentKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
@@ -60,10 +56,10 @@ impl Hash for ComponentKey {
     }
 }
 
-/// The hasher of a map keyed by [`ComponentKey`]: it keeps the key's own hash
-/// instead of hashing it again. A key is already a well-mixed hash, and a
-/// page looks a column up on every row a query visits — a second hash there
-/// is pure cost.
+/// The hasher of a map keyed by [`ComponentKey`]: it keeps the key's own hash.
+///
+/// A key is already well mixed, and a page looks a column up on every row a
+/// query visits: a second hash there is pure cost.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct KeyHasher(u64);
 
@@ -90,9 +86,10 @@ impl Hasher for KeyHasher {
 /// A page's columns, by key, hashed with [`KeyHasher`].
 pub type ColumnMap = HashMap<ComponentKey, Box<dyn AnyVec>, BuildHasherDefault<KeyHasher>>;
 
-/// 128-bit FNV-1a: stable across builds and platforms, computable in a
-/// `const`, and wide enough that two names sharing a hash is not a practical
-/// concern — a registry still refuses one, should it happen.
+/// 128-bit FNV-1a: stable across builds and platforms, and computable in a `const`.
+///
+/// Wide enough that two names sharing a hash is no practical concern; a
+/// registry still refuses one.
 const fn fnv1a_128(bytes: &[u8]) -> u128 {
     const OFFSET: u128 = 0x6c62_272e_07bb_0142_62b8_2175_6295_c58d;
     const PRIME: u128 = 0x0000_0000_0100_0000_0000_0000_0000_013b;

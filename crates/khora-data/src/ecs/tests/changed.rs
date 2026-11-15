@@ -12,15 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Reading changes: `Changed<T>` keeps the entities whose `T` was written
-//! after the query's `since`.
-//!
-//! Per page of `T`'s column: a page whose summary σ is not past `since` is
-//! skipped whole; a column keeping row ticks τ, read at or above its floor
-//! φ, keeps exactly the rows whose tick is past `since`; any other column
-//! keeps every row. `Changed<T>` requires `T`, yields `()`, and reads alike
-//! in a Native, a Transversal and a joined iteration, through `query` and
-//! `query_mut`.
+//! `Changed<T>` keeps the entities whose `T` was written after the query's `since`, alike in
+//! Native, Transversal and joined iterations, through `query` and `query_mut`.
+//! See the book: concepts/change-detection-formal.md, "The answer a reader gets".
 
 use std::any::TypeId;
 use std::ops::DerefMut;
@@ -88,11 +82,11 @@ fn write_position(world: &mut World, entity: EntityId, value: i32) {
 
 // --- the page summary ---
 
-/// **A clean page is not entered.** A page whose `Position` summary is not
-/// past `since` is skipped whole — its rows are never read. To see it, the
-/// clean page's row ticks are set past `since` while its summary stays at
-/// or under it — a state no write can make: a reader that entered the page
-/// and read its rows would yield them.
+/// **A clean page is not entered**: a page whose `Position` summary is not past `since` is
+/// skipped whole.
+///
+/// Its row ticks are set past `since`, a state no write can make, so a reader that entered
+/// the page would yield them.
 #[test]
 fn changed_skips_a_clean_page_without_reading_its_rows() {
     let mut world = world();
@@ -192,10 +186,10 @@ fn changed_returns_exactly_the_rows_written_since() {
     }
 }
 
-/// **A Transversal query reads `Changed` exactly too**: `Changed` on a
-/// component of one domain beside a term of the other, in both directions —
-/// whichever domain drives, one of the two puts `Changed` in a peer domain.
-/// An entity lacking the other term never matches.
+/// **A Transversal query reads `Changed` exactly too**, whichever domain drives.
+///
+/// `Changed` sits on one domain beside a term of the other, both ways round; an entity
+/// lacking the other term never matches.
 #[test]
 fn changed_returns_exactly_the_rows_written_since_in_a_transversal_query() {
     let mut world = world();
@@ -277,12 +271,10 @@ fn changed_returns_exactly_the_rows_written_since_in_a_transversal_query() {
 
 // --- every row ---
 
-/// **Under the floor, every row.** A column whose history was dropped up to
-/// φ cannot tell which of its rows were written before φ, so a reader whose
-/// `since` is under φ gets every row of a page written since; at or above φ
-/// the row ticks answer exactly. Here `Velocity` is written unwatched up to
-/// tick 4, then watched: its next write, at 7, gives the column row ticks,
-/// every other row reading 0 under the floor of 4.
+/// **Under the floor, every row**: a reader whose `since` is under the floor φ gets every
+/// row of a page written since; at or above φ the row ticks answer exactly.
+///
+/// `Velocity` is written unwatched up to tick 4, then watched and written at 7.
 #[test]
 fn a_reader_under_the_floor_sees_every_row() {
     let mut world = world();
@@ -331,9 +323,8 @@ fn a_reader_under_the_floor_sees_every_row() {
     assert_eq!(changed::<Velocity>(&world, 7), vec![], "since = σ: nothing");
 }
 
-/// **A column keeping no row ticks answers with every row** of a page
-/// written since — it knows only its summary and its floor — and with none
-/// of a page not written since.
+/// **A column keeping no row ticks answers with every row** of a page written since, and
+/// with none of a page not written since.
 #[test]
 fn a_column_without_row_ticks_answers_with_every_row_of_a_written_page() {
     let mut world = world();
@@ -380,10 +371,9 @@ fn a_column_without_row_ticks_answers_with_every_row_of_a_written_page() {
     );
 }
 
-/// **A query never told `since` sees every row**: the default is `Tick(0)`,
-/// and an observer that has seen nothing sees everything — whether the rows
-/// were placed or written. `Changed<T>` requires `T`: an entity without it
-/// never matches.
+/// **A query never told `since` sees every row**, placed or written: the default is `Tick(0)`.
+///
+/// `Changed<T>` requires `T`: an entity without it never matches.
 #[test]
 fn changed_with_no_since_sees_every_row() {
     let mut world = world();
@@ -423,10 +413,8 @@ fn changed_with_no_since_sees_every_row() {
 
 // --- in a query ---
 
-/// **`Changed` beside writable terms**: `query_mut` over `&mut Velocity`
-/// filtered by `Changed<Position>` hands out only the entities whose
-/// `Position` changed, and a write through what it hands out reaches those
-/// alone.
+/// **`Changed` beside writable terms**: `query_mut` filtered by `Changed<Position>` hands out,
+/// and writes, only the entities whose `Position` changed.
 #[test]
 fn changed_in_a_tuple_with_writable_terms() {
     let mut world = world();
@@ -465,10 +453,8 @@ fn changed_in_a_tuple_with_writable_terms() {
     assert!(read.iter().all(|(_, velocity)| *velocity == 100));
 }
 
-/// **`Changed` on a component of another domain than the driver**, read
-/// through the join: a Native query whose `Option` term names another
-/// domain joins each row through the entity's live rows, and a Transversal
-/// one does too. The answer is the same as the page-row path's.
+/// **`Changed` on a component of another domain than the driver** answers through the join
+/// as through the page rows, in a Native query with a foreign `Option` term and a Transversal one.
 #[test]
 fn changed_on_a_component_in_another_domain() {
     let mut world = world();
@@ -524,10 +510,8 @@ fn changed_on_a_component_in_another_domain() {
 
 // --- moves ---
 
-/// **A move is not a change, and an orphan is never read.** A migrated
-/// entity is yielded once, from its live row — never from the orphan row it
-/// left behind — and it carries the tick of its last write, so a reader who
-/// saw that write does not see it again after the move.
+/// **A move is not a change, and an orphan is never read**: a migrated entity is yielded
+/// once, from its live row, with the tick of its last write.
 #[test]
 fn changed_yields_a_migrated_entity_once_and_only_for_its_writes() {
     let mut world = world();
@@ -577,16 +561,11 @@ fn changed_yields_a_migrated_entity_once_and_only_for_its_writes() {
 
 // --- rows of one entity in two pages ---
 
-/// **A peer column on the driver page that is not the entity's live one is
-/// never judged.** An entity spawned with `(Position, RenderId)` holds both
-/// in one page. When one domain is removed and its component added back,
-/// the component lands in a page of its own, while the driver page keeps a
-/// stale column of it — the one the entity no longer reads. A Transversal
-/// `Changed` on that component must read the live row (as its value does,
-/// through `fetch_from_world`), never the stale column of the driver page:
-/// a write to the live row since `since` is a change, whatever the stale
-/// column's summary says. One entity is split each way, so whichever domain
-/// drives, one of the two reads goes through the stale column.
+/// **A peer column on the driver page that is not the entity's live one is never judged.**
+///
+/// A component removed and added back lands in a page of its own, while the driver page keeps
+/// a stale column of it. A Transversal `Changed` reads the live row, as its value does; one
+/// entity is split each way, so whichever domain drives, one read meets the stale column.
 #[test]
 fn changed_reads_the_live_row_when_the_driver_page_holds_a_stale_column() {
     let mut world = world();
@@ -658,14 +637,11 @@ fn changed_reads_the_live_row_when_the_driver_page_holds_a_stale_column() {
     );
 }
 
-/// **`Changed<T>` beside `&mut T`**: the filter reads `T`'s ticks while the
-/// guards it let through write them. Each guard is written as it is handed
-/// out and kept, so the filter reads the next rows after a write — one that
-/// gave the column its row ticks mid-iteration, `Position` having been
-/// watched only after its rows were placed — and the guards are written
-/// again, out of order, once the iteration is done. The rows yielded are
-/// those that changed before the query began, each once; every write lands
-/// and stamps its row.
+/// **`Changed<T>` beside `&mut T`** yields the rows changed before the query began, each once,
+/// while the guards it lets through write `T`; every write lands and stamps its row.
+///
+/// A first write gives the column its row ticks mid-iteration, and the kept guards are
+/// written again, out of order, after it.
 #[test]
 fn changed_beside_a_writable_term_of_the_same_component() {
     let mut world = World::new();

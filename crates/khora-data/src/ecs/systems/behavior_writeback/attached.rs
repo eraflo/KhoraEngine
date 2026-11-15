@@ -15,10 +15,9 @@
 //! Writing back the behaviors their component attaches.
 //!
 //! What a turn changed of the behavior's fields goes to the behavior's
-//! component — only those fields, so another script's write to another one
-//! the same frame survives — and what the engine keeps of the instance goes
-//! to its state companion. Rows are written a column at a time: one write per
-//! behavior and set of changed fields, one per companion.
+//! component (only those fields, so another script's write to another one
+//! the same frame survives), and what resumes the instance to its state
+//! companion.
 
 use std::collections::BTreeMap;
 

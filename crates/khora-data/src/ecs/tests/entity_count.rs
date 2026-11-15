@@ -12,12 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `World::entity_count` counts the live entities — not the slots ever
-//! allocated, which a dead entity or an id held back for a load would inflate.
-//!
-//! The DCC reads it every frame as its workload size, so a count that only
-//! ever grows would drift over a session. Each test leaves at least one dead
-//! or reserved slot behind, so a slot count cannot pass for a live count.
+//! `World::entity_count` counts the live entities, not the slots ever allocated: the DCC reads
+//! it every frame as its workload size. Each test leaves a dead or reserved slot behind, so a
+//! slot count cannot pass for a live count.
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::PersistentId;
@@ -294,9 +291,9 @@ fn rewrite(record: &mut Record, missing: PersistentId, rewritten: &mut usize) {
     }
 }
 
-/// Loads `record` beside the entities already in a world with no dead slot,
-/// so the only id the load leaves allocated but not alive is the sentinel it
-/// reserves for the dead reference.
+/// Asserts a load of `record` into a world with no dead slot counts only the live entities.
+///
+/// The only id the load leaves allocated but not alive is the sentinel for the dead reference.
 fn assert_load_counts_only_the_live(record: &SceneRecord) {
     let mut world = World::new();
     world.spawn(Transform::identity());

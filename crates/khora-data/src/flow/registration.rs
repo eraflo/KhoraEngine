@@ -20,14 +20,11 @@ use khora_core::Runtime;
 use crate::ecs::{ComponentKey, Role, SemanticDomain, World};
 use crate::flow::FlowContext;
 
-/// Registration entry for a [`Flow`](super::Flow) — submitted by each
-/// concrete Flow implementation via [`inventory::submit!`].
+/// A [`Flow`](super::Flow)'s registration, submitted by
+/// [`register_flow!`](crate::register_flow).
 ///
-/// Type erasure: because [`Flow`](super::Flow) has an associated `View`
-/// type, we cannot store trait objects directly. Each Flow provides a
-/// trampoline `run` function that owns its lifecycle (typically delegating
-/// to a `static OnceLock<Mutex<MyFlow>>` instance) and publishes its View
-/// into the [`LaneBus`].
+/// Type-erased, since a Flow has an associated `View`: its `run` function owns
+/// the Flow's instance and publishes the View into the [`LaneBus`].
 pub struct FlowRegistration {
     /// Stable identifier — matches `Flow::NAME`.
     pub name: &'static str,
@@ -37,24 +34,20 @@ pub struct FlowRegistration {
     pub role: Role,
     /// Trampoline that runs select + project and publishes the View.
     pub run: fn(&mut World, &mut LaneBus, &Runtime, FlowContext),
-    /// Components this Flow watches for change, by key. The `World` records
-    /// each as observed ([`World::observe`]); the runner keeps the Flow's
-    /// last-seen tick. Empty by default (`register_flow!(MyFlow)`).
+    /// Components this Flow watches for change, by key.
+    ///
+    /// The `World` records each as observed ([`World::observe`]); the runner
+    /// keeps the Flow's last-seen tick.
     pub observes: &'static [fn() -> ComponentKey],
 }
 
 inventory::collect!(FlowRegistration);
 
-/// One Substrate-Pass execution of `flow`, with view-cache support. This is
-/// the body of the [`register_flow!`] trampoline, extracted so the caching
-/// behaviour is a single, directly testable code path.
+/// Runs `flow` once, republishing its cached view while its key is unchanged.
 ///
-/// `cache` holds the `(key, view)` pair of the previously published view.
-/// When [`Flow::cache_key`] returns `Some(k)` equal to the cached key, the
-/// cached view is republished (cloned) without re-running
-/// `select`/`project`; otherwise the flow projects normally and the result
-/// replaces the cache (only when caching is enabled — a `None` key clears
-/// it, so a flow can opt out dynamically without risking a stale entry).
+/// The body of the [`register_flow!`](crate::register_flow) trampoline. `cache` holds the last
+/// published `(key, view)`, keyed by [`Flow::cache_key`](super::Flow::cache_key);
+/// a `None` key clears it, so a stale view is never served.
 pub fn run_flow_cached<F: super::Flow>(
     flow: &mut F,
     cache: &mut Option<(u64, F::View)>,
@@ -94,8 +87,8 @@ pub fn run_flow_cached<F: super::Flow>(
     bus.publish(view);
 }
 
-/// Convenience macro for declaring a Flow registration with the standard
-/// trampoline (single static instance, no per-frame allocation).
+/// Registers a Flow with the standard trampoline: one static instance and its
+/// view cache.
 ///
 /// # Example
 ///
@@ -167,9 +160,10 @@ mod tests {
         projections: usize,
     }
 
-    /// Cached test flow keyed on the Audio + Spatial domain epochs,
-    /// mirroring the real `AudioFlow` key; counts how many times `project`
-    /// actually runs.
+    /// A cached test flow keyed like `AudioFlow`, on the Audio and Spatial
+    /// epochs.
+    ///
+    /// Counts how many times `project` runs.
     #[derive(Default)]
     struct CountedFlow {
         projections: AtomicUsize,
@@ -303,9 +297,11 @@ mod tests {
         );
     }
 
-    /// Handing out `&mut` access is not a write: a cached flow keyed on the
-    /// domain epochs keeps its view while its components are only read
-    /// through `get_mut` and `query_mut`, and re-projects once one is written.
+    /// Handing out `&mut` access is not a write.
+    ///
+    /// A cached flow keyed on the domain epochs keeps its view while its
+    /// components are only read through `get_mut` and `query_mut`, and
+    /// re-projects once one is written.
     #[test]
     fn cached_flow_keeps_its_view_when_access_is_handed_out_but_nothing_is_written() {
         let mut world = World::new();

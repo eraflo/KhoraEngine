@@ -12,20 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! ECS maintenance subsystem — page compaction (orphan-row reclamation).
+//! ECS maintenance: compacts the pages migrations left orphaned rows in, a few per frame.
 //!
-//! A direct maintenance service for the ECS World. Unlike Agents there is no
-//! strategy negotiation: it compacts a fixed number of pages per frame to keep
-//! frame times predictable. This is the Stage-6 (`TickPhase::Maintenance`)
-//! housekeeping the frame model describes — Data-owned and self-budgeted.
-//!
-//! A component migration (`add_component` / `remove_component` /
-//! `remove_component_domain`) repoints an entity's metadata to a new page but
-//! leaves the old physical row orphaned, recording the source page in the
-//! World's dirty set (`StorageManager::dirty_pages`). No migration call site has
-//! to remember to forward anything. Each frame [`EcsMaintenance::tick`] drains up
-//! to `max_per_frame` dirty pages and compacts them via
-//! [`World::run_compaction`], which physically drops the fully-dead rows.
+//! See the book: concepts/ecs.md, "Maintenance is a service, not an agent".
 //!
 //! # Usage
 //!
@@ -43,11 +32,7 @@ use super::World;
 
 const DEFAULT_MAX_PER_FRAME: usize = 10;
 
-/// Direct ECS maintenance service.
-///
-/// Compacts up to `max_per_frame` dirty pages each frame, reclaiming the
-/// orphaned rows left by component migrations. This replaces the former
-/// `GarbageCollectorAgent`.
+/// The ECS maintenance service: compacts up to `max_per_frame` dirty pages each frame.
 pub struct EcsMaintenance {
     max_per_frame: usize,
     last_compacted_count: usize,
@@ -70,10 +55,9 @@ impl EcsMaintenance {
         }
     }
 
-    /// Runs one frame of maintenance: compacts up to `max_per_frame` dirty pages.
+    /// Compacts up to `max_per_frame` dirty pages.
     ///
-    /// Dirty pages beyond the budget stay queued for the next frame — harmless,
-    /// since the query layer already skips orphan rows.
+    /// Pages beyond the budget wait for the next frame; queries skip orphan rows meanwhile.
     pub fn tick(&mut self, world: &mut World) {
         self.last_compacted_count = world.run_compaction(self.max_per_frame);
 
@@ -85,12 +69,12 @@ impl EcsMaintenance {
         }
     }
 
-    /// Number of pages compacted in the last [`tick`](Self::tick).
+    /// Returns the number of pages compacted in the last [`tick`](Self::tick).
     pub fn last_compacted_count(&self) -> usize {
         self.last_compacted_count
     }
 
-    /// The maximum number of pages compacted per frame.
+    /// Returns the maximum number of pages compacted per frame.
     pub fn max_per_frame(&self) -> usize {
         self.max_per_frame
     }

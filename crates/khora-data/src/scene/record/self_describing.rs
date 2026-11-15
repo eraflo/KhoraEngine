@@ -12,17 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A record in the form self-describing formats write: JSON, MessagePack.
-//!
-//! Structs become maps keyed by field name, a variant its name or a map keyed
-//! by it, an absent optional `null`, a present one its bare value. The two
-//! kinds of reference keep a marker key no field is named — `$entity`,
-//! `$asset` — so reading the text back recovers them for what they are. A
-//! float that text cannot write as a number — an infinity or a NaN — is kept
-//! the same way, under `$float`.
+//! A record in the form self-describing formats (JSON, MessagePack) write:
+//! structs as maps by field name; references and floats text has no number
+//! for under marker keys no field is named (`$entity`, `$asset`, `$float`).
 //!
 //! Struct and enum names are not written: the reader matches by field and
-//! variant name, and a self-describing format has nowhere natural for them.
+//! variant name.
 
 use std::fmt;
 
@@ -154,9 +149,10 @@ impl<'de> Deserialize<'de> for Record {
     }
 }
 
-/// Reads one value `depth` levels into another. A file is input: however
-/// deep it nests, reading it is an error past [`MAX_DEPTH`], never a stack
-/// overflow — whatever bound the format's own reader has, or lacks.
+/// Reads one value `depth` levels into another.
+///
+/// Past [`MAX_DEPTH`] a file is refused, never a stack overflow, whatever
+/// bound the format's own reader has or lacks.
 struct RecordSeed {
     depth: usize,
 }

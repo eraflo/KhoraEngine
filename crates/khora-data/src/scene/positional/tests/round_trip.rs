@@ -23,10 +23,10 @@ use khora_core::script::{
 use super::*;
 use crate::ecs::{SerializableTransform, Transform};
 
-/// Every kind serde's data model has — structs, unit, newtype and tuple
-/// structs, tuples, arrays, enums of every variant kind, options (a present
-/// `None` included), sequences, maps, strings, bytes, numbers at their
-/// extremes — nested in one value, comes back equal.
+/// Every kind serde's data model has, nested in one value, comes back equal.
+///
+/// Structs of each form, tuples, arrays, enums of every variant kind, options
+/// (a present `None` included), sequences, maps, strings, bytes, extreme numbers.
 #[test]
 fn every_kind_of_value_round_trips() {
     let scene = rich_scene();
@@ -173,9 +173,9 @@ fn collections_round_trip() {
     assert_eq!(round_trip(&keyed), keyed);
 }
 
-/// The engine's own persisted types: a component mirror, and a script's
-/// values and runtime snapshot — a sequence frozen part-way, every script
-/// value kind.
+/// The engine's own persisted types round-trip: a component mirror and a script's state.
+///
+/// The script state holds every value kind and a sequence frozen part-way.
 #[test]
 fn engine_types_round_trip() {
     let transform = SerializableTransform::from(Transform::new(
