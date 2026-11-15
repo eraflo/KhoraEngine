@@ -12,21 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The brand typefaces every Khora tool installs, embedded in the binary —
-//! the pair of the logo (`docs/src/design/editor.md`, "04 — Typography"):
+//! The brand typefaces every Khora tool installs, embedded so a tool finds them
+//! wherever it runs. See the book: design/editor.md, "04 — Typography".
 //!
-//! - **Archivo**: every word on screen. Regular, Medium and SemiBold at normal
-//!   width for text, labels and titles; Light at 112 % width for display
-//!   titles; Light at 125 % width for the name KHORA (the wordmark).
-//! - **IBM Plex Mono**: code, telemetry, paths, numbers — with **Noto Sans
-//!   Mono**'s Greek behind it, for `ΧΩΡΑ` under the name.
-//! - **Lucide**: the icon font reached through `FontFamilyHint::Icons`.
-//!
-//! Archivo is a variable font upstream; egui reads no variation axes, so the
-//! faces here are static instances cut from the google/fonts originals.
-//! All SIL Open Font License 1.1; the licenses sit next to the files in
-//! `assets/fonts/`. Embedding them means a tool finds its fonts wherever its
-//! binary runs, with nothing to copy next to it.
+//! Beside the book's pair: **Noto Sans Mono**'s Greek behind Plex Mono, and
+//! **Lucide**, the icon font behind `FontFamilyHint::Icons`. Archivo is a
+//! variable font upstream; egui reads no variation axes, so its faces here are
+//! static instances. All are SIL OFL 1.1, licences beside them in `assets/fonts/`.
 
 use khora_core::ui::{FontHandle, FontPack, NamedFont};
 
@@ -207,10 +199,10 @@ mod tests {
         false
     }
 
-    /// Every tool gets every brand family, face for face: Archivo for every
-    /// word, Archivo wider for display and widest for the wordmark, IBM Plex
-    /// Mono for code and numbers with a Greek-only fallback behind it, Lucide
-    /// for icons.
+    /// Every tool gets every brand family, face for face.
+    ///
+    /// Archivo for words, wider for display and widest for the wordmark; IBM
+    /// Plex Mono with a Greek-only fallback behind it; Lucide for icons.
     #[test]
     fn every_tool_loads_every_brand_family() {
         let pack = brand_fonts();

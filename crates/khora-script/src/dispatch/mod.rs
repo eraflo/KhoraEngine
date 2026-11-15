@@ -14,33 +14,9 @@
 
 //! Delivering an event to the behavior that declared a handler for it.
 //!
-//! # There is no subscription table
-//!
-//! Which is the point. A handler is found by asking the running behavior's
-//! program whether it has a function named `Guard.Damaged`, and by asking the
-//! caller whether the target entity is still one it knows about. Both answers
-//! are derived at the moment of delivery, so neither can be stale.
-//!
-//! A subscription list would answer the same questions from remembered state,
-//! and remembered state about entities has to be maintained: an entry for a
-//! despawned entity is a leak and a dangling call at once. `on` handlers
-//! therefore stop firing after a `Despawn` because there is nothing left to ask
-//! — not because something remembered to detach them.
-//!
-//! # What it costs
-//!
-//! One lookup per event, in a table each program builds once from its
-//! declared events and the handlers they compiled to ([`HandlerTable`]) — the
-//! code's answer, cached; the entity's state picks among it at delivery. Only
-//! a declared event is in it, so a method or a lifecycle hook is never run by
-//! an event of its name.
-//!
-//! # A payload that does not fit
-//!
-//! The checker holds every script raise to its event's declaration, so a
-//! payload that does not fit came from the engine, or from mail queued before
-//! a reload changed the event. It is refused as a [`NotDelivered::Mismatch`]
-//! — the receiver did nothing wrong, and is not faulted for it.
+//! No subscription table: the handler and the target's liveness are asked at
+//! delivery, so a despawned entity hears nothing without being detached.
+//! See the book: concepts/scripting/events.md, "An event is never delivered in the frame it was raised".
 
 mod handlers;
 mod ticked;
@@ -57,9 +33,8 @@ use crate::vm::{Machine, Program, Run, TimerKind, Value};
 
 /// Why an event was not delivered.
 ///
-/// Not all of these are mistakes. [`NoHandler`](Self::NoHandler) is the normal
-/// case for most events — a guard hears `Damaged` and ignores `Opened` — so a
-/// caller distinguishes it rather than logging every one.
+/// [`NoHandler`](Self::NoHandler) is the normal case for most events, not a
+/// mistake: a caller tells it apart rather than logging every one.
 #[derive(Debug, Clone, PartialEq)]
 pub enum NotDelivered {
     /// The entity is gone. An `on` handler stops firing after a `Despawn`.
@@ -71,10 +46,8 @@ pub enum NotDelivered {
         /// The event it does not handle.
         event: String,
     },
-    /// The handler exists but takes a different number of arguments.
-    ///
-    /// Means the program and whatever raised the event disagree — a script
-    /// compiled against an older definition of the event, most likely.
+    /// The handler exists but takes a different number of arguments: the
+    /// program and the raiser disagree on the event's definition.
     WrongArity {
         /// The handler.
         handler: String,
@@ -90,8 +63,8 @@ pub enum NotDelivered {
         /// What it was.
         kind: &'static str,
     },
-    /// The payload does not fit the event's declared signature — a count or a
-    /// kind the declaration does not allow.
+    /// The payload does not fit the event's declared signature. It came from
+    /// the engine or from mail queued before an edit; the receiver is not faulted.
     Mismatch {
         /// The event.
         event: String,
@@ -144,23 +117,21 @@ impl std::fmt::Display for NotDelivered {
     }
 }
 
-/// The name a behavior's handler compiles to.
+/// Returns the name a behavior's handler compiles to.
 ///
-/// One place, and now actually one: the compiler writes the name here too
-/// (`bytecode::member_signature`, `bytecode::expr`), because two spellings of
-/// the same convention fail silently — a handler registered under one and
-/// looked up under the other never fires, and nothing reports it.
+/// The compiler spells it through here too: a handler registered under one
+/// spelling and looked up under another would silently never fire.
 pub fn handler_name(behavior: &str, event: &str) -> String {
     format!("{behavior}.{event}")
 }
 
-/// Whether a behavior handles an event, in any state or outside them.
+/// Returns whether a behavior handles an event, in any state or outside them.
 pub fn handles(program: &Program, behavior: &str, event: &str) -> bool {
     !is_reserved(event) && program.handlers.of(program, behavior, event).is_some()
 }
 
-/// The function handling `event` for the behavior as it stands now — its
-/// current state's handler, else its own — as its index in the program.
+/// Returns the program index of the function handling `event`: the current
+/// state's handler, else the behavior's own.
 pub fn resolve_handler(
     program: &Program,
     behavior: &str,
@@ -177,24 +148,21 @@ pub fn resolve_handler(
         .copied()
 }
 
-/// Whether `event` names something the compiler made rather than a member a
-/// script declared — `__fields`, `__enter`, a schedule's `__every(0.5)`. An
-/// event never reaches one: raising `"__enter"` must not change a state
-/// without a `become`.
+/// Whether `event` names a compiler-made member (`__enter`, `__every(0.5)`):
+/// raising `"__enter"` must not change a state without a `become`.
 fn is_reserved(event: &str) -> bool {
     event.starts_with("__")
 }
 
-/// The name a state's handler compiles to.
+/// Returns the name a state's handler compiles to.
 pub fn state_handler_name(behavior: &str, state: &str, event: &str) -> String {
     format!("{behavior}.{state}.{event}")
 }
 
-/// Which state an instance is in, if its behavior has any.
+/// Returns the state an instance is in, if its behavior has any.
 ///
-/// Read from the store rather than remembered beside it: the discriminant *is*
-/// the state, it travels with a save, and a second copy would be a second thing
-/// to keep in step.
+/// Read from the stored discriminant, which travels with a save; no second copy
+/// is kept.
 pub fn current_state<'a>(program: &'a Program, behavior: &str, host: &Host) -> Option<&'a str> {
     let layout = program.layout(behavior)?;
     let Persisted::Scalar(Value::Int(index)) = host.fields.get(layout.state_slot())? else {
@@ -205,16 +173,10 @@ pub fn current_state<'a>(program: &'a Program, behavior: &str, host: &Host) -> O
         .map(|state| state.name.as_str())
 }
 
-/// The member a name resolves to, preferring the current state's.
+/// Returns the member a name resolves to: the current state's, else the
+/// behavior's own.
 ///
-/// A state's member wins over the behavior's, which is what makes `on Lost`
-/// inside `Chase` mean "while chasing" — the whole point of writing it there.
-/// The behavior's own is the fallback, so `on Damaged` written once applies in
-/// every state without being repeated in each.
-///
-/// The same rule for `Update`: a state that defines one is patrolling or chasing
-/// rather than doing both, and a behavior-level `Update` still runs for the
-/// states that define none.
+/// See the book: reference/ergon.md, "States".
 pub fn resolve_member(
     program: &Program,
     behavior: &str,
@@ -233,14 +195,9 @@ pub fn resolve_member(
 
 /// Counts the behavior's live countdowns down by `delta`, running nothing.
 ///
-/// Apart from [`tick_timers`] so that a turn can count its time before it
-/// runs any code: counting costs no fuel, so no cut can come before it, and
-/// a turn the fuel stops early has still given its countdowns every second.
-/// [`tick_timers`] then runs, with no time of its own, whichever came due.
-///
-/// `held` names the timers whose body is part-way: their slot is rewritten
-/// when the body finishes, so their time is counted on the body's rearm
-/// instead (see [`count_rearm`]).
+/// Costs no fuel, so a turn the fuel stops early has still counted all its
+/// time; [`tick_timers`] then runs whichever came due. `held` names the timers
+/// whose body is part-way: their time goes on the body's rearm ([`count_rearm`]).
 pub fn count_down(program: &Program, behavior: &str, host: &mut Host, delta: f32, held: &[usize]) {
     let Some(layout) = program.layout(behavior) else {
         return;
@@ -265,10 +222,10 @@ pub fn count_down(program: &Program, behavior: &str, host: &mut Host, delta: f32
 }
 
 /// Rearms timer `index` of `behavior` once its body, resumed after a cut, has
-/// finished — what [`tick_timers`] does at once for a body that finishes in
-/// one go. `rearm` has gone on counting while the body was cut
-/// ([`count_rearm`]), so an `every` fires next where it would have had the
-/// body never been cut.
+/// finished.
+///
+/// `rearm` kept counting while the body was cut ([`count_rearm`]), so an
+/// `every` fires next where it would have had the body never been cut.
 pub fn finish_timer(
     program: &Program,
     behavior: &str,
@@ -282,18 +239,20 @@ pub fn finish_timer(
     }
 }
 
-/// Counts `delta` on the rearm of a timer whose body is part-way: a fuel cut
-/// changes when the body runs, never the schedule it keeps. An `after`
-/// rearms to `Null` and counts nothing.
+/// Counts `delta` on the rearm of a timer whose body is part-way.
+///
+/// A fuel cut changes when the body runs, never the schedule it keeps. An
+/// `after` rearms to `Null` and counts nothing.
 pub fn count_rearm(rearm: &mut Value, delta: f32) {
     if let Value::Float(seconds) = rearm {
         *seconds -= delta;
     }
 }
 
-/// What timer `index` of `behavior` waits once a body part-way through is
-/// stopped by a fault: its whole interval again for an `every`, whatever the
-/// cut had counted; `rearm` for an `after`.
+/// Returns what timer `index` waits once its part-way body is stopped by a fault.
+///
+/// An `every` waits its whole interval again, whatever the cut had counted; an
+/// `after` keeps `rearm`.
 pub fn rearm_after_fault(program: &Program, behavior: &str, index: usize, rearm: Value) -> Value {
     match program
         .layout(behavior)
@@ -306,11 +265,14 @@ pub fn rearm_after_fault(program: &Program, behavior: &str, index: usize, rearm:
 
 /// Runs the handler for `event`, if the behavior declares one.
 ///
-/// `alive` answers whether the target entity still exists. It is a parameter
-/// rather than something looked up here because the answer belongs to the
-/// `World`, which this crate does not know about — and passing it keeps the
-/// lifetime rule at the point of delivery instead of somewhere that could be
-/// skipped.
+/// `alive` answers whether the target entity still exists: the answer belongs
+/// to the `World`, which this crate does not know. Sets `host.entity` to the
+/// event's target.
+///
+/// # Errors
+///
+/// Returns [`NotDelivered`] when the target is gone, the behavior has no
+/// handler, or the payload does not fit the event or the handler.
 pub fn deliver(
     program: &Program,
     behavior: &str,
@@ -353,9 +315,8 @@ pub fn deliver(
     let payload = fitted(signature, &event.args)?;
     let payload: &[ScriptValue] = if function.arity == 0 { &[] } else { &payload };
 
-    // Through the one bridge, and with the arena, so a handler receives exactly
-    // what a raise can carry. The two were separate translations once, and the
-    // pair that did not agree is what disabled a behavior for good.
+    // Through the one bridge, with the arena, so a handler receives exactly
+    // what a raise can carry: two translations that disagreed would fault it.
     let args = payload
         .iter()
         .enumerate()
@@ -411,11 +372,13 @@ fn fitted(
 
 /// Runs a member of the behavior, if it declares one under that name.
 ///
-/// The engine calls [`Update`] and its siblings through here, and [`deliver`]
-/// funnels into it once an event's arguments are in registers. One path,
-/// because the difference between "something happened to this behavior" and
-/// "the frame advanced" is entirely in how the arguments were obtained — after
-/// that it is the same lookup, the same state preference, and the same machine.
+/// The engine calls [`Update`] and the other lifecycle members through here,
+/// with the same state preference as an event's handler.
+///
+/// # Errors
+///
+/// Returns [`NotDelivered::NoHandler`] when no such member exists, and
+/// [`NotDelivered::WrongArity`] when `args` do not match it.
 ///
 /// [`Update`]: crate::lifecycle::UPDATE
 pub fn invoke(
@@ -457,9 +420,8 @@ fn run(
     let mut machine = Machine::at(program, index, args).ok_or_else(wrong_arity)?;
     let (outcome, spent) = machine.run_counting(program, host, fuel);
 
-    // A member that suspended hands its machine back rather than dropping it.
-    // Dropping it would make `await` a statement that silently ends the member:
-    // the code after it would never run and nothing would say why.
+    // A suspended member hands its machine back: dropping it would make `await`
+    // silently end the member.
     let suspended = matches!(outcome, Run::Suspended(_)).then_some(machine);
 
     Ok(Delivered {
@@ -476,10 +438,8 @@ pub struct Delivered {
     pub outcome: Run,
     /// What it cost.
     pub spent: u64,
-    /// The frozen machine, when it stopped part-way.
-    ///
-    /// The caller keeps it and resumes it; the wait it asked for is on the
-    /// host, in [`awaiting`](Host::awaiting).
+    /// The frozen machine, when it stopped part-way; the caller keeps it and
+    /// resumes it. The wait it asked for is in [`awaiting`](Host::awaiting).
     pub suspended: Option<Machine>,
 }
 

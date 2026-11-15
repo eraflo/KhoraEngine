@@ -12,16 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A system's `ref` rows, from the row's end until they leave as column
-//! writes.
+//! A system's `ref` rows, from the row's end until they leave as column writes.
 //!
-//! At a row's end the fields of a `ref` copy that differ from the row as it
-//! was read are written into the working set — every later read sees them —
-//! and held in the run's batch for that component and those fields. A batch
-//! leaves as one [`WorldCommand::WriteColumn`] before any later command of the
-//! run on its component, and when the run stops, however it stops: none
-//! outlives the run that wrote it, so none is ever saved with a machine, and
-//! the run's writes reach the World in the order they were made.
+//! A batch leaves as one [`WorldCommand::WriteColumn`] before any later command
+//! of the run on its component, and when the run stops, however it stops: none
+//! outlives its run, so none is saved with a machine, and the run's writes reach
+//! the World in the order they were made.
+//! See the book: concepts/scripting/queries.md, "`ref`: written where the row ends".
 
 use std::sync::Arc;
 
@@ -40,9 +37,10 @@ pub(super) struct PendingRows {
 
 impl PendingRows {
     /// Holds `entity`'s written `fields` of `component`: in the component's
-    /// latest batch when it writes exactly those fields, else in a new one —
-    /// a row never joins a batch older than one of its component written
-    /// since, which would send it ahead of that one.
+    /// latest batch when it writes exactly those fields, else in a new one.
+    ///
+    /// A row never joins a batch older than one of its component written since,
+    /// which would send it ahead of that one.
     fn push(&mut self, component: &str, entity: EntityId, fields: Vec<(String, ScriptValue)>) {
         let names: Vec<String> = fields.iter().map(|(name, _)| name.clone()).collect();
         let at = self

@@ -14,33 +14,10 @@
 
 //! The one place that says which values cross the script boundary.
 //!
-//! A value has three shapes — a register's [`Value`], a saved [`Persisted`], and
-//! this crate's [`ScriptValue`] — because each answers a different pressure. The
-//! shapes are justified; **translating between them four separate times was
-//! not.**
-//!
-//! Four hand-written conversions once existed, in three crates, written weeks
-//! apart. They diverged exactly where you would expect: one learned to carry a
-//! `Vec3`, another never did. A script could raise an event holding a vector
-//! that the delivery then refused — and the refusal read as a fault, which
-//! disabled the receiving behavior for good.
-//!
-//! # An X-macro, and why
-//!
-//! This macro defines nothing. It **calls back** with the table, so each crate
-//! generates the form it needs from one source. `khora-script` builds the
-//! register and persistence bridges; the component writer builds its JSON arms.
-//! Adding `Quat` is one line here instead of eight edits nobody can enumerate.
-//!
-//! # What is deliberately absent
-//!
-//! The irregular variants. `Str` is a reference in a register, owned in a store,
-//! and owned again at the boundary — three different things. `Array` and
-//! `Struct` have no register form at all, and `Null` crosses into a save but
-//! never into an event.
-//! Putting them here behind a "special" flag would move their logic into a
-//! macro, where it reads worst. They stay hand-written arms, visible **as**
-//! exceptions.
+//! A value has three shapes: a register's [`Value`], a saved [`Persisted`] and
+//! this crate's [`ScriptValue`]. The table is an X-macro: each crate generates
+//! its conversions between them from it, so they cannot diverge. The irregular
+//! variants (`Str`, `Array`, `Struct`, `Null`) stay hand-written arms.
 //!
 //! [`Value`]: ../../../khora_script/vm/enum.Value.html
 //! [`Persisted`]: ../../../khora_script/arena/enum.Persisted.html
@@ -115,12 +92,10 @@ mod tests {
     }
     crate::script_value_table!(survey);
 
-    /// **The table has to name every regular variant.** One left out is exactly
-    /// how the four hand-written conversions diverged, so this asserts the count
-    /// rather than trusting the eye.
+    /// **The table names every regular variant.**
     ///
-    /// `ScriptValue` holds five irregulars — `Unit`, `Str`, `Array`, `Struct`,
-    /// `Null` — which the table deliberately excludes.
+    /// `ScriptValue` holds five irregulars (`Unit`, `Str`, `Array`, `Struct`,
+    /// `Null`), which the table excludes.
     #[test]
     fn the_table_covers_every_regular_variant() {
         assert_eq!(

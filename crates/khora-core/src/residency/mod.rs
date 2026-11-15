@@ -84,6 +84,10 @@ pub trait Residency: Send + Sync + 'static {
     type Target<'a>;
 
     /// Makes the resident of `source` on `target`.
+    ///
+    /// # Errors
+    ///
+    /// A [`ResidencyError`] when the device refuses it.
     fn make(
         source: &Self::Source,
         target: &mut Self::Target<'_>,
@@ -135,12 +139,14 @@ impl<R: Residency> Resident<R> {
             .map(|entry| entry.resident.clone())
     }
 
-    /// The resident of `source` under `key`: the one kept, when it was made
-    /// from this very copy; otherwise a new one, made on `target`, which
-    /// replaces and releases the stale one.
+    /// Returns the resident of `source` under `key`, made on `target` unless kept from this copy.
     ///
-    /// A failed make keeps the stale resident: the last good copy stays on
-    /// the device until the source makes one.
+    /// A new resident replaces and releases the stale one; a failed make keeps
+    /// the stale one, the last good copy on the device.
+    ///
+    /// # Errors
+    ///
+    /// The [`ResidencyError`] of a failed [`Residency::make`].
     pub fn ensure(
         &self,
         key: ResidentKey,

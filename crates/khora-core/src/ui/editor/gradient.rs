@@ -43,7 +43,8 @@ pub struct LinearGradient<'a> {
 }
 
 impl LinearGradient<'_> {
-    /// Projection of `p` on the axis: 0 at `from`, 1 at `to`; not clamped.
+    /// Returns the projection of `p` on the axis, unclamped: 0 at `from`, 1 at `to`.
+    ///
     /// A degenerate axis (`from == to`) gives 1.0.
     pub fn offset_at(&self, p: [f32; 2]) -> f32 {
         let axis = [self.to[0] - self.from[0], self.to[1] - self.from[1]];
@@ -54,19 +55,19 @@ impl LinearGradient<'_> {
         ((p[0] - self.from[0]) * axis[0] + (p[1] - self.from[1]) * axis[1]) / len_sq
     }
 
-    /// The colour at `p`, with SVG semantics: clamped to the first / last
-    /// stop outside them, linear (componentwise) between stops. Stops are
-    /// assumed sorted by offset. No stops gives `[0.0; 4]`, one stop gives its
-    /// colour, and a degenerate axis (`from == to`) gives the last stop's
-    /// colour.
+    /// Returns the colour at `p`, with SVG semantics.
+    ///
+    /// Clamped to the first / last stop outside them, linear (componentwise)
+    /// between stops sorted by offset. No stops gives `[0.0; 4]`, one stop its
+    /// colour, a degenerate axis (`from == to`) the last stop's colour.
     pub fn color_at(&self, p: [f32; 2]) -> [f32; 4] {
         color_at_offset(self.stops, self.offset_at(p))
     }
 }
 
-/// The colour of `stops` at offset `t`: clamped to the first / last stop
-/// outside them, linear (componentwise) between stops; the later of two stops
-/// sharing an offset wins at that offset. No stops gives `[0.0; 4]`.
+/// Returns the colour of `stops` at offset `t`, with SVG semantics.
+///
+/// The later of two stops sharing an offset wins at that offset. No stops gives `[0.0; 4]`.
 pub(super) fn color_at_offset(stops: &[GradientStop], t: f32) -> [f32; 4] {
     let (Some(first), Some(last)) = (stops.first(), stops.last()) else {
         return [0.0; 4];
@@ -94,8 +95,9 @@ pub(super) fn color_at_offset(stops: &[GradientStop], t: f32) -> [f32; 4] {
     last.color
 }
 
-/// The vertex centroid of a polygon of at least 3 points — where a backend
-/// without gradient fills samples the gradient for its flat colour.
+/// Returns the vertex centroid of a polygon of at least 3 points, `None` for fewer.
+///
+/// Where a backend without gradient fills samples the gradient for its flat colour.
 pub fn flat_fill_point(points: &[[f32; 2]]) -> Option<[f32; 2]> {
     if points.len() < 3 {
         return None;

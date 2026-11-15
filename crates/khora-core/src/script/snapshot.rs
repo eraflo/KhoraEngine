@@ -12,30 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Everything a behavior is, written down.
+//! Everything a behavior is, written down: fields, state, countdowns, a body
+//! stopped at an `await`.
 //!
-//! A guard saved mid-patrol should load mid-patrol. Its fields are the obvious
-//! part, and the part that is easy to mistake for the whole: a behavior is also
-//! *which state it is in*, that state's own data, how long its countdowns have
-//! left, and — if it stopped at an `await` — where in the code it stopped.
-//! Saving only the fields loads a guard that has forgotten it was chasing
-//! anyone.
-//!
-//! # Named, never numbered
-//!
-//! Every part of this is keyed by something the **author wrote** — a state's
-//! name, a field's name, a timer's declared interval. Never by a slot or an
-//! index, because those are assigned by the compiler and move when the script is
-//! edited. A scene is read once and has to survive whatever happened to the
-//! script between the save and the load; matching by name is what makes an
-//! edited script load an old save instead of corrupting it.
-//!
-//! # What a countdown holds
-//!
-//! Time *remaining*, not the moment it is due. An absolute deadline saved on
-//! Tuesday and loaded on Friday either fires instantly or waits three days,
-//! depending only on how the host measures time. What is left survives a save
-//! exactly.
+//! Every part is keyed by what the author wrote (a name, a declared interval),
+//! never by a compiler slot, so an edited script loads an old save. A countdown
+//! holds the time remaining, not a deadline. See the book:
+//! concepts/scripting/saves-and-edits.md, "Saved mid-sentence".
 
 use serde::{Deserialize, Serialize};
 
@@ -43,11 +26,10 @@ use super::{FrozenMachine, ScriptValue};
 
 /// One `every` or `after`, and how far along it is.
 ///
-/// Identified by what the author wrote — `every 0.5s` — rather than by its
-/// position among the behavior's members, so inserting a schedule above another
-/// does not swap their countdowns. Two schedules an author wrote identically are
-/// genuinely interchangeable, and [`ordinal`](Self::ordinal) tells those apart
-/// only so a save with two of them restores two.
+/// Identified by what the author wrote (`every 0.5s`), not by its position, so
+/// inserting a schedule above another does not swap their countdowns.
+/// [`ordinal`](Self::ordinal) tells apart schedules written identically, so a
+/// save with two of them restores two.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TimerRemaining {
     /// Whether it repeats — `every` rather than `after`.
@@ -56,41 +38,34 @@ pub struct TimerRemaining {
     pub interval: f32,
     /// The state that owns it, by name.
     ///
-    /// `None` for a schedule written at behavior level. Part of the key because
-    /// `every 0.5s` inside `Patrol` and `every 0.5s` beside it are two different
-    /// schedules that an author can tell apart, so a save has to as well.
+    /// `None` for a schedule written at behavior level. Part of the key:
+    /// `every 0.5s` inside `Patrol` and `every 0.5s` beside it are two
+    /// schedules.
     pub state: Option<String>,
     /// Which one, among schedules declared identically *and* in the same place.
     pub ordinal: u32,
     /// Seconds still to wait.
     ///
     /// `None` for an `after` that has already fired: it is spent, not due in
-    /// zero seconds, and the difference is whether loading the save makes it
-    /// fire again.
+    /// zero seconds, so loading the save does not fire it again.
     pub remaining: Option<f32>,
 }
 
 /// A member stopped part-way through an `await`.
 ///
-/// The reason a continuation had to be *representable* rather than opaque, and
-/// the promise the whole suspension design was built to keep: a save taken
-/// half-way through an attack's wind-up loads half-way through it.
+/// A save taken half-way through an attack's wind-up loads half-way through it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PendingSequence {
     /// What the program looked like when the machine stopped.
     ///
-    /// A suspended machine holds a position in code. If the script was edited
-    /// between the save and the load, that position may mean something else —
-    /// so the fingerprint is compared, not trusted. A match resumes the
-    /// machine exactly; a mismatch takes it back in tiers — kept where every
-    /// function on its stack is unchanged, rebuilt at the same named sites,
-    /// or restarted from its member's entry — and abandons it only when none
-    /// of those holds, calling the behavior's `OnResumeFailed`.
+    /// A load compares it, never trusts it: a match resumes the machine
+    /// exactly, a mismatch takes it back in tiers. See the book:
+    /// concepts/scripting/saves-and-edits.md, "A body part-way through, in tiers".
     pub fingerprint: u64,
     /// Seconds still to wait.
     pub remaining: f32,
-    /// Game seconds the body had run without finishing since it started or
-    /// last came back from an `await` — what the watchdog counts on from.
+    /// Game seconds the body had run since it started or last came back from
+    /// an `await`: what the watchdog counts on from.
     #[serde(default)]
     pub running: f32,
     /// The frozen machine, in the engine's terms — see [`super::frozen`].
@@ -112,17 +87,18 @@ pub struct InstanceLifecycle {
     /// `OnResumeFailed`, oldest first.
     #[serde(default)]
     pub resume_failed: Vec<String>,
-    /// Game seconds that passed since its last turn — frames a rate skipped
-    /// or the fuel could not reach: its next turn is handed them.
+    /// Game seconds since its last turn (frames a rate skipped or the fuel
+    /// could not reach), handed to its next turn.
     #[serde(default)]
     pub owed: f32,
     /// Game seconds its `Update` is owed past `owed`: time a turn counted its
     /// countdowns with but stopped before its `Update` ran.
     #[serde(default)]
     pub update_owed: f32,
-    /// The fixed steps its `FixedUpdate` has not been called for yet, each
-    /// the step it was taken at, oldest first, at most the engine's step
-    /// cap: they run first, on its next turn.
+    /// The fixed steps its `FixedUpdate` is still owed, oldest first.
+    ///
+    /// Each is the step it was taken at; at most the engine's step cap. They
+    /// run first, on its next turn.
     #[serde(default)]
     pub fixed_owed: Vec<f32>,
 }
@@ -145,8 +121,8 @@ pub struct ScriptSnapshot {
     /// Which state it is in, by name.
     ///
     /// `None` for a behavior that declares no states. A name the reloaded script
-    /// no longer declares is dropped, and the instance starts in the first state
-    /// — which is what a fresh one does.
+    /// does not declare is dropped, and the instance starts in the first state,
+    /// as a fresh one does.
     pub state: Option<String>,
     /// The current state's own data, by name.
     ///

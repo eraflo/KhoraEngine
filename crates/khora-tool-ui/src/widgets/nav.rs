@@ -21,11 +21,10 @@ use khora_core::ui::{UiBuilder, UiTheme};
 use super::paint::{fill, fill_stroke, icon, selection_bar, text, text_centered, tint};
 use super::{text_y, Rect};
 
-/// A segmented control — mutually exclusive views of the *same* thing
-/// (Properties | Debug). Not for navigation between different things; that's
-/// [`nav_item`].
+/// A segmented control: mutually exclusive views of the *same* thing (Properties | Debug).
 ///
-/// Returns `Some(index)` when a segment was clicked.
+/// Moving between different things is [`nav_item`]'s job. Returns
+/// `Some(index)` when a segment was clicked.
 pub fn segmented_tabs(
     ui: &mut dyn UiBuilder,
     theme: &UiTheme,
@@ -188,8 +187,9 @@ pub enum StepState {
     Pending,
 }
 
-/// A vertical step rail — "what happens when I press Create". Steps are
-/// numbered only because they *are* a sequence; the number carries real
+/// A vertical step rail: "what happens when I press Create".
+///
+/// Steps are numbered because they *are* a sequence: the number carries real
 /// ordering information.
 pub fn step_rail(
     ui: &mut dyn UiBuilder,
@@ -257,8 +257,9 @@ pub fn step_rail(
     }
 }
 
-/// A selectable card — the engine-version picker. A radio in card clothing:
-/// exactly one of a set, but with room for metadata the plain control has no
+/// A selectable card, as in the engine-version picker: a radio in card clothing.
+///
+/// Exactly one of a set, with room for metadata the plain control has no
 /// space for.
 pub fn radio_card(
     ui: &mut dyn UiBuilder,
@@ -505,10 +506,10 @@ mod tests {
         (l1.max(l2) + 0.05) / (l1.min(l2) + 0.05)
     }
 
-    /// On the light field the selected radio card's meta ("installed",
-    /// "download · 42 MB") is text on the card's brand-tinted fill: it reads at
-    /// WCAG AA (4.5:1) against that fill as actually painted over the panel
-    /// surface.
+    /// On the light field, the selected radio card's meta reads at WCAG AA (4.5:1) on its fill.
+    ///
+    /// The meta is "installed" or "download · 42 MB"; the fill is measured as
+    /// painted, the card's brand tint over the panel surface.
     #[test]
     fn light_selected_radio_card_meta_reads_at_aa_on_its_painted_fill() {
         let t = crate::brand::khora_light();

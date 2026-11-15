@@ -176,10 +176,10 @@ impl BudgetField for Budget {
         src.budget(field)
     }
 }
-/// A lane that can run before its agent was lent anything declares
-/// `Option<Budget>`: `None` until a budget is lent — a budget of zero is one,
-/// and buys nothing — and the lane decides what it runs on meanwhile: its
-/// level's own price on the frame's inputs, say.
+/// `Option<Budget>`, for a lane that can run before its agent was lent anything.
+///
+/// `None` until a budget is lent (a budget of zero is one, and buys nothing);
+/// the lane decides what it runs on meanwhile.
 impl BudgetField for Option<Budget> {
     fn declare(d: &mut Declaration, field: &'static str) {
         d.read::<Budget>(field, SourceKind::Budget);

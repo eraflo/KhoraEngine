@@ -12,16 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Runtime values.
+//! Runtime values: small enough to copy cheaply into a register file frozen on every suspension.
 //!
-//! Narrow on purpose. The type checker has already proved the program
-//! well-typed, so the VM does not need a value shape rich enough to
-//! re-litigate that — it needs one small enough to copy cheaply into a register
-//! file that gets frozen and thawed on every suspension.
-//!
-//! `Duration` and `Angle` are distinct at check time but plain floats here:
-//! once the units have been proved to agree, carrying the distinction into
-//! every arithmetic instruction would cost something and prove nothing.
+//! The checker has already proved the program well-typed, so `Duration` and
+//! `Angle` are plain floats here.
 
 use khora_core::ecs::entity::EntityId;
 use serde::{Deserialize, Serialize};
@@ -67,13 +61,9 @@ pub enum Value {
     Quat(khora_core::math::Quaternion),
     /// A linear colour.
     ///
-    /// These five widen a register to the largest of them — sixteen bytes plus
-    /// the tag. That is the price of the table in
+    /// These five widen a register to sixteen bytes plus the tag: the price of
     /// [`script_value_table`](khora_core::script_value_table) covering every
-    /// engine type at once, and it is the right price: the alternative was a
-    /// register that carried only what someone had needed so far, which is
-    /// exactly the asymmetry that let an event carry a vector the delivery then
-    /// refused.
+    /// engine type at once.
     Color(khora_core::math::LinearRgba),
     /// Absent optional.
     Null,
@@ -81,50 +71,45 @@ pub enum Value {
     Obj(ObjRef),
 }
 
-/// Where an array lives: the frame arena, or — while its machine is suspended
-/// — the machine itself. The same two places built text can be, for the same
-/// reasons (see [`StrRef`]); a handle, so [`Value`] stays `Copy`.
+/// Where an array lives: the frame arena, or the machine itself while it is suspended.
+///
+/// The same two places built text can be, for the same reasons (see
+/// [`StrRef`]); a handle, so [`Value`] stays `Copy`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ObjRef {
     /// In the frame arena.
     Arena(ArenaRef),
-    /// Owned by a suspended machine, at this index of what it holds. Never
-    /// seen while the machine runs.
+    /// Owned by a suspended machine, at this index of what it holds.
+    ///
+    /// Never seen while the machine runs.
     Held(u32),
 }
 
-/// Where a string's characters actually are.
+/// Where a string's characters actually are: the program for a literal, the
+/// frame arena for built text.
 ///
-/// Two places, because literals and computed text have nothing in common but
-/// their type. A literal is fixed when the program is compiled, so it lives in
-/// the program and costs nothing to name — a `"hit"` inside a loop must not
-/// allocate once per iteration. Text a program *builds* did not exist at
-/// compile time and has to go somewhere that can grow, which is the frame
-/// arena.
-///
-/// The consequence to keep in mind: two `StrRef`s comparing unequal says
-/// nothing about their text. `==` on strings resolves both sides first — see
-/// [`Machine::resolve_str`](crate::vm::Machine::resolve_str) — which is why
-/// string equality is not simply `Value == Value`.
+/// A literal costs nothing to name, so a `"hit"` inside a loop does not
+/// allocate. Two `StrRef`s comparing unequal says nothing about their text:
+/// string `==` resolves both sides first, through
+/// [`Machine::resolve_str`](crate::vm::Machine::resolve_str).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum StrRef {
     /// A literal, in the program's constant table.
     Const(u32),
     /// Text built while running, in the frame arena.
     Arena(ArenaRef),
-    /// Owned by a suspended machine, at this index of its held text. Never
-    /// seen while the machine runs: resuming turns every one back into
+    /// Owned by a suspended machine, at this index of its held text.
+    ///
+    /// Never seen while the machine runs: resuming turns every one back into
     /// [`Arena`](Self::Arena) before the first instruction executes.
     Held(u32),
 }
 
 /// Why a string reference did not resolve.
 ///
-/// Deliberately not a [`Fault`](crate::vm::Fault) or a
-/// [`NativeError`](crate::native::NativeError): the lookup is one thing, but its
-/// two callers report to different audiences — the VM faults a behavior, an
-/// engine function tells its author. Each maps this to its own, and the lookup
-/// itself exists once.
+/// Neither a [`Fault`](crate::vm::Fault) nor a
+/// [`NativeError`](crate::native::NativeError): the VM and an engine function
+/// each map it to their own audience.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StrError {
     /// The value is not a string at all.
@@ -135,10 +120,13 @@ pub enum StrError {
     Gone,
 }
 
-/// The text a string value stands for.
+/// Returns the text a string value stands for, from the literals or the arena.
 ///
-/// Needs the literals *and* the arena because a string lives in one or the
-/// other and the value only says which.
+/// # Errors
+///
+/// [`StrError::NotAString`] for a value that is not a string,
+/// [`StrError::NotInProgram`] for a literal `strings` lacks, and
+/// [`StrError::Gone`] for text no longer in `arena`.
 pub fn resolve_str<'a>(
     value: Value,
     strings: &'a [String],

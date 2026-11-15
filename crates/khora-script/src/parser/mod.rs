@@ -12,29 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Tokens to syntax tree.
+//! Tokens to syntax tree: a hand-written recursive-descent parser, for its messages.
 //!
-//! A hand-written recursive-descent parser. A generator would save some of this
-//! code, but the error messages are the product here — the case for a bespoke
-//! language collapses if its compiler explains itself worse than the one it
-//! replaces — and generated parsers are hard to make apologise well.
-//!
-//! # Recovering from errors
-//!
-//! On a syntax error the parser records it, then skips to the next statement or
-//! declaration boundary and carries on. One run reports several problems
-//! instead of one per compile-run-fix cycle. The cost is that a badly broken
-//! file can produce follow-on noise; the cure is to stop at a boundary the
-//! author would recognise — a `;`, a `}`, or a keyword that can only start a
-//! declaration.
-//!
-//! # What is *not* checked here
-//!
-//! Whether `await` sits inside an `async` member, whether a `T?` was tested
-//! before use, whether units match. All of it is well-formed syntax and belongs
-//! to the type checker, which can name the enclosing member and the types
-//! involved. Rejecting them here would produce a message about grammar for a
-//! problem about meaning.
+//! On a syntax error the parser records it and skips to the next `;`, `}` or
+//! declaration keyword, so one run reports several problems. Meaning — `await`
+//! outside `async`, an untested `T?`, units — is the type checker's to refuse.
 
 use self::describe::describe;
 use crate::ast::*;
@@ -63,6 +45,7 @@ pub fn parse(tokens: Vec<Token>) -> Parsed {
 }
 
 /// Signals that the parser gave up on the current construct and should recover.
+///
 /// The diagnostic is already recorded when this travels.
 pub(super) struct Bail;
 
@@ -265,10 +248,8 @@ impl Parser {
     }
 
     // ── Sub-parsers ───────────────────────────────────
-    //
-    // Split by what is being parsed. Each file adds methods to `Parser`, so the
-    // cursor and recovery stay in one place while the grammar for declarations,
-    // types, statements and expressions each gets its own file.
+    // Each file adds methods to `Parser`, so the cursor and recovery stay in
+    // one place while each part of the grammar gets its own file.
 }
 
 mod args;

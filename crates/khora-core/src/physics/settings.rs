@@ -33,9 +33,10 @@ impl PhysicsSettings {
     /// The step a game that sets none runs at: a sixtieth of a second.
     pub const DEFAULT_STEP: Duration = Duration::from_nanos(16_666_667);
 
-    /// The shortest step a game may set: half a millisecond, 2000 steps a
-    /// simulated second. A frame runs as many physics steps as its time holds,
-    /// so a step a settings file made tiny would freeze the engine.
+    /// The shortest step a game may set: half a millisecond.
+    ///
+    /// A frame runs as many physics steps as its time holds, so a tiny step
+    /// would freeze the engine.
     pub const MIN_STEP: Duration = Duration::from_micros(500);
 
     /// Whether these are the settings a game that sets nothing has.
@@ -69,9 +70,10 @@ impl Serialize for PhysicsSettings {
 }
 
 impl<'de> Deserialize<'de> for PhysicsSettings {
-    /// A step that is not a positive, representable number of seconds, or
-    /// one shorter than [`MIN_STEP`](Self::MIN_STEP), is refused here, at the
-    /// file: no step the scheduler could not run reaches it.
+    /// Reads the section, refusing a step the scheduler could not run.
+    ///
+    /// A step that is not a positive, representable number of seconds, or one
+    /// shorter than [`MIN_STEP`](Self::MIN_STEP), is an error.
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let written = Written::deserialize(deserializer)?;
         let Some(seconds) = written.step else {
@@ -112,8 +114,7 @@ mod tests {
     /// 1/128 s, exact in binary, so the comparisons below need no tolerance.
     const A_128TH: Duration = Duration::from_nanos(7_812_500);
 
-    /// A game that sets nothing steps its physics sixty times a simulated
-    /// second, as the engine always has.
+    /// A game that sets nothing steps its physics sixty times a simulated second.
     #[test]
     fn the_default_physics_step_is_a_sixtieth_of_a_second() {
         let step = PhysicsSettings::default().step;
@@ -144,9 +145,10 @@ mod tests {
         }
     }
 
-    /// A step shorter than half a millisecond is refused: a frame runs as many
-    /// steps as its time holds, and a tiny one would freeze the engine. The
-    /// floor itself is read.
+    /// A step shorter than half a millisecond is refused: a frame runs as many steps as
+    /// its time holds, and a tiny one would freeze the engine.
+    ///
+    /// The floor itself is read.
     #[test]
     fn a_step_shorter_than_the_floor_is_refused() {
         let floor = serde_json::from_str::<PhysicsSettings>(r#"{ "step": 0.0005 }"#);
@@ -169,10 +171,11 @@ mod tests {
         }
     }
 
-    /// **Only a positive step is read.** A zero step would be no step at all,
-    /// and a negative one has no meaning; neither may reach the scheduler,
-    /// and neither may panic the read (`Duration::from_secs_f64` does on a
-    /// negative number).
+    /// **Only a positive step is read.**
+    ///
+    /// A zero step would be no step at all, and a negative one has no meaning; neither
+    /// may reach the scheduler, and neither may panic the read
+    /// (`Duration::from_secs_f64` does on a negative number).
     #[test]
     fn only_a_positive_physics_step_is_read() {
         let positive = serde_json::from_str::<PhysicsSettings>(r#"{ "step": 0.0078125 }"#);

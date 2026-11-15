@@ -271,9 +271,9 @@ mod tests {
         (l1.max(l2) + 0.05) / (l1.min(l2) + 0.05)
     }
 
-    /// On the light field a status chip's label is caption text on the chip's
-    /// own tinted plate: it reads at WCAG AA (4.5:1) against the plate as
-    /// actually painted over the panel surface.
+    /// On the light field, a status chip's label reads at WCAG AA (4.5:1) on its plate.
+    ///
+    /// The plate is measured as painted: the chip's tint over the panel surface.
     #[test]
     fn light_status_chip_label_reads_at_aa_on_its_painted_plate() {
         let t = crate::brand::khora_light();

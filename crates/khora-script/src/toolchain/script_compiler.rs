@@ -18,20 +18,19 @@ use khora_core::lane::Lease;
 
 use super::{CompileRequest, Recompiled};
 
-/// Compiles what a [`CompileRequest`] names, as the project lays its
-/// scripts out. Called off the frame, from the `loading` family's lanes: it
-/// touches no `World`, and whatever it reports to (problems, the script
-/// flow's demand) is thread-safe.
+/// Compiles what a [`CompileRequest`] names, as the project lays its scripts out.
+///
+/// Called off the frame from the `loading` family's lanes: it touches no
+/// `World`, and whatever it reports to is thread-safe.
 pub trait ScriptCompiler: Send + Sync {
     /// Compiles `request`'s modules and their importers.
     fn compile(&self, request: &CompileRequest) -> Recompiled;
 
-    /// Compiles `request` as [`compile`](Self::compile) does, and says what
-    /// the result holds to: a [`Lease`] that stops holding once what it was
-    /// compiled for is gone — its project closed while the compile was out.
-    /// The reserve then abandons it rather than install it. None, by
-    /// default: a compiler that knows of no project hands on what it
-    /// compiled whatever happens.
+    /// Compiles `request` as [`compile`](Self::compile) does, with the
+    /// [`Lease`] the result holds to.
+    ///
+    /// The lease stops holding once the project closes during the compile, and
+    /// the result is abandoned. `None` by default: the result is always kept.
     fn compile_leased(&self, request: &CompileRequest) -> (Recompiled, Option<Lease>) {
         (self.compile(request), None)
     }

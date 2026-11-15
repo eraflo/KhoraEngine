@@ -18,9 +18,10 @@ use super::TargetKey;
 use crate::math::Extent2D;
 use crate::renderer::api::resource::TextureViewId;
 
-/// The frame's target, read by a lane that depth-tests what it draws: the
-/// target with its depth attachment. A frame whose target has no depth is
-/// refused at the fetch, as a [`Reason::BadTarget`](crate::lane::guard::Reason).
+/// The frame's target with its depth attachment, read by a lane that depth-tests.
+///
+/// A frame whose target has no depth is refused at the fetch, as a
+/// [`Reason::BadTarget`](crate::lane::guard::Reason).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SceneTarget {
     /// The colour attachment.

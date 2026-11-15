@@ -12,14 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Struct values: the literal, and what a struct's defaults may be.
-//!
-//! `Loot { value: 1 }` names each field it writes, in any order; a field it
-//! leaves out takes its declared default, or its type's zero — and a field
-//! with neither must be written. A struct's defaults are **constants**: they
-//! are data the engine reads wherever a value of the struct is built or
-//! loaded, not code that runs, so a saved value missing a field can be filled
-//! from them without running anything.
+//! Struct values: the literal, and what a struct's defaults may be. Defaults
+//! are constants, data read wherever a value is built or loaded, so a saved
+//! value missing a field is filled without running anything.
 
 use super::{Checker, Context, Ty};
 use crate::ast::{Expr, UnaryOp};
@@ -104,10 +99,10 @@ impl Checker {
         );
     }
 
-    /// Refuses a component field default that is not a constant. A
-    /// component's own field may also start at an engine value built from
-    /// numbers — `Vec3(0.0, 0.0, 1.0)` — since those types have no zero and
-    /// the engine stores them inline.
+    /// Refuses a component field default that is not a constant.
+    ///
+    /// An engine value built from numbers, `Vec3(0.0, 0.0, 1.0)`, is one too:
+    /// those types have no zero and the engine stores them inline.
     pub(super) fn expect_component_constant(&mut self, default: &Expr) {
         if is_constant(default) || engine_constant(default).is_some() {
             return;
@@ -121,11 +116,11 @@ impl Checker {
 }
 
 impl Checker {
-    /// Refuses a behavior field's default — or, `in_state`, a state datum's —
-    /// that is not a constant. Both are data: the registered default of the
-    /// behavior's component, and what entering a state writes, read wherever
-    /// an instance is built, loaded or carried across an edit — no code runs
-    /// for them.
+    /// Refuses a behavior field's default, or `in_state` a state datum's, that
+    /// is not a constant.
+    ///
+    /// Both are data, read wherever an instance is built, loaded or carried
+    /// across an edit: no code runs for them.
     pub(super) fn expect_behavior_constant(&mut self, default: &Expr, in_state: bool) -> bool {
         if is_data_constant(default) {
             return true;
@@ -146,9 +141,10 @@ impl Checker {
         false
     }
 
-    /// Refuses a default that, through the defaults of the literals it
-    /// builds, builds itself again — `struct A { A? next = A { v: 1 }; }`
-    /// leaves `next` out of its own literal, whose `next` is the same default.
+    /// Refuses a default that builds itself again through its literals' defaults.
+    ///
+    /// `struct A { A? next = A { v: 1 }; }` leaves `next` out of its own
+    /// literal, whose `next` is the same default.
     pub(super) fn expect_finite_default(&mut self, owner: &str, field: &str, default: &Expr) {
         let start = (owner.to_owned(), field.to_owned());
         let mut pending = Vec::new();
@@ -204,9 +200,10 @@ impl Checker {
     }
 }
 
-/// The engine types a constant may construct, with the numbers each takes,
-/// by name: `Vec3(0.0, 0.0, 1.0)` is data, as `[0.0, 0.0, 1.0]` is — and so
-/// is `Vec3(z: 1.0, x: 0.0, y: 0.0)`.
+/// The engine types a constant may construct, with the numbers each takes.
+///
+/// `Vec3(0.0, 0.0, 1.0)` is data, as `[0.0, 0.0, 1.0]` is, and so is
+/// `Vec3(z: 1.0, x: 0.0, y: 0.0)`.
 pub(crate) const ENGINE_CONSTRUCTORS: [(&str, &[&str]); 5] = [
     ("Vec2", &["x", "y"]),
     ("Vec3", &["x", "y", "z"]),

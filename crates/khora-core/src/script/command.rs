@@ -12,32 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What a script asks the engine to do.
+//! What a script asks the engine to do to the `World`, applied at the frame
+//! boundary. See the book: concepts/scripting/writing.md, "A script never writes the world".
 //!
-//! A script spawns, moves and destroys — all of which are structural or mutating
-//! writes to the `World`, and all of which `RULES.md` §3 forbids inside a Lane.
-//! Rather than perforate that rule, a script does not write at all: it *describes*
-//! the write, and the engine performs it at the frame boundary where mutation is
-//! already legal.
-//!
-//! The rule turns out to be the design. A lane that touches nothing shared runs
-//! on the worker pool alongside the others — which a lane holding a
-//! `&mut World` never could.
-//!
-//! # Two tiers, on purpose
-//!
-//! Transform writes are the overwhelming majority of what gameplay does, so they
-//! are their own variants: typed, `Copy`, no lookup and no allocation. Everything
-//! else goes through [`WorldCommand::SetComponent`] and friends, which carry a
-//! [`ComponentName`] the applier resolves. The generic path costs a string and a
-//! map hit; the common path costs neither.
-//!
-//! # Scope
-//!
-//! ECS mutations only. A script that plays a sound or applies an impulse is not
-//! writing to the `World`, and routing those through here would make this enum a
-//! dumping ground for every subsystem. They belong to their own decks, read by
-//! the subsystem that owns them.
+//! Transform writes, the bulk of gameplay, are typed variants with no lookup;
+//! other components go by [`ComponentName`]. Sounds and impulses are not world
+//! writes: they go to their subsystems' decks.
 
 use std::sync::Arc;
 
@@ -49,10 +29,7 @@ use super::{ColumnBatch, ScriptValue};
 
 /// The name of a component type, as a script spells it.
 ///
-/// A newtype rather than a bare `String` so the representation can become an
-/// interned id later without touching a single call site. Today the generic
-/// component path is the cold path, and a string is what the applier needs to
-/// look the type up.
+/// A newtype, so its representation can change without touching a call site.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ComponentName(String);
 
@@ -92,10 +69,8 @@ pub enum WorldCommand {
     },
     /// Moves the entity by `delta`, relative to where it already is.
     ///
-    /// Distinct from [`Self::SetTranslation`] for a reason that matters at the
-    /// boundary: two scripts nudging the same entity **compose**, and reporting
-    /// that as a conflict would flag correct code. Two scripts *placing* it do
-    /// conflict, because one of the two placements is silently lost.
+    /// Two scripts nudging the same entity **compose**, so this is no
+    /// conflict; two placing it with [`Self::SetTranslation`] are one.
     Translate {
         /// The entity to move.
         entity: EntityId,
@@ -129,18 +104,14 @@ pub enum WorldCommand {
     /// entity made from a prefab is a [`WorldCommand::SpawnPrefab`].
     ///
     /// The entity's id is reserved in the turn that queued this, from the
-    /// world's [`EntityReserver`](crate::ecs::EntityReserver): the script holds
-    /// it at once and configures the entity with the commands that follow. The
-    /// boundary commits the id when every component is accepted, and releases
-    /// it otherwise — a refused spawn never existed.
+    /// world's [`EntityReserver`](crate::ecs::EntityReserver), so the commands
+    /// that follow can configure it. The boundary commits the id when every
+    /// component is accepted, and releases it otherwise.
     Spawn {
         /// The id reserved for it.
         entity: EntityId,
-        /// Where to place it.
-        ///
-        /// Typed rather than left to `components` because a spawn always places
-        /// something, and the spawner is what knows where: a projectile's
-        /// heading belongs to whoever fired it.
+        /// Where to place it: a spawn always places, and the spawner knows
+        /// where.
         position: Vec3,
         /// How to orient it.
         rotation: Quaternion,
@@ -306,8 +277,9 @@ impl WorldCommand {
         }
     }
 
-    /// Calls `f` with every entity and target this command overwrites — none
-    /// for a command that cannot lose a write, one per field for a field
+    /// Calls `f` with every entity and target this command overwrites.
+    ///
+    /// None for a command that cannot lose a write, one per field for a field
     /// write, one per row and field for a [`Self::WriteColumn`]. The targets
     /// borrow from the command, so a caller may keep them while it counts.
     pub fn for_each_write_target<'a>(&'a self, mut f: impl FnMut(EntityId, WriteTargetRef<'a>)) {

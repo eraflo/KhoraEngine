@@ -12,23 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The members the engine calls without being asked.
+//! The members the engine calls without being asked, and the signature each must have.
 //!
-//! An `on Damaged` fires because something raised `Damaged`. `Update` fires
-//! because the frame advanced — nobody raises it, and no script can. That is the
-//! whole difference, and it is why these are listed here rather than left to
-//! look like ordinary methods that happen to have well-known names.
-//!
-//! # Why the signature is checked
-//!
-//! A method the engine calls is a method the author cannot see called. Writing
-//! `void Update()` instead of `void Update(float dt)` is not a compile error in
-//! any language that dispatches by name alone — it is a method that silently
-//! never runs, which is the worst outcome available. So the shape is fixed here,
-//! the checker holds authors to it, and the dispatcher trusts it.
-//!
-//! One table, read by both. Two lists of well-known names would drift, and the
-//! drift would show up as a hook that stopped firing.
+//! One table, read by the checker and the dispatcher: a hook with the wrong
+//! signature would be an ordinary method that silently never runs.
+//! See the book: reference/ergon.md, "Lifecycle members".
 
 use crate::types::Ty;
 
@@ -89,12 +77,11 @@ pub static ON_LOAD: Lifecycle = Lifecycle {
 };
 
 /// `void OnResumeFailed(string member)` — once, for a body that could not
-/// resume in the code as it is now.
+/// resume in the edited code.
 ///
-/// A body suspended by fuel or `await` resumes in edited code when it can; one
-/// whose member is gone, or whose parameters changed, is abandoned instead.
-/// This runs on the instance's next turn, where the body would have resumed,
-/// naming the abandoned body's member — `"OnSpawn"`, `"Patrol.OnHit"`,
+/// A suspended body whose member is gone, or whose parameters changed, is
+/// abandoned. This runs on the instance's next turn, where the body would have
+/// resumed, naming the abandoned body's member — `"OnSpawn"`, `"Patrol.OnHit"`,
 /// `"__every(0.5)"`.
 pub static ON_RESUME_FAILED: Lifecycle = Lifecycle {
     name: "OnResumeFailed",
@@ -105,11 +92,9 @@ pub static ON_RESUME_FAILED: Lifecycle = Lifecycle {
 /// `void FixedUpdate(float dt)` — once per fixed simulation step the frame
 /// took, `dt` the fixed step.
 ///
-/// A fixed clock, not a physics callback: each turn calls it as many times as
-/// the frame has fixed steps, before its events and `Update`, on the frame's
-/// view of the world — its writes reach physics next frame. A step the fuel
-/// did not reach is owed, and runs first next turn. Never `async`: a step
-/// that waited would not be a step.
+/// A fixed clock, not a physics callback; its writes reach physics next frame.
+/// Never `async`: a step that waited would not be a step.
+/// See the book: reference/ergon.md, "`FixedUpdate`".
 pub static FIXED_UPDATE: Lifecycle = Lifecycle {
     name: "FixedUpdate",
     params: &[Ty::Float],
@@ -157,9 +142,8 @@ mod tests {
         assert!(ON_SPAWN.params.is_empty());
     }
 
-    /// `OnLoad` is a member the engine calls, so it is in the one table both
-    /// the checker and the dispatcher read — a hook missing from it would be
-    /// an ordinary method that silently never runs.
+    /// `OnLoad` is in the one table the checker and the dispatcher read: a hook
+    /// missing from it would be an ordinary method that silently never runs.
     #[test]
     fn on_load_is_an_engine_invoked_member() {
         assert!(

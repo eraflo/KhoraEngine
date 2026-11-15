@@ -44,24 +44,28 @@ enum Commands {
     Test,
     /// Run `cargo check` on all crates.
     Check,
-    /// Format all code in the workspace.
+    /// Check the formatting of all code in the workspace.
     Format,
     /// Run clippy on all crates with warnings as errors.
     Clippy,
     /// Run all CI tasks (build, test, check, format, clippy).
     All,
-    /// Run what CI checks — format, clippy, tests, doc tests — and stop at the
-    /// first failure. The check to run before a commit.
+    /// Run what CI checks and stop at the first failure.
+    ///
+    /// Format, feature unification, clippy, tests and doc tests: the check to
+    /// run before a commit.
     Gate,
 
     /// Pre-build editor + runtime in debug, then run the hub in release.
-    /// Convenience wrapper for the typical contributor dev loop — also
-    /// available via the `cargo hub-dev` alias from `.cargo/config.toml`.
+    ///
+    /// The contributor dev loop, also the `cargo hub-dev` alias from
+    /// `.cargo/config.toml`.
     HubDev,
 
-    /// Write the landing page at the root of a built book: `site/index.html`,
-    /// its stylesheet, script and frames under `site/landing/`. Run after
-    /// `mdbook build`, e.g. `cargo xtask landing docs/book`.
+    /// Write the landing page at the root of a built book.
+    ///
+    /// `site/index.html`, with its stylesheet, script and frames under
+    /// `site/landing/`. Run after `mdbook build`, e.g. `cargo xtask landing docs/book`.
     Landing {
         /// The built book's folder (holding `home.html`).
         site: std::path::PathBuf,
@@ -72,8 +76,9 @@ enum Commands {
     Assets(AssetCommand),
 
     /// Generate the per-provider AI wrappers from `.agent/<profile>/`.
-    /// Forwards to the Node installer, e.g. `cargo xtask ai install all`
-    /// or `cargo xtask ai --profile gamedev install all`.
+    ///
+    /// Forwards to the Node installer, e.g. `cargo xtask ai install all` or
+    /// `cargo xtask ai --profile gamedev install all`.
     Ai {
         /// Which documentation profile to install ("engine" or "gamedev").
         #[clap(long, default_value = "engine")]

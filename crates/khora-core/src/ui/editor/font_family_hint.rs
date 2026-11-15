@@ -14,8 +14,9 @@
 
 //! Which registered face a styled text is painted with.
 
-/// Font family hint passed to
-/// [`UiBuilder::paint_text_styled`](super::UiBuilder::paint_text_styled).
+/// The font family a styled text is painted with.
+///
+/// Passed to [`UiBuilder::paint_text_styled`](super::UiBuilder::paint_text_styled).
 /// Backends map each variant to whichever face was registered for that family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FontFamilyHint {
@@ -23,13 +24,15 @@ pub enum FontFamilyHint {
     Proportional,
     /// The monospaced face: code, paths, numbers.
     Monospace,
-    /// The display face for screen headings and hero numerals. Falls back to
-    /// the proportional family when the installed pack has none.
+    /// The display face, for screen headings and hero numerals.
+    ///
+    /// Falls back to the proportional family when the installed pack has none.
     Display,
     /// The icon font. Pass single-char codepoints.
     Icons,
-    /// The widest cut of the text face, for the product name itself. Falls
-    /// back to the display family, then to the proportional one, when the
-    /// installed pack has no wordmark face.
+    /// The widest cut of the text face, for the product name itself.
+    ///
+    /// Falls back to the display family, then to the proportional one, when
+    /// the installed pack has no wordmark face.
     Wordmark,
 }

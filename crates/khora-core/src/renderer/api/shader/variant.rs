@@ -14,9 +14,9 @@
 
 //! Shader variants: the specialization defs a pipeline composes its shader with.
 
-/// A scalar shader-def value used to specialize a shader variant. Floats are
-/// excluded (naga_oil `#define` is integer/bool only; float consts stay
-/// textually injected by the backend).
+/// A scalar shader-def value that specializes a shader variant.
+///
+/// No float: a naga_oil `#define` takes only integers and booleans.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ShaderDefScalar {
     /// A boolean `#ifdef`-style flag.
@@ -36,7 +36,7 @@ pub enum ShaderDefScalar {
 pub struct ShaderVariantKey(Vec<(&'static str, ShaderDefScalar)>);
 
 impl ShaderVariantKey {
-    /// The empty variant (no specialization defs).
+    /// Returns the empty variant (no specialization defs).
     pub fn empty() -> Self {
         Self(Vec::new())
     }
@@ -55,14 +55,12 @@ impl ShaderVariantKey {
         self
     }
 
-    /// Whether this variant has no defs.
+    /// Returns whether this variant has no defs.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
-    /// Whether the named flag is present and set to `Bool(true)`. Used by
-    /// variant-dependent layouts (e.g. the material group-2 layout, which
-    /// includes only the texture bindings whose `HAS_*` flag is set).
+    /// Returns whether the named flag is present and set to `Bool(true)`.
     pub fn has_flag(&self, name: &str) -> bool {
         self.0
             .binary_search_by_key(&name, |(n, _)| n)
@@ -70,7 +68,7 @@ impl ShaderVariantKey {
             .unwrap_or(false)
     }
 
-    /// The `(name, value)` defs, sorted by name.
+    /// Returns the `(name, value)` defs, sorted by name.
     pub fn defs(&self) -> &[(&'static str, ShaderDefScalar)] {
         &self.0
     }

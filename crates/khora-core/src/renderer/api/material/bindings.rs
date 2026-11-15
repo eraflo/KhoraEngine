@@ -12,12 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Bind-group contract for the material bind group (group 2 in every
-//! lit pipeline).
+//! Bind-group contract for the material bind group, group 2 of every lit pipeline.
 //!
-//! This file is the **single source of truth** mirrored by the WGSL lib
-//! module `khora-infra/src/graphics/shader/shaders/lib/std/material_textures.wgsl`.
-//! Bump a constant here and update the WGSL counterpart in lockstep.
+//! Mirrored by `khora-infra/src/graphics/shader/shaders/lib/std/material_textures.wgsl`:
+//! change a constant in both.
 
 use std::marker::PhantomData;
 
@@ -51,12 +49,11 @@ pub mod binding {
     pub const SAMPLER: u32 = 8;
 }
 
-/// Canonical shader-variant flag names for the optional material texture
-/// slots. A material's [`ShaderVariantKey`]
-/// sets the flag for each texture slot it declares; the group-2 layout,
-/// the WGSL `#ifdef` gates, and the cached bind group are all derived from
-/// the same set, so they stay in lockstep. Single source of truth — never
-/// duplicate these strings.
+/// Shader-variant flag names for the optional material texture slots.
+///
+/// A material's [`ShaderVariantKey`] sets the flag of each map it declares;
+/// the group-2 layout, the WGSL `#ifdef` gates and the bind group all derive
+/// from that set. Use these constants, never the string literals.
 pub mod flag {
     /// Set when the material declares a base-color (albedo) texture.
     pub const HAS_BASE_COLOR_TEXTURE: &str = "HAS_BASE_COLOR_TEXTURE";
@@ -76,13 +73,10 @@ pub mod flag {
 
 /// Per-material GPU resources composing the group-2 bind group.
 ///
-/// Lit lanes never build this — the data-layer material projection does,
-/// once per material UUID. Lanes simply bind the resulting
-/// [`GpuMaterial`](crate::renderer::api::material::GpuMaterial) bind group.
-///
-/// Each texture view is `Some` only when the material declares that map
-/// (no fallback textures); the `None` slots are absent from both the
-/// variant layout and the bind group.
+/// Built by the material projection once per material; lanes bind only the
+/// resulting [`GpuMaterial`](crate::renderer::api::material::GpuMaterial).
+/// A view is `Some` only when the material declares that map (no fallback
+/// texture); a `None` slot is absent from the layout and the bind group.
 #[derive(Debug, Clone, Copy)]
 pub struct MaterialGpuBindings {
     /// `MaterialUniforms` uniform buffer for this material.
@@ -105,9 +99,8 @@ pub struct MaterialGpuBindings {
     pub sampler: SamplerId,
 }
 
-/// Returns the nine [`BindGroupLayoutEntry`] values defining the canonical
-/// group-2 material layout. Created once at bootstrap and referenced by
-/// every lit pipeline and every cached material bind group.
+/// Returns the nine [`BindGroupLayoutEntry`] values of the full group-2
+/// material layout, every texture slot present.
 pub fn material_bind_group_layout_entries() -> [BindGroupLayoutEntry; 9] {
     let texture = |binding: u32| BindGroupLayoutEntry {
         binding,
@@ -143,15 +136,11 @@ pub fn material_bind_group_layout_entries() -> [BindGroupLayoutEntry; 9] {
     ]
 }
 
-/// Returns the group-2 layout entries for a given shader variant: the
-/// uniform at binding 0, the filtering sampler at binding 8, and **only**
-/// the texture bindings whose `HAS_*` flag is set in `variant`. Binding
-/// indices stay fixed (1 to 7) so the WGSL `#ifdef`-gated declarations and
-/// the cached bind group line up regardless of which textures are present.
+/// Returns the group-2 layout entries for `variant`: the uniform, the sampler
+/// and only the textures whose `HAS_*` flag is set.
 ///
-/// The same `(LayoutKey::Material, variant)` resolves to this layout for
-/// both the lit pipeline (group 2) and the material's cached bind group,
-/// keeping the two byte-for-byte identical.
+/// Each texture keeps its fixed binding index, so the WGSL `#ifdef` gates and
+/// the bind group line up whichever maps are present.
 pub fn material_layout_entries_for_variant(
     variant: &ShaderVariantKey,
 ) -> Vec<BindGroupLayoutEntry> {
@@ -202,12 +191,10 @@ pub fn material_layout_entries_for_variant(
     entries
 }
 
-/// Pushes the material [`BindGroupEntry`] values into `entries`, in binding
-/// order: the uniform at 0, each declared texture at its fixed slot, then
-/// the sampler at 8. Absent textures (`None`) are skipped, so the entries
-/// match [`material_layout_entries_for_variant`] for the same variant.
-/// Called by the data-layer projection when building a material's cached
-/// bind group.
+/// Pushes the material [`BindGroupEntry`] values into `entries`, in binding order.
+///
+/// Absent maps are skipped, so the entries match
+/// [`material_layout_entries_for_variant`] for the same variant.
 pub fn fill_material_bind_group_entries<'a>(
     bindings: &MaterialGpuBindings,
     entries: &mut Vec<BindGroupEntry<'a>>,

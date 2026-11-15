@@ -48,6 +48,11 @@ pub struct Fill {
 
 /// Writes the landing into `site`, a built book: `site/index.html`, and its
 /// stylesheet, script and images under `site/landing/`.
+///
+/// # Errors
+///
+/// Fails when `site` holds no built book, a source is missing, a scene has no
+/// frames, or a file cannot be written.
 pub fn build(site: &Path) -> Result<()> {
     print_task_start("Writing the landing page", ROCKET, MAGENTA);
     if !site.join("home.html").is_file() {
@@ -84,9 +89,10 @@ pub fn build(site: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The whole page: the shell (fonts, favicon, stylesheet) around `body`, its
-/// placeholders filled. The landing sits at the book's root, so the book's
-/// pages are reached from there as they are, and its files under `landing/`.
+/// Returns the whole page: the shell (fonts, favicon, stylesheet) around `body`, filled.
+///
+/// The landing sits at the book's root: the book's pages are reached from
+/// there as they are, and the landing's own files under `landing/`.
 pub fn document(body: &str, fill: &Fill) -> String {
     let [chess, valley, fireflies, physics] = fill.frames;
     let body = body

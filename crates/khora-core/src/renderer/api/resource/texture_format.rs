@@ -57,33 +57,29 @@ pub enum TextureFormat {
 
 /// How the values stored in a texture are to be interpreted by the sampler.
 ///
-/// This is a property of the texture's **role**, not of the file it was decoded
-/// from: the same PNG serves as an sRGB color map (albedo, emissive) or as a
-/// linear data map (normal, metallic-roughness, occlusion) depending on the
-/// material slot that references it. The decoder therefore reports the pixel
-/// *layout* ([`TextureFormat`]) and the consumer supplies the color space;
-/// [`TextureFormat::with_color_space`] combines the two into the upload format.
+/// It belongs to the texture's role, not its file: one PNG is a colour map or a
+/// data map depending on the material slot using it. The decoder reports the
+/// layout, the consumer the colour space, and
+/// [`TextureFormat::with_color_space`] combines them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TextureColorSpace {
-    /// Values are sRGB-encoded and must be linearized by the sampler. Use for
-    /// authored *color* (base color / albedo, emissive).
+    /// sRGB-encoded values the sampler linearizes, for authored colour.
+    ///
+    /// Base colour and emissive maps.
     Srgb,
-    /// Values are already linear and must be sampled verbatim. Use for *data*
-    /// maps (normal, metallic-roughness, occlusion) and for any float/HDR
-    /// texture, where lighting math would be wrong if the values were
-    /// transformed.
+    /// Linear values sampled verbatim, for data maps and any float/HDR texture.
+    ///
+    /// Normal, metallic-roughness and occlusion maps: transforming them would
+    /// break the lighting math.
     Linear,
 }
 
 impl TextureFormat {
-    /// Returns the format to upload this decoded layout into for a given
-    /// color space.
+    /// Returns the format to upload this decoded layout into for `color_space`.
     ///
-    /// Only 8-bit RGBA has both an sRGB and a linear variant, so only it
-    /// switches. Float formats are returned unchanged: they carry linear HDR
-    /// values by definition and have no sRGB counterpart, so an incoming
-    /// [`TextureColorSpace::Srgb`] request is *correctly* ignored rather than
-    /// silently corrupting the data.
+    /// Only 8-bit RGBA has both variants, so only it switches. Any other
+    /// format, float HDR included, is returned unchanged: it has no sRGB
+    /// counterpart, so an sRGB request is ignored.
     pub fn with_color_space(self, color_space: TextureColorSpace) -> Self {
         match self {
             TextureFormat::Rgba8Unorm | TextureFormat::Rgba8UnormSrgb => match color_space {
@@ -95,7 +91,8 @@ impl TextureFormat {
     }
 
     /// Returns the size in bytes of a single pixel for this format.
-    /// Note: This can be an approximation for packed or complex formats.
+    ///
+    /// Approximate for packed formats.
     pub fn bytes_per_pixel(&self) -> u32 {
         match self {
             TextureFormat::R8Unorm => 1,

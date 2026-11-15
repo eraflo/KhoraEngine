@@ -15,10 +15,10 @@
 //! Operations on an entity: its natives called as methods, and the component
 //! writes `Set`, `Add`, `Remove`, `Spawn`.
 //!
-//! `e.SetPosition(v)` is the same `NativeCall` the engine function always was,
-//! the receiver in the first argument register. A component write evaluates
-//! the receiver, then each field in the order written, into consecutive
-//! registers, and one instruction queues the command — no stop in between.
+//! `e.SetPosition(v)` is a `NativeCall` like any engine function, the receiver
+//! in the first argument register. A component write evaluates the receiver,
+//! then each field in the order written, into consecutive registers, and one
+//! instruction queues the command — no stop in between.
 
 use super::{Compiler, Shape};
 use crate::ast::Expr;
@@ -146,10 +146,11 @@ impl Compiler {
         (dst, Shape::Other)
     }
 
-    /// `Spawn(prefab, C1 { … }, …, at: position, facing: rotation)`: every
-    /// argument evaluated in the order written, each into the register the
-    /// instruction reads it from; a missing `facing:` is `null`, the prefab's
-    /// own turn.
+    /// `Spawn(prefab, C1 { … }, …, at: position, facing: rotation)`.
+    ///
+    /// Every argument is evaluated in the order written, each into the register
+    /// the instruction reads it from; a missing `facing:` is `null`, the
+    /// prefab's own turn.
     fn compile_prefab_spawn(
         &mut self,
         args: &[Expr],
@@ -323,7 +324,6 @@ impl Compiler {
         }
     }
 
-    /// `entity.Remove(C)`.
     /// `entity.SetMaterial(m)`.
     fn compile_set_material(&mut self, object: &Expr, material: &Expr) -> (Reg, Shape) {
         let mark = self.registers.mark();
@@ -424,10 +424,11 @@ impl Compiler {
         self.constant(Value::Unit, Shape::Other)
     }
 
-    /// The fields' values, in the order written, in consecutive registers;
-    /// returns the first. Every slot is reserved before any value is compiled,
-    /// so a value's own temporaries cannot land between two of them. An `int`
-    /// written to a `float` field arrives as the float it means.
+    /// Places the fields' values, as written, in consecutive registers; returns the first.
+    ///
+    /// Every slot is reserved before any value compiles, so a value's own
+    /// temporaries cannot land between two of them. An `int` written to a
+    /// `float` field arrives as the float it means.
     fn compile_fields<'e>(
         &mut self,
         fields: impl Iterator<Item = (&'e str, &'e (String, crate::diagnostics::Span, Expr))> + Clone,

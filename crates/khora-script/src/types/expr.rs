@@ -12,22 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Inferring the type of an expression.
-//!
-//! Three of the language's guarantees are decided here.
-//!
-//! **Unit arithmetic.** `Duration` and `Angle` are closed under addition with
-//! themselves and scaling by a number, and nothing else. `2s + 500ms` is a
-//! Duration; `2s * 3` is a Duration; `2s * 3s` is meaningless and is rejected,
-//! as is `2s + 90deg`. Ratios are the one crossing allowed: `4s / 2s` is a
-//! plain number, which is what a proportion is.
-//!
-//! **Optionals.** Using a `T?` where a `T` is wanted fails here, and the
-//! message points at the narrowing forms rather than merely restating the rule.
-//!
-//! **Overloads.** Resolved against the struct's declarations at check time, so
-//! the call is direct and costs nothing at run time — the reason overloading is
-//! affordable in a statically typed language and would not be in a dynamic one.
+//! Inferring the type of an expression: unit arithmetic (`2s + 90deg` and
+//! `2s * 3s` refused, `4s / 2s` a plain ratio), a `T?` used where a `T` is
+//! wanted, and operator overloads, resolved at check time.
 
 use super::{Checker, Context, Ty};
 use crate::ast::{BinaryOp, Expr, UnaryOp};
@@ -74,12 +61,9 @@ impl Checker {
             // optional of the error type gets that for free.
             Expr::Null(_) => Ty::Optional(Box::new(Ty::Error)),
 
-            // `this` is the entity, not an object. A behavior is a component on
-            // an entity and has no identity apart from it, so there is nothing
-            // else `this` could usefully be — and typing it as the entity is
-            // what makes `this.Despawn()` and `this.SetParent(…)` read the way
-            // the API is written, without a conversion nobody would expect to
-            // need.
+            // `this` is the entity: a behavior is a component on it and has no
+            // identity apart from it, and so `this.Despawn()` reads as the API
+            // is written.
             Expr::This(span) => {
                 if self.system.is_some() {
                     self.error_note(

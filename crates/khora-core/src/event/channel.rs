@@ -12,49 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Something happened; someone reads it later.
-//!
-//! The engine had written this six times before this file existed: the script
-//! reload queue, the asset watcher's backlog, the script event queue, the
-//! command buffer, the telemetry channel, the budget channel. Only two things
-//! actually separated them — **how a read consumes** (a cursor, or a
-//! destructive take) and **what happens when it is full** — so those are the
-//! only two things this is parameterised on.
+//! Something happened; someone reads it later: a bounded, typed [`Channel`].
 //!
 //! # One channel per event type, never one bus
 //!
-//! Each instance lives in [`Resources`](crate::runtime::Resources) under its own
-//! `TypeId`, which is what an agent names in
-//! [`Agent::contention`](crate::agent::Agent::contention). A single global bus
-//! would make every agent that reads any event declare the same resource,
-//! so every one of them would conflict with every other and the whole set would
-//! serialise — trading N queues for one global lock, and losing exactly the
-//! parallelism the contention contract buys.
+//! Each channel is its own [`Resources`](crate::runtime::Resources) entry, so
+//! an agent declares only the events it reads; one global bus would make
+//! every reader contend with every other.
 //!
 //! # The cursor belongs to the reader
 //!
-//! Subscribing costs the reader a [`Cursor`] field and costs the channel
-//! nothing. That is not a detail: if the channel held the cursors, advancing one
-//! would be a write, two readers would contend on the lock, and they would
-//! serialise despite reading disjoint answers to the same question. With the
-//! cursor outside, [`read`](Channel::read) takes the lock **shared** and several
-//! agents genuinely read at once — which is what makes declaring it as a
-//! `reading` rather than a `locking` honest.
+//! With the [`Cursor`] outside the channel, [`read`](Channel::read) takes the
+//! lock shared and several agents read at once, so a reader declares a
+//! `reading`, not a `locking`.
 //!
 //! # Bounded, and the losses are counted
 //!
-//! Every unbounded queue in the engine today is one somebody meant to bound
-//! later. Capacity is therefore a constructor argument with no default, and
-//! whatever is dropped is counted where [`dropped`](Channel::dropped) can be
-//! read — a queue that discards in silence is a queue whose failure nobody can
-//! see.
+//! Capacity has no default. What a full channel drops is counted by
+//! [`dropped`](Channel::dropped), what a reader discards by `discarded`, so a
+//! monitor can see both.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, RwLock};
 
-/// A channel that takes back, at its front, what a drain took: a fetch
-/// refused after its `#[take]` gives the requests back through it. Erased, so
-/// the source holds channels of any item.
+/// A type-erased channel that takes back, at its front, what a drain took.
+///
+/// A fetch refused after its `#[take]` gives the requests back through it.
 pub trait Restore: Sync {
     /// Puts back `items`, a `Vec` of the channel's items drained from it; an
     /// item of another type is dropped.
@@ -71,17 +54,13 @@ impl<T: Supersedes + Send + Sync + 'static> Restore for Channel<T> {
 
 /// Whether a newly sent item makes an already-queued one obsolete.
 ///
-/// The rule lives on the item because it is a fact about the item: two saves of
-/// the same file between frames are one reload, and two collisions in one frame
-/// are two collisions. Nothing about a queue decides that.
+/// A fact about the item, not the queue: two saves of one file between frames
+/// are one reload, two collisions in one frame are two collisions.
 pub trait Supersedes {
     /// Whether this type ever supersedes anything.
     ///
-    /// `false` — the default — lets [`send`](Channel::send) skip the scan
-    /// entirely. It is a compile-time answer on purpose: a type that never
-    /// coalesces would otherwise pay a comparison against every queued item on
-    /// every send, which for a few hundred contacts a frame is quadratic work
-    /// to discover that the answer is always no.
+    /// `false`, the default, lets [`send`](Channel::send) skip the scan
+    /// against every queued item, quadratic work for a busy stream.
     const COALESCES: bool = false;
 
     /// Whether `self`, arriving now, replaces `earlier` in place.
@@ -109,10 +88,9 @@ pub enum WhenFull {
 
 /// Where one reader has read to.
 ///
-/// A position in the stream as a whole, not an index into storage, so it stays
-/// meaningful after the channel has dropped what it no longer holds. Default is
-/// the beginning, which is what makes a reader that subscribes late still hear
-/// whatever is retained.
+/// A position in the whole stream, not an index into storage, so it survives
+/// what the channel drops. The default is the beginning: a reader that
+/// subscribes late still hears whatever is retained.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Cursor(u64);
 
@@ -149,10 +127,13 @@ impl<T> Clone for Channel<T> {
 }
 
 impl<T: Supersedes> Channel<T> {
-    /// A channel holding at most `capacity` unread items.
+    /// Returns a channel holding at most `capacity` unread items.
     ///
-    /// There is no unbounded constructor, and that is the point: every queue in
-    /// this engine that grew without a limit was one where nobody chose.
+    /// There is no unbounded constructor: every queue chooses its limit.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `capacity` is 0.
     pub fn bounded(capacity: usize, when_full: WhenFull) -> Self {
         assert!(capacity > 0, "a channel that can hold nothing is a bug");
         Self {
@@ -234,11 +215,9 @@ impl<T: Supersedes> Channel<T> {
 
     /// Everything `reader` has not seen, remembering its position by name.
     ///
-    /// For a reader with nowhere to keep a [`Cursor`] — a `DataSystem` is a
-    /// free function, and so is a hot-reload pump. Prefer [`read`](Self::read)
-    /// wherever the reader is a struct: this one takes a second lock to find
-    /// the cursor, and two callers under the same name would share a position
-    /// and starve each other.
+    /// For a reader with nowhere to keep a [`Cursor`], such as a `DataSystem`.
+    /// Prefer [`read`](Self::read) otherwise: this takes a second lock, and two
+    /// callers under one name share a position and starve each other.
     pub fn read_for(&self, reader: &'static str) -> Vec<T>
     where
         T: Clone,
@@ -273,11 +252,10 @@ impl<T: Supersedes> Channel<T> {
         ring.items.drain(..).collect()
     }
 
-    /// Puts `items`, taken by a drain, back at the front of the channel, in
-    /// their order: the reader that drained them could not use them. They
-    /// are held whatever the capacity — they were held a moment ago. An item
-    /// that one sent since supersedes is dropped: the newer replaces it, as
-    /// it would have in [`send`](Self::send).
+    /// Puts `items`, taken by a drain, back at the front of the channel, in order.
+    ///
+    /// They are held whatever the capacity. An item superseded by one sent
+    /// since is dropped, as it would have been in [`send`](Self::send).
     pub fn restore(&self, mut items: Vec<T>) {
         let Ok(mut ring) = self.ring.write() else {
             log::error!(
@@ -313,9 +291,9 @@ impl<T: Supersedes> Channel<T> {
         ring.items.retain(|item| keep(item));
     }
 
-    /// Discards every unread item, as a reader that takes them would have
-    /// taken them: the channel is left empty and any cursor points past what
-    /// was discarded. Counted by [`discarded`](Self::discarded), never by
+    /// Discards every unread item, as a drain would, leaving every cursor past them.
+    ///
+    /// Counted by [`discarded`](Self::discarded), never by
     /// [`dropped`](Self::dropped): nothing overflowed.
     pub fn discard_unread(&self) {
         let Ok(mut ring) = self.ring.write() else {
@@ -331,9 +309,10 @@ impl<T: Supersedes> Channel<T> {
         ring.items.clear();
     }
 
-    /// Moves the named `reader` past everything it has not read, as if it had
-    /// read it. The items stay for the channel's other readers; what this
-    /// reader skipped is counted by [`discarded`](Self::discarded).
+    /// Moves the named `reader` past everything it has not read, as if it had read it.
+    ///
+    /// The items stay for the other readers; what this reader skipped is
+    /// counted by [`discarded`](Self::discarded).
     pub fn skip_to_end(&self, reader: &'static str) {
         let Ok(mut named) = self.named.lock() else {
             log::error!(
@@ -356,18 +335,17 @@ impl<T: Supersedes> Channel<T> {
         cursor.0 = end;
     }
 
-    /// How many unread items were discarded on purpose
-    /// ([`discard_unread`](Self::discard_unread),
-    /// [`skip_to_end`](Self::skip_to_end)), since the channel was made —
-    /// apart from what overflow [`dropped`](Self::dropped).
+    /// How many unread items were discarded on purpose since the channel was made.
+    ///
+    /// Counts [`discard_unread`](Self::discard_unread) and
+    /// [`skip_to_end`](Self::skip_to_end), not overflow.
     pub fn discarded(&self) -> u64 {
         self.ring.read().map(|ring| ring.discarded).unwrap_or(0)
     }
 
     /// How many sends were lost, since the channel was made.
     ///
-    /// Not a diagnostic afterthought: a channel that silently discards is a
-    /// failure nobody can observe, and this is what a monitor reads to notice.
+    /// What a monitor reads to notice a channel losing items.
     pub fn dropped(&self) -> u64 {
         self.ring.read().map(|ring| ring.dropped).unwrap_or(0)
     }

@@ -155,10 +155,10 @@ mod tests {
     use crate::testing::RecordingUiBuilder;
     use khora_core::ui::editor::ui_builder::TextAlign;
 
-    /// **Laying out on a measuring builder paints nothing on the real one,
-    /// and measures text as it does.** Text, rects and lines painted on it
-    /// leave the real builder's calls empty; a text's measure is the real
-    /// builder's.
+    /// **A measuring builder paints nothing on the real one, and measures text as it does.**
+    ///
+    /// Text, rects and lines painted on it leave the real builder's calls
+    /// empty; a text's measure is the real builder's.
     #[test]
     fn measuring_paints_nothing_and_measures_as_the_real_builder() {
         let real = RecordingUiBuilder::new(400.0, 300.0);

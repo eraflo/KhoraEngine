@@ -35,48 +35,45 @@ pub use super::text_align::TextAlign;
 pub trait UiBuilder {
     // ── Text ───────────────────────────────────────────
 
-    /// Large heading text.
+    /// Draws large heading text.
     fn heading(&mut self, text: &str);
 
-    /// Normal label text.
+    /// Draws normal label text.
     fn label(&mut self, text: &str);
 
-    /// Colored label.
+    /// Draws a label in `color`.
     fn colored_label(&mut self, color: [f32; 4], text: &str);
 
-    /// Small / secondary label.
+    /// Draws a small, secondary label.
     fn small_label(&mut self, text: &str);
 
-    /// Monospaced text (for code / log output).
+    /// Draws monospaced text, for code and log output.
     fn monospace(&mut self, text: &str);
 
     // ── Interactive ────────────────────────────────────
 
-    /// Push-button. Returns `true` the frame it is clicked.
+    /// Draws a push-button; returns `true` the frame it is clicked.
     fn button(&mut self, text: &str) -> bool;
 
-    /// Small push-button (less padding).
+    /// Draws a push-button with less padding; returns `true` the frame it is clicked.
     fn small_button(&mut self, text: &str) -> bool;
 
-    /// Selectable label — highlights when `active` is true.
-    /// Returns `true` when clicked.
+    /// Draws a selectable label, highlighted when `active`; returns `true` when clicked.
     fn selectable_label(&mut self, active: bool, text: &str) -> bool;
 
-    /// Selectable label that returns `true` when double-clicked.
+    /// Draws a selectable label; returns `true` when double-clicked.
     fn selectable_label_double_clicked(&mut self, active: bool, text: &str) -> bool;
 
-    /// Boolean checkbox. Returns `true` when toggled.
+    /// Draws a checkbox; returns `true` when toggled.
     fn checkbox(&mut self, checked: &mut bool, text: &str) -> bool;
 
-    /// Draggable `f32` value. Returns `true` when changed.
+    /// Draws a draggable `f32` value; returns `true` when changed.
     fn drag_value_f32(&mut self, label: &str, value: &mut f32, speed: f32) -> bool;
 
-    /// Draggable `f32` value kept between `min` and `max` once edited.
-    /// Returns `true` when changed. A value already outside the bounds is
-    /// shown as it is, and stays as it is until the author edits it.
+    /// Draws a draggable `f32` value kept between `min` and `max` once edited.
     ///
-    /// The default draws [`drag_value_f32`](Self::drag_value_f32) and
-    /// clamps the value only when it changed.
+    /// Returns `true` when changed. A value already outside the bounds is
+    /// shown and kept as it is until the author edits it.
     fn drag_value_f32_in(
         &mut self,
         label: &str,
@@ -93,34 +90,31 @@ pub trait UiBuilder {
         changed
     }
 
-    /// A label in `color` that says `tooltip` when hovered. The default
-    /// draws the label alone.
+    /// Draws a label in `color` that says `tooltip` when hovered.
+    ///
+    /// The default draws the label alone.
     fn colored_label_with_tooltip(&mut self, color: [f32; 4], text: &str, tooltip: &str) {
         let _ = tooltip;
         self.colored_label(color, text);
     }
 
-    /// Slider for `f32`. Returns `true` when changed.
+    /// Draws an `f32` slider; returns `true` when changed.
     fn slider_f32(&mut self, label: &str, value: &mut f32, min: f32, max: f32) -> bool;
 
-    /// Single-line text input. Returns `true` when changed.
+    /// Draws a single-line text input; returns `true` when changed.
     fn text_edit_singleline(&mut self, text: &mut String) -> bool;
 
-    /// Editable Vec3 as three drag-values (X / Y / Z). Returns `true` when any component changed.
+    /// Draws a Vec3 as three drag-values (X / Y / Z); returns `true` when any changed.
     fn vec3_editor(&mut self, label: &str, value: &mut [f32; 3], speed: f32) -> bool;
 
-    /// RGBA color picker. Returns `true` when changed.
+    /// Draws an RGBA color picker; returns `true` when changed.
     fn color_edit(&mut self, label: &str, color: &mut [f32; 4]) -> bool;
 
-    /// Drop-down combo box picking among string options.
-    /// `current` is the index of the currently selected item.
-    /// Returns `true` when the selection changed.
-    /// Dropdown over `options`, writing the picked index into `current`.
+    /// Draws a dropdown over `options`, writing the picked index into `current`.
     ///
-    /// `id_salt` must be stable across frames and unique among sibling combo
-    /// boxes: the backend keys the popup's open state on it. Deriving it from
-    /// `label` is not enough — the inspector's generic enum walker labels every
-    /// switchable enum the same way.
+    /// Returns `true` when the selection changed. `id_salt` must be stable
+    /// across frames and unique among sibling combo boxes: the backend keys the
+    /// popup's open state on it, and the inspector labels every enum alike.
     fn combo_box(
         &mut self,
         id_salt: &str,
@@ -131,13 +125,13 @@ pub trait UiBuilder {
 
     // ── Layout ─────────────────────────────────────────
 
-    /// Horizontal layout — children placed left-to-right.
+    /// Lays out the children `f` draws left to right.
     fn horizontal(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder));
 
-    /// Vertical layout (default, but useful inside a horizontal).
+    /// Lays out the children `f` draws top to bottom, as inside a horizontal layout.
     fn vertical(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder));
 
-    /// Collapsible section with a header.
+    /// Draws a collapsible section with a header.
     fn collapsing(
         &mut self,
         header: &str,
@@ -145,59 +139,48 @@ pub trait UiBuilder {
         f: &mut dyn FnMut(&mut dyn UiBuilder),
     );
 
-    /// Indented block.
+    /// Draws an indented block.
     fn indent(&mut self, id: &str, f: &mut dyn FnMut(&mut dyn UiBuilder));
 
-    /// Scrollable area.
+    /// Draws a scrollable area.
     fn scroll_area(&mut self, id: &str, f: &mut dyn FnMut(&mut dyn UiBuilder));
 
-    /// Inset panel along the top edge of the current region.
+    /// Draws an inset panel in the top `height` pixels of the current region.
     ///
-    /// Splits the layout vertically: the closure draws into the top
-    /// `height` pixels, then the rest of the region is left for
-    /// subsequent calls (typically a [`central_inset`](Self::central_inset)).
-    /// Used by tools that want a header bar nested inside a screen
-    /// (the hub does this for its title bar).
-    ///
-    /// Default implementation is a no-op so the trait stays
-    /// object-safe — the egui backend overrides it.
+    /// The rest of the region is left for later calls, typically a
+    /// [`central_inset`](Self::central_inset): a header bar nested inside a
+    /// screen. Does nothing by default.
     fn top_inset_panel(&mut self, id: &str, height: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let _ = (id, height, f);
     }
 
-    /// Inset panel along the bottom edge — counterpart of
-    /// [`top_inset_panel`](Self::top_inset_panel).
+    /// Draws an inset panel along the bottom edge.
+    ///
+    /// The counterpart of [`top_inset_panel`](Self::top_inset_panel).
     fn bottom_inset_panel(&mut self, id: &str, height: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let _ = (id, height, f);
     }
 
-    /// Inset sidebar on the left edge of the current region.
-    ///
-    /// Splits the layout horizontally: the closure draws into the
-    /// left `width` pixels.
+    /// Draws an inset sidebar in the left `width` pixels of the current region.
     fn left_inset_panel(&mut self, id: &str, width: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let _ = (id, width, f);
     }
 
-    /// Inset sidebar on the right edge — counterpart of
-    /// [`left_inset_panel`](Self::left_inset_panel).
+    /// Draws an inset sidebar along the right edge.
+    ///
+    /// The counterpart of [`left_inset_panel`](Self::left_inset_panel).
     fn right_inset_panel(&mut self, id: &str, width: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let _ = (id, width, f);
     }
 
-    /// Central region — fills whatever space remains after the inset
-    /// panels above were placed.
+    /// Draws into the space left once the inset panels are placed.
     fn central_inset(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let _ = f;
     }
 
-    /// Wraps `f` in a visual frame: paints the optional fill / stroke /
-    /// rounded background first, then runs `f` inside the inner
-    /// content rect (after applying `margin`).
+    /// Wraps `f` in a visual frame with an optional fill, a stroke and rounded corners.
     ///
-    /// Replaces the old `egui::Frame::new().inner_margin(...).show(...)`
-    /// idiom for tool apps that want decorative frames without
-    /// importing a backend type.
+    /// `f` draws inside the frame, `margin` in from its edge.
     fn frame_box(
         &mut self,
         margin: crate::ui::Margin,
@@ -209,25 +192,20 @@ pub trait UiBuilder {
         let _ = (margin, fill, stroke, radius, f);
     }
 
-    /// Open a modal dialog overlaid on top of the current screen.
+    /// Opens a centered modal dialog of logical `size` over the current screen.
     ///
-    /// The dialog is centered, has the requested logical `size`, and
-    /// dims the rest of the screen with a semi-transparent backdrop
-    /// to convey focus. The closure receives a `UiBuilder` scoped to
-    /// the dialog's interior.
-    ///
-    /// Default impl is a no-op so the trait stays object-safe — the
-    /// egui backend overrides.
+    /// The rest of the screen is dimmed; `f` draws the dialog's interior. Does
+    /// nothing by default.
     fn modal(&mut self, id: &str, size: [f32; 2], f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let _ = (id, size, f);
     }
 
     // ── Decoration ─────────────────────────────────────
 
-    /// Horizontal separator line.
+    /// Draws a horizontal separator line.
     fn separator(&mut self);
 
-    /// Blank vertical spacing (in logical points).
+    /// Adds blank vertical spacing, in logical points.
     fn spacing(&mut self, points: f32);
 
     // ── Interaction ────────────────────────────────────
@@ -244,30 +222,23 @@ pub trait UiBuilder {
     /// Returns `true` if Escape was pressed while the last widget had focus.
     fn is_last_item_escape_pressed(&self) -> bool;
 
-    /// Returns `true` if the last interacted region is currently being dragged.
-    /// Used by drag sources to paint a cursor-following ghost so the user can
-    /// see a drag is in progress. Default: `false`.
+    /// Returns `true` if the last interacted region is being dragged.
+    ///
+    /// Drag sources paint a cursor-following ghost by it. Default: `false`.
     fn is_last_item_dragged(&self) -> bool {
         false
     }
 
-    /// Whether `key` was pressed this frame **and no text field is consuming
-    /// keyboard input**.
+    /// Returns whether `key` was pressed this frame **while no text field takes keyboard input**.
     ///
-    /// The focus condition is the whole point: a panel that drives selection
-    /// with the arrow keys must go quiet while the user is typing in a search
-    /// box, and every caller getting that right by hand is how a shortcut ends
-    /// up eating keystrokes meant for a field.
-    ///
-    /// Default: `false`, so a backend without keyboard support simply reports
-    /// no shortcuts rather than pretending.
+    /// So a shortcut never eats keystrokes meant for a field. Default: `false`,
+    /// a backend without keyboard support reporting no shortcuts.
     fn key_pressed(&self, key: KeyCode) -> bool {
         let _ = key;
         false
     }
 
-    /// Whether any widget currently holds keyboard focus — typically a text
-    /// field being typed into.
+    /// Returns whether any widget holds keyboard focus, typically a text field.
     ///
     /// Panels use it to suppress their own single-key shortcuts. Default:
     /// `false`.
@@ -275,12 +246,11 @@ pub trait UiBuilder {
         false
     }
 
-    /// Whether `key` was pressed this frame, **regardless of focus**.
+    /// Returns whether `key` was pressed this frame, **regardless of focus**.
     ///
-    /// For the widget that *owns* the focused field: a command palette must
-    /// still move its selection with the arrows while the user types in its
-    /// own query box, which is exactly the case [`key_pressed`] refuses to
-    /// serve. Reach for that one by default; this is the deliberate exception.
+    /// For the widget that *owns* the focused field, such as a command palette
+    /// moving its selection while the user types its query. Prefer
+    /// [`key_pressed`] everywhere else.
     ///
     /// [`key_pressed`]: Self::key_pressed
     fn raw_key_pressed(&self, key: KeyCode) -> bool {
@@ -310,41 +280,33 @@ pub trait UiBuilder {
     /// [`push_clip_rect`]: Self::push_clip_rect
     fn pop_clip_rect(&mut self) {}
 
-    /// Accumulated scroll-wheel delta this frame while the pointer is inside
-    /// `rect`, in points. Positive means the content should move **down**
-    /// (the user scrolled towards the top of the list).
+    /// Returns the scroll-wheel delta this frame while the pointer is inside `rect`, in points.
     ///
-    /// Scoped to a rect rather than reported globally so two scrollable panels
-    /// on screen can't both consume the same gesture. Default: `0.0`.
+    /// Positive moves the content **down** (scrolled towards the top). Scoped
+    /// to a rect so two scrollable panels never consume one gesture. Default: `0.0`.
     fn scroll_delta_in(&self, rect: [f32; 4]) -> f32 {
         let _ = rect;
         0.0
     }
 
-    /// Shows a right-click context menu on the last widget.
-    /// The closure is called to build menu content when the menu is open.
+    /// Shows a right-click context menu on the last widget, built by `f` while open.
     fn context_menu_last(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder));
 
-    /// Shows a right-click context menu when the user right-clicks anywhere on
-    /// the current panel background (not on a specific widget).
+    /// Shows a context menu on a right-click on the current panel's background.
     ///
-    /// Allocates an invisible full-width/height region to detect right-clicks.
+    /// Does nothing by default.
     fn context_menu_panel(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
-        // Default no-op. Backends that support it override this method.
         let _ = f;
     }
 
-    /// Close the currently open context menu (if any).
+    /// Closes the open context menu, if any.
     ///
-    /// Call this after a menu action has been executed so the popup dismisses
-    /// and the action takes effect on the same frame.
-    fn close_menu(&mut self) {
-        // Default no-op.
-    }
+    /// Call it after running a menu action, so the popup closes on the same frame.
+    fn close_menu(&mut self) {}
 
     /// Shows a sub-menu button inside a context menu.
-    /// Unlike `collapsing`, this creates a proper egui sub-menu that doesn't
-    /// steal focus from the parent context menu.
+    ///
+    /// Unlike `collapsing`, the sub-menu does not steal focus from its parent menu.
     fn menu_button(&mut self, label: &str, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let _ = (label, f);
     }
@@ -407,91 +369,88 @@ pub trait UiBuilder {
         let _ = (pos, text, size, color, family, align);
     }
 
-    /// Paints a closed polygon path (triangles, the brand sign, custom shapes).
-    /// `points` is a list of `[x, y]` window-space coordinates.
+    /// Paints a closed polygon through the window-space `[x, y]` `points`.
     fn paint_path_filled(&mut self, points: &[[f32; 2]], color: [f32; 4]) {
         let _ = (points, color);
     }
 
-    /// Paints a closed convex polygon filled with a linear gradient.
-    /// `points` is a list of `[x, y]` window-space coordinates.
+    /// Paints a closed convex polygon through window-space `points`, filled with a linear gradient.
     ///
-    /// Default: one flat [`paint_path_filled`](Self::paint_path_filled) in the
-    /// gradient's colour at the vertex centroid. Fewer than 3 points paint
-    /// nothing.
+    /// The default paints one flat fill in the gradient's colour at the vertex
+    /// centroid. Fewer than 3 points paint nothing.
     fn paint_path_filled_gradient(&mut self, points: &[[f32; 2]], gradient: LinearGradient<'_>) {
         if let Some(c) = flat_fill_point(points) {
             self.paint_path_filled(points, gradient.color_at(c));
         }
     }
 
-    /// Paints a closed convex polygon filled with a radial gradient. Default:
-    /// one flat fill at the centroid colour; fewer than 3 points paint nothing.
+    /// Paints a closed convex polygon filled with a radial gradient.
+    ///
+    /// The default paints one flat fill at the centroid colour; fewer than 3
+    /// points paint nothing.
     fn paint_path_filled_radial(&mut self, points: &[[f32; 2]], gradient: RadialGradient<'_>) {
         if let Some(c) = flat_fill_point(points) {
             self.paint_path_filled(points, gradient.color_at(c));
         }
     }
 
-    /// Allocates a clickable region at the given absolute window-space rect
-    /// and reports interaction this frame. The `id_salt` disambiguates
-    /// overlapping or repeatedly-painted hot regions.
+    /// Allocates a clickable region at a window-space rect and reports this frame's interaction.
+    ///
+    /// `id_salt` tells overlapping or repeatedly painted regions apart.
     fn interact_rect(&mut self, id_salt: &str, rect: [f32; 4]) -> Interaction {
         let _ = (id_salt, rect);
         Interaction::default()
     }
 
-    /// Attaches a drag payload (typically an entity ID packed into a
-    /// `u64`) to the **last interacted region** (the most recent
-    /// [`interact_rect`](Self::interact_rect) call). Should be called
-    /// immediately after `interact_rect`. Avoids creating a competing
-    /// hit-target on the same rect, which would steal pointer events.
-    /// Default: no-op.
+    /// Attaches a `u64` drag payload, such as an entity id, to the **last interacted region**.
+    ///
+    /// Call it right after [`interact_rect`](Self::interact_rect): it adds no
+    /// competing hit-target that would steal pointer events. Does nothing by default.
     fn dnd_attach_drag_payload(&mut self, payload: u64) {
         let _ = payload;
     }
 
-    /// If a drag-and-drop just released on the **last interacted region**,
-    /// returns its `u64` payload. Should be called after
-    /// [`interact_rect`](Self::interact_rect). Default: no-op.
+    /// Returns the `u64` payload of a drag just dropped on the **last interacted region**.
+    ///
+    /// Call it after [`interact_rect`](Self::interact_rect). Default: `None`.
     fn dnd_take_drop_payload(&mut self) -> Option<u64> {
         None
     }
 
-    /// The `u64` payload of a drag hovering the **last interacted region**,
-    /// read but not taken: a drop there still delivers it. Default: `None`.
+    /// Returns the `u64` payload of a drag hovering the **last interacted region**.
+    ///
+    /// Read but not taken: a drop there still delivers it. Default: `None`.
     fn dnd_hover_payload(&self) -> Option<u64> {
         None
     }
 
-    /// A menu that opens on a primary click on the last widget or interacted
-    /// region, and closes on a pick or a click outside. Default: no-op.
+    /// Shows a menu on a primary click on the last widget or interacted region.
+    ///
+    /// It closes on a pick or a click outside. Does nothing by default.
     fn menu_on_click_last(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let _ = f;
     }
 
-    /// Current pointer (cursor) position in window-space `[x, y]`, or `None`
-    /// when the pointer is outside the window or unknown. Drop targets use this
-    /// to place a dropped item where the cursor released (e.g. unproject the
-    /// drop point into the 3D scene). Default: `None`.
+    /// Returns the pointer position in window-space `[x, y]`, `None` outside the window.
+    ///
+    /// Drop targets place a dropped item where the cursor released by it.
+    /// Default: `None`.
     fn pointer_position(&self) -> Option<[f32; 2]> {
         None
     }
 
-    /// `true` while any `u64` drag payload is in flight this frame (a drag
-    /// started and hasn't been released). Drop targets use it to show a
-    /// "droppable here" highlight. Default: `false`.
+    /// Returns `true` while a `u64` drag payload is in flight this frame.
+    ///
+    /// Drop targets show a "droppable here" highlight by it. Default: `false`.
     fn is_drag_active(&self) -> bool {
         false
     }
 
-    /// Draws a single-line text editor at an absolute window-space rect and
-    /// returns its outcome **this frame** (see [`InlineEditEvent`]). Unlike the
-    /// generic [`region_at`](Self::region_at) + response-tracking helpers, this
-    /// is self-contained: it owns the widget's `Response`, so Enter / Escape /
-    /// focus-loss are detected reliably. Pass `request_focus = true` on the
-    /// frame the field first appears so the user can type immediately.
-    /// Default: no-op returning [`InlineEditEvent::Idle`].
+    /// Draws a single-line text editor at a window-space rect and returns this frame's outcome.
+    ///
+    /// Detects Enter, Escape and focus loss on its own. Pass `request_focus`
+    /// on the frame the field first appears so the user can type at once.
+    /// Default: [`InlineEditEvent::Idle`].
     fn inline_text_field(
         &mut self,
         rect: [f32; 4],
@@ -503,10 +462,10 @@ pub trait UiBuilder {
         InlineEditEvent::Idle
     }
 
-    /// Paints a filled rounded rect in an **unclipped top overlay layer**
-    /// (above all panels). For cursor-following affordances like drag ghosts
-    /// that must remain visible outside the current panel's clip rect.
-    /// Default: no-op.
+    /// Paints a filled rounded rect in an **unclipped overlay layer** above all panels.
+    ///
+    /// For drag ghosts and other marks that must show outside the current
+    /// panel's clip rect. Does nothing by default.
     fn overlay_rect_filled(
         &mut self,
         min: [f32; 2],
@@ -517,8 +476,9 @@ pub trait UiBuilder {
         let _ = (min, size, color, rounding);
     }
 
-    /// Stroked rounded rect in the unclipped overlay layer. See
-    /// [`overlay_rect_filled`](Self::overlay_rect_filled). Default: no-op.
+    /// Paints a stroked rounded rect in the unclipped overlay layer.
+    ///
+    /// See [`overlay_rect_filled`](Self::overlay_rect_filled). Does nothing by default.
     fn overlay_rect_stroke(
         &mut self,
         min: [f32; 2],
@@ -530,8 +490,9 @@ pub trait UiBuilder {
         let _ = (min, size, color, rounding, thickness);
     }
 
-    /// Text in the unclipped overlay layer. See
-    /// [`overlay_rect_filled`](Self::overlay_rect_filled). Default: no-op.
+    /// Paints text in the unclipped overlay layer.
+    ///
+    /// See [`overlay_rect_filled`](Self::overlay_rect_filled). Does nothing by default.
     fn overlay_text(
         &mut self,
         pos: [f32; 2],
@@ -548,113 +509,80 @@ pub trait UiBuilder {
         let _ = text;
     }
 
-    /// Pushes a child layout region at the given absolute screen-space rect.
-    /// Inside the closure, `&mut dyn UiBuilder` reflects the constrained
-    /// region — egui-native widgets (`button`, `text_edit_singleline`,
-    /// `vec3_editor`, …) lay out within it instead of the parent panel.
-    /// Used by composite widgets (inspector cards) that paint their frame
-    /// absolutely but want native egui controls inside.
+    /// Lays out the widgets `f` draws within a screen-space rect instead of the parent panel.
     ///
-    /// `id_salt` must be **stable across frames and unique within the parent**.
-    /// The backend derives the region's widget ids from it, and those ids are
-    /// what carries keyboard focus and text-edit state: a salt that changes
-    /// between frames makes a field being typed into lose focus mid-word, and
-    /// two regions sharing a salt make their contents collide.
+    /// `id_salt` must be **stable across frames and unique within the parent**:
+    /// the region's widget ids, which carry focus and text-edit state, derive
+    /// from it. Does nothing by default, `f` included.
     fn region_at(&mut self, id_salt: &str, rect: [f32; 4], f: &mut dyn FnMut(&mut dyn UiBuilder)) {
-        // Default fallback for backends that don't support sub-regions:
-        // do nothing. Concrete backends (egui) MUST override this — calling
-        // it on a backend without an override silently no-ops the body.
         let _ = (id_salt, rect, f);
     }
 
-    /// Returns the current layout cursor in screen-space `(x, y)`. Useful for
-    /// composites that need to know where to place an absolutely-painted
-    /// frame before advancing egui's natural layout.
+    /// Returns the current layout cursor in screen-space `[x, y]`.
+    ///
+    /// Where a composite places an absolutely painted frame before the layout advances.
     fn cursor_pos(&self) -> [f32; 2] {
         let r = self.panel_rect();
         [r[0], r[1]]
     }
 
-    /// Allocates `[width, height]` of space at the current cursor in
-    /// the active layout direction. Returns the resulting rect as
-    /// `[x, y, w, h]` — feed it to the paint primitives.
+    /// Reserves `[width, height]` at the current cursor and returns the rect as `[x, y, w, h]`.
     ///
-    /// Unlike [`interact_rect`](Self::interact_rect), this **reserves
-    /// space in the parent layout** so subsequent widgets don't paint
-    /// on top. Use this when a custom widget paints with
-    /// `paint_rect_filled` etc. so the layout flow stays correct (for
-    /// example inside a `horizontal()` row where the row's height
-    /// must reflect the tallest custom-painted widget).
-    ///
-    /// The returned rect's position matches what the cursor would have
-    /// been just before the call. Default impl falls back to the
-    /// current `cursor_pos()` + the requested size — backends that
-    /// support real layout allocation must override.
+    /// Unlike [`interact_rect`](Self::interact_rect), the space is **reserved in
+    /// the parent layout**, so a custom-painted widget keeps later widgets off
+    /// it. The default reserves nothing and returns the rect at `cursor_pos()`.
     fn allocate_size(&mut self, size: [f32; 2]) -> [f32; 4] {
         let p = self.cursor_pos();
         [p[0], p[1], size[0], size[1]]
     }
 
-    /// Measures the rendered size of `text` at `size` points using `family`.
-    /// Returns `[width, height]` in logical points.
+    /// Returns the `[width, height]` of `text` at `size` points in `family`, in logical points.
     ///
-    /// Backends without a real text shaper fall back to a heuristic
-    /// (~0.55 × size per character, height = size). The egui backend uses
-    /// the actual font metrics — call this rather than guessing widths.
+    /// The default estimates 0.55 × `size` per character and a height of `size`.
     fn measure_text(&self, text: &str, size: f32, family: FontFamilyHint) -> [f32; 2] {
         let _ = family;
-        // Default heuristic: ~0.55 average glyph aspect ratio.
         let w = text.chars().count() as f32 * size * 0.55;
         [w, size]
     }
 
     // ── Queries ────────────────────────────────────────
 
-    /// Available width in the current layout region.
+    /// Returns the available width in the current layout region.
     fn available_width(&self) -> f32;
 
-    /// Available height in the current layout region.
+    /// Returns the available height in the current layout region.
     fn available_height(&self) -> f32;
 
-    /// Returns the current paint region in *screen-space* coordinates as
-    /// `[min_x, min_y, width, height]`.
+    /// Returns the current paint region in *screen-space* as `[min_x, min_y, width, height]`.
     ///
-    /// Useful for panels that need to draw custom chrome (rounded backgrounds,
-    /// gradients, branded pills) on top of their content. The returned
-    /// rectangle matches the area covered by the current layout, including
-    /// space already consumed by widgets.
-    ///
-    /// Default implementation falls back to a `(0, 0)` origin and the
-    /// available size — backends should override it to return their real
-    /// region.
+    /// The area of the current layout, space already taken by widgets included.
+    /// The default returns a `(0, 0)` origin and the available size.
     fn panel_rect(&self) -> [f32; 4] {
         [0.0, 0.0, self.available_width(), self.available_height()]
     }
 
-    /// Returns the full screen size (top-left = `(0, 0)`) as
-    /// `[min_x, min_y, width, height]`.
+    /// Returns the full screen as `[min_x, min_y, width, height]`, its top-left at `(0, 0)`.
     ///
-    /// Used by floating overlays / modals that need to cover or center
-    /// themselves on the entire viewport. Default implementation falls back
-    /// to [`panel_rect`](Self::panel_rect).
+    /// For overlays and modals covering or centering on the whole viewport.
+    /// The default returns [`panel_rect`](Self::panel_rect).
     fn screen_rect(&self) -> [f32; 4] {
         self.panel_rect()
     }
 
-    /// Physical pixels per UI point — the factor from every size and position
-    /// this builder reports (points) to the window's pixels, the unit of the
-    /// platform cursor and of render targets. Default: `1.0`.
+    /// Returns the physical pixels per UI point.
+    ///
+    /// Converts this builder's sizes and positions (points) to window pixels,
+    /// the unit of the platform cursor and render targets. Default: `1.0`.
     fn pixels_per_point(&self) -> f32 {
         1.0
     }
 
     // ── Viewport / Images ──────────────────────────────
 
-    /// Display a viewport texture at the given size.
+    /// Displays a viewport texture at `size` and returns the image's window-space top-left.
     ///
-    /// Returns the top-left position `[x, y]` of the rendered image in
-    /// window-space pixels (useful for hit-testing / picking).
-    /// Returns `None` if the backend cannot display this handle.
+    /// The position serves hit-testing and picking. `None` if the backend
+    /// cannot display this handle.
     fn viewport_image(&mut self, handle: ViewportTextureHandle, size: [f32; 2])
         -> Option<[f32; 2]>;
 }

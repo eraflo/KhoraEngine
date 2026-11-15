@@ -15,18 +15,9 @@
 //! Control flow: branches, loops, and taking an optional apart.
 //!
 //! Two jumps carry it all — `JumpIfNot` for a condition and `JumpIfNull` for
-//! an optional — with absolute targets inside the function, emitted as
-//! placeholders and patched once the destination exists.
-//!
-//! A loop keeps a [`LoopContext`] while its body compiles, so a `break` or a
-//! `continue` written anywhere inside it — in an arm, in a narrowed branch —
-//! finds the loop it acts on. `continue` lands on a `while`'s head, a safepoint,
-//! or on a `for`'s step, from which the back edge does.
-//!
-//! The narrowing forms — `if (var x = e)`, `while (var x = e)`, a `match` arm
-//! binding `T x` — evaluate the value, jump past the branch when it is `null`,
-//! and bind the present value as a local of the branch, declared after the
-//! value so the local's register cannot be one the value is still using.
+//! an optional — with absolute targets inside the function. A narrowed value
+//! (`if (var x = e)`, a `match` arm `T x`) is a local of its branch, declared
+//! after the value so its register cannot be one the value still uses.
 
 use std::collections::HashMap;
 
@@ -102,9 +93,10 @@ impl Compiler {
         });
     }
 
-    /// Ends a loop's body: its pending `continue`s land here. The context is
-    /// handed back for [`exit_loop`](Self::exit_loop) once the loop's end is
-    /// emitted.
+    /// Ends a loop's body, landing its pending `continue`s here.
+    ///
+    /// The context is handed back for [`exit_loop`](Self::exit_loop) once the
+    /// loop's end is emitted.
     pub(super) fn leave_loop_body(&mut self) -> LoopContext {
         let mut context = self.loops.pop().unwrap_or_default();
         let here = self.here();
@@ -121,10 +113,11 @@ impl Compiler {
         }
     }
 
-    /// Evaluates a condition, emitting the jump taken when it fails: an
-    /// ordinary one when false, `var x = e` when `e` is `null` — whose present
-    /// value is returned to bind in the branch. Temporaries are released
-    /// unless a value is to be bound; the caller releases to `mark` then.
+    /// Evaluates a condition, emitting the jump taken when it fails.
+    ///
+    /// `var x = e` fails when `e` is `null`; its present value is returned to
+    /// bind in the branch. Temporaries are released unless a value is to be
+    /// bound; the caller releases to `mark` then.
     fn compile_test<'a>(&mut self, condition: &'a Expr, mark: usize) -> (usize, Option<Bound<'a>>) {
         if let Expr::Binding { name, value, .. } = condition {
             let (register, shape) = self.compile_value(value);
@@ -236,11 +229,8 @@ impl Compiler {
 
     /// `match (subject) { … }` — taking an optional apart.
     ///
-    /// The subject is evaluated once. Each arm tests it and runs, or falls to
-    /// the next arm's test: `null` when it is null, `T x` when it is present —
-    /// binding it — and `_` always. An arm that ran jumps past the rest. The
-    /// subject's register is only read by the tests, which run before any
-    /// arm's body has, so a body is free to reuse it.
+    /// The subject is evaluated once and read only by the arms' tests, which
+    /// run before any arm's body, so a body is free to reuse its register.
     pub(super) fn compile_match(&mut self, subject: &Expr, arms: &[MatchArm]) {
         let mark = self.registers.mark();
         let (value, _) = self.compile_value(subject);
@@ -286,7 +276,7 @@ impl Compiler {
                 }
                 Pattern::Wildcard(_) => None,
             };
-            // Past its tests, an arm no longer needs the subject held: released
+            // Past its tests, an arm does not need the subject held: released
             // here for every arm alike, so a site inside one records the same
             // temporaries wherever the arm sits — reordering the arms must not
             // turn a rebuildable frame into a restart.

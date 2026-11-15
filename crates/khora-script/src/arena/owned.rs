@@ -67,10 +67,11 @@ impl Owned {
         matches!(self, Self::Array(_) | Self::Struct { .. })
     }
 
-    /// Whether it can be held by a slot declared `ty` (as written), all the
-    /// way down: a struct by its name and each field by its declared type.
-    /// `Unit` is "nothing written" and fits anything; an empty `ty` (a layout
-    /// recorded before types were) takes anything on trust.
+    /// Whether it can be held by a slot declared `ty` (as written), all the way down.
+    ///
+    /// A struct fits by its name and each field by its declared type. `Unit`
+    /// is "nothing written" and fits anything; an empty `ty` (a layout
+    /// recorded without types) takes anything on trust.
     pub fn fits(&self, ty: &str, structs: &[StructLayout]) -> bool {
         if ty.is_empty() || matches!(self, Self::Scalar(Value::Unit)) {
             return true;
@@ -101,8 +102,8 @@ impl Owned {
                 let Some(layout) = structs.iter().find(|layout| layout.name == *name) else {
                     return false;
                 };
-                // A field the struct no longer declares is dropped on the way
-                // in; every other one must fit what it is declared now.
+                // A field the struct does not declare is dropped on the way
+                // in; every other one must fit its declared type.
                 fields.iter().all(|(field, value)| {
                     layout
                         .fields
@@ -115,9 +116,10 @@ impl Owned {
         }
     }
 
-    /// The struct with every field present: a field it lacks takes its
-    /// declared default, else its type's zero — `None` when one has neither.
-    /// Fields of struct type are completed in turn. Anything else is itself.
+    /// Returns the struct with every field present; anything else is itself.
+    ///
+    /// A missing field takes its declared default, else its type's zero —
+    /// `None` when one has neither. Fields of struct type are completed in turn.
     pub fn completed(&self, ty: &str, structs: &[StructLayout]) -> Option<Owned> {
         self.completed_within(ty, structs, 0)
     }
@@ -192,10 +194,11 @@ impl Owned {
 }
 
 impl Owned {
-    /// What a field of `ty` written with no default starts at: its zero, an
-    /// engine value's neutral — `Vec3(0, 0, 0)`, the identity rotation,
-    /// white — or a struct's own defaults. `None` for a type with none: an
-    /// `Entity` names an entity, and no entity is what `Entity?` spells.
+    /// The value a field of `ty` written with no default starts at.
+    ///
+    /// Its zero, an engine value's neutral — `Vec3(0, 0, 0)`, the identity
+    /// rotation, white — or a struct's own defaults. `None` for a type with
+    /// none: an `Entity` names an entity, and no entity is what `Entity?` spells.
     pub fn neutral(ty: &str, structs: &[StructLayout]) -> Option<Owned> {
         Self::neutral_within(ty, structs, 0)
     }
@@ -232,10 +235,15 @@ impl Owned {
 }
 
 impl Arena {
-    /// A deep copy of `value` out of the arena: text and objects by value,
-    /// literals and struct names resolved against `program`.
+    /// Returns a deep copy of `value` out of the arena, owning its text and objects.
     ///
-    /// Fails on a reference that names nothing — stale, or held by a machine.
+    /// Literals and struct names are resolved against `program`.
+    ///
+    /// # Errors
+    ///
+    /// [`ArenaError::OutOfBounds`] on a reference that names nothing — stale,
+    /// or held by a machine; [`ArenaError::Mismatch`] on a struct layout
+    /// `program` lacks.
     pub fn export(&self, value: Value, program: &Program) -> Result<Owned, ArenaError> {
         Ok(match value {
             Value::Str(StrRef::Const(index)) => Owned::Str(
@@ -280,11 +288,17 @@ impl Arena {
         })
     }
 
-    /// `owned`, copied into the arena. A struct is matched to `program`'s
-    /// declaration by field name: a field it lacks takes the declared default,
-    /// else its type's zero, else the value does not fit
-    /// ([`ArenaError::Mismatch`]); a field `program` no longer declares is
-    /// dropped.
+    /// Copies `owned` into the arena and returns the value that names it.
+    ///
+    /// A struct is matched to `program`'s declaration by field name: a field
+    /// it lacks takes the declared default, else its type's zero; a field
+    /// `program` does not declare is dropped.
+    ///
+    /// # Errors
+    ///
+    /// [`ArenaError::Mismatch`] when a struct or a field does not fit
+    /// `program`, or a missing field has neither default nor zero;
+    /// [`ArenaError::Full`] when the arena is.
     pub fn import(&mut self, owned: &Owned, program: &Program) -> Result<Value, ArenaError> {
         Ok(match owned {
             Owned::Scalar(value) => *value,
@@ -376,9 +390,7 @@ impl Arena {
         }
     }
 
-    /// How many values `value` holds, nested ones included: `1` for a scalar
-    /// or text, `1 +` its parts' sizes for an array or a struct — what copying
-    /// it costs.
+    /// How many values `value` holds, nested ones included — what copying it costs.
     pub fn size(&self, value: Value) -> usize {
         match value {
             Value::Obj(ObjRef::Arena(handle)) => match self.get(handle) {
@@ -391,8 +403,13 @@ impl Arena {
         }
     }
 
-    /// A deep copy of an object, in the arena: the value semantics every
-    /// binding of a place has. Text is shared — nothing writes it in place.
+    /// Returns a deep copy of an object, in the arena: the value semantics of a binding.
+    ///
+    /// Text is shared — nothing writes it in place.
+    ///
+    /// # Errors
+    ///
+    /// An [`ArenaError`] when `value` names nothing, or [`ArenaError::Full`].
     pub fn deep_copy(&mut self, value: Value) -> Result<Value, ArenaError> {
         let Value::Obj(ObjRef::Arena(handle)) = value else {
             return Ok(value);

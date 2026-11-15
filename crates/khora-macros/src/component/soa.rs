@@ -19,10 +19,10 @@
 use quote::{quote, ToTokens};
 use syn::{DeriveInput, Fields};
 
-/// The `Component` impl carrying `script_methods`, and the `SoaLayout` impl —
-/// empty unless `layout_soa`. `Err` holds what the derive emits instead when
-/// the struct cannot take the SoA layout: the `Component` impl and a
-/// `compile_error!`.
+/// The `Component` impl carrying `script_methods`, and the `SoaLayout` impl if `layout_soa`.
+///
+/// `Err` holds what the derive emits instead when the struct cannot take the
+/// SoA layout: the `Component` impl and a `compile_error!`.
 pub(super) fn component_impls(
     input: &DeriveInput,
     fields: &Fields,

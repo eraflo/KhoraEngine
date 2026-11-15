@@ -31,14 +31,11 @@ impl Compiler {
         self.bindings.get(&at).cloned()
     }
 
-    /// Places a bound call's values and emits it: `receiver` and the written
-    /// arguments evaluated **in the order written**, each into a register of
-    /// its own, then moved into the parameters' consecutive registers in
-    /// their order, a default loaded where one was left out.
+    /// Emits a bound call, its arguments evaluated **in the order written**.
     ///
-    /// Evaluated first, placed after: the side effects follow the source, and
-    /// a frame stopped among them holds the same values whatever order the
-    /// callee declares its parameters in.
+    /// They are placed after, in the parameters' order, a default loaded where
+    /// one was left out: the side effects follow the source, and a frame
+    /// stopped among them holds the same values whatever the callee's order.
     pub(super) fn emit_bound_call(
         &mut self,
         target: CallTarget,
@@ -51,10 +48,11 @@ impl Compiler {
         self.finish_call(target, name, base, argc)
     }
 
-    /// The bound values in consecutive registers, as
-    /// [`emit_bound_call`](Self::emit_bound_call) places them; returns the
-    /// first and how many. An `int` placed where `floats` says the parameter
-    /// is a float arrives as that float.
+    /// Places the bound values in consecutive registers; returns the first and how many.
+    ///
+    /// Placed as [`emit_bound_call`](Self::emit_bound_call) places them. An
+    /// `int` placed where `floats` says the parameter is a float arrives as
+    /// that float.
     pub(super) fn place_bound(
         &mut self,
         receiver: Option<&Expr>,
@@ -123,21 +121,17 @@ impl Compiler {
 
     /// Places the arguments and emits the call.
     ///
-    /// Split out because a sibling call resolves differently but is emitted
-    /// identically — duplicating the argument placement is exactly how the two
-    /// would drift apart.
+    /// A sibling call resolves differently but is emitted here too, so the two
+    /// cannot drift apart.
     pub(super) fn emit_call(
         &mut self,
         target: CallTarget,
         name: &str,
         args: &[&Expr],
     ) -> (Reg, Shape) {
-        // Arguments must land in *consecutive* registers: the callee's frame
-        // starts at the first of them, so its parameters need no copying.
-        //
-        // Every slot is reserved before any argument is compiled. Reserving as
-        // we go would not work: compiling an argument takes temporaries of its
-        // own, so the next slot would no longer be adjacent.
+        // Arguments land in *consecutive* registers, where the callee's frame
+        // starts. Every slot is reserved before any argument compiles: an
+        // argument's own temporaries would otherwise break the adjacency.
         let base = self.registers.temp();
         let slots: Vec<Reg> = std::iter::once(base)
             .chain((1..args.len()).map(|_| self.registers.temp()))
@@ -181,8 +175,7 @@ impl Compiler {
                     .map_or_else(|| name.to_owned(), |(callee, _)| callee.clone());
                 self.record_return(&callee, base, dst);
                 // By the compiled name too: `returns` is keyed by it, and a
-                // sibling's bare name found nothing — its result's shape was
-                // lost, and every operation on it picked the wrong form.
+                // sibling's bare name would lose its result's shape.
                 self.returns.get(&callee).copied().unwrap_or(Shape::Other)
             }
             CallTarget::Native(function) => {

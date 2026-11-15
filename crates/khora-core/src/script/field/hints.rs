@@ -52,10 +52,11 @@ impl FieldRange {
         self.min <= value && value <= self.max
     }
 
-    /// Whether `value`, a 32-bit float, lies within the bounds — one that
-    /// converting a unit left a step or two of a 32-bit float past a bound
-    /// counting as at it: `3000ms` is `3.0000002` seconds, and lies within
-    /// `0s..=3s`.
+    /// Whether `value`, a 32-bit float, lies within the bounds, give or take
+    /// the rounding of a unit conversion.
+    ///
+    /// A value a step or two of a 32-bit float past a bound counts as at it:
+    /// `3000ms` is `3.0000002` seconds, and lies within `0s..=3s`.
     pub fn holds(&self, value: f64) -> bool {
         let near = |bound: f64| steps_apart(value as f32, bound as f32) <= 2;
         self.contains(value) || near(self.min) || near(self.max)

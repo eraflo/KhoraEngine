@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Type-erased data store used by [`FrameContext`].
+//! Type-erased data store used by `FrameContext`.
 //!
 //! A simple `AnyMap` implementation that stores one value per type.
 //! O(1) type-safe lookup via `TypeId`.

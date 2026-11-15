@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A family's place in the frame, and the frame logic every layered agent
-//! shares: the swap at frame start, the kept layers, the wakes, the run and
-//! its report. The scheduler and the agents' tests run this same code.
+//! A family's place in the frame: the installed, staged and kept layers, the
+//! wakes, the run and its report. The scheduler and the agents' tests share it.
 
 use std::time::{Duration, Instant};
 
@@ -27,38 +26,34 @@ use crate::lane::cost::{Cost, PerDevice};
 use crate::lane::io::TargetKey;
 use crate::EngineContext;
 
-/// How many epochs a layer swapped out is kept ready: each allocation lent
-/// counts one down, and a layer with none left is shut down at the next frame
-/// start.
+/// How many epochs a layer swapped out is kept ready before it is shut down.
+///
+/// Each allocation lent counts one down; a layer with none left is shut down
+/// at the next frame start.
 pub const KEEP_EPOCHS: u32 = 3;
 
 /// What the agent lent its installed layer: the terms every run is made on.
 ///
-/// Two parts. The agent's — `epoch`, `envelope`, `budget`, `fixed_step`,
-/// `over_budget`, `quoted_at`, `target` — is
-/// what the DCC lent the family and how the agent answered it, from its last
-/// full quote, whatever layer runs it: set while another layer is on its way
-/// in, it applies to the installed one at once, so its reports answer the
-/// epoch lent. The row's — its `quote`, its own price — applies from that
-/// row's swap.
+/// The agent's part (every field but `quote`) applies to the installed layer
+/// at once, even while another layer is on its way in, so reports answer the
+/// epoch lent. The row's part, `quote`, applies from that row's swap.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Terms {
     /// The epoch the agent runs in.
     pub epoch: Epoch,
-    /// The envelope the DCC lent; `None` while none was, which limits
-    /// nothing — the kept layers' memory included.
+    /// The envelope the DCC lent; `None` limits nothing, kept layers' memory included.
     pub envelope: Option<Envelope>,
-    /// The time lent to a `#[budget]` lane — the envelope's, on its busiest
-    /// device; `None` while nothing was lent, which a lane taking
-    /// `Option<Budget>` reads as `None`.
+    /// The time lent to a `#[budget]` lane: the envelope's, on its busiest device.
+    ///
+    /// `None` while nothing was lent.
     pub budget: Option<Duration>,
     /// The simulated time one run advances, for a fixed-step family.
     pub fixed_step: Option<Duration>,
     /// Whether the row is the floor, run because no row fitted the envelope.
     pub over_budget: bool,
-    /// The row's quote when the agent last quoted every row: what its drift
-    /// is measured from — its time, and the impact it named. `None` when it
-    /// was not quoted then; the layer's first run then sets the base.
+    /// The row's quote when the agent last quoted every row: its drift's base.
+    ///
+    /// `None` when it was not quoted then; the layer's first run sets the base.
     pub quote: Option<Cost>,
     /// When the agent last quoted every row; `None` before it ever did.
     pub quoted_at: Option<Instant>,
@@ -67,8 +62,7 @@ pub struct Terms {
 }
 
 impl Terms {
-    /// `lent` with the row's part of these terms: their quote, the row's
-    /// own price, kept.
+    /// Returns `lent` with the row's part of these terms (`quote`) kept.
     fn lending(&self, lent: &Terms) -> Terms {
         Terms {
             quote: self.quote,
@@ -77,8 +71,7 @@ impl Terms {
     }
 }
 
-/// A layer at the place, with the time its preparation took while its first
-/// run has not reported it yet.
+/// A layer at the place, with its preparation time until its first run reports it.
 struct Held {
     layer: Box<dyn Layer>,
     switch: Option<Duration>,
@@ -90,8 +83,7 @@ struct Kept {
     epochs: u32,
 }
 
-/// What the last run of a place gave back, for an agent reading its place
-/// between two wakes.
+/// What the last run of a place gave back, read by its agent between wakes.
 #[derive(Debug, Clone, Default)]
 pub struct LastRun {
     /// The report the run published; `None` before any run.
@@ -101,17 +93,12 @@ pub struct LastRun {
     pub costs: Vec<Cost>,
 }
 
-/// A family's place in the frame: its phase and its pass slot, where one
-/// [`Layer`] is installed.
+/// A family's place in the frame (its phase and pass slot), where one [`Layer`] is installed.
 ///
-/// It holds the installed layer, the layer staged for the next frame start,
-/// the layers swapped out and kept ready (each with the epochs it has left),
-/// the wakes gathered for the agent, the [`Terms`] the agent lent, and the
-/// time the staged layer took to prepare, which the first report after its
-/// swap carries.
-///
-/// Shared between the agent and the scheduler as `Arc<Mutex<Place>>`. Lock
-/// order: an agent's lock, then its place's — never the other way round.
+/// Holds the installed, staged and kept layers, the wakes gathered and the
+/// [`Terms`] lent. Shared by the agent and the scheduler as
+/// `Arc<Mutex<Place>>`. Lock order: an agent's lock, then its place's, never
+/// the other way round.
 pub struct Place {
     agent: AgentId,
     installed: Option<Held>,
@@ -131,15 +118,16 @@ pub struct Place {
     waiting: Option<super::Preparation>,
     /// The row of the preparation a runner took and has not handed back.
     under_way: Option<StrategyId>,
-    /// The row the agent last asked a preparation for, while it still wants
-    /// it: what a preparation's layer is staged for. A stage or a reinstate
-    /// since means the agent wants another layer.
+    /// The row the agent last asked a preparation for, while it still wants it.
+    ///
+    /// A stage or a reinstate since clears it.
     wanted: Option<StrategyId>,
 }
 
-/// The installed layer of a place, checked out for one run off the frame,
-/// with the terms it runs on. The place holds nothing of it meanwhile, so no
-/// lock is held across frames; it comes back through [`Place::check_in`].
+/// The installed layer of a place, checked out with its terms for one run off the frame.
+///
+/// The place holds nothing of it meanwhile, so no lock is held across frames;
+/// it comes back through [`Place::check_in`].
 pub struct CheckedOut {
     held: Held,
     terms: Terms,
@@ -168,9 +156,10 @@ impl CheckedOut {
 }
 
 impl Place {
-    /// The place of `agent`'s family: nothing installed, and a
-    /// [`Wake::FirstFrame`] waiting, so the first event pass wakes the agent
-    /// to install a layer before the first run.
+    /// Returns the place of `agent`'s family, empty, with a [`Wake::FirstFrame`] waiting.
+    ///
+    /// The first event pass so wakes the agent to install a layer before the
+    /// first run.
     pub fn new(agent: AgentId) -> Self {
         Self {
             agent,
@@ -188,9 +177,10 @@ impl Place {
         }
     }
 
-    /// Checks the installed layer out for one run off the frame: `None` while
-    /// nothing is installed, or it is out already. Until it is checked in, the
-    /// place swaps in no staged layer and runs nothing.
+    /// Checks the installed layer out for one run off the frame.
+    ///
+    /// `None` while nothing is installed or it is out already. Until it is
+    /// checked in, the place swaps in no staged layer and runs nothing.
     pub fn check_out(&mut self) -> Option<CheckedOut> {
         if self.out.is_some() {
             return None;
@@ -203,9 +193,9 @@ impl Place {
         })
     }
 
-    /// Takes back the layer `out` held, with what its `run` gave back, and
-    /// reports the run as [`run`](Self::run) does. A layer staged while it was
-    /// out waits for the next frame start.
+    /// Takes back the layer `out` held and reports its `run` as [`run`](Self::run) does.
+    ///
+    /// A layer staged while it was out waits for the next frame start.
     pub fn check_in(&mut self, out: CheckedOut, run: LayerRun) -> Report {
         let CheckedOut { mut held, terms } = out;
         self.out = None;
@@ -234,8 +224,7 @@ impl Place {
         self.staged.as_ref().map(|held| held.layer.row())
     }
 
-    /// The rows of the layers kept ready, oldest first, each with the epochs
-    /// it has left.
+    /// The rows of the layers kept ready, oldest first, with the epochs each has left.
     pub fn kept(&self) -> Vec<(StrategyId, u32)> {
         self.kept
             .iter()
@@ -253,8 +242,7 @@ impl Place {
         self.wakes.push(why);
     }
 
-    /// Takes the wakes gathered, leaving none: what the event pass hands the
-    /// agent.
+    /// Takes the wakes gathered, for the event pass to hand the agent.
     pub fn take_wakes(&mut self) -> Vec<Wake> {
         std::mem::take(&mut self.wakes)
     }
@@ -264,10 +252,11 @@ impl Place {
         &self.terms
     }
 
-    /// Sets the terms the installed layer runs on, from its next run. While
-    /// a layer is staged, or prepared, they are that layer's, whole from its
-    /// swap; the installed layer runs on their agent's part at once and keeps
-    /// its own row's part until then.
+    /// Sets the terms the installed layer runs on, from its next run.
+    ///
+    /// While a layer is staged or being prepared, the terms are that layer's
+    /// from its swap; the installed layer takes their agent's part at once
+    /// and keeps its own row's part until then.
     pub fn set_terms(&mut self, terms: Terms) {
         if self.staged.is_some() || self.pending_row().is_some() {
             self.terms = self.terms.lending(&terms);
@@ -277,14 +266,12 @@ impl Place {
         }
     }
 
-    /// The step every layer of the place runs at, for a fixed-step family:
-    /// what the scheduler sub-steps the family by, read each frame.
+    /// The step the scheduler sub-steps a fixed-step family by, read each frame.
     pub fn fixed_step(&self) -> Option<Duration> {
         self.terms.fixed_step
     }
 
-    /// Sets the step every layer of the place runs at — the installed one
-    /// and one on its way in — leaving the rest of their terms as they are.
+    /// Sets the step of the installed layer and of one on its way in.
     pub fn set_fixed_step(&mut self, step: Option<Duration>) {
         self.terms.fixed_step = step;
         if let Some(staged) = self.staged_terms.as_mut() {
@@ -292,17 +279,16 @@ impl Place {
         }
     }
 
-    /// What the last run gave back: its report, the costs it found and what
-    /// went wrong.
+    /// What the last run gave back: its report and the costs it found.
     pub fn last_run(&self) -> &LastRun {
         &self.last
     }
 
-    /// Stages `layer`, prepared in `switch`, to be swapped in at the next
-    /// frame start. Into a place with nothing installed it is installed at
-    /// once: no frame runs without a layer. A layer staged before it and
-    /// never swapped in is kept ready. A preparation asked for before is no
-    /// longer wanted: one waiting is dropped, one under way kept once it ends.
+    /// Stages `layer`, prepared in `switch`, to be swapped in at the next frame start.
+    ///
+    /// Into an empty place it is installed at once. A layer staged before and
+    /// never swapped in is kept ready. A preparation asked for before is
+    /// dropped if waiting, and its layer kept if under way.
     pub fn stage(&mut self, layer: Box<dyn Layer>, switch: Duration) {
         self.unwant();
         self.stage_held(layer, switch);
@@ -323,10 +309,11 @@ impl Place {
         }
     }
 
-    /// Stages the kept layer of `row` again, preparing nothing; whether one
-    /// was kept. The installed layer's own row unstages what was staged,
-    /// keeping it ready; the staged layer's own row changes nothing. A
-    /// preparation asked for before is no longer wanted, once one is found.
+    /// Stages the kept layer of `row` again, preparing nothing; returns whether one was found.
+    ///
+    /// The installed layer's row unstages what was staged, keeping it ready;
+    /// the staged layer's row changes nothing. Once found, a preparation
+    /// asked for before stops being wanted.
     pub fn reinstate(&mut self, row: StrategyId) -> bool {
         let found = self.installed_row() == Some(row)
             || self.staged_row() == Some(row)
@@ -355,18 +342,17 @@ impl Place {
         true
     }
 
-    /// Forgets the preparation asked for: one waiting is dropped, and the
-    /// layer of one under way will be kept rather than staged.
+    /// Forgets the preparation asked for; the layer of one under way is kept, not staged.
     fn unwant(&mut self) {
         self.waiting = None;
         self.wanted = None;
     }
 
-    /// Leaves `preparation` at the place, to be taken by whoever runs it
-    /// ([`take_preparation`](Self::take_preparation)); the installed layer
-    /// runs on meanwhile. Its row is the one wanted from now: a preparation
-    /// waiting and not yet taken is replaced by it, and the layer of one
-    /// under way is kept ready once it ends.
+    /// Leaves `preparation` for its runner to [`take`](Self::take_preparation).
+    ///
+    /// The installed layer runs on meanwhile. Its row becomes the one wanted:
+    /// it replaces a preparation still waiting, and the layer of one under
+    /// way is kept ready once it ends.
     pub fn request_preparation(&mut self, preparation: super::Preparation) {
         // A layer staged before is not the one wanted any more.
         if let Some(staged) = self.staged.take() {
@@ -384,8 +370,7 @@ impl Place {
         Some(preparation)
     }
 
-    /// The row of the preparation the place waits for — waiting to be taken
-    /// or under way — if it waits for one.
+    /// The row of the preparation the place waits for, waiting or under way.
     pub fn pending_row(&self) -> Option<StrategyId> {
         let pending = self
             .waiting
@@ -395,10 +380,10 @@ impl Place {
         self.wanted.filter(|_| pending.is_some())
     }
 
-    /// Takes back what a preparation gave. A layer whose row is still the
-    /// one wanted is staged, with the time its preparation took; one whose
-    /// row no longer is is kept ready. A preparation that gave no layer
-    /// raises [`Wake::PrepareFailed`] for its row.
+    /// Takes back what a preparation gave: staged if its row is still wanted, kept otherwise.
+    ///
+    /// A preparation that gave no layer raises [`Wake::PrepareFailed`] for its
+    /// row when that row was wanted.
     pub fn prepared(&mut self, prepared: super::PreparedLayer) {
         let row = prepared.row();
         if self.under_way == Some(row) {
@@ -432,9 +417,9 @@ impl Place {
         }
     }
 
-    /// Records that an allocation for `epoch` was lent to the agent: the
-    /// agent is woken for it ([`Wake::Allocated`]) and every kept layer has
-    /// one epoch less.
+    /// Records an allocation lent to the agent for `epoch`.
+    ///
+    /// Raises [`Wake::Allocated`] and counts one epoch down on every kept layer.
     pub fn lent(&mut self, epoch: Epoch) {
         let _ = epoch;
         self.raise(Wake::Allocated);
@@ -443,10 +428,10 @@ impl Place {
         }
     }
 
-    /// The frame start: swaps the staged layer in and keeps the one it
-    /// replaces for [`KEEP_EPOCHS`] epochs; then shuts down, with `gpu`, every
-    /// kept layer with no epoch left and, oldest first, those the envelope's
-    /// memory cannot hold beside the installed one.
+    /// Swaps the staged layer in at a frame start, keeping the one it replaces.
+    ///
+    /// Shuts down, with `gpu`, every kept layer with no epoch left and, oldest
+    /// first, those the envelope's memory cannot hold beside the installed one.
     pub fn start_frame(&mut self, gpu: &mut GpuSetup<'_>) {
         // A layer out for a run off the frame is swapped once it is back.
         if self.out.is_none() {
@@ -483,12 +468,10 @@ impl Place {
         }
     }
 
-    /// Runs the installed layer on the terms, keeps the wake it raised, and
-    /// reports the run: the terms' epoch and over-budget flag, the layer's
-    /// row, what it measured, did and stalled on, a health of the lesser of
-    /// its time ratio and what it did, and — on the first run after a swap —
-    /// the time its preparation took. `None`, running nothing, while nothing
-    /// is installed.
+    /// Runs the installed layer on the terms and returns its report.
+    ///
+    /// Keeps the wake it raised. The health is the lesser of its time ratio
+    /// and the share it did. `None`, running nothing, while nothing is installed.
     pub fn run(&mut self, context: &mut EngineContext<'_>) -> Option<Report> {
         let held = self.installed.as_mut()?;
         let run = held.layer.run(&self.terms, context);
@@ -499,9 +482,9 @@ impl Place {
         Some(self.report(row, level, &terms, switch, run))
     }
 
-    /// Reports a run of the installed layer that did not finish — it
-    /// panicked: stalled, nothing done, saying `why`. `None` while nothing is
-    /// installed.
+    /// Reports a run of the installed layer that panicked: stalled, nothing done.
+    ///
+    /// `why` is the report's message. `None` while nothing is installed.
     pub fn run_failed(&mut self, why: String) -> Option<Report> {
         let held = self.installed.as_mut()?;
         let row = held.layer.row();

@@ -16,8 +16,8 @@
 
 /// An opaque handle to a compiled shader module.
 ///
-/// This ID is returned by [`GraphicsDevice::create_shader_module`] and is used to
-/// reference the shader in a [`RenderPipelineDescriptor`].
+/// This ID is returned by `GraphicsDevice::create_shader_module` and is used to
+/// reference the shader in a `RenderPipelineDescriptor`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ShaderModuleId(pub usize);
 

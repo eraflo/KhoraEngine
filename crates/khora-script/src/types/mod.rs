@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Type checking.
-//!
-//! Where the guarantees the language was designed around are actually made:
+//! Type checking, in two passes: declarations, then bodies, so a file's order
+//! decides nothing. A failed expression gets [`ty::Ty::Error`], which accepts
+//! everything, so one mistake yields one message.
 //!
 //! | Rule | Enforced by |
 //! |---|---|
@@ -22,14 +22,6 @@
 //! | `Duration` and `Angle` never decay to `float` | [`ty::Ty::accepts`] and the arithmetic rules in [`expr`] |
 //! | `await` only inside an `async` member | the [`Context`] carried through [`stmt`] |
 //! | An overloaded operator is resolved statically | [`expr`], against the struct's declarations |
-//!
-//! Two passes. The first collects declarations, so a behavior may refer to a
-//! struct declared below it — order in a file should not be load-bearing. The
-//! second checks bodies against what the first learned.
-//!
-//! Like the parser, the checker does not stop at the first problem: an
-//! expression that fails gets [`ty::Ty::Error`], which is compatible with
-//! everything, so one mistake yields one message instead of a cascade.
 
 mod arithmetic;
 mod asset_names;
@@ -68,11 +60,13 @@ use crate::diagnostics::{Diagnostic, Span};
 pub struct Checked {
     /// Problems found. Empty means the module type-checks.
     pub diagnostics: Vec<Diagnostic>,
-    /// Each `var`'s inferred type, keyed by its initialiser's address in the
-    /// module checked — valid only alongside that module.
+    /// Each `var`'s inferred type, by its initialiser's address in the module.
+    ///
+    /// Valid only alongside the module checked.
     pub inferred: HashMap<usize, String>,
-    /// Every expression's type, keyed by its address in the module checked —
-    /// what the compiler asks where a shape cannot say: an element's type, an
+    /// Every expression's type, by its address in the module checked.
+    ///
+    /// The compiler reads it where a shape cannot say: an element's type, an
     /// array or a struct, which value is copied.
     pub types: HashMap<usize, Ty>,
     /// How each call naming an argument or leaving one out binds, by the
@@ -94,13 +88,8 @@ pub fn check(module: &Module) -> Checked {
 
 /// Checks a module against a specific set of engine functions.
 ///
-/// The registry is a parameter because it is part of what "well-typed" means: a
-/// program calling `Raycast` is correct against a host that exposes it and
-/// wrong against one that does not, and the compiler must be told which. Passing
-/// the same registry here and to [`compile`](crate::bytecode::compile) is what
-/// keeps a call's index meaning the same thing on both sides.
-///
-/// [`compile`]: crate::bytecode::compile
+/// Pass the same registry to [`compile`](crate::bytecode::compile): it is what
+/// keeps a native call's index meaning the same thing on both sides.
 pub fn check_with(module: &Module, natives: &crate::native::NativeRegistry) -> Checked {
     let mut checker = Checker::new();
     checker.collect_natives(natives);
@@ -127,11 +116,7 @@ pub struct StructInfo {
     pub defaulted: Vec<String>,
     /// Each defaulted field's default, as written.
     pub default_exprs: HashMap<String, crate::ast::Expr>,
-    /// Operator overloads, keyed by operator and right-hand type name.
-    ///
-    /// Keyed on the *written* right-hand type rather than the resolved one so
-    /// collection stays a single pass; resolution happens when a use is
-    /// checked.
+    /// Operator overloads, with their resolved operand types.
     pub operators: Vec<OperatorInfo>,
 }
 
@@ -216,32 +201,36 @@ pub struct Checker {
     pub bindings: HashMap<usize, std::rc::Rc<[Bound]>>,
     /// The states of the behavior being checked: what `become` fills.
     pub state_signatures: HashMap<String, FnInfo>,
-    /// The states declaring each state method of the behavior being checked:
-    /// callable only from inside its state, and named when a call from
-    /// anywhere else is refused.
+    /// The states declaring each state method of the behavior being checked.
+    ///
+    /// Named when a call from outside its state is refused.
     pub state_methods: HashMap<String, Vec<String>>,
-    /// The fields with no value yet while a default is checked: that one and
-    /// those declared below it at its level. Defaults run in declaration
-    /// order, so reading one of these would read a slot not written yet.
+    /// The fields with no value yet while a default is checked.
+    ///
+    /// That field and those below it at its level: defaults run in declaration
+    /// order, so reading one would read a slot not written yet.
     pub unready: Vec<String>,
-    /// The fields in scope in the behavior being checked — its own, and the
-    /// state's while inside one — so `this.health` can be told to name the
-    /// field directly.
+    /// The fields in scope in the behavior being checked, its state's included.
+    ///
+    /// Lets `this.health` be told to name the field directly.
     pub field_names: Vec<String>,
-    /// The methods in scope in the behavior being checked — its own, and the
-    /// state's while inside one — apart from the free functions they share
+    /// The methods in scope in the behavior being checked, its state's included.
+    ///
+    /// Tells them apart from the free functions they share
     /// [`functions`](Self::functions) with.
     pub method_names: std::collections::HashSet<String>,
-    /// The behavior's members each of its members calls, by name — what
-    /// tells whether a call reaches an `async` member and waits.
+    /// The behavior's members each of its members calls, by name.
+    ///
+    /// Tells whether a call reaches an `async` member and waits.
     pub member_calls: HashMap<String, std::collections::HashSet<String>>,
-    /// The state being checked, with its own methods: what qualifies a
-    /// member's name in [`member_calls`](Self::member_calls) — two states'
-    /// `Act` are two members.
+    /// The state being checked, with its own methods.
+    ///
+    /// Qualifies a member's name in [`member_calls`](Self::member_calls): two
+    /// states' `Act` are two members.
     pub current_state: Option<(String, std::collections::HashSet<String>)>,
-    /// The system being checked: what refuses `this`, a native reading the
-    /// subject, `become` and `await` in it — a system has no entity of its
-    /// own.
+    /// The system being checked, which has no entity of its own.
+    ///
+    /// Refuses `this`, a native reading the subject, `become` and `await`.
     pub system: Option<String>,
     /// The free function being checked.
     pub free_function: Option<String>,
@@ -250,9 +239,9 @@ pub struct Checker {
     pub in_default: bool,
     /// Every free function the module declares.
     pub free_functions: std::collections::HashSet<String>,
-    /// Who calls what among the free functions, and which read the subject
-    /// themselves: what a system's call is checked against once every body
-    /// is.
+    /// Who calls what among the free functions, and which read the subject.
+    ///
+    /// A system's calls are checked against it once every body is.
     pub subject_calls: query::SubjectCalls,
 }
 

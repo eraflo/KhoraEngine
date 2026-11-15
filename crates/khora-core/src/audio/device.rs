@@ -21,7 +21,7 @@
 //! live.
 //!
 //! The backend's hardware callback drains samples from the
-//! [`AudioMixBus`](super::mix_bus::AudioMixBus) provided to `open`. Audio
+//! [`AudioMixBus`] provided to `open`. Audio
 //! lanes write into the same bus from the main thread; the bus is the
 //! sole synchronisation boundary between the two worlds.
 
@@ -55,8 +55,8 @@ pub trait AudioDevice: Send + Sync {
 
 /// Live audio stream handle. Drop = stop.
 pub trait AudioStream: Send + Sync {
-    /// Channel count and sample rate of the stream as actually opened by
-    /// the backend (may differ from the bus's nominal info if the
-    /// hardware imposed a different format).
+    /// Channel count and sample rate of the stream as the backend opened it.
+    ///
+    /// May differ from the bus's nominal info if the hardware imposed a format.
     fn stream_info(&self) -> StreamInfo;
 }

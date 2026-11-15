@@ -14,15 +14,8 @@
 
 //! The value vocabulary crossing the script/engine boundary.
 //!
-//! Deliberately *not* a scripting language's internal value type. A VM's value
-//! is shaped by how the VM runs — registers, arena handles, tagged unions — and
-//! none of that means anything to the engine applying the effect. This type is
-//! what the engine understands: engine math types, an [`EntityId`], and the
-//! scalars that survive the trip.
-//!
-//! Keeping the two apart is why [`WorldCommand`] is not Ergon-specific. A second
-//! language, or the editor replaying a recorded session, emits the same commands
-//! without inheriting Ergon's runtime.
+//! It is the engine's vocabulary (engine math types, an [`EntityId`], scalars),
+//! not a VM's, so [`WorldCommand`] is not tied to Ergon.
 //!
 //! [`WorldCommand`]: super::WorldCommand
 //! [`EntityId`]: crate::ecs::entity::EntityId
@@ -35,11 +28,8 @@ use crate::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
 
 /// A value handed to the engine by a script.
 ///
-/// Serializable, because this is also the form a behavior's authored fields
-/// take in a scene file — a designer setting `speed = 3.0` in the inspector and
-/// a script writing to a component are the same value crossing the same
-/// boundary, and giving them two representations would mean two things to keep
-/// in step.
+/// It is also the form a behavior's authored fields take in a scene file: an
+/// inspector edit and a script write are the same value.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ScriptValue {
     /// No value.
@@ -69,16 +59,11 @@ pub enum ScriptValue {
     Entity(EntityId),
     /// A list of values.
     Array(Vec<ScriptValue>),
-    /// Named fields — a `struct`, or the fields of a component being written.
+    /// Named fields: a `struct`, or the fields of a component being written.
     ///
-    /// A list rather than a map because it is built once and read once, and
-    /// because declaration order is worth keeping: it is the order the author
-    /// wrote, which is what a diagnostic should echo back.
-    ///
-    /// Carrying *some* of a component's fields is the normal case, not a
-    /// degenerate one. `health.current = 50` is a write to one field, and the
-    /// applier merges it onto what the component already holds rather than
-    /// demanding the script restate every field it did not touch.
+    /// In the order the author wrote them. It may carry only *some* of a
+    /// component's fields: the applier merges them onto what the component
+    /// already holds.
     Struct(Vec<(String, ScriptValue)>),
     /// The absent optional.
     Null,
@@ -90,9 +75,10 @@ pub enum ScriptValue {
 }
 
 impl ScriptValue {
-    /// Whether every number the value carries is finite — a `float`, every
-    /// lane of an engine value, every element of an array or a struct. Text,
-    /// handles and `null` carry none.
+    /// Whether every number the value carries is finite.
+    ///
+    /// That is a `float`, every lane of an engine value, every element of an
+    /// array or a struct. Text, handles and `null` carry none.
     pub fn is_finite(&self) -> bool {
         match self {
             Self::Float(v) => v.is_finite(),
@@ -109,8 +95,7 @@ impl ScriptValue {
 
     /// The type name, as an author would write it.
     ///
-    /// Used by the applier when a component patch arrives with the wrong shape:
-    /// the message names both types rather than reporting a bare mismatch.
+    /// A wrong-shaped component patch is reported with both type names.
     pub fn type_name(&self) -> &'static str {
         match self {
             Self::Unit => "void",

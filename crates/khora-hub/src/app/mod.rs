@@ -6,13 +6,11 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! `HubApp` — top-level application state + non-rendering domain
-//! methods (engine choices, project launch, GitHub auth kickoff,
-//! create-project finalisation, …).
+//! `HubApp`: the hub's state and its non-rendering actions (engine choices,
+//! project launch, GitHub sign-in, project creation).
 //!
-//! The `App::update` impl + per-frame async pump lives in
-//! `runtime::async_pump`; the per-frame paint composition lives in
-//! `bootstrap` (which wires up `App::update`).
+//! The per-frame drain of background channels lives in `async_pump`; the
+//! `App::update` impl that paints a frame lives in `bootstrap`.
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -30,13 +28,21 @@ use crate::state::{
     SettingsState,
 };
 
+/// The hub's whole state: its config, the screen shown and each screen's state.
 pub struct HubApp {
+    /// The hub's settings, saved on disk.
     pub config: HubConfig,
+    /// The screen shown.
     pub screen: Screen,
+    /// The message over the screen, if any.
     pub banner: Option<Banner>,
+    /// The projects screen's state.
     pub home: HomeState,
+    /// The New Project screen's state.
     pub new_project: NewProjectState,
+    /// The Engine Manager screen's state.
     pub engine_manager: EngineManagerState,
+    /// The Settings screen's state, GitHub sign-in included.
     pub settings: SettingsState,
     /// The sign film over the hub while it opens, with the clock it plays
     /// on; gone once it has faded out.
@@ -49,6 +55,9 @@ pub struct HubApp {
 }
 
 impl HubApp {
+    /// Loads the config and restores the GitHub session whose token is on disk.
+    ///
+    /// A stored token GitHub refuses is forgotten.
     pub fn new() -> Self {
         let config = HubConfig::load();
         let local_repo = config.local_engine_repo.clone().unwrap_or_default();
@@ -101,9 +110,9 @@ impl HubApp {
         }
     }
 
-    /// Builds the engine choices for the New Project combo: installed
-    /// engines (incl. dev) followed by remote releases not yet
-    /// installed and that have a binary for the current platform.
+    /// Returns the New Project engine choices: installed engines, then releases to download.
+    ///
+    /// A release is offered only when it is not installed and has an editor for this platform.
     pub fn engine_choices(&self) -> Vec<EngineChoice> {
         let mut out: Vec<EngineChoice> = self
             .available_engines()
@@ -142,11 +151,10 @@ impl HubApp {
         engines
     }
 
-    /// Launch the editor on `proj` using the matching engine binary.
-    /// Surfaces success / failure as a banner.
+    /// Launches the editor on `proj` with its engine version, or the first engine.
     ///
-    /// A project the user never decided of is not launched: it waits for
-    /// their answer (`trust_prompt`).
+    /// The outcome is shown as a banner. A project the user never decided of
+    /// is not launched: it waits for their answer (`trust_prompt`).
     pub fn launch_project(&mut self, proj: &RecentProject) {
         if self
             .trust_store
@@ -187,9 +195,10 @@ impl HubApp {
         }
     }
 
-    /// The user's answer to the trust prompt (`trust_prompt`): a decision
-    /// is written to the trust store and the project waiting is launched;
-    /// `None` lets it go, launching nothing. Either way the prompt closes.
+    /// Applies the user's answer to the trust prompt and closes it.
+    ///
+    /// A decision is written to the trust store and the waiting project is
+    /// launched; `None` lets it go, launching nothing.
     pub fn answer_trust(&mut self, answer: Option<khora_sdk::trust::ProjectTrust>) {
         let Some(proj) = self.trust_prompt.take() else {
             return;
@@ -201,9 +210,9 @@ impl HubApp {
         }
     }
 
-    /// Restricts `proj` at once — the `Restrict this project` of its card's
-    /// `More` menu: the decision is written to the trust store, and a banner
-    /// says so.
+    /// Restricts `proj` in the trust store and says so in a banner.
+    ///
+    /// Behind the `Restrict this project` item of a project card's `More` menu.
     pub fn restrict_project(&mut self, proj: &RecentProject) {
         self.trust_store.decide(
             std::path::Path::new(&proj.path),
@@ -215,9 +224,10 @@ impl HubApp {
         )));
     }
 
-    /// Open a project that already exists on disk (from a folder
-    /// picker). Reads `project.json` if present, otherwise infers
-    /// name / engine version from the folder.
+    /// Opens the project at `path` and adds it to the recent projects.
+    ///
+    /// Its name and engine version come from `project.json`, or else from the
+    /// folder name and `dev`.
     pub fn open_existing_project(&mut self, path: PathBuf) {
         let descriptor_path = path.join("project.json");
         let (name, engine_version) = if descriptor_path.exists() {
@@ -249,9 +259,7 @@ impl HubApp {
         let _ = self.config.save();
     }
 
-    /// Kick off the GitHub OAuth Device Flow if not already in
-    /// progress. Used both by the title bar Connect button and the
-    /// Settings screen.
+    /// Starts the GitHub OAuth device flow, unless one is already running.
     pub fn start_github_auth(&mut self) {
         if matches!(self.settings.auth, AuthState::Connecting { .. })
             || self.settings.auth_rx.is_some()
@@ -264,9 +272,11 @@ impl HubApp {
         self.settings.auth_rx = Some(auth::start_device_flow());
     }
 
-    /// Resolve the user's Git options into a [`project::GitInit`]. If
-    /// the remote-creation step fails, downgrades to local-only and
-    /// surfaces a banner.
+    /// Returns the [`project::GitInit`] the user's Git options ask for.
+    ///
+    /// Creates the GitHub repository when a remote is asked for. Without a
+    /// GitHub session, or when the creation fails, it falls back to a local
+    /// repository and says so in a banner.
     pub fn build_git_init(&mut self) -> project::GitInit {
         if !self.new_project.git_init {
             return project::GitInit::None;
@@ -305,9 +315,9 @@ impl HubApp {
         }
     }
 
-    /// Called once a remote engine has finished downloading during a
-    /// "Create Project" flow. Writes the project on disk, registers it
-    /// in the config, and launches the editor.
+    /// Creates the New Project screen's project with `engine`, trusts it and opens it.
+    ///
+    /// Call once the engine a project creation waited for is downloaded.
     pub fn finalize_new_project_creation(&mut self, engine: &EngineInstall) {
         self.new_project.creating_after_download = false;
 

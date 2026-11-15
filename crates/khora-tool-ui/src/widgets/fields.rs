@@ -21,9 +21,10 @@ use khora_core::ui::{UiBuilder, UiTheme};
 use super::paint::{fill_stroke, icon, mono, text};
 use super::{text_y, Color, Rect};
 
-/// A spatial axis. Its colour is a *label*, not decoration: X/Y/Z are always
-/// red/green/cyan, in the inspector and on the gizmo alike, so the two read as
-/// the same thing.
+/// A spatial axis, whose colour is a *label*, not decoration.
+///
+/// X/Y/Z are always red/green/cyan, in the inspector and on the gizmo alike,
+/// so the two read as the same thing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Axis {
     /// X — red.
@@ -95,10 +96,10 @@ pub fn axis_field(
     out
 }
 
-/// A search / filter input. Purely presentational — the caller owns the text
-/// and hosts the real text edit inside the frame via
-/// [`UiBuilder::region_at`](khora_core::ui::UiBuilder::region_at) when it needs
-/// one; this paints the frame, the icon, and the placeholder.
+/// A search / filter input: the frame, the icon and the placeholder.
+///
+/// Purely presentational: the caller owns the text and hosts the real text
+/// edit inside the frame through [`UiBuilder::region_at`].
 pub fn search_field(
     ui: &mut dyn UiBuilder,
     theme: &UiTheme,
@@ -136,9 +137,9 @@ pub fn search_field(
     out
 }
 
-/// A text-input frame. Paints the box and returns the **inner rect** the
-/// caller should host the real text edit in (via
-/// [`UiBuilder::region_at`](khora_core::ui::UiBuilder::region_at)).
+/// A text-input frame; returns the **inner rect** to host the real text edit in.
+///
+/// The caller hosts it through [`UiBuilder::region_at`].
 ///
 /// `invalid` swaps the border to the error colour — the field itself carries
 /// the failure, so the message below it can explain rather than announce.

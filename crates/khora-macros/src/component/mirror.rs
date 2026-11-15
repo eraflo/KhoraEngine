@@ -31,7 +31,6 @@ pub(super) fn mirror(
 ) -> impl ToTokens {
     let name = &input.ident;
 
-    // Generate Serializable struct fields (only included fields)
     let serializable_field_defs: Vec<_> = split
         .included
         .iter()
@@ -74,14 +73,10 @@ pub(super) fn mirror(
     }
 }
 
-/// The mirror struct itself.
+/// The mirror struct itself, with the component's visibility.
 ///
-/// The `Serializable<Name>` mirror is a generated implementation detail
-/// used by the scene serialization pipeline and the editor inspector.
-/// It is `pub` because callers of `#[derive(Component)]` can be public,
-/// but it is not part of the documented public API surface. We tag it
-/// with `#[allow(missing_docs)]` so that crates with `#![warn(missing_docs)]`
-/// do not require users to document every mirror field by hand.
+/// It is tagged `#[allow(missing_docs)]`: a generated detail of saves and the
+/// inspector, it must not ask a crate under `missing_docs` to document it.
 fn mirror_struct(
     input: &DeriveInput,
     serializable_name: &syn::Ident,
@@ -151,7 +146,6 @@ fn into_mirror(
     included_fields: &[&syn::Field],
     named_with_fields: bool,
 ) -> impl ToTokens {
-    // Generate field assignments for From<Original> → Serializable
     let to_serializable_assigns: Vec<_> = included_fields
         .iter()
         .map(|f| {
@@ -195,13 +189,9 @@ fn into_mirror(
             }
         }
     } else {
-        // A marker — a unit struct, or one whose every field is skipped. The
-        // mirror above is generated for it; without these two impls it had a
-        // type and no way to reach it, so the registration did not compile and
-        // the only way to declare such a component was
-        // `#[component(no_serializable)]` — which drops the registration
-        // entirely and makes the marker vanish from every scene file. A marker
-        // carries no data and all of its meaning: its presence *is* the value.
+        // A marker: a unit struct, or one whose every field is skipped. It
+        // carries no data and all of its meaning, so it keeps a mirror and a
+        // registration like any component: its presence in a scene *is* the value.
         quote! {
             impl From<#name> for #serializable_name {
                 fn from(_: #name) -> Self {
@@ -212,9 +202,9 @@ fn into_mirror(
     }
 }
 
-/// `From<Serializable<Name>> for Name`: included fields from the mirror,
-/// skipped fields from their `Default`. `named_with_fields` as in
-/// [`into_mirror`].
+/// `From<Serializable<Name>> for Name`: included fields from the mirror, skipped ones from `Default`.
+///
+/// `named_with_fields` as in [`into_mirror`].
 fn from_mirror(
     name: &syn::Ident,
     serializable_name: &syn::Ident,
@@ -224,8 +214,6 @@ fn from_mirror(
 ) -> impl ToTokens {
     let included_fields = &split.included;
 
-    // Generate field assignments for From<Serializable> → Original
-    // Included fields come from the serializable, skipped fields use Default
     let from_serializable_included: Vec<_> = included_fields
         .iter()
         .map(|f| {

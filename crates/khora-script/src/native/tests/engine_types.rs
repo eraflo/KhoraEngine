@@ -12,11 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What a script can do with an engine type.
-//!
-//! Written before the declaration that makes them pass: the shape a script
-//! author expects is the specification, and building the mechanism first would
-//! have let the mechanism decide the shape.
+//! What a script can do with an engine type: the shape a script author
+//! expects is the specification.
 
 use crate::bytecode::compile_with;
 use crate::lexer::lex;

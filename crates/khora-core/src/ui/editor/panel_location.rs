@@ -16,38 +16,37 @@
 
 /// Where a panel is placed in the editor dock layout.
 ///
-/// Slots are filled by panels registered with the [`EditorShell`](super::EditorShell).
-/// The shell is responsible for laying them out — the panel only needs to know
-/// which slot it lives in.
+/// Panels registered with the [`EditorShell`](super::EditorShell) fill the
+/// slots; the shell lays them out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PanelLocation {
-    /// Top fixed-height strip — non-resizable. Multiple `TopBar` panels stack
-    /// vertically in registration order. Heights come from
-    /// [`EditorPanel::preferred_size`](super::EditorPanel::preferred_size).
+    /// Top fixed-height strip, non-resizable.
+    ///
+    /// Several `TopBar` panels stack vertically in registration order. Heights
+    /// come from [`EditorPanel::preferred_size`](super::EditorPanel::preferred_size).
     TopBar,
-    /// Left fixed-width strip — non-resizable. Used for vertical mode
-    /// switchers / "spines". Width comes from
-    /// [`EditorPanel::preferred_size`](super::EditorPanel::preferred_size).
+    /// Left fixed-width strip, non-resizable, for vertical mode switchers ("spines").
+    ///
+    /// Width comes from [`EditorPanel::preferred_size`](super::EditorPanel::preferred_size).
     Spine,
-    /// Resizable left sidebar (e.g. Scene Tree / Hierarchy). Default width
-    /// comes from
-    /// [`EditorPanel::preferred_size`](super::EditorPanel::preferred_size)
-    /// when set.
+    /// Resizable left sidebar (e.g. Scene Tree / Hierarchy).
+    ///
+    /// Default width comes from
+    /// [`EditorPanel::preferred_size`](super::EditorPanel::preferred_size) when set.
     Left,
     /// Resizable right sidebar (e.g. Inspector / Properties).
     Right,
-    /// Resizable bottom strip (e.g. Console, Asset Browser). Panels sharing
-    /// this slot are displayed as tabs.
+    /// Resizable bottom strip (e.g. Console, Asset Browser), its panels shown as tabs.
     Bottom,
-    /// Bottom fixed-height strip — non-resizable. Sits below the resizable
-    /// `Bottom` slot. Used for status bars. Height comes from
-    /// [`EditorPanel::preferred_size`](super::EditorPanel::preferred_size).
+    /// Bottom fixed-height strip below `Bottom`, non-resizable, for status bars.
+    ///
+    /// Height comes from [`EditorPanel::preferred_size`](super::EditorPanel::preferred_size).
     StatusBar,
     /// Central area (e.g. 3D Viewport).
     Center,
-    /// Floating overlay rendered on top of the dock. Inner `i32` is the
-    /// z-order — higher values draw on top. Used for command palettes,
-    /// modal dialogs, etc.
+    /// Floating overlay above the dock, for command palettes and modal dialogs.
+    ///
+    /// The `i32` is the z-order: higher values draw on top.
     Floating(i32),
     /// One full-screen panel painted above everything, taking every click —
     /// a loading or splash screen. Its panel rect is the whole screen.

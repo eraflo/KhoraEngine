@@ -23,9 +23,7 @@ use crate::lane::reserve::Staged;
 /// The reserve's queues: one per output type, each a `Vec` of that type.
 pub(super) type Queues = Vec<(TypeId, Box<dyn Any + Send>)>;
 
-/// One type's outputs of a run, on their way to the reserve. A trait object
-/// so a staging holds every type a run staged, and each knows how to join its
-/// own queue in the reserve.
+/// One type's outputs of a run, erased so a staging holds every type it staged.
 pub(super) trait Batch: Send {
     /// Whether the batch holds nothing.
     fn is_empty(&self) -> bool;
@@ -101,10 +99,10 @@ pub(super) fn supersede<T: Staged>(queue: &mut Vec<T>, item: T) {
     queue.push(item);
 }
 
-/// What one run of a lane staged through its `#[staged]` outputs, in the
-/// order it staged them. The scheduler hands it to the
-/// [`Reserve`](crate::lane::reserve::Reserve) at the frame start after the run
-/// ended.
+/// What one run of a lane staged through its `#[staged]` outputs, in order.
+///
+/// The scheduler hands it to the [`Reserve`](crate::lane::reserve::Reserve)
+/// at the frame start after the run ended.
 #[derive(Default)]
 pub struct Staging {
     batches: Vec<Box<dyn Batch>>,
@@ -142,9 +140,9 @@ impl Staging {
         }
     }
 
-    /// Adds `items` under `lease`, after what was staged before: the reserve
-    /// takes them in only if the lease still holds when it receives them, and
-    /// abandons them otherwise.
+    /// Adds `items` under `lease`, after what was staged before.
+    ///
+    /// The reserve abandons them if the lease fails by the time it receives them.
     pub fn stage_while<T: Staged>(&mut self, items: Vec<T>, lease: Lease) {
         if !items.is_empty() {
             self.batches.push(Box::new(Typed(items, Some(lease))));

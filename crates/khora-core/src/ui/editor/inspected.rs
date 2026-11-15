@@ -21,40 +21,31 @@ use crate::ecs::entity::EntityId;
 pub use super::prefab_apply_scope::PrefabApplyScope;
 pub use super::property_edit::PropertyEdit;
 
-/// Snapshot of one component on an inspected entity, captured generically
-/// as JSON via the macro-generated `to_json` on `ComponentRegistration`.
+/// Snapshot of one component on an inspected entity, as JSON.
 ///
-/// This is the path adding a new component costs **zero** editor code: any
-/// type that derives `Component` is auto-registered and shows up here.
-/// Components with a hard-coded inspector card (Transform, Camera, etc.)
-/// are skipped from the generic list to avoid double-rendering.
+/// Captured by the macro-generated `ComponentRegistration::to_json`, so any
+/// type deriving `Component` shows up here with no editor code.
 #[derive(Debug, Clone)]
 pub struct ComponentJson {
     /// `ComponentRegistration::type_name` — card title and lookup key.
     pub type_name: String,
-    /// Domain bucket, mirrored from `SemanticDomain` (Spatial=0, Render=1,
-    /// Audio=2, Physics=3, Ui=4). `None` means the type isn't registered
-    /// on a CRPECS page (e.g. types registered via inventory only).
+    /// The component's `SemanticDomain`, as its index.
+    ///
+    /// `None` when the type is not registered on a CRPECS page.
     pub domain: Option<u8>,
-    /// Live JSON value. The shape mirrors the component's
-    /// `Serializable<Type>` form.
+    /// Live JSON value, shaped as the component's `Serializable<Type>` form.
     pub value: serde_json::Value,
 }
 
 /// Snapshot of an inspected entity.
 ///
-/// Components are captured generically as JSON via the macro-generated
-/// `ComponentRegistration::to_json`. The inspector iterates `components_json`
-/// and renders every entry through a single field-typed walker — there is
-/// no per-component code path. The entity's `Name` lives in the inspector
-/// header rather than as a component card.
+/// The entity's `Name` shows in the inspector header, not as a component card.
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub struct InspectedEntity {
     pub entity: EntityId,
     pub name: String,
-    /// Every component on this entity, captured as JSON. The inspector
-    /// renders this list directly — no per-component hard-coding.
+    /// Every component on this entity, captured as JSON.
     pub components_json: Vec<ComponentJson>,
     /// The prefab instance the entity belongs to, and how it differs from
     /// its prefab — `None` for an entity that is no part of an instance.
@@ -64,8 +55,7 @@ pub struct InspectedEntity {
     pub declared: Vec<super::declared::DeclaredCard>,
 }
 
-/// An inspected entity seen against the prefab of the instance it belongs
-/// to: what it overrides there.
+/// What an inspected entity overrides of the prefab of its instance.
 #[derive(Debug, Clone)]
 pub struct InspectedPrefab {
     /// The root of the innermost instance holding the entity.
@@ -88,15 +78,16 @@ pub struct InspectedPrefab {
     /// The prefab's fields of each declared component the prefab gives the
     /// entity, by component name — what a revert writes back.
     pub prefab_declared: Vec<(String, Vec<(String, crate::script::ScriptValue)>)>,
-    /// Whether the prefab takes no changes: it is a part of an imported file
-    /// (a glTF scene), which the editor never writes. Its instance's changes
-    /// stay on the instance; nothing is applied to it.
+    /// Whether the prefab takes no changes, being part of an imported file (a glTF scene).
+    ///
+    /// The editor never writes it; its instance's changes stay on the instance.
     pub read_only: bool,
 }
 
 impl InspectedPrefab {
-    /// How many overrides the entity carries: overridden fields, added
-    /// components and removed components.
+    /// Returns how many overrides the entity carries.
+    ///
+    /// Counts overridden fields, added components and removed components.
     pub fn override_count(&self) -> usize {
         let components: usize = self
             .components
@@ -112,8 +103,7 @@ impl InspectedPrefab {
         components + self.removed.len()
     }
 
-    /// The overridden field paths of the component `type_name` — empty when
-    /// it overrides none.
+    /// Returns the overridden field paths of the component `type_name`, empty when none.
     pub fn fields_of(&self, type_name: &str) -> &[Vec<String>] {
         self.components
             .iter()

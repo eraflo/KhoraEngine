@@ -285,7 +285,7 @@ impl AssetService {
 
     /// Returns the asset `uuid` if cached, else files its decode off the frame.
     ///
-    /// One [`DecodeRequest`](khora_core::asset::DecodeRequest) is filed while it is
+    /// One [`DecodeRequest`] is filed while it is
     /// pending. [`Requested`](super::Requested) says `Failed` once its last decode
     /// failed and nothing changed since.
     pub fn request<A: Asset>(&mut self, uuid: &AssetUUID) -> super::requested::Requested<A> {

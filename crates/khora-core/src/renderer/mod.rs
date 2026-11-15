@@ -15,7 +15,7 @@
 //! Provides the public, backend-agnostic rendering contracts for the Khora Engine.
 //!
 //! This module defines the "common language" for all rendering operations. It contains
-//! the abstract `traits` (like [`GraphicsDevice`]), data structures (like [`BufferDescriptor`]),
+//! the abstract `traits` (like [`GraphicsDevice`]), data structures (like `BufferDescriptor`),
 //! and error types that form the stable, public-facing API for rendering.
 //!
 //! Following the CLAD architecture, this module defines the 'what' of rendering,
@@ -29,8 +29,7 @@ pub mod error;
 pub mod light;
 pub mod traits;
 
-// Re-export the most important traits and types for easier use.
-// pub use self::api::*; // Removed legacy blanket re-export. Use explicit paths: crate::renderer::api::<submodule>::<type>
+// The `api` types are reached by their module path, never re-exported in bulk.
 
 pub use self::error::{PipelineError, RenderError, ResourceError, ShaderError};
 pub use self::light::{

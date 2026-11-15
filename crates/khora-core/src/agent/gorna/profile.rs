@@ -53,9 +53,11 @@ pub struct CostProfile {
 }
 
 impl CostProfile {
-    /// The rows a profile may seed a book with: factors finite and clamped to
-    /// [1e-3, 1e3], spreads finite and ≥ 0 (a NaN, infinite or negative spread
-    /// becomes 0), rows with a non-finite factor dropped.
+    /// Returns the rows a profile may seed a book with, made sane.
+    ///
+    /// Rows with a non-finite factor are dropped; factors are clamped to
+    /// [1e-3, 1e3]; a spread that is not finite and positive becomes 0, and
+    /// is capped at 1e3.
     pub fn sane_rows(&self) -> Vec<ProfileRow> {
         self.rows
             .iter()

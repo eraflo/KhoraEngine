@@ -91,9 +91,10 @@ pub enum Stmt {
         /// The whole statement.
         span: Span,
     },
-    /// `foreach (Entity e, ref Health h, Regen r) with Player without Dead {
-    /// … }` — a query: every entity holding the components it binds and
-    /// those it names after `with`, holding none named after `without`.
+    /// A query: `foreach (Entity e, ref Health h) with Player without Dead { … }`.
+    ///
+    /// Its rows are every entity holding the components it binds and those
+    /// named after `with`, holding none named after `without`.
     Query {
         /// What each row binds, in the order written.
         bindings: Vec<QueryBinding>,

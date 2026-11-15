@@ -13,12 +13,8 @@
 // limitations under the License.
 
 //! A behavior's members: its fields, methods, handlers, schedules and states.
-//!
-//! Scope follows the declaration. A behavior's fields and methods are visible
-//! to every member, inside its states too; a state's own data and methods only
-//! inside that state, where its methods come first — ahead of the behavior's,
-//! then the free functions and the engine's. A state's method called from
-//! anywhere else is refused, naming the state it belongs to.
+//! A state's own data and methods are visible only inside it, its methods
+//! ahead of the behavior's; called from elsewhere, one is refused.
 
 use super::{collect_state_names, Checker, Context, FnInfo, Scopes, Ty};
 use crate::ast::{BehaviorDecl, BehaviorMember};
@@ -55,8 +51,9 @@ impl Checker {
         self.state_signatures.clear();
     }
 
-    /// What each state of a behavior takes, for `become` to be checked
-    /// against — its parameters' defaults refused, `become` giving them all.
+    /// Records what each state takes, for `become` to be checked against.
+    ///
+    /// A state's parameters take no default: `become` gives them all.
     fn collect_state_signatures(&mut self, members: &[BehaviorMember]) {
         self.state_signatures.clear();
         for member in members {
@@ -71,9 +68,9 @@ impl Checker {
         }
     }
 
-    /// Refuses a `FixedUpdate` that would wait: one that calls, itself or
-    /// through other members, an `async` member — a step that waited would
-    /// not be a step.
+    /// Refuses a `FixedUpdate` that reaches an `async` member, directly or not.
+    ///
+    /// A step that waited would not be a step.
     fn refuse_waiting_fixed_update(&mut self, members: &[BehaviorMember]) {
         // Every method, by its name qualified with its state's.
         let mut all: Vec<(String, &crate::ast::MethodDecl)> = Vec::new();
@@ -138,9 +135,10 @@ impl Checker {
         }
     }
 
-    /// Brings the methods declared directly in `members` into scope, over any
-    /// free function or outer method of the same name, and records which state
-    /// declares each method of the states among them.
+    /// Brings the methods declared directly in `members` into scope.
+    ///
+    /// They shadow any free function or outer method of the same name. The
+    /// methods of the states among `members` are only recorded with their state.
     fn collect_methods(&mut self, members: &[BehaviorMember]) {
         for member in members {
             match member {
@@ -411,9 +409,9 @@ impl Checker {
         }
     }
 
-    /// Refuses a field written with no default whose type has no neutral
-    /// value to start at — an `Entity` names one entity or none, and none is
-    /// what `Entity?` spells.
+    /// Refuses a field with no default whose type has no neutral value.
+    ///
+    /// An `Entity` names one entity or none, and none is what `Entity?` spells.
     pub(super) fn expect_neutral(&mut self, name: &str, ty: &Ty, span: crate::diagnostics::Span) {
         if self.has_neutral(ty, 0) {
             return;
@@ -433,12 +431,11 @@ impl Checker {
 }
 
 impl Checker {
-    /// Whether a field of `ty` written with no default has a value to start
-    /// at: a number's zero, `false`, empty text or array, an engine value's
-    /// neutral (`Vec3(0, 0, 0)`, the identity rotation, white), `null` for an
-    /// optional — and a struct whose every field has a default or a neutral
-    /// value of its own: a struct holding an `Entity` with no default has
-    /// none, as its literals already have to name it.
+    /// Whether a field of `ty` with no default has a neutral value to start at.
+    ///
+    /// A number's zero, `false`, empty text or array, an engine value's neutral,
+    /// `null` for an optional. A struct has one when each of its fields has a
+    /// default or a neutral value: one holding a bare `Entity` has none.
     fn has_neutral(&self, ty: &Ty, depth: usize) -> bool {
         match ty {
             Ty::Int

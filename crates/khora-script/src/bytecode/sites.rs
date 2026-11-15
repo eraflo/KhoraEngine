@@ -110,9 +110,9 @@ impl Naming {
         self.points.push(HashMap::new());
     }
 
-    /// The block a local declared now belongs to: the path to here, without
-    /// the `let` that declares it. A `for`'s own initialiser declares into the
-    /// `for`, which stays in the path.
+    /// The block a local declared now belongs to: the path to here, without its `let`.
+    ///
+    /// A `for`'s own initialiser declares into the `for`, which stays in the path.
     pub fn scope(&self) -> String {
         let declaring = self
             .path

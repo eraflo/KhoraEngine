@@ -112,9 +112,10 @@ impl<'f> InputSource<'f> {
         self
     }
 
-    /// Sets whether a [`lock`](Self::lock) held elsewhere is waited for, and
-    /// returns what it was. Not waiting, a held lock is refused at once as
-    /// `LockTimedOut`, and no deadline is started.
+    /// Sets whether a [`lock`](Self::lock) held elsewhere is waited for; returns the old value.
+    ///
+    /// Not waiting, a held lock is refused at once as `LockTimedOut`, and no
+    /// deadline is started.
     pub fn set_waiting(&mut self, waits: bool) -> bool {
         std::mem::replace(&mut self.waits, waits)
     }
@@ -133,9 +134,9 @@ impl<'f> InputSource<'f> {
         }
     }
 
-    /// Sets whether a `#[take]` drains its channel, returning what it was:
-    /// a quote or a preparation fetches the lane's inputs without taking the
-    /// requests a run is for.
+    /// Sets whether a `#[take]` drains its channel; returns the old value.
+    ///
+    /// A quote or a preparation reads the requests and leaves them for the run.
     pub fn set_taking(&mut self, takes: bool) -> bool {
         std::mem::replace(&mut self.takes, takes)
     }
@@ -161,6 +162,11 @@ impl<'f> InputSource<'f> {
     }
 
     /// The View `V`, published for this frame.
+    ///
+    /// # Errors
+    ///
+    /// Refused as `Missing` when the bus holds no `V`, as `Stale` when it was
+    /// published for another frame.
     pub fn view<V: Any + Send + Sync>(
         &mut self,
         field: &'static str,
@@ -186,6 +192,10 @@ impl<'f> InputSource<'f> {
     }
 
     /// The runtime entry `T`, read without locking.
+    ///
+    /// # Errors
+    ///
+    /// Refused as `Missing` when the runtime holds no `T`.
     pub fn entry<T: Send + Sync + 'static>(
         &mut self,
         field: &'static str,
@@ -202,12 +212,16 @@ impl<'f> InputSource<'f> {
 
     /// The runtime entry registered as `Arc<Mutex<T>>`, locked.
     ///
-    /// Every lock of one fetch is waited for within one deadline: the lane's
-    /// budget ([`LOCK_WAIT`] without one or with one of no time, at most
-    /// [`MAX_LOCK_WAIT`]) from the
-    /// first wait. A lock held elsewhere — or already held by this very
-    /// fetch — is refused as `LockTimedOut` rather than blocking the lane and
-    /// its worker; at once, on a source that does not wait.
+    /// Every lock of one fetch shares one deadline from its first wait: the
+    /// lane's budget, or [`LOCK_WAIT`] without a positive one, at most
+    /// [`MAX_LOCK_WAIT`]. A lock held elsewhere, or by this very fetch, is
+    /// refused rather than blocking the worker.
+    ///
+    /// # Errors
+    ///
+    /// Refused as `Missing` when the runtime holds no such entry, as
+    /// `LockPoisoned`, or as `LockTimedOut` past the deadline (at once on a
+    /// source that does not wait).
     pub fn lock<T: ?Sized + Send + 'static>(
         &mut self,
         field: &'static str,
@@ -247,10 +261,14 @@ impl<'f> InputSource<'f> {
         }
     }
 
-    /// Every request the runtime's `Channel<T>` holds, drained: what a
-    /// `#[take]` field reads. A source not taking ([`set_taking`](Self::set_taking))
-    /// reads them and leaves them. Refused as `Missing` when the runtime
-    /// holds no such channel.
+    /// Drains every request the runtime's `Channel<T>` holds, for a `#[take]` field.
+    ///
+    /// A source not taking ([`set_taking`](Self::set_taking)) reads them and
+    /// leaves them.
+    ///
+    /// # Errors
+    ///
+    /// Refused as `Missing` when the runtime holds no such channel.
     pub fn take<T: Supersedes + Clone + Send + Sync + 'static>(
         &mut self,
         field: &'static str,
@@ -267,9 +285,9 @@ impl<'f> InputSource<'f> {
         Ok(drained)
     }
 
-    /// Puts `items`, left in a `#[take]` field after a run, back at the front
-    /// of the runtime's `Channel<T>`, in their order; an item a queued one
-    /// supersedes is dropped.
+    /// Puts `items` left in a `#[take]` field back at the front of `Channel<T>`, in order.
+    ///
+    /// An item a queued one supersedes is dropped.
     pub fn give_back<T: Supersedes + Send + Sync + 'static>(&mut self, items: Vec<T>) {
         // A source that does not take drained nothing, so owes nothing back.
         if items.is_empty() || !self.takes {
@@ -286,6 +304,10 @@ impl<'f> InputSource<'f> {
     }
 
     /// The frame's target, when it has a size.
+    ///
+    /// # Errors
+    ///
+    /// Refused as `Missing` without a target, as `BadTarget` when it has no size.
     pub fn target(&mut self, field: &'static str) -> Result<Target, InputRefusal> {
         self.touch::<Target>(field, SourceKind::Frame);
         let refuse = |reason| InputRefusal {
@@ -301,6 +323,10 @@ impl<'f> InputSource<'f> {
     }
 
     /// The frame's target, when it has a size and a depth attachment.
+    ///
+    /// # Errors
+    ///
+    /// As [`target`](Self::target), and `BadTarget` without a depth attachment.
     pub fn scene_target(&mut self, field: &'static str) -> Result<SceneTarget, InputRefusal> {
         let target = self.target(field)?;
         let depth = target.depth.ok_or(InputRefusal {
@@ -317,6 +343,10 @@ impl<'f> InputSource<'f> {
     }
 
     /// The colour the frame's target is cleared to.
+    ///
+    /// # Errors
+    ///
+    /// Refused as `Missing` when the source has none.
     pub fn clear_color(&mut self, field: &'static str) -> Result<ClearColor, InputRefusal> {
         self.touch::<ClearColor>(field, SourceKind::Frame);
         self.clear_color.ok_or(InputRefusal {
@@ -327,6 +357,10 @@ impl<'f> InputSource<'f> {
     }
 
     /// The step the lane's agent runs it at.
+    ///
+    /// # Errors
+    ///
+    /// Refused as `Missing` when the family is not fixed-step.
     pub fn fixed_step(&mut self, field: &'static str) -> Result<FixedStep, InputRefusal> {
         self.touch::<FixedStep>(field, SourceKind::Frame);
         self.step.ok_or(InputRefusal {
@@ -336,14 +370,17 @@ impl<'f> InputSource<'f> {
         })
     }
 
-    /// The budget the lane was lent, zero included; `None` when it was lent
-    /// none — its agent was never budgeted.
+    /// The budget the lane was lent, zero included; `None` when its agent was never budgeted.
     pub fn lent_budget(&mut self, field: &'static str) -> Option<Budget> {
         self.touch::<Budget>(field, SourceKind::Budget);
         self.budget
     }
 
     /// The lane's budget, when it has a positive one.
+    ///
+    /// # Errors
+    ///
+    /// Refused as `NoBudget` without one, or with one of no time.
     pub fn budget(&mut self, field: &'static str) -> Result<Budget, InputRefusal> {
         self.touch::<Budget>(field, SourceKind::Budget);
         self.budget

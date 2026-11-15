@@ -14,21 +14,10 @@
 
 //! A script body stopped part-way, written down in the engine's own terms.
 //!
-//! What a suspended machine *is* belongs to the VM. What a scene stores has to
-//! belong to the engine: every scene encoding must be able to read it, a text
-//! save must show it, and a change to the VM's internals must not
-//! make every save that holds one unreadable. So the VM converts its machine to
-//! and from this, and this is what the scene keeps.
-//!
-//! # Named where the VM numbers
-//!
-//! A frame names its function rather than indexing it, and a register holding
-//! a literal holds the literal's text rather than its slot in the constant
-//! table. Both are what a reader of a text save can check against the
-//! script; neither moves when the compiler lays the program out differently.
-//! Positions *inside* a function — the program counter, a frame's registers —
-//! stay numbers: nothing else names them, and the program fingerprint the save
-//! carries is what guards them.
+//! The VM converts its machine to and from this, so a save outlives a change of
+//! the VM's internals. Functions and literals are named; positions inside a
+//! function stay numbers, guarded by the program fingerprint. See the book:
+//! concepts/scripting/saves-and-edits.md, "Saved mid-sentence".
 
 use serde::{Deserialize, Serialize};
 
@@ -49,8 +38,8 @@ pub struct FrozenMachine {
     /// The body's arguments as it was started.
     ///
     /// A parameter is a local the body may reassign, so its frame alone
-    /// cannot say what the body was called with. Empty in a save written
-    /// before machines recorded them.
+    /// cannot say what the body was called with. Empty when the save holds
+    /// none.
     #[serde(default)]
     pub arguments: Vec<FrozenValue>,
 }
@@ -66,19 +55,17 @@ pub struct FrozenFrame {
     pub return_pc: u64,
     /// The register its result goes to, in the caller's register file.
     pub result: u64,
-    /// The named site the frame resumes at. Empty in a save written before
-    /// frames recorded it.
+    /// The named site the frame resumes at; empty when the save holds none.
     #[serde(default)]
     pub site: String,
-    /// The fingerprint of the function it runs. Zero in a save written
-    /// before frames recorded it.
+    /// The fingerprint of the function it runs; zero when the save holds none.
     #[serde(default)]
     pub fingerprint: u64,
     /// The locals in scope at its site, and where each sits in its window.
     ///
-    /// Written down with the machine because the program that placed them is
-    /// gone by the time an edited one reads the save: rebuilding the frame at
-    /// the same site in new code moves each local to its new register by name.
+    /// The program that placed them is gone when an edited one reads the save:
+    /// rebuilding the frame at the same site moves each local to its new
+    /// register by name.
     #[serde(default)]
     pub locals: Vec<FrozenLocal>,
     /// The temporaries live across its site, in allocation order, relative to
@@ -315,9 +302,8 @@ mod tests {
         assert_eq!(through_json(&original), original);
     }
 
-    /// **What a text save is for.** A machine reads as named frames and
-    /// typed registers — something a reader can check against the script —
-    /// and not as a list of bytes.
+    /// **A text save shows a machine as named frames and typed registers**,
+    /// not as a list of bytes.
     #[test]
     fn a_frozen_machine_reads_as_named_frames_in_a_definition_save() {
         let original = sequence(frozen(PendingBody::Sequence));
@@ -369,9 +355,8 @@ mod tests {
         );
     }
 
-    /// A machine written as a list of bytes — the form saves held before the
-    /// machine had a structure — is not a machine: it is refused, never
-    /// guessed at.
+    /// A machine written as a list of bytes is not a machine: it is refused,
+    /// never guessed at.
     #[test]
     fn a_machine_written_as_bytes_is_refused() {
         let json = r#"{"fingerprint":14594608129314069874,"remaining":1.0,"machine":[4,1,2]}"#;

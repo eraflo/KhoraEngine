@@ -12,39 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Syntax tree to bytecode.
+//! Syntax tree to bytecode, run **after** the type checker and trusting what it
+//! proved: `AddInt` or `AddFloat` is picked up front, never at run time.
 //!
-//! Runs **after** the type checker and assumes what it proved. That assumption
-//! is what lets the compiler pick `AddInt` or `AddFloat` up front instead of
-//! emitting an instruction that inspects its operands: the decision was already
-//! made, and paying for it again at every step would be paying twice.
+//! Every statement's start and loop head is a named `Safepoint` ([`sites`]).
+//! See the book: concepts/scripting/turns.md, "Stopping is ordinary".
 //!
-//! # Break points
-//!
-//! The compiler marks where the budget may stop a run: the start of every
-//! statement and the head of every loop, each a `Safepoint` with a name drawn
-//! from the source's structure ([`sites`]). The machine also stops at a
-//! function's entry and just past a call's return. Between two of these a run
-//! spends past its budget if it must; a loop's back edge lands on its head, so
-//! that stretch is bounded by the code between two of them and its worst case
-//! is recorded as the program's overdraft bound.
-//!
-//! Stopping only there keeps the saved state small and meaningful: at a
-//! statement's start there are no live temporaries, so a suspension captures
-//! locals and a program counter — and because the place is named, a machine
-//! saved before an edit can be laid out again at the same place after it.
-//!
-//! # Scope
-//!
-//! Free functions and behavior members. A member is not special at run time: it
-//! is a function named `Guard.Damaged`, compiled with the behavior's field
-//! table in scope. Fields do not become registers — a register file belongs to
-//! a call, and a field outlives every call made on the entity — so they compile
-//! to `LoadField`/`StoreField` against the persistent store.
-//!
-//! `await` arrives with the suspension half of the execution model: a suspended
-//! machine has to be kept per instance, which the schedule below does not need.
-//! `state`, `become`, `every` and `after` are here.
+//! A behavior member is a function named `Guard.Damaged`, compiled with the
+//! behavior's field table in scope. A field outlives every call, so it is not a
+//! register: it compiles to `LoadField`/`StoreField` against the persistent store.
 
 mod behavior;
 mod calls;
@@ -159,9 +135,10 @@ struct Local {
     name: String,
     register: Reg,
     shape: Shape,
-    /// Its type as written, or its shape for one declared with `var` — what a
-    /// site records so a frame rebuilt in edited code refuses a local whose
-    /// type changed.
+    /// Its type as written, or its shape for one declared with `var`.
+    ///
+    /// A site records it, so a frame rebuilt in edited code refuses a local
+    /// whose type changed.
     ty: String,
     /// The block that declares it, so a local and one it shadows stay apart.
     scope: String,
@@ -178,18 +155,19 @@ pub struct Compiler {
     pub signatures: HashMap<String, usize>,
     /// Return shape per function, to pick the right comparison at a call site.
     pub returns: HashMap<String, Shape>,
-    /// The compiled names that are a behavior's or a state's *methods* — what a
-    /// bare call inside a behavior may name. A handler compiles to the same
-    /// form of name (`Guard.Hit` for `on Hit`) and is never called by name.
+    /// The compiled names of a behavior's or a state's *methods*: what a bare call may name.
+    ///
+    /// A handler compiles to the same form of name (`Guard.Hit` for `on Hit`)
+    /// and is never called by name.
     pub methods: std::collections::HashSet<String>,
     /// Engine function name to its index in the registry, and its result shape.
     pub natives: HashMap<String, (usize, Shape)>,
     /// The layout of the behavior being compiled, so `become` can resolve a
     /// state name to the discriminant it writes.
     pub behavior: Option<crate::vm::BehaviorLayout>,
-    /// The state whose code is being compiled — its members, or the defaults
-    /// written on entering it — so a bare call finds that state's methods
-    /// first.
+    /// The state whose members or entry defaults are being compiled.
+    ///
+    /// A bare call finds that state's methods first.
     pub state: Option<String>,
     /// Fields of the behavior being compiled, by name.
     ///
@@ -206,17 +184,12 @@ pub struct Compiler {
     /// The sweeps around the code being compiled, innermost last — what ends
     /// a row when the body leaves it.
     row_writes: Vec<query::RowWrites>,
-    /// How many of [`locals`](Self::locals) a name may not resolve to: the
-    /// locals of the member a `become` is written in, while the entered
-    /// state's defaults compile — they are still live, and still recorded at
-    /// that member's sites, but they are not the state's to read.
-    hidden_locals: usize,
-    /// What entering each state of the behavior being compiled has to write.
+    /// How many of [`locals`](Self::locals) a name may not resolve to.
     ///
-    /// Collected once per behavior and emitted at every `become`, and again in
-    /// the initialiser for the state a fresh instance starts in. Without it a
-    /// state's declared defaults were decoration — `Become` wrote the arguments
-    /// it was handed and nothing else, so `int missed = 7;` left an unset slot.
+    /// While an entered state's defaults compile, the locals of the member
+    /// the `become` is written in are still live and recorded at its sites,
+    /// but not the state's to read.
+    hidden_locals: usize,
     /// Instructions of the function being compiled.
     pub code: Vec<Instruction>,
     /// Register allocation for the current function.
@@ -284,17 +257,10 @@ impl Compiler {
 
     /// Records a function's index and return shape, refusing a name twice.
     ///
-    /// Two declarations compiling to one name is not a shadowing rule waiting to
-    /// be chosen — it is unrepresentable. A direct call resolves through
-    /// [`signatures`](Self::signatures), which would hold the *last*, while a
-    /// dispatch resolves through [`Program::index_of`], which finds the
-    /// **first**: the same name would mean two different bodies depending on how
-    /// it was reached. `void Update()` beside `on Update()` is the way an author
-    /// meets this without meaning to, since a member's kind is not part of its
-    /// compiled name.
-    ///
-    /// The first declaration is kept, matching what a dispatch would have found,
-    /// so the diagnostics that follow describe one coherent program.
+    /// A direct call resolves through [`signatures`](Self::signatures), a
+    /// dispatch through [`Program::index_of`] (the **first**): one name for two
+    /// bodies — `void Update()` beside `on Update()` — would mean two programs.
+    /// The first declaration is kept, matching what a dispatch would find.
     fn declare(&mut self, name: String, returns: Shape, index: usize, span: Span) {
         if self.signatures.contains_key(&name) {
             self.error(
@@ -326,10 +292,8 @@ impl Compiler {
     /// Assigns an index to every function before compiling any body.
     ///
     /// Walks the items in **the order the bodies will be emitted**, behavior
-    /// members included. Counting only free functions would be right until a
-    /// behavior sat above one in the file, at which point every index after it
-    /// would name a different function than the caller meant — the kind of
-    /// mistake that produces a working program and a wrong one.
+    /// and state members included: an index counted in any other order names
+    /// a different function than the caller meant.
     fn collect_signatures(&mut self, module: &Module) {
         let mut index = 0;
         for item in &module.items {
@@ -345,10 +309,8 @@ impl Compiler {
                 }
                 Item::Behavior(decl) | Item::System(decl) => {
                     for member in &decl.members {
-                        // A state's members are functions too, emitted after
-                        // the behavior's own. Counting only the behavior's was
-                        // right until a state appeared, at which point every
-                        // index after it named a different function.
+                        // A state's members are functions too, counted where
+                        // `compile_behavior` emits them.
                         if let BehaviorMember::State(state) = member {
                             for inner in &state.members {
                                 let Some((name, returns, span)) =
@@ -390,9 +352,7 @@ impl Compiler {
                     }
 
                     // Scheduled bodies are emitted last, so they are counted
-                    // last — the order here and in `compile_behavior` is the
-                    // one contract this pair has.
-                    // Named by what each schedule is, so these cannot collide
+                    // last. Named by what each schedule is, they cannot collide
                     // with each other; `declare` still guards them against an
                     // author's own `__every(1)`.
                     for (position, name) in sites::timer_names(&decl.name, &decl.members) {
@@ -618,13 +578,9 @@ fn shape_of_state_slot(decl: &crate::ast::StateDecl, slot: &str) -> Shape {
 
 /// The compiled name, return shape and source span of a behavior member.
 ///
-/// The name itself comes from [`dispatch`](crate::dispatch), which is where the
-/// *reader* of it lives. Both sides claimed to be the one place; neither was,
-/// and a handler registered under one spelling and looked up under another does
-/// not fail to compile — it simply never fires.
-///
-/// The span is the *name* rather than the whole declaration: it is what a
-/// duplicate report has to point at for the author to see which two collided.
+/// The name comes from [`dispatch`](crate::dispatch), where its reader lives:
+/// a handler compiled under another spelling would never fire. The span is the
+/// *name*, what a duplicate report points at.
 fn member_signature(
     behavior: &str,
     state: Option<&str>,
@@ -650,10 +606,8 @@ fn member_signature(
 
 /// The parameters and body of a member that compiles to a function.
 ///
-/// Answers `Some` for exactly the members [`member_signature`] names, so the two
-/// cannot disagree about which members become functions — the disagreement would
-/// show up as an index counted for a body never emitted, and every function
-/// after it resolving to its neighbour.
+/// Answers `Some` for exactly the members [`member_signature`] names: an index
+/// counted for a body never emitted would shift every function after it.
 fn member_body(member: &BehaviorMember) -> Option<(&[crate::ast::Param], &crate::ast::Block)> {
     match member {
         BehaviorMember::Method(method) => Some((&method.params, &method.body)),

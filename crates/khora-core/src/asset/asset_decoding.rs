@@ -27,9 +27,11 @@ pub trait AssetDecoding: Send + Sync {
     /// a failure is an `Err` in [`Decoded::value`].
     fn decode(&self, uuid: &AssetUUID, type_id: TypeId) -> Decoded;
 
-    /// Decodes `request` as [`decode`](Self::decode) does, and says what the
-    /// result holds to: a [`Lease`] that stops holding once a file the decode
-    /// read changed after the request was filed. None, by default.
+    /// Decodes `request` as [`decode`](Self::decode) does, with the [`Lease`]
+    /// its result holds to.
+    ///
+    /// The lease stops holding once a file the decode read changes after the
+    /// request was filed. The default returns no lease.
     fn decode_leased(&self, request: &DecodeRequest) -> (Decoded, Option<Lease>) {
         (self.decode(&request.uuid, request.type_id), None)
     }

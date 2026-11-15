@@ -34,9 +34,7 @@ pub enum Impact {
 }
 
 impl Impact {
-    /// What a result of this impact is worth, from `0.0` to `1.0`: the
-    /// reference is whole, a difference to look for costs a little, one a
-    /// player sees costs more.
+    /// Returns what a result of this impact is worth, from `0.0` to `1.0`.
     pub fn quality(self) -> f32 {
         match self {
             Impact::None => 1.0,
@@ -63,9 +61,10 @@ pub struct Level {
 mod tests {
     use super::Impact;
 
-    /// **A row's quality comes from its impact**: the reference result is
-    /// worth 1.0, a difference a player has to look for 0.7, one a player sees
-    /// 0.4.
+    /// **A row's quality comes from its impact.**
+    ///
+    /// The reference result is worth 1.0, a difference a player has to look for 0.7,
+    /// one a player sees 0.4.
     #[test]
     fn impact_maps_to_quality() {
         assert_eq!(Impact::None.quality(), 1.0);

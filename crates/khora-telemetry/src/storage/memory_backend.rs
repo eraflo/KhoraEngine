@@ -19,7 +19,7 @@ use khora_core::telemetry::metrics::{Metric, MetricId, MetricType, MetricsError,
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-/// High-performance in-memory metrics backend using RwLock<HashMap>
+/// High-performance in-memory metrics backend behind an `RwLock<HashMap>`
 ///
 /// This implementation provides:
 /// - Thread-safe concurrent access (multiple readers, single writer)

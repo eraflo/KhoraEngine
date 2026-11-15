@@ -17,13 +17,14 @@
 /// Result of an [`UiBuilder::interact_rect`](super::UiBuilder::interact_rect) call.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Interaction {
-    /// The pointer is on this rect, and on nothing drawn above it: what a
-    /// widget tints itself by. A button drawn over the rect takes it.
+    /// The pointer is on this rect and on nothing drawn above it.
+    ///
+    /// What a widget tints itself by; a button drawn over the rect takes it.
     pub hovered: bool,
-    /// The pointer is inside the rect this frame, on whatever is drawn above
-    /// it — what a container shows its own controls by. A row's actions,
-    /// revealed while it is pointed at, would otherwise take the row's hover
-    /// as the pointer reached them and vanish.
+    /// The pointer is inside the rect this frame, whatever is drawn above it.
+    ///
+    /// What a container shows its own controls by: a row's actions, revealed
+    /// on hover, would otherwise take the row's hover and vanish.
     pub contains_pointer: bool,
     /// Primary button was pressed inside the rect this frame.
     pub clicked: bool,
@@ -33,8 +34,6 @@ pub struct Interaction {
     pub double_clicked: bool,
     /// This widget holds keyboard focus.
     ///
-    /// Without it no widget can draw a focus ring, so a keyboard user has no
-    /// way to see where they are — which is why the editor's keyboard story
-    /// could not be built before this existed.
+    /// What a widget draws its focus ring by, so a keyboard user sees where they are.
     pub focused: bool,
 }

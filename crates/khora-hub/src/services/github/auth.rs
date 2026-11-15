@@ -6,16 +6,9 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! GitHub OAuth Device Flow.
+//! GitHub sign-in through the OAuth device flow, and the token kept on disk.
 //!
-//! See https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow
-//!
-//! Single-tenant OAuth design: the Khora Hub OAuth App is owned by the project
-//! maintainer, and its Client ID is injected at build time from the
-//! `KHORA_HUB_GITHUB_CLIENT_ID` GitHub Actions secret only by the release
-//! pipeline. Contributor builds compile fine without the secret, but the
-//! "Connect GitHub" flow refuses to start with a clear message — only official
-//! release binaries can authenticate against the official OAuth App.
+//! See <https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow>.
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -23,13 +16,11 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::Duration;
 
-/// GitHub OAuth Client ID, baked into the binary at build time from
-/// `KHORA_HUB_GITHUB_CLIENT_ID`. `None` means this build was compiled without
-/// the secret (typical for contributor / CI builds); `Some(_)` means an
-/// official release.
+/// Client ID of the Khora Hub OAuth app, embedded at build time; `None` in a build without it.
 ///
-/// There is intentionally no source-level fallback: the secret lives only in
-/// the project's GitHub Actions secrets, accessible to `release.yml` on `main`.
+/// Only the release pipeline (`release.yml` on `main`) holds the
+/// `KHORA_HUB_GITHUB_CLIENT_ID` secret, so only release binaries can sign in.
+/// There is deliberately no fallback in the source.
 pub const KHORA_HUB_CLIENT_ID: Option<&str> = option_env!("KHORA_HUB_GITHUB_CLIENT_ID");
 
 /// OAuth scope: full repo access (private + public) so the hub can create
@@ -38,13 +29,19 @@ const SCOPES: &str = "repo";
 
 // ── Device flow types ────────────────────────────────────────────
 
+/// GitHub's answer to a device-code request.
 #[derive(Debug, Clone, Deserialize)]
 pub struct DeviceCode {
+    /// The code the hub polls the token endpoint with.
     pub device_code: String,
+    /// The code the user types on the verification page.
     pub user_code: String,
+    /// The page where the user types `user_code`.
     pub verification_uri: String,
+    /// Seconds before the codes expire.
     #[serde(default = "default_expires_in")]
     pub expires_in: u64,
+    /// Seconds to wait between two polls.
     #[serde(default = "default_interval")]
     pub interval: u64,
 }
@@ -76,10 +73,10 @@ pub enum AuthMessage {
 
 // ── Public API ───────────────────────────────────────────────────
 
-/// Start a device-flow authentication. Returns a receiver that yields:
-/// 1. `DeviceCodeReady(...)` once the device code has been obtained,
-/// 2. `Authenticated { ... }` if the user authorizes,
-/// 3. `Failed(...)` on error/denial/timeout.
+/// Starts the device flow in the background and returns the channel of its messages.
+///
+/// It sends `DeviceCodeReady` once GitHub gives a code, then `Authenticated`
+/// (the token stored on disk, or a warning logged when it cannot be), or `Failed`.
 pub fn start_device_flow() -> mpsc::Receiver<AuthMessage> {
     let (tx, rx) = mpsc::channel();
 
@@ -122,8 +119,9 @@ pub fn start_device_flow() -> mpsc::Receiver<AuthMessage> {
     rx
 }
 
-/// Path to the credentials file (`~/.khora/credentials.json`). Kept separate
-/// from `hub.json` so `HubConfig` stays free of secrets.
+/// Returns the path of the credentials file, `~/.khora/credentials.json`.
+///
+/// It is kept apart from `hub.json` so that `HubConfig` holds no secret.
 pub fn credentials_path() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -144,7 +142,11 @@ pub fn load_token() -> Option<String> {
     Some(creds.github_token)
 }
 
-/// Persists the token to disk with restrictive permissions on Unix.
+/// Writes `token` to the credentials file, readable by its owner only on Unix.
+///
+/// # Errors
+///
+/// Fails when the file or its folder cannot be written.
 pub fn store_token(token: &str) -> Result<()> {
     let path = credentials_path();
     if let Some(parent) = path.parent() {
@@ -167,7 +169,11 @@ pub fn store_token(token: &str) -> Result<()> {
     Ok(())
 }
 
-/// Removes the credentials file. Idempotent.
+/// Removes the credentials file; a missing one is no error.
+///
+/// # Errors
+///
+/// Fails when the file exists but cannot be removed.
 pub fn forget_token() -> Result<()> {
     let path = credentials_path();
     if path.exists() {
@@ -186,10 +192,7 @@ fn http_client() -> Result<reqwest::blocking::Client> {
         .context("Failed to build HTTP client")
 }
 
-/// Returns the build-time Client ID, or a clear error if this build was
-/// compiled without the `KHORA_HUB_GITHUB_CLIENT_ID` secret. Contributor /
-/// dev builds end up here and the message points users to the official
-/// release.
+/// Returns the build-time Client ID, or an error pointing to the official release binaries.
 fn require_client_id() -> Result<&'static str> {
     KHORA_HUB_CLIENT_ID.ok_or_else(|| {
         anyhow::anyhow!(

@@ -12,17 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Import paths.
-//!
-//! Every path is relative to the project's script root and stays inside it.
-//! That is not tidiness: a script that could import from an absolute path, or
-//! climb out with `..`, would read whatever the author of a downloaded asset
-//! pointed it at. The same containment the file API gets, applied to code.
-//!
-//! Paths are also **normalised**, so `ai/steering.erg` and `ai//steering.erg`
-//! are one module rather than two. Without that, a diamond of imports would
-//! compile the same file twice and its declarations would collide with
-//! themselves.
+//! Import paths: relative to the project's script root, never out of it, and
+//! normalised so one file is one module however its path is spelt.
 
 /// The extension of an Ergon source file, without its dot.
 pub const EXTENSION: &str = "erg";
@@ -51,7 +42,7 @@ impl PathError {
         }
     }
 
-    /// The reasoning, which is what makes the rule land rather than annoy.
+    /// Returns the reason for the rule, shown beside the message.
     pub fn note(self) -> &'static str {
         match self {
             Self::Absolute | Self::Escapes => {
@@ -67,6 +58,11 @@ impl PathError {
 ///
 /// Returns the canonical form: forward slashes, no duplicate or trailing
 /// separators, no `.` segments.
+///
+/// # Errors
+///
+/// Returns a [`PathError`] for a path that is empty, absolute, climbs out with
+/// `..`, or does not end in `.erg`.
 pub fn normalise(path: &str) -> Result<String, PathError> {
     if path.trim().is_empty() {
         return Err(PathError::Empty);
@@ -84,10 +80,8 @@ pub fn normalise(path: &str) -> Result<String, PathError> {
     for segment in unified.split('/') {
         match segment {
             "" | "." => continue,
-            // Rejected outright rather than resolved. `a/../b` could be
-            // collapsed safely, but allowing the syntax at all invites
-            // `../../secrets` and makes the rule something you have to compute
-            // rather than read.
+            // Refused even where it would collapse safely (`a/../b`): a rule
+            // read off the path, never computed, cannot be talked around.
             ".." => return Err(PathError::Escapes),
             other => segments.push(other),
         }
@@ -178,9 +172,8 @@ mod tests {
         assert_eq!(normalise("./."), Err(PathError::Empty));
     }
 
-    /// A path of nothing but separators is reported as absolute rather than
-    /// empty. Both are true; leading with the more specific one is what tells
-    /// the author which rule they crossed.
+    /// A path of nothing but separators is reported as absolute, the more
+    /// specific of the two rules it crosses.
     #[test]
     fn a_path_of_separators_is_reported_as_absolute() {
         assert_eq!(normalise("///"), Err(PathError::Absolute));

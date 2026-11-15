@@ -12,16 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A family's reserve: what its runs staged, kept across frames until a
-//! frame's `Boundary` takes it.
-//!
-//! A lane writes a `#[staged]` output into the [`Staging`] of its run. When
-//! the run is over, the scheduler hands that staging to the runtime's
-//! [`Reserve`] at the next frame start — never in the middle of a frame — and
-//! a `TickPhase::Boundary` DataSystem takes what the reserve holds for its
-//! type. An output that a newer one of the same key
-//! ([`Supersedes`]) replaces while it waits is never applied: it goes through
-//! its [`Staged::abandon`].
+//! A family's reserve: what its runs staged, received at a frame start and
+//! kept until a `TickPhase::Boundary` DataSystem takes it. An output a newer
+//! one supersedes while it waits is abandoned, never applied.
 
 use std::any::TypeId;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -30,17 +23,16 @@ use crate::event::Supersedes;
 
 use crate::lane::staging::{Queues, Staging};
 
-/// An output a lane stages: kept in the reserve until a frame's `Boundary`
-/// takes it.
+/// An output a lane stages, kept in the reserve until a frame's `Boundary` takes it.
 ///
-/// Its [`Supersedes`] says which waiting output a newer one replaces — the
-/// same file compiled twice, the same asset decoded twice. The replaced one is
-/// never applied: it goes through [`abandon`](Self::abandon), which gives
-/// back what it holds (a reservation, a handle). An output that holds nothing
-/// to give back abandons by being dropped.
+/// Its [`Supersedes`] says which waiting output a newer one replaces (the same
+/// file compiled twice). The replaced one is never applied: it goes through
+/// [`abandon`](Self::abandon).
 pub trait Staged: Supersedes + Sized + Send + 'static {
-    /// Gives back what `self` holds, once a newer output replaced it before
-    /// it was applied.
+    /// Gives back what `self` holds (a reservation, a handle), as it is never applied.
+    ///
+    /// Runs while the [`Reserve`]'s lock is held, so it must not reach the
+    /// reserve. Defaults to dropping it.
     fn abandon(self) {}
 }
 
@@ -48,8 +40,8 @@ pub trait Staged: Supersedes + Sized + Send + 'static {
 ///
 /// Held by the runtime as a resource; a clone shares the same reserve. Its
 /// lock is a leaf: held only to add or take, never across a call out — an
-/// abandon runs while it is held, and gives back what it holds without
-/// reaching the reserve.
+/// abandon runs under it and gives back what it holds without reaching the
+/// reserve.
 #[derive(Default, Clone)]
 pub struct Reserve {
     queues: Arc<Mutex<Queues>>,
@@ -72,11 +64,10 @@ impl Reserve {
         Self::default()
     }
 
-    /// Takes in what one run staged: each output waits behind those of its
-    /// type already held, and replaces — abandoning it — a waiting one it
-    /// supersedes. Outputs staged under a [`Lease`](crate::lane::Lease) that no
-    /// longer holds are abandoned instead. What the scheduler does with a
-    /// run's staging at the frame start after the run ended.
+    /// Takes in what one run staged, behind the outputs of each type already held.
+    ///
+    /// An output replaces, abandoning it, a waiting one it supersedes. Outputs
+    /// under a [`Lease`](crate::lane::Lease) that fails are abandoned instead.
     pub fn receive(&self, staging: Staging) {
         for batch in staging.into_batches() {
             // Asked with the reserve's lock not held: a lease may lock.
@@ -88,10 +79,10 @@ impl Reserve {
         }
     }
 
-    /// Stages `staging` from the host — a mount, an unmount — to land at the
-    /// next frame start, after what the background runs that ended by then
-    /// staged: the host's action, the later one, has the last word over a run
-    /// it overtook.
+    /// Stages `staging` from the host (a mount, an unmount) to land at the next frame start.
+    ///
+    /// It lands after the background runs that ended by then, so the host's
+    /// action has the last word over a run it overtook.
     pub fn stage_from_host(&self, staging: Staging) {
         self.from_host
             .lock()
@@ -99,9 +90,9 @@ impl Reserve {
             .push(staging);
     }
 
-    /// Lands what the host staged since the last frame start, in the order
-    /// it was staged. What the scheduler's frame start does once the ended
-    /// background runs are received.
+    /// Lands what the host staged since the last frame start, in order.
+    ///
+    /// Call after the ended background runs were received.
     pub fn land_from_host(&self) {
         let staged = std::mem::take(
             &mut *self

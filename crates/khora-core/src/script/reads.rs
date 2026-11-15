@@ -51,9 +51,8 @@ mod tests {
         list.iter().map(|name| ComponentName::new(*name)).collect()
     }
 
-    /// **What scripts read is asked by component name**: the installed
-    /// programs' reads and an incoming module's together, sorted by name,
-    /// each once — what the script flow projects.
+    /// **What scripts read is asked by component name**: the installed and
+    /// incoming reads together, sorted, each once.
     #[test]
     fn the_script_reads_are_the_component_names_every_owner_wants() {
         let reads = Interest::<ScriptReads>::new();

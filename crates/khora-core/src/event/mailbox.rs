@@ -66,8 +66,7 @@ pub struct Mailbox {
     pub between_sessions: BetweenSessions,
     /// The channel's item type, by name, for diagnostics.
     pub message: fn() -> &'static str,
-    /// The runtime entry the mailbox is: `Channel<T>`, by type — what a
-    /// `#[take]` field declares.
+    /// The runtime entry the mailbox is, `Channel<T>` by type: what a `#[take]` field declares.
     pub channel: fn() -> std::any::TypeId,
     /// Discards what `reader` has not read of the runtime's `Channel<T>`.
     empty: fn(&Runtime, Reader),
@@ -93,16 +92,15 @@ impl Mailbox {
         }
     }
 
-    /// Discards what this mailbox's reader has not read of `runtime`'s
-    /// channel: everything for a [`Reader::Take`], the named reader's unread
-    /// items for a [`Reader::Cursor`]. A runtime without the channel holds
-    /// nothing to discard.
+    /// Discards what this mailbox's reader has not read of `runtime`'s channel.
+    ///
+    /// Everything for a [`Reader::Take`], the named reader's unread items for
+    /// a [`Reader::Cursor`]. A runtime without the channel holds nothing.
     pub fn empty(&self, runtime: &Runtime) {
         (self.empty)(runtime, self.reader);
     }
 
-    /// Whether `runtime`'s channel holds mail: what wakes a background run
-    /// of a family taking it. A runtime without the channel holds none.
+    /// Whether `runtime`'s channel holds mail, which wakes a background family taking it.
     pub fn holds_mail(&self, runtime: &Runtime) -> bool {
         (self.holds)(runtime)
     }
@@ -138,19 +136,15 @@ fn empty_channel<T: Supersedes + Clone + Send + Sync + 'static>(runtime: &Runtim
     }
 }
 
-/// Empties every [`BetweenSessions::Drop`] mailbox of a family off in
-/// `activation`'s state in force, so a family off for the coming frame starts
-/// its next session with no mail of the last.
+/// Empties the [`BetweenSessions::Drop`] mailboxes of every family off in `activation`.
 pub fn discard_mail_of_inactive(activation: &Activation, runtime: &Runtime) {
     discard_mail_of(&activation.inactive(), runtime);
 }
 
 /// Empties every [`BetweenSessions::Drop`] mailbox of the `families` named.
 ///
-/// What the frame boundary does, once it has settled, for every family off in
-/// the frame that ended or in the coming one: what was sent to a family while
-/// it was off — its last frame off included, though the boundary that ends it
-/// switches the family on — never reaches its next session.
+/// The boundary names every family off in the frame that ended or the coming
+/// one, so mail sent during a family's last frame off is dropped too.
 pub fn discard_mail_of(families: &BTreeSet<AgentId>, runtime: &Runtime) {
     if families.is_empty() {
         return;
@@ -217,11 +211,12 @@ mod tests {
         runtime.resources.get::<Channel<T>>().expect("the channel")
     }
 
-    /// **A family off for the coming frame loses its `Drop` mail, and keeps
-    /// its `Hold` mail.** The taken channel is emptied, counted as discarded
-    /// and not as overflow; the held one keeps its items; the named reader of
-    /// the watched channel is moved past its unread items, while another
-    /// reader of the same channel keeps them.
+    /// **A family off for the coming frame loses its `Drop` mail, and keeps its `Hold`
+    /// mail.**
+    ///
+    /// The taken channel is emptied, counted as discarded and not as overflow; the held
+    /// one keeps its items; the named reader of the watched channel is moved past its
+    /// unread items, while another reader of the same channel keeps them.
     #[test]
     fn a_family_switched_off_loses_its_drop_mail_and_keeps_its_hold_mail() {
         let runtime = runtime_with_mail();
@@ -311,9 +306,10 @@ mod tests {
         assert_eq!(channel::<Taken>(&runtime).len(), 2);
     }
 
-    /// **The families named lose their `Drop` mail, whatever is in force**:
-    /// the boundary also names a family it just switched on, whose last frame
-    /// off may have been sent mail.
+    /// **The families named lose their `Drop` mail, whatever is in force.**
+    ///
+    /// The boundary also names a family it just switched on, whose last frame off may
+    /// have been sent mail.
     #[test]
     fn the_families_named_lose_their_drop_mail_whatever_is_in_force() {
         let runtime = runtime_with_mail();

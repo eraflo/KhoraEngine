@@ -23,8 +23,7 @@ use std::ops::{Add, Div, Index, IndexMut, Mul, Neg, Sub};
 
 /// A 4-dimensional vector with `f32` components, often used for homogeneous coordinates.
 ///
-/// In 3D graphics, `Vec4` is primarily used to represent points (`w`=1.0) and
-/// vectors (`w`=0.0) in homogeneous space, allowing them to be transformed by a `Mat4`.
+/// A point has `w = 1` and a direction `w = 0`, so a `Mat4` translates the one and not the other.
 #[derive(
     Debug,
     Default,
@@ -261,8 +260,10 @@ impl Neg for Vec4 {
 
 impl Index<usize> for Vec4 {
     type Output = f32;
-    /// Allows accessing a vector component by index.
+    /// Returns the component at `index`: 0 for x, 1 for y, 2 for z, 3 for w.
+    ///
     /// # Panics
+    ///
     /// Panics if `index` is not between 0 and 3.
     #[inline]
     fn index(&self, index: usize) -> &Self::Output {
@@ -277,8 +278,10 @@ impl Index<usize> for Vec4 {
 }
 
 impl IndexMut<usize> for Vec4 {
-    /// Allows mutably accessing a vector component by index.
+    /// Returns the component at `index` mutably: 0 for x, 1 for y, 2 for z, 3 for w.
+    ///
     /// # Panics
+    ///
     /// Panics if `index` is not between 0 and 3.
     #[inline]
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {

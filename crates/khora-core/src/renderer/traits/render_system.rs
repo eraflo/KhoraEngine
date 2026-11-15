@@ -75,8 +75,8 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
 
     /// Renders a single frame from a flat list of render objects.
     ///
-    /// Legacy entry point retained for non-agent code paths (tests, demos).
-    /// Production rendering goes through the frame graph.
+    /// Serves code outside the agents (tests, demos); the engine's frames go
+    /// through the frame graph.
     fn render(
         &mut self,
         renderables: &[RenderObject],

@@ -37,7 +37,7 @@ use std::{ops::Deref, sync::Arc};
 /// # impl Asset for Texture {}
 /// let texture = Texture {};
 ///
-/// // The AssetAgent creates the first handle when loading is complete.
+/// // The asset service creates the first handle when loading is complete.
 /// let handle1 = AssetHandle::new(texture);
 ///
 /// // Other systems can clone the handle to share access.
@@ -52,7 +52,7 @@ pub struct AssetHandle<T: Asset>(Arc<T>);
 impl<T: Asset> AssetHandle<T> {
     /// Creates a new `AssetHandle` that takes ownership of the asset data.
     ///
-    /// This is typically called by an asset loading system (like an `AssetAgent`)
+    /// This is typically called by an asset loading system (like the asset service)
     /// once an asset has been successfully loaded into memory.
     pub fn new(asset: T) -> Self {
         Self(Arc::new(asset))

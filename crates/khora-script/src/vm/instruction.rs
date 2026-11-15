@@ -12,22 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The instruction set.
+//! The instruction set: register-based, one instruction per typed operation.
 //!
-//! Register-based: operands name registers, results name a destination. The
-//! deciding argument is not density but suspension — the live state of a
-//! register machine is a program counter and a flat register file, whereas a
-//! stack machine would also have to capture the operand stack mid-expression.
-//!
-//! # One instruction per typed operation
-//!
-//! `AddInt` and `AddFloat` are separate. The checker has already proved which
-//! applies, so making the VM re-inspect its operands at every arithmetic step
-//! would pay for a decision that was settled at compile time.
-//!
-//! Comparisons are the exception: `Less` and friends accept either numeric
-//! shape, because emitting four variants for a rarely hot operation buys less
-//! than it costs in instruction-set surface.
+//! Registers rather than a stack because a suspended register machine is only a
+//! program counter and a register file, with no operand stack to capture
+//! mid-expression. `AddInt` and `AddFloat` are separate because the checker has
+//! already settled which applies; comparisons alone accept either numeric shape.
 
 use serde::{Deserialize, Serialize};
 
@@ -256,11 +246,9 @@ pub enum Instruction {
 
     /// Enters a state, with its arguments already in `base..base + argc`.
     ///
-    /// Writes which state the behavior is in, then the values it was entered
-    /// with. It does **not** jump: a transition ends the current member's turn
-    /// rather than redirecting it, and the next dispatch finds the new state.
-    /// Jumping would mean the rest of the statement that said `become` ran
-    /// inside a state it had just left.
+    /// Writes the entered state's data, then the values it was entered with,
+    /// then which state the behavior is in. It does **not** jump: the member's
+    /// statements after it still run, and the next dispatch finds the new state.
     Become {
         /// The behavior whose state it is, by its index among the program's
         /// layouts: what entering it writes is read from there.
@@ -298,13 +286,12 @@ pub enum Instruction {
         /// The value.
         src: Reg,
     },
-    /// Writes a field as the last step of something that must not stop
-    /// halfway — an update through a path rooted at the field, a state's
-    /// entry, an initialiser. Never a place the run stops at: a stop between
-    /// loading a field and writing it back would erase a write another body
-    /// made meanwhile, and one between a state's stores would leave it
-    /// half-entered. Costs one unit: what it copies was paid for when it was
-    /// loaded, copied or built.
+    /// Writes a field that ends something the run must not stop halfway through.
+    ///
+    /// Used by a path update, a state's entry, an initialiser. Never a stop: one
+    /// between loading a field and writing it back would erase a write another
+    /// body made meanwhile, and one between a state's stores would leave it
+    /// half-entered. Costs one unit: what it copies was paid for already.
     WriteBack {
         /// Which field, by declaration order.
         slot: u16,
@@ -365,9 +352,11 @@ pub enum Instruction {
         dst: Reg,
     },
 
-    /// `entity.Set(C { … })` or `entity.Add(C { … })`: queues a write of the
-    /// fields of [`Program::patches`](super::Program::patches)`[patch]`, whose
-    /// values are in `base..base + count`, for the frame boundary.
+    /// `entity.Set(C { … })` or `entity.Add(C { … })`: queues a patch write for
+    /// the frame boundary.
+    ///
+    /// The patch is [`Program::patches`](super::Program::patches)`[patch]`, its
+    /// values in `base..base + count`.
     WriteComponent {
         /// Set the named fields, or attach then set them.
         mode: WriteMode,
@@ -381,9 +370,10 @@ pub enum Instruction {
         count: u16,
     },
 
-    /// `entity.Get(C)`: a copy of the component named by
-    /// [`Program::strings`](super::Program::strings)`[component]`, as this
-    /// frame's scripts see it — or `null` when the entity does not hold it.
+    /// `entity.Get(C)`: a copy of the component as this frame's scripts see it.
+    ///
+    /// The component is [`Program::strings`](super::Program::strings)`[component]`;
+    /// the copy is `null` when the entity does not hold it.
     GetComponent {
         /// Where the copy goes.
         dst: Reg,
@@ -406,11 +396,11 @@ pub enum Instruction {
         component: u32,
     },
 
-    /// The start of a query's sweep: the rows of
-    /// [`Program::queries`](super::Program::queries)`[query]` as this frame's
-    /// scripts see them — its entities in entity order — as a new array.
+    /// The start of a query's sweep: its rows as this frame's scripts see them,
+    /// as a new array.
     ///
-    /// Charged by the VM for the candidates it visits.
+    /// The query is [`Program::queries`](super::Program::queries)`[query]`, its
+    /// rows in entity order. Charged by the VM for the candidates it visits.
     QueryRows {
         /// Where the array goes.
         dst: Reg,
@@ -418,9 +408,10 @@ pub enum Instruction {
         query: u32,
     },
 
-    /// Whether `entity` still matches
-    /// [`Program::queries`](super::Program::queries)`[query]`: a row that the
-    /// sweep's earlier bodies took out of the query is skipped when reached.
+    /// Whether `entity` still matches [`Program::queries`](super::Program::queries)`[query]`.
+    ///
+    /// A row the sweep's earlier bodies took out of the query is skipped when
+    /// reached.
     QueryHolds {
         /// Where the answer goes.
         dst: Reg,
@@ -432,10 +423,11 @@ pub enum Instruction {
         count: u16,
     },
 
-    /// The end of a `ref` binding's row: the fields of `copy` that differ
-    /// from `original` are written into the frame's working set at once and
-    /// into the run's pending batch for the component named by
-    /// [`Program::strings`](super::Program::strings)`[component]`.
+    /// The end of a `ref` binding's row: writes the fields of `copy` that
+    /// differ from `original`.
+    ///
+    /// They go into the frame's working set at once, and into the run's pending
+    /// batch for the component [`Program::strings`](super::Program::strings)`[component]`.
     WriteRow {
         /// The row's entity.
         entity: Reg,
@@ -469,9 +461,10 @@ pub enum Instruction {
         component: u32,
     },
 
-    /// `target.Raise(E(…))`: queues the event named by
-    /// [`Program::strings`](super::Program::strings)`[event]` on `entity`,
-    /// carrying the `argc` values that follow one another from `base`.
+    /// `target.Raise(E(…))`: queues an event on `entity`, carrying the `argc`
+    /// values from `base`.
+    ///
+    /// The event is [`Program::strings`](super::Program::strings)`[event]`.
     Raise {
         /// The entity told.
         entity: Reg,
@@ -484,8 +477,10 @@ pub enum Instruction {
     },
 
     /// `Spawn(position, C1 { … }, …)`: queues a new entity at `position`
-    /// carrying each patch of [`Program::spawns`](super::Program::spawns)`[spawn]`,
-    /// whose values follow one another from `base`.
+    /// carrying its patches.
+    ///
+    /// The patches are [`Program::spawns`](super::Program::spawns)`[spawn]`,
+    /// their values following one another from `base`.
     SpawnEntity {
         /// Where the new entity's id goes: reserved now, so what follows in
         /// the turn can name it.
@@ -499,11 +494,12 @@ pub enum Instruction {
         /// How many fields all its patches name together.
         count: u16,
     },
-    /// Spawns an instance of the prefab in `prefab` with its root at
-    /// `position`, facing `facing` — a register holding `Null` when the call
-    /// gave none — merging onto the root each patch of
-    /// [`Program::spawns`](super::Program::spawns)`[spawn]`, whose values
-    /// follow one another from `base`.
+    /// Spawns an instance of the prefab in `prefab`, its root at `position`
+    /// facing `facing`.
+    ///
+    /// `facing` holds `Null` when the call gave none. Each patch of
+    /// [`Program::spawns`](super::Program::spawns)`[spawn]` is merged onto the
+    /// root, their values following one another from `base`.
     SpawnPrefab {
         /// Where the instance root's id goes: reserved now, so what follows
         /// in the turn can name it.
@@ -657,15 +653,18 @@ pub enum Instruction {
         array: Reg,
         /// The index, an `int`.
         index: Reg,
-        /// Whether it is charged what it shifts, and a place the run may stop
-        /// before — on a variable's array. Inside an update of a field, the
-        /// field's load paid for the array, and nothing stops halfway.
+        /// Whether it is charged what it shifts and is a place the run may stop
+        /// before.
+        ///
+        /// True on a variable's array. Inside an update of a field, the field's
+        /// load paid for the array, and nothing stops halfway.
         charged: bool,
         /// Where a run that cannot pay for it stops: the start of the path
-        /// walked to reach the array. Walking it again is free of effects,
-        /// and stopping there rather than here leaves no reference into the
-        /// array held across the stop — a reference a suspension would copy
-        /// apart from the array it points into.
+        /// walked to reach the array.
+        ///
+        /// Walking it again is free of effects, and stopping there holds no
+        /// reference into the array across the stop — a reference a suspension
+        /// would copy apart from the array it points into.
         from: usize,
     },
 

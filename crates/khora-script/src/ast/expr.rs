@@ -133,8 +133,7 @@ pub enum Expr {
         callee: Box<Expr>,
         /// Arguments, in the order written.
         args: Vec<Expr>,
-        /// The name each argument is given, beside it — empty when none is
-        /// named, so a positional call is what it always was.
+        /// The name each argument is given, beside it — empty when none is named.
         labels: Vec<Option<Label>>,
         /// The whole expression.
         span: Span,

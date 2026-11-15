@@ -8,10 +8,9 @@
 
 //! Home — the project grid and the sidebar.
 //!
-//! Cards carry their identity with the brand sign and a clean border. The
-//! old left accent-stripe is gone: a coloured bar down the side of a card is
-//! decoration pretending to be information, and with a grid of them it reads
-//! as noise.
+//! Cards carry their identity with the brand sign and a clean border, never a
+//! coloured bar down the side: that is decoration pretending to be
+//! information, and in a grid of cards it reads as noise.
 
 use crate::app::HubApp;
 use crate::services::config::RecentProject;

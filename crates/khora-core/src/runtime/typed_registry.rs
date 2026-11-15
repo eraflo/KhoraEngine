@@ -16,22 +16,11 @@
 //!
 //! # Why one type and three names
 //!
-//! The three used to be three files holding the same struct: the same two
-//! fields, the same eight methods, the same `Debug`, and — down to the
-//! assertion names — the same tests. Only two words differed per copy: what
-//! the container is called, and what it calls the things inside it.
-//!
-//! That taxonomy is real and worth keeping. A service has a rich API, a
-//! backend is a swappable implementation, a resource is shared data. But it is
-//! a distinction the *reader* needs, not one the machine does, and encoding it
-//! by copying a container three times means a fix to lookup or parent-chaining
-//! has to be made three times and can be made in two.
-//!
-//! So the distinction survives as a marker type, and the container is written
-//! once. `Services`, `Backends` and `Resources` remain three distinct types —
-//! a `Backends` still cannot be passed where a `Services` is expected — and
-//! their panic messages and `Debug` output are unchanged, because the marker
-//! carries the two words that differed.
+//! A service has a rich API, a backend is a swappable implementation, a
+//! resource is shared data: a distinction for the reader, not the machine. It
+//! survives as a marker type, which carries the container's name for its panic
+//! messages and `Debug`, so `Services`, `Backends` and `Resources` stay three
+//! distinct types over one container written once.
 
 use std::any::{type_name, Any, TypeId};
 use std::collections::HashMap;
@@ -138,9 +127,9 @@ impl<K: RegistryKind> TypedRegistry<K> {
                 .unwrap_or(false)
     }
 
-    /// Reports whether an entry of the type `id` names is registered, walking
-    /// the parent chain — the check a declaration needs, which knows its types
-    /// only by id.
+    /// Reports whether an entry of the type `id` names is registered, walking the parent chain.
+    ///
+    /// For a declaration, which knows its types only by id.
     #[must_use]
     pub fn contains_type_id(&self, id: TypeId) -> bool {
         self.inner.contains_key(&id)
@@ -227,9 +216,10 @@ mod tests {
         assert_eq!(child.get::<Thing>(), Some(&Thing(2)));
     }
 
-    /// `Backends`' documented convention: register under the **trait-object**
-    /// type, not the concrete impl, so the entry stays swappable. Keying on
-    /// `TypeId` means `Arc<Mutex<Box<dyn T>>>` is its own key — this is what
+    /// `Backends`' documented convention: register under the **trait-object** type, not
+    /// the concrete impl, so the entry stays swappable.
+    ///
+    /// Keying on `TypeId` means `Arc<Mutex<Box<dyn T>>>` is its own key — this is what
     /// makes a backend replaceable without every caller learning the new type.
     #[test]
     fn an_entry_can_be_keyed_by_a_trait_object_type() {

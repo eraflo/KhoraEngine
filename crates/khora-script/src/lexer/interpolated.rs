@@ -142,9 +142,9 @@ impl Lexer<'_> {
     }
 }
 
-/// Skips a string's text from `at`, just past its opening quote, to its
-/// closing quote — counting an interpolated one's holes — and returns where
-/// that quote sits.
+/// Returns where the string whose text starts at `at` closes, its holes counted.
+///
+/// `at` is just past the opening quote; a quote inside a hole does not end it.
 fn skip_string(bytes: &[u8], mut at: usize, interpolated: bool) -> Option<usize> {
     while let Some(&byte) = bytes.get(at) {
         match byte {

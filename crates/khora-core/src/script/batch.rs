@@ -41,7 +41,11 @@ pub enum BatchShapeError {
 }
 
 impl ColumnBatch {
-    /// An empty batch writing `fields`, refusing one that names a field twice.
+    /// Creates an empty batch writing `fields`.
+    ///
+    /// # Errors
+    ///
+    /// [`BatchShapeError::DuplicateField`] when `fields` names a field twice.
     pub fn new(fields: Vec<String>) -> Result<Self, BatchShapeError> {
         for (at, field) in fields.iter().enumerate() {
             if fields[..at].contains(field) {
@@ -55,9 +59,12 @@ impl ColumnBatch {
         })
     }
 
-    /// Appends `entity`'s row, refusing one whose width is not the batch's —
-    /// the boundary never meets a ragged batch. A refused row leaves the
-    /// batch as it was.
+    /// Appends `entity`'s row, one value per field.
+    ///
+    /// # Errors
+    ///
+    /// [`BatchShapeError::WrongWidth`] when the row's width is not the batch's;
+    /// the batch is then left as it was.
     pub fn push_row(
         &mut self,
         entity: EntityId,

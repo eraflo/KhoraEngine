@@ -21,12 +21,6 @@ crate::khora_bitflags! {
     ///
     /// Used in bind group layouts to specify the visibility of a resource.
     /// Combine with `|`.
-    ///
-    /// Built with `khora_bitflags!` like every other flag set in the engine.
-    /// It used to be hand-written, which cost it the `ALL_DECLARED` constant a
-    /// backend bridge needs to prove it translates every flag — so this one
-    /// crossed into wgpu as a raw bit cast, correct only because the two sets
-    /// happen to be numbered alike.
     pub struct ShaderStageFlags: u32 {
         /// Vertex shader stage.
         const VERTEX = 1 << 0;

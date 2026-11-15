@@ -30,8 +30,9 @@ impl Checker {
         ) && khora_core::asset::AssetKind::from_ergon_name(item.name()).is_some()
     }
 
-    /// Refuses a struct, a component or a behavior named like an asset kind:
-    /// the name would stand for two types, and the asset's could no longer be
+    /// Refuses a struct, a component or a behavior named like an asset kind.
+    ///
+    /// The name would stand for two types, and the asset's could not be
     /// written.
     pub(super) fn refuse_asset_name(&mut self, name: &str, span: Span) {
         self.error_note(

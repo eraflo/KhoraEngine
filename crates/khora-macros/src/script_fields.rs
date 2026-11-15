@@ -18,9 +18,10 @@
 use quote::{quote, ToTokens};
 use syn::Fields;
 
-/// What a script reaches: the included fields, by slot — the very list the
-/// `Serializable` mirror and the field schema are built from, so a skipped
-/// field is out of every one of them. A field whose type is not a
+/// The `Component` methods a script reaches the included fields through, by slot.
+///
+/// The same list builds the `Serializable` mirror and the field schema, so a
+/// skipped field is out of all three. A field whose type is not a
 /// `ScriptField` resolves to "not accessible" rather than a compile error.
 pub(crate) fn script_methods(fields: &Fields, included_fields: &[&syn::Field]) -> impl ToTokens {
     let positions: Vec<usize> = fields
@@ -116,9 +117,9 @@ pub(crate) fn script_methods(fields: &Fields, included_fields: &[&syn::Field]) -
     }
 }
 
-/// The registration's `script_default`: the component's `Default`, as a
-/// script reads it — what a script's `Add` starts from in the frame's working
-/// set.
+/// The registration's `script_default`: the component's `Default`, as a script reads it.
+///
+/// A script's `Add` starts from it in the frame's working set.
 pub(crate) fn script_default(name: &syn::Ident) -> impl ToTokens {
     quote! { || {
         let value = <#name as ::core::default::Default>::default();

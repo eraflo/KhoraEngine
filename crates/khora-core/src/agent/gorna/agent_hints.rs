@@ -18,26 +18,26 @@ use serde::{Deserialize, Serialize};
 
 use super::AgentId;
 
-/// A developer/editor hint that biases GORNA arbitration without changing game
-/// semantics — the "adapt the HOW, not the WHAT" control surface, on the same
-/// axis as [`AdaptationMode`](super::AdaptationMode). Hints are advisory: a
-/// death-spiral safety stop and a `Manual` pin both still win over them.
-/// Sent to the DCC over the hint channel; the DCC folds them per agent (see
-/// [`AgentHints`]) and feeds the accumulated state into each arbitration
-/// round.
+/// A developer or editor hint that biases GORNA arbitration, never game semantics.
+///
+/// Advisory, like [`AdaptationMode`](super::AdaptationMode): a death-spiral
+/// stop and a `Manual` pin both win over it. The DCC folds hints per agent
+/// into [`AgentHints`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EngineHint {
-    /// Cap an agent's per-frame time budget: GORNA will not issue a strategy
-    /// whose estimated cost exceeds `max_ms`, clamping toward cheaper
-    /// strategies. Re-send with a large `max_ms` to lift a previous cap.
+    /// Caps an agent's per-frame time budget at `max_ms`.
+    ///
+    /// GORNA issues no strategy estimated above it. Re-send with a large
+    /// `max_ms` to lift a cap.
     Cap {
         /// The agent to cap.
         agent: AgentId,
         /// Maximum per-frame strategy cost, in milliseconds.
         max_ms: f32,
     },
-    /// Bias an agent's negotiation priority weight (higher = more budget share
-    /// when the fit upgrades agents). Overrides the default per-agent priority.
+    /// Overrides an agent's negotiation priority weight.
+    ///
+    /// Higher means a larger budget share when the fit upgrades agents.
     Prioritize {
         /// The agent to reprioritize.
         agent: AgentId,
@@ -55,9 +55,10 @@ impl EngineHint {
     }
 }
 
-/// The accumulated hint state for one agent, folded from the [`EngineHint`]s
-/// the DCC has received. A `None` field means "no developer hint — use the
-/// engine default". Persists across ticks until overwritten by a newer hint.
+/// One agent's hint state, folded from the [`EngineHint`]s the DCC received.
+///
+/// A `None` field means no hint: the engine default applies. The state
+/// persists across ticks until a newer hint overwrites it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct AgentHints {
     /// Per-frame time-budget ceiling in milliseconds, if capped.

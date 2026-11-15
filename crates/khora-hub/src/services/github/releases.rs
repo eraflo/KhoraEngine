@@ -17,27 +17,31 @@ use serde::Deserialize;
 /// Subset of a GitHub release object we care about.
 #[derive(Debug, Clone, Deserialize)]
 pub struct GithubRelease {
+    /// The release's tag, used as the engine version.
     pub tag_name: String,
+    /// Whether GitHub marks it as a pre-release.
     pub prerelease: bool,
+    /// The files attached to it.
     pub assets: Vec<GithubAsset>,
 }
 
 /// A downloadable file attached to a release.
 #[derive(Debug, Clone, Deserialize)]
 pub struct GithubAsset {
+    /// The file name.
     pub name: String,
+    /// The URL a plain download fetches it from.
     pub browser_download_url: String,
+    /// Its size, in bytes.
     pub size: u64,
 }
 
 impl GithubRelease {
-    /// Returns the engine asset (containing `khora-editor`) for the current OS,
-    /// if any.
+    /// Returns the engine archive, holding `khora-editor`, for the current OS.
     ///
-    /// Convention: release archives are named `khora-engine-{platform}.{ext}`
-    /// where platform is one of `windows-x86_64`, `linux-x86_64`, or
-    /// `macos-aarch64`. The hub asset (`khora-hub-*`) is intentionally ignored
-    /// — the hub does not download itself.
+    /// Release archives are named `khora-engine-{platform}.{ext}`, the platform
+    /// being `windows-x86_64`, `linux-x86_64` or `macos-aarch64`. The hub's own
+    /// archive (`khora-hub-*`) is never offered: the hub does not download itself.
     pub fn editor_asset(&self) -> Option<&GithubAsset> {
         let needle = if cfg!(windows) {
             "khora-engine-windows"
@@ -49,12 +53,11 @@ impl GithubRelease {
         self.assets.iter().find(|a| a.name.starts_with(needle))
     }
 
-    /// Returns the runtime asset (containing `khora-runtime`) for the current
-    /// OS, if any. Same naming convention as [`Self::editor_asset`] —
-    /// `khora-runtime-{platform}.{ext}` produced by `release.yml`. Older
-    /// releases predate the runtime artifact and return `None`; the engine
-    /// stays usable for editing in that case (the editor's "Build Game"
-    /// feature is what needs the runtime).
+    /// Returns the runtime archive, holding `khora-runtime`, for the current OS.
+    ///
+    /// It is named `khora-runtime-{platform}.{ext}`, as for
+    /// [`Self::editor_asset`]. A release without one still edits; only the
+    /// editor's Build Game needs the runtime.
     pub fn runtime_asset(&self) -> Option<&GithubAsset> {
         let needle = if cfg!(windows) {
             "khora-runtime-windows"
@@ -68,6 +71,11 @@ impl GithubRelease {
 }
 
 /// Fetches all releases from the KhoraEngine GitHub repository.
+///
+/// # Errors
+///
+/// Fails when GitHub cannot be reached, answers with an error status or
+/// sends JSON that does not parse.
 pub fn fetch_releases() -> Result<Vec<GithubRelease>> {
     let client = reqwest::blocking::Client::builder()
         .user_agent("khora-hub/0.1")
@@ -91,9 +99,7 @@ pub fn fetch_releases() -> Result<Vec<GithubRelease>> {
     Ok(releases)
 }
 
-/// Spawns a background thread that calls [`fetch_releases`] once and
-/// reports the outcome on the returned channel. Used by hub screens
-/// that need to refresh in the background without blocking the UI.
+/// Runs [`fetch_releases`] in the background and returns the channel of its outcome.
 pub fn fetch_releases_async() -> std::sync::mpsc::Receiver<Result<Vec<GithubRelease>, String>> {
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {

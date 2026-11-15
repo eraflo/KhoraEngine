@@ -56,13 +56,12 @@ pub struct Dialog<'a> {
     pub choices: &'a [DialogChoice<'a>],
 }
 
-/// Paints `spec` in place over `rect` — a dimmed backdrop and the dialog's
-/// box centred on it, as [`confirm_modal`](super::confirm_modal) does — and
-/// returns the index of the choice clicked this frame, `None` when none was.
-/// A click on the backdrop chooses nothing.
+/// Paints `spec` over `rect` and returns the index of the choice clicked this frame.
 ///
-/// Interaction ids, from `id_salt`: the backdrop is `"{id_salt}-backdrop"`,
-/// the choice at index `i` is `"{id_salt}-choice-{i}"`.
+/// A dimmed backdrop covers `rect` with the box centred on it, as
+/// [`confirm_modal`](super::confirm_modal) does; a click on the backdrop
+/// chooses nothing. Interaction ids, from `id_salt`: the backdrop is
+/// `"{id_salt}-backdrop"`, the choice at index `i` is `"{id_salt}-choice-{i}"`.
 pub fn dialog(
     ui: &mut dyn UiBuilder,
     theme: &UiTheme,
@@ -259,9 +258,10 @@ fn shorten(ui: &dyn UiBuilder, text: &str, size: f32, width: f32, middle: bool) 
     String::new()
 }
 
-/// `text` broken into lines no wider than `width` at `size`, at spaces —
-/// in the proportional face. A word wider than `width` stands on its own
-/// line.
+/// `text` broken at spaces into lines no wider than `width` at `size`.
+///
+/// Measured in the proportional face. A word wider than `width` stands on its
+/// own line.
 pub fn wrap_text(ui: &dyn UiBuilder, text: &str, size: f32, width: f32) -> Vec<String> {
     let mut lines = Vec::new();
     let mut line = String::new();
@@ -345,9 +345,10 @@ mod tests {
             .unwrap_or_else(|| panic!("`{label}` is painted: {:?}", ui.texts()))
     }
 
-    /// **The dialog paints everything it is given**: the title, the
-    /// subtitle in monospace, the lead, each row's label and value, the
-    /// note, and each choice's label.
+    /// **The dialog paints everything it is given.**
+    ///
+    /// The title, the subtitle in monospace, the lead, each row's label and
+    /// value, the note, and each choice's label.
     #[test]
     fn a_dialog_paints_its_title_subtitle_lead_rows_note_and_choices() {
         let mut ui = RecordingUiBuilder::new(SCREEN[2], SCREEN[3]);
@@ -419,9 +420,10 @@ mod tests {
         assert_eq!(frame(&mut ui, &ROWS), None);
     }
 
-    /// **No rows, no plate**: the sunk plate the rows sit on is not drawn
-    /// when there are none — the dialog with rows paints more filled
-    /// rectangles than the same dialog without.
+    /// **No rows, no plate.**
+    ///
+    /// The dialog with rows paints more filled rectangles than the same dialog
+    /// without: the sunk plate the rows sit on.
     #[test]
     fn a_dialog_without_rows_draws_no_plate() {
         let mut with_rows = RecordingUiBuilder::new(SCREEN[2], SCREEN[3]);
@@ -438,9 +440,10 @@ mod tests {
         assert!(!without.painted_text("runs its scripts"));
     }
 
-    /// **Text wraps at spaces, within its width**: at 10 px a glyph is
-    /// 5.5 px wide, so 60 px hold ten; a word wider than the width stands
-    /// alone, never split.
+    /// **Text wraps at spaces, within its width.**
+    ///
+    /// At 10 px a glyph is 5.5 px wide, so 60 px hold ten; a word wider than
+    /// the width stands alone, never split.
     #[test]
     fn text_wraps_at_spaces_within_its_width() {
         let ui = RecordingUiBuilder::new(SCREEN[2], SCREEN[3]);

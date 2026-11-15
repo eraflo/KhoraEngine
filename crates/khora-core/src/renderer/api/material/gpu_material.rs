@@ -20,27 +20,14 @@ use crate::renderer::api::material::MaterialGpuBindings;
 use crate::renderer::api::resource::{BufferId, SamplerId, TextureId, TextureViewId};
 use crate::renderer::api::shader::ShaderVariantKey;
 
-/// A GPU-ready representation of a material: its uniform buffer, the PBR
-/// texture views it declares, the shared sampler, and a ready-to-bind
-/// group-2 bind group.
+/// GPU-ready material: its uniform buffer, declared texture maps, shared
+/// sampler and ready-to-bind group-2 bind group.
 ///
-/// Built once per material UUID by the data-layer projection (mirroring
-/// [`GpuMesh`](crate::renderer::api::gpu_scene::GpuMesh)), cached, and consumed by every lit lane —
-/// which selects the pipeline for `variant` and binds `bind_group` at
-/// group 2. Each texture view is `Some` only for a map the material
-/// declares (no fallback textures); the [`variant`](Self::variant) records
-/// exactly that set of `HAS_*` flags, so the bind group, the group-2 layout
-/// it was built against, and the lit pipeline's group-2 layout all resolve
-/// from the same `(LayoutKey::Material, variant)`.
-///
-/// Each declared map is uploaded as a texture private to this material (the
-/// projection does not share GPU textures across materials), so the material
-/// **exclusively owns** its `uniform_buffer`, its four `*_texture` /
-/// `*_view` handles, and its `bind_group`. The `sampler` is the opposite:
-/// it is the engine-shared filtering sampler. This ownership split is what
-/// asset eviction relies on to free the resources — it destroys everything
-/// but the shared sampler when the material is reclaimed. The `*_texture`
-/// and matching `*_view` fields are always `Some`/`None` together.
+/// A view is `Some` only for a map the material declares, and
+/// [`variant`](Self::variant) records exactly that set of `HAS_*` flags. The
+/// material owns its buffer, textures, views and bind group, freed on
+/// eviction; the sampler is the engine's, never freed with it. Each
+/// `*_texture` is `Some` exactly when its `*_view` is.
 #[derive(Debug, Clone)]
 pub struct GpuMaterial {
     /// `MaterialUniforms` uniform buffer (base color, factors, …).
@@ -81,26 +68,24 @@ pub struct GpuMaterial {
     /// Prebuilt group-2 bind group bound by lit lanes.
     pub bind_group: BindGroupId,
     /// Shader variant (`HAS_*` texture flags) this material was built for.
-    /// The lit lane requests the matching pipeline and groups draws by it.
     pub variant: ShaderVariantKey,
-    /// Whether the material renders double-sided (back faces not culled). The
-    /// lit lane selects a no-cull pipeline for it; single-sided materials cull
-    /// back faces. Part of the pipeline cache key via [`PipelineKey`].
+    /// Whether back faces are drawn too; part of the pipeline cache key via
+    /// `PipelineKey`.
     pub double_sided: bool,
-    /// Whether the material is alpha-*blended* (`AlphaMode::Blend`).
+    /// Whether the material is alpha-blended (`AlphaMode::Blend`); a masked
+    /// material is not.
     ///
-    /// Blended materials need a different pipeline state (alpha blending on,
-    /// depth writes off) **and** a different draw order: the lit lane defers
-    /// them to a second, back-to-front sorted batch after the opaque draws,
-    /// because blending is order-dependent. `AlphaMode::Mask` is *not* blended
-    /// — it discards in the shader and stays in the opaque batch.
+    /// A blended material needs its own pipeline state and is drawn after the
+    /// opaque ones, back to front. See the book: concepts/rendering.md,
+    /// "Transparency, and the order it needs".
     pub blend: bool,
 }
 
 impl GpuMaterial {
-    /// Returns the [`MaterialGpuBindings`] view of this material's
-    /// resources, suitable for
-    /// [`fill_material_bind_group_entries`](crate::renderer::api::material::fill_material_bind_group_entries).
+    /// Returns the [`MaterialGpuBindings`] view of this material's resources.
+    ///
+    /// It is what [`fill_material_bind_group_entries`](crate::renderer::api::material::fill_material_bind_group_entries)
+    /// takes.
     pub fn bindings(&self) -> MaterialGpuBindings {
         MaterialGpuBindings {
             uniform_buffer: self.uniform_buffer,

@@ -178,9 +178,10 @@ mod tests {
         crate::khora_dark()
     }
 
-    /// The dialog states the question and the consequence — a confirmation
-    /// that only says "Are you sure?" makes the user guess what they are
-    /// confirming.
+    /// The dialog states the question and the consequence.
+    ///
+    /// A confirmation that only says "Are you sure?" makes the user guess what
+    /// they are confirming.
     #[test]
     fn confirm_modal_paints_title_and_body() {
         let mut ui = RecordingUiBuilder::new(800.0, 600.0);

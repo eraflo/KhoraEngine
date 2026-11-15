@@ -12,21 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Render-interpolation bookkeeping — the per-entity "previous pose" store.
+//! The per-entity "previous pose" store the render path interpolates from.
 //!
-//! The fixed-timestep simulation advances in whole steps while rendering
-//! happens once per (variable-rate) frame. To stay smooth between steps, the
-//! render path blends each simulated entity's transform *as it was before the
-//! latest step* with its current [`GlobalTransform`] by the
-//! [`Time::interpolation_alpha`](crate::time::Time::interpolation_alpha).
+//! It lives in [`Runtime::resources`](crate::Runtime), not in the ECS: it is
+//! never inspected nor saved.
 //!
-//! Those "previous" poses live HERE, not in the ECS, on purpose: interpolation
-//! is a render-only representation ("adapt the HOW, never the WHAT"). Keeping it
-//! out of the component space means it never shows up in the editor inspector
-//! and is never written into scene files — it carries no game meaning. The store
-//! lives in [`Runtime::resources`](crate::Runtime) behind an `Arc<RwLock<…>>`,
-//! mirroring the `CollisionPairs` broadphase scratch: engine-owned per-entity
-//! data, keyed by [`EntityId`], that no gameplay code authors.
+//! See the book: concepts/the-frame.md, "Why interpolation is render-only".
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
@@ -34,12 +25,10 @@ use std::sync::{Arc, RwLock};
 use crate::ecs::entity::EntityId;
 use crate::math::affine_transform::AffineTransform;
 
-/// Per-entity snapshots of the world-space transform *before* the latest
-/// simulation step, consumed by the render path for motion interpolation.
+/// Per-entity world-space transforms from before the latest simulation step.
 ///
-/// Engine-internal: populated by the data layer's capture pass for simulated
-/// bodies and read by the render projection. Not an ECS component (see the
-/// module docs) — it is neither inspectable nor serialized.
+/// Written by the data layer's capture pass for simulated bodies, read by the
+/// render projection.
 #[derive(Debug, Default)]
 pub struct TransformInterpolation {
     previous: HashMap<EntityId, AffineTransform>,
@@ -51,9 +40,10 @@ impl TransformInterpolation {
         Self::default()
     }
 
-    /// The pre-step world-space transform recorded for `entity`, if the entity
-    /// is currently simulated. `None` means "render at the current transform"
-    /// (static entity, or first frame before any snapshot).
+    /// The pre-step world-space transform recorded for `entity`, if it is simulated.
+    ///
+    /// `None` means render at the current transform: a static entity, or no
+    /// snapshot yet.
     pub fn previous(&self, entity: EntityId) -> Option<AffineTransform> {
         self.previous.get(&entity).copied()
     }
@@ -64,9 +54,10 @@ impl TransformInterpolation {
         self.previous.insert(entity, transform);
     }
 
-    /// Drops snapshots for entities absent from `live` — despawned bodies, or
-    /// entities the simulation no longer moves. Bounds memory and prevents a
-    /// recycled [`EntityId`] from reading a stale generation's pose.
+    /// Drops snapshots for entities absent from `live`.
+    ///
+    /// Bounds memory and keeps a recycled [`EntityId`] from reading a stale
+    /// generation's pose.
     pub fn retain_live(&mut self, live: &HashSet<EntityId>) {
         self.previous.retain(|id, _| live.contains(id));
     }
@@ -82,10 +73,10 @@ impl TransformInterpolation {
     }
 }
 
-/// Shared, interior-mutable handle to the [`TransformInterpolation`] store as it
-/// lives in [`Runtime::resources`](crate::Runtime): the data layer's capture
-/// pass takes the write lock once per frame; the render projection takes a read
-/// lock while it projects.
+/// The shared [`TransformInterpolation`] store, as the runtime's resources hold it.
+///
+/// The capture pass takes the write lock once per frame; the render projection
+/// takes a read lock while it projects.
 pub type SharedTransformInterpolation = Arc<RwLock<TransformInterpolation>>;
 
 #[cfg(test)]

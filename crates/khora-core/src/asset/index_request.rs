@@ -33,12 +33,12 @@ pub enum IndexKind {
     Reindex,
 }
 
-/// Index the assets of the project at `project_root` — the files under
-/// `<project_root>/assets/`, their identities read from the registry under
-/// `<project_root>/.khora/` — for `kind`.
+/// A request to index the assets of the project at `project_root`, for `kind`.
 ///
-/// Filed by a host through the index hub, taken by the `loading` family's
-/// lanes. It never coalesces: a reindex filed after another lands after it.
+/// The assets are the files under `<project_root>/assets/`, their identities
+/// read from the registry under `<project_root>/.khora/`. Filed by a host
+/// through the index hub, taken by the `loading` family's lanes. It never
+/// coalesces: a reindex filed after another lands after it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexRequest {
     /// What its outcome is filed under.

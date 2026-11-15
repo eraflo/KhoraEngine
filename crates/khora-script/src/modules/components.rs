@@ -15,10 +15,8 @@
 //! The components a project's scripts declare: what the compiler refuses
 //! about them, and what it tells the engine.
 //!
-//! Checked per module, before the modules are merged, because two of the
-//! rules are about *where* a declaration is written: the engine's own module
-//! (`ENGINE_COMPONENTS_MODULE`) mirrors components the engine already stores,
-//! and is held to neither.
+//! Checked per module, before the merge: the engine's own module
+//! (`ENGINE_COMPONENTS_MODULE`) mirrors stored components and is exempt.
 
 use khora_core::ecs::SemanticDomain;
 use khora_core::script::{ErgonType, ScriptValue};
@@ -33,9 +31,8 @@ use crate::vm::{DeclaredComponent, DeclaredField, DeclaredKind, Program};
 /// The attribute that places a component's data.
 pub(super) const DOMAIN: &str = "Domain";
 
-/// Every refusal about the components the project's own modules declare:
-/// a name the engine uses, an attribute other than one `[Domain(…)]`, a
-/// field the engine cannot store, a field with no zero and no default.
+/// Returns the refusals of the project's components: an engine name, a wrong
+/// attribute, a field the engine cannot store or start a row at.
 pub fn report_script_components(resolved: &Resolved, engine: &[String]) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     for decl in script_components(resolved).map(|(_, decl)| decl) {
@@ -73,9 +70,9 @@ pub fn report_script_components(resolved: &Resolved, engine: &[String]) -> Vec<D
     diagnostics
 }
 
-/// The components the project's own modules declare, as the engine
-/// registers them, sorted by name. `program` is what those modules compiled
-/// to: its struct layouts hold each field's default.
+/// Returns the project's components as the engine registers them, sorted by name.
+///
+/// `program` is what those modules compiled to: its layouts hold each default.
 pub fn declared_components(resolved: &Resolved, program: &Program) -> Vec<DeclaredComponent> {
     let mut declared: Vec<DeclaredComponent> = script_components(resolved)
         .map(|(module, decl)| DeclaredComponent {
@@ -258,10 +255,10 @@ pub(crate) fn ergon_type(ty: &TypeRef) -> Option<ErgonType> {
     })
 }
 
-/// `ty` with every struct it names given its fields, from the program's
-/// layouts: a struct changed between two versions of a component is then a
-/// field of another type. A struct already being expanded — one that holds
-/// itself — stays known by its name.
+/// Returns `ty` with every struct it names given its fields, from the layouts.
+///
+/// A struct changed between two versions of a component is then a field of
+/// another type. A struct that holds itself stays known by its name.
 pub(super) fn with_struct_fields(
     ty: ErgonType,
     program: &Program,

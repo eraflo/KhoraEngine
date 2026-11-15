@@ -17,10 +17,10 @@
 
 use khora_sdk::Runtime;
 
-/// Builds a small procedural checkerboard [`CpuTexture`] and inserts it into
-/// the shared AssetStore CpuTexture sub-store (filled by the SDK layer, uploaded to the GPU
-/// by the data-layer material projection). Returns the texture's `AssetUUID`
-/// to attach to a material's `base_color_texture`.
+/// Builds a small procedural checkerboard `CpuTexture` and stores it in the shared asset store.
+///
+/// Returns its `AssetUUID`, to set as a material's `base_color_texture`; the
+/// data layer's material projection uploads it to the GPU.
 pub(super) fn register_checker_texture(
     runtime: &Runtime,
 ) -> khora_sdk::khora_core::asset::AssetUUID {
@@ -73,19 +73,12 @@ pub(super) fn register_checker_texture(
 /// Stable id of the sandbox's procedural environment map.
 pub(super) const ENV_ASSET_NAME: &str = "sandbox/studio_env";
 
-/// Builds a procedural **equirectangular HDR** environment and registers it as
-/// a `CpuTexture` asset, standing in for an authored `.hdr` until one is
-/// dropped in.
+/// Builds a procedural **equirectangular HDR** studio environment, registered as a `CpuTexture`.
 ///
-/// This is a "studio" environment: a sky/ground gradient plus a sun and three
-/// tinted light panels, all at radiances well above 1.0. The high dynamic range
-/// is the point — it is what makes the panels read as crisp bright reflections
-/// on glossy surfaces instead of washing into the background, and an 8-bit
-/// image could not represent it.
-///
-/// The direction → pixel mapping is the exact inverse of the one
-/// `ibl_equirect.wgsl` applies when projecting onto the cube: longitude from
-/// `atan2(z, x)`, latitude from the polar angle with `v = 0` at `+Y`.
+/// A sky/ground gradient, a sun and three tinted light panels, at radiances
+/// well above 1.0 so the panels read as crisp reflections on glossy surfaces.
+/// The direction → pixel mapping is the exact inverse of `ibl_equirect.wgsl`'s:
+/// longitude from `atan2(z, x)`, latitude from the polar angle, `v = 0` at `+Y`.
 pub(super) fn register_environment_map(
     runtime: &Runtime,
 ) -> khora_sdk::khora_core::asset::AssetUUID {

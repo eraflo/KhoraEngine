@@ -12,38 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Khora brand tokens — the single source of truth for the "Deep Navy /
-//! Silver" palette shared by **every** Khora *tool* surface (editor, hub, and
-//! future tools), so they cannot drift.
+//! Khora brand tokens: the "Deep Navy / Silver" palette every Khora tool shares.
 //!
-//! This is cosmetics, not engine contract: it lives here rather than in
-//! `khora-core` so that a game built on Khora never inherits the engine
-//! vendor's brand. See the crate docs for the split.
-//!
-//! ## Color space — the stored floats are sRGB, not linear
-//!
-//! The only place a [`UiTheme`] color reaches egui is
-//! `khora-infra/src/ui/egui/theme.rs::c()`, which does `(x * 255.0) as u8`
-//! straight into `Color32::from_rgba_unmultiplied` — i.e. it treats the four
-//! floats as **sRGB** components in `0..1`. So every value below is
-//! `sRGB_byte / 255`, NOT linear-light. (The [`LinearRgba`] type name is a
-//! historical misnomer in this context; here it is a plain `[r,g,b,a]` sRGB
-//! carrier.)
-//!
-//! ## Provenance
-//!
-//! Each constant is the offline `oklch(L C H)` → sRGB conversion of the token
-//! of the same name in the design mockups (`design-reference/*.html`). The
-//! full table and the frozen conversion procedure live in
-//! `design-reference/TOKENS.md`; the values there are verified byte-for-byte
-//! against Chrome's `oklch()` rasterization.
+//! The stored floats are **sRGB** in `0..1` (`sRGB_byte / 255`), not linear
+//! light, whatever the [`LinearRgba`] name says: egui receives them unconverted
+//! (`c()` in `khora-infra/src/ui/egui/theme.rs`). Each constant is the `oklch`
+//! token of the same name in `design-reference/*.html`, converted as
+//! `design-reference/TOKENS.md` records.
 
 use khora_core::math::LinearRgba;
 use khora_core::ui::theme::{ColorScheme, UiTheme};
 
-/// Named palette constants. Widget code should take a [`UiTheme`] and read its
-/// semantic slots; reach into `pal` directly only inside the theme producer
-/// or where a raw brand color is genuinely needed (e.g. axis tints).
+/// Named constants of the dark palette.
+///
+/// Widget code reads a [`UiTheme`]'s semantic slots; reach into `pal` only in
+/// a theme producer or for a raw brand colour, such as an axis tint.
 pub mod pal {
     use khora_core::math::LinearRgba;
 
@@ -88,7 +71,7 @@ pub mod pal {
     pub const ACCENT_CYAN: LinearRgba = LinearRgba::new(0.4510, 0.8000, 0.9176, 1.0);
     /// Gold — **selection / active only**.
     pub const ACCENT_GOLD: LinearRgba = LinearRgba::new(0.9059, 0.7451, 0.4078, 1.0);
-    /// Legacy alias for the violet accent.
+    /// The default accent: alias of [`ACCENT_VIOLET`].
     pub const ACCENT: LinearRgba = ACCENT_VIOLET;
     /// Semantic alias of [`ACCENT_VIOLET`].
     pub const VIOLET: LinearRgba = ACCENT_VIOLET;
@@ -132,13 +115,10 @@ pub mod pal {
     pub const AXIS_Z: LinearRgba = CYAN;
 }
 
-/// The light counterpart of [`pal`]: the same deep-navy family (hue 245–264)
-/// turned into a silver field with navy ink, for the hub — the doorway that
-/// stands as the editor's negative.
+/// The light counterpart of [`pal`]: silver surfaces and navy ink, for the hub.
 ///
-/// Values are `#rrggbb / 255` sRGB (see the module note on the color space).
-/// The axes have no light variant: they are editor-only slots and keep the
-/// [`pal`] tints.
+/// Values are `#rrggbb / 255` sRGB. The axes have no light variant: they are
+/// editor-only slots and keep the [`pal`] tints.
 pub mod pal_light {
     use khora_core::math::LinearRgba;
 
@@ -214,8 +194,9 @@ pub mod pal_light {
     pub const ERROR: LinearRgba = LinearRgba::new(150.0 / 255.0, 32.0 / 255.0, 24.0 / 255.0, 1.0);
 }
 
-/// Returns the Khora "Deep Navy / Silver" theme — the editor's. The hub wears
-/// its negative, [`khora_light`].
+/// Returns the Khora "Deep Navy / Silver" theme, the editor's.
+///
+/// The hub wears its negative, [`khora_light`].
 pub fn khora_dark() -> UiTheme {
     UiTheme {
         scheme: ColorScheme::Dark,
@@ -265,9 +246,9 @@ pub fn khora_dark() -> UiTheme {
     }
 }
 
-/// Returns the light Khora theme — silver surfaces, navy ink — built from
-/// [`pal_light`], with the same radii, type sizes and spacing as
-/// [`khora_dark`].
+/// Returns the light Khora theme, built from [`pal_light`]: the hub's.
+///
+/// Its radii, type sizes and spacing are [`khora_dark`]'s.
 pub fn khora_light() -> UiTheme {
     let dark = khora_dark();
     UiTheme {
@@ -331,8 +312,7 @@ mod tests {
         0.2126 * s[0] + 0.7152 * s[1] + 0.0722 * s[2]
     }
 
-    /// The brand theme is visibly distinct from the neutral default (migrated
-    /// from the old editor `theme.rs`).
+    /// The brand theme is visibly distinct from the neutral default.
     #[test]
     fn khora_dark_overrides_default_palette() {
         let dflt = UiTheme::default();
@@ -383,9 +363,10 @@ mod tests {
         }
     }
 
-    /// The surface ladder gets monotonically lighter from void to active, and
-    /// the text ramp gets monotonically darker from primary to disabled — the
-    /// two invariants every panel relies on for depth and hierarchy.
+    /// The surface ladder lightens from void to active; the text ramp darkens
+    /// from primary to disabled.
+    ///
+    /// Every panel relies on both for depth and hierarchy.
     #[test]
     fn ladders_are_monotonic() {
         let t = khora_dark();
@@ -490,9 +471,9 @@ mod tests {
         assert_eq!(khora_light().scheme, ColorScheme::Light);
     }
 
-    /// The void sits below the panel surface, and the elevated surface is the
-    /// lightest step of the ladder — on a light field, elevation reads as
-    /// "closer to white".
+    /// The void sits below the panel surface; the elevated surface is the lightest step.
+    ///
+    /// On a light field, elevation reads as "closer to white".
     #[test]
     fn khora_light_surface_ladder_rises_from_void_to_elevated() {
         let t = khora_light();

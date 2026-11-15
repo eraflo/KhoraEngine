@@ -127,9 +127,7 @@ impl Vec3 {
 
     /// Returns the largest component of the vector (signed).
     ///
-    /// Useful for major-axis selection in cubemap sampling and bounding-box
-    /// checks. Note that this is not the absolute maximum — for that,
-    /// call `.abs().max_element()`.
+    /// Not the largest magnitude: for that, call `.abs().max_element()`.
     #[inline]
     pub fn max_element(self) -> f32 {
         self.x.max(self.y).max(self.z)
@@ -153,13 +151,11 @@ impl Vec3 {
         self.length_squared().sqrt()
     }
 
-    /// Returns a normalized version of the vector with a length of 1.
+    /// Returns the vector scaled to unit length, or zero when it is no longer than `EPSILON`.
     #[inline]
     pub fn normalize(&self) -> Self {
         let len_sq = self.length_squared();
         if len_sq > EPSILON * EPSILON {
-            // Use squared length to avoid sqrt
-            // Multiply by inverse sqrt for potentially better performance
             *self * (1.0 / len_sq.sqrt())
         } else {
             Self::ZERO
@@ -172,7 +168,7 @@ impl Vec3 {
         self.x * other.x + self.y * other.y + self.z * other.z
     }
 
-    /// Computes the cross product of this vector and another.
+    /// Computes the right-handed cross product of this vector and another.
     #[inline]
     pub fn cross(&self, other: Self) -> Self {
         Self {
@@ -197,7 +193,7 @@ impl Vec3 {
         self.distance_squared(other).sqrt()
     }
 
-    /// Performs a linear interpolation between two vectors.
+    /// Linearly interpolates from `start` to `end` by `t`, which is not clamped.
     #[inline]
     pub fn lerp(start: Self, end: Self, t: f32) -> Self {
         Self {
@@ -322,8 +318,10 @@ impl Neg for Vec3 {
 
 impl Index<usize> for Vec3 {
     type Output = f32;
-    /// Allows accessing a vector component by index.
+    /// Returns the component at `index`: 0 for x, 1 for y, 2 for z.
+    ///
     /// # Panics
+    ///
     /// Panics if `index` is not 0, 1, or 2.
     #[inline]
     fn index(&self, index: usize) -> &Self::Output {
@@ -337,8 +335,10 @@ impl Index<usize> for Vec3 {
 }
 
 impl IndexMut<usize> for Vec3 {
-    /// Allows mutably accessing a vector component by index.
+    /// Returns the component at `index` mutably: 0 for x, 1 for y, 2 for z.
+    ///
     /// # Panics
+    ///
     /// Panics if `index` is not 0, 1, or 2.
     #[inline]
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {

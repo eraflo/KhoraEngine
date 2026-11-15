@@ -14,11 +14,9 @@
 
 //! A named place in a function where a frame can stand.
 //!
-//! A suspended frame stands at one of these: a function's entry, a
-//! statement's start, a loop's head, just after an `await`, or just after a
-//! call returns. The name comes from the source's structure — what a statement
-//! says, not where it sits — so an edit elsewhere in the function leaves it
-//! unchanged, and a frame frozen at it can be found again in the edited code.
+//! The name comes from what a statement says, not where it sits, so a frame
+//! frozen at it can be found again in edited code.
+//! See the book: concepts/scripting/turns.md, "Stopping is ordinary".
 
 use serde::{Deserialize, Serialize};
 
@@ -50,8 +48,9 @@ pub enum SiteKind {
     LoopHead,
     /// Just after an `await`.
     Await,
-    /// Just before an operation whose cost depends on what it touches — a
-    /// copy, a field read or write of an array. A run that cannot pay for it
+    /// Just before an operation whose cost depends on what it touches.
+    ///
+    /// A copy, a field read or write of an array. A run that cannot pay for it
     /// stops here, with the operation not yet done.
     Checkpoint,
     /// Just after a call returns, in the caller.
@@ -71,9 +70,10 @@ pub struct SiteLocal {
     /// Its type, as the checker prints it.
     pub ty: String,
     /// The block that declares it: the path of its enclosing statements and
-    /// branches, `param` for a parameter. With the name, what tells a local
-    /// apart from one it shadows or that shadows it — an edit may remove
-    /// either.
+    /// branches, `param` for a parameter.
+    ///
+    /// With the name, it tells a local apart from one it shadows or that
+    /// shadows it, since an edit may remove either.
     #[serde(default)]
     pub scope: String,
     /// The register holding it.

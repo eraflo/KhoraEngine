@@ -107,10 +107,10 @@ impl EntityReserver {
         self.hold_these(Vec::new())
     }
 
-    /// A hold over this reserver that holds `ids` — slots the owning world
-    /// took out of its free list for it — and hands them out before any
-    /// other: held from now, so no frame's end takes them back, until
-    /// committed or given back.
+    /// Returns a hold over this reserver that holds `ids` and hands them out first.
+    ///
+    /// `ids` are slots the owning world took out of its free list; no frame's
+    /// end takes them back until they are committed or given back.
     pub fn hold_these(self: &Arc<Self>, ids: Vec<EntityId>) -> ReservationHold {
         self.hold_ids(&ids);
         ReservationHold {
@@ -127,9 +127,10 @@ mod tests {
 
     use super::*;
 
-    /// **A held id is not the frame's to take back.** What the world releases
-    /// at a frame's end is what the reserver calls unspent: a hold's ids are
-    /// never among them, an ordinary reservation's are.
+    /// **A held id is not the frame's to take back.**
+    ///
+    /// What the world releases at a frame's end is what the reserver calls unspent: a
+    /// hold's ids are never among them, an ordinary reservation's are.
     #[test]
     fn ids_reserved_under_a_hold_are_not_taken_back_as_unspent() {
         let reserver = Arc::new(EntityReserver::new());

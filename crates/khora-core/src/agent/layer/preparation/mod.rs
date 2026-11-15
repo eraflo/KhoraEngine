@@ -12,16 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A layer prepared off the frame: the switch of a family's row, while its
-//! installed layer keeps running.
-//!
-//! When a place already holds an installed layer, the agent leaves a
-//! [`Preparation`] at it ([`Place::request_preparation`](super::Place::request_preparation))
-//! rather than preparing the new row inline. The scheduler takes it
-//! ([`Place::take_preparation`](super::Place::take_preparation)), runs it on
-//! the background pool under its own contention, and hands what it gave —
-//! a [`PreparedLayer`] — back to the place at the next frame start
-//! ([`Place::prepared`](super::Place::prepared)).
+//! A layer prepared off the frame, switching a family's row while its
+//! installed layer keeps running. It goes through
+//! [`Place::request_preparation`](super::Place::request_preparation) and
+//! comes back through [`Place::prepared`](super::Place::prepared).
 
 use std::time::{Duration, Instant};
 
@@ -31,13 +25,10 @@ use crate::EngineContext;
 
 use super::Layer;
 
-/// What a preparation's job runs: given a context, it lends the inputs,
-/// prepares the lane and returns the layer — or says why it could not.
+/// A preparation's job: returns the prepared layer, or why it could not be prepared.
 type Job = Box<dyn FnOnce(&mut EngineContext<'_>) -> Result<Box<dyn Layer>, String> + Send>;
 
-/// A layer to prepare off the frame: its row, what the preparation competes
-/// for, and the job that, given a context, lends the inputs, prepares the
-/// lane and returns the layer — or says why it could not.
+/// A layer to prepare off the frame: its row, its contention and the job that prepares it.
 pub struct Preparation {
     row: StrategyId,
     contention: Contention,
@@ -53,8 +44,7 @@ impl std::fmt::Debug for Preparation {
 }
 
 impl Preparation {
-    /// The preparation of `row`'s layer by `job`, contending for
-    /// `contention` while it runs.
+    /// Returns the preparation of `row`'s layer by `job`, contending for `contention`.
     pub fn new(
         row: StrategyId,
         contention: Contention,
@@ -78,8 +68,7 @@ impl Preparation {
         self.contention.clone()
     }
 
-    /// Runs the job on `context`, measuring the time it took: what the
-    /// place stages as the layer's switch time.
+    /// Runs the job on `context`, timing it: the layer's switch time.
     pub fn run(self, context: &mut EngineContext<'_>) -> PreparedLayer {
         let started = Instant::now();
         let outcome = (self.job)(context).map(|layer| (layer, started.elapsed()));

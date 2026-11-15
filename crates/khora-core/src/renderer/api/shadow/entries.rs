@@ -12,12 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Per-light shadow entries — abstract types every shadow strategy
-//! emits into the [`ShadowFrame`](super::ShadowFrame) deck slot for
-//! lit consumer lanes to look up by light index.
-//!
-//! Lives in `khora-core` because both producers (shadow lanes) and
-//! consumers (lit lanes) speak this contract.
+//! Per-light shadow entries that shadow strategies write into the
+//! [`ShadowFrame`](super::ShadowFrame) deck slot and lit lanes read by light index.
 
 use std::collections::HashMap;
 
@@ -25,17 +21,8 @@ use crate::math::{Mat4, Vec3};
 
 /// Shadow data computed by a shadow strategy for a single light.
 ///
-/// Two variants reflect the two atlas binding surfaces:
-///
-/// - [`ShadowEntry::Atlas2D`] — directional / spot, sampled with one
-///   view-projection matrix against a `texture_depth_2d_array`.
-/// - [`ShadowEntry::Cube`] — point lights, sampled directionally
-///   against a `texture_depth_cube_array`. The CPU-side per-face
-///   matrices are kept on the entry so the strategy can rebuild bind
-///   data without re-running its source flow.
-///
-/// `Cube` is boxed to keep the enum size close to `Atlas2D` (most
-/// lights in a typical scene are directional / spot).
+/// One variant per atlas: a 2D depth array for directional and spot lights, a
+/// depth cube array for point lights.
 #[derive(Debug, Clone)]
 pub enum ShadowEntry {
     /// Directional / spot shadow stored in the 2D depth-array atlas.
@@ -47,20 +34,17 @@ pub enum ShadowEntry {
     },
     /// Point-light omnidirectional shadow stored in the cubemap atlas.
     Cube {
-        /// Per-face view-projection matrices in
-        /// [`crate::math::CubeFace::ALL`] order
-        /// (`[+X, -X, +Y, -Y, +Z, -Z]`).
+        /// Per-face view-projection matrices in [`crate::math::CubeFace::ALL`]
+        /// order (`[+X, -X, +Y, -Y, +Z, -Z]`), boxed to keep the enum small.
         face_view_projs: Box<[Mat4; 6]>,
-        /// Layer index inside the cube-array atlas (the GPU consumes
-        /// `cube_array_index * 6 + face_index` to address a face).
+        /// Layer index inside the cube-array atlas; face `f` is layer
+        /// `cube_array_index * 6 + f`.
         cube_array_index: i32,
-        /// World-space light position. The shader uses this to compute
-        /// the fragment-to-light direction it samples the cubemap with.
+        /// World-space light position, from which the shader samples the cube.
         light_pos: Vec3,
-        /// Light's effective range — the perspective `far` plane used
-        /// when rendering the six faces. The shader recomputes the
-        /// non-linear depth value with this constant to compare against
-        /// the sampled depth.
+        /// Light's range, the `far` plane of the six face projections.
+        ///
+        /// The shader rebuilds the non-linear depth from it to compare.
         far_plane: f32,
     },
 }
@@ -80,12 +64,12 @@ impl ShadowEntries {
         self.0.get(&light_index)
     }
 
-    /// Number of shadow entries currently recorded.
+    /// Returns the number of shadow entries recorded.
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
-    /// Whether no shadow entries are currently recorded.
+    /// Returns whether no shadow entry is recorded.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }

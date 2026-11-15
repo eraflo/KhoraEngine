@@ -17,14 +17,11 @@
 pub use super::pipeline_layout_id::PipelineLayoutId;
 use std::borrow::Cow;
 
-/// A descriptor for a [`PipelineLayoutId`].
-/// Defines the set of resource bindings (e.g., uniform buffers, textures) a pipeline can access.
+/// A descriptor for a [`PipelineLayoutId`]: the resource bindings a pipeline can access.
 #[derive(Debug, Clone)]
 pub struct PipelineLayoutDescriptor<'a> {
     /// An optional debug label.
     pub label: Option<Cow<'a, str>>,
-    /// The bind group layouts used by this pipeline, indexed by set number.
-    /// Each bind group layout describes the structure of resources that will be
-    /// bound at a specific set index.
+    /// The bind group layouts used by this pipeline, indexed by group number.
     pub bind_group_layouts: &'a [crate::renderer::api::command::BindGroupLayoutId],
 }

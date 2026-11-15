@@ -119,15 +119,20 @@ pub struct ShapedText {
 /// implementation while it holds it. Every method can therefore be called from
 /// many threads at once without deadlocking.
 pub trait TextShaper: Send + Sync {
-    /// Registers the font file `data` under `id` and returns the family the
-    /// file declares. Registering an `id` again replaces its font (a hot
-    /// reload): later shaping under `id` uses the new data. A refused
-    /// registration leaves `id` with no font — never the file it held before,
-    /// which is no longer the one its owner holds.
+    /// Registers the font file `data` under `id` and returns the family it declares.
+    ///
+    /// Registering an `id` again replaces its font (a hot reload). A refused
+    /// registration leaves `id` with no font, never the file it held before.
+    ///
+    /// # Errors
+    ///
+    /// [`FontError::Unreadable`] when `data` is not a font file the backend reads.
     fn register_font(&self, id: AssetUUID, data: Arc<[u8]>) -> Result<FontFamily, FontError>;
 
     /// Shapes `request.text` with the font registered under `request.font`.
-    /// Refused with [`ShapeError::UnknownFont`] if no font is registered under
-    /// that id.
+    ///
+    /// # Errors
+    ///
+    /// [`ShapeError::UnknownFont`] if no font is registered under that id.
     fn shape(&self, request: &ShapeRequest<'_>) -> Result<ShapedText, ShapeError>;
 }

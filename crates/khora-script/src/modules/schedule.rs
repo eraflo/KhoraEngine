@@ -12,13 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! How the script lane schedules a behavior or a system, as its author
-//! declares it: `[Critical]` served first from the frame's fuel, `[Budget(d)]`
-//! a per-frame ceiling, `[Rate(f)]` at most `f` turns a second.
+//! The scheduling attributes of a behavior or a system: `[Critical]`,
+//! `[Budget(d)]`, `[Rate(f)]`. They change when a turn runs, never what it does.
 //!
-//! The author says what matters and how often; the lane decides who runs
-//! when. None of them changes what a turn does — only whether it runs this
-//! frame, and with how much of the fuel.
+//! See the book: reference/ergon.md, "Scheduling".
 
 use crate::ast::{Attribute, BehaviorDecl, BehaviorMember, Expr};
 use crate::diagnostics::Diagnostic;
@@ -34,8 +31,8 @@ pub const RATE: &str = "Rate";
 /// The scheduling attributes.
 pub const SCHEDULING: [&str; 3] = [CRITICAL, BUDGET, RATE];
 
-/// The schedule `attributes` declare — what the lane reads. An argument
-/// refused by [`report_schedule`] is left out.
+/// Returns the schedule `attributes` declare, leaving out any argument
+/// [`report_schedule`] refuses.
 pub fn schedule_of(attributes: &[Attribute]) -> Schedule {
     let first = |name: &str| attributes.iter().find(|attribute| attribute.name == name);
     Schedule {
@@ -52,9 +49,8 @@ pub fn schedule_of(attributes: &[Attribute]) -> Schedule {
     }
 }
 
-/// Every refusal about `decl`'s scheduling attributes: an argument of the
-/// wrong kind, one given twice, a rate on a behavior with a fixed-step
-/// member — and, on a system, any attribute but these three.
+/// Reports `decl`'s scheduling refusals: a wrong argument, a repeat, a rate with
+/// a `FixedUpdate`, and on a system any attribute but these three.
 pub fn report_schedule(decl: &BehaviorDecl, system: bool, diagnostics: &mut Vec<Diagnostic>) {
     if system {
         for attribute in &decl.attributes {

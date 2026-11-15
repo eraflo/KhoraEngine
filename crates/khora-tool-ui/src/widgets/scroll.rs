@@ -14,13 +14,9 @@
 
 //! Scrolling for panels that paint in absolute coordinates.
 //!
-//! The editor's panels compute their own rects and paint straight into window
-//! space, which is why none of them scrolled: a stock scroll area expects to
-//! own the layout, and adopting one would mean rewriting every panel to paint
-//! relatively.
-//!
-//! Instead a panel keeps a [`ScrollState`], subtracts its offset from its own
-//! `y` cursor, and clips to the viewport. Three lines per panel, no rewrite.
+//! The editor's panels paint straight into window space, and a stock scroll
+//! area expects to own the layout. Instead a panel keeps a [`ScrollState`],
+//! subtracts its offset from its own `y` cursor, and clips to the viewport.
 
 use khora_core::ui::{UiBuilder, UiTheme};
 
@@ -49,9 +45,10 @@ impl ScrollState {
         self.offset
     }
 
-    /// Scrolls back to the top — call when the content is replaced wholesale
-    /// (a new scene, a changed filter) so the user isn't left staring at blank
-    /// space below the end of a now-shorter list.
+    /// Scrolls back to the top.
+    ///
+    /// Call when the content is replaced wholesale (a new scene, a changed
+    /// filter), so the user is not left before blank space past a shorter list.
     pub fn reset(&mut self) {
         self.offset = 0.0;
     }

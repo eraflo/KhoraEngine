@@ -17,9 +17,10 @@ use crate::services::github::auth;
 use crate::state::{AuthState, Banner};
 use khora_sdk::tool_ui::AppContext;
 
-/// Drain every background-channel queued since the last frame.
-/// Triggers banner updates, progress recordings, and post-download
-/// callbacks for the New Project flow.
+/// Applies every message the background channels queued since the last frame.
+///
+/// Updates the banner and download progress, and finishes a project
+/// creation whose engine download completed.
 pub fn pump_async_messages(app: &mut HubApp, ctx: &mut dyn AppContext) {
     pump_engine_manager_fetch(app);
     pump_engine_manager_download(app, ctx);

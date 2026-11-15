@@ -93,7 +93,7 @@ impl<'f, T: Default + Clone + Any + Send + Sync> DeckOutputField<'f> for T {
     }
 }
 
-/// A field type output `#[staged]` accepts: `Vec<T>` or [`Leases<T>`] of a
+/// A field type output `#[staged]` accepts: `Vec<T>` or `Leases<T>` of a
 /// [`Staged`] output, kept in the family's reserve across frames.
 #[diagnostic::on_unimplemented(
     message = "`#[staged]` writes to the family's reserve: the field must be `Vec<T>` or `Leases<T>` of a `Staged` output, not `{Self}`",

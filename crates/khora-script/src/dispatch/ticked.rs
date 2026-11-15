@@ -44,24 +44,12 @@ pub struct SuspendedTimer {
     pub why: Suspension,
 }
 
-/// Advances the behavior's countdowns and runs whichever came due.
+/// Advances the behavior's countdowns by `delta` and runs whichever came due.
 ///
-/// Called once per frame with the time that passed. A countdown rather than a
-/// deadline, for the reason [`TimerLayout`] gives: what is left survives a save
-/// exactly, where an absolute time would resume either instantly or after the
-/// whole gap depending on how long the game was closed.
+/// Returns the fuel spent and the body cut short, if one was: it resumes where
+/// it stopped and its timer rearms when it finishes ([`finish_timer`]). The
+/// timers still due after a cut body wait for a later turn.
 ///
-/// Returns what was spent, so the caller's budget accounting stays whole — a
-/// scheduled body costs fuel like anything else — and the body that stopped
-/// before finishing, if one did.
-///
-/// A body cut short, by fuel or by an `await` in a method it calls, is handed
-/// back rather than dropped: it resumes where it stopped, and its timer rearms
-/// when it finishes ([`finish_timer`]). Rerunning it whole would repeat what it
-/// had already done. Once a body is cut, the timers still due after it wait,
-/// due, for a later turn: the behavior does one thing at a time.
-///
-/// [`TimerLayout`]: crate::vm::TimerLayout
 /// [`finish_timer`]: super::finish_timer
 pub fn tick_timers(
     program: &Program,
@@ -124,11 +112,9 @@ pub fn tick_timers(
             // dropped: a frame that ran long must not make `every 0.5s` drift
             // slower than half a second.
             TimerKind::Every => Value::Float(timer.seconds + remaining),
-            // `after` fires once. `Null` — "there is no next time" — rather
-            // than a large number, so nothing has to reason about how large is
-            // large enough, and deliberately not `Unit`: an unset slot is also
-            // `Unit`, and a reload restoring defaults over a spent schedule
-            // would arm it again and fire it twice.
+            // `after` fires once: `Null` means "no next time". Not `Unit`, which
+            // an unset slot also holds: a reload restoring defaults over a spent
+            // schedule would arm it again and fire it twice.
             TimerKind::After => Value::Null,
         };
 
@@ -145,9 +131,8 @@ pub fn tick_timers(
                     why,
                 });
             }
-            // Rearmed *after* the body, because the body may have written the
-            // slot itself — a `become` that leaves the state owning this timer,
-            // for instance, should not be undone by the schedule.
+            // Rearmed *after* the body, which may have written the slot itself:
+            // a `become` leaving the timer's state must not be undone.
             Run::Completed => host.fields.set(slot, Persisted::Scalar(next)),
             Run::Faulted(fault) => {
                 host.fields.set(slot, Persisted::Scalar(next));

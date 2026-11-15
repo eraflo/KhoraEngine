@@ -374,15 +374,8 @@ fn an_event_with_the_wrong_arity_is_refused() {
     assert_eq!(health(&host), 100, "nothing ran");
 }
 
-/// An argument a register genuinely cannot hold is refused rather than dropped:
+/// An argument an event cannot carry, a list, is refused rather than dropped:
 /// an event that silently lost its payload would be far harder to see.
-///
-/// This once asserted that a `Vec3` was such a case. It was not — it was one
-/// half of a translation written twice, where the raising side knew about
-/// vectors and the delivery side did not. A single bridge removed the asymmetry,
-/// so the example had to become something an event genuinely cannot carry: a
-/// list. A register holds arrays now, but an event's payload stays scalars and
-/// text.
 #[test]
 fn an_argument_a_register_cannot_hold_is_refused() {
     let program = build(GUARD);
@@ -407,7 +400,7 @@ fn an_argument_a_register_cannot_hold_is_refused() {
     ));
 }
 
-/// And a `Vec3` **does** fit one — the case this file used to get backwards.
+/// A `Vec3` **does** fit an event's payload.
 #[test]
 fn a_vector_argument_reaches_the_handler() {
     let program = build(

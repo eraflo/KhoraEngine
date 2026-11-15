@@ -80,30 +80,41 @@ impl Activation {
         }
     }
 
-    /// Makes `families` known too, each on: a family registered after the
-    /// activation was made can be switched from then on. A family already known keeps its state.
+    /// Makes `families` known too, each on, so they can be switched.
+    ///
+    /// A family already known keeps its state.
     pub fn admit(&self, families: impl IntoIterator<Item = AgentId>) {
         self.write().known.extend(families);
     }
 
     /// Requests `family` on, from the next [`settle`](Self::settle).
+    ///
+    /// # Errors
+    ///
+    /// [`UnknownFamily`] when `family` is not known; nothing changes.
     pub fn activate(&self, family: AgentId) -> Result<(), UnknownFamily> {
         self.request(family, State::On)
     }
 
     /// Requests `family` off, from the next [`settle`](Self::settle).
+    ///
+    /// # Errors
+    ///
+    /// [`UnknownFamily`] when `family` is not known; nothing changes.
     pub fn deactivate(&self, family: AgentId) -> Result<(), UnknownFamily> {
         self.request(family, State::Off)
     }
 
-    /// Requests `family` on, limited to the entities holding the component
-    /// registered as `marker`, from the next [`settle`](Self::settle). A
-    /// scoped family counts as on.
+    /// Requests `family` on for the entities holding the component `marker` only.
     ///
-    /// The scope is honoured by the family's Flows and the systems that read
-    /// the World for it — the scripting and audio families today. The physics
-    /// family does not honour one yet: its provider steps every body it was
-    /// given, so a scoped physics family runs as one plainly on.
+    /// Takes effect at the next [`settle`](Self::settle); a scoped family counts
+    /// as on. The family's Flows and World-reading systems honour the scope
+    /// (scripting and audio); the physics provider steps every body it was
+    /// given, so a scoped physics family runs plainly on.
+    ///
+    /// # Errors
+    ///
+    /// [`UnknownFamily`] when `family` is not known; nothing changes.
     pub fn scope(&self, family: AgentId, marker: &'static str) -> Result<(), UnknownFamily> {
         self.request(family, State::Scoped(marker))
     }
@@ -216,9 +227,7 @@ mod tests {
         assert!(activation.inactive().is_empty());
     }
 
-    /// **A request takes effect only at `settle`.** Switched off, the family
-    /// is still on for the frame in force; settled, it is off. Switched on
-    /// again, it stays off until the next settle.
+    /// **A request takes effect only at `settle`**, whether it switches off or on.
     #[test]
     fn a_request_takes_effect_only_at_settle() {
         let activation = engine();
@@ -244,8 +253,9 @@ mod tests {
         assert!(activation.inactive().is_empty());
     }
 
-    /// **The generation moves only when the state in force changes.** A
-    /// settle with nothing requested, a request for the state already in
+    /// **The generation moves only when the state in force changes.**
+    ///
+    /// A settle with nothing requested, a request for the state already in
     /// force, or a request taken back before the boundary leave it where it
     /// was, and `settle` says nothing changed.
     #[test]
@@ -294,9 +304,11 @@ mod tests {
         assert!(activation.inactive().is_empty());
     }
 
-    /// **A scoped family is on, limited to its marker.** Requested, the scope
-    /// waits for the boundary like any request; settled, the family reports
-    /// its marker, counts as active and is not among the families off.
+    /// **A scoped family is on, limited to its marker.**
+    ///
+    /// Requested, the scope waits for the boundary like any request; settled,
+    /// the family reports its marker, counts as active and is not among the
+    /// families off.
     #[test]
     fn a_scoped_family_is_on_and_reports_its_marker() {
         let activation = engine();
@@ -319,9 +331,9 @@ mod tests {
         assert_eq!(activation.state(AUDIO), State::On, "the others unscoped");
     }
 
-    /// **`activate` and `deactivate` replace a scope**, and a scope replaces
-    /// a family switched off: the last request before the boundary is the
-    /// state in force.
+    /// **The last request before the boundary is the state in force.**
+    ///
+    /// `activate` and `deactivate` replace a scope, and a scope replaces off.
     #[test]
     fn activate_and_deactivate_replace_a_scope() {
         let activation = engine();
@@ -351,9 +363,10 @@ mod tests {
         assert_eq!(activation.state(AUDIO), State::On, "on replaces the scope");
     }
 
-    /// **The generation moves when the marker changes, and only then.** The
-    /// same scope requested again, or a scope taken back before the boundary,
-    /// changes nothing; another marker, or leaving the scope, does.
+    /// **The generation moves when the marker changes, and only then.**
+    ///
+    /// The same scope requested again, or a scope taken back before the
+    /// boundary, changes nothing; another marker, or leaving the scope, does.
     #[test]
     fn the_generation_moves_when_the_scope_changes_and_not_for_the_same_scope() {
         let activation = engine();

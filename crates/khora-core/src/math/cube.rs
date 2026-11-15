@@ -12,21 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Cubemap face primitives.
-//!
-//! [`CubeFace`] enumerates the six faces of an axis-aligned cube in the
-//! order wgpu expects when indexing a `texture_cube` / `texture_cube_array`:
-//!
-//! ```text
-//! 0: +X    1: -X    2: +Y    3: -Y    4: +Z    5: -Z
-//! ```
-//!
-//! It is the foundation for omnidirectional shadow mapping (point-light
-//! shadows), reflection probes, IBL, and any other code path that needs to
-//! enumerate or sample a cube's faces. The "up" vector returned by
-//! [`CubeFace::up`] matches the cubemap convention used by wgpu / Vulkan /
-//! D3D11 — the +Y / −Y faces use ±Z as their up vector to avoid the
-//! singularity where `look_at_rh(eye, eye + Y, Y)` is degenerate.
+//! The six faces of a cube, in the order wgpu indexes a `texture_cube`, with each face's
+//! camera axes: what point-light shadows, reflection probes and IBL render through.
 
 use crate::math::Vec3;
 
@@ -54,10 +41,6 @@ pub enum CubeFace {
 
 impl CubeFace {
     /// All six faces in wgpu cubemap order: `[+X, -X, +Y, -Y, +Z, -Z]`.
-    ///
-    /// Use this with `Iterator::map` or array `.map()` to produce per-face
-    /// data structures (view matrices, render passes, atlas slots…) in a
-    /// stable order that matches the GPU's expectation.
     pub const ALL: [CubeFace; 6] = [
         CubeFace::PosX,
         CubeFace::NegX,
@@ -74,8 +57,7 @@ impl CubeFace {
         self as usize
     }
 
-    /// World-space direction the rendering camera looks toward when
-    /// rasterising this face.
+    /// Returns the world-space direction the camera looks toward when rasterising this face.
     #[inline]
     pub const fn forward(self) -> Vec3 {
         match self {
@@ -88,9 +70,10 @@ impl CubeFace {
         }
     }
 
-    /// World-space "up" direction matching the wgpu / Vulkan / D3D11
-    /// cubemap convention. The ±Y faces use ±Z as their up vector to keep
-    /// `look_at_rh(eye, eye + face.forward(), face.up())` non-degenerate.
+    /// Returns the face camera's world-space up, in the wgpu / Vulkan / D3D11 cubemap convention.
+    ///
+    /// The ±Y faces use ±Z, so `look_at_rh(eye, eye + face.forward(), face.up())` is never
+    /// degenerate.
     #[inline]
     pub const fn up(self) -> Vec3 {
         match self {
@@ -101,13 +84,10 @@ impl CubeFace {
         }
     }
 
-    /// Picks the face whose [`forward`](Self::forward) axis is most aligned
-    /// with `dir` (largest absolute component wins, sign chooses the
-    /// half-axis).
+    /// Returns the face whose [`forward`](Self::forward) axis is most aligned with `dir`.
     ///
-    /// This is the major-axis selection used in CPU-side cubemap sampling
-    /// debug paths and unit tests; the GPU equivalent runs in hardware
-    /// during `textureSampleCompareLevel(cube, ...)`.
+    /// The largest absolute component wins (X before Y before Z on ties), its sign picks the
+    /// half-axis: the major-axis rule the GPU applies when sampling a cube.
     pub fn from_direction(dir: Vec3) -> CubeFace {
         let abs = dir.abs();
         if abs.x >= abs.y && abs.x >= abs.z {

@@ -26,13 +26,13 @@ pub(super) struct SandboxGame {
     frame_count: u64,
     player: Option<khora_sdk::prelude::ecs::EntityId>,
     controller: PlayerController,
-    /// Cached handle to the engine's InputMap. Stored at `setup` time so
-    /// `update` (which doesn't receive `&ServiceRegistry`) can still query
-    /// actions each frame.
+    /// The engine's InputMap, kept at `setup` for `update` to query actions.
+    ///
+    /// `update` receives no `Runtime` to find it in.
     input_map: Option<Arc<Mutex<InputMap>>>,
-    /// Cached handle to the engine's per-frame [`Time`](khora_sdk::prelude::Time) resource. Cached at
-    /// `setup` time so `update` can read the real frame delta (the scheduler
-    /// publishes it each frame) instead of a hardcoded constant.
+    /// The engine's per-frame [`Time`](khora_sdk::prelude::Time) resource, kept at `setup`.
+    ///
+    /// `update` reads the real frame delta from it, published each frame.
     time: Option<khora_sdk::prelude::SharedTime>,
 }
 
@@ -151,11 +151,10 @@ impl EngineApp for SandboxGame {
 
         let mut point_light = khora_sdk::prelude::ecs::Light::point();
         if let khora_sdk::prelude::ecs::LightType::Point(ref mut p) = point_light.light_type {
-            // `intensity` is a direct linear multiplier on the light color in
-            // this shading model (not a physical luminous power), so it pairs
-            // with the windowed `(1 - (d/range)^2)^2` attenuation. A few units
-            // is bright; large values saturate every nearby surface to white
-            // after the Reinhard tonemap.
+            // `intensity` multiplies the light colour linearly (not a physical
+            // power) under the `(1 - (d/range)^2)^2` attenuation. A few units is
+            // bright; large values saturate nearby surfaces to white after the
+            // Reinhard tonemap.
             p.intensity = 5.0;
             p.color = khora_sdk::prelude::math::LinearRgba::new(0.8, 0.9, 1.0, 1.0);
             p.range = 15.0;
@@ -197,13 +196,10 @@ impl EngineApp for SandboxGame {
             .with_component(chrome_handle)
             .build();
 
-        // A sphere driven by Ergon rather than by Rust — the first entity in
-        // this repository whose motion comes from a script.
-        //
-        // A behaviour is a component: `Hover`, declared by
-        // `assets/scripts/hover.erg` and registered from it before `setup`.
-        // Naming `speed` overrides the default the script declared, which is
-        // exactly what the inspector edits and what a scene file keeps.
+        // A sphere moved by Ergon, not Rust. The behaviour is a component,
+        // `Hover`, declared by `assets/scripts/hover.erg` and registered before
+        // `setup`. Naming `speed` overrides the script's default, as the
+        // inspector does and a scene file keeps.
         let scripted = khora_sdk::prelude::materials::StandardMaterial {
             base_color: khora_sdk::prelude::math::LinearRgba::rgb(0.9, 0.45, 0.15),
             roughness: 0.35,
@@ -222,11 +218,10 @@ impl EngineApp for SandboxGame {
             log::error!("the hovering sphere has no `Hover`: {error:?}");
         }
 
-        // Two tinted glass spheres, one behind the other, to show alpha
-        // blending: `AlphaMode::Blend` puts them in the depth-sorted
-        // transparent batch, so the far one shows through the near one and the
-        // scene behind shows through both. Overlapping them is the actual test
-        // — a single transparent object would look right even unsorted.
+        // Two tinted glass spheres, one behind the other: `AlphaMode::Blend`
+        // puts them in the depth-sorted transparent batch, so each shows what
+        // is behind it. The overlap is the test: a single transparent object
+        // would look right even unsorted.
         for (offset, tint) in [
             (
                 0.0_f32,

@@ -12,15 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! How the inspector shows a field, as its author declares it:
-//! `[Range(min, max)]` bounds what editing it reaches, `[Tooltip("…")]` is
-//! what hovering its label says, `[Header("…")]` titles the fields from it
-//! on.
+//! The field attributes that tell the inspector how to show a field:
+//! `[Range]`, `[Tooltip]`, `[Header]`. No run time reads them.
 //!
-//! They are the editor's alone: no run time reads them, and a range bounds
-//! the inspector, never what a script writes. A component's, a behavior's
-//! and a system's fields take them — those the inspector shows; a struct's
-//! field and a state's field take none.
+//! See the book: reference/ergon.md, "Field attributes".
 
 use khora_core::script::{FieldHints, FieldRange};
 
@@ -49,8 +44,8 @@ enum Kind {
     Angle,
 }
 
-/// The hints `field`'s attributes declare. An attribute refused by
-/// [`report_field_attributes`] is left out.
+/// Returns the hints `field`'s attributes declare, leaving out any attribute
+/// [`report_field_attributes`] refuses.
 pub fn hints_of(field: &Field) -> FieldHints {
     let first = |name: &str| {
         field
@@ -69,7 +64,7 @@ pub fn hints_of(field: &Field) -> FieldHints {
     }
 }
 
-/// What is wrong with the attributes of `field`, one the inspector shows.
+/// Reports what is wrong with the attributes of `field`, one the inspector shows.
 pub fn report_field_attributes(field: &Field, diagnostics: &mut Vec<Diagnostic>) {
     for (at, attribute) in field.attributes.iter().enumerate() {
         if !FIELD_ATTRIBUTES.contains(&attribute.name.as_str()) {
@@ -123,8 +118,8 @@ pub fn report_field_attributes(field: &Field, diagnostics: &mut Vec<Diagnostic>)
     }
 }
 
-/// The attributes written on fields the inspector never shows: a struct's,
-/// and a state's — in every module but the engine's.
+/// Returns the refusals of attributes written on fields the inspector never
+/// shows: a struct's and a state's, in every module but the engine's.
 pub fn report_misplaced(resolved: &Resolved) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let items = resolved
@@ -338,9 +333,8 @@ fn bound(kind: Kind, expr: &Expr) -> Option<f64> {
     }
 }
 
-/// Gathers into `values` what a constant default holds, each of `kind` —
-/// nothing for a `null`, every element of an array, at any depth; `None`
-/// for a default that is not such a constant, which the type checker judges.
+/// Gathers into `values` every number of `kind` a constant default holds, at any
+/// depth; `None` for a non-constant default, which the type checker judges.
 fn leaves(expr: &Expr, kind: Kind, values: &mut Vec<f64>) -> Option<()> {
     match expr {
         Expr::Null(_) => Some(()),

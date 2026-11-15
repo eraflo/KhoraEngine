@@ -14,7 +14,7 @@
 
 //! A glTF file's sub-assets: its scenes, primitives, materials and textures.
 //!
-//! The file's own uuid still decodes as one merged [`Mesh`] (see
+//! The file's own uuid still decodes as one merged `Mesh` (see
 //! [`GltfDecoder`](super::GltfDecoder)); each part is also an asset, named by
 //! the label [`list_gltf_sub_assets`] gives it.
 

@@ -50,7 +50,7 @@ fn an_agent_id_is_its_name() {
 
 /// **Agent ids order by name**, not by a declaration order: a journal keyed
 /// by agent lists them the same way on every run. `physics` comes before
-/// `renderer`, which the old variant order put first.
+/// `renderer`, whatever order they were declared in.
 #[test]
 fn agent_ids_order_by_name() {
     let mut ids = [

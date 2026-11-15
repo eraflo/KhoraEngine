@@ -12,12 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The four messages of GORNA: the DCC asks for offers, each agent offers its
-//! rows, the DCC allocates an envelope to each, and each agent reports what it
-//! ran.
+//! The four messages of GORNA: offer request, offer, allocation, report.
 //!
-//! The DCC decides *how much* (an envelope per agent per epoch); the agent
-//! decides *how* (its row within the envelope).
+//! See the book: concepts/gorna.md, "The four messages".
 
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -87,10 +84,11 @@ pub struct Allocation {
     pub allowed: Vec<(AgentId, Vec<StrategyId>)>,
     /// The cutoff of the upgrade pass, for information only.
     pub price: Option<f32>,
-    /// Whether a lower frame target can take something back: some agent's
-    /// plan runs above its floor — an upgrade, or a `Stable` envelope it keeps
-    /// — and is not pinned there. The frame governor does not lower the
-    /// multiplier without one.
+    /// Whether a lower frame target can take something back.
+    ///
+    /// True when some unpinned agent's plan runs above its floor (an upgrade,
+    /// or a `Stable` envelope it keeps). The frame governor lowers the
+    /// multiplier only with one.
     pub lever: bool,
     /// The agents whose offer came after the request's `reply_by`: each keeps
     /// the envelope it had.
@@ -98,11 +96,10 @@ pub struct Allocation {
 }
 
 impl Allocation {
-    /// Lends `agent` what the allocation names for it — its envelope, its pin
-    /// and its allowed rows — through [`Agent::apply`]; whether it named the
-    /// agent. An agent it names neither an envelope, a pin nor allowed rows
-    /// for is left with what it holds. One named a pin or allowed rows but no
-    /// envelope — the round could not price it — is lent no envelope.
+    /// Lends `agent` its envelope, pin and allowed rows; returns whether it named the agent.
+    ///
+    /// An agent named nowhere keeps what it holds. One named a pin or allowed
+    /// rows but no envelope (the round could not price it) is lent no envelope.
     pub fn lend_to(&self, agent: &mut dyn Agent) -> bool {
         let id = agent.id();
         let envelope = (self.envelopes.iter())

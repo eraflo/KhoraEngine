@@ -34,10 +34,9 @@ pub struct EngineInstall {
     pub version: String,
     /// Path to the editor binary.
     pub editor_binary: String,
-    /// Path to the host-target `khora-runtime` binary, when this version
-    /// shipped one (introduced in v0.4 alongside the editor's "Build Game"
-    /// feature). `None` for older releases — the editor falls back to
-    /// scanning the engine cache directory in that case.
+    /// Path to the host-target `khora-runtime` binary, when this version ships one.
+    ///
+    /// When `None`, the editor looks for one in the engine cache directory.
     #[serde(default)]
     pub runtime_binary: Option<String>,
     /// "github" | "local"
@@ -64,7 +63,7 @@ impl HubConfig {
             .join("hub.json")
     }
 
-    /// Loads the configuration from disk, creating defaults if absent.
+    /// Loads the configuration from disk, or the defaults when it is missing or unreadable.
     pub fn load() -> Self {
         let path = Self::config_path();
         if path.exists() {
@@ -78,6 +77,10 @@ impl HubConfig {
     }
 
     /// Saves the configuration to disk.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the folder cannot be created or the file cannot be written.
     pub fn save(&self) -> Result<()> {
         let path = Self::config_path();
         if let Some(parent) = path.parent() {
@@ -88,8 +91,9 @@ impl HubConfig {
         Ok(())
     }
 
-    /// Adds or updates a recent project entry, keeping the list sorted by
-    /// most-recently-opened first.
+    /// Moves `path` to the front of the recent projects, adding it if new.
+    ///
+    /// The list keeps the 20 most recently opened.
     pub fn push_recent(&mut self, name: &str, path: &Path, engine_version: &str) {
         let path_str = path.to_string_lossy().to_string();
         self.recent_projects.retain(|p| p.path != path_str);
@@ -112,15 +116,12 @@ impl HubConfig {
     pub fn dev_engine(&self) -> Option<EngineInstall> {
         let repo = self.local_engine_repo.as_deref()?;
         let exe_suffix = if cfg!(windows) { ".exe" } else { "" };
-        // Editor binary at <repo>/target/debug/khora-editor(.exe)
         let editor = PathBuf::from(repo)
             .join("target")
             .join("debug")
             .join(format!("khora-editor{exe_suffix}"));
-        // Runtime binary at <repo>/target/debug/khora-runtime(.exe) — the
-        // editor's Build Game feature copies this into staged exports.
-        // Returned only if the file exists today; if the dev hasn't built
-        // it yet, the editor will surface an actionable error.
+        // The editor's Build Game copies the runtime into exports; when it is
+        // not built yet, the editor says so.
         let runtime_path = PathBuf::from(repo)
             .join("target")
             .join("debug")

@@ -23,18 +23,15 @@ use crate::exec::*;
 use crate::term::*;
 use anyhow::Result;
 
-/// `cargo xtask hub-dev` — pre-builds the engine binaries the hub needs to
-/// launch (editor + runtime) in **debug** profile, then runs the hub
-/// itself in **release**. Mirrors the typical contributor workflow:
+/// `cargo xtask hub-dev`: builds the editor and runtime in debug, then runs the hub in release.
 ///
-/// - Hub in release for snappy UI.
-/// - Editor + runtime in debug for fast engine-code iteration. The hub's
-///   `dev_engine()` already looks for both at `<workspace>/target/debug/`,
-///   so this command lines up with what the hub expects.
+/// The hub's `dev_engine()` looks for both binaries in `<workspace>/target/debug/`.
+/// Two cargo invocations rather than `cargo build --workspace`: only the
+/// binaries the hub launches are rebuilt.
 ///
-/// The two cargo invocations stay separate (rather than one
-/// `cargo build --workspace`) to keep the dev cycle fast: contributors
-/// rebuild only the binaries they actually need.
+/// # Errors
+///
+/// Fails when the build or the hub fails.
 pub fn hub_dev() -> Result<()> {
     print_task_start("Hub Dev Workflow", ROCKET, CYAN);
     println!(
@@ -42,16 +39,13 @@ pub fn hub_dev() -> Result<()> {
         BOLD, RESET
     );
 
-    // Build the editor and the runtime (debug). The hub's dev_engine() expects
-    // both at target/debug/, and the editor's Build Game feature stamps the
-    // runtime from there.
+    // The editor's Build Game stamps the runtime from `target/debug/` too.
     execute_command(
         "cargo",
         &["build", "-p", "khora-editor", "-p", "khora-runtime"],
         "Build editor + runtime (debug)",
     )?;
 
-    // Then run the hub itself in release.
     execute_command(
         "cargo",
         &["run", "-p", "khora-hub", "--release"],

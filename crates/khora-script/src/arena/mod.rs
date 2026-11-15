@@ -12,12 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Frame-scoped memory.
-//!
-//! Ergon has no garbage collector, which is the point: a collector is one more
-//! consumer for the DCC to budget, and an unpredictable pause is exactly what a
-//! frame budget cannot absorb. Instead, memory is split by lifetime and each
-//! kind is freed by knowing *when*, not by discovering *whether*.
+//! Frame-scoped memory: Ergon has no garbage collector, so memory is freed by lifetime.
 //!
 //! | Zone | Freed | Holds |
 //! |---|---|---|
@@ -25,21 +20,9 @@
 //! | [`persistent`] | with the entity | behavior fields, state, continuations |
 //! | The ECS | with the scene | what the game authored |
 //!
-//! Releasing a frame's allocations costs one counter bump, whatever was
-//! allocated. Nothing is traced and nothing is scanned.
-//!
-//! # The danger, and the guard
-//!
-//! Reusing memory wholesale means a reference held past the reset would read
-//! whatever landed there next — a use-after-free with none of the noise.
-//!
-//! So every reference carries the **generation** it was made in, and `reset`
-//! bumps it. A stale reference does not read the wrong object: it does not
-//! read at all. [`Arena::get`] returns [`ArenaError::Stale`], which says how
-//! many frames ago the value died and where to keep one that has to live
-//! longer. The check is a `u32` comparison on each access — cheap next to what
-//! it rules out, and unlike a collector its cost does not vary from frame to
-//! frame.
+//! Every reference carries the **generation** it was made in, and a reset
+//! bumps it: a reference held past its frame reads nothing, [`Arena::get`]
+//! returns [`ArenaError::Stale`].
 
 pub mod owned;
 pub mod persistent;
@@ -141,8 +124,8 @@ pub enum ArenaError {
     OutOfBounds,
     /// The arena is full.
     Full,
-    /// A value the program's declarations cannot hold — a struct it no longer
-    /// declares, or one missing a field that has neither a default nor a zero.
+    /// A value the program's declarations cannot hold — a struct it does not
+    /// declare, or one missing a field that has neither a default nor a zero.
     Mismatch,
 }
 
@@ -220,6 +203,10 @@ impl Arena {
     }
 
     /// Allocates `object`, returning a reference valid until the next reset.
+    ///
+    /// # Errors
+    ///
+    /// [`ArenaError::Full`] past the frame's capacity.
     pub fn alloc(&mut self, object: Object) -> Result<ArenaRef, ArenaError> {
         if self.objects.len() >= CAPACITY {
             return Err(ArenaError::Full);
@@ -233,6 +220,11 @@ impl Arena {
     }
 
     /// Reads through a reference.
+    ///
+    /// # Errors
+    ///
+    /// [`ArenaError::Stale`] for a reference of another frame,
+    /// [`ArenaError::OutOfBounds`] for one past the arena.
     pub fn get(&self, reference: ArenaRef) -> Result<&Object, ArenaError> {
         self.check(reference)?;
         self.objects
@@ -241,6 +233,10 @@ impl Arena {
     }
 
     /// Reads through a reference, mutably.
+    ///
+    /// # Errors
+    ///
+    /// As [`Arena::get`].
     pub fn get_mut(&mut self, reference: ArenaRef) -> Result<&mut Object, ArenaError> {
         self.check(reference)?;
         self.objects
@@ -248,18 +244,11 @@ impl Arena {
             .ok_or(ArenaError::OutOfBounds)
     }
 
-    /// Frees everything at once.
-    ///
-    /// The bump: one counter, whatever was allocated. Every outstanding
-    /// reference becomes detectably stale in the same step — which is what
-    /// makes freeing wholesale safe rather than reckless.
+    /// Frees everything at once; every outstanding reference becomes stale.
     pub fn reset(&mut self) {
         self.objects.clear();
-        // Wrapping keeps the invariant at the boundary: after u32::MAX frames
-        // the counter returns to 1 rather than to 0, so it never collides with
-        // the "never allocated" value. At 60fps that is over two years of
-        // continuous play, but a wrong answer then would be no better for
-        // being rare.
+        // After u32::MAX frames the counter wraps to 1, never to 0: it never
+        // collides with the "never allocated" value, however rare that frame.
         self.generation = self.generation.wrapping_add(1).max(1);
     }
 

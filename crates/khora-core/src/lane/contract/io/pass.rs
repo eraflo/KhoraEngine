@@ -74,15 +74,12 @@ impl<'f, P: PassSlot> Pass<'f, P> {
         self.encoder.as_mut()
     }
 
-    /// The device the pass records for: what the lane uploads its per-pass
-    /// uniforms through.
+    /// The device the pass records for, which the lane uploads its per-pass uniforms through.
     pub fn device(&self) -> &'f dyn GraphicsDevice {
         self.device
     }
 
-    /// The pipeline system the agent lent the sink the pass opened on, when it
-    /// lent one: what a lane resolves the pipelines it draws with through
-    /// while it records.
+    /// The pipeline system the lane resolves its pipelines through, when the agent lent one.
     pub fn pipelines(&self) -> Option<&'f dyn PipelineSystem> {
         self.pipelines
     }

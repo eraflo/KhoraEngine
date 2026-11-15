@@ -18,28 +18,20 @@ use crate::ecs::entity::EntityId;
 
 /// A property edit to apply back to the ECS world.
 ///
-/// Components are mutated through a single generic round-trip via
-/// `ComponentRegistration::from_json`: the inspector walks each field of
-/// the component's JSON shape, lets the user edit it, and ships the whole
-/// patched `serde_json::Value` back through `SetComponentJson`. There is
-/// no per-component editor variant — adding a new component costs zero
-/// editor code.
+/// A Rust component is edited as a whole JSON value committed through
+/// `ComponentRegistration::from_json`, so a new component needs no editor code.
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub enum PropertyEdit {
-    /// Rename the entity (`Name` component is special — it shows up in the
-    /// inspector header rather than as a component card).
+    /// Renames the entity; `Name` shows in the inspector header, not as a component card.
     SetName(EntityId, String),
-    /// Replace the entire JSON value of one component on `entity`. The
-    /// editor looks up the registration by `type_name` and calls
-    /// `from_json` to commit.
+    /// Replaces the whole JSON value of the component `type_name` on `entity`.
     SetComponentJson {
         entity: EntityId,
         type_name: String,
         value: serde_json::Value,
     },
-    /// Remove a component from `entity`. The editor looks up the
-    /// registration by `type_name` and calls `remove` to commit.
+    /// Removes the component `type_name` from `entity`.
     RemoveComponent { entity: EntityId, type_name: String },
     /// Add the component `type_name` to `entity` and set it to `value` — a
     /// removed component brought back with the value it is to have.

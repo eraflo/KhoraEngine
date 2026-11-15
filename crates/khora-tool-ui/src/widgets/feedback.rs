@@ -204,9 +204,9 @@ mod tests {
         (l1.max(l2) + 0.05) / (l1.min(l2) + 0.05)
     }
 
-    /// On the light field the banner's body — the explanation — is text on
-    /// the tone's tinted plate: it reads at WCAG AA (4.5:1) against the plate
-    /// as actually painted over the panel surface.
+    /// On the light field, the banner's body reads at WCAG AA (4.5:1) on the tone's plate.
+    ///
+    /// The plate is measured as painted: the tone's tint over the panel surface.
     #[test]
     fn light_banner_body_reads_at_aa_on_its_painted_plate() {
         let t = crate::brand::khora_light();

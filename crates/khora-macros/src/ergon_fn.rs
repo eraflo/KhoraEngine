@@ -120,14 +120,10 @@ fn expand(function: &ItemFn, options: &Options) -> syn::Result<TokenStream> {
         .collect();
     let slots: Vec<_> = (0..params.len()).map(|i| format_ident!("arg{i}")).collect();
 
-    // A native that can refuse says so by returning `Result`, and the generated
-    // trampoline propagates it — which is what lets one be written with `?`
-    // instead of by hand.
-    //
-    // Recognised by the name of the return type, which is the one place this
-    // macro does look at a written token. It is safe here in a way it would not
-    // be for a parameter: a wrong guess produces a compile error on the very
-    // next line, because the generated call would not type-check.
+    // A native that can refuse returns `Result`, which the trampoline propagates,
+    // so the native can use `?`. Recognised by the return type's name, the one
+    // written token this macro reads: safe here, since a wrong guess fails to
+    // type-check on the very next line.
     let (result_ty, produced) = match &function.sig.output {
         ReturnType::Default => (quote!(()), quote!(let produced = ())),
         ReturnType::Type(_, ty) => match unwrap_result(ty) {
@@ -171,11 +167,9 @@ fn expand(function: &ItemFn, options: &Options) -> syn::Result<TokenStream> {
                 },
             };
 
-        // Through `khora_script`'s re-export rather than `::inventory`, so a
-        // crate exposing a function to Ergon needs the one dependency it already
-        // has. Naming the collector crate directly would make `#[ergon_fn]` fail
-        // to compile for the exact reason nobody would guess: a transitive
-        // dependency that has to be declared again to be nameable.
+        // Through `khora_script`'s re-export rather than `::inventory`: a crate
+        // exposing a function to Ergon needs no dependency beyond the one it
+        // has, where naming the collector directly would fail to compile.
         ::khora_script::inventory::submit! {
             ::khora_script::native::NativeRegistration(&#declaration)
         }

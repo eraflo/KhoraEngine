@@ -57,10 +57,11 @@ impl PersistentId {
         Self::authored(uuid::Uuid::new_v4().as_u64_pair().0)
     }
 
-    /// The identity of the entity a prefab knows as `inner`, inside the
-    /// instance whose root is `instance`: authored, the same on every load,
-    /// and different for every instance and every inner entity. Nested
-    /// instances compose: `within(within(instance, nested_root), inner)`.
+    /// Returns the identity of a prefab's `inner` entity inside the instance rooted at `instance`.
+    ///
+    /// Authored, the same on every load, different for every instance and
+    /// inner entity. Nested instances compose:
+    /// `within(within(instance, nested_root), inner)`.
     pub fn within(instance: PersistentId, inner: PersistentId) -> PersistentId {
         let mut bytes = [0u8; 16];
         bytes[..8].copy_from_slice(&instance.0.to_le_bytes());
@@ -68,9 +69,10 @@ impl PersistentId {
         Self::authored(uuid::Uuid::new_v5(&WITHIN, &bytes).as_u64_pair().0)
     }
 
-    /// The identity named by `text`: authored, the same in every world and
-    /// every build, and different for every text — the id of an entity the
-    /// engine keeps one of, such as a system's (`"system:Regeneration"`).
+    /// Returns the authored identity named by `text`, the same in every world and build.
+    ///
+    /// The id of an entity the engine keeps one of, such as a system's
+    /// (`"system:Regeneration"`); different for every text.
     pub fn named(text: &str) -> PersistentId {
         Self::authored(uuid::Uuid::new_v5(&NAMED, text.as_bytes()).as_u64_pair().0)
     }
@@ -102,11 +104,12 @@ mod tests {
 
     const TOP_BIT: u64 = 1 << 63;
 
-    /// An authored id and a created id can never be the same identity, even
-    /// from the same number: a scene's authored entities and the entities a
-    /// save numbered while the game ran must not collide on load. The top bit
-    /// is what tells them apart, so an authored id drops it whatever it is
-    /// given — random bits include it half of the time.
+    /// An authored id and a created id can never be the same identity, even from the
+    /// same number.
+    ///
+    /// A scene's authored entities and the entities a save numbered while the game ran
+    /// must not collide on load. The top bit is what tells them apart, so an authored
+    /// id drops it whatever it is given — random bits include it half of the time.
     #[test]
     fn authored_and_created_ids_live_in_separate_namespaces() {
         for n in [0, 1, 7, 0x1234_5678_9abc_def0, TOP_BIT - 1] {
@@ -138,10 +141,11 @@ mod tests {
         assert_eq!(PersistentId::authored(5).to_bits(), 5);
     }
 
-    /// The editor gives every entity an author creates a random identity, so
-    /// that two people adding entities on two branches do not collide. A
-    /// random draw is always authored — whatever the top bit came out as — and
-    /// draws do not repeat.
+    /// The editor gives every entity an author creates a random identity, so that two
+    /// people adding entities on two branches do not collide.
+    ///
+    /// A random draw is always authored — whatever the top bit came out as — and draws
+    /// do not repeat.
     #[test]
     fn a_random_authored_id_is_authored_and_does_not_repeat() {
         let mut seen = std::collections::HashSet::new();
@@ -161,10 +165,12 @@ mod tests {
         );
     }
 
-    /// An entity inside a prefab instance is known by the instance's root and
-    /// its own id in the prefab. The derived id is the same however often it
-    /// is asked for — that is what lets a reference into an instance survive
-    /// a reload — and it is authored: a scene's author placed the instance.
+    /// An entity inside a prefab instance is known by the instance's root and its own
+    /// id in the prefab.
+    ///
+    /// The derived id is the same however often it is asked for — that is what lets a
+    /// reference into an instance survive a reload — and it is authored: a scene's
+    /// author placed the instance.
     #[test]
     fn an_id_within_an_instance_is_stable_and_authored() {
         let instance = PersistentId::authored(0x1234_5678_9abc_def0);
@@ -183,10 +189,11 @@ mod tests {
         }
     }
 
-    /// Two instances of one prefab never share an id, and two entities of
-    /// one instance never do: neither the instance nor the inner id may be
-    /// dropped from the derivation. Order matters too — the instance root and
-    /// the inner id are not interchangeable.
+    /// Two instances of one prefab never share an id, and two entities of one instance
+    /// never do.
+    ///
+    /// Neither the instance nor the inner id may be dropped from the derivation. Order
+    /// matters too — the instance root and the inner id are not interchangeable.
     #[test]
     fn ids_within_instances_are_distinct_per_instance_and_per_entity() {
         let mut seen = std::collections::HashSet::new();
@@ -213,10 +220,11 @@ mod tests {
         assert_ne!(PersistentId::within(a, b), PersistentId::within(b, a));
     }
 
-    /// A nested instance's members are derived twice: from the outer
-    /// instance to the nested root, then from the nested root to the member.
-    /// The composition is an id of its own — not the member's id in the
-    /// outer instance, nor in the nested prefab alone.
+    /// A nested instance's members are derived twice: from the outer instance to the
+    /// nested root, then from the nested root to the member.
+    ///
+    /// The composition is an id of its own — not the member's id in the outer instance,
+    /// nor in the nested prefab alone.
     #[test]
     fn ids_within_nested_instances_compose() {
         let outer = PersistentId::authored(0xaaaa);
@@ -233,9 +241,10 @@ mod tests {
         );
     }
 
-    /// A file stores the raw 64 bits; reading them back must give the very
-    /// identity that was written, in either namespace, for every bit pattern
-    /// a file can hold.
+    /// A file stores the raw 64 bits.
+    ///
+    /// Reading them back must give the very identity that was written, in either
+    /// namespace, for every bit pattern a file can hold.
     #[test]
     fn persistent_id_bits_round_trip() {
         for bits in [0, 1, 42, TOP_BIT - 1, TOP_BIT, TOP_BIT | 9, u64::MAX] {
@@ -257,10 +266,11 @@ mod tests {
         assert!(!PersistentId::from_bits(3).is_created());
     }
 
-    /// **A named identity is the same wherever it is asked for, and authored**:
-    /// the id of an entity the engine keeps one of — a system's — found again
-    /// in every world, every session and every build by its text alone, and
-    /// never mistaken for one the game numbered as it ran.
+    /// **A named identity is the same wherever it is asked for, and authored.**
+    ///
+    /// The id of an entity the engine keeps one of — a system's — found again in every
+    /// world, every session and every build by its text alone, and never mistaken for
+    /// one the game numbered as it ran.
     #[test]
     fn a_named_id_is_stable_authored_and_distinct_per_text() {
         let regeneration = PersistentId::named("system:Regeneration");
@@ -294,9 +304,10 @@ mod tests {
         }
     }
 
-    /// **Named identities have a namespace of their own**: a text whose bytes
-    /// are the very bytes a prefab member's id is derived from does not name
-    /// that member.
+    /// **Named identities have a namespace of their own.**
+    ///
+    /// A text whose bytes are the very bytes a prefab member's id is derived from does
+    /// not name that member.
     #[test]
     fn a_named_id_is_not_derived_in_the_prefab_namespace() {
         let half = u64::from_le_bytes(*b"aaaaaaaa");

@@ -12,26 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Resolved types.
-//!
-//! [`Ty`] is what a thing *is*; [`TypeRef`](crate::ast::TypeRef) is what the
-//! author *wrote*. Keeping them apart matters because a written `Health` is
-//! just a name until the checker has seen the struct, and because a `Ty` can
-//! exist with no syntax behind it at all — the type of `2s + 500ms`, say.
-//!
-//! # Duration and Angle are types, not floats
-//!
-//! This is where the unit guarantee lives. `Duration` and `Angle` are distinct
-//! from `Float` and from each other, so `2s + 90deg` has no valid result and
-//! `float x = cooldown;` is rejected. In a language where they were all floats,
-//! both would compile and misbehave at runtime — the radians/degrees mix-up is
-//! a genuine class of gameplay bug, and this is what removes it.
-//!
-//! # `Error` stops cascades
-//!
-//! A malformed expression gets [`Ty::Error`], which is compatible with
-//! everything. One mistake then produces one message, instead of a wave of
-//! follow-on complaints about types the author never wrote.
+//! Resolved types: [`Ty`] is what a thing is, [`TypeRef`]
+//! what the author wrote. `Duration` and `Angle` are distinct from `Float` and
+//! from each other, so `2s + 90deg` and `float x = cooldown;` are refused.
 
 use crate::ast::TypeRef;
 
@@ -74,24 +57,20 @@ pub enum Ty {
     Error,
 }
 
-/// The engine types a script may name. Listed rather than derived: the API
-/// surface is a decision, and a script should not reach whatever happens to be
-/// reachable.
+/// The engine types a script may name.
 ///
-/// But a decision is not the same as a wish. This once also named `Transform`,
-/// `Mesh` and `Material`, none of which had a `Value` variant, a constructor or
-/// an accessor — so `Transform t;` type-checked, shaped cleanly, and then failed
-/// at the first use with "`Transform` has no `x`". A name here that nothing
-/// declares is worse than a name that is absent: absent gives the author the
-/// error they can act on.
+/// Listed rather than derived: the API surface is a decision. Each name needs a
+/// `Value` variant, a constructor and accessors, or it type-checks and fails at
+/// its first use.
 ///
-/// [`every_engine_type_is_declared`](super::tests::every_engine_type_is_declared)
+/// `every_engine_type_is_declared`
 /// holds the two together.
 pub const ENGINE_TYPES: &[&str] = &["Vec2", "Vec3", "Vec4", "Quat", "Color"];
 
-/// What a field of a bare asset type is told: there is no asset literal, so
-/// the field has nothing to start at but `null`, and its asset is chosen in
-/// the inspector.
+/// Returns the note for a field of a bare asset type.
+///
+/// There is no asset literal, so the field starts at `null` and its asset is
+/// chosen in the inspector.
 pub(crate) fn asset_field_note(kind: khora_core::asset::AssetKind) -> String {
     format!(
         "make it `{}?` and choose it in the inspector: there is no asset literal, so it starts at `null`",
@@ -255,9 +234,9 @@ mod tests {
         assert!(!Ty::Angle.accepts(&Ty::Duration));
     }
 
-    /// A present value fits where an optional is wanted; an optional does not
-    /// fit where a present value is required. That asymmetry is the whole
-    /// nullability rule.
+    /// A present value fits where an optional is wanted, not the reverse.
+    ///
+    /// That asymmetry is the whole nullability rule.
     #[test]
     fn optionals_accept_values_but_not_the_reverse() {
         let optional_entity = Ty::Optional(Box::new(Ty::Entity));

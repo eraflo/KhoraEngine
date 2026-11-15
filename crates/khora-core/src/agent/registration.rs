@@ -14,7 +14,7 @@
 
 //! How a family's agent is registered, and what boot checks of all of them.
 //!
-//! A domain registers one agent per family with [`register_agent!`]: its
+//! A domain registers one agent per family with `register_agent!`: its
 //! family, its phase, and the lanes it chooses between. The registrations are
 //! checked together at boot, before the first frame, by
 //! [`check_registrations`].
@@ -33,7 +33,7 @@ use crate::lane::io::FixedStep;
 use crate::lane::level::Impact;
 use crate::runtime::Runtime;
 
-/// One family's agent, as [`register_agent!`] builds it.
+/// One family's agent, as `register_agent!` builds it.
 ///
 /// Built in a `const` context, so every field is a constant: the lanes are
 /// constructors, run at boot.
@@ -176,10 +176,10 @@ pub enum BootError {
         /// The level it names.
         level: StrategyId,
     },
-    /// A lane of a family at [`ExecutionPhase::BACKGROUND`] reads a source
-    /// that lives inside one frame — a View, the frame's target, a deck slot,
-    /// a resident, a lock. A background run spans frames: it may read only
-    /// `#[take]`, `#[resource]` and `#[budget]`.
+    /// A lane of a [`ExecutionPhase::BACKGROUND`] family reads a source of one frame.
+    ///
+    /// A background run spans frames: it may read only `#[take]`,
+    /// `#[resource]` and `#[budget]`.
     BackgroundInput {
         /// The family.
         family: &'static str,
@@ -190,9 +190,10 @@ pub enum BootError {
         /// Where the field reads from.
         source: SourceKind,
     },
-    /// A lane of a family at [`ExecutionPhase::BACKGROUND`] writes a slot of
-    /// one frame — a deck slot, a pass. A background run spans frames: what it
-    /// hands on is `#[staged]`, kept in the reserve until a frame's boundary.
+    /// A lane of a [`ExecutionPhase::BACKGROUND`] family writes a slot of one frame.
+    ///
+    /// A background run spans frames: what it hands on is `#[staged]`, kept
+    /// in the reserve until a frame's boundary.
     BackgroundOutput {
         /// The family.
         family: &'static str,
@@ -203,9 +204,9 @@ pub enum BootError {
         /// Where the field writes.
         sink: SinkKind,
     },
-    /// A lane of a family in a frame phase writes a `#[staged]` output. A
-    /// staged output is what a run off the frame hands on; a frame's lane
-    /// writes the frame's deck.
+    /// A lane of a frame-phase family writes a `#[staged]` output.
+    ///
+    /// Staging is for runs off the frame; a frame's lane writes the frame's deck.
     StagedInFrame {
         /// The family.
         family: &'static str,
@@ -214,8 +215,9 @@ pub enum BootError {
         /// The field staging it.
         field: &'static str,
     },
-    /// Two families take one channel. A `Take` reader is the channel's one
-    /// reader: two of them would split its requests by timing alone, one of
+    /// Two families take one channel.
+    ///
+    /// Two `Take` readers would split its requests by timing alone, one of
     /// them off the frame where no wave orders it against the other.
     ChannelTakenTwice {
         /// The channel's type name.
@@ -225,9 +227,10 @@ pub enum BootError {
         /// The other.
         second: &'static str,
     },
-    /// A `#[take]` field drains a channel that no
-    /// [`Reader::Take`](crate::event::Reader::Take) mailbox of the family
-    /// declares, so nothing says the family is the one reader of it.
+    /// A `#[take]` field drains a channel no `Take` mailbox of the family declares.
+    ///
+    /// The [`Reader::Take`](crate::event::Reader::Take) mailbox is what says
+    /// the family is the channel's one reader.
     TakeWithoutMailbox {
         /// The family.
         family: &'static str,
@@ -378,15 +381,18 @@ pub fn registered_agents() -> Vec<&'static AgentRegistration> {
         .collect()
 }
 
-/// Checks every registration against the others, the runtime and the device:
-/// one agent per family and one family per agent, every family in a phase that
-/// runs, at least one supported lane
-/// and one level per family, unique strategy ids within a family, no level of
-/// an `Exact` family that changes the result, no lane reading a fixed step its
-/// family does not have, no lane locking one entry twice
-/// nor a family writing one slot twice,
-/// every declared resource and resident held by the runtime, every `#[deck]`
-/// read written by an earlier phase.
+/// Checks every registration against the others, the runtime and the device.
+///
+/// # Errors
+///
+/// The first [`BootError`] found: a family or agent registered twice, a
+/// phase that never runs, no supported lane or level, a strategy id offered
+/// twice, an inexact level of an `Exact` family, a fixed step the family
+/// lacks, an entry locked or a slot written twice, a resource or resident
+/// the runtime lacks, a `#[deck]` read no earlier phase writes, a default
+/// level none of the family's lanes offers, a `#[take]` with no mailbox, a
+/// channel taken by two families, a `#[staged]` output in a frame phase, or a
+/// background lane reading or writing anything but what the background allows.
 pub fn check_registrations(
     registrations: &[&AgentRegistration],
     runtime: &Runtime,
@@ -395,10 +401,14 @@ pub fn check_registrations(
     check_registrations_in(registrations, runtime, caps, ExecutionPhase::DEFAULT_ORDER)
 }
 
-/// [`check_registrations`] for a scheduler running `phase_order`: a `#[deck]`
-/// read is checked against the order the phases really run in, a game's own
-/// phases included. A phase absent from the order never runs, so it writes
-/// nothing a reader could see.
+/// Runs [`check_registrations`] for a scheduler running `phase_order`.
+///
+/// A `#[deck]` read is checked against that order, a game's own phases
+/// included; a phase absent from it never runs, so writes nothing.
+///
+/// # Errors
+///
+/// As [`check_registrations`].
 pub fn check_registrations_in(
     registrations: &[&AgentRegistration],
     runtime: &Runtime,

@@ -18,15 +18,6 @@
 //! the store's [`Persisted`], and the boundary's [`ScriptValue`]. Everywhere
 //! else calls in here.
 //!
-//! # Why one place, and not four
-//!
-//! There were four. Written in three crates, weeks apart, by the same hand, and
-//! they had already diverged: one of them learned to carry a `Vec3` and another
-//! never did. A script could raise an event holding a vector that the delivery
-//! then refused — and the refusal read as a fault, so the *receiving* behavior
-//! was disabled for good. Nobody wrote that behaviour; it fell out of a table
-//! that existed twice.
-//!
 //! # How the arms are produced
 //!
 //! The regular ones come from [`script_value_table`], so a row added there
@@ -86,9 +77,7 @@ macro_rules! define_to_register {
         ///
         /// Takes the arena because text has to *live* somewhere to be named by a
         /// register, and a boundary string has no index in the running
-        /// program's constant table. The conversion that refused strings refused
-        /// them for exactly this reason — it had nowhere to put them. Handing it
-        /// the arena removes the reason rather than working around it.
+        /// program's constant table.
         pub fn to_register(
             value: &ScriptValue,
             arena: &mut Arena,

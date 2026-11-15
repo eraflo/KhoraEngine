@@ -17,25 +17,22 @@ use super::AppContext;
 
 pub use super::app_lifecycle::AppLifecycle;
 
-/// One application — implements `update` and gets called once per
-/// frame.
+/// A standalone tool, updated once per frame for the lifetime of its window.
 ///
-/// Tools should be single types (a struct holding all the app state)
-/// implementing this trait. The boot helper instantiates the type
-/// once, then drives `update` for the lifetime of the window.
+/// A tool is one type holding all its state; the boot helper builds it once.
 pub trait App {
-    /// Per-frame update — paint UI, react to input, dispatch async
-    /// completions, etc.
+    /// Updates the tool for one frame: paints UI, reacts to input, handles async completions.
     fn update(&mut self, ctx: &mut dyn AppContext);
 
-    /// Called once after the backend is up and before the first
-    /// `update`. Apps install their theme / fonts / DPI snapping
-    /// here. Default is a no-op.
+    /// Runs once after the backend is up and before the first `update`.
+    ///
+    /// The place to install the theme, fonts and DPI snapping. Does nothing by default.
     fn on_start(&mut self, ctx: &mut dyn AppContext) {
         let _ = ctx;
     }
 
-    /// Called once when the window is closing. Persist state here.
-    /// Default is a no-op.
+    /// Runs once when the window is closing, the place to persist state.
+    ///
+    /// Does nothing by default.
     fn on_exit(&mut self) {}
 }

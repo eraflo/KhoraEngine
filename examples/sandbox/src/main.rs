@@ -55,7 +55,7 @@ fn main() -> Result<()> {
         let mut rs = WgpuRenderSystem::new();
         let monitors = rs.init(window).expect("renderer init failed");
         runtime.resources.insert(HostMonitors(monitors));
-        // Register the graphics device before boxing — required by RenderAgent.
+        // The device is a backend of its own: lanes reach it apart from the render system.
         runtime.backends.insert(rs.graphics_device());
         let rs: Box<dyn RenderSystem> = Box::new(rs);
         runtime.backends.insert(Arc::new(Mutex::new(rs)));
@@ -79,11 +79,9 @@ fn main() -> Result<()> {
         let layout: Box<dyn LayoutSystem> = Box::new(TaffyLayoutSystem::new());
         runtime.backends.insert(Arc::new(Mutex::new(layout)));
 
-        // Audio — shared mix bus + CPAL device. The bus is the sole
-        // synchronisation boundary between audio lanes (main thread) and
-        // the backend's hardware callback (RT thread). The opened
-        // AudioStream is stored as a backend handle; dropping it stops
-        // the stream.
+        // Audio — shared mix bus + CPAL device. The bus is the only meeting
+        // point of the audio lanes and the hardware callback's real-time thread.
+        // The opened stream is kept as a backend: dropping it stops the sound.
         let stream_info = StreamInfo {
             channels: 2,
             sample_rate: 48_000,
@@ -99,14 +97,10 @@ fn main() -> Result<()> {
             Err(e) => log::error!("audio open failed: {}", e),
         }
 
-        // `.wgsl` hot-reload (engine-dev convenience). Watch the canonical
-        // shader source tree so edits to lighting / shadow / material WGSL
-        // recompose the affected modules and rebuild the cached pipelines in
-        // place — no rebuild, no lane change (the `shader_hot_reload` data
-        // system pumps the watcher each tick; lanes re-fetch pipelines by key).
-        // The directory is resolved from this crate's compile-time location, so
-        // it only exists when the sandbox runs from the source checkout; a
-        // relocated binary skips hot-reload and serves the embedded shaders.
+        // `.wgsl` hot-reload, an engine-dev convenience: an edited shader
+        // rebuilds its pipelines in place. The tree is found from this crate's
+        // compile-time location, so only a run from the checkout has it; a
+        // relocated binary serves the embedded shaders.
         let shader_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../crates/khora-infra/src/graphics/shader/shaders");
         if let Ok(shader_dir) = shader_dir.canonicalize() {
@@ -128,13 +122,9 @@ fn main() -> Result<()> {
             }
         }
 
-        // Ergon. Resolved from this crate's compile-time location for the same
-        // reason as the shaders above: the sandbox is run from the checkout.
-        // Its own root on the engine's watch, beside the shader tree's: both
-        // hot-reload.
-        // Mounted here, before the boot, rather than in `setup`: the boot
-        // compiles a mount filed before it, so `setup` finds `Hover` declared
-        // and attaches it to the sphere it builds.
+        // Ergon scripts, found like the shaders and hot-reloaded too. Mounted
+        // before the boot, not in `setup`: the boot compiles a mount filed
+        // before it, so `setup` finds `Hover` declared and can attach it.
         let script_assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
         khora_sdk::scripts::mount(runtime, &script_assets);
     })?;

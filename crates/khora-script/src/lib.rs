@@ -34,12 +34,10 @@
 //! time (`every 0.5s`) and `async/await` are not separate systems bolted on —
 //! they are the budget mechanism wearing a different hat.
 //!
-//! ## State of the crate
+//! ## The chain
 //!
-//! The whole chain is in place: lexer, parser, type checker, bytecode compiler
-//! and VM. The suspend/resume core was built first, before any syntax: if a
-//! program cannot be stopped and restarted without changing its result,
-//! nothing built on top would be worth writing.
+//! Lexer, parser, type checker, bytecode compiler and VM. A program stopped and
+//! resumed gives the same result as one run straight through.
 //!
 //! [`Agent`]: khora_core::agent::Agent
 
@@ -94,8 +92,8 @@ pub use vm::{Function, Instruction, Machine, Program, Run, Suspension, Value};
 
 /// The module the engine serves its component declarations from.
 ///
-/// `import "engine/components.erg";` — the one module a `component` declaration
-/// is accepted from, until scripts can declare their own.
+/// `import "engine/components.erg";` — it mirrors the components the engine
+/// stores, and is exempt from the rules on a script's own `component`.
 pub const ENGINE_COMPONENTS_MODULE: &str = "engine/components.erg";
 
 /// The module the engine serves its events from — `Touched`, `Separated`.

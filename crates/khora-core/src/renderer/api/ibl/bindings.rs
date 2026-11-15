@@ -12,21 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Bind-group contract for image-based lighting (IBL) — the diffuse
-//! irradiance cube, the prefiltered specular cube, and the split-sum BRDF
-//! integration LUT, plus a shared filtering sampler.
+//! Bind-group contract for image-based lighting: the irradiance and
+//! prefiltered cubes, the split-sum BRDF LUT and their sampler.
 //!
-//! IBL resources live in **group 3** (the lighting group) alongside the
-//! lighting uniform and the shadow atlases. Unlike shadow — whose bindings
-//! sit at fixed indices 1/2/3 in every lit lane — the IBL block starts at a
-//! **lane-specific base index** because the lit lanes' group-3 layouts
-//! diverge: `LitForward` places IBL right after shadow (base 4), while `Forward+` packs several extra light-culling bindings at 4..8
-//! and places IBL at base 8. Both the layout entries and the per-frame bind
-//! group are built from the same `base`, and the matching WGSL declares the
-//! cube/LUT bindings at the same indices, so the three stay in lockstep.
-//!
-//! The split-sum evaluation math is shared across lanes in the WGSL lib
-//! `lib/lighting/ibl.wgsl`; only the texture *declarations* differ per lane.
+//! The block sits in group 3 at a base index each lit lane picks, because the
+//! lanes' group-3 layouts differ; the layout entries, the bind group and the
+//! lane's WGSL must all use that same base.
 
 use crate::renderer::api::command::{
     BindGroupEntry, BindGroupLayoutEntry, BindingResource, BindingType, SamplerBindingType,
@@ -53,15 +44,13 @@ pub mod offset {
 
 /// Per-scene GPU resources the IBL bake publishes for lit lanes.
 ///
-/// Lit lanes treat this opaquely: they pass it to
-/// [`fill_ibl_bind_group_entries`] without inspecting fields. Holds only
-/// opaque resource IDs (no handles), so it is `Copy` — the IBL bake is static
-/// after startup, so the same IDs are bound every frame.
+/// Lit lanes pass it to [`fill_ibl_bind_group_entries`] without reading it.
+/// The bake is static after startup, so the same ids are bound every frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IblGpuBindings {
-    /// Full-resolution environment cube view (the linear-HDR sky the whole
-    /// bake derives from). Not part of the lit lanes' group-3 IBL block — it is
-    /// consumed only by the skybox background pass, which samples it directly.
+    /// Full-resolution linear-HDR environment cube the bake derives from.
+    ///
+    /// Outside the lit lanes' IBL block: only the skybox pass samples it.
     pub env_cube: TextureViewId,
     /// Diffuse irradiance cube view (cosine-convolved environment).
     pub irradiance_cube: TextureViewId,
@@ -106,9 +95,10 @@ pub fn ibl_bind_group_layout_entries(base: u32) -> [BindGroupLayoutEntry; 4] {
 }
 
 /// Pushes the four IBL [`BindGroupEntry`] values into `entries`, starting at
-/// `base`. Lit lanes call this while assembling their group-3 bind group,
-/// after the lighting uniform and shadow entries. `base` MUST match the value
-/// passed to [`ibl_bind_group_layout_entries`] for the same lane.
+/// `base`.
+///
+/// `base` must match the one given to [`ibl_bind_group_layout_entries`] for
+/// the same lane.
 pub fn fill_ibl_bind_group_entries<'a>(
     bindings: &IblGpuBindings,
     base: u32,

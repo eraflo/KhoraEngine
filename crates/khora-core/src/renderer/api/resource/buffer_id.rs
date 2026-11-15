@@ -16,7 +16,7 @@
 
 /// An opaque handle to a GPU buffer resource.
 ///
-/// This ID is returned by [`GraphicsDevice::create_buffer`] and is used to reference
+/// This ID is returned by `GraphicsDevice::create_buffer` and is used to reference
 /// the buffer in all subsequent operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BufferId(pub usize);

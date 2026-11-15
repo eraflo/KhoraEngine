@@ -184,13 +184,11 @@ struct WrittenEpoch {
     policies: Vec<(Named, AdaptationMode)>,
     hints: Vec<(Named, AgentHints)>,
     reasons: Vec<String>,
-    /// A journal from before the decisions were explained reads the default:
-    /// decided by the floors, nothing rejected.
+    /// Absent from a journal, it reads as decided by the floors, nothing rejected.
     #[serde(default)]
     why: Option<WrittenWhy>,
-    /// A journal from before the round's inputs were written reads none of
-    /// them: no importance, memory limit or background agent, opened at
-    /// zero, no frame.
+    /// Absent from a journal, the round's inputs read as none: no importance,
+    /// memory limit or background agent, opened at zero, no frame.
     #[serde(default)]
     importance: Vec<(Named, AgentImportance)>,
     #[serde(default)]
@@ -203,15 +201,13 @@ struct WrittenEpoch {
     frames: FrameSummary,
     #[serde(default)]
     in_force: Vec<(Named, Envelope)>,
-    /// A journal from before the rounds planned beyond their frame reads a
-    /// planning for nothing.
+    /// Absent from a journal, it reads as a planning for nothing.
     #[serde(default)]
     planning: WrittenPlanning,
-    /// A journal from before each row's correction was learnt reads none: its
-    /// rows plan at their quotes.
+    /// Absent from a journal, it reads as none: rows plan at their quotes.
     #[serde(default)]
     corrections: Vec<(Named, StrategyId, Correction)>,
-    /// A journal from before each round's rows were written reads none.
+    /// Absent from a journal, it reads as none.
     #[serde(default)]
     planned: Vec<(Named, StrategyId)>,
 }
@@ -224,7 +220,7 @@ struct WrittenPlanning {
     margin: Duration,
     growth: Vec<(Named, f64)>,
     switch: Vec<(Named, StrategyId, Duration)>,
-    /// A journal from before corrections were planned with caution reads none.
+    /// Absent from a journal, it reads as no caution.
     #[serde(default)]
     caution: f64,
 }
@@ -246,16 +242,16 @@ struct WrittenAllocation {
     pins: Vec<(Named, StrategyId)>,
     allowed: Vec<(Named, Vec<StrategyId>)>,
     price: Option<WrittenPrice>,
-    /// A journal from before the lever was written lends none.
+    /// Absent from a journal, it reads as no lever lent.
     #[serde(default)]
     lever: bool,
     late: Vec<Named>,
 }
 
-/// A price as written. A free upgrade — no extra time for its quality — is
-/// priced infinite, and a round fed a value that is not a number prices its
-/// upgrades so: neither is a number a format such as JSON can hold, and the
-/// journal keeps what the round decided, whatever it is.
+/// A price as written, with infinite and NaN prices as variants of their own.
+///
+/// A free upgrade is priced infinite, and a round fed NaN prices its upgrades
+/// so; JSON holds neither, and the journal keeps what the round decided.
 #[derive(Serialize, Deserialize)]
 enum WrittenPrice {
     At(f32),
@@ -308,7 +304,7 @@ struct WrittenReport {
     over_budget: bool,
     stalled: bool,
     workload: Option<f64>,
-    /// A journal from before the switch cost was written reads none.
+    /// Absent from a journal, it reads as none.
     #[serde(default)]
     switch: Option<Duration>,
 }
@@ -479,8 +475,8 @@ fn read_epoch<E>(
             .collect::<Result<_, E>>()?,
         reasons: written.reasons,
         why: match written.why {
-            // Written before decisions were explained: what is known is the
-            // trigger the allocation itself records.
+            // A journal without reasons: what is known is the trigger the
+            // allocation itself records.
             None => Why {
                 trigger: allocation.trigger,
                 ..Why::default()

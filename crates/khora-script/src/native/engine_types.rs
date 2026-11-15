@@ -12,42 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The engine's math types, as a script sees them.
-//!
-//! Exposing `Vec3` once cost a hand-written `ScriptType`, a hand-written
-//! constructor, and an arm in each of four converters. The converters are gone
-//! (see [`bridge`](crate::bridge)); this removes the other two. A type is now a
-//! declaration, and `Quat`, `Color`, `Vec2` and `Vec4` cost a line each.
-//!
-//! # Why a declaration and not `#[ergon_type]` on the struct
-//!
-//! The plan called for an attribute, sister to `#[ergon_fn]`. Writing it made
-//! the shape clear: an attribute belongs on the item it describes, and these
-//! types live in `khora-core`, which must not carry scripting annotations. More
-//! decisively, [`ScriptType`] needs a matching `Value` variant, and those come
-//! from [`script_value_table`] — so a game *cannot* expose a type of its own
-//! this way whatever the syntax. The thing being written down is not "this
-//! struct is scriptable" but "this table row is reachable from a script", and a
-//! declaration says that where an attribute would imply the other.
-//!
-//! No proc macro either: the only thing one would have added is turning `x` into
-//! `X`, and naming the accessor outright turned out to read better than deriving
-//! it — see below.
-//!
-//! # `v.x`, not `X(v)`
-//!
-//! The surface an author writes is field access, which is what the design
-//! documents promise. A free function per component cannot work: the language
-//! has no overloading, so one `X` could serve exactly one type, and `Vec2`,
-//! `Vec4` and `Quat` would each need a different spelling of the same idea.
-//!
-//! So each component becomes a native named `Vec3.x` — a name **no source can
-//! spell**, because a `.` is not an identifier. It cannot collide with a
-//! function a game declares, and it leaves `X` free. The only thing that reaches
-//! it is the compiler lowering `v.x`.
-//!
-//! [`script_value_table`]: khora_core::script_value_table
-//! [`ScriptType`]: super::ScriptType
+//! The engine's math types as a script sees them: a constructor and one
+//! accessor per component each. An accessor is named `Vec3.x`, which no source
+//! can spell, so only the lowering of `v.x` reaches it and `X` stays free.
+//! See the book: concepts/scripting/under-the-hood.md, "Adding a type to the language".
 
 use super::{NativeContext, NativeError, NativeFn, NativeTy, ScriptType};
 use crate::vm::Value;
@@ -155,9 +123,8 @@ ergon_type! {
 }
 
 ergon_type! {
-    /// `Quat(x, y, z, w)` — the components, not an axis and an angle. An author
-    /// building a rotation by hand wants `FromAxisAngle`, which is a function
-    /// rather than a constructor.
+    /// `Quat(x, y, z, w)`, the components; from an axis and an angle, it is
+    /// `FromAxisAngle`.
     Quat = khora_core::math::Quaternion { x, y, z, w }
 }
 

@@ -18,10 +18,10 @@ use std::time::Duration;
 
 use super::{AgentId, StrategyId};
 
-/// What a round plans for beyond its own frame: what a switch of row is
-/// charged, the margin kept free of the target, and how each agent's costs
-/// are expected to grow over the horizon. The default plans for nothing
-/// beyond the frame: no charge, no margin, no growth.
+/// What a round plans for beyond its own frame: switch charges, margin, cost growth.
+///
+/// The default plans for nothing beyond the frame: no charge, no margin, no
+/// growth.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Planning {
     /// How long a plan is meant to hold (H); zero charges no switch.

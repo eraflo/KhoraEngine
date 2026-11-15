@@ -12,20 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What a staged output holds to while it waits.
-//!
-//! A background run works on a world that moves on without it: the project it
-//! compiles may be closed, the asset it decodes unloaded, before it ends. Its
-//! outputs then answer a question nobody asks any more. A run that knows what
-//! its work depends on stages it under a [`Lease`]; the reserve checks the
-//! lease when it takes the outputs in — at a frame start, on the thread the
-//! host acts on — and abandons them when it no longer holds. Checked there,
-//! never in the run, a lease cannot race the host action that breaks it.
+//! What a staged output holds to while it waits: a [`Lease`] the reserve
+//! checks at a frame start, on the host's thread, so it cannot race the host
+//! action that breaks it.
 
 use std::sync::Arc;
 
-/// A condition staged outputs hold to: while it holds, they count; once it
-/// does not, the reserve abandons them instead of taking them in.
+/// A condition staged outputs hold to; once it fails, the reserve abandons them.
 ///
 /// Checked on the thread that runs the frame start, with the reserve's lock
 /// not held: the condition may take a lock of its own, as a leaf.
@@ -50,10 +43,10 @@ impl std::fmt::Debug for Lease {
     }
 }
 
-/// Outputs a lane stages in groups, each under the [`Lease`]
-/// its work depended on, or none: the field type of a `#[staged]` output
-/// whose groups can each stop counting before the run ends — the project
-/// one compile was for closed, the asset one decode was for unloaded.
+/// Outputs a lane stages in groups, each under the [`Lease`] its work depended on, or none.
+///
+/// The field type of a `#[staged]` output whose groups can each stop counting
+/// before the run ends: the project closed, the asset unloaded.
 #[derive(Debug)]
 pub struct Leases<T> {
     groups: Vec<(Vec<T>, Option<Lease>)>,

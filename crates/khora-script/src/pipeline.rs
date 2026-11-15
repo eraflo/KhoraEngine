@@ -14,17 +14,9 @@
 
 //! Turning a module and everything it imports into a program.
 //!
-//! The whole reachable set is resolved through a [`SourceLoader`], so this
-//! module never opens a file itself: the caller hands it a loader that reads
-//! from disk, from memory, or from a pack.
-//!
-//! # Nothing is replaced until it compiles
-//!
-//! A failed compile yields no program and reports why, so the caller keeps the
-//! program it was running. The alternative — swapping in whatever came out —
-//! means a saved file with a typo stops the game, which is the opposite of what
-//! an author reaches for hot-reload to get. Editing is iterative and most
-//! intermediate states do not compile.
+//! Sources come through a [`SourceLoader`] (disk, memory or pack); this module
+//! never opens a file. A failed compile yields no program, so the caller keeps
+//! the one it was running: a typo mid-edit must not stop the game.
 
 use crate::diagnostics::Diagnostic;
 use crate::modules::SourceLoader;
@@ -34,10 +26,8 @@ use crate::vm::Program;
 /// What compiling a module produced.
 #[derive(Debug)]
 pub struct CompileOutcome {
-    /// The program, when every stage succeeded.
-    ///
-    /// `None` means the source did not compile. The caller keeps whatever it
-    /// was running: a typo mid-edit must not stop the game.
+    /// The program, when every stage succeeded; `None` when the source did not
+    /// compile.
     pub program: Option<Program>,
     /// Everything that went wrong, from whichever stage found it.
     pub diagnostics: Vec<Diagnostic>,
@@ -55,10 +45,9 @@ impl CompileOutcome {
 
 /// Resolves `entry` and everything it imports, then compiles the lot.
 ///
-/// The stages run in order and stop at the first that fails, because each one
-/// assumes what the last proved: the compiler trusts the checker's types, and
-/// the checker trusts the parser's tree. Running a later stage on a failed
-/// earlier one produces noise, not more information.
+/// The diagnostics come from the first stage that failed: a later stage trusts
+/// what the earlier one proved, so running it after a failure would only add
+/// noise.
 pub fn compile_module(loader: &dyn SourceLoader, entry: &str) -> CompileOutcome {
     let resolved = crate::resolve(entry, loader);
     if resolved.has_errors() {
@@ -166,9 +155,8 @@ mod tests {
         assert!(result.succeeded(), "{:?}", result.diagnostics);
     }
 
-    /// **Nothing is replaced until it compiles.** A typo mid-edit must not stop
-    /// the game, so a failed compile yields no program and the caller keeps
-    /// what it had.
+    /// **Nothing is replaced until it compiles**: a failed compile yields no
+    /// program, so the caller keeps what it had.
     #[test]
     fn a_syntax_error_produces_no_program_and_says_why() {
         let loader = MemoryLoader::new().with("broken.erg", "fn void ( ) { }");

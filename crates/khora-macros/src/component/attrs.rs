@@ -52,18 +52,11 @@ impl ComponentAttrs {
     }
 }
 
-/// Whether the component opts into the field-SoA layout:
-/// `#[component(layout = "soa")]`.
+/// Whether the component opts into the field-SoA layout: `#[component(layout = "soa")]`.
 ///
-/// A component can declare a field-split (Structure-of-Arrays) physical
-/// column — the AGDF compute-friendly layout. v1 supports structs whose
-/// fields are all `f32`. When opted in, the generated `Component` impl routes
-/// storage through a `FieldSoaColumn<Self>` and a `SoaLayout` impl describes
-/// the field↔lane mapping. Otherwise the `Component` impl stays the default
-/// (empty marker) and no `SoaLayout` is emitted.
-///
-/// As in the `no_serializable` scan, other `key = value` metas are
-/// consumed so `layout` is found whatever the key order.
+/// Only a struct whose fields are all `f32` can take it. Other `key = value`
+/// metas are consumed, as in the `no_serializable` scan, so `layout` is found
+/// whatever the key order.
 fn layout_soa(input: &DeriveInput) -> bool {
     input.attrs.iter().any(|attr| {
         if !attr.path().is_ident("component") {
@@ -85,10 +78,9 @@ fn layout_soa(input: &DeriveInput) -> bool {
 
 /// Whether the component carries `#[component(no_serializable)]`.
 ///
-/// The `else if` branch consumes unknown `key = value` metas (`domain`,
-/// `provenance`, `layout`, `formerly`) so the walk reaches this flag whatever the order
-/// the keys were written in — without it, `parse_nested_meta` aborts on the
-/// first unconsumed value and the discarded error makes the miss silent.
+/// The `else if` branch consumes the other `key = value` metas so the walk
+/// reaches this flag whatever the key order: `parse_nested_meta` aborts on the
+/// first unconsumed value, and the discarded error makes the miss silent.
 fn no_serializable(input: &DeriveInput) -> bool {
     input.attrs.iter().any(|attr| {
         if !attr.path().is_ident("component") {
@@ -107,10 +99,9 @@ fn no_serializable(input: &DeriveInput) -> bool {
     })
 }
 
-/// Whether the component carries `#[component(resumable)]`: state the engine
-/// writes while running that a game save keeps so play resumes where it
-/// stopped. Walked like `no_serializable`, consuming the `key = value` metas
-/// it does not read.
+/// Whether the component carries `#[component(resumable)]`: runtime state a game save keeps.
+///
+/// Walked like `no_serializable`, consuming the `key = value` metas it does not read.
 fn resumable(input: &DeriveInput) -> bool {
     input.attrs.iter().any(|attr| {
         if !attr.path().is_ident("component") {
@@ -129,24 +120,12 @@ fn resumable(input: &DeriveInput) -> bool {
     })
 }
 
-/// The type-level `#[component(...)]` keys that carry a value:
+/// The `domain`, `provenance` (`Authored` when absent) and `formerly` keys.
 ///
-/// * `domain = <SemanticDomain variant>` — the component self-registers its
-///   domain into `World` via `inventory`, so the domain lives on the type
-///   instead of a hand-maintained list in `World::new`.
-/// * `provenance = <ComponentProvenance variant>` — who writes the component.
-///   Absent means `Authored`: a component is the author's data unless it says
-///   otherwise, so engine-written types opt out explicitly rather than every
-///   authored type having to opt in.
-/// * `formerly = "<old name>"` (repeatable) — a name the type was registered
-///   under before: a save that names it so still loads, reported as renamed.
-///
-/// All value keys are read in ONE pass. `parse_nested_meta` requires every meta it
-/// walks to be fully consumed, so a closure that recognises only one key
-/// aborts on the other's `= value` — and because the result is discarded, the
-/// failure is silent and the second key is simply never seen. Hence the
-/// trailing branch that consumes unknown `key = value` pairs (`layout = ...`)
-/// so parsing continues past them.
+/// See the book: how-to/add-a-component.md, "Step 3 — Say who writes it".
+/// All are read in one pass that consumes the other `key = value` pairs: a
+/// closure that recognises one key aborts on another's `= value`, and the
+/// discarded error would hide every key after it.
 fn value_keys(input: &DeriveInput) -> (Option<syn::Ident>, syn::Ident, Vec<syn::LitStr>) {
     let mut domain = None;
     let mut provenance = None;

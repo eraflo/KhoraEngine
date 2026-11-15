@@ -22,17 +22,13 @@ use std::time::Instant;
 // sets recompiles the crates they touch.
 const SCOPE: [&str; 3] = ["--workspace", "--all-targets", "--all-features"];
 
-// The tests are built from cargo's default targets — which leave out a
-// target marked `test = false` — and then from the benches, whose functions
-// run as smoke tests. Each test target is a binary linking the whole engine,
-// so one holding no test costs a full link for nothing: such a target sets
-// `test = false` in its manifest (an `xtask` check keeps a test from hiding
-// there). Naming `--lib --bins --tests` instead would build those targets
-// anyway, since an explicit selection overrides `test = false`. The benches
-// are named by `--bench *`: `--benches` would take every target with
-// `bench = true`, libs and bins included, and run their tests a second time.
+// The benches run as smoke tests after cargo's default test targets. Named by
+// `--bench *`: `--benches` would take every `bench = true` target, libs and bins
+// included, and run their tests twice. See the book:
+// contributing/setup.md, "Keeping `target/` in check".
 const BENCHES: [&str; 2] = ["--bench", "*"];
 
+/// Builds every workspace crate, all targets and features.
 pub fn build() -> Result<()> {
     print_task_start("Building All Crates", HAMMER, BLUE);
     println!(
@@ -43,6 +39,7 @@ pub fn build() -> Result<()> {
     Ok(())
 }
 
+/// Runs the workspace tests with nextest, the benches as smoke tests, then `xtask`'s tests.
 pub fn test() -> Result<()> {
     print_task_start("Running All Tests", TEST_TUBE, GREEN);
     println!(
@@ -88,6 +85,7 @@ pub fn test() -> Result<()> {
     Ok(())
 }
 
+/// Runs `cargo check` on every workspace crate, all targets and features.
 pub fn check() -> Result<()> {
     print_task_start("Checking All Crates", MAGNIFIER, CYAN);
     println!(
@@ -98,21 +96,26 @@ pub fn check() -> Result<()> {
     Ok(())
 }
 
+/// Checks the formatting of the whole workspace.
 pub fn format() -> Result<()> {
     print_task_start("Formatting Code", BRUSH, MAGENTA);
     println!(
         "{}💡 Info:{} Checking code formatting (use 'cargo fmt --all' to auto-fix)",
         BOLD, RESET
     );
-    // Match CI: check formatting without modifying files
+    // Checks only, as CI does: a gate never rewrites files.
     execute_command("cargo", &["fmt", "--all", "--", "--check"], "Format")?;
     Ok(())
 }
 
-/// The workspace-hack is up to date: every third-party dependency builds
-/// with one feature set, whichever crate a command builds (RULES §2b). Fails
-/// when a dependency changed without `cargo hakari generate` and `cargo hakari
-/// manage-deps` — run them, and commit what they change.
+/// Checks that the workspace-hack unifies every third-party dependency's features.
+///
+/// See the book: contributing/setup.md, "Keeping `target/` in check".
+///
+/// # Errors
+///
+/// Fails when a dependency changed without `cargo hakari generate` and
+/// `cargo hakari manage-deps`: run them, and commit what they change.
 pub fn hakari() -> Result<()> {
     print_task_start("Checking the feature unification", MAGNIFIER, CYAN);
     execute_command(
@@ -128,6 +131,7 @@ pub fn hakari() -> Result<()> {
     Ok(())
 }
 
+/// Runs clippy on every workspace crate, warnings denied.
 pub fn clippy() -> Result<()> {
     print_task_start("Running Clippy", CLIPPY, YELLOW);
     println!(
@@ -144,7 +148,7 @@ pub fn clippy() -> Result<()> {
     Ok(())
 }
 
-/// Doc tests: nextest does not run them.
+/// Runs the doc tests, which nextest does not run.
 pub fn doc_test() -> Result<()> {
     print_task_start("Running Doc Tests", TEST_TUBE, GREEN);
     execute_command(
@@ -155,9 +159,13 @@ pub fn doc_test() -> Result<()> {
     Ok(())
 }
 
-/// What CI checks, in the order that fails fastest: format, the feature
-/// unification, clippy, tests, doc tests. Stops at the first failure. Run it once, when a change is done;
-/// while iterating, `cargo t -p <crate> [filter]`.
+/// Runs what CI checks, fastest failure first: format, feature unification, clippy, tests, doc tests.
+///
+/// Run it once a change is done; while iterating, `cargo t -p <crate> [filter]`.
+///
+/// # Errors
+///
+/// Fails at the first check that fails, and runs none after it.
 pub fn gate() -> Result<()> {
     let start_time = Instant::now();
     format()?;
@@ -176,6 +184,11 @@ pub fn gate() -> Result<()> {
     Ok(())
 }
 
+/// Runs build, test, check, format and clippy in turn, each even when one before failed.
+///
+/// # Errors
+///
+/// Fails when any of them failed.
 pub fn all() -> Result<()> {
     println!("{}", crate::term::BANNER);
     println!("{}{}Starting full build pipeline...{}", BOLD, CYAN, RESET);

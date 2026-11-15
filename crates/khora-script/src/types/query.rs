@@ -12,13 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Queries and systems.
-//!
-//! A query binds, row by row, the entity and copies of its components; only a
-//! system's `ref` binding is written back. A system is a behavior with no
-//! subject: what needs the entity a behavior is attached to — `this`, a
-//! native reading it — or belongs to one entity's time — a state, `become`,
-//! an event, `async` — is refused at the construct, saying a system has none.
+//! Queries and systems: a system is a behavior with no subject, so `this`,
+//! a native reading it, a state, `become`, an event and `async` are refused.
+//! See the book: reference/ergon.md, "Systems".
 
 use std::collections::{HashMap, HashSet};
 
@@ -26,9 +22,10 @@ use super::{Checker, Context, Ty};
 use crate::ast::{BehaviorDecl, BehaviorMember, Block, QueryBinding, TypeRef};
 use crate::diagnostics::Span;
 
-/// The calls among free functions, and those of systems to free functions:
-/// a free function reading the subject — itself or through those it calls —
-/// is refused where a system calls it.
+/// The calls among free functions, and those of systems to free functions.
+///
+/// A free function reading the subject, itself or through those it calls, is
+/// refused where a system calls it.
 #[derive(Debug, Default)]
 pub struct SubjectCalls {
     /// Each free function's calls to free functions.
@@ -282,9 +279,10 @@ impl Checker {
         }
     }
 
-    /// Records that the query names component `name` as `how`, refusing a
-    /// name that is not a component and one named before. `true` when it is
-    /// a component named for the first time.
+    /// Records that the query names component `name` as `how`.
+    ///
+    /// Refuses a name that is not a component or was named before; `true` when
+    /// it is a component named for the first time.
     fn query_component(
         &mut self,
         name: &str,

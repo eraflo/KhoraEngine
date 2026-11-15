@@ -31,15 +31,10 @@ use crate::renderer::traits::CommandEncoder;
 use std::fmt::Debug;
 use std::future::Future;
 
-/// Defines the abstract interface for a graphics device.
+/// Backend-neutral graphics device that creates, writes and destroys GPU resources.
 ///
-/// This trait is the central point of interaction with the underlying graphics API
-/// (like WGPU, Vulkan, etc.). It abstracts away the specifics of the backend and
-/// provides a unified API for creating, managing, and destroying GPU resources such
-/// as buffers, textures, and pipelines.
-///
-/// It is the cornerstone of the `khora-infra` crate's responsibility, where a
-/// concrete type will implement this trait to provide actual rendering capabilities.
+/// Resources are named by opaque ids, never by backend handles. The
+/// implementation lives in `khora-infra`.
 ///
 /// # Called from many threads at once
 ///
@@ -51,6 +46,9 @@ use std::future::Future;
 /// anything else. Code above the device (a pipeline system, a glyph atlas)
 /// may hold its own lock while calling the device, because the device never
 /// calls back up.
+///
+/// Any method returning a [`ResourceError`] may also fail when the backend's
+/// own state is unusable (the wgpu backend: its registry lock poisoned).
 pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     // --- Shader Management ---
 
@@ -64,6 +62,9 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     ) -> Result<ShaderModuleId, ResourceError>;
 
     /// Destroys a shader module, releasing its GPU resources.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] if `id` names no live shader module.
     fn destroy_shader_module(&self, id: ShaderModuleId) -> Result<(), ResourceError>;
 
     // --- Pipeline Management ---
@@ -93,6 +94,9 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     ) -> Result<PipelineLayoutId, ResourceError>;
 
     /// Destroys a render pipeline, releasing its GPU resources.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] if `id` names no live render pipeline.
     fn destroy_render_pipeline(&self, id: RenderPipelineId) -> Result<(), ResourceError>;
 
     // --- Compute Pipeline Management ---
@@ -107,6 +111,9 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     ) -> Result<ComputePipelineId, ResourceError>;
 
     /// Destroys a compute pipeline, releasing its GPU resources.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] if `id` names no live compute pipeline.
     fn destroy_compute_pipeline(&self, id: ComputePipelineId) -> Result<(), ResourceError>;
 
     // --- Bind Group Management ---
@@ -137,18 +144,33 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     ) -> Result<BindGroupId, ResourceError>;
 
     /// Destroys a bind group layout, releasing its resources.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] if `id` names no live layout.
     fn destroy_bind_group_layout(&self, id: BindGroupLayoutId) -> Result<(), ResourceError>;
 
     /// Destroys a bind group, releasing its resources.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] if `id` names no live bind group.
     fn destroy_bind_group(&self, id: BindGroupId) -> Result<(), ResourceError>;
 
     // --- Buffer Management ---
 
     /// Creates a new GPU buffer.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] when the backend cannot create it. The wgpu
+    /// backend reports an invalid descriptor through wgpu's own validation.
     fn create_buffer(&self, descriptor: &BufferDescriptor) -> Result<BufferId, ResourceError>;
 
-    /// Creates a new GPU buffer and initializes it with the provided data.
-    /// This is often more efficient than `create_buffer` followed by `write_buffer` for static data.
+    /// Creates a new GPU buffer initialized with `data`.
+    ///
+    /// Cheaper than `create_buffer` then `write_buffer` for static data.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] when the backend cannot create it. The wgpu
+    /// backend reports an invalid descriptor through wgpu's own validation.
     fn create_buffer_with_data(
         &self,
         descriptor: &BufferDescriptor,
@@ -156,6 +178,9 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     ) -> Result<BufferId, ResourceError>;
 
     /// Destroys a GPU buffer, releasing its memory.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] if `id` names no live buffer.
     fn destroy_buffer(&self, id: BufferId) -> Result<(), ResourceError>;
 
     /// Writes data to a specific region of a GPU buffer.
@@ -164,10 +189,17 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     /// * `id`: The identifier of the buffer to write to.
     /// * `offset`: The offset in bytes from the beginning of the buffer to start writing.
     /// * `data`: The slice of bytes to write into the buffer.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] if `id` names no live buffer or the write
+    /// runs past its end.
     fn write_buffer(&self, id: BufferId, offset: u64, data: &[u8]) -> Result<(), ResourceError>;
 
-    /// Asynchronously writes data to a GPU buffer.
-    /// This can be more performant for large data uploads by avoiding stalls.
+    /// Writes data to a GPU buffer without stalling, for large uploads.
+    ///
+    /// # Errors
+    /// The future resolves to a [`ResourceError`] when `id` names no live buffer
+    /// or the mapping fails.
     fn write_buffer_async<'a>(
         &'a self,
         id: BufferId,
@@ -178,9 +210,16 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     // --- Texture & Sampler Management ---
 
     /// Creates a new GPU texture.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] when the backend cannot create it. The wgpu
+    /// backend reports an invalid descriptor through wgpu's own validation.
     fn create_texture(&self, descriptor: &TextureDescriptor) -> Result<TextureId, ResourceError>;
 
     /// Destroys a GPU texture, releasing its memory.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] if `id` names no live texture.
     fn destroy_texture(&self, id: TextureId) -> Result<(), ResourceError>;
 
     /// Writes data to a specific region of a GPU texture.
@@ -191,6 +230,9 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     /// * `bytes_per_row`: The number of bytes for a single row of texels in `data`.
     /// * `offset`: The 3D offset (x, y, z/layer) in the texture to start writing.
     /// * `size`: The 3D extent (width, height, depth/layers) of the data to write.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] if `texture_id` names no live texture.
     fn write_texture(
         &self,
         texture_id: TextureId,
@@ -200,8 +242,10 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
         size: dimension::Extent3D,
     ) -> Result<(), ResourceError>;
 
-    /// Creates a new texture view for a given texture.
-    /// A view describes how a shader will interpret a texture's data (e.g., its format, mip levels).
+    /// Creates a view of `texture_id`: how a shader reads its format and mip levels.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] if `texture_id` names no live texture.
     fn create_texture_view(
         &self,
         texture_id: TextureId,
@@ -209,13 +253,22 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     ) -> Result<TextureViewId, ResourceError>;
 
     /// Destroys a texture view.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] if `id` names no live view.
     fn destroy_texture_view(&self, id: TextureViewId) -> Result<(), ResourceError>;
 
-    /// Creates a new sampler.
-    /// A sampler defines how a shader will sample from a texture (e.g., filtering, wrapping).
+    /// Creates a sampler: how a shader filters and wraps texture reads.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] when the backend cannot create it. The wgpu
+    /// backend reports an invalid descriptor through wgpu's own validation.
     fn create_sampler(&self, descriptor: &SamplerDescriptor) -> Result<SamplerId, ResourceError>;
 
     /// Destroys a sampler.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] if `id` names no live sampler.
     fn destroy_sampler(&self, id: SamplerId) -> Result<(), ResourceError>;
 
     // --- Command Management ---
@@ -234,17 +287,16 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     /// Gets the texture format of the primary render surface.
     fn get_surface_format(&self) -> Option<TextureFormat>;
 
-    /// Gets the dimensions of the primary render surface.
-    /// Returns (width, height).
+    /// Returns the `(width, height)` of the primary render surface, in pixels.
     fn get_surface_size(&self) -> (u32, u32);
 
     /// Gets information about the active graphics adapter (GPU).
     fn get_adapter_info(&self) -> GraphicsAdapterInfo;
 
-    /// Who made the adapter, which device it is and which driver runs it —
-    /// what names the machine's GPU in its
-    /// [`MachineIdentity`](crate::platform::MachineIdentity). A device that
-    /// cannot say returns `None`.
+    /// Returns the adapter's vendor, device and driver, or `None` if unknown.
+    ///
+    /// It names the machine's GPU in its
+    /// [`MachineIdentity`](crate::platform::MachineIdentity).
     fn adapter_identity(&self) -> Option<crate::renderer::api::device::AdapterIdentity> {
         None
     }
@@ -252,9 +304,9 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     /// Checks if a specific, optional rendering feature is supported by the backend.
     fn supports_feature(&self, feature_name: &str) -> bool;
 
-    /// What the device can do that a lane may need, read once at boot to
-    /// decide which lanes stay on their families' menus. A device that does
-    /// not say reports none of it.
+    /// Returns the capabilities a lane may need; the default reports none.
+    ///
+    /// Read once at boot to decide which lanes stay on their families' menus.
     fn caps(&self) -> crate::gpu::DeviceCaps {
         crate::gpu::DeviceCaps::default()
     }

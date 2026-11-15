@@ -53,9 +53,10 @@ pub enum ErgonType {
     /// Any value — what the engine keeps of a script's own state. Spelled
     /// `<any>`, which no struct's name can be.
     Any,
-    /// A struct a script declares: its name and, where known, its fields —
-    /// what tells two versions of one struct apart. `None` where the struct
-    /// holds itself, or nothing more was known.
+    /// A struct a script declares: its name and, where known, its fields.
+    ///
+    /// The fields tell two versions of one struct apart. `None` where the
+    /// struct holds itself, or nothing more was known.
     Struct {
         /// Its name.
         name: String,
@@ -76,10 +77,11 @@ impl ErgonType {
         }
     }
 
-    /// The type spelled `text` — as Ergon writes it (`int`, `Vec3?`,
-    /// `string[]`, `Loot`), or as a [signature](Self::signature) writes it,
-    /// a struct with its fields (`Loot{item:string,value:int}[]`). `None` for
-    /// text that is not a type.
+    /// Parses the type spelled `text`; `None` for text that is not a type.
+    ///
+    /// It reads Ergon's spelling (`int`, `Vec3?`, `string[]`, `Loot`) and a
+    /// [signature](Self::signature)'s, a struct with its fields
+    /// (`Loot{item:string,value:int}[]`).
     pub fn parse(text: &str) -> Option<Self> {
         let mut at = 0;
         let ty = Self::parse_at(text.as_bytes(), &mut at)?;
@@ -161,9 +163,11 @@ impl ErgonType {
         }
     }
 
-    /// The type written whole: as Ergon spells it, each struct with its
-    /// fields — `Loot{item:string,value:int}[]`. What a file keeps of a field's
-    /// type, so a reader tells two versions of one struct apart.
+    /// Returns the type written whole, each struct with its fields:
+    /// `Loot{item:string,value:int}[]`.
+    ///
+    /// A file keeps this of a field's type, so a reader tells two versions of
+    /// one struct apart.
     pub fn signature(&self) -> String {
         match self {
             Self::Struct {
@@ -183,10 +187,10 @@ impl ErgonType {
         }
     }
 
-    /// Whether `value` is a value of this type: what keeps a value of
-    /// another type — a `string` for what is now an `int?`, a struct of
-    /// another shape — out of a field it would not fit. An `int` is taken
-    /// where a `float` is, as everywhere a script writes one.
+    /// Whether `value` is a value of this type, and so fits a field of it.
+    ///
+    /// A `string` for an `int?`, or a struct of another shape, does not. An
+    /// `int` is taken where a `float` is, as everywhere a script writes one.
     pub fn admits(&self, value: &ScriptValue) -> bool {
         match (self, value) {
             (Self::Bool, ScriptValue::Bool(_))
@@ -223,9 +227,11 @@ impl ErgonType {
         }
     }
 
-    /// `value` as a field of this type holds it: an `int` written where a
-    /// `float` is declared — a `Duration`, an `Angle`, inside an optional,
-    /// an array or a struct too — is that float. Anything else is kept.
+    /// Returns `value` as a field of this type holds it.
+    ///
+    /// An `int` written where a `float` is declared (a `Duration`, an `Angle`,
+    /// inside an optional, an array or a struct too) is that float. Anything
+    /// else is kept.
     pub fn widened(&self, value: ScriptValue) -> ScriptValue {
         match (self, value) {
             (Self::Float | Self::Duration | Self::Angle, ScriptValue::Int(v)) => {
@@ -346,10 +352,10 @@ impl ScriptField for f32 {
     fn to_script(&self) -> ScriptValue {
         ScriptValue::Float(*self)
     }
-    /// A non-finite value is refused: a NaN mass is not a mass, and every
-    /// system reading the field would inherit it. An `int` is taken as the
-    /// float it names — a `float` accepts an `int` in Ergon, and a script's
-    /// `float m = 1;` holds one.
+    /// Refuses a non-finite value, which every system reading the field would
+    /// inherit.
+    ///
+    /// An `int` is taken as the float it names, as Ergon's `float m = 1;` is.
     fn from_script(value: &ScriptValue) -> Result<Self, FieldValueError> {
         match value {
             ScriptValue::Float(v) if v.is_finite() => Ok(*v),
@@ -458,9 +464,10 @@ impl<T: ScriptField> ScriptField for Vec<T> {
     }
 }
 
-/// What `#[derive(Component)]` reaches a field's type through, so a field
-/// whose type is not a [`ScriptField`] still derives — it resolves to `None`
-/// instead of a compile error.
+/// What `#[derive(Component)]` reaches a field's type through.
+///
+/// A field whose type is not a [`ScriptField`] still derives: it resolves to
+/// `None` instead of a compile error.
 ///
 /// Autoref specialisation: `(&&Probe::<T>::new()).reader()` finds the impl on
 /// `&Probe<T>` when `T: ScriptField`, and otherwise falls through to the one on

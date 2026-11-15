@@ -14,8 +14,8 @@
 
 //! What a compile filed by a host lands under.
 
-/// The ticket a compile filed by a host — a mount — is known by: the
-/// `loading` family carries it through the compile, and the outcome is
-/// filed under it at a frame's boundary.
+/// The ticket a compile filed by a host (a mount) is known by.
+///
+/// The compile's outcome is filed under it at a frame's boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CompileTicket(pub u64);

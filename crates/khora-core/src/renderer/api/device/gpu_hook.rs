@@ -16,7 +16,7 @@
 
 /// Represents a specific point in a frame's GPU execution for timestamping.
 ///
-/// These are used by a [`GpuProfiler`] to record timestamps and measure performance.
+/// These are used by a `GpuProfiler` to record timestamps and measure performance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GpuHook {
     /// Marks the absolute beginning of GPU work for a frame.

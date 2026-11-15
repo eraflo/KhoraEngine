@@ -14,12 +14,10 @@
 
 //! A boundary value into a slot of a declared type.
 //!
-//! [`ScriptValue::Struct`] names its fields but not its struct — it is the same
-//! shape a component patch uses — so only the declared type of the slot it
-//! goes into can say which struct a saved value is. That type also says what
-//! a field the saved value lacks starts at: its default, else its zero. A
-//! saved field the struct no longer declares is dropped, with a warning naming
-//! it.
+//! [`ScriptValue::Struct`] names its fields but not its struct, so only the
+//! slot's declared type says which struct a saved value is. A missing field
+//! takes its default, else its zero; a saved field the struct does not declare
+//! is dropped, with a warning naming it.
 
 use khora_core::script::ScriptValue;
 
@@ -28,6 +26,10 @@ use crate::arena::{Owned, Persisted};
 use crate::vm::StructLayout;
 
 /// The stored form of `value`, for a slot declared `ty`.
+///
+/// # Errors
+///
+/// As [`to_owned_as`].
 pub fn to_persisted_as(
     value: &ScriptValue,
     ty: &str,
@@ -39,9 +41,13 @@ pub fn to_persisted_as(
     })
 }
 
-/// The owned form of `value`, for a slot declared `ty` (as written) — refused
-/// when it does not fit that type all the way down: a struct's field retyped
-/// since the save does not load as the old kind.
+/// The owned form of `value`, for a slot declared `ty` (as written).
+///
+/// # Errors
+///
+/// [`Unrepresentable::Kind`] when `value` does not fit `ty` all the way down —
+/// a struct's field retyped since the save does not load as the old kind — or
+/// a missing field has neither a default nor a zero.
 pub fn to_owned_as(
     value: &ScriptValue,
     ty: &str,

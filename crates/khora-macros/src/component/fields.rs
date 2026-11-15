@@ -23,16 +23,16 @@ pub(super) struct FieldSplit<'a> {
     pub(super) included: Vec<&'a syn::Field>,
     /// The fields tagged `#[component(skip)]`, in declaration order.
     pub(super) skipped: Vec<&'a syn::Field>,
-    /// A field's former names, read by the mirror as serde aliases: a save
-    /// written before the rename still fills the field (named fields only — a
-    /// tuple field has no name to rename). One entry per included field.
+    /// Each included field's former names, which the mirror reads as serde aliases.
+    ///
+    /// A save written before the rename still fills the field. Only a named
+    /// field has former names: a tuple field has no name to rename.
     pub(super) formerly: Vec<Vec<syn::LitStr>>,
 }
 
 impl<'a> FieldSplit<'a> {
     /// Splits `fields` by their `#[component(...)]` field attributes.
     pub(super) fn of(fields: &'a Fields) -> Self {
-        // Separate included and skipped fields
         let mut included_fields = Vec::new();
         let mut skipped_fields = Vec::new();
 

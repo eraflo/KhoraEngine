@@ -37,9 +37,10 @@ pub(super) fn domain_registration(name: &syn::Ident, domain: Option<&syn::Ident>
     }
 }
 
-/// The `ComponentRegistration` of `name`, saved through its mirror
-/// `serializable_name`, with its `field_schema`, its schema traced once into
-/// the static `schema_cell`, and its declared `check`.
+/// The `ComponentRegistration` of `name`, saved through its mirror `serializable_name`.
+///
+/// It carries `field_schema`, the schema traced once into the static
+/// `schema_cell`, and the declared `check`.
 pub(super) fn component_registration(
     name: &syn::Ident,
     serializable_name: &syn::Ident,

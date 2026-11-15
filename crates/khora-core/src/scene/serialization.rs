@@ -12,51 +12,38 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines the public API for the Goal-Oriented Adaptive Serialization system (SAA-Serialize).
-//!
-//! This module contains the core data structures that form the contract between the user
-//! and the engine's serialization capabilities. The central concept is the [`SerializationGoal`]
-//! enum, which allows developers to express their *intent* (e.g., speed, stability, readability)
-//! rather than being forced to choose a specific file format.
+//! What a developer asks of a save: a [`SerializationGoal`], not a file format.
 
-/// Defines the developer's high-level intention for a serialization operation.
+/// What a serialization is for; the serialization service picks the encoding that serves it.
 ///
-/// This enum is the core of the SAA-Serialize system's public API. Instead of
-/// specifying a format, the user specifies a goal, and the serialization
-/// service chooses the encoding that serves it best.
+/// The goal changes the encoding, never what is saved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SerializationGoal {
-    /// Prioritizes the fastest possible loading time.
-    /// This is the ideal choice for production game builds where loading screens
-    /// must be minimized. Served by a snapshot: positional, bound to the
-    /// schema of the build that wrote it, and read only by that schema — a
-    /// world holding a component whose schema cannot be fingerprinted is
-    /// written as a compact record instead.
+    /// The fastest load, served by a snapshot bound to the build that wrote it.
+    ///
+    /// A same-build cache, never a project's only copy. A world holding a
+    /// component whose schema cannot be fingerprinted is written as a compact
+    /// record instead.
     FastestLoad,
 
-    /// Prioritizes the smallest possible file size on disk.
-    /// This is useful for network transfers, content patches, or game saves
-    /// where storage space is a concern. Served by the compact encoding.
+    /// The smallest file, served by the compact encoding.
     SmallestFileSize,
 
-    /// Prioritizes human-readability for debugging and version control.
-    /// The output will be a text-based format (JSON) that can be easily
-    /// inspected and diffed. This is the slowest option.
+    /// A file people can read and diff, as JSON; the slowest option.
     HumanReadableDebug,
 
-    /// Prioritizes long-term stability and forward compatibility: written as
-    /// text (JSON), which any tool can still read in years. Every encoding
-    /// holds components and fields by name, so future versions of Khora read
-    /// all of them; this goal adds a file readable without Khora.
+    /// A file readable without Khora for years, as JSON.
+    ///
+    /// Every encoding holds components and fields by name, so future versions
+    /// of Khora read them all.
     LongTermStability,
 
-    /// Prioritizes a flexible, structured format suitable for editor
-    /// operations, prefabs, and tool interchange.
+    /// A structured format for editor operations, prefabs and tool interchange.
     EditorInterchange,
 
-    /// A portable, schema-less binary format (MessagePack). Useful for
-    /// interop with non-Rust tools that need to consume scene data
-    /// without Khora's own compact encoding. Slightly larger than `EditorInterchange`
-    /// but readable by every language with a MessagePack library.
+    /// A portable, schema-less binary format (MessagePack), for non-Rust tools.
+    ///
+    /// Slightly larger than `EditorInterchange`, but readable by every
+    /// language with a MessagePack library.
     PortableBinary,
 }

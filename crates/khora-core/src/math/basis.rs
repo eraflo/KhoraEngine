@@ -17,16 +17,16 @@
 
 use crate::math::Vec3;
 
-/// Two unit directions whose cross product is shorter than this are taken as
-/// parallel: [`AffineTransform::rotation`] cannot draw a perpendicular from
-/// one to the other.
+/// The cross-product length under which two unit directions count as parallel.
+///
+/// [`AffineTransform::rotation`](super::affine_transform::AffineTransform::rotation) then cannot draw a perpendicular from one to the other.
 pub(super) const PARALLEL_SINE: f32 = 1e-6;
 
-/// An axis shorter than this fraction of the longest one carries no
-/// direction: f32 matrix products leave a residue of a few units in the last
-/// place (~1e-7) of the longest axis in an axis meant to be zero — a quarter
-/// turn under a parent flattened to zero leaves one — so below this neither
-/// its direction nor its sign is information, only rounding.
+/// The fraction of the longest axis under which an axis carries no direction.
+///
+/// f32 matrix products leave a residue of ~1e-7 of the longest axis in an axis meant to be
+/// zero (a quarter turn under a parent flattened to zero leaves one): below this, neither its
+/// direction nor its sign is information.
 pub(super) const NOISE_FLOOR: f32 = 1e-6;
 
 /// `v` made unit whatever its magnitude — `None` when it is zero or not
@@ -59,9 +59,10 @@ pub(super) fn unit_rejection(v: Vec3, onto: Vec3) -> Option<Vec3> {
     unit(rejection)
 }
 
-/// Three perpendicular unit axes keeping the `known` ones: an axis scaled to
-/// zero has no direction of its own, so it is rebuilt from the others
-/// (right-handed), and a flattened pose keeps the rotation it shows.
+/// Three perpendicular unit axes keeping the `known` ones, the others rebuilt right-handed.
+///
+/// An axis scaled to zero has no direction of its own; rebuilt, a flattened pose keeps the
+/// rotation it shows.
 pub(super) fn complete_basis(known: [Option<Vec3>; 3]) -> [Vec3; 3] {
     match known {
         [Some(x), Some(y), Some(z)] => [x, y, z],

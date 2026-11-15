@@ -38,8 +38,7 @@ pub struct NativeFn {
     /// Whether it accepts arguments beyond the declared ones.
     ///
     /// Nothing the engine exposes is: an argument the checker cannot hold to
-    /// a declared type is one it cannot check. Raising an event, the call that
-    /// once was, is now checked against the event's declaration.
+    /// a declared type is one it cannot check.
     ///
     /// A native written with `#[ergon_fn]` is never variadic: the macro derives
     /// its signature from typed Rust parameters, which is the whole point.

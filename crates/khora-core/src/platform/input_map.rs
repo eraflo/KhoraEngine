@@ -79,8 +79,10 @@ pub enum InputBinding {
     Mouse(MouseButton),
 }
 
-/// Action / binding map. One per engine — registered as a service in the
-/// `ServiceRegistry` and updated once per frame from the input queue.
+/// The action / binding map, one per engine.
+///
+/// It is registered as a service in the `ServiceRegistry` and updated once per
+/// frame from the input queue.
 #[derive(Debug, Default)]
 pub struct InputMap {
     /// `action → list of bindings` (multiple bindings → action fires when ANY of them fires).
@@ -97,14 +99,10 @@ pub struct InputMap {
 
 /// What the action map says, for a consumer that cannot hold the map.
 ///
-/// The scripting lane reaches no `Runtime` resource it did not declare, and it
-/// declares no `InputMap`, so it cannot ask one anything. A `Flow` projects this into the lane's view instead,
-/// which is the same road a transform already takes and the reason `Flow`
-/// exists: the lane reads a snapshot of engine state, never the state.
-///
-/// Only the two questions gameplay asks. "Is it held" drives movement; "did it
-/// fire this frame" drives a jump. `just_released` is not here because nothing
-/// has ever wanted it, and an unread field is one more thing to keep true.
+/// A lane declares no `InputMap`, so a `Flow` projects this into its view: the
+/// lane reads a snapshot of engine state, never the state. It holds only the
+/// two questions gameplay asks: "is it held" (movement) and "did it fire this
+/// frame" (a jump).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct InputSnapshot {
     /// Actions held right now.
@@ -213,10 +211,11 @@ impl InputMap {
         }
     }
 
-    /// Drains a frame of input events into the action sets. Call once per
-    /// frame **before** game logic queries the map. Edge sets (`just_*`)
-    /// are cleared first; held set persists across frames until a Released
-    /// event arrives.
+    /// Drains a frame of input events into the action sets.
+    ///
+    /// Call once per frame, **before** game logic queries the map. The edge
+    /// sets (`just_*`) start empty each call; the held set persists across
+    /// frames until a release arrives.
     pub fn update(&mut self, events: &[InputEvent]) {
         self.just_pressed.clear();
         self.just_released.clear();
@@ -244,7 +243,7 @@ impl InputMap {
                         self.just_released.insert(action);
                     }
                 }
-                _ => {} // mouse motion / wheel don't drive actions today
+                _ => {} // mouse motion and wheel drive no action
             }
         }
     }
@@ -328,12 +327,8 @@ mod tests {
         }]);
         assert!(m.is_pressed("jump"));
 
-        // Release just the mouse — the action is still considered held
-        // because no internal "ref-count per binding" is tracked. This
-        // matches Unity's InputAction semantics: the action is one logical
-        // boolean fed by OR of its bindings, but the release path uses the
-        // same OR path — releasing any binding "releases the action". This
-        // is the simpler / more predictable behaviour for keyboard+mouse.
+        // No ref-count per binding is kept: the action is one boolean fed by
+        // the OR of its bindings, and releasing any binding releases it.
         m.update(&[InputEvent::MouseButtonReleased {
             button: MouseButton::Left,
         }]);
@@ -354,10 +349,9 @@ mod tests {
         assert!(!m.is_pressed("jump"));
     }
 
-    /// **The bug this event exists for.** The OS stops reporting a key that was
-    /// held when focus left, so the release never arrives: alt-tab away
-    /// mid-sprint and the action stays held forever, in an unfocused window and
-    /// then in a focused one.
+    /// **Losing focus lets go of every held action.**
+    ///
+    /// The OS never reports the release of a key held when focus left.
     #[test]
     fn losing_focus_lets_go_of_everything_held() {
         let mut m = InputMap::new();
@@ -375,9 +369,8 @@ mod tests {
         );
     }
 
-    /// Reported as released, not merely forgotten: a consumer watching for the
-    /// release of a key it saw pressed gets one, rather than waiting for an
-    /// event the OS will never send now that the window is not listening.
+    /// **Losing focus reports each held action as released**, not merely
+    /// forgotten.
     #[test]
     fn losing_focus_reports_the_release() {
         let mut m = InputMap::new();

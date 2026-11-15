@@ -12,25 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The per-frame [`Time`] resource — the engine's single clock.
+//! The per-frame [`Time`] resource, the engine's single clock: the frame's
+//! wall-clock delta, the fixed tick and the render-interpolation factor.
 //!
-//! `Time` carries the real wall-clock frame delta, the fixed simulation
-//! step, and the render-interpolation factor. It is the bridge between the
-//! decoupled fixed-timestep simulation and the variable-rate render:
-//!
-//! - The simulation advances in whole [`fixed_delta_seconds`](Time::fixed_delta_seconds)
-//!   ticks via an accumulator in the scheduler, so it is frame-rate
-//!   independent (deterministic). The tick is the game's clock: an agent that
-//!   sub-steps finer or coarser (physics, at the precision GORNA picks) cuts the
-//!   ticks' time into its own steps and never changes how much time passes.
-//! - Rendering happens once per frame; to stay smooth between sim steps the
-//!   render path blends the previous and current transforms by
-//!   [`interpolation_alpha`](Time::interpolation_alpha).
-//!
-//! The scheduler publishes a fresh `Time` each frame; game code and Flows
-//! read it. It lives in [`Runtime::resources`](crate::Runtime) behind an
-//! `Arc<RwLock<Time>>` so the scheduler (which holds `Arc<Runtime>`) can
-//! write it while Flows and game `update` (which borrow `&Runtime`) read it.
+//! See the book: concepts/the-frame.md, "Fixed-timestep simulation and render interpolation".
 
 use std::sync::{Arc, RwLock};
 
@@ -38,26 +23,26 @@ use std::sync::{Arc, RwLock};
 /// and the simulated time a frame advances in, whatever step physics takes.
 pub const DEFAULT_FIXED_DELTA_SECONDS: f32 = 1.0 / 60.0;
 
-/// Upper bound on the fixed ticks one frame runs — 83 ms of simulated time,
-/// the same under every physics precision — and on the ticks a script's
-/// `FixedUpdate` may be owed.
+/// Upper bound on the fixed ticks one frame runs, and a script's `FixedUpdate` may be owed.
+///
+/// 83 ms of simulated time, the same under every physics precision.
 pub const MAX_SIM_STEPS: u32 = 5;
 
 /// Per-frame timing state shared between the simulation and the render path.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Time {
-    /// Real wall-clock time elapsed since the previous frame, in seconds,
-    /// clamped to a sane maximum to avoid a "spiral of death" after a long
-    /// stall (debugger break, asset hitch). This is the delta game code
-    /// should use for variable-rate logic.
+    /// Wall-clock seconds since the previous frame: the delta for variable-rate logic.
+    ///
+    /// Clamped after a long stall (a debugger break, an asset hitch) to avoid
+    /// a spiral of death.
     pub delta_seconds: f32,
-    /// The game's fixed tick in seconds — what a `FixedUpdate` is given.
-    /// Defaults to 1/60. Not the physics step: physics sub-steps the ticks'
-    /// time at its own precision, which never shows here.
+    /// The game's fixed tick in seconds, what a `FixedUpdate` is given; 1/60 by default.
+    ///
+    /// Not the physics step: physics sub-steps the ticks' time at its own precision.
     pub fixed_delta_seconds: f32,
-    /// Render-interpolation factor in `[0, 1)`: the fraction of a tick the
-    /// accumulator carries past the last whole tick. Render-only transform
-    /// blending uses it; it never affects simulation semantics.
+    /// Render-interpolation factor in `[0, 1)`: the fraction of a tick past the last whole one.
+    ///
+    /// Render-only; it never affects the simulation.
     pub interpolation_alpha: f32,
     /// Monotonic frame counter, incremented once per rendered frame.
     pub frame: u64,
@@ -65,21 +50,10 @@ pub struct Time {
     pub fixed_steps: u32,
     /// How fast the simulated world runs, against the wall clock.
     ///
-    /// `1.0` is real time. `0.0` stops the simulation without stopping the
-    /// engine: the fixed-step accumulator never fills, so no sub-step runs, no
-    /// body integrates and no script timer counts down — while the renderer,
-    /// the UI and input carry on at real time, because they read the wall clock
-    /// and not this.
-    ///
-    /// **Not an editor concept.** It is the pause menu, the slow-motion hit,
-    /// the fast-forward of a strategy game — things a game wants on its own.
-    ///
-    /// Negative values are refused by [`set_scale`](Self::set_scale) — running
-    /// a solver backwards is not a slower forward, and every integrator here
-    /// assumes time moves one way.
-    ///
-    /// Private so [`set_scale`](Self::set_scale) is the only way in — a field
-    /// anyone could assign is a field somebody assigns `-1.0` to.
+    /// `1.0` is real time. `0.0` stops the simulation, not the engine: the
+    /// renderer, the UI and input read the wall clock. A game's pause menu,
+    /// slow motion or fast-forward, not an editor concept. Private so
+    /// [`set_scale`](Self::set_scale), which clamps negatives, is the only way in.
     scale: f32,
 }
 
@@ -97,8 +71,7 @@ impl Default for Time {
 }
 
 impl Time {
-    /// Creates a `Time` with the given fixed step and otherwise default
-    /// values (zero real delta, zero alpha, frame 0).
+    /// Creates a `Time` with the given fixed step and otherwise default values.
     #[must_use]
     pub fn with_fixed_delta(fixed_delta_seconds: f32) -> Self {
         Self {
@@ -113,13 +86,10 @@ impl Time {
         self.scale
     }
 
-    /// Sets it, refusing to run time backwards.
+    /// Sets the scale, clamping a negative one, or NaN, to `0.0`.
     ///
-    /// A negative scale is not a slower forward: every integrator in the engine
-    /// assumes time moves one way, and a solver run in reverse produces states
-    /// no forward run could reach. Clamped rather than rejected, because a
-    /// caller computing a scale from a curve should not have to guard the
-    /// bottom of it.
+    /// Every integrator assumes time moves one way. Clamped rather than
+    /// rejected, so a scale computed from a curve needs no guard.
     pub fn set_scale(&mut self, scale: f32) {
         self.scale = scale.max(0.0);
     }
@@ -133,9 +103,8 @@ impl Time {
 
 /// Shared, interior-mutable handle to the engine's [`Time`] resource.
 ///
-/// Registered in [`Runtime::resources`](crate::Runtime) under this type so
-/// the scheduler can publish a fresh `Time` each frame (write lock) while
-/// Flows and game code read it (read lock).
+/// Registered in [`Runtime::resources`](crate::Runtime) under this type: the
+/// scheduler writes it once a frame, Flows and game code read it.
 pub type SharedTime = Arc<RwLock<Time>>;
 
 #[cfg(test)]

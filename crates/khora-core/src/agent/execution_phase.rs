@@ -40,12 +40,14 @@ impl ExecutionPhase {
     /// Cleanup, telemetry, end-of-frame tasks.
     pub const FINALIZE: Self = Self(5);
 
-    /// Off the frame: a family placed here runs its installed layer on a
-    /// thread the frame's waves leave free, one run at a time, possibly over
-    /// several frames, when its `#[take]` mailbox holds a request. It is in
-    /// no phase order — the phase loop never runs it — and its `#[staged]`
-    /// outputs are applied at the `Boundary` of the first frame after its run
-    /// ends. The ID reserved by [`custom`](Self::custom).
+    /// The phase off the frame, in no phase order; its ID is the one
+    /// [`custom`](Self::custom) reserves.
+    ///
+    /// A family placed here runs its layer when its `#[take]` mailbox holds a
+    /// request, on a thread the frame's waves leave free, one run at a time,
+    /// possibly over several frames. Its
+    /// `#[staged]` outputs are applied at the `Boundary` of the first frame
+    /// after the run ends.
     pub const BACKGROUND: Self = Self(255);
 
     /// Default phase order — used if no custom order is set.
@@ -58,10 +60,10 @@ impl ExecutionPhase {
         Self::FINALIZE,
     ];
 
-    /// Create a custom phase. IDs 6-254 are available for user phases.
-    /// ID 255 is reserved.
+    /// Returns a custom phase; IDs 6 to 254 are free, 255 is reserved.
     ///
     /// # Panics
+    ///
     /// Panics if `id` is not in range 6..255.
     #[must_use]
     pub const fn custom(id: u8) -> Self {

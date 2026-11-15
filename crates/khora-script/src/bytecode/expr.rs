@@ -339,9 +339,10 @@ impl Compiler {
         }
     }
 
-    /// The value a slot of this written type starts at when nothing was
-    /// written: `null` for an optional, `false` for a `bool` — which its shape
-    /// alone cannot tell from an `Entity` — its shape's zero otherwise.
+    /// Loads the value a slot of this written type starts at when nothing was written.
+    ///
+    /// `null` for an optional, `false` for a `bool` — which its shape alone
+    /// cannot tell from an `Entity` — its shape's zero otherwise.
     pub(super) fn zero_of_type(&mut self, ty: &crate::ast::TypeRef) -> Reg {
         if ty.is_optional() {
             return self.constant(Value::Null, Shape::Other).0;
@@ -469,11 +470,10 @@ impl Compiler {
         let written = args;
         let args: Vec<&Expr> = args.iter().collect();
         let args = args.as_slice();
-        // A member calls its siblings by their bare name — `Riposte()`, not
-        // `Guard.Riposte()`, which is not even syntax. Resolved first, so a
-        // behavior's own method wins over a free function of the same name:
-        // inside `Guard`, `Attack()` means the guard's — and inside one of its
-        // states, that state's own method wins over both.
+        // A member calls its siblings by their bare name — `Riposte()`. Resolved
+        // first, so inside `Guard`, `Attack()` means the guard's over a free
+        // function of the same name, and inside one of its states, that
+        // state's own method wins over both.
         let in_state = self
             .behavior
             .as_ref()

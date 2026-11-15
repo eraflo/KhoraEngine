@@ -33,15 +33,12 @@ impl Instruction {
 
     /// What running this costs from the fuel budget.
     ///
-    /// Uniform today, except for a safepoint, which marks a place rather than
-    /// doing work. It is a method rather than a constant because a call and a
-    /// move plainly do not cost the same, and the shape should be here when
-    /// measurement says so — not retrofitted through every call site.
-    ///
-    /// Building an array pays for its elements: a ten-thousand-element literal
-    /// is not one unit of work. An operation whose size only the running
-    /// program knows — `Copy`, a field read or write of an array — is charged
-    /// by the VM when it runs; this is its floor.
+    /// A safepoint costs nothing: it marks a place rather than doing work. An
+    /// instruction that builds, writes or compares `count` values pays for each:
+    /// a ten-thousand-element literal is not one unit of work. A `Become` pays one
+    /// more for each field it writes; a `Raise` pays a flat 4. An operation whose
+    /// size only the running program knows — `Copy`, a field read or write of an
+    /// array — is charged by the VM when it runs; this is its floor.
     pub fn cost(&self) -> u64 {
         match self {
             Self::Safepoint => 0,
@@ -56,7 +53,7 @@ impl Instruction {
             | Self::SpawnEntity { count, .. }
             | Self::SpawnPrefab { count, .. } => 1 + u64::from(*count),
             Self::Become { writes, .. } => 1 + u64::from(*writes),
-            // What the engine function it replaced was charged.
+            // Queuing an event is priced as an engine function doing it would be.
             Self::Raise { .. } => 4,
             _ => 1,
         }

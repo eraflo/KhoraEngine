@@ -20,7 +20,9 @@ pub enum DownloadMessage {
     Progress(u64, u64),
     /// Download and extraction completed successfully.
     Completed {
+        /// The release tag installed.
         version: String,
+        /// The installation, to add to the hub config.
         install: EngineInstall,
     },
     /// Download or extraction failed.
@@ -35,20 +37,19 @@ fn engines_dir() -> PathBuf {
         .join("engines")
 }
 
-/// Returns the install directory for a specific engine version
-/// (`~/.khora/engines/<version>/`). Public so the uninstaller can
-/// locate the directory it needs to remove.
+/// Returns the install directory of engine `version`: `~/.khora/engines/<version>/`.
 pub fn engine_install_dir(version: &str) -> PathBuf {
     engines_dir().join(version)
 }
 
-/// Removes a downloaded engine install from disk. Returns `Ok(())`
-/// when the directory was successfully deleted (or never existed).
+/// Removes the downloaded engine `version` from disk; a missing one is no error.
 ///
-/// `Err` only on filesystem failure mid-deletion. Caller should
-/// remove the matching entry from `HubConfig.engines` either way:
-/// the on-disk directory and the config registration are tracked
-/// separately, and a stale config entry is harmless.
+/// The caller removes its entry from `HubConfig.engines` whatever the
+/// outcome: a stale config entry is harmless.
+///
+/// # Errors
+///
+/// Fails when the filesystem refuses the deletion partway.
 pub fn uninstall_engine(version: &str) -> std::io::Result<()> {
     let dir = engine_install_dir(version);
     if dir.is_dir() {
@@ -57,20 +58,11 @@ pub fn uninstall_engine(version: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Starts a background download of the editor archive, optionally also
-/// fetching the matching `khora-runtime` archive into the same engine
-/// cache slot.
+/// Downloads engine `version` in the background, its runtime too when given.
 ///
-/// Layout produced under `~/.khora/engines/<version>/`:
-/// - `editor/` — extracted editor archive (contains `khora-editor{.exe}` + font licenses)
-/// - `runtime/` — extracted runtime archive (contains `khora-runtime{.exe}`),
-///   only when `runtime_asset` is `Some` and its download succeeds
-///
-/// `EngineInstall.runtime_binary` is populated when the runtime download
-/// works; it stays `None` for older releases that don't ship the runtime
-/// archive yet — the engine still installs and is usable for editing.
-///
-/// Returns a `Receiver` that the caller should poll every frame.
+/// The archives are extracted to `~/.khora/engines/<version>/editor/` and
+/// `runtime/`. A runtime that fails leaves `EngineInstall.runtime_binary` at
+/// `None`; the engine is still installed. Poll the returned `Receiver` every frame.
 pub fn start_download(
     editor_asset: &GithubAsset,
     runtime_asset: Option<&GithubAsset>,
@@ -143,13 +135,9 @@ pub fn start_download(
 
 /// Downloads the file at `url` and extracts it (if zip) into `dest_dir`.
 ///
-/// `bin_base_name` is the binary stem to look up after extraction
-/// (`"khora-editor"`, `"khora-runtime"`, …) — `.exe` is appended on Windows.
-/// `archive_size` is the size of *this* archive; `total_size` and
-/// `progress_offset` let the caller report cumulative progress across
-/// multiple downloads (editor + runtime in the same install slot).
-///
-/// Returns the absolute path to the resolved binary on success.
+/// Returns the path of the binary `bin_base_name` (`.exe` added on Windows)
+/// found in the extraction. `total_size` and `progress_offset` place this
+/// archive's progress within the whole install's.
 fn download_and_extract(
     url: &str,
     dest_dir: &std::path::Path,

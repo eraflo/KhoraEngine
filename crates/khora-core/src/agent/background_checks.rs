@@ -81,9 +81,10 @@ pub(super) fn check_one_taker(
     Ok(())
 }
 
-/// Refuses a lane of a family in a frame phase staging an output: what a frame
-/// hands on goes into its deck, and a staging nobody collects would grow
-/// forever.
+/// Refuses a lane of a frame-phase family that stages an output.
+///
+/// What a frame hands on goes into its deck; a staging nobody collects would
+/// grow forever.
 pub(super) fn check_nothing_staged(
     family: &'static str,
     lanes: &[Box<dyn AnyLane>],
@@ -105,9 +106,10 @@ pub(super) fn check_nothing_staged(
     Ok(())
 }
 
-/// Refuses a lane of a background family reading what lives inside one frame,
-/// or writing to one: a run spans frames, so it reads only `#[take]`,
-/// `#[resource]` and `#[budget]`, and hands on only `#[staged]` outputs.
+/// Refuses a lane of a background family that reads or writes within one frame.
+///
+/// A run spans frames, so it reads only `#[take]`, `#[resource]` and
+/// `#[budget]`, and hands on only `#[staged]` outputs.
 pub(super) fn check_background(
     family: &'static str,
     lanes: &[Box<dyn AnyLane>],

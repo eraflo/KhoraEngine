@@ -115,12 +115,11 @@ impl LoadingScreen {
         }
     }
 
-    /// Paints the film over `rect` at full opacity while
-    /// [`Playing`](LoadingState::Playing), fading out over [`Self::FADE`] once
-    /// the end is reached, nothing once [`Done`](LoadingState::Done). A click
-    /// on the rect or Esc calls [`Self::skip`].
+    /// Paints the film over `rect` at `now` and returns the state after painting.
     ///
-    /// Returns the state after painting.
+    /// Full opacity while [`Playing`](LoadingState::Playing), fading out over
+    /// [`Self::FADE`] once the end is reached, nothing once
+    /// [`Done`](LoadingState::Done). A click on the rect or Esc calls [`Self::skip`].
     pub fn paint(&mut self, ui: &mut dyn UiBuilder, rect: Rect, now: f32) -> LoadingState {
         if self.state(now) == LoadingState::Done {
             return LoadingState::Done;

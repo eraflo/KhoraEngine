@@ -14,21 +14,9 @@
 
 //! Arrays: literals, indexing, `.Length`, `foreach`, and value semantics.
 //!
-//! **Value semantics.** A value read from a *place* — a local, a field, an
-//! element — and bound to a name is copied, so two names never share one
-//! array. A literal or a call's result is fresh, owned by nobody yet, and
-//! never copied. A field keeps its own copy anyway: the store exports.
-//!
-//! **Writes through a path mutate in place**, ordered so that no write goes
-//! through a reference taken before a place the run may stop at: the index
-//! operands and the right-hand side are evaluated first, then the path is
-//! walked and written. A path rooted at a behavior field loads it (a copy),
-//! writes into the copy and stores it back — after the right-hand side, so a
-//! write another body made to the field while this one waited survives.
-//!
-//! **Sized operations** — a copy, a field read or write of an array — are
-//! checkpoints (see `vm/objects.rs`): each gets a named site, so a frame
-//! stopped there before paying for one resumes, and rebuilds, like any other.
+//! A path write evaluates its index operands and right-hand side first, then
+//! walks and writes with no stop between, so no write goes through a reference
+//! taken before a stop. See the book: reference/ergon.md, "Arrays and structs".
 
 use super::keys::type_name;
 use super::{Compiler, Shape};
@@ -110,9 +98,9 @@ impl Compiler {
         (dst, shape)
     }
 
-    /// `[a, b, …]`: built in chunks, so a literal longer than the registers a
-    /// frame can lay out still builds — `NewArray` for the first, `Extend` for
-    /// the rest.
+    /// `[a, b, …]`, built in chunks: `NewArray` for the first, `Extend` for the rest.
+    ///
+    /// A literal longer than the registers a frame can lay out still builds.
     pub(super) fn compile_array(&mut self, elements: &[Expr]) -> (Reg, Shape) {
         let dst = self.registers.temp();
         if elements.is_empty() {
@@ -176,6 +164,7 @@ impl Compiler {
     }
 
     /// `d.Seconds`, `a.Radians`, `a.Degrees`: a unit read as a plain float.
+    ///
     /// A duration is held in seconds and an angle in radians, so two of the
     /// three are the value itself.
     pub(super) fn compile_unit_reading(
@@ -242,10 +231,11 @@ impl Compiler {
         (written, element)
     }
 
-    /// The root variable of `target` and its steps, outermost first, with
-    /// each index operand evaluated into a register of its own — before
+    /// The root variable of `target` and its steps, outermost first; `None` when not rooted at one.
+    ///
+    /// Each index operand is evaluated into a register of its own before
     /// anything else of the write, since what follows may change a local an
-    /// index reads. `None` when the path is not rooted at a variable.
+    /// index reads.
     pub(super) fn place_path(&mut self, target: &Expr) -> Option<(String, Vec<At>)> {
         let mut steps: Vec<Step<'_>> = Vec::new();
         let mut root = target;
@@ -288,9 +278,10 @@ impl Compiler {
         Some((name, at))
     }
 
-    /// The register a path's root is in: a local's own, or — a behavior
-    /// field — a copy loaded for the update, with the field's slot to write
-    /// it back to.
+    /// The register a path's root is in, with the field's slot to write it back to.
+    ///
+    /// A local's own register, or, for a behavior field, a copy loaded for
+    /// the update.
     pub(super) fn load_root(&mut self, name: &str) -> (Reg, Option<u16>) {
         match self.lookup_local(name) {
             Some((register, _)) => (register, None),
@@ -323,9 +314,7 @@ impl Compiler {
         dst
     }
 
-    /// Walks `name[at…]` from its root: reads the element, or — `write` —
-    /// writes `source` into it, storing a field root back. Returns the
-    /// element read, or the root.
+    /// Writes `update` into `name[at…]`, storing a field root back; returns the value written.
     fn walk(&mut self, name: &str, at: &[At], update: Update) -> Reg {
         let (root, field) = self.load_root(name);
         let last = at.len().saturating_sub(1);

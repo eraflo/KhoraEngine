@@ -13,13 +13,8 @@
 // limitations under the License.
 
 //! Named arguments and parameter defaults: which value each parameter of a
-//! call receives.
-//!
-//! Positional arguments fill the parameters in order, then each named one
-//! fills its own; what is left takes its default. The arguments are checked —
-//! and later evaluated — in the order written, whatever order the parameters
-//! are declared in. A call that names nothing and leaves nothing out binds as
-//! it always did, and records nothing.
+//! call receives. Arguments are checked, and later evaluated, in the order
+//! written, whatever order the parameters are declared in.
 
 use crate::ast::{Expr, Label, Param};
 use crate::diagnostics::Span;
@@ -61,7 +56,7 @@ impl Callee<'_> {
             .unwrap_or(self.params.len())
     }
 
-    /// Whether a call written `args` / `labels` binds as it always did: every
+    /// Whether a call written `args` / `labels` binds plainly: every
     /// parameter given, in order, none by name.
     pub fn plain(&self, args: &[Expr], labels: &[Option<Label>]) -> bool {
         labels.is_empty() && args.len() == self.params.len()
@@ -141,9 +136,10 @@ pub(super) enum ParamRole {
 }
 
 impl Checker {
-    /// Checks the arguments of a call to `callee` in the order written, each
-    /// against the parameter it fills, and returns how they bind — `None` when
-    /// the call binds as it always did.
+    /// Checks a call's arguments in the order written and returns how they bind.
+    ///
+    /// Each argument is checked against the parameter it fills. Returns `None`
+    /// for a plain call (see [`Callee::plain`]), which records nothing.
     pub(super) fn bind_arguments(
         &mut self,
         callee: &Callee<'_>,
@@ -208,10 +204,9 @@ impl Checker {
                 (Some(at), _) => bound.push(Bound::Written(*at)),
                 (None, Some(default)) => {
                     let default = Box::new(default);
-                    // Checked here, where it is passed: what the compiler asks
-                    // of it — its type, how a constructor in it binds — is
-                    // recorded at the very place it compiles from.
-                    // Its mistakes were reported where it is declared.
+                    // Checked again where it is passed, so what the compiler asks
+                    // of it is recorded at the place it compiles from; its
+                    // mistakes were already reported where it is declared.
                     if is_data_constant(&default) {
                         let reported = self.diagnostics.len();
                         let outer = std::mem::replace(&mut self.in_default, true);
@@ -268,9 +263,11 @@ impl Checker {
         }
     }
 
-    /// The defaults of `params`, as `role` allows them: constants, of the
-    /// parameter's type, none missing after the first — and none at all where
-    /// the engine or a raise gives every value.
+    /// Checks the defaults of `params` as `role` allows them.
+    ///
+    /// A default is a constant of the parameter's type, and every parameter
+    /// after the first default has one. A lifecycle member, handler, event,
+    /// state or operator takes none: the engine or a raise gives every value.
     pub(super) fn check_param_defaults(&mut self, params: &[Param], role: ParamRole) {
         let refused = match role {
             ParamRole::Callable => None,

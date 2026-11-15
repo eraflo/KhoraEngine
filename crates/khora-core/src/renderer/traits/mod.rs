@@ -18,7 +18,7 @@
 //! logic from any specific graphics backend.
 //!
 //! - [`GraphicsDevice`]: The main interface for creating and managing GPU resources.
-//! - [`CommandRecorder`]: An interface for recording GPU commands.
+//! - `CommandRecorder`: An interface for recording GPU commands.
 //! - [`RenderSystem`]: A high-level trait representing the entire rendering pipeline.
 //! - [`GraphicsBackendSelector`]: A trait for selecting the appropriate graphics backend.
 //! - [`GpuProfiler`]: An interface for performance profiling on the GPU.

@@ -12,13 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Bind-group contract for the shadow-aware lighting bind group
-//! (group 3 in every lit pipeline).
+//! Bind-group contract for the shadow part of the lighting bind group, group 3
+//! of every lit pipeline.
 //!
-//! This file is the **single source of truth** mirrored by the WGSL
-//! lib modules under `khora-infra/src/graphics/shader/shaders/lib/shadow/`
-//! (`bindings.wgsl` + sampling helpers). Bump a constant here and
-//! update the WGSL counterpart in lockstep.
+//! Mirrored by `khora-infra/src/graphics/shader/shaders/lib/shadow/bindings.wgsl`:
+//! change a constant in both.
 
 use crate::renderer::api::command::{
     BindGroupEntry, BindGroupLayoutEntry, BindingResource, BindingType, SamplerBindingType,
@@ -41,10 +39,8 @@ pub mod binding {
 
 /// Per-frame GPU resources shadow strategies publish for lit lanes.
 ///
-/// Lit lanes treat this opaquely: they pass it to
-/// [`fill_shadow_bind_group_entries`] without inspecting fields. Which
-/// concrete strategy filled it (`StandardShadowsLane`,
-/// `LowResShadowsLane`, …) is invisible at this seam.
+/// Lit lanes pass it to [`fill_shadow_bind_group_entries`] without reading
+/// it, whichever shadow strategy filled it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShadowGpuBindings {
     /// 2D depth-array atlas view (directional / spot lights).
@@ -85,9 +81,9 @@ pub fn shadow_bind_group_layout_entries() -> [BindGroupLayoutEntry; 3] {
     ]
 }
 
-/// Pushes the three shadow-related [`BindGroupEntry`] values into
-/// `entries`. Lit lanes call this immediately after pushing their own
-/// `LIGHTING_UNIFORMS` entry.
+/// Pushes the three shadow [`BindGroupEntry`] values into `entries`.
+///
+/// Call right after pushing the lane's `LIGHTING_UNIFORMS` entry.
 pub fn fill_shadow_bind_group_entries<'a>(
     bindings: &ShadowGpuBindings,
     entries: &mut Vec<BindGroupEntry<'a>>,

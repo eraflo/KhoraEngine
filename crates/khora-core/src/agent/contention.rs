@@ -12,18 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What an agent competes with the others for.
+//! What an agent competes with the others for: the only thing it declares,
+//! since no agent reaches the `World`.
 //!
-//! An agent used to declare one thing — the deck slots it wrote — and the
-//! scheduler checked it. It declared **nothing** about what it read or locked in
-//! the [`Runtime`](crate::Runtime), so the scheduler had no way to know, and a
-//! coarse access kind stood in for the answer by forbidding every resource to
-//! any agent that wanted to run concurrently. Two agents that did not contend
-//! could not share a wave, because nobody could say whether they did.
-//!
-//! Now an agent declares what it reads and locks, and that is the only thing
-//! it declares: no agent reaches the `World`, so the world needs no
-//! declaration of its own.
+//! See the book: concepts/agents-and-lanes.md, "What an agent declares".
 //!
 //! # Reading is free, locking is not
 //!
@@ -35,12 +27,7 @@
 
 use std::any::TypeId;
 
-/// What one agent touches that another might.
-///
-/// Three surfaces in one declaration, so an agent's contention reads in one
-/// place. `deck` was once its own method and is folded in here: it was the only
-/// half that existed, and keeping it apart would have suggested the two answer
-/// different questions.
+/// What one agent touches that another might: deck slots and runtime entries, in one place.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Contention {
     /// [`OutputDeck`](crate::lane::OutputDeck) slot types the agent writes.

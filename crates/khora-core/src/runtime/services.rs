@@ -17,7 +17,7 @@
 //!
 //! See [`crate::runtime`] for the broader Services / Backends / Resources
 //! taxonomy. The container itself is
-//! [`TypedRegistry`](crate::runtime::typed_registry::TypedRegistry) — this module
+//! [`TypedRegistry`] — this module
 //! contributes the name and the admission criteria, not a second copy of the
 //! lookup code.
 

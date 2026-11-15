@@ -56,18 +56,22 @@ pub enum GitInit {
 ///   assets/scripts/        ← gameplay scripts (data, hot-reloadable)
 /// ```
 ///
-/// `src/` is for native Rust extensions and custom components compiled into
-/// the game binary. `assets/scripts/` is for gameplay scripts treated as
-/// runtime data — eventually a custom scripting language for live editing.
+/// `src/` holds native Rust compiled into the game binary; `assets/scripts/`
+/// holds the Ergon gameplay scripts, data the engine compiles and hot-reloads.
+/// Git is initialised as `git` asks; a Git failure is logged, not returned.
+/// Returns the project root, `<parent>/<name>` with the name sanitised.
 ///
-/// Returns the absolute path to the project root directory.
+/// # Errors
+///
+/// Fails when the sanitised name is empty, the folder already exists, or a
+/// file cannot be written.
 pub fn create_project(
     name: &str,
     parent: &Path,
     engine_version: &str,
     git: &GitInit,
 ) -> Result<PathBuf> {
-    // Safety: strip any path-separator characters from the name.
+    // Strips path separators, so the project cannot land outside `parent`.
     let safe_name = sanitize_name(name);
     if safe_name.is_empty() {
         anyhow::bail!("Project name is empty or contains only invalid characters");
@@ -82,7 +86,6 @@ pub fn create_project(
         );
     }
 
-    // Create the directory tree.
     std::fs::create_dir_all(&root)
         .with_context(|| format!("Failed to create project directory '{}'", root.display()))?;
 
@@ -93,18 +96,14 @@ pub fn create_project(
             .with_context(|| format!("Failed to create assets/{} directory", sub))?;
     }
 
-    // Create src/ directory for user game code.
     std::fs::create_dir_all(root.join("src")).context("Failed to create src/ directory")?;
 
-    // Write .gitignore.
     std::fs::write(root.join(".gitignore"), default_gitignore())
         .context("Failed to write .gitignore")?;
 
-    // Write README.md.
     std::fs::write(root.join("README.md"), default_readme(name, engine_version))
         .context("Failed to write README.md")?;
 
-    // Write project.json.
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -122,23 +121,19 @@ pub fn create_project(
 
     std::fs::write(root.join("project.json"), json).context("Failed to write project.json")?;
 
-    // ── assets/scripts/main.erg ─────────────────────────────────────────
-    // Seed an empty gameplay-scripts file so contributors have a starting
-    // point. It is a real Ergon module: the engine compiles every `.erg` under
-    // `assets/scripts` at startup, so a fresh project has gameplay that runs
-    // rather than a placeholder that documents one. The file is a regular
-    // project asset (the canonical ext→type map registers `.erg` under the
-    // `script` slot), so it shows up in the asset browser like any other.
+    // A real Ergon module, not a placeholder: the engine compiles every `.erg`
+    // under `assets/scripts` at startup, so a fresh project's gameplay runs.
+    // It is a script asset like any other, shown in the asset browser.
     std::fs::write(
         root.join("assets").join("scripts").join("main.erg"),
         default_main_erg(name),
     )
     .context("Failed to write assets/scripts/main.erg")?;
 
-    // Note: The editor creates the default scene (assets/scenes/default.kscene)
-    // on first open if it doesn't exist. No need to create it here.
+    // The editor creates the default scene (`assets/scenes/default.kscene`)
+    // on first open when it is missing.
 
-    // ── Git initialization (best-effort: warn on failure, don't unwind) ──
+    // Git is best-effort: the project exists whether or not it succeeds.
     if !matches!(git, GitInit::None)
         && let Err(e) = init_git(&root, name, git)
     {
@@ -180,17 +175,10 @@ fn default_gitignore() -> &'static str {
      "
 }
 
-/// The behaviour a new project starts with.
+/// Returns the Ergon behaviour a new project starts with: a module that compiles and runs.
 ///
-/// It runs. That is the whole point: the hub used to seed a JSON stub whose own
-/// comment said "the scripting runtime is not implemented yet", and nothing
-/// under `assets/scripts` could ever be compiled — a project began with a file
-/// that documented a feature instead of using one.
-///
-/// Deliberately does nothing visible. `OnSpawn` fires once per entity carrying
-/// this behaviour, and a fresh project has none, so the log line appears only
-/// after the author attaches it — which is the moment they want to know the
-/// chain works.
+/// It does nothing visible: `OnSpawn` fires once per entity carrying it, and a
+/// fresh project has none, so its log line appears once the author attaches it.
 fn default_main_erg(project_name: &str) -> String {
     format!(
         "// {project_name} — gameplay in Ergon.\n\
@@ -237,37 +225,25 @@ fn default_readme(name: &str, engine_version: &str) -> String {
     )
 }
 
-/// Returns `true` when the project root already holds a `Cargo.toml` —
-/// indicating the user has opted into native-Rust mode (Build Game will
-/// then invoke `cargo build` instead of stamping `khora-runtime`).
+/// Returns whether the project root holds a `Cargo.toml`, the opt-in to native Rust.
 ///
-/// The check is purely "file exists" — no parsing — to keep the rule
-/// simple: presence of the file IS the contract.
+/// Build Game then runs `cargo build` instead of stamping `khora-runtime`. The
+/// file's presence is the whole contract: it is not parsed.
 pub fn has_native_code(project_root: &Path) -> bool {
     project_root.join("Cargo.toml").is_file()
 }
 
 /// Scaffolds a native-Rust project on top of an existing Khora project.
 ///
-/// Writes:
-/// - `<root>/Cargo.toml` — minimal manifest depending on `khora-sdk` for the
-///   project's engine version.
-/// - `<root>/src/main.rs` — calls `khora_sdk::run_default()` so a freshly
-///   scaffolded project is functionally identical to the pre-built
-///   `khora-runtime`. Users edit this file when they want to register
-///   custom components / agents / lanes.
-/// - `<root>/src/lib.rs` is **not** generated — the user adds it themselves
-///   if they want a library split.
+/// Writes a `Cargo.toml` depending on `khora-sdk` at `engine_version` and a
+/// `src/main.rs` calling `khora_sdk::run_default()`, as `khora-runtime` does,
+/// and adds `target/` to the `.gitignore`. Native Rust is opt-in, behind
+/// "Add Native Code". See the book: reference/editor.md, "Why two strategies".
 ///
-/// Idempotent: returns an error if `Cargo.toml` already exists (the caller
-/// should pre-check via [`has_native_code`] and present a clear UI).
+/// # Errors
 ///
-/// **Why this is opt-in.** Khora's philosophy treats `src/` and
-/// `assets/scripts/` as two distinct first-class roles, neither being the
-/// default. Auto-generating `Cargo.toml` at project creation would push
-/// every user into the native-Rust flow, which most don't need. Build Game
-/// uses the `khora-runtime` stamp by default; the user explicitly upgrades
-/// to native Rust by clicking "Add Native Code" when they need it.
+/// Fails when the project already has a `Cargo.toml` (see [`has_native_code`])
+/// or a file cannot be written.
 pub fn add_native_code(
     project_root: &Path,
     project_name: &str,
@@ -290,8 +266,7 @@ pub fn add_native_code(
     std::fs::write(src_dir.join("main.rs"), native_main_rs())
         .context("Failed to write src/main.rs")?;
 
-    // Append target/ to .gitignore if not already there. Keeps the project
-    // git-clean after the user runs cargo build.
+    // Keeps the project git-clean once the user runs `cargo build`.
     let gitignore_path = project_root.join(".gitignore");
     if let Ok(existing) = std::fs::read_to_string(&gitignore_path)
         && !existing.split_whitespace().any(|line| line == "target/")
@@ -309,9 +284,7 @@ pub fn add_native_code(
 }
 
 fn native_pkg_name(project_name: &str) -> String {
-    // Cargo package names are kebab/snake-friendly identifiers. We
-    // sanitise like the project-name sanitiser but force lowercase and
-    // map underscores to hyphens for the canonical Cargo style.
+    // Cargo's style for a package name: lowercase words joined by hyphens.
     let cleaned: String = project_name
         .to_lowercase()
         .chars()
@@ -390,6 +363,11 @@ fn main() -> Result<()> {
 /// Launches the Khora Editor with the given project path.
 ///
 /// Spawns the editor process in the background and returns immediately.
+///
+/// # Errors
+///
+/// Fails when `editor_binary` is not a file, saying how to get one, or when
+/// the process cannot start.
 pub fn launch_editor(editor_binary: &str, project_path: &Path) -> Result<()> {
     if !Path::new(editor_binary).is_file() {
         anyhow::bail!(
@@ -411,6 +389,10 @@ pub fn launch_editor(editor_binary: &str, project_path: &Path) -> Result<()> {
 }
 
 /// Opens the project folder in the system file manager.
+///
+/// # Errors
+///
+/// Fails when the system has no way to open the folder.
 pub fn reveal_in_explorer(path: &Path) -> Result<()> {
     open::that(path).with_context(|| format!("Failed to open '{}'", path.display()))?;
     Ok(())
@@ -429,10 +411,8 @@ fn sanitize_name(name: &str) -> String {
 mod tests {
     /// **A new project starts with a file that compiles.**
     ///
-    /// The hub used to seed a JSON stub that no compiler could read, and no
-    /// project could have working gameplay out of the box. A seed that does not
-    /// compile is worse than the stub was: it fails at the first launch, and
-    /// the author cannot tell their mistake from ours.
+    /// A seed that does not compile fails at the first launch, and the author
+    /// cannot tell their mistake from ours.
     #[test]
     fn the_seeded_behaviour_compiles() {
         let loader =
@@ -455,9 +435,10 @@ mod tests {
 
     use super::*;
 
-    /// **A new project names its version.** The `project.json` the hub
-    /// writes holds the game's `version`, `0.1.0` for a project just created,
-    /// beside its name and the engine version it targets.
+    /// **A new project names its version.**
+    ///
+    /// Its `project.json` holds the game's `version`, `0.1.0`, beside its name
+    /// and the engine version it targets.
     #[test]
     fn a_new_project_names_its_version() -> Result<()> {
         let parent = std::env::temp_dir().join(format!(
@@ -486,9 +467,9 @@ mod tests {
         assert_eq!(sanitize_name("ok-name_1"), "ok-name_1");
     }
 
-    /// **A missing editor is named, with how to get one** — not a bare
-    /// "failed to launch": after `target/` is cleaned, the dev engine's
-    /// editor is simply not built.
+    /// **A missing editor is named, with how to get one.**
+    ///
+    /// After `target/` is cleaned, the dev engine's editor is simply not built.
     #[test]
     fn launching_a_missing_editor_says_how_to_build_it() {
         let missing = std::env::temp_dir().join("khora-no-such-editor.exe");

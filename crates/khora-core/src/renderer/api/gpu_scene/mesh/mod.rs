@@ -51,15 +51,15 @@ pub struct Mesh {
     pub bounding_box: Aabb,
 }
 
-// Implement the core Asset trait for Mesh
 impl Asset for Mesh {}
 
 impl Mesh {
     /// Byte size of one vertex in every mesh vertex buffer.
     pub const VERTEX_STRIDE: u64 = 48;
 
-    /// The engine's mesh vertex: what [`Mesh::create_vertex_buffer`] writes and
-    /// every mesh pipeline declares. Location 0 position, 1 normal, 2 UV,
+    /// The engine's mesh vertex layout, written by [`Mesh::create_vertex_buffer`].
+    ///
+    /// Every mesh pipeline declares it: location 0 position, 1 normal, 2 UV,
     /// 3 linear RGBA colour.
     pub const VERTEX_ATTRIBUTES: &'static [VertexAttributeDescriptor] = &[
         VertexAttributeDescriptor {
@@ -84,7 +84,7 @@ impl Mesh {
         },
     ];
 
-    /// The vertex buffer layout every mesh pipeline binds.
+    /// Returns the vertex buffer layout every mesh pipeline binds.
     pub fn vertex_buffer_layout() -> VertexBufferLayoutDescriptor<'static> {
         VertexBufferLayoutDescriptor {
             array_stride: Self::VERTEX_STRIDE,

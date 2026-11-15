@@ -29,12 +29,18 @@ use crate::asset::AssetUUID;
 /// implementation while it holds it. Every method can therefore be called from
 /// many threads at once without deadlocking.
 pub trait GlyphRasterizer: Send + Sync {
-    /// Registers the font file `data` under `id`. Registering an `id` again
-    /// replaces its font (a hot reload); a refused registration leaves `id`
-    /// with no font.
+    /// Registers the font file `data` under `id`.
+    ///
+    /// Registering an `id` again replaces its font (a hot reload); a refused
+    /// registration leaves `id` with no font.
+    ///
+    /// # Errors
+    ///
+    /// [`FontError::Unreadable`] when `data` is not a font file the backend reads.
     fn register_font(&self, id: AssetUUID, data: Arc<[u8]>) -> Result<(), FontError>;
 
     /// Rasterises the glyph `key` names, offset right by its subpixel bin.
+    ///
     /// `None` when the font is not registered, the font has no such glyph, or
     /// the glyph draws nothing (a space).
     fn rasterize(&self, key: &GlyphKey) -> Option<GlyphImage>;
@@ -85,7 +91,7 @@ pub struct GlyphKey {
 }
 
 impl GlyphKey {
-    /// The key of `glyph` of `font` drawn at `size_px` with its pen at `x`.
+    /// Returns the key of `glyph` of `font` drawn at `size_px` with its pen at `x`.
     ///
     /// The size is quantised to a quarter pixel (`size_q = round(size_px *
     /// 4)`). The pen's x keeps only its fractional part, rounded to one of four
@@ -101,11 +107,11 @@ impl GlyphKey {
         }
     }
 
-    /// The whole pixel a glyph whose pen is at `x` is drawn from: the image
-    /// its key names already holds the bin's fraction, so it is placed at
-    /// `whole_pixel(x)`, and `whole_pixel(x) + subpixel_offset()` is within
-    /// an eighth of a pixel of `x`. It follows the bin's rounding exactly — a
-    /// fraction that wraps to bin 0 moves the pen to the next pixel — on
+    /// Returns the whole pixel a glyph whose pen is at `x` is drawn from.
+    ///
+    /// The key's image already holds the bin's fraction, so
+    /// `whole_pixel(x) + subpixel_offset()` is within an eighth of a pixel of
+    /// `x`. A fraction that wraps to bin 0 moves the pen to the next pixel, on
     /// either side of the origin.
     pub fn whole_pixel(x: f32) -> f32 {
         x.floor() + if quarters(x) == 4 { 1.0 } else { 0.0 }
@@ -271,9 +277,8 @@ mod tests {
         );
     }
 
-    /// Wherever the pen, left of the origin or right of it, its whole pixel
-    /// plus its key's offset is the pen to an eighth of a pixel: the image
-    /// lands where it was shaped.
+    /// A pen's whole pixel plus its key's offset is the pen to an eighth of a
+    /// pixel, on either side of the origin: the image lands where it was shaped.
     #[test]
     fn a_whole_pixel_and_its_keys_offset_are_the_pen_to_an_eighth_of_a_pixel() {
         for step in -800..800 {

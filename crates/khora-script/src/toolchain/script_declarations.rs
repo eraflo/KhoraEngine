@@ -20,8 +20,8 @@ use khora_core::lane::Staged;
 
 use crate::vm::DeclaredComponent;
 
-/// The components one module declares, as it last compiled — none when it
-/// declares none, or no longer exists.
+/// The components one module declares, as it last compiled; none when it
+/// declares none or is gone.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScriptDeclarations {
     /// The module, by its path.
@@ -33,14 +33,13 @@ pub struct ScriptDeclarations {
 impl Supersedes for ScriptDeclarations {
     const COALESCES: bool = true;
 
-    /// A module's newer set replaces its older one: only what the file says
-    /// now is registered.
+    /// A module's newer set replaces its older one: only what the file last
+    /// said is registered.
     fn supersedes(&self, earlier: &Self) -> bool {
         self.module == earlier.module
     }
 }
 
-/// Staged by the `loading` family, taken by the frame boundary's
-/// `script_components`. A set replaced before a boundary took it holds
-/// nothing to give back.
+/// Staged by the `loading` family, taken by `script_components` at a frame
+/// boundary; a set replaced before then holds nothing to give back.
 impl Staged for ScriptDeclarations {}

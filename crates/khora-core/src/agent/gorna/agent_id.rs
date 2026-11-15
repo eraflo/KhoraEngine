@@ -51,9 +51,10 @@ impl Serialize for AgentId {
 }
 
 impl<'de> Deserialize<'de> for AgentId {
-    /// An agent read back, as a journal records it. The name outlives the
-    /// read, so it is kept for the program's life: a reader should read each
-    /// agent's name once (a journal's table of names), not once per entry.
+    /// Reads an agent back by name, leaking the name for the program's life.
+    ///
+    /// Read each agent's name once (a journal's table of names), not once
+    /// per entry.
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let name = String::deserialize(deserializer)?;
         Ok(Self(Box::leak(name.into_boxed_str())))

@@ -16,7 +16,7 @@
 
 use crate::renderer::api::{pipeline::RenderPipelineId, resource::BufferId};
 
-/// A low-level representation of a single draw call to be processed by a [`RenderLane`].
+/// A low-level representation of a single draw call to be processed by a `RenderLane`.
 ///
 /// This structure links GPU buffers and pipelines, serving as the common data format
 /// produced by ISAs (like `RenderAgent`) and consumed by specialized rendering lanes.

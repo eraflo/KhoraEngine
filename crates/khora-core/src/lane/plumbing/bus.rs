@@ -89,16 +89,15 @@ impl LaneBus {
         self.views.is_empty()
     }
 
-    /// Clears all published views. Called by the scheduler between ticks
-    /// when a bus instance is reused rather than reallocated.
+    /// Clears all published views, for a bus reused between ticks.
     pub fn clear(&mut self) {
         self.views.clear();
         self.stamps.clear();
     }
 
     /// Starts `frame`: every view published from now on is stamped with it.
-    /// The views already published keep the stamp of the frame they were
-    /// published in.
+    ///
+    /// Views already published keep their own frame's stamp.
     pub fn set_frame(&mut self, frame: FrameId) {
         self.frame = frame;
     }

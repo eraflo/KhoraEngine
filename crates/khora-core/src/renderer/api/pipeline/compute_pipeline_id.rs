@@ -16,7 +16,7 @@
 
 /// An opaque handle to a compiled compute pipeline state object.
 ///
-/// This ID is returned by [`GraphicsDevice::create_compute_pipeline`] and is used
+/// This ID is returned by `GraphicsDevice::create_compute_pipeline` and is used
 /// to reference the pipeline when recording compute dispatches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ComputePipelineId(pub u64);

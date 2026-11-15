@@ -22,9 +22,8 @@ use khora_core::lane::Staged;
 
 use super::CompileTicket;
 
-/// One root compiled by the `loading` family: the tickets of every request
-/// merged into that compile, and what it came to — how many modules
-/// compiled, or why the compile failed.
+/// One root compiled by the `loading` family: the tickets it answers and what
+/// it came to.
 ///
 /// Staged under the root's lease, beside the reloads and declarations it
 /// produced; a boundary files its outcome under each of its tickets.

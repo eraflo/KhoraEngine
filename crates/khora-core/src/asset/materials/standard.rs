@@ -23,27 +23,8 @@ use super::AlphaMode;
 
 /// A physically-based rendering (PBR) material using the metallic-roughness workflow.
 ///
-/// This is the primary material type for realistic 3D objects in Khora. It implements
-/// the standard PBR metallic-roughness model, which is widely used in modern game engines
-/// and 3D content creation tools (e.g., glTF 2.0 standard).
-///
-/// # PBR Properties
-///
-/// - **Base Color**: The surface's base color (albedo). For metals, this represents
-///   the reflectance; for dielectrics, this is the diffuse color.
-/// - **Metallic**: Controls whether the surface behaves like a metal (1.0) or a
-///   dielectric/non-metal (0.0). Intermediate values create unrealistic results.
-/// - **Roughness**: Controls how smooth (0.0) or rough (1.0) the surface appears.
-///   This affects specular reflections.
-///
-/// # Texture Maps
-///
-/// Supports all common PBR texture maps:
-/// - Base color/albedo
-/// - Metallic-roughness combined (metallic in B channel, roughness in G channel)
-/// - Normal map for surface detail
-/// - Ambient occlusion for subtle shadows
-/// - Emissive for self-illuminating areas
+/// It follows the glTF 2.0 model, `KHR_materials_specular` included: each
+/// factor is multiplied by its optional texture.
 ///
 /// # Examples
 ///
@@ -143,17 +124,19 @@ pub struct StandardMaterial {
     pub double_sided: bool,
 
     /// The strength of the reflection a non-metal shows (glTF
-    /// `KHR_materials_specular` `specularFactor`): it scales the dielectric
-    /// reflectance at normal and at grazing incidence. `1.0` is the usual
-    /// 4% reflectance; `0.0` removes the dielectric reflection.
+    /// `KHR_materials_specular` `specularFactor`).
     ///
-    /// A material saved before it existed reads `1.0`.
+    /// It scales the dielectric reflectance at normal and at grazing
+    /// incidence. `1.0` is the usual 4% reflectance; `0.0` removes the
+    /// dielectric reflection. A material saved without it reads `1.0`.
     #[serde(default = "full_specular")]
     pub specular: f32,
 
     /// The colour of a non-metal's reflection at normal incidence (glTF
-    /// `specularColorFactor`), multiplying the 4% base reflectance (clamped to
-    /// 1). White keeps it neutral; values above 1 strengthen it.
+    /// `specularColorFactor`).
+    ///
+    /// It multiplies the 4% base reflectance (clamped to 1). White keeps it
+    /// neutral; values above 1 strengthen it.
     #[serde(default)]
     pub specular_color: LinearRgba,
 
@@ -189,7 +172,7 @@ impl Default for StandardMaterial {
     }
 }
 
-/// The specular strength of a material saved before the field existed.
+/// The specular strength of a material saved without the field.
 fn full_specular() -> f32 {
     1.0
 }
@@ -541,8 +524,8 @@ mod tests {
         assert_eq!(material.textures(), vec![specular_color]);
     }
 
-    /// A material saved before the specular fields existed has none of them:
-    /// it must read back as specular 1 / white (today's image), not 0 / black.
+    /// A material saved without the specular fields reads back as specular
+    /// 1 / white, not 0 / black.
     #[test]
     fn a_standard_material_saved_without_specular_fields_reads_specular_one_and_white() {
         let mut saved = serde_json::to_value(StandardMaterial {

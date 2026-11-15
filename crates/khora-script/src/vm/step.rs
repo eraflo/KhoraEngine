@@ -291,12 +291,10 @@ impl Machine {
         else {
             unreachable!("step_become is reached only for `Become`")
         };
-        // The arguments first, read while the old state's data is still
-        // there: an argument may have been read out of it. Then the
-        // entered state's data at its defaults and its countdowns armed
-        // — data the layout holds — then the arguments into their
-        // slots, and the discriminant last. Nothing here can fail
-        // part-way, so a state is never half-entered.
+        // The arguments are read first, while the old state's data is still
+        // there: an argument may have been read out of it. Nothing fails once
+        // the writes begin, and the discriminant is written last, so a state is
+        // never half-entered.
         let mut arguments = Vec::with_capacity(usize::from(argc));
         for offset in 0..argc {
             let value = self.read(base + offset)?;

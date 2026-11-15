@@ -123,14 +123,11 @@ mod tests {
         }
     }
 
-    /// **A machine's key is stable and changes with what it is made of.** The
-    /// same fields give the same key, on every run and every build: the key of
-    /// a fixed machine is pinned here, so the hash or its encoding can never
-    /// drift without this test reddening (every profile already written would
-    /// be orphaned). It is 16 lowercase hex digits. Another driver, another
-    /// driver version, another device, another CPU, another core count,
-    /// another OS or no GPU at all give another key, and so do two fields
-    /// trading characters.
+    /// **A machine's key is stable and changes with what it is made of.**
+    ///
+    /// The key of a fixed machine is pinned, so the hash or its encoding never
+    /// drifts unseen: every profile already written would be orphaned. Each
+    /// field changed, no GPU, or two fields trading characters give another key.
     #[test]
     fn a_machine_key_is_stable_and_changes_with_the_driver() {
         let machine = a_machine();
@@ -217,9 +214,7 @@ mod tests {
         }
     }
 
-    /// **A machine identity round-trips through JSON.** Written beside what
-    /// was learnt of the machine, it reads back equal, its GPU included — and
-    /// a machine without a GPU reads back without one.
+    /// **A machine identity round-trips through JSON**, with or without a GPU.
     #[test]
     fn a_machine_identity_round_trips() {
         for machine in [

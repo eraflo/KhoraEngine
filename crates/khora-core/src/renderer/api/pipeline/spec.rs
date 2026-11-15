@@ -12,17 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Declarative pipeline + layout specs for the [`PipelineSystem`] backend.
-//!
-//! A lane describes *what* pipeline it needs ([`PipelineSpec`]) instead of
-//! hand-rolling bind-group layouts + a `RenderPipelineDescriptor`. The backend
-//! (`khora-infra`) compiles the shader (for the requested [`ShaderVariantKey`]),
-//! resolves the bind-group layouts, builds + caches the pipeline, and returns a
-//! [`RenderPipelineId`](super::RenderPipelineId).
-//!
-//! Caching is keyed by [`PipelineKey`] = `(shader, variant, color_format)`:
-//! for a given shader + variant + target format the rest of the pipeline config
-//! is fixed, so the rest of the spec need not be hashable.
+//! Declarative pipeline and layout specs: what a lane asks of the
+//! `PipelineSystem` backend, and the keys the backend caches them by.
 
 use std::borrow::Cow;
 
@@ -37,11 +28,11 @@ use crate::renderer::api::resource::{SampleCount, TextureFormat};
 use crate::renderer::api::shader::ShaderVariantKey;
 use crate::renderer::api::util::ShaderStageFlags;
 
-/// A canonical, engine-shared bind-group layout, owned once by the backend's
-/// layout cache and referenced by every lane that needs it. The lit pipelines'
-/// 4-group budget maps to `Camera`(0) / `Model`(1) / `Material`(2) /
-/// `Lighting`(3); `LightingBuffer` is the 1-binding layout the lighting ring
-/// buffer is created against.
+/// A canonical bind-group layout, cached once by the backend and shared by lanes.
+///
+/// The lit pipelines' four groups are `Camera` (0), `Model` (1), `Material` (2)
+/// and `Lighting` (3); `LightingBuffer` is the layout the lighting ring buffer
+/// is created against.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LayoutKey {
     /// Group 0 — camera uniforms (view-projection, position).
@@ -57,10 +48,10 @@ pub enum LayoutKey {
 }
 
 impl LayoutKey {
-    /// Returns the bind-group layout entries for this canonical layout, for the
-    /// given shader variant. Only `Material` varies by variant — it contains
-    /// the uniform + sampler plus only the texture bindings whose `HAS_*` flag
-    /// is set; the others ignore the variant.
+    /// Returns the bind-group layout entries of this layout under `variant`.
+    ///
+    /// Only `Material` depends on the variant: it holds only the textures whose
+    /// `HAS_*` flag is set.
     pub fn entries(&self, variant: &ShaderVariantKey) -> Vec<BindGroupLayoutEntry> {
         match self {
             LayoutKey::Camera => vec![uniform_entry(
@@ -94,7 +85,7 @@ impl LayoutKey {
     }
 }
 
-/// Helper: a single uniform-buffer bind-group layout entry.
+/// A single uniform-buffer bind-group layout entry.
 fn uniform_entry(
     binding: u32,
     visibility: ShaderStageFlags,
@@ -137,7 +128,7 @@ pub enum LayoutCacheKey {
 }
 
 impl LayoutSpec {
-    /// The cache key for this layout spec under `variant`.
+    /// Returns the cache key of this layout spec under `variant`.
     pub fn cache_key(&self, variant: &ShaderVariantKey) -> LayoutCacheKey {
         match self {
             LayoutSpec::Named(key) => LayoutCacheKey::Named(*key, variant.clone()),
@@ -146,10 +137,9 @@ impl LayoutSpec {
     }
 }
 
-/// Declarative description of a render pipeline. The lane fills this each call;
-/// the backend dedups via [`PipelineKey`] so repeated calls are a cache hit.
+/// Declarative description of a render pipeline, cached by its [`PipelineKey`].
 ///
-/// Owns its data (`'static`) so it is cheap to build and pass by reference.
+/// A lane may build it on every call: a repeated spec is a cache hit.
 #[derive(Debug, Clone)]
 pub struct PipelineSpec {
     /// Debug label.
@@ -177,16 +167,12 @@ pub struct PipelineSpec {
 }
 
 impl PipelineSpec {
-    /// The cache key: `(shader, variant, first color-target format, depth
-    /// format, samples, cull_mode, blend)`.
+    /// Returns the cache key: shader, variant, target formats, sample count,
+    /// cull mode and blending.
     ///
-    /// The target's formats and sample count are part of the key because a
-    /// lane builds its pipeline for the target it draws into: two targets
-    /// that differ only in depth need distinct pipelines. The cull mode is
-    /// part of it because it is a rasterizer state baked into the pipeline:
-    /// double-sided vs single-sided materials share a shader, variant, and
-    /// format but need distinct pipelines. Everything else is fixed for a
-    /// given key.
+    /// These are what two pipelines of one shader can differ by: a target
+    /// differing only in depth, or a double-sided material, needs its own.
+    /// Everything else in the spec is fixed for a given key.
     pub fn key(&self) -> PipelineKey {
         PipelineKey {
             shader: self.shader,

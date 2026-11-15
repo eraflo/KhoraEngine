@@ -30,15 +30,15 @@ use std::collections::HashMap;
 
 /// Mutable typed deck collecting lane outputs for one tick.
 ///
-/// Each typed slot is created on first access, holding `T::default()` until
-/// a lane writes into it. The engine drains specific types at the I/O
-/// boundary (submit, present) via [`OutputDeck::take`].
+/// Each typed slot is created on first access, holding `T::default()`. The
+/// engine drains slots at the I/O boundary through [`OutputDeck::take`].
 pub struct OutputDeck {
     slots: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
     /// The slot types written through [`slot`](Self::slot) since the last
-    /// [`drain_written`](Self::drain_written). The scheduler reads it after
-    /// each agent: to drop what a panicking agent wrote, and (in debug builds)
-    /// to check the writes against what the agent declared.
+    /// [`drain_written`](Self::drain_written).
+    ///
+    /// The scheduler drops what a panicking agent wrote from it, and checks the
+    /// writes against the agent's declaration in debug builds.
     written: Vec<TypeId>,
 }
 
@@ -51,11 +51,9 @@ impl OutputDeck {
         }
     }
 
-    /// Returns a mutable reference to the slot for type `T`, creating it
-    /// with `T::default()` on first access.
+    /// Returns the slot for type `T`, created with `T::default()` on first access.
     ///
-    /// Lanes call this to accumulate outputs (e.g. push command buffers
-    /// onto a `Vec`).
+    /// Records `T` as written.
     pub fn slot<T: Default + Any + Send + Sync>(&mut self) -> &mut T {
         let type_id = TypeId::of::<T>();
         if !self.written.contains(&type_id) {
@@ -68,11 +66,9 @@ impl OutputDeck {
             .expect("slot type mismatch — TypeId collision is impossible in safe Rust")
     }
 
-    /// Removes and returns the slot for type `T`, replacing it with the
-    /// default value (so subsequent ticks start clean).
+    /// Removes and returns the slot for type `T`, so the next tick starts clean.
     ///
-    /// Returns `T::default()` if no lane wrote into this slot during the
-    /// tick. Used by the engine at the I/O boundary.
+    /// Returns `T::default()` if no lane wrote into it this tick.
     pub fn take<T: Default + Any + Send + Sync>(&mut self) -> T {
         self.slots
             .remove(&TypeId::of::<T>())
@@ -82,9 +78,8 @@ impl OutputDeck {
 
     /// Reads the slot for type `T`, if one was written this tick.
     ///
-    /// Unlike [`slot`](Self::slot), reading is not writing: a lane that only
-    /// consumes another domain's output reads it through here, so the
-    /// scheduler's write check does not count it as a writer.
+    /// Unlike [`slot`](Self::slot), it records no write, so a reader is not
+    /// counted as a writer.
     pub fn get<T: Any + Send + Sync>(&self) -> Option<&T> {
         self.slots
             .get(&TypeId::of::<T>())
@@ -120,16 +115,15 @@ impl OutputDeck {
         self.slots.is_empty()
     }
 
-    /// Clears all slots. Called by the scheduler between ticks if a deck
-    /// instance is reused rather than reallocated.
+    /// Clears all slots, for a deck reused between ticks.
     pub fn clear(&mut self) {
         self.slots.clear();
     }
 
-    /// Moves the slots of `types` out into a deck of their own, as they are —
-    /// what a concurrent wave hands each member: the slots it writes, so a
-    /// slot it grows sub-step after sub-step keeps growing. Nothing is
-    /// recorded as written.
+    /// Moves the slots of `types` out, as they are, into a deck of their own.
+    ///
+    /// What a concurrent wave hands each member, so a slot grown sub-step
+    /// after sub-step keeps growing. Nothing is recorded as written.
     pub fn take_slots(&mut self, types: &[TypeId]) -> OutputDeck {
         let mut taken = OutputDeck::new();
         for type_id in types {
@@ -140,9 +134,9 @@ impl OutputDeck {
         taken
     }
 
-    /// Moves every slot from `other` into `self`, replacing what `self` held
-    /// in it, and records each as written — how an agent commits what one
-    /// run of its lane wrote into a deck of its own.
+    /// Moves every slot from `other` into `self`, replacing and recording each as written.
+    ///
+    /// How an agent commits what one run of its lane wrote into a deck of its own.
     pub fn commit_from(&mut self, other: OutputDeck) {
         for (type_id, value) in other.slots {
             if !self.written.contains(&type_id) {
@@ -154,12 +148,10 @@ impl OutputDeck {
 
     /// Moves every slot from `other` into `self`.
     ///
-    /// Used by the parallel executor to fold a worker's private deck shard back
-    /// into the shared deck after a concurrent wave. The merged shards are
-    /// expected to write **disjoint** slot types (a wave holds only agents
-    /// whose [`Contention`](crate::agent::Contention)s are disjoint). A colliding `TypeId` is therefore a scheduling bug: the existing
-    /// slot is kept and the collision logged, rather than silently dropping one
-    /// side's outputs.
+    /// Folds a worker's shard back after a concurrent wave. Shards write
+    /// disjoint slots (a wave's [`Contention`](crate::agent::Contention)s are
+    /// disjoint), so a collision is a scheduling bug: the existing slot is
+    /// kept and the collision logged.
     pub fn merge_from(&mut self, other: OutputDeck) {
         for (type_id, value) in other.slots {
             if self.slots.contains_key(&type_id) {

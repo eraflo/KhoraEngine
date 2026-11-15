@@ -12,18 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What a Rust type means to a script.
-//!
-//! The bridge `#[ergon_fn]` compiles against. A macro that read the *written*
-//! type name — matching the token `f32` and hoping — would break on a type
-//! alias, on `super::Vec3`, and on anything generic; and it could only ever
-//! know the types the macro author listed. Asking the type itself instead
-//! means the mapping is resolved by the compiler, and a crate can expose its
-//! own type to scripts by implementing this trait, without the macro learning
-//! anything new.
-//!
-//! [`TY`](ScriptType::TY) is an associated **constant**, which is what lets a
-//! generated signature be a `static` rather than something built at start-up.
+//! What a Rust type means to a script: the trait `#[ergon_fn]` compiles
+//! against, so the compiler resolves the mapping rather than the macro reading
+//! a type's written name.
 
 use khora_core::ecs::entity::EntityId;
 
@@ -33,19 +24,25 @@ use crate::vm::Value;
 /// A Rust type a script can pass or receive.
 pub trait ScriptType: Sized {
     /// How the type is written in Ergon.
+    ///
+    /// A constant, so a generated signature is a `static`.
     const TY: NativeTy;
 
     /// Reads a value the VM produced.
     ///
-    /// The checker has already proved the call well-typed, so a mismatch here
-    /// means the registry and the program disagree — an engine fault, not the
-    /// author's mistake, and the message says so.
+    /// # Errors
+    ///
+    /// A value of another shape: the checker proved the call well-typed, so the
+    /// registry and the program disagree, and the message says so.
     fn from_value(value: Value, context: &NativeContext<'_>) -> Result<Self, NativeError>;
 
     /// Turns a result into a value the VM can hold.
     ///
-    /// Takes the context because a type too large for a register has to be put
-    /// somewhere, and that somewhere is the frame arena.
+    /// A type too large for a register is put in the context's frame arena.
+    ///
+    /// # Errors
+    ///
+    /// The frame arena refused the allocation.
     fn to_value(self, context: &mut NativeContext<'_>) -> Result<Value, NativeError>;
 }
 
@@ -112,12 +109,9 @@ impl ScriptType for EntityId {
 
 /// Text handed to or from an engine function.
 ///
-/// Owned rather than borrowed, and that is the honest shape rather than a
-/// missed optimisation: a borrow would have to name the lifetime of *either*
-/// the program or the arena depending on where the string happened to live, and
-/// a native's signature cannot depend on that. Reading a string into a native
-/// therefore copies it. Returning one allocates in the frame arena, so it lasts
-/// one frame like everything else there.
+/// Owned: a borrow would name the program's lifetime or the arena's depending
+/// on where the string lives. Reading one copies it; returning one allocates
+/// in the frame arena, so it lasts one frame.
 impl ScriptType for String {
     const TY: NativeTy = NativeTy::Str;
 
@@ -289,9 +283,10 @@ mod tests {
         assert_eq!(f32::from_value(Value::Int(3), &context), Ok(3.0));
     }
 
-    /// The message blames the engine, not the author: the checker already
-    /// proved the call well-typed, so a mismatch here is a registry that does
-    /// not match the program.
+    /// The message blames the engine, not the author.
+    ///
+    /// The checker proved the call well-typed: a mismatch is a registry that
+    /// does not match the program.
     #[test]
     fn a_mismatch_names_the_real_culprit() {
         let mut fixture = Fixture::new();

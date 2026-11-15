@@ -14,41 +14,18 @@
 
 //! The shared widget vocabulary — one look for every Khora tool.
 //!
-//! # The contract
+//! A widget is a free function `fn(ui: &mut dyn UiBuilder, theme: &UiTheme,
+//! rect: Rect, …data) -> Interaction?`. It reads its colours from the
+//! [`UiTheme`] it is handed, never from [`crate::brand::pal`]; paints through
+//! [`UiBuilder`] primitives only, never `egui`; holds no state, the caller
+//! owning it; and paints into the absolute rect it is given (from
+//! [`UiBuilder::allocate_size`](khora_core::ui::UiBuilder::allocate_size), or
+//! computed by the caller).
 //!
-//! Every widget in this module is a **free function** with the shape:
-//!
-//! ```text
-//! fn widget(ui: &mut dyn UiBuilder, theme: &UiTheme, rect: Rect, …data) -> Interaction?
-//! ```
-//!
-//! and obeys four rules. They are what make the system extensible:
-//!
-//! 1. **Theme in, never `pal` out.** A widget reads its colors from the
-//!    [`UiTheme`] it is handed — never from [`crate::brand::pal`] directly.
-//!    That is the whole reason the editor and the hub cannot drift, and why
-//!    re-theming a tool is just passing a different theme.
-//! 2. **No backend.** Widgets paint through [`UiBuilder`] primitives only. No
-//!    `egui` type ever appears here, so the day the backend changes, none of
-//!    this moves.
-//! 3. **No state.** The caller owns the state (which tab is open, which pills
-//!    are enabled); the widget takes it by value or `&mut` and returns what
-//!    happened. Widgets are pure functions of their inputs.
-//! 4. **Absolute rects.** A widget paints into the `[x, y, w, h]` it is given.
-//!    Callers using auto-layout get one from
-//!    [`UiBuilder::allocate_size`]; callers doing manual layout (most editor
-//!    panels) compute it themselves.
-//!
-//! # Adding a widget
-//!
-//! Put composites here as free functions. **Do not add methods to the
-//! [`UiBuilder`] trait** — that trait is the backend contract and only grows
-//! when a genuinely new *primitive* (a paint or interaction capability that
-//! cannot be composed from the existing ones) is needed. Every widget below is
-//! built from the primitives that already exist.
-//!
-//! Test with [`crate::testing::RecordingUiBuilder`]: assert on which theme slot
-//! was used and what was painted, not on pixel coordinates.
+//! A new widget is composed here from existing primitives: [`UiBuilder`] is
+//! the backend contract and grows only for a genuinely new primitive. Test it
+//! with [`crate::testing::RecordingUiBuilder`], asserting on theme slots and
+//! what was painted, not on pixel coordinates.
 //!
 //! [`UiTheme`]: khora_core::ui::UiTheme
 //! [`UiBuilder`]: khora_core::ui::UiBuilder
@@ -149,9 +126,9 @@ pub fn text_y(rect: Rect, size: f32) -> f32 {
     rect[1] + (rect[3] - size) * 0.5
 }
 
-/// Resolves the foreground color for text drawn on top of a filled `primary`
-/// (silver) surface — the inverse ink. Used by primary buttons and any other
-/// control that fills with the brand color.
+/// Returns the inverse ink, for text on a filled `primary` (silver) surface.
+///
+/// Used by primary buttons and any other control filled with the brand colour.
 #[inline]
 pub fn on_primary(theme: &UiTheme) -> Color {
     theme.text_inverse

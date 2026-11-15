@@ -23,13 +23,12 @@ mod mat4;
 pub use mat3::Mat3;
 pub use mat4::Mat4;
 
-/// Whether a matrix with determinant `det` is invertible, `scale` being the
-/// product of its column lengths — by Hadamard's inequality the largest
-/// magnitude `det` can reach. The ratio is scale-free: it says how far the
-/// columns are from lying in a lower-dimensional space, whatever their size.
-/// A NaN or an infinity anywhere fails the comparison, and so does a
-/// determinant so small (subnormal) that its reciprocal overflows: the
-/// inverse would hold infinities.
+/// Whether a matrix with determinant `det` is invertible, `scale` being the product of its
+/// column lengths.
+///
+/// By Hadamard's inequality `|det| ≤ scale`, so `|det| / scale` says, whatever the size, how
+/// far the columns are from a lower-dimensional space. A NaN, an infinity, or a determinant
+/// whose reciprocal overflows (the inverse would hold infinities) is not invertible.
 #[inline]
 pub(crate) fn is_invertible(det: f32, scale: f32) -> bool {
     det.is_finite() && scale.is_finite() && det.abs() > EPSILON * scale && (1.0 / det).is_finite()

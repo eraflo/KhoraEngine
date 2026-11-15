@@ -125,9 +125,10 @@ mod tests {
         assert_eq!(distinct.len(), 6, "ALL holds six distinct kinds");
     }
 
-    /// **A name that is no kind reads as none** — the other vocabulary's
-    /// spelling included: the index's `audio` is no Ergon type, Ergon's
-    /// `Sound` no index name, and case matters.
+    /// **A name that is no kind reads as none**, the other vocabulary's
+    /// spelling and another case included.
+    ///
+    /// The index's `audio` is no Ergon type, Ergon's `Sound` no index name.
     #[test]
     fn a_name_of_no_kind_reads_as_none() {
         for name in [

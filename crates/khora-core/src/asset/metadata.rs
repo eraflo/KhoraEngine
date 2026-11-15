@@ -27,17 +27,11 @@ pub enum CompressionKind {
     Lz4,
 }
 
-/// Represents the physical source of an asset's data.
+/// The physical source of an asset's data.
 ///
-/// This enum allows the asset system to transparently handle assets from two
-/// different contexts:
-/// - In editor/development mode, assets are loaded directly from loose files on disk (`Path`).
-/// - In release/standalone mode, assets are loaded from an optimized packfile (`Packed`).
-///
-/// **Pack format version:** v2 added per-entry compression (`compression`,
-/// `uncompressed_size`). v1 packs (without these fields) are no longer
-/// supported on the read side; the loader bails on the header version
-/// check before reaching this struct.
+/// A loose file on disk in development (`Path`), a span of the packfile in a
+/// shipped build (`Packed`), or a part of another asset (`Sub`). See the book:
+/// concepts/assets.md, "Dev and packed are the same path".
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AssetSource {
     /// The asset is a loose file on disk. The `PathBuf` points to the file.
@@ -57,9 +51,11 @@ pub enum AssetSource {
         /// `offset + size`.
         compression: CompressionKind,
     },
-    /// The asset lives inside another asset — a mesh, material, texture or
-    /// scene of a glTF file. It has no bytes of its own: they are read from
-    /// `container`'s own source and the asset is extracted by `label`.
+    /// The asset lives inside another asset: a mesh, material, texture or
+    /// scene of a glTF file.
+    ///
+    /// It has no bytes of its own: they are read from `container`'s own source
+    /// and the asset is extracted by `label`.
     Sub {
         /// The uuid of the asset that holds this one.
         container: AssetUUID,
@@ -70,41 +66,31 @@ pub enum AssetSource {
 
 /// Serializable metadata that describes an asset and its relationships.
 ///
-/// This structure serves as the "identity card" for each asset within the engine's
-/// Virtual File System (VFS). It contains all the information needed by the
-/// `AssetAgent` to make intelligent loading and management decisions *without*
-/// having to load the actual asset data from disk.
-///
-/// A collection of these metadata entries forms the VFS "Index".
+/// It tells the asset service how to load an asset without reading its data.
+/// The index of the VFS is a collection of these entries.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssetMetadata {
-    /// The unique, stable identifier for this asset. This is the primary key.
+    /// The asset's stable identifier: the key of this entry.
     pub uuid: AssetUUID,
 
-    /// The canonical path to the original source file (e.g., a `.blend` or `.png`).
-    /// This is primarily used by the asset importer and editor tooling.
+    /// The path to the original source file (e.g. a `.gltf` or `.png`), for
+    /// the importer and editor tooling.
     pub source_path: PathBuf,
 
-    /// A string identifier for the asset's type (e.g., "texture", "mesh", "material").
-    /// This is used by the loading system to select the correct `AssetLoader` trait object.
+    /// The asset's type name (e.g. `"texture"`, `"mesh"`, `"material"`), which
+    /// selects its decoder.
     pub asset_type_name: String,
 
-    /// A list of other assets that this asset directly depends on.
-    /// For example, a material asset would list its required texture assets here.
-    /// This information is crucial for tracking dependencies and ensuring all
-    /// necessary assets are loaded.
+    /// The assets this asset directly depends on, such as a material's
+    /// textures.
     pub dependencies: Vec<AssetUUID>,
 
-    /// A map of available, pre-processed asset variants ready for runtime use.
+    /// The engine-ready variants of the asset, keyed by variant name.
     ///
-    /// The key is a variant identifier (e.g., "LOD0", "4K", "low_quality"),
-    /// and the value is the source of the compiled, engine-ready file for that variant. (Which contains the necessary metadata for loading the asset.)
-    /// This map allows the `AssetAgent` to make strategic choices, such as loading
-    /// a lower-quality texture to stay within a VRAM budget.
+    /// A key names the variant (e.g. `"default"`, `"LOD0"`, `"4K"`); its value
+    /// is where that variant's bytes are read from.
     pub variants: HashMap<String, AssetSource>,
 
-    /// A collection of semantic tags for advanced querying and organization.
-    /// Tags can be used to group assets for collective operations, such as
-    /// loading all assets for a specific game level or character.
+    /// Semantic tags that group assets, e.g. all the assets of one level.
     pub tags: Vec<String>,
 }

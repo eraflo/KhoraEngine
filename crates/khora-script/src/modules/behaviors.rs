@@ -12,16 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The components a project's behaviors are.
+//! The components a project's behaviors are: `Guard`, its authored fields,
+//! and its state companion `Guard#state`, which no script can name.
 //!
-//! A `behavior` is stored as two components. Its own — `Guard` — holds the
-//! fields its author sets, in the behavior's `[Domain(…)]`, and is saved by a
-//! scene. Its **state companion** — `Guard#state` — holds what the engine
-//! writes while it runs: the current state by name, that state's data, the
-//! timers, a suspended sequence, the lifecycle; it is runtime state a game
-//! save keeps and a scene never does, always in the `Script` domain, with the
-//! same fields for every behavior. `#` is no part of a name a script can
-//! write, so no script names a companion.
+//! See the book: concepts/scripting/saves-and-edits.md, "Saved mid-sentence".
 
 use khora_core::ecs::SemanticDomain;
 use khora_core::script::{ErgonType, ScriptValue};
@@ -42,9 +36,8 @@ pub fn state_companion(behavior: &str) -> String {
     format!("{behavior}{STATE_SUFFIX}")
 }
 
-/// Every refusal about the behaviors the project's own modules declare: a
-/// name an engine component has, a `[Domain(…)]` that names no domain or is
-/// given twice.
+/// Returns the refusals of the project's behaviors: an engine component's name,
+/// or a `[Domain(…)]` that names no domain or is given twice.
 pub fn report_script_behaviors(resolved: &Resolved, engine: &[String]) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     for (_, decl, declared) in script_behaviors(resolved) {
@@ -135,10 +128,11 @@ fn report_domain(attributes: &[Attribute], diagnostics: &mut Vec<Diagnostic>) {
     }
 }
 
-/// The two components each behavior and system of the project's own modules
-/// is: its fields, and its state companion. Each carries the item's place
-/// among the module's behaviors and systems, in source order: the order they
-/// run in.
+/// Returns the two components of each project behavior and system: its fields
+/// and its state companion.
+///
+/// Each carries the item's source order among the module's behaviors and
+/// systems, which is the order they run in.
 pub fn declared_behaviors(resolved: &Resolved, program: &Program) -> Vec<DeclaredComponent> {
     script_behaviors(resolved)
         .flat_map(|(module, decl, declared)| {
@@ -230,9 +224,8 @@ fn fields_of(decl: &BehaviorDecl) -> impl Iterator<Item = &Field> {
     })
 }
 
-/// A behavior field as its component holds it: its registered default is the
-/// layout's — the constant written, or its type's neutral value — so what a
-/// row starts at and what a fresh instance holds are one value.
+/// A behavior field as its component holds it, defaulting to the layout's
+/// default so a new row and a fresh instance start at one value.
 fn declared_field(field: &Field, slot: usize, behavior: &str, program: &Program) -> DeclaredField {
     // A type the storage names no type for — a `Map` — is held as any value.
     let ty = ergon_type(&field.ty).map_or(ErgonType::Any, |ty| {
@@ -252,9 +245,7 @@ fn declared_field(field: &Field, slot: usize, behavior: &str, program: &Program)
     }
 }
 
-/// The fields of every state companion: the current state, by name; that
-/// state's data, by name; each timer's remaining time; a suspended sequence;
-/// whether the instance spawned; its fault; the bodies a resume abandoned.
+/// The fields of every state companion, the same for every behavior.
 fn companion_fields() -> Vec<DeclaredField> {
     let field = |name: &str, ty: ErgonType, default: ScriptValue| DeclaredField {
         name: name.to_owned(),

@@ -180,10 +180,11 @@ impl Parser {
         })
     }
 
-    /// `[Domain(…)] component Name { fields }` — fields only, each with an
-    /// optional default: a component is data the engine stores, with no
-    /// operators. A default is what a new row starts with; a write still
-    /// leaves the fields it does not name as they are.
+    /// `[Domain(…)] component Name { fields }` — fields only, each with an optional default.
+    ///
+    /// A component is data the engine stores, with no operators. A default is
+    /// what a new row starts with; a write still leaves the fields it does not
+    /// name as they are.
     pub(super) fn parse_component(&mut self, attributes: Vec<Attribute>) -> Parse<StructDecl> {
         let start = self.span();
         self.advance(); // `component`
@@ -418,9 +419,9 @@ impl Parser {
         })
     }
 
-    /// Whether a handler starts here: `on` is a word only where a member
-    /// starts, before an event's name — a parameter, a field or a local may
-    /// still be called `on`.
+    /// Whether a handler starts here: `on`, where a member starts, before an event's name.
+    ///
+    /// A parameter, a field or a local may still be called `on`.
     fn at_handler(&self) -> bool {
         matches!(self.peek(), TokenKind::Ident(word) if word == "on")
             && matches!(self.peek_at(1), TokenKind::Ident(_))
@@ -470,16 +471,10 @@ impl Parser {
         Ok(AfterDecl { delay, body, span })
     }
 
-    /// `{ … }` or `=> …;`.
+    /// `{ … }` or `=> …;`, the arrow form as a one-statement block.
     ///
-    /// The arrow form becomes a one-statement block, so everything downstream
-    /// sees a single shape and no pass has to special-case the shorthand.
-    ///
-    /// `returns_value` decides what that statement is. On a member that
-    /// produces a value — an operator, a non-`void` method — `=> expr` means
-    /// *return* `expr`; on a `void` one it is an expression evaluated for
-    /// effect. Getting this wrong would silently discard the result of every
-    /// arrow-bodied operator.
+    /// With `returns_value` — an operator, a non-`void` method — `=> expr`
+    /// means *return* `expr`; otherwise it is an expression evaluated for effect.
     pub(super) fn parse_body_or_arrow(&mut self, returns_value: bool) -> Parse<Block> {
         if self.eat(&TokenKind::FatArrow) {
             let arrow = self.previous_span();

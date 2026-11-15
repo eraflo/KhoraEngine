@@ -20,9 +20,7 @@ use super::protocol::Trigger;
 use super::{AgentId, StrategyId};
 use crate::lane::cost::Device;
 
-/// Why the DCC decided an allocation as it did: what decided it, why the
-/// round opened, what stopped it from lending more, and the upgrades it
-/// refused.
+/// Why the DCC decided an allocation as it did, and the upgrades it refused.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Why {
     /// What decided the rows the allocation plans.
@@ -30,18 +28,19 @@ pub struct Why {
     /// Why the round opened, as decided: `Trigger::Safety` when the floors
     /// did not fit.
     pub trigger: Trigger,
-    /// The constraint that refused the last upgrade tried; `None` when every
-    /// agent reached its best allowed row, or the round opened as
-    /// `Trigger::Safety`.
+    /// The constraint that refused the last upgrade tried.
+    ///
+    /// `None` when every agent reached its best allowed row, or the round
+    /// opened as `Trigger::Safety`.
     pub binding: Option<BindingConstraint>,
     /// The upgrades found not to fit, each with the constraint it broke.
     pub rejected: Vec<Rejected>,
 }
 
 impl Default for Why {
-    /// Decided by the floors, the first round, nothing binding, nothing
-    /// rejected: what a journal written before the DCC kept its reasons
-    /// reads back as.
+    /// Decided by the floors, the first round, nothing binding or rejected.
+    ///
+    /// What a journal without reasons reads back as.
     fn default() -> Self {
         Self {
             by: DecidedBy::Floors,

@@ -19,46 +19,39 @@ use super::{Mat4, Vec3};
 use crate::math::{CubeFace, FRAC_PI_2};
 
 impl Mat4 {
-    /// The near plane, in world units, of every light-space perspective a
-    /// shadow is rendered through (a point light's cube faces, a spot
-    /// light's cone). The shader-side depth recompute used in
-    /// omnidirectional shadow sampling assumes the same constant, so a light
-    /// whose range does not exceed it can cast no shadow.
+    /// The near plane, in world units, of every light-space perspective a shadow renders through.
+    ///
+    /// Point-light cube faces and spot-light cones share it, and the omnidirectional shadow
+    /// sampling shader assumes the same value: a light whose range does not exceed it casts no
+    /// shadow.
     pub const SHADOW_NEAR: f32 = 0.1;
 
-    /// View-projection matrix for one face of an omnidirectional cubemap
-    /// rendered from `position`.
+    /// Returns the view-projection of one cubemap face rendered from `position`.
     ///
-    /// Builds a 90°-FOV perspective with `[SHADOW_NEAR, far]` depth range,
-    /// then a look-at matrix using [`CubeFace::forward`] and [`CubeFace::up`]
-    /// in the wgpu cubemap convention.
+    /// A right-handed 90° perspective over `[SHADOW_NEAR, far]` (depth 0 to 1), looking along
+    /// [`CubeFace::forward`] with [`CubeFace::up`]. `far` is the light's range in world units; a
+    /// range that comes from data goes through [`Mat4::try_cube_face_view_projs`].
     ///
-    /// `far` should be the light's effective range in world units, and must
-    /// exceed [`Mat4::SHADOW_NEAR`] (a precondition: a range that comes from
-    /// data goes through [`Mat4::try_cube_face_view_projs`]).
+    /// # Panics
+    ///
+    /// Panics if `far` does not exceed [`Mat4::SHADOW_NEAR`].
     pub fn cube_face_view_proj(position: Vec3, face: CubeFace, far: f32) -> Mat4 {
         Mat4::perspective_rh_zo(FRAC_PI_2, 1.0, Mat4::SHADOW_NEAR, far) * face_view(position, face)
     }
 
-    /// Six view-projection matrices, one per cube face, in
-    /// [`CubeFace::ALL`] order (`[+X, -X, +Y, -Y, +Z, -Z]`).
+    /// Returns [`Mat4::cube_face_view_proj`] for each face, in [`CubeFace::ALL`] order.
     ///
-    /// Equivalent to:
-    /// ```ignore
-    /// CubeFace::ALL.map(|f| Mat4::cube_face_view_proj(position, f, far))
-    /// ```
+    /// # Panics
+    ///
+    /// Panics if `far` does not exceed [`Mat4::SHADOW_NEAR`].
     pub fn cube_face_view_projs(position: Vec3, far: f32) -> [Mat4; 6] {
         CubeFace::ALL.map(|f| Mat4::cube_face_view_proj(position, f, far))
     }
 
-    /// The six cube-face view-projections of [`Mat4::cube_face_view_projs`],
-    /// or `None` when `far` cannot make them.
+    /// Returns [`Mat4::cube_face_view_projs`], or `None` unless `far` is finite and exceeds
+    /// [`Mat4::SHADOW_NEAR`].
     ///
-    /// The constructor for data — a point light's authored range. Built on
-    /// [`Mat4::try_perspective_rh_zo`] with a 90° field of view, aspect 1 and
-    /// depth range `[SHADOW_NEAR, far]`: `None` unless `far` is finite and
-    /// greater than [`Mat4::SHADOW_NEAR`]. When it returns `Some`, the
-    /// matrices equal [`Mat4::cube_face_view_projs`] for the same inputs.
+    /// The constructor for data, such as a point light's authored range.
     pub fn try_cube_face_view_projs(position: Vec3, far: f32) -> Option<[Mat4; 6]> {
         let projection = Mat4::try_perspective_rh_zo(FRAC_PI_2, 1.0, Mat4::SHADOW_NEAR, far)?;
         Some(CubeFace::ALL.map(|f| projection * face_view(position, f)))

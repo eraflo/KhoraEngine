@@ -16,8 +16,8 @@
 //!
 //! Each variant maps to a Private-Use-Area codepoint defined by `lucide.ttf`
 //! (v0.469.0). Apps render an icon by passing
-//! [`Icon::glyph()`] to [`UiBuilder::paint_text_styled`] with
-//! [`FontFamilyHint::Icons`], or by using a higher-level widget that does
+//! [`Icon::glyph()`] to `UiBuilder::paint_text_styled` with
+//! `FontFamilyHint::Icons`, or by using a higher-level widget that does
 //! that internally.
 //!
 //! See <https://lucide.dev/icons/> for visual previews.
@@ -128,9 +128,10 @@ pub enum Icon {
 }
 
 impl Icon {
-    /// Returns the Lucide PUA glyph for this icon as a `&'static str`.
-    /// Use it with `paint_text_styled(.., FontFamilyHint::Icons, ..)` or with
-    /// any widget that renders icon text.
+    /// Returns the Lucide Private-Use-Area glyph for this icon.
+    ///
+    /// Paint it with `paint_text_styled(.., FontFamilyHint::Icons, ..)` or any
+    /// widget that renders icon text.
     pub fn glyph(self) -> &'static str {
         match self {
             // Navigation
@@ -237,9 +238,8 @@ impl Icon {
 mod tests {
     use super::Icon;
 
-    /// Every glyph is a single character in the Private Use Area — an icon
-    /// font maps one codepoint per icon, so anything else means a typo'd
-    /// escape that would silently render as tofu.
+    /// Every glyph is one Private-Use-Area character; anything else is a
+    /// mistyped escape that would render as tofu.
     #[test]
     fn every_glyph_is_one_pua_codepoint() {
         const ALL: &[Icon] = &[

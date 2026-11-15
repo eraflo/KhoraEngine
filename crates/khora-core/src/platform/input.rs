@@ -289,24 +289,24 @@ pub enum KeyCode {
     F33,
     F34,
     F35,
-    /// Catch-all for keys whose physical code the adapter could not map to
-    /// any of the variants above. The platform adapter logs a one-shot
-    /// warning the first time it produces this value so the gap is visible.
+    /// A key whose physical code the adapter could not map to a variant.
+    ///
+    /// The platform adapter logs a one-shot warning the first time it
+    /// produces this value, so the gap is visible.
     Unidentified,
 }
 
 /// How much OS input is kept for readers that have not caught up.
 ///
 /// A frame of a fast typist is tens of events, so this is several seconds of
-/// backlog. What it guards against is a reader that stopped reading — the
-/// window minimised, a system that ran once and never again — where the queue
-/// used to be an unbounded `VecDeque` that nothing ever trimmed.
+/// backlog. It bounds the queue of a reader that stopped reading: the window
+/// minimised, a system that ran once and never again.
 pub const INPUT_BACKLOG: usize = 2048;
 
-/// A channel for the OS input of the frames nobody has read yet.
+/// Returns a channel for the OS input of the frames nobody has read yet.
 ///
-/// Dropping the oldest, because input is a stream where the recent matters and
-/// the stale is worth less than the stall that keeping it would cost.
+/// It drops the oldest when full: in input the recent matters, and the stale
+/// is worth less than the stall that keeping it would cost.
 pub fn input_channel() -> crate::event::Channel<InputEvent> {
     crate::event::Channel::bounded(INPUT_BACKLOG, crate::event::WhenFull::DropOldest)
 }

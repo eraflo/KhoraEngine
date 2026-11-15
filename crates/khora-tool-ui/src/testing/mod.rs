@@ -101,18 +101,19 @@ impl RecordingUiBuilder {
         }
     }
 
-    /// Scripts a click at `pos`: every region [`UiBuilder::interact_rect`]
-    /// allocates over `pos` reports hovered + clicked, unless its `id_salt`
-    /// is scripted otherwise. For widgets whose `id_salt` is their own
-    /// business. Chainable.
+    /// Scripts a click at `pos`, for widgets whose `id_salt` is their own business.
+    ///
+    /// Every region [`UiBuilder::interact_rect`] allocates over `pos` reports
+    /// hovered + clicked, unless its `id_salt` is scripted otherwise. Chainable.
     pub fn with_click_at(mut self, pos: [f32; 2]) -> Self {
         self.click_at = Some(pos);
         self
     }
 
-    /// Scripts `key` as pressed this frame: [`UiBuilder::key_pressed`] and
-    /// [`UiBuilder::raw_key_pressed`] report it (the recorder has no text
-    /// field holding focus). Chainable.
+    /// Scripts `key` as pressed this frame. Chainable.
+    ///
+    /// [`UiBuilder::key_pressed`] and [`UiBuilder::raw_key_pressed`] both report
+    /// it: the recorder has no text field holding focus.
     pub fn with_key(mut self, key: KeyCode) -> Self {
         self.keys.insert(key);
         self
@@ -125,9 +126,10 @@ impl RecordingUiBuilder {
         self
     }
 
-    /// Makes `viewport_image` show the image at the panel's origin and report
-    /// that origin, as a backend that can display the handle does; without it
-    /// the recorder reports `None`. Chainable.
+    /// Makes `viewport_image` show the image at the panel's origin. Chainable.
+    ///
+    /// It then reports that origin, as a backend that can display the handle
+    /// does; without it the recorder reports `None`.
     pub fn with_viewport_image(mut self) -> Self {
         self.shows_viewport_image = true;
         self
@@ -199,9 +201,10 @@ impl RecordingUiBuilder {
         )
     }
 
-    /// Every tooltip a widget attached with
-    /// [`UiBuilder::tooltip_for_last`], in order — whatever it is attached
-    /// to: the recorder has no pointer to show it under.
+    /// Every tooltip a widget attached with [`UiBuilder::tooltip_for_last`], in order.
+    ///
+    /// All are recorded, whatever they are attached to: the recorder has no
+    /// pointer to show them under.
     pub fn tooltips(&self) -> &[String] {
         &self.tooltips
     }

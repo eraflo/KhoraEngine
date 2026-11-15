@@ -62,17 +62,18 @@ pub struct Cost {
     /// means the level's own [`Level::impact`](crate::lane::level::Level::impact).
     #[serde(default)]
     pub impact: Option<Impact>,
-    /// The share of the frame's due work the level serves on these inputs,
-    /// from `0.0` to `1.0`; `None` means all of it. A row's quality is its
-    /// impact's quality times this share.
+    /// The share of the frame's due work the level serves, from `0.0` to `1.0`.
+    ///
+    /// `None` means all of it. A row's quality is its impact's quality times
+    /// this share.
     #[serde(default)]
     pub share: Option<f32>,
 }
 
 impl Cost {
-    /// The share of the due work served, read as a number from `0.0` to
-    /// `1.0`: all of it without a `share`; a share above one is all of it,
-    /// and one below zero or not a number is none of it.
+    /// Returns the share of the due work served, from `0.0` to `1.0`.
+    ///
+    /// No `share` or one above one is all of it; one below zero or NaN is none.
     pub fn served(&self) -> f32 {
         match self.share {
             None => 1.0,

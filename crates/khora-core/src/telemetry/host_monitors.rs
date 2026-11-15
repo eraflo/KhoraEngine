@@ -18,9 +18,9 @@ use std::sync::Arc;
 
 use super::monitoring::ResourceMonitor;
 
-/// The monitors a host built for the telemetry service — the renderer's,
-/// say, from `RenderSystem::init`. A host puts them in `runtime.resources`;
-/// the SDK's bootstrap registers each in the `MonitorRegistry` and removes
-/// the resource.
+/// The monitors a host built for the telemetry service, such as the renderer's.
+///
+/// A host puts them in `runtime.resources`; the SDK's bootstrap registers each
+/// in the `MonitorRegistry` and removes the resource.
 #[derive(Debug, Default)]
 pub struct HostMonitors(pub Vec<Arc<dyn ResourceMonitor>>);

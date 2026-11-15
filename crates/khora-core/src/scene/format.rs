@@ -12,28 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines the unified file format for Khora scenes.
-//!
-//! Every saved scene uses this container: a fixed-size [`SceneHeader`] followed
-//! by a variable-length payload. The header names the encoding the payload was
-//! written with, so a file is read back without knowing in advance how it was
-//! saved.
+//! The container of every saved scene and game save: a fixed-size
+//! [`SceneHeader`] naming the payload's encoding, then the payload.
 
 use std::convert::TryInto;
 
 /// A unique byte sequence to identify Khora Scene Files. ("KHORASCN").
 pub const HEADER_MAGIC_BYTES: [u8; 8] = *b"KHORASCN";
 
-/// The magic bytes of a game save ("KHORASAV"): the same header as a scene,
-/// told apart so a save is never read where a scene is expected, nor the
-/// reverse.
+/// The magic bytes of a game save ("KHORASAV"), so a save is never read as a scene.
 pub const SAVE_MAGIC_BYTES: [u8; 8] = *b"KHORASAV";
 
 /// The scene file format this engine writes and reads.
 ///
-/// Version 2 holds scene records: components by name, entities by persistent
-/// identity. How a component's fields evolve is carried by the records
-/// themselves, so this number moves only when the file's own layout does.
+/// It moves only when the file's own layout does: how a component's fields
+/// evolve is carried by the records themselves.
 pub const SCENE_FORMAT_VERSION: u8 = 2;
 const ENCODING_ID_LEN: usize = 32;
 
@@ -72,14 +65,17 @@ pub struct SceneFile {
     pub payload: Vec<u8>,
 }
 
-// NOTE: We are intentionally not using `serde` for the header.
-// It's a fixed-layout, performance-critical part of the file format,
-// so direct byte manipulation is more robust and efficient.
+// The header is read by hand, not by `serde`: its layout is fixed.
 impl SceneHeader {
     /// The total size of the header in bytes.
     pub const SIZE: usize = 8 + 1 + ENCODING_ID_LEN + 8;
 
-    /// Attempts to parse a `SceneHeader` from the beginning of a byte slice.
+    /// Parses a `SceneHeader` from the beginning of a byte slice.
+    ///
+    /// # Errors
+    ///
+    /// A message when the slice is shorter than [`SIZE`](Self::SIZE) or the
+    /// magic bytes are neither a scene's nor a save's.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, &'static str> {
         if bytes.len() < Self::SIZE {
             return Err("Not enough bytes to form a valid header");
@@ -120,7 +116,11 @@ impl SceneHeader {
 impl SceneFile {
     /// Parses a `SceneFile` from a byte slice.
     ///
-    /// The bytes are input: a damaged length is an error, never an overflow.
+    /// # Errors
+    ///
+    /// [`SceneFileError::TooShort`] when the bytes end before the header or the
+    /// payload it announces (a damaged length included, never an overflow);
+    /// [`SceneFileError::InvalidMagicBytes`] for neither a scene nor a save.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, SceneFileError> {
         if bytes.len() < SceneHeader::SIZE {
             return Err(SceneFileError::TooShort);
@@ -187,9 +187,10 @@ mod tests {
         }
     }
 
-    /// A save shares the scene header, under its own magic: its bytes parse
-    /// back to the same file, the magic kept, so a reader can tell the two
-    /// apart after parsing.
+    /// A save shares the scene header, under its own magic.
+    ///
+    /// Its bytes parse back to the same file, the magic kept, so a reader can tell the
+    /// two apart after parsing.
     #[test]
     fn a_save_file_round_trips_through_its_bytes() {
         let mut bytes = bytes_claiming(2, &[7, 9]);

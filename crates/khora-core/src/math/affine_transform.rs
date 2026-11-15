@@ -19,11 +19,9 @@ use serde::{Deserialize, Serialize};
 use crate::math::basis::{complete_basis, unit, unit_rejection, NOISE_FLOOR, PARALLEL_SINE};
 use crate::math::{Mat4, Quaternion, Vec3, Vec4};
 
-/// Represents a 3D affine transformation (translation, rotation, scale).
+/// A 3D affine transformation (translation, rotation, scale) over a column-major `Mat4`.
 ///
-/// This is a semantic wrapper around a `Mat4` that guarantees the matrix
-/// represents a valid affine transform. It provides a dedicated API for
-/// creating and manipulating these transformations.
+/// The matrix's last row is `(0, 0, 0, 1)`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct AffineTransform(pub Mat4);
@@ -33,13 +31,9 @@ impl AffineTransform {
     pub const IDENTITY: Self = Self(Mat4::IDENTITY);
 
     // --- CONSTRUCTORS ---
-    /// Creates an `AffineTransform` from a translation vector.
+    /// Creates a transform that translates by `v`.
     ///
-    /// # Arguments
-    ///
-    /// * `v` - The translation vector to apply
-    ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use khora_core::math::Vec3;
@@ -58,13 +52,9 @@ impl AffineTransform {
         ))
     }
 
-    /// Creates an `AffineTransform` from a non-uniform scale vector.
+    /// Creates a transform that scales each axis by the matching component of `scale`.
     ///
-    /// # Arguments
-    ///
-    /// * `scale` - The scale vector to apply to each axis
-    ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use khora_core::math::Vec3;
@@ -82,13 +72,11 @@ impl AffineTransform {
         ))
     }
 
-    /// Creates an `AffineTransform` from a rotation around the X axis.
+    /// Creates a rotation of `angle` radians about the X axis.
     ///
-    /// # Arguments
+    /// Right-handed: a positive angle turns +Y toward +Z.
     ///
-    /// * `angle` - The angle of rotation in radians
-    ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use khora_core::math::Vec3;
@@ -109,13 +97,11 @@ impl AffineTransform {
         ))
     }
 
-    /// Creates an `AffineTransform` from a rotation around the Y axis.
+    /// Creates a rotation of `angle` radians about the Y axis.
     ///
-    /// # Arguments
+    /// Right-handed: a positive angle turns +Z toward +X.
     ///
-    /// * `angle` - The angle of rotation in radians
-    ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use khora_core::math::Vec3;
@@ -136,13 +122,11 @@ impl AffineTransform {
         ))
     }
 
-    /// Creates an `AffineTransform` from a rotation around the Z axis.
+    /// Creates a rotation of `angle` radians about the Z axis.
     ///
-    /// # Arguments
+    /// Right-handed: a positive angle turns +X toward +Y.
     ///
-    /// * `angle` - The angle of rotation in radians
-    ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use std::f32::consts::PI;
@@ -163,23 +147,20 @@ impl AffineTransform {
         ))
     }
 
-    /// Creates an `AffineTransform` from a rotation around an arbitrary axis.
+    /// Creates a rotation of `angle` radians about `axis`, by Rodrigues' formula.
     ///
-    /// Uses Rodrigues' rotation formula to create a rotation matrix.
+    /// `axis` must be unit length: it is not normalised. Right-handed, as
+    /// [`from_rotation_z`](Self::from_rotation_z): a positive angle about `Z` turns
+    /// `X` toward `Y`.
     ///
-    /// # Arguments
-    ///
-    /// * `axis` - The axis of rotation (will be normalized automatically)
-    /// * `angle` - The angle of rotation in radians
-    ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use std::f32::consts::PI;
     /// use khora_core::math::Vec3;
     /// use khora_core::math::affine_transform::AffineTransform;
     ///
-    /// let axis = Vec3::new(1.0, 1.0, 0.0);
+    /// let axis = Vec3::new(1.0, 1.0, 0.0).normalize();
     /// let transform = AffineTransform::from_axis_angle(axis, PI / 4.0);
     /// ```
     #[inline]
@@ -192,20 +173,16 @@ impl AffineTransform {
         let z = axis.z;
 
         Self(Mat4::from_cols(
-            Vec4::new(t * x * x + c, t * x * y - s * z, t * x * z + s * y, 0.0),
-            Vec4::new(t * y * x + s * z, t * y * y + c, t * y * z - s * x, 0.0),
-            Vec4::new(t * z * x - s * y, t * z * y + s * x, t * z * z + c, 0.0),
+            Vec4::new(t * x * x + c, t * x * y + s * z, t * x * z - s * y, 0.0),
+            Vec4::new(t * y * x - s * z, t * y * y + c, t * y * z + s * x, 0.0),
+            Vec4::new(t * z * x + s * y, t * z * y - s * x, t * z * z + c, 0.0),
             Vec4::new(0.0, 0.0, 0.0, 1.0),
         ))
     }
 
-    /// Creates an `AffineTransform` from a quaternion representing a rotation.
+    /// Creates the rotation `q` represents.
     ///
-    /// # Arguments
-    ///
-    /// * `q` - The quaternion representing the rotation
-    ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use khora_core::math::{Quaternion, Vec3};
@@ -221,12 +198,9 @@ impl AffineTransform {
     }
 
     // --- SEMANTIC ACCESSORS---
-    /// Converts the `AffineTransform` to a `Mat4`.
+    /// Returns the underlying matrix, as shaders and other raw-matrix consumers expect.
     ///
-    /// This is useful when you need to pass the transformation matrix to shaders
-    /// or other systems that expect a raw matrix.
-    ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use khora_core::math::Vec3;
@@ -240,12 +214,9 @@ impl AffineTransform {
         self.0
     }
 
-    /// Extracts the translation component from the affine transform.
+    /// Returns the translation part.
     ///
-    /// Returns the translation vector representing the position offset
-    /// applied by this transformation.
-    ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use khora_core::math::Vec3;
@@ -259,12 +230,9 @@ impl AffineTransform {
         self.0.cols[3].truncate()
     }
 
-    /// Extracts the right direction vector from the affine transform.
+    /// Returns the image of local +X: the first basis column, scale included.
     ///
-    /// This returns the first column of the transformation matrix (excluding the w component),
-    /// which represents the transformed positive X-axis direction.
-    ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use khora_core::math::Vec3;
@@ -273,19 +241,16 @@ impl AffineTransform {
     ///
     /// let transform = AffineTransform::from_rotation_z(PI / 2.0);
     /// let right = transform.right();
-    /// // After 90° rotation around Z, right vector points in -Y direction
+    /// // After a quarter turn about Z, right points along +Y.
     /// ```
     #[inline]
     pub fn right(&self) -> Vec3 {
         self.0.cols[0].truncate()
     }
 
-    /// Extracts the up direction vector from the affine transform.
+    /// Returns the image of local +Y: the second basis column, scale included.
     ///
-    /// This returns the second column of the transformation matrix (excluding the w component),
-    /// which represents the transformed positive Y-axis direction.
-    ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use std::f32::consts::PI;
@@ -294,19 +259,16 @@ impl AffineTransform {
     ///
     /// let transform = AffineTransform::from_rotation_x(PI / 2.0);
     /// let up = transform.up();
-    /// // After 90° rotation around X, up vector points in -Z direction
+    /// // After a quarter turn about X, up points along +Z.
     /// ```
     #[inline]
     pub fn up(&self) -> Vec3 {
         self.0.cols[1].truncate()
     }
 
-    /// Extracts the forward direction vector from the affine transform.
+    /// Returns the image of local +Z: the third basis column, scale included.
     ///
-    /// This returns the third column of the transformation matrix (excluding the w component),
-    /// which represents the transformed positive Z-axis direction.
-    ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use std::f32::consts::PI;
@@ -315,42 +277,22 @@ impl AffineTransform {
     ///
     /// let transform = AffineTransform::from_rotation_y(PI / 2.0);
     /// let forward = transform.forward();
-    /// // After 90° rotation around Y, forward vector points in X direction
+    /// // After a quarter turn about Y, forward points along +X.
     /// ```
     #[inline]
     pub fn forward(&self) -> Vec3 {
         self.0.cols[2].truncate()
     }
 
-    /// Extracts the rotation component as a quaternion.
+    /// Returns the rotation part as a unit quaternion, scale of any size left out.
     ///
-    /// The basis columns are divided by their lengths first, so any scale —
-    /// uniform or not — is left out: a matrix-to-quaternion conversion fed a
-    /// scaled basis returns a unit quaternion with the **wrong angle** (0.6 ×
-    /// a quarter turn comes out as ~74°). A mirrored basis (negative
-    /// determinant) has no rotation that reproduces it; the mirror is put on
-    /// the first axis, consistent with [`scale`](Self::scale) reporting
-    /// magnitudes.
+    /// Axes are compared to each other, never to an absolute size. A mirror is put on the first
+    /// axis, as [`scale`](Self::scale) reports magnitudes. An axis under a millionth of the
+    /// longest is rounding residue, rebuilt as the right-handed cross product of the two others.
+    /// A sheared basis keeps its forward (Z) axis exact, then up (Y) made perpendicular to it.
+    /// Two such axes, two parallel survivors or a non-finite basis give the identity.
     ///
-    /// How small a scale is never matters, only how the axes compare: an axis
-    /// keeps its direction, and its mirror is read from it, down to a
-    /// millionth of the longest axis. Below that it is f32 rounding residue
-    /// (a quarter turn under a parent flattened to zero leaves one), with no
-    /// direction or sign to read; it is rebuilt as the right-handed cross
-    /// product of the two others, so a transform squashed flat keeps its
-    /// rotation (a mirror on the surviving axes then has nothing to be read
-    /// from and turns into a half turn). Two such axes, two parallel
-    /// survivors, or a non-finite basis leave no rotation to recover and
-    /// yield the identity.
-    ///
-    /// A sheared basis — a rotated child under a non-uniformly scaled parent
-    /// — has no rotation that reproduces it, and the angle its author gave the
-    /// child cannot be read back from the world matrix. The rotation keeps the
-    /// forward (Z) axis exactly, then the up (Y) axis made perpendicular to
-    /// it: a camera looks exactly where its forward axis points. For an
-    /// orthogonal basis this changes nothing.
-    ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use khora_core::math::{Quaternion, Vec3};
@@ -367,13 +309,10 @@ impl AffineTransform {
         let Some(axes) = self.unit_basis() else {
             return Quaternion::IDENTITY;
         };
-        // Orthonormalised forward first: a sheared basis (a rotated child
-        // under a non-uniformly scaled parent) keeps exactly where its forward
-        // axis points — where a camera looks — and its up as near as a
-        // perpendicular allows. The right axis is derived, which puts any
-        // mirror on it. Up parallel to forward leaves the twist to the right
-        // axis instead. Each pair is made perpendicular twice, so the basis
-        // stays orthonormal even when up nearly folds onto forward.
+        // Forward first, so a sheared basis keeps exactly where it looks. The
+        // derived right axis carries any mirror, and gives the twist when up is
+        // parallel to forward. Each pair is made perpendicular twice, so the
+        // basis stays orthonormal when up nearly folds onto forward.
         let [right, up, forward] = axes;
         let right = if let Some(up) = unit_rejection(up, forward) {
             unit(up.cross(forward))
@@ -395,17 +334,12 @@ impl AffineTransform {
         Quaternion::from_rotation_matrix(&basis)
     }
 
-    /// The unit world direction a local direction points along.
+    /// Returns the unit world direction `local` points along, translation left out.
     ///
-    /// This is the linear part of the transform (rotation and scale, never
-    /// the translation) applied to `local`, normalised: under a non-uniform
-    /// scale a direction leans the way the stretched basis leans, exactly as
-    /// the geometry it lights or looks at does, however short `local` or the
-    /// axes are. Only when that image is no longer than the basis's rounding
-    /// residue (`local` lies along an axis scaled to zero, see
-    /// [`rotation`](Self::rotation)) or the basis is not finite is the
-    /// direction `rotation()` applied to `local`. A zero or non-finite `local`
-    /// gives zero.
+    /// It is the linear part applied to `local`, normalised, so under a non-uniform scale it
+    /// leans with the basis as the geometry does. When that image is rounding residue (`local`
+    /// along an axis scaled to zero) or the basis is not finite, it is
+    /// [`rotation`](Self::rotation) applied to `local`. A zero or non-finite `local` gives zero.
     #[inline]
     pub fn transform_direction(&self, local: Vec3) -> Vec3 {
         let Some(local) = unit(local) else {
@@ -433,9 +367,10 @@ impl AffineTransform {
         unit(image).unwrap_or_else(|| self.rotation() * local)
     }
 
-    /// The three basis axes made unit, an axis scaled to exactly zero rebuilt
-    /// from the two others — `None` when the basis is not finite, two axes
-    /// are zero, or the survivors of a zero axis are parallel.
+    /// The three basis axes made unit, an axis scaled to zero rebuilt from the two others.
+    ///
+    /// `None` when the basis is not finite, two axes are zero, or a zero axis's survivors are
+    /// parallel.
     fn unit_basis(&self) -> Option<[Vec3; 3]> {
         let columns = [self.right(), self.up(), self.forward()];
         if columns
@@ -465,11 +400,10 @@ impl AffineTransform {
         match (zero.next(), zero.next()) {
             (None, _) => Some(units.map(|u| u.unwrap_or(Vec3::ZERO))),
             (Some((missing, _)), None) => {
-                // An axis scaled to (nearly) zero has no direction, and no
-                // sign to read a mirror from, but the two others
-                // still carry the rotation; it is their right-handed cross
-                // product (right = up × forward, up = forward × right,
-                // forward = right × up).
+                // An axis scaled to (nearly) zero has no direction nor sign,
+                // but the two others carry the rotation: it is their
+                // right-handed cross product, in cyclic order (right = up ×
+                // forward, up = forward × right, forward = right × up).
                 let next = units[(missing + 1) % 3]?;
                 let after = units[(missing + 2) % 3]?;
                 let rebuilt = next.cross(after);
@@ -484,12 +418,10 @@ impl AffineTransform {
         }
     }
 
-    /// Extracts the non-negative scale factors along each local axis.
+    /// Returns the non-negative scale along each local axis: the basis columns' lengths.
     ///
-    /// Returns the Euclidean lengths of the three basis columns (right, up,
-    /// forward). For a transform built as translation ∘ rotation ∘ scale this
-    /// recovers the original scale vector. Mirror/negative scales are reported
-    /// as their magnitudes (sign is folded into the rotation extraction).
+    /// For translation ∘ rotation ∘ scale this is the original scale; a mirror is reported as
+    /// its magnitude.
     #[inline]
     pub fn scale(&self) -> Vec3 {
         Vec3::new(
@@ -499,18 +431,11 @@ impl AffineTransform {
         )
     }
 
-    /// Interpolates between two affine transforms for smooth rendering
-    /// between discrete simulation steps.
+    /// Blends from `self` (the previous pose) to `other` (the current one) by `alpha`.
     ///
-    /// Decomposes both transforms into translation / rotation / scale and
-    /// blends each channel independently: translation and scale by linear
-    /// interpolation, rotation by spherical interpolation (shortest-path
-    /// `slerp`). `alpha` is clamped to `[0, 1]`; `alpha = 0` returns `self`
-    /// (the *previous* transform) and `alpha = 1` returns `other` (the
-    /// *current* transform).
-    ///
-    /// This is a render-only blend: it never feeds back into the authoritative
-    /// simulation state.
+    /// Translation and signed scale blend linearly, rotation by shortest-path slerp, so a
+    /// mirrored pair stays mirrored. `alpha` is clamped to `[0, 1]`. See the book:
+    /// concepts/rendering.md, "Render interpolation".
     ///
     /// # Examples
     ///
@@ -543,10 +468,10 @@ impl AffineTransform {
         Self(mat)
     }
 
-    /// The rotation and the *signed* scale this transform is made of: a
-    /// mirror (negative determinant) is a negative scale on the first axis,
-    /// so rotation ∘ scale rebuilds it — where [`Self::rotation`] and
-    /// [`Self::scale`] cannot, scale being non-negative there.
+    /// The rotation and *signed* scale this transform is made of.
+    ///
+    /// A mirror is a negative scale on the first axis, so rotation ∘ scale rebuilds the
+    /// transform, which [`Self::rotation`] and [`Self::scale`] cannot.
     fn signed_rotation_scale(&self) -> (Quaternion, Vec3) {
         let columns = [self.right(), self.up(), self.forward()];
         let mirrored = columns[0].dot(columns[1].cross(columns[2])) < 0.0;
@@ -573,17 +498,9 @@ impl AffineTransform {
         (rotation, scale)
     }
 
-    /// Computes the inverse of the affine transformation.
+    /// Returns the inverse transform, or `None` when it is singular (a zero scale, say).
     ///
-    /// This uses an optimized affine inverse algorithm that's more efficient than
-    /// a general matrix inverse, taking advantage of the affine transform structure.
-    /// Returns `None` if the transformation is not invertible (e.g., zero scale).
-    ///
-    /// # Returns
-    ///
-    /// `Some(AffineTransform)` if the inverse exists, `None` otherwise.
-    ///
-    /// # Example
+    /// # Examples
     ///
     /// ```rust
     /// use khora_core::math::Vec3;
@@ -606,7 +523,6 @@ impl Default for AffineTransform {
     }
 }
 
-// Allow easy conversion to the underlying Mat4 for sending to the GPU, etc.
 impl From<AffineTransform> for Mat4 {
     /// Converts the `AffineTransform` into its inner `Mat4`.
     #[inline]
@@ -616,11 +532,11 @@ impl From<AffineTransform> for Mat4 {
 }
 
 impl From<Mat4> for AffineTransform {
-    /// Converts a `Mat4` into an `AffineTransform`.
+    /// Wraps `val` as an affine transform.
     ///
     /// # Panics
     ///
-    /// Panics if the matrix is not a valid affine transformation.
+    /// Panics if the matrix's last row is not `(0, 0, 0, 1)`.
     #[inline]
     fn from(val: Mat4) -> Self {
         // Validate that the matrix is affine (last row must be [0, 0, 0, 1])
@@ -800,9 +716,7 @@ mod tests {
             }
         }
 
-        /// The scale is blended signed: two poses mirrored along X with
-        /// different magnitudes blend to the mirrored mean, not to its absolute
-        /// value.
+        /// Two poses mirrored along X blend to the mirrored mean scale, not its absolute value.
         #[test]
         fn interpolating_mirrored_scales_blends_the_signed_scale() {
             let prev = trs(Vec3::ZERO, Quaternion::IDENTITY, Vec3::new(-2.0, 1.0, 3.0));
@@ -831,9 +745,9 @@ mod tests {
             );
         }
 
-        /// A rotated pose scaled differently on each axis comes back unchanged at
-        /// alpha 0 and 1: the rotation is read from the normalised columns, not
-        /// from the scaled ones.
+        /// A rotated pose scaled differently on each axis comes back unchanged at alpha 0 and 1.
+        ///
+        /// The rotation is read from the normalised columns, not the scaled ones.
         #[test]
         fn a_rotated_non_uniformly_scaled_pose_returns_each_end_at_alpha_zero_and_one() {
             let prev = trs(
@@ -851,9 +765,8 @@ mod tests {
             assert_matrix_close(&prev.interpolate(&curr, 1.0), &curr, "alpha 1");
         }
 
-        /// A pose scaled to nothing (an entity popping in from zero size)
-        /// interpolates to a finite matrix: no division by a zero scale leaks a
-        /// NaN into the drawn pose.
+        /// A pose scaled to nothing (an entity popping in from zero size) interpolates to a finite
+        /// matrix.
         #[test]
         fn a_pose_scaled_to_zero_interpolates_without_nan() {
             let prev = trs(Vec3::new(1.0, 2.0, 3.0), Quaternion::IDENTITY, Vec3::ZERO);
@@ -871,9 +784,8 @@ mod tests {
             assert_matrix_close(&prev.interpolate(&curr, 1.0), &curr, "alpha 1");
         }
 
-        /// A rotated pose flattened to zero along one axis comes back unchanged
-        /// at every alpha when interpolated with itself: the two axes that still
-        /// have a size keep their direction.
+        /// A rotated pose flattened on one axis, interpolated with itself, comes back at every
+        /// alpha.
         #[test]
         fn a_rotated_pose_flattened_on_one_axis_round_trips_through_interpolation() {
             let pose = trs(
@@ -949,10 +861,9 @@ mod tests {
             );
         }
 
-        /// **A scaled crate turned a quarter came out turned 73.7°.** The upper 3×3
-        /// went to the quaternion conversion with its scale still in it, so the
-        /// trace mixed a scaled diagonal with an unscaled 1. Every consumer —
-        /// physics sync, render flows, interpolation — read the wrong angle.
+        /// A uniformly scaled quarter turn reads back as a quarter turn.
+        ///
+        /// A scale left in the basis would skew the quaternion conversion's trace and its angle.
         #[test]
         fn rotation_of_a_uniformly_scaled_quarter_turn_is_the_quarter_turn() {
             let yaw = Quaternion::from_axis_angle(Vec3::Y, PI / 2.0);
@@ -968,9 +879,7 @@ mod tests {
             );
         }
 
-        /// A non-uniform scale under an oblique rotation is the general case: each
-        /// basis column has its own length, and the rotation must come out of it
-        /// unchanged.
+        /// An oblique rotation under a non-uniform scale, the general case, comes out unchanged.
         #[test]
         fn rotation_of_a_non_uniformly_scaled_oblique_rotation_is_that_rotation() {
             let rotation = Quaternion::from_axis_angle(Vec3::new(1.0, 2.0, -0.5).normalize(), 1.1);
@@ -1010,9 +919,8 @@ mod tests {
             );
         }
 
-        /// A mirror is not a rotation; it belongs to the scale, which already
-        /// reports magnitudes. Mirroring the first axis under a rotation must give
-        /// back that rotation, the mirror folded into the first column.
+        /// A rotation with its first axis mirrored gives back that rotation, the mirror left to
+        /// the scale.
         #[test]
         fn rotation_of_a_first_axis_mirror_is_the_unmirrored_rotation() {
             let yaw = Quaternion::from_axis_angle(Vec3::Y, 40f32.to_radians());
@@ -1057,10 +965,10 @@ mod tests {
             );
         }
 
-        /// A millimetre asset nested in a centimetre node has a 1e-6 uniform
-        /// scale. Every column still carries the rotation exactly (direction
-        /// precision is relative to the column's own length), so the rotation is
-        /// recovered, not dropped to the identity by an absolute length threshold.
+        /// A 1e-6 uniform scale (a millimetre asset in a centimetre node) keeps its rotation.
+        ///
+        /// Direction precision is relative to each column's length, so no absolute threshold
+        /// drops it.
         #[test]
         fn rotation_under_a_tiny_uniform_scale_is_that_rotation() {
             let rotation = oblique_rotation();
@@ -1087,9 +995,7 @@ mod tests {
             );
         }
 
-        /// A 1e-20 scale is well inside f32's normal range, but squaring its
-        /// components to measure a length underflows. The basis is rescaled before
-        /// it is measured, so the rotation still comes out.
+        /// A 1e-20 scale, whose squared components underflow, still gives its rotation.
         #[test]
         fn rotation_under_a_scale_whose_squared_length_underflows_is_that_rotation() {
             let rotation = oblique_rotation();
@@ -1100,9 +1006,10 @@ mod tests {
             );
         }
 
-        /// Flattening one axis to zero loses that column, not the rotation: the
-        /// missing axis is the right-handed cross product of the two others.
-        /// Holds for each of the three axes, whatever the survivors' lengths.
+        /// One axis flattened to zero loses that column, not the rotation, for each of the three
+        /// axes.
+        ///
+        /// The missing axis is the right-handed cross product of the two others.
         #[test]
         fn rotation_with_one_flattened_axis_is_that_rotation() {
             let rotation = oblique_rotation();
@@ -1122,9 +1029,8 @@ mod tests {
             }
         }
 
-        /// An axis ten million times shorter than the longest one counts as
-        /// flattened too (the tolerance is relative) and is rebuilt from the two
-        /// others.
+        /// An axis ten million times shorter than the longest counts as flattened (the tolerance
+        /// is relative) and is rebuilt.
         #[test]
         fn rotation_with_one_nearly_flattened_axis_is_that_rotation() {
             let rotation = oblique_rotation();
@@ -1156,9 +1062,7 @@ mod tests {
             }
         }
 
-        /// Two flattened axes leave a single line: the twist around it is
-        /// undefined, so there is no rotation to recover and the answer is the
-        /// identity.
+        /// Two flattened axes leave a line whose twist is undefined: the rotation is the identity.
         #[test]
         fn rotation_with_two_flattened_axes_is_the_identity() {
             let rotation = oblique_rotation();
@@ -1186,9 +1090,8 @@ mod tests {
             );
         }
 
-        /// One flattened column and two surviving columns that are parallel span
-        /// a line, not a plane: the missing axis cannot be rebuilt, so the answer
-        /// is the identity.
+        /// One flattened axis with two parallel survivors spans a line: the rotation is the
+        /// identity.
         #[test]
         fn rotation_with_one_flattened_axis_and_two_parallel_survivors_is_the_identity() {
             let transform = AffineTransform(Mat4::from_cols(
@@ -1204,9 +1107,7 @@ mod tests {
             );
         }
 
-        /// A basis carrying a NaN or an infinity has no rotation to read: the
-        /// answer is the identity, finite, rather than a NaN that spreads to every
-        /// consumer.
+        /// A basis holding a NaN or an infinity gives the identity, never a NaN that spreads.
         #[test]
         fn rotation_of_a_non_finite_basis_is_the_identity() {
             let cases = [
@@ -1246,9 +1147,7 @@ mod tests {
             }
         }
 
-        /// A basis whose largest component is subnormal (below `1 / f32::MAX`,
-        /// about 2.9e-39) still carries its rotation: its columns are compared to
-        /// each other, never to an absolute size, so the rotation comes out.
+        /// A basis whose largest component is subnormal (below `1 / f32::MAX`) keeps its rotation.
         #[test]
         fn rotation_under_a_subnormal_uniform_scale_is_that_rotation() {
             let rotation = oblique_rotation();
@@ -1261,9 +1160,7 @@ mod tests {
             }
         }
 
-        /// A scale whose squared column length overflows f32 (1e30² is past
-        /// `f32::MAX`) is the mirror image of the underflow case: the basis is
-        /// rescaled before it is measured, so the rotation still comes out.
+        /// A scale whose squared column length overflows f32 (1e30²) still gives its rotation.
         #[test]
         fn rotation_under_a_scale_whose_squared_length_overflows_is_that_rotation() {
             let rotation = oblique_rotation();
@@ -1281,9 +1178,10 @@ mod tests {
             }
         }
 
-        /// Rotations at and near a half turn take the quaternion conversion off
-        /// its positive-trace branch; with one axis flattened and rebuilt, each
-        /// branch still returns the rotation.
+        /// Rotations at and near a half turn, one axis flattened, come out on every conversion
+        /// branch.
+        ///
+        /// They take the quaternion conversion off its positive-trace branch.
         #[test]
         fn rotation_near_a_half_turn_with_one_flattened_axis_is_that_rotation() {
             let axis = Vec3::new(1.0, 2.0, -0.5).normalize();
@@ -1313,11 +1211,10 @@ mod tests {
             }
         }
 
-        /// A mirrored transform whose third axis shrinks keeps the rotation it
-        /// had: the shrinking column still carries its direction (and so the
-        /// basis its handedness) down to the noise floor, a millionth of the
-        /// longest axis, so shrinking it from a thousandth to a hundred-thousandth
-        /// must not turn the rotation over by a half turn.
+        /// A mirrored transform whose third axis shrinks to 1e-5 of the longest keeps its rotation.
+        ///
+        /// Above the noise floor (a millionth of the longest axis) the column keeps its direction,
+        /// and the basis its handedness, so the rotation must not turn over by a half turn.
         #[test]
         fn rotation_of_a_mirrored_transform_does_not_turn_over_as_an_axis_nearly_flattens() {
             let rotation = oblique_rotation();
@@ -1337,10 +1234,8 @@ mod tests {
             }
         }
 
-        /// A rank-deficient basis with no short column — a rotated child under a
-        /// parent flattened on Z, whose three columns all lie in one plane — is
-        /// not a rotation, but what comes out is still a usable one: unit and
-        /// finite, never a NaN handed to a solver.
+        /// A planar basis with no short column (a child under a parent flattened on Z) gives a
+        /// unit, finite rotation.
         #[test]
         fn rotation_of_a_planar_basis_with_no_short_column_is_a_unit_finite_quaternion() {
             let flattened_parent = Mat4::from_scale(Vec3::new(1.0, 1.0, 0.0));
@@ -1365,10 +1260,11 @@ mod tests {
             );
         }
 
-        /// Asserts the rotation of `transform` takes local +Z exactly onto the
-        /// normalised world Z column (a camera looks where its axis points), and
-        /// local +Y into the plane of the world Y and Z columns, perpendicular
-        /// to Z, on Y's side.
+        /// Asserts `transform`'s rotation takes local +Z exactly onto the normalised world Z
+        /// column.
+        ///
+        /// Local +Y must land in the plane of the world Y and Z columns, perpendicular to Z, on
+        /// Y's side.
         fn assert_forward_exact(transform: AffineTransform, what: &str) {
             let extracted = transform.rotation();
             assert_unit_and_finite(extracted);
@@ -1400,10 +1296,10 @@ mod tests {
             );
         }
 
-        /// A child pitched 30° under a parent stretched to twice its height has a
-        /// sheared world basis: its Y and Z columns are no longer perpendicular.
-        /// The rotation keeps its forward exact — a camera there looks where its
-        /// world Z axis points — and its up in the plane the Y and Z columns span.
+        /// A child pitched 30° under a parent stretched to twice its height keeps its forward
+        /// exact.
+        ///
+        /// The world basis is sheared: its up lands in the plane the Y and Z columns span.
         #[test]
         fn rotation_of_a_pitched_child_under_a_stretched_parent_keeps_its_forward_exact() {
             let parent = Mat4::from_scale(Vec3::new(1.0, 2.0, 1.0));
@@ -1417,9 +1313,8 @@ mod tests {
             assert_forward_exact(transform, "30° pitch under a (1, 2, 1) parent");
         }
 
-        /// A strong shear — an obliquely turned child under a parent scaled
-        /// (1, 5, 0.3) — still gives a unit, finite rotation whose forward is
-        /// exactly the world Z column.
+        /// An oblique child under a parent scaled (1, 5, 0.3) gives a unit, finite rotation,
+        /// forward exact.
         #[test]
         fn rotation_under_a_strong_shear_keeps_its_forward_exact() {
             let parent = Mat4::from_scale(Vec3::new(1.0, 5.0, 0.3));
@@ -1432,9 +1327,8 @@ mod tests {
             assert_forward_exact(transform, "oblique child under a (1, 5, 0.3) parent");
         }
 
-        /// When the Y column is parallel to the Z column, Y says nothing about
-        /// the twist around the forward axis: the forward stays exact and the X
-        /// column, made perpendicular to it, gives the twist.
+        /// With the Y column parallel to Z, the forward stays exact and the X column gives the
+        /// twist.
         #[test]
         fn rotation_with_up_parallel_to_forward_takes_its_twist_from_the_right_axis() {
             let world_x = Vec3::new(1.0, 0.5, -0.2);
@@ -1493,9 +1387,9 @@ mod tests {
             }
         }
 
-        /// Under a non-uniform scale an off-axis direction leans with the
-        /// stretched basis: it is the linear part applied to it, normalised — not
-        /// the rotation applied to it.
+        /// Under a non-uniform scale an off-axis direction leans with the stretched basis.
+        ///
+        /// It is the linear part applied to it, normalised, not the rotation applied to it.
         #[test]
         fn transform_direction_under_a_non_uniform_scale_leans_with_the_basis() {
             let local = Vec3::new(1.0, -1.0, 0.0).normalize();
@@ -1522,9 +1416,7 @@ mod tests {
             );
         }
 
-        /// A direction along a flattened axis has no image under the linear part;
-        /// it still points somewhere: the rotation applied to it, unit and
-        /// finite.
+        /// A direction along a flattened axis is the rotation applied to it, unit and finite.
         #[test]
         fn transform_direction_along_a_flattened_axis_is_the_rotated_direction() {
             let transform = trs(
@@ -1570,9 +1462,8 @@ mod tests {
             }
         }
 
-        /// A basis carrying a NaN has no finite image of any direction; the
-        /// direction falls back to the rotation, the identity for such a basis,
-        /// rather than a NaN that spreads to every light.
+        /// A direction under a basis holding a NaN falls back to the rotation, the identity, so
+        /// it is finite.
         #[test]
         fn transform_direction_under_a_non_finite_basis_is_finite() {
             let transform = AffineTransform(Mat4::from_cols(
@@ -1592,10 +1483,10 @@ mod tests {
 
         // --- Orthogonal bases and the limits of a shear -------------------------
 
-        /// An orthogonal basis — any non-uniform scale, a mirror on any axis or
-        /// on all three, rotations near and at a half turn — keeps the rotation
-        /// it had before the forward-first orthonormalisation: each column made
-        /// unit, the first one negated when the basis is mirrored.
+        /// An orthogonal basis keeps its rotation: columns made unit, the first negated if
+        /// mirrored.
+        ///
+        /// Covers any non-uniform scale, a mirror on any axis or on all three, and half turns.
         #[test]
         fn rotation_of_an_orthogonal_basis_puts_a_mirror_on_any_axis_onto_the_first() {
             let axis = Vec3::new(1.0, 2.0, -0.5).normalize();
@@ -1628,9 +1519,8 @@ mod tests {
             }
         }
 
-        /// As the stretch of a parent vanishes, the rotation of its rotated child
-        /// tends to the child's own: no jump as the basis turns orthogonal, and
-        /// the deviation shrinks with the stretch.
+        /// As a parent's stretch vanishes, its rotated child's rotation tends to its own, without a
+        /// jump.
         #[test]
         fn rotation_under_a_vanishing_stretch_tends_to_the_child_rotation() {
             let rotation = oblique_rotation();
@@ -1651,11 +1541,11 @@ mod tests {
             v / v.length()
         }
 
-        /// A camera whose forward axis shrinks toward zero under a stretched
-        /// parent keeps looking down that axis: above the noise floor (a
-        /// millionth of the longest axis) the shrinking column still has its own
-        /// direction, and the view must not swing to the cross product of the two
-        /// other, sheared, columns.
+        /// A camera whose forward axis shrinks under a stretched parent keeps looking down that
+        /// axis.
+        ///
+        /// Above the noise floor the shrinking column has its own direction; the view must not
+        /// swing to the cross product of the two sheared columns.
         #[test]
         fn rotation_keeps_its_forward_on_a_nearly_flattened_forward_axis_under_a_stretch() {
             let parent = Mat4::from_scale(Vec3::new(1.0, 2.0, 1.0));
@@ -1671,12 +1561,10 @@ mod tests {
             }
         }
 
-        /// A parent squashed toward zero on one axis folds its rotated child's
-        /// up and forward columns toward one line. Until they are parallel within
-        /// the tolerance, the up column made perpendicular to the forward one is
-        /// a short difference of two nearly equal vectors, carrying rounding
-        /// error along the forward axis; the rotation still keeps its forward
-        /// exactly on the world Z column at every squash.
+        /// A child's forward stays exact as a squashed parent folds its up column onto forward.
+        ///
+        /// The up made perpendicular to forward is then a short difference of nearly equal vectors,
+        /// carrying rounding error along the forward axis.
         #[test]
         fn rotation_keeps_its_forward_exact_as_a_squashed_parent_folds_up_onto_forward() {
             let child = Quaternion::from_axis_angle(Vec3::Y, 30f32.to_radians())
@@ -1703,9 +1591,8 @@ mod tests {
             );
         }
 
-        /// A light direction too long or too short to square in f32 — components
-        /// near 1e30 or below 1e-23 — is still a direction: it is the unit image
-        /// of that direction, never zero.
+        /// A direction too long or short to square in f32 (near 1e30, below 1e-23) gives its unit
+        /// image.
         #[test]
         fn transform_direction_of_a_huge_or_tiny_local_is_its_unit_image() {
             let transform = trs(
@@ -1733,12 +1620,10 @@ mod tests {
             }
         }
 
-        /// A child turned a quarter turn under a parent scaled to exactly zero on
-        /// one axis: the child axis the turn lays along the flattened one is
-        /// zero, but the quarter turn computed in f32 leaves a residue of a few
-        /// 1e-8 in it. That residue has no direction of its own; the rotation is
-        /// the child's, its lost axis rebuilt from the two others, never one read
-        /// from the sign of a rounding error.
+        /// A child turned a quarter under a parent flattened to zero keeps that turn.
+        ///
+        /// The f32 quarter turn leaves a residue of a few 1e-8 in the flattened axis; the rotation
+        /// never reads a direction from it, but rebuilds that axis from the two others.
         #[test]
         fn rotation_of_a_quarter_turned_child_under_a_parent_flattened_to_zero_is_that_turn() {
             for (parent_scale, child) in [
@@ -1764,11 +1649,10 @@ mod tests {
             }
         }
 
-        /// The inverse of a turned, scaled and moved transform undoes it: the
-        /// inverse composed with the transform is the identity, whatever the
-        /// rotation. A parent's inverse is how a pose is taken back into the
-        /// parent's frame, so an inverse that turned the wrong way would put a
-        /// released body or a collider test in the wrong place.
+        /// The inverse of a turned, scaled and moved transform composed with it is the identity.
+        ///
+        /// A parent's inverse takes a pose back into the parent's frame: turned the wrong way, it
+        /// would misplace a released body or a collider test.
         #[test]
         fn the_inverse_of_a_turned_transform_undoes_it() {
             for transform in [
@@ -1799,11 +1683,10 @@ mod tests {
             }
         }
 
-        /// With up exactly parallel to forward, the twist comes from the right
-        /// axis — and when that axis nearly folds onto forward too, its part
-        /// perpendicular to forward is a short difference of nearly equal
-        /// vectors. The rotation still keeps its forward exactly on the world Z
-        /// column.
+        /// With up parallel to forward and right nearly folded onto it, the forward stays exact.
+        ///
+        /// The twist then comes from the right axis's part perpendicular to forward, a short
+        /// difference of nearly equal vectors.
         #[test]
         fn rotation_keeps_its_forward_exact_when_right_nearly_folds_onto_a_parallel_up() {
             let forward = Vec3::new(0.3, -0.4, 1.0);
@@ -1825,6 +1708,18 @@ mod tests {
                     &format!("forward with the right axis folded to {fold:e}"),
                 );
             }
+        }
+
+        /// A rotation about a principal axis turns the same way as the dedicated constructor.
+        #[test]
+        fn an_axis_angle_about_z_turns_as_a_rotation_about_z() {
+            let quarter = PI / 2.0;
+            let by_axis = AffineTransform::from_axis_angle(Vec3::Z, quarter).right();
+            let by_z = AffineTransform::from_rotation_z(quarter).right();
+            assert!(
+                (by_axis - by_z).length() < 1e-5,
+                "about +Z, +X goes to {by_axis:?}, not {by_z:?}"
+            );
         }
     }
 }

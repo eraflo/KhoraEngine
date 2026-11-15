@@ -78,9 +78,9 @@ pub trait AnyLane: Send {
     /// Whether the device can run the lane.
     fn supports(&self, caps: &DeviceCaps) -> bool;
 
-    /// One frame: fetch, prepare if the target changed, cost every level on
-    /// what was fetched, record at `level`, give back what the record left,
-    /// commit.
+    /// Runs one frame at `level`, costing every level on the inputs fetched.
+    ///
+    /// Prepares again first if the target changed.
     fn run(
         &mut self,
         level: usize,
@@ -89,19 +89,22 @@ pub trait AnyLane: Send {
         gpu: &mut GpuSetup<'_>,
     ) -> LaneRun;
 
-    /// The cost of every level on this frame's inputs, in level order,
-    /// without running the lane: the inputs are fetched and each level is
-    /// costed, but nothing is prepared, recorded or written.
+    /// Returns the cost of every level on this frame's inputs, in level order, without running.
     ///
-    /// `None` when an input is refused. A `#[locked]` input is taken only if
+    /// Nothing is prepared, recorded or written. `None` when an input is
+    /// refused. A `#[locked]` input is taken only if
     /// its lock is free, and let go before the quote returns: a quote never
     /// waits, so a lock held elsewhere leaves the lane unquoted.
     fn quote(&self, inputs: &mut InputSource<'_>) -> Option<Vec<Cost>>;
 
-    /// Prepares the lane at `level` for this frame's inputs — the target it
-    /// draws into — ahead of its first run, so that run prepares nothing
-    /// while the target keeps its key. What the agent does for a new layer,
-    /// beside the installed one.
+    /// Prepares the lane at `level` for this frame's target, ahead of its first run.
+    ///
+    /// That run then prepares nothing while the target keeps its key.
+    ///
+    /// # Errors
+    ///
+    /// [`NotPrepared`] when an input is refused, or the lane failed to prepare
+    /// or does not offer the level.
     fn prepare(
         &mut self,
         level: usize,

@@ -91,8 +91,9 @@ mod tests {
     #[derive(Debug, Clone, PartialEq)]
     struct Lines(Vec<u32>);
 
-    /// **What the host set reaches the bus, latest value first.** Each View
-    /// type keeps one value; a second `set` replaces it, and every frame's
+    /// **What the host set reaches the bus, latest value first.**
+    ///
+    /// Each View type keeps one value; a second `set` replaces it, and every frame's
     /// fresh bus receives the same copy until the host sets it again.
     #[test]
     fn host_views_reach_every_frame_bus() {

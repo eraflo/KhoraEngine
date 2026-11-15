@@ -16,10 +16,7 @@
 
 use bytemuck::{Pod, Zeroable};
 
-/// GPU-friendly representation of a light source for compute shader processing.
-///
-/// This structure is designed for efficient GPU transfer and compute shader access.
-/// It uses a unified layout that can represent all light types.
+/// GPU layout of a light source, one layout for every light type.
 ///
 /// # Memory Layout
 ///
@@ -55,9 +52,8 @@ pub struct GpuLight {
     pub shadow_bias: f32,
     /// Shadow normal bias.
     pub shadow_normal_bias: f32,
-    /// Far plane of the per-face shadow projection (point lights only —
-    /// matches `ShadowEntry::Cube.far_plane`). Unused for directional
-    /// and spot lights; left at `0.0` in that case.
+    /// Far plane of a point light's per-face shadow projection, as
+    /// `ShadowEntry::Cube.far_plane`; `0.0` for other lights.
     pub shadow_far_plane: f32,
     /// Rounds the struct up to the 16-byte alignment WGSL gives it (it holds
     /// `vec3`s), so light `i` sits where `array<GpuLight>[i]` reads it.

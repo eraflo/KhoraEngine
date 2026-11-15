@@ -61,9 +61,10 @@ pub enum ProblemSource {
     /// The engine's startup: the work it waited on that had not landed when
     /// its wait timed out.
     Startup,
-    /// The files the engine refused to read, or quarantined: a path leaving
-    /// its root, a file over its size cap, bytes that are not what their
-    /// extension says.
+    /// The files the engine refused to read, or quarantined.
+    ///
+    /// A path leaving its root, a file over its size cap, bytes that are not
+    /// what their extension says.
     Security,
     /// What a restricted project does not run: a shader overlay ignored, as
     /// warnings; cleared once the project is trusted.
@@ -130,9 +131,10 @@ impl Problems {
         held.generation += 1;
     }
 
-    /// Every problem of every source: errors first, then by module, line,
-    /// column, component and field — each once, though two compiles may both
-    /// find one in a module they share.
+    /// Returns every problem of every source, each once, errors first.
+    ///
+    /// Then sorted by module, line, column, component and field; two compiles
+    /// finding one problem in a shared module list it once.
     pub fn all(&self) -> Vec<Problem> {
         let held = match self.0.read() {
             Ok(held) => held,
@@ -413,9 +415,10 @@ mod tests {
         assert_ne!(problems.generation(), replaced, "a clearing");
     }
 
-    /// **The generation stays when nothing changed**: the same list reported
-    /// again, or a source with nothing clearing again — what a lane reporting
-    /// every frame does.
+    /// **The generation stays when nothing changed.**
+    ///
+    /// The same list reported again, or a source with nothing clearing again — what a
+    /// lane reporting every frame does.
     #[test]
     fn the_generation_stays_when_a_report_changes_nothing() {
         let problems = Problems::default();

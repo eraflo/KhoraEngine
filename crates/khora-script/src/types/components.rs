@@ -13,15 +13,8 @@
 // limitations under the License.
 
 //! Operations on an entity: `e.SetPosition(v)`, `e.Set(C { … })`, `Spawn(…)`.
-//!
-//! An engine operation whose first parameter is an `Entity` is called *on*
-//! that entity — one spelling, so typing `this.` lists everything that can be
-//! done to it. The free form of such an operation is refused with its rewrite.
-//!
-//! `Set`, `Add` and `Remove` write components; they are intrinsics rather than
-//! natives because they take what a native cannot — a component literal, a
-//! component name. A component literal is a *patch*: the fields it names are
-//! written, the others are left as they are.
+//! `Set`, `Add` and `Remove` are intrinsics: a native cannot take a component
+//! literal or name. See the book: reference/ergon.md, "Writing components".
 
 use std::collections::HashMap;
 
@@ -53,9 +46,9 @@ impl Checker {
             .insert(decl.name.clone(), ComponentInfo { fields });
     }
 
-    /// Checks a component's field defaults as a struct's are checked: each
-    /// fits its field and is a constant — data, read wherever a row is built
-    /// or loaded, never run.
+    /// Checks a component's field defaults: each fits its field and is a constant.
+    ///
+    /// A default is data, read wherever a row is built or loaded, never run.
     pub(super) fn check_component_defaults(&mut self, decl: &StructDecl) {
         for field in &decl.fields {
             let Some(default) = &field.default else {
@@ -290,9 +283,10 @@ impl Checker {
         }
     }
 
-    /// `this.Set(Guard { … })` inside `Guard`: a behavior changes its own
-    /// fields by assigning them — read and written within its turn, in the
-    /// order written — not by queueing a write of itself.
+    /// Refuses `this.Set(Guard { … })` inside `Guard`.
+    ///
+    /// A behavior changes its own fields by assigning them, within its turn,
+    /// not by queueing a write of itself.
     fn refuse_own_component(
         &mut self,
         object: &Expr,
@@ -440,9 +434,10 @@ impl Checker {
         None
     }
 
-    /// A write through a copy a `Get` returned — an assignment to a place
-    /// rooted at it, or an array of it grown or shrunk: refused, with the write
-    /// that was meant. `true` when `target` is one.
+    /// Refuses a write through a copy a `Get` returned; `true` when `target` is one.
+    ///
+    /// An assignment rooted at the copy, or an array of it grown or shrunk,
+    /// changes nothing: the message names the write that was meant.
     pub(super) fn refuse_copy_write(&mut self, target: &Expr) -> bool {
         // A system's `ref` binding is written back to its row.
         if let Expr::Ident { name, .. } = root_of(target) {

@@ -78,8 +78,8 @@ pub trait PhysicsProvider: Send + Sync {
     /// The linear and angular velocity a body currently has.
     ///
     /// Read back rather than assumed: `RigidBody::initial_velocity` is what its
-    /// author declared, applied once when the body is created. What it is doing
-    /// now is the solver's, and until this existed nothing could ask.
+    /// author declared, applied once when the body is created; what the body
+    /// does since is the solver's.
     fn get_body_velocity(&self, handle: RigidBodyHandle) -> (Vec3, Vec3);
 
     /// Manually sets the position and rotation of a rigid body.

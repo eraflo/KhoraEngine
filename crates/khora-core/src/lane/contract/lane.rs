@@ -47,16 +47,22 @@ pub trait Lane: Send + 'static {
     /// The levels the lane offers, cheapest first.
     fn levels(&self) -> &[Level];
 
-    /// Whether the device can run the lane at all. A lane that cannot is
-    /// removed from the menu at boot.
+    /// Whether the device can run the lane at all.
+    ///
+    /// A lane that cannot is removed from the menu at boot.
     fn supports(&self, caps: &DeviceCaps) -> bool {
         let _ = caps;
         true
     }
 
-    /// Builds what the lane needs on the device for `level`. Runs before the
-    /// first record, and again whenever the level or the target's key
-    /// changes: a level of another resolution rebuilds what it sizes.
+    /// Builds what the lane needs on the device for `level`.
+    ///
+    /// Called before the first record, and again whenever the level or the
+    /// target's key changes.
+    ///
+    /// # Errors
+    ///
+    /// A [`LaneError`] when the device resources cannot be built.
     fn prepare(
         &mut self,
         level: usize,
@@ -71,6 +77,10 @@ pub trait Lane: Send + 'static {
     fn cost(&self, level: usize, inputs: &Self::Inputs<'_>) -> Cost;
 
     /// Records one frame's work at `level`.
+    ///
+    /// # Errors
+    ///
+    /// A [`LaneError`] when the lane cannot record this frame.
     fn record(
         &mut self,
         level: usize,

@@ -24,30 +24,22 @@ use crate::math::{Quat, Vec3};
 pub struct ColliderDesc {
     /// The entity this collider belongs to.
     ///
-    /// Stamped into the backend so a contact can name **who** touched whom.
-    /// Without it a collision arrives as two backend handles and the only way
-    /// back to entities is to scan every collider component comparing handles —
-    /// linear per contact, and ambiguous the moment a slot is recycled.
-    ///
-    /// `None` for a collider the ECS does not own, which nothing creates today
-    /// and a tool or a query volume might.
+    /// Stamped into the backend so a contact names who touched whom, without
+    /// scanning every collider for its handle. `None` for a collider the ECS
+    /// does not own, such as a tool's or a query volume's.
     pub owner: Option<crate::ecs::entity::EntityId>,
     /// Parent rigid body to attach to (if any).
     pub parent_body: Option<RigidBodyHandle>,
-    /// Position **in the parent body's frame** when `parent_body` is `Some`
-    /// (the zero vector for a collider centred on its body), in the world
-    /// otherwise.
+    /// Position in the parent body's frame when `parent_body` is `Some`, in the world otherwise.
     ///
     /// Never the world position of an attached collider: a backend reads it as
-    /// the offset from the body, so a world position sends the shape to
-    /// twice its distance from the origin.
+    /// the offset from the body.
     pub position: Vec3,
-    /// Rotation in the parent body's frame when `parent_body` is `Some`, in
-    /// the world otherwise — the same rule as `position`.
+    /// Rotation in the parent body's frame when `parent_body` is `Some`, in the world otherwise.
     pub rotation: Quat,
-    /// The shape **at world size**: the authored shape already scaled by the
-    /// entity's world scale. A backend never sees the entity's scale, so a
-    /// shape sent in local units would collide at a size it is not drawn at.
+    /// The shape at world size: the authored shape scaled by the entity's world scale.
+    ///
+    /// A backend never sees the entity's scale.
     pub shape: ColliderShape,
     /// Whether to enable collision events for this collider.
     pub active_events: bool,
@@ -55,15 +47,15 @@ pub struct ColliderDesc {
     pub friction: f32,
     /// Restitution (bounciness) coefficient.
     pub restitution: f32,
-    /// Whether the collider is a sensor: it reports what enters and leaves it —
-    /// whatever `active_events` says, since a silent sensor has no purpose —
-    /// but never pushes anything, never stops a character, and adds no mass
-    /// to the body it hangs from.
+    /// Whether the collider is a sensor: it reports what enters and leaves, nothing more.
+    ///
+    /// It reports whatever `active_events` says, but never pushes anything,
+    /// never stops a character, and adds no mass to its body.
     pub is_sensor: bool,
-    /// Whether the collider is a character's: it has no body and is moved by
-    /// the character controller rather than by the solver. A backend must let
-    /// triggers see it, as they see a moving body, though to the solver it is
-    /// as still as the level.
+    /// Whether the collider is a character's, moved by the character controller, not the solver.
+    ///
+    /// It has no body. A backend must let triggers see it as a moving body,
+    /// though to the solver it is as still as the level.
     pub is_character: bool,
 }
 

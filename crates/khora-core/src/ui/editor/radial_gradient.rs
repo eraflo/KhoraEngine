@@ -29,8 +29,9 @@ pub struct RadialGradient<'a> {
 }
 
 impl RadialGradient<'_> {
-    /// Distance of `p` from `center` divided by `radius`: 0 at the centre, 1
-    /// on the circle; not clamped. A radius ≤ 0 gives 1.0.
+    /// Returns the distance of `p` from `center` over `radius`, unclamped.
+    ///
+    /// 0 at the centre, 1 on the circle; a radius ≤ 0 gives 1.0.
     pub fn offset_at(&self, p: [f32; 2]) -> f32 {
         if self.radius <= 0.0 {
             return 1.0;
@@ -39,11 +40,10 @@ impl RadialGradient<'_> {
         (d[0] * d[0] + d[1] * d[1]).sqrt() / self.radius
     }
 
-    /// The colour at `p`, with the same stop semantics as
-    /// [`LinearGradient::color_at`](super::LinearGradient::color_at): clamped
-    /// to the first / last stop outside them, linear (componentwise) between
-    /// stops. No stops gives `[0.0; 4]`, one stop gives its colour, and a
-    /// radius ≤ 0 gives the last stop's colour.
+    /// Returns the colour at `p`.
+    ///
+    /// Stops behave as in [`LinearGradient::color_at`](super::LinearGradient::color_at);
+    /// a radius ≤ 0 gives the last stop's colour.
     pub fn color_at(&self, p: [f32; 2]) -> [f32; 4] {
         color_at_offset(self.stops, self.offset_at(p))
     }

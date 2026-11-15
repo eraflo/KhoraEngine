@@ -34,10 +34,10 @@ pub struct Function {
     pub registers: usize,
     /// Its instructions.
     pub code: Vec<Instruction>,
-    /// A stable hash of its code, every operand that names something outside
-    /// the function hashed by name, so moving another function, a literal or
-    /// a field leaves it alone. Zero for a function nobody fingerprinted — one
-    /// built by hand rather than compiled — which never counts as unchanged.
+    /// A stable hash of its code, hashing by name every operand that names something outside it.
+    ///
+    /// Moving another function, a literal or a field leaves it alone. Zero for a
+    /// function built by hand rather than compiled, which never counts as unchanged.
     #[serde(default)]
     pub fingerprint: u64,
     /// Where a frame of it can stand, sorted by program counter.
@@ -102,20 +102,14 @@ pub struct TimerLayout {
 
 /// A behavior's field slots, in the order the compiler assigned them.
 ///
-/// # The layout, and why states share their slots
-///
 /// ```text
 /// [0 .. fields.len())      the behavior's own fields — always readable
 /// [fields.len()]           which state it is in
 /// [fields.len() + 1 ..)    the current state's data
 /// ```
 ///
-/// Every state's data occupies the **same** region, because a state's data only
-/// exists while the behavior is in it. That is not a saving, it is the point:
-/// a patrol's waypoint index cannot be read while chasing because it is not
-/// there to read. In C# those variables sit on the class and are always in
-/// scope, which is what makes a state machine written that way so easy to get
-/// subtly wrong.
+/// Every state's data occupies the **same** region: a state's data exists only
+/// while the behavior is in it. See the book: reference/ergon.md, "States".
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct BehaviorLayout {
     /// The behavior's name.
@@ -126,19 +120,20 @@ pub struct BehaviorLayout {
     /// into a field by name — a copy of [`Program::structs`].
     #[serde(default)]
     pub structs: Vec<StructLayout>,
-    /// Each field's type as written (`int?`, `Vec3`), index = slot: what a
-    /// value carried in by name must still fit. Empty for a layout recorded
-    /// before types were, which takes every value on trust.
+    /// Each field's type as written (`int?`, `Vec3`), index = slot.
+    ///
+    /// What a value carried in by name must still fit. A saved layout without
+    /// types reads back empty and takes every value on trust.
     #[serde(default)]
     pub field_types: Vec<String>,
     /// Its states, in declaration order — the index is the discriminant.
     pub states: Vec<StateLayout>,
     /// Its `every` and `after` members, in declaration order.
     pub timers: Vec<TimerLayout>,
-    /// Each field's default, index = slot: the constant written, or its
-    /// type's neutral value. Data, not code — what a fresh instance holds,
-    /// what its component registers, and what an edit that adds the field
-    /// gives a running one.
+    /// Each field's default, index = slot: the constant written, or its type's neutral value.
+    ///
+    /// Data, not code: what a fresh instance holds, what its component
+    /// registers, and what an edit that adds the field gives a running one.
     #[serde(default)]
     pub defaults: Vec<crate::arena::Owned>,
     /// Whether a `system` declares it — a behavior with no subject, run on an
@@ -210,11 +205,12 @@ impl BehaviorLayout {
         self.states.get(index)
     }
 
-    /// What entering state `index` writes, by slot: its data's defaults, its
-    /// parameters unset — for `become`, or a save, to fill — and its own
-    /// countdowns armed at their full interval. Every slot of the state, so
-    /// nothing another state left in a slot they share survives the entry,
-    /// and a state's `every` does not resume a countdown from the last visit.
+    /// Returns what entering state `index` writes, by slot.
+    ///
+    /// Its data's defaults, its parameters unset for `become` or a save to fill,
+    /// its own countdowns at their full interval. Every slot of the state, so
+    /// nothing another state left in a shared slot survives the entry, and a
+    /// state's `every` does not resume a countdown from the last visit.
     pub fn entry(&self, index: usize) -> Vec<(usize, crate::arena::Persisted)> {
         let Some(state) = self.states.get(index) else {
             return Vec::new();
@@ -241,9 +237,10 @@ impl BehaviorLayout {
         data.chain(timers).collect()
     }
 
-    /// A fresh instance's store, built from the layout alone: every field at
-    /// its default, in the first state with that state's data, every
-    /// countdown at its full interval. No code runs for it, and no fuel.
+    /// Returns a fresh instance's store, built from the layout alone; no code runs, no fuel.
+    ///
+    /// Every field at its default, in the first state with that state's data,
+    /// every countdown at its full interval.
     pub fn fresh_store(&self) -> crate::arena::PersistentStore {
         let mut store = crate::arena::PersistentStore::with_slots(self.slot_count());
         for (slot, default) in self.defaults.iter().enumerate() {
@@ -275,14 +272,9 @@ pub struct Program {
     pub functions: Vec<Function>,
     /// What each behavior's field slots are called.
     ///
-    /// The running code addresses a field by slot, which is right — a name
-    /// lookup per access would be paid on every frame for something fixed at
-    /// compile time. But a slot is only meaningful against the program that
-    /// assigned it, and hot-reload replaces exactly that: after an edit, slot 1
-    /// may be a different field, or the same field moved. Matching the old
-    /// layout to the new one by name is what lets an instance keep the values
-    /// that still mean something, and the names have to be recorded here for
-    /// that comparison to be possible at all.
+    /// Code addresses a field by slot, but a slot means something only in the
+    /// program that assigned it: a hot reload matches old fields to new by these
+    /// names. See the book: concepts/scripting/saves-and-edits.md, "Fields, by name".
     pub behaviors: Vec<BehaviorLayout>,
     /// Every string literal the program contains, deduplicated.
     ///
@@ -307,9 +299,9 @@ pub struct Program {
     /// Every `Spawn`'s components, as patch indices in the order written.
     #[serde(default)]
     pub spawns: Vec<Vec<u32>>,
-    /// What each prefab `Spawn` calls its prefab in a fault — `` `bullet` ``,
-    /// or "this prefab" — by the spawn's index; empty for a spawn at a
-    /// position.
+    /// What each prefab `Spawn` calls its prefab in a fault, by the spawn's index.
+    ///
+    /// `` `bullet` ``, or "this prefab"; empty for a spawn at a position.
     #[serde(default)]
     pub spawn_names: Vec<String>,
     /// Every `$"…"`'s plan: its text and how each hole is shown.
@@ -375,8 +367,9 @@ pub struct DeclaredComponent {
     /// Its fields, in declaration order.
     pub fields: Vec<DeclaredField>,
     /// What declares it: a `component`, a `behavior`'s authored fields, or a
-    /// behavior's state companion. A program frozen before behaviors were
-    /// components declares only components.
+    /// behavior's state companion.
+    ///
+    /// A saved program that names no kind declares a `component`.
     #[serde(default)]
     pub kind: DeclaredKind,
     /// Where its item sits among the behaviors and systems of its module, in
@@ -413,9 +406,10 @@ pub struct DeclaredField {
     /// What a new row starts with: the declared default, else the type's
     /// zero.
     pub default: khora_core::script::ScriptValue,
-    /// How the inspector presents it: `[Range(…)]`, `[Tooltip(…)]`,
-    /// `[Header(…)]` as written. Editor-only — nothing at run time reads it.
-    /// A program frozen before fields carried hints reads back with none.
+    /// How the inspector presents it: `[Range(…)]`, `[Tooltip(…)]`, `[Header(…)]` as written.
+    ///
+    /// Editor-only: nothing at run time reads it. A saved program without hints
+    /// reads back with none.
     #[serde(default)]
     pub hints: khora_core::script::FieldHints,
 }
@@ -478,18 +472,11 @@ impl Program {
         self.functions.iter().find(|f| f.name == name)
     }
 
-    /// A number identifying this program's code.
+    /// Returns a number identifying this program's code, whatever order its functions sit in.
     ///
-    /// What a suspended machine holds is positions — a program counter, a
-    /// register file sized for a frame — that only mean something in the code
-    /// that placed them. A machine resumed into a program with the same
-    /// fingerprint resumes exactly; otherwise [`resume`](super::resume) looks
-    /// further, function by function and site by site.
-    ///
-    /// Built from every function's own fingerprint, each of which covers its
-    /// name and its normalized code, and combined so the order the functions
-    /// sit in does not matter: reordering declarations changes no code. Cheap
-    /// to recompute — one addition per function and one hash.
+    /// A machine resumed into a program with the same fingerprint resumes
+    /// exactly; otherwise [`resume`](super::resume()) looks further, function by
+    /// function and site by site.
     pub fn fingerprint(&self) -> u64 {
         let sum = self
             .functions

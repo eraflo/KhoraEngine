@@ -14,10 +14,10 @@
 
 //! Type checker tests.
 //!
-//! The milestone the plan sets for this phase: a `T?` used untested, a mixed
-//! unit, an `await` in `Update` and a bad `become` must all **fail to compile**.
-//! Each of those has a test here, alongside the forms that must keep working —
-//! a rule that also rejects correct code is not a feature.
+//! A `T?` used untested, a mixed unit, an `await` in `Update` and a bad
+//! `become` must all **fail to compile**. Each has a test here, alongside the
+//! forms that must keep working: a rule that also rejects correct code is not
+//! a feature.
 
 use super::check;
 use crate::lexer::lex;

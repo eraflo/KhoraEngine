@@ -21,18 +21,12 @@ use crate::lane::{LaneBus, OutputDeck};
 use crate::runtime::Runtime;
 use std::sync::Arc;
 
-/// Engine context providing access to various subsystems.
+/// What one run of an agent's work (its layer, its wake, a preparation) may reach.
 ///
-/// Built by the scheduler for each run of an agent's work — its layer, its
-/// wake, a preparation. No agent reaches the ECS `World`: what a lane needs of
-/// it, a `Flow` published on the bus. Lanes read [`Flow`] outputs from `bus` and write their own
-/// outputs to `deck`, through their typed inputs and outputs.
-///
-/// The `runtime` bundle exposes the three runtime containers
-/// ([`Services`](crate::runtime::Services),
-/// [`Backends`](crate::runtime::Backends),
-/// [`Resources`](crate::runtime::Resources)) — agents pick the right one
-/// based on what they're looking for.
+/// Lanes read [`Flow`] Views from `bus` and write their outputs to `deck`; the
+/// runtime is reached only through [`resource`](Self::resource),
+/// [`locked`](Self::locked), and a lane's [`input_source`](Self::input_source),
+/// bounded by the fields the lane declares. No agent reaches the ECS `World`.
 ///
 /// [`Flow`]: ../../../khora_data/flow/index.html
 pub struct EngineContext<'a> {
@@ -48,18 +42,17 @@ pub struct EngineContext<'a> {
     /// outputs produced this tick. Lanes consume Views from here.
     pub bus: &'a LaneBus,
 
-    /// Mutable typed deck for lane outputs (recorded GPU commands, draw
-    /// lists, etc.). Drained by the engine at the I/O boundary.
+    /// Mutable typed deck for lane outputs, drained by the engine at the I/O boundary.
     pub deck: &'a mut OutputDeck,
 
-    /// The deck as the earlier phases and waves left it, when the agent writes
-    /// into a deck of its own (a concurrent wave's shard). `None` when
-    /// [`deck`](Self::deck) is the frame's deck itself.
+    /// The deck as the earlier phases and waves left it, when `deck` is a wave's shard.
+    ///
+    /// `None` when [`deck`](Self::deck) is the frame's deck itself.
     earlier: Option<&'a OutputDeck>,
 
-    /// What the running agent declared through
-    /// [`Agent::contention`](crate::agent::Agent::contention), stamped here by
-    /// the scheduler.
+    /// What the running agent declared, stamped by the scheduler.
+    ///
+    /// See [`Agent::contention`](crate::agent::Agent::contention).
     ///
     /// **Private.** [`resource`](Self::resource) and [`locked`](Self::locked)
     /// are the only readers: an agent that could see its own permit could work
@@ -71,20 +64,18 @@ pub struct EngineContext<'a> {
 }
 
 impl<'a> EngineContext<'a> {
-    /// The source a typed lane fetches its inputs from this frame: the bus,
-    /// the deck the earlier phases wrote, and the runtime — reached only
-    /// through the fields its `LaneInputs` declares, which is what the
-    /// agent's contention is built from.
+    /// Returns the source a typed lane fetches its inputs from this frame.
+    ///
+    /// It reaches the runtime only through the fields its `LaneInputs`
+    /// declares, which the agent's contention is built from.
     pub fn input_source(&self) -> InputSource<'_> {
         InputSource::new(self.bus.frame(), self.bus, &self.runtime).with_deck(self.earlier_deck())
     }
 
-    /// Builds the context for one run of an agent's work — its layer, its
-    /// wake, a preparation.
+    /// Builds the context for one run of an agent's work under `permit`.
     ///
-    /// Takes the agent's declaration rather than reading it back from the
-    /// agent, because the scheduler has already locked and read it once to build
-    /// the wave — asking twice invites the two answers to differ.
+    /// `permit` is the declaration the scheduler built the wave from: asking
+    /// the agent again could give a different answer.
     pub fn for_agent(
         runtime: Arc<Runtime>,
         bus: &'a LaneBus,
@@ -109,9 +100,9 @@ impl<'a> EngineContext<'a> {
         self
     }
 
-    /// The deck as the earlier phases and waves left it: what an agent reads
-    /// another agent's slots from. The frame's deck itself, unless the agent
-    /// runs in a concurrent wave and writes into a shard.
+    /// The deck as the earlier phases and waves left it, to read other agents' slots from.
+    ///
+    /// The frame's deck itself, unless the agent writes into a wave's shard.
     pub fn earlier_deck(&self) -> &OutputDeck {
         self.earlier.unwrap_or(self.deck)
     }
@@ -148,12 +139,8 @@ impl<'a> EngineContext<'a> {
 
     /// The three runtime containers, searched in one pass.
     ///
-    /// `backends` is searched like the other two, and deliberately: two of them
-    /// — the physics provider and the render system — are handed out behind a
-    /// `Mutex`, so they are contention in the most literal sense. Leaving the
-    /// container out because most of what it holds is an immutable device
-    /// handle would have left a hole shaped exactly like the one this contract
-    /// closes.
+    /// `backends` is searched too: the physics provider and the render system
+    /// are handed out behind a `Mutex`, so they are contention like any lock.
     fn look_up<T: Send + Sync + 'static>(&self) -> Option<&T> {
         self.runtime
             .resources
@@ -196,9 +183,9 @@ mod tests {
         )
     }
 
-    /// **The point of the whole contract.** A declaration that only the
-    /// scheduler compared would be an honour system — the same one `deck_writes`
-    /// was, and the same one that let this agent write a slot it never named.
+    /// **The point of the whole contract.**
+    ///
+    /// A declaration only the scheduler compared would be an honour system.
     #[test]
     fn an_undeclared_resource_is_refused() {
         let (runtime, bus, mut deck, permit) = context_with(&Contention::none());
@@ -219,9 +206,11 @@ mod tests {
         assert_eq!(ctx.resource::<Watched>().map(|w| w.0), Some(7));
     }
 
-    /// Declaring a read is not declaring a lock. The scheduler groups waves
-    /// differently for the two, so an agent that quietly locked what it said it
-    /// would only read would be in a wave built on a false premise.
+    /// Declaring a read is not declaring a lock.
+    ///
+    /// The scheduler groups waves differently for the two, so an agent that quietly
+    /// locked what it said it would only read would be in a wave built on a false
+    /// premise.
     #[test]
     fn reading_a_resource_does_not_permit_locking_it() {
         let (runtime, bus, mut deck, permit) =
@@ -243,8 +232,10 @@ mod tests {
     }
 
     /// A declared resource the runtime does not hold is the ordinary case, not a
-    /// violation: a packed build has no file watcher, and an agent that wanted
-    /// one simply finds nothing.
+    /// violation.
+    ///
+    /// A packed build has no file watcher, and an agent that wanted one simply finds
+    /// nothing.
     #[test]
     fn a_declared_but_absent_resource_is_simply_absent() {
         let (runtime, bus, mut deck, permit) =
@@ -254,9 +245,11 @@ mod tests {
         assert!(ctx.resource::<Unwatched>().is_none());
     }
 
-    /// Backends are searched like resources and services, because two of them
-    /// are handed out behind a `Mutex` — the contention the contract exists to
-    /// declare would otherwise sit in the one container it did not cover.
+    /// Backends are searched like resources and services, because two of them are
+    /// handed out behind a `Mutex`.
+    ///
+    /// The contention the contract exists to declare would otherwise sit in the one
+    /// container it did not cover.
     #[test]
     fn a_backend_obeys_the_same_contract() {
         let (runtime, bus, mut deck, permit) =

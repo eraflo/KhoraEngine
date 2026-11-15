@@ -42,9 +42,10 @@ impl<T: Any> AsAny for T {
     }
 }
 
-/// Supertrait that gives every material a `clone_box` without making `Material`
-/// itself depend on the non-object-safe `Clone`. The blanket impl below covers
-/// every `T: Material + Clone`, so concrete materials implement nothing extra.
+/// Supertrait that gives every material a `clone_box`, keeping `Material`
+/// object-safe.
+///
+/// A blanket impl covers every `T: Material + Clone`.
 pub trait MaterialClone {
     /// Clones `self` into a new boxed `dyn Material`.
     fn clone_box(&self) -> Box<dyn Material>;
@@ -60,7 +61,7 @@ impl<T: Material + Clone + 'static> MaterialClone for T {
 ///
 /// A material defines the surface properties of an object being rendered,
 /// influencing how it interacts with light and determining which shader
-/// (`RenderPipeline`) is used to draw it.
+/// (render pipeline) is used to draw it.
 pub trait Material: Asset + AsAny + MaterialClone {
     /// Returns the base color (albedo or diffuse) of the material.
     /// Default implementation is White.
@@ -104,9 +105,10 @@ pub trait Material: Asset + AsAny + MaterialClone {
         None
     }
 
-    /// Returns the UUID of the metallic-roughness texture, if any
-    /// (glTF convention: B=metallic, G=roughness).
-    /// Default implementation is `None`.
+    /// Returns the UUID of the metallic-roughness texture, if any.
+    ///
+    /// glTF convention: B = metallic, G = roughness. Default implementation
+    /// is `None`.
     fn metallic_roughness_texture(&self) -> Option<crate::asset::AssetUUID> {
         None
     }
@@ -123,8 +125,9 @@ pub trait Material: Asset + AsAny + MaterialClone {
         None
     }
 
-    /// Returns the UUID of the ambient-occlusion map, if any (red channel).
-    /// Attenuates the indirect (ambient/IBL) term only, never direct light.
+    /// Returns the UUID of the ambient-occlusion map (red channel), if any.
+    ///
+    /// It attenuates the indirect (ambient/IBL) term only, never direct light.
     /// Default implementation is `None`.
     fn occlusion_map(&self) -> Option<crate::asset::AssetUUID> {
         None
@@ -154,10 +157,11 @@ pub trait Material: Asset + AsAny + MaterialClone {
         None
     }
 
-    /// Returns the UUID of every texture slot that is set, in slot order:
-    /// base colour, metallic-roughness, normal, emissive, occlusion,
-    /// specular, specular colour. This is the single list of a material's
-    /// texture slots.
+    /// Returns the UUID of every texture slot that is set, in slot order.
+    ///
+    /// The order: base colour, metallic-roughness, normal, emissive,
+    /// occlusion, specular, specular colour. This is the single list of a
+    /// material's texture slots.
     fn textures(&self) -> Vec<crate::asset::AssetUUID> {
         [
             self.base_color_texture(),
@@ -173,9 +177,11 @@ pub trait Material: Asset + AsAny + MaterialClone {
         .collect()
     }
 
-    /// Returns the material's alpha (transparency) mode. For [`AlphaMode::Mask`]
-    /// the contained value is the alpha-cutoff threshold: fragments below it are
-    /// discarded. Default implementation is [`AlphaMode::Opaque`].
+    /// Returns the material's alpha (transparency) mode.
+    ///
+    /// For [`AlphaMode::Mask`] the contained value is the alpha-cutoff
+    /// threshold: fragments below it are discarded. Default implementation is
+    /// [`AlphaMode::Opaque`].
     fn alpha_mode(&self) -> AlphaMode {
         AlphaMode::Opaque
     }
@@ -187,10 +193,8 @@ pub trait Material: Asset + AsAny + MaterialClone {
     }
 }
 
-/// This is the key to our type-erased material handle system.
-/// We explicitly tell the compiler that a boxed, dynamic Material trait
-/// object can itself be treated as a valid Asset. This allows it to be
-/// stored inside an AssetHandle.
+/// A boxed material is an asset, so an `AssetHandle` can hold a material of
+/// any concrete type.
 impl Asset for Box<dyn Material> {}
 
 impl Clone for Box<dyn Material> {

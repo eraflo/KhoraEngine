@@ -17,7 +17,7 @@
 //! The shell owns no application logic and no branding. It only knows how to:
 //! - apply a theme to the underlying UI backend,
 //! - lay out panels in a small set of fixed slots ([`PanelLocation`]),
-//! - render those panels each frame via the [`UiBuilder`] abstraction.
+//! - render those panels each frame via the `UiBuilder` abstraction.
 //!
 //! Concrete implementations (e.g. egui) live in `khora-infra`. Editor-specific
 //! chrome (menu bars, toolbars, status bars, brand logos) is implemented as
@@ -43,9 +43,10 @@ pub trait EditorShell: Send + Sync {
     /// Applies a theme to the underlying UI backend.
     fn set_theme(&mut self, theme: UiTheme);
 
-    /// Installs a custom font pack. If [`FontPack::is_empty`] is true, the
-    /// backend keeps its built-in defaults. Default no-op so backends that
-    /// don't support custom fonts compile without changes.
+    /// Installs a custom font pack.
+    ///
+    /// An empty pack ([`FontPack::is_empty`]) keeps the backend's built-in
+    /// defaults. Does nothing on a backend without custom fonts.
     fn set_fonts(&mut self, fonts: FontPack) {
         let _ = fonts;
     }
@@ -56,9 +57,9 @@ pub trait EditorShell: Send + Sync {
     /// shell does not draw a status bar itself).
     fn set_status(&mut self, data: StatusBarData);
 
-    /// Sets a shared [`EditorState`] reference. Panels typically grab this
-    /// at construction; this method exists for shells that want to surface
-    /// state to internal helpers (debug overlays, etc.).
+    /// Sets the shared [`EditorState`], for a shell's internal helpers (debug overlays).
+    ///
+    /// Panels take their own reference at construction.
     fn set_editor_state(&mut self, state: std::sync::Arc<std::sync::Mutex<EditorState>>);
 
     /// Renders the full editor frame.

@@ -16,7 +16,7 @@
 //!
 //! Shaped by two rules.
 //!
-//! **Everything carries a [`Span`](crate::diagnostics::Span).** Type errors,
+//! **Everything carries a [`Span`].** Type errors,
 //! nullability errors and the `await`-outside-a-sequence check all report
 //! against source the author wrote, and a node that lost its position can only
 //! produce a vague message.

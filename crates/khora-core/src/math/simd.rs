@@ -12,32 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Explicit-SIMD batch kernels for transform math — the AGDF *compute-heavy hot
-//! loop* lever.
-//!
-//! A component column is stored as an array of whole structs (AoS-within-the-
-//! component), which is fine for random access but leaves SIMD lanes empty on a
-//! batched math sweep: a `Vec3`/`Quaternion` only fills part of a vector
-//! register. The lever is to feed the heavy loops *field-split* data — every
-//! field its own contiguous `f32` stream ([`TrsBatchSoa`]) — and process eight
-//! entities at a time with [`wide::f32x8`]. `f32x8` maps 1:1 to an 8-wide AoSoA
-//! tile, so the index split is trivial and the compiler emits one aligned vector
-//! op per field instead of eight scalar ones.
-//!
-//! Why *explicit* SIMD rather than trusting auto-vectorisation: the heavy parts
-//! of this math are a quaternion-to-matrix expansion and a `1/√(x²+y²+z²+w²)`
-//! normalisation. The normalisation's horizontal sum is a floating-point
-//! reduction, and FP addition is not associative — the compiler is not allowed
-//! to reorder it into independent lanes, so it serialises and the loop stays
-//! scalar. Writing the lanes by hand recovers the throughput the auto-vectoriser
-//! leaves on the table.
-//!
-//! The kernels are layout-agnostic in the LLAMA sense: callers fill a
-//! [`TrsBatchSoa`] from whatever their storage is, and the kernel owns the
-//! physical f32x8 tiling underneath. Each kernel has a scalar twin (used for the
-//! ragged tail and as the equivalence oracle in tests) so the SIMD path is
-//! guaranteed to match the scalar result to the last representable bit of the
-//! same operations.
+//! Explicit-SIMD transform kernels over field-split batches, eight entities per [`wide::f32x8`],
+//! each matching its scalar path bit for bit. See the book: concepts/agdf.md, "Layer 2 —
+//! the field-SoA substrate, and why it is the lever".
 
 use wide::{f32x8, CmpGt};
 
@@ -49,19 +26,17 @@ pub const LANES: usize = 8;
 
 /// A field-split (struct-of-arrays) batch of translate/rotate/scale inputs.
 ///
-/// Each field is its own contiguous `f32` stream so a kernel can load eight
-/// entities of one field into a single [`f32x8`]. Fill it from any source
-/// (e.g. an ECS `Transform` column) with [`push`](Self::push); the engine's
-/// component types stay in the data crate, this buffer speaks only `f32`.
+/// Each field is its own contiguous `f32` stream, so a kernel loads eight entities of one
+/// field into a single [`f32x8`]. Fill it from any storage with [`push`](Self::push).
 #[derive(Debug, Default, Clone)]
 pub struct TrsBatchSoa {
-    /// Translation X / Y / Z, one entry per entity.
+    /// Translation X, one entry per entity.
     pub tx: Vec<f32>,
     /// Translation Y.
     pub ty: Vec<f32>,
     /// Translation Z.
     pub tz: Vec<f32>,
-    /// Rotation quaternion X / Y / Z / W, one entry per entity.
+    /// Rotation quaternion X, one entry per entity.
     pub qx: Vec<f32>,
     /// Rotation quaternion Y.
     pub qy: Vec<f32>,
@@ -69,7 +44,7 @@ pub struct TrsBatchSoa {
     pub qz: Vec<f32>,
     /// Rotation quaternion W.
     pub qw: Vec<f32>,
-    /// Scale X / Y / Z, one entry per entity.
+    /// Scale X, one entry per entity.
     pub sx: Vec<f32>,
     /// Scale Y.
     pub sy: Vec<f32>,
@@ -135,23 +110,12 @@ impl TrsBatchSoa {
     }
 }
 
-/// Composes `out[i] = T · R · S` for every entity in `batch`, the same
-/// column-major affine matrix [`Mat4::from_translation`]`(t) *
-/// `[`Mat4::from_quat`]`(q) * `[`Mat4::from_scale`]`(s)` produces — eight
-/// entities per [`f32x8`] tile, scalar for the ragged tail.
+/// Writes `out[i] = T · R · S` for every entity of `batch`, eight per [`f32x8`] tile.
 ///
-/// The quaternion is taken as-is (not renormalised), matching
-/// [`Mat4::from_quat`]. The last matrix row is written as the exact affine
-/// constant `[0, 0, 0, 1]`.
-///
-/// **Performance caveat (measured):** because the output is *array-of-structs*
-/// `Mat4`, each lane is transposed back out individually, and that scatter
-/// dominates the relatively cheap quaternion expansion — so for AoS `Mat4`
-/// output this kernel is *slower* than [`compose_trs_to_mat4_scalar`]. The
-/// explicit-SIMD win materialises only when the data stays field-SoA *resident*
-/// across the loop (see [`normalize_quat_batch`], which is in-place SoA and does
-/// win). Use this kernel only inside a pipeline whose result also stays SoA, not
-/// for a one-off SoA→AoS transpose.
+/// Each matrix is the column-major one `Mat4::from_translation(t) * Mat4::from_quat(q) *
+/// Mat4::from_scale(s)` gives; the quaternion is not renormalised, as in [`Mat4::from_quat`].
+/// Writing array-of-structs `Mat4`s makes it slower than [`compose_trs_to_mat4_scalar`]
+/// (measured): use it only in a pipeline whose result stays field-SoA.
 ///
 /// # Panics
 /// Panics if `out.len() != batch.len()`.
@@ -230,10 +194,10 @@ pub fn compose_trs_to_mat4(batch: &TrsBatchSoa, out: &mut [Mat4]) {
     }
 }
 
-/// Scalar twin of [`compose_trs_to_mat4`] — identical result, one entity at a
-/// time, no SIMD. This is the fallback a caller should prefer for small batches
-/// (where the field-split transpose costs more than the vector op saves) and the
-/// equivalence oracle the SIMD path is tested against.
+/// Scalar twin of [`compose_trs_to_mat4`]: the same result, one entity at a time.
+///
+/// Prefer it for small batches, where the field-split transpose costs more than the vector
+/// op saves; it is also the oracle the SIMD path is tested against.
 ///
 /// # Panics
 /// Panics if `out.len() != batch.len()`.
@@ -296,10 +260,9 @@ fn compose_one(t: [f32; 3], q: [f32; 4], s: [f32; 3]) -> Mat4 {
 
 /// Normalises a batch of quaternions in place to unit length, eight at a time.
 ///
-/// This is the kernel whose reduction (`x²+y²+z²+w²`) and `1/√` the
-/// auto-vectoriser refuses to lane because FP addition is not associative;
-/// doing it explicitly is the point of the SIMD path. All four slices must be
-/// the same length; a near-zero quaternion is left unchanged (no divide-by-zero).
+/// The auto-vectoriser will not lane the `x²+y²+z²+w²` reduction, FP addition not being
+/// associative: explicit lanes are the point. A quaternion whose squared length is at most
+/// `f32::MIN_POSITIVE` is left unchanged.
 ///
 /// # Panics
 /// Panics if the four slices do not all have the same length.
@@ -343,9 +306,8 @@ pub fn normalize_quat_batch(qx: &mut [f32], qy: &mut [f32], qz: &mut [f32], qw: 
 
 /// Loads eight contiguous `f32`s starting at `i` into a vector lane.
 ///
-/// Goes through a contiguous slice→array conversion (one 32-byte move the
-/// backend lowers to a single vector load) rather than eight indexed reads —
-/// the latter keeps per-element bounds checks and defeats the vectorisation.
+/// A slice-to-array move lowers to one vector load; eight indexed reads would keep their
+/// bounds checks and defeat the vectorisation.
 #[inline]
 fn load8(s: &[f32], i: usize) -> f32x8 {
     let chunk: [f32; LANES] = s[i..i + LANES].try_into().unwrap();

@@ -44,21 +44,15 @@ pub struct Abandoned {
     pub member: String,
 }
 
-/// `frozen`, frozen in a program whose fingerprint was `fingerprint`, as a
-/// machine of `program`.
+/// Takes `frozen` back as a machine of `program`, in the best [`ResumeTier`] that holds it.
 ///
-/// Tried in order, each tier only when the one before cannot hold it:
-/// 1. **exact** — the same program;
-/// 2. **unchanged** — every function on the stack has the fingerprint it was
-///    frozen with, so every position in it still means what it meant;
-/// 3. **rebuilt** — every frame's site still exists, its locals by name and
-///    type, its temporaries as many: the frames are laid out again at the new
-///    sites;
-/// 4. **restarted** — the body's member still takes the same parameters: it
-///    runs again from its entry with the arguments it was first given. What it
-///    did before it was cut may happen again; the author edited the code it was
-///    running, and the alternative is losing the body;
-/// 5. otherwise [`Abandoned`].
+/// `fingerprint` is that of the program it was frozen in. A body restarted may
+/// repeat what it did before it was cut.
+/// See the book: concepts/scripting/saves-and-edits.md, "A body part-way through, in tiers".
+///
+/// # Errors
+///
+/// [`Abandoned`], naming the body's member, when no tier can take it back.
 pub fn resume(
     frozen: &FrozenMachine,
     fingerprint: u64,
@@ -104,9 +98,9 @@ fn unchanged(frame: &FrozenFrame, program: &Program) -> bool {
             .is_some_and(|function| function.fingerprint == frame.fingerprint)
 }
 
-/// Where a frame's caller leaves it: the caller's base, where the frame's
-/// window begins and its result lands relative to it, and the instruction the
-/// caller resumes at.
+/// Where a frame's caller leaves it: `base` and `result` relative to `caller_base`.
+///
+/// `return_pc` is the instruction the caller resumes at.
 struct Call {
     caller_base: usize,
     base: usize,
@@ -247,7 +241,7 @@ fn rebuild(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
         });
     }
 
-    // Every frame unchanged is tier 2's case, which a thaw already refused.
+    // Every frame unchanged is the unchanged tier's case, which a thaw already refused.
     if frozen.frames.iter().all(|frame| unchanged(frame, program)) {
         return None;
     }
@@ -269,13 +263,12 @@ fn rebuild(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
     })
 }
 
-/// Each local the new site holds, paired with the register it had where the
-/// frame was frozen: the local of the same name, declared in the same block,
-/// of the same type. A block is named by its enclosing statements' headers,
-/// so a local keeps its pairing when its own initialiser is edited, and a
-/// local and one it shadows never take each other's value whichever of the
-/// two an edit removed. `None` when the new site needs a local the old one did
-/// not have.
+/// Pairs each local of the new site with its register where the frame was
+/// frozen, or `None` when the old site lacks one.
+///
+/// The same local has the same name, declaring block and type. A block is named
+/// by its enclosing statements' headers, so an edit to a local's initialiser
+/// keeps its pairing, and a local never takes the value of one it shadows.
 fn matched_locals<'s>(site: &'s Site, old: &[FrozenLocal]) -> Option<Vec<(u8, u64, &'s str)>> {
     let same = |a: (&str, &str), b: (&str, &str)| a == b;
     site.locals
@@ -332,9 +325,10 @@ fn restart(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
     Some(machine)
 }
 
-/// Whether a local of type `ty` can hold `value`: what [`fits`] says, an
-/// `int` in a float-typed local too — the VM widens one where a float is read,
-/// so `float x = 1;` holds an `Int` — and nothing written yet.
+/// Whether a local of type `ty` can hold `value`.
+///
+/// What [`fits`] says, plus an `int` in a float-typed local — the VM widens one
+/// where a float is read, so `float x = 1;` holds an `Int` — and nothing written yet.
 fn holds(value: &FrozenValue, ty: &str, structs: &[crate::vm::StructLayout]) -> bool {
     let float = matches!(ty.trim_end_matches('?'), "float" | "Duration" | "Angle");
     // `Unit` is a local not written yet — `int count;` before its first

@@ -14,15 +14,9 @@
 
 //! Dock model — the tree of splits and tab groups behind the editor workbench.
 //!
-//! Pure data and geometry: no backend, no painting, no interaction. The shell
-//! asks for a [`DockLayout`] and paints it; the widget layer turns pointer
-//! events into calls back into [`DockTree`]. Keeping the model here means the
-//! rules that are easy to get wrong — where a drop lands, what happens to a
-//! split when its last tab closes, how ratios clamp — are testable without a
-//! window.
-//!
-//! Chrome (title bar, spine, status bar) deliberately lives *outside* the dock:
-//! those are the frame the workbench sits in, not panels the user rearranges.
+//! Pure data and geometry, so where a drop lands and how ratios clamp are
+//! testable without a window. The shell paints a [`DockLayout`]; the widget
+//! layer turns pointer events into [`DockTree`] calls.
 
 use serde::{Deserialize, Serialize};
 
@@ -81,9 +75,10 @@ pub struct SplitId(pub u32);
 /// A node of the dock tree.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DockNode {
-    /// A group of panels shown as tabs. Never empty — an emptied group is
-    /// collapsed by [`DockTree::remove`] rather than left behind, because a
-    /// zero-tab group would occupy space that has nothing to show.
+    /// A group of panels shown as tabs, never empty.
+    ///
+    /// [`DockTree::remove`] collapses an emptied group: a zero-tab group would
+    /// hold space with nothing to show.
     Tabs {
         /// Panel ids, in tab order.
         panels: Vec<String>,
@@ -109,9 +104,10 @@ pub enum DockNode {
 /// aiming, narrow enough not to steal clicks from the panels either side.
 pub const SPLITTER_THICKNESS: f32 = 6.0;
 
-/// Smallest area a tab group may be squeezed to. Ratios clamp so a drag can
-/// never collapse a panel to nothing — a panel you cannot see is a panel you
-/// cannot get back without knowing the layout can be reset.
+/// Smallest size a tab group may be squeezed to, in points.
+///
+/// Ratios clamp so a drag never collapses a panel to nothing: a hidden panel
+/// comes back only through a layout reset.
 pub const MIN_PANE: f32 = 120.0;
 
 /// One tab group placed on screen.
@@ -159,9 +155,10 @@ pub struct DockLayout {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DockTree {
     root: Option<DockNode>,
-    /// Monotonic source of [`SplitId`]s. Never reused, so a handle held across
-    /// a structural change can only go stale, never silently address a
-    /// different divider.
+    /// Monotonic source of [`SplitId`]s, never reused.
+    ///
+    /// A handle held across a structural change can only go stale, never
+    /// address a different divider.
     next_split: u32,
 }
 

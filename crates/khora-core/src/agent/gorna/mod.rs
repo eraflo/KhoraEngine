@@ -52,13 +52,11 @@ pub enum StrategyId {
     Custom(u32),
 }
 
-/// How much latitude GORNA has to change an agent's strategy — the
-/// developer-control surface over the adaptive core.
+/// How much latitude GORNA has to change an agent's strategy, set per agent.
 ///
-/// This is what keeps the engine a *partnership* rather than an autocracy: the
-/// DCC observes and proposes, but the developer decides how much it may act. Set
-/// per agent; `Learning` is the default. (A death-spiral safety stop can still
-/// force `LowPower` in any mode — safety overrides developer control.)
+/// A death-spiral safety stop can still force `LowPower` in any mode.
+///
+/// See the book: concepts/gorna.md, "AdaptationMode — the developer-control surface".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum AdaptationMode {
     /// Full GORNA negotiation — the DCC freely picks the best-fitting strategy
@@ -68,13 +66,13 @@ pub enum AdaptationMode {
     /// The agent is **pinned** to a fixed strategy; GORNA observes and reports
     /// but never switches it. The developer takes control.
     Manual(StrategyId),
-    /// **Predictable**: GORNA may *downgrade* under budget pressure but never
-    /// makes an opportunistic *upgrade*, so the strategy doesn't flap up and
-    /// down frame to frame.
+    /// GORNA may downgrade under budget pressure, never upgrade.
+    ///
+    /// Keeps the strategy from flapping up and down frame to frame.
     Stable,
-    /// **Learning within limits**: the chosen strategy is clamped to the
-    /// `[min, max]` range (ordering `LowPower < Balanced < HighPerformance`;
-    /// `Custom` ranks above `HighPerformance`).
+    /// GORNA learns, its choice clamped to `[min, max]`.
+    ///
+    /// Ordering: `LowPower < Balanced < HighPerformance < Custom`.
     Bounded {
         /// Lowest strategy GORNA may select.
         min: StrategyId,

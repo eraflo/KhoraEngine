@@ -20,7 +20,7 @@ use std::time::Duration;
 
 /// Configuration for the graphics backend selection process.
 ///
-/// This struct is passed to the [`GraphicsBackendSelector`] to guide its decision on
+/// This struct is passed to the `GraphicsBackendSelector` to guide its decision on
 /// which GPU and API to use for rendering.
 #[derive(Debug, Clone)]
 pub struct BackendSelectionConfig {

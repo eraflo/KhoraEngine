@@ -100,16 +100,16 @@ impl EntityReserver {
         }
     }
 
-    /// Takes one id ready to hand out — a slot the world holds back for this
-    /// reserver — for the owning world itself to fill: spawns use what
-    /// loads and frames left ready before growing the store.
+    /// Takes one id ready to hand out, for the owning world itself to fill.
+    ///
+    /// Spawns use the slots loads and frames left ready before growing the store.
     pub fn take_ready(&self) -> Option<EntityId> {
         self.lock().ready.pop()
     }
 
-    /// Claims the next fresh index for the owning world itself — a slot it
-    /// adds past the end of its store — so no reservation, from any thread,
-    /// is handed the same index.
+    /// Claims the next fresh index, past the end of the store, for the owning world itself.
+    ///
+    /// No reservation, from any thread, is handed the same index.
     pub fn claim_fresh(&self) -> u32 {
         let mut state = self.lock();
         let index = state.fresh;
@@ -117,9 +117,10 @@ impl EntityReserver {
         index
     }
 
-    /// The fresh indices handed out up to now, past `from`: what the owning
-    /// world gives slots to. Raises the next fresh index to `from` when it
-    /// lags, so a fresh id is never an index the store already holds.
+    /// Returns the fresh indices handed out past `from`, for the owning world to give slots to.
+    ///
+    /// Raises the next fresh index to `from` when it lags, so a fresh id is
+    /// never an index the store already holds.
     pub fn fresh_since(&self, from: u32) -> std::ops::Range<u32> {
         let mut state = self.lock();
         if state.fresh < from {

@@ -34,10 +34,9 @@ const ACTION_DOWN: &str = "player.down";
 
 /// Simple camera controller for the player.
 ///
-/// Movement is driven through the engine-wide [`InputMap`] (action /
-/// binding map). Mouse look stays on raw [`InputEvent`]s because mouse
-/// motion isn't representable as an action — the InputMap is for boolean
-/// inputs (held / just-pressed / just-released).
+/// Movement goes through the engine's [`InputMap`] of actions. Mouse look
+/// reads raw [`InputEvent`]s: an action is a boolean input (held, just
+/// pressed, just released), and mouse motion is not one.
 pub(super) struct PlayerController {
     pub(super) speed: f32,
     pub(super) sensitivity: f32,
@@ -59,9 +58,10 @@ impl PlayerController {
         }
     }
 
-    /// Registers the controller's action bindings with the engine
-    /// [`InputMap`]. Called once at setup. Multiple bindings per action
-    /// (e.g. arrows AND WASD) demonstrate the OR semantics.
+    /// Registers the controller's action bindings with the engine [`InputMap`].
+    ///
+    /// Call once at setup. Several bindings per action (arrows and WASD) show
+    /// that any of them triggers it.
     pub(super) fn bind_actions(map: &mut InputMap) {
         map.bind(ACTION_FORWARD, InputBinding::Key(KeyCode::KeyW));
         map.bind(ACTION_FORWARD, InputBinding::Key(KeyCode::ArrowUp));
@@ -76,9 +76,9 @@ impl PlayerController {
         map.bind(ACTION_DOWN, InputBinding::Key(KeyCode::ShiftRight));
     }
 
-    /// Drives mouse look from raw events. Movement keys are queried from
-    /// the engine's [`InputMap`] in [`Self::movement_axes`] so this loop
-    /// only handles things the InputMap can't model.
+    /// Drives mouse look from raw events.
+    ///
+    /// Movement keys are read from the [`InputMap`] in [`Self::movement_axes`].
     pub(super) fn process_input(&mut self, inputs: &[InputEvent]) {
         use khora_sdk::prelude::MouseButton;
 
@@ -109,8 +109,7 @@ impl PlayerController {
         }
     }
 
-    /// Resolves the current movement axes from the [`InputMap`].
-    /// Returns `(forward, right, up)` in {-1, 0, 1} per axis.
+    /// Returns the movement axes `(forward, right, up)` from the [`InputMap`], each in {-1, 0, 1}.
     fn movement_axes(input_map: &InputMap) -> (f32, f32, f32) {
         let mut forward = 0.0;
         let mut right = 0.0;

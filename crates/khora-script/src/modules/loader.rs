@@ -12,13 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Where module source comes from.
-//!
-//! A trait rather than a filesystem call, for a reason that pays off three
-//! times: the compiler stays testable without touching disk, the editor can
-//! resolve imports against unsaved buffers, and the engine can serve them from
-//! a packed asset archive at runtime. None of those would work if
-//! `khora-script` opened files itself.
+//! Where module source comes from: disk, unsaved editor buffers or a pack,
+//! behind one trait, so `khora-script` never opens a file itself.
 
 use std::collections::HashMap;
 
@@ -28,11 +23,12 @@ use std::collections::HashMap;
 /// [`normalise`](super::path::normalise) — relative to whatever they consider
 /// the script root.
 pub trait SourceLoader {
-    /// The text of the module at `path`, or `None` if there is none.
+    /// Returns the text of the module at `path`, or `None` if there is none.
     fn load(&self, path: &str) -> Option<String>;
 
-    /// The name of every component the engine registers, its `formerly`
-    /// names included — what a script's own `component` may not be called.
+    /// Returns every component name the engine registers, `formerly` names
+    /// included: what a script's own `component` may not be called.
+    ///
     /// Empty for a loader that serves no engine.
     fn engine_components(&self) -> &[String] {
         &[]
@@ -46,7 +42,7 @@ pub struct MemoryLoader {
 }
 
 impl MemoryLoader {
-    /// An empty loader.
+    /// Creates an empty loader.
     pub fn new() -> Self {
         Self::default()
     }

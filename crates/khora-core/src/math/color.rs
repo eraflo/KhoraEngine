@@ -19,15 +19,10 @@ use serde::{Deserialize, Serialize};
 use crate::math::vector::Vec4;
 use std::ops::{Add, Div, Mul, Sub};
 
-/// Represents a color in a **linear RGBA** color space using `f32` components.
+/// A color in **linear** RGBA, the engine's standard color representation.
 ///
-/// This struct is the standard color representation within Khora.  
-/// Using a linear color space is crucial for correct lighting, shading, and blending.
-/// The `f32` components allow for High Dynamic Range (HDR) colors, where component
-/// values can exceed `1.0`.
-///
-/// `#[repr(C)]` ensures a consistent memory layout, which is important when passing
-/// color data to graphics APIs.
+/// Lighting and blending are only correct in linear space. Channels are `f32`, so HDR values
+/// above `1.0` are allowed; the layout is `#[repr(C)]` for upload to graphics APIs.
 #[derive(
     Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable, Serialize, Deserialize,
 )]
@@ -77,8 +72,7 @@ impl LinearRgba {
         Self { r, g, b, a: 1.0 }
     }
 
-    /// Creates an opaque grayscale color where every channel equals
-    /// `value`. Equivalent to `LinearRgba::rgb(value, value, value)`.
+    /// Creates an opaque gray whose three channels equal `value`.
     #[inline]
     pub const fn gray(value: f32) -> Self {
         Self {
@@ -132,13 +126,14 @@ impl LinearRgba {
 
     /// Creates a `LinearRgba` from an sRGB hex string (`#RRGGBB` or `#RRGGBBAA`).
     ///
-    /// The RGB channels are converted to linear space.
-    /// Alpha is normalized but not gamma corrected.
+    /// The RGB channels are converted to linear space; alpha is not gamma corrected. A digit
+    /// pair that is not hex reads as 0 (alpha as `FF`).
     ///
     /// # Panics
-    /// Panics if the hex string is malformed.
+    /// Panics if, `#` aside, the string is shorter than 6 bytes or exactly 7, or if a digit
+    /// pair is cut inside a multi-byte character.
     ///
-    /// # Example
+    /// # Examples
     /// ```
     /// use khora_core::math::color::LinearRgba;
     /// let color = LinearRgba::from_hex("#6495ED");
@@ -164,8 +159,8 @@ impl LinearRgba {
 
     /// Converts this linear color to an sRGB hex string (`#RRGGBBAA`).
     ///
-    /// The RGB channels are gamma corrected to sRGB.
-    /// Alpha is kept linear.
+    /// The RGB channels are gamma corrected to sRGB, alpha kept linear; channels are clamped to
+    /// `[0, 1]`.
     #[inline]
     pub fn to_hex(&self) -> String {
         let r = linear_to_srgb(self.r).clamp(0.0, 1.0);
@@ -211,13 +206,9 @@ impl LinearRgba {
     ///   out of sRGB gamut and get clamped)
     /// - `h` — hue in degrees
     ///
-    /// OKLCH is the perceptual cylindrical form of OKLab — same hue
-    /// reads the same brightness across the spectrum. This is the
-    /// space the Khora design system is authored in (see
-    /// `docs/src/design/editor.md` and the mdBook CSS).
-    ///
-    /// The output is an *opaque* color (`a = 1.0`); use [`Self::with_alpha`]
-    /// to layer transparency on top.
+    /// OKLCH is the cylindrical form of OKLab, in which the Khora design system is authored.
+    /// See the book: design/editor.md, "03 — Color system". The result is opaque; use
+    /// [`Self::with_alpha`] for transparency.
     #[inline]
     pub fn from_oklch(l: f32, c: f32, h: f32) -> Self {
         let h_rad = h.to_radians();
@@ -256,9 +247,9 @@ impl LinearRgba {
         }
     }
 
-    /// Returns the same color premultiplied by its alpha — every RGB
-    /// channel is scaled by `a`. Premultiplied alpha is what most
-    /// graphics APIs (and egui) expect at the blending stage.
+    /// Returns the color with each RGB channel multiplied by its alpha.
+    ///
+    /// Premultiplied alpha is what most graphics APIs, egui included, blend with.
     #[inline]
     pub fn premultiplied(self) -> Self {
         Self {
@@ -269,9 +260,9 @@ impl LinearRgba {
         }
     }
 
-    /// Inverse of [`Self::premultiplied`] — divides each RGB channel
-    /// by `a` (no-op when `a == 0`). Use to recover unassociated alpha
-    /// from a premultiplied buffer.
+    /// Returns the color with each RGB channel divided by its alpha, undoing premultiplication.
+    ///
+    /// An alpha at or below `f32::EPSILON` gives [`Self::TRANSPARENT`].
     #[inline]
     pub fn unpremultiplied(self) -> Self {
         if self.a <= f32::EPSILON {
@@ -295,8 +286,7 @@ impl LinearRgba {
         Self { a, ..*self }
     }
 
-    /// Linearly interpolates between two colors.
-    /// The factor `t` is clamped to `[0.0, 1.0]`.
+    /// Linearly interpolates from `start` to `end` by `t`, clamped to `[0.0, 1.0]`.
     #[inline]
     pub fn lerp(start: Self, end: Self, t: f32) -> Self {
         let t = t.clamp(0.0, 1.0);

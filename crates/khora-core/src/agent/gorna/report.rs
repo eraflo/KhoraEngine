@@ -40,15 +40,14 @@ pub struct Report {
     /// Whether the agent could not progress: a lane that stalled, a script
     /// that faulted.
     pub stalled: bool,
-    /// How much work the run did, as its lane priced it: the host time, in
-    /// µs, its own level quoted on the run's inputs. The DCC's cost book
-    /// learns each row's measured time against it, and its cost model is
-    /// read at it. `None` when the run priced nothing: nothing is learnt
-    /// from it.
+    /// The run's work as its lane priced it: host µs its level quoted on its inputs.
+    ///
+    /// The DCC's cost book learns each row's measured time against it. `None`
+    /// when the run priced nothing: nothing is learnt from it.
     pub workload: Option<f64>,
-    /// How long preparing the layer that ran took, on the first run after it
-    /// was swapped in at its family's place; `None` on every other run. What
-    /// a switch of row costs.
+    /// How long preparing the layer took: what a switch of row costs.
+    ///
+    /// Set on the first run after the layer was swapped in; `None` otherwise.
     pub switch: Option<Duration>,
     /// What the run had to say — its lane's message, a refused input, a
     /// failure; `None` when it said nothing.

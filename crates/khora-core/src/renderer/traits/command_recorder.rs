@@ -158,7 +158,7 @@ pub trait CommandEncoder {
     /// Finalizes the command recording and returns a handle to the resulting command buffer.
     ///
     /// This method consumes the encoder. The returned [`CommandBufferId`] can then
-    /// be submitted to the [`GraphicsDevice`]'s command queue.
+    /// be submitted to the `GraphicsDevice`'s command queue.
     ///
     /// Returns `None` when the underlying backend's pending-buffer registry
     /// is unrecoverable (e.g. a poisoned mutex from a prior panic). Callers

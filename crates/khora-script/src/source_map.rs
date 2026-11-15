@@ -14,10 +14,8 @@
 
 //! Where a span of a compiled program sits: its module, line and column.
 //!
-//! A program is compiled from several modules merged into one tree, so a
-//! [`Span`] alone does not say which file it points into. Resolving gives
-//! each module a base offset in one program-wide offset space; this map turns
-//! a span of that space back into a position an author can open.
+//! Each module of a program has a base in one program-wide offset space, so a
+//! [`Span`] alone does not say which file it points into.
 
 use crate::diagnostics::{SourceFile, Span};
 
@@ -37,9 +35,8 @@ pub struct Location {
 /// offset space.
 #[derive(Debug, Clone, Default)]
 pub struct SourceMap {
-    /// Each module's source and where it starts, in the order they were
-    /// placed: ascending, a gap of one between neighbours so a span at the end
-    /// of one can never be read as the start of the next.
+    /// Each module's source and ascending base, a gap of one between neighbours
+    /// so a span at the end of one never reads as the start of the next.
     modules: Vec<(u32, SourceFile)>,
 }
 
@@ -55,8 +52,8 @@ impl SourceMap {
         base
     }
 
-    /// The module, line and column `span` starts at; `None` when it falls in
-    /// no module of the program.
+    /// Returns the module, line and column `span` starts at; `None` when it
+    /// falls in no module of the program.
     pub fn locate(&self, span: Span) -> Option<Location> {
         let (base, source) = self
             .modules

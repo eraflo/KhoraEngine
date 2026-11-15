@@ -31,9 +31,10 @@ pub struct ScriptCatalog(RwLock<CatalogData>);
 /// The catalog's contents.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct CatalogData {
-    /// Every name a loaded module declares — components, behaviors,
-    /// systems — as the script registry lists them: sorted, each once. A new
-    /// declaration of one of these is refused.
+    /// Every name a loaded module declares (components, behaviors, systems),
+    /// sorted, each once.
+    ///
+    /// A new declaration of one of these is refused.
     pub declared: Vec<ComponentName>,
     /// Moves on every change of `declared`, never otherwise: a reader that
     /// saw this generation has the current set.
@@ -141,8 +142,7 @@ mod tests {
     }
 
     /// **The generation moves when the declared set changes, and only
-    /// then** — so a tool copying on a moved generation copies once per
-    /// change, and every change.
+    /// then**, so a tool copying on a moved generation copies each change once.
     #[test]
     fn the_declared_generation_moves_only_when_the_set_changes() {
         let catalog = ScriptCatalog::default();

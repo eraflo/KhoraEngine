@@ -12,29 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Compile-time constants shared between Rust and WGSL.
+//! Constants shared between Rust and WGSL, injected into every shader by the
+//! `PipelineSystem` backend.
 //!
-//! These values are injected as `#define`s into every shader at module
-//! creation time by the `PipelineSystem` backend (`khora-infra`), giving
-//! a **single source of truth** for limits that both the CPU side
-//! (uniform layouts, atlas allocations) and the GPU side (array
-//! lengths, loop bounds) need to agree on.
-//!
-//! Adding a new shared constant:
-//! 1. Add a `pub const` here.
-//! 2. Reference it in Rust via `ShaderDefs::MY_CONST`.
-//! 3. Reference it in WGSL via `MY_CONST` (the `PipelineSystem` injects
-//!    it as a `#define`).
-//!
-//! Never duplicate a value: if the WGSL shader writes
-//! `const MAX_FOO = 32u`, the corresponding Rust constant MUST live
-//! here and the WGSL declaration MUST be removed in favor of the
-//! injected `#define`.
+//! A limit both sides must agree on lives only here: WGSL reads it by the same
+//! name and never declares its own copy.
 
 /// Shared shader constants.
 ///
-/// All limits are `u32` because that's the type WGSL `#define`
-/// substitutions accept directly without casting.
+/// Limits are `u32`, the type a WGSL `#define` substitutes without a cast.
 pub struct ShaderDefs;
 
 impl ShaderDefs {
@@ -50,10 +36,7 @@ impl ShaderDefs {
 
     // ── Shadow constants ──
     //
-    // These are advertised by the **canonical** shadow strategy
-    // (`StandardShadowsLane`). Lower-quality strategies
-    // (`LowResShadowsLane`, …) ship their own atlases at their own
-    // sizes; the WGSL math is agnostic of the atlas resolution.
+    // Independent of the atlas resolution, which each shadow strategy picks.
 
     /// Near plane of the cubemap shadow projection. Must match
     /// `Mat4::cube_face_view_proj`'s NEAR constant.

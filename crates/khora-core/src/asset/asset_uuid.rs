@@ -15,8 +15,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// A constant, randomly generated namespace for our asset UUIDs.
-/// This ensures that UUIDs generated from the same path are always the same.
+/// The fixed namespace of path-derived asset UUIDs ([`AssetUUID::new_v5`]).
 const ASSET_NAMESPACE_UUID: Uuid = Uuid::from_u128(0x4a6a81e9_f0d1_4b8f_91a8_7e7a5e0b6b4a);
 
 /// The fixed namespace of sub-asset UUIDs ([`AssetUUID::sub_asset`]), apart from
@@ -25,15 +24,10 @@ const SUB_ASSET_NAMESPACE_UUID: Uuid = Uuid::from_u128(0x6b68_6f72_615f_7375_625
 
 /// A globally unique, persistent identifier for a logical asset.
 ///
-/// This UUID represents the "idea" of an asset, completely decoupled from its
-/// physical file path. It is the primary key used by the Virtual File System (VFS)
-/// to track and retrieve asset metadata.
-///
-/// By using a stable UUID, assets can be moved, renamed, or have their source
-/// data modified without breaking references to them in scenes or other assets.
-///
-/// Its serde name is reserved, so a save can tell an asset reference from any
-/// other sixteen bytes.
+/// It is the key of the asset's metadata in the VFS, independent of the file's
+/// path, so a moved or renamed asset keeps every reference to it. Its serde
+/// name is reserved, so a save can tell an asset reference from any other
+/// sixteen bytes. See the book: concepts/assets.md, "Identity, not paths".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename = "khora.AssetUUID")]
 pub struct AssetUUID(Uuid);
@@ -70,14 +64,10 @@ impl AssetUUID {
         Self(Uuid::new_v4())
     }
 
-    /// Creates a new, stable AssetUUID (version 5) from a given path.
+    /// Creates the stable (version 5) `AssetUUID` of the asset named `path_str`.
     ///
-    /// This is the preferred method for generating UUIDs for assets on disk,
-    /// as it guarantees that the UUID will be the same every time the asset
-    /// pipeline is run for the same file.
-    ///
-    /// The path string must come from [`asset_key`] — the stability this
-    /// promises is only as stable as the convention that builds its input.
+    /// The same path always gives the same UUID. `path_str` must come from
+    /// [`asset_key`]: the identity is only as stable as that convention.
     pub fn new_v5(path_str: &str) -> Self {
         Self(Uuid::new_v5(&ASSET_NAMESPACE_UUID, path_str.as_bytes()))
     }
@@ -85,9 +75,9 @@ impl AssetUUID {
     /// The identity of the asset named `label` inside the asset `container`
     /// (a glTF file's mesh, material, texture or scene).
     ///
-    /// A version-5 UUID in its own namespace over `container`'s sixteen bytes
-    /// followed by `label`, so it follows the container's identity: a renamed
-    /// file keeps its registry-frozen uuid, and with it every sub uuid.
+    /// It is derived from `container`'s identity, so a renamed file keeps its
+    /// registry-frozen uuid and with it every sub uuid. It never collides with
+    /// a path-derived uuid.
     pub fn sub_asset(container: AssetUUID, label: &str) -> AssetUUID {
         let mut name = Vec::with_capacity(16 + label.len());
         name.extend_from_slice(container.as_bytes());
@@ -105,22 +95,10 @@ impl Default for AssetUUID {
 
 /// Turns a project-relative path into the string that names an asset.
 ///
-/// # Why this is not five lines at each call site
-///
-/// This is the *entire* definition of an asset's identity: whatever string
-/// comes out of here is what [`AssetUUID::new_v5`] hashes. It used to be
-/// written out by hand in five places — the index builder, the pack builder,
-/// the file watcher, the editor's project VFS and its scene loader — and each
-/// copy could have drifted on its own.
-///
-/// The drift would not have been loud. `Path::components` yields
-/// `textures\wall.png` on Windows and `textures/wall.png` elsewhere, so a copy
-/// that forgot the join would keep working perfectly on one platform and hand
-/// every asset a different UUID on the other: scene references resolving to
-/// nothing, on someone else's machine, with no error at the point of failure.
-///
-/// A convention with five copies is a convention that can drift. This is the
-/// one copy.
+/// This is the whole definition of a path-derived identity: its output is what
+/// [`AssetUUID::new_v5`] hashes. Components are joined with `/` on every
+/// platform, so an asset keeps its UUID from one OS to another. Every caller
+/// that names an asset by path goes through it.
 pub fn asset_key(relative: &std::path::Path) -> String {
     relative
         .components()
@@ -135,9 +113,9 @@ mod tests {
         use super::super::*;
         use std::path::Path;
 
-        /// The convention itself. If this changes, every asset in every existing
-        /// project gets a new identity and every scene reference breaks — so it is
-        /// pinned here rather than left to five call sites to agree on.
+        /// **Components join with forward slashes.**
+        ///
+        /// Changing this gives every asset of every project a new identity.
         #[test]
         fn nested_paths_join_with_forward_slashes() {
             assert_eq!(
@@ -161,10 +139,9 @@ mod tests {
             assert_eq!(asset_key(Path::new("")), "");
         }
 
-        /// **The bug this exists to prevent.** A Windows-separated relative path
-        /// and a Unix-separated one name the same asset, so they must hash to the
-        /// same UUID. Five hand-written copies each had their own chance to get
-        /// this wrong on one platform only.
+        /// **A Windows-separated path and a Unix-separated one hash alike.**
+        ///
+        /// They name the same asset, so they must have the same UUID.
         #[test]
         fn separators_do_not_change_an_asset_s_identity() {
             let windows_style = Path::new(r"textures\walls\brick.png");

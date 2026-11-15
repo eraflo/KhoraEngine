@@ -17,13 +17,9 @@
 use super::dependency::AgentDependency;
 use super::execution_phase::ExecutionPhase;
 
-/// Declares when and how an agent should execute within the frame pipeline.
+/// When an agent's family runs in the frame, and how much it matters.
 ///
-/// Each agent provides its timing via `Agent::execution_timing()`. The
-/// Scheduler uses this information to order and potentially skip agents
-/// based on the current phase, budget, and dependencies.
-///
-/// Whether an agent runs at all in a frame is its family's state in force
+/// Whether it runs at all is its family's state in force
 /// ([`Activation`](crate::agent::Activation)), not this struct's.
 #[derive(Debug, Clone)]
 pub struct ExecutionTiming {
@@ -48,29 +44,24 @@ impl Default for ExecutionTiming {
     }
 }
 
-/// How critical an agent is for frame correctness — and therefore whether GORNA
-/// budget arbitration may skip it under pressure.
+/// How critical an agent is to the frame, so whether it may be skipped under pressure.
 ///
-/// `Critical` and `Important` are **non-negotiable**: the scheduler never drops
-/// them to save frame time. Work that must be deterministic — physics in a
-/// simulation, or editor chrome once it owns a non-negotiable pass — lives here.
-/// Only `Optional` work is negotiable (the budget escape valve).
+/// Only `Optional` is negotiable; the scheduler never drops `Critical` or
+/// `Important` work to save frame time.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
 )]
 pub enum AgentImportance {
     /// Must execute — non-negotiable, never skipped. Skipping causes errors or corruption.
     Critical,
-    /// Should execute — non-negotiable under normal budget pressure (not skipped today).
+    /// Should execute — non-negotiable, never skipped.
     Important,
-    /// Nice to have — **negotiable**: the first (and currently only) work the
-    /// scheduler skips under budget pressure.
+    /// Nice to have — negotiable: the only work the scheduler skips under pressure.
     Optional,
 }
 
 impl AgentImportance {
-    /// Whether GORNA may skip this work under budget pressure. Only `Optional`
-    /// is negotiable; `Critical` and `Important` are non-negotiable (always run).
+    /// Whether GORNA may skip this work under budget pressure: only `Optional`.
     pub fn is_negotiable(self) -> bool {
         matches!(self, AgentImportance::Optional)
     }
@@ -87,10 +78,7 @@ mod tests {
         assert!(AgentImportance::Optional.is_negotiable());
     }
 
-    /// **An agent runs in one phase, `OUTPUT` unless it says otherwise.** The
-    /// default timing names a single phase, the one a frame's output is
-    /// recorded in: an agent built with it runs once a frame, not once in
-    /// every phase.
+    /// **An agent runs in one phase, `OUTPUT` unless it says otherwise.**
     #[test]
     fn the_default_timing_runs_in_output() {
         assert_eq!(ExecutionTiming::default().phase, ExecutionPhase::OUTPUT);

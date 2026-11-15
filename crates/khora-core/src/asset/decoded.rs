@@ -30,13 +30,16 @@ pub struct Decoded {
     /// The Rust type asked for (`TypeId::of::<A>()`): `value`, when `Ok`,
     /// holds an `A`.
     pub type_id: TypeId,
-    /// The decoded asset, or why it could not be decoded (not indexed, no
-    /// decoder, unreadable bytes, integrity failure, another type than asked
-    /// for).
+    /// The decoded asset, or why it could not be decoded.
+    ///
+    /// The reasons: not indexed, no decoder, unreadable bytes, integrity
+    /// failure, another type than asked for.
     pub value: Result<Box<dyn Any + Send>, String>,
-    /// Each container file the decode opened (a glTF read for one of its
-    /// parts, or decoded whole), with the files it read besides its own, as
-    /// asset keys. Empty for a file that is no container.
+    /// Each container file the decode opened, with the other files it read,
+    /// as asset keys.
+    ///
+    /// A container is a glTF read for one of its parts or decoded whole.
+    /// Empty for a file that is no container.
     pub external_files: Vec<(AssetUUID, Vec<String>)>,
 }
 

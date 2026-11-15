@@ -21,13 +21,11 @@ use khora_core::event::Supersedes;
 
 use super::CompileTicket;
 
-/// Recompile `modules` of the assets root `root` — and every module
+/// A request to recompile `modules` of one assets root, with every module
 /// importing one of them; a module whose file is gone is withdrawn.
 ///
-/// Filed by the hot-reload pump, taken by the `loading` family's lanes. A newer
-/// request of a root replaces a waiting one only when it names every module
-/// the waiting one does (nothing is lost); the requests of one root that
-/// remain are merged by the lane, which compiles each root once per run.
+/// Taken by the `loading` family's lanes, which merge the waiting requests of a
+/// root and compile each root once per run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompileRequest {
     /// The assets root whose script folder holds the modules.
@@ -41,7 +39,7 @@ pub struct CompileRequest {
 }
 
 impl CompileRequest {
-    /// A request of `root` naming `modules`, which no ticket waits on.
+    /// Creates a request of `root` naming `modules`, which no ticket waits on.
     pub fn new(root: impl Into<PathBuf>, modules: impl IntoIterator<Item = String>) -> Self {
         Self {
             root: root.into(),
@@ -54,9 +52,8 @@ impl CompileRequest {
 impl Supersedes for CompileRequest {
     const COALESCES: bool = true;
 
-    /// The same root, every module `earlier` names named again, and every
-    /// ticket waiting on it carried: a request no one waits on never takes
-    /// the place of a mount's.
+    /// Same root, and every module and ticket of `earlier` carried: nothing
+    /// is lost, and a request no one waits on never replaces a mount's.
     fn supersedes(&self, earlier: &Self) -> bool {
         self.root == earlier.root
             && self.modules.is_superset(&earlier.modules)

@@ -39,9 +39,9 @@ impl FontHandle {
     }
 }
 
-/// A named font face inside a pack. The name is used by the backend to
-/// register the font in its registry and (where applicable) to make it
-/// addressable by user code.
+/// A named font face inside a pack.
+///
+/// The backend registers the face under its name, which user code can then address.
 #[derive(Debug, Clone)]
 pub struct NamedFont {
     /// Stable identifier (e.g. `"geist-regular"`, `"geist-mono"`).
@@ -62,18 +62,20 @@ pub struct FontPack {
     pub proportional: Vec<NamedFont>,
     /// Monospaced faces. The first one becomes the default monospace font.
     pub monospace: Vec<NamedFont>,
-    /// Display faces, for headings. The first one is exposed by the
-    /// backend under the family name `"display"` so widgets can reach it via
+    /// Display faces, for headings; the first is the `"display"` family.
+    ///
+    /// Widgets reach it via
     /// [`FontFamilyHint::Display`](super::editor::ui_builder::FontFamilyHint::Display).
     /// When empty, the backend aliases `"display"` to the proportional family.
     pub display: Vec<NamedFont>,
-    /// Icon faces. The first one is exposed by the
-    /// backend under the family name `"icons"` so widgets can reach it via
+    /// Icon faces; the first is the `"icons"` family.
+    ///
+    /// Widgets reach it via
     /// [`FontFamilyHint::Icons`](super::editor::ui_builder::FontFamilyHint::Icons).
     pub icons: Vec<NamedFont>,
-    /// Wordmark faces: the widest cut of the text face, for the product
-    /// name itself. The first one is exposed by the backend under the family
-    /// name `"wordmark"` so widgets can reach it via
+    /// Wordmark faces, the widest cut for the product name; the first is the `"wordmark"` family.
+    ///
+    /// Widgets reach it via
     /// [`FontFamilyHint::Wordmark`](super::editor::ui_builder::FontFamilyHint::Wordmark).
     /// When empty, the backend aliases `"wordmark"` to the display family,
     /// then to the proportional one.

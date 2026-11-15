@@ -12,32 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Live behavior state on its way back into the scene.
+//! Live behavior state on its way back into the behavior's component and its
+//! state companion (`Guard`, `Guard#state`), kept current for a save.
 //!
-//! A behavior's fields live in the script lane while the game runs, and in the
-//! behavior's component and its state companion when the game is saved —
-//! `Guard` and `Guard#state`. Something has to
-//! carry them from the first to the second, and a save can happen at any
-//! moment — so the component has to be current at every moment, not only when
-//! someone asks.
-//!
-//! # Only what did something
-//!
-//! Writing every instance every frame would clone a name and a value per field
-//! per entity in a game that may never save. Writing none until a save is
-//! requested needs a signal that crosses the same boundary the lane exists to
-//! keep, and lands a frame late.
-//!
-//! Neither is necessary, because a behavior that spent no fuel this frame
-//! changed nothing: it handled no event and ran no code. So the lane writes back
-//! exactly the instances that **did work**, which is free in a quiet frame and
-//! costs only where the state genuinely moved.
-//!
-//! It is a separate slot from [`CommandBuffer`] rather than a `SetComponent`
-//! command because the two are different kinds of thing: a command is what a
-//! *script* asked for, and this is the engine reconciling its own bookkeeping.
-//! Folding them together would put engine writes into the conflict report meant
-//! for the author's.
+//! The lane writes back only the instances that did work this frame: one that
+//! spent no fuel changed nothing. This is apart from [`CommandBuffer`], so
+//! engine bookkeeping never enters the conflict report of the author's writes.
 //!
 //! [`CommandBuffer`]: super::CommandBuffer
 
@@ -58,14 +38,17 @@ pub struct BehaviorUpdate {
     /// another script wrote the same frame survives.
     pub changed: Vec<String>,
     /// How many of the frame's [`CommandBuffer`] commands were queued when
-    /// the turn began: a `Set` of its fields at a lower position was read by
-    /// it, and is not a write it lost to.
+    /// the turn began.
+    ///
+    /// A `Set` of its fields at a lower position was read by it, and is not a
+    /// write it lost to.
     ///
     /// [`CommandBuffer`]: super::CommandBuffer
     pub read_until: usize,
-    /// How many of the frame's commands were queued when the turn's writes
-    /// took effect — its end: a `Set` of a changed field at this position or
-    /// later wins over it; one the turn queued itself, before, loses to it.
+    /// How many of the frame's commands were queued when the turn ended.
+    ///
+    /// A `Set` of a changed field at this position or later wins over the
+    /// turn's write; one the turn queued itself, before, loses to it.
     pub emitted_after: usize,
 }
 

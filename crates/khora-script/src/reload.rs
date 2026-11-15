@@ -12,14 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A module that finished recompiling, on its way to the agent that runs it.
-//!
-//! The compiled programs live in the scripting runtime, which the script lane
-//! locks; the `World` never reaches it. Hot-reload happens on the other side
-//! of that line: a file changed, the pump recompiled it, and the result has
-//! to cross over. It crosses through a
-//! [`Channel<ScriptReload>`](khora_core::event::Channel) the agent declares
-//! and drains.
+//! A module that finished recompiling, on its way to the scripting runtime.
 
 use khora_core::event::Supersedes;
 use khora_core::lane::Staged;
@@ -39,9 +32,8 @@ pub struct ScriptReload {
 impl Supersedes for ScriptReload {
     const COALESCES: bool = true;
 
-    /// Two saves of the same file between frames are one reload: applying the
-    /// older after the newer would leave the game running code the author
-    /// already replaced.
+    /// Two saves of one file between frames are one reload: applying the older
+    /// after the newer would run code the author already replaced.
     fn supersedes(&self, earlier: &Self) -> bool {
         self.module == earlier.module
     }

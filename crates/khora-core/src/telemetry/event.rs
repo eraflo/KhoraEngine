@@ -19,15 +19,14 @@ use crate::agent::gorna::AgentId;
 use crate::telemetry::metrics::{MetricId, MetricValue};
 use crate::telemetry::monitoring::{HardwareReport, MonitoredResourceType, ResourceUsageReport};
 
-/// What reaches the DCC on its inbox. Two families share it:
+/// What reaches the DCC on its inbox: the protocol's reports, and the context.
 ///
-/// - **The protocol's reports** — what the work cost and how it ran:
-///   [`AgentReport`](Self::AgentReport), [`FrameReport`](Self::FrameReport),
-///   [`WavePlan`](Self::WavePlan), [`ActivationChanged`](Self::ActivationChanged). Every
-///   time the DCC budgets from comes from one of them.
-/// - **The context** — the situation the work runs in, which no agent
-///   reports: memory, hardware health, the data layer's access patterns
-///   (the other variants).
+/// Every time the DCC budgets from comes from a report
+/// ([`AgentReport`](Self::AgentReport), [`FrameReport`](Self::FrameReport),
+/// [`WavePlan`](Self::WavePlan), [`ActivationChanged`](Self::ActivationChanged));
+/// the other variants are context no agent reports.
+///
+/// See the book: concepts/telemetry.md, "Reports and context".
 #[derive(Debug, Clone)]
 pub enum TelemetryEvent {
     /// A single metric sample update.
@@ -37,8 +36,7 @@ pub enum TelemetryEvent {
         /// The new value.
         value: MetricValue,
     },
-    /// A hardware resource usage report (typically bytes/memory), tagged
-    /// with the resource it measures.
+    /// A hardware resource usage report, tagged with the resource it measures.
     ResourceReport {
         /// The resource the report measures (the monitor's
         /// [`resource_type`](crate::telemetry::monitoring::ResourceMonitor::resource_type)).
@@ -48,35 +46,30 @@ pub enum TelemetryEvent {
     },
     /// A physical hardware health report (thermal, CPU load).
     HardwareReport(HardwareReport),
-    /// The families off in the state in force changed, at a frame boundary:
-    /// the families now off ([`Activation::inactive`](crate::agent::Activation::inactive)).
-    ActivationChanged(std::collections::BTreeSet<AgentId>),
-    /// An agent's report on one run, collected by the scheduler right after
-    /// the run: the row that ran, the time it took on each device (the host's
-    /// as the scheduler measured it), and the workload the run did. The DCC
-    /// fits its cost models, counts overruns and stalls, and journals each
-    /// epoch from these. Best-effort, once per run.
-    AgentReport(Report),
-    /// What one frame cost: the time it kept each device busy, waits for the
-    /// display excluded. Sent once per frame, after the frame.
-    FrameReport(FrameReport),
-    /// The scheduler's per-frame **wave plan**: how the agents will actually be
-    /// grouped for execution. Each inner list is one wave — agents that run
-    /// concurrently — any agents whose declared contentions are disjoint;
-    /// a singleton list is a serially-executed agent. Published only when
-    /// parallel execution is enabled (serial execution needs no grouping — the
-    /// DCC then falls back to summing per-agent costs).
+    /// The families off from this frame boundary on, when they changed.
     ///
-    /// The DCC uses it to cost a concurrent wave by its **critical path**
-    /// (`max` of its members) instead of the sum, so budget fitting doesn't
-    /// leave frame time on the table for work that overlaps.
+    /// See [`Activation::inactive`](crate::agent::Activation::inactive).
+    ActivationChanged(std::collections::BTreeSet<AgentId>),
+    /// An agent's report on one run, sent by the scheduler right after it, best-effort.
+    ///
+    /// The DCC fits its cost models, counts overruns and stalls, and journals
+    /// each epoch from these.
+    AgentReport(Report),
+    /// What one frame cost on each device, display waits excluded; sent after each frame.
+    FrameReport(FrameReport),
+    /// The scheduler's per-frame wave plan: the agents grouped into concurrent waves.
+    ///
+    /// Published only with parallel execution on. The DCC costs a wave by its
+    /// critical path (the `max` of its members) rather than the sum; without a
+    /// plan it sums per-agent costs.
     WavePlan {
         /// Agent ids grouped by wave, in execution order.
         waves: Vec<Vec<AgentId>>,
     },
-    /// A per-component access-pattern snapshot from the ECS, for the layout
-    /// advisor (AGDF). Cumulative counters, sampled at a low rate (not every
-    /// frame); the DCC turns them into a read-only layout recommendation.
+    /// A per-component access-pattern snapshot from the ECS, for the AGDF layout advisor.
+    ///
+    /// Cumulative counters, sampled at a low rate; the DCC turns them into a
+    /// read-only layout recommendation.
     ComponentAccess {
         /// Component type name (for the glass-box report).
         type_name: String,

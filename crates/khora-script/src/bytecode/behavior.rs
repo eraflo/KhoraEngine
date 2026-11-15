@@ -26,11 +26,9 @@ use crate::ast::BehaviorMember;
 impl Compiler {
     /// Compiles a behavior's members, each as a function of its own.
     ///
-    /// A member is not special at run time: `on Damaged(int amount)` becomes a
-    /// function taking an `int`, named `Guard.Damaged` so the dispatcher can
-    /// find it. What makes it a *member* is the field table in scope while it
-    /// compiles — which is why the fields are assigned slots first, before any
-    /// body is read, so a member can name a field declared below it.
+    /// `on Damaged(int amount)` becomes a function taking an `int`, named
+    /// `Guard.Damaged` so the dispatcher can find it. Every field has its slot
+    /// before any body compiles, so a member can name a field declared below it.
     pub(super) fn compile_behavior(&mut self, decl: &crate::ast::BehaviorDecl, system: bool) {
         self.fields.clear();
         let mut layout = crate::vm::BehaviorLayout {
@@ -101,8 +99,7 @@ impl Compiler {
         }
 
         // A state's own schedules, after its slots exist so the discriminant is
-        // known. `every 0.5s` written inside `Patrol` was collected by nobody
-        // before this, so it compiled and never fired.
+        // known: `every 0.5s` written inside `Patrol` fires only while patrolling.
         for member in &decl.members {
             let BehaviorMember::State(state) = member else {
                 continue;
@@ -130,11 +127,9 @@ impl Compiler {
                 self.compile_state(&decl.name, state);
                 continue;
             }
-            // Through the same pair `collect_signatures` used, so the name a
-            // body is emitted under is by construction the name an index was
-            // counted for. Fields fall out here, and a scheduled body is a
-            // function of no arguments emitted below — what makes it scheduled
-            // is the countdown the layout records, not anything about the code.
+            // Through the same pair `collect_signatures` used, so a body is
+            // emitted under the name its index was counted for. Fields fall out
+            // here; a scheduled body is a function of no arguments emitted below.
             let Some((name, _, _)) = member_signature(&decl.name, None, member) else {
                 continue;
             };
@@ -158,13 +153,10 @@ impl Compiler {
         self.behavior = None;
     }
 
-    /// Compiles a state's members, with its own data in scope alongside the
-    /// behavior's.
+    /// Compiles a state's members, its own data in scope beside the behavior's.
     ///
-    /// A state's member is a function like any other, named
-    /// `Guard.Patrol.Update` so dispatch can prefer it over the behavior's own.
-    /// What makes it a *state's* member is only which slots it can name — which
-    /// is the containment `state` exists to give.
+    /// Each is named `Guard.Patrol.Update` so dispatch can prefer it over the
+    /// behavior's own.
     fn compile_state(&mut self, behavior: &str, decl: &crate::ast::StateDecl) {
         let Some(layout) = self.behavior.clone() else {
             return;
@@ -258,9 +250,10 @@ impl Compiler {
     }
 }
 
-/// A field's default as data: the constant written, completed against the
-/// program's structs, or its type's neutral value. The checker refuses
-/// anything else; a program that was refused gets `null`.
+/// A field's default as data: the constant written, else its type's neutral value.
+///
+/// The constant is completed against the program's structs. The checker
+/// refuses anything else; a program that was refused gets `null`.
 fn field_default(
     field: &crate::ast::Field,
     structs: &[crate::vm::StructLayout],

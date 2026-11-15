@@ -271,9 +271,10 @@ impl FrameComponents {
         rows
     }
 
-    /// How many candidates [`matching`](Self::matching) visits for `all`: the
-    /// holders, projected or added this frame, of the component of `all` the
-    /// fewest entities hold.
+    /// Returns how many candidates [`matching`](Self::matching) visits for `all`.
+    ///
+    /// They are the holders, projected or added this frame, of the component
+    /// of `all` the fewest entities hold.
     pub fn scan_cost(&self, all: &[&str]) -> usize {
         self.driver(all)
             .map_or(0, |driver| self.holders_of(driver).count())
@@ -310,10 +311,11 @@ impl FrameComponents {
     }
 
     /// Takes a command a script queued into the working set, as the frame
-    /// boundary will apply it: a write changes the copy, an add attaches the
-    /// defaults with the patch, a removal detaches. Only a projected component
-    /// is tracked — no loaded program reads the others — and a command the
-    /// boundary would refuse changes nothing here either.
+    /// boundary will apply it.
+    ///
+    /// A write changes the copy, an add attaches the defaults with the patch, a
+    /// removal detaches. Only a projected component is tracked, and a command
+    /// the boundary would refuse changes nothing here either.
     pub fn observe(&mut self, command: &WorldCommand) {
         match command {
             WorldCommand::SetComponent {

@@ -144,12 +144,11 @@ impl Declaration {
         &self.outputs
     }
 
-    /// What the declaration contends for: `#[resource]` and `#[resident]`
-    /// reads, `#[locked]` locks, the `FrameContext` a `#[frame]` target or
-    /// clear colour is lent from, and the slots `#[deck]` and `#[pass]`
-    /// outputs write. A View, a deck read,
-    /// the frame and the budget are nobody else's to write while the lane
-    /// runs, so they contend for nothing.
+    /// Returns what the declaration contends for: runtime reads and locks, deck reads and writes.
+    ///
+    /// A `#[take]` locks its channel; a `#[frame]` target or clear colour
+    /// reads the `FrameContext`. A View, the fixed step and the budget are
+    /// nobody else's to write while the lane runs, so they contend for nothing.
     pub fn contention(&self) -> Contention {
         let mut contention = Contention::none();
         let frame_context = TypeId::of::<Arc<FrameContext>>();

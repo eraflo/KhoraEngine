@@ -17,11 +17,10 @@
 use super::spec::LayoutSpec;
 use crate::renderer::api::shader::ShaderVariantKey;
 
-/// Declarative description of a compute pipeline. Mirrors [`PipelineSpec`](super::PipelineSpec) for
-/// the compute path (no vertex / depth / color state). The backend resolves the
-/// bind-group layouts, compiles the compute shader for the variant, and builds +
-/// caches the pipeline keyed by [`ComputePipelineKey`]. Used by Forward+ light
-/// culling.
+/// Declarative description of a compute pipeline, the compute counterpart of
+/// [`PipelineSpec`](super::PipelineSpec).
+///
+/// The backend caches the built pipeline by [`ComputePipelineKey`].
 #[derive(Debug, Clone)]
 pub struct ComputePipelineSpec {
     /// Debug label.
@@ -37,8 +36,8 @@ pub struct ComputePipelineSpec {
 }
 
 impl ComputePipelineSpec {
-    /// The cache key: `(shader, variant)`. For a given shader + variant the
-    /// rest of the compute config is fixed.
+    /// Returns the cache key: shader and variant, which fix the rest of the
+    /// compute configuration.
     pub fn key(&self) -> ComputePipelineKey {
         ComputePipelineKey {
             shader: self.shader,

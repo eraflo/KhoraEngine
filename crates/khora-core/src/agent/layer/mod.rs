@@ -12,16 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Lanes as layers: the per-frame work of a family, apart from its agent.
+//! Lanes as layers: the per-frame work of a family, installed at its [`Place`].
 //!
-//! A [`Layer`] is one lane instance of the family's own, already prepared at
-//! one level. Each family has a fixed [`Place`] in the frame — its phase and
-//! its pass slot — where one layer is installed. The scheduler applies the
-//! installed layer every frame without the agent; the agent is woken only by
-//! a [`Wake`]. On waking it prepares a new layer beside the installed one,
-//! which the place swaps in at the next frame start, at the same place. The
-//! layer swapped out is kept ready for [`KEEP_EPOCHS`] epochs, then shut
-//! down: swapping back to it within that time prepares nothing.
+//! See the book: concepts/agents-and-lanes.md, "Lanes are layers".
 
 mod place;
 mod preparation;
@@ -49,41 +42,40 @@ pub trait Layer: Send {
     /// The row the layer runs.
     fn row(&self) -> StrategyId;
 
-    /// The level of its lane the layer runs: the place in a run's
-    /// [`costs`](LayerRun::costs) of what the run itself quoted. `None` for a
-    /// layer whose runs price no level of their own.
+    /// The level of its lane the layer runs, as an index into [`LayerRun::costs`].
+    ///
+    /// `None` for a layer whose runs price no level of their own.
     fn level(&self) -> Option<usize> {
         None
     }
 
-    /// What the layer's lane competes for: its declaration. The scheduler
-    /// builds its waves from it and stamps it on the run's context.
+    /// What the layer's lane competes for: the scheduler builds its waves from it.
     fn contention(&self) -> Contention;
 
     /// The memory the layer holds on each device while it is prepared, run or
     /// kept.
     fn memory(&self) -> PerDevice<u64>;
 
-    /// One run of the frame: fetch, record, cost every level of the lane,
-    /// commit, on the `terms` the agent lent (the budget a `#[budget]` lane is
-    /// lent, the fixed step). Raises a [`Wake`] when its agent must choose
-    /// again.
+    /// Runs the lane once on the `terms` the agent lent, costing every level.
+    ///
+    /// Raises a [`Wake`] in the result when its agent must choose again.
     fn run(&mut self, terms: &Terms, context: &mut EngineContext<'_>) -> LayerRun;
 
     /// Releases what the layer's lane built on the device.
     fn shutdown(&mut self, gpu: &mut GpuSetup<'_>);
 
-    /// Takes what the layer's runs staged through `#[staged]` outputs since
-    /// it was last asked, for the scheduler to hand to the runtime's
-    /// [`Reserve`](crate::lane::Reserve) at a frame start. Defaults to
-    /// nothing.
+    /// Takes what the layer's runs staged through `#[staged]` outputs since last asked.
+    ///
+    /// The scheduler hands it to the runtime's [`Reserve`](crate::lane::Reserve)
+    /// at a frame start. Defaults to nothing.
     fn staged(&mut self) -> crate::lane::Staging {
         crate::lane::Staging::new()
     }
 
-    /// Called each time the layer is installed at its place: first, or
-    /// swapped back in from the layers kept. What it watches its runs for
-    /// starts afresh, as for a layer just prepared. Defaults to nothing.
+    /// Restarts what the layer watches its runs for, each time it is installed.
+    ///
+    /// Called on the first install and on a swap back from the layers kept.
+    /// Defaults to nothing.
     fn installed(&mut self) {}
 }
 

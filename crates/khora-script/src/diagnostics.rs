@@ -16,9 +16,8 @@
 //!
 //! Ergon's whole argument for existing is that it fits gameplay work better
 //! than a general-purpose language. A compiler whose errors read like
-//! `unexpected token at 1247` fails that argument on first contact, so
-//! diagnostics are built first and everything downstream is required to use
-//! them.
+//! `unexpected token at 1247` fails that argument on first contact, so every
+//! stage reports through these diagnostics.
 //!
 //! Every error carries a [`Span`], and a [`Diagnostic`] renders as the offending
 //! line with a caret under the exact characters at fault:

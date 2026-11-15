@@ -12,29 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What a script does to the world.
-//!
-//! Apart from [`builtins`](super::builtins), which compute and report, these are
-//! the functions that *change* something — and none of them changes anything.
-//! Each queues a [`WorldCommand`] into the frame's buffer, which the engine
-//! applies at the boundary where mutation is legal.
-//!
-//! That is not a workaround for `RULES.md` §3. It is what lets the scripting
-//! lane run beside the others on the worker pool: a lane holding a
-//! `&mut World` never could.
-//!
-//! The engine types these take — `Vec3` and the rest — are declared in
-//! [`engine_types`](super::engine_types), constructors and all.
-//!
-//! # Reading is narrower than writing, on purpose
-//!
-//! A script may write any entity it has a handle to, and may read only its own
-//! position — because a write is a *request*, resolved later against the real
-//! `World`, while a read has to be answered now from what the frame projected.
-//! Widening the read side means projecting more into the view for every entity
-//! whether or not a script asks. When something needs it, that is the change to
-//! make; guessing at it now would cost every frame for a feature nobody has
-//! written yet.
+//! What a script does to the world: each native queues a [`WorldCommand`],
+//! applied at the frame's boundary, never at the call.
+//! See the book: concepts/scripting/writing.md, "A script never writes the world".
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::math::{Quaternion, Vec3};
@@ -51,11 +31,8 @@ pub const SUBJECT_NATIVES: &[&str] = &["Position"];
 
 /// Where this entity is, as the frame projected it.
 ///
-/// The value the frame *started* with. A `Translate` queued a moment ago has not
-/// been applied yet and is not reflected here — commands are performed at the
-/// boundary, so within one turn a behavior sees the world it was handed. Reading
-/// back a write inside the same frame would need the boundary to run mid-lane,
-/// which is the thing the whole design is arranged to avoid.
+/// The value the frame started with: a `Translate` queued in the same turn is
+/// not reflected until the boundary applies it.
 #[ergon_fn]
 fn position(context: &mut NativeContext<'_>) -> Result<Vec3, NativeError> {
     context.position.ok_or_else(|| {
@@ -70,9 +47,8 @@ fn position(context: &mut NativeContext<'_>) -> Result<Vec3, NativeError> {
 
 /// Moves the entity, relative to where it already is.
 ///
-/// Distinct from [`set_position`] at the boundary, not just here: two behaviors
-/// nudging the same entity **compose**, so neither loses a write, while two
-/// placing it conflict and one of the two is discarded.
+/// Two behaviors nudging the same entity compose at the boundary, while two
+/// [`set_position`]s conflict and one is discarded.
 #[ergon_fn]
 fn translate(context: &mut NativeContext<'_>, entity: EntityId, delta: Vec3) {
     context
@@ -96,9 +72,10 @@ fn set_rotation(context: &mut NativeContext<'_>, entity: EntityId, value: Quater
         .push(WorldCommand::SetRotation { entity, value });
 }
 
-/// The component placed by its own operations rather than written as one, and
-/// those operations: they allocate nothing and look nothing up, which is why
-/// they exist. A script writing `Transform` is pointed at them.
+/// The component placed by its own operations rather than written, with them.
+///
+/// They allocate nothing and look nothing up; a script writing `Transform` is
+/// pointed at them.
 pub const PLACEMENT: (&str, &[&str]) = (
     "Transform",
     &["SetPosition", "Translate", "SetRotation", "SetScale"],
@@ -116,13 +93,9 @@ fn set_scale(context: &mut NativeContext<'_>, entity: EntityId, value: Vec3) {
 
 /// Destroys the entity, and everything parented to it.
 ///
-/// The subtree goes because a child of a destroyed entity has nowhere to be:
-/// leaving it would produce an entity whose parent no longer exists, which is a
-/// state nothing else in the engine knows how to render or simulate.
-///
-/// A behavior that despawns itself still finishes the member it is in, and its
-/// `OnDespawn` runs before the frame ends — the entity is doomed from here, not
-/// gone.
+/// A child of a destroyed entity would have no parent, so the subtree goes. A
+/// behavior that despawns itself still finishes the member it is in, and its
+/// `OnDespawn` runs before the frame ends.
 #[ergon_fn]
 fn despawn(context: &mut NativeContext<'_>, entity: EntityId) {
     context.commands.push(WorldCommand::Despawn { entity });
@@ -132,10 +105,8 @@ fn despawn(context: &mut NativeContext<'_>, entity: EntityId) {
 
 /// Attaches the entity under a new parent.
 ///
-/// The engine refuses a cycle at the boundary rather than here: whether `parent`
-/// is already below `entity` depends on the `World`, which a lane cannot ask.
-/// The command is diagnosed and dropped, and the rest of the frame's work
-/// continues.
+/// A cycle is refused at the boundary, where the `World` can tell: the command
+/// is diagnosed and dropped, and the frame's other work continues.
 #[ergon_fn]
 fn set_parent(context: &mut NativeContext<'_>, entity: EntityId, parent: EntityId) {
     context.commands.push(WorldCommand::SetParent {
@@ -146,9 +117,8 @@ fn set_parent(context: &mut NativeContext<'_>, entity: EntityId, parent: EntityI
 
 /// Detaches the entity from whatever it was parented to.
 ///
-/// Its own function rather than `e.SetParent(null)`: an optional `Entity`
-/// argument would make every hierarchy call carry a nullable the caller has to
-/// think about, to express something that is a different intent anyway.
+/// Its own function rather than `e.SetParent(null)`, so no hierarchy call
+/// carries a nullable parent.
 #[ergon_fn]
 fn detach(context: &mut NativeContext<'_>, entity: EntityId) {
     context.commands.push(WorldCommand::SetParent {

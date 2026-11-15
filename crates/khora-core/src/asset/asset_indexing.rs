@@ -21,9 +21,10 @@ use super::{IndexRequest, IndexedAssets};
 /// Indexes the project an [`IndexRequest`] names, off the frame, from the
 /// `loading` family's lanes: it touches no `World` and no asset service.
 pub trait AssetIndexing: Send + Sync {
-    /// Indexes `request`'s project, and says what the result holds to: a
-    /// [`Lease`] that stops holding once the project it was filed for is
-    /// no longer the one open. Never panics: a failure is an `Err` in
+    /// Indexes `request`'s project, with the [`Lease`] its result holds to.
+    ///
+    /// The lease stops holding once the project it was filed for is no longer
+    /// the one open. Never panics: a failure is an `Err` in
     /// [`IndexedAssets::index`].
     fn index_leased(&self, request: &IndexRequest) -> (IndexedAssets, Option<Lease>);
 }

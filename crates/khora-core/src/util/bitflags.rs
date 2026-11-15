@@ -37,22 +37,16 @@ macro_rules! khora_bitflags {
 
             /// Every bit any declared flag occupies.
             ///
-            /// Generated from the declaration itself, so it cannot fall behind
-            /// it. A backend bridge asserts against this to prove it translates
-            /// **every** flag rather than the ones somebody remembered — which
-            /// is how [`BufferUsage`] came to drop `MAP_READ`, `MAP_WRITE` and
-            /// `QUERY_RESOLVE` on the way to wgpu, in silence, for as long as
-            /// nobody asked for a mappable buffer.
-            ///
-            /// Composite flags contribute no bits their parts do not already
-            /// contribute, so a coverage check written against this is not
-            /// fooled by an `ALL`.
+            /// Generated from the declaration, so it cannot fall behind it. A
+            /// backend bridge (e.g. of [`BufferUsage`]) asserts against it to
+            /// prove it translates **every** flag. A composite flag adds no bit
+            /// its parts do not, so an `ALL` does not fool such a check.
             ///
             /// [`BufferUsage`]: crate::renderer::api::resource::BufferUsage
             pub const ALL_DECLARED: Self = Self { bits: 0 $( | $flag_value )* };
 
-            /// Creates a new bitflag set from the given raw bits.
-            /// Bits not corresponding to any defined flag are kept.
+            /// Creates a bitflag set from raw bits, keeping the bits of no
+            /// defined flag.
             pub const fn from_bits_truncate(bits: $ty) -> Self {
                 Self { bits }
             }
@@ -155,7 +149,7 @@ macro_rules! khora_bitflags {
             }
         }
 
-        // Optimized Debug implementation (no runtime allocations)
+        // Writes straight to the formatter, allocating nothing.
         impl core::fmt::Debug for $name {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 let mut bits = self.bits;
@@ -164,19 +158,17 @@ macro_rules! khora_bitflags {
                 write!(f, "{} {{ ", stringify!($name))?;
 
                 $(
-                    // Only process flags that are non-zero.
-                    // Check if the flag's bits are actually present in the current_bits.
+                    // A zero flag is never printed.
                     if ($flag_value != 0) && (bits & $flag_value) == $flag_value {
                         if !first_flag {
                             write!(f, " | ")?;
                         }
                         write!(f, "{}", stringify!($flag_name))?;
-                        bits &= !$flag_value; // Clear these bits from the remaining set
+                        bits &= !$flag_value;
                         first_flag = false;
                     }
                 )*
 
-                // Handle any remaining unknown bits
                 if bits != 0 {
                     if !first_flag {
                         write!(f, " | ")?;
@@ -185,9 +177,6 @@ macro_rules! khora_bitflags {
                     first_flag = false;
                 }
 
-                // If after checking all flags (and unknown bits), the original value was 0,
-                // and no named flags were printed (meaning `first_flag` is still true),
-                // then explicitly print "EMPTY".
                 if self.bits == 0 && first_flag {
                     write!(f, "EMPTY")?;
                 }
@@ -215,12 +204,10 @@ mod tests {
         }
     }
 
-    /// `ALL_DECLARED` is the union of every declared flag, generated from the
-    /// declaration so it cannot fall behind it.
+    /// `ALL_DECLARED` is the union of every declared flag.
     ///
-    /// A composite adds no bits its parts do not already add — `COMBINED_AC`
-    /// here — which is what lets a coverage check written against this treat
-    /// composites as free rather than as flags to be bridged.
+    /// A composite (`COMBINED_AC` here) adds no bit its parts do not, so a
+    /// coverage check treats composites as free.
     #[test]
     fn all_declared_is_the_union_of_every_flag() {
         let by_hand = TestFlags::FLAG_A
@@ -236,9 +223,7 @@ mod tests {
         );
     }
 
-    /// The reason it exists: something that translates these flags elsewhere
-    /// can prove it covers all of them, instead of covering the ones whoever
-    /// wrote it remembered.
+    /// A translation that forgets a flag is told apart from a complete one.
     #[test]
     fn a_forgotten_flag_leaves_an_uncovered_bit() {
         let partial = TestFlags::FLAG_A | TestFlags::FLAG_B;
@@ -433,10 +418,8 @@ mod tests {
     fn test_bitwise_not_operator() {
         let flags = TestFlags::FLAG_A;
         let result = !flags;
-        assert_eq!(result.bits(), !TestFlags::FLAG_A.bits()); // Value depends on the underlying integer type
-                                                              // Debug output for NOT might be complex due to UNKNOWN bits
-                                                              // For u32, !1 is 0xFFFFFFFE, which is a lot of unknown bits.
-                                                              // We'll just assert the raw bits for now.
+        // The raw bits only: the complement sets many unknown bits.
+        assert_eq!(result.bits(), !TestFlags::FLAG_A.bits());
     }
 
     #[test]
@@ -452,9 +435,8 @@ mod tests {
 
     #[test]
     fn test_assign_and_operator() {
-        let mut flags = TestFlags::FLAG_A | TestFlags::FLAG_B | TestFlags::FLAG_C; // 0b0111 = 7
-                                                                                   // AND with (FLAG_B | FLAG_D) = 0b0010 | 0b1000 = 0b1010 = 10
-                                                                                   // Expected result: 0b0111 & 0b1010 = 0b0010 (FLAG_B) = 2
+        // 0b0111 & 0b1010 = 0b0010, FLAG_B alone.
+        let mut flags = TestFlags::FLAG_A | TestFlags::FLAG_B | TestFlags::FLAG_C;
         flags &= TestFlags::FLAG_B | TestFlags::FLAG_D;
         assert_eq!(flags.bits(), TestFlags::FLAG_B.bits());
         assert_eq!(format!("{flags:?}"), "TestFlags { FLAG_B }");
@@ -496,12 +478,7 @@ mod tests {
 
     #[test]
     fn test_debug_formatting_only_unknown() {
-        // This test case needs to ensure NO known flags are set.
-        // FLAG_A = 1<<0, FLAG_B = 1<<1, FLAG_C = 1<<2, FLAG_D = 1<<3
-        // So, 0xFF (0b11111111) is actually *not* only unknown; it contains A, B, C, D.
-        // A truly "only unknown" value would be one where bits 0-3 are zero,
-        // and 1<<20 is zero, but other bits are set.
-        // Example: (1 << 4) | (1 << 5) = 0b110000 = 48 (0x30)
+        // Bits 0-3 and 20 are the known flags; bits 4 and 5 are none of them.
         let flags = TestFlags::from_bits_truncate((1 << 4) | (1 << 5));
         assert_eq!(format!("{flags:?}"), "TestFlags { UNKNOWN(0x30) }");
 

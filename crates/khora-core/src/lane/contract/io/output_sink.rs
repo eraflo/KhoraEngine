@@ -24,8 +24,7 @@ use crate::lane::OutputDeck;
 use crate::renderer::traits::PipelineSystem;
 use crate::renderer::GraphicsDevice;
 
-/// Where a lane's outputs go for one frame: the deck slots and pass slots its
-/// family declared, committed by the agent after the lane ran.
+/// Where a lane's outputs go for one frame: its family's deck, pass and staged slots.
 pub struct OutputSink<'f> {
     deck: &'f mut OutputDeck,
     /// The slot types committed through this sink.
@@ -53,9 +52,9 @@ impl<'f> OutputSink<'f> {
         }
     }
 
-    /// The same sink, its deck outputs opening on what `seed` holds this
-    /// frame: a lane run once per fixed sub-step adds to what the earlier
-    /// sub-steps wrote, and one that writes the whole value replaces it.
+    /// Returns the same sink, its deck outputs opening on what `seed` holds this frame.
+    ///
+    /// A lane run once per fixed sub-step so adds to what earlier sub-steps wrote.
     pub fn with_seed(mut self, seed: &'f OutputDeck) -> Self {
         self.seed = Some(seed);
         self
@@ -84,15 +83,19 @@ impl<'f> OutputSink<'f> {
         self.pipelines
     }
 
-    /// The same sink, its `#[staged]` outputs going into `staging`: what one
-    /// run staged, handed to the family's reserve once the run is over.
+    /// Returns the same sink, its `#[staged]` outputs going into `staging`.
+    ///
+    /// The staging is handed to the family's reserve once the run is over.
     pub fn with_staging(mut self, staging: &'f mut Staging) -> Self {
         self.staging = Some(staging);
         self
     }
 
-    /// Stages `items` into the run's staging. Refused as `Missing`, naming
-    /// `field`, by a sink lent no staging.
+    /// Stages `items` into the run's staging.
+    ///
+    /// # Errors
+    ///
+    /// Refused as `Missing`, naming `field`, by a sink lent no staging.
     pub fn stage<T: Staged>(
         &mut self,
         field: &'static str,
@@ -109,8 +112,11 @@ impl<'f> OutputSink<'f> {
         Ok(())
     }
 
-    /// Stages `items`, written to `field`, under `lease`: the reserve takes
-    /// them in only while it holds.
+    /// Stages `items`, written to `field`, under `lease`: the reserve takes them while it holds.
+    ///
+    /// # Errors
+    ///
+    /// Refused as `Missing`, naming `field`, by a sink lent no staging.
     pub fn stage_while<T: Staged>(
         &mut self,
         field: &'static str,
@@ -136,9 +142,12 @@ impl<'f> OutputSink<'f> {
             .unwrap_or_default()
     }
 
-    /// Writes `value` into the deck slot `T`. A slot holds one value a frame:
-    /// a second write through the same sink is refused, naming `field`, and
-    /// the first value stays.
+    /// Writes `value` into the deck slot `T`; a slot holds one value a frame.
+    ///
+    /// # Errors
+    ///
+    /// Refused, naming `field`, on a second write through the same sink; the
+    /// first value stays.
     pub fn put<T: Default + Any + Send + Sync>(
         &mut self,
         field: &'static str,
@@ -147,8 +156,11 @@ impl<'f> OutputSink<'f> {
         self.write(field, SinkKind::Deck, value)
     }
 
-    /// Writes a closed pass into its slot `P`, refused as
-    /// [`put`](Self::put) refuses a second write.
+    /// Writes a closed pass into its slot `P`.
+    ///
+    /// # Errors
+    ///
+    /// As [`put`](Self::put).
     pub fn put_pass<P: PassSlot>(
         &mut self,
         field: &'static str,

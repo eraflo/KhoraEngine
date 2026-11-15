@@ -12,17 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A machine to and from the engine's written-down form.
+//! A [`Machine`] to and from [`FrozenMachine`], the written-down form a scene keeps.
 //!
-//! [`FrozenMachine`] is what a scene keeps; [`Machine`] is what runs. The
-//! conversion names what the machine numbers — a frame's function, a literal's
-//! text — against the program the machine runs in, and resolves those names
-//! against the program it is thawed into.
-//!
-//! Each frame also records the site it stands at, its function's fingerprint,
-//! and the locals and temporaries of that site: enough for
-//! [`resume`](super::resume) to rebuild it in edited code, after the program
-//! that placed them is gone.
+//! Freezing names what the machine numbers — a frame's function, a literal's
+//! text — and records each frame's site, fingerprint, locals and temporaries:
+//! enough for [`resume`](super::resume()) to rebuild it in edited code.
 
 use khora_core::script::{FrozenFrame, FrozenLocal, FrozenMachine, FrozenValue, PendingBody};
 
@@ -72,12 +66,10 @@ impl Machine {
                     Some(callee) => callee.return_pc,
                     None => self.program_counter,
                 };
-                // The first site at that counter: a function's entry before the
-                // statement that starts there, an `await` before the statement
-                // that follows it — the place the frame actually stopped. Where
-                // a call's return and a checkpoint share a counter, a frame still
-                // waiting on its call stands at the return, the innermost one at
-                // the checkpoint.
+                // The first site at that counter, an entry or an `await` coming
+                // before the statement that shares it. Where a call's return and
+                // a checkpoint share one, a frame still waiting on its call stands
+                // at the return, the innermost one at the checkpoint.
                 let innermost = depth + 1 == self.frames.len();
                 let at = |site: &&super::Site| site.pc as usize == pc;
                 let preferred = |site: &&super::Site| match site.kind {

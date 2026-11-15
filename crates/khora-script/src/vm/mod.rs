@@ -12,30 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The interruptible virtual machine.
+//! The interruptible virtual machine: run on fuel, stopped at a safepoint, resumed.
 //!
-//! # The contract
-//!
-//! Running with a fuel budget either finishes, or stops and hands back a
-//! machine that can be resumed. **Resuming must be indistinguishable from never
-//! having stopped** — the invariant the tests defend at every possible
-//! interruption point, not at a sampled few.
-//!
-//! # Fuel
-//!
-//! Every instruction costs fuel. The DCC's frame budget becomes a fuel
-//! allowance, so a script that would overrun its share stops mid-way and
-//! resumes next frame. Observable behaviour never changes — only *when* the
-//! work happens, which is the engine's rule of adapting the HOW and never the
-//! WHAT.
-//!
-//! # Calls
-//!
-//! Frames are explicit rather than recursive Rust calls. A native recursion
-//! would put the interpreter's own stack in the middle of the machine state,
-//! and that state has to be freezable — mid-call, mid-`await`, into a saved
-//! scene. Everything that must survive lives in [`Machine`], and nothing else
-//! does.
+//! Resuming is indistinguishable from never having stopped, at every place a
+//! run can stop. Frames are explicit rather than Rust recursion, so everything
+//! that must survive a stop — mid-call, mid-`await`, into a saved scene — lives
+//! in [`Machine`]. See the book: concepts/scripting/turns.md, "Stopping is ordinary".
 
 mod commands;
 mod cost;
@@ -102,8 +84,8 @@ pub struct Machine {
     /// The call stack, outermost first.
     frames: Vec<Frame>,
     /// Index of the *next* instruction in the innermost frame's function.
-    /// Suspending is nothing more than returning while this points at work not
-    /// yet done.
+    ///
+    /// Suspending is returning while this points at work not yet done.
     program_counter: usize,
     /// Set once the program has halted or faulted, so a resume cannot restart
     /// a finished program.
@@ -115,9 +97,11 @@ pub struct Machine {
     /// again from its entry, and it has to be handed what it was handed then.
     #[serde(default)]
     arguments: Vec<Value>,
-    /// The text and arrays the registers and arguments referenced when the
-    /// machine last suspended, each named by a [`StrRef::Held`] or an
-    /// [`ObjRef::Held`]. Empty while it runs.
+    /// The text and arrays the registers and arguments referenced at the last
+    /// suspension.
+    ///
+    /// Each is named by a [`StrRef::Held`] or an [`ObjRef::Held`]. Empty while
+    /// it runs. See the book: concepts/scripting/turns.md, "Text outlives the stop".
     #[serde(default)]
     held: Vec<crate::arena::Owned>,
     /// Where in the arena each held value was copied from — see
@@ -213,12 +197,10 @@ impl Machine {
         self.run_counting(program, host, fuel).0
     }
 
-    /// Runs, and reports how much fuel was actually spent.
+    /// Runs, and reports how much fuel was actually spent, overdraft included.
     ///
-    /// A caller sharing one budget across many programs needs the second number:
-    /// without it, it can only count *calls*, and a call is not a unit of work —
-    /// one handler is a dozen instructions and another is a thousand. Counting
-    /// calls would hand the same slice to both and call that a budget.
+    /// A caller sharing one budget across many programs charges each by the
+    /// fuel it spent: a call is not a unit of work.
     pub fn run_counting(&mut self, program: &Program, host: &mut Host, fuel: u64) -> (Run, u64) {
         let mut remaining = fuel;
         let mut overdraft = 0;
@@ -239,9 +221,10 @@ impl Machine {
         (outcome, fuel.saturating_sub(remaining) + overdraft)
     }
 
-    /// The run loop. `remaining` is left holding what was not spent;
-    /// `overdraft` what the run spent beyond `fuel`, running on to the next
-    /// safepoint once the slice was used up.
+    /// The run loop; leaves in `remaining` the fuel not spent.
+    ///
+    /// `overdraft` gains what the run spent past its fuel, running on to the
+    /// next safepoint once the slice was used up.
     fn run_inner(
         &mut self,
         program: &Program,
@@ -258,11 +241,9 @@ impl Machine {
         // Whether this run has executed nothing yet: a sized operation it starts
         // at runs whatever it costs, so every run makes progress.
         let mut first = true;
-        // Where this run started, in which frame: a sized operation that stops
-        // a run at an earlier place it can walk back to runs anyway when the
-        // run started there, so a run that resumes there makes progress.
-        // Once: the operation the run resumed for, not every later one that
-        // walks back to the same place.
+        // Where this run started, in which frame: a sized operation that would
+        // stop the run back at that very place runs anyway, once, so a run that
+        // resumes there makes progress.
         let mut entry = Some(self.entry_point());
 
         loop {
@@ -291,12 +272,10 @@ impl Machine {
                 }
             };
 
-            // Checked only at a safepoint, so a machine stopped for fuel always
-            // stands at a place the compiler named: a statement's start, a
-            // loop's head, a function's entry, or just past a call's return —
-            // never with half an expression in its registers. A run with any
-            // fuel at all passes the place it starts from, so every non-zero
-            // slice makes progress.
+            // Checked only at a safepoint, so a machine stopped for fuel never
+            // has half an expression in its registers. A run with any fuel
+            // passes the place it starts from, so every non-zero slice makes
+            // progress. See the book: concepts/scripting/turns.md, "Stopping is ordinary".
             if matches!(instruction, Instruction::Safepoint) {
                 at_safepoint = true;
             }
@@ -390,12 +369,15 @@ impl Machine {
         Run::Faulted(fault)
     }
 
-    /// The text a string value stands for.
+    /// Returns the text a string value stands for, borrowed from the program or the arena.
     ///
-    /// Needs both the program and the arena because a string can live in
-    /// either, and the value itself carries only which. Borrows both for the
-    /// call rather than copying the text, so comparing two strings costs no
-    /// allocation.
+    /// A string lives in either; the value says only which. Borrowing rather
+    /// than copying keeps a string comparison free of allocation.
+    ///
+    /// # Errors
+    ///
+    /// [`Fault::TypeMismatch`] when `value` is not a string, and
+    /// [`Fault::BadString`] when it names text that is not there.
     pub fn resolve_str<'a>(
         &self,
         value: Value,

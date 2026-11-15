@@ -18,21 +18,20 @@ use crate::reload::ScriptReload;
 
 use super::ScriptDeclarations;
 
-/// What a [`ScriptCompiler`](super::ScriptCompiler) made of one request:
-/// the reloads — a program per module that compiled, a withdrawal per module
-/// gone — and what each module recompiled declares now. A module that does
-/// not compile is in neither: what it ran before keeps running.
+/// What a [`ScriptCompiler`](super::ScriptCompiler) made of one request.
+///
+/// A module that does not compile is in neither list: what it ran before
+/// keeps running.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Recompiled {
-    /// The modules recompiled or withdrawn.
+    /// A program per module that compiled, a withdrawal per module gone.
     pub reloads: Vec<ScriptReload>,
-    /// What the modules declare now, one set per declaring module.
+    /// What the recompiled modules declare, one set per declaring module.
     pub declarations: Vec<ScriptDeclarations>,
 }
 
 impl Recompiled {
-    /// How many modules compiled to a program: a withdrawal, or a module
-    /// that did not compile, is not counted.
+    /// Returns how many modules compiled to a program, withdrawals not counted.
     pub fn programs(&self) -> usize {
         self.reloads
             .iter()

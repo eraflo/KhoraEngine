@@ -12,39 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Arrays at run time: building, indexing, measuring, copying — and what each
-//! costs.
+//! Arrays and structs at run time: building, indexing, measuring, copying, and what each costs.
 //!
-//! An array is an arena object a register names by handle. Ergon gives it
-//! value semantics: binding one read from a place copies it (`Copy`, emitted by
-//! the compiler), so two names never share one, and writing through a path
-//! mutates in place.
-//!
-//! # Sized operations
-//!
-//! Most instructions cost one unit of fuel. A few do work proportional to a
-//! size only the running program knows — a deep copy, a field read or write
-//! that copies an array across the frame boundary — and are charged that
-//! size. Fuel is otherwise checked only at safepoints, so a sized operation is
-//! its own checkpoint: it does not start when the remaining fuel cannot pay
-//! for it, unless it is the first thing the run does (every run must make
-//! progress). The compiler names a site at each one, so a frame stopped there
-//! resumes, and rebuilds, like any other.
+//! Arrays have value semantics: binding one read from a place copies it, and a
+//! write through a path mutates in place. A sized operation — a deep copy, a
+//! field read or write carrying an array — is charged its size and is its own
+//! checkpoint: it does not start when the fuel left cannot pay for it, unless it
+//! is the run's first, and the compiler names a site at each one.
 
 use super::{Fault, Instruction, Machine, ObjRef, Program, Step, Value};
 use crate::arena::{Arena, Object, Persisted};
 use crate::native::Host;
 
 impl Machine {
-    /// What `instruction` costs when that depends on the values it touches —
-    /// or `None` when its cost is fixed. A run stops before one it cannot pay
-    /// for.
+    /// What `instruction` costs when that depends on the values it touches, or
+    /// `None` when its cost is fixed.
     ///
-    /// A write that completes an update, a state's entry or a `become`
-    /// (`WriteBack`, `Become`) is not among them: it is never a place to stop,
-    /// and the value it writes was already paid for, as it was loaded, copied
-    /// or built in the same run. Charging it again would let a run overdraw by
-    /// a size no static bound knows.
+    /// `WriteBack` and `Become` are not sized: never a place to stop, they write
+    /// what the run already paid for, and charging it again would let a run
+    /// overdraw by a size no static bound knows.
     pub(super) fn sized_cost(
         &self,
         instruction: &Instruction,

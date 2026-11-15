@@ -15,8 +15,7 @@
 //! Runtime containers — engine-wide injection points for services,
 //! backends, and resources.
 //!
-//! Replaces the legacy `ServiceRegistry` fourre-tout with three distinct
-//! containers, each with a clear admission criterion:
+//! Three containers, each with a clear admission criterion:
 //!
 //! | Container | What lives here | Examples |
 //! |---|---|---|

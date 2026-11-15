@@ -247,13 +247,12 @@ pub enum RenderError {
 }
 
 impl RenderError {
-    /// Whether this error is fatal — i.e. the render system cannot make
-    /// progress on subsequent frames and the host should tear down or
-    /// reinitialize rather than retry.
+    /// Returns whether rendering cannot progress, so the host should tear down
+    /// or reinitialize rather than retry.
     ///
-    /// Transient acquisition failures (surface lost/outdated/timeout, occluded
-    /// or zero-size windows) are **not** fatal: the loop skips the frame and
-    /// retries. Device loss and out-of-memory **are** fatal.
+    /// Device loss and out-of-memory are fatal. Transient acquisition failures
+    /// (surface lost, outdated or timed out, occluded or zero-size window) are
+    /// not: the frame is skipped and retried.
     pub fn is_fatal(&self) -> bool {
         matches!(
             self,

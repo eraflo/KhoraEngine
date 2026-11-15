@@ -12,14 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What a statement *says*, as a short stable key.
-//!
-//! A site is named by the statements around it, and a statement by its own
-//! syntax tree — spans left out — rather than by where it sits. Adding a line
-//! above it, or editing the body of the loop it belongs to, leaves the key
-//! alone; editing the statement itself changes it. A compound statement is
-//! keyed by its **header** only (a condition, a `for`'s three clauses), so its
-//! body is free to change without renaming every site around it.
+//! What a statement *says*, as a short stable key: its syntax tree, spans left
+//! out; a compound statement by its **header** only.
+//! See the book: concepts/scripting/saves-and-edits.md, "A body part-way through, in tiers".
 //!
 //! Every match below is exhaustive on purpose: a node added to the tree must
 //! decide what it contributes, or two different statements would share a key.
@@ -33,10 +28,10 @@ pub fn statement_key(statement: &Stmt) -> (&'static str, String) {
     statement_key_with(statement, &HashMap::new())
 }
 
-/// [`statement_key`], with each event's signature — `event name → its
-/// parameter types` — hashed where the statement raises it: a raise whose
-/// event changed its payload is another statement, so a frame stopped in it
-/// is not rebuilt with a value of the type the payload had.
+/// [`statement_key`], hashing each raised event's signature (`event name → its parameter types`).
+///
+/// A raise whose event changed its payload is another statement, so a frame
+/// stopped in it is not rebuilt with a value of the payload's old type.
 pub fn statement_key_with(
     statement: &Stmt,
     signatures: &HashMap<String, String>,
@@ -110,9 +105,8 @@ impl Key<'_> {
         self.0.update(&[tag]);
     }
 
-    /// Length-prefixed, so `ab` + `c` and `a` + `bc` differ.
-    /// The names a call gives its arguments, in the order written — nothing
-    /// for a call that names none, whose key is what it always was.
+    /// The names a call gives its arguments, in the order written; nothing
+    /// for a call that names none.
     fn labels(&mut self, labels: &[Option<crate::ast::Label>]) {
         if labels.is_empty() {
             return;
@@ -123,6 +117,7 @@ impl Key<'_> {
         }
     }
 
+    /// Length-prefixed, so `ab` + `c` and `a` + `bc` differ.
     fn text(&mut self, text: &str) {
         self.0.update(&(text.len() as u64).to_le_bytes());
         self.0.update(text.as_bytes());
