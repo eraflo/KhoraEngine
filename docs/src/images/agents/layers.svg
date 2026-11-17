@@ -1,6 +1,6 @@
 <svg id="fig-agents-layers" class="kp-figure" viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-agents-layers-title kp-agents-layers-desc">
   <title id="kp-agents-layers-title">Lanes are layers</title>
-  <desc id="kp-agents-layers-desc">The frame is a stack of places, one for each family of work. On each place lies one transparent layer: a lane, prepared at one level. Every frame the scheduler applies the layers, top to bottom, without asking any agent. When a layer's price no longer fits its envelope, it wakes its agent. The agent prepares the new layer beside the stack while the old one keeps running. At the next frame start the new layer takes the old one's place, the same place, and the old one is put aside for three epochs, so going back to it costs nothing; then it is released.</desc>
+  <desc id="kp-agents-layers-desc">The frame is a stack of places, one for each family of work. On each place lies one transparent layer: a lane, prepared at one level. Every frame the scheduler applies the layers, top to bottom, without asking any agent. When a layer's price no longer fits its envelope, it wakes its agent. The new layer is prepared off the frame, beside the stack, while the old one keeps running. At the next frame start the new layer takes the old one's place, the same place, and the old one is put aside for three epochs, so going back to it costs nothing; then it is released.</desc>
   <style>
     #fig-agents-layers { width: 100%; height: auto; display: block; margin: 0; }
     #fig-agents-layers .kp-bg { fill: var(--k-bg-0, #090d17); }
@@ -24,27 +24,27 @@
   <text class="kp-head" x="40" y="34">the frame: one place for each family</text>
   <!-- the places -->
   <rect class="kp-place" x="40" y="48" width="400" height="40" rx="5"/>
-  <text class="kp-station" x="50" y="72">Transform · physics</text>
+  <text class="kp-station" x="50" y="72">Observe · shadows</text>
   <rect class="kp-place" x="40" y="94" width="400" height="40" rx="5"/>
-  <text class="kp-station" x="50" y="118">Output · shadows</text>
+  <text class="kp-station" x="50" y="118">Output · render</text>
   <rect class="kp-place" x="40" y="140" width="400" height="40" rx="5"/>
   <text class="kp-station" x="50" y="164">Output · sky</text>
   <rect class="kp-place" x="40" y="186" width="400" height="40" rx="5"/>
   <text class="kp-station" x="50" y="210">Output · UI</text>
   <!-- the layers installed -->
   <rect class="kp-layer" x="220" y="54" width="200" height="28" rx="4"/>
-  <text class="kp-name" x="230" y="73">its one step</text>
+  <text class="kp-name" x="230" y="73">shadows · medium</text>
   <rect class="kp-layer" x="220" y="146" width="200" height="28" rx="4"/>
-  <text class="kp-name" x="230" y="165">sky · cube map</text>
+  <text class="kp-name" x="230" y="165">skybox</text>
   <rect class="kp-layer" x="220" y="192" width="200" height="28" rx="4"/>
-  <text class="kp-name" x="230" y="211">UI · full text</text>
+  <text class="kp-name" x="230" y="211">ui</text>
   <g data-on="1 2 3 4">
     <rect class="kp-layer-lead" x="220" y="100" width="200" height="28" rx="4"/>
-    <text class="kp-name" x="230" y="119">shadows · high</text>
+    <text class="kp-name" x="230" y="119">render · forward+</text>
   </g>
   <!-- the agent -->
   <rect class="kp-agent" x="560" y="94" width="160" height="40" rx="6"/>
-  <text class="kp-name" x="572" y="118">shadows' agent</text>
+  <text class="kp-name" x="572" y="118">render's agent</text>
   <g data-on="1">
     <text class="kp-how" x="40" y="258">Each family has a fixed place in the frame: its phase, and for what draws</text>
     <text class="kp-how" x="40" y="276">its pass. On it lies one layer: one of its lanes, prepared at one level.</text>
@@ -66,17 +66,17 @@
   <!-- 4. prepared beside -->
   <g data-on="4">
     <rect class="kp-layer-new" x="540" y="184" width="200" height="28" rx="4"/>
-    <text class="kp-name" x="550" y="203">shadows · medium</text>
+    <text class="kp-name" x="550" y="203">render · lit forward</text>
     <text class="kp-gold" x="540" y="232">prepared beside</text>
-    <text class="kp-how" x="40" y="258">The agent chooses the row that fits and prepares a fresh layer of it beside</text>
-    <text class="kp-how" x="40" y="276">the stack, its pipelines and buffers. The old layer keeps running meanwhile.</text>
+    <text class="kp-how" x="40" y="258">The agent chooses the row that fits; a fresh layer of it is prepared off the</text>
+    <text class="kp-how" x="40" y="276">frame, beside the stack. The old layer keeps running meanwhile.</text>
   </g>
   <!-- 5. the swap -->
   <g data-on="5 6">
     <rect class="kp-layer-lead" x="220" y="100" width="200" height="28" rx="4"/>
-    <text class="kp-name" x="230" y="119">shadows · medium</text>
+    <text class="kp-name" x="230" y="119">render · lit forward</text>
     <rect class="kp-layer-kept" x="540" y="184" width="200" height="28" rx="4"/>
-    <text class="kp-name" x="550" y="203">shadows · high</text>
+    <text class="kp-name" x="550" y="203">render · forward+</text>
   </g>
   <g data-on="5">
     <text class="kp-how" x="540" y="232">put aside, 3 epochs left</text>

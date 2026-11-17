@@ -15,7 +15,7 @@
 //! The problem a round plans beyond its own frame, which every proposer and
 //! the shield plan and check.
 //!
-//! See the book: concepts/gorna.md, "Formalisation".
+//! See the book: concepts/arbiter.md, "Formalisation".
 
 use std::time::Duration;
 

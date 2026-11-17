@@ -1,0 +1,103 @@
+<svg id="fig-frame-run" class="kp-figure" viewBox="0 0 760 350" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-frame-run-title kp-frame-run-desc">
+  <title id="kp-frame-run-title">One frame of the scheduler, and the work beside it</title>
+  <desc id="kp-frame-run-desc">The frame starts by lending the allocation in force and swapping each family's staged layer in. At the boundary, what work off the frame staged lands in the World. The app's update runs between data systems. The Flows publish their Views, then the event pass wakes the agents that have an event. Then the six phases run in order, INIT to FINALIZE, each family's layer in waves; the fixed-step families run their sub-steps first. Beside the frame, the background runs the families placed there and prepares the layers agents switch to, on its own pool, across frames.</desc>
+  <defs>
+    <marker id="kp-frame-run-tip" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="kp-tip" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+  <style>
+    #fig-frame-run { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-frame-run .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-frame-run .kp-box { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-frame-run .kp-on { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 2; }
+    #fig-frame-run .kp-band { fill: var(--k-bg-2, #181e2b); stroke: var(--k-line, #383d48); stroke-width: 1; stroke-dasharray: 4 3; }
+    #fig-frame-run .kp-chip { fill: var(--k-bg-3, #1f2636); stroke: var(--k-silver-dim, #809db2); stroke-width: 1; }
+    #fig-frame-run .kp-link { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.2; fill: none; }
+    #fig-frame-run .kp-tip { fill: var(--k-silver-dim, #809db2); }
+    #fig-frame-run .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; font-weight: 500; }
+    #fig-frame-run .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 13px; }
+    #fig-frame-run .kp-name { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-frame-run .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 10.5px; }
+    #fig-frame-run .kp-how { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="350" rx="10"/>
+  <text class="kp-head" x="20" y="30">the frame, left to right</text>
+  <!-- row 1: before the phases -->
+  <rect class="kp-box" x="20" y="40" width="136" height="44" rx="5"/>
+  <text class="kp-station" x="30" y="59">frame start</text>
+  <text class="kp-label" x="30" y="75">lend · swap layers</text>
+  <rect class="kp-box" x="164" y="40" width="136" height="44" rx="5"/>
+  <text class="kp-station" x="174" y="59">Boundary</text>
+  <text class="kp-label" x="174" y="75">staged work lands</text>
+  <rect class="kp-box" x="308" y="40" width="136" height="44" rx="5"/>
+  <text class="kp-station" x="318" y="59">app update</text>
+  <text class="kp-label" x="318" y="75">systems around it</text>
+  <rect class="kp-box" x="452" y="40" width="136" height="44" rx="5"/>
+  <text class="kp-station" x="462" y="59">Flows</text>
+  <text class="kp-label" x="462" y="75">Views on the bus</text>
+  <rect class="kp-box" x="596" y="40" width="144" height="44" rx="5"/>
+  <text class="kp-station" x="606" y="59">event pass</text>
+  <text class="kp-label" x="606" y="75">agents woken</text>
+  <!-- row 2: the phases -->
+  <rect class="kp-box" x="20" y="110" width="80" height="52" rx="5"/>
+  <text class="kp-name" x="30" y="130">INIT</text>
+  <rect class="kp-box" x="108" y="110" width="104" height="52" rx="5"/>
+  <text class="kp-name" x="118" y="130">OBSERVE</text>
+  <text class="kp-label" x="118" y="149">shadows</text>
+  <rect class="kp-box" x="220" y="110" width="160" height="52" rx="5"/>
+  <text class="kp-name" x="230" y="130">TRANSFORM</text>
+  <text class="kp-label" x="230" y="149">physics · audio · script</text>
+  <rect class="kp-box" x="388" y="110" width="84" height="52" rx="5"/>
+  <text class="kp-name" x="398" y="130">MUTATE</text>
+  <rect class="kp-box" x="480" y="110" width="160" height="52" rx="5"/>
+  <text class="kp-name" x="490" y="130">OUTPUT</text>
+  <text class="kp-label" x="490" y="149">render · sky · ui · overlays</text>
+  <rect class="kp-box" x="648" y="110" width="92" height="52" rx="5"/>
+  <text class="kp-name" x="658" y="130">FINALIZE</text>
+  <!-- row 3: the background -->
+  <rect class="kp-band" x="20" y="190" width="720" height="58" rx="6"/>
+  <text class="kp-name" x="30" y="209">BACKGROUND</text>
+  <text class="kp-label" x="30" y="226">its own pool, across frames</text>
+  <rect class="kp-chip" x="220" y="198" width="230" height="22" rx="4"/>
+  <text class="kp-label" x="230" y="213">loading: one run, over several frames</text>
+  <rect class="kp-chip" x="470" y="224" width="250" height="18" rx="4"/>
+  <text class="kp-label" x="480" y="237">a new layer, prepared beside the old</text>
+  <!-- 1. frame start -->
+  <g data-on="1">
+    <rect class="kp-on" x="18" y="38" width="140" height="48" rx="6"/>
+    <text class="kp-how" x="20" y="292">The frame starts: the allocation in force is lent to the agents that do not hold it,</text>
+    <text class="kp-how" x="20" y="310">each place swaps in the layer staged for it, and the runs off the frame that ended</text>
+    <text class="kp-how" x="20" y="328">come home.</text>
+  </g>
+  <!-- 2. boundary -->
+  <g data-on="2">
+    <rect class="kp-on" x="162" y="38" width="140" height="48" rx="6"/>
+    <path class="kp-link" d="M300,198 L232,88" marker-end="url(#kp-frame-run-tip)"/>
+    <text class="kp-how" x="20" y="292">At the boundary, what a run off the frame staged lands in the World, before anything</text>
+    <text class="kp-how" x="20" y="310">of the frame reads it. Then the app's update, between the data systems that keep</text>
+    <text class="kp-how" x="20" y="328">the World consistent.</text>
+  </g>
+  <!-- 3. flows and event pass -->
+  <g data-on="3">
+    <rect class="kp-on" x="450" y="38" width="292" height="48" rx="6"/>
+    <path class="kp-link" d="M668,86 L620,220" marker-end="url(#kp-frame-run-tip)"/>
+    <text class="kp-how" x="20" y="292">The Flows publish the frame's Views. Then every agent whose place holds a wake is</text>
+    <text class="kp-how" x="20" y="310">woken, once: it chooses again, and the layer of a new row is prepared off the frame</text>
+    <text class="kp-how" x="20" y="328">while the installed one keeps running.</text>
+  </g>
+  <!-- 4. phases -->
+  <g data-on="4">
+    <rect class="kp-on" x="18" y="108" width="724" height="56" rx="6"/>
+    <text class="kp-how" x="20" y="292">The phases run in order, each family's installed layer at its place, in waves. A</text>
+    <text class="kp-how" x="20" y="310">fixed-step family runs its sub-steps first, round by round, then the rest of the</text>
+    <text class="kp-how" x="20" y="328">frame runs once.</text>
+  </g>
+  <!-- 5. background -->
+  <g data-on="5">
+    <rect class="kp-on" x="18" y="188" width="724" height="62" rx="7"/>
+    <text class="kp-how" x="20" y="292">Beside the frame, on a pool of its own: a family placed at BACKGROUND runs when its</text>
+    <text class="kp-how" x="20" y="310">mailbox holds a request, one run at a time, over as many frames as it takes. What it</text>
+    <text class="kp-how" x="20" y="328">hands on lands at the boundary of the first frame after it ends.</text>
+  </g>
+</svg>

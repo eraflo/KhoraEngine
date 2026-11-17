@@ -1,0 +1,79 @@
+<svg id="fig-gorna-paths" class="kp-figure" viewBox="0 0 760 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-gorna-paths-title kp-gorna-paths-desc">
+  <title id="kp-gorna-paths-title">The cold path decides, the hot path runs; they meet at the budget channel and the reports</title>
+  <desc id="kp-gorna-paths-desc">On the left, the cold path: the DCC's own thread, twenty ticks a second. Its inbox takes the reports and the telemetry, the heuristics turn them into a target, and the arbiter turns the target into one envelope per agent. The allocation is published on the budget channel. On the right, the hot path: the frame. At each frame start the scheduler lends the newest allocation; the installed layers run at their places every frame; an agent is woken only for an event, and stages a new layer beside the installed one. Every run reports back to the cold path's inbox.</desc>
+  <style>
+    #fig-gorna-paths { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-gorna-paths .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-gorna-paths .kp-panel { fill: none; stroke: var(--k-line, #383d48); stroke-width: 1; stroke-dasharray: 4 4; }
+    #fig-gorna-paths .kp-box { fill: var(--k-bg-1, #101622); stroke: var(--k-silver-dim, #809db2); stroke-width: 1; }
+    #fig-gorna-paths .kp-channel { fill: var(--k-bg-2, #181e2b); stroke: var(--k-gold, #e4b65c); stroke-width: 1.4; }
+    #fig-gorna-paths .kp-wire { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.2; fill: none; }
+    #fig-gorna-paths .kp-gold-wire { stroke: var(--k-gold, #e4b65c); stroke-width: 1.6; fill: none; }
+    #fig-gorna-paths .kp-head { fill: var(--k-silver-dim, #809db2); }
+    #fig-gorna-paths .kp-gold-head { fill: var(--k-gold, #e4b65c); }
+    #fig-gorna-paths .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 16px; }
+    #fig-gorna-paths .kp-name { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 13px; font-weight: 500; }
+    #fig-gorna-paths .kp-how { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+    #fig-gorna-paths .kp-msg { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-gorna-paths .kp-msg-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="340" rx="10"/>
+  <!-- the two paths -->
+  <text class="kp-station" x="32" y="32">cold path · the DCC · 20 ticks a second</text>
+  <text class="kp-station" x="452" y="32">hot path · the frame · every frame</text>
+  <rect class="kp-panel" x="24" y="44" width="296" height="214" rx="10"/>
+  <rect class="kp-panel" x="440" y="44" width="296" height="214" rx="10"/>
+  <!-- cold path: inbox, heuristics, arbiter, from the bottom up -->
+  <rect class="kp-box" x="44" y="188" width="256" height="48" rx="8"/>
+  <text class="kp-name" x="58" y="208">Inbox</text>
+  <text class="kp-how" x="58" y="226">reports and telemetry</text>
+  <rect class="kp-box" x="44" y="124" width="256" height="48" rx="8"/>
+  <text class="kp-name" x="58" y="144">Heuristics, governor</text>
+  <text class="kp-how" x="58" y="162">the frame's target time</text>
+  <rect class="kp-box" x="44" y="60" width="256" height="48" rx="8"/>
+  <text class="kp-name" x="58" y="80">Arbiter</text>
+  <text class="kp-how" x="58" y="98">one envelope per agent</text>
+  <path class="kp-wire" d="M172 188 L172 178"/>
+  <path class="kp-head" d="M167 178 L177 178 L172 172 Z"/>
+  <path class="kp-wire" d="M172 124 L172 114"/>
+  <path class="kp-head" d="M167 114 L177 114 L172 108 Z"/>
+  <!-- the channel, the one thread between them -->
+  <rect class="kp-channel" x="332" y="64" width="96" height="40" rx="6"/>
+  <text class="kp-msg-gold" x="344" y="81">budget</text>
+  <text class="kp-msg-gold" x="344" y="96">channel</text>
+  <path class="kp-gold-wire" d="M300 84 L326 84"/>
+  <path class="kp-gold-head" d="M326 79 L326 89 L332 84 Z"/>
+  <path class="kp-gold-wire" d="M428 84 L454 84"/>
+  <path class="kp-gold-head" d="M454 79 L454 89 L460 84 Z"/>
+  <text class="kp-msg-gold" x="344" y="124">Allocation</text>
+  <!-- hot path: frame start, agents, places -->
+  <rect class="kp-box" x="460" y="60" width="256" height="48" rx="8"/>
+  <text class="kp-name" x="474" y="80">Frame start</text>
+  <text class="kp-how" x="474" y="98">the newest allocation is lent</text>
+  <rect class="kp-box" x="460" y="124" width="200" height="48" rx="8"/>
+  <text class="kp-name" x="474" y="144">Agents</text>
+  <text class="kp-how" x="474" y="162">only when woken: they choose</text>
+  <rect class="kp-box" x="460" y="188" width="256" height="48" rx="8"/>
+  <text class="kp-name" x="474" y="208">Places</text>
+  <text class="kp-how" x="474" y="226">the installed layers run</text>
+  <path class="kp-wire" d="M560 108 L560 118"/>
+  <path class="kp-head" d="M555 118 L565 118 L560 124 Z"/>
+  <text class="kp-how" x="568" y="119">wakes</text>
+  <path class="kp-wire" d="M560 172 L560 182"/>
+  <path class="kp-head" d="M555 182 L565 182 L560 188 Z"/>
+  <text class="kp-how" x="568" y="183">stage a layer</text>
+  <path class="kp-wire" d="M700 108 L700 182"/>
+  <path class="kp-head" d="M695 182 L705 182 L700 188 Z"/>
+  <text class="kp-how" x="668" y="150">every</text>
+  <text class="kp-how" x="668" y="164">frame</text>
+  <!-- reports, back to the inbox -->
+  <path class="kp-wire" d="M460 212 L306 212"/>
+  <path class="kp-head" d="M306 207 L306 217 L300 212 Z"/>
+  <text class="kp-msg" x="326" y="204">Report</text>
+  <text class="kp-how" x="326" y="232">every run</text>
+  <!-- what each path never does -->
+  <text class="kp-how" x="32" y="284">Asks offers of prices the agents already hold.</text>
+  <text class="kp-how" x="32" y="302">Never lends, never runs a lane.</text>
+  <text class="kp-how" x="452" y="284">Never waits on the cold path.</text>
+  <text class="kp-how" x="452" y="302">A quiet frame calls no agent.</text>
+</svg>

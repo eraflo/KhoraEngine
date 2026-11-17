@@ -54,7 +54,7 @@ pub enum StrategyId {
 
 /// How much latitude GORNA has to change an agent's strategy, set per agent.
 ///
-/// A death-spiral safety stop can still force `LowPower` in any mode.
+/// A `Safety` round still lends every agent its floor, whatever its mode.
 ///
 /// See the book: concepts/gorna.md, "`AdaptationMode` — the developer-control surface".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

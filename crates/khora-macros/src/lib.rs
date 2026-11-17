@@ -71,7 +71,7 @@ pub fn ergon_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// This macro generates:
 /// - `impl Component for Camera`
-/// - `pub struct SerializableCamera { ... }` with `Encode, Decode`
+/// - `pub struct SerializableCamera { ... }` deriving serde's `Serialize, Deserialize`
 /// - `impl From<Camera> for SerializableCamera`
 /// - `impl From<SerializableCamera> for Camera`
 ///

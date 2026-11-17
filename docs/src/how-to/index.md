@@ -1,12 +1,14 @@
 # How-to guides
 
-Task-sized recipes. Each page solves **one** goal with real, verified APIs and a
-way to check it worked. These assume you've done the
+<p class="kp-lede">Recipes, one goal each: what to write, where, and how to see that it worked.</p>
+
+Each page solves **one** goal with real, verified APIs and a way to check it
+worked. These assume you've done the
 [Your first game](../tutorials/your-first-game.md) tutorial (for game tasks) or
 [Extending the engine](../tutorials/extending-the-engine.md) (for engine tasks) —
 they don't re-teach the basics, they link to them.
 
-Looking for the "why" behind a recipe? Follow the links into [Concepts](../concepts/saa.md).
+Looking for the "why" behind a recipe? Follow the links into [Concepts](../concepts/index.md).
 Looking for the exact signature? See the [API reference](../reference/api.md).
 
 ## Building a game
@@ -19,6 +21,7 @@ Looking for the exact signature? See the [API reference](../reference/api.md).
 | Play positional 3D audio | [Play 3D audio](./play-3d-audio.md) |
 | Lay out a UI | [Build a UI](./build-a-ui.md) |
 | Save and restore the world | [Save and load scenes](./save-and-load-scenes.md) |
+| Reuse a subtree as a linked prefab | [Work with prefabs](./work-with-prefabs.md) |
 | Bind input to actions | [Map input](./map-input.md) |
 
 ## Extending the engine
@@ -26,12 +29,18 @@ Looking for the exact signature? See the [API reference](../reference/api.md).
 | I want to… | Recipe |
 |---|---|
 | Define and register an ECS component | [Add a component](./add-a-component.md) |
-| Add a hot-path strategy to an agent | [Add a lane](./add-a-lane.md) |
-| Add a new strategist subsystem | [Add a subsystem (a family)](./add-an-agent.md) |
+| Add a new way of doing a family's job (a lane and its levels) | [Add a lane](./add-a-lane.md) |
+| Add a subsystem that negotiates its share of the frame | [Add a subsystem (a family)](./add-a-family.md) |
 | Add a `.wgsl` shader and a pipeline | [Add a shader](./add-a-shader.md) |
 | Decode a new asset format | [Add an asset decoder](./add-an-asset-decoder.md) |
 | Project the World into a View for lanes | [Add a flow](./add-a-flow.md) |
-| Pin or bound an agent's adaptation | [Control GORNA adaptation](./control-gorna-adaptation.md) |
+| Pin or bound a family's choice of row | [Control GORNA adaptation](./control-gorna-adaptation.md) |
+
+The concepts behind these recipes: [Families and levels](../concepts/families-and-levels.md)
+(what a family and its rows are), [The GORNA protocol](../concepts/gorna-protocol.md)
+(how envelopes are lent), [The arbiter](../concepts/arbiter.md) (how they are
+decided), and [Residency](../concepts/residency.md) (an asset's copy on a device,
+which a lane never owns).
 
 ## Operating and tuning
 

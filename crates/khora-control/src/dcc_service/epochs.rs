@@ -77,7 +77,7 @@ impl Epochs {
     ///
     /// A report under an epoch that an opened epoch answered is dropped; a
     /// replay answers nothing, and a report naming no epoch always counts.
-    /// See the book: concepts/gorna.md, "When things go wrong".
+    /// See the book: concepts/gorna-protocol.md, "When things go wrong".
     pub(super) fn report(&mut self, report: &Report, overruns_in_a_row: u32) {
         if report.epoch != Epoch::default() && self.answered.contains(&report.epoch) {
             return;

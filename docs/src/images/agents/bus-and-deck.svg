@@ -1,0 +1,109 @@
+<svg id="fig-agents-bus-deck" class="kp-figure" viewBox="0 0 760 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-agents-bus-deck-title kp-agents-bus-deck-desc">
+  <title id="kp-agents-bus-deck-title">How a lane gets its data: the bus and the deck</title>
+  <desc id="kp-agents-bus-deck-desc">One frame's data path. The Flows read the World and publish typed Views on the LaneBus. The DCC lends the family's agent an envelope, and the agent has installed one layer: a lane at one level. The lane reads its inputs: Views from the bus, a slot an earlier phase wrote on the deck, a runtime entry. It writes its family's outputs into the OutputDeck. At the I/O boundary the engine takes them out: it submits the recorded passes, and the Maintenance systems write the rest back into the World.</desc>
+  <defs>
+    <marker id="kp-agents-bus-deck-tip" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="kp-tip" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+  <style>
+    #fig-agents-bus-deck { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-agents-bus-deck .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-agents-bus-deck .kp-box { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-agents-bus-deck .kp-box-on { fill: var(--k-bg-3, #1f2636); stroke: var(--k-silver, #b4cfe2); stroke-width: 1.4; }
+    #fig-agents-bus-deck .kp-link { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.2; fill: none; }
+    #fig-agents-bus-deck .kp-thread { stroke: var(--k-gold, #e4b65c); stroke-width: 2; fill: none; }
+    #fig-agents-bus-deck .kp-tip { fill: var(--k-silver-dim, #809db2); }
+    #fig-agents-bus-deck .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 14px; }
+    #fig-agents-bus-deck .kp-name { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+    #fig-agents-bus-deck .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+    #fig-agents-bus-deck .kp-how { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-agents-bus-deck .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="360" rx="10"/>
+  <!-- control and agent -->
+  <rect class="kp-box" x="250" y="24" width="150" height="46" rx="6"/>
+  <text class="kp-station" x="264" y="45">DCC</text>
+  <text class="kp-name" x="264" y="61">GORNA</text>
+  <rect class="kp-box" x="460" y="24" width="150" height="46" rx="6"/>
+  <text class="kp-station" x="474" y="45">its agent</text>
+  <text class="kp-name" x="474" y="61">LaneAgent</text>
+  <path class="kp-link" d="M400,47 L456,47" marker-end="url(#kp-agents-bus-deck-tip)"/>
+  <text class="kp-label" x="404" y="40">envelope</text>
+  <path class="kp-link" d="M535,70 L535,130" marker-end="url(#kp-agents-bus-deck-tip)"/>
+  <text class="kp-label" x="542" y="104">installs a layer</text>
+  <!-- the data path -->
+  <rect class="kp-box" x="24" y="134" width="110" height="56" rx="6"/>
+  <text class="kp-station" x="38" y="158">World</text>
+  <text class="kp-name" x="38" y="176">CRPECS</text>
+  <rect class="kp-box" x="166" y="134" width="110" height="56" rx="6"/>
+  <text class="kp-station" x="180" y="158">Flows</text>
+  <text class="kp-name" x="180" y="176">project</text>
+  <rect class="kp-box" x="308" y="134" width="120" height="56" rx="6"/>
+  <text class="kp-station" x="322" y="158">LaneBus</text>
+  <text class="kp-name" x="322" y="176">Views, read-only</text>
+  <rect class="kp-box" x="470" y="134" width="130" height="56" rx="6"/>
+  <text class="kp-station" x="484" y="158">the lane</text>
+  <text class="kp-name" x="484" y="176">at one level</text>
+  <rect class="kp-box" x="626" y="134" width="114" height="56" rx="6"/>
+  <text class="kp-station" x="640" y="158">OutputDeck</text>
+  <text class="kp-name" x="640" y="176">typed slots</text>
+  <path class="kp-link" d="M134,162 L162,162" marker-end="url(#kp-agents-bus-deck-tip)"/>
+  <path class="kp-link" d="M276,162 L304,162" marker-end="url(#kp-agents-bus-deck-tip)"/>
+  <path class="kp-link" d="M428,162 L466,162" marker-end="url(#kp-agents-bus-deck-tip)"/>
+  <path class="kp-link" d="M600,162 L622,162" marker-end="url(#kp-agents-bus-deck-tip)"/>
+  <!-- the boundary -->
+  <rect class="kp-box" x="470" y="226" width="270" height="46" rx="6"/>
+  <text class="kp-station" x="484" y="246">I/O boundary</text>
+  <text class="kp-name" x="484" y="262">submit passes · write back</text>
+  <path class="kp-link" d="M683,190 L683,222" marker-end="url(#kp-agents-bus-deck-tip)"/>
+  <path class="kp-link" d="M470,262 L80,262 L80,194" marker-end="url(#kp-agents-bus-deck-tip)"/>
+  <text class="kp-label" x="200" y="256">Maintenance systems</text>
+  <!-- 1. the Flows publish -->
+  <g data-on="1">
+    <rect class="kp-box-on" x="166" y="134" width="110" height="56" rx="6"/>
+    <text class="kp-station" x="180" y="158">Flows</text>
+    <text class="kp-name" x="180" y="176">project</text>
+    <path class="kp-thread" d="M134,152 L162,152 M276,152 L304,152"/>
+    <text class="kp-gold" x="308" y="214">RenderWorld · AudioView · …</text>
+    <text class="kp-how" x="24" y="314">During the Substrate Pass each Flow reads the World and publishes one typed View</text>
+    <text class="kp-how" x="24" y="332">on the bus. Only Flows publish; nothing writes the bus after that.</text>
+  </g>
+  <!-- 2. the layer -->
+  <g data-on="2">
+    <rect class="kp-box-on" x="460" y="24" width="150" height="46" rx="6"/>
+    <text class="kp-station" x="474" y="45">its agent</text>
+    <text class="kp-name" x="474" y="61">LaneAgent</text>
+    <path class="kp-thread" d="M400,54 L456,54"/>
+    <text class="kp-how" x="24" y="314">Above the lane: the DCC lent the agent an envelope, and the agent installed one</text>
+    <text class="kp-how" x="24" y="332">layer, a lane at the level that fits. The agent is not called on this frame.</text>
+  </g>
+  <!-- 3. the lane reads -->
+  <g data-on="3">
+    <rect class="kp-box-on" x="470" y="134" width="130" height="56" rx="6"/>
+    <text class="kp-station" x="484" y="158">the lane</text>
+    <text class="kp-name" x="484" y="176">at one level</text>
+    <path class="kp-thread" d="M428,152 L466,152"/>
+    <text class="kp-gold" x="470" y="214">#[bus] #[deck] #[resource] …</text>
+    <text class="kp-how" x="24" y="314">The lane reads only its typed inputs: Views from the bus, a slot an earlier phase</text>
+    <text class="kp-how" x="24" y="332">wrote, a runtime entry, the frame's target. Never the World.</text>
+  </g>
+  <!-- 4. the lane writes -->
+  <g data-on="4">
+    <rect class="kp-box-on" x="626" y="134" width="114" height="56" rx="6"/>
+    <text class="kp-station" x="640" y="158">OutputDeck</text>
+    <text class="kp-name" x="640" y="176">typed slots</text>
+    <path class="kp-thread" d="M600,152 L622,152"/>
+    <text class="kp-how" x="24" y="314">It writes its family's outputs: a pass recorded for a pass slot, a value a later</text>
+    <text class="kp-how" x="24" y="332">phase reads. They are committed to the deck once the record returns.</text>
+  </g>
+  <!-- 5. the boundary -->
+  <g data-on="5">
+    <rect class="kp-box-on" x="470" y="226" width="270" height="46" rx="6"/>
+    <text class="kp-station" x="484" y="246">I/O boundary</text>
+    <text class="kp-name" x="484" y="262">submit passes · write back</text>
+    <path class="kp-thread" d="M690,190 L690,222 M470,268 L86,268 L86,194"/>
+    <text class="kp-how" x="24" y="314">At the end of the frame the engine takes the slots out: the passes are submitted</text>
+    <text class="kp-how" x="24" y="332">in their order, and the Maintenance systems write results back into the World.</text>
+  </g>
+</svg>

@@ -1,0 +1,81 @@
+<svg id="fig-gorna-telemetry-loop" class="kp-figure" viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-gorna-telemetry-loop-title kp-gorna-telemetry-loop-desc">
+  <title id="kp-gorna-telemetry-loop-title">How readings reach the DCC and become decisions</title>
+  <desc id="kp-gorna-telemetry-loop-desc">Three kinds of reading reach the DCC's inbox. The telemetry service polls its monitors, memory and video memory, once a second inside the frame. The DCC's own thread reads the hardware monitor, heat, battery and CPU load, about once a second. The scheduler and the host send a report after every run and every frame. The DCC, twenty times a second, drains its inbox into its metric store and its context, runs the heuristics and the governor, and publishes an allocation on the budget channel, which the agents are lent at a frame start. The editor reads the context and the last decision.</desc>
+  <style>
+    #fig-gorna-telemetry-loop { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-gorna-telemetry-loop .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-gorna-telemetry-loop .kp-box { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-gorna-telemetry-loop .kp-lit { fill: none; stroke: var(--k-silver, #b4cfe2); stroke-width: 1.6; }
+    #fig-gorna-telemetry-loop .kp-dcc { fill: var(--k-bg-2, #181e2b); stroke: var(--k-silver-dim, #809db2); stroke-width: 1.2; }
+    #fig-gorna-telemetry-loop .kp-wire { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.2; fill: none; }
+    #fig-gorna-telemetry-loop .kp-gold-wire { stroke: var(--k-gold, #e4b65c); stroke-width: 1.6; fill: none; }
+    #fig-gorna-telemetry-loop .kp-head { fill: var(--k-silver-dim, #809db2); }
+    #fig-gorna-telemetry-loop .kp-gold-head { fill: var(--k-gold, #e4b65c); }
+    #fig-gorna-telemetry-loop .kp-name { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 13px; font-weight: 500; }
+    #fig-gorna-telemetry-loop .kp-how { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+    #fig-gorna-telemetry-loop .kp-mono { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-gorna-telemetry-loop .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="330" rx="10"/>
+  <!-- the three sources -->
+  <rect class="kp-box" x="24" y="40" width="230" height="64" rx="8"/>
+  <text class="kp-name" x="38" y="62">Monitors</text>
+  <text class="kp-how" x="38" y="80">memory, video memory</text>
+  <text class="kp-mono" x="38" y="96">polled 1 / s, in the frame</text>
+  <rect class="kp-box" x="24" y="128" width="230" height="64" rx="8"/>
+  <text class="kp-name" x="38" y="150">Hardware monitor</text>
+  <text class="kp-how" x="38" y="168">heat, battery, CPU load</text>
+  <text class="kp-mono" x="38" y="184">read 1 / s, off the frame</text>
+  <rect class="kp-box" x="24" y="216" width="230" height="64" rx="8"/>
+  <text class="kp-name" x="38" y="238">Reports</text>
+  <text class="kp-how" x="38" y="256">each run of an agent, each frame</text>
+  <text class="kp-mono" x="38" y="272">sent as they happen</text>
+  <!-- the DCC -->
+  <rect class="kp-dcc" x="300" y="40" width="200" height="240" rx="10"/>
+  <text class="kp-name" x="316" y="64">DCC · 20 ticks / s</text>
+  <text class="kp-how" x="316" y="92">inbox → metric store,</text>
+  <text class="kp-how" x="316" y="108">context</text>
+  <text class="kp-how" x="316" y="140">heuristics → target</text>
+  <text class="kp-how" x="316" y="164">governor → multiplier</text>
+  <text class="kp-how" x="316" y="188">cost book, planner</text>
+  <text class="kp-how" x="316" y="220">arbiter → envelopes</text>
+  <!-- what comes out -->
+  <rect class="kp-box" x="546" y="40" width="190" height="64" rx="8"/>
+  <text class="kp-name" x="560" y="62">Editor</text>
+  <text class="kp-how" x="560" y="80">the context, the last</text>
+  <text class="kp-how" x="560" y="96">decision</text>
+  <rect class="kp-box" x="546" y="128" width="190" height="64" rx="8"/>
+  <text class="kp-name" x="560" y="150">Budget channel</text>
+  <text class="kp-gold" x="560" y="170">Allocation</text>
+  <rect class="kp-box" x="546" y="216" width="190" height="64" rx="8"/>
+  <text class="kp-name" x="560" y="238">Agents</text>
+  <text class="kp-how" x="560" y="256">lent at a frame start</text>
+  <!-- wires -->
+  <path class="kp-wire" d="M254 72 L294 72"/>
+  <path class="kp-head" d="M294 67 L294 77 L300 72 Z"/>
+  <path class="kp-wire" d="M254 160 L294 160"/>
+  <path class="kp-head" d="M294 155 L294 165 L300 160 Z"/>
+  <path class="kp-wire" d="M254 248 L294 248"/>
+  <path class="kp-head" d="M294 243 L294 253 L300 248 Z"/>
+  <path class="kp-wire" d="M500 72 L540 72"/>
+  <path class="kp-head" d="M540 67 L540 77 L546 72 Z"/>
+  <path class="kp-gold-wire" d="M500 160 L540 160"/>
+  <path class="kp-gold-head" d="M540 155 L540 165 L546 160 Z"/>
+  <path class="kp-gold-wire" d="M641 192 L641 210"/>
+  <path class="kp-gold-head" d="M636 210 L646 210 L641 216 Z"/>
+  <!-- 1. the machine -->
+  <g data-on="1">
+    <rect class="kp-lit" x="20" y="36" width="238" height="160" rx="10"/>
+    <text class="kp-how" x="24" y="312">The situation: facts about the machine and the data, sampled. No agent reports these.</text>
+  </g>
+  <!-- 2. the work -->
+  <g data-on="2">
+    <rect class="kp-lit" x="20" y="212" width="238" height="72" rx="10"/>
+    <text class="kp-how" x="24" y="312">The cost: what each run and each frame took, measured where it ran, never by a monitor.</text>
+  </g>
+  <!-- 3. the decision -->
+  <g data-on="3">
+    <rect class="kp-lit" x="296" y="36" width="208" height="248" rx="12"/>
+    <text class="kp-how" x="24" y="312">Each tick the DCC drains its inbox, decides when something changed, and publishes.</text>
+  </g>
+</svg>

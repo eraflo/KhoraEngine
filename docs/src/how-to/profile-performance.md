@@ -19,70 +19,66 @@ measurable today and what is not yet — for the *why* behind each mechanism, fo
 Telemetry is a first-class subsystem, not an afterthought — it is the engine's nervous system and
 the input to every adaptive decision. See [Telemetry](../concepts/telemetry.md).
 
-**What the engine collects.**
+**What the engine measures.**
 
-- **Frame timing.** The wgpu backend has a GPU timestamp profiler
-  (`crates/khora-infra/src/graphics/wgpu/profiler.rs`) that measures the **main pass** and the
-  **frame total** on the GPU, smoothed with an EMA. It uses a two-pass timestamp scheme with a
-  frame-lag read model (timestamps written in frame N are read at frame N+2).
-- **Per-agent cost.** The scheduler times every run of a family's installed layer and publishes the agent's report,
-  `TelemetryEvent::AgentReport` after each run: the row, the time per device and the workload `n`. This is
-  what feeds the cost model ([§2](#understand-gornas-decisions)–[§3](#the-fixed-timestep-cost-model)).
-- **Draw calls / triangles / render stats.** Agents and lanes push named counters and gauges through
-  the `MetricsRegistry` (e.g. `render.draw_calls`, `physics.bodies_active`). Names are dot-separated;
-  the registry is concurrent.
-- **Memory.** `SaaTrackingAllocator` (installed as the global allocator in every binary) tracks every
-  heap allocation into atomic counters; the `MemoryMonitor` surfaces them as `memory.current_bytes`,
-  `memory.bytes_allocated_lifetime`, `memory.net_allocations`.
-- **Hardware monitors.** `MemoryMonitor` and `VramMonitor` poll the heap and the VRAM. Time is not a
-  monitor's: it comes from the agents' reports and the frame report.
+- **The frame.** The host reports every frame (`FrameReport`): how long it kept each device busy,
+  the waits for the display left out. Its longest busy time is the frame's **critical path**, kept as
+  the metric `frame:critical_ms`. The graphics card is not timed in it: it stays *unmeasured*.
+- **Each agent.** The scheduler times every run of a family's installed layer, and the agent reports
+  it (`TelemetryEvent::AgentReport`): the row it ran, its time per device, and the host time its level
+  quoted on the run's inputs. The DCC keeps each agent's time as `agent:<name>_time_ms`, and its
+  [cost book](../concepts/arbiter.md#the-cost-book) learns how far each row's quote is from it.
+- **The GPU, inside the renderer.** The wgpu backend has a timestamp profiler
+  (`crates/khora-infra/src/graphics/wgpu/profiler.rs`) that measures the **main pass** and the **frame
+  total** on the graphics card, smoothed. Timestamps written in frame N are read at frame N + 2. The
+  results land in the render system's `RenderStats` (`gpu_main_pass_time_ms`,
+  `gpu_frame_total_time_ms`, with `draw_calls` and `triangles_rendered`), read through
+  `RenderSystem::get_last_frame_stats`; no report carries them to the DCC.
+- **Memory.** `SaaTrackingAllocator`, the global allocator of every binary, counts every heap
+  allocation; the `MemoryMonitor` publishes `memory:current_bytes`,
+  `memory:bytes_allocated_lifetime` and `memory:net_allocations`. The renderer's device reports the
+  video memory the platform gives it and what it uses.
+- **Pushed metrics.** Code that counts something holds a typed `CounterHandle`, `GaugeHandle` or
+  `HistogramHandle` from the `MetricsRegistry`, registered once; the asset decoders record
+  `assets:decode_time` and `assets:decoded_total`. Do not look a metric up by name in the hot path.
 
-**Where it surfaces.** The editor's **Control Plane** (the sixth Spine mode) is the primary surface —
-see [Editor — The Control Plane](../reference/editor.md):
+**Where it surfaces.** The editor's **Control Plane**, its second Spine mode — see
+[Editor — The Control Plane](../reference/editor.md#10--the-control-plane):
 
-- **Lane Timeline** — per-subsystem execution windows.
-- **GORNA Stream** — the live negotiation feed (who switched, and why).
-- **Meters Wall** — frame time, GPU %, memory, agent budget, assets pending.
-
-To read live metrics from your own game/UI, the well-known metric names are documented in
-`crates/khora-telemetry/src/lib.rs` under the metric names the DCC emits (built inline, e.g. `agent.<Id>_time_ms` in `DccService`). To add your own, hold a
-`Counter` / `Gauge` handle in the agent or lane that owns it (do not look up by string in the hot
-path).
-
-**Honest gap.** The GPU profiler measures *main pass* and *frame total*; there is **no fine-grained
-per-stage GPU breakdown** (per-pass, per-material) and **no CPU tracing spans** (Tracy-style) wired up
-yet. Per-agent CPU cost is available (from `AgentReport`), but it is not yet sliced per render stage.
-See [What is not yet measurable](#what-is-not-yet-measurable).
+- the **summary bar** — the frame time over the last frames, the frame budget, the processor's and
+  graphics card's load, video memory, heap, and the budget multiplier;
+- the **agents**, with the row each runs and its health;
+- the **inspector**'s **Decision** card — what the selected agent was lent, the row planned and the
+  row running, and why ([Debug a frame](./debug-a-frame.md) reads it step by step).
 
 ---
 
 ## Understand GORNA's decisions
 
-GORNA chooses *how* each agent runs every cold-path tick; the [GORNA](../concepts/gorna.md) chapter is the
-full reference. For performance work, three pieces matter.
+GORNA decides *how* each agent runs; the [GORNA](../concepts/gorna.md) pages are the full reference.
+For performance work, three pieces matter.
 
-**The frame budget.** Heuristics (thermal, battery, phase, frame-time, stutter, trend, CPU pressure,
-GPU pressure, memory pressure, death-spiral) collapse into a single frame-time **target**. The
-**frame governor** (`khora_control::governor`) then drives the `global_budget_multiplier` applied to
-the frame target GORNA shares, closing the loop on the frames' *measured* critical path versus that
-target. When frames run long the
-multiplier drops and agents pick cheaper strategies; when there is headroom it climbs back toward 1.0
-and agents upgrade. A hard safety ceiling caps the multiplier immediately on `Critical`
-thermal/battery or near-budget memory pressure.
+**The frame's target.** The heuristics (heat, battery, frame time, stutter, trend, processor, graphics
+card, memory, death spiral) set a **setpoint**, 16.66 ms by default. The **frame governor**
+(`khora_control::governor`) scales it by a **budget multiplier**, from 0.3 to 1.0, so the frames'
+*measured* critical path settles 10 % under the setpoint. When frames run long the multiplier drops
+and agents pick cheaper rows; when there is room it climbs back and agents upgrade. A safety ceiling
+caps it at once on critical heat, a critical battery or memory at 95 % of its budget. See
+[The arbiter — the frame governor](../concepts/arbiter.md#the-cost-model-and-the-frame-governor).
 
-**Why an agent up/downgraded.** Read the **GORNA Stream** panel — each switch prints its reason
-("renderer: LitForward → Forward+ — GPU pressure"). Re-arbitration fires whenever the governor's
-multiplier has moved since budgets were last issued, so a strategy change always traces back to a
-measured target/multiplier move. To walk a single decision step by
-step, use [Debug a frame](./debug-a-frame.md).
+**Why an agent switched.** Select it in the Control Plane: the Decision card names the trigger that
+opened the round, who decided, what bound the frame and which upgrades were refused. Every move of the
+governor's multiplier opens a round, so a row change traces back to a trigger you can read. To walk one
+decision step by step, use [Debug a frame](./debug-a-frame.md).
 
-**Calibration anchors quotes to reality.** Agents quote the cost of every row in their `offer()`, but
-a quote is an estimate and reality drifts per machine and per scene. The DCC fits each agent's measured `(n, time)` samples into
-a `CostModel` (`c·f(n)` over `{1, n, n·log n, n²}`) and, during arbitration, rescales each agent's
-offered rows so the row matching its *current* strategy equals the measurement (factor clamped
-to `[0.25, 4.0]`, ordering preserved). The budget fitting therefore reasons about **measured
-milliseconds**, not worst-case quotes — a cold-start agent with no sample keeps its quote until it is
-measured. See [AGDF — anticipatory budgeting](../concepts/agdf.md).
+**Learnt costs anchor the quotes.** An agent quotes every row in its offer, but a quote is a formula
+written on some machine. The DCC's **cost book** learns, for each agent and each row, the factor from
+the quoted host time to the measured one, with its spread, by recursive least squares. A round plans in
+measured time — a row whose runs vary a little higher — then lends each envelope back in the agent's
+own quoted units, so the agent runs the row planned. A row never run borrows the mean of its agent's
+learnt rows; an agent nothing was learnt of is planned at its quotes. What it learns is kept per machine
+and game version as a profile, so the next run starts informed. See
+[The arbiter — the cost book](../concepts/arbiter.md#the-cost-book).
 
 ---
 
@@ -214,7 +210,7 @@ epoch, so they never invalidate a cached View.
 - **Pre-size allocations in lanes.** Allocation churn is a real frame-hitch cause — the DCC raises a
   glass-box alert when resident-byte volatility is high (see [Telemetry](../concepts/telemetry.md)). Reserve
   buffers up front and reuse them across frames rather than allocating per frame.
-- **Avoid per-frame churn in the hot path.** Hold typed `Counter` / `Gauge` handles instead of looking
+- **Avoid per-frame churn in the hot path.** Hold typed `CounterHandle` / `GaugeHandle` handles instead of looking
   metrics up by string; keep field-SoA data resident across a SIMD loop ([§4](#agdf--data-layout)); do
   not transpose in and out.
 - **Let GORNA pick the cheap path under pressure** instead of hard-coding a quality level — but pin it
@@ -231,23 +227,24 @@ epoch, so they never invalidate a cached View.
 
 Being explicit about the gaps:
 
-- **No fine-grained GPU stage breakdown.** The profiler times the main pass and the frame total, not
-  individual passes or materials.
-- **No CPU tracing spans.** There is no Tracy/`tracing`-span timeline yet; the telemetry pipeline is
-  described as *compatible* with such a hookup, but it is not wired
-  ([Telemetry — open questions](../concepts/telemetry.md)).
-- **Coarse workload size.** The cost model's `n` is the **global entity count**, not a per-domain
-  workload — per-domain refinement is an open GORNA item
-  ([GORNA — open questions](../concepts/gorna.md)).
-- **No histogram export.** Histograms collect, but a Prometheus/OpenMetrics exporter is not committed;
-  metrics are read in-editor or in-process.
+- **No GPU time in the frame report.** The frame graph is not timed on the graphics card, so the DCC
+  sees the host's time only; a GPU-bound frame hides in the wait for the swapchain image. The
+  renderer's timestamp profiler times the main pass and the frame total, not individual passes or
+  materials, and does not reach the DCC.
+- **No GPU time per lane.** The cost book corrects host time only; each row's GPU time stays as its
+  lane quotes it.
+- **No graphics-card load.** No shipped monitor reports it, so the GPU-load heuristic reads 0.
+- **No memory pressure by default.** It needs a RAM budget (`DccConfig::memory_budget_bytes`), which
+  the default configuration leaves unset.
+- **No CPU tracing spans.** There is no span timeline (Tracy, `tracing`) wired up; the telemetry
+  pipeline could feed one ([Telemetry — honest gaps](../concepts/telemetry.md#honest-gaps)).
+- **No histogram export.** Histograms collect, but no export format is settled; metrics are read in
+  the editor or in-process.
 
-These are forward-looking: the observation tunnel and metric registry are built to absorb them when
-they land. (GORNA decision record/replay, once roadmap, is now available — see
-[Debug a frame](./debug-a-frame.md).)
+Recording and replaying GORNA's decisions is available: see [Debug a frame](./debug-a-frame.md).
 
 ---
 
-*See also: [Telemetry](../concepts/telemetry.md), [GORNA](../concepts/gorna.md), [AGDF](../concepts/agdf.md),
-[ECS](../concepts/ecs.md), [Editor](../reference/editor.md), [Troubleshoot](./troubleshoot.md),
-[Debug a frame](./debug-a-frame.md).*
+*See also: [Telemetry](../concepts/telemetry.md), [GORNA](../concepts/gorna.md),
+[The arbiter](../concepts/arbiter.md), [AGDF](../concepts/agdf.md), [ECS](../concepts/ecs.md),
+[Editor](../reference/editor.md), [Troubleshoot](./troubleshoot.md), [Debug a frame](./debug-a-frame.md).*

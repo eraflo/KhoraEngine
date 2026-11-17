@@ -1,0 +1,79 @@
+<svg id="fig-residency-frame" class="kp-figure" viewBox="0 0 760 270" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-res-frame-title kp-res-frame-desc">
+  <title id="kp-res-frame-title">Where the residencies run in a frame</title>
+  <desc id="kp-res-frame-desc">A frame runs its phases in order: Boundary, PreSimulation, the game's update, PostSimulation, PreExtract, the Flows, the agents and their lanes, and Maintenance. At the Boundary, decoded assets land. In PreExtract, asset_reload replaces the copies of changed assets, asset_resolver turns references into handles, then the residencies make what is new resident: image_on_gpu, gpu_mesh_sync, and gpu_material_sync after the meshes. The Flows and lanes then read what is resident. In Maintenance, asset_eviction frees the GPU meshes and materials no live entity uses.</desc>
+  <style>
+    #fig-residency-frame { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-residency-frame .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-residency-frame .kp-chip { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-residency-frame .kp-chip-hot { fill: var(--k-bg-2, #181e2b); stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    #fig-residency-frame .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-residency-frame .kp-link { stroke: var(--k-line, #383d48); stroke-width: 1; fill: none; stroke-dasharray: 3 3; }
+    #fig-residency-frame .kp-time { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; fill: none; }
+    #fig-residency-frame .kp-arrowhead { fill: var(--k-silver-dim, #809db2); }
+    #fig-residency-frame .kp-thread { stroke: var(--k-gold, #e4b65c); stroke-width: 2; fill: none; }
+    #fig-residency-frame .kp-chip-text { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-residency-frame .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 15px; }
+    #fig-residency-frame .kp-mono { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-residency-frame .kp-mono-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-residency-frame .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-residency-frame .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+  </style>
+  <defs>
+    <marker id="kp-res-frame-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path class="kp-arrowhead" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+  <rect class="kp-bg" x="0" y="0" width="760" height="270" rx="8"/>
+  <text class="kp-note" x="30" y="24">one frame, left to right</text>
+  <path class="kp-time" d="M30,86 L735,86" marker-end="url(#kp-res-frame-arrow)"/>
+  <!-- The phases -->
+  <rect class="kp-chip" x="30" y="38" width="68" height="34" rx="5"/>
+  <rect class="kp-chip" x="104" y="38" width="101" height="34" rx="5"/>
+  <rect class="kp-chip" x="211" y="38" width="56" height="34" rx="5"/>
+  <rect class="kp-chip" x="273" y="38" width="107" height="34" rx="5"/>
+  <rect class="kp-chip-hot" x="386" y="38" width="81" height="34" rx="5"/>
+  <rect class="kp-chip" x="473" y="38" width="49" height="34" rx="5"/>
+  <rect class="kp-chip" x="528" y="38" width="107" height="34" rx="5"/>
+  <rect class="kp-chip" x="641" y="38" width="88" height="34" rx="5"/>
+  <text class="kp-chip-text" x="39" y="60">Boundary</text>
+  <text class="kp-chip-text" x="113" y="60">PreSimulation</text>
+  <text class="kp-chip-text" x="220" y="60">update</text>
+  <text class="kp-chip-text" x="282" y="60">PostSimulation</text>
+  <text class="kp-chip-text" x="395" y="60">PreExtract</text>
+  <text class="kp-chip-text" x="482" y="60">Flows</text>
+  <text class="kp-chip-text" x="537" y="60">agents · lanes</text>
+  <text class="kp-chip-text" x="650" y="60">Maintenance</text>
+  <!-- Boundary detail -->
+  <path class="kp-link" d="M64,72 L64,108"/>
+  <rect class="kp-panel" x="30" y="108" width="175" height="78" rx="6"/>
+  <text class="kp-mono" x="42" y="130">asset_intake</text>
+  <text class="kp-label" x="42" y="150">the copies the loading</text>
+  <text class="kp-label" x="42" y="166">family decoded land here</text>
+  <!-- PreExtract detail -->
+  <path class="kp-link" d="M426,72 L426,108"/>
+  <rect class="kp-panel" x="222" y="108" width="300" height="140" rx="6"/>
+  <text class="kp-station" x="234" y="130">PreExtract, in order</text>
+  <text class="kp-mono" x="234" y="154">asset_reload</text>
+  <text class="kp-label" x="352" y="154">changed copies replaced</text>
+  <text class="kp-mono" x="234" y="174">asset_resolver</text>
+  <text class="kp-label" x="352" y="174">references → handles</text>
+  <path class="kp-thread" d="M228,186 L228,242"/>
+  <text class="kp-mono-gold" x="234" y="198">image_on_gpu</text>
+  <text class="kp-mono-gold" x="234" y="218">gpu_mesh_sync</text>
+  <text class="kp-mono-gold" x="234" y="238">gpu_material_sync</text>
+  <text class="kp-label" x="388" y="198">the residencies:</text>
+  <text class="kp-label" x="388" y="218">what is new is</text>
+  <text class="kp-label" x="388" y="238">made resident</text>
+  <!-- Readers -->
+  <path class="kp-link" d="M497,72 L497,100 L580,100 L580,108"/>
+  <path class="kp-link" d="M580,72 L580,108"/>
+  <text class="kp-note" x="540" y="128">read what is</text>
+  <text class="kp-note" x="540" y="142">resident</text>
+  <!-- Maintenance detail -->
+  <path class="kp-link" d="M685,72 L685,160"/>
+  <rect class="kp-panel" x="540" y="160" width="190" height="88" rx="6"/>
+  <text class="kp-mono" x="552" y="182">asset_eviction</text>
+  <text class="kp-label" x="552" y="202">frees the GPU meshes and</text>
+  <text class="kp-label" x="552" y="218">materials no live entity</text>
+  <text class="kp-label" x="552" y="234">uses, up to 16 a frame</text>
+</svg>

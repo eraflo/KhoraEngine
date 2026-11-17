@@ -1,0 +1,59 @@
+<svg id="fig-saa-two-clocks" class="kp-figure" viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-saa-two-clocks-title kp-saa-two-clocks-desc">
+  <title id="kp-saa-two-clocks-title">Two clocks, one channel</title>
+  <desc id="kp-saa-two-clocks-desc">Two timelines. Above, the cold path: the DCC's own thread, 20 times a second, reads telemetry and the frames' reports, opens a GORNA round when one is due and publishes its allocation. Below, the hot path: the frame loop, every frame. The allocation travels down one channel and is lent at the next frame start; nothing is seen in the middle of a frame. Reports and telemetry travel back up. Several frames pass between two decisions, and neither side ever waits for the other.</desc>
+  <defs>
+    <marker id="kp-saa-two-clocks-tip" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="kp-tip" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+  <style>
+    #fig-saa-two-clocks { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-saa-two-clocks .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-saa-two-clocks .kp-lane { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-saa-two-clocks .kp-round { fill: var(--k-bg-3, #1f2636); stroke: var(--k-silver, #b4cfe2); stroke-width: 1.2; }
+    #fig-saa-two-clocks .kp-frame { fill: var(--k-bg-2, #181e2b); stroke: var(--k-silver-dim, #809db2); stroke-width: 1; }
+    #fig-saa-two-clocks .kp-down { stroke: var(--k-gold, #e4b65c); stroke-width: 1.6; fill: none; }
+    #fig-saa-two-clocks .kp-up { stroke: var(--k-silver-dim, #809db2); stroke-width: 1; fill: none; stroke-dasharray: 3 3; }
+    #fig-saa-two-clocks .kp-tip { fill: var(--k-silver-dim, #809db2); }
+    #fig-saa-two-clocks .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; font-weight: 500; }
+    #fig-saa-two-clocks .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 13px; }
+    #fig-saa-two-clocks .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+    #fig-saa-two-clocks .kp-name { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10px; }
+    #fig-saa-two-clocks .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="300" rx="10"/>
+  <!-- cold path -->
+  <text class="kp-head" x="24" y="30">cold path · the DCC's thread · 20 times a second</text>
+  <rect class="kp-lane" x="24" y="40" width="712" height="64" rx="6"/>
+  <rect class="kp-round" x="60" y="52" width="210" height="40" rx="5"/>
+  <text class="kp-station" x="72" y="70">one tick</text>
+  <text class="kp-name" x="72" y="85">telemetry → a round when due</text>
+  <rect class="kp-round" x="420" y="52" width="210" height="40" rx="5"/>
+  <text class="kp-station" x="432" y="70">one tick</text>
+  <text class="kp-name" x="432" y="85">telemetry → a round when due</text>
+  <!-- hot path -->
+  <text class="kp-head" x="24" y="152">hot path · the frame loop · every frame</text>
+  <rect class="kp-lane" x="24" y="162" width="712" height="64" rx="6"/>
+  <rect class="kp-frame" x="36" y="176" width="58" height="36" rx="4"/>
+  <rect class="kp-frame" x="102" y="176" width="58" height="36" rx="4"/>
+  <rect class="kp-frame" x="168" y="176" width="58" height="36" rx="4"/>
+  <rect class="kp-frame" x="234" y="176" width="58" height="36" rx="4"/>
+  <rect class="kp-frame" x="300" y="176" width="58" height="36" rx="4"/>
+  <rect class="kp-frame" x="366" y="176" width="58" height="36" rx="4"/>
+  <rect class="kp-frame" x="432" y="176" width="58" height="36" rx="4"/>
+  <rect class="kp-frame" x="498" y="176" width="58" height="36" rx="4"/>
+  <rect class="kp-frame" x="564" y="176" width="58" height="36" rx="4"/>
+  <rect class="kp-frame" x="630" y="176" width="58" height="36" rx="4"/>
+  <text class="kp-name" x="44" y="198">frame</text>
+  <text class="kp-name" x="110" y="198">frame</text>
+  <text class="kp-name" x="176" y="198">frame</text>
+  <!-- the channel -->
+  <path class="kp-down" d="M270,92 C 290,130 305,150 305,172" marker-end="url(#kp-saa-two-clocks-tip)"/>
+  <path class="kp-down" d="M630,92 C 640,130 638,150 637,172" marker-end="url(#kp-saa-two-clocks-tip)"/>
+  <text class="kp-gold" x="282" y="128">allocation, lent at the next frame start</text>
+  <path class="kp-up" d="M200,176 C 200,140 180,120 170,96" marker-end="url(#kp-saa-two-clocks-tip)"/>
+  <path class="kp-up" d="M560,176 C 560,140 540,120 530,96" marker-end="url(#kp-saa-two-clocks-tip)"/>
+  <text class="kp-label" x="24" y="128">reports, telemetry</text>
+  <text class="kp-label" x="24" y="256">Neither side waits for the other. A frame never sees a decision in its middle; a newer</text>
+  <text class="kp-label" x="24" y="274">allocation replaces one that has not been lent yet.</text>
+</svg>

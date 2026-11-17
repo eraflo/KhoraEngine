@@ -1,0 +1,72 @@
+<svg id="fig-scripting-budget-frame" class="kp-figure" viewBox="0 0 760 410" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-scripting-budget-frame-title kp-scripting-budget-frame-desc">
+  <title id="kp-scripting-budget-frame-title">One frame of the script family, from the envelope the DCC lends to the report it reads back</title>
+  <desc id="kp-scripting-budget-frame-desc">Six columns: the DCC, the scheduler, the script family's LaneAgent, the data layer, the script lane and the VM. At a frame start the scheduler lends the DCC's envelope to the agent, which chooses a row. The scheduler wakes the agent, which sets its place's terms: a budget of 0.4 ms. Before the lane runs, the data layer applies reloads, joins the events into the mail and publishes the ScriptView. In the transform phase the scheduler runs the layer installed at the place; the lane turns the budget into fuel at its measured rate. The VM runs turns; an instance whose share of fuel is gone sits out, a body cut short stops at a safepoint. The lane returns how much of its work it did, the place turns it into a report with a health, and the scheduler hands that report to the DCC.</desc>
+  <style>
+    #fig-scripting-budget-frame { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-scripting-budget-frame .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-scripting-budget-frame .kp-head { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-scripting-budget-frame .kp-life { fill: none; stroke: var(--k-line, #383d48); stroke-width: 1; stroke-dasharray: 3 4; }
+    #fig-scripting-budget-frame .kp-thread { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.75; }
+    #fig-scripting-budget-frame .kp-past { fill: none; stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
+    #fig-scripting-budget-frame .kp-name { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 14px; }
+    #fig-scripting-budget-frame .kp-mono { fill: var(--k-fg-1, #c9ced4); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11.5px; }
+    #fig-scripting-budget-frame .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="410" rx="8"/>
+  <!-- Who takes part -->
+  <rect class="kp-head" x="14" y="16" width="112" height="30" rx="5"/>
+  <text class="kp-name" x="70" y="36" text-anchor="middle">DCC</text>
+  <path class="kp-life" d="M70 46 V400"/>
+  <rect class="kp-head" x="139" y="16" width="112" height="30" rx="5"/>
+  <text class="kp-name" x="195" y="36" text-anchor="middle">scheduler</text>
+  <path class="kp-life" d="M195 46 V400"/>
+  <rect class="kp-head" x="264" y="16" width="112" height="30" rx="5"/>
+  <text class="kp-name" x="320" y="36" text-anchor="middle">LaneAgent</text>
+  <path class="kp-life" d="M320 46 V400"/>
+  <rect class="kp-head" x="389" y="16" width="112" height="30" rx="5"/>
+  <text class="kp-name" x="445" y="36" text-anchor="middle">data layer</text>
+  <path class="kp-life" d="M445 46 V400"/>
+  <rect class="kp-head" x="514" y="16" width="112" height="30" rx="5"/>
+  <text class="kp-name" x="570" y="36" text-anchor="middle">script lane</text>
+  <path class="kp-life" d="M570 46 V400"/>
+  <rect class="kp-head" x="639" y="16" width="112" height="30" rx="5"/>
+  <text class="kp-name" x="695" y="36" text-anchor="middle">VM</text>
+  <path class="kp-life" d="M695 46 V400"/>
+  <!-- Step 1 -->
+  <path class="kp-thread" d="M70 86 H195 M188 82 L195 86 L188 90" data-on="1"/>
+  <path class="kp-past" d="M70 86 H195 M188 82 L195 86 L188 90" data-on="2 3 4 5 6"/>
+  <text class="kp-mono" x="132.5" y="79" text-anchor="middle">envelope: time, memory</text>
+  <path class="kp-thread" d="M195 116 H320 M313 112 L320 116 L313 120" data-on="1"/>
+  <path class="kp-past" d="M195 116 H320 M313 112 L320 116 L313 120" data-on="2 3 4 5 6"/>
+  <text class="kp-mono" x="257.5" y="109" text-anchor="middle">apply: choose a row</text>
+  <!-- Step 2 -->
+  <path class="kp-thread" d="M195 146 H320 M313 142 L320 146 L313 150" data-on="2"/>
+  <path class="kp-past" d="M195 146 H320 M313 142 L320 146 L313 150" data-on="3 4 5 6"/>
+  <text class="kp-mono" x="257.5" y="139" text-anchor="middle" data-on="2 3 4 5 6">wake</text>
+  <path class="kp-thread" d="M320 176 H570 M563 172 L570 176 L563 180" data-on="2"/>
+  <path class="kp-past" d="M320 176 H570 M563 172 L570 176 L563 180" data-on="3 4 5 6"/>
+  <text class="kp-mono" x="445" y="169" text-anchor="middle" data-on="2 3 4 5 6">terms: budget 0.4 ms</text>
+  <!-- Step 3 -->
+  <path class="kp-thread" d="M445 210 H570 M563 206 L570 210 L563 214" data-on="3"/>
+  <path class="kp-past" d="M445 210 H570 M563 206 L570 210 L563 214" data-on="4 5 6"/>
+  <text class="kp-mono" x="507.5" y="203" text-anchor="middle" data-on="3 4 5 6">ScriptView, mail</text>
+  <text class="kp-note" x="445" y="228" text-anchor="middle" data-on="3 4 5 6">reloads applied, events joined</text>
+  <!-- Step 4 -->
+  <path class="kp-thread" d="M195 252 H570 M563 248 L570 252 L563 256" data-on="4"/>
+  <path class="kp-past" d="M195 252 H570 M563 248 L570 252 L563 256" data-on="5 6"/>
+  <text class="kp-mono" x="382.5" y="245" text-anchor="middle" data-on="4 5 6">run the layer at its place</text>
+  <text class="kp-note" x="570" y="270" text-anchor="middle" data-on="4 5 6">fuel = (budget − overhead) × rate</text>
+  <!-- Step 5 -->
+  <path class="kp-thread" d="M570 300 H695 M688 296 L695 300 L688 304" data-on="5"/>
+  <path class="kp-past" d="M570 300 H695 M688 296 L695 300 L688 304" data-on="6"/>
+  <text class="kp-mono" x="632.5" y="293" text-anchor="middle" data-on="5 6">turns</text>
+  <path class="kp-thread" d="M695 324 H570 M577 320 L570 324 L577 328" data-on="5"/>
+  <path class="kp-past" d="M695 324 H570 M577 320 L570 324 L577 328" data-on="6"/>
+  <text class="kp-mono" x="632.5" y="317" text-anchor="middle" data-on="5 6">done, or stopped at a safepoint</text>
+  <text class="kp-note" x="570" y="342" text-anchor="middle" data-on="5 6">fuel gone: the rest sit out</text>
+  <!-- Step 6 -->
+  <path class="kp-thread" d="M570 364 H195 M202 360 L195 364 L202 368" data-on="6"/>
+  <text class="kp-mono" x="382.5" y="357" text-anchor="middle" data-on="6">LaneReport: done 0.8</text>
+  <path class="kp-thread" d="M195 390 H70 M77 386 L70 390 L77 394" data-on="6"/>
+  <text class="kp-mono" x="132.5" y="383" text-anchor="middle" data-on="6">Report: health 0.8</text>
+</svg>

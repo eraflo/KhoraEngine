@@ -1,0 +1,105 @@
+<svg id="fig-persistence-prepare-commit" class="kp-figure" viewBox="0 0 760 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-pc-title kp-pc-desc">
+  <title id="kp-pc-title">A load is prepared, touching nothing the world shows, then committed, or abandoned</title>
+  <desc id="kp-pc-desc">Prepare reads the whole scene record: it refuses a record still linking prefabs, reads every page's component names and column shapes, checks the plan for entities recorded twice, rows not listed, a component twice in a page and two pages of one domain, reserves an entity id per saved entity without bringing it to life, stages every value field by field with references bound, and reads the hierarchy from Parent, refusing a cycle. Any failure gives the reserved ids back and returns the reason with the report; the world is unchanged. Commit registers what the file declares, keeps each saved identity unless another entity holds it, places every row in its final page and builds Children, and returns the entities and the report. A load prepared for another world adds nothing; one prepared before the world's components changed is prepared again.</desc>
+  <style>
+    #fig-persistence-prepare-commit { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-persistence-prepare-commit .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-persistence-prepare-commit .kp-zone { fill: none; stroke: var(--k-line, #383d48); stroke-width: 1; stroke-dasharray: 4 4; }
+    #fig-persistence-prepare-commit .kp-step { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-persistence-prepare-commit .kp-ring { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.75; }
+    #fig-persistence-prepare-commit .kp-card { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-persistence-prepare-commit .kp-flow { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; fill: none; }
+    #fig-persistence-prepare-commit .kp-arrowhead { fill: var(--k-silver-dim, #809db2); }
+    #fig-persistence-prepare-commit .kp-zone-label { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+    #fig-persistence-prepare-commit .kp-step-text { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-persistence-prepare-commit .kp-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 17px; }
+    #fig-persistence-prepare-commit .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-persistence-prepare-commit .kp-strong { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+    #fig-persistence-prepare-commit .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+  </style>
+  <defs>
+    <marker id="kp-pc-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path class="kp-arrowhead" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+  <rect class="kp-bg" x="0" y="0" width="760" height="380" rx="8"/>
+  <!-- Zones -->
+  <rect class="kp-zone" x="24" y="20" width="560" height="118" rx="6"/>
+  <text class="kp-zone-label" x="34" y="36">prepare — reads, reserves, shows nothing</text>
+  <rect class="kp-zone" x="594" y="20" width="142" height="118" rx="6"/>
+  <text class="kp-zone-label" x="604" y="36">commit — adds</text>
+  <!-- Steps -->
+  <rect class="kp-step" x="34" y="48" width="100" height="76" rx="5"/>
+  <text class="kp-step-text" x="44" y="72">names and</text>
+  <text class="kp-step-text" x="44" y="88">shapes</text>
+  <rect class="kp-step" x="144" y="48" width="100" height="76" rx="5"/>
+  <text class="kp-step-text" x="154" y="72">the plan</text>
+  <text class="kp-step-text" x="154" y="88">checked</text>
+  <rect class="kp-step" x="254" y="48" width="100" height="76" rx="5"/>
+  <text class="kp-step-text" x="264" y="72">ids</text>
+  <text class="kp-step-text" x="264" y="88">reserved</text>
+  <rect class="kp-step" x="364" y="48" width="100" height="76" rx="5"/>
+  <text class="kp-step-text" x="374" y="72">values</text>
+  <text class="kp-step-text" x="374" y="88">staged</text>
+  <rect class="kp-step" x="474" y="48" width="100" height="76" rx="5"/>
+  <text class="kp-step-text" x="484" y="72">hierarchy</text>
+  <text class="kp-step-text" x="484" y="88">read</text>
+  <rect class="kp-step" x="604" y="48" width="122" height="76" rx="5"/>
+  <text class="kp-step-text" x="614" y="72">rows placed</text>
+  <text class="kp-step-text" x="614" y="88">in their pages</text>
+  <path class="kp-flow" d="M134,86 L142,86" marker-end="url(#kp-pc-arrow)"/>
+  <path class="kp-flow" d="M244,86 L252,86" marker-end="url(#kp-pc-arrow)"/>
+  <path class="kp-flow" d="M354,86 L362,86" marker-end="url(#kp-pc-arrow)"/>
+  <path class="kp-flow" d="M464,86 L472,86" marker-end="url(#kp-pc-arrow)"/>
+  <path class="kp-flow" d="M574,86 L602,86" marker-end="url(#kp-pc-arrow)"/>
+  <!-- Current step -->
+  <rect class="kp-ring" x="30" y="44" width="108" height="84" rx="7" data-on="1 2 3 4 5" data-tf="2:translate(110px, 0)|3:translate(220px, 0)|4:translate(330px, 0)|5:translate(440px, 0)"/>
+  <rect class="kp-ring" x="600" y="44" width="130" height="84" rx="7" data-on="6"/>
+  <rect class="kp-ring" x="20" y="16" width="568" height="126" rx="8" data-on="7"/>
+  <!-- Card -->
+  <rect class="kp-card" x="24" y="156" width="712" height="204" rx="8"/>
+  <g data-on="1">
+    <text class="kp-title" x="44" y="188">Names and shapes</text>
+    <text class="kp-label" x="44" y="214">A record that still links prefabs is refused: links are expanded first. Then page by page,</text>
+    <text class="kp-label" x="44" y="234">each column's length is checked against the page's rows, and each component's name is</text>
+    <text class="kp-label" x="44" y="254">resolved: current, formerly, retired, not saved, declared by the file — or unknown,</text>
+    <text class="kp-label" x="44" y="274">which refuses the load.</text>
+  </g>
+  <g data-on="2">
+    <text class="kp-title" x="44" y="188">The plan, checked</text>
+    <text class="kp-label" x="44" y="214">With every name known, the record's plan is checked as a whole: an entity recorded</text>
+    <text class="kp-label" x="44" y="234">twice, a row whose entity the record does not list, a component twice in one page, two</text>
+    <text class="kp-label" x="44" y="254">pages of one domain for one entity. Any of them refuses the load.</text>
+  </g>
+  <g data-on="3">
+    <text class="kp-title" x="44" y="188">Ids reserved</text>
+    <text class="kp-label" x="44" y="214">One entity id per saved entity, reserved: held for this load, not alive, handed to no</text>
+    <text class="kp-label" x="44" y="234">one else. No query, no system, no other load can see or take them.</text>
+  </g>
+  <g data-on="4">
+    <text class="kp-title" x="44" y="188">Values staged</text>
+    <text class="kp-label" x="44" y="214">Every value is read field by field, by name, into a staged row; every reference to an</text>
+    <text class="kp-label" x="44" y="234">entity is bound to the id reserved for it, or to nowhere when the file does not hold it.</text>
+    <text class="kp-label" x="44" y="254">Each adaptation becomes an entry of the report.</text>
+  </g>
+  <g data-on="5">
+    <text class="kp-title" x="44" y="188">Hierarchy read</text>
+    <text class="kp-label" x="44" y="214">The tree is read from each entity's Parent; a cycle refuses the load. The result is a</text>
+    <text class="kp-label" x="44" y="234">Prepared load: everything checked, nothing shown.</text>
+    <text class="kp-strong" x="44" y="268">A prepare needs no World: off the frame, it reads the world's catalogue instead.</text>
+  </g>
+  <g data-on="6">
+    <text class="kp-title" x="44" y="188">Commit</text>
+    <text class="kp-label" x="44" y="214">What the file declares and the world lacks is registered. Each saved identity is kept,</text>
+    <text class="kp-label" x="44" y="234">unless another entity already holds it. Every row lands in its final page at once, and</text>
+    <text class="kp-label" x="44" y="254">Children is built beside each Parent. The result: the entities, and the report.</text>
+    <text class="kp-label" x="44" y="288">Commit returns no error. Prepared for another world, it adds nothing (NotLoaded);</text>
+    <text class="kp-label" x="44" y="308">prepared before the world's components changed, it is prepared again first.</text>
+  </g>
+  <g data-on="7">
+    <text class="kp-title" x="44" y="188">Or nothing at all</text>
+    <text class="kp-label" x="44" y="214">A failure anywhere in prepare gives the reserved ids back and returns the reason, with</text>
+    <text class="kp-label" x="44" y="234">the report of what had been read. A prepared load can also be abandoned on purpose.</text>
+    <text class="kp-gold" x="44" y="268">Either every entity of the file arrives, or the world is exactly as it was.</text>
+  </g>
+</svg>

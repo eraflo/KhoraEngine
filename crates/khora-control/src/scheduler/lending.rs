@@ -75,7 +75,8 @@ impl ExecutionScheduler {
     /// force; an allocation that does not name it leaves it with what it holds. An agent busy
     /// now is handed what it missed at the next frame start. A family found on again after
     /// being off is first withdrawn ([`Agent::withdraw`]), and owed only what was taken
-    /// after its resume. See the book: concepts/gorna.md, "When things go wrong".
+    /// after its resume.
+    /// See the book: concepts/gorna-protocol.md, "Envelopes lent at a frame start".
     pub(super) fn lend_allocation(&mut self, inactive: &BTreeSet<AgentId>) {
         let current = self.ledger.taken.last().map(|taken| taken.place);
         self.note_resumes(inactive, current);

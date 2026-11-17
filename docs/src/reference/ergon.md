@@ -1,7 +1,7 @@
 # Ergon reference
 
-The Ergon language as it compiles and runs **today**: every construct, with an
-example, and an honest line on what parses but does not run yet. For how a
+The Ergon language as it compiles and runs: every construct, with an example,
+and a line on what parses but does not run yet. For how a
 script runs inside a frame — turns, safepoints, saves, edits — see
 [Scripting](../concepts/scripting/index.md).
 
@@ -34,7 +34,7 @@ behavior Guard {
 
 | Item | Status | Notes |
 |---|---|---|
-| `import "path.erg";` | runs | before every other item; paths relative to `assets/scripts/`, the one folder scripts live in; a cycle is refused with its chain. Every imported module joins **one flat namespace**; `as Alias` parses and is unused |
+| `import "path.erg";` | runs | anywhere among the items, by convention first; paths relative to `assets/scripts/`, the one folder scripts live in; a cycle is refused with its chain. Every imported module joins **one flat namespace**; `as Alias` parses and is unused |
 | `fn <type> Name(params) { … }` | runs | free functions; called before their declaration and recursively; `this` is refused in them; a name an engine function already has is refused |
 | `behavior Name { … }` | runs | a component of the same name, its fields the behavior's, with a state companion `Name#state`; attached by adding the component (`GameWorld::add_declared_component`). Names are global: two modules declaring one is refused |
 | `system Name { … }` | runs | a behavior with no subject, run once a frame on an entity of its own; see [Systems](#systems). Its name is global like a behavior's |
@@ -243,18 +243,19 @@ behavior Guard {
 }
 ```
 
-```mermaid
-stateDiagram-v2
-    direction LR
-    [*] --> Patrol: first declared
-    Patrol --> Chase: become Chase(foe)
-    Chase --> Patrol: become Patrol
-    note right of Chase
-        foe and missed exist only here;
-        its every and after run only here,
-        re-armed on each entry
-    end note
-```
+<figure class="kp-steps">
+<div class="kp-figure-frame">
+
+{{#include ../images/reference/ergon-states.svg}}
+
+</div>
+<ol class="kp-steps-text">
+<li><strong>The first state.</strong> A new <code>Guard</code> starts in <code>Patrol</code>, the first state declared, entered with no arguments.</li>
+<li><strong>Entering Chase.</strong> <code>become Chase(foe)</code>: the parameter <code>foe</code> and the field <code>missed</code> now exist, <code>missed</code> at its default, and the <code>every</code> and <code>after</code> of the state are armed.</li>
+<li><strong>Leaving it.</strong> Ten seconds on, <code>after 10s</code> runs <code>become Patrol</code>. <code>foe</code>, <code>missed</code> and both schedules are gone.</li>
+<li><strong>Entering again.</strong> The next <code>Spotted</code> enters <code>Chase</code> afresh: <code>missed</code> is 0 again and both clocks start over.</li>
+</ol>
+</figure>
 
 - An instance starts in the **first declared** state, entered with no
   arguments — so the first state takes no parameters.
@@ -361,7 +362,9 @@ declared in: `F(b: Mark(2), a: Mark(1))` marks 2 then 1.
 | `become` | the state's parameters: `become Chase(prey: e)` |
 
 `Push`, `RemoveAt`, `Set`, `Add`, `Remove`, `Get`, `Has`, `Raise`'s argument
-itself, `Spawn` and an attribute take their arguments in order, unnamed.
+itself and an attribute take their arguments in order, unnamed. `Spawn` takes
+its prefab and components in order, and its two placements by label, `at:`
+and `facing:` (see [Writing components](#writing-components)).
 
 | Refused | Why |
 |---|---|

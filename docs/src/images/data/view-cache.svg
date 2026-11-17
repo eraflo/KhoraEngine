@@ -1,0 +1,89 @@
+<svg id="fig-data-view-cache" class="kp-figure" viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-view-cache-title kp-view-cache-desc">
+  <title id="kp-view-cache-title">A Flow's cached View, frame by frame</title>
+  <desc id="kp-view-cache-desc">On the first frame, the AudioFlow has nothing cached: it projects the world and keeps the view under its key. On the next frame nothing was written, the key is the same, and the cached view is published again without projecting. On a frame where a Transform was written, the spatial epoch rose, the key differs, and the Flow projects again. A system writing the same value through set_if_neq writes nothing, so the key holds and the view stays cached.</desc>
+  <style>
+    #fig-data-view-cache { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-data-view-cache .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-data-view-cache .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-data-view-cache .kp-cell { fill: var(--k-bg-2, #181e2b); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-data-view-cache .kp-hot { fill: var(--k-bg-2, #181e2b); stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    #fig-data-view-cache .kp-card { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-data-view-cache .kp-flow { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; fill: none; }
+    #fig-data-view-cache .kp-arrowhead { fill: var(--k-silver-dim, #809db2); }
+    #fig-data-view-cache .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 15px; }
+    #fig-data-view-cache .kp-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 17px; }
+    #fig-data-view-cache .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-data-view-cache .kp-strong { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+    #fig-data-view-cache .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+    #fig-data-view-cache .kp-mono { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-data-view-cache .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+  </style>
+  <defs>
+    <marker id="kp-view-cache-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path class="kp-arrowhead" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+  <rect class="kp-bg" x="0" y="0" width="760" height="320" rx="8"/>
+  <!-- The world's epochs -->
+  <rect class="kp-panel" x="30" y="24" width="210" height="140" rx="6"/>
+  <text class="kp-station" x="44" y="48">The World</text>
+  <text class="kp-note" x="44" y="72">instance</text>
+  <text class="kp-mono" x="140" y="72">7</text>
+  <text class="kp-note" x="44" y="94">Audio epoch</text>
+  <text class="kp-mono" x="140" y="94">120</text>
+  <text class="kp-note" x="44" y="116">Spatial epoch</text>
+  <text class="kp-mono" x="140" y="116" data-on="1 2">131</text>
+  <text class="kp-gold" x="140" y="116" data-on="3 4">158</text>
+  <text class="kp-note" x="44" y="146" data-on="1">frame 1</text>
+  <text class="kp-note" x="44" y="146" data-on="2">frame 2 · nothing written</text>
+  <text class="kp-note" x="44" y="146" data-on="3">frame 3 · a Transform moved</text>
+  <text class="kp-note" x="44" y="146" data-on="4">frame 4 · same value written</text>
+  <path class="kp-flow" d="M240,94 L278,94" marker-end="url(#kp-view-cache-arrow)"/>
+  <!-- The key -->
+  <rect class="kp-panel" x="280" y="24" width="200" height="140" rx="6"/>
+  <text class="kp-station" x="294" y="48">cache_key</text>
+  <text class="kp-note" x="294" y="72">this frame</text>
+  <rect class="kp-cell" x="294" y="80" width="172" height="24" rx="4" data-on="1 2 4"/>
+  <rect class="kp-hot" x="294" y="80" width="172" height="24" rx="4" data-on="3"/>
+  <text class="kp-mono" x="304" y="96" data-on="1 2 4">k1 = hash(7, 120, 131)</text>
+  <text class="kp-gold" x="304" y="96" data-on="3">k2 = hash(7, 120, 158)</text>
+  <text class="kp-note" x="294" y="126">kept from the last run</text>
+  <rect class="kp-cell" x="294" y="132" width="172" height="24" rx="4"/>
+  <text class="kp-mono" x="304" y="148" data-on="1">none</text>
+  <text class="kp-mono" x="304" y="148" data-on="2 3">k1 · its View</text>
+  <text class="kp-mono" x="304" y="148" data-on="4">k2 · its View</text>
+  <path class="kp-flow" d="M480,94 L518,94" marker-end="url(#kp-view-cache-arrow)"/>
+  <!-- The outcome -->
+  <rect class="kp-panel" x="520" y="24" width="210" height="140" rx="6"/>
+  <text class="kp-station" x="534" y="48">The bus</text>
+  <text class="kp-strong" x="534" y="84" data-on="1 3">select + project</text>
+  <text class="kp-label" x="534" y="104" data-on="1 3">a fresh AudioView</text>
+  <text class="kp-strong" x="534" y="84" data-on="2 4">republish a clone</text>
+  <text class="kp-label" x="534" y="104" data-on="2 4">no projection at all</text>
+  <text class="kp-note" x="534" y="146">the lanes read it all the same</text>
+  <!-- Card -->
+  <rect class="kp-card" x="30" y="184" width="700" height="116" rx="8"/>
+  <g data-on="1">
+    <text class="kp-title" x="50" y="214">First frame: nothing cached</text>
+    <text class="kp-label" x="50" y="240">AudioFlow folds the World's instance and its Audio and Spatial epochs into a key.</text>
+    <text class="kp-label" x="50" y="260">Nothing is kept yet: it selects, projects, publishes the View and keeps it under k1.</text>
+  </g>
+  <g data-on="2">
+    <text class="kp-title" x="50" y="214">Nothing changed: the same key</text>
+    <text class="kp-label" x="50" y="240">No value was written, no row moved: every epoch is where it was, so the key is k1</text>
+    <text class="kp-label" x="50" y="260">again. The runner publishes a clone of the kept View and projects nothing.</text>
+    <text class="kp-strong" x="50" y="284">Equal epochs guarantee equal data: the clone is what a projection would give.</text>
+  </g>
+  <g data-on="3">
+    <text class="kp-title" x="50" y="214">A Transform moved</text>
+    <text class="kp-label" x="50" y="240">The write raised the Spatial epoch to this frame's tick. The key is k2, not k1: the</text>
+    <text class="kp-label" x="50" y="260">Flow projects again and keeps the new View under k2.</text>
+    <text class="kp-gold" x="50" y="284">A key that misses an input serves a stale View; one input too many only projects more.</text>
+  </g>
+  <g data-on="4">
+    <text class="kp-title" x="50" y="214">The same value, written again</text>
+    <text class="kp-label" x="50" y="240">A system recomputing a value every frame writes it with set_if_neq: equal, it writes</text>
+    <text class="kp-label" x="50" y="260">nothing, so no epoch moves. The key stays k2 and the View stays cached.</text>
+    <text class="kp-strong" x="50" y="284">A still scene costs one key a frame.</text>
+  </g>
+</svg>

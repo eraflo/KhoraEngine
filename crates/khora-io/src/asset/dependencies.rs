@@ -36,9 +36,8 @@ pub fn type_has_dependency_extractor(asset_type: &str) -> bool {
 pub fn extract_dependencies(asset_type: &str, path: &str, bytes: &[u8]) -> Vec<AssetUUID> {
     let mut deps = match asset_type {
         "material" => material_dependencies(bytes),
-        // An `import` names a path, and a path becomes a UUID only against the
-        // root it is relative to — which is why this needs the importing file's
-        // own location and the other extractors do not.
+        // Only a module, a file under the script folder, has imports: the path
+        // says whether this file is one.
         "script" => script_dependencies(path, bytes),
         // Scenes, prefabs and meshes reference other assets; not extracted yet.
         "scene" => Vec::new(),

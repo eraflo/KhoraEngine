@@ -1,0 +1,144 @@
+<svg id="fig-reference-crate-tiers" class="kp-figure" viewBox="0 0 760 490" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-reference-crate-tiers-title kp-reference-crate-tiers-desc">
+  <title id="kp-reference-crate-tiers-title">Khora's crates in six tiers, each using only crates of the tiers below it</title>
+  <desc id="kp-reference-crate-tiers-desc">Six rows, from the floor at the bottom to the apps at the top. The floor holds khora-core and khora-macros. On the floor stand telemetry, infra, tool-ui and control, data and script; each uses khora-core, control also uses data, data and script use macros. The middle holds io, which uses data, script and telemetry, and lanes, which uses data, script and macros. The strategists tier holds agents, which uses lanes, data and script. The façade, khora-sdk, uses agents, lanes, io, control, data, infra and telemetry. The apps, editor, hub, runtime and sandbox, use the SDK; the editor and the hub also use tool-ui. Outside the tiers: xtask and the generated workspace-hack.</desc>
+  <style>
+    #fig-reference-crate-tiers { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-reference-crate-tiers .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-reference-crate-tiers .kp-box { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-reference-crate-tiers .kp-on { fill: var(--k-bg-2, #181e2b); stroke: var(--k-silver, #b4cfe2); stroke-width: 1.5; }
+    #fig-reference-crate-tiers .kp-out { fill: none; stroke: var(--k-line, #383d48); stroke-width: 1; stroke-dasharray: 4 4; }
+    #fig-reference-crate-tiers .kp-edge { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    #fig-reference-crate-tiers .kp-mono { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-reference-crate-tiers .kp-dim { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-reference-crate-tiers .kp-station { fill: var(--k-fg-1, #c9ced4); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 13px; }
+    #fig-reference-crate-tiers .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="490" rx="8"/>
+  <!-- Tier names -->
+  <text class="kp-station" x="40" y="22">apps</text>
+  <text class="kp-station" x="300" y="102">façade</text>
+  <text class="kp-station" x="430" y="182">strategists</text>
+  <text class="kp-station" x="200" y="262">middle</text>
+  <text class="kp-station" x="40" y="342">on the floor</text>
+  <text class="kp-station" x="40" y="422">floor</text>
+  <text class="kp-note" x="720" y="478" text-anchor="end">every name but sandbox starts with khora-</text>
+  <!-- Highlight of the tier the step is about -->
+  <g data-on="1">
+    <rect class="kp-on" x="40" y="430" width="520" height="34" rx="5"/>
+    <rect class="kp-on" x="580" y="430" width="140" height="34" rx="5"/>
+  </g>
+  <g data-on="2">
+    <rect class="kp-on" x="40" y="350" width="105" height="34" rx="5"/>
+    <rect class="kp-on" x="155" y="350" width="105" height="34" rx="5"/>
+    <rect class="kp-on" x="270" y="350" width="105" height="34" rx="5"/>
+    <rect class="kp-on" x="385" y="350" width="105" height="34" rx="5"/>
+    <rect class="kp-on" x="500" y="350" width="105" height="34" rx="5"/>
+    <rect class="kp-on" x="615" y="350" width="105" height="34" rx="5"/>
+  </g>
+  <g data-on="3">
+    <rect class="kp-on" x="200" y="270" width="150" height="34" rx="5"/>
+    <rect class="kp-on" x="430" y="270" width="150" height="34" rx="5"/>
+  </g>
+  <rect class="kp-on" x="430" y="190" width="150" height="34" rx="5" data-on="4"/>
+  <rect class="kp-on" x="300" y="110" width="160" height="34" rx="5" data-on="5"/>
+  <g data-on="6">
+    <rect class="kp-on" x="40" y="30" width="120" height="34" rx="5"/>
+    <rect class="kp-on" x="170" y="30" width="120" height="34" rx="5"/>
+    <rect class="kp-on" x="300" y="30" width="120" height="34" rx="5"/>
+    <rect class="kp-on" x="430" y="30" width="120" height="34" rx="5"/>
+  </g>
+  <!-- The crates: outlines shown at every step -->
+  <rect class="kp-box" x="40" y="30" width="120" height="34" rx="5" data-on="1 2 3 4 5"/>
+  <rect class="kp-box" x="170" y="30" width="120" height="34" rx="5" data-on="1 2 3 4 5"/>
+  <rect class="kp-box" x="300" y="30" width="120" height="34" rx="5" data-on="1 2 3 4 5"/>
+  <rect class="kp-box" x="430" y="30" width="120" height="34" rx="5" data-on="1 2 3 4 5"/>
+  <rect class="kp-out" x="580" y="30" width="140" height="56" rx="5"/>
+  <rect class="kp-box" x="300" y="110" width="160" height="34" rx="5" data-on="1 2 3 4 6"/>
+  <rect class="kp-box" x="430" y="190" width="150" height="34" rx="5" data-on="1 2 3 5 6"/>
+  <g data-on="1 2 4 5 6">
+    <rect class="kp-box" x="200" y="270" width="150" height="34" rx="5"/>
+    <rect class="kp-box" x="430" y="270" width="150" height="34" rx="5"/>
+  </g>
+  <g data-on="1 3 4 5 6">
+    <rect class="kp-box" x="40" y="350" width="105" height="34" rx="5"/>
+    <rect class="kp-box" x="155" y="350" width="105" height="34" rx="5"/>
+    <rect class="kp-box" x="270" y="350" width="105" height="34" rx="5"/>
+    <rect class="kp-box" x="385" y="350" width="105" height="34" rx="5"/>
+    <rect class="kp-box" x="500" y="350" width="105" height="34" rx="5"/>
+    <rect class="kp-box" x="615" y="350" width="105" height="34" rx="5"/>
+  </g>
+  <g data-on="2 3 4 5 6">
+    <rect class="kp-box" x="40" y="430" width="520" height="34" rx="5"/>
+    <rect class="kp-box" x="580" y="430" width="140" height="34" rx="5"/>
+  </g>
+  <!-- Crate names -->
+  <text class="kp-mono" x="100" y="51" text-anchor="middle">editor</text>
+  <text class="kp-mono" x="230" y="51" text-anchor="middle">hub</text>
+  <text class="kp-mono" x="360" y="51" text-anchor="middle">runtime</text>
+  <text class="kp-mono" x="490" y="51" text-anchor="middle">sandbox</text>
+  <text class="kp-note" x="592" y="48">outside the tiers</text>
+  <text class="kp-dim" x="592" y="66">xtask</text>
+  <text class="kp-dim" x="592" y="80">workspace-hack</text>
+  <text class="kp-mono" x="380" y="131" text-anchor="middle">sdk</text>
+  <text class="kp-mono" x="505" y="211" text-anchor="middle">agents</text>
+  <text class="kp-mono" x="275" y="291" text-anchor="middle">io</text>
+  <text class="kp-mono" x="505" y="291" text-anchor="middle">lanes</text>
+  <text class="kp-mono" x="92" y="371" text-anchor="middle">telemetry</text>
+  <text class="kp-mono" x="207" y="371" text-anchor="middle">infra</text>
+  <text class="kp-mono" x="322" y="371" text-anchor="middle">tool-ui</text>
+  <text class="kp-mono" x="437" y="371" text-anchor="middle">control</text>
+  <text class="kp-mono" x="552" y="371" text-anchor="middle">data</text>
+  <text class="kp-mono" x="667" y="371" text-anchor="middle">script</text>
+  <text class="kp-mono" x="300" y="451" text-anchor="middle">core</text>
+  <text class="kp-mono" x="650" y="451" text-anchor="middle">macros</text>
+  <!-- Step 1: the floor uses nothing -->
+  <text class="kp-note" x="300" y="420" text-anchor="middle" data-on="1">uses no crate of the workspace</text>
+  <!-- Step 2: on the floor -->
+  <g data-on="2">
+    <path class="kp-edge" d="M92 384 V430"/>
+    <path class="kp-edge" d="M207 384 V430"/>
+    <path class="kp-edge" d="M322 384 V430"/>
+    <path class="kp-edge" d="M437 384 V430"/>
+    <path class="kp-edge" d="M530 384 V430"/>
+    <path class="kp-edge" d="M465 350 C475 330, 515 330, 525 350"/>
+    <path class="kp-edge" d="M580 384 L610 430"/>
+    <path class="kp-edge" d="M667 384 L660 430"/>
+  </g>
+  <!-- Step 3: the middle -->
+  <g data-on="3">
+    <path class="kp-edge" d="M230 304 L100 350"/>
+    <path class="kp-edge" d="M320 304 L530 350"/>
+    <path class="kp-edge" d="M340 304 L650 350"/>
+    <path class="kp-edge" d="M505 304 L560 350"/>
+    <path class="kp-edge" d="M550 304 L675 350"/>
+    <path class="kp-edge" d="M580 287 H738 V447 H720"/>
+    <text class="kp-note" x="40" y="252">and both stand on core</text>
+  </g>
+  <!-- Step 4: the strategists -->
+  <g data-on="4">
+    <path class="kp-edge" d="M505 224 V270"/>
+    <path class="kp-edge" d="M580 202 H742 V328 H560 V350"/>
+    <path class="kp-edge" d="M580 214 H730 V338 H675 V350"/>
+    <text class="kp-note" x="430" y="244">and core</text>
+  </g>
+  <!-- Step 5: the façade -->
+  <g data-on="5">
+    <path class="kp-edge" d="M440 144 L505 190"/>
+    <path class="kp-edge" d="M330 144 L275 270"/>
+    <path class="kp-edge" d="M400 144 L440 270"/>
+    <path class="kp-edge" d="M380 144 L437 350"/>
+    <path class="kp-edge" d="M310 144 L110 350"/>
+    <path class="kp-edge" d="M305 144 L185 265 L207 350"/>
+    <path class="kp-edge" d="M460 130 H610 V330 H570 V350"/>
+    <text class="kp-note" x="470" y="104">and core</text>
+  </g>
+  <!-- Step 6: the apps -->
+  <g data-on="6">
+    <path class="kp-edge" d="M100 64 L320 110"/>
+    <path class="kp-edge" d="M230 64 L350 110"/>
+    <path class="kp-edge" d="M360 64 L380 110"/>
+    <path class="kp-edge" d="M490 64 L420 110"/>
+    <path class="kp-edge" d="M40 47 H22 V330 H312 V350"/>
+    <path class="kp-edge" d="M190 64 V320 H332 V350"/>
+  </g>
+</svg>

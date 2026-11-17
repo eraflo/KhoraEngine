@@ -31,7 +31,7 @@ pub(crate) use super::units::{busiest, fits_envelope, micros};
 /// A pure function: the same round always gives the same [`Allocation`].
 /// Times are counted in whole microseconds.
 ///
-/// See the book: concepts/gorna.md, "Formalisation".
+/// See the book: concepts/arbiter.md, "Formalisation".
 pub fn decide(round: &Round<'_>) -> Allocation {
     Arbiter::default().decide(round).allocation
 }

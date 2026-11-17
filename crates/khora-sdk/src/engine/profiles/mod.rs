@@ -58,7 +58,7 @@ impl Profiles {
     /// first; a player's boot with none reads the one its game shipped. Only a
     /// profile this engine version learnt running this game is used; any other,
     /// or one that does not read, is logged and left.
-    /// See the book: concepts/gorna.md, "Learnt across runs".
+    /// See the book: concepts/arbiter.md, "Learnt across runs".
     pub(crate) fn begin(runtime: &Runtime, dcc: &DccService, kept: bool) -> Option<Self> {
         let chosen = std::env::var_os(PROFILES_VAR).is_some_and(|folder| !folder.is_empty());
         if !kept && !chosen {

@@ -84,7 +84,7 @@ impl Default for GovernorConfig {
 /// setpoint, with headroom.
 ///
 /// A ratio law, not a PID: each decision scales the multiplier by
-/// `target / estimate`. See the book: concepts/gorna.md, "The cost model and
+/// `target / estimate`. See the book: concepts/arbiter.md, "The cost model and
 /// the frame governor".
 #[derive(Debug, Clone)]
 pub struct FrameGovernor {

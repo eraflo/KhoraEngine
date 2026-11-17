@@ -136,7 +136,7 @@ impl Card {
 /// card goes.
 ///
 /// When `view` lends the agent an envelope, the card of what the DCC learnt
-/// of its rows follows. See the book: concepts/gorna.md, "How an agent chooses".
+/// of its rows follows. See the book: concepts/arbiter.md, "The journal and why".
 pub(super) fn paint_decision_cards(
     ui: &mut dyn UiBuilder,
     card: Card,

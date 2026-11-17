@@ -1,0 +1,94 @@
+<svg id="fig-data-world" class="kp-figure" viewBox="0 0 760 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-data-world-title kp-data-world-desc">
+  <title id="kp-data-world-title">What a World holds: the entity store, the component registry and the pages</title>
+  <desc id="kp-data-world-desc">The entity store lists each live entity with its generation and, per semantic domain, the page and row holding its components of that domain. The component registry holds one vtable per component: its key, name, domain, provenance, layout and column operations. The pages hold the rows: one column per component of the page's signature, the entity of each row, and a tick per row and column. Entity e7 has a row in a spatial page holding Transform and GlobalTransform, and a row in a physics page holding RigidBody and Collider.</desc>
+  <style>
+    #fig-data-world { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-data-world .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-data-world .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-data-world .kp-col { fill: var(--k-bg-2, #181e2b); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-data-world .kp-cell { fill: var(--k-bg-3, #1f2636); }
+    #fig-data-world .kp-cell-hot { fill: var(--k-bg-3, #1f2636); stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    #fig-data-world .kp-thread { stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; fill: none; }
+    #fig-data-world .kp-arrowhead { fill: var(--k-gold, #e4b65c); }
+    #fig-data-world .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 16px; }
+    #fig-data-world .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-data-world .kp-mono { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-data-world .kp-mono-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-data-world .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10px; }
+  </style>
+  <defs>
+    <marker id="kp-data-world-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path class="kp-arrowhead" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+  <rect class="kp-bg" x="0" y="0" width="760" height="360" rx="8"/>
+  <!-- Entity store -->
+  <rect class="kp-panel" x="30" y="30" width="230" height="300" rx="6"/>
+  <text class="kp-station" x="44" y="56">The entity store</text>
+  <text class="kp-label" x="44" y="76">index · generation → per domain,</text>
+  <text class="kp-label" x="44" y="92">the page and row</text>
+  <rect class="kp-col" x="44" y="108" width="202" height="44" rx="4"/>
+  <text class="kp-mono" x="54" y="126">e5 · gen 2</text>
+  <text class="kp-note" x="54" y="142">Spatial → A, row 0</text>
+  <rect class="kp-cell-hot" x="44" y="160" width="202" height="60" rx="4"/>
+  <text class="kp-mono-gold" x="54" y="178">e7 · gen 1</text>
+  <text class="kp-note" x="54" y="194">Spatial → A, row 1</text>
+  <text class="kp-note" x="54" y="210">Physics → B, row 0</text>
+  <rect class="kp-col" x="44" y="228" width="202" height="44" rx="4"/>
+  <text class="kp-mono" x="54" y="246">e9 · gen 3</text>
+  <text class="kp-note" x="54" y="262">Audio → C, row 0</text>
+  <text class="kp-label" x="44" y="296">An old handle with another</text>
+  <text class="kp-label" x="44" y="312">generation finds nothing.</text>
+  <!-- Registry -->
+  <rect class="kp-panel" x="290" y="30" width="440" height="88" rx="6"/>
+  <text class="kp-station" x="304" y="56">The component registry</text>
+  <text class="kp-label" x="304" y="76">one vtable per component: key · short name · domain · provenance ·</text>
+  <text class="kp-label" x="304" y="92">layout · the operations storage needs on its columns</text>
+  <text class="kp-note" x="304" y="108">Transform · GlobalTransform · RigidBody · Collider · AudioSource · …</text>
+  <!-- Pages -->
+  <text class="kp-station" x="290" y="148">The pages</text>
+  <text class="kp-note" x="380" y="148">one column per component, the entity of each row, ticks</text>
+  <!-- Page A -->
+  <rect class="kp-panel" x="290" y="160" width="190" height="104" rx="6"/>
+  <text class="kp-mono" x="300" y="178">A · Spatial</text>
+  <rect class="kp-col" x="300" y="186" width="54" height="66" rx="3"/>
+  <rect class="kp-col" x="358" y="186" width="54" height="66" rx="3"/>
+  <rect class="kp-col" x="416" y="186" width="54" height="66" rx="3"/>
+  <text class="kp-note" x="304" y="200">Transf.</text>
+  <text class="kp-note" x="362" y="200">Global</text>
+  <text class="kp-note" x="420" y="200">entity</text>
+  <rect class="kp-cell" x="304" y="208" width="46" height="16" rx="2"/>
+  <rect class="kp-cell" x="362" y="208" width="46" height="16" rx="2"/>
+  <rect class="kp-cell" x="420" y="208" width="46" height="16" rx="2"/>
+  <rect class="kp-cell-hot" x="304" y="230" width="46" height="16" rx="2"/>
+  <rect class="kp-cell-hot" x="362" y="230" width="46" height="16" rx="2"/>
+  <rect class="kp-cell-hot" x="420" y="230" width="46" height="16" rx="2"/>
+  <text class="kp-note" x="426" y="220">e5</text>
+  <text class="kp-mono-gold" x="426" y="242">e7</text>
+  <!-- Page B -->
+  <rect class="kp-panel" x="500" y="160" width="230" height="82" rx="6"/>
+  <text class="kp-mono" x="510" y="178">B · Physics</text>
+  <rect class="kp-col" x="510" y="186" width="66" height="44" rx="3"/>
+  <rect class="kp-col" x="580" y="186" width="66" height="44" rx="3"/>
+  <rect class="kp-col" x="650" y="186" width="66" height="44" rx="3"/>
+  <text class="kp-note" x="514" y="200">RigidBody</text>
+  <text class="kp-note" x="584" y="200">Collider</text>
+  <text class="kp-note" x="654" y="200">entity</text>
+  <rect class="kp-cell-hot" x="514" y="208" width="58" height="16" rx="2"/>
+  <rect class="kp-cell-hot" x="584" y="208" width="58" height="16" rx="2"/>
+  <rect class="kp-cell-hot" x="654" y="208" width="58" height="16" rx="2"/>
+  <text class="kp-mono-gold" x="660" y="220">e7</text>
+  <!-- Page C -->
+  <rect class="kp-panel" x="500" y="256" width="230" height="74" rx="6"/>
+  <text class="kp-mono" x="510" y="274">C · Audio</text>
+  <rect class="kp-col" x="510" y="282" width="100" height="38" rx="3"/>
+  <rect class="kp-col" x="616" y="282" width="100" height="38" rx="3"/>
+  <text class="kp-note" x="514" y="296">AudioSource</text>
+  <text class="kp-note" x="620" y="296">entity</text>
+  <text class="kp-note" x="626" y="314">e9</text>
+  <!-- e7's locations -->
+  <path class="kp-thread" d="M246,194 C270,194 270,238 300,238" marker-end="url(#kp-data-world-arrow)"/>
+  <path class="kp-thread" d="M246,210 C268,210 268,276 290,276 L470,276 C490,276 490,216 510,216" marker-end="url(#kp-data-world-arrow)"/>
+  <text class="kp-label" x="290" y="302">A column is read with the page</text>
+  <text class="kp-label" x="290" y="320">and the key, never the World.</text>
+</svg>

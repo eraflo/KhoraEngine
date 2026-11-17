@@ -1,0 +1,125 @@
+<svg id="fig-gorna-round" class="kp-figure" viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-gorna-round-title kp-gorna-round-desc">
+  <title id="kp-gorna-round-title">One round of GORNA, state by state</title>
+  <desc id="kp-gorna-round-desc">Six states in a row. In force: an allocation holds and every agent reports each run. Triggered: something changed, and the trigger waits until the epoch has lasted three ticks, except an emergency, which never waits. Asking: the DCC asks every agent of a family switched on for an offer, waiting at most a tenth of a second for each; an agent busy that long keeps its envelope. Deciding: the arbiter turns the offers into one envelope per agent, or into the emergency allocation when the floors do not fit. Published: the allocation waits on the budget channel; a newer one replaces it while it waits. Lent: at the next frame start the scheduler lends it to every agent at once, and the new epoch is in force.</desc>
+  <style>
+    #fig-gorna-round { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-gorna-round .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-gorna-round .kp-state { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-gorna-round .kp-now { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 2; }
+    #fig-gorna-round .kp-marker { fill: var(--k-gold, #e4b65c); }
+    #fig-gorna-round .kp-card { fill: var(--k-bg-2, #181e2b); stroke: var(--k-silver-dim, #809db2); stroke-width: 1; }
+    #fig-gorna-round .kp-busy { fill: var(--k-bg-1, #101622); stroke: var(--k-amber, #e8a33d); stroke-width: 1.2; stroke-dasharray: 4 3; }
+    #fig-gorna-round .kp-tick { fill: var(--k-silver-dim, #809db2); }
+    #fig-gorna-round .kp-wire { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.2; fill: none; }
+    #fig-gorna-round .kp-name { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 13px; font-weight: 500; }
+    #fig-gorna-round .kp-how { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-gorna-round .kp-mono { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11.5px; }
+    #fig-gorna-round .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11.5px; }
+    #fig-gorna-round .kp-warn { fill: var(--k-amber, #e8a33d); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="320" rx="10"/>
+  <!-- the six states -->
+  <rect class="kp-state" x="24" y="24" width="112" height="44" rx="8"/>
+  <rect class="kp-state" x="144" y="24" width="112" height="44" rx="8"/>
+  <rect class="kp-state" x="264" y="24" width="112" height="44" rx="8"/>
+  <rect class="kp-state" x="384" y="24" width="112" height="44" rx="8"/>
+  <rect class="kp-state" x="504" y="24" width="112" height="44" rx="8"/>
+  <rect class="kp-state" x="624" y="24" width="112" height="44" rx="8"/>
+  <text class="kp-name" x="38" y="51">In force</text>
+  <text class="kp-name" x="158" y="51">Triggered</text>
+  <text class="kp-name" x="278" y="51">Asking</text>
+  <text class="kp-name" x="398" y="51">Deciding</text>
+  <text class="kp-name" x="518" y="51">Published</text>
+  <text class="kp-name" x="638" y="51">Lent</text>
+  <rect class="kp-now" x="21" y="21" width="118" height="50" rx="10" data-tf="2:translate(120px, 0)|3:translate(240px, 0)|4:translate(360px, 0)|5:translate(480px, 0)|6:translate(600px, 0)"/>
+  <circle class="kp-marker" cx="80" cy="84" r="5" data-tf="2:translate(120px, 0)|3:translate(240px, 0)|4:translate(360px, 0)|5:translate(480px, 0)|6:translate(600px, 0)"/>
+  <!-- 1. in force -->
+  <g data-on="1">
+    <text class="kp-gold" x="40" y="124">epoch 41 · in force</text>
+    <rect class="kp-card" x="40" y="140" width="150" height="54" rx="8"/>
+    <rect class="kp-card" x="210" y="140" width="150" height="54" rx="8"/>
+    <rect class="kp-card" x="380" y="140" width="150" height="54" rx="8"/>
+    <text class="kp-name" x="54" y="162">shadows</text>
+    <text class="kp-name" x="224" y="162">audio</text>
+    <text class="kp-name" x="394" y="162">UI</text>
+    <text class="kp-mono" x="54" y="182">Report · 1.4 ms</text>
+    <text class="kp-mono" x="224" y="182">Report · 0.3 ms</text>
+    <text class="kp-mono" x="394" y="182">Report · 0.6 ms</text>
+    <text class="kp-how" x="40" y="232">Each agent runs within the envelope it was lent, and reports every run:</text>
+    <text class="kp-how" x="40" y="250">the row that ran, its time on each device, the share of its work done.</text>
+  </g>
+  <!-- 2. triggered -->
+  <g data-on="2">
+    <text class="kp-warn" x="40" y="124">Trigger::FrameGovernor raised</text>
+    <rect class="kp-tick" x="40" y="146" width="40" height="8" rx="2"/>
+    <rect class="kp-tick" x="88" y="146" width="40" height="8" rx="2"/>
+    <rect class="kp-tick" x="136" y="146" width="40" height="8" rx="2"/>
+    <text class="kp-mono" x="40" y="176">tick 1</text><text class="kp-mono" x="88" y="176">tick 2</text><text class="kp-mono" x="136" y="176">tick 3 → due</text>
+    <text class="kp-how" x="40" y="214">A trigger waits until the epoch has lasted 3 ticks (150 ms at 20 Hz).</text>
+    <text class="kp-how" x="40" y="232">The first trigger raised waits; a later one does not replace it.</text>
+    <text class="kp-how" x="40" y="250">An emergency, Trigger::Safety, replaces whatever waits, and never waits.</text>
+  </g>
+  <!-- 3. asking -->
+  <g data-on="3">
+    <text class="kp-mono" x="40" y="124">OfferRequest · epoch 42 · target 16.7 ms</text>
+    <rect class="kp-card" x="40" y="140" width="150" height="54" rx="8"/>
+    <rect class="kp-busy" x="210" y="140" width="150" height="54" rx="8"/>
+    <rect class="kp-card" x="380" y="140" width="150" height="54" rx="8"/>
+    <text class="kp-name" x="54" y="162">shadows</text>
+    <text class="kp-name" x="224" y="162">audio</text>
+    <text class="kp-name" x="394" y="162">UI</text>
+    <text class="kp-mono" x="54" y="182">Offer · 3 rows</text>
+    <text class="kp-warn" x="224" y="182">busy · keeps its own</text>
+    <text class="kp-mono" x="394" y="182">Offer · 2 rows</text>
+    <text class="kp-how" x="40" y="232">Only the families switched on are asked. Each offer is read from prices</text>
+    <text class="kp-how" x="40" y="250">the agent already holds: no lane runs on the DCC's thread.</text>
+    <text class="kp-how" x="40" y="268">An agent busy for 100 ms, or late, keeps the envelope it holds.</text>
+  </g>
+  <!-- 4. deciding -->
+  <g data-on="4">
+    <text class="kp-mono" x="40" y="124">the arbiter</text>
+    <text class="kp-how" x="40" y="148">corrects each quote by what it learnt · plans beyond the frame</text>
+    <text class="kp-how" x="40" y="166">proposes the rows · the shield checks them · shares the slack</text>
+    <rect class="kp-card" x="40" y="182" width="96" height="30" rx="5"/>
+    <rect class="kp-card" x="150" y="182" width="96" height="30" rx="5"/>
+    <rect class="kp-card" x="260" y="182" width="96" height="30" rx="5"/>
+    <text class="kp-gold" x="52" y="202">2.6 ms</text>
+    <text class="kp-mono" x="162" y="202">kept</text>
+    <text class="kp-gold" x="272" y="202">0.8 ms</text>
+    <text class="kp-how" x="40" y="236">The busy agent keeps the envelope it holds.</text>
+    <text class="kp-how" x="40" y="254">Had the floors not fitted, the allocation would be Safety: every envelope a floor.</text>
+  </g>
+  <!-- 5. published -->
+  <g data-on="5">
+    <text class="kp-gold" x="40" y="124">Allocation · epoch 42 · published</text>
+    <path class="kp-wire" d="M40 160 L720 160"/>
+    <rect class="kp-tick" x="40" y="152" width="3" height="16"/>
+    <rect class="kp-tick" x="250" y="152" width="3" height="16"/>
+    <rect class="kp-tick" x="460" y="152" width="3" height="16"/>
+    <rect class="kp-tick" x="670" y="152" width="3" height="16"/>
+    <text class="kp-how" x="46" y="186">frame</text>
+    <text class="kp-how" x="256" y="186">frame</text>
+    <text class="kp-how" x="466" y="186">frame</text>
+    <circle class="kp-marker" cx="350" cy="160" r="5"/>
+    <text class="kp-gold" x="330" y="146">published</text>
+    <text class="kp-how" x="40" y="222">It waits on the budget channel until the next frame start: nothing changes</text>
+    <text class="kp-how" x="40" y="240">in the middle of a frame. A newer live allocation published meanwhile</text>
+    <text class="kp-how" x="40" y="258">replaces it; a replayed one waits its turn instead.</text>
+  </g>
+  <!-- 6. lent -->
+  <g data-on="6">
+    <text class="kp-gold" x="40" y="124">frame start · epoch 42 lent to every agent</text>
+    <rect class="kp-card" x="40" y="140" width="150" height="54" rx="8"/>
+    <rect class="kp-card" x="210" y="140" width="150" height="54" rx="8"/>
+    <rect class="kp-card" x="380" y="140" width="150" height="54" rx="8"/>
+    <text class="kp-name" x="54" y="162">shadows</text>
+    <text class="kp-name" x="224" y="162">audio</text>
+    <text class="kp-name" x="394" y="162">UI</text>
+    <text class="kp-mono" x="54" y="182">→ medium</text>
+    <text class="kp-mono" x="224" y="182">→ 32 voices</text>
+    <text class="kp-mono" x="394" y="182">→ full text</text>
+    <text class="kp-how" x="40" y="232">Lent at once to every agent of a family switched on: two agents never run</text>
+    <text class="kp-how" x="40" y="250">one frame under two epochs. Each chooses its row within its envelope.</text>
+    <text class="kp-how" x="40" y="268">An agent busy at that frame start is handed it at the next.</text>
+  </g>
+</svg>

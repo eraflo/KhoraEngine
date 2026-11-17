@@ -1,0 +1,96 @@
+<svg id="fig-gorna-frame-start" class="kp-figure" viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-gorna-frame-start-title kp-gorna-frame-start-desc">
+  <title id="kp-gorna-frame-start-title">Envelopes are lent at a frame start, never in the middle of a frame</title>
+  <desc id="kp-gorna-frame-start-desc">Two clocks side by side over 160 milliseconds. The DCC ticks every 50 milliseconds; the frames start whenever the previous one ends, and the second frame is a long one. The DCC publishes epoch 42 at its tick of 50 milliseconds: it waits on the budget channel. At 100 milliseconds it publishes epoch 43, which replaces 42 before any frame start took it. At the next frame start the scheduler takes epoch 43 and lends it to every agent at once. One agent, busy at that instant, is handed it at the following frame start.</desc>
+  <style>
+    #fig-gorna-frame-start { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-gorna-frame-start .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-gorna-frame-start .kp-track { stroke: var(--k-line, #383d48); stroke-width: 1; fill: none; }
+    #fig-gorna-frame-start .kp-tick { fill: var(--k-silver-dim, #809db2); }
+    #fig-gorna-frame-start .kp-frame { fill: var(--k-bg-1, #101622); stroke: var(--k-silver-dim, #809db2); stroke-width: 1; }
+    #fig-gorna-frame-start .kp-pub { fill: var(--k-bg-2, #181e2b); stroke: var(--k-silver, #b4cfe2); stroke-width: 1.2; }
+    #fig-gorna-frame-start .kp-pub-gold { fill: var(--k-bg-2, #181e2b); stroke: var(--k-gold, #e4b65c); stroke-width: 1.6; }
+    #fig-gorna-frame-start .kp-strike { stroke: var(--k-amber, #e8a33d); stroke-width: 1.6; }
+    #fig-gorna-frame-start .kp-lend { stroke: var(--k-gold, #e4b65c); stroke-width: 1.6; fill: none; }
+    #fig-gorna-frame-start .kp-dot { fill: var(--k-gold, #e4b65c); }
+    #fig-gorna-frame-start .kp-busy { fill: none; stroke: var(--k-amber, #e8a33d); stroke-width: 1.4; }
+    #fig-gorna-frame-start .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-gorna-frame-start .kp-name { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-gorna-frame-start .kp-mono { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-gorna-frame-start .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-gorna-frame-start .kp-warn { fill: var(--k-amber, #e8a33d); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="330" rx="10"/>
+  <!-- the DCC's clock: a tick every 50 ms -->
+  <text class="kp-name" x="16" y="54">DCC</text>
+  <path class="kp-track" d="M80 50 L704 50"/>
+  <rect class="kp-tick" x="79" y="42" width="2" height="16"/>
+  <rect class="kp-tick" x="274" y="42" width="2" height="16"/>
+  <rect class="kp-tick" x="469" y="42" width="2" height="16"/>
+  <rect class="kp-tick" x="664" y="42" width="2" height="16"/>
+  <text class="kp-label" x="70" y="34">0 ms</text>
+  <text class="kp-label" x="262" y="34">50 ms</text>
+  <text class="kp-label" x="455" y="34">100 ms</text>
+  <text class="kp-label" x="650" y="34">150 ms</text>
+  <!-- the budget channel -->
+  <text class="kp-name" x="16" y="114">channel</text>
+  <path class="kp-track" d="M80 110 L704 110"/>
+  <!-- the frames: a long second one -->
+  <text class="kp-name" x="16" y="174">frames</text>
+  <rect class="kp-frame" x="80" y="160" width="64" height="24" rx="4"/>
+  <rect class="kp-frame" x="146" y="160" width="388" height="24" rx="4"/>
+  <rect class="kp-frame" x="536" y="160" width="65" height="24" rx="4"/>
+  <rect class="kp-frame" x="603" y="160" width="60" height="24" rx="4"/>
+  <text class="kp-label" x="156" y="177">a long frame: a level loads</text>
+  <!-- the agents -->
+  <text class="kp-name" x="16" y="234">shadows</text>
+  <text class="kp-name" x="16" y="262">audio</text>
+  <text class="kp-name" x="16" y="290">UI</text>
+  <path class="kp-track" d="M80 230 L704 230 M80 258 L704 258 M80 286 L704 286"/>
+  <!-- 1. two clocks -->
+  <g data-on="1">
+    <text class="kp-label" x="300" y="318">The DCC ticks 20 times a second; a frame starts when the last one ends.</text>
+  </g>
+  <!-- 2. epoch 42 published mid-frame -->
+  <g data-on="2 3 4 5">
+    <path class="kp-track" d="M275 58 L275 98"/>
+    <rect class="kp-pub" x="252" y="98" width="46" height="24" rx="4"/>
+    <text class="kp-mono" x="264" y="114">42</text>
+  </g>
+  <g data-on="2">
+    <text class="kp-label" x="210" y="318">Epoch 42, decided on a tick, waits on the channel: the frame runs on.</text>
+  </g>
+  <!-- 3. epoch 43 replaces it -->
+  <g data-on="3 4 5">
+    <path class="kp-strike" d="M248 122 L302 98"/>
+    <path class="kp-track" d="M470 58 L470 98"/>
+    <rect class="kp-pub-gold" x="447" y="98" width="46" height="24" rx="4"/>
+    <text class="kp-gold" x="459" y="114">43</text>
+  </g>
+  <g data-on="3">
+    <text class="kp-warn" x="310" y="114">replaced while waiting</text>
+    <text class="kp-label" x="180" y="318">Epoch 43 comes before any frame start took 42: the newest live one wins.</text>
+  </g>
+  <!-- 4. the frame start lends 43 to every agent -->
+  <g data-on="4 5">
+    <path class="kp-lend" d="M493 110 L536 110 L536 160"/>
+    <path class="kp-lend" d="M536 184 L536 286"/>
+    <circle class="kp-dot" cx="536" cy="230" r="5"/>
+    <circle class="kp-dot" cx="536" cy="286" r="5"/>
+    <text class="kp-gold" x="546" y="226">43</text>
+    <text class="kp-gold" x="546" y="282">43</text>
+  </g>
+  <g data-on="4">
+    <circle class="kp-dot" cx="536" cy="258" r="5"/>
+    <text class="kp-gold" x="546" y="254">43</text>
+    <text class="kp-label" x="150" y="318">At the frame start the scheduler takes 43 and lends it to every agent at once.</text>
+  </g>
+  <!-- 5. a busy agent is handed it at the next frame start -->
+  <g data-on="5">
+    <circle class="kp-busy" cx="536" cy="258" r="7"/>
+    <text class="kp-warn" x="496" y="254">busy</text>
+    <path class="kp-lend" d="M603 184 L603 258"/>
+    <circle class="kp-dot" cx="603" cy="258" r="5"/>
+    <text class="kp-gold" x="613" y="254">43</text>
+    <text class="kp-label" x="110" y="318">Audio was busy at that instant: it runs on what it holds, and is handed 43 at the next frame start.</text>
+  </g>
+</svg>

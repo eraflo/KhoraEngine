@@ -1,0 +1,100 @@
+<svg id="fig-data-asset-path" class="kp-figure" viewBox="0 0 760 370" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-asset-path-title kp-asset-path-desc">
+  <title id="kp-asset-path-title">How an asset uuid becomes a handle to a decoded asset</title>
+  <desc id="kp-asset-path-desc">A uuid is looked up in the asset index, whose entry gives the asset's type and where its bytes are: a loose file, a span of the pack, or a part of another asset. The I/O backend reads the raw bytes, from the disk or the pack. The reader checks them: a pack entry against the signed manifest's hash, any file against its type's size cap and its decoder's recognition of its first bytes. The decoder registered for the type turns the bytes into a typed asset within its limits, a panic caught. The service caches the asset and hands back a handle. A load does all of it on the calling thread; a request files it to the loading family, which decodes off the frame, and the asset lands at a frame boundary.</desc>
+  <style>
+    #fig-data-asset-path { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-data-asset-path .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-data-asset-path .kp-box { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-data-asset-path .kp-ring { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.75; }
+    #fig-data-asset-path .kp-card { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-data-asset-path .kp-flow { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; fill: none; }
+    #fig-data-asset-path .kp-arrowhead { fill: var(--k-silver-dim, #809db2); }
+    #fig-data-asset-path .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 15px; }
+    #fig-data-asset-path .kp-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 17px; }
+    #fig-data-asset-path .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-data-asset-path .kp-strong { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+    #fig-data-asset-path .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+    #fig-data-asset-path .kp-mono { fill: var(--k-fg-1, #c9ced3); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+  </style>
+  <defs>
+    <marker id="kp-asset-path-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path class="kp-arrowhead" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+  <rect class="kp-bg" x="0" y="0" width="760" height="370" rx="8"/>
+  <!-- Stations -->
+  <rect class="kp-box" x="30" y="30" width="124" height="104" rx="6"/>
+  <rect class="kp-box" x="174" y="30" width="124" height="104" rx="6"/>
+  <rect class="kp-box" x="318" y="30" width="124" height="104" rx="6"/>
+  <rect class="kp-box" x="462" y="30" width="124" height="104" rx="6"/>
+  <rect class="kp-box" x="606" y="30" width="124" height="104" rx="6"/>
+  <text class="kp-station" x="42" y="54">The index</text>
+  <text class="kp-station" x="186" y="54">The I/O</text>
+  <text class="kp-station" x="330" y="54">The reader</text>
+  <text class="kp-station" x="474" y="54">The decoder</text>
+  <text class="kp-station" x="618" y="54">The service</text>
+  <text class="kp-mono" x="42" y="78">uuid → type,</text>
+  <text class="kp-mono" x="42" y="94">where its bytes</text>
+  <text class="kp-mono" x="42" y="110">are</text>
+  <text class="kp-mono" x="186" y="78">FileLoader,</text>
+  <text class="kp-mono" x="186" y="94">PackLoader</text>
+  <text class="kp-mono" x="186" y="110">raw bytes</text>
+  <text class="kp-mono" x="330" y="78">manifest hash,</text>
+  <text class="kp-mono" x="330" y="94">size cap,</text>
+  <text class="kp-mono" x="330" y="110">first bytes</text>
+  <text class="kp-mono" x="474" y="78">by type name</text>
+  <text class="kp-mono" x="474" y="94">bytes → asset,</text>
+  <text class="kp-mono" x="474" y="110">within limits</text>
+  <text class="kp-mono" x="618" y="78">cached copy,</text>
+  <text class="kp-mono" x="618" y="94">AssetHandle</text>
+  <path class="kp-flow" d="M154,82 L172,82" marker-end="url(#kp-asset-path-arrow)"/>
+  <path class="kp-flow" d="M298,82 L316,82" marker-end="url(#kp-asset-path-arrow)"/>
+  <path class="kp-flow" d="M442,82 L460,82" marker-end="url(#kp-asset-path-arrow)"/>
+  <path class="kp-flow" d="M586,82 L604,82" marker-end="url(#kp-asset-path-arrow)"/>
+  <!-- The current station -->
+  <rect class="kp-ring" x="26" y="26" width="132" height="112" rx="8" data-on="1 2 3 4 5" data-tf="2:translate(144px, 0)|3:translate(288px, 0)|4:translate(432px, 0)|5:translate(576px, 0)"/>
+  <!-- Two ways in -->
+  <text class="kp-label" x="30" y="166" data-on="6">load: every station on the calling thread, at once</text>
+  <text class="kp-gold" x="30" y="186" data-on="6">request: filed → the loading family decodes off the frame → lands at a boundary</text>
+  <!-- Card -->
+  <rect class="kp-card" x="30" y="200" width="700" height="150" rx="8"/>
+  <g data-on="1">
+    <text class="kp-title" x="50" y="230">A uuid, looked up</text>
+    <text class="kp-label" x="50" y="256">The index maps each uuid to its metadata: its type ("texture", "mesh"…) and where</text>
+    <text class="kp-label" x="50" y="276">its bytes are — a loose file, a span of the pack, or a part of another asset, such as</text>
+    <text class="kp-label" x="50" y="296">a mesh inside a glTF. One hash-map lookup; no file is opened yet.</text>
+  </g>
+  <g data-on="2">
+    <text class="kp-title" x="50" y="230">The bytes, read</text>
+    <text class="kp-label" x="50" y="256">The I/O backend reads the raw bytes: a FileLoader from the project's assets folder,</text>
+    <text class="kp-label" x="50" y="276">a PackLoader from data.pack, decompressing an LZ4 entry. A part of another asset has</text>
+    <text class="kp-label" x="50" y="296">no bytes of its own: its container's are read.</text>
+    <text class="kp-strong" x="50" y="326">Everything above this station is the same in development and in a shipped game.</text>
+  </g>
+  <g data-on="3">
+    <text class="kp-title" x="50" y="230">The bytes, checked</text>
+    <text class="kp-label" x="50" y="256">A pack entry must hash to what the signed manifest says. Any file must fit its type's</text>
+    <text class="kp-label" x="50" y="276">size cap at the project's trust, and its first bytes must be what its decoder reads.</text>
+    <text class="kp-label" x="50" y="296">A file refused here is never decoded, and is quarantined.</text>
+    <text class="kp-strong" x="50" y="326">The guard and the quarantine are explained in Trust.</text>
+  </g>
+  <g data-on="4">
+    <text class="kp-title" x="50" y="230">Decoded</text>
+    <text class="kp-label" x="50" y="256">The decoder registered under the type's name turns the bytes into a typed asset —</text>
+    <text class="kp-label" x="50" y="276">a CpuTexture, a Mesh, a SoundData — within its limits at that trust. A decoder that</text>
+    <text class="kp-label" x="50" y="296">panics is caught: the file is refused, the engine goes on.</text>
+  </g>
+  <g data-on="5">
+    <text class="kp-title" x="50" y="230">Cached, handed back</text>
+    <text class="kp-label" x="50" y="256">The service keeps the asset under its uuid and hands back an AssetHandle: a shared</text>
+    <text class="kp-label" x="50" y="276">pointer, cheap to clone. Every later load of the uuid gets the same copy; many</text>
+    <text class="kp-label" x="50" y="296">entities showing one mesh share one copy in memory.</text>
+  </g>
+  <g data-on="6">
+    <text class="kp-title" x="50" y="230">Two ways in</text>
+    <text class="kp-label" x="50" y="256">load walks the stations on the calling thread and returns the handle or the error.</text>
+    <text class="kp-label" x="50" y="276">request returns a cached copy at once, or files the decode: the loading family walks</text>
+    <text class="kp-label" x="50" y="296">the stations off the frame, and the copy lands in the service at a frame boundary.</text>
+    <text class="kp-gold" x="50" y="326">The resolvers and the reload only request: no frame waits for the disk.</text>
+  </g>
+</svg>

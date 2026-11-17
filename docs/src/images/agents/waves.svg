@@ -1,0 +1,99 @@
+<svg id="fig-agents-waves" class="kp-figure" viewBox="0 0 760 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-agents-waves-title kp-agents-waves-desc">
+  <title id="kp-agents-waves-title">Grouping a phase's families into waves</title>
+  <desc id="kp-agents-waves-desc">An example phase with four families, A to D, in the order the scheduler sorts them. A writes slot S1 and reads resource R; B writes S2 and reads R; C reads S1 and locks L; D runs after C. A opens the first wave and B joins it: reading R twice is no conflict and they write different slots. C reads S1, which A writes, so C opens a second wave. D comes after C, so it opens a third. The waves run in order: a wave of one inline, a larger one on the worker pool, each member writing into its own share of the deck, folded back in wave order.</desc>
+  <style>
+    #fig-agents-waves { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-agents-waves .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-agents-waves .kp-row { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-agents-waves .kp-row-on { fill: var(--k-bg-3, #1f2636); stroke: var(--k-silver, #b4cfe2); stroke-width: 1.4; }
+    #fig-agents-waves .kp-wave { fill: none; stroke: var(--k-silver-dim, #809db2); stroke-width: 1; stroke-dasharray: 4 3; }
+    #fig-agents-waves .kp-chip { fill: var(--k-bg-3, #1f2636); stroke: var(--k-silver-dim, #809db2); stroke-width: 1; }
+    #fig-agents-waves .kp-clash { stroke: var(--k-gold, #e4b65c); stroke-width: 1.8; fill: none; }
+    #fig-agents-waves .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 15px; }
+    #fig-agents-waves .kp-name { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-agents-waves .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; font-weight: 500; }
+    #fig-agents-waves .kp-how { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-agents-waves .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="340" rx="10"/>
+  <text class="kp-head" x="28" y="32">one phase, in sorted order</text>
+  <text class="kp-head" x="400" y="32">its waves</text>
+  <!-- the families -->
+  <rect class="kp-row" x="28" y="46" width="330" height="40" rx="5"/>
+  <text class="kp-station" x="42" y="71">A</text>
+  <text class="kp-name" x="72" y="71">writes S1 · reads R</text>
+  <rect class="kp-row" x="28" y="94" width="330" height="40" rx="5"/>
+  <text class="kp-station" x="42" y="119">B</text>
+  <text class="kp-name" x="72" y="119">writes S2 · reads R</text>
+  <rect class="kp-row" x="28" y="142" width="330" height="40" rx="5"/>
+  <text class="kp-station" x="42" y="167">C</text>
+  <text class="kp-name" x="72" y="167">reads S1 · locks L</text>
+  <rect class="kp-row" x="28" y="190" width="330" height="40" rx="5"/>
+  <text class="kp-station" x="42" y="215">D</text>
+  <text class="kp-name" x="72" y="215">after C · writes S3</text>
+  <!-- the waves -->
+  <rect class="kp-wave" x="400" y="46" width="130" height="184" rx="8"/>
+  <text class="kp-name" x="412" y="222">wave 1</text>
+  <rect class="kp-wave" x="546" y="46" width="90" height="184" rx="8"/>
+  <text class="kp-name" x="558" y="222">wave 2</text>
+  <rect class="kp-wave" x="652" y="46" width="90" height="184" rx="8"/>
+  <text class="kp-name" x="664" y="222">wave 3</text>
+  <!-- 1. the order -->
+  <g data-on="1">
+    <text class="kp-how" x="28" y="282">The scheduler sorts a phase's families so each comes after the ones its</text>
+    <text class="kp-how" x="28" y="300">registration names in after. Each declares what it touches: its contention.</text>
+  </g>
+  <!-- 2. A and B share wave 1 -->
+  <g data-on="2 3 4 5">
+    <rect class="kp-chip" x="414" y="60" width="102" height="30" rx="4"/>
+    <text class="kp-station" x="426" y="80">A</text>
+    <rect class="kp-chip" x="414" y="98" width="102" height="30" rx="4"/>
+    <text class="kp-station" x="426" y="118">B</text>
+  </g>
+  <g data-on="2">
+    <rect class="kp-row-on" x="28" y="46" width="330" height="40" rx="5"/>
+    <text class="kp-station" x="42" y="71">A</text>
+    <text class="kp-name" x="72" y="71">writes S1 · reads R</text>
+    <rect class="kp-row-on" x="28" y="94" width="330" height="40" rx="5"/>
+    <text class="kp-station" x="42" y="119">B</text>
+    <text class="kp-name" x="72" y="119">writes S2 · reads R</text>
+    <text class="kp-gold" x="232" y="110">R and R: no conflict</text>
+    <text class="kp-how" x="28" y="282">A opens the first wave. B joins it: two reads of R never conflict, and they</text>
+    <text class="kp-how" x="28" y="300">write different slots.</text>
+  </g>
+  <!-- 3. C reads what A writes -->
+  <g data-on="3 4 5">
+    <rect class="kp-chip" x="558" y="60" width="66" height="30" rx="4"/>
+    <text class="kp-station" x="570" y="80">C</text>
+  </g>
+  <g data-on="3">
+    <rect class="kp-row-on" x="28" y="142" width="330" height="40" rx="5"/>
+    <text class="kp-station" x="42" y="167">C</text>
+    <text class="kp-name" x="72" y="167">reads S1 · locks L</text>
+    <path class="kp-clash" d="M108,76 C 220,100 220,140 120,158"/>
+    <text class="kp-gold" x="236" y="124">S1 written, S1 read</text>
+    <text class="kp-how" x="28" y="282">C reads S1, which A writes. A reader and a writer of one slot never share a</text>
+    <text class="kp-how" x="28" y="300">wave: C opens the second, and reads S1 as A left it.</text>
+  </g>
+  <!-- 4. D after C -->
+  <g data-on="4 5">
+    <rect class="kp-chip" x="664" y="60" width="66" height="30" rx="4"/>
+    <text class="kp-station" x="676" y="80">D</text>
+  </g>
+  <g data-on="4">
+    <rect class="kp-row-on" x="28" y="190" width="330" height="40" rx="5"/>
+    <text class="kp-station" x="42" y="215">D</text>
+    <text class="kp-name" x="72" y="215">after C · writes S3</text>
+    <text class="kp-how" x="28" y="282">D comes after C, so it never shares C's wave, whatever it touches: it opens</text>
+    <text class="kp-how" x="28" y="300">the third.</text>
+  </g>
+  <!-- 5. run -->
+  <g data-on="5">
+    <text class="kp-gold" x="414" y="150">worker pool</text>
+    <text class="kp-gold" x="558" y="150">inline</text>
+    <text class="kp-gold" x="664" y="150">inline</text>
+    <text class="kp-how" x="28" y="282">The waves run in order. A wave of one runs on the scheduler's thread; A and B run</text>
+    <text class="kp-how" x="28" y="300">side by side on the worker pool, each into its own share of the deck, folded</text>
+    <text class="kp-how" x="28" y="318">back in wave order, so the deck's contents never depend on which finished first.</text>
+  </g>
+</svg>

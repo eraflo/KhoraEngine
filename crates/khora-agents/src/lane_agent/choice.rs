@@ -102,7 +102,7 @@ pub(super) fn dominated(
 /// no row is priced. `pin` overrides the choice; `allowed` filters the rows.
 /// `lanes[row]` is the lane `row` belongs to, its levels cheapest first.
 ///
-/// See the book: concepts/gorna.md, "How an agent chooses".
+/// See the book: concepts/gorna-protocol.md, "How an agent chooses".
 pub fn choose(
     envelope: &Envelope,
     quotes: &[Option<Cost>],

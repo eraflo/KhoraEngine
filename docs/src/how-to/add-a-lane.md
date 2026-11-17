@@ -1,8 +1,12 @@
 # Add a lane
 
-This guide shows you how to **implement a `Lane`** — one behaviour of a family, at
-one or more levels — declare the inputs it reads and the outputs it writes, and add
-it to its family's registration so the family's agent can choose it.
+A lane is one way of doing a family's job: a new lighting technique for the
+renderer, another mixing strategy for audio. This guide shows you how to
+**implement a `Lane`** — the work, at one or more levels — declare the inputs it
+reads and the outputs it writes, and add it to its family's registration so the
+family's agent can choose it. The lane never decides when it runs or at which
+level: its agent does, within the envelope the DCC lends
+([Families and levels](../concepts/families-and-levels.md)).
 
 **Prerequisites:** you have completed
 [Extending the engine](../tutorials/extending-the-engine.md) and read
@@ -16,7 +20,7 @@ A lane implements `khora_core::lane::Lane` (`crates/khora-core/src/lane/contract
 | `type Inputs<'f>` | What the lane reads each frame, a struct deriving `LaneInputs`. |
 | `levels` | The levels the lane offers, cheapest first. Each is a row of the family's menu. |
 | `supports` | Whether the device can run the lane at all (default: yes). A lane that cannot is left off the menu at boot. |
-| `prepare` | Builds what a level needs on the device. Runs before the first record, and again when the level or the target's formats change (default: nothing). |
+| `prepare` | Builds what a level needs on the device. Runs for a new layer, and again when the level or the target's formats change (default: nothing). |
 | `cost` | What running a level on this frame's inputs costs. |
 | `record` | Does one frame's work at a level and writes the family's outputs. |
 | `shutdown` | Releases what `prepare` built (default: nothing). |
@@ -24,7 +28,14 @@ A lane implements `khora_core::lane::Lane` (`crates/khora-core/src/lane/contract
 The lane never sees the `World`, the whole deck or the whole runtime — only the
 fields its inputs name. The examples below come from the audio family's
 `SpatialMixingLane` (`crates/khora-lanes/src/audio/spatial_mixing.rs`) and
-the `SkyboxLane` (`crates/khora-lanes/src/skybox/mod.rs`).
+the `SkyboxLane` (`crates/khora-lanes/src/skybox/lane.rs`).
+
+## Step 0 — Place the file
+
+A lane lives in its family's folder: `crates/khora-lanes/src/<family>/<lane>.rs`,
+or a folder `<lane>/` when it needs several files (as `render/forward_plus/`).
+Declare it in the family's `mod.rs`. A lane of a new family starts with the family:
+see [Add a subsystem (a family)](./add-a-family.md).
 
 ## Step 1 — Declare the levels
 
@@ -37,7 +48,7 @@ use khora_core::agent::gorna::StrategyId;
 use khora_core::lane::cost::PerDevice;
 use khora_core::lane::level::{Impact, Level};
 
-/// A level of the lane: the voices it mixes at most.
+/// Builds a level of the lane, which holds no memory: it differs by the voices it mixes.
 const fn voices(id: StrategyId, name: &'static str, impact: Impact) -> Level {
     Level {
         id,
@@ -55,15 +66,18 @@ const LEVELS: [Level; 3] = [
 const VOICE_CAPS: [usize; 3] = [8, 32, 128];
 ```
 
-In an `Exact` family every level must have `Impact::None`: boot refuses one that
-changes the result.
+The lane maps the level's index to its parameters (`VOICE_CAPS` here). In an
+`Exact` family every level must have `Impact::None`: boot refuses one that changes
+the result.
 
 ## Step 2 — Declare the inputs
 
 The inputs are a struct deriving `LaneInputs`. Each field names where it comes
 from, and the derive turns those names into the lane's declaration: what it reads
-and locks, from which its agent's contention follows. The mixing lane reads the
-View the `AudioFlow` published and the mix bus the backend drains:
+and locks, from which its agent's contention follows
+([What an agent declares](../concepts/agents-and-lanes.md#what-an-agent-declares)).
+The mixing lane reads the View the `AudioFlow` published and the mix bus the backend
+drains:
 
 ```rust
 use std::sync::Arc;
@@ -97,7 +111,12 @@ pub struct SpatialMixingInputs<'f> {
 
 `#[bus(validate)]` and `#[deck(validate)]` also run the value's `Validate` check.
 A field of the wrong type fails to compile, on that field, with the attribute's
-own message.
+own message. A lane of a `BACKGROUND` family may read only `#[take]`,
+`#[resource]` and `#[budget]`: it runs over several frames.
+
+**Read only what you use.** Every `#[resource]` keeps a family that locks that
+entry out of your wave; every `#[locked]` keeps out every family that reads it.
+Nothing fails when you declare too much: the frame is just slower.
 
 > A lane never queries the World: it reads the View a `Flow` published — see
 > [Add a flow](./add-a-flow.md). Boot refuses a lane that reads a resource the
@@ -176,12 +195,19 @@ not progress, and an optional message; the agent's GORNA report carries them. An
 `Err` never crashes the frame: it wakes the agent, which falls back to a cheaper
 row.
 
+`cost` must be cheap and honest: it runs every frame for every level of the lane
+that runs, and the agent chooses on it. A level that serves only part of the
+frame's work says so in `Cost::share`; one whose impact depends on the inputs says
+so in `Cost::impact`.
+
 ## Step 4 — Build device resources in `prepare`
 
 A lane that draws builds its buffers and pipelines in `prepare`, for the level and
-the target's formats (`TargetKey`), and releases them in `shutdown`. It resolves a
-pipeline by name through the `PipelineSystem`, never by handing over WGSL source.
-Simplified from the `SkyboxLane`:
+the target's formats (`TargetKey`), and releases them in `shutdown`. `prepare` runs
+off the frame for a new layer, while the old one keeps drawing, and again on a run
+when the level or the target's formats change. It resolves a pipeline by name
+through the `PipelineSystem`, never by handing over WGSL source. Simplified from the
+`SkyboxLane`:
 
 ```rust
 use khora_core::gpu::GpuSetup;
@@ -222,9 +248,10 @@ record the draw. See [Add a shader](./add-a-shader.md) for the pipeline itself.
 A lane writes only its family's outputs, the struct deriving `LaneOutputs` named by
 `LaneFamily::Outputs`. It receives them opened for the frame (a `#[deck]` field
 holds the slot's value this frame, or its default), and they are committed to the
-deck after `record` returns. Every lane of a family writes the same outputs, which is what
-lets one stand in for another. To write something new, add a field to the family's
-outputs; to start a new family, see [Add a subsystem (a family)](./add-an-agent.md).
+deck after `record` returns. Every lane of a family writes the same outputs, which
+is what lets one stand in for another. To write something new, add a field to the
+family's outputs; to start a new family, see
+[Add a subsystem (a family)](./add-a-family.md).
 
 ## Step 6 — Add the lane to its family's registration
 
@@ -238,22 +265,28 @@ lanes: [SimpleUnlitLane, LitForwardLane, ForwardPlusLane],
 Every level of every lane the device supports becomes a row of the agent's menu.
 The lane must name that family as its `Lane::Family`, or the registration does not
 compile; its `StrategyId`s must differ from those of the family's other lanes, or
-boot refuses the family.
+boot refuses the family. The registration builds the lane with `Default`.
 
 ## Step 7 — Verify it works
 
-Drive the family through one frame with `khora_agents::lane_agent::run_frame`, as in
-[Add a subsystem (a family)](./add-an-agent.md#step-7--verify-it-works), and assert
+Unit tests go beside the lane; its integration tests in
+`crates/khora-lanes/tests/it/<family>/`. Drive the whole family through one frame
+with `khora_agents::lane_agent::run_frame`, in
+`crates/khora-agents/tests/it/families/<family>/`, as in
+[Add a subsystem (a family)](./add-a-family.md#step-8--verify-it-works), and assert
 on what the lane wrote into the deck. Then:
 
 ```bash
+cargo xtask lint-file <every .rs touched>
 cargo t -p khora-lanes
+cargo t -p khora-agents
 cargo gate
-cargo run -p sandbox   # confirm no wgpu/Vulkan validation errors for a render lane
+cargo run -p sandbox   # a render lane: a clean frame, no wgpu/Vulkan validation error
 ```
 
 ## Related
 
 - [Agents and Lanes](../concepts/agents-and-lanes.md) — families, layers, the bus and the deck.
+- [Families and levels](../concepts/families-and-levels.md) — levels, rows and how one is chosen.
 - [Add a flow](./add-a-flow.md) — produce the View this lane consumes.
-- [Add a subsystem (a family)](./add-an-agent.md) — the family and its registration.
+- [Add a subsystem (a family)](./add-a-family.md) — the family and its registration.

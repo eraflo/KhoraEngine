@@ -1,20 +1,21 @@
 # Glossary
 
-The vocabulary index. Khora uses a small set of proprietary terms — acronyms for
-its architecture, names for its runtime substrates — that recur across every
-chapter. This page defines each one in a sentence or two and links to the page
-that covers it in depth, so a reader landing anywhere can look up a term without
-reading the book front to back.
+<p class="kp-lede">A word list for the whole book. Khora names its parts with words of its own, and many of them are everyday words used in a precise sense: a family, a row, an envelope, a place. Look one up here, read its sentence or two, and follow the link to the page that explains it.</p>
 
-Terms are listed alphabetically. Where a term is an acronym, it is expanded on
-first mention.
+Terms are listed alphabetically. An acronym is expanded where it is defined.
+The terms of the engine's contract, how a frame's time is shared and spent, are
+these: [family](#family), [lane](#lane), [level](#level), [row](#row--menu--floor),
+[agent](#agent), [envelope](#envelope), [epoch](#epoch-gorna),
+[allocation](#allocation), [arbiter](#arbiter), [shield](#shield),
+[layer and place](#layer-and-place), [wake](#wake), [bus and deck](#lanebus--outputdeck),
+[residency](#residency), and on the disk's side, the [trust layer](#trust--trust-layer).
 
 ---
 
 ### Activation
 
-Which families run. The engine has no mode: every registered family — the lane
-families, the script agent, an app's own agents — starts on, and an application
+Which families run. The engine has no mode: every registered
+[family](#family), scripting and rendering included, starts on, and an application
 switches one with `activate(family)` / `deactivate(family)` on the
 `Arc<Activation>` resource (`khora_core::agent::Activation`, re-exported as
 `khora_sdk::Activation`). A family it does not know is refused (`UnknownFamily`).
@@ -30,7 +31,7 @@ while editing. A scoped family counts as on. The substrate hands the marker's ke
 to the family's systems and Flows (`SystemContext::scope`, `FlowContext::scope`);
 a Flow projects only what its `Selection` admits, and an entity entering the
 scope arrives while one leaving it is forgotten, not bid farewell. The scripting
-and audio families honour a scope; the physics family does not yet. See
+and audio families honour a scope; the physics family does not. See
 [Role](#role), [Mailbox](#mailbox) and
 [The frame](../concepts/the-frame.md#the-simulation-clock).
 
@@ -40,9 +41,10 @@ The per-agent dial that bounds how freely GORNA may shape an agent's envelope.
 Every mode is an envelope shape — `Learning` (default, negotiates freely),
 `Manual(row)` (a pinned row the agent is told to run), `Stable` (keeps its envelope
 while its row still fits, takes no upgrade), and `Bounded { min, max }` (limits the
-rows planned and chosen) — set via `DccService::set_adaptation_mode`. The `Safety`
-allocation can still give every agent its floor regardless. See
-[GORNA](../concepts/gorna.md).
+rows planned and chosen) — set via `DccService::set_adaptation_mode`. A `Safety`
+epoch still lends every agent its floor, whatever its mode (see
+[Death spiral](#death-spiral)). See
+[GORNA](../concepts/gorna.md#adaptationmode--the-developer-control-surface).
 
 ### AGDF — Adaptive Game Data Flows
 
@@ -54,15 +56,41 @@ data. AGDF is self-optimized inside `khora-data`; the DCC only observes it. See
 
 ### Agent
 
-A family's strategist: it offers the family's rows (every level of every lane the
-device supports) to GORNA, receives an [envelope](#envelope), chooses the row that
-fits, and installs it as a [layer](#layer-and-place); it is woken only by events.
-Every family's agent is the same `LaneAgent`, built from the family's registration;
-an agent implements only the `Agent` trait. It is *not* a controller (the DCC
-decides how much) and *not* a worker (lanes do the work). No hand-written agent
-is left: rendering and scripting are families like the others. Any agent can be
-switched off and on through the [Activation](#activation). See [Agents and Lanes](../concepts/agents-and-lanes.md).
-Also called an **ISA** (Intelligent Subsystem Agent).
+A family's strategist: it offers the family's [rows](#row--menu--floor) (every
+level of every lane the device supports) to GORNA, is lent an
+[envelope](#envelope), chooses the row that fits, and installs it as a
+[layer](#layer-and-place); between those it sleeps, and only a [wake](#wake)
+calls it. Every family's agent is the same [`LaneAgent`](#laneagent), built from
+the family's registration; it implements only the `Agent` trait (`id`, `offer`,
+`apply`, `withdraw`, `report`, `place`, `wake`, `execution_timing`,
+`contention`), and has no `execute`. It is *not* a controller (the DCC decides
+how much) and *not* a worker (lanes do the work). Any agent can be switched off
+and on through the [Activation](#activation). See
+[Agents and Lanes](../concepts/agents-and-lanes.md). Also called an **ISA**
+(Intelligent Subsystem Agent).
+
+### Allocation
+
+The DCC's decision for an [epoch](#epoch-gorna) (`khora_core::agent::gorna::protocol::Allocation`):
+each agent's [envelope](#envelope), the agents a policy [pins](#pin--allowed-rows)
+to one row or limits to some rows, the trigger that opened the epoch, and whether
+a lower frame target could still take something back (`lever`). The DCC publishes
+it from its own thread on the `BudgetChannel`; the scheduler takes it at the next
+frame start and lends each agent its part (`Allocation::lend_to` calls
+`Agent::apply`). An agent the allocation does not name keeps what it holds. See
+[The GORNA protocol](../concepts/gorna-protocol.md).
+
+### Arbiter
+
+The part of the DCC that decides an epoch's rows. Each **proposer** plans a row
+for every agent: `Greedy` climbs each agent's priced rows by quality gained per
+microsecond while they fit, `Exact` searches the rows by branch and bound within
+a node budget, starting from the greedy plan. Every plan passes the
+[shield](#shield); the arbiter keeps the accepted plan of most weighed quality
+(the first proposer's on a tie) and lends it, each envelope its planned cost plus
+80 % of the slack. With no plan accepted, the plans admission made, the floors,
+are lent. Lives
+in `khora-control/src/gorna/arbiter/`. See [The arbiter](../concepts/arbiter.md).
 
 ### Asset reference (Ergon)
 
@@ -97,16 +125,15 @@ nothing else: how a reader reads (a **cursor** it owns, so several readers see
 the same events independently — or a destructive `drain`), and what happens when
 it is full (`DropOldest` or `Reject`, with the drop counted rather than
 silent). Deliberately *not* a global event bus: each channel is created and
-registered by whoever owns that traffic. Replaced four independently-grown
-queues, one of which was fully generic and entirely dead.
+registered by whoever owns that traffic.
 
 ### CLAD — Control / Lanes / Agents / Data
 
 The concrete crate structure and dependency layering that implements SAA, and the
 name of the per-frame descent `Control → Agent → Lane → Data`. Dependencies flow
 downward only; the descent names how a budget becomes work each frame: Control
-arbitrates, the Agent selects a Lane, the Lane reads projected Views and writes
-results back to Data. CLAD is *the how*; [SAA](#saa--symbiotic-adaptive-architecture)
+lends each agent an envelope, the Agent chooses a row (a lane at a level), the
+Lane reads projected Views and writes results back to Data. CLAD is *the how*; [SAA](#saa--symbiotic-adaptive-architecture)
 is *the why*. See [CLAD](../concepts/clad.md).
 
 ### ComponentProvenance
@@ -120,7 +147,7 @@ action such as dragging in the scene tree; saved and copied, not offered),
 copied), and `Runtime` (per-run state that nobody authors and nothing
 recomputes). A `Runtime` component is never in a scene; one also declared
 `resumable` — a behavior's state companion `Guard#state`, and a
-[system](#system-ergon)'s component and its companion, are the kinds today — is
+[system](#system-ergon)'s component and its companion are such — is
 kept by a [game save](#game-save--saverecord) so play resumes where it stopped. It is what
 keeps a simulated pose out of a scene file without a line of filtering, because
 the serializer honours the axis directly. See [Physics](../concepts/physics.md)
@@ -128,12 +155,34 @@ and [Scenes and game saves](../concepts/saves.md).
 
 ### Contention
 
-What an agent declares that it competes with others for: the `OutputDeck` slots
-it writes and reads, and the `Runtime` resources it **reads** or **locks**. No agent reaches
-the `World`, so it is the only thing an agent declares. Two agents share a concurrent
-wave only when their contentions are disjoint. Enforced at the access point —
+What an agent competes with others for: the `OutputDeck` slots it writes, and
+the `Runtime` resources, services and backends it **reads** or **locks**. No
+agent reaches the `World`, so it is the only thing an agent declares, and nobody
+writes it by hand: `LaneAgent` derives it from its lanes' typed inputs and
+outputs. Two agents share a concurrent wave only when their contentions are
+disjoint; reads never conflict with reads. Enforced at the access point —
 `EngineContext::resource` and `::locked` refuse what was not declared. See
-[Agents and Lanes](../concepts/agents-and-lanes.md).
+[Agents and Lanes](../concepts/agents-and-lanes.md#what-an-agent-declares).
+
+### Cost / quote
+
+What running one level costs this frame (`khora_core::lane::cost::Cost`): the
+time on each device (CPU, GPU, NPU, other), the bytes sent between host and GPU,
+the bytes held on each device, a confidence, and, when it differs from the
+level's own, the impact on these inputs and the share of the due work served. A
+lane's `cost(level, inputs)` gives it; that answer is a **quote**. The agent
+quotes every row again when the running row's quote drifts more than 10 %
+(`QUOTE_DRIFT`), when the last full quote is older than 1 s (`QUOTE_MAX_AGE`),
+when it stops fitting the envelope, or when the frame's target changes. See
+[Families and levels](../concepts/families-and-levels.md).
+
+### Cost book
+
+What the DCC learns of each (agent, row): the correction from the host time the
+row was quoted at to the host time it was measured at
+(`khora-control/src/gorna/cost_book.rs`). The [arbiter](#arbiter) plans with
+corrected costs, so a lane that always under-quotes stops being lent too little.
+See [The arbiter](../concepts/arbiter.md#the-cost-book).
 
 ### CRPECS — Chunked Relational Page ECS
 
@@ -147,10 +196,10 @@ change cheap, which is what AGDF's adaptive layout requires. See
 ### DataSystem
 
 A registered, fixed (non-negotiating) unit of Data-layer work the engine runs in
-an ordered slot each tick — invariants like transform propagation and GPU mesh
-sync, plus maintenance write-backs. New invariants are added data-driven, by
-submitting a `DataSystemRegistration` rather than wiring a system manually. A
-Each run is handed a `SystemContext`, whose `since` is the tick of the system's
+an ordered slot each tick — invariants like transform propagation, the
+[residencies](#residency), and maintenance write-backs. New invariants are added
+data-driven, by submitting a `DataSystemRegistration` rather than wiring a system
+manually. Each run is handed a `SystemContext`, whose `since` is the tick of the system's
 previous run, so it can read only what changed since (`Changed<T>`). DataSystem is
 *not* an agent: it has no strategies to negotiate. Every registration declares
 its [role](#role). See [The frame](../concepts/the-frame.md) and
@@ -158,21 +207,25 @@ its [role](#role). See [The frame](../concepts/the-frame.md) and
 
 ### DCC — Dynamic Context Core
 
-The engine's central observer and arbitrator, running on a dedicated background
-("cold path") thread at ~20 Hz. It maintains a situational model from telemetry,
-runs the heuristic engine, arbitrates the GORNA budget auction among agents, and
-sends budgets to the hot-path Scheduler through the `BudgetChannel`. It commands
-nothing: it sets budgets and observes Data; agents and Data decide *how*. Lives in
-`khora-control`. See [GORNA](../concepts/gorna.md) and
-[The frame](../concepts/the-frame.md).
+The engine's budget keeper, running on a thread of its own (the "cold path"),
+20 times a second by default (`DccConfig::tick_rate`). It reads the frames'
+reports and the hardware, runs its heuristics and the
+[frame governor](#frame-governor), opens [epochs](#epoch-gorna), and lets the
+[arbiter](#arbiter) decide each one's [allocation](#allocation), which it
+publishes on the `BudgetChannel`. It asks the agents for their offers, but never
+lends from its own thread: the scheduler lends at a frame start. It commands nothing: it decides how much; agents
+and Data decide *how*. Lives in `khora-control`. See [GORNA](../concepts/gorna.md)
+and [The frame](../concepts/the-frame.md).
 
 ### Death spiral
 
-The failure mode where the engine misses its frame budget for several consecutive
-frames, each overrun making the next worse. GORNA treats it as a first-class
-concept: a death-spiral heuristic forces the cheapest strategy until the engine
-recovers, then returns to the negotiated strategy. A separate "spiral of death"
-guard bounds the fixed-timestep accumulator (see
+The failure mode where each overrun makes the next frame worse. The DCC's
+heuristics call it one when three or more independent pressures hold at once;
+GORNA also does when two or more agents report stalled. Either opens a `Safety`
+epoch: every agent is lent its floor, whatever its
+[AdaptationMode](#adaptationmode), and the next epochs negotiate back up. A
+separate guard bounds the fixed-timestep accumulator: a frame runs at most five
+game ticks (`MAX_SIM_STEPS`) and drops the excess time (see
 [Fixed timestep](#fixed-timestep--interpolation-alpha)). See
 [GORNA](../concepts/gorna.md).
 
@@ -188,18 +241,24 @@ more is **orphaned**: kept with its data, flagged, never deleted. See
 
 ### Envelope
 
-What GORNA lends an agent for an [epoch](#epoch-gorna): how much time on each device
-and how much memory it may use — never which row to run. It is the row the DCC
-planned for the agent plus its part of the slack; the agent chooses within it. See
-[GORNA](../concepts/gorna.md).
+What GORNA lends an agent for an [epoch](#epoch-gorna) (`Envelope`): how much
+time on each device and how much memory on each device it may use — never which
+row to run. It is the cost of the row the [arbiter](#arbiter) planned for the
+agent plus its part of the slack, held to that row; the agent chooses within it.
+A lane that reads `#[budget]` gets the envelope's time on its busiest device. See
+[The GORNA protocol](../concepts/gorna-protocol.md).
 
 ### Epoch (GORNA)
 
 One numbered round of the GORNA dialogue: `OfferRequest`, `Offer`, `Allocation`,
 then a `Report` after every run until the next one. An epoch opens on a trigger
-(pressure, drift, an agent arriving, leaving or switched on or off, overruns, a refresh, an emergency) and is
-lent to every agent at the same frame start. Not to be confused with a
-[change epoch](#change-epoch). See [GORNA](../concepts/gorna.md).
+(a `Trigger`: the first round, pressure, a forecast over the target, the frame
+governor's multiplier moving, agents registered or switched on or off, a policy
+changed, an agent stalled, overruns, the periodic refresh, the `Safety`
+emergency) and is lent to every
+agent at the same frame start. Not to be confused with a
+[change epoch](#change-epoch). See
+[The GORNA protocol](../concepts/gorna-protocol.md#epochs-and-triggers).
 
 ### Ergon
 
@@ -229,10 +288,11 @@ a fault of the receiver. Delivered next frame. The engine raises `Touched` and
 
 Two distinct ordered-slot enums, easy to confuse:
 
-- **`ExecutionPhase`** orders **agent** execution within a frame:
-  `Init`, `Observe`, `Transform`, `Mutate`, `Output`, `Finalize`, plus optional
-  custom phases. Each agent declares the phases it may run in; the Scheduler runs
-  them in order. One place is outside the frame: **`ExecutionPhase::BACKGROUND`**.
+- **`ExecutionPhase`** orders the families' [places](#layer-and-place) within a
+  frame: `INIT`, `OBSERVE`, `TRANSFORM`, `MUTATE`, `OUTPUT`, `FINALIZE`, plus
+  the app's custom phases. Each family's registration names its one phase; the
+  scheduler runs the phases in order, and the places of one phase in waves. One
+  phase is outside the frame: **`ExecutionPhase::BACKGROUND`**.
   A family there has its layer run off the frame, on a pool of its own, when its
   `Take` [mailbox](#mailbox) holds mail — one run at a time, however many frames
   it takes. Its lanes read only `#[take]` (the requests, drained), `#[resource]`
@@ -247,6 +307,21 @@ Two distinct ordered-slot enums, easy to confuse:
   start (`begin_frame`: the allocation lent, the layers swapped, the background
   runs that ended brought home): its systems apply what the background staged,
   through `SystemContext::staged::<T>()`. See [The frame](../concepts/the-frame.md).
+
+### Family
+
+One job the engine does every frame, with several ways of doing it: drawing the
+scene, casting shadows, stepping physics, mixing sound, running scripts. A family
+is a type implementing `LaneFamily` (`khora-core/src/lane/contract/family.rs`):
+its name, the `AgentId` it negotiates under, its semantics (`Presentation`, a
+cheaper level may look or sound worse, or `Exact`, every level gives the same
+result) and the outputs every one of its [lanes](#lane) writes. A family is added
+with one `register_agent!` line in its `registration.rs`, giving its phase, its
+importance (`Critical`, `Important`, `Optional`), the families it runs after, its
+fixed step, its default level and its lanes; the engine boots one
+[`LaneAgent`](#laneagent) for it. A new subsystem is a family, never a new agent
+type. See [Families and levels](../concepts/families-and-levels.md) and
+[Add a subsystem (a family)](../how-to/add-a-family.md).
 
 ### Field attributes (Ergon)
 
@@ -287,6 +362,18 @@ changed. Every Flow declares its [role](#role) (`const ROLE`). Lives in
 `khora-data/src/flow/`. See [AGDF](../concepts/agdf.md) and
 [Data and the ECS](../concepts/ecs.md).
 
+### Frame governor
+
+The DCC's loop on the frame's length (`khora-control/src/governor/mod.rs`). It
+reads the critical path of every frame, keeps an estimate of the frame, and
+moves GORNA's global budget multiplier, which scales the time the DCC shares:
+lowered by the target over the estimate when frames run over, raised a quarter
+of the way toward its target when they have room, never above its maximum (1.0
+by default). Its target is the frame setpoint less its
+[headroom](#headroom). It counts frame time, never the wall clock. A moved
+multiplier opens an epoch. See
+[The arbiter](../concepts/arbiter.md#the-cost-model-and-the-frame-governor).
+
 ### Game save / SaveRecord
 
 What a running game is, written as its differences from the scene it started
@@ -301,21 +388,21 @@ since reaches every field the game left alone. Written by
 
 ### GORNA — Goal-Oriented Resource Negotiation and Allocation
 
-The protocol by which the DCC and the agents share each frame's time, replacing
-static compile-time allocations: per [epoch](#epoch-gorna), each agent offers its
-priced rows, the DCC lends each one an [envelope](#envelope), and the agent chooses
-its row within it and reports after every run. The DCC decides how much; the agent
+The protocol by which the DCC and the agents share each frame's time, rather
+than fixing it when the game is built: per [epoch](#epoch-gorna), each agent
+[offers](#offer) its priced rows, the [arbiter](#arbiter) decides, the DCC lends
+each one an [envelope](#envelope), and the agent chooses its row within it and
+[reports](#report) after every run. The DCC decides how much; the agent
 decides how. Only agents negotiate; the Data layer does not. See
 [GORNA](../concepts/gorna.md).
 
 ### Headroom
 
-The slack between current resource use and the budget or safety ceiling. When the
-frame governor sees headroom (measured frame time under its target), it climbs
-the global budget multiplier back toward 1.0 so agents can upgrade to richer
-strategies; under pressure it lowers the multiplier. Memory headroom similarly
-gates whether a layout repack is allowed. See [GORNA](../concepts/gorna.md) and
-[AGDF](../concepts/agdf.md).
+The margin the [frame governor](#frame-governor) keeps under the frame
+setpoint: its target is `setpoint × (1 − headroom)`, with a headroom of 10 % by
+default (`GovernorConfig::headroom`). Frames that fit under the target let it
+raise the multiplier, so agents are lent richer rows; frames over it lower the
+multiplier. See [The arbiter](../concepts/arbiter.md#the-cost-model-and-the-frame-governor).
 
 ### Interpolation (Ergon)
 
@@ -333,36 +420,66 @@ used in the architecture and roadmap. See [SAA](../concepts/saa.md) and
 
 ### Lane
 
-A hot-path execution unit: one deterministic way of doing a family's work (draw the
-shadow maps, step physics once, mix one audio frame), offered at one or more levels.
-Lanes do not decide *whether* to run and do not negotiate. They consume the typed
-Views the Flows publish into the `LaneBus` and never query the World directly. The
-`Lane` trait has `prepare`, `cost`, `record` and `shutdown`. See
+A hot-path execution unit: one deterministic way of doing a [family](#family)'s
+work (draw the shadow maps, step physics once, mix one audio frame), offered at
+one or more [levels](#level). Lanes do not decide *whether* to run and do not
+negotiate. They read typed inputs (`#[derive(LaneInputs)]`: the Views on the
+[bus](#lanebus--outputdeck), earlier phases' deck slots, runtime resources,
+the budget lent…), write the family's typed outputs (`#[derive(LaneOutputs)]`),
+and never query the World. The `Lane` trait (`khora-core/src/lane/contract/lane.rs`)
+has `levels`, `supports`, `prepare`, `cost`, `record` and `shutdown`. See
+[Agents and Lanes](../concepts/agents-and-lanes.md).
+
+### LaneAgent
+
+The one implementor of `Agent` (`khora-agents/src/lane_agent/`), built by the
+boot for every registered [family](#family). It holds the family's menu of
+[rows](#row--menu--floor) and their quotes, offers them to GORNA, chooses the row
+that fits its [envelope](#envelope), prepares that row's [layer](#layer-and-place)
+and installs it at the family's place. The xtask check
+`only_lane_agent_implements_agent` keeps it the only one. Without a scheduler, a
+test runs a family through `khora_agents::lane_agent::run_frame`. See
 [Agents and Lanes](../concepts/agents-and-lanes.md).
 
 ### LaneBus / OutputDeck
 
-The typed input/output substrate of the lane layer. The **`LaneBus`** is where
-Flows publish their per-domain Views for lanes to read (the lane *input* side).
-The **`OutputDeck`** is the typed sink lanes write cross-domain results into
-(audio and physics write-backs), drained by the Maintenance DataSystems at end of
-frame. GPU render passes use a separate sink, the `FrameGraph`. Both live in
-`khora-core/src/lane/`. See [The frame](../concepts/the-frame.md) and
-[Agents and Lanes](../concepts/agents-and-lanes.md).
+The **bus** and the **deck**: the typed input and output substrate of the lane
+layer, both scoped to one frame. The **`LaneBus`** is where Flows publish their
+per-domain Views during the Substrate Pass, with the Views the host hands in
+(`HostViews`: the editor's grid, gizmos, wireframe switch), for lanes to read as
+`#[bus]` inputs. The **`OutputDeck`** is where lanes write their `#[deck]`
+outputs: read by a later phase's lanes as `#[deck]` inputs, or drained by the
+Maintenance DataSystems at the frame's end (audio and physics write-backs). GPU
+passes go to a separate sink, the frame graph's pass slots (`#[pass]`). Both live
+in `khora-core/src/lane/plumbing/`. See
+[Agents and Lanes](../concepts/agents-and-lanes.md#how-a-lane-gets-its-data-the-bus-and-the-deck).
 
 ### Layer and place
 
-A family's **place** is its fixed spot in the frame — its phase and, for what draws,
-its pass. A **layer** is one of its lanes, prepared at one level, installed at that
-place: the scheduler applies it every frame without the agent. A new layer is
-prepared beside the installed one and swapped in at a frame start; the old one is
-kept ready three epochs, then released. See
+A family's **place** (`Place`) is its fixed spot in the frame — its phase and,
+for what draws, its pass. A **layer** is one of its lanes, prepared at one level,
+installed at that place: the scheduler runs it every frame without the agent, on
+the place's **terms** (the epoch, the envelope, the budget a `#[budget]` lane
+reads, the fixed step). A new layer is prepared beside the installed one, off the
+frame when it can be, and swapped in at a frame start; the old one is kept ready
+three epochs (`KEEP_EPOCHS`), then released. The place turns each run into the
+agent's `Report`. See
 [Agents and Lanes](../concepts/agents-and-lanes.md#lanes-are-layers).
+
+### Level
+
+One set of parameters a lane can run with (`khora_core::lane::level::Level`): its
+`StrategyId`, a name for tools and logs ("lit forward", "32 voices"), its
+**impact** (how much it changes the result) and the memory it holds on each
+device. A lane lists its levels cheapest first. The audio lane offers 8, 32 or
+128 voices; the physics lane one level. Each level becomes a
+[row](#row--menu--floor) of its family's menu. See
+[Families and levels](../concepts/families-and-levels.md).
 
 ### LoadReport
 
 What a load adapted, said out loud: one entry per place where the file and
-today's code disagreed — a field that took its default, a field dropped, a name
+the running code disagreed — a field that took its default, a field dropped, a name
 read through `formerly`, a number widened, a retired component skipped, an
 engine-written component skipped, a reference to an entity the file does not hold, a game save's change to an entity
 the scene no longer has. None of these is an error and none is silent. A load
@@ -394,6 +511,15 @@ A DataSystem or a Flow that watches components for change, declared by the
 components observers watch and remembers each observer's last-seen tick. See
 [Knowing what changed](../concepts/change-detection.md).
 
+### Offer
+
+An agent's answer when the DCC opens an [epoch](#epoch-gorna) (`Offer`): every
+[row](#row--menu--floor) it can run, each with its cost, its quality from 0 to 1
+and how far the cost can be trusted (`Measured`, `Quoted` or `Assumed`); its
+floor; the row running now; and its health. An offer that comes after the
+request's `reply_by` is late, and the agent keeps the envelope it had. See
+[The GORNA protocol](../concepts/gorna-protocol.md#the-four-messages).
+
 ### OnLoad / OnResumeFailed
 
 Two Ergon lifecycle hooks. **`void OnLoad()`** runs once when a behavior instance
@@ -419,6 +545,14 @@ a text under a namespace of its own, fixed forever, and lives in the authored
 namespace: a [system](#system-ergon)'s entity is `named("system:Name")`, the same
 in every save. See [Data and the ECS](../concepts/ecs.md) and
 [Serialization](../concepts/serialization.md).
+
+### Pin / allowed rows
+
+A developer's hold on an agent's choice, carried by the [allocation](#allocation):
+a **pin** names the one row the agent runs (`AdaptationMode::Manual`), **allowed
+rows** the only rows it may choose among (`Bounded`). The agent still chooses
+within its envelope, among what it is allowed. See
+[Families and levels](../concepts/families-and-levels.md#pins-and-allowed-rows).
 
 ### PlayMode
 
@@ -462,6 +596,16 @@ read are written into the frame's working set at once and into the run's
 pending batch, which leaves as one `WriteColumn` per component and set of fields,
 in the order the run wrote them. See [Sweep](#sweep-ergon).
 
+### Report
+
+What a run of a family's layer says back (`khora_core::agent::gorna::Report`),
+after every run: the row it ran, the time it measured on each device, the share
+of its work it got `done`, its **health** (the lesser of `done` and how well the
+run kept to its budget), whether it ran over budget or stalled, and why. The
+[place](#layer-and-place) builds it; the scheduler hands it to the DCC, which
+learns from it in its [cost book](#cost-book). See
+[The GORNA protocol](../concepts/gorna-protocol.md#the-four-messages).
+
 ### Reserved entity / EntityReserver
 
 An entity id a script's turn takes before the entity exists: `Spawn` returns it
@@ -484,6 +628,18 @@ them in. The project a compile was for may have closed while the compile ran:
 its result is then abandoned. See
 [ExecutionPhase / TickPhase](#executionphase--tickphase).
 
+### Residency
+
+Keeping a copy of an asset where a device can use it: a mesh's vertex buffers on
+the GPU, a UI image's rect in the GPU atlas, a material's uniforms. A residency
+(the `Residency` trait, `khora-core/src/residency/`) names what it starts from
+(its `Source`, a CPU asset), what it makes (its `Resident`) and what it makes it
+on (its `Target`). Each runs as a `PreExtract` DataSystem, registered with
+`register_residency!` in `khora-data/src/residency/` (`MeshOnGpu`, `ImageOnGpu`,
+`gpu_material_sync`); its store remembers which copy of the source each resident
+was made from, so a hot-reloaded asset is made again. An asset's copy on a device
+is a residency, never a lane's state. See [Residency](../concepts/residency.md).
+
 ### Resume tier
 
 How a suspended Ergon body comes back after the code it was running in changed —
@@ -504,6 +660,17 @@ skipped while the family is off. On its first run on a world, and its first run
 after a skip, a system sees `SystemContext.resumed` and a Flow's `select` sees
 `FlowContext { resumed: true }`. The boot refuses a `Serves` that names no
 registered family. See [Activation](#activation).
+
+### Row / menu / floor
+
+A **row** is one level of one lane of a family, priced: what the agent offers
+the DCC and chooses among, named by the level's `StrategyId` (`OfferRow`). The
+**menu** is every row the device supports, lane by lane, cheapest level first;
+the agent offers it without the rows another row beats on every count. The
+**floor** is the cheapest priced row: what the agent runs when nothing fits its
+envelope, and what a `Safety` epoch lends. A family never offers one
+`StrategyId` twice; boot refuses it. See
+[Families and levels](../concepts/families-and-levels.md#the-menu-rows-and-their-prices).
 
 ### SAA — Symbiotic Adaptive Architecture
 
@@ -556,7 +723,8 @@ as badges on `.erg` tiles. See [Editor — Scripts](./editor.md#07--scripts).
 ### SemanticDomain
 
 The partition a component belongs to, declared with `#[component(domain = …)]` and
-carried in the component registry: `Spatial`, `Render`, `Physics`, `Audio`, `Ui`.
+carried in the component registry: `Spatial`, `Render`, `Audio`, `Physics`, `Ui`,
+`Script`.
 Domains let query planners and Flows pre-filter pages (a render extraction never
 touches UI pages) and anchor the per-domain change epochs that gate Flow view
 caching. See [Data and the ECS](../concepts/ecs.md).
@@ -572,6 +740,17 @@ component listed with its schema fingerprint, refused whole by a build whose
 schemas differ — a cache of a stable save, never its only copy. The goal changes
 how a scene is encoded, never what it holds. See
 [Serialization](../concepts/serialization.md) and [File formats](./formats.md).
+
+### Shield
+
+What every proposal for an epoch must pass before the [arbiter](#arbiter) keeps
+it (`khora-control/src/gorna/arbiter/shield.rs`): no row a developer's policy
+rules out (a pin, the allowed rows, a `Stable` ceiling), and no breach of the
+frame's constraints, the critical path on each device against the target and the
+memory against what each device holds. A proposal it refuses is set aside, and
+the journal names the proposer. The shield is why a better proposer can be added
+without risk: whatever it plans, nothing unsafe is lent. See
+[The arbiter](../concepts/arbiter.md#the-shield).
 
 ### Site (Ergon)
 
@@ -624,6 +803,18 @@ resumable: never in a scene or a snapshot, kept by a game save. Behaviors and
 systems take their turns in one list, by module path, then source order. See
 [Scripting](../concepts/scripting/behaviors-and-systems.md#a-system-at-a-glance).
 
+### Trust / trust layer
+
+How much the engine trusts a file it reads (`khora_io::trust::Trust`): `Engine`
+(its own files), `Project` (a project its user trusts), `Restricted` (one not
+trusted yet), `Imported` (a file from outside the project, or carrying the
+system's download mark), `Save` (a game save). A project is opened `Trusted` or
+`Restricted` (`ProjectTrust`): restricted, its files are read under tighter caps
+and nothing of it runs. A refused file is named by its **trust layer**
+(`TrustLayer`), where the refusal was decided: `File` (reading it), `Decoder`
+(decoding it), `Pack` (reading it out of a signed pack) or `Content` (what it
+holds). See [Trust](../concepts/trust.md).
+
 ### Vessel
 
 The SDK's entity-spawn builder. It guarantees every spawned entity has a
@@ -639,6 +830,16 @@ and publishes into the `LaneBus` for lanes to consume (`RenderWorld`,
 `ShadowView`, …). A cached View is bit-identical to a freshly projected one — only
 *whether* the projection runs changes, never *what* it contains. See
 [AGDF](../concepts/agdf.md).
+
+### Wake
+
+Why the scheduler calls a family's agent (`khora_core::agent::Wake`). On a frame
+without one, the installed [layer](#layer-and-place) runs alone and the agent is
+not called. The wakes: the family's first frame, an allocation lent, the running
+row's quote no longer fitting the envelope, drifting or aged
+([quote](#cost--quote)), the frame's target changed, the lane failed, an input
+refused, a layer that could not be prepared. See
+[Agents and Lanes](../concepts/agents-and-lanes.md#lanes-are-layers).
 
 ### Watchdog (Ergon)
 

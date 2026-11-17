@@ -72,7 +72,7 @@ and mdBook, kept until the site reaches parity — rustdoc, Mermaid diagrams, an
   who never touched a computer, a game maker from another engine, an engine contributor. A new term is
   defined in a sentence where it first appears.
 - **Figures:** explain mechanisms with hand-made **SVG figures** — diagrams and illustrated examples —
-  beside Mermaid (keep Mermaid for flowcharts). Files under `docs/src/images/<topic>/`, inlined with
+  — never Mermaid: the site does not draw it. Files under `docs/src/images/<topic>/`, inlined with
   `{{#include ../images/<topic>/x.svg}}` inside `<div class="kp-figure-frame">` (scrolls on narrow
   screens). The root `<svg>` has `id="fig-<topic>-<name>"`, `role="img"` and an `aria-labelledby`
   naming its `<title>`, and **every selector of its `<style>` starts with that id**

@@ -1,0 +1,118 @@
+<svg id="fig-arbiter-governor" class="kp-figure" viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-arbiter-governor-title kp-arbiter-governor-desc">
+  <title id="kp-arbiter-governor-title">The frame governor: fast down, slow up, a band to rest in</title>
+  <desc id="kp-arbiter-governor-desc">Above, the frames' critical path against the setpoint of 16.7 milliseconds and the governor's target 10 percent under it, 15 milliseconds, with a band under the target. Below, the budget multiplier. Frames run at 20 milliseconds: the governor lowers the multiplier from 1.0 to 0.75, the ratio of the target to its estimate, never more than 30 percent at once. The agents step down; the frames settle at 14 milliseconds, inside the band, and the multiplier holds. The scene lightens and frames fall to 10.5 milliseconds: the governor raises the multiplier a quarter of the way toward its goal each decision, and not past 0.94, just under the multiplier that ran over, for 5 seconds. A single frame of 40 milliseconds after normal ones is a hitch and is left out.</desc>
+  <style>
+    #fig-arbiter-governor { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-arbiter-governor .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-arbiter-governor .kp-axis { stroke: var(--k-line, #383d48); stroke-width: 1; fill: none; }
+    #fig-arbiter-governor .kp-setpoint { stroke: var(--k-gold, #e4b65c); stroke-width: 1.6; fill: none; }
+    #fig-arbiter-governor .kp-target { stroke: var(--k-silver, #b4cfe2); stroke-width: 1; stroke-dasharray: 5 4; fill: none; }
+    #fig-arbiter-governor .kp-band { fill: var(--k-silver, #b4cfe2); fill-opacity: 0.1; }
+    #fig-arbiter-governor .kp-frame { fill: var(--k-silver, #b4cfe2); }
+    #fig-arbiter-governor .kp-hitch { fill: none; stroke: var(--k-amber, #e8a33d); stroke-width: 1.4; }
+    #fig-arbiter-governor .kp-multiplier { stroke: var(--k-silver, #b4cfe2); stroke-width: 2; fill: none; }
+    #fig-arbiter-governor .kp-ceiling { stroke: var(--k-amber, #e8a33d); stroke-width: 1; stroke-dasharray: 3 3; fill: none; }
+    #fig-arbiter-governor .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+    #fig-arbiter-governor .kp-text { fill: var(--k-fg-1, #c5cad0); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-arbiter-governor .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-arbiter-governor .kp-mono { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-arbiter-governor .kp-warn { fill: var(--k-amber, #e8a33d); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="320" rx="10"/>
+  <!-- above: the frames against the setpoint, the target and its band -->
+  <text class="kp-label" x="60" y="28">frames' critical path (ms)</text>
+  <path class="kp-axis" d="M56 36 L56 140 L724 140"/>
+  <rect class="kp-band" x="56" y="100" width="668" height="14"/>
+  <path class="kp-setpoint" d="M56 90 L724 90"/>
+  <path class="kp-target" d="M56 100 L724 100"/>
+  <text class="kp-gold" x="8" y="94">16.7</text>
+  <text class="kp-mono" x="8" y="110">15.0</text>
+  <!-- below: the multiplier -->
+  <text class="kp-label" x="60" y="162">budget multiplier</text>
+  <path class="kp-axis" d="M56 166 L56 262 L724 262"/>
+  <text class="kp-mono" x="20" y="174">1.0</text>
+  <text class="kp-mono" x="20" y="219">.75</text>
+  <!-- 1. frames over: the first ten -->
+  <g>
+    <circle class="kp-frame" cx="66" cy="70" r="3"/>
+    <circle class="kp-frame" cx="80" cy="68" r="3"/>
+    <circle class="kp-frame" cx="94" cy="71" r="3"/>
+    <circle class="kp-frame" cx="108" cy="69" r="3"/>
+    <circle class="kp-frame" cx="122" cy="70" r="3"/>
+    <circle class="kp-frame" cx="136" cy="72" r="3"/>
+    <circle class="kp-frame" cx="150" cy="70" r="3"/>
+    <circle class="kp-frame" cx="164" cy="69" r="3"/>
+    <circle class="kp-frame" cx="178" cy="71" r="3"/>
+    <circle class="kp-frame" cx="192" cy="70" r="3"/>
+  </g>
+  <path class="kp-multiplier" d="M56 170 L200 170"/>
+  <g data-on="1">
+    <text class="kp-text" x="40" y="292">Frames run at 20 ms: the estimate is over the target, 10 % under the setpoint.</text>
+  </g>
+  <!-- 2. lowered: the ratio, at most 30 % -->
+  <g data-on="2 3 4 5">
+    <path class="kp-multiplier" d="M200 170 L200 215 L480 215"/>
+    <text class="kp-mono" x="208" y="236">× 15 / 20 → 0.75</text>
+  </g>
+  <g data-on="2">
+    <text class="kp-text" x="40" y="292">Lowered at once by the ratio target ÷ estimate, never more than 30 %; the agents step down.</text>
+  </g>
+  <!-- 3. inside the band, it holds -->
+  <g data-on="3 4 5">
+    <circle class="kp-frame" cx="220" cy="106" r="3"/>
+    <circle class="kp-frame" cx="234" cy="108" r="3"/>
+    <circle class="kp-frame" cx="248" cy="105" r="3"/>
+    <circle class="kp-frame" cx="262" cy="107" r="3"/>
+    <circle class="kp-frame" cx="276" cy="106" r="3"/>
+    <circle class="kp-frame" cx="290" cy="108" r="3"/>
+    <circle class="kp-frame" cx="304" cy="105" r="3"/>
+    <circle class="kp-frame" cx="318" cy="107" r="3"/>
+    <circle class="kp-frame" cx="332" cy="106" r="3"/>
+    <circle class="kp-frame" cx="346" cy="108" r="3"/>
+    <circle class="kp-frame" cx="360" cy="106" r="3"/>
+    <circle class="kp-frame" cx="374" cy="105" r="3"/>
+    <circle class="kp-frame" cx="388" cy="107" r="3"/>
+    <circle class="kp-frame" cx="402" cy="106" r="3"/>
+    <circle class="kp-frame" cx="416" cy="107" r="3"/>
+  </g>
+  <g data-on="3">
+    <text class="kp-text" x="40" y="292">The change waits for an epoch to lend it, then 3 frames. At 14 ms, in the band: it holds.</text>
+  </g>
+  <!-- 4. room again: raised a quarter of the way, under its memory -->
+  <g data-on="4 5">
+    <circle class="kp-frame" cx="430" cy="127" r="3"/>
+    <circle class="kp-frame" cx="444" cy="126" r="3"/>
+    <circle class="kp-frame" cx="458" cy="128" r="3"/>
+    <circle class="kp-frame" cx="472" cy="127" r="3"/>
+    <circle class="kp-frame" cx="486" cy="126" r="3"/>
+    <circle class="kp-frame" cx="500" cy="128" r="3"/>
+    <circle class="kp-frame" cx="514" cy="127" r="3"/>
+    <circle class="kp-frame" cx="528" cy="126" r="3"/>
+    <circle class="kp-frame" cx="542" cy="127" r="3"/>
+    <circle class="kp-frame" cx="556" cy="128" r="3"/>
+    <circle class="kp-frame" cx="570" cy="126" r="3"/>
+    <circle class="kp-frame" cx="584" cy="127" r="3"/>
+    <circle class="kp-frame" cx="598" cy="126" r="3"/>
+    <circle class="kp-frame" cx="612" cy="127" r="3"/>
+    <circle class="kp-frame" cx="626" cy="128" r="3"/>
+    <path class="kp-multiplier" d="M480 215 L480 206 L540 206 L540 200 L600 200 L600 195 L724 195"/>
+    <path class="kp-ceiling" d="M200 181 L724 181"/>
+    <text class="kp-warn" x="620" y="176">ceiling 0.94, 5 s</text>
+  </g>
+  <g data-on="4">
+    <text class="kp-text" x="40" y="292">Frames at 10.5 ms leave room: each decision rises a quarter of the way, and not past the</text>
+    <text class="kp-text" x="40" y="310">multiplier that ran over, less 0.06, for 5 seconds.</text>
+  </g>
+  <!-- 5. a hitch is left out -->
+  <g data-on="5">
+    <circle class="kp-hitch" cx="640" cy="44" r="5"/>
+    <text class="kp-warn" x="652" y="48">40 ms · left out</text>
+    <circle class="kp-frame" cx="654" cy="126" r="3"/>
+    <circle class="kp-frame" cx="668" cy="127" r="3"/>
+    <circle class="kp-frame" cx="682" cy="126" r="3"/>
+    <circle class="kp-frame" cx="696" cy="128" r="3"/>
+    <circle class="kp-frame" cx="710" cy="127" r="3"/>
+    <text class="kp-text" x="40" y="292">One frame over twice the setpoint after a normal one is a hitch, a load or a stall:</text>
+    <text class="kp-text" x="40" y="310">nothing a row could fix. It is left out of the estimate.</text>
+  </g>
+</svg>

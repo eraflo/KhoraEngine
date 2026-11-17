@@ -1,0 +1,63 @@
+<svg id="fig-clad-pillars" class="kp-figure" viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-clad-pillars-title kp-clad-pillars-desc">
+  <title id="kp-clad-pillars-title">Where each SAA idea lives in the crates</title>
+  <desc id="kp-clad-pillars-desc">On the left, the ideas of the Symbiotic Adaptive Architecture; on the right, the crates that hold them. The Dynamic Context Core and the GORNA protocol live in khora-control, GORNA's message types in khora-core. The intelligent subsystem agents are khora-agents, which holds the one LaneAgent, and khora-lanes, which holds the families. Adaptive data flows live in khora-data, the contracts in khora-core, the I/O services and the trust boundary in khora-io, observability in khora-telemetry, and the hardware backends in khora-infra.</desc>
+  <style>
+    #fig-clad-pillars { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-clad-pillars .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-clad-pillars .kp-idea { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-clad-pillars .kp-crate { fill: var(--k-bg-3, #1f2636); stroke: var(--k-silver-dim, #809db2); stroke-width: 1; }
+    #fig-clad-pillars .kp-link { stroke: var(--k-silver-dim, #809db2); stroke-width: 1; fill: none; }
+    #fig-clad-pillars .kp-link-soft { stroke: var(--k-line, #383d48); stroke-width: 1; fill: none; stroke-dasharray: 3 3; }
+    #fig-clad-pillars .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; font-weight: 500; }
+    #fig-clad-pillars .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 12.5px; }
+    #fig-clad-pillars .kp-name { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11.5px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="330" rx="10"/>
+  <text class="kp-head" x="24" y="28">SAA · the why</text>
+  <text class="kp-head" x="490" y="28">CLAD · the how</text>
+  <!-- ideas -->
+  <rect class="kp-idea" x="24" y="40" width="300" height="28" rx="4"/>
+  <text class="kp-station" x="34" y="59">Dynamic Context Core</text>
+  <rect class="kp-idea" x="24" y="74" width="300" height="28" rx="4"/>
+  <text class="kp-station" x="34" y="93">GORNA protocol and arbiter</text>
+  <rect class="kp-idea" x="24" y="108" width="300" height="28" rx="4"/>
+  <text class="kp-station" x="34" y="127">Intelligent subsystem agents</text>
+  <rect class="kp-idea" x="24" y="142" width="300" height="28" rx="4"/>
+  <text class="kp-station" x="34" y="161">Adaptive game data flows</text>
+  <rect class="kp-idea" x="24" y="176" width="300" height="28" rx="4"/>
+  <text class="kp-station" x="34" y="195">Semantic interfaces and contracts</text>
+  <rect class="kp-idea" x="24" y="210" width="300" height="28" rx="4"/>
+  <text class="kp-station" x="34" y="229">I/O services and trust boundary</text>
+  <rect class="kp-idea" x="24" y="244" width="300" height="28" rx="4"/>
+  <text class="kp-station" x="34" y="263">Observability and telemetry</text>
+  <rect class="kp-idea" x="24" y="278" width="300" height="28" rx="4"/>
+  <text class="kp-station" x="34" y="297">Hardware and OS interaction</text>
+  <!-- crates -->
+  <rect class="kp-crate" x="490" y="57" width="246" height="28" rx="4"/>
+  <text class="kp-name" x="500" y="76">khora-control</text>
+  <rect class="kp-crate" x="490" y="99" width="246" height="28" rx="4"/>
+  <text class="kp-name" x="500" y="118">khora-agents · LaneAgent</text>
+  <rect class="kp-crate" x="490" y="133" width="246" height="28" rx="4"/>
+  <text class="kp-name" x="500" y="152">khora-lanes · the families</text>
+  <rect class="kp-crate" x="490" y="167" width="246" height="28" rx="4"/>
+  <text class="kp-name" x="500" y="186">khora-data</text>
+  <rect class="kp-crate" x="490" y="201" width="246" height="28" rx="4"/>
+  <text class="kp-name" x="500" y="220">khora-core</text>
+  <rect class="kp-crate" x="490" y="235" width="246" height="28" rx="4"/>
+  <text class="kp-name" x="500" y="254">khora-io</text>
+  <rect class="kp-crate" x="490" y="269" width="246" height="28" rx="4"/>
+  <text class="kp-name" x="500" y="288">khora-telemetry</text>
+  <rect class="kp-crate" x="490" y="303" width="246" height="20" rx="4"/>
+  <text class="kp-name" x="500" y="317">khora-infra</text>
+  <!-- links -->
+  <path class="kp-link" d="M324,54 L490,71"/>
+  <path class="kp-link" d="M324,88 L490,71"/>
+  <path class="kp-link-soft" d="M324,88 C 420,120 420,200 490,215"/>
+  <path class="kp-link" d="M324,122 L490,113"/>
+  <path class="kp-link" d="M324,122 L490,147"/>
+  <path class="kp-link" d="M324,156 L490,181"/>
+  <path class="kp-link" d="M324,190 L490,215"/>
+  <path class="kp-link" d="M324,224 L490,249"/>
+  <path class="kp-link" d="M324,258 L490,283"/>
+  <path class="kp-link" d="M324,292 L490,313"/>
+</svg>

@@ -14,7 +14,7 @@
 
 //! The four messages of GORNA: offer request, offer, allocation, report.
 //!
-//! See the book: concepts/gorna.md, "The four messages".
+//! See the book: concepts/gorna-protocol.md, "The four messages".
 
 use serde::{Deserialize, Serialize};
 use std::time::Duration;

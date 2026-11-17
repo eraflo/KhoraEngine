@@ -134,7 +134,7 @@ impl Agent for LaneAgent {
     /// dominates is left out. The floor is the cheapest priced row (the
     /// default level while none is); the current row is the one installed.
     ///
-    /// See the book: concepts/gorna.md, "Formalisation".
+    /// See the book: concepts/gorna-protocol.md, "Formalisation".
     fn offer(&mut self, request: &OfferRequest) -> Offer {
         let (ran, running, health) = {
             let place = Arc::clone(&self.place);

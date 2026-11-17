@@ -1,0 +1,69 @@
+<svg id="fig-persistence-names" class="kp-figure" viewBox="0 0 760 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-names-title kp-names-desc">
+  <title id="kp-names-title">How a load reads a saved component, and each of its fields, by name</title>
+  <desc id="kp-names-desc">A saved component is matched by its name. Under its current name it is read. Under an old name its type lists as formerly, it is read and reported Renamed. A component declared retired is skipped and reported Retired. A derived or runtime component is skipped, reported NotSaved, and rebuilt by the engine. A name the file itself declares is read onto the world's declaration, or registered when the load commits. Any other name refuses the whole load and leaves the world unchanged. Each field of a component read is then matched by name: in both the save and the code it is read, reported Widened when read at another width without loss; only in the code it takes its default, reported Defaulted; only in the save it is dropped, reported Dropped; under an old name it is reported Renamed. A value the component's check rejects is kept and reported Unusable.</desc>
+  <style>
+    #fig-persistence-names { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-persistence-names .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-persistence-names .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-persistence-names .kp-row { fill: var(--k-bg-2, #181e2b); }
+    #fig-persistence-names .kp-stop { fill: var(--k-bg-2, #181e2b); stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    #fig-persistence-names .kp-flow { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; fill: none; }
+    #fig-persistence-names .kp-arrowhead { fill: var(--k-silver-dim, #809db2); }
+    #fig-persistence-names .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 16px; }
+    #fig-persistence-names .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-persistence-names .kp-strong { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-persistence-names .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-persistence-names .kp-mono { fill: var(--k-fg-1, #c9ced3); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+  </style>
+  <defs>
+    <marker id="kp-names-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path class="kp-arrowhead" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+  <rect class="kp-bg" x="0" y="0" width="760" height="360" rx="8"/>
+  <!-- Components -->
+  <rect class="kp-panel" x="30" y="24" width="340" height="312" rx="6"/>
+  <text class="kp-station" x="44" y="50">A saved component, by name</text>
+  <rect class="kp-row" x="44" y="64" width="312" height="36" rx="4"/>
+  <text class="kp-strong" x="54" y="80">its current name</text>
+  <text class="kp-mono" x="54" y="94">read</text>
+  <rect class="kp-row" x="44" y="106" width="312" height="36" rx="4"/>
+  <text class="kp-strong" x="54" y="122">an old name, listed in formerly</text>
+  <text class="kp-mono" x="54" y="136">read · Renamed</text>
+  <rect class="kp-row" x="44" y="148" width="312" height="36" rx="4"/>
+  <text class="kp-strong" x="54" y="164">declared retired</text>
+  <text class="kp-mono" x="54" y="178">skipped · Retired</text>
+  <rect class="kp-row" x="44" y="190" width="312" height="36" rx="4"/>
+  <text class="kp-strong" x="54" y="206">derived, or runtime</text>
+  <text class="kp-mono" x="54" y="220">skipped · NotSaved · rebuilt</text>
+  <rect class="kp-row" x="44" y="232" width="312" height="36" rx="4"/>
+  <text class="kp-strong" x="54" y="248">declared by the file itself</text>
+  <text class="kp-mono" x="54" y="262">read by field name · registered at commit</text>
+  <rect class="kp-stop" x="44" y="274" width="312" height="48" rx="4"/>
+  <text class="kp-gold" x="54" y="292">any other name</text>
+  <text class="kp-label" x="54" y="312">the whole load is refused; the world is unchanged</text>
+  <!-- Arrow to fields -->
+  <path class="kp-flow" d="M356,82 L386,82" marker-end="url(#kp-names-arrow)"/>
+  <path class="kp-flow" d="M356,124 L370,124 L370,82"/>
+  <path class="kp-flow" d="M356,250 L370,250 L370,124"/>
+  <!-- Fields -->
+  <rect class="kp-panel" x="390" y="24" width="340" height="312" rx="6"/>
+  <text class="kp-station" x="404" y="50">Each of its fields, by name</text>
+  <rect class="kp-row" x="404" y="64" width="312" height="36" rx="4"/>
+  <text class="kp-strong" x="414" y="80">in the save and in the code</text>
+  <text class="kp-mono" x="414" y="94">read · Widened if read at another width</text>
+  <rect class="kp-row" x="404" y="106" width="312" height="36" rx="4"/>
+  <text class="kp-strong" x="414" y="122">only in the code</text>
+  <text class="kp-mono" x="414" y="136">its default · Defaulted</text>
+  <rect class="kp-row" x="404" y="148" width="312" height="36" rx="4"/>
+  <text class="kp-strong" x="414" y="164">only in the save</text>
+  <text class="kp-mono" x="414" y="178">its value is gone · Dropped</text>
+  <rect class="kp-row" x="404" y="190" width="312" height="36" rx="4"/>
+  <text class="kp-strong" x="414" y="206">under an old name</text>
+  <text class="kp-mono" x="414" y="220">read · Renamed</text>
+  <rect class="kp-row" x="404" y="232" width="312" height="36" rx="4"/>
+  <text class="kp-strong" x="414" y="248">a value the type's check rejects</text>
+  <text class="kp-mono" x="414" y="262">kept · Unusable</text>
+  <text class="kp-label" x="404" y="296">None of these is an error, and none is silent:</text>
+  <text class="kp-label" x="404" y="314">each is an entry of the load report.</text>
+</svg>

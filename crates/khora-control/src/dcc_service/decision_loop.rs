@@ -343,7 +343,7 @@ impl DecisionLoop {
     /// Tightens the target GORNA shares when the cost models forecast a
     /// breach, so it downgrades before the frame overruns.
     ///
-    /// See the book: concepts/gorna.md, "The cost model and the frame governor".
+    /// See the book: concepts/arbiter.md, "The cost model and the frame governor".
     fn tighten_to_forecast(&mut self, report: &mut AnalysisReport) {
         if let Some(predicted_ms) = forecast_frame_ms(
             &self.cost_models,
@@ -371,7 +371,7 @@ impl DecisionLoop {
     ///
     /// The governor decides only on frames its last change reached, and never
     /// lowers with every agent at its floor; the safety ceiling caps what is
-    /// published. See the book: concepts/gorna.md, "The cost model and the
+    /// published. See the book: concepts/arbiter.md, "The cost model and the
     /// frame governor".
     fn govern(
         &mut self,

@@ -1,0 +1,83 @@
+<svg id="fig-frame-stages" class="kp-figure" viewBox="0 0 760 392" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-frame-stages-title kp-frame-stages-desc">
+  <title id="kp-frame-stages-title">The six stages of a frame</title>
+  <desc id="kp-frame-stages-desc">A frame runs six stages in order, with the app's hooks between them. One, drain_inputs reads the frame's input events; the app's before_frame follows. Two, run_app_update opens with the frame boundary, then runs the data systems around the app's update. Three, begin_render_frame acquires the image; the app's before_agents follows. Four, run_scheduler runs the Flows, wakes the agents that have an event, then runs every phase's layers in waves. Five, the passes are submitted, the app's after_agents runs, and the image is presented. Six, run_maintenance writes the lanes' results back and compacts storage. Then the frame's busy time goes to the DCC.</desc>
+  <style>
+    #fig-frame-stages { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-frame-stages .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-frame-stages .kp-row { fill: var(--k-bg-1, #101622); }
+    #fig-frame-stages .kp-spine { stroke: var(--k-line, #383d48); stroke-width: 1.25; }
+    #fig-frame-stages .kp-node { fill: var(--k-bg-0, #090d17); stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
+    #fig-frame-stages .kp-node-on { fill: var(--k-gold, #e4b65c); }
+    #fig-frame-stages .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    #fig-frame-stages .kp-name { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12.5px; }
+    #fig-frame-stages .kp-num { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12.5px; }
+    #fig-frame-stages .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-frame-stages .kp-hook { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 11.5px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="392" rx="10"/>
+  <path class="kp-spine" d="M36,54 V370"/>
+  <!-- 1 -->
+  <rect class="kp-row" x="52" y="34" width="692" height="40" rx="4"/>
+  <circle class="kp-node" cx="36" cy="54" r="5"/>
+  <text class="kp-num" x="64" y="59">1</text>
+  <text class="kp-name" x="84" y="59">drain_inputs</text>
+  <text class="kp-label" x="290" y="59">the frame's input events, read; telemetry ticks</text>
+  <text class="kp-hook" x="84" y="92">the app's before_frame: switch families on or off for this frame</text>
+  <!-- 2 -->
+  <rect class="kp-row" x="52" y="100" width="692" height="40" rx="4"/>
+  <circle class="kp-node" cx="36" cy="120" r="5"/>
+  <text class="kp-num" x="64" y="125">2</text>
+  <text class="kp-name" x="84" y="125">run_app_update</text>
+  <text class="kp-label" x="290" y="125">the boundary, then data systems around app.update</text>
+  <!-- 3 -->
+  <rect class="kp-row" x="52" y="148" width="692" height="40" rx="4"/>
+  <circle class="kp-node" cx="36" cy="168" r="5"/>
+  <text class="kp-num" x="64" y="173">3</text>
+  <text class="kp-name" x="84" y="173">begin_render_frame</text>
+  <text class="kp-label" x="290" y="173">the image acquired; its target and clear colour published</text>
+  <text class="kp-hook" x="84" y="206">the app's before_agents: point the renderer at a viewport</text>
+  <!-- 4 -->
+  <rect class="kp-row" x="52" y="214" width="692" height="40" rx="4"/>
+  <circle class="kp-node" cx="36" cy="234" r="5"/>
+  <text class="kp-num" x="64" y="239">4</text>
+  <text class="kp-name" x="84" y="239">run_scheduler</text>
+  <text class="kp-label" x="290" y="239">Flows publish Views · agents woken · layers run in waves</text>
+  <!-- 5 -->
+  <rect class="kp-row" x="52" y="262" width="692" height="40" rx="4"/>
+  <circle class="kp-node" cx="36" cy="282" r="5"/>
+  <text class="kp-num" x="64" y="287">5</text>
+  <text class="kp-name" x="84" y="287">end_render_frame</text>
+  <text class="kp-label" x="290" y="287">passes submitted · the app's after_agents · present</text>
+  <!-- 6 -->
+  <rect class="kp-row" x="52" y="310" width="692" height="40" rx="4"/>
+  <circle class="kp-node" cx="36" cy="330" r="5"/>
+  <text class="kp-num" x="64" y="335">6</text>
+  <text class="kp-name" x="84" y="335">run_maintenance</text>
+  <text class="kp-label" x="290" y="335">the deck drained into the World · storage compacted</text>
+  <text class="kp-hook" x="84" y="374">then the frame's busy time goes to the DCC</text>
+  <!-- the steps -->
+  <g data-on="1">
+    <circle class="kp-node-on" cx="36" cy="54" r="5"/>
+    <rect class="kp-sel" x="50" y="32" width="696" height="44" rx="5"/>
+  </g>
+  <g data-on="2">
+    <circle class="kp-node-on" cx="36" cy="120" r="5"/>
+    <rect class="kp-sel" x="50" y="98" width="696" height="44" rx="5"/>
+  </g>
+  <g data-on="3">
+    <circle class="kp-node-on" cx="36" cy="168" r="5"/>
+    <rect class="kp-sel" x="50" y="146" width="696" height="44" rx="5"/>
+  </g>
+  <g data-on="4">
+    <circle class="kp-node-on" cx="36" cy="234" r="5"/>
+    <rect class="kp-sel" x="50" y="212" width="696" height="44" rx="5"/>
+  </g>
+  <g data-on="5">
+    <circle class="kp-node-on" cx="36" cy="282" r="5"/>
+    <rect class="kp-sel" x="50" y="260" width="696" height="44" rx="5"/>
+  </g>
+  <g data-on="6">
+    <circle class="kp-node-on" cx="36" cy="330" r="5"/>
+    <rect class="kp-sel" x="50" y="308" width="696" height="44" rx="5"/>
+  </g>
+</svg>

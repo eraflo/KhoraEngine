@@ -15,7 +15,7 @@
 //! GORNA, the DCC's side of the protocol: one round per epoch, from each
 //! agent's [`Offer`] to the envelopes it [`decide`](decide())s.
 //!
-//! See the book: concepts/gorna.md, "How the DCC shares the time".
+//! See the book: concepts/arbiter.md, "How the DCC shares the time".
 
 use crate::analysis::AnalysisReport;
 use crate::dcc_context::DccContext;
@@ -282,7 +282,7 @@ impl GornaArbitrator {
     /// instead of `trigger` when `report` detects a death spiral, too many
     /// agents are stalled, or the floors do not fit.
     ///
-    /// See the book: concepts/gorna.md, "How the DCC shares the time".
+    /// See the book: concepts/arbiter.md, "How the DCC shares the time".
     pub fn allocate(
         &mut self,
         context: &DccContext,

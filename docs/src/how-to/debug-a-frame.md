@@ -1,173 +1,193 @@
 # Debug a frame / a GORNA decision
 
-**Goal:** investigate a *single* frame — figure out which agent chose which strategy, why GORNA made
-that call, and how to pin or replay the decision so it stops being a moving target. Assumes you know
-the [GORNA](../concepts/gorna.md) model and have the editor's Control Plane open.
+**Goal:** investigate a single frame — which agent runs which row, why the DCC lent it
+the envelope it did, and how to pin or replay the decision so it stops being a moving
+target. Assumes you know the [GORNA](../concepts/gorna.md) model and have the editor's
+Control Plane open.
 
-When to reach for this page: a strategy switched and you want the *reason*; quality oscillates and you
-want to freeze it; or a bug only reproduces under a specific adaptation sequence and you need it to
-recur. For the symptom-level "why did quality drop?" entry, start at
-[Troubleshoot — GORNA](./troubleshoot.md#gorna--adaptation); come here to go deeper.
-
----
-
-## 1 — Read the per-frame telemetry
-
-Open the editor's **Control Plane** (the sixth Spine mode). It is a first-class workspace, not a
-profiler popup — see [Editor — The Control Plane](../reference/editor.md). Three regions matter for a single
-frame:
-
-| Region | What it shows | What to read it for |
-|---|---|---|
-| **Lane Timeline** (top) | Per-subsystem execution windows as colored bands | Which subsystem owns the frame's cost this tick |
-| **GORNA Stream** (bottom-left) | Live negotiation feed: timestamp, subsystem, suggestion, accept/reject | *Why* an agent up/downgraded |
-| **Meters Wall** (bottom-right) | Frame time, GPU %, memory, agent budget, assets pending | The signals that drove the decision |
-
-The Lane Timeline shows execution *windows* per subsystem, not a per-render-stage GPU breakdown — that
-finer slice does not exist yet (see [Profile performance — gaps](./profile-performance.md#what-is-not-yet-measurable)).
-For the CPU side, the scheduler publishes each agent's report after every run
-(`TelemetryEvent::AgentReport`: the row that ran, the time on each device — the host's at least what
-the scheduler measured — and the run's workload), surfaced as the `agent.<name>_time_ms` metric — that
-is your per-agent cost.
-
-If you are reading metrics from your own code rather than the editor, the well-known names live in
-`crates/khora-telemetry/src/lib.rs` under the metric names the DCC emits (built inline, e.g. `agent.<name>_time_ms` in `DccService`); the DCC also ingests
-`renderer.frame_time` (ms), `renderer.draw_calls`, and `renderer.triangles_rendered` from the GPU
-report.
+When to reach for this page: a row switched and you want the *reason*; quality
+oscillates and you want to freeze it; or a bug only reproduces under one adaptation
+sequence and you need it to recur. For the symptom-level "why did quality drop?",
+start at [Troubleshoot](./troubleshoot.md); come here to go deeper.
 
 ---
 
-## 2 — Recognize which agent chose which strategy, and why
+## 1 — Read the Control Plane
 
-Adaptation is two stages: **the heuristics decide a target**, then **the governor + arbitrator turn that
-target into a strategy per agent**. Reading a decision means tracing it back through both.
+The **Control Plane** is the editor's second Spine mode, a workspace of its own — see
+[Editor — The Control Plane](../reference/editor.md#10--the-control-plane). It reads
+the engine live:
 
-### Step A — read the reason off the GORNA Stream
-
-Each switch in the stream prints its reason, e.g. `renderer: LitForward → Forward+ — GPU
-pressure`. That suffix is the heuristic that fired. The `HeuristicEngine`
-(`crates/khora-control/src/analysis/mod.rs`, `analyze`) evaluates these pressure sources every cold-path
-tick, starting from a 60 FPS baseline target (16.66 ms):
-
-| Pressure source | Trigger | Effect on the target |
-|---|---|---|
-| **Thermal** | `Throttling` / `Critical` | Relax to 33.33 ms (30 FPS) / 50 ms (~20 FPS) |
-| **Battery** | `Low` / `Critical` | Relax to 33.33 ms / 50 ms |
-| **Frame time** | avg over warn / critical threshold | Force negotiation (critical also counts as pressure) |
-| **Stutter** | frame-time variance over threshold | Force negotiation |
-| **Trend** | rising frame-time slope (`MetricStore::get_trend`) | Preemptive negotiation *before* a breach |
-| **CPU / GPU load** | above critical (GPU also has a warn tier) | Force negotiation, counts as pressure |
-| **Memory pressure** | resident RAM nears the developer-set budget | Force negotiation, counts as pressure |
-
-The logs mirror the stream: the DCC thread emits `DCC Analysis: <alert>` at `info` for each alert in
-the report, and `DCC governor: multiplier=… (setpoint=…ms, N frames this tick)` at `debug`. Raise the log
-level on `khora_control` to see them outside the editor.
-
-### Step B — understand the multiplier that scaled the budget
-
-The heuristics produce a single `suggested_latency_ms` **target**. The **frame governor**
-(`crates/khora-control/src/governor/mod.rs`, driven from the DccService cold-path loop in
-`dcc_service/decision_loop.rs`) then moves the `global_budget_multiplier` so the frames' *measured*
-critical path settles under that target, with 10 % headroom. Key behaviours when reading a decision:
-
-- It decides only once there are at least `FRAME_TIME_MIN_SAMPLES` frame reports, and then only on
-  frames measured after its last change took effect (or at once after three frames in a row over the
-  setpoint).
-- A lone frame twice the setpoint is a hitch: it is left out, and the multiplier does not move.
-- It holds inside a band under its target, and after lowering it does not raise past the multiplier
-  that ran over for five seconds: that is why it settles instead of cycling between two rows.
-- It stops lowering when every agent already runs its floor row: nothing is left to give.
-- It is clamped to a **hard safety ceiling** on `Critical` thermal/battery or near-budget memory. That
-  cap is applied *after* the governor, so a critical signal overrides it immediately.
-- Any move of the published multiplier opens an epoch (`Trigger::FrameGovernor`), **in both
-  directions**. Pressure heuristics drive downgrades; this is what drives *recovery* (the multiplier
-  climbing back toward 1.0 re-issues budgets so agents upgrade again). That is the mechanism behind
-  "it upgraded right after a downgrade".
-
-### Step C — recognize the death-spiral stop
-
-If **three or more independent pressure sources** are active in the same tick, `analyze` sets
-`death_spiral_detected` and logs `Heuristic: DEATH SPIRAL detected (N simultaneous pressure
-sources)` at `error`. That is the emergency stop, not a per-signal downgrade — if you see it, the
-machine is genuinely saturated on several axes at once.
-
-### Step D — confirm the agent honoured (or overrode) the choice
-
-Even with a target and a multiplier, the *final* strategy depends on the agent's `AdaptationMode`. An
-agent pinned with `Manual` keeps its strategy regardless of the fit; a `Stable` agent refuses
-opportunistic upgrades; a `Bounded` agent clamps to its range. Check the mode before concluding
-"GORNA chose X" — the arbitrator may have *wanted* Y and been overridden. See the next section.
-
----
-
-## 3 — Pin a strategy to isolate behaviour
-
-To remove adaptation as a variable, set the agent's **`AdaptationMode`** through the DCC service.
-There are exactly four modes (`crates/khora-core/src/agent/gorna/mod.rs`):
-
-```rust
-dcc.set_adaptation_mode(AgentId::new("renderer"), AdaptationMode::Manual(StrategyId::LowPower));
-```
-
-| Mode | Effect |
+| Region | What it shows |
 |---|---|
-| `Manual(strategy)` | Pin the agent to one strategy; GORNA will not move it (a death-spiral safety stop can still force a downgrade). |
-| `Stable` | Block opportunistic *up*-switches; the agent can still downgrade under pressure. |
-| `Bounded { min, max }` | Clamp the negotiated range. |
-| `Learning` *(default)* | Negotiate freely. |
+| **Summary bar** (top) | The DCC at a glance: the budget multiplier (`budget×`), the families switched off, the frame budget and the frame time over the last frames, the processor's and graphics card's load, video memory, heap |
+| **Agents** (left) | Every registered agent, grouped by importance, with the row it runs and its health |
+| **Schedule** | The agents by execution phase. A schedule, not a timeline: per-phase timing is not measured |
+| **Inspector** (right) | The selected agent: its timing and status, its health and message, and its **Decision** card |
 
-`set_adaptation_mode` is thread-safe and takes effect on the next arbitration tick. Pinning a single
-agent lets you isolate one subsystem's contribution while the rest adapt normally. For the broader
-recipe and the trade-offs of each mode, see
-[Control GORNA adaptation](./control-gorna-adaptation.md). For the symptom-driven version, see
-[Troubleshoot — Pin a strategy](./troubleshoot.md#pin-a-strategy-so-adaptation-stops-surprising-you).
+The **Decision** card is the last GORNA decision for that agent, read from the DCC's
+`DecisionWatch`:
+
+- **Lent** — the envelope: its host time, its GPU time when it has one, its memory
+  (*not limited* when the round knew no limit).
+- **Planned row** and **Running row** — the row the DCC planned, and the row the agent
+  runs. While a new row's layer is being prepared, the card says the agent is still on
+  the old row and the swap lands at the next frame start.
+- **Why** — *Opened by* (the trigger), *Decided by* (`Greedy`, `Exact search`, or
+  *Floors only*), *Frame bound by* (the constraint that stopped the plan growing: host
+  time, GPU time, a memory, a `Stable` ceiling), the *risk margin kept*, and each
+  *upgrade refused* with the constraint it broke.
+- **What the DCC learnt** — for each of the agent's rows, its learnt factor (×k), its
+  spread (±σ) and the charge a switch to it would pay.
+
+A decision read back from a journal is tagged *replayed · journal*; one the agent was
+not lent says *Not lent in epoch N*.
+
+For the numbers behind the card, the DCC keeps each agent's measured time as the
+metric `agent:<name>_time_ms` and each frame's critical path as `frame:critical_ms`.
 
 ---
 
-## 4 — Record and replay a GORNA decision
+## 2 — Trace a decision back
 
-When a bug only reproduces under a *specific* adaptation sequence, capture that sequence and replay it
-bit-for-bit. The DCC journals each epoch into a `DecisionTrace`: its allocation and what the round was
-given — the target, the offers, the agents' latest reports, the waves, the policies, the hints and the
-reasons (`EpochRecord`, `crates/khora-core/src/agent/gorna/decision_trace.rs`). A trace serialises with
-each agent's name written once. Replay publishes the recorded allocations again; the scheduler lends
-each at its next frame start:
+A decision has four layers; read them top down.
+
+### Step A — what opened the round
+
+*Opened by* names the trigger. The [triggers](../concepts/gorna-protocol.md#epochs-and-triggers)
+say who raises each. For `Pressure`, the DCC thread logs each heuristic's alert at
+`info` as `DCC Analysis: <alert>` — the heat, a slow frame, a stutter, a rising trend,
+a loaded processor, memory. Raise the log level of `khora_control` to see them outside
+the editor.
+
+### Step B — the target the round shared
+
+The heuristics set a setpoint (16.66 ms by default, relaxed by heat or a low battery);
+the **frame governor** scales it by the **budget multiplier** shown in the summary bar
+(`budget×`). The DCC logs `DCC governor: multiplier=… (setpoint=…ms, N frames this
+tick)` at `debug`, and each change as the alert `Governor: budget multiplier → x`.
+Reading a multiplier:
+
+- it decides only once 10 frames were reported, then only on frames measured after its
+  last change was lent — 3 frames and 0.25 s — or at once after 3 frames in a row over
+  the setpoint;
+- one frame over twice the setpoint after a normal one is a hitch, left out;
+- it holds in a band under its target, 10 % under the setpoint, and after lowering it
+  does not raise past the multiplier that ran over, less 0.06, for 5 seconds: that is
+  why it settles instead of cycling between two rows;
+- it stops lowering when every agent already runs its floor;
+- a **safety ceiling** caps it at once on critical heat (0.4), a critical battery or
+  memory at 95 % of its budget (0.5);
+- every move, either way, opens an epoch (`FrameGovernor`). Pressure drives the
+  downgrades; this drives the *recovery*. That is the mechanism behind "it upgraded
+  right after a downgrade".
+
+A cost-model forecast over the setpoint tightens the target the round shares and opens
+a round as `ForecastBreach`, with an alert naming the forecast. The full loop is in
+[the arbiter](../concepts/arbiter.md#the-cost-model-and-the-frame-governor).
+
+### Step C — how the arbiter planned
+
+*Decided by*, *Frame bound by* and the *upgrades refused* are the arbiter's own
+account (`Why`). An upgrade refused for host time on a GPU-light scene usually means
+the frame's critical path, not this agent, is the limit; a large ×k means the agent's
+quotes are far from what its runs measure on this machine, and the DCC plans with the
+measurement. A plan refused by the shield is logged at `debug`:
+`GORNA: the … proposal for epoch … is refused`. See [the arbiter](../concepts/arbiter.md).
+
+### Step D — the death-spiral stop
+
+If three or more pressures are active in one tick, the DCC logs `Heuristic: DEATH
+SPIRAL detected (N simultaneous pressure sources)` at `error`, and the round is
+`Safety`: every agent at its floor. Two or more stalled agents do the same, logged as
+`GORNA: death spiral (N stalled agents)`. If you see either, the machine is saturated
+on several axes at once.
+
+### Step E — what the agent made of its envelope
+
+The agent chooses its row within its envelope: the best quality whose quote fits. A
+running row other than the planned one has a reason:
+
+- **the swap is under way** — the new layer is prepared off the frame and lands at a
+  frame start;
+- **its quotes moved** — the running row's quote no longer fitted, or drifted by more
+  than 10 %, and the agent chose again between rounds;
+- **nothing fitted** — the floor runs, and its report says `over_budget`; three in a row
+  open an `Overruns` round;
+- **a policy** — a `Manual` pin, a `Bounded` range, a cap, or a `Stable` envelope.
+
+Check the agent's mode before concluding "GORNA chose X".
+
+---
+
+## 3 — Pin a row to isolate behaviour
+
+To remove adaptation as a variable, pin the agent through the DCC service. There are
+four modes (`AdaptationMode`): `Learning`, `Manual(row)`, `Stable`,
+`Bounded { min, max }`.
 
 ```rust
-dcc.start_decision_recording();      // begins a fresh trace; takes effect next tick
-// … reproduce the scenario …
-let trace = dcc.stop_decision_recording();   // returns the captured DecisionTrace
-
-dcc.replay_decisions(trace);         // each subsequent tick publishes the recorded
-                                     // allocations in order, asking for no offer,
-                                     // until the trace is exhausted
-assert!(dcc.is_replaying());         // true until the trace runs out
-dcc.stop_replay();                   // return to live arbitration at any time
+dcc.set_adaptation_mode(AgentId::new("shadows"), AdaptationMode::Manual(StrategyId::LowPower));
 ```
 
-During replay, arbitration drives every tick from the recorded decisions in order until the trace is
-exhausted, then falls back to live negotiation — so a captured run reproduces exactly, independent of
-the machine's current thermal/frame-time signals. `recorded_decisions()` returns a snapshot of the
-trace captured so far (safe to call any time, e.g. to inspect mid-recording).
-
-> **Note on `AdaptationMode::Replay`.** Replay is *not* an `AdaptationMode` variant — the four modes
-> are `Learning`, `Manual`, `Stable`, `Bounded`. Record/replay is a separate `DccService` capability
-> (the methods above), so you can record a run while individual agents still carry their own modes.
+The next round reads it — a mode opens no round by itself — and the agent then runs
+the pinned row whatever its envelope, except under a `Safety` allocation. Pinning one
+agent isolates its contribution while the rest adapt. For each mode and the hints, see
+[Control GORNA adaptation](./control-gorna-adaptation.md).
 
 ---
 
-## 5 — Quick reference: what to look at, in order
+## 4 — Record and replay a decision
 
-1. **GORNA Stream** — read the switch reason (the `— <cause>` suffix).
-2. **Meters Wall + `DCC Analysis:` logs** — confirm which pressure signal actually fired.
-3. **`DCC governor:` debug log** — check the `multiplier` against the `setpoint`; any move of it
-   explains a re-arbitration.
-4. **Agent's `AdaptationMode`** — confirm the agent didn't override the fit.
+When a bug only reproduces under one adaptation sequence, record it and replay it. The
+DCC journals each epoch into a `DecisionTrace`: its allocation, its `Why`, and
+everything the round read — the offers, the reports, the target, the waves, the
+policies, the hints, the corrections, the planning (`EpochRecord`,
+`crates/khora-core/src/agent/gorna/decision_trace.rs`).
+
+```rust
+dcc.start_decision_recording();      // a fresh journal, from the next tick
+// … reproduce the scenario …
+let trace = dcc.stop_decision_recording();
+
+dcc.replay_decisions(trace);         // lends the recorded allocations again,
+                                     // one per DCC tick, each at a frame start
+                                     // of its own, asking no agent for an offer
+assert!(dcc.is_replaying());         // true until the journal runs out
+dcc.stop_replay();                   // back to live rounds at any time
+```
+
+Once the journal runs out, a live round opens (`Refresh`). `recorded_decisions()`
+returns the journal so far, safe to call at any time. To record a whole run without
+code, set `KHORA_RECORD_DECISIONS=<file>` when you start the app; the journal is
+written there at shutdown.
+
+A journal can also be **decided again** off the engine, through the arbiter or through
+other proposer sets, to see whether a decision was the arbiter's best:
+
+```text
+cargo run --release -p khora-sdk --example arbiter_eval journal.json
+```
+
+Replay is not an `AdaptationMode`: it is a capability of the DCC service, so agents
+keep their own modes while a run is recorded.
+
+---
+
+## 5 — Quick reference
+
+1. **Decision card** — the trigger, who decided, what bound the frame, the upgrades
+   refused.
+2. **Summary bar + `DCC Analysis:` logs** — which pressure fired.
+3. **`DCC governor:` debug log** — the multiplier against the setpoint; any move of it
+   explains a round.
+4. **The agent's mode** — confirm a policy did not decide.
 5. **Pin with `Manual`** — freeze the variable while you reproduce.
-6. **Record → replay** — when you need the *exact* sequence to recur.
+6. **Record, then replay** — when you need the exact sequence to recur.
 
 ---
 
-*See also: [GORNA](../concepts/gorna.md), [Profile performance](./profile-performance.md),
+*See also: [GORNA](../concepts/gorna.md), [The protocol](../concepts/gorna-protocol.md),
+[The arbiter](../concepts/arbiter.md), [Profile performance](./profile-performance.md),
 [Troubleshoot](./troubleshoot.md), [Control GORNA adaptation](./control-gorna-adaptation.md),
-[Editor — The Control Plane](../reference/editor.md), [Telemetry](../concepts/telemetry.md).*
+[Telemetry](../concepts/telemetry.md).*

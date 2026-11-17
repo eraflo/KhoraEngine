@@ -1,0 +1,88 @@
+<svg id="fig-saa-negotiation" class="kp-figure" viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-saa-negotiation-title kp-saa-negotiation-desc">
+  <title id="kp-saa-negotiation-title">A negotiation, in four messages</title>
+  <desc id="kp-saa-negotiation-desc">The DCC and three agents: render, audio and physics. First each agent offers its menu, every row priced. Then the DCC shares the frame's time among them and lends each an envelope, time per device and memory, never a row. Each agent chooses the best row that fits its envelope and runs it. After every run, each reports the row that ran and what it cost, which the next round learns from.</desc>
+  <defs>
+    <marker id="kp-saa-negotiation-tip" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="kp-tip" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+  <style>
+    #fig-saa-negotiation { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-saa-negotiation .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-saa-negotiation .kp-box { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-saa-negotiation .kp-dcc { fill: var(--k-bg-3, #1f2636); stroke: var(--k-silver, #b4cfe2); stroke-width: 1.2; }
+    #fig-saa-negotiation .kp-row { fill: var(--k-bg-2, #181e2b); stroke: var(--k-silver-dim, #809db2); stroke-width: 1; }
+    #fig-saa-negotiation .kp-pick { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 2; }
+    #fig-saa-negotiation .kp-msg { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.2; fill: none; }
+    #fig-saa-negotiation .kp-msg-gold { stroke: var(--k-gold, #e4b65c); stroke-width: 1.6; fill: none; }
+    #fig-saa-negotiation .kp-msg-back { stroke: var(--k-silver-dim, #809db2); stroke-width: 1; fill: none; stroke-dasharray: 3 3; }
+    #fig-saa-negotiation .kp-tip { fill: var(--k-silver-dim, #809db2); }
+    #fig-saa-negotiation .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 14px; }
+    #fig-saa-negotiation .kp-name { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10px; }
+    #fig-saa-negotiation .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+    #fig-saa-negotiation .kp-how { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="300" rx="10"/>
+  <!-- the DCC -->
+  <rect class="kp-dcc" x="30" y="80" width="150" height="80" rx="8"/>
+  <text class="kp-station" x="46" y="112">DCC</text>
+  <text class="kp-name" x="46" y="132">shares the frame</text>
+  <!-- the agents -->
+  <rect class="kp-box" x="420" y="24" width="310" height="58" rx="6"/>
+  <text class="kp-station" x="432" y="46">render</text>
+  <rect class="kp-row" x="520" y="34" width="62" height="20" rx="3"/>
+  <rect class="kp-row" x="588" y="34" width="62" height="20" rx="3"/>
+  <rect class="kp-row" x="656" y="34" width="62" height="20" rx="3"/>
+  <text class="kp-name" x="526" y="48">unlit</text>
+  <text class="kp-name" x="594" y="48">lit</text>
+  <text class="kp-name" x="662" y="48">forward+</text>
+  <rect class="kp-box" x="420" y="92" width="310" height="58" rx="6"/>
+  <text class="kp-station" x="432" y="114">audio</text>
+  <rect class="kp-row" x="520" y="102" width="62" height="20" rx="3"/>
+  <rect class="kp-row" x="588" y="102" width="62" height="20" rx="3"/>
+  <rect class="kp-row" x="656" y="102" width="62" height="20" rx="3"/>
+  <text class="kp-name" x="526" y="116">8</text>
+  <text class="kp-name" x="594" y="116">32</text>
+  <text class="kp-name" x="662" y="116">128</text>
+  <rect class="kp-box" x="420" y="160" width="310" height="58" rx="6"/>
+  <text class="kp-station" x="432" y="182">physics</text>
+  <rect class="kp-row" x="520" y="170" width="62" height="20" rx="3"/>
+  <text class="kp-name" x="526" y="184">standard</text>
+  <!-- 1. offer -->
+  <g data-on="1">
+    <path class="kp-msg" d="M418,53 L184,104" marker-end="url(#kp-saa-negotiation-tip)"/>
+    <path class="kp-msg" d="M418,121 L184,120" marker-end="url(#kp-saa-negotiation-tip)"/>
+    <path class="kp-msg" d="M418,189 L184,136" marker-end="url(#kp-saa-negotiation-tip)"/>
+    <text class="kp-gold" x="196" y="214">offer: every row, priced</text>
+    <text class="kp-how" x="30" y="256">Each agent offers its whole menu: every row it can run, with what it costs this</text>
+    <text class="kp-how" x="30" y="274">frame on each device and what it is worth.</text>
+  </g>
+  <!-- 2. share -->
+  <g data-on="2">
+    <path class="kp-msg-gold" d="M184,104 L418,53" marker-end="url(#kp-saa-negotiation-tip)"/>
+    <path class="kp-msg-gold" d="M184,120 L418,121" marker-end="url(#kp-saa-negotiation-tip)"/>
+    <path class="kp-msg-gold" d="M184,136 L418,189" marker-end="url(#kp-saa-negotiation-tip)"/>
+    <text class="kp-gold" x="196" y="214">envelope: time per device, memory</text>
+    <text class="kp-how" x="30" y="256">The DCC shares the frame's time among them and lends each an envelope: how much</text>
+    <text class="kp-how" x="30" y="274">time on each device, how much memory. It never names a row.</text>
+  </g>
+  <!-- 3. choose -->
+  <g data-on="3 4">
+    <rect class="kp-pick" x="586" y="32" width="66" height="24" rx="4"/>
+    <rect class="kp-pick" x="586" y="100" width="66" height="24" rx="4"/>
+    <rect class="kp-pick" x="518" y="168" width="66" height="24" rx="4"/>
+  </g>
+  <g data-on="3">
+    <text class="kp-how" x="30" y="256">Each agent chooses the best row that fits its envelope, and runs it. The DCC decides</text>
+    <text class="kp-how" x="30" y="274">how much; the agent decides how.</text>
+  </g>
+  <!-- 4. report -->
+  <g data-on="4">
+    <path class="kp-msg-back" d="M418,60 L184,110" marker-end="url(#kp-saa-negotiation-tip)"/>
+    <path class="kp-msg-back" d="M418,128 L184,126" marker-end="url(#kp-saa-negotiation-tip)"/>
+    <path class="kp-msg-back" d="M418,196 L184,142" marker-end="url(#kp-saa-negotiation-tip)"/>
+    <text class="kp-gold" x="196" y="214">report, after every run</text>
+    <text class="kp-how" x="30" y="256">After every run each reports the row that ran, what it measured and how much of</text>
+    <text class="kp-how" x="30" y="274">its work it did. The next round decides from what was measured.</text>
+  </g>
+</svg>

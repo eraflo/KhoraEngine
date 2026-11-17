@@ -1,0 +1,126 @@
+<svg id="fig-residency-reach" class="kp-figure" viewBox="0 0 760 390" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-res-reach-title kp-res-reach-desc">
+  <title id="kp-res-reach-title">One UI image, from its file to the GPU atlas, and again when its file changes</title>
+  <desc id="kp-res-reach-desc">An entity names an image by its uuid. The loading family decodes the file off the frame and the decoded copy lands in the asset store at a frame boundary. Before the agents run, the image_on_gpu residency makes it resident: it places the image in the GPU atlas and keeps the copy it was made from beside the rect. The UI lane reads the rect; later frames find the same copy and upload nothing. When the file changes, the reload puts a new copy in the store under the same uuid, and the residency places it again and releases the old rect. When the atlas refuses the image, the last good rect stays and the residency tries again on the next frame.</desc>
+  <style>
+    #fig-residency-reach { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-residency-reach .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-residency-reach .kp-station-box { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-residency-reach .kp-card { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-residency-reach .kp-slot { fill: var(--k-bg-2, #181e2b); stroke: var(--k-line, #383d48); stroke-width: 1; stroke-dasharray: 3 3; }
+    #fig-residency-reach .kp-flow { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; fill: none; }
+    #fig-residency-reach .kp-arrowhead { fill: var(--k-silver-dim, #809db2); }
+    #fig-residency-reach .kp-token { fill: var(--k-gold, #e4b65c); }
+    #fig-residency-reach .kp-old { fill: var(--k-silver-dim, #809db2); }
+    #fig-residency-reach .kp-ring { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.75; }
+    #fig-residency-reach .kp-cross { stroke: var(--k-gold, #e4b65c); stroke-width: 2; fill: none; }
+    #fig-residency-reach .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 16px; }
+    #fig-residency-reach .kp-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 17px; }
+    #fig-residency-reach .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-residency-reach .kp-strong { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+    #fig-residency-reach .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+    #fig-residency-reach .kp-mono { fill: var(--k-fg-1, #c9ced3); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-residency-reach .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+  </style>
+  <defs>
+    <marker id="kp-res-reach-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path class="kp-arrowhead" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+  <rect class="kp-bg" x="0" y="0" width="760" height="390" rx="8"/>
+  <!-- The four stations -->
+  <rect class="kp-station-box" x="30" y="30" width="160" height="120" rx="6"/>
+  <rect class="kp-station-box" x="215" y="30" width="160" height="120" rx="6"/>
+  <rect class="kp-station-box" x="400" y="30" width="160" height="120" rx="6"/>
+  <rect class="kp-station-box" x="585" y="30" width="145" height="120" rx="6"/>
+  <text class="kp-station" x="44" y="56">The file</text>
+  <text class="kp-station" x="229" y="56">The asset store</text>
+  <text class="kp-station" x="414" y="56">The residency</text>
+  <text class="kp-station" x="599" y="56">The device</text>
+  <text class="kp-mono" x="44" y="76">ui/heart.png</text>
+  <text class="kp-mono" x="229" y="76">CpuTexture</text>
+  <text class="kp-mono" x="414" y="76">image_on_gpu</text>
+  <text class="kp-mono" x="599" y="76">the UI atlas</text>
+  <text class="kp-note" x="44" y="94">on disk, or in a pack</text>
+  <text class="kp-note" x="229" y="94">decoded, on the CPU</text>
+  <text class="kp-note" x="414" y="94">PreExtract, each frame</text>
+  <text class="kp-note" x="599" y="94">usable by the GPU</text>
+  <path class="kp-flow" d="M190,90 L213,90" marker-end="url(#kp-res-reach-arrow)"/>
+  <path class="kp-flow" d="M375,90 L398,90" marker-end="url(#kp-res-reach-arrow)"/>
+  <path class="kp-flow" d="M560,90 L583,90" marker-end="url(#kp-res-reach-arrow)"/>
+  <!-- Slots the copies sit in -->
+  <rect class="kp-slot" x="44" y="108" width="132" height="30" rx="4"/>
+  <rect class="kp-slot" x="229" y="108" width="132" height="30" rx="4"/>
+  <rect class="kp-slot" x="414" y="108" width="132" height="30" rx="4"/>
+  <rect class="kp-slot" x="599" y="108" width="117" height="30" rx="4"/>
+  <!-- The store's entry: key, source copy, resident -->
+  <g data-on="3 4 5 6">
+    <text class="kp-note" x="422" y="127">heart → copy 1 · rect</text>
+  </g>
+  <!-- The first copy travels -->
+  <g data-tf="2:translate(185px, 0)|3:translate(555px, 0)">
+    <rect class="kp-token" x="52" y="114" width="18" height="18" rx="3" data-on="1 2 3 4"/>
+    <rect class="kp-old" x="52" y="114" width="18" height="18" rx="3" data-on="5 6"/>
+    <text class="kp-strong" x="78" y="128" data-on="1 2 3 4">copy 1</text>
+    <text class="kp-label" x="78" y="128" data-on="5 6">copy 1</text>
+  </g>
+  <!-- The new copy, after the file changed -->
+  <g data-on="5 6" data-tf="5:translate(185px, 0)">
+    <rect class="kp-token" x="52" y="166" width="18" height="18" rx="3"/>
+    <text class="kp-gold" x="78" y="180">copy 2</text>
+  </g>
+  <g data-on="5">
+    <path class="kp-flow" d="M361,175 L590,175 L604,141" marker-end="url(#kp-res-reach-arrow)"/>
+    <text class="kp-note" x="414" y="168">made again · copy 1's rect released</text>
+  </g>
+  <g data-on="6">
+    <path class="kp-cross" d="M596,104 L720,142 M720,104 L596,142"/>
+    <text class="kp-note" x="414" y="168">refused: the atlas has no room</text>
+  </g>
+  <!-- Who reads it -->
+  <g data-on="4">
+    <rect class="kp-ring" x="594" y="103" width="127" height="40" rx="6"/>
+    <text class="kp-note" x="599" y="168">the UI lane reads the rect</text>
+  </g>
+  <!-- The explanation card -->
+  <rect class="kp-card" x="30" y="200" width="700" height="166" rx="8"/>
+  <g data-on="1">
+    <text class="kp-title" x="50" y="232">An entity names an image</text>
+    <text class="kp-label" x="50" y="262">A UiImage holds the image's uuid, nothing more. The file is somewhere on disk, or in</text>
+    <text class="kp-label" x="50" y="282">the game's pack. Nothing of it is on the CPU or on the GPU yet.</text>
+    <text class="kp-strong" x="50" y="318">What the entity holds is a name. Making the picture usable is the engine's job.</text>
+  </g>
+  <g data-on="2">
+    <text class="kp-title" x="50" y="232">Decoded off the frame</text>
+    <text class="kp-label" x="50" y="262">The resolver asks the asset service for the uuid. The loading family reads and decodes</text>
+    <text class="kp-label" x="50" y="282">the file away from the frame, through the trust guard; the decoded copy lands in the</text>
+    <text class="kp-label" x="50" y="302">asset store at a frame boundary, as a CpuTexture.</text>
+    <text class="kp-strong" x="50" y="336">The frames go on meanwhile: none of them waits for the disk.</text>
+  </g>
+  <g data-on="3">
+    <text class="kp-title" x="50" y="232">Made resident</text>
+    <text class="kp-label" x="50" y="262">At PreExtract, before the Flows and the agents, image_on_gpu asks its store to ensure</text>
+    <text class="kp-label" x="50" y="282">the image. The store holds nothing under its uuid, so make places it in the atlas. The</text>
+    <text class="kp-label" x="50" y="302">store keeps the rect beside the copy it was made from: a clone of copy 1's handle.</text>
+    <text class="kp-strong" x="50" y="336">Same frame: the image reaches the GPU before anything draws.</text>
+  </g>
+  <g data-on="4">
+    <text class="kp-title" x="50" y="232">Read, and kept</text>
+    <text class="kp-label" x="50" y="262">The UI lane samples the atlas at that rect. On the next frames the store finds the</text>
+    <text class="kp-label" x="50" y="282">same copy in the asset store, the very same handle, and returns the rect it holds.</text>
+    <text class="kp-strong" x="50" y="318">One upload per copy, however many frames, however many entities show it.</text>
+  </g>
+  <g data-on="5">
+    <text class="kp-title" x="50" y="232">The file changes</text>
+    <text class="kp-label" x="50" y="262">The reload decodes the file again and puts copy 2 in the asset store, under the same</text>
+    <text class="kp-label" x="50" y="282">uuid. The store sees another copy than the one its rect was made from: it makes the</text>
+    <text class="kp-label" x="50" y="302">image again, keeps the new rect, and releases the old one.</text>
+    <text class="kp-gold" x="50" y="336">Hot reload is the store's job: the residency only knows how to make and release.</text>
+  </g>
+  <g data-on="6">
+    <text class="kp-title" x="50" y="232">Refused</text>
+    <text class="kp-label" x="50" y="262">The atlas has no room for the image. Make returns a ResidencyError; the store keeps</text>
+    <text class="kp-label" x="50" y="282">the last good rect, and the refusal is logged once, not every frame. The next frame</text>
+    <text class="kp-label" x="50" y="302">tries again; the warning comes back only after the image was placed once.</text>
+    <text class="kp-gold" x="50" y="336">A refusal costs the new picture, never the frame.</text>
+  </g>
+</svg>

@@ -1,0 +1,82 @@
+<svg id="fig-data-migration" class="kp-figure" viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-data-mig-title kp-data-mig-desc">
+  <title id="kp-data-mig-title">Adding a component moves one row of one domain, and maintenance later reclaims the row left behind</title>
+  <desc id="kp-data-mig-desc">Entity e7 holds a RigidBody, in a physics page whose signature is RigidBody alone. A Collider is added: e7's physics row is copied into the page whose signature is RigidBody and Collider, the new value beside it, and e7's physics location points there. The old row stays in the first page as an orphan that no location names; queries skip it. At the end of a frame, maintenance compacts the dirty page: the orphan is removed, the page's last row takes its place, and the physics domain's epoch rises because the order changed.</desc>
+  <style>
+    #fig-data-migration { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-data-migration .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-data-migration .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-data-migration .kp-cell { fill: var(--k-bg-3, #1f2636); }
+    #fig-data-migration .kp-cell-hot { fill: var(--k-bg-3, #1f2636); stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    #fig-data-migration .kp-orphan { fill: none; stroke: var(--k-fg-3, #5d646c); stroke-width: 1; stroke-dasharray: 3 3; }
+    #fig-data-migration .kp-card { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-data-migration .kp-thread { stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; fill: none; }
+    #fig-data-migration .kp-arrowhead { fill: var(--k-gold, #e4b65c); }
+    #fig-data-migration .kp-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 17px; }
+    #fig-data-migration .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-data-migration .kp-strong { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+    #fig-data-migration .kp-mono { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-data-migration .kp-mono-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-data-migration .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+  </style>
+  <defs>
+    <marker id="kp-data-mig-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path class="kp-arrowhead" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+  <rect class="kp-bg" x="0" y="0" width="760" height="330" rx="8"/>
+  <!-- Page P: RigidBody -->
+  <rect class="kp-panel" x="30" y="30" width="250" height="130" rx="6"/>
+  <text class="kp-mono" x="44" y="50">P · RigidBody</text>
+  <rect class="kp-cell" x="44" y="62" width="222" height="20" rx="3"/>
+  <text class="kp-mono" x="54" y="76">e3</text>
+  <rect class="kp-cell-hot" x="44" y="88" width="222" height="20" rx="3" data-on="1"/>
+  <text class="kp-mono-gold" x="54" y="102" data-on="1">e7</text>
+  <rect class="kp-orphan" x="44" y="88" width="222" height="20" rx="3" data-on="2"/>
+  <text class="kp-note" x="54" y="102" data-on="2">e7 · orphan, skipped by queries</text>
+  <rect class="kp-cell" x="44" y="88" width="222" height="20" rx="3" data-on="3"/>
+  <text class="kp-mono" x="54" y="102" data-on="3">e4</text>
+  <rect class="kp-cell" x="44" y="114" width="222" height="20" rx="3" data-on="1 2"/>
+  <text class="kp-mono" x="54" y="128" data-on="1 2">e4</text>
+  <text class="kp-note" x="54" y="150" data-on="2">dirty: queued for compaction</text>
+  <text class="kp-note" x="54" y="150" data-on="3">compacted: e4 took the free row</text>
+  <!-- Page Q: RigidBody + Collider -->
+  <rect class="kp-panel" x="330" y="30" width="400" height="130" rx="6"/>
+  <text class="kp-mono" x="344" y="50">Q · RigidBody · Collider</text>
+  <rect class="kp-cell" x="344" y="62" width="180" height="20" rx="3"/>
+  <rect class="kp-cell" x="530" y="62" width="186" height="20" rx="3"/>
+  <text class="kp-mono" x="354" y="76">e8</text>
+  <g data-on="2 3">
+    <rect class="kp-cell-hot" x="344" y="88" width="180" height="20" rx="3"/>
+    <rect class="kp-cell-hot" x="530" y="88" width="186" height="20" rx="3"/>
+    <text class="kp-mono-gold" x="354" y="102">e7 · its RigidBody, copied</text>
+    <text class="kp-mono-gold" x="540" y="102">the new Collider</text>
+  </g>
+  <path class="kp-thread" d="M266,98 L340,98" marker-end="url(#kp-data-mig-arrow)" data-on="2"/>
+  <!-- e7's location -->
+  <text class="kp-note" x="30" y="184">e7's physics location</text>
+  <text class="kp-mono" x="180" y="184" data-on="1">P, row 1</text>
+  <text class="kp-mono-gold" x="180" y="184" data-on="2 3">Q, row 1</text>
+  <text class="kp-note" x="400" y="184">physics epoch</text>
+  <text class="kp-mono" x="500" y="184" data-on="1">41</text>
+  <text class="kp-mono-gold" x="500" y="184" data-on="2">42 · a row moved</text>
+  <text class="kp-mono-gold" x="500" y="184" data-on="3">43 · the order changed</text>
+  <!-- Card -->
+  <rect class="kp-card" x="30" y="200" width="700" height="110" rx="8"/>
+  <g data-on="1">
+    <text class="kp-title" x="50" y="230">One row per domain</text>
+    <text class="kp-label" x="50" y="256">e7's physics components sit in one row of page P, whose signature is RigidBody alone.</text>
+    <text class="kp-label" x="50" y="276">Its spatial components sit in a row of another page; they take no part in what follows.</text>
+  </g>
+  <g data-on="2">
+    <text class="kp-title" x="50" y="230">A Collider is added</text>
+    <text class="kp-label" x="50" y="256">e7's physics row is copied into page Q, the new value beside it, and its location points</text>
+    <text class="kp-label" x="50" y="276">there. The old row stays behind: no location names it, so every query skips it.</text>
+    <text class="kp-strong" x="50" y="298">The cost: one row of one domain, never a pass over the world.</text>
+  </g>
+  <g data-on="3">
+    <text class="kp-title" x="50" y="230">Maintenance reclaims it</text>
+    <text class="kp-label" x="50" y="256">At the end of a frame, ecs_maintenance compacts up to 10 dirty pages. The orphan goes;</text>
+    <text class="kp-label" x="50" y="276">the page's last row takes its place, so the order changed and the domain's epoch rises.</text>
+    <text class="kp-strong" x="50" y="298">Removing a whole domain's row (remove_component_domain) only edits the location.</text>
+  </g>
+</svg>

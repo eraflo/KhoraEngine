@@ -187,7 +187,7 @@ fn above_floor(bid: &Bid, plan: &Plan, envelope: &Envelope) -> bool {
 /// time, never below the floor. A memory the DCC does not know limits
 /// nothing. The share keeps the critical path under the target.
 ///
-/// See the book: concepts/gorna.md, "Formalisation".
+/// See the book: concepts/arbiter.md, "Lending the plan".
 fn share(round: &Round<'_>, bids: &[&Bid], plans: &[Plan]) -> Vec<(AgentId, Envelope)> {
     let target = micros(round.target);
     let paths = critical_paths(round, bids, plans);

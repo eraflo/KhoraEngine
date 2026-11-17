@@ -15,7 +15,7 @@
 //! The cost book: what the DCC learns of each (agent, row) — the correction
 //! from its quoted host time to its measured one.
 //!
-//! See the book: concepts/gorna.md, "The cost model and the frame governor".
+//! See the book: concepts/arbiter.md, "The cost book".
 
 use std::time::Duration;
 

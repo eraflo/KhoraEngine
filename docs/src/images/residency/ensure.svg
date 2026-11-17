@@ -1,0 +1,65 @@
+<svg id="fig-residency-ensure" class="kp-figure" viewBox="0 0 760 270" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-res-ensure-title kp-res-ensure-desc">
+  <title id="kp-res-ensure-title">What a residency's store does when it is asked to ensure an asset</title>
+  <desc id="kp-res-ensure-desc">The store is asked to ensure an asset's resident from the copy the asset store holds now. If its entry was made from that very copy, it returns the resident it holds and makes nothing. Otherwise it asks the residency to make a resident on the target. If the device accepts, the new resident is kept beside the copy and the stale one is released. If the device refuses, the stale resident stays and the error goes back to the caller.</desc>
+  <style>
+    #fig-residency-ensure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-residency-ensure .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-residency-ensure .kp-box { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-residency-ensure .kp-ask { fill: var(--k-bg-2, #181e2b); stroke: var(--k-silver, #b4cfe2); stroke-width: 1.25; }
+    #fig-residency-ensure .kp-flow { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; fill: none; }
+    #fig-residency-ensure .kp-thread { stroke: var(--k-gold, #e4b65c); stroke-width: 2; fill: none; }
+    #fig-residency-ensure .kp-arrowhead { fill: var(--k-silver-dim, #809db2); }
+    #fig-residency-ensure .kp-arrowhead-gold { fill: var(--k-gold, #e4b65c); }
+    #fig-residency-ensure .kp-strong { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+    #fig-residency-ensure .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+    #fig-residency-ensure .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-residency-ensure .kp-mono { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11.5px; }
+    #fig-residency-ensure .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+  </style>
+  <defs>
+    <marker id="kp-res-ensure-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path class="kp-arrowhead" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+    <marker id="kp-res-ensure-arrow-gold" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path class="kp-arrowhead-gold" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+  <rect class="kp-bg" x="0" y="0" width="760" height="270" rx="8"/>
+  <!-- The ask -->
+  <rect class="kp-ask" x="30" y="30" width="190" height="58" rx="6"/>
+  <text class="kp-mono" x="44" y="54">ensure(key, copy)</text>
+  <text class="kp-label" x="44" y="74">copy: what the asset store holds</text>
+  <!-- The question -->
+  <rect class="kp-box" x="270" y="30" width="200" height="58" rx="6"/>
+  <text class="kp-strong" x="284" y="54">Made from this very copy?</text>
+  <text class="kp-note" x="284" y="74">one handle, not an equal one</text>
+  <path class="kp-flow" d="M220,59 L268,59" marker-end="url(#kp-res-ensure-arrow)"/>
+  <!-- Yes: reuse -->
+  <path class="kp-flow" d="M470,59 L518,59" marker-end="url(#kp-res-ensure-arrow)"/>
+  <text class="kp-note" x="480" y="50">yes</text>
+  <rect class="kp-box" x="520" y="30" width="210" height="58" rx="6"/>
+  <text class="kp-strong" x="534" y="54">Return its resident</text>
+  <text class="kp-label" x="534" y="74">nothing made, nothing uploaded</text>
+  <!-- No: make -->
+  <path class="kp-thread" d="M370,88 L370,128" marker-end="url(#kp-res-ensure-arrow-gold)"/>
+  <text class="kp-note" x="380" y="112">no, or nothing kept</text>
+  <rect class="kp-box" x="270" y="130" width="200" height="50" rx="6"/>
+  <text class="kp-mono" x="284" y="152">make(copy, target)</text>
+  <text class="kp-label" x="284" y="170">the residency's one job</text>
+  <!-- Accepted -->
+  <path class="kp-thread" d="M470,155 L518,155" marker-end="url(#kp-res-ensure-arrow-gold)"/>
+  <text class="kp-note" x="476" y="146">made</text>
+  <rect class="kp-box" x="520" y="125" width="210" height="62" rx="6"/>
+  <text class="kp-gold" x="534" y="148">Keep it beside the copy</text>
+  <text class="kp-label" x="534" y="168">release the stale resident</text>
+  <!-- Refused -->
+  <path class="kp-flow" d="M370,180 L370,208" marker-end="url(#kp-res-ensure-arrow)"/>
+  <text class="kp-note" x="380" y="200">refused</text>
+  <rect class="kp-box" x="270" y="210" width="460" height="40" rx="6"/>
+  <text class="kp-strong" x="284" y="235">Keep the stale resident, the last good one. Return the error.</text>
+  <!-- Legend -->
+  <text class="kp-label" x="30" y="150">Each entry holds a</text>
+  <text class="kp-label" x="30" y="168">resident and the copy</text>
+  <text class="kp-label" x="30" y="186">it was made from.</text>
+  <text class="kp-note" x="30" y="214">key: the asset's uuid</text>
+</svg>

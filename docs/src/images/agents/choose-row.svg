@@ -1,0 +1,86 @@
+<svg id="fig-agents-choose-row" class="kp-figure" viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-agents-choose-row-title kp-agents-choose-row-desc">
+  <title id="kp-agents-choose-row-title">An agent chooses its row within its envelope</title>
+  <desc id="kp-agents-choose-row-desc">The audio family's menu on a frame with 40 playing sources: 8 voices costs 35.6 microseconds of CPU, 32 voices 130.4, 128 voices 162. The first two have a minor impact, quality 0.7; the third none, quality 1.0. With an envelope of 150 microseconds, 8 and 32 voices fit and tie on quality; within one lane the dearest level wins, so 32 voices runs. With 30 microseconds nothing fits: the floor, the cheapest priced row, runs and the report says over budget. With 200 microseconds, 128 voices fits and is the best: it runs.</desc>
+  <style>
+    #fig-agents-choose-row { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-agents-choose-row .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-agents-choose-row .kp-axis { stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-agents-choose-row .kp-bar { fill: var(--k-bg-3, #1f2636); stroke: var(--k-silver-dim, #809db2); stroke-width: 1; }
+    #fig-agents-choose-row .kp-dim { fill: var(--k-bg-0, #090d17); opacity: 0.7; }
+    #fig-agents-choose-row .kp-pick { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 2; }
+    #fig-agents-choose-row .kp-envelope { stroke: var(--k-gold, #e4b65c); stroke-width: 2; stroke-dasharray: 5 3; }
+    #fig-agents-choose-row .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 14px; }
+    #fig-agents-choose-row .kp-name { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+    #fig-agents-choose-row .kp-price { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-agents-choose-row .kp-tick { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10px; }
+    #fig-agents-choose-row .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; font-weight: 500; }
+    #fig-agents-choose-row .kp-how { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-agents-choose-row .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="330" rx="10"/>
+  <text class="kp-head" x="28" y="32">the audio family's menu, 40 sources playing</text>
+  <text class="kp-head" x="520" y="32">CPU time this frame</text>
+  <!-- axis: 2 px per microsecond from x = 220 -->
+  <line class="kp-axis" x1="220" y1="52" x2="220" y2="214"/>
+  <line class="kp-axis" x1="220" y1="214" x2="640" y2="214"/>
+  <text class="kp-tick" x="216" y="230">0</text>
+  <text class="kp-tick" x="310" y="230">50</text>
+  <text class="kp-tick" x="408" y="230">100</text>
+  <text class="kp-tick" x="508" y="230">150</text>
+  <text class="kp-tick" x="608" y="230">200 µs</text>
+  <!-- the rows -->
+  <text class="kp-station" x="28" y="80">8 voices</text>
+  <text class="kp-name" x="28" y="95">LowPower · minor · 0.7</text>
+  <rect class="kp-bar" x="220" y="66" width="71" height="26" rx="3"/>
+  <text class="kp-price" x="299" y="84">35.6</text>
+  <text class="kp-station" x="28" y="130">32 voices</text>
+  <text class="kp-name" x="28" y="145">Balanced · minor · 0.7</text>
+  <rect class="kp-bar" x="220" y="116" width="261" height="26" rx="3"/>
+  <text class="kp-price" x="489" y="134">130.4</text>
+  <text class="kp-station" x="28" y="180">128 voices</text>
+  <text class="kp-name" x="28" y="195">HighPerformance · none · 1.0</text>
+  <rect class="kp-bar" x="220" y="166" width="324" height="26" rx="3"/>
+  <text class="kp-price" x="552" y="184">162</text>
+  <!-- 1. priced -->
+  <g data-on="1">
+    <text class="kp-how" x="28" y="268">Every row is priced on this frame's inputs: a voice costs 4 µs to mix, a voice past</text>
+    <text class="kp-how" x="28" y="286">the level's cap 0.05 µs to keep virtual, a block 2 µs. Quality comes from the impact.</text>
+  </g>
+  <!-- 2 to 4: an envelope of 150 µs -->
+  <g data-on="2 3 4">
+    <line class="kp-envelope" x1="520" y1="52" x2="520" y2="214"/>
+    <text class="kp-gold" x="526" y="62">envelope 150 µs</text>
+  </g>
+  <g data-on="2">
+    <text class="kp-how" x="28" y="268">The DCC lends the agent an envelope: 150 µs on the CPU this epoch, and the memory</text>
+    <text class="kp-how" x="28" y="286">it may hold. It names no row.</text>
+  </g>
+  <g data-on="3 4">
+    <rect class="kp-dim" x="24" y="160" width="620" height="40"/>
+  </g>
+  <g data-on="3">
+    <text class="kp-how" x="28" y="268">A row fits when its price is within the envelope on every device, time and memory.</text>
+    <text class="kp-how" x="28" y="286">128 voices, at 162 µs, does not.</text>
+  </g>
+  <g data-on="4">
+    <rect class="kp-pick" x="216" y="112" width="310" height="34" rx="4"/>
+    <text class="kp-how" x="28" y="268">Of the rows that fit, the best quality. 8 and 32 voices tie at 0.7; within one lane</text>
+    <text class="kp-how" x="28" y="286">the dearest level wins, more of the same work. 32 voices runs.</text>
+  </g>
+  <!-- 5. a tighter envelope -->
+  <g data-on="5">
+    <line class="kp-envelope" x1="280" y1="52" x2="280" y2="214"/>
+    <text class="kp-gold" x="286" y="62">envelope 30 µs</text>
+    <rect class="kp-pick" x="216" y="62" width="120" height="34" rx="4"/>
+    <text class="kp-how" x="28" y="268">A tighter envelope, 30 µs: no row fits. The floor runs, the cheapest priced row,</text>
+    <text class="kp-how" x="28" y="286">and the agent's report says it is over budget. The frame always gets a row.</text>
+  </g>
+  <!-- 6. a wider envelope -->
+  <g data-on="6">
+    <line class="kp-envelope" x1="620" y1="52" x2="620" y2="214"/>
+    <text class="kp-gold" x="560" y="246">envelope 200 µs</text>
+    <rect class="kp-pick" x="216" y="162" width="374" height="34" rx="4"/>
+    <text class="kp-how" x="28" y="268">A wider envelope, 200 µs: 128 voices fits, and its quality, 1.0, is the best.</text>
+    <text class="kp-how" x="28" y="286">The agent switches; the new layer is prepared beside the one running.</text>
+  </g>
+</svg>

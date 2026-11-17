@@ -1,0 +1,73 @@
+<svg id="fig-clad-tiers" class="kp-figure" viewBox="0 0 760 370" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-clad-tiers-title kp-clad-tiers-desc">
+  <title id="kp-clad-tiers-title">The crate tiers: dependencies flow downward only</title>
+  <desc id="kp-clad-tiers-desc">The engine's crates in six tiers, from the floor up. The floor: core and macros, which depend on nothing. On the floor: data, control, script, telemetry, infra and tool-ui, which depend on core; data and script also on macros, control also on data. The middle: io and lanes. The strategists: agents. The facade: sdk, the only public API. The apps: editor, hub and runtime, on the sdk, the editor and hub also on tool-ui. A crate depends only on the tiers below it. Infra depends on core alone, and agents never depend on infra.</desc>
+  <style>
+    #fig-clad-tiers { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-clad-tiers .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-clad-tiers .kp-tier { fill: var(--k-bg-1, #101622); }
+    #fig-clad-tiers .kp-crate { fill: var(--k-bg-3, #1f2636); stroke: var(--k-silver-dim, #809db2); stroke-width: 1; }
+    #fig-clad-tiers .kp-crate-floor { fill: var(--k-bg-3, #1f2636); stroke: var(--k-silver, #b4cfe2); stroke-width: 1.4; }
+    #fig-clad-tiers .kp-down { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.2; fill: none; }
+    #fig-clad-tiers .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; font-weight: 500; }
+    #fig-clad-tiers .kp-station { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 12.5px; }
+    #fig-clad-tiers .kp-name { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11.5px; }
+    #fig-clad-tiers .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 10.5px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="370" rx="10"/>
+  <text class="kp-head" x="24" y="24">each crate is khora-&lt;name&gt; · a crate depends only on the tiers below it</text>
+  <!-- apps -->
+  <rect class="kp-tier" x="16" y="36" width="728" height="44" rx="5"/>
+  <text class="kp-station" x="28" y="63">apps</text>
+  <rect class="kp-crate" x="160" y="43" width="120" height="30" rx="4"/>
+  <text class="kp-name" x="172" y="63">editor</text>
+  <rect class="kp-crate" x="292" y="43" width="120" height="30" rx="4"/>
+  <text class="kp-name" x="304" y="63">hub</text>
+  <rect class="kp-crate" x="424" y="43" width="120" height="30" rx="4"/>
+  <text class="kp-name" x="436" y="63">runtime</text>
+  <text class="kp-note" x="556" y="62">editor, hub: also tool-ui</text>
+  <!-- facade -->
+  <rect class="kp-tier" x="16" y="88" width="728" height="44" rx="5"/>
+  <text class="kp-station" x="28" y="115">façade</text>
+  <rect class="kp-crate" x="160" y="95" width="120" height="30" rx="4"/>
+  <text class="kp-name" x="172" y="115">sdk</text>
+  <text class="kp-note" x="292" y="114">the only public API for games</text>
+  <!-- strategists -->
+  <rect class="kp-tier" x="16" y="140" width="728" height="44" rx="5"/>
+  <text class="kp-station" x="28" y="167">strategists</text>
+  <rect class="kp-crate" x="160" y="147" width="120" height="30" rx="4"/>
+  <text class="kp-name" x="172" y="167">agents</text>
+  <text class="kp-note" x="292" y="166">LaneAgent · never infra</text>
+  <!-- middle -->
+  <rect class="kp-tier" x="16" y="192" width="728" height="44" rx="5"/>
+  <text class="kp-station" x="28" y="219">middle</text>
+  <rect class="kp-crate" x="160" y="199" width="120" height="30" rx="4"/>
+  <text class="kp-name" x="172" y="219">io</text>
+  <rect class="kp-crate" x="292" y="199" width="120" height="30" rx="4"/>
+  <text class="kp-name" x="304" y="219">lanes</text>
+  <!-- on the floor -->
+  <rect class="kp-tier" x="16" y="244" width="728" height="44" rx="5"/>
+  <text class="kp-station" x="28" y="271">on the floor</text>
+  <rect class="kp-crate" x="160" y="251" width="88" height="30" rx="4"/>
+  <text class="kp-name" x="170" y="271">data</text>
+  <rect class="kp-crate" x="256" y="251" width="88" height="30" rx="4"/>
+  <text class="kp-name" x="266" y="271">control</text>
+  <rect class="kp-crate" x="352" y="251" width="88" height="30" rx="4"/>
+  <text class="kp-name" x="362" y="271">script</text>
+  <rect class="kp-crate" x="448" y="251" width="96" height="30" rx="4"/>
+  <text class="kp-name" x="458" y="271">telemetry</text>
+  <rect class="kp-crate" x="552" y="251" width="88" height="30" rx="4"/>
+  <text class="kp-name" x="562" y="271">infra</text>
+  <rect class="kp-crate" x="648" y="251" width="88" height="30" rx="4"/>
+  <text class="kp-name" x="658" y="271">tool-ui</text>
+  <!-- floor -->
+  <rect class="kp-tier" x="16" y="296" width="728" height="44" rx="5"/>
+  <text class="kp-station" x="28" y="323">floor</text>
+  <rect class="kp-crate-floor" x="160" y="303" width="120" height="30" rx="4"/>
+  <text class="kp-name" x="172" y="323">core</text>
+  <rect class="kp-crate-floor" x="292" y="303" width="120" height="30" rx="4"/>
+  <text class="kp-name" x="304" y="323">macros</text>
+  <text class="kp-note" x="424" y="322">depend on nothing</text>
+  <!-- a few edges -->
+  <path class="kp-down" d="M300,251 C 296,240 270,240 254,251"/>
+  <text class="kp-note" x="160" y="360">control also on data · data and script also on macros · infra on core alone</text>
+</svg>

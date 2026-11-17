@@ -1,0 +1,64 @@
+<svg id="fig-reference-ergon-states" class="kp-figure" viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-reference-ergon-states-title kp-reference-ergon-states-desc">
+  <title id="kp-reference-ergon-states-title">A Guard behavior moves between its Patrol and Chase states with become</title>
+  <desc id="kp-reference-ergon-states-desc">The instance starts in Patrol, the first state declared, entered with no arguments. On Spotted, become Chase(foe) enters Chase: its parameter foe and its field missed exist, missed starts at 0, and its every and after schedules are armed. Ten seconds later, become Patrol leaves Chase, and foe, missed and the two schedules are gone. Entering Chase again writes its defaults again and re-arms its schedules from zero.</desc>
+  <style>
+    #fig-reference-ergon-states { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-reference-ergon-states .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-reference-ergon-states .kp-box { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-reference-ergon-states .kp-on { fill: var(--k-bg-2, #181e2b); stroke: var(--k-silver, #b4cfe2); stroke-width: 1.5; }
+    #fig-reference-ergon-states .kp-start { fill: var(--k-silver, #b4cfe2); }
+    #fig-reference-ergon-states .kp-path { fill: none; stroke: var(--k-line, #383d48); stroke-width: 1.25; }
+    #fig-reference-ergon-states .kp-thread { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 2; }
+    #fig-reference-ergon-states .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 18px; }
+    #fig-reference-ergon-states .kp-mono { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-reference-ergon-states .kp-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-reference-ergon-states .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-reference-ergon-states .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+    #fig-reference-ergon-states .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="300" rx="8"/>
+  <!-- The start -->
+  <circle class="kp-start" cx="54" cy="140" r="7"/>
+  <path class="kp-path" d="M61 140 H120"/>
+  <path class="kp-thread" d="M61 140 H120" data-on="1"/>
+  <text class="kp-note" x="40" y="168">first declared</text>
+  <!-- Patrol -->
+  <rect class="kp-box" x="120" y="100" width="180" height="80" rx="8" data-on="2 4"/>
+  <rect class="kp-on" x="120" y="100" width="180" height="80" rx="8" data-on="1 3"/>
+  <text class="kp-station" x="140" y="132">Patrol</text>
+  <text class="kp-label" x="140" y="160">no parameter, no field</text>
+  <!-- Chase -->
+  <rect class="kp-box" x="460" y="60" width="250" height="160" rx="8" data-on="1 3"/>
+  <rect class="kp-on" x="460" y="60" width="250" height="160" rx="8" data-on="2 4"/>
+  <text class="kp-station" x="480" y="92">Chase(Entity foe)</text>
+  <text class="kp-label" x="480" y="122">foe</text>
+  <text class="kp-label" x="480" y="144">missed</text>
+  <text class="kp-label" x="480" y="172">every 1s</text>
+  <text class="kp-label" x="480" y="194">after 10s</text>
+  <g data-on="1 3">
+    <text class="kp-dim" x="570" y="122">does not exist</text>
+    <text class="kp-dim" x="570" y="144">does not exist</text>
+    <text class="kp-dim" x="570" y="172">not armed</text>
+    <text class="kp-dim" x="570" y="194">not armed</text>
+  </g>
+  <g data-on="2 4">
+    <text class="kp-mono" x="570" y="122">the intruder</text>
+    <text class="kp-gold" x="570" y="144">0</text>
+    <text class="kp-mono" x="570" y="172">armed, from 0s</text>
+    <text class="kp-mono" x="570" y="194">armed, from 0s</text>
+  </g>
+  <!-- The two transitions -->
+  <path class="kp-path" d="M300 120 C360 70, 400 70, 460 90"/>
+  <path class="kp-path" d="M460 190 C400 230, 360 220, 300 165"/>
+  <path class="kp-thread" d="M300 120 C360 70, 400 70, 460 90" data-on="2 4"/>
+  <path class="kp-thread" d="M460 190 C400 230, 360 220, 300 165" data-on="3"/>
+  <text class="kp-mono" x="380" y="60" text-anchor="middle">become Chase(foe)</text>
+  <text class="kp-mono" x="380" y="238" text-anchor="middle">become Patrol</text>
+  <text class="kp-note" x="380" y="76" text-anchor="middle">on Spotted(Entity foe)</text>
+  <text class="kp-note" x="380" y="254" text-anchor="middle">after 10s</text>
+  <!-- What the step shows -->
+  <text class="kp-label" x="40" y="284" data-on="1">The instance starts in Patrol, entered with no arguments.</text>
+  <text class="kp-label" x="40" y="284" data-on="2">Spotted: Chase is entered. Its defaults are written, its schedules armed.</text>
+  <text class="kp-label" x="40" y="284" data-on="3">Ten seconds on: back to Patrol. Chase's data and schedules are gone.</text>
+  <text class="kp-label" x="40" y="284" data-on="4">Spotted again: Chase starts over. missed is 0 again, the clocks restart.</text>
+</svg>

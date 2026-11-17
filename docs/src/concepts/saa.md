@@ -1,229 +1,222 @@
 # The big idea
 
-Why an engine would negotiate with itself.
+<p class="kp-lede">Most engines are set up once, by hand, for the machine their makers had in mind, and play the same way everywhere. Khora is built to adjust itself while it runs. Its parts — drawing, sound, physics, scripts — tell a coordinator what each way of doing their work would cost right now. The coordinator shares out the time a frame has. Each part then picks the best way that fits. It happens again and again while the game runs, so the engine follows the machine and the scene as they change.</p>
+
+This page is the *why* of Khora's design. Where each idea lives in the code is
+[Architecture (CLAD)](./clad.md); how a frame runs is [The frame](./the-frame.md).
 
 ---
 
 ## The problem with rigid engines
 
-Most game engines decide at compile time. The render pipeline is fixed, the
-physics tick rate is a constant, the resource budgets are baked in. This works
-beautifully on exactly one target — the machine the defaults were tuned for —
-and progressively worse everywhere else. The result is a familiar trio of
-problems:
+Most engines decide ahead of time. The render pipeline is fixed, the quality
+presets are chosen, the budgets are baked in. That works on the machine the
+defaults were tuned for, and worse everywhere else:
 
 | Problem | Impact |
 |---|---|
-| Static resource allocation | Underutilization or bottlenecks |
-| Manual per-platform tuning | Tedious, fragile, expensive |
-| No contextual awareness | Cannot prioritize what matters to the player right now |
+| Static resource allocation | idle hardware, or a bottleneck |
+| Manual per-platform tuning | slow, fragile, expensive |
+| No awareness of the moment | cannot favour what matters to the player right now |
 
-Hardware diversity makes this worse every year. A title that ships to high-end
-PCs, mobile, and VR cannot have one static configuration that is right for all
-three. The classic answer is per-platform tuning by hand: weeks of fiddling
-with quality presets, and a combinatorial explosion of edge cases. The engine
-never *understands* its situation — it only ever replays decisions a human made
-in advance.
+A game that ships on a desktop, a laptop on battery and a handheld cannot have one
+configuration that is right for all three. The usual answer is tuning by hand:
+preset after preset, edge case after edge case. The engine never *knows* its
+situation; it replays decisions someone made in advance.
 
-## The answer: an engine that thinks
+## The answer: an engine that negotiates
 
-Khora replaces the rigid orchestrator with a council of intelligent,
-collaborating agents. The framework has a name: the **Symbiotic Adaptive
-Architecture**, or [**SAA**](../reference/glossary.md). The name is exact —
-subsystems live in *symbiosis* (neither commanding nor commanded), and the
-engine *adapts* to its environment as a continuous behavior, not as a
-configuration step.
+Khora replaces the fixed order with negotiation. The design has a name: the
+**Symbiotic Adaptive Architecture**, [**SAA**](../reference/glossary.md).
+*Symbiotic*: the parts neither command nor obey each other. *Adaptive*: adjusting
+to the machine is something the engine does all the time, not a setup step.
 
-The contrast with a traditional engine is sharp:
+- A traditional engine is a **tree**: a central loop calls the renderer, the
+  physics and the audio in a fixed order, with budgets fixed in advance.
+- SAA is a **council**: a coordinator watches, the specialists price their options,
+  the coordinator shares out the frame, each specialist chooses. The decisions are
+  revisited many times a second.
 
-- A traditional engine is a **tree**. A central runtime calls into renderers,
-  physics, and audio in a fixed order, with budgets decided at compile time.
-- SAA is a **council**. A central observer watches; specialists negotiate; an
-  arbitrator hands out budgets each tick. Decisions are revisited every frame.
+Three properties follow:
 
-Three properties fall out of this:
+- **Self-optimisation.** The engine measures where the time goes and shares it out
+  again: no `MAX_LIGHTS` constant, no preset to pick.
+- **Strategic flexibility.** Under load, rendering moves between unlit, lit forward
+  and forward+; shadows drop from a 2048-pixel atlas to 1024 or 512; audio mixes
+  128, 32 or 8 voices; scripts can serve only their critical behaviours for a
+  frame. None of it needs the developer.
+- **Goals, not settings.** Every adaptation serves a target the developer sets — a
+  frame time, a priority between families — never a fixed quality level.
 
-- **Automated self-optimization.** The engine detects bottlenecks and
-  reallocates resources autonomously — no `MAX_LIGHTS` constant, no preset to
-  pick.
-- **Strategic flexibility.** Rendering switches techniques under load. Physics
-  shrinks its tick rate when the GPU is starving. Audio sheds voices when memory
-  tightens. None of it requires developer intervention.
-- **Goal-oriented decisions.** Every adaptation serves a high-level goal —
-  *maintain 90 fps in VR*, *conserve battery on mobile*, *prioritize physics in
-  this volume*.
+## The pillars
 
-This is not a research toy. The engine ships a working renderer, a working
-physics step, an editor with a play mode, a sandbox you can run today, and
-hundreds of workspace tests. SAA is a deliberate, opinionated answer to the
-rigidity problem — not an aspiration.
+SAA rests on seven ideas. Here is the idea of each; where each lives is
+[Architecture (CLAD)](./clad.md).
 
-## The seven pillars
+### 1. Dynamic Context Core — the coordinator
 
-SAA rests on seven pillars. Here is the *idea* of each; where each one lives in
-the codebase is the subject of [Architecture (CLAD)](./clad.md).
+The [**DCC**](../reference/glossary.md) is the engine's awareness. It commands no
+subsystem. It keeps a picture of the whole application: the hardware (processor
+load, graphics memory, temperature, battery), what the frames measured, and the
+goals (the target frame time). It runs on **its own thread, 20 times a second**,
+beside the frame loop and never in it.
 
-### 1. Dynamic Context Core — the central nervous system
+### 2. Families and their agents — the specialists
 
-The [**DCC**](../reference/glossary.md) is the engine's center of awareness. It
-does not command subsystems directly; it maintains a constantly updated
-*situational model* of the whole application — hardware load (CPU cores, GPU
-utilization, VRAM, bandwidth), game state (scene complexity, entity counts,
-light count), and performance goals (target framerate, latency ceiling, power
-budget). It runs on a **dedicated background thread at ~20 Hz**, completely
-independent of the frame loop.
+Every subsystem that has choices is a **family**: its **lanes** are the ways it can
+do its work, each offered at one or more **levels**, and every level is a **row**
+with a price. Each family has an [**agent**](../reference/glossary.md), always the
+same one, `LaneAgent`, built by the engine from the family's registration. It
+offers the rows, priced on the current frame, and chooses one within the budget it
+is lent. The engine ships 11 families: rendering, shadows, the sky, the grid, the
+wireframe, the gizmos, the interface, audio, physics, scripting and loading. A
+game adds its own the same way. Work with nothing to choose — the asset service,
+serialization, ECS maintenance — is a plain service with no agent. See
+[Agents and Lanes](./agents-and-lanes.md) and
+[Families and levels](./families-and-levels.md).
 
-### 2. Intelligent Subsystem Agents — the specialists
+### 3. GORNA — the negotiation
 
-Every major subsystem is an [**agent**](../reference/glossary.md): not a passive
-library but a semi-autonomous component with deep understanding of its own
-domain. An agent measures its own cost, holds several ways of doing its work at
-different costs and qualities — its **rows** — and prices each of them. Each
-**family** of lanes (shadows, physics, audio, the interface, the sky, the grid, the
-wireframe, the gizmos) has one, the same `LaneAgent` built from the family's
-registration; rendering and scripting still have hand-written agents of their own.
-The `Asset`, `Scene` and `Ecs` work has no agent at all, because a decoder and a
-compaction pass have no competing strategies to negotiate. The architecture is
-open: a game adds a family, and its agent comes with it.
+[**GORNA**](./gorna.md) (Goal-Oriented Resource Negotiation and Allocation) is the
+protocol between the DCC and the agents. It has four messages:
 
-### 3. GORNA — Goal-Oriented Resource Negotiation and Allocation
+<figure class="kp-steps">
+<div class="kp-figure-frame">
 
-[**GORNA**](../reference/glossary.md) is the formal protocol the DCC and the
-agents use to allocate resources, replacing static budgets:
+{{#include ../images/saa/negotiation.svg}}
 
-```mermaid
-flowchart LR
-    A[Offer: every row, priced] --> B[DCC: share the frame]
-    B -->|Allocation: one envelope each| C[Agent: choose a row]
-    C -->|Report, every run| B
-```
+</div>
+<ol class="kp-steps-text">
+<li><strong>Offer.</strong> Each agent offers its whole menu: every row, with what it costs this frame on each device and what it is worth.</li>
+<li><strong>Allocation.</strong> The DCC shares the frame's time among them and lends each an envelope: time per device, memory. Never a row.</li>
+<li><strong>Choice.</strong> Each agent chooses the best row that fits its envelope, and runs it.</li>
+<li><strong>Report.</strong> After every run, each reports the row that ran, what it measured, how much of its work it did. The next round decides from what was measured.</li>
+</ol>
+</figure>
 
-Per epoch, each agent offers its whole menu, priced; the DCC shares the frame's
-time out on its critical path and lends each agent an **envelope** — how much time
-and memory it may use, never which row to run; the agent chooses the best row that
-fits, and reports after every run. **The DCC decides how much; the agent decides
-how.** The DCC shapes a single frame-time target from a battery of heuristics, and
-a closed-loop **frame governor** scales it so the frames' *measured* critical path
-settles under that target.
+**The DCC decides how much; the agent decides how.** The DCC sets one frame-time
+target from its picture of the machine, and a closed-loop **frame governor**
+adjusts it until the frames' *measured* time settles under the target.
 
-### 4. Adaptive Game Data Flows — the living representation
+### 4. Adaptive Game Data Flows — data that rearranges itself
 
-[**AGDF**](../reference/glossary.md) is the principle that *not only algorithms
-but also the in-memory representation of data should adapt* to the hardware it
-runs on. The engine observes how each component is actually accessed and lays
-its storage out for the machine it is on right now:
+[**AGDF**](./agdf.md) is the idea that not only algorithms but the *layout of data
+in memory* should adapt to the hardware. The data layer watches how each component
+is read and lays its storage out for the machine it is on:
 
 | Signal | AGDF action (representation only) |
 |---|---|
-| A component is scanned in tight, vectorizable loops | Re-tile its column to a SIMD-friendly `AoSoA` layout |
-| A component mixes hot and cold fields | Split storage so iteration touches only the hot cache lines |
-| A layout stops paying off on this hardware | Repack back, gated by a cost/benefit test |
+| A component is scanned in tight, vectorisable loops | re-tile its column to a SIMD-friendly layout |
+| A component mixes hot and cold fields | split its storage so iteration touches only the hot ones |
+| A layout stops paying off on this hardware | repack it, if a cost/benefit test says so |
 
-This rearranges bytes, never the simulation outcome. It is the data-layer twin
-of GORNA — the same *observe → decide → apply* loop, applied to memory instead
-of strategy.
+This moves bytes, never the outcome of the simulation. It is the data layer's
+twin of GORNA — the same *observe → decide → apply* loop, applied to memory.
 
 > **What AGDF is *not*.** Removing an entity's physics because it is far from the
-> player *changes the game*, not just its representation. That is a gameplay
-> decision and belongs to the developer. The engine may offer the mechanism, but
-> it never applies it to an entity the developer has not opted into. See pillar 7.
+> player *changes the game*, not its representation. That is the developer's
+> decision. The engine may offer the mechanism; it never applies it to an entity
+> the developer has not opted in. See pillar 7.
 
-### 5. Semantic interfaces and contracts — the common language
+### 5. Contracts — the common language
 
-For intelligent negotiation to be possible, every agent must speak a common,
-unambiguous language. Khora's contracts are formal Rust traits — capabilities
-("I can render with Forward+ or Simple Unlit"), requirements ("I require all
-entity positions and meshes"), guarantees ("with 4 ms CPU budget I guarantee
-stable physics for 1000 rigid bodies"). These contracts are the seam through
-which the entire engine is reorganizable.
+For negotiation to work, every part must speak the same language. Khora's
+contracts are Rust traits and types in `khora-core`: a family declares its outputs
+and whether a cheaper level may change its result (`LaneFamily`, `Semantics`); a
+lane declares its levels, what each costs on this frame's inputs, and what it reads
+and writes (`Lane`, `Level`, `Cost`, its typed inputs and outputs); a backend
+implements a trait (`GraphicsDevice`, `PhysicsProvider`, `AudioDevice`). Those
+declarations are what the engine checks at boot, groups into parallel waves, and
+negotiates over.
 
-### 6. Observability and traceability — the glass box
+### 6. Observability — the glass box
 
-An intelligent system risks becoming an indecipherable black box. Observability
-is therefore first-class. Every DCC decision is logged with complete context —
-telemetry, requests, final budget — so a developer can ask not just "what
-happened?" but "*why* did the engine choose that?". A telemetry service surfaces
-real-time metrics for every subsystem.
+An adaptive engine must not become a black box. Every GORNA round is recorded with
+its inputs and its reasons (`DecisionTrace`), the editor's Control Plane shows them,
+and the telemetry service measures every subsystem. A developer can ask not just
+"what happened?" but "*why* did the engine choose that?".
 
-### 7. Developer guidance and control — partnership, not autocracy
+### 7. Developer control — partnership, not autocracy
 
-The engine's autonomy serves the developer; it does not replace them. The
-developer can define constraints ("in this zone, physics > graphics") and pick
-an adaptation mode (`Learning` / `Manual` / `Stable` / `Bounded`). The boundary
-is firm:
+The engine's autonomy serves the developer. Per family, the developer picks an
+adaptation mode — `Learning`, `Manual` (pin a row), `Stable` (never upgrade),
+`Bounded` (only rows within a range) — and can weigh families against each other.
+The boundary is firm:
 
 > **Automatic adaptation may change the *how* (strategy, quality, memory layout)
 > but never the *what* (game semantics — which components an entity has, how the
 > simulation behaves).** Changing the *what* is always the developer's call; the
-> engine supplies the mechanism, the developer authors the policy.
+> engine supplies the mechanism, the developer writes the policy.
 
-This single rule — *adapt the HOW, never the WHAT* — recurs throughout the
-engine, and is the reason adaptation never becomes a correctness hazard.
+*Adapt the HOW, never the WHAT* recurs throughout the engine. It is why the physics
+step is a game setting and never a GORNA lever, why physics and scripting only
+offer levels that give the same result, and why adaptation never becomes a
+correctness hazard.
 
 ## Cold path and hot path
 
-The clearest way to understand SAA is to see the two clocks it runs on. The
-**hot path** runs every frame on the main thread and must never block. The
-**cold path** runs slowly on a background thread, watches what just happened, and
-decides what should happen next. They communicate through exactly one channel:
-budgets flow down, telemetry flows up.
+SAA runs on two clocks. The **hot path** is the frame loop, every frame; it never
+waits. The **cold path** is the DCC's thread, 20 times a second; it watches what
+the frames measured and decides what comes next. One channel joins them:
+allocations go down, measurements come up.
 
-```mermaid
-graph TD
-    subgraph Cold["Cold path — background thread, ~20 Hz"]
-        DCC[DCC service]
-        Telemetry[Telemetry aggregation]
-        Heuristics[Heuristics]
-        GORNA[GORNA arbitration]
-    end
-    subgraph Hot["Hot path — main thread, 60+ Hz"]
-        Scheduler[ExecutionScheduler]
-        Layers[Layers: the lanes installed at each family's place]
-        Agents[Agents, woken by events]
-    end
-    Telemetry --> DCC
-    DCC --> Heuristics
-    Heuristics --> GORNA
-    GORNA -->|Allocation| Scheduler
-    Scheduler --> Layers
-    Scheduler -->|wakes| Agents
-    Agents -->|a new layer| Layers
-    Layers -->|Report| Telemetry
-```
+<div class="kp-figure-frame">
 
-| Aspect | Cold path (DCC) | Hot path (Scheduler + agents) |
+{{#include ../images/saa/two-clocks.svg}}
+
+</div>
+
+| Aspect | Cold path (DCC) | Hot path (scheduler and agents) |
 |---|---|---|
-| Thread | Background | Main |
-| Frequency | ~20 Hz | 60+ Hz (every frame) |
-| Responsibility | Observe, analyze, share out envelopes | Apply the layers, wake the agents, produce output |
-| Communication | Allocations published on one channel | Allocations lent at a frame start; reports sent after every run |
+| Thread | its own | the frame loop's, and the scheduler's pools |
+| Rate | 20 times a second | every frame |
+| Job | observe, decide, share out envelopes | lend envelopes, run the layers, wake agents |
+| Communication | publishes allocations on one channel | takes the newest at a frame start; reports after every run |
 
-**The key insight:** agents are not controllers, they are *adapters*. They
-receive envelopes from GORNA and choose the row that fits; between two choices they
-are not called at all — the scheduler applies the layer they installed. The DCC
-decides *what* resources are available; agents decide *how* to use them. The
-data layer plays by the same spirit on its own — it self-optimizes its memory
-layout internally, and the DCC only *observes* the result through a read-only
-telemetry tunnel. Only agents compete in the budget auction; the data layer
-never bids for frame time.
+Agents are *adapters*, not controllers. They receive envelopes and choose the row
+that fits; between two choices they are not called at all — the scheduler runs the
+layer they installed. The DCC decides how much there is; the agents decide how to
+use it. The data layer plays in the same spirit on its own: it adapts its memory
+layout inside `khora-data`, and the DCC only observes the result. Only agents take
+part in the budget negotiation.
 
-This cold/hot split is non-negotiable. The frame loop must never be blocked by
-analysis, and an agent must never wait synchronously on the DCC — the
-relationship is fire-and-forget through a channel: a live allocation replaces one
-still waiting, and a frame start lends whatever is newest.
+The split is not negotiable. The frame loop is never blocked by analysis, and an
+agent never waits on the DCC: an allocation published between two frame starts
+replaces one not yet lent, and a frame start lends the newest.
 
 ## SAA is the *why*; CLAD is the *how*
 
-SAA describes the philosophy. Its concrete implementation has another name: the
-[**CLAD**](../reference/glossary.md) layering — Control, Lanes, Agents, Data.
-The first describes the *why*; the second describes the *how*. They are two
-views of the same thing. Every abstract SAA concept has a direct, physical home
-within CLAD, and the dependency layering of the crates *is* the architecture.
+The ideas have a concrete form: the [**CLAD**](./clad.md) layering — Control,
+Lanes, Agents, Data — and the crates that hold it. Every idea above has one home
+there, and the direction of the crates' dependencies *is* the architecture.
+
+## Under the hood
+
+The negotiation reduces to two functions that never meet inside a frame. For each
+epoch *e*, the DCC computes, from the offers *O* (each agent's priced rows) and its
+picture of the machine *S*, an envelope per agent:
+
+> *share : (O, S) ↦ (E_a)_a*,
+
+aiming to keep the frame's **critical path** — the sum over the frame's waves of the
+time of each wave's slowest member, *Σ_w max_{a ∈ w} T_a* — within the frame's
+target on every device. An agent at the background phase is on no wave: its time
+is not on the path.
+
+Each agent *a* then applies, at a frame start,
+
+> *choose_a : E_a ↦ r_a*, a row of greatest quality among those that fit *E_a*.
+
+The separation is the guarantee: *share* never names a row, so an agent's own
+knowledge of its work (which levels exist, what each changes) never has to reach the
+DCC; *choose* never sees another agent's envelope, so no agent can take another's
+time. The precise rules are in [Families and levels](./families-and-levels.md#under-the-hood)
+for *choose* and in [GORNA](./gorna.md) for *share*.
 
 ## Next steps
 
-- **[Architecture (CLAD)](./clad.md)** — where each of the seven pillars lives,
-  and why the layering flows the way it does. Read this next.
-- **[The frame](./the-frame.md)** — the per-frame descent and the fixed-timestep
-  model that turns SAA into motion.
-- **[Glossary](../reference/glossary.md)** — every proprietary term in one place.
+- **[Architecture (CLAD)](./clad.md)** — where each idea lives, and why the layers
+  depend on each other the way they do. Read this next.
+- **[The frame](./the-frame.md)** — the per-frame mechanics that turn SAA into
+  motion.
+- **[Glossary](../reference/glossary.md)** — every Khora term in one place.

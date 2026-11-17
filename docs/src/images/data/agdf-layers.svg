@@ -1,0 +1,64 @@
+<svg id="fig-data-agdf-layers" class="kp-figure" viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-agdf-layers-title kp-agdf-layers-desc">
+  <title id="kp-agdf-layers-title">AGDF's three layers: observe and advise, the field-split substrate, online repack</title>
+  <desc id="kp-agdf-layers-desc">Layer 1 runs today: an observation tunnel carries agent reports and per-component access counts to the DCC, which feeds a cost model, a read-only layout advisor and memory tracking. Layer 2 is chosen when a component is registered: a field-split column and SIMD kernels over it. Layer 3, repacking a populated component while the game runs, is not built. Layer 1's advice is read by a person who opts a component into Layer 2; Layer 2 is the substrate Layer 3 would switch between, and Layer 1 the source of its reward.</desc>
+  <style>
+    #fig-data-agdf-layers { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-data-agdf-layers .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-data-agdf-layers .kp-band { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-data-agdf-layers .kp-band-off { fill: none; stroke: var(--k-line, #383d48); stroke-width: 1; stroke-dasharray: 5 4; }
+    #fig-data-agdf-layers .kp-chip { fill: var(--k-bg-2, #181e2b); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-data-agdf-layers .kp-chip-hot { fill: var(--k-bg-2, #181e2b); stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    #fig-data-agdf-layers .kp-flow { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; fill: none; }
+    #fig-data-agdf-layers .kp-flow-off { stroke: var(--k-fg-3, #5d646c); stroke-width: 1.25; fill: none; stroke-dasharray: 4 4; }
+    #fig-data-agdf-layers .kp-arrowhead { fill: var(--k-silver-dim, #809db2); }
+    #fig-data-agdf-layers .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 16px; }
+    #fig-data-agdf-layers .kp-status { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-data-agdf-layers .kp-chip-text { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-data-agdf-layers .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-data-agdf-layers .kp-mono { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+    #fig-data-agdf-layers .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+  </style>
+  <defs>
+    <marker id="kp-agdf-layers-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path class="kp-arrowhead" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+  <rect class="kp-bg" x="0" y="0" width="760" height="330" rx="8"/>
+  <!-- Layer 1 -->
+  <rect class="kp-band" x="30" y="24" width="700" height="104" rx="6"/>
+  <text class="kp-station" x="46" y="50">Layer 1 · observe and advise</text>
+  <text class="kp-status" x="560" y="50">runs every frame</text>
+  <rect class="kp-chip" x="46" y="62" width="160" height="52" rx="5"/>
+  <text class="kp-chip-text" x="56" y="82">Observation tunnel</text>
+  <text class="kp-mono" x="56" y="100">reports · access counts</text>
+  <rect class="kp-chip" x="216" y="62" width="150" height="52" rx="5"/>
+  <text class="kp-chip-text" x="226" y="82">Cost model</text>
+  <text class="kp-mono" x="226" y="100">time ≈ c · f(n)</text>
+  <rect class="kp-chip-hot" x="376" y="62" width="170" height="52" rx="5"/>
+  <text class="kp-gold" x="386" y="82">Layout advisor</text>
+  <text class="kp-mono" x="386" y="100">advises, never repacks</text>
+  <rect class="kp-chip" x="556" y="62" width="160" height="52" rx="5"/>
+  <text class="kp-chip-text" x="566" y="82">Memory tracking</text>
+  <text class="kp-mono" x="566" y="100">pressure · churn</text>
+  <!-- Layer 2 -->
+  <rect class="kp-band" x="30" y="148" width="700" height="80" rx="6"/>
+  <text class="kp-station" x="46" y="174">Layer 2 · the field-split substrate</text>
+  <text class="kp-status" x="560" y="174">chosen at registration</text>
+  <rect class="kp-chip-hot" x="376" y="184" width="170" height="34" rx="5"/>
+  <text class="kp-gold" x="386" y="206">layout = "soa"</text>
+  <rect class="kp-chip" x="556" y="184" width="160" height="34" rx="5"/>
+  <text class="kp-chip-text" x="566" y="206">f32x8 SIMD kernels</text>
+  <text class="kp-note" x="46" y="200">one contiguous f32 stream per field,</text>
+  <text class="kp-note" x="46" y="214">inside CRPECS, not beside it</text>
+  <!-- Layer 3 -->
+  <rect class="kp-band-off" x="30" y="248" width="700" height="62" rx="6"/>
+  <text class="kp-station" x="46" y="274">Layer 3 · online repack</text>
+  <text class="kp-status" x="560" y="274">not built</text>
+  <text class="kp-note" x="46" y="294">switch a populated component's layout while the game runs</text>
+  <!-- Arrows -->
+  <path class="kp-flow" d="M461,114 L461,182" marker-end="url(#kp-agdf-layers-arrow)"/>
+  <text class="kp-note" x="470" y="142">a person reads it, opts a component in</text>
+  <path class="kp-flow-off" d="M290,228 L290,246"/>
+  <text class="kp-note" x="300" y="242">the substrate it would switch</text>
+  <path class="kp-flow-off" d="M712,114 L712,246"/>
+</svg>

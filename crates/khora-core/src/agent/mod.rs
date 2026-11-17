@@ -50,7 +50,7 @@ pub use timing::{AgentImportance, ExecutionTiming};
 /// It does no per-frame work: that belongs to [`Lane`](crate::lane::Lane)s.
 /// Every family's agent is the one `LaneAgent` of `khora-agents`.
 ///
-/// See the book: concepts/gorna.md, "The four messages".
+/// See the book: concepts/gorna-protocol.md, "The four messages".
 pub trait Agent: Send + Sync {
     /// Returns the unique identifier for this agent.
     fn id(&self) -> AgentId;

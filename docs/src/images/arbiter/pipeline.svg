@@ -1,0 +1,94 @@
+<svg id="fig-arbiter-pipeline" class="kp-figure" viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-arbiter-pipeline-title kp-arbiter-pipeline-desc">
+  <title id="kp-arbiter-pipeline-title">The arbiter's six stations, from the offers to the envelopes and the reasons</title>
+  <desc id="kp-arbiter-pipeline-desc">Predict: each row's quoted host time is corrected by what the cost book learnt of it, a little above for a row whose runs vary. Plan: the target loses a margin read from the frames' spread, and a switch of row is charged its preparation and its swap. Propose: the greedy pass and the exact search each plan one row per agent. Shield: each plan is checked against the policies, the frame's time and the memory; a refused plan is dropped. Share: the best plan accepted is lent as envelopes, the slack shared, each envelope held under the next better row and converted back into the agent's own quoted units. Journal: the decision is kept with why it was made.</desc>
+  <style>
+    #fig-arbiter-pipeline { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-arbiter-pipeline .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-arbiter-pipeline .kp-station-box { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-arbiter-pipeline .kp-now { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 2; }
+    #fig-arbiter-pipeline .kp-card { fill: var(--k-bg-2, #181e2b); stroke: var(--k-silver-dim, #809db2); stroke-width: 1; }
+    #fig-arbiter-pipeline .kp-refused { fill: var(--k-bg-1, #101622); stroke: var(--k-amber, #e8a33d); stroke-width: 1.2; stroke-dasharray: 4 3; }
+    #fig-arbiter-pipeline .kp-wire { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.2; fill: none; }
+    #fig-arbiter-pipeline .kp-name { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 13px; font-weight: 500; }
+    #fig-arbiter-pipeline .kp-how { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-arbiter-pipeline .kp-mono { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-arbiter-pipeline .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-arbiter-pipeline .kp-warn { fill: var(--k-amber, #e8a33d); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="300" rx="10"/>
+  <!-- the six stations -->
+  <rect class="kp-station-box" x="24" y="24" width="112" height="44" rx="8"/>
+  <rect class="kp-station-box" x="144" y="24" width="112" height="44" rx="8"/>
+  <rect class="kp-station-box" x="264" y="24" width="112" height="44" rx="8"/>
+  <rect class="kp-station-box" x="384" y="24" width="112" height="44" rx="8"/>
+  <rect class="kp-station-box" x="504" y="24" width="112" height="44" rx="8"/>
+  <rect class="kp-station-box" x="624" y="24" width="112" height="44" rx="8"/>
+  <text class="kp-name" x="38" y="51">Predict</text>
+  <text class="kp-name" x="158" y="51">Plan</text>
+  <text class="kp-name" x="278" y="51">Propose</text>
+  <text class="kp-name" x="398" y="51">Shield</text>
+  <text class="kp-name" x="518" y="51">Share</text>
+  <text class="kp-name" x="638" y="51">Journal</text>
+  <rect class="kp-now" x="21" y="21" width="118" height="50" rx="10" data-tf="2:translate(120px, 0)|3:translate(240px, 0)|4:translate(360px, 0)|5:translate(480px, 0)|6:translate(600px, 0)"/>
+  <!-- 1. predict -->
+  <g data-on="1">
+    <text class="kp-mono" x="40" y="112">shadows · medium · quoted 2.0 ms of host time</text>
+    <text class="kp-mono" x="40" y="136">learnt: measured ≈ 1.5 × quoted, spread 0.1</text>
+    <text class="kp-gold" x="40" y="160">planned at (1.5 + 1.645 × 0.1) × 2.0 ≈ 3.3 ms</text>
+    <text class="kp-how" x="40" y="204">The cost book corrects each row's host time by what its runs measured.</text>
+    <text class="kp-how" x="40" y="222">A row above the floor is planned a little higher while its runs vary;</text>
+    <text class="kp-how" x="40" y="240">the floor is planned at its factor alone. Other devices stay as quoted.</text>
+  </g>
+  <!-- 2. plan -->
+  <g data-on="2">
+    <text class="kp-mono" x="40" y="112">target 16.7 ms − margin 0.8 ms = 15.9 ms planned</text>
+    <text class="kp-mono" x="40" y="136">switch shadows → high: 0.75 × (5 ms + 250 ms) / 5 s</text>
+    <text class="kp-gold" x="40" y="160">charged ≈ 0.04 of weighed quality</text>
+    <text class="kp-how" x="40" y="204">The margin keeps the plans clear of the frames' usual spread. A switch of</text>
+    <text class="kp-how" x="40" y="222">row is charged its preparation and its swap, spread over the 5 s a plan</text>
+    <text class="kp-how" x="40" y="240">is meant to hold: an upgrade must gain more than it costs to make.</text>
+  </g>
+  <!-- 3. propose -->
+  <g data-on="3">
+    <rect class="kp-card" x="40" y="96" width="300" height="70" rx="8"/>
+    <rect class="kp-card" x="370" y="96" width="300" height="70" rx="8"/>
+    <text class="kp-name" x="54" y="118">Greedy</text>
+    <text class="kp-mono" x="54" y="140">steepest gain per µs first</text>
+    <text class="kp-mono" x="54" y="158">worth 2.10</text>
+    <text class="kp-name" x="384" y="118">Exact</text>
+    <text class="kp-mono" x="384" y="140">from the greedy's plan, 3 072 nodes</text>
+    <text class="kp-gold" x="384" y="158">worth 2.25</text>
+    <text class="kp-how" x="40" y="204">Two proposers each plan one row per agent. The greedy is quick and near</text>
+    <text class="kp-how" x="40" y="222">the best; the exact search starts from its plan and can only improve it.</text>
+  </g>
+  <!-- 4. shield -->
+  <g data-on="4">
+    <text class="kp-mono" x="40" y="112">every row allowed by its policies</text><text class="kp-mono" x="400" y="112">✓</text>
+    <text class="kp-mono" x="40" y="136">critical path ≤ 15.9 ms, each device</text><text class="kp-mono" x="400" y="136">✓</text>
+    <text class="kp-mono" x="40" y="160">memory within what is known</text><text class="kp-mono" x="400" y="160">✓</text>
+    <rect class="kp-refused" x="500" y="96" width="200" height="70" rx="8"/>
+    <text class="kp-warn" x="514" y="124">a plan over target</text>
+    <text class="kp-warn" x="514" y="146">refused, dropped</text>
+    <text class="kp-how" x="40" y="204">Whatever proposed it, a plan reaches the frame only through the shield.</text>
+    <text class="kp-how" x="40" y="222">Of the plans accepted the arbiter keeps the one worth most; none accepted,</text>
+    <text class="kp-how" x="40" y="240">every agent keeps the row admission gave it.</text>
+  </g>
+  <!-- 5. share -->
+  <g data-on="5">
+    <text class="kp-mono" x="40" y="112">shadows planned 3.3 ms + its part of 80 % of the slack</text>
+    <text class="kp-mono" x="40" y="136">held under the next better row · 3.6 ms measured</text>
+    <text class="kp-gold" x="40" y="160">lent in its own units: 3.6 ÷ 1.5 = 2.4 ms quoted</text>
+    <text class="kp-how" x="40" y="204">The envelope is cut just under the next better row, so the agent runs the</text>
+    <text class="kp-how" x="40" y="222">row planned; it is lent in the agent's quoted units, since the agent chooses</text>
+    <text class="kp-how" x="40" y="240">by its own quotes. 20 % of the slack stays back for spikes.</text>
+  </g>
+  <!-- 6. journal -->
+  <g data-on="6">
+    <text class="kp-mono" x="40" y="112">Why { by: Exact, trigger: FrameGovernor,</text>
+    <text class="kp-mono" x="88" y="136">binding: Time(Cpu),</text>
+    <text class="kp-mono" x="88" y="160">rejected: [audio → HighPerformance, Time(Cpu)] }</text>
+    <text class="kp-how" x="40" y="204">Each decision says who decided, why the round opened, what stopped the plan</text>
+    <text class="kp-how" x="40" y="222">growing and which upgrades were refused. The editor shows it; a journal keeps</text>
+    <text class="kp-how" x="40" y="240">it with every input the round read, so the round can be decided again.</text>
+  </g>
+</svg>

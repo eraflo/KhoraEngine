@@ -1,0 +1,66 @@
+<svg id="fig-arbiter-exact" class="kp-figure" viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-arbiter-exact-title kp-arbiter-exact-desc">
+  <title id="kp-arbiter-exact-title">Where the greedy pass stops short, and the exact search does better</title>
+  <desc id="kp-arbiter-exact-desc">Two agents of equal weight share a 9 millisecond frame. Shadows offers low at 1 millisecond, quality 0.4, and medium at 2 milliseconds, quality 0.7. Foliage offers sparse at 1 millisecond, quality 0.4, and dense at 8 milliseconds, quality 1.0. The floors take 2 milliseconds and are worth 0.8. The greedy pass takes the steepest step first, shadows to medium, worth 1.1. Foliage's step to dense would then take the frame to 10 milliseconds: refused, and the greedy stops at 1.1. The exact search tries shadows at low with foliage dense: exactly 9 milliseconds, worth 1.4. The arbiter lends the exact plan.</desc>
+  <style>
+    #fig-arbiter-exact { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-arbiter-exact .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-arbiter-exact .kp-axis { stroke: var(--k-line, #383d48); stroke-width: 1; fill: none; }
+    #fig-arbiter-exact .kp-target { stroke: var(--k-gold, #e4b65c); stroke-width: 2; fill: none; }
+    #fig-arbiter-exact .kp-shadows { fill: var(--k-bg-3, #1f2636); stroke: var(--k-silver, #b4cfe2); stroke-width: 1; }
+    #fig-arbiter-exact .kp-foliage { fill: var(--k-bg-2, #181e2b); stroke: var(--k-silver-dim, #809db2); stroke-width: 1; }
+    #fig-arbiter-exact .kp-over { fill: none; stroke: var(--k-amber, #e8a33d); stroke-width: 1.4; stroke-dasharray: 4 3; }
+    #fig-arbiter-exact .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+    #fig-arbiter-exact .kp-name { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; font-weight: 500; }
+    #fig-arbiter-exact .kp-text { fill: var(--k-fg-1, #c5cad0); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-arbiter-exact .kp-mono { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11.5px; }
+    #fig-arbiter-exact .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11.5px; }
+    #fig-arbiter-exact .kp-warn { fill: var(--k-amber, #e8a33d); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11.5px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="300" rx="10"/>
+  <!-- the two menus -->
+  <text class="kp-name" x="40" y="36">shadows</text>
+  <text class="kp-mono" x="40" y="56">low · 1 ms · 0.4</text>
+  <text class="kp-mono" x="40" y="74">medium · 2 ms · 0.7</text>
+  <text class="kp-name" x="300" y="36">foliage</text>
+  <text class="kp-mono" x="300" y="56">sparse · 1 ms · 0.4</text>
+  <text class="kp-mono" x="300" y="74">dense · 8 ms · 1.0</text>
+  <text class="kp-label" x="540" y="56">equal weights,</text>
+  <text class="kp-label" x="540" y="72">one after the other</text>
+  <!-- the frame: 60 px a millisecond, the target at 9 ms -->
+  <path class="kp-axis" d="M80 170 L700 170"/>
+  <text class="kp-label" x="76" y="188">0</text>
+  <text class="kp-label" x="610" y="188">9 ms</text>
+  <path class="kp-target" d="M620 110 L620 176"/>
+  <text class="kp-gold" x="626" y="122">target</text>
+  <!-- 1. the floors -->
+  <g data-on="1">
+    <rect class="kp-shadows" x="80" y="130" width="60" height="34" rx="3"/>
+    <rect class="kp-foliage" x="140" y="130" width="60" height="34" rx="3"/>
+    <text class="kp-mono" x="40" y="224">floors: 2 ms · worth 0.8</text>
+    <text class="kp-text" x="40" y="252">Every agent's floor first: they fit, so the round is no emergency.</text>
+  </g>
+  <!-- 2. the greedy's steepest step -->
+  <g data-on="2 3">
+    <rect class="kp-shadows" x="80" y="130" width="120" height="34" rx="3"/>
+    <rect class="kp-foliage" x="200" y="130" width="60" height="34" rx="3"/>
+  </g>
+  <g data-on="2">
+    <text class="kp-mono" x="40" y="224">greedy: shadows → medium · 3 ms · worth 1.1</text>
+    <text class="kp-text" x="40" y="252">The steepest step: 0.3 gained for 1 ms, against 0.6 for 7 ms.</text>
+  </g>
+  <!-- 3. the next step no longer fits -->
+  <g data-on="3">
+    <rect class="kp-over" x="200" y="124" width="480" height="46" rx="3"/>
+    <text class="kp-warn" x="460" y="150">10 ms: over</text>
+    <text class="kp-mono" x="40" y="224">greedy: foliage → dense refused · stops at 1.1</text>
+    <text class="kp-text" x="40" y="252">With shadows at medium, dense foliage no longer fits. The greedy never goes back.</text>
+  </g>
+  <!-- 4. the exact search -->
+  <g data-on="4">
+    <rect class="kp-shadows" x="80" y="130" width="60" height="34" rx="3"/>
+    <rect class="kp-foliage" x="140" y="130" width="480" height="34" rx="3"/>
+    <text class="kp-gold" x="40" y="224">exact: shadows low + foliage dense · 9 ms · worth 1.4</text>
+    <text class="kp-text" x="40" y="252">The exact search tries the combination the greedy passed by. It fits, it is</text>
+    <text class="kp-text" x="40" y="270">worth more, so it is lent: Why { by: Exact }.</text>
+  </g>
+</svg>

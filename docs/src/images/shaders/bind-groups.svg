@@ -1,0 +1,54 @@
+<svg id="fig-shaders-bind-groups" class="kp-figure" viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-shaders-bind-groups-title kp-shaders-bind-groups-desc">
+  <title id="kp-shaders-bind-groups-title">The four bind groups of a mesh pipeline</title>
+  <desc id="kp-shaders-bind-groups-desc">Four bind groups, by role. Group 0, Camera: the view-projection and the camera's position. Group 1, Model: the model matrices, at a dynamic offset per draw. Group 2, Material: the material's uniforms, and the textures its variant holds. Group 3, Lighting: the lighting uniforms at binding 0, the shadow atlas, its sampler and the cube atlas at bindings 1, 2 and 3, image-based lighting from binding 4. There is no group 4: a new lighting resource takes a free binding of group 3.</desc>
+  <style>
+    #fig-shaders-bind-groups { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-shaders-bind-groups .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-shaders-bind-groups .kp-group { fill: var(--k-bg-1, #101622); stroke: var(--k-silver-dim, #809db2); stroke-width: 1; }
+    #fig-shaders-bind-groups .kp-slot { fill: var(--k-bg-3, #1f2636); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-shaders-bind-groups .kp-none { fill: none; stroke: var(--k-line, #383d48); stroke-width: 1; stroke-dasharray: 4 3; }
+    #fig-shaders-bind-groups .kp-cross { stroke: var(--k-fg-3, #5d646c); stroke-width: 1.2; }
+    #fig-shaders-bind-groups .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 14px; }
+    #fig-shaders-bind-groups .kp-num { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-shaders-bind-groups .kp-name { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10px; }
+    #fig-shaders-bind-groups .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="250" rx="10"/>
+  <!-- group 0 -->
+  <rect class="kp-group" x="20" y="24" width="140" height="170" rx="6"/>
+  <text class="kp-num" x="32" y="44">@group(0)</text>
+  <text class="kp-station" x="32" y="64">Camera</text>
+  <rect class="kp-slot" x="32" y="76" width="116" height="24" rx="3"/>
+  <text class="kp-name" x="38" y="92">0 view-projection</text>
+  <!-- group 1 -->
+  <rect class="kp-group" x="172" y="24" width="140" height="170" rx="6"/>
+  <text class="kp-num" x="184" y="44">@group(1)</text>
+  <text class="kp-station" x="184" y="64">Model</text>
+  <rect class="kp-slot" x="184" y="76" width="116" height="24" rx="3"/>
+  <text class="kp-name" x="190" y="92">0 model, per draw</text>
+  <!-- group 2 -->
+  <rect class="kp-group" x="324" y="24" width="140" height="170" rx="6"/>
+  <text class="kp-num" x="336" y="44">@group(2)</text>
+  <text class="kp-station" x="336" y="64">Material</text>
+  <rect class="kp-slot" x="336" y="76" width="116" height="24" rx="3"/>
+  <text class="kp-name" x="342" y="92">uniforms</text>
+  <rect class="kp-slot" x="336" y="106" width="116" height="24" rx="3"/>
+  <text class="kp-name" x="342" y="122">variant textures</text>
+  <!-- group 3 -->
+  <rect class="kp-group" x="476" y="24" width="160" height="170" rx="6"/>
+  <text class="kp-num" x="488" y="44">@group(3)</text>
+  <text class="kp-station" x="488" y="64">Lighting</text>
+  <rect class="kp-slot" x="488" y="76" width="136" height="24" rx="3"/>
+  <text class="kp-name" x="494" y="92">0 lighting uniforms</text>
+  <rect class="kp-slot" x="488" y="106" width="136" height="24" rx="3"/>
+  <text class="kp-name" x="494" y="122">1 2 3 shadows</text>
+  <rect class="kp-slot" x="488" y="136" width="136" height="24" rx="3"/>
+  <text class="kp-name" x="494" y="152">4 … IBL</text>
+  <text class="kp-note" x="488" y="182">new lighting: here</text>
+  <!-- no group 4 -->
+  <rect class="kp-none" x="648" y="24" width="92" height="170" rx="6"/>
+  <text class="kp-num" x="658" y="44">@group(4)</text>
+  <line class="kp-cross" x1="660" y1="70" x2="728" y2="150"/>
+  <line class="kp-cross" x1="728" y1="70" x2="660" y2="150"/>
+  <text class="kp-note" x="20" y="224">A render pipeline binds at most four groups, by role. Compute pipelines own their layout.</text>
+</svg>

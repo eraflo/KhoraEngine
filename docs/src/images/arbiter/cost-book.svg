@@ -1,0 +1,89 @@
+<svg id="fig-arbiter-cost-book" class="kp-figure" viewBox="0 0 760 310" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-arbiter-cost-book-title kp-arbiter-cost-book-desc">
+  <title id="kp-arbiter-cost-book-title">The cost book learns, row by row, how far a quote is from the time measured</title>
+  <desc id="kp-arbiter-cost-book-desc">A chart of one row's runs: across, the runs; up, the measured host time over the quoted one. Before any run the row is planned at its quote, a ratio of one. The first run after its layer was swapped in is left out: its caches were cold. Each later run moves the learnt factor, which settles near 1.5 while the band of its spread narrows. A row above the floor is planned at the factor plus 1.645 spreads. A row of the same agent never run borrows the mean of the agent's learnt rows, and counts no run of its own. A row that stops running drifts back toward that mean, by half every 120 runs of its agent.</desc>
+  <style>
+    #fig-arbiter-cost-book { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-arbiter-cost-book .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-arbiter-cost-book .kp-axis { stroke: var(--k-line, #383d48); stroke-width: 1; fill: none; }
+    #fig-arbiter-cost-book .kp-quote { stroke: var(--k-silver-dim, #809db2); stroke-width: 1; stroke-dasharray: 4 4; fill: none; }
+    #fig-arbiter-cost-book .kp-band { fill: var(--k-silver, #b4cfe2); fill-opacity: 0.14; }
+    #fig-arbiter-cost-book .kp-factor { stroke: var(--k-gold, #e4b65c); stroke-width: 2; fill: none; }
+    #fig-arbiter-cost-book .kp-run { fill: var(--k-silver, #b4cfe2); }
+    #fig-arbiter-cost-book .kp-cold { fill: none; stroke: var(--k-amber, #e8a33d); stroke-width: 1.4; }
+    #fig-arbiter-cost-book .kp-borrowed { stroke: var(--k-silver, #b4cfe2); stroke-width: 1.4; stroke-dasharray: 2 4; fill: none; }
+    #fig-arbiter-cost-book .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+    #fig-arbiter-cost-book .kp-text { fill: var(--k-fg-1, #c5cad0); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-arbiter-cost-book .kp-mono { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11.5px; }
+    #fig-arbiter-cost-book .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11.5px; }
+    #fig-arbiter-cost-book .kp-warn { fill: var(--k-amber, #e8a33d); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="310" rx="10"/>
+  <!-- the chart: runs across, measured ÷ quoted up -->
+  <path class="kp-axis" d="M64 40 L64 260 L450 260"/>
+  <text class="kp-label" x="20" y="54">2.4</text>
+  <text class="kp-label" x="20" y="154">1.5</text>
+  <text class="kp-label" x="20" y="204">1.0</text>
+  <text class="kp-label" x="20" y="254">0.5</text>
+  <text class="kp-label" x="72" y="282">runs of shadows · medium →</text>
+  <text class="kp-label" x="72" y="34">measured ÷ quoted host time</text>
+  <path class="kp-quote" d="M64 200 L450 200"/>
+  <!-- 1. before any run, and the cold first run -->
+  <g data-on="1">
+    <text class="kp-mono" x="480" y="70">quoted 2.0 ms</text>
+    <text class="kp-text" x="480" y="100">Before any run, a row is</text>
+    <text class="kp-text" x="480" y="118">planned at its quote.</text>
+    <text class="kp-text" x="480" y="150">The first run after its layer</text>
+    <text class="kp-text" x="480" y="168">is swapped in teaches nothing:</text>
+    <text class="kp-text" x="480" y="186">its caches were cold.</text>
+  </g>
+  <circle class="kp-cold" cx="80" cy="60" r="5"/>
+  <text class="kp-warn" x="92" y="64">cold, left out</text>
+  <!-- 2. the runs, the factor, the spread -->
+  <g data-on="2 3 4">
+    <path class="kp-band" d="M112 103 L144 120 L176 121 L240 127 L336 133 L432 136 L432 164 L336 165 L240 167 L176 171 L144 178 L112 173 Z"/>
+    <circle class="kp-run" cx="112" cy="138" r="3.5"/>
+    <circle class="kp-run" cx="144" cy="159" r="3.5"/>
+    <circle class="kp-run" cx="176" cy="142" r="3.5"/>
+    <circle class="kp-run" cx="208" cy="154" r="3.5"/>
+    <circle class="kp-run" cx="240" cy="147" r="3.5"/>
+    <circle class="kp-run" cx="272" cy="153" r="3.5"/>
+    <circle class="kp-run" cx="304" cy="149" r="3.5"/>
+    <circle class="kp-run" cx="336" cy="151" r="3.5"/>
+    <circle class="kp-run" cx="368" cy="148" r="3.5"/>
+    <circle class="kp-run" cx="400" cy="152" r="3.5"/>
+    <circle class="kp-run" cx="432" cy="150" r="3.5"/>
+    <path class="kp-factor" d="M64 200 L96 200 L112 138 L144 149 L176 146 L208 148 L240 147 L272 149 L304 149 L336 149 L368 149 L400 150 L432 150"/>
+  </g>
+  <g data-on="2">
+    <text class="kp-gold" x="480" y="70">factor 1.50 · spread 0.14</text>
+    <text class="kp-mono" x="480" y="90">11 runs</text>
+    <text class="kp-text" x="480" y="122">Each run moves the factor;</text>
+    <text class="kp-text" x="480" y="140">a run keeps 0.95 of its weight</text>
+    <text class="kp-text" x="480" y="158">per newer one. The band is</text>
+    <text class="kp-text" x="480" y="176">the spread: it narrows run</text>
+    <text class="kp-text" x="480" y="194">after run.</text>
+    <text class="kp-mono" x="480" y="226">planned above the floor at</text>
+    <text class="kp-mono" x="480" y="244">1.50 + 1.645 × 0.14 ≈ 1.73</text>
+  </g>
+  <!-- 3. a row never run borrows its agent's mean -->
+  <g data-on="3">
+    <path class="kp-borrowed" d="M64 152 L450 152"/>
+    <text class="kp-mono" x="230" y="186">high · never run · borrowed</text>
+    <text class="kp-text" x="480" y="86">Another row of the same agent,</text>
+    <text class="kp-text" x="480" y="104">never run, borrows the mean</text>
+    <text class="kp-text" x="480" y="122">of the agent's learnt rows,</text>
+    <text class="kp-text" x="480" y="140">and counts 0 runs of its own.</text>
+    <text class="kp-text" x="480" y="172">An agent nothing was learnt of</text>
+    <text class="kp-text" x="480" y="190">is planned at its quotes.</text>
+  </g>
+  <!-- 4. a row that stops running relaxes -->
+  <g data-on="4">
+    <text class="kp-text" x="480" y="86">A row that stops running drifts</text>
+    <text class="kp-text" x="480" y="104">toward the mean of its agent's</text>
+    <text class="kp-text" x="480" y="122">other rows: its own estimate</text>
+    <text class="kp-text" x="480" y="140">weighs half after 120 runs of</text>
+    <text class="kp-text" x="480" y="158">its agent. A factor learnt on a</text>
+    <text class="kp-text" x="480" y="176">bad run is so tried again,</text>
+    <text class="kp-text" x="480" y="194">rather than held back for ever.</text>
+  </g>
+</svg>

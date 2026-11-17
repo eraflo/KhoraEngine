@@ -59,7 +59,7 @@ pub struct DccContext {
     /// The multiplier on the frame target GORNA shares, from 0.0 (emergency) to 1.0.
     ///
     /// Driven by the frame governor ([`crate::governor`]) and capped by
-    /// [`safety_ceiling`]. See the book: concepts/gorna.md, "The cost model and
+    /// [`safety_ceiling`]. See the book: concepts/arbiter.md, "The cost model and
     /// the frame governor".
     pub global_budget_multiplier: f32,
     /// System-memory pressure in `[0, 1]`: `current_ram_bytes / memory_budget_bytes`.

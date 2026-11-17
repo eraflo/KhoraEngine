@@ -317,7 +317,7 @@ impl Planner {
     /// is kept), else the last measured for it, else the agent's mean
     /// measured, else `switch_prior`.
     ///
-    /// See the book: concepts/gorna.md, "Formalisation".
+    /// See the book: concepts/arbiter.md, "Planning beyond the frame".
     pub fn planning(&self, offers: &[Offer], epoch: Epoch) -> Planning {
         let mut planning = Planning {
             horizon: self.config.horizon,

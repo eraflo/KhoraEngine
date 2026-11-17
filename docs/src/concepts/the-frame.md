@@ -1,289 +1,298 @@
 # The frame
 
-How Khora turns the [CLAD](./clad.md) layering into motion — the per-frame
-descent, the Substrate Pass, and the fixed-timestep model that keeps the
-simulation deterministic.
+<p class="kp-lede">A game is a flipbook: it draws one picture, then the next, sixty or more times a second, and the motion is in the difference between them. Each picture is called a frame. Khora makes every frame the same way, in the same order of steps — read what the player pressed, move the world, draw it, tidy up — and a second, slower clock beside it decides how much each part of the work may spend.</p>
+
+This page follows one frame from start to end: the stages it walks through, the
+boundary where it starts, the phases and waves in which the families run, the work
+that runs beside the frame, and the fixed clock that keeps the simulation the same
+whatever the frame rate. For the layering it brings to life, see
+[Architecture (CLAD)](./clad.md).
 
 ---
 
 ## Two clocks, one channel
 
-Khora has two clocks. The **hot path** runs every frame on the main thread, at
-60 Hz or higher, and must never block. The **cold path** runs at ~20 Hz on a
-background thread, watches what just happened, and decides what should happen
-next. They communicate through a single channel: budgets flow from the cold path
-to the hot path; telemetry flows back.
+Khora has two clocks. The **hot path** is the frame loop, on the main thread, every
+frame; it never waits. The **cold path** is the DCC's own thread, which ticks 20
+times a second (`DccConfig::tick_rate`), reads what the frames measured, and opens
+a [GORNA](./gorna.md) round when one is due. They meet in one channel: allocations
+go down, lent at the next frame start; reports and telemetry come back up.
 
-```mermaid
-sequenceDiagram
-    participant OS as OS / winit
-    participant SDK as EngineCore
-    participant App as EngineApp
-    participant GW as GameWorld
-    participant RS as RenderSystem
-    participant Sch as Scheduler
-    participant FG as FrameGraph
-    participant DCC as DCC (~20 Hz thread)
+<div class="kp-figure-frame">
 
-    OS->>SDK: redraw requested
-    SDK->>SDK: drain_inputs()
-    SDK->>SDK: run_app_update (Pre/Post-Sim + Pre-Extract DataSystems around app.update)
-    SDK->>App: app.update(world, inputs)
-    SDK->>RS: begin_frame() → ColorTarget, DepthTarget
-    SDK->>Sch: run_frame()
-    Sch->>Sch: budget_channel.sync()
-    Sch->>Sch: run Flows → publish Views into LaneBus
-    Sch->>Sch: wake agents with pending events, then per phase: plugins, topo sort, run each family's layer
-    Note over Sch: Lanes record GPU passes into FrameGraph and fill the OutputDeck
-    SDK->>FG: drain + submit (topological pass order)
-    SDK->>RS: end_frame(presents) → swapchain present
-    SDK->>SDK: run_maintenance (drain OutputDeck, EcsMaintenance compaction)
-    DCC-->>Sch: budgets via BudgetChannel
-```
+{{#include ../images/saa/two-clocks.svg}}
 
-The cold path is the subject of [The big idea](./saa.md) and the GORNA
-reference. This page is about the hot path — the six stages a frame walks
-through, and the timing model underneath them.
+</div>
+
+A frame never sees a decision in its middle: an allocation is lent only at a frame
+start, and of two published between frame starts, the later one wins. The rest of
+this page is the hot path. The cold path is the subject of
+[The big idea](./saa.md) and [GORNA](./gorna.md).
 
 ## Startup, once
 
 Before the first frame, the engine boots through the SDK entry point. It builds
 the window hidden, constructs your app, and runs your bootstrap closure. In that
-closure the app registers what it needs from the engine: the renderer, the
+closure the app installs what it needs from the engine: the renderer, the
 pipeline system, physics, layout, audio. Then the engine registers its services
-and the DCC, calls `setup` once so you can spawn initial entities and cache
-service handles, then `provide`, and registers the families. The first frame is painted, then the window
-is shown. Nothing in `setup` is ever re-run; after it, the engine enters the
-frame loop and stays there.
+and the DCC, calls `setup` once so you can spawn initial entities, then `provide`
+so you can install runtime entries, and builds one agent per registered family.
+The first frame is painted, then the window is shown. Nothing in `setup` runs
+again; the engine enters the frame loop and stays there.
 
-The engine runs first; the slow work comes after, as ordinary frames. An app
-does not index a project, load a scene or compile scripts inside `setup`.
-Instead it files each of them and keeps the ticket it gets back:
+The engine runs first; the slow work comes after, as ordinary frames. An app does
+not index a project, load a scene or compile scripts inside `setup`. It files each
+of them and keeps the ticket it gets back:
 
 - the project index goes to the `IndexHub`;
 - a scene goes to the `SceneLoadHub`;
 - scripts go through `scripts::mount`, which returns a ticket.
 
-The `loading` family does that work off the frame, within the budget the DCC
-lends it, and each result lands at a later frame's boundary.
+The `loading` family does that work off the frame (see
+[The background](#the-background) below), within the budget the DCC lends it, and
+each result lands at a later frame's boundary.
 
-An app that must know when its startup is over waits on those tickets
-through the runtime's `Readiness`. It can also take a `hold` while it files
-work in steps. The engine calls `startup_ready` once, on the frame where
-everything has landed, or after 60 s, with the late tickets reported as
-problems. The editor's loading film is painted by those first frames and fades
-on `startup_ready`. `run_default` loads a game's default scene and scripts the
-same way, with no film.
+An app that must know when its startup is over waits on those tickets through the
+runtime's `Readiness`. It can also take a `hold` while it files work in steps. The
+engine calls the app's `startup_ready` once, on the frame where everything has
+landed, or after 60 s, with the late tickets reported as problems. The editor's
+loading film is painted by those first frames and fades on `startup_ready`.
+`run_default` loads a game's default scene and scripts the same way, with no film.
 
-One exception keeps `setup` simple for a game built in code: scripts mounted
-in the bootstrap closure, before the boot, are compiled by the boot. Their
-declarations are then registered before `setup`, which can attach a behaviour
-by name. The sandbox works this way.
-
-The details of bootstrapping an app are a how-to, not a concept — see the
-[SDK quickstart how-to](../how-to/spawn-and-transform.md) for the actual steps.
+One exception keeps `setup` simple for a game built in code: scripts mounted in
+the bootstrap closure, before the boot, are compiled by the boot. Their
+declarations are then registered before `setup`, which can attach a behaviour by
+name. The sandbox works this way.
 
 ## The six-stage descent
 
-Each frame runs six stages in order. Every stage is a public method on the
-engine core, so drivers (the editor's overlay and shell) can interleave hooks
+Each frame runs six stages in order. Each is a public method of the engine core,
+so a driver — the winit runner, the editor's shell — can call the app's hooks
 between them:
 
-```
-1. drain_inputs        ← Read the queued InputEvents (not taken), tick telemetry
-2. run_app_update      ← Substrate invariants (Pre/Post-Sim, Pre-Extract) around app.update
-3. begin_render_frame  ← RenderSystem::begin_frame, swapchain acquire
-4. run_scheduler       ← Substrate Pass (Flows publish Views) + phase-by-phase layer runs
-5. end_render_frame    ← submit FrameGraph + RenderSystem::end_frame
-6. run_maintenance     ← Maintenance DataSystems drain the OutputDeck; EcsMaintenance compacts
-```
+<figure class="kp-steps">
+<div class="kp-figure-frame">
 
-A few stages reward a closer look, because they are where the architecture's
-discipline shows.
+{{#include ../images/frame/stages.svg}}
 
-**Stage 2 — `run_app_update`** opens with the frame boundary — the families on and
-off settled, the scheduler's frame start, the `Boundary` systems, and `startup_ready`
-the first frame that finds startup over — then runs the data layer's invariants
-*around* your game logic: pre-simulation systems (input-driven mutations the app will see),
-then `app.update`, then post-simulation systems (hierarchy fix-ups such as
-transform propagation), then pre-extract systems (GPU mesh sync). Notice what is
-*not* here: scene projection. That happens in Stage 4.
+</div>
+<ol class="kp-steps-text">
+<li><strong><code>drain_inputs</code>.</strong> The frame's clock opens, telemetry ticks, and the input events queued since the last frame are read (not taken: other readers see the same events). Then the app's <code>before_frame</code>: the place to switch families on or off for this frame.</li>
+<li><strong><code>run_app_update</code>.</strong> The frame boundary (below), then the data systems around the app's <code>update</code>: <code>PreSimulation</code> before it, <code>PostSimulation</code> and <code>PreExtract</code> after it.</li>
+<li><strong><code>begin_render_frame</code>.</strong> The renderer acquires the frame's image and publishes its target and clear colour. Then the app's <code>before_agents</code>: the place to point the renderer at an offscreen viewport.</li>
+<li><strong><code>run_scheduler</code>.</strong> The clocks advance, the Flows publish the frame's Views, the renderer is prepared from the camera, the agents with an event are woken, and the phases run their layers in waves.</li>
+<li><strong><code>end_render_frame</code>.</strong> The recorded passes are submitted in their registered order; the driver runs the app's <code>after_agents</code> (an overlay drawn there paints over the scene); the image is presented.</li>
+<li><strong><code>run_maintenance</code>.</strong> The <code>Maintenance</code> data systems drain the deck into the World — physics and audio write-backs — and compact storage. Then <code>close_frame</code> reports the frame's busy time to the DCC.</li>
+</ol>
+</figure>
 
-**Stage 4 — `run_scheduler`** is the heart of the descent. It runs in two parts.
-First the **Substrate Pass** runs every registered projection
-[**Flow**](../reference/glossary.md), publishing each domain's typed View into
-the [**`LaneBus`**](../reference/glossary.md) for lanes to consume. Then the
-Scheduler runs every active execution phase in order — `INIT`, `OBSERVE`,
-`TRANSFORM`, `MUTATE`, `OUTPUT`, `FINALIZE` — syncing budgets from the DCC,
-running plugin hooks, topologically sorting the phase's families by their hard
-dependencies, and running each family's installed **layer** — one of its lanes at
-one level — at its place, in waves formed from what the layers contend for. An
-agent is not called on a quiet frame: it is woken, before the waves, only for an
-event (a new envelope, a price that stopped fitting, a failed lane), and then
-chooses a row and prepares a new layer. This is the `Control → Agent → Lane → Data`
-descent made concrete: the Scheduler is Control, the agents choose the layers it
-runs, lanes read the Views the Substrate just published.
+Two stages show the architecture's discipline.
 
-**Stage 6 — `run_maintenance`** is where the data layer does its own
-housekeeping. The maintenance systems drain the
-[**`OutputDeck`**](../reference/glossary.md) the lanes filled — audio and physics
-write-backs land on ECS components here — and the ECS maintenance pass compacts
-storage pages and prunes orphaned data. This pass is *Data-owned and
-self-budgeted*: it is not negotiated with the DCC. It is the home of the data
-layer's self-optimization, the same "Data adapts itself" principle from
-[CLAD](./clad.md).
+**`run_app_update` does not project the scene.** It keeps the World consistent
+around your game logic: input-driven changes the update must see before it,
+hierarchy fix-ups such as transform propagation after it, then GPU uploads such as
+the meshes'. Projecting the World into Views happens later, in `run_scheduler`.
 
-> **Two output channels.** Lanes feed two sinks. The `FrameGraph` carries
-> recorded GPU render passes, drained and submitted in Stage 5. The typed
-> `OutputDeck` carries cross-domain results (audio, physics, …), drained by
-> maintenance systems in Stage 6. The *inputs* to lanes are the typed Views the
-> projection Flows publish into the `LaneBus` in Stage 4.
+**`run_maintenance` is the data layer's own housekeeping.** It is not negotiated
+with the DCC: it writes back what the lanes left in the deck and compacts storage,
+on the data layer's own terms. Lanes feed two sinks: recorded GPU passes,
+submitted at stage 5, and typed deck slots, drained at stage 6. Their inputs are
+the Views the Flows publish at stage 4.
 
-The six stages are the single most important sequence in Khora. Everything
-performance-critical happens here, in this order. To watch a real frame walk
-through them, see [Debug a frame](../how-to/debug-a-frame.md).
+## The frame boundary
+
+The frame starts at one instant, the **boundary**, at the top of
+`run_app_update`. Everything that changes *between* frames changes there, so the
+whole frame sees one state:
+
+1. **The families settle.** The requests to switch families on or off, made since
+   the last boundary, take effect (`Activation::settle`); mail left for a family
+   now off is dropped when its mailbox says so.
+2. **The scheduler's frame start.** The runs off the frame that ended come home,
+   with what they staged. The allocation in force is lent to every agent that
+   does not hold it yet. Every family's place swaps in the layer staged for it.
+3. **The `Boundary` data systems.** What work off the frame staged — an indexed
+   project, a decoded asset, a prepared scene — lands in the World here, before
+   anything of the frame reads it.
+4. **Startup.** On the first frame that finds every awaited ticket landed, the app's
+   `startup_ready` is called, once.
+
+A request made later in the frame counts from the next boundary.
+
+## Which families run
+
+The **activation** (`Arc<Activation>`, a resource the SDK publishes before the
+app's `setup`, `khora_core::agent::Activation`) knows every registered family, and
+every family starts on. `activate(family)` and `deactivate(family)` are requests,
+settled at the next boundary; a family it does not know is refused
+(`UnknownFamily`) and logged.
+
+A family off is not asked to offer, is lent nothing, and does not run. The data
+systems and Flows that do its work are skipped too, by their **role**: each one
+declares `Role::Upkeep` (a data invariant, run every frame) or
+`Role::Serves(family)` (skipped while the family is off). On its first run after a
+skip, a system sees `SystemContext.resumed`, and a Flow `FlowContext.resumed`.
+
+The editor switches families in `before_frame`
+(`khora-editor/src/commands/transport.rs`). Editing has scripting
+(`khora_core::script::SCRIPT`), physics (`khora_core::physics::PHYSICS`) and audio
+(`khora_core::audio::AUDIO`) off: nothing steps because nothing that steps runs.
+Play switches the three on. A game without an editor keeps every family on unless
+it switches one off.
+
+## Phases and waves
+
+`run_scheduler` runs the frame's families in **phases**, in this order:
+
+| Phase | For |
+|---|---|
+| `INIT` | setting up the frame |
+| `OBSERVE` | reading and extracting: the shadow maps are drawn here |
+| `TRANSFORM` | simulation and logic: physics, audio, scripts |
+| `MUTATE` | syncing results |
+| `OUTPUT` | what leaves the engine: the scene, the sky, the interface, the overlays |
+| `FINALIZE` | end-of-frame work |
+
+A game may add phases of its own (`ExecutionPhase::custom`, ids 6 to 254) through
+its `PhaseProvider`: they run after `OUTPUT` and before `FINALIZE`, in the order it
+declares them. Within a phase, each family's installed **layer** runs at its place:
+
+- **In order.** The phase's families are sorted so each runs after the ones its
+  registration names in `after` (the sky and the overlays after the renderer).
+- **In waves.** Consecutive families whose contentions do not overlap, and that do
+  not depend on each other, run side by side: a wave of one on the scheduler's
+  thread, a larger one on the scheduler's worker pool. See
+  [Agents and Lanes](./agents-and-lanes.md#what-an-agent-declares).
+- **Fixed steps first.** A family whose place holds a fixed step (physics) runs
+  its sub-steps first, round by round, each a full run of its layer; then the
+  phases run once more for every other family.
+- **Optional work gives way.** A family registered `Optional` (the grid, the
+  wireframe, the gizmos) is skipped for the frame when, by its turn, the
+  scheduler's frame has already run for more than 16 ms.
+
+No agent is called in this loop. Before the first phase, the **event pass** has
+woken each agent whose place gathered a wake — a new envelope, a price that stopped
+fitting, a failed lane — so it could choose a row and, if it changed, leave a new
+layer to prepare. On a quiet frame no agent is called at all.
+
+<figure class="kp-steps">
+<div class="kp-figure-frame">
+
+{{#include ../images/frame/run.svg}}
+
+</div>
+<ol class="kp-steps-text">
+<li><strong>The frame start.</strong> The allocation in force is lent, each place swaps in its staged layer, and the runs off the frame that ended come home.</li>
+<li><strong>The boundary.</strong> What a run off the frame staged lands in the World, before anything of the frame reads it. Then the app's update, between the data systems.</li>
+<li><strong>Views, then wakes.</strong> The Flows publish the frame's Views; every agent with a wake is woken once, and the layer of a new row is prepared off the frame.</li>
+<li><strong>The phases.</strong> In order, each family's installed layer at its place, in waves; fixed-step sub-steps first.</li>
+<li><strong>The background.</strong> Beside the frame, on its own pool: the families placed at <code>BACKGROUND</code> run over several frames, and new layers are prepared.</li>
+</ol>
+</figure>
+
+## The background
+
+Some work does not fit in a frame: indexing a project, decoding a large asset,
+preparing a scene, compiling scripts, building a new layer's pipelines. It runs
+**beside** the frame, on a pool of threads of its own, and lands at a boundary.
+
+A family registered in the `BACKGROUND` phase (the `loading` family) is in no phase
+order. It runs when its mailbox (a `#[take]` input) holds a request: one run at a
+time, possibly over several frames. Nothing waits for it. Its lanes may read only `#[take]`, `#[resource]` and
+`#[budget]` inputs, and hand on only `#[staged]` outputs: boot refuses anything of a
+single frame. What it staged lands at the `Boundary` of the first frame after the
+run ends. GORNA lends it an envelope like any family, but its time is not on the
+frame's critical path.
+
+The same pool prepares the layers agents switch to, one per family at a time, while
+the installed layer keeps running. A prepared layer is taken in at the next frame
+start and swapped in; one that failed to prepare wakes its agent
+(`PrepareFailed`).
 
 ## The Substrate Pass
 
-The **Substrate** is the data layer's per-tick self-presentation: the invariants
-that keep the World consistent (Stage 2) and the projection Flows that publish
-read-only Views for the lanes (Stage 4). The Scheduler *invokes* the Substrate
-because it owns the tick ordering, but it does not decide *how* the data is laid
-out — that remains the data layer's own concern.
+The **Substrate** is the data layer presenting itself to the frame: the
+invariants that keep the World consistent (stage 2, and `Maintenance` at stage 6)
+and the projection Flows that publish read-only Views for the lanes (stage 4). The
+scheduler *calls* the Substrate because it owns the order of the frame; it does
+not decide how the data is laid out — that is the data layer's own concern.
 
-The crucial property: Flows are **read-only projectors**. A Flow reads the World
-and publishes a typed View; it never mutates game state and never changes which
-components an entity has. This is the frame-level expression of *adapt the HOW,
-never the WHAT*. Lanes consume those Views from the bus rather than querying the
-World directly — which is what lets the data layer change its internal
-representation freely without any lane noticing.
+Flows are **read-only projectors**. A Flow reads the World and publishes a typed
+View; it never changes game state and never changes which components an entity
+has. This is the frame-level form of *adapt the HOW, never the WHAT*. Lanes read
+those Views from the bus rather than querying the World, which is what lets the
+data layer change its memory layout without any lane noticing.
 
 ## Fixed-timestep simulation and render interpolation
 
-Rendering runs at the display's variable rate, but the **simulation** must
-advance in fixed increments to stay frame-rate independent and deterministic. A
-physics step that depended on a variable frame delta would produce different
-results on a 30 Hz machine and a 144 Hz machine — unacceptable for physics,
-replays, or networked play. Khora reconciles the two with a single time
-**accumulator**, owned by the Scheduler.
+The screen refreshes at whatever rate the machine manages; the **simulation** must
+advance in fixed increments to give the same result on a 30 Hz machine and a
+144 Hz one. Khora reconciles the two with one time **accumulator**, owned by the
+scheduler. Each frame:
 
-The model, per frame:
+1. **Measure and clamp.** The real time since the previous frame, at most
+   `MAX_FRAME_DELTA_SECONDS` (0.25 s). A longer gap — a debugger break, a hitch, a
+   window drag — is cut, so the accumulator never demands an unbounded catch-up.
+2. **Scale, then accumulate.** The clamped time times `Time::scale` (see
+   [The simulation clock](#the-simulation-clock)), added to the accumulator.
+3. **Take whole ticks.** The game's tick, `DEFAULT_FIXED_DELTA_SECONDS` (1/60 s), is
+   the one fixed clock game code sees: as many whole ticks as the accumulator
+   holds, at most `MAX_SIM_STEPS` (5, 83 ms of game time). The rest carries over.
+4. **Derive alpha.** The rest as a share of a tick, always in [0, 1), is the render
+   `interpolation_alpha`.
+5. **Sub-step the fixed families.** A family whose place holds a fixed step —
+   physics, at the game's `physics.step` — gets exactly the game time the ticks
+   advanced, in a sub-clock of its own, and runs once per whole step of its own
+   size. Then the phases run once for everyone else: physics integrates *N* times
+   while the frame renders once.
 
-1. **Measure and clamp.** Take the real wall-clock delta since the previous
-   frame and clamp it to `MAX_FRAME_DELTA_SECONDS` (0.25 s). A longer real gap —
-   a debugger break, an asset hitch, a window drag — is truncated so the
-   accumulator never demands an unbounded catch-up. This is the classic
-   *spiral-of-death* guard.
-2. **Scale, then accumulate.** Multiply the clamped delta by `Time::scale` and
-   add it to the accumulator. See *[The simulation clock](#the-simulation-clock)*
-   below.
-3. **Consume whole ticks.** The game's fixed tick `fixed_delta`
-   (`DEFAULT_FIXED_DELTA_SECONDS`, 1/60 s) is the one clock game code sees:
-   `ticks = floor(accumulator / fixed_delta)`, capped at `MAX_SIM_STEPS` (5 ticks,
-   83 ms of simulated time). The remainder carries over to the next frame.
-4. **Derive alpha.** The leftover fraction — `remainder / fixed_delta`, always in
-   `[0, 1)` — becomes the render `interpolation_alpha`.
-5. **Sub-step the fixed families.** A family whose place holds a fixed step
-   (`Place::fixed_step`) — physics, at the game's `physics.step` — gets exactly the
-   simulated time the ticks advanced, `ticks × fixed_delta`, in a second
-   accumulator, and its layer runs once per whole step of its own size that fits
-   (a fixed-update sub-loop, each iteration a full run of the layer). Then the
-   regular phase loop runs **once**, excluding those families so they are not
-   stepped twice. So physics integrates *N* discrete
-   sub-steps while the render fires exactly once.
+<figure class="kp-steps">
+<div class="kp-figure-frame">
 
-See *[Precision is not time](#precision-is-not-time)* below for why the two
-clocks are separate.
+{{#include ../images/frame/ticks.svg}}
+
+</div>
+<ol class="kp-steps-text">
+<li><strong>Measure.</strong> A slow frame took 40 ms: under the 250 ms clamp, at a scale of 1. With the 5 ms the last frame carried, the accumulator holds 45 ms.</li>
+<li><strong>Whole ticks.</strong> 45 ms holds 2 ticks of 1/60 s. At most 5 a frame; past them the time is dropped.</li>
+<li><strong>The rest.</strong> 11.7 ms is carried to the next frame. As a share of a tick it is the render alpha, 0.70.</li>
+<li><strong>Physics.</strong> It gets exactly the 33.3 ms the ticks advanced, cut at its own step, here 1/120 s: 4 steps. <code>FixedUpdate</code> runs twice, once per tick.</li>
+<li><strong>Render once.</strong> Each body is drawn 70 % of the way from its previous to its current pose.</li>
+</ol>
+</figure>
+
+**The guarantee:** the same total elapsed time produces the same number of ticks
+whatever the frame cadence. A 144 Hz burst and a 30 Hz stutter spanning the same
+time run the same ticks. Game logic that must be deterministic never sees a
+variable step; variable-rate code reads the real delta; render smoothing reads the
+alpha.
+
+When more than 5 ticks would be due, the excess time is dropped rather than queued.
+Under sustained overload — below 12 frames a second — the game runs in slow motion
+rather than freezing in an ever-deepening catch-up. A brief slowdown is
+recoverable; a spiral of death is not. The cap counts ticks, so it is the same
+83 ms whatever step physics runs at.
 
 ### The simulation clock
 
-The delta that reaches the accumulator is the wall-clock one **times
-`Time::scale`**. At `0.0` the accumulator never fills, so `steps` is zero: no
-body integrates, no script timer counts down, and rendering carries on at real
-time because it reads `interpolation_alpha`, not this. Between the two it is
-slow motion; above it, fast forward.
+The time that reaches the accumulator is the real one **times `Time::scale`**. At
+`0.0` the accumulator never fills, so no tick is taken: no body integrates, no
+script timer counts down, and rendering carries on at real time because it reads
+the alpha, not the ticks. Between 0 and 1 it is slow motion; above it, fast
+forward.
 
 That one number is how the editor pauses a game. `PlayMode` stays inside
-`khora-editor` and never becomes engine vocabulary — the editor writes a
-scale, exactly as a pause menu or a cutscene would, and is one caller among
-several rather than a case the engine knows about. `Time::scale` is private and reachable only through `set_scale`, which
-clamps at zero: running a solver backwards is not a slower forward, and every
-integrator here assumes time moves one way.
+`khora-editor` and never becomes engine vocabulary: the editor writes a scale,
+exactly as a pause menu or a cutscene would. `Time::scale` is private and set only
+through `set_scale`, which clamps at zero: running a solver backwards is not a
+slower forward, and every integrator here assumes time moves one way.
 
-The scale says whether time passes; it does not say *which families run*.
-That is the **activation**, the `Arc<Activation>` resource the SDK publishes
-before the app's `setup` (`khora_core::agent::Activation`). It knows every
-registered family — every `register_agent!` registration, scripting
-included — and every family starts on. `activate(family)` and `deactivate(family)` are
-requests; a family it does not know is refused (`UnknownFamily`) and logged.
-
-The requests land at the **frame boundary**: the SDK calls `settle()` once per
-frame, after the app's `before_frame` and before the first DataSystem phase.
-Every phase, every Flow, the scheduler and the DCC then see one state; a
-request made later in the frame counts from the next one. A family off is not
-asked to offer, is lent nothing, and does not run. The DataSystems and Flows
-that do its work are skipped too, by their **role**: each one declares
-`Role::Upkeep` (a data invariant, run every frame) or `Role::Serves(family)`
-(skipped while the family is off). On its first run after a skip, a system
-sees `SystemContext.resumed`, and a Flow's `select` sees
-`FlowContext { resumed: true }`. Mail sent to a family while it is off is
-dropped at the boundary if its mailbox says `BetweenSessions::Drop`.
-
-The editor switches the families in `before_frame`
-(`khora-editor/src/commands/transport.rs`). Editing has scripting
-(`khora_core::script::SCRIPT`), physics (`khora_core::physics::PHYSICS`) and
-audio (`khora_core::audio::AUDIO`) off, at a scale of 1: nothing steps
-because nothing that steps runs. Play switches the three on. Pause leaves them
-on and sets the scale to 0: a paused game is still the game, its scripts run
-at a delta of zero. A game without an editor keeps every family on unless it
-switches one off.
-
-Applied once, in the scheduler. An agent deciding for itself whether time
-passes would be a dozen places to disagree about what "paused" means.
-
-```mermaid
-sequenceDiagram
-    participant Loop as Frame
-    participant Acc as sim_accumulator
-    participant Sim as Fixed families (physics)
-    participant Render as Render (once/frame)
-
-    Loop->>Acc: += min(real_dt, 0.25 s) × scale
-    Note over Acc: ticks = floor(acc / fixed_delta), capped at 5
-    Acc->>Sim: + ticks × fixed_delta of simulated time
-    Note over Sim: sub-steps = floor(sim_acc / physics step)
-    loop sub-steps times
-        Sim->>Sim: step(physics step)
-    end
-    Acc->>Loop: alpha = remainder / fixed_delta  (in [0, 1))
-    Loop->>Render: render once, blend by alpha
-```
-
-The step arithmetic is small and pure — its essence is:
-
-```rust
-let acc = accumulator + dt;            // dt already clamped to 0.25 s, scaled
-let ticks = (acc / fixed_delta).floor();    // whole game ticks this frame
-// ... capped at MAX_SIM_STEPS, the excess dropped so the accumulator stays bounded
-let alpha = (remainder / fixed_delta).clamp(0.0, 1.0);   // render blend factor
-
-let sim_acc = sim_accumulator + ticks * fixed_delta;   // exactly the ticks' time
-let sub_steps = (sim_acc / physics_step).floor();      // the rest carries over
-```
-
-**The determinism guarantee** is the payoff: the *same total elapsed time
-produces the same number of sim steps regardless of frame cadence*. A 144 Hz
-burst and a 30 Hz stutter that span the same wall-clock interval run identical
-step counts. Game logic that must be deterministic therefore never sees a
-variable step. Variable-rate game code instead reads the real delta; render
-smoothing reads the interpolation alpha.
-
-On saturation — when more than `MAX_SIM_STEPS` ticks would be required — the
-excess time is dropped rather than queued. Under sustained overload (below 12
-frames a second) the simulation runs in *slow motion* rather than freezing in an
-ever-deepening catch-up, and the accumulator stays bounded. This is a deliberate
-trade: a brief slowdown is recoverable; a spiral of death is not. The cap counts
-ticks, so it is the same 83 ms whatever step physics runs at.
+The scale says whether time passes; it does not say which families run — that is
+the [activation](#which-families-run). Pause leaves scripting, physics and audio on
+and sets the scale to 0: a paused game is still the game, its scripts run at a
+delta of zero. The scale is applied once, in the scheduler; an agent deciding for
+itself whether time passes would be a dozen places to disagree about what "paused"
+means.
 
 ### Precision is not time
 
@@ -291,63 +300,105 @@ The physics step is a game setting — `physics.step` in the game's settings
 (`khora_core::physics::PhysicsSettings`, 1/60 s by default) — and never a GORNA
 lever: the simulation's result depends on it, so no budget may change it. It is a
 choice of **precision**: how finely a second is cut, never how many seconds pass.
-The simulated time is decided once, by the ticks; the physics sub-clock only
-divides it. Whatever the step, a body falls the same distance in a second of real
-time and stays within one physics step of the game's clock (the leftover carries
-over to the next frame).
+The game time is decided once, by the ticks; the physics sub-clock only divides
+it. Whatever the step, a body falls the same distance in a second of real time and
+stays within one physics step of the game's clock.
 
-The two clocks are kept apart on purpose. If the physics step *were* the clock,
-a script's `FixedUpdate` would run 30, 60 or 120 times a second depending on the
+The two clocks are apart on purpose. If the physics step *were* the clock, a
+script's `FixedUpdate` would run 30, 60 or 120 times a second depending on the
 physics precision, and the catch-up cap — counted in steps — would be 166 ms of
-time at one step and 42 ms at another, so a slow machine would slow the game
-down only under the precise step. Both would tie the game's time to how finely
-physics cuts it. Bevy (`Time<Fixed>` + physics substeps), Unity
-(`fixedDeltaTime` as a project setting, a catch-up guard in seconds) and Godot
-(`physics_ticks_per_second`) draw the same line: the game owns the tick,
+time at one step and 42 ms at another. Bevy (`Time<Fixed>` and physics sub-steps),
+Unity (`fixedDeltaTime` as a project setting, a catch-up guard in seconds) and
+Godot (`physics_ticks_per_second`) draw the same line: the game owns the tick,
 precision subdivides it.
 
-All of this timing state lives in one place — the engine's
-[**`Time`**](../reference/glossary.md) resource (`khora_core::time::Time`),
-republished fresh into the runtime each frame before the render phase reads it. It
+All of this timing state lives in one place, the engine's **`Time`** resource
+(`khora_core::time::Time`), written fresh each frame before the phases read it. It
 carries the real `delta_seconds`, the `fixed_delta_seconds`, the
-`interpolation_alpha`, the frame's `fixed_steps`, and a monotonic `frame`
-counter.
+`interpolation_alpha`, the frame's `fixed_steps`, and a monotonic `frame` counter.
 
 `fixed_steps` is what a script's `FixedUpdate` is called for: the game ticks the
-frame took, at `fixed_delta_seconds` each — never the physics sub-steps, so a
-script's cadence does not follow the physics step. A game with no physics
-has the same fixed clock, and a paused one takes no tick. Scripts run once per frame, after
-the fixed sub-loop, on one view of the world: their `FixedUpdate` is a fixed
-clock, not interleaved with physics, and what it writes reaches physics next
-frame.
+frame took — never the physics sub-steps, so a script's cadence does not follow
+the physics step. A game with no physics has the same fixed clock, and a paused one
+takes no tick. Scripts run once per frame, after the fixed sub-steps, on one view
+of the world: their `FixedUpdate` is a fixed clock, not interleaved with physics,
+and what it writes reaches physics the next frame.
 
 ### Why interpolation is render-only
 
-Because the simulation steps at a fixed cadence but the screen refreshes at a
-different one, the most recent simulated pose rarely lands exactly on a frame
-boundary. Rendering the raw current pose would judder. Instead the render path
-blends the *previous* and *current* poses by `interpolation_alpha`, producing
-smooth motion at any refresh rate.
+The simulation steps at a fixed cadence and the screen refreshes at another, so the
+latest simulated pose rarely lands on a frame. Drawing it raw would judder. The
+render path instead blends each body's *previous* and *current* poses by
+`interpolation_alpha`, so motion is smooth at any refresh rate.
 
-Here is the architecturally important part: the previous-pose store for
-interpolation is an engine-internal **resource**
-(`khora_core::interpolation::TransformInterpolation`), **not** an ECS component.
-A post-simulation system snapshots each simulated body's world transform into
-that store before propagation overwrites it; the render path reads it to blend.
+The previous-pose store is an engine **resource**
+(`khora_core::interpolation::TransformInterpolation`), **not** an ECS component. A
+post-simulation system snapshots each simulated body's world transform into it
+before propagation overwrites it; the render path reads it to blend.
 
 This is *adapt the HOW, never the WHAT* in its purest form. Interpolation is a
-render representation: it carries no game meaning, so it must never appear as a
-component in the editor inspector or in a saved scene. Only simulated entities
-(those carrying a rigid body) are snapshotted; everything else simply renders at
-its current transform. The store is pruned each pass so a despawned body leaves
-no stale entry. Keeping it out of the ECS is what guarantees the smoothing can
-never leak into simulation semantics — a saved scene is identical whether or not
-the renderer ever interpolated it.
+render representation with no game meaning, so it never appears as a component in
+the inspector or in a saved scene. Only simulated entities (those with a rigid
+body) are snapshotted; everything else renders at its current transform. The store
+is pruned each pass, so a despawned body leaves no stale entry, and a saved scene is
+the same whether or not the renderer ever interpolated it.
+
+## Under the hood
+
+For contributors: the frame driver is `khora-sdk/src/engine/` (`frame.rs`,
+`app_update.rs`, `render_frame.rs`) and `khora-sdk/src/winit_adapters.rs`; the
+scheduler's frame is `khora-control/src/scheduler/frame.rs`, its clocks
+`clocks.rs`, `sim_steps.rs` and `sub_steps.rs`, the background `background.rs`.
+
+The arithmetic, as the scheduler runs it:
+
+```rust
+let dt = real_dt.min(0.25) * scale;               // clamped, then scaled
+let acc = accumulator + dt;
+let ticks = (acc / tick).floor().min(5.0);        // whole ticks, capped
+// past the cap, the excess is dropped so the accumulator stays below one tick
+let alpha = (rest / tick).clamp(0.0, 1.0);        // render blend factor
+
+let sub_acc = sub_accumulator + ticks * tick;     // exactly the ticks' time
+let sub_steps = (sub_acc / physics_step + 1e-3).floor(); // a hair of slack, paid back
+```
+
+**Notation.** Frame *n* brings a clamped, scaled time *dₙ ≥ 0*. Write *τ* for the
+tick (1/60 s), *aₙ* for the accumulator after frame *n* (*a₀ ∈ [0, τ)*), *kₙ* for
+its ticks and *K* = 5 for the cap.
+
+**The step.** *kₙ = min(⌊(aₙ₋₁ + dₙ)/τ⌋, K)*. When the cap does not bind,
+*aₙ = aₙ₋₁ + dₙ − kₙτ*; when it does, the excess is dropped and *aₙ* is
+*aₙ₋₁ + dₙ − Kτ* reduced modulo *τ*.
+
+**Invariant.** *0 ≤ aₙ < τ* for every *n*, so *αₙ = aₙ/τ ∈ [0, 1)*. *Proof.* With
+the cap not binding, *kₙ* is the floor of *(aₙ₋₁ + dₙ)/τ*, so the remainder lies in
+[0, τ). With it binding, the reduction modulo *τ* lies in [0, τ) by definition.
+
+**Theorem (cadence independence).** If no frame among *1 … N* hits the cap, the
+ticks taken depend only on the total time:
+
+> *Σₙ kₙ = ⌊(a₀ + Σₙ dₙ)/τ⌋* and *a_N = a₀ + Σₙ dₙ − τ Σₙ kₙ*.
+
+*Proof.* By induction on *N*, from *aₙ + kₙτ = aₙ₋₁ + dₙ*: summing gives
+*a_N + τ Σ kₙ = a₀ + Σ dₙ*; since *0 ≤ a_N < τ* (invariant), *Σ kₙ* is the floor
+of the right side divided by *τ*. Two cadences spanning the same total time
+therefore take the same number of ticks.
+
+**Bounds.** A frame takes at most *K* = 5 ticks, 83 ms of game time; with
+*dₙ ≤ 0.25 s* and *aₙ₋₁ < τ*, the time dropped in one frame is less than
+*0.25 + τ − Kτ ≈ 0.183 s*. The
+physics sub-clock receives exactly *kₙτ* each frame and keeps its carry in
+[−10⁻³·h, h) for a step *h*: the slack absorbs `f32` rounding, so the steps never
+cover more time than the ticks advanced, and never fall a step behind. The results
+above hold in exact arithmetic; the scheduler computes in `f32`, whose rounding the
+sub-clock's slack is there to absorb.
 
 ## Next steps
 
+- **[Agents and Lanes](./agents-and-lanes.md)** — layers, places and waves in
+  detail.
 - **[Debug a frame](../how-to/debug-a-frame.md)** — walk a live frame through the
-  six stages and inspect a GORNA decision.
-- **[The big idea](./saa.md)** — the cold path that feeds budgets into Stage 4,
-  and the philosophy the frame serves.
-- **[Glossary](../reference/glossary.md)** — every proprietary term in one place.
+  stages and inspect a GORNA decision.
+- **[The big idea](./saa.md)** — the cold path that lends the envelopes.
+- **[Glossary](../reference/glossary.md)** — every Khora term in one place.

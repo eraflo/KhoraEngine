@@ -1,0 +1,69 @@
+<svg id="fig-agents-menu" class="kp-figure" viewBox="0 0 760 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-agents-menu-title kp-agents-menu-desc">
+  <title id="kp-agents-menu-title">A family's menu: every level of every lane</title>
+  <desc id="kp-agents-menu-desc">Two families and their menus. The render family has three lanes, one level each: unlit, lit forward and forward plus, which make three rows named LowPower, Balanced and HighPerformance. The audio family has one lane, spatial mixing, with three levels: 8, 32 and 128 voices, three rows named the same way. Each row carries its impact on the result. The menu is every level of every lane the device supports, lane by lane, cheapest level first.</desc>
+  <defs>
+    <marker id="kp-agents-menu-tip" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="kp-tip" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+  <style>
+    #fig-agents-menu { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-agents-menu .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-agents-menu .kp-family { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-agents-menu .kp-lane { fill: var(--k-bg-2, #181e2b); stroke: var(--k-silver-dim, #809db2); stroke-width: 1; }
+    #fig-agents-menu .kp-row { fill: var(--k-bg-3, #1f2636); stroke: var(--k-silver, #b4cfe2); stroke-width: 1; }
+    #fig-agents-menu .kp-link { stroke: var(--k-silver-dim, #809db2); stroke-width: 1; fill: none; }
+    #fig-agents-menu .kp-tip { fill: var(--k-silver-dim, #809db2); }
+    #fig-agents-menu .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 14px; }
+    #fig-agents-menu .kp-name { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+    #fig-agents-menu .kp-id { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10px; }
+    #fig-agents-menu .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; font-weight: 500; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="290" rx="10"/>
+  <text class="kp-head" x="28" y="30">lanes</text>
+  <text class="kp-head" x="200" y="30">rows of the menu</text>
+  <text class="kp-head" x="408" y="30">lanes</text>
+  <text class="kp-head" x="580" y="30">rows of the menu</text>
+  <!-- render family -->
+  <rect class="kp-family" x="16" y="42" width="356" height="232" rx="8"/>
+  <text class="kp-station" x="28" y="64">the render family</text>
+  <rect class="kp-lane" x="28" y="80" width="140" height="50" rx="5"/>
+  <text class="kp-name" x="38" y="102">SimpleUnlitLane</text>
+  <text class="kp-id" x="38" y="118">1 level</text>
+  <rect class="kp-lane" x="28" y="142" width="140" height="50" rx="5"/>
+  <text class="kp-name" x="38" y="164">LitForwardLane</text>
+  <text class="kp-id" x="38" y="180">1 level</text>
+  <rect class="kp-lane" x="28" y="204" width="140" height="50" rx="5"/>
+  <text class="kp-name" x="38" y="226">ForwardPlusLane</text>
+  <text class="kp-id" x="38" y="242">1 level</text>
+  <rect class="kp-row" x="200" y="80" width="160" height="50" rx="5"/>
+  <text class="kp-name" x="210" y="102">unlit</text>
+  <text class="kp-id" x="210" y="118">LowPower · major</text>
+  <rect class="kp-row" x="200" y="142" width="160" height="50" rx="5"/>
+  <text class="kp-name" x="210" y="164">lit forward</text>
+  <text class="kp-id" x="210" y="180">Balanced · none</text>
+  <rect class="kp-row" x="200" y="204" width="160" height="50" rx="5"/>
+  <text class="kp-name" x="210" y="226">forward+</text>
+  <text class="kp-id" x="210" y="242">HighPerformance · none</text>
+  <path class="kp-link" d="M168,105 L196,105" marker-end="url(#kp-agents-menu-tip)"/>
+  <path class="kp-link" d="M168,167 L196,167" marker-end="url(#kp-agents-menu-tip)"/>
+  <path class="kp-link" d="M168,229 L196,229" marker-end="url(#kp-agents-menu-tip)"/>
+  <!-- audio family -->
+  <rect class="kp-family" x="388" y="42" width="356" height="232" rx="8"/>
+  <text class="kp-station" x="400" y="64">the audio family</text>
+  <rect class="kp-lane" x="400" y="80" width="150" height="174" rx="5"/>
+  <text class="kp-name" x="410" y="102">SpatialMixingLane</text>
+  <text class="kp-id" x="410" y="118">3 levels</text>
+  <rect class="kp-row" x="580" y="80" width="152" height="50" rx="5"/>
+  <text class="kp-name" x="590" y="102">8 voices</text>
+  <text class="kp-id" x="590" y="118">LowPower · minor</text>
+  <rect class="kp-row" x="580" y="142" width="152" height="50" rx="5"/>
+  <text class="kp-name" x="590" y="164">32 voices</text>
+  <text class="kp-id" x="590" y="180">Balanced · minor</text>
+  <rect class="kp-row" x="580" y="204" width="152" height="50" rx="5"/>
+  <text class="kp-name" x="590" y="226">128 voices</text>
+  <text class="kp-id" x="590" y="242">HighPerformance · none</text>
+  <path class="kp-link" d="M550,105 L576,105" marker-end="url(#kp-agents-menu-tip)"/>
+  <path class="kp-link" d="M550,167 L576,167" marker-end="url(#kp-agents-menu-tip)"/>
+  <path class="kp-link" d="M550,229 L576,229" marker-end="url(#kp-agents-menu-tip)"/>
+</svg>
