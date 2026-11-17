@@ -5,3 +5,8 @@ dist/
 .astro/
 # Copied from `docs/src` (its non-Markdown files) on every build: never edit here.
 public/
+
+# The landing film's frames (`npm run frames`, or `scripts/encode-frames.mjs`),
+# and the archive the encoder packs for their release: never in git.
+frames/
+release/

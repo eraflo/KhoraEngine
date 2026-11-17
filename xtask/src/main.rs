@@ -67,15 +67,6 @@ enum Commands {
     /// `.cargo/config.toml`.
     HubDev,
 
-    /// Write the landing page at the root of a built book.
-    ///
-    /// `site/index.html`, with its stylesheet, script and frames under
-    /// `site/landing/`. Run after `mdbook build`, e.g. `cargo xtask landing docs/book`.
-    Landing {
-        /// The built book's folder (holding `home.html`).
-        site: std::path::PathBuf,
-    },
-
     /// Run the per-file convention checks on the given Rust files.
     ///
     /// In-file order, file and function sizes, comments (plan labels,
@@ -130,7 +121,6 @@ fn main() -> Result<()> {
             Commands::Gate => commands::ci::gate()?,
 
             Commands::HubDev => commands::dev::hub_dev()?,
-            Commands::Landing { site } => commands::landing::build(&site)?,
             Commands::LintFile { paths } => std::process::exit(commands::lint_file::run(&paths)),
 
             Commands::Assets(command) => match command {

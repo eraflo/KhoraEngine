@@ -11,6 +11,8 @@
     "build": "astro build",
     "preview": "astro preview",
     "api": "node scripts/mount-api.mjs",
+    "frames": "node scripts/fetch-frames.mjs",
+    "frames:encode": "node scripts/encode-frames.mjs",
     "astro": "astro",
     "test": "node --test \"src/**/*.test.mjs\""
   },
@@ -20,5 +22,8 @@
     "@fontsource/ibm-plex-mono": "5.3.0",
     "astro": "7.4.7",
     "starlight-links-validator": "0.27.0"
+  },
+  "devDependencies": {
+    "sharp": "0.35.5"
   }
 }

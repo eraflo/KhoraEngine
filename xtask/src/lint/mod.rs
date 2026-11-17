@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The checks that read one Rust file at a time: in-file order, sizes and
-//! comments, each also run over the whole tree by `xtask/tests/layout.rs`.
+//! The checks that read one file at a time: in-file order, sizes and
+//! comments of a Rust file, the rules of a book figure, each also run over
+//! the whole tree by `xtask/tests/layout.rs`.
 
 pub mod allowlist;
 pub mod boundaries;
 pub mod code;
 pub mod comments;
+pub mod figures;
 pub mod finding;
 pub mod functions;
 pub mod history;
@@ -35,6 +37,7 @@ pub use allowlist::*;
 pub use boundaries::*;
 pub use code::*;
 pub use comments::*;
+pub use figures::*;
 pub use finding::*;
 pub use functions::*;
 pub use history::*;

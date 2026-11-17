@@ -165,7 +165,9 @@ main:has(.kp-home) h1#_top {
     display: none;
 }
 
-/* ---------- The content ---------- */
+/* ---------- The content ----------
+   Prose rules skip what a page marks `not-content` (Starlight's own
+   opt-out), such as the landing's sections. */
 .sl-markdown-content {
     color: var(--k-fg-1);
 }
@@ -183,11 +185,11 @@ main:has(.kp-home) h1#_top {
     color: var(--k-silver);
 }
 
-.sl-markdown-content :is(h2, h3, h4) {
+.sl-markdown-content :is(h2, h3, h4):not(:where(.not-content *)) {
     color: var(--k-fg-0);
 }
 
-.sl-markdown-content h2 {
+.sl-markdown-content h2:not(:where(.not-content *)) {
     font-family: var(--k-font-display);
     font-stretch: var(--k-display-stretch);
     font-weight: 400;
@@ -197,19 +199,19 @@ main:has(.kp-home) h1#_top {
     margin-top: 2.6em;
 }
 
-.sl-markdown-content h2 em {
+.sl-markdown-content h2:not(:where(.not-content *)) em {
     font-weight: 300;
     color: var(--k-silver-dim);
 }
 
-.sl-markdown-content h3 {
+.sl-markdown-content h3:not(:where(.not-content *)) {
     font-size: 1.13em;
     font-weight: 600;
     letter-spacing: -0.01em;
     margin-top: 2.2em;
 }
 
-.sl-markdown-content h4 {
+.sl-markdown-content h4:not(:where(.not-content *)) {
     font-family: var(--k-font-mono);
     font-size: 11px;
     font-weight: 600;
@@ -218,29 +220,29 @@ main:has(.kp-home) h1#_top {
     color: var(--k-silver);
 }
 
-.sl-markdown-content p {
+.sl-markdown-content p:not(:where(.not-content *)) {
     max-width: 68ch;
 }
 
-.sl-markdown-content :is(strong, em) {
+.sl-markdown-content :is(strong, em):not(:where(.not-content *)) {
     color: var(--k-fg-0);
 }
 
 /* Links: silver, underlined by a faint rule. */
-.sl-markdown-content a {
+.sl-markdown-content a:not(:where(.not-content *)) {
     color: var(--k-silver);
     text-decoration: none;
     border-bottom: 1px solid var(--k-silver-line);
     transition: border-bottom-color 150ms var(--k-ease), color 150ms var(--k-ease);
 }
 
-.sl-markdown-content a:hover {
+.sl-markdown-content a:not(:where(.not-content *)):hover {
     color: var(--k-fg-0);
     border-bottom-color: var(--k-silver);
 }
 
 /* Inline code is silver, not body colour. */
-.sl-markdown-content :not(pre) > code {
+.sl-markdown-content :not(pre) > code:not(:where(.not-content *)) {
     font-size: 0.88em;
     color: var(--k-silver);
     background: var(--k-bg-2);
@@ -250,22 +252,22 @@ main:has(.kp-home) h1#_top {
 }
 
 /* Lists: a short silver-dim bar instead of a bullet, a hairline per item. */
-.sl-markdown-content ul:not(.kp-door-list) {
+.sl-markdown-content ul:not(.kp-door-list, :where(.not-content *)) {
     padding-left: 0;
     list-style: none;
 }
 
-.sl-markdown-content ul:not(.kp-door-list) > li {
+.sl-markdown-content ul:not(.kp-door-list, :where(.not-content *)) > li {
     position: relative;
     padding: 4px 0 4px 22px;
     border-bottom: 1px solid oklch(1 0 0 / 0.04);
 }
 
-.sl-markdown-content ul:not(.kp-door-list) > li:last-child {
+.sl-markdown-content ul:not(.kp-door-list, :where(.not-content *)) > li:last-child {
     border-bottom: none;
 }
 
-.sl-markdown-content ul:not(.kp-door-list) > li::before {
+.sl-markdown-content ul:not(.kp-door-list, :where(.not-content *)) > li::before {
     content: '';
     position: absolute;
     left: 0;
@@ -279,7 +281,7 @@ main:has(.kp-home) h1#_top {
     border-bottom: none;
 }
 
-.sl-markdown-content ol li::marker {
+.sl-markdown-content ol:not(:where(.not-content *)) li::marker {
     color: var(--k-silver-dim);
     font-family: var(--k-font-mono);
     font-size: 0.92em;
@@ -699,7 +701,7 @@ main:has(.kp-home) h1#_top {
     h1#_top {
         font-size: 2em;
     }
-    .sl-markdown-content h2 {
+    .sl-markdown-content h2:not(:where(.not-content *)) {
         font-size: 1.6em;
     }
     .sl-markdown-content blockquote {

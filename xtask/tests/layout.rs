@@ -748,7 +748,55 @@ fn docs_site_nav_is_the_summary() {
     if !content.contains("bookLoader(") || !content.contains("'../../src/'") {
         problems.push("content.config.mjs does not load the pages from docs/src with bookLoader");
     }
-    assert!(problems.is_empty(), "docs site nav: {}", problems.join("; "));
+    assert!(
+        problems.is_empty(),
+        "docs site nav: {}",
+        problems.join("; ")
+    );
+}
+
+/// Every figure of the book, each `.svg` under `docs/src/images/`, holds to
+/// [`figure_problems`], and no id is declared twice among them.
+///
+/// The book's pages inline the figures with `{{#include}}`, and the site's
+/// index inlines its own, so all of them share a page's styles and ids. The
+/// rules: the root `<svg>` has an `id` starting `fig-`, `role="img"` and an
+/// `aria-labelledby` naming a `<title>` of the file; every selector of every
+/// `<style>` rule, `@media` ones included, is scoped to that id; no blank
+/// line inside the SVG; every class starts with `kp-`. Strict: no allowlist.
+#[test]
+fn docs_figures() {
+    let root = repo_root();
+    let figures: Vec<PathBuf> = walk_files(&root.join(FIGURES_DIR))
+        .into_iter()
+        .filter(|path| has_extension(path, "svg"))
+        .collect();
+    assert!(!figures.is_empty(), "no figure under {FIGURES_DIR}");
+
+    let mut problems = Vec::new();
+    let mut owners: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for path in &figures {
+        let name = rel(&root, path);
+        let source = read_text(path);
+        problems.extend(
+            figure_problems(&source)
+                .into_iter()
+                .map(|problem| format!("{name}: {problem}")),
+        );
+        for id in declared_ids(&source) {
+            owners.entry(id).or_default().push(name.clone());
+        }
+    }
+    for (id, files) in owners.into_iter().filter(|(_, files)| files.len() > 1) {
+        problems.push(format!("the id `{id}` is declared by {}", files.join(", ")));
+    }
+    problems.sort();
+    assert!(
+        problems.is_empty(),
+        "docs_figures: {} problems:\n  {}",
+        problems.len(),
+        problems.join("\n  ")
+    );
 }
 
 /// No Rust file repeats its folder's name: `<dir>/<dir>_*.rs` and

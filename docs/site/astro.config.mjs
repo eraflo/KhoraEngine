@@ -8,7 +8,9 @@
 // - the sidebar is SUMMARY.md, parsed on every build;
 // - the step-through figures run the book's own `docs/theme/steps.js`, and
 //   its `figures.css` frames them;
-// - `src/styles/khora.css` is the Khora theme over Starlight's.
+// - `src/styles/khora.css` is the Khora theme over Starlight's;
+// - the index is the landing page (`src/pages/index.astro`), whose film is
+//   served from `frames/` when it was fetched there (`src/landing/`).
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -18,10 +20,12 @@ import starlight from '@astrojs/starlight';
 import starlightLinksValidator from 'starlight-links-validator';
 
 import { bookAssets } from './src/book/assets.mjs';
+import { landingFrames } from './src/landing/integration.mjs';
 import { BASE, SITE } from './src/book/site.mjs';
 import { parseSummary, sidebarFromSummary } from './src/book/summary.mjs';
 
 const BOOK = fileURLToPath(new URL('../src/', import.meta.url));
+const FRAMES = fileURLToPath(new URL('./frames/', import.meta.url));
 const SUMMARY = parseSummary(readFileSync(new URL('../src/SUMMARY.md', import.meta.url), 'utf8'));
 
 export default defineConfig({
@@ -29,6 +33,7 @@ export default defineConfig({
     base: BASE,
     integrations: [
         bookAssets({ srcDir: BOOK }),
+        landingFrames({ dir: FRAMES, base: BASE }),
         starlight({
             title: 'Khora',
             description: 'Every frame, negotiated. Khora is a free, open-source game engine in Rust.',
@@ -54,6 +59,7 @@ export default defineConfig({
                 Head: './src/components/Head.astro',
                 ThemeProvider: './src/components/ThemeProvider.astro',
                 ThemeSelect: './src/components/ThemeSelect.astro',
+                Hero: './src/components/Hero.astro',
             },
             expressiveCode: {
                 themes: ['github-dark-default'],
