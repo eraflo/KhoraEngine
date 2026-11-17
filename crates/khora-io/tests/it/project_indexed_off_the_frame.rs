@@ -17,7 +17,7 @@
 //! `loading` family's work is played here by hand, as the scheduler runs it
 //! at the background: the requests filed are taken, indexed through the
 //! runtime's `AssetIndexing` and staged under their lease into the engine's
-//! reserve. The `asset_index_intake` DataSystem then takes them in at the
+//! reserve. The `asset_index_intake` `DataSystem` then takes them in at the
 //! boundary, after `asset_intake`: an `Open` swaps a new asset service into
 //! the runtime's own, a `Reindex` reindexes it; each outcome is filed under
 //! its ticket.
@@ -315,8 +315,8 @@ fn an_index_request_is_built_off_the_frame() {
 }
 
 /// **An index filed for a project replaced since lands nothing.** A reindex
-/// of A is filed, then B is opened: A's index is built, but its lease no
-/// longer holds once B was filed — the frame start abandons it, and its
+/// of A is filed, then B is opened: A's index is built, but its lease
+/// stops holding once B was filed — the frame start abandons it, and its
 /// ticket lands an error at once, saying it was superseded. B's index
 /// lands in the reserve, its ticket still waiting for the boundary.
 #[test]
@@ -452,7 +452,7 @@ fn a_panicking_index_build_fails_its_ticket_alone() {
 /// **An open lands a new service in the runtime.** The engine serves A, and
 /// a decode A filed is out. B is opened: once its ticket lands `Ok`, the
 /// runtime's own service — the one every holder of it reads — serves B's
-/// assets and no longer A's; and the decode request A had filed is filed
+/// assets and not A's; and the decode request A had filed is filed
 /// again by the new service, on the channel the `loading` family takes
 /// from (the service moving in adopted it).
 #[test]

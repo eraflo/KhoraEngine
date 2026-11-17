@@ -99,26 +99,6 @@ pub struct CpuTexture {
 
 impl crate::asset::Asset for CpuTexture {}
 
-/// The number of samples per pixel for Multisample Anti-Aliasing (MSAA).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum SampleCount {
-    /// 1 sample per pixel (MSAA disabled).
-    #[default]
-    X1,
-    /// 2 samples per pixel.
-    X2,
-    /// 4 samples per pixel.
-    X4,
-    /// 8 samples per pixel.
-    X8,
-    /// 16 samples per pixel.
-    X16,
-    /// 32 samples per pixel.
-    X32,
-    /// 64 samples per pixel.
-    X64,
-}
-
 impl CpuTexture {
     /// Builds an HDR texture from linear `f32` RGBA channels, packed to
     /// `Rgba16Float`.
@@ -173,6 +153,26 @@ impl CpuTexture {
         let bytes_per_pixel = self.format.bytes_per_pixel();
         self.size.width as usize * bytes_per_pixel as usize
     }
+}
+
+/// The number of samples per pixel for Multisample Anti-Aliasing (MSAA).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum SampleCount {
+    /// 1 sample per pixel (MSAA disabled).
+    #[default]
+    X1,
+    /// 2 samples per pixel.
+    X2,
+    /// 4 samples per pixel.
+    X4,
+    /// 8 samples per pixel.
+    X8,
+    /// 16 samples per pixel.
+    X16,
+    /// 32 samples per pixel.
+    X32,
+    /// 64 samples per pixel.
+    X64,
 }
 
 #[cfg(test)]

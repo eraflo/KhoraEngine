@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What a script does to the world: each native queues a [`WorldCommand`],
-//! applied at the frame's boundary, never at the call.
+//! What a script does to the world.
+//!
+//! Each native queues a [`WorldCommand`], applied at the frame's boundary,
+//! never at the call.
 //! See the book: concepts/scripting/writing.md, "A script never writes the world".
 
 use khora_core::ecs::entity::EntityId;
@@ -29,7 +31,16 @@ use super::{NativeContext, NativeError};
 /// system, which has none.
 pub const SUBJECT_NATIVES: &[&str] = &["Position"];
 
-/// Where this entity is, as the frame projected it.
+/// The component placed by its own operations rather than written, with them.
+///
+/// They allocate nothing and look nothing up; a script writing `Transform` is
+/// pointed at them.
+pub const PLACEMENT: (&str, &[&str]) = (
+    "Transform",
+    &["SetPosition", "Translate", "SetRotation", "SetScale"],
+);
+
+/// Returns where this entity is, as the frame projected it.
 ///
 /// The value the frame started with: a `Translate` queued in the same turn is
 /// not reflected until the boundary applies it.
@@ -71,15 +82,6 @@ fn set_rotation(context: &mut NativeContext<'_>, entity: EntityId, value: Quater
         .commands
         .push(WorldCommand::SetRotation { entity, value });
 }
-
-/// The component placed by its own operations rather than written, with them.
-///
-/// They allocate nothing and look nothing up; a script writing `Transform` is
-/// pointed at them.
-pub const PLACEMENT: (&str, &[&str]) = (
-    "Transform",
-    &["SetPosition", "Translate", "SetRotation", "SetScale"],
-);
 
 /// Resizes the entity.
 #[ergon_fn]

@@ -85,7 +85,7 @@ impl LayoutKey {
     }
 }
 
-/// A single uniform-buffer bind-group layout entry.
+/// Returns a single uniform-buffer bind-group layout entry.
 fn uniform_entry(
     binding: u32,
     visibility: ShaderStageFlags,
@@ -118,15 +118,6 @@ pub enum LayoutSpec {
     },
 }
 
-/// Cache identity for a resolved bind-group layout.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum LayoutCacheKey {
-    /// A canonical layout for a given variant.
-    Named(LayoutKey, ShaderVariantKey),
-    /// A bespoke inline layout, identified by its label.
-    Inline(&'static str),
-}
-
 impl LayoutSpec {
     /// Returns the cache key of this layout spec under `variant`.
     pub fn cache_key(&self, variant: &ShaderVariantKey) -> LayoutCacheKey {
@@ -135,6 +126,15 @@ impl LayoutSpec {
             LayoutSpec::Inline { label, .. } => LayoutCacheKey::Inline(label),
         }
     }
+}
+
+/// Cache identity for a resolved bind-group layout.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum LayoutCacheKey {
+    /// A canonical layout for a given variant.
+    Named(LayoutKey, ShaderVariantKey),
+    /// A bespoke inline layout, identified by its label.
+    Inline(&'static str),
 }
 
 /// Declarative description of a render pipeline, cached by its [`PipelineKey`].

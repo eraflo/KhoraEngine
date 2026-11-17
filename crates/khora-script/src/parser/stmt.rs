@@ -75,7 +75,7 @@ impl Parser {
         }
     }
 
-    /// Whether the statement is `Type name …` rather than an expression.
+    /// Returns whether the statement is `Type name …` rather than an expression.
     ///
     /// `Vec3 target = …;` and `target = …;` both start with an identifier, so
     /// the decision is made by looking for a second name before the `=`.
@@ -169,7 +169,7 @@ impl Parser {
         })
     }
 
-    /// A braced block, or a single statement treated as one.
+    /// Parses a braced block, or a single statement treated as one.
     pub(super) fn parse_block_or_statement(&mut self) -> Parse<Block> {
         if self.check(&TokenKind::LBrace) {
             return self.parse_block();
@@ -284,7 +284,7 @@ impl Parser {
         })
     }
 
-    /// The rest of a query, `first` binding read already when one was.
+    /// Parses the rest of a query, `first` binding read already when one was.
     fn parse_query(
         &mut self,
         start: crate::diagnostics::Span,
@@ -322,7 +322,7 @@ impl Parser {
         })
     }
 
-    /// `with A, B` or `without A, B` after a query's bindings — words only
+    /// Parses `with A, B` or `without A, B` after a query's bindings, words only
     /// there, never reserved.
     fn parse_query_filter(&mut self, word: &str) -> Parse<Vec<(String, crate::diagnostics::Span)>> {
         if !matches!(self.peek(), TokenKind::Ident(name) if name == word) {
@@ -428,7 +428,7 @@ impl Parser {
         })
     }
 
-    /// An arm body that is a bare expression has no `;` — the comma or the
+    /// Parses an arm's statement: a bare expression has no `;`, the comma or the
     /// closing brace ends it.
     pub(super) fn parse_statement_for_arm(&mut self) -> Parse<Stmt> {
         if matches!(

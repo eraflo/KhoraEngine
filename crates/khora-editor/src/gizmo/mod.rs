@@ -19,5 +19,5 @@ pub mod frame;
 pub mod interact;
 pub mod selection;
 
-pub use frame::{apply_delta, capture_starts, collect_gizmo_lines, selection_frame};
+pub(crate) use frame::{apply_delta, capture_starts, collect_gizmo_lines, selection_frame};
 pub use interact::{pick_handle, GizmoDrag, GizmoTransform};

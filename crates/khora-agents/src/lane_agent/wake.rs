@@ -422,7 +422,7 @@ impl LaneAgent {
         if full {
             // Every lane quoted on the inputs as they stand, the one that ran
             // too: its run priced what it was given, which a lane that takes
-            // its requests no longer holds, and rows priced on other inputs
+            // its requests is out of date, and rows priced on other inputs
             // would be compared unfairly.
             self.quote_every_lane(context, frame.as_deref(), place.fixed_step());
         } else if let Some(ran) = ran.filter(|ran| self.quotes[*ran].is_none()) {

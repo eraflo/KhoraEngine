@@ -75,14 +75,14 @@ pub trait PhysicsProvider: Send + Sync {
     /// Synchronizes the position and rotation of a rigid body.
     fn get_body_transform(&self, handle: RigidBodyHandle) -> (Vec3, Quat);
 
-    /// The linear and angular velocity a body currently has.
+    /// Returns the linear and angular velocity a body currently has.
     ///
     /// Read back rather than assumed: `RigidBody::initial_velocity` is what its
     /// author declared, applied once when the body is created; what the body
     /// does since is the solver's.
     fn get_body_velocity(&self, handle: RigidBodyHandle) -> (Vec3, Vec3);
 
-    /// Manually sets the position and rotation of a rigid body.
+    /// Sets the position and rotation of a rigid body directly.
     fn set_body_transform(&mut self, handle: RigidBodyHandle, pos: Vec3, rot: Quat);
 
     /// Returns a list of all active rigid body handles.
@@ -111,7 +111,7 @@ pub trait PhysicsProvider: Send + Sync {
     /// only one who will ever see it. A second caller gets nothing.
     fn take_collision_events(&self) -> Vec<CollisionEvent>;
 
-    /// The entity a collider belongs to, if the ECS created it.
+    /// Returns the entity a collider belongs to, if the ECS created it.
     ///
     /// A contact names two colliders; gameplay asks about two entities. The
     /// backend is asked because it is where the answer already is — the owner

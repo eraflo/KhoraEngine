@@ -14,7 +14,7 @@
 
 //! `UiFlow`: the UI nodes and laid-out texts, projected into the
 //! [`UiScene`] the UI lane draws. It shapes no text and
-//! fills no atlas: DataSystems do, since both write.
+//! fills no atlas: `DataSystem`s do, since both write.
 
 use std::sync::Arc;
 

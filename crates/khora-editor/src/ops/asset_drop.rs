@@ -37,12 +37,12 @@ pub enum AssetDrop {
     Ignored,
 }
 
-/// What dropping `entry` asks for, among the project's `entries`.
+/// Returns what dropping `entry` asks for, among the project's `entries`.
 ///
 /// A glTF file whose default scene is listed places that scene, node by node
 /// with their materials; any other mesh — an OBJ, a glTF primitive part, a
 /// glTF whose scene is not listed — spawns as one mesh.
-pub fn asset_drop(entries: &[AssetEntry], entry: &AssetEntry) -> AssetDrop {
+pub(crate) fn asset_drop(entries: &[AssetEntry], entry: &AssetEntry) -> AssetDrop {
     match &entry.asset_type {
         AssetType::Mesh => {
             if entry.container.is_none() {

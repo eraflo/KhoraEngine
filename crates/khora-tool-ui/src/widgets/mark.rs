@@ -103,8 +103,8 @@ pub fn sign(ui: &mut dyn UiBuilder, theme: &UiTheme, center: [f32; 2], size: f32
     ui.paint_path_filled_gradient(&bottom, gradient);
 }
 
-/// The brand lockup: the sign, "Khora", and an optional monospace context chip
-/// separated by a hairline — the top-left of every Khora tool window.
+/// Draws the brand lockup: the sign, "Khora", and an optional monospace context
+/// chip separated by a hairline — the top-left of every Khora tool window.
 ///
 /// Returns the x coordinate just past the lockup, so the caller can continue
 /// laying out the title bar.

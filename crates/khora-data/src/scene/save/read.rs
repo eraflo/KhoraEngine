@@ -182,7 +182,7 @@ impl Read {
     ///
     /// The save's order, less what the scene lost, with each entity the scene
     /// gained since right after its predecessor in the scene. Each entity the
-    /// save changed that the scene no longer has is reported `RemovedFromScene`.
+    /// save changed that the scene does not have is reported `RemovedFromScene`.
     pub(super) fn order(
         &self,
         save: &SaveRecord,

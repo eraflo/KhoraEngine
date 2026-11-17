@@ -38,7 +38,7 @@ const DIVIDER: &str = "behavior Divider {
                            void Update(float dt) { n = n / zero; }
                        }";
 
-/// The divider, edited so it no longer faults.
+/// The divider, edited so it does not fault.
 const DIVIDER_FIXED: &str = "behavior Divider {
                                  int zero = 0;
                                  int n = 1;

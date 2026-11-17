@@ -170,7 +170,7 @@ impl super::EditorApp {
     }
 }
 
-/// What trusting the project at `root` changes, read from its folder and
+/// Reads what trusting the project at `root` changes, read from its folder and
 /// from what `refusals` holds of it.
 fn trust_summary(root: &Path, refusals: Option<&Refusals>) -> TrustSummary {
     let assets = root.join("assets");
@@ -199,8 +199,8 @@ fn trust_summary(root: &Path, refusals: Option<&Refusals>) -> TrustSummary {
     }
 }
 
-/// `rel`, a forward-slash path the asset browser gave, as a path under the
-/// assets; `None` when it would leave them — a `..`, a root, a drive.
+/// Returns `rel`, a forward-slash path the asset browser gave, as a path under
+/// the assets; `None` when it would leave them — a `..`, a root, a drive.
 fn under_assets(rel: &str) -> Option<PathBuf> {
     if rel.starts_with('/') {
         return None;
@@ -216,14 +216,15 @@ fn under_assets(rel: &str) -> Option<PathBuf> {
     (!path.as_os_str().is_empty()).then_some(path)
 }
 
-/// The files under `dir`, at any depth, whose extension is `extension`, by their path under `dir`.
+/// Lists the files under `dir`, at any depth, whose extension is `extension`, by their path under
+/// `dir`.
 fn with_extension<'a>(dir: &Path, extension: &'a str) -> impl Iterator<Item = PathBuf> + 'a {
     (fs::files_under(dir).into_iter())
         .filter(move |rel| rel.extension().and_then(|e| e.to_str()) == Some(extension))
 }
 
-/// What the asset browser shows of `refusal`, a file of the project whose
-/// assets are at `assets`; `None` for another project's file.
+/// Returns what the asset browser shows of `refusal`, a file of the project
+/// whose assets are at `assets`; `None` for another project's file.
 fn shown(
     assets: &Path,
     refusal: &SecurityRefusal,

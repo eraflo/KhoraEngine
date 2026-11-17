@@ -82,7 +82,7 @@ pub fn patch(base: &Record, patch: &Record) -> Record {
     }
 }
 
-/// The fields `patch` sets on a struct named `name`: a same-named struct's, or
+/// Returns the fields `patch` sets on a struct named `name`: a same-named struct's, or
 /// a map's keyed by field name.
 fn patch_fields<'r>(name: &str, patch: &'r Record) -> Option<Vec<(&'r str, &'r Record)>> {
     match patch {
@@ -120,7 +120,7 @@ fn field_named<'r>(fields: &'r [(String, Record)], name: &str) -> Option<&'r Rec
         .map(|(_, value)| value)
 }
 
-/// Whether two values are the same value — floats by their bits, so an
+/// Returns whether two values are the same value — floats by their bits, so an
 /// unchanged `NaN` is no change and `0.0` becoming `-0.0` is one.
 pub(crate) fn same(a: &Record, b: &Record) -> bool {
     fn all(a: &[Record], b: &[Record]) -> bool {

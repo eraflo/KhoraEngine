@@ -18,7 +18,7 @@ use crate::storage::{backend::MetricsBackend, memory_backend::InMemoryBackend};
 use khora_core::telemetry::metrics::{Metric, MetricId, MetricType, MetricsError, MetricsResult};
 use std::sync::Arc;
 
-/// Central registry for metrics in the KhoraEngine
+/// Central registry for the engine's metrics.
 ///
 /// This registry provides a high-level API for metrics management and
 /// serves as the main entry point for the metrics system. It handles
@@ -30,19 +30,23 @@ pub struct MetricsRegistry {
 }
 
 impl MetricsRegistry {
-    /// Create a new metrics registry with the default in-memory backend
+    /// Creates a new metrics registry with the default in-memory backend
     pub fn new() -> Self {
         Self {
             backend: Arc::new(InMemoryBackend::new()),
         }
     }
 
-    /// Create a new metrics registry with a custom backend
+    /// Creates a new metrics registry with a custom backend
     pub fn with_backend(backend: Arc<dyn MetricsBackend>) -> Self {
         Self { backend }
     }
 
-    /// Register a new counter metric
+    /// Registers a new counter metric
+    ///
+    /// # Errors
+    ///
+    /// Returns the backend's error when it cannot store the metric.
     pub fn register_counter(
         &self,
         namespace: impl Into<String>,
@@ -55,7 +59,11 @@ impl MetricsRegistry {
         Ok(CounterHandle::new(id, self.backend.clone()))
     }
 
-    /// Register a new counter metric with labels
+    /// Registers a new counter metric with labels
+    ///
+    /// # Errors
+    ///
+    /// Returns the backend's error when it cannot store the metric.
     pub fn register_counter_with_labels(
         &self,
         namespace: impl Into<String>,
@@ -72,7 +80,11 @@ impl MetricsRegistry {
         Ok(CounterHandle::new(id, self.backend.clone()))
     }
 
-    /// Register a new gauge metric
+    /// Registers a new gauge metric
+    ///
+    /// # Errors
+    ///
+    /// Returns the backend's error when it cannot store the metric.
     pub fn register_gauge(
         &self,
         namespace: impl Into<String>,
@@ -86,7 +98,11 @@ impl MetricsRegistry {
         Ok(GaugeHandle::new(id, self.backend.clone()))
     }
 
-    /// Register a new gauge metric with labels
+    /// Registers a new gauge metric with labels
+    ///
+    /// # Errors
+    ///
+    /// Returns the backend's error when it cannot store the metric.
     pub fn register_gauge_with_labels(
         &self,
         namespace: impl Into<String>,
@@ -104,7 +120,11 @@ impl MetricsRegistry {
         Ok(GaugeHandle::new(id, self.backend.clone()))
     }
 
-    /// Register a new histogram metric
+    /// Registers a new histogram metric
+    ///
+    /// # Errors
+    ///
+    /// Returns the backend's error when it cannot store the metric.
     pub fn register_histogram(
         &self,
         namespace: impl Into<String>,
@@ -119,17 +139,22 @@ impl MetricsRegistry {
         Ok(HistogramHandle::new(id, self.backend.clone()))
     }
 
-    /// Get a metric by ID
+    /// Returns a metric by ID
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetricsError::MetricNotFound`] when no metric has `id`, or the
+    /// backend's error when it cannot read its storage.
     pub fn get_metric(&self, id: &MetricId) -> MetricsResult<Metric> {
         self.backend.get_metric(id)
     }
 
-    /// Check if a metric exists
+    /// Returns whether a metric exists
     pub fn contains_metric(&self, id: &MetricId) -> bool {
         self.backend.contains_metric(id)
     }
 
-    /// Get all metrics in a namespace
+    /// Returns all metrics in a namespace
     pub fn get_namespace_metrics(&self, namespace: &str) -> Vec<Metric> {
         // Try to cast to InMemoryBackend for more efficient operation
         if let Some(memory_backend) = self
@@ -149,7 +174,7 @@ impl MetricsRegistry {
         }
     }
 
-    /// Get all counters
+    /// Returns all counters
     pub fn get_all_counters(&self) -> Vec<Metric> {
         if let Some(memory_backend) = self
             .backend
@@ -167,7 +192,7 @@ impl MetricsRegistry {
         }
     }
 
-    /// Get all gauges
+    /// Returns all gauges
     pub fn get_all_gauges(&self) -> Vec<Metric> {
         if let Some(memory_backend) = self
             .backend
@@ -185,17 +210,21 @@ impl MetricsRegistry {
         }
     }
 
-    /// Get the total number of metrics
+    /// Returns the total number of metrics
     pub fn metric_count(&self) -> usize {
         self.backend.metric_count()
     }
 
-    /// Clear all metrics
+    /// Clears all metrics
+    ///
+    /// # Errors
+    ///
+    /// Returns the backend's error when it cannot clear its storage.
     pub fn clear_all(&self) -> MetricsResult<()> {
         self.backend.clear_all()
     }
 
-    /// Get direct access to the backend (for advanced operations)
+    /// Returns direct access to the backend (for advanced operations)
     pub fn backend(&self) -> &Arc<dyn MetricsBackend> {
         &self.backend
     }
@@ -219,17 +248,35 @@ impl CounterHandle {
         Self { id, backend }
     }
 
-    /// Increment the counter by 1
+    /// Increments the counter by 1
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetricsError::MetricNotFound`] when the counter was removed,
+    /// [`MetricsError::TypeMismatch`] when its metric is not a counter, or the
+    /// backend's error.
     pub fn increment(&self) -> MetricsResult<u64> {
         self.backend.increment_counter(&self.id, 1)
     }
 
-    /// Increment the counter by a specific amount
+    /// Increments the counter by a specific amount
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetricsError::MetricNotFound`] when the counter was removed,
+    /// [`MetricsError::TypeMismatch`] when its metric is not a counter, or the
+    /// backend's error.
     pub fn increment_by(&self, amount: u64) -> MetricsResult<u64> {
         self.backend.increment_counter(&self.id, amount)
     }
 
-    /// Get the current counter value
+    /// Returns the current counter value
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetricsError::MetricNotFound`] when the counter was removed,
+    /// [`MetricsError::TypeMismatch`] when its metric is not a counter, or the
+    /// backend's error.
     pub fn get(&self) -> MetricsResult<u64> {
         let metric = self.backend.get_metric(&self.id)?;
         metric
@@ -241,7 +288,7 @@ impl CounterHandle {
             })
     }
 
-    /// Get the metric ID
+    /// Returns the metric ID
     pub fn id(&self) -> &MetricId {
         &self.id
     }
@@ -259,12 +306,24 @@ impl GaugeHandle {
         Self { id, backend }
     }
 
-    /// Set the gauge to a specific value
+    /// Sets the gauge to a specific value
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetricsError::MetricNotFound`] when the gauge was removed,
+    /// [`MetricsError::TypeMismatch`] when its metric is not a gauge, or the
+    /// backend's error.
     pub fn set(&self, value: f64) -> MetricsResult<()> {
         self.backend.set_gauge(&self.id, value)
     }
 
-    /// Increment the gauge by a specific amount
+    /// Increments the gauge by a specific amount
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetricsError::MetricNotFound`] when the gauge was removed,
+    /// [`MetricsError::TypeMismatch`] when its metric is not a gauge, or the
+    /// backend's error.
     pub fn add(&self, delta: f64) -> MetricsResult<f64> {
         let current = self.get()?;
         let new_value = current + delta;
@@ -272,12 +331,24 @@ impl GaugeHandle {
         Ok(new_value)
     }
 
-    /// Decrement the gauge by a specific amount
+    /// Decrements the gauge by a specific amount
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetricsError::MetricNotFound`] when the gauge was removed,
+    /// [`MetricsError::TypeMismatch`] when its metric is not a gauge, or the
+    /// backend's error.
     pub fn sub(&self, delta: f64) -> MetricsResult<f64> {
         self.add(-delta)
     }
 
-    /// Get the current gauge value
+    /// Returns the current gauge value
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetricsError::MetricNotFound`] when the gauge was removed,
+    /// [`MetricsError::TypeMismatch`] when its metric is not a gauge, or the
+    /// backend's error.
     pub fn get(&self) -> MetricsResult<f64> {
         let metric = self.backend.get_metric(&self.id)?;
         metric
@@ -289,7 +360,7 @@ impl GaugeHandle {
             })
     }
 
-    /// Get the metric ID
+    /// Returns the metric ID
     pub fn id(&self) -> &MetricId {
         &self.id
     }
@@ -307,17 +378,28 @@ impl HistogramHandle {
         Self { id, backend }
     }
 
-    /// Record a sample in the histogram
+    /// Records a sample in the histogram
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetricsError::MetricNotFound`] when the histogram was removed,
+    /// [`MetricsError::TypeMismatch`] when its metric is not a histogram, or the
+    /// backend's error.
     pub fn observe(&self, value: f64) -> MetricsResult<()> {
         self.backend.record_histogram_sample(&self.id, value)
     }
 
-    /// Get the metric ID
+    /// Returns the metric ID
     pub fn id(&self) -> &MetricId {
         &self.id
     }
 
-    /// Get the full histogram metric (for analysis)
+    /// Returns the full histogram metric (for analysis)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetricsError::MetricNotFound`] when the histogram was removed,
+    /// or the backend's error when it cannot read its storage.
     pub fn get_metric(&self) -> MetricsResult<Metric> {
         self.backend.get_metric(&self.id)
     }

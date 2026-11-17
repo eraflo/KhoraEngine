@@ -19,7 +19,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Spellings of homes that no longer exist.
+/// Spellings of homes that do not exist.
 const RETIRED: &[&str] = &[
     // GORNA types and the PID left `khora_core::control`.
     "khora_core::control",
@@ -836,7 +836,7 @@ fn the_old_lane_agent_home_is_told_from_the_new_one() {
     }
 }
 
-/// The LaneAgent's old folder is not named by a crate-relative path either:
+/// The `LaneAgent`'s old folder is not named by a crate-relative path either:
 /// a line about khora-agents (it names `khora-agents` or `khora_agents`, and
 /// not khora-core, whose own `agent/` folder is current) never names a bare
 /// `agent/…` path, such as `agent/mod.rs` in the crate map.
@@ -911,9 +911,9 @@ fn cited_family_test_paths_name_where_the_tests_live() {
 }
 
 /// The files the mesh and material residencies left when they moved under
-/// `crates/khora-data/src/residency/`: their DataSystems in `ecs/systems/`.
+/// `crates/khora-data/src/residency/`: their `DataSystem`s in `ecs/systems/`.
 /// Each run fn and registration now sits in its residency's file
-/// (`mesh_on_gpu.rs`, `material_on_gpu.rs`); the DataSystems keep their
+/// (`mesh_on_gpu.rs`, `material_on_gpu.rs`); the `DataSystem`s keep their
 /// names, `gpu_mesh_sync` and `gpu_material_sync`.
 const RETIRED_RESIDENCY_FILES: &[&str] = &[
     "crates/khora-data/src/ecs/systems/gpu_mesh_sync.rs",
@@ -921,7 +921,7 @@ const RETIRED_RESIDENCY_FILES: &[&str] = &[
 ];
 
 /// Those homes as module paths and as source paths. Each is matched as a whole
-/// name (`names_whole`), so the DataSystem names alone (`"gpu_mesh_sync"`),
+/// name (`names_whole`), so the `DataSystem` names alone (`"gpu_mesh_sync"`),
 /// and a longer name that starts like one (`gpu_mesh_sync_system`), never
 /// match.
 const RETIRED_RESIDENCY_HOMES: &[&str] = &[
@@ -933,12 +933,12 @@ const RETIRED_RESIDENCY_HOMES: &[&str] = &[
     "gpu_material_sync.rs",
 ];
 
-/// A residency is named where it lives: the mesh and material DataSystems'
+/// A residency is named where it lives: the mesh and material `DataSystem`s'
 /// files under `crates/khora-data/src/ecs/systems/` are gone, and nothing in
 /// code, docs or the installer scripts names them, by module path
 /// (`khora_data::ecs::systems::gpu_mesh_sync`) or by source path. Read: the
 /// files `family_home_scanned_files` reads, and the build tool's tests but
-/// this file, which names the old homes to forbid them. The DataSystem names
+/// this file, which names the old homes to forbid them. The `DataSystem` names
 /// `gpu_mesh_sync` and `gpu_material_sync` stay.
 #[test]
 fn nothing_names_the_old_home_of_a_residency() {
@@ -979,7 +979,7 @@ fn nothing_names_the_old_home_of_a_residency() {
     );
 }
 
-/// The old residency homes are told from the DataSystem names they kept:
+/// The old residency homes are told from the `DataSystem` names they kept:
 /// every spelling of the old module and source paths is caught, and the
 /// names `gpu_mesh_sync` and `gpu_material_sync`, the run fns and the new
 /// homes never are.

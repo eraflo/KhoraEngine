@@ -17,13 +17,13 @@
 use khora_core::asset::AssetUUID;
 use khora_core::event::Supersedes;
 
-/// The asset `0` names changed: every copy of it the engine holds is stale.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct AssetChanged(pub AssetUUID);
-
 /// How many distinct unread changes the service's channel holds before the
 /// oldest leaves to make room.
 pub const CHANGE_BACKLOG: usize = 4096;
+
+/// The asset `0` names changed: every copy of it the engine holds is stale.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AssetChanged(pub AssetUUID);
 
 impl Supersedes for AssetChanged {
     const COALESCES: bool = true;

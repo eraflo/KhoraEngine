@@ -166,8 +166,12 @@ pub struct Light {
 7. **`//!` module doc**: 1–3 lines saying what the module holds. A crate's `lib.rs` may say more.
 8. **`// SAFETY:`** on every `unsafe` block, unchanged. The 13-line licence header stays.
 
-Checked by `xtask/tests/layout.rs`: `no_plan_labels_in_comments` and `book_citations_resolve`
-(strict), `doc_summary_is_short` and `inline_comments_are_short` (ratchets).
+Checked by `cargo xtask lint-file` (run by a hook after every write) and `xtask/tests/layout.rs`:
+`no_plan_labels_in_comments`, `book_citations_resolve`, `doc_summary_is_short`,
+`inline_comments_are_short`, `comments_tell_no_history`, `fn_summaries_start_with_a_verb`,
+`a_type_and_its_impls_are_contiguous`, `every_public_fn_is_named_by_a_test`; and by the workspace
+lints (`missing_docs`, clippy's doc lints, `undocumented_unsafe_blocks`) and the `cargo doc` step of
+`cargo gate`.
 
 **Checklist before commit**
 - Each summary is one sentence and fits in 2 lines.

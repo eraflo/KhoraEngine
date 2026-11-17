@@ -86,39 +86,6 @@ impl Default for GizmoLane {
     }
 }
 
-/// What the gizmos build on the device.
-#[derive(Debug)]
-struct GizmoGpu {
-    camera: Block,
-    /// The line storage, grown when a frame brings more lines than it holds.
-    storage: Block,
-    storage_layout: BindGroupLayoutId,
-    /// The pipeline and the colour format and samples it was built for.
-    pipeline: Option<((TextureFormat, u32), RenderPipelineId)>,
-}
-
-impl GizmoGpu {
-    /// The bytes its buffers hold.
-    fn bytes(&self) -> u64 {
-        self.camera.size + self.storage.size
-    }
-}
-
-/// What the gizmo lane reads each frame: the host's lines, the camera they
-/// are seen from, and the target they are drawn into.
-#[derive(LaneInputs)]
-pub struct GizmoInputs<'f> {
-    /// The lines the host publishes this frame.
-    #[bus]
-    pub gizmos: &'f GizmoView,
-    /// The frame's views; the first is the camera the gizmos are seen from.
-    #[bus]
-    pub render_world: &'f RenderWorld,
-    /// The frame's colour attachment; the gizmos never test depth.
-    #[frame]
-    pub target: Target,
-}
-
 impl Lane for GizmoLane {
     type Family = super::GizmoFamily;
     type Inputs<'f> = GizmoInputs<'f>;
@@ -237,6 +204,39 @@ impl Lane for GizmoLane {
     }
 }
 
+/// What the gizmos build on the device.
+#[derive(Debug)]
+struct GizmoGpu {
+    camera: Block,
+    /// The line storage, grown when a frame brings more lines than it holds.
+    storage: Block,
+    storage_layout: BindGroupLayoutId,
+    /// The pipeline and the colour format and samples it was built for.
+    pipeline: Option<((TextureFormat, u32), RenderPipelineId)>,
+}
+
+impl GizmoGpu {
+    /// Returns the bytes its buffers hold.
+    fn bytes(&self) -> u64 {
+        self.camera.size + self.storage.size
+    }
+}
+
+/// What the gizmo lane reads each frame: the host's lines, the camera they
+/// are seen from, and the target they are drawn into.
+#[derive(LaneInputs)]
+pub struct GizmoInputs<'f> {
+    /// The lines the host publishes this frame.
+    #[bus]
+    pub gizmos: &'f GizmoView,
+    /// The frame's views; the first is the camera the gizmos are seen from.
+    #[bus]
+    pub render_world: &'f RenderWorld,
+    /// The frame's colour attachment; the gizmos never test depth.
+    #[frame]
+    pub target: Target,
+}
+
 /// Builds the camera block and the first line storage.
 ///
 /// A refusal halfway gives back what came before it.
@@ -271,7 +271,7 @@ fn build_gizmo_gpu(
     })
 }
 
-/// A line storage holding `lines` instances.
+/// Creates a line storage holding `lines` instances.
 fn storage_block(
     device: &dyn GraphicsDevice,
     layout: BindGroupLayoutId,
@@ -301,7 +301,7 @@ fn grow_storage(
     Ok(())
 }
 
-/// Group-0 camera layout: a single uniform buffer (vertex stage).
+/// Returns the group-0 camera layout: a single uniform buffer (vertex stage).
 fn camera_layout_entries() -> Vec<BindGroupLayoutEntry> {
     crate::render::util::single_uniform_layout(
         khora_core::renderer::api::util::ShaderStageFlags::VERTEX,
@@ -309,7 +309,7 @@ fn camera_layout_entries() -> Vec<BindGroupLayoutEntry> {
     )
 }
 
-/// Group-1 storage layout: the read-only line-instance storage buffer.
+/// Returns the group-1 storage layout: the read-only line-instance storage buffer.
 fn storage_layout_entries() -> Vec<BindGroupLayoutEntry> {
     use khora_core::renderer::api::command::{BindingType, BufferBindingType};
     use khora_core::renderer::api::util::ShaderStageFlags;

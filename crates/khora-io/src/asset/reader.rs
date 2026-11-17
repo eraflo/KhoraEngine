@@ -35,6 +35,22 @@ use crate::trust::{
 /// How many of a file's first bytes its decoder is shown to recognise it.
 const SNIFFED: usize = 512;
 
+/// A file decoded from its own bytes, and — when its type is also a
+/// container — the files it reads besides its own.
+pub(super) type DecodedFile = (Box<dyn Any + Send>, Option<Vec<String>>);
+
+/// A container file opened: what opens it, the opened value, and the files
+/// it reads besides its own, as asset keys.
+pub(super) type Opened = (
+    Arc<dyn AssetContainer>,
+    Arc<dyn Any + Send + Sync>,
+    Vec<String>,
+);
+
+/// What one [`AssetReader::decode`] produced; defined in `khora-core`, where
+/// the `loading` family's lanes names it.
+pub use khora_core::asset::Decoded;
+
 /// Everything decoding an asset reads: index snapshot, decoders, containers, manifest and IO.
 ///
 /// Shared as an `Arc`, it decodes on any thread, without the
@@ -55,22 +71,6 @@ pub struct AssetReader {
     /// How much the files read are trusted: the limits each decode has.
     pub(super) trust: Trust,
 }
-
-/// A file decoded from its own bytes, and — when its type is also a
-/// container — the files it reads besides its own.
-pub(super) type DecodedFile = (Box<dyn Any + Send>, Option<Vec<String>>);
-
-/// A container file opened: what opens it, the opened value, and the files
-/// it reads besides its own, as asset keys.
-pub(super) type Opened = (
-    Arc<dyn AssetContainer>,
-    Arc<dyn Any + Send + Sync>,
-    Vec<String>,
-);
-
-/// What one [`AssetReader::decode`] produced; defined in `khora-core`, where
-/// the `loading` family's lanes names it.
-pub use khora_core::asset::Decoded;
 
 impl AssetReader {
     /// Decodes the asset `uuid`, a sub-asset from its container, as the Rust type `type_id`.
@@ -183,7 +183,7 @@ impl AssetReader {
         let bytes = match self.io.load_bytes(source) {
             Ok(bytes) => bytes,
             // Its place and sizes are signed with the index: a sealed entry
-            // that no longer loads was changed after the build.
+            // that fails to load was changed after the build.
             Err(error)
                 if self.manifest.is_some() && matches!(source, AssetSource::Packed { .. }) =>
             {

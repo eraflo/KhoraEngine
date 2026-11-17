@@ -27,15 +27,6 @@ pub struct FetchContext<'s> {
     pub(crate) since: Tick,
 }
 
-/// One writable term's key, whether some observer watches it, and the change
-/// epoch of its domain, which a write through it raises.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct Writable {
-    pub(crate) key: ComponentKey,
-    pub(crate) observed: bool,
-    pub(crate) epoch: *mut u64,
-}
-
 impl FetchContext<'_> {
     /// Returns the context of a query that writes nothing.
     pub(crate) fn read_only(tick: Tick, since: Tick) -> Self {
@@ -55,4 +46,13 @@ impl FetchContext<'_> {
             .find(|w| w.key == key)
             .map_or((false, std::ptr::null_mut()), |w| (w.observed, w.epoch))
     }
+}
+
+/// One writable term's key, whether some observer watches it, and the change
+/// epoch of its domain, which a write through it raises.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Writable {
+    pub(crate) key: ComponentKey,
+    pub(crate) observed: bool,
+    pub(crate) epoch: *mut u64,
 }

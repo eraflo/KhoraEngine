@@ -126,8 +126,8 @@ impl Checker {
         }
     }
 
-    /// `name` as [`member_calls`](Self::member_calls) keys it: qualified with
-    /// the state being checked when it is that state's own method.
+    /// Returns `name` as [`member_calls`](Self::member_calls) keys it: qualified
+    /// with the state being checked when it is that state's own method.
     pub(super) fn qualified(&self, name: &str) -> String {
         match &self.current_state {
             Some((state, own)) if own.contains(name) => format!("{state}.{name}"),
@@ -431,7 +431,7 @@ impl Checker {
 }
 
 impl Checker {
-    /// Whether a field of `ty` with no default has a neutral value to start at.
+    /// Returns whether a field of `ty` with no default has a neutral value to start at.
     ///
     /// A number's zero, `false`, empty text or array, an engine value's neutral,
     /// `null` for an optional. A struct has one when each of its fields has a
@@ -466,7 +466,7 @@ impl Checker {
     }
 }
 
-/// `ty` with its article, as a message names it — "an `Entity`".
+/// Returns `ty` with its article, as a message names it — "an `Entity`".
 fn article(ty: &Ty) -> String {
     let name = ty.name();
     let vowel = name

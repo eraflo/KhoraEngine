@@ -29,7 +29,7 @@ pub type MaterialHandle = HandleComponent<Box<dyn Material>>;
 /// An authored reference to a material: the only form a material is saved in.
 ///
 /// A resolver `DataSystem` (in `khora-io`) turns it into a [`MaterialHandle`],
-/// and again whenever its [`uuid`](Self::uuid) no longer matches the handle's.
+/// and again whenever its [`uuid`](Self::uuid) differs from the handle's.
 /// Build `Inline` with [`MaterialRef::inline`], so its UUID matches its content.
 pub enum MaterialRef {
     /// A material made in code or the editor, saved inside the scene.
@@ -289,7 +289,7 @@ fn stage_material_ref_snapshot(
     })
 }
 
-/// Editor JSON form: `Inline` reuses `material_to_json`; `Asset` emits
+/// Writes the editor JSON form: `Inline` reuses `material_to_json`; `Asset` emits
 /// `{ "asset": "<uuid>" }`.
 fn material_ref_to_json(
     world: &crate::ecs::World,

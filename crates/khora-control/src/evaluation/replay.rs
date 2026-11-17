@@ -119,7 +119,7 @@ pub fn replay(trace: &DecisionTrace, arbiters: Arbiters) -> Replay {
     Replay { epochs, metrics }
 }
 
-/// The trigger `record`'s round opened with.
+/// Returns the trigger `record`'s round opened with.
 ///
 /// A journal keeps the trigger of what was lent: a `Safety` allocation naming
 /// a breach was a round opened otherwise whose floors did not fit.
@@ -130,7 +130,7 @@ fn opened_by(record: &EpochRecord) -> Trigger {
     }
 }
 
-/// `record`'s bids, as its round read them, each agent keeping what it `held`.
+/// Returns `record`'s bids, as its round read them, each agent keeping what it `held`.
 ///
 /// An agent the round found busy (late, with no offer) keeps its envelope.
 fn bids(record: &EpochRecord, held: Option<&[(AgentId, Envelope)]>) -> Vec<Bid> {
@@ -204,7 +204,7 @@ fn bids(record: &EpochRecord, held: Option<&[(AgentId, Envelope)]>) -> Vec<Bid> 
     bids
 }
 
-/// What `epochs`, decided again from `trace`, measure.
+/// Measures what `epochs`, decided again from `trace`, measure.
 fn metrics(
     trace: &DecisionTrace,
     epochs: &[ReplayedEpoch],
@@ -238,7 +238,7 @@ fn metrics(
     }
 }
 
-/// The planned rows that changed from one epoch to the next, per minute of
+/// Returns the planned rows that changed from one epoch to the next, per minute of
 /// the time the epochs span; `None` when they span none.
 fn row_changes_per_minute(trace: &DecisionTrace, epochs: &[ReplayedEpoch]) -> Option<f64> {
     let (first, last) = (trace.epochs.first()?, trace.epochs.last()?);

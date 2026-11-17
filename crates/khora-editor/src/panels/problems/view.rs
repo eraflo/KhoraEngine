@@ -20,6 +20,9 @@ use std::path::{Path, PathBuf};
 use khora_sdk::khora_core::ecs::entity::EntityId;
 use khora_sdk::khora_core::problems::{Problem, ProblemSeverity};
 
+/// Where a project keeps its scripts, under its assets root.
+pub(crate) const SCRIPT_DIR: &str = khora_sdk::scripts::SCRIPT_DIR;
+
 /// One module's problems, or one component's for the scene's data, as the
 /// tab lists them.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -169,9 +172,6 @@ pub(crate) fn tab_title(problems: &[Problem]) -> String {
         ),
     }
 }
-
-/// Where a project keeps its scripts, under its assets root.
-pub(crate) const SCRIPT_DIR: &str = khora_sdk::scripts::SCRIPT_DIR;
 
 /// Returns the module the asset at `rel_path` is known by, `None` for an
 /// asset that is no `.erg` under the script folder.

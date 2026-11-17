@@ -25,7 +25,7 @@ use super::AssetService;
 use crate::asset::container::AssetContainer;
 
 impl AssetService {
-    /// Whether the file `uuid` can hold sub-assets, as a glTF can.
+    /// Returns whether the file `uuid` can hold sub-assets, as a glTF can.
     ///
     /// When its bytes change, its parts may have changed too: the index lists them again.
     pub fn may_hold_sub_assets(&self, uuid: &AssetUUID) -> bool {
@@ -84,11 +84,11 @@ impl AssetService {
         })
     }
 
-    /// Whether `uuid` has left the project: unindexed, its container gone or without it.
+    /// Returns whether `uuid` has left the project: unindexed, its container gone or without it.
     ///
     /// A sub-asset whose container is indexed but does not open (a file caught
     /// mid-write) is not gone: its file is read again when it changes.
-    pub fn is_gone(&mut self, uuid: &AssetUUID) -> bool {
+    pub(crate) fn is_gone(&mut self, uuid: &AssetUUID) -> bool {
         if self.gone_from_index(uuid) {
             return true;
         }
@@ -105,10 +105,10 @@ impl AssetService {
         container.is_some_and(|container| self.open_container(container).is_ok())
     }
 
-    /// Whether the index alone says `uuid` left the project, its container unindexed too.
+    /// Returns whether the index alone says `uuid` left the project, its container unindexed too.
     ///
     /// Reads no file, so it decides a removal on the frame its change is seen.
-    pub fn gone_from_index(&self, uuid: &AssetUUID) -> bool {
+    pub(crate) fn gone_from_index(&self, uuid: &AssetUUID) -> bool {
         if self.reader.index.get_metadata(uuid).is_some() {
             return false;
         }

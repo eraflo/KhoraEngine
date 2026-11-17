@@ -86,7 +86,7 @@ pub(crate) fn admit<'r>(round: &'r Round<'_>) -> Admission<'r> {
 
     // A `Stable` agent keeps the envelope it holds while it still fits the
     // frame with every other agent at its floor, and takes no upgrade; one
-    // that no longer fits gives way, and may not grow past it.
+    // that no more fits gives way, and may not grow past it.
     for index in 0..plans.len() {
         if plans[index].fixed.is_some() || bids[index].mode != AdaptationMode::Stable {
             continue;

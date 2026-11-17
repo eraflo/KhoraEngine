@@ -604,7 +604,7 @@ fn describe_surface(device: &WgpuDevice, gc: &WgpuGraphicsContext) {
     );
 }
 
-/// The engine's description of the adapter `gc` runs on.
+/// Returns the engine's description of the adapter `gc` runs on.
 fn adapter_info_of(
     gc: &WgpuGraphicsContext,
 ) -> khora_core::renderer::api::device::GraphicsAdapterInfo {

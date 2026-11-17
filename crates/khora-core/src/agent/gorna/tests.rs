@@ -1367,3 +1367,99 @@ fn a_profiles_rows_are_made_sane() {
     );
     assert_eq!(super::CostProfile::default().sane_rows(), Vec::new());
 }
+
+// ─── Lending an allocation ──────────────────────────────────────────────────
+
+/// What an allocation lent an agent: its epoch, envelope, pin and allowed rows.
+type Lent = (
+    Epoch,
+    Option<Envelope>,
+    Option<StrategyId>,
+    Option<Vec<StrategyId>>,
+);
+
+/// An agent that only records what it was lent.
+struct Borrower {
+    id: AgentId,
+    lent: Option<Lent>,
+}
+
+impl crate::agent::Agent for Borrower {
+    fn id(&self) -> AgentId {
+        self.id
+    }
+
+    fn offer(&mut self, _request: &super::protocol::OfferRequest) -> Offer {
+        unreachable!("lending asks for no offer")
+    }
+
+    fn apply(
+        &mut self,
+        epoch: Epoch,
+        envelope: Option<&Envelope>,
+        pin: Option<StrategyId>,
+        allowed: Option<&[StrategyId]>,
+    ) {
+        self.lent = Some((epoch, envelope.copied(), pin, allowed.map(<[_]>::to_vec)));
+    }
+
+    fn report(&self) -> Report {
+        unreachable!("lending asks for no report")
+    }
+
+    fn place(&self) -> std::sync::Arc<std::sync::Mutex<crate::agent::Place>> {
+        std::sync::Arc::new(std::sync::Mutex::new(crate::agent::Place::new(self.id)))
+    }
+}
+
+/// **An allocation lends an agent what it names for it, and nothing to one it
+/// does not name.** One named only by a pin is lent the pin and no envelope.
+#[test]
+fn an_allocation_lends_only_the_agents_it_names() {
+    let envelope = Envelope {
+        time: host_time(4_000),
+        memory: PerDevice::default(),
+    };
+    let allocation = Allocation {
+        epoch: Epoch(7),
+        trigger: Trigger::Initial,
+        envelopes: vec![(ALPHA, envelope)],
+        pins: vec![(BETA, StrategyId::LowPower)],
+        allowed: vec![(ALPHA, vec![StrategyId::Balanced])],
+        price: None,
+        lever: false,
+        late: Vec::new(),
+    };
+    let mut alpha = Borrower {
+        id: ALPHA,
+        lent: None,
+    };
+    let mut beta = Borrower {
+        id: BETA,
+        lent: None,
+    };
+    let mut stranger = Borrower {
+        id: AgentId::new("journal-stranger"),
+        lent: None,
+    };
+
+    assert!(allocation.lend_to(&mut alpha));
+    assert!(allocation.lend_to(&mut beta));
+    assert!(!allocation.lend_to(&mut stranger), "named nowhere");
+
+    assert_eq!(
+        alpha.lent,
+        Some((
+            Epoch(7),
+            Some(envelope),
+            None,
+            Some(vec![StrategyId::Balanced])
+        ))
+    );
+    assert_eq!(
+        beta.lent,
+        Some((Epoch(7), None, Some(StrategyId::LowPower), None)),
+        "pinned but unpriced: no envelope"
+    );
+    assert_eq!(stranger.lent, None, "keeps what it holds");
+}

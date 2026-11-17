@@ -72,7 +72,7 @@ pub fn save_scene_in_project(pvfs: &mut ProjectVfs, world: &GameWorld, rel_path:
 }
 
 /// Saves as [`save_scene_in_project`] does, under an explicit serialization goal.
-pub fn save_scene_in_project_with_goal(
+pub(crate) fn save_scene_in_project_with_goal(
     pvfs: &mut ProjectVfs,
     world: &GameWorld,
     rel_path: &Path,
@@ -133,7 +133,7 @@ pub fn load_scene_in_project_with_report(
     world: &mut GameWorld,
     rel_path_fwd_slash: &str,
 ) -> Option<khora_sdk::khora_data::scene::record::LoadReport> {
-    // Registry-aware: a scene that was renamed keeps its frozen UUID.
+    // Registry-aware: a renamed scene keeps its frozen UUID.
     let uuid = pvfs.resolve_uuid(rel_path_fwd_slash);
 
     // Try the existing index first; if absent, reindex once and retry.
@@ -226,12 +226,12 @@ impl SceneFetch for SceneOnDisk {
 ///
 /// Its bytes are read off the frame; a scene missing from the index is
 /// indexed again once. `None`, logged, when the project holds no such scene.
-pub fn scene_in_project(
+pub(crate) fn scene_in_project(
     pvfs: &mut ProjectVfs,
     rel_path_fwd_slash: &str,
     choice: u64,
 ) -> Option<(SceneSource, std::sync::Arc<dyn PrefabSource + Send + Sync>)> {
-    // Registry-aware: a scene that was renamed keeps its frozen UUID.
+    // Registry-aware: a renamed scene keeps its frozen UUID.
     let uuid = pvfs.resolve_uuid(rel_path_fwd_slash);
     if pvfs.assets().reader().index().get_metadata(&uuid).is_none() {
         if let Err(e) = pvfs.reindex() {
@@ -398,7 +398,7 @@ pub fn save_scene_to_path_with_goal(
 /// Returns `abs_path` relative to `assets_root`, forward-slashed, if it lies under it.
 ///
 /// `None` otherwise: callers read the scene from its path ([`scene_on_disk`]).
-pub fn rel_inside_project(abs_path: &Path, assets_root: &Path) -> Option<String> {
+pub(crate) fn rel_inside_project(abs_path: &Path, assets_root: &Path) -> Option<String> {
     let rel = abs_path.strip_prefix(assets_root).ok()?;
     Some(asset_key(rel))
 }

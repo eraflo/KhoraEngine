@@ -26,8 +26,8 @@ pub(crate) const WORDMARK: &str = "wordmark";
 /// The egui family name [`FontFamilyHint::Icons`](khora_core::ui::editor::FontFamilyHint::Icons) resolves to.
 pub(crate) const ICONS: &str = "icons";
 
-/// egui's font definitions for `pack`, each family's faces in pack order ahead
-/// of egui's built-in ones (the first face primary, the rest fallbacks).
+/// Builds egui's font definitions for `pack`, each family's faces in pack order
+/// ahead of egui's built-in ones (the first face primary, the rest fallbacks).
 ///
 /// epaint panics on a `FontFamily::Name` bound to no font, so every named
 /// family falls back: display to the proportional faces, the wordmark to

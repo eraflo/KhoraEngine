@@ -35,6 +35,21 @@ use crate::gorna::planning::{Planner, PlanningConfig};
 use crate::gorna::{Bid, Round};
 use crate::governor::{FrameGovernor, GovernorConfig};
 
+/// How long a switch of row takes to prepare, when the agent does not say.
+const DEFAULT_PREPARE: u64 = 2_000;
+
+/// How long the governor is given to answer a change of load.
+const LOAD_STEP_ANSWER: Duration = Duration::from_millis(500);
+
+/// The shortest frame.
+const MIN_FRAME: Duration = Duration::from_micros(1);
+
+/// The weight of an `Important` agent, as the arbiter weighs it.
+const WEIGHT: f64 = 0.75;
+
+/// The DCC's tick, in frame time: 20 Hz.
+const TICK: Duration = Duration::from_millis(50);
+
 /// An agent of the simulation.
 #[derive(Debug, Clone)]
 pub struct SimAgent {
@@ -49,7 +64,7 @@ pub struct SimAgent {
 }
 
 impl SimAgent {
-    /// `name`, offering `rows` that cost what they quote.
+    /// Creates `name`, offering `rows` that cost what they quote.
     pub fn new(name: &'static str, rows: Vec<(StrategyId, u64, f32)>) -> Self {
         Self {
             name,
@@ -57,6 +72,68 @@ impl SimAgent {
             bias: Vec::new(),
             prepare: Vec::new(),
         }
+    }
+}
+
+impl SimAgent {
+    /// Returns this agent's bid for `epoch` under `load`: its rows at their quotes,
+    /// which follow the load, `Important`, learning.
+    fn bid(&self, epoch: Epoch, running: usize, load: f64) -> Bid {
+        Bid {
+            offer: Offer {
+                agent: AgentId::new(self.name),
+                epoch,
+                rows: (self.rows.iter())
+                    .map(|&(id, cpu_us, quality)| OfferRow {
+                        id,
+                        cost: Cost {
+                            time: PerDevice {
+                                cpu: Duration::from_secs_f64(cpu_us as f64 * load / 1_000_000.0),
+                                ..PerDevice::default()
+                            },
+                            ..Cost::default()
+                        },
+                        quality,
+                        confidence: CostBasis::Measured,
+                    })
+                    .collect(),
+                floor: self.rows[0].0,
+                current: self.rows[running.min(self.rows.len() - 1)].0,
+                health: 1.0,
+            },
+            importance: AgentImportance::Important,
+            mode: AdaptationMode::Learning,
+            hints: AgentHints::default(),
+            kept: None,
+            late: false,
+        }
+    }
+
+    /// Returns the row this agent runs under `allocation` and `load`: the best
+    /// quality whose quote its envelope's host time fits, else its floor.
+    fn runs(&self, allocation: &Allocation, load: f64) -> usize {
+        let lent = (allocation.envelopes.iter())
+            .find(|(id, _)| *id == AgentId::new(self.name))
+            .map_or(Duration::ZERO, |(_, envelope)| envelope.time.cpu);
+        (0..self.rows.len())
+            .filter(|&row| self.quote(row).as_secs_f64() * load <= lent.as_secs_f64())
+            .max_by(|&a, &b| self.rows[a].2.total_cmp(&self.rows[b].2))
+            .unwrap_or(0)
+    }
+
+    /// Returns how long a switch to row `row` takes to prepare.
+    fn prepare(&self, row: usize) -> Duration {
+        Duration::from_micros(self.prepare.get(row).copied().unwrap_or(DEFAULT_PREPARE))
+    }
+
+    /// Returns what row `row` quotes.
+    fn quote(&self, row: usize) -> Duration {
+        Duration::from_micros(self.rows[row].1)
+    }
+
+    /// Returns what row `row` costs for each microsecond it quotes.
+    fn bias(&self, row: usize) -> f64 {
+        self.bias.get(row).copied().unwrap_or(1.0)
     }
 }
 
@@ -160,7 +237,7 @@ pub struct Simulation {
 }
 
 impl Simulation {
-    /// The engine with `agents` and a host part of `host`, deciding through
+    /// Builds the engine with `agents` and a host part of `host`, deciding through
     /// `arbiters`, its noise drawn from `seed`.
     ///
     /// Its first epoch is decided at the governor's resting multiplier and
@@ -226,14 +303,14 @@ impl Simulation {
         sim
     }
 
-    /// The same engine whose true costs vary by `noise`, relative: each
+    /// Returns the same engine whose true costs vary by `noise`, relative: each
     /// frame, each cost is drawn within ±`noise` of its mean.
     pub fn with_noise(mut self, noise: f64) -> Self {
         self.noise = noise.max(0.0);
         self
     }
 
-    /// The frame's time outside every agent, from the next frame on.
+    /// Sets the frame's time outside every agent, from the next frame on.
     pub fn set_host(&mut self, host: Duration) {
         self.host = host;
     }
@@ -252,7 +329,7 @@ impl Simulation {
         }
     }
 
-    /// The next frame lasts `frame`.
+    /// Makes the next frame last `frame`.
     pub fn hitch(&mut self, frame: Duration) {
         self.hitch = Some(frame);
     }
@@ -265,38 +342,38 @@ impl Simulation {
         }
     }
 
-    /// The frame time elapsed.
+    /// Returns the frame time elapsed.
     pub fn clock(&self) -> Duration {
         self.clock
     }
 
-    /// The governor's multiplier.
+    /// Returns the governor's multiplier.
     pub fn multiplier(&self) -> f32 {
         self.governor.multiplier()
     }
 
-    /// Every decision of the governor so far.
+    /// Returns every decision of the governor so far.
     pub fn decisions(&self) -> &[SimDecision] {
         &self.decisions
     }
 
-    /// Every frame so far.
+    /// Returns every frame so far.
     pub fn frames(&self) -> &[SimFrame] {
         &self.frames
     }
 
-    /// Each row change: when, and which agent.
+    /// Returns each row change: when, and which agent.
     pub fn switches(&self) -> &[(Duration, usize)] {
         &self.switches
     }
 
-    /// The margin each round was planned with, in order, the first epoch's
+    /// Returns the margin each round was planned with, in order, the first epoch's
     /// included; empty for a set that plans nothing beyond the frame.
     pub fn margins(&self) -> &[Duration] {
         &self.margins
     }
 
-    /// What the run so far measures.
+    /// Returns what the run so far measures.
     pub fn metrics(&self) -> SimMetrics {
         let frames = self.frames.len() as u64;
         let minutes = self.clock.as_secs_f64() / 60.0;
@@ -351,7 +428,7 @@ impl Simulation {
         }
     }
 
-    /// The allocation the arbiter decides for a target of `multiplier` × the
+    /// Returns the allocation the arbiter decides for a target of `multiplier` × the
     /// setpoint.
     fn allocate(&mut self, trigger: Trigger, multiplier: f32) -> Allocation {
         self.epoch += 1;
@@ -412,7 +489,7 @@ impl Simulation {
         decision.allocation
     }
 
-    /// One frame: the rows chosen at the previous lend run, the allocation
+    /// Runs one frame: the rows chosen at the previous lend run, the allocation
     /// published since is lent, and the governor observes the frame.
     fn frame(&mut self) -> Duration {
         let mut switched = vec![false; self.agents.len()];
@@ -497,7 +574,7 @@ impl Simulation {
         time
     }
 
-    /// One DCC tick: frames for 50 ms of frame time (one at least), then a
+    /// Runs one DCC tick: frames for 50 ms of frame time (one at least), then a
     /// decision once the DCC has seen enough frames; a change opens an epoch.
     fn tick(&mut self) {
         let mut ticked = Duration::ZERO;
@@ -521,89 +598,12 @@ impl Simulation {
     }
 }
 
-impl SimAgent {
-    /// This agent's bid for `epoch` under `load`: its rows at their quotes,
-    /// which follow the load, `Important`, learning.
-    fn bid(&self, epoch: Epoch, running: usize, load: f64) -> Bid {
-        Bid {
-            offer: Offer {
-                agent: AgentId::new(self.name),
-                epoch,
-                rows: (self.rows.iter())
-                    .map(|&(id, cpu_us, quality)| OfferRow {
-                        id,
-                        cost: Cost {
-                            time: PerDevice {
-                                cpu: Duration::from_secs_f64(cpu_us as f64 * load / 1_000_000.0),
-                                ..PerDevice::default()
-                            },
-                            ..Cost::default()
-                        },
-                        quality,
-                        confidence: CostBasis::Measured,
-                    })
-                    .collect(),
-                floor: self.rows[0].0,
-                current: self.rows[running.min(self.rows.len() - 1)].0,
-                health: 1.0,
-            },
-            importance: AgentImportance::Important,
-            mode: AdaptationMode::Learning,
-            hints: AgentHints::default(),
-            kept: None,
-            late: false,
-        }
-    }
-
-    /// The row this agent runs under `allocation` and `load`: the best
-    /// quality whose quote its envelope's host time fits, else its floor.
-    fn runs(&self, allocation: &Allocation, load: f64) -> usize {
-        let lent = (allocation.envelopes.iter())
-            .find(|(id, _)| *id == AgentId::new(self.name))
-            .map_or(Duration::ZERO, |(_, envelope)| envelope.time.cpu);
-        (0..self.rows.len())
-            .filter(|&row| self.quote(row).as_secs_f64() * load <= lent.as_secs_f64())
-            .max_by(|&a, &b| self.rows[a].2.total_cmp(&self.rows[b].2))
-            .unwrap_or(0)
-    }
-
-    /// How long a switch to row `row` takes to prepare.
-    fn prepare(&self, row: usize) -> Duration {
-        Duration::from_micros(self.prepare.get(row).copied().unwrap_or(DEFAULT_PREPARE))
-    }
-
-    /// What row `row` quotes.
-    fn quote(&self, row: usize) -> Duration {
-        Duration::from_micros(self.rows[row].1)
-    }
-
-    /// What row `row` costs for each microsecond it quotes.
-    fn bias(&self, row: usize) -> f64 {
-        self.bias.get(row).copied().unwrap_or(1.0)
-    }
-}
-
-/// How long a switch of row takes to prepare, when the agent does not say.
-const DEFAULT_PREPARE: u64 = 2_000;
-
-/// How long the governor is given to answer a change of load.
-const LOAD_STEP_ANSWER: Duration = Duration::from_millis(500);
-
-/// The shortest frame.
-const MIN_FRAME: Duration = Duration::from_micros(1);
-
-/// The weight of an `Important` agent, as the arbiter weighs it.
-const WEIGHT: f64 = 0.75;
-
-/// The governor's setpoint: a 60 Hz frame.
+/// Returns the governor's setpoint: a 60 Hz frame.
 fn setpoint() -> Duration {
     Duration::from_secs_f64(1.0 / 60.0)
 }
 
-/// The DCC's tick, in frame time: 20 Hz.
-const TICK: Duration = Duration::from_millis(50);
-
-/// `seed` spread over the generator's bits (SplitMix64), never zero.
+/// Spreads `seed` over the generator's bits (`SplitMix64`), never zero.
 fn scramble(seed: u64) -> u64 {
     let mut z = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
@@ -611,7 +611,7 @@ fn scramble(seed: u64) -> u64 {
     (z ^ (z >> 31)).max(1)
 }
 
-/// The next draw of `state` (xorshift64), uniform in [-1, 1].
+/// Returns the next draw of `state` (`xorshift64`), uniform in [-1, 1].
 fn uniform(state: &mut u64) -> f64 {
     let mut x = *state;
     x ^= x << 13;

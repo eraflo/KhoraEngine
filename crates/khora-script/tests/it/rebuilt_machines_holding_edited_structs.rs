@@ -16,8 +16,8 @@
 //!
 //! A rebuild keeps an unchanged frame as it was frozen — its registers too —
 //! and lays an edited frame out again with the locals it matched. Either can
-//! hold a struct whose declaration changed so that the held value no longer
-//! goes back into the arena: a field its code never names, retyped; a field
+//! hold a struct whose declaration changed so that the held value does not go
+//! back into the arena: a field its code never names, retyped; a field
 //! added with neither default nor zero. The machine must still resume — the
 //! field at its zero, or the body restarted — and never fault on its first
 //! run.

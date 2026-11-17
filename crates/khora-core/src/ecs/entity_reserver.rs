@@ -39,30 +39,14 @@ pub struct EntityReserver {
     state: Mutex<State>,
 }
 
-#[derive(Debug, Default)]
-struct State {
-    /// Ids the world holds back for this reserver, handed out first.
-    ready: Vec<EntityId>,
-    /// The next index past the end of the world's store to hand out.
-    fresh: u32,
-    /// Every id handed out since the world last settled its reservations.
-    handed: Vec<EntityId>,
-    /// How many ids were handed out since the world last took the count —
-    /// a frame's spawns, which size the ids it keeps ready for the next.
-    served: usize,
-    /// Every id handed out under a hold and not committed or given back yet:
-    /// never taken back at a frame's end.
-    held: HashSet<EntityId>,
-}
-
 impl EntityReserver {
-    /// A reserver owned by no world: its ids start at index 0 — what a
+    /// Returns a reserver owned by no world: its ids start at index 0 — what a
     /// script run on its own spawns with.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// An id no other reservation and no live entity holds. Never fails.
+    /// Returns an id no other reservation and no live entity holds. Never fails.
     pub fn reserve(&self) -> EntityId {
         let mut state = self.state.lock_recovered();
         let id = state.next();
@@ -71,7 +55,7 @@ impl EntityReserver {
         id
     }
 
-    /// An id like [`reserve`](Self::reserve) gives, held: never taken back
+    /// Returns an id like [`reserve`](Self::reserve) gives, held: never taken back
     /// at a frame's end, until committed or given back.
     pub(crate) fn reserve_held(&self) -> EntityId {
         let mut state = self.state.lock_recovered();
@@ -86,7 +70,7 @@ impl EntityReserver {
         self.state.lock_recovered().held.extend(ids.iter().copied());
     }
 
-    /// Whether `id` is held and not committed nor given back — and, if so,
+    /// Returns whether `id` is held and not committed nor given back — and, if so,
     /// forgets it: the load holding it commits it.
     pub fn commit_held(&self, id: EntityId) -> bool {
         self.state.lock_recovered().held.remove(&id)
@@ -132,7 +116,7 @@ impl EntityReserver {
         from..state.fresh
     }
 
-    /// Whether this reserver handed out `id` since the world last settled —
+    /// Returns whether this reserver handed out `id` since the world last settled —
     /// and, if so, forgets it: a spawn commits an id once.
     pub fn take_handed(&self, id: EntityId) -> bool {
         let mut state = self.state.lock_recovered();
@@ -145,23 +129,23 @@ impl EntityReserver {
         }
     }
 
-    /// Whether this reserver handed out `id` since the world last settled
+    /// Returns whether this reserver handed out `id` since the world last settled
     /// and nothing committed it yet — without forgetting it.
     pub fn is_handed(&self, id: EntityId) -> bool {
         self.state.lock_recovered().handed.contains(&id)
     }
 
-    /// Every id handed out and not committed: what the world takes back.
+    /// Returns every id handed out and not committed: what the world takes back.
     pub fn take_unspent(&self) -> Vec<EntityId> {
         std::mem::take(&mut self.state.lock_recovered().handed)
     }
 
-    /// How many ids are ready to hand out without a fresh index.
+    /// Returns how many ids are ready to hand out without a fresh index.
     pub fn ready_len(&self) -> usize {
         self.state.lock_recovered().ready.len()
     }
 
-    /// How many ids were handed out since the last call — and starts the
+    /// Returns how many ids were handed out since the last call — and starts the
     /// count again.
     pub fn take_served(&self) -> usize {
         std::mem::take(&mut self.state.lock_recovered().served)
@@ -181,8 +165,24 @@ impl EntityReserver {
     }
 }
 
+#[derive(Debug, Default)]
+struct State {
+    /// Ids the world holds back for this reserver, handed out first.
+    ready: Vec<EntityId>,
+    /// The next index past the end of the world's store to hand out.
+    fresh: u32,
+    /// Every id handed out since the world last settled its reservations.
+    handed: Vec<EntityId>,
+    /// How many ids were handed out since the world last took the count —
+    /// a frame's spawns, which size the ids it keeps ready for the next.
+    served: usize,
+    /// Every id handed out under a hold and not committed or given back yet:
+    /// never taken back at a frame's end.
+    held: HashSet<EntityId>,
+}
+
 impl State {
-    /// The next id to hand out: a ready one, else a fresh index.
+    /// Returns the next id to hand out: a ready one, else a fresh index.
     fn next(&mut self) -> EntityId {
         match self.ready.pop() {
             Some(id) => id,
@@ -259,5 +259,26 @@ mod tests {
         assert_eq!(reserver.take_ready_beyond(1), vec![id(2, 1), id(3, 1)]);
         assert_eq!(reserver.ready_len(), 1);
         assert!(reserver.take_ready_beyond(5).is_empty());
+    }
+
+    #[test]
+    fn a_held_id_is_committed_once() {
+        let reserver = EntityReserver::new();
+        let held = reserver.reserve_held();
+        assert!(!reserver.commit_held(id(9, 0)), "never held");
+        assert!(reserver.commit_held(held));
+        assert!(!reserver.commit_held(held), "committed already");
+    }
+
+    #[test]
+    fn the_world_takes_ready_ids_and_claims_fresh_indices_no_reservation_gets() {
+        let reserver = EntityReserver::new();
+        reserver.refill([id(3, 2)]);
+        assert_eq!(reserver.take_ready(), Some(id(3, 2)));
+        assert_eq!(reserver.take_ready(), None);
+
+        assert_eq!(reserver.claim_fresh(), 0);
+        assert_eq!(reserver.claim_fresh(), 1);
+        assert_eq!(reserver.reserve(), id(2, 0), "past the claimed indices");
     }
 }

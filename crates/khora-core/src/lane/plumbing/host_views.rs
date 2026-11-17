@@ -55,7 +55,7 @@ pub struct HostViews {
 }
 
 impl HostViews {
-    /// An empty set: publishes nothing.
+    /// Returns an empty set: publishes nothing.
     #[must_use]
     pub fn new() -> Self {
         Self::default()

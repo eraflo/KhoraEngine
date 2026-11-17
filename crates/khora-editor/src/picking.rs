@@ -28,7 +28,7 @@ use khora_sdk::{GameWorld, HandleComponent};
 /// without this box it could not be clicked in the viewport.
 const GIZMO_PICK_HALF_EXTENT: f32 = 0.35;
 
-/// The nearest entity whose bounds the ray enters, if any.
+/// Returns the nearest entity whose bounds the ray enters, if any.
 pub fn pick_entity(world: &GameWorld, ray: &Ray) -> Option<EntityId> {
     // Reciprocal once, not per candidate — the slab test takes the inverse
     // direction so it can multiply rather than divide.
@@ -74,8 +74,8 @@ fn entity_matrix(world: &GameWorld, entity: EntityId) -> Option<Mat4> {
     )
 }
 
-/// Local-space bounds for `entity`: the mesh's own extent when it has one, a
-/// small box otherwise.
+/// Returns the local-space bounds for `entity`: the mesh's own extent when it
+/// has one, a small box otherwise.
 fn local_bounds(world: &GameWorld, entity: EntityId) -> Aabb {
     if let Some(mesh) = world.get_component::<HandleComponent<Mesh>>(entity) {
         if let Some(bounds) = Aabb::from_points(&mesh.handle.positions) {

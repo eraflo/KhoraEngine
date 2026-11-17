@@ -16,7 +16,7 @@
 
 /// A scalar shader-def value that specializes a shader variant.
 ///
-/// No float: a naga_oil `#define` takes only integers and booleans.
+/// No float: a `naga_oil` `#define` takes only integers and booleans.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ShaderDefScalar {
     /// A boolean `#ifdef`-style flag.

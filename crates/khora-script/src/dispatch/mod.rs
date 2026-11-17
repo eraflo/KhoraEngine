@@ -132,7 +132,7 @@ pub fn handles(program: &Program, behavior: &str, event: &str) -> bool {
 
 /// Returns the program index of the function handling `event`: the current
 /// state's handler, else the behavior's own.
-pub fn resolve_handler(
+pub(crate) fn resolve_handler(
     program: &Program,
     behavior: &str,
     event: &str,
@@ -148,8 +148,8 @@ pub fn resolve_handler(
         .copied()
 }
 
-/// Whether `event` names a compiler-made member (`__enter`, `__every(0.5)`):
-/// raising `"__enter"` must not change a state without a `become`.
+/// Returns whether `event` names a compiler-made member (`__enter`,
+/// `__every(0.5)`): raising `"__enter"` must not change a state without a `become`.
 fn is_reserved(event: &str) -> bool {
     event.starts_with("__")
 }
@@ -333,7 +333,7 @@ pub fn deliver(
     run(program, handler, &args, host, fuel)
 }
 
-/// `args` as the event's declaration takes them, or why not.
+/// Fits `args` to the event's declaration, or says why not.
 fn fitted(
     signature: &crate::vm::EventSignature,
     args: &[ScriptValue],

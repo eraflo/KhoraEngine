@@ -18,7 +18,7 @@
 //! starting again — the lane sees it as a view that is `resumed`. What was
 //! queued for the old world — what scripts raised in its last frame, and what
 //! the engine put on its channel while nothing played — belongs to entities
-//! that may no longer exist, or whose ids now name someone else. None of it
+//! that may be gone, or whose ids now name someone else. None of it
 //! is delivered after Play: the intake clears what scripts raised on the
 //! session's first frame, and the frame boundary drops the engine's events
 //! at each frame the scripting family is off — its `ScriptEvent` mailbox

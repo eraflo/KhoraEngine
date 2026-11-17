@@ -64,8 +64,8 @@ pub fn pack() -> Result<()> {
     Ok(())
 }
 
-/// What a pack of `root` is called: the project it belongs to — the
-/// directory holding `assets/` — else the directory itself.
+/// Returns the name of a pack of `root`: the project it belongs to (the
+/// directory holding `assets/`), else the directory itself.
 fn pack_name(root: &Path) -> String {
     let named = |path: &Path| {
         path.file_name()

@@ -67,7 +67,7 @@ pub struct DeclaredComponents {
 }
 
 impl DeclaredComponents {
-    /// Whether `component` is registered with no module declaring it.
+    /// Returns whether `component` is registered with no module declaring it.
     pub fn is_orphaned(&self, component: &str) -> bool {
         self.orphans.contains(component)
     }
@@ -100,7 +100,7 @@ impl DeclaredComponents {
     /// Returns what is wrong with the declarations now: the names refused, and the orphans.
     ///
     /// Orphans an unmount left are not listed.
-    pub fn standing_problems(&self) -> Vec<khora_core::problems::Problem> {
+    pub(crate) fn standing_problems(&self) -> Vec<khora_core::problems::Problem> {
         use khora_core::problems::{Problem, ProblemSeverity};
         let refusals = self.refused.keys().map(|(name, module)| {
             let owner = self.owner_of(name).unwrap_or("another module");
@@ -148,7 +148,7 @@ pub struct DeclarationReport {
     pub relaid: Vec<String>,
     /// Moved to another domain.
     pub moved: Vec<String>,
-    /// No longer declared by any module: kept, with their data.
+    /// Declared by no module: kept, with their data.
     pub orphaned: Vec<String>,
     /// Registered with no module declaring them — orphaned, or loaded from a
     /// file — and now declared again.
@@ -236,7 +236,7 @@ pub fn apply_declarations(
         }
     }
 
-    // A module of the batch that no longer declares a name it was refused
+    // A module of the batch that stops declaring a name it was refused
     // gives up its claim.
     state.refused.retain(|(name, module), _| {
         sets.get(module.as_str())
@@ -263,7 +263,7 @@ pub fn apply_declarations(
         state.owner.insert((*name).to_owned(), (*module).to_owned());
     }
 
-    // Whatever a module of the batch owned and no longer declares, unless
+    // Whatever a module of the batch owned and stops declaring, unless
     // another module of the batch took it.
     let dropped: Vec<String> = state
         .owner
@@ -471,7 +471,7 @@ fn apply_layout(
     }
 }
 
-/// The packed layout `component` declares, each field of its Ergon type.
+/// Returns the packed layout `component` declares, each field of its Ergon type.
 fn layout_of(component: &DeclaredComponent) -> Result<PackedLayout, khora_data::ecs::LayoutError> {
     PackedLayout::typed(
         component

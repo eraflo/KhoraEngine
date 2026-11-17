@@ -50,12 +50,16 @@ pub trait AudioDevice: Send + Sync {
     ///
     /// The returned handle keeps the stream alive for as long as it
     /// exists. Dropping the handle stops the stream.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the backend cannot open an output stream on the device.
     fn open(self: Box<Self>, mix_bus: Arc<dyn AudioMixBus>) -> Result<Box<dyn AudioStream>>;
 }
 
 /// Live audio stream handle. Drop = stop.
 pub trait AudioStream: Send + Sync {
-    /// Channel count and sample rate of the stream as the backend opened it.
+    /// Returns the channel count and sample rate of the stream as the backend opened it.
     ///
     /// May differ from the bus's nominal info if the hardware imposed a format.
     fn stream_info(&self) -> StreamInfo;

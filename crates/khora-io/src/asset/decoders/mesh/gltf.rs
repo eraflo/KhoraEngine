@@ -174,7 +174,7 @@ pub(super) fn parse_gltf(bytes: &[u8]) -> Result<gltf::Gltf, Box<dyn Error + Sen
     Ok(gltf::Gltf { document, blob })
 }
 
-/// Every mesh the file shows, with the world transform of the node showing it.
+/// Returns every mesh the file shows, with the world transform of the node showing it.
 ///
 /// The default scene (else the first) is walked depth first; a file without a
 /// scene shows each mesh once, untransformed. A node reached twice (a cycle, or
@@ -221,7 +221,7 @@ fn placed_meshes(
     Ok(placed)
 }
 
-/// The node's local transform (TRS or matrix), column-major.
+/// Returns the node's local transform (TRS or matrix), column-major.
 fn local_matrix(node: &gltf::Node<'_>) -> Mat4 {
     let [c0, c1, c2, c3] = node.transform().matrix();
     Mat4::from_cols(
@@ -232,7 +232,7 @@ fn local_matrix(node: &gltf::Node<'_>) -> Mat4 {
     )
 }
 
-/// The matrix carrying normals through `world`: its 3×3 cofactor, det · M⁻ᵀ.
+/// Returns the matrix carrying normals through `world`: its 3×3 cofactor, det · M⁻ᵀ.
 ///
 /// Signed so a mirror keeps normals pointing out. Unlike the inverse it needs
 /// no tolerance on the determinant, so a centimetre-scaled node still rotates
@@ -247,7 +247,7 @@ fn normal_matrix(world: &Mat4) -> Mat3 {
     Mat3::from_cols(b.cross(c) * sign, c.cross(a) * sign, a.cross(b) * sign)
 }
 
-/// `v` scaled to unit length, or `fallback` when it has none. No tolerance:
+/// Scales `v` to unit length, or `fallback` when it has none. No tolerance:
 /// a normal through a tiny scale is short but still a direction.
 fn unit_or(v: Vec3, fallback: Vec3) -> Vec3 {
     let length = v.length();
@@ -393,7 +393,7 @@ pub(super) fn read_primitive(
     })
 }
 
-/// Triangle list of a strip: every triangle after the first alternates its
+/// Returns the triangle list of a strip: every triangle after the first alternates its
 /// winding, so odd ones swap their first two corners to stay counter-clockwise.
 fn strip_to_list(strip: &[u32]) -> Vec<u32> {
     strip
@@ -409,7 +409,7 @@ fn strip_to_list(strip: &[u32]) -> Vec<u32> {
         .collect()
 }
 
-/// Triangle list of a fan: every triangle shares the first corner.
+/// Returns the triangle list of a fan: every triangle shares the first corner.
 fn fan_to_list(fan: &[u32]) -> Vec<u32> {
     match fan.split_first() {
         Some((&hub, rim)) => rim.windows(2).flat_map(|w| [hub, w[0], w[1]]).collect(),
@@ -464,7 +464,7 @@ pub(super) fn merge(primitives: Vec<Primitive>) -> Result<Mesh, Box<dyn Error + 
     })
 }
 
-/// Exactly `count` values: the attribute's own, then `default`.
+/// Returns exactly `count` values: the attribute's own, then `default`.
 fn aligned<T: Copy>(values: Option<Vec<T>>, count: usize, default: T) -> Vec<T> {
     let mut values = values.unwrap_or_default();
     values.resize(count, default);

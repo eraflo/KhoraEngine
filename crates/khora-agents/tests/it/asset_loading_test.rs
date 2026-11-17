@@ -45,7 +45,7 @@ impl AssetDecoder<TestTexture> for TestTextureLoader {
         true
     }
     fn load(&self, bytes: &[u8]) -> Result<TestTexture, Box<dyn Error + Send + Sync>> {
-        let id = u32::from_le_bytes(bytes.try_into().unwrap());
+        let id = u32::from_le_bytes(bytes.try_into()?);
         Ok(TestTexture { id })
     }
 }

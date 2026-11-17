@@ -25,6 +25,16 @@ use crate::governor::GovernorConfig;
 /// How often a scenario sets its loads, in seconds of frame time.
 const STEP: f64 = 0.25;
 
+/// The frame's time outside every agent.
+const HOST: Duration = Duration::from_millis(3);
+
+/// How much the true costs vary from one frame to the next, relative.
+const NOISE: f64 = 0.05;
+
+const RENDER: usize = 0;
+const SHADOW: usize = 1;
+const SCRIPT: usize = 3;
+
 /// A scripted run of the simulated engine: its agents, its host part, and
 /// how their loads move over time.
 #[derive(Debug, Clone)]
@@ -38,7 +48,83 @@ pub struct Scenario {
     load: fn(f64, usize) -> f64,
 }
 
-/// The agents every scenario runs, in order: renderer, shadows, physics, scripts, audio.
+impl Scenario {
+    /// Returns every scenario: a light ramp, shadow casters, a script load and
+    /// thermal throttling.
+    pub fn all() -> Vec<Scenario> {
+        vec![
+            // Lights are added: the renderer's load rises from ×1 to ×3
+            // over 30 s, then holds.
+            Scenario {
+                name: "light ramp",
+                seconds: 45.0,
+                load: |t, agent| {
+                    if agent == RENDER {
+                        1.0 + 2.0 * (t / 30.0).min(1.0)
+                    } else {
+                        1.0
+                    }
+                },
+            },
+            // Shadow casters enter the view at 10 s: the shadows cost twice
+            // as much from then on.
+            Scenario {
+                name: "shadow casters",
+                seconds: 30.0,
+                load: |t, agent| {
+                    if agent == SHADOW && t >= 10.0 {
+                        2.0
+                    } else {
+                        1.0
+                    }
+                },
+            },
+            // Scripts burst for one second in every five, four times as
+            // costly.
+            Scenario {
+                name: "script load",
+                seconds: 30.0,
+                load: |t, agent| {
+                    if agent == SCRIPT && t % 5.0 < 1.0 {
+                        4.0
+                    } else {
+                        1.0
+                    }
+                },
+            },
+            // The machine heats up: every cost rises from ×1 to ×1.4 over
+            // 60 s, then holds.
+            Scenario {
+                name: "thermal",
+                seconds: 75.0,
+                load: |t, _| 1.0 + 0.4 * (t / 60.0).min(1.0),
+            },
+        ]
+    }
+
+    /// Runs the scenario through `arbiters`, its noise drawn from `seed`.
+    pub fn run(&self, arbiters: Arbiters, seed: u64) -> SimMetrics {
+        let agents = agents();
+        let count = agents.len();
+        let mut sim = Simulation::new(GovernorConfig::default(), agents, HOST, arbiters, seed)
+            .with_noise(NOISE);
+        while sim.clock().as_secs_f64() < self.seconds {
+            let t = sim.clock().as_secs_f64();
+            for agent in 0..count {
+                sim.set_load(agent, (self.load)(t, agent));
+            }
+            sim.run_for(STEP);
+        }
+        sim.metrics()
+    }
+}
+
+/// Runs `scenario` through `arbiters`, its noise drawn from `seed`.
+pub fn simulate(scenario: &Scenario, arbiters: Arbiters, seed: u64) -> SimMetrics {
+    scenario.run(arbiters, seed)
+}
+
+/// Returns the agents every scenario runs, in order: renderer, shadows, physics, scripts, audio.
 ///
 /// Like a lane calibrated on another machine, some take a fixed factor of
 /// what they quote on every row: the renderer and the scripts more (×1.2,
@@ -94,90 +180,4 @@ fn agents() -> Vec<SimAgent> {
             rows(&[(LowPower, 300, 0.5), (HighPerformance, 800, 1.0)]),
         ),
     ]
-}
-
-/// The frame's time outside every agent.
-const HOST: Duration = Duration::from_millis(3);
-
-/// How much the true costs vary from one frame to the next, relative.
-const NOISE: f64 = 0.05;
-
-const RENDER: usize = 0;
-const SHADOW: usize = 1;
-const SCRIPT: usize = 3;
-
-impl Scenario {
-    /// Every scenario: a light ramp, shadow casters, a script load and
-    /// thermal throttling.
-    pub fn all() -> Vec<Scenario> {
-        vec![
-            // Lights are added: the renderer's load rises from ×1 to ×3
-            // over 30 s, then holds.
-            Scenario {
-                name: "light ramp",
-                seconds: 45.0,
-                load: |t, agent| {
-                    if agent == RENDER {
-                        1.0 + 2.0 * (t / 30.0).min(1.0)
-                    } else {
-                        1.0
-                    }
-                },
-            },
-            // Shadow casters enter the view at 10 s: the shadows cost twice
-            // as much from then on.
-            Scenario {
-                name: "shadow casters",
-                seconds: 30.0,
-                load: |t, agent| {
-                    if agent == SHADOW && t >= 10.0 {
-                        2.0
-                    } else {
-                        1.0
-                    }
-                },
-            },
-            // Scripts burst for one second in every five, four times as
-            // costly.
-            Scenario {
-                name: "script load",
-                seconds: 30.0,
-                load: |t, agent| {
-                    if agent == SCRIPT && t % 5.0 < 1.0 {
-                        4.0
-                    } else {
-                        1.0
-                    }
-                },
-            },
-            // The machine heats up: every cost rises from ×1 to ×1.4 over
-            // 60 s, then holds.
-            Scenario {
-                name: "thermal",
-                seconds: 75.0,
-                load: |t, _| 1.0 + 0.4 * (t / 60.0).min(1.0),
-            },
-        ]
-    }
-
-    /// The scenario run through `arbiters`, its noise drawn from `seed`.
-    pub fn run(&self, arbiters: Arbiters, seed: u64) -> SimMetrics {
-        let agents = agents();
-        let count = agents.len();
-        let mut sim = Simulation::new(GovernorConfig::default(), agents, HOST, arbiters, seed)
-            .with_noise(NOISE);
-        while sim.clock().as_secs_f64() < self.seconds {
-            let t = sim.clock().as_secs_f64();
-            for agent in 0..count {
-                sim.set_load(agent, (self.load)(t, agent));
-            }
-            sim.run_for(STEP);
-        }
-        sim.metrics()
-    }
-}
-
-/// `scenario` run through `arbiters`, its noise drawn from `seed`.
-pub fn simulate(scenario: &Scenario, arbiters: Arbiters, seed: u64) -> SimMetrics {
-    scenario.run(arbiters, seed)
 }

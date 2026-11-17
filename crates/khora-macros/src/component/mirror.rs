@@ -21,7 +21,7 @@ use syn::{DeriveInput, Fields};
 
 use super::fields::FieldSplit;
 
-/// The mirror struct of `input`, named `serializable_name`, and its `From`
+/// Returns the mirror struct of `input`, named `serializable_name`, and its `From`
 /// impls in both directions.
 pub(super) fn mirror(
     input: &DeriveInput,
@@ -73,7 +73,7 @@ pub(super) fn mirror(
     }
 }
 
-/// The mirror struct itself, with the component's visibility.
+/// Returns the mirror struct itself, with the component's visibility.
 ///
 /// It is tagged `#[allow(missing_docs)]`: a generated detail of saves and the
 /// inspector, it must not ask a crate under `missing_docs` to document it.
@@ -137,8 +137,8 @@ fn mirror_struct(
     }
 }
 
-/// `From<Name> for Serializable<Name>`. `named_with_fields`: a struct with
-/// named fields of which the mirror holds at least one.
+/// Generates `From<Name> for Serializable<Name>`. `named_with_fields`: a struct with named fields
+/// of which the mirror holds at least one.
 fn into_mirror(
     name: &syn::Ident,
     serializable_name: &syn::Ident,
@@ -202,7 +202,8 @@ fn into_mirror(
     }
 }
 
-/// `From<Serializable<Name>> for Name`: included fields from the mirror, skipped ones from `Default`.
+/// Generates `From<Serializable<Name>> for Name`: included fields from the mirror, skipped ones
+/// from `Default`.
 ///
 /// `named_with_fields` as in [`into_mirror`].
 fn from_mirror(

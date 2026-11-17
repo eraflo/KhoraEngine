@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! `MeshOnGpu`: a CPU mesh as vertex and index buffers, kept in the
-//! `AssetStore`'s `Assets<GpuMesh>` the render lanes read. Its DataSystem runs
+//! `AssetStore`'s `Assets<GpuMesh>` the render lanes read. Its `DataSystem` runs
 //! [`ProjectionRegistry::sync_all`](crate::ProjectionRegistry::sync_all).
 
 use std::sync::Arc;

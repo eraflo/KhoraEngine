@@ -325,13 +325,13 @@ impl Tables {
     }
 }
 
-/// Zig-zag: maps signed to unsigned so small magnitudes stay short as varints
+/// Maps signed to unsigned by zig-zag, so small magnitudes stay short as varints
 /// (0→0, -1→1, 1→2, -2→3).
 fn zigzag(v: i64) -> u64 {
     ((v << 1) ^ (v >> 63)) as u64
 }
 
-/// The inverse of [`zigzag`].
+/// Returns the inverse of [`zigzag`].
 fn unzigzag(v: u64) -> i64 {
     ((v >> 1) as i64) ^ -((v & 1) as i64)
 }

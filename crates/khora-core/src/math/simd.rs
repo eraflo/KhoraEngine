@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Explicit-SIMD transform kernels over field-split batches, eight entities per [`wide::f32x8`],
-//! each matching its scalar path bit for bit. See the book: concepts/agdf.md, "Layer 2 —
+//! Explicit-SIMD transform kernels over field-split batches, eight entities per [`wide::f32x8`].
+//!
+//! Each matches its scalar path bit for bit. See the book: concepts/agdf.md, "Layer 2 —
 //! the field-SoA substrate, and why it is the lever".
 
 use wide::{f32x8, CmpGt};
@@ -70,12 +71,12 @@ impl TrsBatchSoa {
         }
     }
 
-    /// The number of entities in the batch.
+    /// Returns the number of entities in the batch.
     pub fn len(&self) -> usize {
         self.tx.len()
     }
 
-    /// Whether the batch holds no entities.
+    /// Returns whether the batch holds no entities.
     pub fn is_empty(&self) -> bool {
         self.tx.is_empty()
     }
@@ -194,7 +195,7 @@ pub fn compose_trs_to_mat4(batch: &TrsBatchSoa, out: &mut [Mat4]) {
     }
 }
 
-/// Scalar twin of [`compose_trs_to_mat4`]: the same result, one entity at a time.
+/// Composes the batch one entity at a time: the scalar twin of [`compose_trs_to_mat4`].
 ///
 /// Prefer it for small batches, where the field-split transpose costs more than the vector
 /// op saves; it is also the oracle the SIMD path is tested against.
@@ -218,7 +219,7 @@ pub fn compose_trs_to_mat4_scalar(batch: &TrsBatchSoa, out: &mut [Mat4]) {
     }
 }
 
-/// Scalar `T · R · S` for one entity — the equivalence oracle for
+/// Composes the scalar `T · R · S` of one entity — the equivalence oracle for
 /// [`compose_trs_to_mat4`] and the kernel used for its ragged tail.
 #[inline]
 fn compose_one(t: [f32; 3], q: [f32; 4], s: [f32; 3]) -> Mat4 {
@@ -310,7 +311,9 @@ pub fn normalize_quat_batch(qx: &mut [f32], qy: &mut [f32], qz: &mut [f32], qw: 
 /// bounds checks and defeat the vectorisation.
 #[inline]
 fn load8(s: &[f32], i: usize) -> f32x8 {
-    let chunk: [f32; LANES] = s[i..i + LANES].try_into().unwrap();
+    let chunk: [f32; LANES] = s[i..i + LANES]
+        .try_into()
+        .expect("a slice of LANES items converts to an array of LANES");
     f32x8::new(chunk)
 }
 

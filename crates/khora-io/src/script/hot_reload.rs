@@ -51,7 +51,7 @@ pub fn request_channel() -> Channel<CompileRequest> {
     Channel::bounded(REQUEST_BACKLOG, WhenFull::Reject)
 }
 
-/// Whether a change at `rel_path` under `root` can change which Ergon files are misplaced.
+/// Returns whether a change at `rel_path` under `root` can change which Ergon files are misplaced.
 ///
 /// True for an Ergon file, a folder that `arrived`, or anything gone: a gone
 /// folder reports only itself and cannot be told from a file (`props.v2/`).
@@ -97,7 +97,7 @@ fn modules_gone_with(mounted: Option<&MountedScripts>, root: &Path, rel_path: &s
         .collect()
 }
 
-/// Whether `module`'s file is under `root`'s script folder, spelled exactly as the module.
+/// Returns whether `module`'s file is under `root`'s script folder, spelled exactly as the module.
 ///
 /// A file renamed to another case is gone under its old name, whatever the
 /// file system thinks of case.

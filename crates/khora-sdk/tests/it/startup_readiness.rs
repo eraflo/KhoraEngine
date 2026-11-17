@@ -16,7 +16,7 @@
 //! go once.** The engine installs `Arc<Readiness>` beside the hubs. A tool
 //! waits on the tickets it filed — a project index, a scene load, a script
 //! compile — and on the holds it keeps while it files them in steps. A
-//! ticket counts as landed once its hub no longer holds it pending, so the
+//! ticket counts as landed when its hub holds it pending no more, so the
 //! tool's outcome is never taken. The engine settles it every frame and calls
 //! `startup_ready` once, on the first frame it is ready or timed out; on a
 //! time-out, each late ticket is reported to the `Problems` under
@@ -24,6 +24,11 @@
 //!
 //! Work filed off the frame spans frames, so these tests wait a bounded
 //! number of frames for it, never assume the frame that lands it.
+
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn threads to test concurrency"
+)]
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -260,7 +265,7 @@ impl Filed {
         }
     }
 
-    /// How many of the three the hubs no longer hold pending.
+    /// Counts how many of the three the hubs hold pending no more.
     fn landed<A: EngineApp>(&self, engine: &EngineCore<A>) -> usize {
         [
             !index_hub(engine).is_pending(self.index),
@@ -296,7 +301,7 @@ fn readiness_is_ready_with_nothing_waited_on() {
 
 /// **Readiness waits for every ticket filed.** An index, a scene load and a
 /// compile are filed and waited on: before any frame, none has landed. Each
-/// frame after, `landed` is the count the hubs no longer hold pending, out
+/// frame after, `landed` is the count the hubs hold pending no more, out
 /// of three, never moving back; the state is `Waiting` with that progress
 /// until the last lands, and `Ready` from then on.
 #[test]

@@ -29,6 +29,7 @@ use handlers::{handler_for, tile_kind_for, ActivationKind};
 use naming::{entity_display_name, sanitize_for_filename};
 
 mod folder_tree;
+mod grid;
 mod naming;
 mod new_script;
 mod panel;

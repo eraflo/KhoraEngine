@@ -23,7 +23,7 @@ use crate::{
 ///
 /// Wireframe materials are essential for debug views, editor gizmos, and understanding
 /// the underlying geometry of meshes. This material will integrate with the future
-/// EditorGizmo RenderLane (issue #167) and is designed for development and debugging,
+/// `EditorGizmo` `RenderLane` (issue #167) and is designed for development and debugging,
 /// not production rendering.
 ///
 /// # Performance Note

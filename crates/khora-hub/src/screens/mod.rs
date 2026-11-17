@@ -14,10 +14,10 @@ mod new_project;
 mod settings;
 mod trust;
 
-pub use engine_manager::show_engine_manager;
-pub use home::show_home;
-pub use new_project::show_new_project;
-pub use settings::show_settings;
+pub(crate) use engine_manager::show_engine_manager;
+pub(crate) use home::show_home;
+pub(crate) use new_project::show_new_project;
+pub(crate) use settings::show_settings;
 
 #[cfg(test)]
 mod tests;

@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A family's reserve: what its runs staged, received at a frame start and
-//! kept until a `TickPhase::Boundary` DataSystem takes it. An output a newer
-//! one supersedes while it waits is abandoned, never applied.
+//! A family's reserve: what its runs staged, kept until it is applied.
+//!
+//! Received at a frame start and kept until a `TickPhase::Boundary`
+//! `DataSystem` takes it. An output a newer one supersedes while it waits is
+//! abandoned, never applied.
 
 use std::any::TypeId;
 use std::sync::{Arc, Mutex};
@@ -62,7 +64,7 @@ impl std::fmt::Debug for Reserve {
 }
 
 impl Reserve {
-    /// An empty reserve.
+    /// Returns an empty reserve.
     pub fn new() -> Self {
         Self::default()
     }
@@ -111,7 +113,7 @@ impl Reserve {
             .unwrap_or_default()
     }
 
-    /// How many outputs of `T` wait in the reserve.
+    /// Returns how many outputs of `T` wait in the reserve.
     pub fn len<T: Staged>(&self) -> usize {
         self.queues
             .lock_recovered()
@@ -121,7 +123,7 @@ impl Reserve {
             .map_or(0, Vec::len)
     }
 
-    /// Whether no output of `T` waits in the reserve.
+    /// Returns whether no output of `T` waits in the reserve.
     pub fn is_empty<T: Staged>(&self) -> bool {
         self.len::<T>() == 0
     }

@@ -23,35 +23,59 @@ pub use super::backend_stats::BackendStats;
 
 /// Trait defining the interface for metrics storage backends
 pub trait MetricsBackend: Send + Sync + Debug + 'static {
-    /// Get a reference to this object as Any for downcasting
+    /// Returns a reference to this object as Any for downcasting
     fn as_any(&self) -> &dyn std::any::Any;
-    /// Store or update a metric
+    /// Stores or updates a metric
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetricsError::StorageError`] when the storage cannot be written.
     fn put_metric(&self, metric: Metric) -> MetricsResult<()>;
 
-    /// Retrieve a metric by ID
+    /// Returns a metric by ID
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetricsError::MetricNotFound`] when no metric has `id`, or
+    /// [`MetricsError::StorageError`] when the storage cannot be read.
     fn get_metric(&self, id: &MetricId) -> MetricsResult<Metric>;
 
-    /// Check if a metric exists
+    /// Returns whether a metric exists
     fn contains_metric(&self, id: &MetricId) -> bool;
 
-    /// Remove a metric
+    /// Removes a metric
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetricsError::MetricNotFound`] when no metric has `id`, or
+    /// [`MetricsError::StorageError`] when the storage cannot be written.
     fn remove_metric(&self, id: &MetricId) -> MetricsResult<()>;
 
-    /// Get all metric IDs currently stored
+    /// Returns all metric IDs currently stored
     fn list_metric_ids(&self) -> Vec<MetricId>;
 
-    /// Get all metrics (potentially expensive operation)
+    /// Returns all metrics (potentially expensive operation)
     fn list_all_metrics(&self) -> Vec<Metric>;
 
-    /// Clear all metrics
+    /// Clears all metrics
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetricsError::StorageError`] when the storage cannot be written.
     fn clear_all(&self) -> MetricsResult<()>;
 
-    /// Get the number of metrics stored
+    /// Returns the number of metrics stored
     fn metric_count(&self) -> usize;
 
     // Convenience methods for common operations
 
-    /// Increment a counter by the given amount
+    /// Increments a counter by the given amount
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetricsError::TypeMismatch`] when the metric is not a counter,
+    /// or what [`get_metric`](Self::get_metric) and [`put_metric`](Self::put_metric)
+    /// return on failure.
     fn increment_counter(&self, id: &MetricId, delta: u64) -> MetricsResult<u64> {
         let mut metric = self.get_metric(id)?;
 
@@ -70,7 +94,13 @@ pub trait MetricsBackend: Send + Sync + Debug + 'static {
         }
     }
 
-    /// Set a gauge value
+    /// Sets a gauge's value
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetricsError::TypeMismatch`] when the metric is not a gauge,
+    /// or what [`get_metric`](Self::get_metric) and [`put_metric`](Self::put_metric)
+    /// return on failure.
     fn set_gauge(&self, id: &MetricId, value: f64) -> MetricsResult<()> {
         let mut metric = self.get_metric(id)?;
 
@@ -88,7 +118,13 @@ pub trait MetricsBackend: Send + Sync + Debug + 'static {
         }
     }
 
-    /// Add a sample to a histogram
+    /// Adds a sample to a histogram
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetricsError::TypeMismatch`] when the metric is not a histogram,
+    /// or what [`get_metric`](Self::get_metric) and [`put_metric`](Self::put_metric)
+    /// return on failure.
     fn record_histogram_sample(&self, id: &MetricId, sample: f64) -> MetricsResult<()> {
         let mut metric = self.get_metric(id)?;
 

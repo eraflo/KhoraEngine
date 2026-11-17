@@ -45,7 +45,7 @@ pub(super) fn seal(program: &mut Program, natives: &NativeRegistry) {
         .unwrap_or(0);
 }
 
-/// One function's fingerprint, against the program and natives it was
+/// Returns one function's fingerprint, against the program and natives it was
 /// compiled with.
 fn fingerprint(function: &Function, program: &Program, natives: &NativeRegistry) -> u64 {
     let layout = function
@@ -63,7 +63,7 @@ fn fingerprint(function: &Function, program: &Program, natives: &NativeRegistry)
     first_u64(hash.0.finalize().as_bytes())
 }
 
-/// What a field slot is, by name: the slot index moves when a field is added
+/// Names what a field slot is: the slot index moves when a field is added
 /// before it, the name does not.
 fn slot_name(layout: Option<&BehaviorLayout>, slot: u16) -> String {
     let slot = usize::from(slot);
@@ -106,7 +106,7 @@ impl Hash {
         self.0.update(&value.to_le_bytes());
     }
 
-    /// A component write, by the component's name and its fields' names.
+    /// Hashes a component write, by the component's name and its fields' names.
     fn patch(&mut self, program: &Program, patch: u32) {
         let declared = program.patches.get(patch as usize);
         self.text(declared.map_or("", |declared| declared.component.as_str()));
@@ -119,7 +119,7 @@ impl Hash {
         }
     }
 
-    /// A query, by the components it matches.
+    /// Hashes a query, by the components it matches.
     fn query(&mut self, program: &Program, query: u32) {
         let shape = program.query(query).cloned().unwrap_or_default();
         for names in [&shape.all, &shape.none] {
@@ -130,7 +130,7 @@ impl Hash {
         }
     }
 
-    /// A struct, by its name — and one of its fields, by its name.
+    /// Hashes a struct by its name, and one of its fields by its name.
     fn struct_layout(&mut self, program: &Program, layout: u16, slot: Option<u16>) {
         let declared = program.structs.get(usize::from(layout));
         self.text(declared.map_or("", |declared| declared.name.as_str()));
@@ -535,7 +535,7 @@ impl Hash {
     }
 }
 
-/// The costliest run of `function`'s code between two places the machine
+/// Returns the costliest run of `function`'s code between two places the machine
 /// checks its fuel, natives at their declared cost.
 ///
 /// A stretch ends at a safepoint, and at an instruction after which the
@@ -550,60 +550,61 @@ fn longest_stretch(function: &Function, natives: &NativeRegistry) -> u64 {
     // itself; the marker only keeps a malformed program from recursing.
     let mut memo: Vec<Option<Option<u64>>> = vec![None; code.len()];
 
-    fn walk(
-        pc: usize,
-        code: &[Instruction],
-        natives: &NativeRegistry,
-        memo: &mut [Option<Option<u64>>],
-    ) -> u64 {
-        let Some(instruction) = code.get(pc) else {
-            return 0;
-        };
-        match memo[pc] {
-            Some(Some(cost)) => return cost,
-            Some(None) => return u64::MAX,
-            None => {}
-        }
-        memo[pc] = Some(None);
-
-        let cost = match instruction {
-            Instruction::NativeCall { function, .. } => {
-                natives.at(*function).map_or(1, |native| native.cost)
-            }
-            other => other.cost(),
-        };
-        let next = |target: usize, memo: &mut [Option<Option<u64>>]| -> u64 {
-            match code.get(target) {
-                None | Some(Instruction::Safepoint) => 0,
-                Some(_) => walk(target, code, natives, memo),
-            }
-        };
-        let rest = match instruction {
-            Instruction::Call { .. }
-            | Instruction::Return { .. }
-            | Instruction::Await { .. }
-            | Instruction::Yield
-            | Instruction::Halt => 0,
-            // A jump backwards lands where the machine checks again.
-            Instruction::Jump { target } if *target <= pc => 0,
-            Instruction::Jump { target } => next(*target, memo),
-            Instruction::JumpIfNot { target, .. } | Instruction::JumpIfNull { target, .. }
-                if *target <= pc =>
-            {
-                next(pc + 1, memo)
-            }
-            Instruction::JumpIfNot { target, .. } | Instruction::JumpIfNull { target, .. } => {
-                next(pc + 1, memo).max(next(*target, memo))
-            }
-            _ => next(pc + 1, memo),
-        };
-        let total = cost.saturating_add(rest);
-        memo[pc] = Some(Some(total));
-        total
-    }
-
     (0..code.len())
         .map(|pc| walk(pc, code, natives, &mut memo))
         .max()
         .unwrap_or(0)
+}
+
+/// Returns the costliest stretch from `pc` to the next place the machine checks its fuel.
+fn walk(
+    pc: usize,
+    code: &[Instruction],
+    natives: &NativeRegistry,
+    memo: &mut [Option<Option<u64>>],
+) -> u64 {
+    let Some(instruction) = code.get(pc) else {
+        return 0;
+    };
+    match memo[pc] {
+        Some(Some(cost)) => return cost,
+        Some(None) => return u64::MAX,
+        None => {}
+    }
+    memo[pc] = Some(None);
+
+    let cost = match instruction {
+        Instruction::NativeCall { function, .. } => {
+            natives.at(*function).map_or(1, |native| native.cost)
+        }
+        other => other.cost(),
+    };
+    let next = |target: usize, memo: &mut [Option<Option<u64>>]| -> u64 {
+        match code.get(target) {
+            None | Some(Instruction::Safepoint) => 0,
+            Some(_) => walk(target, code, natives, memo),
+        }
+    };
+    let rest = match instruction {
+        Instruction::Call { .. }
+        | Instruction::Return { .. }
+        | Instruction::Await { .. }
+        | Instruction::Yield
+        | Instruction::Halt => 0,
+        // A jump backwards lands where the machine checks again.
+        Instruction::Jump { target } if *target <= pc => 0,
+        Instruction::Jump { target } => next(*target, memo),
+        Instruction::JumpIfNot { target, .. } | Instruction::JumpIfNull { target, .. }
+            if *target <= pc =>
+        {
+            next(pc + 1, memo)
+        }
+        Instruction::JumpIfNot { target, .. } | Instruction::JumpIfNull { target, .. } => {
+            next(pc + 1, memo).max(next(*target, memo))
+        }
+        _ => next(pc + 1, memo),
+    };
+    let total = cost.saturating_add(rest);
+    memo[pc] = Some(Some(total));
+    total
 }

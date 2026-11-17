@@ -37,7 +37,14 @@ const LINK: &str = "PrefabInstance";
 /// its scene rather than describe the prefab: no override of it.
 const PLACEMENT: [&str; 2] = ["translation", "rotation"];
 
-/// The paths at which `live` differs from `prefab`.
+/// What a reference names in a world that has no entity for nothing: an id
+/// no entity is ever given.
+const NOTHING: EntityId = EntityId {
+    index: u32::MAX,
+    generation: u32::MAX,
+};
+
+/// Returns the paths at which `live` differs from `prefab`.
 ///
 /// Objects are walked key by key and the leaves that differ are reported; a
 /// list that differs is reported whole, at the list's path, and so is an
@@ -81,7 +88,7 @@ fn walk(live: &Value, prefab: &Value, path: &mut Vec<String>, found: &mut Vec<Ve
     }
 }
 
-/// Whether two values are the same value.
+/// Returns whether two values are the same value.
 ///
 /// A float the inspector widened from a component's `f32` is the same as that
 /// `f32`; integers are compared exactly.
@@ -150,7 +157,7 @@ fn revert_into(live: &mut Value, prefab: &Value, path: &[String]) {
 /// entity is the `{ index, generation }` object an `EntityId` serializes as. A
 /// reference to nothing, or to an entity `to` lacks, names `to`'s nothing: the
 /// entity a load gives every reference that has no target.
-pub fn rebound(value: &Value, from: &World, to: &World) -> Value {
+pub(crate) fn rebound(value: &Value, from: &World, to: &World) -> Value {
     match value {
         Value::Object(map) if is_entity(map) => {
             let entity = EntityId {
@@ -175,13 +182,6 @@ pub fn rebound(value: &Value, from: &World, to: &World) -> Value {
         other => other.clone(),
     }
 }
-
-/// What a reference names in a world that has no entity for nothing: an id
-/// no entity is ever given.
-const NOTHING: EntityId = EntityId {
-    index: u32::MAX,
-    generation: u32::MAX,
-};
 
 fn is_entity(map: &serde_json::Map<String, Value>) -> bool {
     map.len() == 2
@@ -208,7 +208,7 @@ pub fn inspect_prefab(
 ///
 /// What [`inspect_prefab`] builds, kept by a caller that inspects the same
 /// instance frame after frame.
-pub fn inspect_against(
+pub(crate) fn inspect_against(
     world: &World,
     entity: EntityId,
     instance: &InstanceOf,

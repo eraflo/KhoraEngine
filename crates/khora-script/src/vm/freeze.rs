@@ -24,8 +24,8 @@ use super::{Frame, Machine, ObjRef, Program, StrRef, Value};
 use crate::arena::{ArenaRef, Owned};
 
 impl Machine {
-    /// Where the machine stands, for a person: the innermost function and the
-    /// named site at its counter — `Guard.Update/while.3c1f…:head`.
+    /// Returns where the machine stands, for a person: the innermost function and
+    /// the named site at its counter — `Guard.Update/while.3c1f…:head`.
     pub fn standing(&self, program: &Program) -> String {
         let Some(function) = self
             .frames
@@ -44,7 +44,7 @@ impl Machine {
         }
     }
 
-    /// This machine, written down, owing `body` when it finishes.
+    /// Writes this machine down, owing `body` when it finishes.
     ///
     /// `None` when the machine does not belong to `program` — a frame naming a
     /// function it lacks, a literal outside its table.
@@ -123,7 +123,7 @@ impl Machine {
         })
     }
 
-    /// The machine `frozen` describes, in `program`.
+    /// Rebuilds the machine `frozen` describes, in `program`.
     ///
     /// `None` when `program` cannot hold it: a function or a literal it names
     /// that `program` does not have, or a frame that does not fit its register
@@ -147,7 +147,7 @@ impl Machine {
             .collect::<Option<_>>()?;
 
         let arguments = thaw_arguments(frozen, program, &mut held).unwrap_or_default();
-        // A held value the program can no longer hold — a struct renamed, a
+        // A held value the program cannot hold — a struct renamed, a
         // field retyped or added with neither default nor zero — refuses the
         // thaw rather than faulting when the machine next runs: the resume
         // then rebuilds or restarts the body.
@@ -168,7 +168,7 @@ impl Machine {
 }
 
 impl Value {
-    /// This register, written down.
+    /// Writes this register down.
     ///
     /// `None` for a literal outside `program`'s table.
     pub fn freeze(self, program: &Program) -> Option<FrozenValue> {
@@ -197,7 +197,7 @@ impl Value {
         })
     }
 
-    /// The register `frozen` describes, in `program`.
+    /// Rebuilds the register `frozen` describes, in `program`.
     ///
     /// `None` for a literal `program` does not have.
     pub fn thaw(frozen: &FrozenValue, program: &Program) -> Option<Self> {
@@ -229,14 +229,14 @@ impl Value {
     }
 }
 
-/// Whether every held value can come back into `program`'s arena.
+/// Returns whether every held value can come back into `program`'s arena.
 pub(super) fn holds_all(held: &[Owned], program: &Program) -> bool {
     let mut scratch = crate::arena::Arena::new();
     held.iter()
         .all(|owned| scratch.import(owned, program).is_ok())
 }
 
-/// The body's arguments, in `program`, their text added to `held`.
+/// Rebuilds the body's arguments, in `program`, their text added to `held`.
 ///
 /// `None` for one `program` cannot hold — a literal it lacks. Only a restart
 /// reads them, so the machine itself thaws without them.
@@ -252,7 +252,7 @@ pub(super) fn thaw_arguments(
         .collect()
 }
 
-/// A register of a machine holding `held`, written down: held text and arrays
+/// Writes down a register of a machine holding `held`: held text and arrays
 /// by value.
 pub(super) fn freeze_held(value: Value, program: &Program, held: &[Owned]) -> Option<FrozenValue> {
     match value {
@@ -266,7 +266,7 @@ pub(super) fn freeze_held(value: Value, program: &Program, held: &[Owned]) -> Op
     }
 }
 
-/// An owned value, written down.
+/// Writes an owned value down.
 fn freeze_owned(owned: &Owned, program: &Program) -> Option<FrozenValue> {
     Some(match owned {
         Owned::Scalar(value) => value.freeze(program)?,
@@ -287,8 +287,8 @@ fn freeze_owned(owned: &Owned, program: &Program) -> Option<FrozenValue> {
     })
 }
 
-/// A register, in `program`, for a machine holding `held`: text and arrays it
-/// owned go back into `held`, and the register names them there.
+/// Rebuilds a register, in `program`, for a machine holding `held`: text and
+/// arrays it owned go back into `held`, and the register names them there.
 pub(super) fn thaw_held(
     frozen: &FrozenValue,
     program: &Program,
@@ -307,8 +307,10 @@ pub(super) fn thaw_held(
     }
 }
 
-/// The owned value a written-down one describes. `None` for one no machine
-/// could have held — text that had expired, a literal `program` lacks.
+/// Rebuilds the owned value a written-down one describes.
+///
+/// `None` for one no machine could have held — text that had expired, a
+/// literal `program` lacks.
 fn thaw_owned(frozen: &FrozenValue, program: &Program) -> Option<Owned> {
     Some(match frozen {
         FrozenValue::Text(text) | FrozenValue::Literal(text) => Owned::Str(text.clone()),
@@ -330,7 +332,7 @@ fn thaw_owned(frozen: &FrozenValue, program: &Program) -> Option<Owned> {
     })
 }
 
-/// One frame, if `program` has its function and the register file holds it.
+/// Rebuilds one frame, if `program` has its function and the register file holds it.
 ///
 /// The VM trusts a frame's window to lie inside the register file — the
 /// compiler sized it so. A frame read from a save was sized by nobody, so the

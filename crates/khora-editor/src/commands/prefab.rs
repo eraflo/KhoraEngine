@@ -364,7 +364,8 @@ fn apply_one_to_prefab(
     }
 }
 
-/// Every instance of `instance`'s prefab in `world` but `instance` itself.
+/// Returns every instance of `instance`'s prefab in `world` but `instance`
+/// itself.
 fn other_instances(world: &World, instance: &InstanceOf) -> Vec<InstanceOf> {
     world
         .query::<(EntityId, &PrefabInstance)>()

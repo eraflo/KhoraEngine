@@ -17,11 +17,6 @@
 //! One structure, [`Channel`], instantiated once per event type. Deliberately
 //! not one bus: see its module docs for why a single shared instance would undo
 //! the agent contention contract.
-//!
-//! It replaces an `EventBus<T>` that lived here — a generic unbounded MPSC over
-//! `flume` with, at the time it was removed, **no user anywhere in the
-//! workspace**. Writing a second one beside it would have been the eighth
-//! spelling of "something happened, read it later" in this engine.
 
 mod channel;
 pub mod mailbox;

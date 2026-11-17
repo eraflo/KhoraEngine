@@ -30,7 +30,7 @@ impl EguiUiBuilder<'_> {
         }
     }
 
-    /// The payload hovering the last item, if a drag carries one.
+    /// Returns the payload hovering the last item, if a drag carries one.
     pub(super) fn hovering_payload(&self) -> Option<u64> {
         self.last_response
             .as_ref()
@@ -38,7 +38,7 @@ impl EguiUiBuilder<'_> {
             .map(|payload| *payload)
     }
 
-    /// The payload released on the last item this frame, if any.
+    /// Returns the payload released on the last item this frame, if any.
     pub(super) fn released_payload(&mut self) -> Option<u64> {
         self.last_response
             .as_ref()
@@ -46,7 +46,7 @@ impl EguiUiBuilder<'_> {
             .map(|payload| *payload)
     }
 
-    /// Whether the last item is being dragged.
+    /// Returns whether the last item is being dragged.
     pub(super) fn last_item_dragged(&self) -> bool {
         self.last_response
             .as_ref()

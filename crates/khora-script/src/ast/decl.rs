@@ -139,9 +139,9 @@ pub struct BehaviorDecl {
 }
 
 impl BehaviorDecl {
-    /// The component the behavior is: its own fields — not a state's — under
+    /// Returns the component the behavior is: its own fields, not a state's, under
     /// its name, what another script writes with `Set` and reads with `Get`.
-    pub fn as_component(&self) -> StructDecl {
+    pub(crate) fn as_component(&self) -> StructDecl {
         StructDecl {
             name: self.name.clone(),
             name_span: self.name_span,
@@ -192,7 +192,7 @@ pub enum BehaviorMember {
 }
 
 impl BehaviorMember {
-    /// Where the member was written.
+    /// Returns where the member was written.
     pub fn span(&self) -> Span {
         match self {
             Self::Field(decl) => decl.span,

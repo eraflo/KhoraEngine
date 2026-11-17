@@ -16,7 +16,7 @@
 
 use khora_core::renderer::api::pipeline::enums::CullMode;
 
-/// The faces a lit draw of a mesh culls.
+/// Returns the faces a lit draw of a mesh culls.
 ///
 /// A double-sided material culls nothing. A single-sided one culls its back
 /// faces, except when the draw is mirrored: a negative determinant turns its

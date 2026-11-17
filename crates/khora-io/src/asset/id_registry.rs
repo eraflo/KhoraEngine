@@ -132,17 +132,17 @@ impl AssetIdRegistry {
         froze
     }
 
-    /// Number of frozen entries (assets whose path has diverged from identity).
+    /// Returns the number of frozen entries (assets whose path has diverged from identity).
     pub fn len(&self) -> usize {
         self.by_path.len()
     }
 
-    /// `true` when no asset has been frozen yet.
+    /// Returns `true` when no asset has been frozen yet.
     pub fn is_empty(&self) -> bool {
         self.by_path.is_empty()
     }
 
-    /// Explicitly freezes `rel_fwd`'s identity to `uuid`.
+    /// Freezes `rel_fwd`'s identity to `uuid`.
     ///
     /// Authoring-only. Rarely needed directly — [`Self::rename`] freezes as part
     /// of the move.
@@ -178,7 +178,7 @@ impl AssetIdRegistry {
         }
     }
 
-    /// Absolute path of the on-disk registry file
+    /// Returns the absolute path of the on-disk registry file
     /// (`<project_root>/.khora/asset-registry.ron`).
     pub fn file_path(&self) -> PathBuf {
         self.project_root.join(REGISTRY_DIR).join(REGISTRY_FILE)
@@ -187,6 +187,10 @@ impl AssetIdRegistry {
     /// Writes the registry file if it does not exist yet. Authoring-only.
     ///
     /// A project then shows its `.khora/asset-registry.ron` from its first open.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::save`].
     pub fn ensure_file(&self) -> std::io::Result<()> {
         if self.file_path().exists() {
             return Ok(());
@@ -198,6 +202,10 @@ impl AssetIdRegistry {
     ///
     /// Entries are sorted by UUID, and the write is atomic: a crash mid-write
     /// leaves the previous file whole. Authoring-only.
+    ///
+    /// # Errors
+    ///
+    /// When the registry cannot be serialised or the file cannot be written.
     pub fn save(&self) -> std::io::Result<()> {
         let mut entries: Vec<RegistryEntry> = self
             .by_path

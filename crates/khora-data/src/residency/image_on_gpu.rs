@@ -37,14 +37,6 @@ use crate::AssetStore;
 /// A UI image, as a rect of the GPU atlas.
 pub struct ImageOnGpu;
 
-/// What an image is placed on: the atlas, and the device it lives on.
-pub struct AtlasTarget<'a> {
-    /// The device the atlas texture belongs to.
-    pub device: &'a dyn GraphicsDevice,
-    /// The atlas the image is placed in.
-    pub atlas: &'a mut TextureAtlas,
-}
-
 impl Residency for ImageOnGpu {
     const NAME: &'static str = "image_on_gpu";
     const DEVICE: DeviceClass = DeviceClass::Gpu;
@@ -75,6 +67,14 @@ impl Residency for ImageOnGpu {
     /// The atlas packs rects one after the other and frees none: the space of
     /// a replaced image comes back only when the atlas is made again.
     fn release(_resident: AtlasRect, _target: &mut AtlasTarget<'_>) {}
+}
+
+/// What an image is placed on: the atlas, and the device it lives on.
+pub struct AtlasTarget<'a> {
+    /// The device the atlas texture belongs to.
+    pub device: &'a dyn GraphicsDevice,
+    /// The atlas the image is placed in.
+    pub atlas: &'a mut TextureAtlas,
 }
 
 fn image_on_gpu_system(

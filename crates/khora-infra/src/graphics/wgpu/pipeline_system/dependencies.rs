@@ -50,8 +50,9 @@ pub(super) fn readd_lib_module(inner: &mut Inner, path: &str) -> Result<(), Rend
     Ok(())
 }
 
-/// The current source for a lib import path: overlay first, then the embedded
-/// `include_str!` source. Returns `None` for an unknown lib path.
+/// Returns the current source for a lib import path, or `None` for an unknown one.
+///
+/// The overlay comes first, then the embedded `include_str!` source.
 pub(super) fn resolve_lib_source(inner: &Inner, path: &str) -> Option<String> {
     if let Some(src) = inner.overlays.get(path) {
         return Some(src.clone());
@@ -62,8 +63,8 @@ pub(super) fn resolve_lib_source(inner: &Inner, path: &str) -> Option<String> {
         .map(|(_, s)| (*s).to_string())
 }
 
-/// The current source for a pipeline module name: overlay first, then the
-/// embedded source from the `pipelines` map.
+/// Returns the current source for a pipeline module name: overlay first, then
+/// the embedded source from the `pipelines` map.
 pub(super) fn resolve_pipeline_source(inner: &Inner, name: &str) -> Option<String> {
     if let Some(src) = inner.overlays.get(name) {
         return Some(src.clone());
@@ -71,8 +72,8 @@ pub(super) fn resolve_pipeline_source(inner: &Inner, name: &str) -> Option<Strin
     inner.pipelines.get(name).map(|s| (*s).to_string())
 }
 
-/// Cached render-pipeline keys whose module graph transitively includes any of
-/// the `dirty` logical names (the pipeline's own module or any imported lib).
+/// Returns the cached render-pipeline keys whose module graph transitively
+/// includes any of the `dirty` logical names (the pipeline's own module or any imported lib).
 pub(super) fn affected_render_pipelines(inner: &Inner, dirty: &[String]) -> Vec<PipelineKey> {
     let dirty_set: HashSet<&str> = dirty.iter().map(String::as_str).collect();
     inner
@@ -83,7 +84,7 @@ pub(super) fn affected_render_pipelines(inner: &Inner, dirty: &[String]) -> Vec<
         .collect()
 }
 
-/// Cached compute-pipeline keys affected by any `dirty` logical name.
+/// Returns the cached compute-pipeline keys affected by any `dirty` logical name.
 pub(super) fn affected_compute_pipelines(
     inner: &Inner,
     dirty: &[String],
@@ -97,7 +98,7 @@ pub(super) fn affected_compute_pipelines(
         .collect()
 }
 
-/// True if pipeline `name`'s module graph (its own source plus the transitive
+/// Returns true if pipeline `name`'s module graph (its own source plus the transitive
 /// closure of its `#import`ed lib modules) includes any of `dirty`.
 pub(super) fn pipeline_depends_on(inner: &Inner, name: &str, dirty: &HashSet<&str>) -> bool {
     if dirty.contains(name) {
@@ -148,8 +149,8 @@ pub(super) fn parse_imports(source: &str) -> Vec<String> {
     out
 }
 
-/// Of the registered lib import paths, the longest that is a prefix of
-/// `token` (segment-wise). Falls back to `None` if none match.
+/// Returns the longest registered lib import path that is a segment-wise
+/// prefix of `token`, or `None` if none match.
 fn longest_lib_prefix(token: &str) -> Option<String> {
     let mut best: Option<&str> = None;
     for (path, _) in LIB_MODULES {

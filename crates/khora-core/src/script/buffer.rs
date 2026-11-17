@@ -54,7 +54,7 @@ pub struct Conflict {
 }
 
 impl Conflict {
-    /// A message naming what was lost and how the tie was broken.
+    /// Returns a message naming what was lost and how the tie was broken.
     pub fn message(&self) -> String {
         format!(
             "entity {}v{}: {} written {} times this frame — the last write wins, \
@@ -71,7 +71,7 @@ pub struct CommandBuffer {
 }
 
 impl CommandBuffer {
-    /// An empty buffer.
+    /// Returns an empty buffer.
     pub fn new() -> Self {
         Self::default()
     }
@@ -81,7 +81,7 @@ impl CommandBuffer {
         self.commands.push(command);
     }
 
-    /// How many commands are queued.
+    /// Returns how many commands are queued.
     pub fn len(&self) -> usize {
         self.commands.len()
     }
@@ -92,12 +92,12 @@ impl CommandBuffer {
         self.commands.truncate(len);
     }
 
-    /// Whether nothing is queued.
+    /// Returns whether nothing is queued.
     pub fn is_empty(&self) -> bool {
         self.commands.is_empty()
     }
 
-    /// The queued commands, in emission order.
+    /// Returns the queued commands, in emission order.
     pub fn as_slice(&self) -> &[WorldCommand] {
         &self.commands
     }

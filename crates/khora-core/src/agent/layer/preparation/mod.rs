@@ -57,12 +57,12 @@ impl Preparation {
         }
     }
 
-    /// The row the preparation prepares.
+    /// Returns the row the preparation prepares.
     pub fn row(&self) -> StrategyId {
         self.row
     }
 
-    /// What the preparation competes for: the permit its run is stamped
+    /// Returns what the preparation competes for: the permit its run is stamped
     /// with.
     pub fn contention(&self) -> Contention {
         self.contention.clone()
@@ -96,7 +96,7 @@ impl std::fmt::Debug for PreparedLayer {
 }
 
 impl PreparedLayer {
-    /// A preparation of `row` that gave no layer, for `message`: one that
+    /// Returns a preparation of `row` that gave no layer, for `message`: one that
     /// panicked, which its runner hands back in its place.
     pub fn failed(row: StrategyId, message: impl Into<String>) -> Self {
         Self {
@@ -105,12 +105,12 @@ impl PreparedLayer {
         }
     }
 
-    /// The row the preparation prepared.
+    /// Returns the row the preparation prepared.
     pub fn row(&self) -> StrategyId {
         self.row
     }
 
-    /// The layer and the time it took to prepare, or why there is none.
+    /// Returns the layer and the time it took to prepare, or why there is none.
     pub(in crate::agent::layer) fn into_outcome(
         self,
     ) -> Result<(Box<dyn Layer>, Duration), String> {

@@ -29,17 +29,17 @@
 use super::{NativeError, NativeFn, NativeRegistration, NativeTy};
 use crate::vm::Value;
 
-/// The native an operator lowers to: `"Vec3 + Vec3"`, `"float * Color"`.
+/// Returns the native an operator lowers to: `"Vec3 + Vec3"`, `"float * Color"`.
 pub fn binary_operator(left: &str, op: &str, right: &str) -> String {
     format!("{left} {op} {right}")
 }
 
-/// The native unary minus lowers to: `"- Vec3"`.
+/// Returns the native unary minus lowers to: `"- Vec3"`.
 pub fn negation(operand: &str) -> String {
     format!("- {operand}")
 }
 
-/// A number operand, whatever width it was written at — an `int` is a
+/// Reads a number operand, whatever width it was written at — an `int` is a
 /// `float` here, the language's one implicit widening.
 fn scalar(value: &Value, operation: &str) -> Result<f32, NativeError> {
     value

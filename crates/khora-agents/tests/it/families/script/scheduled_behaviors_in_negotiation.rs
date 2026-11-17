@@ -130,10 +130,10 @@ fn low_power_and_last_cost(project: Project) -> (Duration, Duration, Duration) {
 }
 
 /// **The critical level covers what the critical behaviors need.** Four
-/// `[Critical]` `Heavy`s spend a few thousand instructions a frame; LowPower
+/// `[Critical]` `Heavy`s spend a few thousand instructions a frame; `LowPower`
 /// is the lane's overhead and that demand, converted at the measured rate.
 /// The same four without `[Critical]` are not floored at their spending:
-/// their LowPower is the overhead alone.
+/// their `LowPower` is the overhead alone.
 #[test]
 fn low_power_is_floored_at_what_the_critical_behaviors_spent() {
     let (critical_low, critical_overhead, critical_cost) = low_power_and_last_cost(CRITICAL_HEAVY);

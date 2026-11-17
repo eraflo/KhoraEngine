@@ -278,7 +278,7 @@ fn a_body_released_under_a_stretched_parent_stays_where_it_was() {
     );
 }
 
-/// **A character that loses its collider is released.** It is no longer
+/// **A character that loses its collider is released.** It stops being
 /// simulated — no `SimulatedTransform` — stays drawn where it walked to, and
 /// its `Transform` says so.
 #[test]

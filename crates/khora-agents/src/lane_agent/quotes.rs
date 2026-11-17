@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! When a family's rows are priced: the row that ran by its own run, every
-//! lane by quoting it on its inputs when the quotes may no longer hold.
+//! lane by quoting it on its inputs when the quotes may stop holding.
 
 use std::time::{Duration, Instant};
 

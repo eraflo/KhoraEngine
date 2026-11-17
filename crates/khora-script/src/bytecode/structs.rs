@@ -82,7 +82,7 @@ impl Compiler {
         }
     }
 
-    /// `name`'s index and its field `field`'s position.
+    /// Returns `name`'s index and its field `field`'s position.
     fn field_of(&self, name: &str, field: &str) -> Option<(u16, u16)> {
         let (layout, declared) = self.program.struct_named(name)?;
         let slot = declared
@@ -92,7 +92,7 @@ impl Compiler {
         Some((layout, u16::try_from(slot).ok()?))
     }
 
-    /// The struct `expr` was checked to be, if it is one.
+    /// Returns the struct `expr` was checked to be, if it is one.
     fn struct_of(&self, expr: &Expr) -> Option<String> {
         match self.type_of(expr)? {
             Ty::Struct(name) => Some(name.clone()),
@@ -104,14 +104,14 @@ impl Compiler {
         }
     }
 
-    /// The layout and position `object.field` names, when `object` is a
+    /// Returns the layout and position `object.field` names, when `object` is a
     /// struct.
     pub(super) fn struct_field(&self, object: &Expr, field: &str) -> Option<(u16, u16)> {
         let name = self.struct_of(object)?;
         self.field_of(&name, field)
     }
 
-    /// `Name { field: value, … }`: each field in declaration order, written or
+    /// Compiles `Name { field: value, … }`: each field in declaration order, written or
     /// defaulted, in consecutive registers, then `NewStruct`.
     pub(super) fn compile_struct_lit(
         &mut self,
@@ -182,7 +182,7 @@ impl Compiler {
         (dst, Shape::Object)
     }
 
-    /// `s.field`, when `s` is a struct.
+    /// Compiles `s.field`, when `s` is a struct.
     pub(super) fn compile_struct_read(
         &mut self,
         whole: &Expr,
@@ -202,7 +202,7 @@ impl Compiler {
         Some((dst, shape))
     }
 
-    /// `s?.field`: the field when `s` is present, `null` when it is not.
+    /// Compiles `s?.field`: the field when `s` is present, `null` when it is not.
     pub(super) fn compile_optional_field(
         &mut self,
         whole: &Expr,
@@ -238,7 +238,7 @@ impl Compiler {
     }
 }
 
-/// The value a constant expression stands for — what a struct field's default
+/// Returns the value a constant expression stands for: what a struct field's default
 /// is (the checker refused any other).
 pub(crate) fn constant(expr: &Expr) -> Option<Owned> {
     use khora_core::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};

@@ -58,7 +58,7 @@ impl Mat4 {
     }
 }
 
-/// The view from `position` through `face`; the identity when it has none
+/// Returns the view from `position` through `face`; the identity when it has none
 /// (a non-finite position).
 fn face_view(position: Vec3, face: CubeFace) -> Mat4 {
     Mat4::look_at_rh(position, position + face.forward(), face.up()).unwrap_or(Mat4::IDENTITY)

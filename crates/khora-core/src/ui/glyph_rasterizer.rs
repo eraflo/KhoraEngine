@@ -117,19 +117,19 @@ impl GlyphKey {
         x.floor() + if quarters(x) == 4 { 1.0 } else { 0.0 }
     }
 
-    /// The size this key stands for, in pixels: `size_q / 4`.
+    /// Returns the size this key stands for, in pixels: `size_q / 4`.
     pub fn size_px(&self) -> f32 {
         self.size_q as f32 / 4.0
     }
 
-    /// The pen offset this key's subpixel bin stands for, in pixels
+    /// Returns the pen offset this key's subpixel bin stands for, in pixels
     /// (`0.0`, `0.25`, `0.5` or `0.75`).
     pub fn subpixel_offset(&self) -> f32 {
         f32::from(self.subpixel_x) / 4.0
     }
 }
 
-/// The fractional part of `x`, always in `[0, 1)`, in quarter pixels rounded
+/// Returns the fractional part of `x`, always in `[0, 1)`, in quarter pixels rounded
 /// to the nearest: `0..=4`, `4` a fraction that rounds to a full pixel.
 fn quarters(x: f32) -> u32 {
     ((x - x.floor()) * 4.0).round() as u32

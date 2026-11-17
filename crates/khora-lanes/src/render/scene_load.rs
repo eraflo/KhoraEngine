@@ -52,7 +52,7 @@ pub(crate) struct SceneLoad {
 }
 
 impl SceneLoad {
-    /// The work of drawing `world` into `target`.
+    /// Measures the work of drawing `world` into `target`.
     pub fn of(world: &RenderWorld, target: &SceneTarget) -> Self {
         let triangles = world
             .meshes
@@ -78,27 +78,27 @@ impl SceneLoad {
         }
     }
 
-    /// Every light of the frame.
+    /// Counts every light of the frame.
     pub fn lights(&self) -> usize {
         self.suns + self.lamps + self.spots
     }
 
-    /// What recording the frame costs the host.
-    pub fn host_time(&self) -> Duration {
+    /// Returns what recording the frame costs the host.
+    pub(crate) fn host_time(&self) -> Duration {
         RECORD_CPU + DRAW_CPU * self.draws
     }
 
-    /// What the device spends on the frame's geometry: the pass, the draws
+    /// Returns what the device spends on the frame's geometry: the pass, the draws
     /// and their triangles.
-    pub fn geometry_time(&self) -> Duration {
+    pub(crate) fn geometry_time(&self) -> Duration {
         PASS_GPU
             + DRAW_GPU * self.draws
             + Duration::from_secs_f64(self.triangles as f64 * TRIANGLE_GPU_SECS)
     }
 
-    /// What the device spends filling the target, each pixel shaded at
+    /// Returns what the device spends filling the target, each pixel shaded at
     /// `shading` times the cost of an unlit one.
-    pub fn fill_time(&self, shading: f64) -> Duration {
+    pub(crate) fn fill_time(&self, shading: f64) -> Duration {
         Duration::from_secs_f64(self.pixels * PIXEL_GPU_SECS * shading.max(0.0))
     }
 }

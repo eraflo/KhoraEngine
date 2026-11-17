@@ -460,7 +460,7 @@ fn the_quarantine_is_mirrored_with_paths_under_the_assets() {
 }
 
 /// **A file released is freed from the quarantine**: the release the asset
-/// browser asked is taken, and the run's refusals no longer hold the file.
+/// browser asked is taken, and the run's refusals stop holding the file.
 #[test]
 fn a_released_file_leaves_the_quarantine() {
     let folder = Folder::new("release");
@@ -661,7 +661,7 @@ fn the_confirmation_names_every_overlay_the_shader_reload_would_use() {
 
 /// **The quarantine shown follows the project open.**
 ///
-/// Once another project is open, the files of the one before are no longer
+/// Once another project is open, the files of the one before are not
 /// shown — even when nothing was refused meanwhile.
 #[test]
 fn the_quarantine_shown_follows_the_project_open() {

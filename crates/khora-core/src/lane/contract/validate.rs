@@ -26,6 +26,6 @@ use super::guard::ValueProblem;
     label = "no `Validate` impl"
 )]
 pub trait Validate {
-    /// Every problem in `self`; empty when nothing is wrong.
+    /// Returns every problem in `self`; empty when nothing is wrong.
     fn validate(&self) -> Vec<ValueProblem>;
 }

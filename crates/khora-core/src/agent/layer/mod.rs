@@ -39,20 +39,20 @@ use crate::EngineContext;
 /// [`Place`], and run by the scheduler every frame. A layer is never shared:
 /// the instance the agent quotes with is not the one that runs.
 pub trait Layer: Send {
-    /// The row the layer runs.
+    /// Returns the row the layer runs.
     fn row(&self) -> StrategyId;
 
-    /// The level of its lane the layer runs, as an index into [`LayerRun::costs`].
+    /// Returns the level of its lane the layer runs, as an index into [`LayerRun::costs`].
     ///
     /// `None` for a layer whose runs price no level of their own.
     fn level(&self) -> Option<usize> {
         None
     }
 
-    /// What the layer's lane competes for: the scheduler builds its waves from it.
+    /// Returns what the layer's lane competes for: the scheduler builds its waves from it.
     fn contention(&self) -> Contention;
 
-    /// The memory the layer holds on each device while it is prepared, run or
+    /// Returns the memory the layer holds on each device while it is prepared, run or
     /// kept.
     fn memory(&self) -> PerDevice<u64>;
 

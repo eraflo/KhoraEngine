@@ -23,6 +23,13 @@ use khora_sdk::editor_ui::{
 use khora_tool_ui::widgets::paint::{icon, text, with_alpha};
 use khora_tool_ui::widgets::{button, Button, ButtonKind};
 
+/// The bar's height.
+const BAR_HEIGHT: f32 = 34.0;
+
+/// What restricted means, said while nothing was refused.
+const DESCRIPTION: &str = "This project's scripts, shaders and Build Game are off. Its files are \
+                           read with stricter limits.";
+
 /// The bar saying the open project is restricted.
 ///
 /// The app registers it when the project turns restricted and removes it
@@ -113,10 +120,3 @@ impl EditorPanel for RestrictedBarPanel {
         }
     }
 }
-
-/// The bar's height.
-const BAR_HEIGHT: f32 = 34.0;
-
-/// What restricted means, said while nothing was refused.
-const DESCRIPTION: &str = "This project's scripts, shaders and Build Game are off. Its files are \
-                           read with stricter limits.";

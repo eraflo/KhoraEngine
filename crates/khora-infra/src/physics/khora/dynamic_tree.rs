@@ -26,7 +26,7 @@ const NULL_NODE: i32 = -1;
 pub struct DynamicTreeNode<T: Clone> {
     /// Enlarged AABB for this node.
     pub aabb: Aabb,
-    /// User data (e.g., EntityId or index).
+    /// User data (e.g., `EntityId` or index).
     pub user_data: Option<T>,
     /// Index of the parent node.
     pub parent: i32,
@@ -139,8 +139,15 @@ impl<T: Clone> DynamicTree<T> {
     }
 
     /// Returns the user data for a given leaf.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `leaf` is not a leaf of this tree, as returned by its insertion.
     pub fn get_user_data(&self, leaf: i32) -> &T {
-        self.nodes[leaf as usize].user_data.as_ref().unwrap()
+        self.nodes[leaf as usize]
+            .user_data
+            .as_ref()
+            .expect("`leaf` names a leaf, and every leaf holds its user data")
     }
 
     /// Queries the tree for all pairs of overlapping leaves.
@@ -184,11 +191,13 @@ impl<T: Clone> DynamicTree<T> {
         }
 
         if node_a.is_leaf() && node_b.is_leaf() {
-            if i_a != i_b {
-                callback(
-                    node_a.user_data.as_ref().unwrap(),
-                    node_b.user_data.as_ref().unwrap(),
-                );
+            // Every leaf holds its user data.
+            if let (true, Some(a), Some(b)) = (
+                i_a != i_b,
+                node_a.user_data.as_ref(),
+                node_b.user_data.as_ref(),
+            ) {
+                callback(a, b);
             }
         } else if node_a.is_leaf() {
             self.query_overlap(i_a, node_b.children[0], callback);
@@ -220,7 +229,8 @@ impl<T: Clone> DynamicTree<T> {
             let node = &self.nodes[node_id as usize];
             if node.aabb.intersects_aabb(aabb) {
                 if node.is_leaf() {
-                    let proceed = callback(node.user_data.as_ref().unwrap());
+                    // Every leaf holds its user data.
+                    let proceed = node.user_data.as_ref().is_none_or(&mut callback);
                     if !proceed {
                         return;
                     }
@@ -551,7 +561,10 @@ impl<'a, T: Clone> Iterator for DynamicTreeIterator<'a, T> {
         while let Some(node_id) = self.stack.pop() {
             let node = &self.tree.nodes[node_id as usize];
             if node.is_leaf() {
-                return Some(node.user_data.as_ref().unwrap());
+                // Every leaf holds its user data.
+                if let Some(data) = node.user_data.as_ref() {
+                    return Some(data);
+                }
             } else {
                 self.stack.push(node.children[0]);
                 self.stack.push(node.children[1]);

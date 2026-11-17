@@ -62,7 +62,7 @@ pub(super) fn map_key(key: KeyCode) -> Option<egui::Key> {
     })
 }
 
-/// An unmultiplied RGBA colour in `0.0..=1.0` as an egui colour.
+/// Converts an unmultiplied RGBA colour in `0.0..=1.0` to an egui colour.
 pub(super) fn color_to_egui(c: [f32; 4]) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(
         (c[0] * 255.0) as u8,
@@ -72,13 +72,13 @@ pub(super) fn color_to_egui(c: [f32; 4]) -> egui::Color32 {
     )
 }
 
-/// The engine's [`LinearRgba`](khora_core::math::LinearRgba) as an egui
-/// colour, channel by channel.
+/// Converts the engine's [`LinearRgba`](khora_core::math::LinearRgba) to an
+/// egui colour, channel by channel.
 pub(super) fn linear_to_color(c: khora_core::math::LinearRgba) -> egui::Color32 {
     color_to_egui([c.r, c.g, c.b, c.a])
 }
 
-/// Where a text's anchor sits on its top edge, by its alignment.
+/// Returns where a text's anchor sits on its top edge, by its alignment.
 pub(super) fn text_anchor(align: TextAlign) -> egui::Align2 {
     match align {
         TextAlign::Left => egui::Align2::LEFT_TOP,
@@ -87,17 +87,17 @@ pub(super) fn text_anchor(align: TextAlign) -> egui::Align2 {
     }
 }
 
-/// A rectangle given as its top-left corner and its size.
+/// Builds a rectangle from its top-left corner and its size.
 pub(super) fn rect_at(min: [f32; 2], size: [f32; 2]) -> egui::Rect {
     egui::Rect::from_min_size(egui::pos2(min[0], min[1]), egui::vec2(size[0], size[1]))
 }
 
-/// A rectangle given as `[x, y, width, height]`.
+/// Builds a rectangle from `[x, y, width, height]`.
 pub(super) fn rect_of(rect: [f32; 4]) -> egui::Rect {
     rect_at([rect[0], rect[1]], [rect[2], rect[3]])
 }
 
-/// A corner radius in points, clamped to what egui stores.
+/// Builds a corner radius in points, clamped to what egui stores.
 pub(super) fn corner_of(rounding: f32) -> egui::CornerRadius {
     egui::CornerRadius::same(rounding.clamp(0.0, 255.0) as u8)
 }

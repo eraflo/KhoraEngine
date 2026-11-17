@@ -27,7 +27,7 @@
 //!
 //! # Performance Characteristics
 //!
-//! - **Complexity**: O(meshes × lights_per_tile) vs O(meshes × lights) for Forward
+//! - **Complexity**: `O(meshes × lights_per_tile)` vs `O(meshes × lights)` for Forward
 //! - **Overhead**: Fixed compute pass cost for light culling (~0.5ms)
 //! - **Memory**: Light grid and index buffers scale with screen resolution
 

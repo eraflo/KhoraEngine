@@ -68,7 +68,7 @@ pub(super) struct Waiting {
 }
 
 impl Waiting {
-    /// The units waiting in `inputs`.
+    /// Counts the units waiting in `inputs`.
     pub(super) fn of(inputs: &LoadingInputs<'_>) -> Self {
         let roots = roots(&inputs.scripts)
             .iter()
@@ -88,7 +88,7 @@ impl Waiting {
         }
     }
 
-    /// Every unit.
+    /// Takes every unit.
     pub(super) fn all(&self) -> Taking {
         Taking {
             indexes: self.indexes.len(),
@@ -128,7 +128,7 @@ impl Waiting {
         }
     }
 
-    /// What taking `taking` costs, and the share of the waiting work it is:
+    /// Returns what taking `taking` costs, and the share of the waiting work it is:
     /// no share when it is all of it.
     pub(super) fn cost(&self, taking: Taking) -> Cost {
         let total = self.time(self.all());
@@ -144,7 +144,7 @@ impl Waiting {
         }
     }
 
-    /// The time `taking` costs.
+    /// Returns the time `taking` costs.
     fn time(&self, taking: Taking) -> Duration {
         self.indexes[..taking.indexes].iter().sum::<Duration>()
             + self.scenes[..taking.scenes].iter().sum::<Duration>()
@@ -164,7 +164,7 @@ fn catch_unit<R>(unit: impl FnOnce() -> R) -> Result<R, String> {
     })
 }
 
-/// The script requests of each root, by index into `scripts`, the roots in
+/// Groups the script requests of each root, by index into `scripts`, the roots in
 /// the order each was first filed.
 fn roots(scripts: &[CompileRequest]) -> Vec<Vec<usize>> {
     let mut roots: Vec<Vec<usize>> = Vec::new();

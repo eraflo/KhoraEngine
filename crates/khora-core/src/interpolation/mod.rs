@@ -40,7 +40,7 @@ impl TransformInterpolation {
         Self::default()
     }
 
-    /// The pre-step world-space transform recorded for `entity`, if it is simulated.
+    /// Returns the pre-step world-space transform recorded for `entity`, if it is simulated.
     ///
     /// `None` means render at the current transform: a static entity, or no
     /// snapshot yet.
@@ -62,12 +62,12 @@ impl TransformInterpolation {
         self.previous.retain(|id, _| live.contains(id));
     }
 
-    /// Number of entities with a recorded previous pose.
+    /// Returns the number of entities with a recorded previous pose.
     pub fn len(&self) -> usize {
         self.previous.len()
     }
 
-    /// Whether no previous pose is recorded.
+    /// Returns whether no previous pose is recorded.
     pub fn is_empty(&self) -> bool {
         self.previous.is_empty()
     }

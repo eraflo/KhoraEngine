@@ -242,7 +242,7 @@ fn a_missing_field_takes_the_default() {
     assert!(resolve::<Lamp>(&no_color, &mut NoEntities).is_err());
 }
 
-/// A field the code no longer has is ignored and reported where it was, nested
+/// A field the code does not have is ignored and reported where it was, nested
 /// fields and list elements included.
 #[test]
 fn an_unknown_field_is_dropped_and_reported() {

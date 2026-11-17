@@ -40,16 +40,8 @@ pub struct ProjectTrustState {
     generation: AtomicU64,
 }
 
-/// The trust held, and the project it is the trust of.
-#[derive(Debug)]
-struct Held {
-    trust: ProjectTrust,
-    /// The project's root; `None` for a game's.
-    project: Option<RootName>,
-}
-
 impl ProjectTrustState {
-    /// A state holding `trust`, of no project in particular.
+    /// Creates a state holding `trust`, of no project in particular.
     pub fn new(trust: ProjectTrust) -> Self {
         Self {
             held: RwLock::new(Held {
@@ -60,7 +52,7 @@ impl ProjectTrustState {
         }
     }
 
-    /// The trust held now.
+    /// Returns the trust held.
     pub fn get(&self) -> ProjectTrust {
         self.read(|held| held.trust)
     }
@@ -147,4 +139,12 @@ impl ProjectTrustState {
             Ordering::Release,
         );
     }
+}
+
+/// The trust held, and the project it is the trust of.
+#[derive(Debug)]
+struct Held {
+    trust: ProjectTrust,
+    /// The project's root; `None` for a game's.
+    project: Option<RootName>,
 }

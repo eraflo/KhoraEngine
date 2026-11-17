@@ -72,7 +72,7 @@ impl Compiler {
     }
 }
 
-/// How a hole of type `ty` is shown: a number by what it measures.
+/// Returns how a hole of type `ty` is shown: a number by what it measures.
 fn shown(ty: Option<&Ty>) -> Shown {
     match ty {
         Some(Ty::Float) => Shown::Float,

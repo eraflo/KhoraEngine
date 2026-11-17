@@ -78,7 +78,7 @@ const GLYPH_GPU: Duration = Duration::from_nanos(30);
 /// A lane that draws each UI node as an instanced quad, then each glyph over them.
 ///
 /// One level. Image nodes sample the [`UiImageAtlas`] and glyphs the
-/// [`GlyphAtlas`]; residency DataSystems fill both before any agent runs, and
+/// [`GlyphAtlas`]; residency `DataSystem`s fill both before any agent runs, and
 /// the lane only reads them.
 #[derive(Debug)]
 pub struct UiLane {
@@ -104,85 +104,6 @@ impl Default for UiLane {
             gpu: None,
         }
     }
-}
-
-/// What the UI builds on the device.
-#[derive(Debug)]
-pub(super) struct UiGpu {
-    /// The projection matrix and its set-0 bind group.
-    pub(super) projection: Block,
-    /// The node instances and their set-1 bind group, grown when a frame
-    /// brings more nodes than they hold.
-    pub(super) instances: Block,
-    /// The glyph instances and their set-1 bind group, grown likewise.
-    pub(super) glyphs: Block,
-    pub(super) instance_layout: BindGroupLayoutId,
-    pub(super) atlas_layout: BindGroupLayoutId,
-    pub(super) glyph_atlas_layout: BindGroupLayoutId,
-    pub(super) sampler: SamplerId,
-    /// The two pipelines and the colour format and samples they were built for.
-    pipelines: Option<((TextureFormat, u32), UiPipelines)>,
-    /// The quads' set-2 bind group and the atlas view it binds, rebuilt only
-    /// when the view changes.
-    pub(super) atlas_bind_group: Option<(TextureViewId, BindGroupId)>,
-    /// The glyphs' set-2 bind group and the `(mask, colour)` views it binds,
-    /// rebuilt only when one of them changes.
-    pub(super) glyph_bind_group: Option<((TextureViewId, TextureViewId), BindGroupId)>,
-    /// A one-texel texture set 2 binds in place of an atlas not made yet: the
-    /// layouts need a texture even when nothing samples one.
-    pub(super) fallback: Option<(TextureId, TextureViewId)>,
-}
-
-/// The UI's two pipelines, built for one colour format and sample count.
-#[derive(Debug, Clone, Copy)]
-struct UiPipelines {
-    quads: RenderPipelineId,
-    glyphs: RenderPipelineId,
-}
-
-impl UiGpu {
-    /// The bytes its buffers hold.
-    fn bytes(&self) -> u64 {
-        self.projection.size + self.instances.size + self.glyphs.size
-    }
-
-    fn destroy(self, device: &dyn GraphicsDevice) {
-        let groups = [
-            self.atlas_bind_group.map(|(_, group)| group),
-            self.glyph_bind_group.map(|(_, group)| group),
-        ];
-        for group in groups.into_iter().flatten() {
-            if let Err(e) = device.destroy_bind_group(group) {
-                log::warn!("UiLane: could not destroy a texture bind group: {e:?}");
-            }
-        }
-        if let Some((texture, view)) = self.fallback {
-            destroy_texture(device, texture, view);
-        }
-        self.projection.destroy(device);
-        self.instances.destroy(device);
-        self.glyphs.destroy(device);
-        if let Err(e) = device.destroy_sampler(self.sampler) {
-            log::warn!("UiLane: could not destroy the sampler: {e:?}");
-        }
-    }
-}
-
-/// What the UI lane reads each frame.
-#[derive(LaneInputs)]
-pub struct UiInputs<'f> {
-    /// The frame's UI, laid out by the UI Flow.
-    #[bus]
-    pub scene: &'f UiScene,
-    /// The frame's colour attachment and its size.
-    #[frame]
-    pub target: Target,
-    /// The atlas image nodes sample, filled by the image residency.
-    #[resource]
-    pub atlas: &'f Arc<UiImageAtlas>,
-    /// The glyphs of the frame's texts, made resident by `glyphs_on_gpu`.
-    #[resource]
-    pub glyphs: &'f Arc<GlyphAtlas>,
 }
 
 impl Lane for UiLane {
@@ -350,6 +271,85 @@ impl Lane for UiLane {
     }
 }
 
+/// What the UI builds on the device.
+#[derive(Debug)]
+pub(super) struct UiGpu {
+    /// The projection matrix and its set-0 bind group.
+    pub(super) projection: Block,
+    /// The node instances and their set-1 bind group, grown when a frame
+    /// brings more nodes than they hold.
+    pub(super) instances: Block,
+    /// The glyph instances and their set-1 bind group, grown likewise.
+    pub(super) glyphs: Block,
+    pub(super) instance_layout: BindGroupLayoutId,
+    pub(super) atlas_layout: BindGroupLayoutId,
+    pub(super) glyph_atlas_layout: BindGroupLayoutId,
+    pub(super) sampler: SamplerId,
+    /// The two pipelines and the colour format and samples they were built for.
+    pipelines: Option<((TextureFormat, u32), UiPipelines)>,
+    /// The quads' set-2 bind group and the atlas view it binds, rebuilt only
+    /// when the view changes.
+    pub(super) atlas_bind_group: Option<(TextureViewId, BindGroupId)>,
+    /// The glyphs' set-2 bind group and the `(mask, colour)` views it binds,
+    /// rebuilt only when one of them changes.
+    pub(super) glyph_bind_group: Option<((TextureViewId, TextureViewId), BindGroupId)>,
+    /// A one-texel texture set 2 binds in place of an atlas not made yet: the
+    /// layouts need a texture even when nothing samples one.
+    pub(super) fallback: Option<(TextureId, TextureViewId)>,
+}
+
+impl UiGpu {
+    /// Returns the bytes its buffers hold.
+    fn bytes(&self) -> u64 {
+        self.projection.size + self.instances.size + self.glyphs.size
+    }
+
+    fn destroy(self, device: &dyn GraphicsDevice) {
+        let groups = [
+            self.atlas_bind_group.map(|(_, group)| group),
+            self.glyph_bind_group.map(|(_, group)| group),
+        ];
+        for group in groups.into_iter().flatten() {
+            if let Err(e) = device.destroy_bind_group(group) {
+                log::warn!("UiLane: could not destroy a texture bind group: {e:?}");
+            }
+        }
+        if let Some((texture, view)) = self.fallback {
+            destroy_texture(device, texture, view);
+        }
+        self.projection.destroy(device);
+        self.instances.destroy(device);
+        self.glyphs.destroy(device);
+        if let Err(e) = device.destroy_sampler(self.sampler) {
+            log::warn!("UiLane: could not destroy the sampler: {e:?}");
+        }
+    }
+}
+
+/// The UI's two pipelines, built for one colour format and sample count.
+#[derive(Debug, Clone, Copy)]
+struct UiPipelines {
+    quads: RenderPipelineId,
+    glyphs: RenderPipelineId,
+}
+
+/// What the UI lane reads each frame.
+#[derive(LaneInputs)]
+pub struct UiInputs<'f> {
+    /// The frame's UI, laid out by the UI Flow.
+    #[bus]
+    pub scene: &'f UiScene,
+    /// The frame's colour attachment and its size.
+    #[frame]
+    pub target: Target,
+    /// The atlas image nodes sample, filled by the image residency.
+    #[resource]
+    pub atlas: &'f Arc<UiImageAtlas>,
+    /// The glyphs of the frame's texts, made resident by `glyphs_on_gpu`.
+    #[resource]
+    pub glyphs: &'f Arc<GlyphAtlas>,
+}
+
 /// Builds the layouts, the projection, the first instance storages and the sampler.
 ///
 /// A refusal halfway gives back what came before it.
@@ -420,7 +420,7 @@ fn build_ui_gpu(
     })
 }
 
-/// An instance storage holding `count` instances.
+/// Creates an instance storage holding `count` instances.
 fn instance_block(
     device: &dyn GraphicsDevice,
     layout: BindGroupLayoutId,
@@ -548,7 +548,7 @@ fn draw_ui(
     }
 }
 
-/// The orthographic projection that maps UI pixel coordinates of `target`
+/// Returns the orthographic projection that maps UI pixel coordinates of `target`
 /// (origin top-left, y down) to clip space; `None` when a side is zero.
 pub(crate) fn ui_projection(target: Extent2D) -> Option<Mat4> {
     if target.width == 0 || target.height == 0 {

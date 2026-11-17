@@ -18,7 +18,7 @@
 //!
 //! These replace the UI agent's own tests: its id, its phase, its importance,
 //! the one lane it held (by name and kind), the one strategy it offered, what
-//! it declared — the atlas it locked is now read — and that it leaves the
+//! it declared — the atlas it reads, never locks — and that it leaves the
 //! asset store to the residency. A frame drawn through the agent into the
 //! frame's target needs a `FrameContext` among the runtime's resources
 //! (built with `FrameContext::new()`); the lane's frames are

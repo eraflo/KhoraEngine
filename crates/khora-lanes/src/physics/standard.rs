@@ -28,12 +28,6 @@ use khora_macros::LaneInputs;
 
 use super::family::{PhysicsFamily, PhysicsOutputs};
 
-/// A lane that steps the provider by the family's fixed step and reports its contacts.
-///
-/// One level: a simulation family may not trade its result for time.
-#[derive(Debug, Default)]
-pub struct StandardPhysicsLane;
-
 const LEVELS: [Level; 1] = [Level {
     id: StrategyId::Balanced,
     name: "standard",
@@ -50,17 +44,11 @@ const LEVELS: [Level; 1] = [Level {
 /// its own timings.
 const STEP_COST: Duration = Duration::from_micros(500);
 
-/// What the physics lane reads each frame: the provider, locked for the step,
-/// and the step its agent runs it at.
-#[derive(LaneInputs)]
-pub struct PhysicsInputs<'f> {
-    /// The simulation, locked while it steps.
-    #[locked]
-    pub provider: Locked<'f, Box<dyn PhysicsProvider>>,
-    /// The simulated time this step advances.
-    #[frame]
-    pub step: FixedStep,
-}
+/// A lane that steps the provider by the family's fixed step and reports its contacts.
+///
+/// One level: a simulation family may not trade its result for time.
+#[derive(Debug, Default)]
+pub struct StandardPhysicsLane;
 
 impl Lane for StandardPhysicsLane {
     type Family = PhysicsFamily;
@@ -124,4 +112,16 @@ impl Lane for StandardPhysicsLane {
             message: None,
         })
     }
+}
+
+/// What the physics lane reads each frame: the provider, locked for the step,
+/// and the step its agent runs it at.
+#[derive(LaneInputs)]
+pub struct PhysicsInputs<'f> {
+    /// The simulation, locked while it steps.
+    #[locked]
+    pub provider: Locked<'f, Box<dyn PhysicsProvider>>,
+    /// The simulated time this step advances.
+    #[frame]
+    pub step: FixedStep,
 }

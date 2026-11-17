@@ -21,6 +21,9 @@ use std::sync::{Arc, Mutex};
 /// Maximum number of log entries kept in memory.
 const MAX_LOG_ENTRIES: usize = 2048;
 
+/// Targets whose DEBUG/TRACE output is suppressed to avoid log flooding.
+const NOISY_TARGETS: &[&str] = &["naga", "wgpu_core", "wgpu_hal"];
+
 /// A `log::Log` implementation that stores entries in a shared buffer
 /// and also writes to stderr.
 pub struct EditorLogCapture {
@@ -39,9 +42,6 @@ impl EditorLogCapture {
     }
 }
 
-/// Targets whose DEBUG/TRACE output is suppressed to avoid log flooding.
-const NOISY_TARGETS: &[&str] = &["naga", "wgpu_core", "wgpu_hal"];
-
 impl log::Log for EditorLogCapture {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
         // Suppress debug/trace from noisy GPU-related crates.
@@ -56,6 +56,10 @@ impl log::Log for EditorLogCapture {
         metadata.level() <= log::Level::Debug
     }
 
+    #[expect(
+        clippy::print_stderr,
+        reason = "the engine's log sink: a `log::Log` that called `log::*` would recurse"
+    )]
     fn log(&self, record: &log::Record) {
         if !self.enabled(record.metadata()) {
             return;
@@ -95,7 +99,7 @@ impl log::Log for EditorLogCapture {
     fn flush(&self) {}
 }
 
-/// Current wall-clock time of day as `HH:MM:SS` (UTC).
+/// Returns the current wall-clock time of day as `HH:MM:SS` (UTC).
 ///
 /// Derived straight from the system clock rather than pulling in a date-time
 /// crate: the console only ever needs the time of day, and the engine has no

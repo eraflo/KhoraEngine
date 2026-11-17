@@ -173,7 +173,7 @@ fn the_states_own_data_survives() {
     );
 }
 
-/// A state the reloaded script no longer declares is dropped.
+/// A state the reloaded script stops declaring is dropped.
 ///
 /// Resolved to whichever state now sits at that index, it would put a guard
 /// into a state nobody put it in.

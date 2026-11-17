@@ -25,15 +25,31 @@ use super::scene_record::SceneRecord;
 
 /// One way of writing a scene record as bytes.
 pub trait SceneEncoding {
-    /// The id the file header names this encoding by.
+    /// Returns the id the file header names this encoding by.
     fn id(&self) -> &'static str;
     /// Writes `record`.
+    ///
+    /// # Errors
+    ///
+    /// When the record cannot be written in this encoding.
     fn encode(&self, record: &SceneRecord) -> Result<Vec<u8>, EncodingError>;
-    /// Reads a record back. A damaged input is an error, never a panic.
+    /// Reads a record back.
+    ///
+    /// # Errors
+    ///
+    /// When `bytes` are damaged or not a record in this encoding: an error, never a panic.
     fn decode(&self, bytes: &[u8]) -> Result<SceneRecord, EncodingError>;
     /// Writes a game save.
+    ///
+    /// # Errors
+    ///
+    /// When the save cannot be written in this encoding.
     fn encode_save(&self, save: &SaveRecord) -> Result<Vec<u8>, EncodingError>;
-    /// Reads a game save back. A damaged input is an error, never a panic.
+    /// Reads a game save back.
+    ///
+    /// # Errors
+    ///
+    /// When `bytes` are damaged or not a save in this encoding: an error, never a panic.
     fn decode_save(&self, bytes: &[u8]) -> Result<SaveRecord, EncodingError>;
 }
 
@@ -52,12 +68,6 @@ impl std::error::Error for EncodingError {}
 /// Compact binary: every name once, values by position.
 pub struct CompactEncoding;
 
-/// Pretty JSON, for people.
-pub struct TextEncoding;
-
-/// MessagePack with names, for other tools.
-pub struct MsgPackEncoding;
-
 impl SceneEncoding for CompactEncoding {
     fn id(&self) -> &'static str {
         "KH_COMPACT_V2"
@@ -75,6 +85,9 @@ impl SceneEncoding for CompactEncoding {
         compact::decode_save(bytes)
     }
 }
+
+/// Pretty JSON, for people.
+pub struct TextEncoding;
 
 impl SceneEncoding for TextEncoding {
     fn id(&self) -> &'static str {
@@ -113,6 +126,9 @@ impl SceneEncoding for TextEncoding {
         Ok(save)
     }
 }
+
+/// MessagePack with names, for other tools.
+pub struct MsgPackEncoding;
 
 impl SceneEncoding for MsgPackEncoding {
     fn id(&self) -> &'static str {

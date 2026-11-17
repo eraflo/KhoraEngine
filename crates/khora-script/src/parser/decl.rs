@@ -97,7 +97,7 @@ impl Parser {
         ))
     }
 
-    /// `event Damaged(int amount);`, `event Opened();` or `event Opened;`.
+    /// Parses `event Damaged(int amount);`, `event Opened();` or `event Opened;`.
     pub(super) fn parse_event(&mut self) -> Parse<EventDecl> {
         let start = self.span();
         self.advance(); // `event`
@@ -180,7 +180,7 @@ impl Parser {
         })
     }
 
-    /// `[Domain(…)] component Name { fields }` — fields only, each with an optional default.
+    /// Parses `[Domain(…)] component Name { fields }`: fields only, each with an optional default.
     ///
     /// A component is data the engine stores, with no operators. A default is
     /// what a new row starts with; a write still leaves the fields it does not
@@ -348,7 +348,7 @@ impl Parser {
         Ok(BehaviorMember::Method(self.parse_method(false)?))
     }
 
-    /// Whether what follows is `Type Name(` rather than `Type Name;`.
+    /// Returns whether what follows is `Type Name(` rather than `Type Name;`.
     pub(super) fn looks_like_method(&self) -> bool {
         let mut ahead = 0;
 
@@ -419,7 +419,7 @@ impl Parser {
         })
     }
 
-    /// Whether a handler starts here: `on`, where a member starts, before an event's name.
+    /// Returns whether a handler starts here: `on`, where a member starts, before an event's name.
     ///
     /// A parameter, a field or a local may still be called `on`.
     fn at_handler(&self) -> bool {
@@ -471,7 +471,7 @@ impl Parser {
         Ok(AfterDecl { delay, body, span })
     }
 
-    /// `{ … }` or `=> …;`, the arrow form as a one-statement block.
+    /// Parses `{ … }` or `=> …;`, the arrow form as a one-statement block.
     ///
     /// With `returns_value` — an operator, a non-`void` method — `=> expr`
     /// means *return* `expr`; otherwise it is an expression evaluated for effect.
@@ -504,7 +504,7 @@ impl Parser {
         self.parse_block()
     }
 
-    /// Whether the next token can only begin a statement, never an expression.
+    /// Returns whether the next token can only begin a statement, never an expression.
     pub(super) fn starts_statement(&self) -> bool {
         matches!(
             self.peek(),
@@ -548,7 +548,7 @@ impl Parser {
         self.parse_field_with(attributes)
     }
 
-    /// A field whose attributes were read already.
+    /// Parses a field whose attributes were read already.
     fn parse_field_with(&mut self, attributes: Vec<Attribute>) -> Parse<Field> {
         let start = self.span();
         let ty = self.parse_type()?;

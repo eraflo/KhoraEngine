@@ -15,7 +15,7 @@
 //! A saved struct loaded into a script that edited the struct since.
 //!
 //! A behavior field's saved value is carried by name and dropped when its
-//! declared type can no longer hold it (`bridge::fits`): the checker never
+//! declared type cannot hold it any more (`bridge::fits`): the checker never
 //! lets an author put text in an `int`, so a load must not either. A struct's
 //! own fields are carried the same way — by name — so the same holds one level
 //! down: a saved field whose type changed is not loaded as the old kind, and a

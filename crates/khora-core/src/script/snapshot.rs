@@ -139,7 +139,7 @@ pub struct ScriptSnapshot {
 }
 
 impl ScriptSnapshot {
-    /// Whether this records nothing at all.
+    /// Returns whether this records nothing at all.
     ///
     /// A behavior that has never run, as distinct from one whose every field
     /// happens to be at its default — the second still has a snapshot.

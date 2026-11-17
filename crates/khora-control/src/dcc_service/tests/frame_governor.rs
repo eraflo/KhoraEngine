@@ -249,7 +249,7 @@ fn the_governor_moves_again_only_once_an_epoch_lent_its_last_move() {
 /// agent offering its floor alone joins, and the epoch it opens keeps the
 /// renderer's envelope — a `Stable` agent keeps what it holds while it fits —
 /// and takes no upgrade: it has no price. Not every agent is on its floor: a
-/// lower target is one the renderer's envelope no longer fits, and it gives
+/// lower target is one the renderer's envelope no more fits, and it gives
 /// way. Frames of 17 ms, over the governor's target, pull the multiplier down.
 #[test]
 fn a_stable_agent_above_its_floor_leaves_the_governor_its_lever() {

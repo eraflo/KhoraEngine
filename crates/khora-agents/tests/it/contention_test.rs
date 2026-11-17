@@ -161,7 +161,7 @@ fn each_render_agent_writes_a_slot_of_its_own() {
 // `families/<family>/`: audio in `mod.rs`, physics, shadows, skybox and ui in
 // `registration.rs`).
 
-/// The `image_on_gpu` DataSystem uploads every UI image into the shared atlas
+/// The `image_on_gpu` `DataSystem` uploads every UI image into the shared atlas
 /// before any agent runs; the UI lane only reads the atlas's view and rects.
 /// So the UI agent declares the atlas as a read: a lock would keep every
 /// other reader of the atlas out of its wave for nothing.
@@ -183,7 +183,7 @@ fn ui_agent_reads_the_atlas_without_locking_it() {
 /// **The script family's agent leaves the engine's channels and the demand to
 /// the intake.** The `script_intake` data system drains the reload and event
 /// channels and announces to the demand before the flow projects; the
-/// family's lane only runs behaviors. Declaring a lock on a channel it no longer
+/// family's lane only runs behaviors. Declaring a lock on a channel it never
 /// drains would serialise every other user of that channel for nothing. It
 /// still locks the scripting world its lane runs against.
 #[test]

@@ -20,6 +20,9 @@ use khora_core::ui::{UiBuilder, UiTheme};
 use super::paint::{fill_stroke, mono, tint};
 use super::{text_y, Color, Rect};
 
+/// Height every chip renders at — they sit in dense rows and must line up.
+const CHIP_H: f32 = 18.0;
+
 /// The semantic tone of a chip. Colour is never decorative here — the tone
 /// *is* the message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,7 +42,7 @@ pub enum Tone {
 }
 
 impl Tone {
-    /// The chip's foreground (also its dot) for a theme.
+    /// Returns the chip's foreground (also its dot) for a theme.
     pub fn fg(self, theme: &UiTheme) -> Color {
         match self {
             Tone::Neutral => theme.text_muted,
@@ -51,8 +54,8 @@ impl Tone {
         }
     }
 
-    /// Fill + border derive from the foreground so a new tone can never fall
-    /// out of the system: 14% fill, 35% border, exactly as the mockups.
+    /// Returns the fill and border, derived from the foreground so a new tone can
+    /// never fall out of the system: 14% fill, 35% border, exactly as the mockups.
     fn plate(self, theme: &UiTheme) -> (Color, Color) {
         match self {
             Tone::Neutral => (theme.surface_elevated, theme.border),
@@ -64,10 +67,7 @@ impl Tone {
     }
 }
 
-/// Height every chip renders at — they sit in dense rows and must line up.
-const CHIP_H: f32 = 18.0;
-
-/// A status chip: an optional dot plus a short monospace label.
+/// Draws a status chip: an optional dot plus a short monospace label.
 ///
 /// Chips carry a state, so the label reads as data — `connected`, `0.7.0`,
 /// `pre-release` — and renders in the monospace face.
@@ -93,8 +93,9 @@ pub fn chip(
     mono(ui, [x, text_y(r, size)], label, size, fg);
 }
 
-/// A keyboard hint chip — `Ctrl`, `↵`, `esc`. Always neutral: a shortcut is
-/// never a status.
+/// Draws a keyboard hint chip — `Ctrl`, `↵`, `esc`.
+///
+/// Always neutral: a shortcut is never a status.
 pub fn kbd_chip(ui: &mut dyn UiBuilder, theme: &UiTheme, rect: Rect, key: &str) {
     fill_stroke(
         ui,
@@ -129,7 +130,7 @@ pub struct Pill<'a> {
 }
 
 impl<'a> Pill<'a> {
-    /// An engaged pill with no count.
+    /// Builds an engaged pill with no count.
     pub fn new(label: &'a str, tone: Tone) -> Self {
         Self {
             label,
@@ -152,7 +153,7 @@ impl<'a> Pill<'a> {
     }
 }
 
-/// A toggleable filter pill with a live count — the console's log-level
+/// Draws a toggleable filter pill with a live count — the console's log-level
 /// filters.
 ///
 /// `on == false` fades the whole pill rather than recolouring it, so the tone
@@ -356,5 +357,16 @@ mod tests {
             Pill::new("Debug", Tone::Neutral).on(false),
         );
         assert!(out.clicked);
+    }
+
+    #[test]
+    fn kbd_chip_is_neutral_whatever_the_key() {
+        let t = khora_dark();
+        let mut ui = RecordingUiBuilder::new(60.0, 24.0);
+        kbd_chip(&mut ui, &t, [0.0, 0.0, 30.0, 18.0], "esc");
+
+        assert!(ui.used_fill(t.surface_elevated));
+        assert_eq!(ui.text_color("esc"), Some(t.text_muted));
+        assert_eq!(ui.text_family("esc"), Some(FontFamilyHint::Monospace));
     }
 }

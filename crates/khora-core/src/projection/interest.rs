@@ -36,28 +36,6 @@ pub struct Interest<D: Demand> {
     _demand: PhantomData<fn() -> D>,
 }
 
-/// What the lock guards: the entries, and the union they make.
-struct State<T> {
-    /// What each owner announced.
-    owners: BTreeMap<String, BTreeSet<T>>,
-    /// The union of every owner's items, kept in step with `owners`.
-    wanted: BTreeSet<T>,
-    /// Moves when `wanted` changes.
-    generation: u64,
-}
-
-impl<T: Ord + Clone> State<T> {
-    /// Rebuilds the union after an entry changed, moving the generation only
-    /// when the union is not what it was.
-    fn settle(&mut self) {
-        let wanted: BTreeSet<T> = self.owners.values().flatten().cloned().collect();
-        if wanted != self.wanted {
-            self.wanted = wanted;
-            self.generation += 1;
-        }
-    }
-}
-
 impl<D: Demand> Default for Interest<D> {
     fn default() -> Self {
         Self {
@@ -78,7 +56,7 @@ impl<D: Demand> std::fmt::Debug for Interest<D> {
 }
 
 impl<D: Demand> Interest<D> {
-    /// An interest no owner announced anything to.
+    /// Returns an interest no owner announced anything to.
     pub fn new() -> Self {
         Self::default()
     }
@@ -100,12 +78,12 @@ impl<D: Demand> Interest<D> {
         }
     }
 
-    /// Every item some owner wants, sorted, each once.
+    /// Returns every item some owner wants, sorted, each once.
     pub fn wanted(&self) -> Vec<D::Item> {
         self.state.read_recovered().wanted.iter().cloned().collect()
     }
 
-    /// Whether every one of `items` is wanted; `true` for none.
+    /// Returns whether every one of `items` is wanted; `true` for none.
     pub fn covers(&self, items: &[D::Item]) -> bool {
         let state = self.state.read_recovered();
         items.iter().all(|item| state.wanted.contains(item))
@@ -114,5 +92,27 @@ impl<D: Demand> Interest<D> {
     /// Moves on every change of [`wanted`](Self::wanted), never otherwise.
     pub fn generation(&self) -> u64 {
         self.state.read_recovered().generation
+    }
+}
+
+/// What the lock guards: the entries, and the union they make.
+struct State<T> {
+    /// What each owner announced.
+    owners: BTreeMap<String, BTreeSet<T>>,
+    /// The union of every owner's items, kept in step with `owners`.
+    wanted: BTreeSet<T>,
+    /// Moves when `wanted` changes.
+    generation: u64,
+}
+
+impl<T: Ord + Clone> State<T> {
+    /// Rebuilds the union after an entry changed, moving the generation only
+    /// when the union is not what it was.
+    fn settle(&mut self) {
+        let wanted: BTreeSet<T> = self.owners.values().flatten().cloned().collect();
+        if wanted != self.wanted {
+            self.wanted = wanted;
+            self.generation += 1;
+        }
     }
 }

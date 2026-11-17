@@ -49,7 +49,7 @@ impl ShadowFrame {
         self.bindings.as_ref()
     }
 
-    /// Convenience accessor for an entry by light index.
+    /// Returns the entry of the light at `light_index`, if any.
     pub fn entry(&self, light_index: usize) -> Option<&super::ShadowEntry> {
         self.entries.get(light_index)
     }

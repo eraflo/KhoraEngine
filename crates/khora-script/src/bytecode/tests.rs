@@ -421,3 +421,23 @@ fn a_state_handler_may_share_a_name_with_the_behaviors_own() {
 
     assert!(found.is_empty(), "the two are distinct names: {found:?}");
 }
+
+// ─── Locals ─────────────────────────────────────────────────────────────────
+
+/// **A bound local resolves to its register until its scope closes**; hidden,
+/// no local resolves until they are revealed again.
+#[test]
+fn a_bound_local_resolves_until_hidden_or_its_scope_closes() {
+    let mut compiler = super::Compiler::new();
+    let mark = compiler.open_scope();
+    compiler.bind_local("hp", 3, super::Shape::Int, "int".to_owned());
+    assert_eq!(compiler.lookup_local("hp"), Some((3, super::Shape::Int)));
+
+    let hidden = compiler.hide_locals();
+    assert_eq!(compiler.lookup_local("hp"), None, "hidden from lookup");
+    compiler.reveal_locals(hidden);
+    assert_eq!(compiler.lookup_local("hp"), Some((3, super::Shape::Int)));
+
+    compiler.close_scope(mark);
+    assert_eq!(compiler.lookup_local("hp"), None, "its scope closed");
+}

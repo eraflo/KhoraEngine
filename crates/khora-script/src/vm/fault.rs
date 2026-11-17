@@ -49,13 +49,13 @@ pub enum Fault {
     /// A call to an engine function the host does not expose.
     ///
     /// Means the program was compiled against a different registry than the one
-    /// running it — the indices no longer line up, so continuing would call
-    /// whatever now sits at that slot.
+    /// running it — the indices do not line up, so continuing would call
+    /// whatever sits at that slot.
     UnknownNative {
         /// The offending index.
         index: usize,
     },
-    /// A string reference that no longer resolves.
+    /// A string reference that does not resolve.
     ///
     /// A constant index outside the program, or arena text from an earlier
     /// frame — the second is the case the arena's generation counter exists to
@@ -117,7 +117,7 @@ pub enum Fault {
         len: usize,
     },
     /// An array was expected and something else was found — a reference that
-    /// no longer exists, or a value of another kind.
+    /// is gone, or a value of another kind.
     NotAnObject {
         /// What was found.
         found: &'static str,

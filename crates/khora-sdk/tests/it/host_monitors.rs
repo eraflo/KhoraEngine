@@ -93,7 +93,7 @@ fn a_hosts_monitors_reach_the_monitor_registry() {
 
 /// **The host's monitors leave the runtime once registered.** The
 /// `HostMonitors` resource is a hand-over, not a second home: after the
-/// bootstrap the runtime no longer holds it.
+/// bootstrap the runtime does not hold it.
 #[test]
 fn the_host_monitors_resource_is_gone_after_the_bootstrap() {
     let mut runtime = Runtime::new();

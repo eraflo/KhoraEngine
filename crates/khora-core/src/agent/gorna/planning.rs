@@ -42,14 +42,14 @@ pub struct Planning {
 }
 
 impl Planning {
-    /// `agent`'s expected cost growth over the horizon: 1 when not named.
+    /// Returns `agent`'s expected cost growth over the horizon: 1 when not named.
     pub fn growth_of(&self, agent: AgentId) -> f64 {
         (self.growth.iter())
             .find(|(named, _)| *named == agent)
             .map_or(1.0, |(_, growth)| *growth)
     }
 
-    /// The preparation a switch of `agent` to `row` costs, if it costs one.
+    /// Returns the preparation a switch of `agent` to `row` costs, if it costs one.
     pub fn switch_of(&self, agent: AgentId, row: StrategyId) -> Option<Duration> {
         (self.switch.iter())
             .find(|(named, id, _)| *named == agent && *id == row)

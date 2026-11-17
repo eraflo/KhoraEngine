@@ -228,11 +228,11 @@ impl GornaArbitrator {
     ///
     /// The switches measured, the frames' spread, each agent's workload trend
     /// and class.
-    pub fn planner_mut(&mut self) -> &mut Planner {
+    pub(crate) fn planner_mut(&mut self) -> &mut Planner {
         &mut self.planner
     }
 
-    /// What the last round planned for beyond its frame.
+    /// Returns what the last round planned for beyond its frame.
     pub fn planning(&self) -> &Planning {
         &self.planning
     }
@@ -253,7 +253,7 @@ impl GornaArbitrator {
         &self.corrections
     }
 
-    /// The row the last round planned for each agent.
+    /// Returns the row the last round planned for each agent.
     pub fn planned(&self) -> &[(AgentId, StrategyId)] {
         &self.planned
     }
@@ -466,7 +466,7 @@ impl GornaArbitrator {
         self.target = record.target;
     }
 
-    /// The envelope `agent` holds from the allocation in force.
+    /// Returns the envelope `agent` holds from the allocation in force.
     fn kept(&self, agent: AgentId) -> Option<Envelope> {
         self.in_force.as_ref().and_then(|allocation| {
             allocation
@@ -477,7 +477,7 @@ impl GornaArbitrator {
         })
     }
 
-    /// How many of `agents` report they are stalled.
+    /// Counts how many of `agents` report they are stalled.
     fn stalled(&self, agents: &[Arc<Mutex<dyn Agent>>]) -> usize {
         agents
             .iter()

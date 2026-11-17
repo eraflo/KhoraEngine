@@ -224,7 +224,7 @@ pub enum Keyword {
 }
 
 impl Keyword {
-    /// The keyword `word` spells, if it is one.
+    /// Returns the keyword `word` spells, if it is one.
     pub(super) fn from_word(word: &str) -> Option<Self> {
         Some(match word {
             "behavior" => Self::Behavior,

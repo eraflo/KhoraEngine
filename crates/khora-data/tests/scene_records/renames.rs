@@ -20,15 +20,15 @@ use khora_macros::Component;
 
 use super::*;
 
-/// A component whose type was renamed: saves wrote it as `LegacyBeacon`.
+/// A component whose type has a former name: saves wrote it as `LegacyBeacon`.
 #[derive(Debug, Clone, PartialEq, Default, Component)]
 #[component(domain = Spatial, formerly = "LegacyBeacon")]
 pub struct Beacon {
     pub range: f32,
 }
 
-/// A component one of whose fields was renamed: saves wrote `reserve` as
-/// `points`.
+/// A component one of whose fields has a former name: saves wrote `reserve`
+/// as `points`.
 #[derive(Debug, Clone, PartialEq, Default, Component)]
 #[component(domain = Spatial)]
 pub struct Stamina {
@@ -43,7 +43,7 @@ fn captured(world: &World) -> SceneRecord {
 }
 
 /// A save is older than a rename. The type's former name, declared on the
-/// type, still finds it; the value loads; the report says what was renamed.
+/// type, still finds it; the value loads; the report names the rename.
 #[test]
 fn a_renamed_component_type_loads_through_formerly() {
     let mut src = World::new();

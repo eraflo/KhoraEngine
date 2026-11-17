@@ -23,10 +23,6 @@ use khora_core::lane::{Lane, LaneReport};
 use super::work::{load, Waiting};
 use super::{LoadingFamily, LoadingInputs, LoadingOutputs};
 
-/// A lane that loads every request filed in one run, whatever it costs.
-#[derive(Debug, Default)]
-pub struct RushLane;
-
 const LEVELS: [Level; 1] = [Level {
     id: StrategyId::HighPerformance,
     name: "rush",
@@ -38,6 +34,10 @@ const LEVELS: [Level; 1] = [Level {
         other: 0,
     },
 }];
+
+/// A lane that loads every request filed in one run, whatever it costs.
+#[derive(Debug, Default)]
+pub struct RushLane;
 
 impl Lane for RushLane {
     type Family = LoadingFamily;

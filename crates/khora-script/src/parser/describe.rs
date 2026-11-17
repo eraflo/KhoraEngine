@@ -19,7 +19,7 @@
 
 use crate::lexer::{Keyword, TokenKind};
 
-/// A human name for a token, for "expected X, found Y".
+/// Returns a human name for a token, for "expected X, found Y".
 pub(super) fn describe(kind: &TokenKind) -> String {
     match kind {
         TokenKind::Int(v) => format!("`{v}`"),

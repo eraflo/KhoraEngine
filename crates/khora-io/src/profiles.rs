@@ -29,15 +29,6 @@ use khora_core::platform::MachineIdentity;
 use crate::user_dirs::var;
 pub use crate::user_dirs::{data_dir, home_dir};
 
-/// Where a profile is filed: a player's machine, or a developer's.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProfilePlace {
-    /// A developer's machine: the editor, the sandbox, a loose runtime.
-    Developer,
-    /// A player's machine: a packed game.
-    Player,
-}
-
 /// The environment variable that, set, is the folder every profile is filed
 /// under, in both places.
 pub const PROFILES_VAR: &str = "KHORA_PROFILES";
@@ -47,6 +38,18 @@ pub const MAX_PROFILE_BYTES: u64 = 1 << 20;
 
 /// The profile a built game ships, beside its `runtime.json`.
 pub const SHIPPED_PROFILE: &str = "profile.ron";
+
+/// The longest a [`path_safe`] name is.
+const MAX_NAME: usize = 64;
+
+/// Where a profile is filed: a player's machine, or a developer's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfilePlace {
+    /// A developer's machine: the editor, the sandbox, a loose runtime.
+    Developer,
+    /// A player's machine: a packed game.
+    Player,
+}
 
 /// Returns `name` made safe as one path component.
 ///
@@ -87,9 +90,6 @@ pub fn path_safe(name: &str) -> String {
     }
     safe
 }
-
-/// The longest a [`path_safe`] name is.
-const MAX_NAME: usize = 64;
 
 /// Returns the file a profile of `machine` running `game` is filed in, `env` read for its folders.
 ///

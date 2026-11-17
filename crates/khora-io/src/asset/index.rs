@@ -18,6 +18,9 @@ use bincode;
 use khora_core::asset::{AssetMetadata, AssetUUID};
 use std::collections::HashMap;
 
+/// The most bytes an index may hold, and its decode may allocate.
+pub const MAX_INDEX_BYTES: usize = 256 << 20;
+
 /// The in-memory asset index (`index.bin`): each asset's metadata by its UUID.
 ///
 /// See the book: concepts/assets.md, "The pipeline".
@@ -27,9 +30,6 @@ pub struct AssetIndex {
     /// How many entries the file held, two sharing a UUID counted twice.
     entries_read: usize,
 }
-
-/// The most bytes an index may hold, and its decode may allocate.
-pub const MAX_INDEX_BYTES: usize = 256 << 20;
 
 impl AssetIndex {
     /// Reads an index from the bytes of an `index.bin`.
@@ -63,7 +63,7 @@ impl AssetIndex {
         })
     }
 
-    /// An index of no asset.
+    /// Returns an index of no asset.
     pub(crate) fn empty() -> Self {
         Self {
             index: HashMap::new(),

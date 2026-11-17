@@ -317,7 +317,7 @@ fn the_prefab_world_of_a_nested_instance_is_its_own_prefabs() {
     assert_eq!(translation(&prefab, barrel), Vec3::new(0.0, 1.0, 0.0));
 }
 
-/// The prefab world of an instance whose prefab can no longer be read is
+/// The prefab world of an instance whose prefab cannot be read is
 /// refused, not built empty.
 #[test]
 fn the_prefab_world_of_an_instance_whose_prefab_is_gone_is_refused() {

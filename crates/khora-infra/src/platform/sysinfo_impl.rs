@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! sysinfo-based implementation of the HardwareMonitor trait.
+//! `sysinfo`-based implementation of the `HardwareMonitor` trait.
 
 use khora_core::platform::{BatteryLevel, HardwareMonitor, ThermalStatus};
 use khora_core::sync::LockExt;
@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use sysinfo::{Components, System};
 
-/// The level one battery reports, from its `state` and its `charge` in `[0, 1]`.
+/// Returns the level one battery reports, from its `state` and its `charge` in `[0, 1]`.
 ///
 /// On mains (charging, full, paused at a charge limit) it is
 /// [`BatteryLevel::Mains`]; discharging, `High` above 50 %, `Low` above 15 %,
@@ -44,7 +44,7 @@ pub fn battery_level_of(state: starship_battery::State, charge: f32) -> BatteryL
     }
 }
 
-/// The level of the machine's batteries: the lowest of them, or
+/// Returns the level of the machine's batteries: the lowest of them, or
 /// [`BatteryLevel::Mains`] when one is on mains.
 ///
 /// `Mains` too without a battery, or when the platform cannot be asked (said once).
@@ -192,7 +192,7 @@ mod tests {
     }
 
     /// **A discharging battery is high above half.** Over 50 % it is `High`;
-    /// exactly 50 % is no longer above half, so `Low`.
+    /// exactly 50 % is not above half, so `Low`.
     #[test]
     fn a_discharging_battery_is_high_above_half() {
         assert_eq!(

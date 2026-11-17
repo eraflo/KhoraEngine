@@ -27,6 +27,12 @@ impl WgpuRenderSystem {
     /// The returned id keeps showing the target across every resize asked with
     /// [`request_viewport_size`](Self::request_viewport_size); a panel shows it with
     /// [`viewport_image`](khora_core::ui::editor::ui_builder::UiBuilder::viewport_image).
+    ///
+    /// # Errors
+    ///
+    /// [`RenderError::NotInitialized`] before `init`, [`RenderError::Internal`]
+    /// when the graphics context's lock is poisoned or a view of the target
+    /// cannot be registered with the device.
     pub fn create_viewport_target(
         &mut self,
         width: u32,
@@ -88,8 +94,8 @@ impl WgpuRenderSystem {
         }
     }
 
-    /// The egui texture to re-point at the viewport's colour view, once after
-    /// each rebuild.
+    /// Takes the egui texture to re-point at the viewport's colour view, once
+    /// after each rebuild.
     pub(super) fn take_viewport_retarget(
         &mut self,
     ) -> Option<(egui::TextureId, wgpu::TextureView)> {
@@ -187,6 +193,11 @@ impl WgpuRenderSystem {
     /// Clears the viewport target's colour and depth.
     ///
     /// Call it once per frame, after `begin_frame()` and before `render_overlay()`.
+    ///
+    /// # Errors
+    ///
+    /// [`RenderError::NotInitialized`] before the viewport target exists, and
+    /// [`RenderError::Internal`] when the graphics context's lock is poisoned.
     pub fn render_viewport_clear(&mut self, clear_color: LinearRgba) -> Result<(), RenderError> {
         let color_view = self
             .viewport_view

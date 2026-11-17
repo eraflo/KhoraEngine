@@ -20,7 +20,7 @@ use khora_core::script::{CommandBuffer, ScriptValue, WorldCommand};
 use khora_core::ecs::entity::EntityId;
 
 use crate::ecs::systems::script_commands::apply_all;
-use crate::ecs::{Children, Parent, Transform, World};
+use crate::ecs::{Children, HierarchyWrite, Parent, SerializableParent, Transform, World};
 
 /// A script removing a child's `Parent` by name leaves the former parent
 /// still listing the child: the two halves of the edge disagree.
@@ -91,5 +91,35 @@ fn set_parent_refuses_a_cycle_through_a_deep_chain() {
     assert!(
         !world.set_parent(root, Some(leaf)),
         "a cycle through 1100 entities was accepted"
+    );
+}
+
+/// **A by-name hierarchy write moves both halves of the edge**: setting
+/// `Parent` parents, removing it detaches, `Children` is refused, and any other
+/// name is left to the caller.
+#[test]
+fn write_hierarchy_by_name_owns_parent_and_refuses_children() {
+    let mut world = World::new();
+    let parent = world.spawn(Transform::identity());
+    let child = world.spawn(Transform::identity());
+    let value = serde_json::to_value(SerializableParent::from(Parent(parent)))
+        .expect("a parent serializes");
+
+    let set = world.write_hierarchy_by_name(child, "Parent", HierarchyWrite::Set(&value));
+    assert_eq!(set, Some(Ok(())));
+    assert_eq!(world.get::<Parent>(child), Some(&Parent(parent)));
+    assert!(world
+        .get::<Children>(parent)
+        .is_some_and(|children| children.0.contains(&child)));
+
+    let removed = world.write_hierarchy_by_name(child, "Parent", HierarchyWrite::Remove);
+    assert_eq!(removed, Some(Ok(())));
+    assert_eq!(world.get::<Parent>(child), None);
+
+    let children = world.write_hierarchy_by_name(parent, "Children", HierarchyWrite::Remove);
+    assert!(matches!(children, Some(Err(_))));
+    assert_eq!(
+        world.write_hierarchy_by_name(child, "Transform", HierarchyWrite::Remove),
+        None
     );
 }

@@ -14,7 +14,7 @@
 
 //! Work off the frame: the runs of the families at [`ExecutionPhase::BACKGROUND`], and
 //! the preparations of the layers any family switches to, one per family at a time.
-//! See the book: reference/glossary.md, "ExecutionPhase / TickPhase".
+//! See the book: reference/glossary.md, "`ExecutionPhase` / `TickPhase`".
 
 use std::collections::HashSet;
 use std::sync::mpsc::{channel, Receiver, Sender};

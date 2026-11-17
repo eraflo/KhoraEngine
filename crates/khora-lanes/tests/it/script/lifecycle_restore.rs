@@ -161,7 +161,7 @@ const LOADER: &str = r#"behavior Loader {
 
 /// **An arrival is handed over once, and a frame out of fuel drops it.** The
 /// flow delivers what an entity brings only on the first frame it appears;
-/// the lane skips an instance the frame can no longer afford before reading
+/// the lane skips an instance the frame cannot afford any more before reading
 /// that arrival. Under budget pressure — a save of many scripted entities,
 /// loaded on a frame whose fuel the earlier ones spend — the later ones are
 /// exactly those instances.

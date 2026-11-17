@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
 use khora_sdk::khora_core::ecs::entity::EntityId;
-use khora_sdk::khora_core::problems::ProblemSeverity;
+use khora_sdk::khora_core::problems::{Problem, ProblemSeverity};
 use khora_tool_ui::widgets::{
     self, empty_state, filter_pill,
     paint::{fill, icon, mono, text},
@@ -65,44 +65,6 @@ impl ProblemsPanel {
     }
 }
 
-/// One line of the list: a module's header, a problem, or a problem's note.
-enum Line {
-    Module(String, usize),
-    Problem {
-        severity: ProblemSeverity,
-        position: String,
-        message: String,
-        entity: Option<String>,
-        action: ProblemAction,
-    },
-    Note(String),
-}
-
-/// Returns the name the hierarchy shows for `entity`.
-fn name_in(nodes: &[SceneNode], entity: EntityId) -> Option<String> {
-    nodes.iter().find_map(|node| {
-        if node.entity == entity {
-            Some(node.name.clone())
-        } else {
-            name_in(&node.children, entity)
-        }
-    })
-}
-
-/// Returns `row_text` split into its `line:col` and its message, the
-/// position empty when the problem has none.
-fn split_position(row_text: &str) -> (String, String) {
-    match row_text.split_once("  ") {
-        Some((position, message))
-            if position.contains(':')
-                && position.chars().all(|c| c.is_ascii_digit() || c == ':') =>
-        {
-            (position.to_owned(), message.to_owned())
-        }
-        _ => (String::new(), row_text.to_owned()),
-    }
-}
-
 impl EditorPanel for ProblemsPanel {
     fn id(&self) -> &str {
         "khora.editor.problems"
@@ -135,6 +97,40 @@ impl EditorPanel for ProblemsPanel {
             .count();
         let warnings = problems.len() - errors;
 
+        self.show_filters(ui, &t, r, errors, warnings);
+
+        let body_y = r[1] + HEADER_H + FILTER_H + 2.0;
+        let body = [r[0], body_y, r[2], (widgets::bottom(r) - body_y).max(0.0)];
+        let shown: Vec<_> = problems
+            .iter()
+            .filter(|problem| match problem.severity {
+                ProblemSeverity::Error => self.show_errors,
+                ProblemSeverity::Warning => self.show_warnings,
+            })
+            .cloned()
+            .collect();
+
+        if shown.is_empty() {
+            paint_empty(ui, &t, body, problems.is_empty());
+            return;
+        }
+
+        let lines = lines_of(&shown, &roots);
+        let clicked = self.paint_lines(ui, &t, body, &lines);
+        self.follow(clicked, project);
+    }
+}
+
+impl ProblemsPanel {
+    /// Paints the header and its filter pills, toggling the one clicked.
+    fn show_filters(
+        &mut self,
+        ui: &mut dyn UiBuilder,
+        t: &UiTheme,
+        r: [f32; 4],
+        errors: usize,
+        warnings: usize,
+    ) {
         ui.paint_rect_filled([r[0], r[1]], [r[2], HEADER_H], t.surface, 0.0);
         ui.paint_line(
             [r[0], r[1] + HEADER_H],
@@ -167,7 +163,7 @@ impl EditorPanel for ProblemsPanel {
                 + 12.0;
             if filter_pill(
                 ui,
-                &t,
+                t,
                 [x, fy, w, 20.0],
                 salt,
                 Pill::new(label, tone).count(count).on(on),
@@ -183,61 +179,16 @@ impl EditorPanel for ProblemsPanel {
             Some(_) => self.show_warnings = !self.show_warnings,
             None => {}
         }
+    }
 
-        let body_y = r[1] + HEADER_H + FILTER_H + 2.0;
-        let body = [r[0], body_y, r[2], (widgets::bottom(r) - body_y).max(0.0)];
-        let shown: Vec<_> = problems
-            .iter()
-            .filter(|problem| match problem.severity {
-                ProblemSeverity::Error => self.show_errors,
-                ProblemSeverity::Warning => self.show_warnings,
-            })
-            .cloned()
-            .collect();
-
-        if shown.is_empty() {
-            let w = 280.0_f32.min(body[2] - 24.0);
-            let h = 110.0_f32.min(body[3] - 12.0);
-            if w > 0.0 && h > 0.0 {
-                empty_state(
-                    ui,
-                    &t,
-                    [body[0] + (body[2] - w) * 0.5, body[1] + 8.0, w, h],
-                    Icon::Code,
-                    if problems.is_empty() {
-                        "No problems"
-                    } else {
-                        "Nothing matches"
-                    },
-                    if problems.is_empty() {
-                        "The project's scripts and the scene's values are all usable."
-                    } else {
-                        "Turn a filter back on to see the rest."
-                    },
-                );
-            }
-            return;
-        }
-
-        let name_of = |entity: EntityId| name_in(&roots, entity);
-        let mut lines = Vec::new();
-        for group in grouped(&shown, &name_of) {
-            lines.push(Line::Module(group.title(), group.rows.len()));
-            for row in group.rows {
-                let (position, message) = split_position(&row.text);
-                lines.push(Line::Problem {
-                    severity: row.severity,
-                    position,
-                    message,
-                    entity: row.entity,
-                    action: row.action,
-                });
-                if let Some(note) = row.note {
-                    lines.push(Line::Note(note));
-                }
-            }
-        }
-
+    /// Paints the scrolled list of lines and returns the action of the row clicked.
+    fn paint_lines(
+        &mut self,
+        ui: &mut dyn UiBuilder,
+        t: &UiTheme,
+        body: [f32; 4],
+        lines: &[Line],
+    ) -> Option<ProblemAction> {
         let size = t.font_size_caption;
         let content_h = lines.len() as f32 * ROW_H + 4.0;
         self.scroll.update(ui, body, content_h);
@@ -344,8 +295,12 @@ impl EditorPanel for ProblemsPanel {
             y += ROW_H;
         }
         ui.pop_clip_rect();
-        widgets::scrollbar(ui, &t, body, content_h, &mut self.scroll, "problems-scroll");
+        widgets::scrollbar(ui, t, body, content_h, &mut self.scroll, "problems-scroll");
+        clicked
+    }
 
+    /// Opens the module's file, or selects the entity, a clicked row leads to.
+    fn follow(&self, clicked: Option<ProblemAction>, project: Option<String>) {
         match clicked {
             Some(ProblemAction::OpenModule(module)) => {
                 let Some(project) = project else { return };
@@ -361,6 +316,91 @@ impl EditorPanel for ProblemsPanel {
             }
             Some(ProblemAction::Nothing) | None => {}
         }
+    }
+}
+
+/// One line of the list: a module's header, a problem, or a problem's note.
+enum Line {
+    Module(String, usize),
+    Problem {
+        severity: ProblemSeverity,
+        position: String,
+        message: String,
+        entity: Option<String>,
+        action: ProblemAction,
+    },
+    Note(String),
+}
+
+/// Paints the empty state: no problem at all, or none the filters let through.
+fn paint_empty(ui: &mut dyn UiBuilder, t: &UiTheme, body: [f32; 4], no_problems: bool) {
+    let w = 280.0_f32.min(body[2] - 24.0);
+    let h = 110.0_f32.min(body[3] - 12.0);
+    if w > 0.0 && h > 0.0 {
+        empty_state(
+            ui,
+            t,
+            [body[0] + (body[2] - w) * 0.5, body[1] + 8.0, w, h],
+            Icon::Code,
+            if no_problems {
+                "No problems"
+            } else {
+                "Nothing matches"
+            },
+            if no_problems {
+                "The project's scripts and the scene's values are all usable."
+            } else {
+                "Turn a filter back on to see the rest."
+            },
+        );
+    }
+}
+
+/// Returns the list's lines: each group's header, then its problems and their notes.
+fn lines_of(shown: &[Problem], roots: &[SceneNode]) -> Vec<Line> {
+    let name_of = |entity: EntityId| name_in(roots, entity);
+    let mut lines = Vec::new();
+    for group in grouped(shown, &name_of) {
+        lines.push(Line::Module(group.title(), group.rows.len()));
+        for row in group.rows {
+            let (position, message) = split_position(&row.text);
+            lines.push(Line::Problem {
+                severity: row.severity,
+                position,
+                message,
+                entity: row.entity,
+                action: row.action,
+            });
+            if let Some(note) = row.note {
+                lines.push(Line::Note(note));
+            }
+        }
+    }
+    lines
+}
+
+/// Returns the name the hierarchy shows for `entity`.
+fn name_in(nodes: &[SceneNode], entity: EntityId) -> Option<String> {
+    nodes.iter().find_map(|node| {
+        if node.entity == entity {
+            Some(node.name.clone())
+        } else {
+            name_in(&node.children, entity)
+        }
+    })
+}
+
+/// Returns `row_text` split into its `line:col` and its message, the
+/// position empty when the problem has none.
+fn split_position(row_text: &str) -> (String, String) {
+    match row_text.split_once("  ") {
+        Some((position, message))
+            if position.contains(':')
+                && position.chars().all(|c| c.is_ascii_digit() || c == ':') =>
+        {
+            (position.to_owned(), message.to_owned())
+        }
+        _ => (String::new(), row_text.to_owned()),
     }
 }
 

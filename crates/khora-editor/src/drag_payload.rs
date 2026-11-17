@@ -45,7 +45,8 @@ pub(crate) fn pack_asset_drag(index: u32, epoch: u64) -> u64 {
     ASSET_DRAG_TAG | stamp | (index as u64 & DRAG_INDEX_MASK)
 }
 
-/// Whether `payload` carries the asset tag, regardless of how stale it is.
+/// Returns whether `payload` carries the asset tag, regardless of how stale it
+/// is.
 ///
 /// Kept separate from [`unpack_asset_drag`] because the two answer different
 /// questions: this one classifies the payload, the other resolves it. Routing
@@ -76,7 +77,7 @@ pub(crate) fn pack_entity(e: khora_sdk::prelude::ecs::EntityId) -> u64 {
     ((e.generation as u64) << 32) | (e.index as u64)
 }
 
-/// Inverse of [`pack_entity`].
+/// Unpacks the entity [`pack_entity`] packed.
 pub(crate) fn unpack_entity(payload: u64) -> khora_sdk::prelude::ecs::EntityId {
     khora_sdk::prelude::ecs::EntityId {
         index: payload as u32,
@@ -84,7 +85,7 @@ pub(crate) fn unpack_entity(payload: u64) -> khora_sdk::prelude::ecs::EntityId {
     }
 }
 
-/// Whether `payload` carries no drag tag, so is a scene-tree entity.
+/// Returns whether `payload` carries no drag tag, so is a scene-tree entity.
 ///
 /// Any payload whose high half matches no tag is taken for a packed
 /// `EntityId`: generations are small u32s, far below the ASCII tags.

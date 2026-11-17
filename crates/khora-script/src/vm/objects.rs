@@ -25,8 +25,8 @@ use crate::arena::{Arena, Object, Persisted};
 use crate::native::Host;
 
 impl Machine {
-    /// What `instruction` costs when that depends on the values it touches, or
-    /// `None` when its cost is fixed.
+    /// Returns what `instruction` costs when that depends on the values it
+    /// touches, or `None` when its cost is fixed.
     ///
     /// `WriteBack` and `Become` are not sized: never a place to stop, they write
     /// what the run already paid for, and charging it again would let a run
@@ -185,7 +185,7 @@ impl Machine {
         Ok(Step::Next)
     }
 
-    /// `count` consecutive registers from `base`.
+    /// Reads `count` consecutive registers from `base`.
     fn read_run(&self, base: super::Reg, count: u16) -> Result<Vec<Value>, Fault> {
         (0..count)
             .map(|offset| {
@@ -207,7 +207,7 @@ impl Machine {
     }
 }
 
-/// The elements of the array `value` names.
+/// Returns the elements of the array `value` names.
 fn array(arena: &Arena, value: Value) -> Result<&Vec<Value>, Fault> {
     match value {
         Value::Obj(ObjRef::Arena(handle)) => match arena.get(handle) {
@@ -222,7 +222,7 @@ fn array(arena: &Arena, value: Value) -> Result<&Vec<Value>, Fault> {
     }
 }
 
-/// The elements of the array `value` names, to write.
+/// Returns the elements of the array `value` names, to write.
 fn array_mut(arena: &mut Arena, value: Value) -> Result<&mut Vec<Value>, Fault> {
     match value {
         Value::Obj(ObjRef::Arena(handle)) => match arena.get_mut(handle) {
@@ -237,7 +237,7 @@ fn array_mut(arena: &mut Arena, value: Value) -> Result<&mut Vec<Value>, Fault> 
     }
 }
 
-/// The fields of the struct `value` names.
+/// Returns the fields of the struct `value` names.
 fn fields(arena: &Arena, value: Value) -> Result<&Vec<Value>, Fault> {
     match value {
         Value::Obj(ObjRef::Arena(handle)) => match arena.get(handle) {
@@ -252,7 +252,7 @@ fn fields(arena: &Arena, value: Value) -> Result<&Vec<Value>, Fault> {
     }
 }
 
-/// The fields of the struct `value` names, to write.
+/// Returns the fields of the struct `value` names, to write.
 fn fields_mut(arena: &mut Arena, value: Value) -> Result<&mut Vec<Value>, Fault> {
     match value {
         Value::Obj(ObjRef::Arena(handle)) => match arena.get_mut(handle) {
@@ -267,7 +267,7 @@ fn fields_mut(arena: &mut Arena, value: Value) -> Result<&mut Vec<Value>, Fault>
     }
 }
 
-/// `index` as a position in an array of `len`, or the fault naming both.
+/// Returns `index` as a position in an array of `len`, or the fault naming both.
 fn position(index: i64, len: usize) -> Result<usize, Fault> {
     usize::try_from(index)
         .ok()

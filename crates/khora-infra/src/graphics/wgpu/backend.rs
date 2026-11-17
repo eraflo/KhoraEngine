@@ -51,7 +51,7 @@ impl WgpuBackendSelector {
         }
     }
 
-    /// Convert WGPU Backend to our generic GraphicsBackendType.
+    /// Converts a wgpu `Backend` to the engine's `GraphicsBackendType`.
     fn backend_to_type(backend: Backend) -> GraphicsBackendType {
         match backend {
             Backend::Vulkan => GraphicsBackendType::Vulkan,
@@ -64,7 +64,7 @@ impl WgpuBackendSelector {
         }
     }
 
-    /// Converts WGPU DeviceType to our generic RendererDeviceType.
+    /// Converts a wgpu `DeviceType` to the engine's `RendererDeviceType`.
     fn device_type_to_type(device_type: DeviceType) -> RendererDeviceType {
         match device_type {
             DeviceType::IntegratedGpu => RendererDeviceType::IntegratedGpu,
@@ -75,7 +75,7 @@ impl WgpuBackendSelector {
         }
     }
 
-    /// Convert our generic GraphicsBackendType to WGPU Backend.
+    /// Converts the engine's `GraphicsBackendType` to a wgpu `Backend`.
     fn type_to_backend(backend_type: GraphicsBackendType) -> Backend {
         match backend_type {
             GraphicsBackendType::Vulkan => Backend::Vulkan,
@@ -88,7 +88,7 @@ impl WgpuBackendSelector {
         }
     }
 
-    /// Convert WGPU adapter info to our generic GraphicsAdapterInfo.
+    /// Converts a wgpu adapter's info to the engine's `GraphicsAdapterInfo`.
     fn adapter_to_info(adapter: &Adapter) -> GraphicsAdapterInfo {
         let info = adapter.get_info();
         GraphicsAdapterInfo {
@@ -98,8 +98,8 @@ impl WgpuBackendSelector {
         }
     }
 
-    /// Try to get an adapter for a specific backend type, on an instance
-    /// made for that backend alone.
+    /// Requests an adapter for one backend type, on an instance made for that
+    /// backend alone.
     async fn try_backend(&self, backend_type: GraphicsBackendType) -> Result<SelectedAdapter> {
         let backend = Self::type_to_backend(backend_type);
         let instance = (self.make_instance)(wgpu::Backends::from(backend));

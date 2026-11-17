@@ -124,7 +124,7 @@ impl Checker {
     }
 }
 
-/// Whether an expression denotes a place that can be written to.
+/// Returns whether an expression denotes a place that can be written to.
 fn is_assignable_target(expr: &Expr) -> bool {
     matches!(
         expr,

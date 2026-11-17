@@ -16,6 +16,11 @@
 //! frame's inputs. The inputs are fetched and every level costed; nothing is
 //! prepared, recorded or written, and a lock is only tried, never waited for.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn threads to test concurrency"
+)]
+
 use std::sync::{Arc, Mutex};
 
 use khora_core::agent::gorna::{AgentId, StrategyId};

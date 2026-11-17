@@ -15,8 +15,7 @@
 //! **What reaches a handler, and what does not** — an event is delivered by
 //! the program's table of declared events, not by a member's name.
 //!
-//! - The handler that runs is the one it always was: the current state's,
-//!   then the behavior's own.
+//! - The handler that runs is the current state's, then the behavior's own.
 //! - Only an event the program declares is delivered. A `ScriptEvent` named
 //!   like a method or a lifecycle hook (`Update`, `OnSpawn`, …) never runs
 //!   that member: it is "no handler".

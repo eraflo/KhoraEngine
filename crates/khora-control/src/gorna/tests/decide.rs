@@ -276,7 +276,7 @@ fn a_round_without_agents_lends_nothing() {
 ///
 /// Either upgrade fits 5 ms alone, both do not. `oak` (Critical) gains 1.0 ×
 /// 0.6 over 3 ms, 0.0002 per µs; `pine` (Optional) gains 0.5 × 0.6 over 0.5 ms,
-/// 0.0006 per µs. `pine` is upgraded first, and `oak`'s upgrade no longer fits:
+/// 0.0006 per µs. `pine` is upgraded first, and `oak`'s upgrade no more fits:
 /// the less important agent wins because its gain per µs is higher. Then the
 /// weights decide: with rows whose raw gain per µs favours `pine`, `oak` takes
 /// the upgrade once it is Critical and `pine` Optional, and `pine` takes it
@@ -836,7 +836,7 @@ fn a_bounded_mode_is_an_allowed_range() {
 }
 
 /// **`Stable` keeps the envelope** when the frame would lend it more, and
-/// gives way when the envelope it holds no longer fits.
+/// gives way when the envelope it holds no more fits.
 #[test]
 fn a_stable_agent_keeps_its_envelope_unless_it_no_longer_fits() {
     let stable = |kept_us| {

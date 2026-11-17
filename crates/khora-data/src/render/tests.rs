@@ -527,3 +527,33 @@ fn primary_view_of_a_broken_camera_ignores_the_editor_override() {
         "a broken active camera fell back to a view: {primary:?}"
     );
 }
+
+// --- A camera set on the editor override ---------------------------------
+
+/// A camera set on the override gives the view built from it, and is kept
+/// whole; a view set alone carries no camera, and `None` clears both.
+#[test]
+fn a_camera_set_on_the_override_gives_its_view_and_is_kept() {
+    let camera = khora_core::renderer::api::resource::ViewInfo::new(
+        Mat4::from_translation(Vec3::new(1.0, 2.0, 3.0)),
+        Mat4::from_scale(Vec3::new(2.0, 2.0, 1.0)),
+        Vec3::new(-1.0, -2.0, -3.0),
+    );
+    let editor = EditorViewportOverride::new();
+
+    editor.set_camera(Some(camera.clone()));
+    let view = editor.get().expect("a camera sets a view");
+    assert_mat_close(view.view_proj, camera.view_projection_matrix(), "view_proj");
+    assert_eq!(view.position, camera.camera_position);
+    let kept = editor.camera().expect("the camera is kept");
+    assert_eq!(kept.camera_position, camera.camera_position);
+
+    editor.set(Some(view));
+    assert!(
+        editor.camera().is_none(),
+        "a view set alone carries no camera"
+    );
+
+    editor.set_camera(None);
+    assert!(editor.get().is_none() && editor.camera().is_none());
+}

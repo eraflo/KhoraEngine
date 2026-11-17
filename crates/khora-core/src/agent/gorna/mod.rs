@@ -56,7 +56,7 @@ pub enum StrategyId {
 ///
 /// A death-spiral safety stop can still force `LowPower` in any mode.
 ///
-/// See the book: concepts/gorna.md, "AdaptationMode — the developer-control surface".
+/// See the book: concepts/gorna.md, "`AdaptationMode` — the developer-control surface".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum AdaptationMode {
     /// Full GORNA negotiation — the DCC freely picks the best-fitting strategy

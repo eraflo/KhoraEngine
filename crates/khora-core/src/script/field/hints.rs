@@ -31,7 +31,7 @@ pub struct FieldHints {
 }
 
 impl FieldHints {
-    /// Whether no hint is given: no range, no tooltip, no header.
+    /// Returns whether no hint is given: no range, no tooltip, no header.
     pub fn is_empty(&self) -> bool {
         self.range.is_none() && self.tooltip.is_none() && self.header.is_none()
     }
@@ -47,12 +47,12 @@ pub struct FieldRange {
 }
 
 impl FieldRange {
-    /// Whether `value` lies within the bounds, both included.
+    /// Returns whether `value` lies within the bounds, both included.
     pub fn contains(&self, value: f64) -> bool {
         self.min <= value && value <= self.max
     }
 
-    /// Whether `value`, a 32-bit float, lies within the bounds, give or take
+    /// Returns whether `value`, a 32-bit float, lies within the bounds, give or take
     /// the rounding of a unit conversion.
     ///
     /// A value a step or two of a 32-bit float past a bound counts as at it:
@@ -62,15 +62,15 @@ impl FieldRange {
         self.contains(value) || near(self.min) || near(self.max)
     }
 
-    /// `value` brought within the bounds.
+    /// Returns `value` brought within the bounds.
     pub fn clamp(&self, value: f64) -> f64 {
         // Never `f64::clamp`, which panics on bounds read from a damaged
         // file.
         value.max(self.min).min(self.max)
     }
 
-    /// Where `value` sits between the bounds: `0` at `min`, `1` at `max`,
-    /// clamped to `0..=1` outside them.
+    /// Returns where `value` sits between the bounds: `0` at `min`, `1` at `max`, clamped to
+    /// `0..=1` outside them.
     pub fn fraction(&self, value: f64) -> f64 {
         let span = self.max - self.min;
         if span <= 0.0 {
@@ -80,7 +80,7 @@ impl FieldRange {
     }
 }
 
-/// How many 32-bit floats lie from `a` to `b`, counting `b`; `u64::MAX` when
+/// Returns how many 32-bit floats lie from `a` to `b`, counting `b`; `u64::MAX` when
 /// either is not a number.
 fn steps_apart(a: f32, b: f32) -> u64 {
     if a.is_nan() || b.is_nan() {

@@ -283,7 +283,7 @@ fn a_nan_done_counts_as_nothing_done() {
 /// **A report says when the lane stalled**, so the DCC learns of a stall from
 /// the report the scheduler publishes, without asking the agent: a run whose
 /// lane could not progress reports `stalled`, and the next run that does
-/// progress no longer does.
+/// progress has stopped.
 #[test]
 fn a_report_says_when_the_lane_stalled() {
     let mut agent = effort_agent(Duration::from_secs(1));

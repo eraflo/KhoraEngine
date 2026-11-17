@@ -34,7 +34,7 @@ impl LaneFamily for PhysicsFamily {
 
 /// What every physics lane writes: the step it advanced and the contacts it reported.
 ///
-/// The `physics_world_writeback` DataSystem drains the step; `collision_dispatch`
+/// The `physics_world_writeback` `DataSystem` drains the step; `collision_dispatch`
 /// the contacts.
 #[derive(LaneOutputs)]
 pub struct PhysicsOutputs {

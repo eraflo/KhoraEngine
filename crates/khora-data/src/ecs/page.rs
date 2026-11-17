@@ -40,13 +40,6 @@ pub struct ComponentPage {
     pub(crate) order: u64,
 }
 
-/// A page's column ticks, by key, hashed like its columns.
-pub(crate) type TickMap = std::collections::HashMap<
-    ComponentKey,
-    ColumnTicks,
-    std::hash::BuildHasherDefault<crate::ecs::component_key::KeyHasher>,
->;
-
 impl ComponentPage {
     /// Adds an entity to this page's entity list, and a tick per column for its row.
     ///
@@ -110,3 +103,10 @@ impl ComponentPage {
         self.order
     }
 }
+
+/// A page's column ticks, by key, hashed like its columns.
+pub(crate) type TickMap = std::collections::HashMap<
+    ComponentKey,
+    ColumnTicks,
+    std::hash::BuildHasherDefault<crate::ecs::component_key::KeyHasher>,
+>;

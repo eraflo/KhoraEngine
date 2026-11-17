@@ -28,7 +28,7 @@ pub struct GpuMesh {
     pub index_count: u32,
     /// The format of indices in the index buffer.
     pub index_format: IndexFormat,
-    /// The topology of primitives to render (e.g., TriangleList, TriangleStrip).
+    /// The topology of primitives to render (e.g., `TriangleList`, `TriangleStrip`).
     pub primitive_topology: PrimitiveTopology,
 }
 

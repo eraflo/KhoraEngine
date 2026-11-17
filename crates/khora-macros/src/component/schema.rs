@@ -18,7 +18,7 @@
 use quote::{quote, ToTokens};
 use syn::Fields;
 
-/// The `ComponentShape` of a component whose mirror holds `included_fields`.
+/// Returns the `ComponentShape` of a component whose mirror holds `included_fields`.
 ///
 /// The field schema, built from the very list that feeds the `Serializable`
 /// mirror. Sharing the list is the point: a field the mirror omits is a field

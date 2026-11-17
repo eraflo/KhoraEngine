@@ -46,6 +46,14 @@ pub const PACK_FLAG_LZ4: u32 = 1 << 0;
 /// Header flag: a `manifest.bin` accompanies the pack.
 pub const PACK_FLAG_MANIFEST: u32 = 1 << 1;
 
+/// The most bytes one pack entry may hold, compressed or not.
+const MAX_ENTRY_BYTES: u64 = 4 << 30;
+
+/// The most LZ4 can expand one compressed byte to.
+const LZ4_MAX_RATIO: u64 = 255;
+/// Room for the end of an LZ4 block, which carries a few literals.
+const LZ4_SLACK: u64 = 64;
+
 /// The 24-byte header at the start of `data.pack`, decoded.
 ///
 /// Byte layout (all little-endian):
@@ -119,6 +127,10 @@ impl PackLoader {
     }
 
     /// Writes a current-version header of `asset_count` entries and `flags` to `out`.
+    ///
+    /// # Errors
+    ///
+    /// When writing to `out` fails.
     pub fn write_header(out: &mut impl Write, asset_count: u32, flags: u32) -> Result<()> {
         let header = PackHeader::v2(asset_count, flags);
         out.write_all(&header.to_bytes())
@@ -158,76 +170,6 @@ impl PackLoader {
         }
         Ok(buffer)
     }
-}
-
-/// The most bytes one pack entry may hold, compressed or not.
-const MAX_ENTRY_BYTES: u64 = 4 << 30;
-
-/// The most LZ4 can expand one compressed byte to.
-const LZ4_MAX_RATIO: u64 = 255;
-/// Room for the end of an LZ4 block, which carries a few literals.
-const LZ4_SLACK: u64 = 64;
-
-/// Reads `file` into `buf` at `offset`, without a cursor shared with other readers.
-///
-/// Windows moves the handle's own position, never relied on here.
-#[cfg(windows)]
-fn read_once(file: &File, buf: &mut [u8], offset: u64) -> std::io::Result<usize> {
-    std::os::windows::fs::FileExt::seek_read(file, buf, offset)
-}
-
-#[cfg(unix)]
-fn read_once(file: &File, buf: &mut [u8], offset: u64) -> std::io::Result<usize> {
-    std::os::unix::fs::FileExt::read_at(file, buf, offset)
-}
-
-#[cfg(not(any(windows, unix)))]
-fn read_once(file: &File, buf: &mut [u8], offset: u64) -> std::io::Result<usize> {
-    let _ = (file, buf, offset);
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "positioned reads are not supported on this platform",
-    ))
-}
-
-fn read_and_validate_header(file: &mut File) -> Result<PackHeader> {
-    file.seek(SeekFrom::Start(0))
-        .context("Failed to seek to pack file start")?;
-    let mut buf = [0u8; PACK_HEADER_SIZE as usize];
-    file.read_exact(&mut buf)
-        .context("Pack file is shorter than 24 bytes — not a Khora pack (or truncated)")?;
-
-    if &buf[0..8] != PACK_MAGIC {
-        bail!(
-            "Not a Khora pack archive (bad magic: expected {:?}, got {:?})",
-            std::str::from_utf8(PACK_MAGIC).unwrap_or("KHORAPK\\0"),
-            &buf[0..8]
-        );
-    }
-    // `buf` is exactly `PACK_HEADER_SIZE` bytes and `read_exact` succeeded, so
-    // each 4-byte window below is in bounds; propagate rather than unwrap so a
-    // future header-size change surfaces as an error instead of a panic.
-    let to_u32 = |slice: &[u8]| -> Result<u32> {
-        let arr: [u8; 4] = slice
-            .try_into()
-            .context("Pack header field is not 4 bytes — truncated or corrupt pack")?;
-        Ok(u32::from_le_bytes(arr))
-    };
-    let format_version = to_u32(&buf[8..12])?;
-    if format_version != PACK_FORMAT_VERSION {
-        bail!(
-            "Unsupported pack format version {} (this runtime supports v{})",
-            format_version,
-            PACK_FORMAT_VERSION
-        );
-    }
-    let asset_count = to_u32(&buf[12..16])?;
-    let flags = to_u32(&buf[16..20])?;
-    Ok(PackHeader {
-        format_version,
-        asset_count,
-        flags,
-    })
 }
 
 impl AssetIo for PackLoader {
@@ -294,6 +236,68 @@ impl AssetIo for PackLoader {
             }
         }
     }
+}
+
+/// Reads `file` into `buf` at `offset`, without a cursor shared with other readers.
+///
+/// Windows moves the handle's own position, never relied on here.
+#[cfg(windows)]
+fn read_once(file: &File, buf: &mut [u8], offset: u64) -> std::io::Result<usize> {
+    std::os::windows::fs::FileExt::seek_read(file, buf, offset)
+}
+
+#[cfg(unix)]
+fn read_once(file: &File, buf: &mut [u8], offset: u64) -> std::io::Result<usize> {
+    std::os::unix::fs::FileExt::read_at(file, buf, offset)
+}
+
+#[cfg(not(any(windows, unix)))]
+fn read_once(file: &File, buf: &mut [u8], offset: u64) -> std::io::Result<usize> {
+    let _ = (file, buf, offset);
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "positioned reads are not supported on this platform",
+    ))
+}
+
+fn read_and_validate_header(file: &mut File) -> Result<PackHeader> {
+    file.seek(SeekFrom::Start(0))
+        .context("Failed to seek to pack file start")?;
+    let mut buf = [0u8; PACK_HEADER_SIZE as usize];
+    file.read_exact(&mut buf)
+        .context("Pack file is shorter than 24 bytes — not a Khora pack (or truncated)")?;
+
+    if &buf[0..8] != PACK_MAGIC {
+        bail!(
+            "Not a Khora pack archive (bad magic: expected {:?}, got {:?})",
+            std::str::from_utf8(PACK_MAGIC).unwrap_or("KHORAPK\\0"),
+            &buf[0..8]
+        );
+    }
+    // `buf` is exactly `PACK_HEADER_SIZE` bytes and `read_exact` succeeded, so
+    // each 4-byte window below is in bounds; propagate rather than unwrap so a
+    // future header-size change surfaces as an error instead of a panic.
+    let to_u32 = |slice: &[u8]| -> Result<u32> {
+        let arr: [u8; 4] = slice
+            .try_into()
+            .context("Pack header field is not 4 bytes — truncated or corrupt pack")?;
+        Ok(u32::from_le_bytes(arr))
+    };
+    let format_version = to_u32(&buf[8..12])?;
+    if format_version != PACK_FORMAT_VERSION {
+        bail!(
+            "Unsupported pack format version {} (this runtime supports v{})",
+            format_version,
+            PACK_FORMAT_VERSION
+        );
+    }
+    let asset_count = to_u32(&buf[12..16])?;
+    let flags = to_u32(&buf[16..20])?;
+    Ok(PackHeader {
+        format_version,
+        asset_count,
+        flags,
+    })
 }
 
 #[cfg(test)]

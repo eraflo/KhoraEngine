@@ -20,7 +20,7 @@ use khora_tool_ui::widgets::{
 pub const TITLE_BAR_HEIGHT: f32 = 44.0;
 
 /// Renders the top bar.
-pub fn show_title_bar(app: &mut HubApp, ui: &mut dyn UiBuilder) {
+pub(crate) fn show_title_bar(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     let t = crate::ui::theme();
     let r = ui.panel_rect();
 

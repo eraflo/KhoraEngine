@@ -17,13 +17,13 @@
 //! A value is carried into a field **by name**, across a hot reload or a load
 //! into edited code — and the edit may have changed the field's type. The
 //! checker never lets an author put a `null` in an `int` or text in a `float`,
-//! so a carried value must not either: one that no longer fits is left behind,
+//! so a carried value must not either: one that does not fit is left behind,
 //! and the field takes its default.
 
 use khora_core::script::ScriptValue;
 
-/// Whether `value` can be held by a slot declared `ty` (as written, `int?`,
-/// `Vec3`, `string[]`).
+/// Returns whether `value` can be held by a slot declared `ty` (as written,
+/// `int?`, `Vec3`, `string[]`).
 ///
 /// An `int` fits a float-typed slot — the VM widens one where a float is read.
 /// A type the value's kind cannot tell apart — a struct — is taken on trust,

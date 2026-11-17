@@ -83,7 +83,7 @@ pub(super) fn report_lost_writes(
     }
 }
 
-/// Whether `component` is a behavior's.
+/// Returns whether `component` is a behavior's.
 fn is_behavior(world: &World, component: &str) -> bool {
     world
         .components()

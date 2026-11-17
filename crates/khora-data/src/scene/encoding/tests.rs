@@ -630,3 +630,14 @@ fn a_huge_declared_count_is_refused_not_allocated() {
         }
     }
 }
+
+/// Each encoding is found by the id its file header writes; an unknown id finds none.
+#[test]
+fn encoding_named_finds_each_encoding_by_its_header_id() {
+    for (name, encoding) in every_encoding() {
+        let found = encoding_named(encoding.id())
+            .unwrap_or_else(|| panic!("{name}: its id `{}` names no encoding", encoding.id()));
+        assert_eq!(found.id(), encoding.id(), "{name}");
+    }
+    assert!(encoding_named("KH_NO_SUCH_ENCODING").is_none());
+}

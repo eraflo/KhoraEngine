@@ -23,7 +23,7 @@ use super::atlas_2d::Atlas2D;
 use super::atlas_cube::AtlasCube;
 
 /// Builds a [`ShadowGpuBindings`] from the lane's atlases and sampler.
-pub fn build_bindings(
+pub(crate) fn build_bindings(
     atlas_2d: &Atlas2D,
     atlas_cube: &AtlasCube,
     sampler: SamplerId,

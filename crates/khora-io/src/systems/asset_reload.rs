@@ -43,7 +43,7 @@ use crate::asset::{AssetService, Requested};
 enum Reloaded<A: Asset> {
     /// The asset's current value.
     Fresh(AssetHandle<A>),
-    /// The asset left the index, or its container no longer holds it: every copy goes.
+    /// The asset left the index, or its container stopped holding it: every copy goes.
     Gone,
     /// The asset did not decode (a file caught mid-write): the last good copy
     /// stays, in the service too, until the next change.
@@ -64,17 +64,6 @@ impl<A: Asset> Clone for Reloaded<A> {
             Self::Pending => Self::Pending,
         }
     }
-}
-
-/// The services one reload pass works through.
-struct Reload<'a> {
-    service: &'a Mutex<AssetService>,
-    store: Option<&'a AssetStore>,
-    eviction: Option<&'a Mutex<AssetEviction>>,
-    /// The uuids whose GPU projection was already taken out this tick.
-    retired: HashSet<AssetUUID>,
-    /// The changed assets whose new value is still being decoded.
-    pending: RefCell<HashSet<AssetUUID>>,
 }
 
 fn asset_reload_system(
@@ -152,6 +141,17 @@ fn asset_reload_system(
     }
 }
 
+/// The services one reload pass works through.
+struct Reload<'a> {
+    service: &'a Mutex<AssetService>,
+    store: Option<&'a AssetStore>,
+    eviction: Option<&'a Mutex<AssetEviction>>,
+    /// The uuids whose GPU projection was already taken out this tick.
+    retired: HashSet<AssetUUID>,
+    /// The changed assets whose new value is still being decoded.
+    pending: RefCell<HashSet<AssetUUID>>,
+}
+
 impl Reload<'_> {
     /// Asks the service for `uuid` again, decoded off the frame.
     ///
@@ -176,7 +176,7 @@ impl Reload<'_> {
                 svc.serve_meanwhile(uuid, last_good.clone());
                 return Reloaded::Pending;
             }
-            // The decode failed: a part its container no longer holds is
+            // The decode failed: a part its container stopped holding is
             // gone; anything else was caught mid-write.
             Requested::Failed if svc.is_gone(uuid) => {
                 log::error!("asset_reload: asset {uuid:?} is gone, its copies are dropped");
@@ -541,7 +541,7 @@ mod tests {
         }
 
         /// One frame of the asset systems and nothing more: the boundary's intake of what the
-        /// `loading` family landed, then the PreExtract reload and resolver.
+        /// `loading` family landed, then the `PreExtract` reload and resolver.
         ///
         /// Nothing is decoded during it: what it files waits for
         /// [`Self::decode`].
@@ -1974,7 +1974,7 @@ mod tests {
     }
 
     /// The file changes again while the decode of its first change is out: that
-    /// decode read bytes no longer on disk, so it is never installed.
+    /// decode read bytes the disk has replaced, so it is never installed.
     ///
     /// The entity goes from the last good value straight to the newest one, and
     /// no frame shows the one in between.
@@ -2222,7 +2222,7 @@ mod tests {
     }
 
     /// The entity holding a changed mesh is despawned while the new mesh
-    /// decodes: the change is no longer looked at once nothing holds it.
+    /// decodes: the change is dropped once nothing holds it.
     #[test]
     fn a_reload_whose_holder_is_despawned_is_no_longer_looked_at() {
         let obj_path = "meshes/despawned.obj";

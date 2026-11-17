@@ -61,7 +61,7 @@ pub enum AgentImportance {
 }
 
 impl AgentImportance {
-    /// Whether GORNA may skip this work under budget pressure: only `Optional`.
+    /// Returns whether GORNA may skip this work under budget pressure: only `Optional`.
     pub fn is_negotiable(self) -> bool {
         matches!(self, AgentImportance::Optional)
     }

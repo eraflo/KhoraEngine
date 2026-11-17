@@ -64,18 +64,18 @@ impl Naming {
         };
     }
 
-    /// The path to the statement being compiled.
+    /// Returns the path to the statement being compiled.
     pub fn path(&self) -> String {
         self.path.join("/")
     }
 
     /// Opens a block of sibling statements.
-    pub fn open_block(&mut self) {
+    pub(crate) fn open_block(&mut self) {
         self.siblings.push(HashMap::new());
     }
 
     /// Closes the innermost block.
-    pub fn close_block(&mut self) {
+    pub(crate) fn close_block(&mut self) {
         self.siblings.pop();
     }
 
@@ -85,18 +85,18 @@ impl Naming {
     }
 
     /// Leaves the innermost branch.
-    pub fn leave_branch(&mut self) {
+    pub(crate) fn leave_branch(&mut self) {
         self.path.pop();
     }
 
     /// Enters `statement`, naming it among its siblings.
-    pub fn enter(&mut self, statement: &Stmt) {
+    pub(crate) fn enter(&mut self, statement: &Stmt) {
         let (kind, hash) = statement_key_with(statement, &self.events);
         self.enter_step(&format!("{kind}.{hash}"));
     }
 
     /// Enters a step already keyed — a field's default, a state's entry.
-    pub fn enter_step(&mut self, step: &str) {
+    pub(crate) fn enter_step(&mut self, step: &str) {
         let seen = self
             .siblings
             .last_mut()
@@ -110,7 +110,7 @@ impl Naming {
         self.points.push(HashMap::new());
     }
 
-    /// The block a local declared now belongs to: the path to here, without its `let`.
+    /// Returns the block a local declared here belongs to: the path to here, without its `let`.
     ///
     /// A `for`'s own initialiser declares into the `for`, which stays in the path.
     pub fn scope(&self) -> String {
@@ -123,12 +123,12 @@ impl Naming {
     }
 
     /// Leaves the statement entered last.
-    pub fn leave(&mut self) {
+    pub(crate) fn leave(&mut self) {
         self.path.pop();
         self.points.pop();
     }
 
-    /// The name of the next `point` of the statement being compiled, or `None`
+    /// Returns the name of the next `point` of the statement being compiled, or `None`
     /// outside any statement.
     pub fn point(&mut self, point: &str) -> Option<String> {
         if self.path.is_empty() {
@@ -141,7 +141,7 @@ impl Naming {
     }
 }
 
-/// `name`, then `#n` when `n` is not zero.
+/// Returns `name`, then `#n` when `n` is not zero.
 fn ordinal(name: &str, n: usize) -> String {
     match n {
         0 => name.to_owned(),
@@ -150,7 +150,7 @@ fn ordinal(name: &str, n: usize) -> String {
 }
 
 impl Compiler {
-    /// The locals in scope, as a site records them.
+    /// Returns the locals in scope, as a site records them.
     fn site_locals(&self) -> Vec<SiteLocal> {
         self.locals
             .iter()
@@ -164,7 +164,7 @@ impl Compiler {
     }
 
     /// Records a site at the next instruction.
-    pub fn record_site(&mut self, name: String, kind: SiteKind, temporaries: Vec<Reg>) {
+    pub(crate) fn record_site(&mut self, name: String, kind: SiteKind, temporaries: Vec<Reg>) {
         let locals = self.site_locals();
         self.naming.sites.push(Site {
             name,
@@ -176,12 +176,12 @@ impl Compiler {
     }
 
     /// Records the function's entry: its parameters, nothing else.
-    pub fn record_entry(&mut self) {
+    pub(crate) fn record_entry(&mut self) {
         self.record_site("entry".to_owned(), SiteKind::Entry, Vec::new());
     }
 
     /// Emits the safepoint a statement starts with, and names it.
-    pub fn statement_safepoint(&mut self, kind: SiteKind) {
+    pub(crate) fn statement_safepoint(&mut self, kind: SiteKind) {
         let name = self.naming.path();
         self.record_site(name, kind, Vec::new());
         self.emit(crate::vm::Instruction::Safepoint);
@@ -191,7 +191,7 @@ impl Compiler {
     ///
     /// Every temporary taken so far in the statement is listed, the await's
     /// own destination last: what the rest of the statement may still read.
-    pub fn record_await(&mut self) {
+    pub(crate) fn record_await(&mut self) {
         let Some(name) = self.naming.point("await") else {
             return;
         };
@@ -206,7 +206,7 @@ impl Compiler {
     /// the call; the rest of the window was the callee's. The result register
     /// is listed last: a frame stopped here once the call has returned holds
     /// the result there, and the rest of the statement reads it.
-    pub fn record_return(&mut self, callee: &str, base: Reg, dst: Reg) {
+    pub(crate) fn record_return(&mut self, callee: &str, base: Reg, dst: Reg) {
         let Some(name) = self.naming.point(&format!("call.{callee}")) else {
             return;
         };
@@ -221,7 +221,7 @@ impl Compiler {
     }
 }
 
-/// The type a site records for a local declared without one: its shape.
+/// Returns the type a site records for a local declared without one: its shape.
 pub fn inferred_type(shape: Shape) -> String {
     match shape {
         Shape::Int => "int".to_owned(),
@@ -232,7 +232,7 @@ pub fn inferred_type(shape: Shape) -> String {
     }
 }
 
-/// The function each of `members`' scheduled bodies compiles to, by member
+/// Returns the function each of `members`' scheduled bodies compiles to, by member
 /// index, for the timers `owner` declares (`Guard` or `Guard.Patrol`).
 ///
 /// Named by what the schedule is — `__every(0.5)`, `__after(2)` — and told
@@ -267,7 +267,7 @@ pub fn timer_names(owner: &str, members: &[BehaviorMember]) -> Vec<(usize, Strin
         .collect()
 }
 
-/// The seconds a literal duration expression denotes.
+/// Returns the seconds a literal duration expression denotes.
 ///
 /// The lexer has already normalised `500ms` and `2s` to seconds, so this only
 /// has to recognise that the expression *is* a literal — a field-driven interval

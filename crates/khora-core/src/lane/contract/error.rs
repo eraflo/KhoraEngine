@@ -76,8 +76,8 @@ impl std::error::Error for LaneError {
 }
 
 impl LaneError {
-    /// Convenience constructor for something the lane needs and was not
-    /// given — a backend the runtime does not hold.
+    /// Builds the error for something the lane needs and was not given: a backend the runtime does
+    /// not hold.
     pub fn missing(type_name: &'static str) -> Self {
         LaneError::InvalidInput {
             expected: type_name,

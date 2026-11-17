@@ -124,11 +124,21 @@ export function mergeClaudeHooks(hooks, ctx) {
   // rewrites `${CLAUDE_PROJECT_DIR}` to `${env:CLAUDE_PROJECT_DIR}`, not the bare form.
   const bin = `"\${CLAUDE_PROJECT_DIR}/${own}"`;
   const syncCmd = `node ${bin} sync --if-changed "$CLAUDE_TOOL_INPUT_FILE_PATH"`;
-  // A profile owns only the hooks that run its own installer: installing one
-  // profile never removes another's, nor the user's.
-  const owned = (c) => typeof c === 'string' && c.includes(own);
+  // A profile owns only the hooks that run its own installer's bin: installing
+  // one profile never removes another's, nor the user's.
+  const ownBin = canon(ctx.profile, 'installer/bin/');
+  const owned = (c) => typeof c === 'string' && c.includes(ownBin);
   const post = (hooks.PostToolUse ?? []).filter((g) => !(g.hooks ?? []).some((h) => owned(h.command)));
   post.push({ matcher: 'Write|Edit', hooks: [{ type: 'command', command: syncCmd }] });
+  // The engine's per-file convention checks on every Rust file written: exit 2
+  // feeds the findings back to the agent (see .agent/engine/hooks/lint-file.md).
+  if (ctx.profile === 'engine') {
+    const lint = `"\${CLAUDE_PROJECT_DIR}/${canon(ctx.profile, 'installer/bin/lint-file.mjs')}"`;
+    post.push({
+      matcher: 'Write|Edit',
+      hooks: [{ type: 'command', command: `node ${lint} "$CLAUDE_TOOL_INPUT_FILE_PATH"`, timeout: 180 }],
+    });
+  }
   // SessionStart: prune target/ (stale incremental caches, oversized profiles).
   const start = (hooks.SessionStart ?? []).filter((g) => !(g.hooks ?? []).some((h) => owned(h.command)));
   start.push({ hooks: [{ type: 'command', command: `node ${bin} sweep` }] });

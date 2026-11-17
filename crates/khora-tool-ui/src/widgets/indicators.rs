@@ -43,7 +43,7 @@ impl Health {
         }
     }
 
-    /// The status color for this level.
+    /// Returns the status color for this level.
     pub fn color(self, theme: &UiTheme) -> Color {
         match self {
             Health::Good => theme.success,
@@ -53,13 +53,14 @@ impl Health {
     }
 }
 
-/// A small filled dot — the cheapest possible status indicator.
+/// Draws a small filled dot — the cheapest possible status indicator.
 pub fn status_dot(ui: &mut dyn UiBuilder, theme: &UiTheme, center: [f32; 2], health: Health) {
     ui.paint_circle_filled(center, 3.0, health.color(theme));
 }
 
-/// A horizontal track with a filled portion. The generic bar behind meters,
-/// health bars, and progress.
+/// Draws a horizontal track with a filled portion.
+///
+/// It is the generic bar behind meters, health bars, and progress.
 ///
 /// `ratio` is clamped to `0..=1`, so a caller that hands over a bogus value
 /// gets a full or empty bar rather than a bar painted outside its track.
@@ -72,15 +73,15 @@ pub fn meter_bar(ui: &mut dyn UiBuilder, theme: &UiTheme, rect: Rect, ratio: f32
     }
 }
 
-/// A meter whose colour is chosen by the [`Health`] thresholds — the agent-row
+/// Draws a meter whose colour is chosen by the [`Health`] thresholds — the agent-row
 /// bar in the Control Plane.
 pub fn health_bar(ui: &mut dyn UiBuilder, theme: &UiTheme, rect: Rect, ratio: f32) {
     let health = Health::from_ratio(ratio);
     meter_bar(ui, theme, rect, ratio, health.color(theme));
 }
 
-/// A labelled progress row: caption on the left, percentage on the right, bar
-/// underneath. Used by engine downloads.
+/// Draws a labelled progress row: caption on the left, percentage on the right,
+/// bar underneath; engine downloads show one.
 pub fn progress_row(ui: &mut dyn UiBuilder, theme: &UiTheme, rect: Rect, label: &str, ratio: f32) {
     let ratio = ratio.clamp(0.0, 1.0);
     let size = theme.font_size_caption;
@@ -106,7 +107,7 @@ pub fn progress_row(ui: &mut dyn UiBuilder, theme: &UiTheme, rect: Rect, label: 
     meter_bar(ui, theme, bar, ratio, theme.primary);
 }
 
-/// A bar sparkline over a series — the agent cost history.
+/// Draws a bar sparkline over a series — the agent cost history.
 ///
 /// Values are normalized against the series maximum, so the shape reads even
 /// when the absolute scale shifts. An empty or all-zero series paints just the
@@ -137,17 +138,20 @@ pub fn sparkline(ui: &mut dyn UiBuilder, theme: &UiTheme, rect: Rect, values: &[
     }
 }
 
-/// A loading placeholder bar. Skeletons beat spinners: they show the shape of
-/// what is coming instead of just saying "wait".
+/// Draws a loading placeholder of stacked bars.
+///
+/// Skeletons beat spinners: they show the shape of what is coming instead of
+/// just saying "wait".
 ///
 /// `lines` is how many placeholder rows to stack; each is inset a little
 /// differently so the block doesn't read as a solid rectangle.
 pub fn skeleton(ui: &mut dyn UiBuilder, theme: &UiTheme, rect: Rect, lines: usize) {
-    let h = 11.0;
-    let gap = 9.0;
     // Deterministic, decreasing widths — reads like text without pretending
     // to be random.
     const WIDTHS: [f32; 3] = [0.80, 0.95, 0.55];
+
+    let h = 11.0;
+    let gap = 9.0;
     for i in 0..lines {
         let y = rect[1] + i as f32 * (h + gap);
         if y + h > super::bottom(rect) {
@@ -305,5 +309,21 @@ mod tests {
         progress_row(&mut ui, &t, [0.0, 0.0, 180.0, 22.0], "downloading", 0.62);
         assert!(ui.painted_text("downloading"));
         assert!(ui.painted_text("62%"));
+    }
+
+    #[test]
+    fn status_dot_is_one_dot_in_its_health_colour() {
+        let t = khora_dark();
+        let mut ui = RecordingUiBuilder::new(20.0, 20.0);
+        status_dot(&mut ui, &t, [5.0, 5.0], Health::Good);
+
+        assert_eq!(
+            ui.calls(),
+            &[PaintCall::CircleFilled {
+                center: [5.0, 5.0],
+                radius: 3.0,
+                color: Health::Good.color(&t),
+            }]
+        );
     }
 }

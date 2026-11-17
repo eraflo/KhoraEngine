@@ -22,11 +22,16 @@ use super::{EntityRef, Record, RecordError, VariantPayload, ASSET_NAME, ENTITY_N
 
 /// Turns the entities a value refers to into references a save can keep.
 pub trait ReferenceWriter {
-    /// The reference that stands for `entity` in the save being written.
+    /// Returns the reference that stands for `entity` in the save being written.
     fn write_entity(&mut self, entity: EntityId) -> EntityRef;
 }
 
 /// Writes `value` as a record.
+///
+/// # Errors
+///
+/// When `value` nests deeper than `MAX_DEPTH`, or its serialization fails or
+/// writes a shape a record cannot hold.
 pub fn to_record<T: Serialize + ?Sized>(
     value: &T,
     references: &mut dyn ReferenceWriter,
@@ -229,7 +234,7 @@ fn variant_record(enum_name: &str, variant: &str, payload: VariantPayload) -> Re
     }
 }
 
-/// An asset reference, from the sixteen bytes its identity serialized as.
+/// Builds an asset reference from the sixteen bytes its identity serialized as.
 fn asset_from(inner: Record) -> Result<Record, RecordError> {
     let bytes = match inner {
         Record::Bytes(bytes) => bytes,
@@ -413,24 +418,6 @@ impl<'a, 'r> CollectStruct<'a, 'r> {
     }
 }
 
-/// The entity whose two numbers were just written.
-fn entity_from(fields: &[(String, Record)]) -> Result<EntityId, RecordError> {
-    let number = |wanted: &str| -> Result<u32, RecordError> {
-        fields
-            .iter()
-            .find(|(name, _)| name == wanted)
-            .and_then(|(_, value)| match value {
-                Record::U64(n) => u32::try_from(*n).ok(),
-                _ => None,
-            })
-            .ok_or_else(|| RecordError(format!("an entity id without its `{wanted}`")))
-    };
-    Ok(EntityId {
-        index: number("index")?,
-        generation: number("generation")?,
-    })
-}
-
 impl ser::SerializeStruct for CollectStruct<'_, '_> {
     type Ok = Record;
     type Error = RecordError;
@@ -459,4 +446,22 @@ impl ser::SerializeStructVariant for CollectStruct<'_, '_> {
     fn end(self) -> Result<Record, RecordError> {
         self.finish()
     }
+}
+
+/// Returns the entity whose two numbers were just written.
+fn entity_from(fields: &[(String, Record)]) -> Result<EntityId, RecordError> {
+    let number = |wanted: &str| -> Result<u32, RecordError> {
+        fields
+            .iter()
+            .find(|(name, _)| name == wanted)
+            .and_then(|(_, value)| match value {
+                Record::U64(n) => u32::try_from(*n).ok(),
+                _ => None,
+            })
+            .ok_or_else(|| RecordError(format!("an entity id without its `{wanted}`")))
+    };
+    Ok(EntityId {
+        index: number("index")?,
+        generation: number("generation")?,
+    })
 }

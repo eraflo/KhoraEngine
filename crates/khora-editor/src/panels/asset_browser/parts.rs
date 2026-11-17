@@ -94,7 +94,7 @@ impl AssetBrowserPanel {
         }
     }
 
-    /// Whether the tile at `flat[idx]` offers rename, move, delete and
+    /// Returns whether the tile at `flat[idx]` offers rename, move, delete and
     /// duplicate; a part does not.
     pub(super) fn file_ops_offered(&self, idx: usize) -> bool {
         self.flat

@@ -274,6 +274,8 @@ impl MaterialProjector<'_> {
         material: &dyn Material,
         cpu_textures: &crate::assets::Assets<CpuTexture>,
     ) -> Option<GpuMaterial> {
+        use TextureColorSpace::{Linear, Srgb};
+
         let variant = material_variant(material);
 
         let emissive = material.emissive_color();
@@ -296,7 +298,6 @@ impl MaterialProjector<'_> {
         // Colour maps decode as sRGB; data maps (normal, metallic-roughness)
         // stay linear or the lighting is wrong. Each slot keeps its texture
         // beside its view, so eviction frees both.
-        use TextureColorSpace::{Linear, Srgb};
         let base_color = self.resolve_texture(material.base_color_texture(), Srgb, cpu_textures)?;
         let metallic_roughness =
             self.resolve_texture(material.metallic_roughness_texture(), Linear, cpu_textures)?;

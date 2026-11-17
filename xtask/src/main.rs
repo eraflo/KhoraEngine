@@ -12,8 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Build automation and scripting tasks for Khora Engine
-// Run with: cargo xtask <command>
+//! Build automation and scripting tasks for Khora Engine, run with
+//! `cargo xtask <command>`.
+
+#![expect(
+    clippy::print_stdout,
+    reason = "xtask is a CLI: what it prints is its output"
+)]
 
 mod commands;
 mod exec;
@@ -71,6 +76,21 @@ enum Commands {
         site: std::path::PathBuf,
     },
 
+    /// Run the per-file convention checks on the given Rust files.
+    ///
+    /// In-file order, file and function sizes, comments (plan labels,
+    /// history, summary length and verb, book citations) and the crate
+    /// boundaries one file shows, as `xtask/tests/layout.rs` checks them over
+    /// the whole tree, without compiling. Honours the entries of
+    /// `xtask/tests/layout_allow.txt`. Skips any file that is not `.rs` or lies outside `crates/`, `xtask/`
+    /// and `examples/`. Prints `path:line: check: message` per finding; exits
+    /// 0 when clean, 1 on a finding, 2 when a file cannot be read.
+    LintFile {
+        /// The files to check, relative to the current folder or absolute.
+        #[clap(required = true)]
+        paths: Vec<std::path::PathBuf>,
+    },
+
     /// Commands for asset pipeline management.
     #[clap(subcommand)]
     Assets(AssetCommand),
@@ -89,6 +109,7 @@ enum Commands {
     },
 }
 
+/// The asset pipeline's commands.
 #[derive(Subcommand, Debug)]
 pub enum AssetCommand {
     /// Scans, builds metadata, and packs all assets into optimized archives.
@@ -110,6 +131,7 @@ fn main() -> Result<()> {
 
             Commands::HubDev => commands::dev::hub_dev()?,
             Commands::Landing { site } => commands::landing::build(&site)?,
+            Commands::LintFile { paths } => std::process::exit(commands::lint_file::run(&paths)),
 
             Commands::Assets(command) => match command {
                 AssetCommand::Pack => commands::assets::pack()?,

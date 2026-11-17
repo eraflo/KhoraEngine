@@ -15,19 +15,21 @@
 //! accounting (whose turn it is, what each cost, who was deferred, what is
 //! written back); a [`turn`](super::turn) knows only about itself.
 
-use khora_core::script::{EventQueue, RecordedFault};
-use khora_data::flow::ScriptView;
-use khora_script::native::Host;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
-use super::arrival::{arrive, Arriving};
+use khora_core::ecs::entity::EntityId;
+use khora_core::script::EventQueue;
+use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
+use khora_script::native::Host;
+use khora_script::vm::Program;
+
 use super::departure::farewell_departed;
-use super::hooks::{despawns_itself, say_goodbye, TurnStart};
+use super::instance_turn::{ready_instance, take_turn, InstanceTurn};
 use super::mail::InstanceMail;
-use super::persistence;
 use super::report::ScriptRunReport;
 use super::runtime::ScriptRuntime;
-use super::shares;
-use super::turn::{run_one, Invocation, Outcome, Progress};
+use super::shares::{self, Share};
 
 /// How much of the frame's fuel one behavior may spend.
 ///
@@ -47,57 +49,22 @@ pub fn run_behaviors(
     host: &mut Host,
     fuel: u64,
 ) -> ScriptRunReport {
-    // Each instance by its entity and behavior: a behavior detached from an
-    // entity that lives on has left, as one whose entity was despawned.
-    let live: std::collections::HashSet<(khora_core::ecs::entity::EntityId, &str)> = view
-        .instances
-        .iter()
-        .filter_map(|instance| {
-            Some((
-                instance.entity,
-                view.program_of(instance)?.behavior.as_str(),
-            ))
-        })
-        .collect();
-    let is_live = |entity, behavior: &str| live.contains(&(entity, behavior));
-
     let mut report = ScriptRunReport::default();
+    see_off_departed(view, runtime, host, fuel, &mut report);
 
-    // An entity that left while the game was not running left without the
-    // game: no `OnDespawn` for it, only forgetting.
-    if view.resumed {
-        runtime.retain_behaviors(is_live);
-    }
-    // An instance that left the family's scope is still attached: it was not
-    // despawned, and is forgotten without a farewell.
-    runtime.forget(&view.left_scope);
-    // Where each entity still in the view is: a behavior detached from one
-    // reads its position in its farewell.
-    let positions: std::collections::HashMap<_, _> = view
-        .instances
-        .iter()
-        .map(|instance| (instance.entity, instance.translation))
-        .collect();
-    // Farewells before any turn, so what an `OnDespawn` queues is among the
-    // frame's commands; dropping the departed then releases their fields
-    // without anyone having to report the despawn.
-    farewell_departed(&is_live, &positions, runtime, host, fuel, &mut report);
-    runtime.retain_behaviors(is_live);
-
-    // An entity running several behaviors: what one of them has not heard is
-    // held for it alone, so the others are not told twice.
-    let mut counts: std::collections::HashMap<_, usize> = std::collections::HashMap::new();
-    for instance in &view.instances {
-        *counts.entry(instance.entity).or_default() += 1;
-    }
     // Behaviors in their fixed order, so on one entity the earlier always runs
     // first; each with its share and its cursor, so a frame short of fuel leaves
     // no instance out every frame. See the book:
     // concepts/scripting/turns.md, "Degrading defers whole behaviors".
-    let pool = fuel.saturating_sub(report.spent);
+    let frame = Frame {
+        view,
+        events,
+        counts: behaviors_per_entity(view),
+        pool: fuel.saturating_sub(report.spent),
+    };
     let mut granted = report.spent;
 
-    for (group_program, order, share) in shares::behaviors(view, runtime, pool) {
+    for (group, order, share) in shares::behaviors(view, runtime, frame.pool) {
         // A behavior with no share spends only what the ones before it passed
         // on — none, it is expected, but an instance it cannot foresee running
         // stays within the frame's fuel.
@@ -113,521 +80,345 @@ pub fn run_behaviors(
             None => granted,
         };
         let spent_before = report.spent;
-        let deferred_before = report.deferred;
-        let share_end = shares::capped(share, share_end, spent_before);
-        let mut starved_at: Option<khora_core::ecs::entity::EntityId> = None;
-        // How many of its turns ran this frame: what a turn costs it, and
-        // whether one has run yet.
-        let mut turns: u64 = 0;
-        // The last instance to run: the one a behavior's overspending is.
-        let mut ran_last: Option<khora_core::ecs::entity::EntityId> = None;
-
+        let mut run = BehaviorRun {
+            group,
+            share,
+            share_end: shares::capped(share, share_end, spent_before),
+            spent_before,
+            deferred_before: report.deferred,
+            starved_at: None,
+            turns: 0,
+            ran_last: None,
+        };
         for at in order {
             let instance = &view.instances[at];
-            let Some(program) = view.program_of(instance) else {
-                continue;
-            };
-            let several = counts.get(&instance.entity).copied().unwrap_or(0) > 1;
-            // What it was not told while the entity ran several behaviors comes
-            // first — and is not lost when the entity is down to this one.
-            let earlier = runtime
-                .attached
-                .take_held(instance.entity, &program.behavior);
-            let held = if several || !earlier.is_empty() {
-                let mut queue = EventQueue::new();
-                for event in earlier
-                    .into_iter()
-                    .chain(events.for_entity(instance.entity).cloned())
-                {
-                    queue.push(event);
-                }
-                Some(queue)
-            } else {
-                None
-            };
-            let events = held.as_ref().unwrap_or(events);
-            let mail = InstanceMail {
-                events,
-                entity: instance.entity,
-                behavior: &program.behavior,
-                several,
-            };
-            // Held on the instance until its first turn: the flow hands an
-            // arrival over once, and a frame with no fuel or program for it must
-            // not lose it. One the lane forgot while the flow did not is what
-            // its row says, never its defaults.
-            let forgotten = (instance.arrival.is_none()
-                && !instance.row.is_empty()
-                && runtime.peek(instance.entity, &program.behavior).is_none())
-            .then(|| khora_data::flow::ScriptArrival {
-                fields: instance.row.clone(),
-                observed: None,
-            });
-            if let Some(arrival) = instance.arrival.as_ref().or(forgotten.as_ref()) {
-                runtime
-                    .instance(instance.entity, &program.behavior)
-                    .arriving = Some(arrival.clone());
-                // Seen as it arrives: a field written before its first turn —
-                // which a starved frame may put off — is then taken as written
-                // outside it.
-                runtime
-                    .attached
-                    .saw(instance.entity, &program.behavior, instance.row.clone());
-            }
-
-            // A frame its rate skips: its mail and its time wait for its turn.
-            // Not a deferral — it runs as often as it asked.
-            if super::rate::skips(
-                runtime,
-                instance,
-                program,
-                (
-                    view.delta_seconds,
-                    view.fixed_steps,
-                    view.fixed_delta_seconds,
-                ),
-            ) {
-                mail.sit_out(instance, program, runtime, &mut report);
-                continue;
-            }
-
-            // A module whose new program waits a frame for what it reads runs
-            // nothing meanwhile: old code over rows the World has already laid
-            // out for the new would spawn a newcomer under the code the author
-            // replaced. Deferred, its events kept for the frame it runs.
-            if runtime.is_waiting(&program.module) {
-                report.deferred += 1;
-                super::rate::note_sat_out(runtime, instance, program, view.fixed_steps);
-                mail.sit_out(instance, program, runtime, &mut report);
-                continue;
-            }
-
-            let remaining = share_end.saturating_sub(report.spent);
-            // With fuel left in the frame, a behavior with no program is not
-            // starved: it goes on to be counted as unloaded.
-            let unloaded = pool > 0 && runtime.program(&program.module).is_none();
-            let short = runtime.shares.too_short(
-                &group_program.module,
-                &group_program.behavior,
-                turns,
-                remaining,
-            );
-            if (remaining == 0 || short) && !unloaded {
-                // A faulted instance would not have run with fuel either.
-                if shares::idle(
-                    runtime.peek(instance.entity, &program.behavior),
-                    runtime.program(&program.module),
-                ) {
-                    continue;
-                }
-                report.deferred += 1;
-                // Sitting out what it overdrew is the body's own run time —
-                // when the frame had fuel to repay it with.
-                let repaying = share.is_some_and(|share| share.owing && share.own > 0)
-                    && runtime.shares.debtor(&program.module, &program.behavior)
-                        == Some(instance.entity);
-                if repaying {
-                    super::watchdog::sat_out(
-                        runtime,
-                        instance,
-                        program,
-                        view.delta_seconds,
-                        &mut report,
-                    );
-                }
-                // The first instance the behavior had no fuel for starts it next
-                // frame: one cut part-way through its turn carries on when the
-                // rotation comes back to it, so every instance moves forward.
-                starved_at.get_or_insert(instance.entity);
-                // Carried into new code this frame, its record follows even
-                // though it does not run: a save in between reads the World —
-                // and so do the fixed steps it now waits for.
-                super::rate::note_sat_out(runtime, instance, program, view.fixed_steps);
-                // The turn never happened, so nothing addressed to it was seen.
-                mail.sit_out(instance, program, runtime, &mut report);
-                continue;
-            }
-
-            let Some(compiled) = runtime.program(&program.module) else {
-                // Not compiled, or no channel carries its program here: counted
-                // rather than passed over, so nothing that looks wired hides
-                // that it is not. A program waiting a frame for the components
-                // it reads is neither, and runs from the next frame.
-                if !runtime.is_waiting(&program.module) {
-                    report.unloaded += 1;
-                }
-                continue;
-            };
-            // A handle, not the program: the runtime is borrowed mutably below for
-            // the instance's fields, and a thousand guards share one `Guard`.
-            let compiled = std::sync::Arc::clone(compiled);
-            // A module saved without the behavior has nothing to run for it:
-            // unloaded, its fields left as they are for the edit that brings
-            // the behavior back.
-            if compiled.layout(&program.behavior).is_none() {
-                report.unloaded += 1;
-                continue;
-            }
-
-            // The instance's fields written outside the lane since it last saw
-            // them, taken before it runs.
-            let mut outside =
-                runtime
-                    .attached
-                    .changed_outside(instance.entity, &program.behavior, &instance.row);
-
-            // What the entity brings, applied once, when it first appears, on
-            // top of its layout's defaults — the slots it did not bring take
-            // them.
-            let state = runtime.instance(instance.entity, &program.behavior);
-            // An instance yet to arrive takes what was written meanwhile as what
-            // it arrives with.
-            if let Some(arrival) = state.arriving.as_mut() {
-                for (name, value) in outside.drain(..) {
-                    match arrival.fields.iter_mut().find(|(field, _)| *field == name) {
-                        Some((_, held)) => *held = value,
-                        None => arrival.fields.push((name, value)),
-                    }
-                }
-            }
-            let arriving = state.arriving.take().and_then(|arrival| {
-                let layout = compiled.layout(&program.behavior)?;
-                let arrived = persistence::arrived(&arrival);
-                Some(Arriving {
-                    store: persistence::store_from_snapshot(layout, &arrived),
-                    resumed: super::resumption::resume(&arrived, &compiled, layout),
-                    restored: arrival.observed.is_some(),
-                    lifecycle: arrived.lifecycle,
-                })
-            });
-            let mut loaded = false;
-            if let Some(arriving) = arriving {
-                loaded = arriving.restored;
-                let resumed = arrive(state, arriving, &program.behavior, &compiled);
-                report.resumes.extend(resumed);
-            }
-            // An instance that brought nothing — fresh, or set up by hand —
-            // starts from its layout: every field at its default, in its first
-            // state, its countdowns armed. No code runs for it.
-            if state.fields.is_empty() {
-                if let Some(layout) = compiled.layout(&program.behavior) {
-                    state.fields = layout.fresh_store();
-                }
-            }
-            // Laid out for another program than the one about to run — its
-            // behavior moved to another module — it is carried there first:
-            // before what was written outside goes in by the new layout's
-            // slots, and before a fault under the old code can hold it off.
-            let stale = state
-                .built_for
-                .as_ref()
-                .filter(|built| !std::sync::Arc::ptr_eq(built, &compiled))
-                .cloned();
-            if let Some(old_program) = stale {
-                let resumed =
-                    super::carry::carry_instance(state, &old_program, &compiled, &program.behavior);
-                report.resumes.extend(resumed);
-            }
-            state.module.clone_from(&program.module);
-            state.built_for = Some(std::sync::Arc::clone(&compiled));
-            // What was written outside since it last ran, then what another
-            // script `Set` of it earlier this frame: its turn starts from both.
-            let earlier =
-                super::state_update::sets_on(&host.commands, instance.entity, &program.behavior);
-            let read_until = host.commands.len();
-            let mut start_row = instance.row.clone();
-            for (name, value) in &earlier {
-                match start_row.iter_mut().find(|(known, _)| known == name) {
-                    Some((_, held)) => *held = value.clone(),
-                    None => start_row.push((name.clone(), value.clone())),
-                }
-            }
-            if let Some(layout) = compiled.layout(&program.behavior) {
-                for written in [&outside, &earlier] {
-                    if !written.is_empty() {
-                        persistence::adopt_fields(layout, &mut state.fields, written);
-                    }
-                }
-            }
-            if state.disabled {
-                continue;
-            }
-            let lifecycle_before = (
-                state.spawned,
-                state.fault.is_some(),
-                state.resume_failed.clone(),
-            );
-
-            host.entity = Some(instance.entity);
-            // The read side, from the projection rather than the `World`. Set
-            // alongside the entity because they name the same subject: a position
-            // left from the previous behavior would answer `Position()` with
-            // somebody else's.
-            host.position = Some(instance.translation);
-            host.fields = std::mem::take(&mut state.fields);
-            // A wait some earlier body asked for is not this one's: every body that
-            // stops takes its own from here.
-            host.awaiting = None;
-            // Handed what it is owed: this frame's time and any it sat out.
-            let schedule = compiled
-                .layout(&program.behavior)
-                .map(|layout| layout.schedule)
-                .unwrap_or_default();
-            let (delta, update_delta, fixed_steps) = super::rate::take_turn(state, schedule);
-            let mut progress = Progress {
-                spawned: state.spawned,
-                pending: state.pending.take(),
-                loading: state.loading,
-                after_load: state.after_load.take(),
-                resume_failed: std::mem::take(&mut state.resume_failed),
-                slow: None,
-                dropped: Vec::new(),
-                fixed_left: fixed_steps,
-                update_left: update_delta,
-            };
-
-            // Brought back by a load as the save had it, it owes nothing: what
-            // it had counted of a debt is in the count the save carried.
-            if loaded {
-                runtime
-                    .shares
-                    .forgive(&program.module, &program.behavior, instance.entity);
-            }
-
-            // Where this behavior's own commands start, so a `this.Despawn()` it
-            // queues can be told from one an earlier behavior queued — and where
-            // its events and writes start, so a turn that faults leaves none.
-            let turn = TurnStart::mark(host);
-
-            let slice = remaining.min(FUEL_PER_BEHAVIOR);
-            // Timed apart from the frame's bookkeeping: the rate the budget
-            // is converted at is the VM's, not the lane's.
-            let ran = std::time::Instant::now();
-            let outcome = run_one(
-                Invocation {
-                    program: &compiled,
-                    behavior: &program.behavior,
-                    entity: instance.entity,
-                    events,
-                    fuel: slice,
-                    delta,
-                    update_delta,
-                    frame_delta: view.delta_seconds,
-                },
-                &mut progress,
-                host,
-            );
-            ran_last = Some(instance.entity);
-            turns += 1;
-            if matches!(outcome, Outcome::Faulted { .. }) {
-                turn.undo(host);
-            }
-
-            // Its farewell belongs to the frame that *decided* the despawn, not to
-            // the one that notices the entity gone: here the entity is still in the
-            // view and still readable, and a frame later it is neither.
-            let leaving = despawns_itself(&host.commands, turn.commands, instance.entity);
-            let farewell = leaving.then(|| {
-                let left = slice.saturating_sub(outcome.spent());
-                say_goodbye(&compiled, &program.behavior, host, left)
-            });
-            report.turns_time += ran.elapsed();
-
-            if let Some((member, site)) = progress.slow.take() {
-                log::warn!(
-                    "script `{}` on {:?}: `{member}` has run {} s of game time without finishing — at {site}; the watchdog stops it at {} s",
-                    program.behavior,
-                    instance.entity,
-                    super::watchdog::WATCHDOG_WARN,
-                    super::watchdog::WATCHDOG_FAULT
-                );
-                report.slow.push(super::report::Slow {
-                    entity: instance.entity,
-                    behavior: program.behavior.clone(),
-                    member,
-                    site,
-                });
-            }
-            let state = runtime.instance(instance.entity, &program.behavior);
-            // The fields go back whatever happened, so a fault does not lose the
-            // state the behavior had before it.
-            state.fields = std::mem::take(&mut host.fields);
-            // Where the turn got to goes back whatever happened, so a turn that
-            // stopped early loses no body part-way through.
-            state.spawned = progress.spawned;
-            state.pending = progress.pending;
-            state.loading = progress.loading;
-            state.after_load = progress.after_load;
-            state.resume_failed = progress.resume_failed;
-            // The steps it did not run are owed — unless it faulted: an edit
-            // that runs it again owes it none from before.
-            // And so is the time its `Update` was not handed.
-            let (steps, time) = match outcome {
-                Outcome::Faulted { .. } => (Vec::new(), 0.0),
-                _ => (progress.fixed_left, progress.update_left),
-            };
-            (state.fixed_owed, state.update_owed) = (steps, time);
-            state.farewelled |= leaving;
-            for (event, why) in progress.dropped {
-                log::warn!(
-                    "script `{}` on {:?}: `{event}` dropped — {why}",
-                    program.behavior,
-                    instance.entity
-                );
-                state.dropped.insert(event, why);
-            }
-
-            let farewell_cost = farewell.unwrap_or(0);
-            report.spent += farewell_cost;
-            let outcome_cost = outcome.spent();
-            let end = super::fuel::TurnEnd::of(&outcome);
-
-            match outcome {
-                Outcome::Completed { spent } => {
-                    report.completed += 1;
-                    report.spent += spent;
-                }
-                Outcome::Deferred { spent, delivered } => {
-                    report.deferred += 1;
-                    report.spent += spent;
-                    mail.keep(delivered, runtime, &mut report);
-                }
-                // Part-way through a body, which carries on next turn. On an
-                // `await` it counts as completed: the script does what it says.
-                // Out of fuel it counts as deferred: that is budget pressure, and
-                // the DCC has to see it.
-                Outcome::Busy {
-                    spent,
-                    delivered,
-                    starved,
-                } => {
-                    if starved {
-                        report.deferred += 1;
-                    } else {
-                        report.completed += 1;
-                    }
-                    report.spent += spent;
-                    // A busy behavior is not finished: what it has not been told yet
-                    // waits for the turn that will listen.
-                    mail.keep(delivered, runtime, &mut report);
-                }
-                Outcome::Faulted { spent, reason } => {
-                    log::error!(
-                        "script `{}` on entity {}v{} faulted and was disabled: {reason}",
-                        program.behavior,
-                        instance.entity.index,
-                        instance.entity.generation
-                    );
-                    state.disabled = true;
-                    // Recorded with the code it faulted in, so a save keeps it
-                    // disabled until that code changes.
-                    state.fault = Some(RecordedFault {
-                        fingerprint: compiled.fingerprint(),
-                        reason,
-                    });
-                    report.faulted += 1;
-                    report.spent += spent;
-                }
-            }
-
-            super::fuel::price_turn(
-                runtime.instance(instance.entity, &program.behavior),
-                end,
-                outcome_cost,
-            );
-
-            // Last, as a suspended machine is known only after the match. A frame
-            // that spent no fuel writes nothing, unless a countdown or a wait moved.
-            // See the book: concepts/scripting/saves-and-edits.md,
-            // "Timers and waits".
-            let ticked = super::fuel::delta_moved_a_countdown(
-                &compiled,
-                &program.behavior,
-                view.delta_seconds,
-            );
-            let waited = view.delta_seconds > 0.0
-                && runtime
-                    .peek(instance.entity, &program.behavior)
-                    .is_some_and(|held| held.pending.is_some());
-            // And a lifecycle fact — spawned, faulted — whatever it cost: a
-            // behavior with no `OnSpawn` spawns for free, a call that faults
-            // before running a single instruction faults for free, and a save
-            // must know both.
-            let lifecycle_changed = runtime
-                .peek(instance.entity, &program.behavior)
-                .is_some_and(|held| {
-                    (
-                        held.spawned,
-                        held.fault.is_some(),
-                        held.resume_failed.clone(),
-                    ) != lifecycle_before
-                });
-            let rewritten = runtime
-                .peek(instance.entity, &program.behavior)
-                .is_some_and(|held| held.rewritten);
-            if outcome_cost + farewell_cost > 0
-                || ticked
-                || waited
-                || lifecycle_changed
-                || rewritten
-            {
-                if let Some(layout) = compiled.layout(&program.behavior) {
-                    let held = runtime.instance(instance.entity, &program.behavior);
-                    held.rewritten = false;
-                    report.state.push(super::state_update::update_of(
-                        held,
-                        layout,
-                        &compiled,
-                        instance.entity,
-                        &program.behavior,
-                        &start_row,
-                        super::state_update::TurnPosition {
-                            began: read_until,
-                            ended: host.commands.len(),
-                        },
-                    ));
-                }
-            }
-            // What the lane has of the instance's row now — what the world will
-            // hold once the frame's writeback lands.
-            if let Some(layout) = compiled.layout(&program.behavior) {
-                let held = runtime.instance(instance.entity, &program.behavior);
-                let mut now = persistence::snapshot_from_store(layout, &held.fields).fields;
-                for (name, value) in &instance.row {
-                    if !now.iter().any(|(known, _)| known == name) {
-                        now.push((name.clone(), value.clone()));
-                    }
-                }
-                runtime
-                    .attached
-                    .saw(instance.entity, &program.behavior, now);
-            }
+            run_instance(&frame, &mut run, instance, runtime, host, &mut report);
         }
-        // A turn stops at its next safepoint, not inside an instruction, so a
-        // behavior may spend past what it was handed: it owes the difference.
-        let handed = share_end.saturating_sub(spent_before);
-        let overspent = (report.spent - spent_before).saturating_sub(handed);
-        runtime.shares.settle(
-            &group_program.module,
-            &group_program.behavior,
-            starved_at,
-            (report.spent - spent_before, overspent, turns),
-            ran_last,
-        );
-        if super::rate::schedule_of(runtime, group_program).critical {
-            report.critical_spent += report.spent - spent_before;
-            report.critical_deferred += report.deferred - deferred_before;
-            if report.deferred > deferred_before
-                && !report
-                    .critical_deferred_behaviors
-                    .contains(&group_program.behavior)
-            {
-                report
-                    .critical_deferred_behaviors
-                    .push(group_program.behavior.clone());
-            }
-        }
+        settle_behavior(&run, runtime, &mut report);
     }
 
     report
+}
+
+/// What every turn of the frame reads.
+struct Frame<'v> {
+    view: &'v ScriptView,
+    events: &'v EventQueue,
+    /// How many behaviors each entity runs this frame.
+    counts: HashMap<EntityId, usize>,
+    /// The fuel the turns share, once the farewells are paid.
+    pool: u64,
+}
+
+/// One behavior's pass through the frame: what it was handed and how it went.
+struct BehaviorRun<'v> {
+    group: &'v ScriptProgram,
+    share: Option<Share>,
+    /// The frame's spent fuel at which its share runs out.
+    share_end: u64,
+    spent_before: u64,
+    deferred_before: usize,
+    /// The first instance it had no fuel for.
+    starved_at: Option<EntityId>,
+    /// How many of its turns ran this frame: what a turn costs it, and
+    /// whether one has run yet.
+    turns: u64,
+    /// The last instance to run: the one a behavior's overspending is.
+    ran_last: Option<EntityId>,
+}
+
+/// Forgets the instances that left, saying goodbye to the despawned, before
+/// any turn.
+fn see_off_departed(
+    view: &ScriptView,
+    runtime: &mut ScriptRuntime,
+    host: &mut Host,
+    fuel: u64,
+    report: &mut ScriptRunReport,
+) {
+    // Each instance by its entity and behavior: a behavior detached from an
+    // entity that lives on has left, as one whose entity was despawned.
+    let live: HashSet<(EntityId, &str)> = view
+        .instances
+        .iter()
+        .filter_map(|instance| {
+            Some((
+                instance.entity,
+                view.program_of(instance)?.behavior.as_str(),
+            ))
+        })
+        .collect();
+    let is_live = |entity, behavior: &str| live.contains(&(entity, behavior));
+
+    // An entity that left while the game was not running left without the
+    // game: no `OnDespawn` for it, only forgetting.
+    if view.resumed {
+        runtime.retain_behaviors(is_live);
+    }
+    // An instance that left the family's scope is still attached: it was not
+    // despawned, and is forgotten without a farewell.
+    runtime.forget(&view.left_scope);
+    // Where each entity still in the view is: a behavior detached from one
+    // reads its position in its farewell.
+    let positions: HashMap<_, _> = view
+        .instances
+        .iter()
+        .map(|instance| (instance.entity, instance.translation))
+        .collect();
+    // Farewells before any turn, so what an `OnDespawn` queues is among the
+    // frame's commands; dropping the departed then releases their fields
+    // without anyone having to report the despawn.
+    farewell_departed(&is_live, &positions, runtime, host, fuel, report);
+    runtime.retain_behaviors(is_live);
+}
+
+/// Counts the behaviors each entity runs this frame.
+///
+/// An entity running several: what one of them has not heard is held for it
+/// alone, so the others are not told twice.
+fn behaviors_per_entity(view: &ScriptView) -> HashMap<EntityId, usize> {
+    let mut counts: HashMap<_, usize> = HashMap::new();
+    for instance in &view.instances {
+        *counts.entry(instance.entity).or_default() += 1;
+    }
+    counts
+}
+
+/// Runs one instance's turn, or counts why it sits this frame out.
+fn run_instance(
+    frame: &Frame<'_>,
+    run: &mut BehaviorRun<'_>,
+    instance: &ScriptInstance,
+    runtime: &mut ScriptRuntime,
+    host: &mut Host,
+    report: &mut ScriptRunReport,
+) {
+    let view = frame.view;
+    let Some(program) = view.program_of(instance) else {
+        return;
+    };
+    let several = frame.counts.get(&instance.entity).copied().unwrap_or(0) > 1;
+    let held = held_events(runtime, instance, program, several, frame.events);
+    let events = held.as_ref().unwrap_or(frame.events);
+    let mail = InstanceMail {
+        events,
+        entity: instance.entity,
+        behavior: &program.behavior,
+        several,
+    };
+    hold_arrival(runtime, instance, program);
+
+    // A frame its rate skips: its mail and its time wait for its turn.
+    // Not a deferral — it runs as often as it asked.
+    if super::rate::skips(
+        runtime,
+        instance,
+        program,
+        (
+            view.delta_seconds,
+            view.fixed_steps,
+            view.fixed_delta_seconds,
+        ),
+    ) {
+        mail.sit_out(instance, program, runtime, report);
+        return;
+    }
+
+    // A module whose new program waits a frame for what it reads runs
+    // nothing meanwhile: the former program over rows the World has already laid
+    // out for the new would spawn a newcomer under the code the author
+    // replaced. Deferred, its events kept for the frame it runs.
+    if runtime.is_waiting(&program.module) {
+        report.deferred += 1;
+        super::rate::note_sat_out(runtime, instance, program, view.fixed_steps);
+        mail.sit_out(instance, program, runtime, report);
+        return;
+    }
+
+    let remaining = run.share_end.saturating_sub(report.spent);
+    // With fuel left in the frame, a behavior with no program is not
+    // starved: it goes on to be counted as unloaded.
+    let unloaded = frame.pool > 0 && runtime.program(&program.module).is_none();
+    let short =
+        runtime
+            .shares
+            .too_short(&run.group.module, &run.group.behavior, run.turns, remaining);
+    if (remaining == 0 || short) && !unloaded {
+        sit_out_starved(view, run, instance, program, &mail, runtime, report);
+        return;
+    }
+
+    let Some(compiled) = runnable_program(runtime, program, report) else {
+        return;
+    };
+    let Some(ready) = ready_instance(runtime, host, instance, program, &compiled, report) else {
+        return;
+    };
+    let turn = InstanceTurn {
+        instance,
+        program,
+        compiled,
+        events,
+        mail,
+        remaining,
+        ready,
+    };
+    take_turn(view, &turn, runtime, host, report);
+    run.ran_last = Some(instance.entity);
+    run.turns += 1;
+}
+
+/// Returns the events an instance hears from a queue of its own, when it
+/// needs one.
+///
+/// What it was not told while the entity ran several behaviors comes first —
+/// and is not lost when the entity is down to this one.
+fn held_events(
+    runtime: &mut ScriptRuntime,
+    instance: &ScriptInstance,
+    program: &ScriptProgram,
+    several: bool,
+    events: &EventQueue,
+) -> Option<EventQueue> {
+    let earlier = runtime
+        .attached
+        .take_held(instance.entity, &program.behavior);
+    if several || !earlier.is_empty() {
+        let mut queue = EventQueue::new();
+        for event in earlier
+            .into_iter()
+            .chain(events.for_entity(instance.entity).cloned())
+        {
+            queue.push(event);
+        }
+        Some(queue)
+    } else {
+        None
+    }
+}
+
+/// Holds an instance's arrival on it until its first turn.
+///
+/// The flow hands an arrival over once, and a frame with no fuel or program
+/// for it must not lose it. One the lane forgot while the flow did not is what
+/// its row says, never its defaults.
+fn hold_arrival(runtime: &mut ScriptRuntime, instance: &ScriptInstance, program: &ScriptProgram) {
+    let forgotten = (instance.arrival.is_none()
+        && !instance.row.is_empty()
+        && runtime.peek(instance.entity, &program.behavior).is_none())
+    .then(|| khora_data::flow::ScriptArrival {
+        fields: instance.row.clone(),
+        observed: None,
+    });
+    if let Some(arrival) = instance.arrival.as_ref().or(forgotten.as_ref()) {
+        runtime
+            .instance(instance.entity, &program.behavior)
+            .arriving = Some(arrival.clone());
+        // Seen as it arrives: a field written before its first turn —
+        // which a starved frame may put off — is then taken as written
+        // outside it.
+        runtime
+            .attached
+            .saw(instance.entity, &program.behavior, instance.row.clone());
+    }
+}
+
+/// Counts an instance its behavior had no fuel for as deferred, unless it
+/// would not have run anyway.
+fn sit_out_starved(
+    view: &ScriptView,
+    run: &mut BehaviorRun<'_>,
+    instance: &ScriptInstance,
+    program: &ScriptProgram,
+    mail: &InstanceMail<'_>,
+    runtime: &mut ScriptRuntime,
+    report: &mut ScriptRunReport,
+) {
+    // A faulted instance would not have run with fuel either.
+    if shares::idle(
+        runtime.peek(instance.entity, &program.behavior),
+        runtime.program(&program.module),
+    ) {
+        return;
+    }
+    report.deferred += 1;
+    // Sitting out what it overdrew is the body's own run time —
+    // when the frame had fuel to repay it with.
+    let repaying = run.share.is_some_and(|share| share.owing && share.own > 0)
+        && runtime.shares.debtor(&program.module, &program.behavior) == Some(instance.entity);
+    if repaying {
+        super::watchdog::sat_out(runtime, instance, program, view.delta_seconds, report);
+    }
+    // The first instance the behavior had no fuel for starts it next
+    // frame: one cut part-way through its turn carries on when the
+    // rotation comes back to it, so every instance moves forward.
+    run.starved_at.get_or_insert(instance.entity);
+    // Carried into the reloaded program this frame, its record follows even
+    // though it does not run: a save in between reads the World —
+    // and so do the fixed steps it now waits for.
+    super::rate::note_sat_out(runtime, instance, program, view.fixed_steps);
+    // The turn never happened, so nothing addressed to it was seen.
+    mail.sit_out(instance, program, runtime, report);
+}
+
+/// Returns the program an instance runs, or counts it as unloaded.
+fn runnable_program(
+    runtime: &ScriptRuntime,
+    program: &ScriptProgram,
+    report: &mut ScriptRunReport,
+) -> Option<Arc<Program>> {
+    let Some(compiled) = runtime.program(&program.module) else {
+        // Not compiled, or no channel carries its program here: counted
+        // rather than passed over, so nothing that looks wired hides
+        // that it is not. A program waiting a frame for the components
+        // it reads is neither, and runs from the next frame.
+        if !runtime.is_waiting(&program.module) {
+            report.unloaded += 1;
+        }
+        return None;
+    };
+    // A handle, not the program: the runtime is borrowed mutably below for
+    // the instance's fields, and a thousand guards share one `Guard`.
+    let compiled = Arc::clone(compiled);
+    // A module saved without the behavior has nothing to run for it:
+    // unloaded, its fields left as they are for the edit that brings
+    // the behavior back.
+    if compiled.layout(&program.behavior).is_none() {
+        report.unloaded += 1;
+        return None;
+    }
+    Some(compiled)
+}
+
+/// Settles what a behavior spent against its share, and counts a critical
+/// behavior's spending and deferrals.
+fn settle_behavior(
+    run: &BehaviorRun<'_>,
+    runtime: &mut ScriptRuntime,
+    report: &mut ScriptRunReport,
+) {
+    // A turn stops at its next safepoint, not inside an instruction, so a
+    // behavior may spend past what it was handed: it owes the difference.
+    let handed = run.share_end.saturating_sub(run.spent_before);
+    let overspent = (report.spent - run.spent_before).saturating_sub(handed);
+    runtime.shares.settle(
+        &run.group.module,
+        &run.group.behavior,
+        run.starved_at,
+        (report.spent - run.spent_before, overspent, run.turns),
+        run.ran_last,
+    );
+    if super::rate::schedule_of(runtime, run.group).critical {
+        report.critical_spent += report.spent - run.spent_before;
+        report.critical_deferred += report.deferred - run.deferred_before;
+        if report.deferred > run.deferred_before
+            && !report
+                .critical_deferred_behaviors
+                .contains(&run.group.behavior)
+        {
+            report
+                .critical_deferred_behaviors
+                .push(run.group.behavior.clone());
+        }
+    }
 }

@@ -122,7 +122,7 @@ impl World {
         self.identity.lock().by_id.get(&id).copied()
     }
 
-    /// Re-tags `entity` as authored with a random identity, and returns it.
+    /// Tags `entity` as authored with a random identity, and returns it.
     ///
     /// An entity already authored keeps its identity.
     pub fn mark_authored(&mut self, entity: EntityId) -> Option<PersistentId> {

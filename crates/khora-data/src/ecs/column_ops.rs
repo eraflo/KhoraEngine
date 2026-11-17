@@ -57,6 +57,11 @@ pub trait ColumnOps: Send + Sync {
     /// Writes the fields of row `row` of `column` the patch names, by slot.
     ///
     /// All or nothing: every value is checked before any is written.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`FieldWriteError`] when a slot names no field, names one a
+    /// script cannot write, or its field refuses the value; nothing is written then.
     fn write_fields(
         &self,
         column: &mut dyn AnyVec,

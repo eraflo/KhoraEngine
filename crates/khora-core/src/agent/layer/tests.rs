@@ -880,7 +880,7 @@ fn a_layer_checked_out_while_another_is_staged_runs_on_the_new_agents_part() {
 /// an envelope of 3000, the middle one installed. While the middle one is out
 /// for a run off the frame, a new layer is staged and the envelope shrinks
 /// to 500 bytes. The frame start swaps nothing — the installed layer is out —
-/// but the kept layer no longer fits the new envelope: it is released there,
+/// but the kept layer does not fit the new envelope: it is released there,
 /// not once the staged layer is swapped in.
 #[test]
 fn a_tighter_envelope_set_while_a_layer_is_staged_releases_kept_layers_at_the_next_frame_start() {
@@ -1070,4 +1070,66 @@ fn a_tight_envelope_releases_the_oldest_kept_layers_first() {
         place.kept().iter().map(|(row, _)| *row).collect::<Vec<_>>(),
         vec![StrategyId::Balanced]
     );
+}
+
+// ─── Check-out, last run, failed run ────────────────────────────────────────
+
+/// **A checked-out layer is out until it is checked in**, and cannot be
+/// checked out twice.
+#[test]
+fn a_checked_out_layer_is_out_until_checked_in() {
+    let log = Log::default();
+    let mut place = installed(Sheet::new("one", StrategyId::Balanced, &log).boxed());
+    assert!(!place.is_out());
+
+    let out = place.check_out().expect("the installed layer is home");
+
+    assert!(place.is_out());
+    assert!(place.check_out().is_none(), "out already");
+    let _ = place.check_in(out, LayerRun::default());
+    assert!(!place.is_out());
+}
+
+/// **The last run keeps the report and the costs of the latest run**; a new
+/// place has neither.
+#[test]
+fn the_last_run_keeps_the_latest_report_and_costs() {
+    let log = Log::default();
+    let costs = vec![Cost::default(), Cost::default()];
+    let mut place = installed(
+        Sheet::new("priced", StrategyId::Balanced, &log)
+            .giving(LayerRun {
+                done: 1.0,
+                costs: costs.clone(),
+                ..LayerRun::default()
+            })
+            .boxed(),
+    );
+    assert_eq!(place.last_run().report, None);
+    assert!(place.last_run().costs.is_empty());
+
+    let report = run(&mut place).expect("the installed layer ran");
+
+    assert_eq!(place.last_run().report, Some(report));
+    assert_eq!(place.last_run().costs, costs);
+}
+
+/// **A failed run reports a stall with its message and nothing done**, and
+/// is the last run; with nothing installed there is nothing to report.
+#[test]
+fn a_failed_run_reports_a_stall_with_its_message() {
+    let log = Log::default();
+    assert_eq!(Place::new(AGENT).run_failed("panicked".to_owned()), None);
+    let mut place = installed(Sheet::new("one", StrategyId::Balanced, &log).boxed());
+
+    let report = place
+        .run_failed("panicked".to_owned())
+        .expect("a layer is installed");
+
+    assert!(report.stalled);
+    assert_eq!(report.done, 0.0);
+    assert_eq!(report.row, StrategyId::Balanced);
+    assert_eq!(report.message.as_deref(), Some("panicked"));
+    assert_eq!(place.last_run().report, Some(report));
+    assert!(taken(&log).is_empty(), "the layer itself did not run");
 }

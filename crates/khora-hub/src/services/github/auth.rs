@@ -77,7 +77,11 @@ pub enum AuthMessage {
 ///
 /// It sends `DeviceCodeReady` once GitHub gives a code, then `Authenticated`
 /// (the token stored on disk, or a warning logged when it cannot be), or `Failed`.
-pub fn start_device_flow() -> mpsc::Receiver<AuthMessage> {
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the hub runs no engine: a network call runs on its own thread"
+)]
+pub(crate) fn start_device_flow() -> mpsc::Receiver<AuthMessage> {
     let (tx, rx) = mpsc::channel();
 
     std::thread::spawn(move || {
@@ -122,7 +126,7 @@ pub fn start_device_flow() -> mpsc::Receiver<AuthMessage> {
 /// Returns the path of the credentials file, `~/.khora/credentials.json`.
 ///
 /// It is kept apart from `hub.json` so that `HubConfig` holds no secret.
-pub fn credentials_path() -> PathBuf {
+pub(crate) fn credentials_path() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".khora")
@@ -135,7 +139,7 @@ struct StoredCredentials {
 }
 
 /// Reads the persisted token, if any.
-pub fn load_token() -> Option<String> {
+pub(crate) fn load_token() -> Option<String> {
     let path = credentials_path();
     let text = std::fs::read_to_string(&path).ok()?;
     let creds: StoredCredentials = serde_json::from_str(&text).ok()?;
@@ -147,7 +151,7 @@ pub fn load_token() -> Option<String> {
 /// # Errors
 ///
 /// Fails when the file or its folder cannot be written.
-pub fn store_token(token: &str) -> Result<()> {
+pub(crate) fn store_token(token: &str) -> Result<()> {
     let creds = StoredCredentials {
         github_token: token.to_owned(),
     };
@@ -170,7 +174,7 @@ pub fn store_token(token: &str) -> Result<()> {
 /// # Errors
 ///
 /// Fails when the file exists but cannot be removed.
-pub fn forget_token() -> Result<()> {
+pub(crate) fn forget_token() -> Result<()> {
     let path = credentials_path();
     if path.exists() {
         std::fs::remove_file(&path).context("Failed to remove credentials.json")?;

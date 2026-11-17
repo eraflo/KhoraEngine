@@ -36,12 +36,6 @@ use super::nav::panel_tab;
 use super::paint::{fill, hairline_h, tint, with_alpha};
 use super::Rect;
 
-/// Width a tab needs for `label`, measured through the backend so the strip
-/// packs correctly whatever font pack is installed.
-fn tab_width(ui: &mut dyn UiBuilder, label: &str, size: f32) -> f32 {
-    ui.measure_text(label, size, FontFamilyHint::Proportional)[0] + 26.0
-}
-
 /// Marks a drag payload as "a dock tab is moving".
 ///
 /// The payload carries no identity: the panel being dragged is held by the
@@ -51,6 +45,12 @@ pub const DOCK_DRAG_TAG: u64 = 0x4B44_434B_0000_0001; // "KDCK"
 
 /// Height of the tab strip above every group's content.
 pub const TAB_STRIP_H: f32 = 26.0;
+
+/// Returns the width a tab needs for `label`, measured through the backend so
+/// the strip packs correctly whatever font pack is installed.
+fn tab_width(ui: &mut dyn UiBuilder, label: &str, size: f32) -> f32 {
+    ui.measure_text(label, size, FontFamilyHint::Proportional)[0] + 26.0
+}
 
 /// What the user did to a tab strip this frame. Indices are into
 /// [`TabGroupLayout::panels`].
@@ -234,7 +234,7 @@ fn short_title(panel_id: &str) -> String {
 mod tests {
     use super::*;
     use crate::dock::{DockTree, DropZone};
-    use crate::testing::RecordingUiBuilder;
+    use crate::testing::{PaintCall, RecordingUiBuilder};
 
     fn theme() -> UiTheme {
         crate::khora_dark()
@@ -340,5 +340,23 @@ mod tests {
         let ratio = dock_splitter(&mut ui, &theme(), &sp, "sp0");
         assert_eq!(ui.rects_filled().len(), before, "nothing painted at rest");
         assert!(ratio.is_none(), "no drag reported without a press");
+    }
+
+    #[test]
+    fn the_drag_ghost_follows_the_pointer_with_the_panel_label() {
+        let t = theme();
+        let mut ui = RecordingUiBuilder::new(400.0, 300.0);
+        dock_drag_ghost(&mut ui, &t, "Console", [100.0, 50.0]);
+
+        assert!(ui.painted_text("Console"));
+        assert_eq!(ui.text_color("Console"), Some(t.text));
+        let Some(PaintCall::RectFilled { min, .. }) = ui.rects_filled().first().copied() else {
+            panic!("the ghost paints its plate");
+        };
+        assert_eq!(
+            *min,
+            [110.0, 60.0],
+            "the plate sits just below-right of the pointer"
+        );
     }
 }

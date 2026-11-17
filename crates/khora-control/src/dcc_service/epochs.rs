@@ -58,7 +58,7 @@ impl Epochs {
         };
     }
 
-    /// One tick passes: notices agents that came or went (`AgentsChanged`).
+    /// Passes one tick: notices agents that came or went (`AgentsChanged`).
     pub(super) fn observe(&mut self, agents: &[Arc<Mutex<dyn Agent>>]) {
         self.ticks_since = self.ticks_since.saturating_add(1);
         if self.opened_any && !same_agents(agents, &self.agents) {
@@ -66,7 +66,7 @@ impl Epochs {
         }
     }
 
-    /// An epoch the DCC put in force, opened or replayed: it is not answered
+    /// Puts in force an epoch the DCC opened or replayed: it is not answered
     /// until the next epoch opens.
     pub(super) fn set_in_force(&mut self, epoch: Epoch) {
         self.unanswered.push(epoch);
@@ -92,7 +92,7 @@ impl Epochs {
         }
     }
 
-    /// The trigger that opens an epoch this tick, if one does.
+    /// Returns the trigger that opens an epoch this tick, if one does.
     ///
     /// `Initial` first, then `Safety` at once, any other once the epoch has
     /// lasted `min_ticks`.
@@ -107,7 +107,7 @@ impl Epochs {
         }
     }
 
-    /// An epoch opened for `agents`: what waited is answered, and the wait
+    /// Records an epoch opened for `agents`: what waited is answered, and the wait
     /// starts again.
     pub(super) fn opened(&mut self, agents: &[Arc<Mutex<dyn Agent>>]) {
         self.replayed(agents);
@@ -116,7 +116,7 @@ impl Epochs {
         self.answered = std::mem::take(&mut self.unanswered);
     }
 
-    /// A recorded allocation was lent to `agents`: an epoch passed, but what
+    /// Records a replayed allocation lent to `agents`: an epoch passed, but what
     /// waits was not answered — it opens its epoch once the replay is over.
     pub(super) fn replayed(&mut self, agents: &[Arc<Mutex<dyn Agent>>]) {
         self.agents = agents.iter().map(Arc::downgrade).collect();
@@ -125,7 +125,7 @@ impl Epochs {
     }
 }
 
-/// Whether `agents` are exactly the agents `known` refers to: as many, each
+/// Returns whether `agents` are exactly the agents `known` refers to: as many, each
 /// one of them, and none of those gone.
 fn same_agents(agents: &[Arc<Mutex<dyn Agent>>], known: &[Weak<Mutex<dyn Agent>>]) -> bool {
     agents.len() == known.len()

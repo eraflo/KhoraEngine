@@ -40,28 +40,6 @@ impl BudgetedScriptLane {
     }
 }
 
-/// What the script lane reads each frame: the script flows' Views, the
-/// scripting world, and the time its agent lent it.
-#[derive(LaneInputs)]
-pub struct ScriptInputs<'f> {
-    /// The behaviours the frame runs, and what they may read.
-    #[bus]
-    pub view: &'f ScriptView,
-    /// Where a spawn takes its entity's id.
-    #[bus]
-    pub reservations: &'f ReservationView,
-    /// The prefabs a spawn may name.
-    #[bus]
-    pub prefabs: &'f PrefabCatalogView,
-    /// The scripting world, locked while the behaviours run.
-    #[locked]
-    pub runtime: Locked<'f, ScriptRuntime>,
-    /// The time the run may spend, turned into fuel at the measured rate;
-    /// `None` until the agent is lent one.
-    #[budget]
-    pub budget: Option<Budget>,
-}
-
 impl khora_core::lane::Lane for BudgetedScriptLane {
     type Family = ScriptFamily;
     type Inputs<'f> = ScriptInputs<'f>;
@@ -171,6 +149,28 @@ impl khora_core::lane::Lane for BudgetedScriptLane {
         runtime.set_last_report(report);
         Ok(lane_report)
     }
+}
+
+/// What the script lane reads each frame: the script flows' Views, the
+/// scripting world, and the time its agent lent it.
+#[derive(LaneInputs)]
+pub struct ScriptInputs<'f> {
+    /// The behaviours the frame runs, and what they may read.
+    #[bus]
+    pub view: &'f ScriptView,
+    /// Where a spawn takes its entity's id.
+    #[bus]
+    pub reservations: &'f ReservationView,
+    /// The prefabs a spawn may name.
+    #[bus]
+    pub prefabs: &'f PrefabCatalogView,
+    /// The scripting world, locked while the behaviours run.
+    #[locked]
+    pub runtime: Locked<'f, ScriptRuntime>,
+    /// The time the run may spend, turned into fuel at the measured rate;
+    /// `None` until the agent is lent one.
+    #[budget]
+    pub budget: Option<Budget>,
 }
 
 /// Returns what a run tells its agent: the share of its turns that ran, whether a

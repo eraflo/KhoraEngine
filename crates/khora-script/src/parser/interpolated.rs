@@ -24,7 +24,7 @@ use crate::diagnostics::{Diagnostic, Span};
 use crate::lexer::{Piece, Token, TokenKind};
 
 impl Parser {
-    /// The interpolated string at the cursor, `pieces` its lexed parts.
+    /// Parses the interpolated string at the cursor, `pieces` its lexed parts.
     pub(super) fn parse_interpolated(&mut self, pieces: Vec<Piece>, span: Span) -> Parse<Expr> {
         self.advance();
         let mut parsed = Vec::with_capacity(pieces.len());
@@ -58,7 +58,7 @@ impl Parser {
         })
     }
 
-    /// One hole's expression, its problems reported where they sit.
+    /// Parses one hole's expression, its problems reported where they sit.
     fn parse_hole(&mut self, tokens: Vec<Token>) -> Option<Expr> {
         if let Some(ternary) = bare_ternary(&tokens) {
             self.diagnostics.push(
@@ -88,7 +88,7 @@ impl Parser {
     }
 }
 
-/// Where a ternary written bare in a hole sits — its `?` outside any
+/// Returns where a ternary written bare in a hole sits: its `?` outside any
 /// parentheses, brackets or braces.
 fn bare_ternary(tokens: &[Token]) -> Option<Span> {
     let mut depth = 0usize;

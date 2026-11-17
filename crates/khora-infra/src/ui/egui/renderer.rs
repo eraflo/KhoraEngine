@@ -78,7 +78,7 @@ impl EguiWgpuRenderer {
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
-                    min_binding_size: Some(std::num::NonZero::new(8).unwrap()),
+                    min_binding_size: std::num::NonZero::new(8),
                 },
                 count: None,
             }],

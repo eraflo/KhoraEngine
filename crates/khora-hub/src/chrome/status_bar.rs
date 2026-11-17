@@ -20,7 +20,7 @@ use khora_tool_ui::widgets::{self, Health, paint::mono, status_dot};
 pub const STATUS_HEIGHT: f32 = 26.0;
 
 /// Renders the status bar.
-pub fn show_status_bar(app: &HubApp, ui: &mut dyn UiBuilder) {
+pub(crate) fn show_status_bar(app: &HubApp, ui: &mut dyn UiBuilder) {
     let t = crate::ui::theme();
     let r = ui.panel_rect();
 
@@ -67,7 +67,7 @@ pub fn show_status_bar(app: &HubApp, ui: &mut dyn UiBuilder) {
     mono(ui, [rx, y], &label, size, color);
 }
 
-/// A short vertical rule between clusters.
+/// Draws a short vertical rule between clusters.
 fn separator(ui: &mut dyn UiBuilder, t: &khora_sdk::tool_ui::UiTheme, x: f32, r: [f32; 4]) {
     ui.paint_line([x, r[1] + 7.0], [x, r[1] + r[3] - 7.0], t.separator, 1.0);
 }

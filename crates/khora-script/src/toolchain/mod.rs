@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The script toolchain, as the engine drives it off the frame: what a
-//! compile is asked ([`CompileRequest`]), who answers it
+//! The script toolchain, as the engine drives it off the frame.
+//!
+//! It names what a compile is asked ([`CompileRequest`]), who answers it
 //! ([`ScriptCompiler`]), and what it hands back ([`Recompiled`]) — the
 //! recompiled programs and what their modules declare
 //! ([`ScriptDeclarations`]), both staged for a frame's boundary.

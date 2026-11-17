@@ -88,7 +88,7 @@ impl Rig {
     }
 
     /// One full frame, in the order `EngineCore::run_app_update` runs it:
-    /// PreSimulation, PostSimulation (transform propagation), PreExtract
+    /// `PreSimulation`, `PostSimulation` (transform propagation), `PreExtract`
     /// (provider sync) data systems → Substrate-Pass flows → the agent with its
     /// own contention (provider step) → Maintenance (write-back, collision
     /// dispatch). The contacts the channel received are kept.

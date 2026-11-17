@@ -19,6 +19,9 @@
 use khora_sdk::editor_ui::DeclaredFieldView;
 use khora_sdk::khora_core::script::{ErgonType, FieldRange, ScriptValue};
 
+/// How many points of drag span a range.
+const SCRUB_POINTS: f64 = 200.0;
+
 /// Returns the section header `field`'s `[Header("…")]` opens above it, if
 /// any.
 pub fn section_header(field: &DeclaredFieldView) -> Option<String> {
@@ -36,7 +39,7 @@ pub fn range_text(ty: &ErgonType, range: FieldRange) -> String {
     }
 }
 
-/// A bound as the inspector shows a `ty` value: whole for an `int`, in
+/// Formats a bound as the inspector shows a `ty` value: whole for an `int`, in
 /// degrees for an angle, else as short as the float it was written as.
 fn shown(ty: &ErgonType, value: f64) -> String {
     match ty {
@@ -92,11 +95,8 @@ pub fn ranged_speed(ty: &ErgonType, range: FieldRange) -> f32 {
     }
 }
 
-/// How many points of drag span a range.
-const SCRUB_POINTS: f64 = 200.0;
-
 /// Returns how far an unbounded `ty` scrubber moves per point dragged.
-pub fn unbounded_speed(ty: &ErgonType) -> f32 {
+pub(crate) fn unbounded_speed(ty: &ErgonType) -> f32 {
     match ty {
         ErgonType::Int => 0.25,
         ErgonType::Duration => 0.01,

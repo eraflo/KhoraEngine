@@ -31,14 +31,18 @@ use crate::vm::{DeclaredComponent, DeclaredField, DeclaredKind, Program};
 /// What separates a behavior's name from its state companion's.
 pub const STATE_SUFFIX: &str = "#state";
 
-/// The name of the state companion of `behavior`.
-pub fn state_companion(behavior: &str) -> String {
+/// The attributes a behavior takes: where its fields live, and how the
+/// scheduler treats it.
+const BEHAVIOR_ATTRIBUTES: [&str; 4] = [DOMAIN, "Critical", "Budget", "Rate"];
+
+/// Returns the name of the state companion of `behavior`.
+pub(crate) fn state_companion(behavior: &str) -> String {
     format!("{behavior}{STATE_SUFFIX}")
 }
 
 /// Returns the refusals of the project's behaviors: an engine component's name,
 /// or a `[Domain(…)]` that names no domain or is given twice.
-pub fn report_script_behaviors(resolved: &Resolved, engine: &[String]) -> Vec<Diagnostic> {
+pub(crate) fn report_script_behaviors(resolved: &Resolved, engine: &[String]) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     for (_, decl, declared) in script_behaviors(resolved) {
         if engine.contains(&decl.name) {
@@ -71,12 +75,8 @@ pub fn report_script_behaviors(resolved: &Resolved, engine: &[String]) -> Vec<Di
     diagnostics
 }
 
-/// The attributes a behavior takes: where its fields live, and how the
-/// scheduler treats it.
-const BEHAVIOR_ATTRIBUTES: [&str; 4] = [DOMAIN, "Critical", "Budget", "Rate"];
-
-/// One `[Domain(X)]` at most, naming a domain; a behavior's other attributes
-/// are the scheduler's.
+/// Reports an attribute a behavior does not take, and a `[Domain(X)]` that is
+/// repeated or names no domain.
 fn report_domain(attributes: &[Attribute], diagnostics: &mut Vec<Diagnostic>) {
     // A misspelt attribute would otherwise be silently ignored — and
     // `[Domian(Physics)]` would leave the fields in `Script`.
@@ -133,7 +133,7 @@ fn report_domain(attributes: &[Attribute], diagnostics: &mut Vec<Diagnostic>) {
 ///
 /// Each carries the item's source order among the module's behaviors and
 /// systems, which is the order they run in.
-pub fn declared_behaviors(resolved: &Resolved, program: &Program) -> Vec<DeclaredComponent> {
+pub(crate) fn declared_behaviors(resolved: &Resolved, program: &Program) -> Vec<DeclaredComponent> {
     script_behaviors(resolved)
         .flat_map(|(module, decl, declared)| {
             let order = declared.order;
@@ -179,7 +179,7 @@ struct Declared {
 }
 
 impl Declared {
-    /// What an author calls it.
+    /// Returns what an author calls it.
     fn word(self) -> &'static str {
         if self.system {
             "system"
@@ -189,8 +189,8 @@ impl Declared {
     }
 }
 
-/// Every `behavior` and `system` written outside the engine's module, with its
-/// module.
+/// Lists every `behavior` and `system` written outside the engine's module,
+/// with its module.
 fn script_behaviors(
     resolved: &Resolved,
 ) -> impl Iterator<Item = (&ResolvedModule, &BehaviorDecl, Declared)> {
@@ -216,7 +216,7 @@ fn script_behaviors(
         })
 }
 
-/// A behavior's own fields — not a state's — in declaration order.
+/// Yields a behavior's own fields — not a state's — in declaration order.
 fn fields_of(decl: &BehaviorDecl) -> impl Iterator<Item = &Field> {
     decl.members.iter().filter_map(|member| match member {
         BehaviorMember::Field(field) => Some(field),
@@ -224,8 +224,8 @@ fn fields_of(decl: &BehaviorDecl) -> impl Iterator<Item = &Field> {
     })
 }
 
-/// A behavior field as its component holds it, defaulting to the layout's
-/// default so a new row and a fresh instance start at one value.
+/// Returns a behavior field as its component holds it, defaulting to the
+/// layout's default so a new row and a fresh instance start at one value.
 fn declared_field(field: &Field, slot: usize, behavior: &str, program: &Program) -> DeclaredField {
     // A type the storage names no type for — a `Map` — is held as any value.
     let ty = ergon_type(&field.ty).map_or(ErgonType::Any, |ty| {
@@ -245,7 +245,7 @@ fn declared_field(field: &Field, slot: usize, behavior: &str, program: &Program)
     }
 }
 
-/// The fields of every state companion, the same for every behavior.
+/// Returns the fields of every state companion, the same for every behavior.
 fn companion_fields() -> Vec<DeclaredField> {
     let field = |name: &str, ty: ErgonType, default: ScriptValue| DeclaredField {
         name: name.to_owned(),

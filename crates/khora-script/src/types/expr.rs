@@ -21,7 +21,7 @@ use crate::ast::{BinaryOp, Expr, UnaryOp};
 use crate::diagnostics::Span;
 
 impl Checker {
-    /// The type of `expr`, reporting anything wrong with it.
+    /// Returns the type of `expr`, reporting anything wrong with it.
     ///
     /// Always returns a type: a failed expression yields [`Ty::Error`], which
     /// is compatible with everything, so one mistake produces one message.
@@ -456,7 +456,7 @@ impl Checker {
         }
     }
 
-    /// `await` — legal only where the member can actually suspend.
+    /// Checks `await` — legal only where the member can actually suspend.
     fn check_await(&mut self, operand: &Expr, span: Span, context: &Context) -> Ty {
         let ty = self.check_expr(operand, context);
 
@@ -506,7 +506,7 @@ impl Checker {
         }
     }
 
-    /// The type both sides must share, reporting when they cannot.
+    /// Returns the type both sides must share, reporting when they cannot.
     pub fn unify(&mut self, left: &Ty, right: &Ty, span: Span, what: &str) -> Ty {
         // The side that says something wins: `c ? [] : ["a"]` is a
         // `string[]`, whichever branch is empty.
@@ -545,8 +545,8 @@ impl Checker {
     }
 }
 
-/// Whether `ty` holds a part nothing has said anything about — the element of
-/// an empty `[]`.
+/// Returns whether `ty` holds a part nothing has said anything about — the
+/// element of an empty `[]`.
 pub(super) fn unknown_inside(ty: &Ty) -> bool {
     match ty {
         Ty::Error => true,
@@ -555,8 +555,8 @@ pub(super) fn unknown_inside(ty: &Ty) -> bool {
     }
 }
 
-/// Whether a `var` given this type would hold something nobody named — an
-/// array whose elements are unknown (`[]`), or only ever `null`.
+/// Returns whether a `var` given this type would hold something nobody named —
+/// an array whose elements are unknown (`[]`), or only ever `null`.
 pub(super) fn says_nothing(ty: &Ty) -> bool {
     match ty {
         Ty::Array(inner) => matches!(**inner, Ty::Error) || null_only(inner) || says_nothing(inner),
@@ -565,7 +565,7 @@ pub(super) fn says_nothing(ty: &Ty) -> bool {
     }
 }
 
-/// `null`'s own type: an optional of nothing.
+/// Returns whether `ty` is `null`'s own type: an optional of nothing.
 fn null_only(ty: &Ty) -> bool {
     matches!(ty, Ty::Optional(inner) if **inner == Ty::Error)
 }

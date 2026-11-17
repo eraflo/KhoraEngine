@@ -22,7 +22,7 @@
 //!
 //! - [`OutputDeck::slot`] returns a `&mut T` for lanes to push into.
 //! - [`OutputDeck::take`] is public so the engine's I/O boundary (the SDK's
-//!   pass submission, the Maintenance DataSystems) can drain typed outputs;
+//!   pass submission, the Maintenance `DataSystem`s) can drain typed outputs;
 //!   lanes only ever push.
 
 use std::any::{Any, TypeId};
@@ -54,6 +54,10 @@ impl OutputDeck {
     /// Returns the slot for type `T`, created with `T::default()` on first access.
     ///
     /// Records `T` as written.
+    ///
+    /// # Panics
+    ///
+    /// Never in practice: a slot is keyed by the `TypeId` of the value it holds.
     pub fn slot<T: Default + Any + Send + Sync>(&mut self) -> &mut T {
         let type_id = TypeId::of::<T>();
         if !self.written.contains(&type_id) {
@@ -105,12 +109,12 @@ impl OutputDeck {
         self.slots.contains_key(&TypeId::of::<T>())
     }
 
-    /// Number of slots currently holding data.
+    /// Returns the number of slots currently holding data.
     pub fn len(&self) -> usize {
         self.slots.len()
     }
 
-    /// Whether no slots have been written.
+    /// Returns whether no slots have been written.
     pub fn is_empty(&self) -> bool {
         self.slots.is_empty()
     }
@@ -257,5 +261,53 @@ mod tests {
         // Colliding slot type: the existing entry is kept (defensive).
         main.merge_from(shard);
         assert_eq!(main.take::<Vec<u32>>(), vec![1]);
+    }
+
+    /// **Discarding removes only the slots of the types named.**
+    #[test]
+    fn discard_removes_only_the_slots_named() {
+        let mut deck = OutputDeck::new();
+        deck.slot::<Vec<u32>>().push(1);
+        deck.slot::<Vec<u8>>().push(2);
+
+        deck.discard(&[TypeId::of::<Vec<u32>>()]);
+
+        assert!(!deck.contains::<Vec<u32>>());
+        assert_eq!(deck.get::<Vec<u8>>(), Some(&vec![2]));
+    }
+
+    /// **Taken slots move out as they are**, into a deck that records no write.
+    #[test]
+    fn taken_slots_move_out_as_they_are_and_record_no_write() {
+        let mut deck = OutputDeck::new();
+        deck.slot::<Vec<u32>>().extend([1, 2]);
+        deck.slot::<Vec<u8>>().push(3);
+
+        let mut taken = deck.take_slots(&[TypeId::of::<Vec<u32>>(), TypeId::of::<u64>()]);
+
+        assert_eq!(taken.get::<Vec<u32>>(), Some(&vec![1, 2]));
+        assert_eq!(
+            taken.len(),
+            1,
+            "a type the deck did not hold is not made up"
+        );
+        assert!(taken.drain_written().is_empty());
+        assert!(!deck.contains::<Vec<u32>>());
+        assert!(deck.contains::<Vec<u8>>());
+    }
+
+    /// **Committing from a deck replaces each slot and records it as written.**
+    #[test]
+    fn commit_from_replaces_each_slot_and_records_it_as_written() {
+        let mut main = OutputDeck::new();
+        main.slot::<Vec<u32>>().push(1);
+        let _ = main.drain_written();
+        let mut run = OutputDeck::new();
+        run.slot::<Vec<u32>>().push(9);
+
+        main.commit_from(run);
+
+        assert_eq!(main.get::<Vec<u32>>(), Some(&vec![9]));
+        assert_eq!(main.drain_written(), vec![TypeId::of::<Vec<u32>>()]);
     }
 }

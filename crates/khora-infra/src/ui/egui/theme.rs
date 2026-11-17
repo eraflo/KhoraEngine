@@ -14,6 +14,7 @@
 
 //! The translation of a [`UiTheme`] into egui [`Visuals`](egui::Visuals) and style.
 
+use egui::{FontFamily, FontId, TextStyle};
 use khora_core::ui::{ColorScheme, UiTheme};
 
 /// Key under which [`apply_theme`] stashes the X/Y/Z axis colours in the egui
@@ -135,7 +136,6 @@ pub fn apply_theme(ctx: &egui::Context, theme: &UiTheme) {
 
     // Default font sizes per text style — drives any RichText that does not
     // override its size manually.
-    use egui::{FontFamily, FontId, TextStyle};
     style.text_styles.insert(
         TextStyle::Heading,
         FontId::new(theme.font_size_display, FontFamily::Proportional),

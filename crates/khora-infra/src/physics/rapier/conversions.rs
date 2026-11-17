@@ -15,18 +15,18 @@
 use khora_core::math::{Quat, Vec3};
 use rapier3d::math::{Rotation, Vector};
 
-pub fn to_rapier_vec(v: Vec3) -> Vector {
+pub(crate) fn to_rapier_vec(v: Vec3) -> Vector {
     Vector::new(v.x, v.y, v.z)
 }
 
-pub fn to_rapier_quat(q: Quat) -> Rotation {
+pub(crate) fn to_rapier_quat(q: Quat) -> Rotation {
     Rotation::from_xyzw(q.x, q.y, q.z, q.w)
 }
 
-pub fn from_rapier_vec(v: Vector) -> Vec3 {
+pub(crate) fn from_rapier_vec(v: Vector) -> Vec3 {
     Vec3::new(v.x, v.y, v.z)
 }
 
-pub fn from_rapier_quat(q: Rotation) -> Quat {
+pub(crate) fn from_rapier_quat(q: Rotation) -> Quat {
     Quat::new(q.x, q.y, q.z, q.w)
 }

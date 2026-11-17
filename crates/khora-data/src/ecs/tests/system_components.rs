@@ -20,6 +20,7 @@ use khora_core::ecs::PersistentId;
 use khora_core::script::ScriptValue;
 
 use super::runtime_components::{declare, field};
+use crate::ecs::systems::script_systems::singleton_id;
 use crate::ecs::{ComponentKey, FieldKind, ScriptRole, SemanticDomain, Transform, World};
 
 fn declared(world: &mut World, name: &str) -> ComponentKey {
@@ -156,4 +157,12 @@ fn a_named_identity_does_not_advance_the_created_numbering() {
         Some(expected),
         "the created numbering starts where a world without the named entity starts"
     );
+}
+
+/// **A system's entity is named by the system**: `system:` and its name,
+/// one identity per system.
+#[test]
+fn singleton_id_is_the_system_name_under_system() {
+    assert_eq!(singleton_id("Score"), PersistentId::named("system:Score"));
+    assert_ne!(singleton_id("Score"), singleton_id("Timer"));
 }

@@ -34,24 +34,6 @@ pub struct Pass<'f, P: PassSlot> {
     descriptor: P::Descriptor,
 }
 
-/// A pass slot a `#[pass]` output closes into: what the frame graph orders
-/// the pass by, and how the slot holds the finished pass.
-///
-/// khora-core cannot name the frame graph's types; the slot, defined beside
-/// them, says what its descriptor is and how it is built.
-pub trait PassSlot: Default + Any + Send + Sync {
-    /// What the frame graph orders the pass by. The lane may amend it while
-    /// it records.
-    type Descriptor: Send;
-
-    /// The descriptor a pass of this slot opens with.
-    fn descriptor() -> Self::Descriptor;
-
-    /// The slot holding the closed pass: its descriptor and the command
-    /// buffer its encoder finished into.
-    fn close(descriptor: Self::Descriptor, command_buffer: CommandBufferId) -> Self;
-}
-
 impl<'f, P: PassSlot> Pass<'f, P> {
     /// Opens a pass of slot `P` on `device`.
     pub fn open(device: &'f dyn GraphicsDevice) -> Self {
@@ -63,28 +45,30 @@ impl<'f, P: PassSlot> Pass<'f, P> {
         }
     }
 
-    /// The same pass, lending `pipelines` to the lane recording into it.
-    pub fn lending(mut self, pipelines: Option<&'f dyn PipelineSystem>) -> Self {
+    /// Returns the same pass, lending `pipelines` to the lane recording into it.
+    pub(crate) fn lending(mut self, pipelines: Option<&'f dyn PipelineSystem>) -> Self {
         self.pipelines = pipelines;
         self
     }
 
-    /// The encoder the lane records the pass into.
+    /// Returns the encoder the lane records the pass into.
     pub fn encoder(&mut self) -> &mut dyn CommandEncoder {
         self.encoder.as_mut()
     }
 
-    /// The device the pass records for, which the lane uploads its per-pass uniforms through.
+    /// Returns the device the pass records for, which the lane uploads its per-pass uniforms
+    /// through.
     pub fn device(&self) -> &'f dyn GraphicsDevice {
         self.device
     }
 
-    /// The pipeline system the lane resolves its pipelines through, when the agent lent one.
+    /// Returns the pipeline system the lane resolves its pipelines through, when the agent lent
+    /// one.
     pub fn pipelines(&self) -> Option<&'f dyn PipelineSystem> {
         self.pipelines
     }
 
-    /// The descriptor the pass closes with.
+    /// Returns the descriptor the pass closes with.
     pub fn descriptor_mut(&mut self) -> &mut P::Descriptor {
         &mut self.descriptor
     }
@@ -97,4 +81,22 @@ impl<'f, P: PassSlot> Pass<'f, P> {
             .finish()
             .map(|command_buffer| P::close(descriptor, command_buffer))
     }
+}
+
+/// A pass slot a `#[pass]` output closes into: what the frame graph orders
+/// the pass by, and how the slot holds the finished pass.
+///
+/// khora-core cannot name the frame graph's types; the slot, defined beside
+/// them, says what its descriptor is and how it is built.
+pub trait PassSlot: Default + Any + Send + Sync {
+    /// What the frame graph orders the pass by. The lane may amend it while
+    /// it records.
+    type Descriptor: Send;
+
+    /// Returns the descriptor a pass of this slot opens with.
+    fn descriptor() -> Self::Descriptor;
+
+    /// Returns the slot holding the closed pass: its descriptor and the command
+    /// buffer its encoder finished into.
+    fn close(descriptor: Self::Descriptor, command_buffer: CommandBufferId) -> Self;
 }

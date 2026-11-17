@@ -75,7 +75,7 @@ pub enum ScriptValue {
 }
 
 impl ScriptValue {
-    /// Whether every number the value carries is finite.
+    /// Returns whether every number the value carries is finite.
     ///
     /// That is a `float`, every lane of an engine value, every element of an
     /// array or a struct. Text, handles and `null` carry none.
@@ -93,7 +93,7 @@ impl ScriptValue {
         }
     }
 
-    /// The type name, as an author would write it.
+    /// Returns the type name, as an author would write it.
     ///
     /// A wrong-shaped component patch is reported with both type names.
     pub fn type_name(&self) -> &'static str {
@@ -167,7 +167,7 @@ impl ScriptValue {
         "The value as an asset reference, if it is one."
     );
 
-    /// The value as a string slice, if it is one.
+    /// Returns the value as a string slice, if it is one.
     pub fn as_str(&self) -> Option<&str> {
         match self {
             Self::Str(text) => Some(text),
@@ -175,7 +175,7 @@ impl ScriptValue {
         }
     }
 
-    /// The elements, if the value is an array.
+    /// Returns the elements, if the value is an array.
     pub fn as_array(&self) -> Option<&[ScriptValue]> {
         match self {
             Self::Array(values) => Some(values),
@@ -183,7 +183,7 @@ impl ScriptValue {
         }
     }
 
-    /// The named fields, if the value is a struct.
+    /// Returns the named fields, if the value is a struct.
     pub fn as_fields(&self) -> Option<&[(String, ScriptValue)]> {
         match self {
             Self::Struct(fields) => Some(fields),

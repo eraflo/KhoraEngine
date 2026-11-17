@@ -45,7 +45,7 @@ impl AssetKind {
         AssetKind::Scene,
     ];
 
-    /// The kind as Ergon spells its type: `"Prefab"`, `"Sound"`, …
+    /// Returns the kind as Ergon spells its type: `"Prefab"`, `"Sound"`, …
     pub fn ergon_name(self) -> &'static str {
         match self {
             Self::Prefab => "Prefab",
@@ -57,7 +57,7 @@ impl AssetKind {
         }
     }
 
-    /// The kind Ergon spells `name`, if any.
+    /// Returns the kind Ergon spells `name`, if any.
     pub fn from_ergon_name(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|kind| kind.ergon_name() == name)
     }

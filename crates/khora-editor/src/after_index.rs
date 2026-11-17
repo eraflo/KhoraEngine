@@ -48,18 +48,10 @@ pub enum AfterIndex {
     },
 }
 
-/// A reindex of the project that landed: its outcome, and the actions that
-/// waited for it.
-#[derive(Debug)]
-pub struct Landed {
-    pub outcome: khora_sdk::IndexOutcome,
-    pub actions: Vec<AfterIndex>,
-}
-
 impl AfterIndex {
-    /// Whether this assignment and `other` are for one entity of one scene
-    /// state — edited or played — so that the one saved last replaces it.
-    pub fn assigns_as(&self, other: &AfterIndex) -> bool {
+    /// Returns whether this assignment and `other` are for one entity of one
+    /// scene state — edited or played — so that the one saved last replaces it.
+    pub(crate) fn assigns_as(&self, other: &AfterIndex) -> bool {
         match (self, other) {
             (
                 AfterIndex::AssignMaterial {
@@ -84,4 +76,12 @@ impl AfterIndex {
             _ => false,
         }
     }
+}
+
+/// A reindex of the project that landed: its outcome, and the actions that
+/// waited for it.
+#[derive(Debug)]
+pub struct Landed {
+    pub outcome: khora_sdk::IndexOutcome,
+    pub actions: Vec<AfterIndex>,
 }

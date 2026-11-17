@@ -15,8 +15,8 @@
 //! Scenes saved while a `Camera` still stored its aspect.
 //!
 //! A camera's aspect is the shape of the image it fills, read every frame
-//! from the colour target; the camera no longer stores one. Scenes written
-//! before that carry `aspect_ratio` on every camera, and `width` on every
+//! from the colour target; the camera stores none. Older scenes carry
+//! `aspect_ratio` on every camera, and `width` on every
 //! orthographic projection. They load: the fields are dropped and the report
 //! says so.
 
@@ -58,8 +58,8 @@ fn dropped<'a>(
     })
 }
 
-/// A camera saved with the aspect it used to store loads as the camera it
-/// is, and the report names `aspect_ratio` as dropped.
+/// A camera saved with an aspect of its own loads as the camera it is,
+/// and the report names `aspect_ratio` as dropped.
 #[test]
 fn a_camera_saved_with_an_aspect_ratio_loads_and_reports_it_dropped() {
     let camera = Camera::new_perspective(std::f32::consts::FRAC_PI_3, 0.05, 500.0);

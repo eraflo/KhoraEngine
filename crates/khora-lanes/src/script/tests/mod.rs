@@ -26,6 +26,7 @@ mod on_load;
 mod reload;
 mod reload_carries;
 mod save;
+mod weights;
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{EventQueue, ScriptEvent, ScriptValue};
@@ -285,7 +286,7 @@ fn a_despawned_entitys_fields_are_released() {
     );
     assert_eq!(runtime.instance_count(), 3);
 
-    // The scene lost one; the view simply no longer lists it.
+    // The scene lost one; the view simply leaves it out.
     run_behaviors(
         &view_of(2),
         &EventQueue::new(),

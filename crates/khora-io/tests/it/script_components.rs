@@ -1079,8 +1079,8 @@ fn pump_until_recompiled(runtime: &khora_core::Runtime) {
 /// **An importer's components follow a struct it imports.** `Route.start`
 /// is a `Point`, declared in another module; editing `Point`'s defaults
 /// recompiles `route.erg` as an importer — and the default a new `Route` row
-/// starts at must be the new one, or the registration keeps a `Point` the
-/// scripts no longer have.
+/// starts at must be the redeclared one, or the registration keeps a `Point`
+/// the scripts do not have.
 #[test]
 fn an_edit_to_an_imported_struct_reaches_the_importers_components() {
     let assets = tempfile::TempDir::new().expect("a temp dir");
@@ -1406,7 +1406,7 @@ fn a_component_adopted_from_a_scene_resets_a_retyped_value_field() {
 /// **A struct a component holds, retyped, is a retype of the field.**
 /// `Route.start` is a `Point`; `Point.x` goes from `int` to `string`. The
 /// field's type is still `Point` and its kind still `Value`, so nothing the
-/// registration compares says the stored `{ x: 1 }` no longer is one — and a
+/// registration compares says the stored `{ x: 1 }` stopped being one — and a
 /// script reading its `Route` cannot take it.
 #[test]
 fn a_reload_retyping_a_held_struct_field_does_not_keep_the_old_value() {

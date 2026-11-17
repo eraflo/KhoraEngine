@@ -110,6 +110,28 @@ fn hub(engine: &EngineCore<Game>) -> Arc<SceneLoadHub> {
         .expect("the engine installs the scene load hub at boot")
 }
 
+/// **The engine sets its hub on the world it runs.** A world no engine runs
+/// has none; a booted engine's world files with the runtime's hub, and a hub
+/// set by hand is the one the world files with.
+#[test]
+fn the_engine_sets_its_scene_load_hub_on_its_world() {
+    assert!(GameWorld::new().scene_loads().is_none());
+    let mut engine = game_engine();
+    let installed = hub(&engine);
+
+    let world = engine
+        .game_world_mut()
+        .expect("a booted engine runs a world");
+    let filed_with = world.scene_loads().cloned().expect("a hub to file with");
+    assert!(Arc::ptr_eq(&filed_with, &installed));
+
+    let mut other = GameWorld::new();
+    other.set_scene_loads(Arc::clone(&installed));
+    assert!(other
+        .scene_loads()
+        .is_some_and(|set| Arc::ptr_eq(set, &installed)));
+}
+
 /// A level as it ships — two authored entities — its scene file, and the
 /// identity the game knows it by.
 fn level() -> (GameWorld, SceneFile, AssetUUID) {

@@ -30,8 +30,7 @@ use crate::ecs::{
     Parent, RigidBody, SimulatedTransform, Teleported, TickPhase, Transform, World,
 };
 
-/// Releases every entity that carries a simulated pose and is no longer
-/// simulated.
+/// Releases every entity that carries a simulated pose and is not simulated.
 pub fn physics_release_system(world: &mut World) {
     let released: Vec<EntityId> = world
         .query::<(EntityId, &SimulatedTransform)>()
@@ -54,14 +53,14 @@ pub fn physics_release_system(world: &mut World) {
     }
 }
 
-/// Whether something still drives the entity's pose.
+/// Returns whether something still drives the entity's pose.
 fn is_simulated(world: &World, entity: EntityId) -> bool {
     world.get::<RigidBody>(entity).is_some()
         || (world.get::<KinematicCharacterController>(entity).is_some()
             && world.get::<Collider>(entity).is_some())
 }
 
-/// The local `Transform` that composes, under the entity's parent as it is
+/// Returns the local `Transform` that composes, under the entity's parent as it is
 /// this frame, to the pose the entity is drawn at.
 ///
 /// Exact unless the parent is scaled unevenly and the entity is turned against
@@ -78,7 +77,7 @@ fn handed_back(world: &World, entity: EntityId) -> Option<Transform> {
     decompose(local, authored)
 }
 
-/// The inverse of a parent's world matrix, whatever its size.
+/// Returns the inverse of a parent's world matrix, whatever its size.
 ///
 /// A general inverse refuses any matrix whose determinant is under a fixed
 /// bound, and a parent at a centimetre scale — what a model exported in
@@ -96,14 +95,14 @@ fn inverse_of(parent: Mat4) -> Option<Mat4> {
     Some(Mat4::from_scale(Vec3::new(1.0 / scale.x, 1.0 / scale.y, 1.0 / scale.z)) * inverse)
 }
 
-/// `local` as a translation, a rotation and a scale, the mirror where the
-/// author put it.
+/// Splits `local` into a translation, a rotation and a scale, the mirror
+/// where the author put it.
 ///
 /// A mirrored matrix has several decompositions — (1, 1, −1) is also
 /// (−1, 1, 1) after a half turn — and they draw the same. The one kept is the
 /// one with the signs of the entity's own `Transform`, so a mirrored crate set
 /// down keeps the numbers its author typed; the first axis takes the mirror
-/// when those signs no longer match.
+/// when those signs differ.
 fn decompose(local: Mat4, authored: &Transform) -> Option<Transform> {
     let affine = AffineTransform::from(local);
     let lengths = affine.scale();

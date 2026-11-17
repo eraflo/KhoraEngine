@@ -33,26 +33,13 @@ pub(crate) struct Generations(
     Mutex<State>,
 );
 
-#[derive(Debug, Default)]
-struct State {
-    /// The last generation handed out.
-    counter: u64,
-    /// The generation each asset was last moved to.
-    by_asset: HashMap<AssetUUID, u64>,
-    /// The generation every asset was moved to by the last new index.
-    all: u64,
-    /// The decodes a lease turned down since they were asked for again, by
-    /// asset and type.
-    abandoned: HashSet<(AssetUUID, TypeId)>,
-}
-
 impl Generations {
     /// Returns the counter's current value, the stamp of a decode filed at this point.
     pub(crate) fn now(&self) -> u64 {
         self.0.lock_recovered().counter
     }
 
-    /// Whether none of `files` changed after `filed`.
+    /// Returns whether none of `files` changed after `filed`.
     pub(crate) fn none_changed_since(
         &self,
         files: impl IntoIterator<Item = AssetUUID>,
@@ -67,13 +54,13 @@ impl Generations {
         self.0.lock_recovered().abandoned.insert((uuid, type_id));
     }
 
-    /// Whether the decode of `uuid` as `type_id` was turned down since it
+    /// Returns whether the decode of `uuid` as `type_id` was turned down since it
     /// was asked for, forgetting it.
     pub(crate) fn take_abandoned(&self, uuid: AssetUUID, type_id: TypeId) -> bool {
         self.0.lock_recovered().abandoned.remove(&(uuid, type_id))
     }
 
-    /// Whether nothing changed at all after `filed`.
+    /// Returns whether nothing changed at all after `filed`.
     pub(crate) fn nothing_changed_since(&self, filed: u64) -> bool {
         self.now() <= filed
     }
@@ -103,6 +90,19 @@ impl Generations {
         state.counter += 1;
         state.all = state.counter;
     }
+}
+
+#[derive(Debug, Default)]
+struct State {
+    /// The last generation handed out.
+    counter: u64,
+    /// The generation each asset was last moved to.
+    by_asset: HashMap<AssetUUID, u64>,
+    /// The generation every asset was moved to by the last new index.
+    all: u64,
+    /// The decodes a lease turned down since they were asked for again, by
+    /// asset and type.
+    abandoned: HashSet<(AssetUUID, TypeId)>,
 }
 
 #[cfg(test)]

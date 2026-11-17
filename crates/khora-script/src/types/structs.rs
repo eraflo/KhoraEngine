@@ -20,8 +20,20 @@ use super::{Checker, Context, Ty};
 use crate::ast::{Expr, UnaryOp};
 use crate::diagnostics::Span;
 
+/// The engine types a constant may construct, with the numbers each takes.
+///
+/// `Vec3(0.0, 0.0, 1.0)` is data, as `[0.0, 0.0, 1.0]` is, and so is
+/// `Vec3(z: 1.0, x: 0.0, y: 0.0)`.
+pub(crate) const ENGINE_CONSTRUCTORS: [(&str, &[&str]); 5] = [
+    ("Vec2", &["x", "y"]),
+    ("Vec3", &["x", "y", "z"]),
+    ("Vec4", &["x", "y", "z", "w"]),
+    ("Quat", &["x", "y", "z", "w"]),
+    ("Color", &["r", "g", "b", "a"]),
+];
+
 impl Checker {
-    /// `Name { field: value, … }`.
+    /// Checks the struct literal `Name { field: value, … }`.
     pub(super) fn check_struct_lit(
         &mut self,
         name: &str,
@@ -174,8 +186,8 @@ impl Checker {
         }
     }
 
-    /// The `(struct, field)` defaults building `expr` needs: the fields its
-    /// struct literals leave out that declare a default.
+    /// Collects the `(struct, field)` defaults building `expr` needs: the fields
+    /// its struct literals leave out that declare a default.
     fn omitted_defaults(&self, expr: &Expr, into: &mut Vec<(String, String)>) {
         match expr {
             Expr::StructLit { name, fields, .. } => {
@@ -200,20 +212,8 @@ impl Checker {
     }
 }
 
-/// The engine types a constant may construct, with the numbers each takes.
-///
-/// `Vec3(0.0, 0.0, 1.0)` is data, as `[0.0, 0.0, 1.0]` is, and so is
-/// `Vec3(z: 1.0, x: 0.0, y: 0.0)`.
-pub(crate) const ENGINE_CONSTRUCTORS: [(&str, &[&str]); 5] = [
-    ("Vec2", &["x", "y"]),
-    ("Vec3", &["x", "y", "z"]),
-    ("Vec4", &["x", "y", "z", "w"]),
-    ("Quat", &["x", "y", "z", "w"]),
-    ("Color", &["r", "g", "b", "a"]),
-];
-
-/// The number a constant numeric expression stands for: a literal, or a
-/// negated one.
+/// Returns the number a constant numeric expression stands for: a literal, or
+/// a negated one.
 pub(crate) fn constant_number(expr: &Expr) -> Option<f32> {
     match expr {
         Expr::Int { value, .. } => Some(*value as f32),
@@ -230,7 +230,7 @@ pub(crate) fn constant_number(expr: &Expr) -> Option<f32> {
     }
 }
 
-/// The engine type `expr` constructs from constant numbers, and those
+/// Returns the engine type `expr` constructs from constant numbers, and those
 /// numbers — `Vec3(0.0, 0.0, 1.0)`.
 pub(crate) fn engine_constant(expr: &Expr) -> Option<(&'static str, Vec<f32>)> {
     let Expr::Call {
@@ -265,8 +265,8 @@ pub(crate) fn engine_constant(expr: &Expr) -> Option<(&'static str, Vec<f32>)> {
     Some((ty, numbers.into_iter().collect::<Option<_>>()?))
 }
 
-/// Whether `expr` is data: a constant, an engine value of constant numbers,
-/// or an array or struct literal of those — at any depth.
+/// Returns whether `expr` is data: a constant, an engine value of constant
+/// numbers, or an array or struct literal of those — at any depth.
 pub(super) fn is_data_constant(expr: &Expr) -> bool {
     match expr {
         Expr::ArrayLit { elements, .. } => elements.iter().all(is_data_constant),
@@ -277,8 +277,8 @@ pub(super) fn is_data_constant(expr: &Expr) -> bool {
     }
 }
 
-/// Whether `expr` is a constant: a literal, a negated number, or an array or
-/// struct literal of constants.
+/// Returns whether `expr` is a constant: a literal, a negated number, or an
+/// array or struct literal of constants.
 pub(super) fn is_constant(expr: &Expr) -> bool {
     match expr {
         Expr::Int { .. }

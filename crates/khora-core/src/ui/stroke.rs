@@ -30,7 +30,7 @@ impl Stroke {
         width: 0.0,
     };
 
-    /// Convenience constructor.
+    /// Builds a stroke of `color` and `width`.
     #[inline]
     pub const fn new(color: LinearRgba, width: f32) -> Self {
         Self { color, width }

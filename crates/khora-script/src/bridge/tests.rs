@@ -49,6 +49,48 @@ khora_core::script_value_table!(define_samples);
 
 // ─── The round trips ────────────────────────────────────────────────────────
 
+/// **A value fits a slot of its own type**, an `int` a float-typed one, `null`
+/// an optional, a list of fitting items an array; nothing else does.
+#[test]
+fn fits_takes_a_value_of_the_slots_type_and_refuses_another() {
+    assert!(fits(&ScriptValue::Int(1), "int"));
+    assert!(fits(&ScriptValue::Int(1), "float"));
+    assert!(!fits(&ScriptValue::Float(1.0), "int"));
+    assert!(fits(&ScriptValue::Null, "int?"));
+    assert!(!fits(&ScriptValue::Null, "int"));
+    assert!(fits(
+        &ScriptValue::Array(vec![ScriptValue::Int(1)]),
+        "int[]"
+    ));
+    assert!(!fits(
+        &ScriptValue::Array(vec![ScriptValue::Bool(true)]),
+        "int[]"
+    ));
+    assert!(
+        fits(&ScriptValue::Unit, "Vec3"),
+        "nothing written fits anything"
+    );
+    assert!(
+        fits(&ScriptValue::Bool(true), ""),
+        "an unknown type takes anything"
+    );
+}
+
+/// **A value stored for a declared slot is inline when scalar, owned
+/// otherwise, and refused when it does not fit the slot.**
+#[test]
+fn to_persisted_as_stores_a_fitting_value_and_refuses_another() {
+    assert_eq!(
+        to_persisted_as(&ScriptValue::Int(3), "int", &[]),
+        Ok(Persisted::Scalar(Value::Int(3)))
+    );
+    assert_eq!(
+        to_persisted_as(&ScriptValue::Str("hi".to_owned()), "string", &[]),
+        Ok(Persisted::Owned(Owned::Str("hi".to_owned())))
+    );
+    assert!(to_persisted_as(&ScriptValue::Bool(true), "int", &[]).is_err());
+}
+
 /// **The guarantee.** Every regular value survives boundary → register →
 /// boundary unchanged.
 #[test]

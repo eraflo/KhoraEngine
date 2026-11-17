@@ -387,6 +387,7 @@ fn register_component_names_the_refused_path_in_its_panic() {
 
 #[test]
 fn lookup_by_name_is_a_map() {
+    const COUNT: usize = 10_000;
     // Every persistence registration is found by its name, and by each name it
     // had before.
     let mut checked = 0usize;
@@ -430,7 +431,6 @@ fn lookup_by_name_is_a_map() {
     }
 
     // And each of ten thousand run-time names.
-    const COUNT: usize = 10_000;
     let keys: Vec<_> = (0..COUNT)
         .map(|i| {
             declare(

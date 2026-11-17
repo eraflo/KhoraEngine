@@ -48,12 +48,12 @@ pub struct Span {
 }
 
 impl Span {
-    /// A span covering `[start, end)`.
+    /// Builds a span covering `[start, end)`.
     pub const fn new(start: u32, end: u32) -> Self {
         Self { start, end }
     }
 
-    /// This span `by` bytes further along.
+    /// Returns this span moved `by` bytes further along.
     pub const fn shifted(self, by: u32) -> Self {
         Self {
             start: self.start + by,
@@ -61,8 +61,8 @@ impl Span {
         }
     }
 
-    /// An empty span at `offset`, for errors that point between characters —
-    /// an unexpected end of file, say.
+    /// Builds an empty span at `offset`, for an error that points between
+    /// characters, such as an unexpected end of file.
     pub const fn empty(offset: u32) -> Self {
         Self {
             start: offset,
@@ -70,8 +70,9 @@ impl Span {
         }
     }
 
-    /// The smallest span covering both. Used to report a whole expression when
-    /// only its ends are known.
+    /// Returns the smallest span covering both.
+    ///
+    /// Used to report a whole expression when only its ends are known.
     pub fn to(self, other: Self) -> Self {
         Self {
             start: self.start.min(other.start),
@@ -79,12 +80,12 @@ impl Span {
         }
     }
 
-    /// Length in bytes.
+    /// Returns the length in bytes.
     pub const fn len(self) -> u32 {
         self.end.saturating_sub(self.start)
     }
 
-    /// Whether the span covers no characters.
+    /// Returns whether the span covers no characters.
     pub const fn is_empty(self) -> bool {
         self.end <= self.start
     }
@@ -121,17 +122,17 @@ impl SourceFile {
         }
     }
 
-    /// The file's name, as it appears in diagnostics.
+    /// Returns the file's name, as it appears in diagnostics.
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    /// The full source text.
+    /// Returns the full source text.
     pub fn text(&self) -> &str {
         &self.text
     }
 
-    /// The 1-based line and column of `offset`.
+    /// Returns the 1-based line and column of `offset`.
     ///
     /// Column counts *characters*, not bytes, so a line with accents does not
     /// report a column past what the reader can count.
@@ -151,7 +152,7 @@ impl SourceFile {
         (line_index as u32 + 1, column + 1)
     }
 
-    /// The text of the 1-based line `line`, without its terminator.
+    /// Returns the text of the 1-based line `line`, without its terminator.
     pub fn line_text(&self, line: u32) -> &str {
         let index = line.saturating_sub(1) as usize;
         // A line that does not exist yields nothing. Falling back to offset 0
@@ -207,23 +208,13 @@ pub struct Diagnostic {
     pub note: Option<String>,
 }
 
-/// Whether any of these stops the pipeline.
-///
-/// One definition, because six places asked it: the five compiler stages each
-/// spelled `iter().any(|d| d.severity == Severity::Error)` on their own result
-/// type, and `khora-io`'s driver spelled the element predicate a sixth time. A
-/// stage result is genuinely its own type; the question asked of it is not.
-pub fn has_errors(diagnostics: &[Diagnostic]) -> bool {
-    diagnostics.iter().any(Diagnostic::is_error)
-}
-
 impl Diagnostic {
-    /// Whether this one stops the pipeline.
+    /// Returns whether this diagnostic stops the pipeline.
     pub fn is_error(&self) -> bool {
         self.severity == Severity::Error
     }
 
-    /// An error at `span`.
+    /// Builds an error at `span`.
     pub fn error(message: impl Into<String>, span: Span) -> Self {
         Self {
             severity: Severity::Error,
@@ -233,7 +224,7 @@ impl Diagnostic {
         }
     }
 
-    /// A warning at `span`.
+    /// Builds a warning at `span`.
     pub fn warning(message: impl Into<String>, span: Span) -> Self {
         Self {
             severity: Severity::Warning,
@@ -289,6 +280,14 @@ impl Diagnostic {
         }
         out
     }
+}
+
+/// Returns whether any of these diagnostics stops the pipeline.
+///
+/// Every compiler stage and the project driver ask it of their own result
+/// type through this one function.
+pub fn has_errors(diagnostics: &[Diagnostic]) -> bool {
+    diagnostics.iter().any(Diagnostic::is_error)
 }
 
 #[cfg(test)]

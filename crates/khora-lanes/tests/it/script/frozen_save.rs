@@ -273,7 +273,7 @@ fn a_save_mid_await_resumes_after_every_encoding() {
 /// is abandoned, not resumed into whatever now sits where it stopped — and the
 /// behavior carries on.
 ///
-/// An edit alone no longer abandons a sequence: one that only touches other
+/// An edit alone never abandons a sequence: one that only touches other
 /// code resumes, and one inside its own code resumes at the same named site.
 /// What still abandons is the member the body started in being gone, here the
 /// handler that started the attack.

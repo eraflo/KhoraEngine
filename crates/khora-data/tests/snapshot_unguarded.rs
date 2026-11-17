@@ -66,7 +66,9 @@ impl<'de> Deserialize<'de> for Version {
 #[derive(Debug, Clone, PartialEq, Default, Component)]
 #[component(domain = Spatial)]
 pub struct Versioned {
+    /// The field whose trace stops.
     pub version: Version,
+    /// A plain field after it.
     pub scale: f32,
 }
 

@@ -26,6 +26,7 @@ use super::{Color, Rect};
 
 mod canvas;
 mod door;
+mod figure;
 mod sign;
 
 /// The films' backdrop, also the letterbox around the composition.
@@ -39,15 +40,6 @@ const LIGHT: [Color; 3] = [
     canvas::rgb(0xe7be68),
     canvas::rgb(0xc99a45),
 ];
-
-/// One of the brand films.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Film {
-    /// "Le signe" — the sign is traced, cut along its K, and closes.
-    Sign,
-    /// "La porte" — a plate, a light, a door, and the breath through it.
-    Door,
-}
 
 /// Chapters of [`Film::Sign`]: start time in seconds, label.
 const SIGN_CHAPTERS: [(f32, &str); 8] = [
@@ -70,8 +62,17 @@ const DOOR_CHAPTERS: [(f32, &str); 5] = [
     (27.2, "Fermeture"),
 ];
 
+/// One of the brand films.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Film {
+    /// "Le signe" — the sign is traced, cut along its K, and closes.
+    Sign,
+    /// "La porte" — a plate, a light, a door, and the breath through it.
+    Door,
+}
+
 impl Film {
-    /// Length of one full cycle, in seconds.
+    /// Returns the length of one full cycle, in seconds.
     pub fn cycle(self) -> f32 {
         match self {
             Film::Sign => 22.6,
@@ -79,7 +80,7 @@ impl Film {
         }
     }
 
-    /// The time, in seconds, of the frame that stands for the whole film when
+    /// Returns the time, in seconds, of the frame that stands for the whole film when
     /// motion is reduced.
     pub fn still(self) -> f32 {
         match self {
@@ -88,7 +89,7 @@ impl Film {
         }
     }
 
-    /// The film's chapters, in order: start time in seconds and label.
+    /// Returns the film's chapters, in order: start time in seconds and label.
     pub fn chapters(self) -> &'static [(f32, &'static str)] {
         match self {
             Film::Sign => &SIGN_CHAPTERS,
@@ -96,7 +97,7 @@ impl Film {
         }
     }
 
-    /// The end of the chapter playing at `t`: the start of the next chapter,
+    /// Returns the end of the chapter playing at `t`: the start of the next chapter,
     /// or [`Film::cycle`] for the last one. `t` is clamped into the cycle.
     pub fn chapter_end(self, t: f32) -> f32 {
         let t = t.clamp(0.0, self.cycle());
@@ -144,12 +145,12 @@ pub fn paint_faded(ui: &mut dyn UiBuilder, film: Film, rect: Rect, t: f32, opaci
     }
 }
 
-/// `v` clamped into 0..=1.
+/// Clamps `v` into 0..=1.
 fn cl(v: f32) -> f32 {
     v.clamp(0.0, 1.0)
 }
 
-/// Cubic ease in-out over 0..=1.
+/// Eases `v` in and out, cubically, over 0..=1.
 fn ez(v: f32) -> f32 {
     let v = cl(v);
     if v < 0.5 {
@@ -159,12 +160,12 @@ fn ez(v: f32) -> f32 {
     }
 }
 
-/// Ease out with exponent `k` over 0..=1.
+/// Eases `v` out with exponent `k` over 0..=1.
 fn eo(v: f32, k: f32) -> f32 {
     1.0 - (1.0 - cl(v)).powf(k)
 }
 
-/// The sign's four pieces in its ±200 space, `h` half the cut: left, top,
+/// Returns the sign's four pieces in its ±200 space, `h` half the cut: left, top,
 /// right, bottom.
 fn sign_pieces(h: f32) -> [Vec<[f32; 2]>; 4] {
     let a = h * std::f32::consts::SQRT_2;

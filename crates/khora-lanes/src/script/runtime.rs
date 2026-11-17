@@ -14,6 +14,7 @@
 
 //! What scripting keeps between frames, outside the `World`: the compiled
 //! programs and each instance's state, locked by the script lane as an input.
+//!
 //! See the book: concepts/scripting/under-the-hood.md, "Who owns what".
 
 use std::collections::HashMap;
@@ -29,13 +30,29 @@ use serde::{Deserialize, Serialize};
 
 pub use super::fuel_demand::FuelDemand;
 
+/// Instructions per millisecond, before anything has been measured.
+///
+/// Only the starting point: the first frame that runs corrects it.
+pub const INITIAL_RATE: f64 = 50_000.0;
+
+/// What a turn is priced at before one has run whole: a guess, corrected by
+/// the first turn that completes.
+pub const UNKNOWN_TURN: std::time::Duration = std::time::Duration::from_micros(2);
+
+/// How much of the measured rate one frame's observation may move it.
+///
+/// Smoothed rather than replaced, because one frame is a noisy sample: a
+/// scheduler hiccup would otherwise halve the budget for the frame after it,
+/// producing a stutter out of a measurement artefact.
+pub(super) const RATE_BLEND: f64 = 0.1;
+
 /// One behavior instance's state.
 #[derive(Debug, Default)]
 pub struct Instance {
     /// The module its behavior was compiled from.
     ///
     /// Recorded because an entity that leaves the view still has an `OnDespawn`
-    /// to run, and by then the view no longer says which program to run it
+    /// to run, and by then the view does not say any more which program to run it
     /// from — the instance has to carry the answer with it.
     pub module: String,
     /// Its fields — every slot its layout has, from its first turn on: built
@@ -141,8 +158,8 @@ pub struct Pending {
     pub body: Body,
     /// The fingerprint of the program the machine stopped in.
     ///
-    /// A hot reload that changes the program carries the machine into the new
-    /// code through [`resumption::carry`](super::resumption::carry), which
+    /// A hot reload that changes the program carries the machine into the reloaded
+    /// program through [`resumption::carry`](super::resumption::carry), which
     /// restamps this.
     pub fingerprint: u64,
     /// Game seconds the body has run without finishing since it started or
@@ -195,7 +212,7 @@ pub struct ReloadReport {
 }
 
 impl ReloadReport {
-    /// Whether anything was lost.
+    /// Returns whether anything was lost.
     pub fn lost_anything(&self) -> bool {
         !self.dropped.is_empty()
     }
@@ -243,22 +260,6 @@ pub struct ScriptRuntime {
     pub(super) shares: super::shares::FuelShares,
 }
 
-/// Instructions per millisecond, before anything has been measured.
-///
-/// Only the starting point: the first frame that runs corrects it.
-pub const INITIAL_RATE: f64 = 50_000.0;
-
-/// What a turn is priced at before one has run whole: a guess, corrected by
-/// the first turn that completes.
-pub const UNKNOWN_TURN: std::time::Duration = std::time::Duration::from_micros(2);
-
-/// How much of the measured rate one frame's observation may move it.
-///
-/// Smoothed rather than replaced, because one frame is a noisy sample: a
-/// scheduler hiccup would otherwise halve the budget for the frame after it,
-/// producing a stutter out of a measurement artefact.
-pub(super) const RATE_BLEND: f64 = 0.1;
-
 impl Default for ScriptRuntime {
     fn default() -> Self {
         Self {
@@ -284,12 +285,12 @@ impl ScriptRuntime {
     }
 
     /// Lends out the frame memory, for one frame's host.
-    pub fn take_arena(&mut self) -> Arena {
+    pub(crate) fn take_arena(&mut self) -> Arena {
         std::mem::take(&mut self.arena)
     }
 
     /// Takes the frame memory back, once the frame has ended and reset it.
-    pub fn return_arena(&mut self, arena: Arena) {
+    pub(crate) fn return_arena(&mut self, arena: Arena) {
         self.arena = arena;
     }
 

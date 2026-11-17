@@ -41,7 +41,7 @@ impl Atlas2D {
     ///
     /// `resolution` is in texels a side. A view the device refuses gives back
     /// the texture already made.
-    pub fn create(
+    pub(crate) fn create(
         device: &dyn GraphicsDevice,
         resolution: u32,
         max_lights: u32,

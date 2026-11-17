@@ -18,6 +18,17 @@
 
 use std::time::Duration;
 
+/// The smallest change a decision makes: below it, the multiplier holds.
+const MIN_STEP: f32 = 0.02;
+
+/// What the step comparisons forgive: a step built to be exactly `MIN_STEP`
+/// may come out a hair under it in `f32`.
+const STEP_TOLERANCE: f32 = 1e-4;
+
+/// How far under the multiplier it lowered from a raise stops while that
+/// multiplier is remembered: the plan just above it is the one that ran over.
+const CEILING_MARGIN: f32 = 0.06;
+
 /// Tuning of a [`FrameGovernor`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GovernorConfig {
@@ -69,17 +80,6 @@ impl Default for GovernorConfig {
     }
 }
 
-/// The smallest change a decision makes: below it, the multiplier holds.
-const MIN_STEP: f32 = 0.02;
-
-/// What the step comparisons forgive: a step built to be exactly `MIN_STEP`
-/// may come out a hair under it in `f32`.
-const STEP_TOLERANCE: f32 = 1e-4;
-
-/// How far under the multiplier it lowered from a raise stops while that
-/// multiplier is remembered: the plan just above it is the one that ran over.
-const CEILING_MARGIN: f32 = 0.06;
-
 /// Drives the budget multiplier so the frames' critical path settles under the
 /// setpoint, with headroom.
 ///
@@ -113,7 +113,7 @@ pub struct FrameGovernor {
 }
 
 impl FrameGovernor {
-    /// A governor of `cfg`, its multiplier at `cfg.output_max`.
+    /// Creates a governor of `cfg`, its multiplier at `cfg.output_max`.
     pub fn new(cfg: GovernorConfig) -> Self {
         Self {
             cfg,
@@ -252,7 +252,7 @@ impl FrameGovernor {
         self.over = 0;
     }
 
-    /// The multiplier in force.
+    /// Returns the multiplier in force.
     pub fn multiplier(&self) -> f32 {
         self.multiplier
     }

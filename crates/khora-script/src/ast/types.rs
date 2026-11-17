@@ -60,7 +60,7 @@ pub enum TypeRef {
 }
 
 impl TypeRef {
-    /// Where the type was written.
+    /// Returns where the type was written.
     pub fn span(&self) -> Span {
         match self {
             Self::Void => Span::empty(0),
@@ -71,7 +71,7 @@ impl TypeRef {
         }
     }
 
-    /// Whether this is an optional, which is what the nullability check keys
+    /// Returns whether this is an optional, what the nullability check keys
     /// off before allowing a value to be used.
     pub fn is_optional(&self) -> bool {
         matches!(self, Self::Optional { .. })

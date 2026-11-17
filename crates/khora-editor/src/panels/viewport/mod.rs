@@ -46,18 +46,6 @@ pub struct ViewportPanel {
     theme: UiTheme,
 }
 
-/// The status fields the stats card paints, copied so the state is not held
-/// locked while painting.
-struct StatsSnap {
-    fps: f32,
-    frame_time_ms: f32,
-    entity_count: usize,
-    memory_used_mb: f32,
-    draw_calls: u32,
-    triangles: u64,
-    vram_mb: f32,
-}
-
 impl ViewportPanel {
     /// Returns the viewport showing the texture behind `handle`.
     pub fn new(
@@ -638,6 +626,18 @@ impl ViewportPanel {
         let size = (viewport_size[0].min(viewport_size[1]) * 0.3).clamp(120.0, 320.0);
         khora_tool_ui::widgets::sign(ui, &self.theme, [cx, cy], size, 0.05);
     }
+}
+
+/// The status fields the stats card paints, copied so the state is not held
+/// locked while painting.
+struct StatsSnap {
+    fps: f32,
+    frame_time_ms: f32,
+    entity_count: usize,
+    memory_used_mb: f32,
+    draw_calls: u32,
+    triangles: u64,
+    vram_mb: f32,
 }
 
 #[cfg(test)]

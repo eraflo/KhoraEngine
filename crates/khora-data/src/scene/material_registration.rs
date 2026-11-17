@@ -73,11 +73,15 @@ pub struct MaterialRegistration {
 
 collect!(MaterialRegistration);
 
-/// A material written down: its type name and its record.
+/// Writes a material down: its type name and its record.
 ///
 /// No registration claiming the material is not a reason to lose it: it is
 /// written as a standard material of the same base color, the one thing every
 /// material has.
+///
+/// # Errors
+///
+/// When the material, or its fallback, cannot be written as a record.
 pub fn material_to_record(
     material: &dyn Material,
     references: &mut dyn ReferenceWriter,
@@ -97,7 +101,12 @@ pub fn material_to_record(
     Ok(("StandardMaterial", to_record(&fallback, references)?))
 }
 
-/// A material read back from its type name and record.
+/// Reads a material back from its type name and record.
+///
+/// # Errors
+///
+/// When no registered material type is named `type_name`, or the record does not
+/// read as that type.
 pub fn material_from_record(
     type_name: &str,
     record: &Record,
@@ -110,7 +119,7 @@ pub fn material_from_record(
         .and_then(|reg| (reg.stage)(record, references))
 }
 
-/// `to_record` for a concrete material type.
+/// Implements `to_record` for a concrete material type.
 fn concrete_to_record<M: Material + Serialize + 'static>(
     material: &dyn Material,
     references: &mut dyn ReferenceWriter,
@@ -121,7 +130,7 @@ fn concrete_to_record<M: Material + Serialize + 'static>(
         .map(|material| to_record(material, references))
 }
 
-/// `to_positional` for a concrete material type.
+/// Implements `to_positional` for a concrete material type.
 fn concrete_to_positional<M: Material + Serialize + 'static>(
     material: &dyn Material,
     out: &mut Vec<u8>,
@@ -133,7 +142,7 @@ fn concrete_to_positional<M: Material + Serialize + 'static>(
         .map(|material| super::positional::to_positional(material, out, references))
 }
 
-/// `from_positional` for a concrete material type.
+/// Implements `from_positional` for a concrete material type.
 fn concrete_from_positional<M: Material + DeserializeOwned + 'static>(
     bytes: &[u8],
     references: &mut dyn ReferenceReader,
@@ -142,18 +151,22 @@ fn concrete_from_positional<M: Material + DeserializeOwned + 'static>(
         .map(|material| Box::new(material) as Box<dyn Material>)
 }
 
-/// `schema` and `schema_complete` for a concrete material type.
+/// Implements `schema` and `schema_complete` for a concrete material type.
 fn concrete_schema<M: DeserializeOwned>() -> (u64, bool) {
     let schema = super::schema::schema_of::<M>();
     (schema.fingerprint(), schema.is_complete())
 }
 
-/// A material written by position: its type name, then its bytes — what
+/// Writes a material by position: its type name, then its bytes — what
 /// its own registration wrote.
 ///
 /// No registration claiming the material falls back as the record does: a
 /// standard material of the same base color.
-pub fn material_to_positional(
+///
+/// # Errors
+///
+/// When the material, or its fallback, cannot be written by position.
+pub(crate) fn material_to_positional(
     material: &dyn Material,
     references: &mut dyn ReferenceWriter,
 ) -> Result<(&'static str, Vec<u8>), RecordError> {
@@ -171,8 +184,13 @@ pub fn material_to_positional(
     Ok(("StandardMaterial", bytes))
 }
 
-/// The material `type_name` names, read from its positional bytes.
-pub fn material_from_positional(
+/// Returns the material `type_name` names, read from its positional bytes.
+///
+/// # Errors
+///
+/// When no registered material type is named `type_name`, or the bytes do not
+/// read as that type, consumed exactly.
+pub(crate) fn material_from_positional(
     type_name: &str,
     bytes: &[u8],
     references: &mut dyn ReferenceReader,
@@ -186,7 +204,7 @@ pub fn material_from_positional(
 
 /// Returns every registered material's schema, sorted by name, and whether
 /// each was traced in full: what a snapshot holding a material is read by.
-pub fn materials_schema() -> (String, bool) {
+pub(crate) fn materials_schema() -> (String, bool) {
     let mut materials: Vec<(&str, u64, bool)> = inventory::iter::<MaterialRegistration>
         .into_iter()
         .map(|reg| (reg.type_name, (reg.schema)(), (reg.schema_complete)()))
@@ -201,7 +219,7 @@ pub fn materials_schema() -> (String, bool) {
     (text, complete)
 }
 
-/// `stage` for a concrete material type.
+/// Implements `stage` for a concrete material type.
 fn concrete_stage<M: Material + Serialize + DeserializeOwned + 'static>(
     record: &Record,
     references: &mut dyn ReferenceReader,

@@ -44,12 +44,12 @@ impl TileGrid {
         }
     }
 
-    /// The number of tiles in the grid.
+    /// Returns the number of tiles in the grid.
     pub fn total(&self) -> u32 {
         self.tiles_x * self.tiles_y
     }
 
-    /// The `tile_info` uniform: `[tiles_x, tiles_y, tile_size, max_lights_per_tile]`.
+    /// Returns the `tile_info` uniform: `[tiles_x, tiles_y, tile_size, max_lights_per_tile]`.
     pub fn tile_info(&self, max_lights_per_tile: u32) -> [u32; 4] {
         [
             self.tiles_x,
@@ -59,7 +59,7 @@ impl TileGrid {
         ]
     }
 
-    /// The target's `[width, height]` in pixels, as the culling shader reads it.
+    /// Returns the target's `[width, height]` in pixels, as the culling shader reads it.
     pub fn screen_dimensions(&self) -> [f32; 2] {
         [self.target.width as f32, self.target.height as f32]
     }

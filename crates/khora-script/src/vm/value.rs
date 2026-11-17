@@ -71,6 +71,103 @@ pub enum Value {
     Obj(ObjRef),
 }
 
+impl Value {
+    /// Returns the integer inside, or `None`.
+    pub fn as_int(self) -> Option<i64> {
+        match self {
+            Self::Int(n) => Some(n),
+            _ => None,
+        }
+    }
+
+    /// Returns the float inside, widening an integer.
+    ///
+    /// The widening matches the one implicit conversion the language allows, so
+    /// the compiler does not have to emit a conversion for every literal used
+    /// in a float context.
+    pub fn as_float(self) -> Option<f32> {
+        match self {
+            Self::Float(x) => Some(x),
+            Self::Int(n) => Some(n as f32),
+            _ => None,
+        }
+    }
+
+    /// Returns the boolean inside, or `None`.
+    pub fn as_bool(self) -> Option<bool> {
+        match self {
+            Self::Bool(b) => Some(b),
+            _ => None,
+        }
+    }
+
+    /// Returns the entity inside, or `None`.
+    pub fn as_entity(self) -> Option<EntityId> {
+        match self {
+            Self::Entity(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// Returns the 3D vector inside, or `None`.
+    pub fn as_vec3(self) -> Option<khora_core::math::Vec3> {
+        match self {
+            Self::Vec3(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// Returns the string reference inside, or `None`.
+    ///
+    /// A *reference*, not the text: resolving it needs the program and the
+    /// arena, which a value on its own does not carry.
+    pub fn as_str_ref(self) -> Option<StrRef> {
+        match self {
+            Self::Str(reference) => Some(reference),
+            _ => None,
+        }
+    }
+
+    /// Returns the object reference inside, or `None`.
+    pub(crate) fn as_obj(self) -> Option<ObjRef> {
+        match self {
+            Self::Obj(reference) => Some(reference),
+            _ => None,
+        }
+    }
+
+    /// Returns whether this is text or an object — a value whose content lives
+    /// somewhere else and has to be carried out of a frame by value.
+    pub(crate) fn is_reference(self) -> bool {
+        matches!(self, Self::Str(_) | Self::Obj(_))
+    }
+
+    /// Returns whether this is the absent optional.
+    pub fn is_null(self) -> bool {
+        matches!(self, Self::Null)
+    }
+
+    /// Returns the short type name, for fault messages.
+    pub fn type_name(self) -> &'static str {
+        match self {
+            Self::Unit => "void",
+            Self::Int(_) => "int",
+            Self::Float(_) => "float",
+            Self::Bool(_) => "bool",
+            Self::Entity(_) => "Entity",
+            Self::Asset(_) => "asset",
+            Self::Str(_) => "string",
+            Self::Vec2(_) => "Vec2",
+            Self::Vec3(_) => "Vec3",
+            Self::Vec4(_) => "Vec4",
+            Self::Quat(_) => "Quat",
+            Self::Color(_) => "Color",
+            Self::Null => "null",
+            Self::Obj(_) => "array",
+        }
+    }
+}
+
 /// Where an array lives: the frame arena, or the machine itself while it is suspended.
 ///
 /// The same two places built text can be, for the same reasons (see
@@ -116,7 +213,7 @@ pub enum StrError {
     NotAString(&'static str),
     /// A constant index the running program does not have.
     NotInProgram,
-    /// Arena text that no longer exists — from an earlier frame.
+    /// Arena text that is gone — from an earlier frame.
     Gone,
 }
 
@@ -126,7 +223,7 @@ pub enum StrError {
 ///
 /// [`StrError::NotAString`] for a value that is not a string,
 /// [`StrError::NotInProgram`] for a literal `strings` lacks, and
-/// [`StrError::Gone`] for text no longer in `arena`.
+/// [`StrError::Gone`] for text gone from `arena`.
 pub fn resolve_str<'a>(
     value: Value,
     strings: &'a [String],
@@ -150,103 +247,6 @@ pub fn resolve_str<'a>(
         // Only a suspended machine holds one, and resuming rewrites it before
         // anything runs: met here, it names text nothing can reach.
         StrRef::Held(_) => Err(StrError::Gone),
-    }
-}
-
-impl Value {
-    /// The integer inside, or `None`.
-    pub fn as_int(self) -> Option<i64> {
-        match self {
-            Self::Int(n) => Some(n),
-            _ => None,
-        }
-    }
-
-    /// The float inside, widening an integer.
-    ///
-    /// The widening matches the one implicit conversion the language allows, so
-    /// the compiler does not have to emit a conversion for every literal used
-    /// in a float context.
-    pub fn as_float(self) -> Option<f32> {
-        match self {
-            Self::Float(x) => Some(x),
-            Self::Int(n) => Some(n as f32),
-            _ => None,
-        }
-    }
-
-    /// The boolean inside, or `None`.
-    pub fn as_bool(self) -> Option<bool> {
-        match self {
-            Self::Bool(b) => Some(b),
-            _ => None,
-        }
-    }
-
-    /// The entity inside, or `None`.
-    pub fn as_entity(self) -> Option<EntityId> {
-        match self {
-            Self::Entity(id) => Some(id),
-            _ => None,
-        }
-    }
-
-    /// The 3D vector inside, or `None`.
-    pub fn as_vec3(self) -> Option<khora_core::math::Vec3> {
-        match self {
-            Self::Vec3(v) => Some(v),
-            _ => None,
-        }
-    }
-
-    /// The string reference inside, or `None`.
-    ///
-    /// A *reference*, not the text: resolving it needs the program and the
-    /// arena, which a value on its own does not carry.
-    pub fn as_str_ref(self) -> Option<StrRef> {
-        match self {
-            Self::Str(reference) => Some(reference),
-            _ => None,
-        }
-    }
-
-    /// The object reference inside, or `None`.
-    pub fn as_obj(self) -> Option<ObjRef> {
-        match self {
-            Self::Obj(reference) => Some(reference),
-            _ => None,
-        }
-    }
-
-    /// Whether this is text or an object — a value whose content lives
-    /// somewhere else and has to be carried out of a frame by value.
-    pub fn is_reference(self) -> bool {
-        matches!(self, Self::Str(_) | Self::Obj(_))
-    }
-
-    /// Whether this is the absent optional.
-    pub fn is_null(self) -> bool {
-        matches!(self, Self::Null)
-    }
-
-    /// Short type name, for fault messages.
-    pub fn type_name(self) -> &'static str {
-        match self {
-            Self::Unit => "void",
-            Self::Int(_) => "int",
-            Self::Float(_) => "float",
-            Self::Bool(_) => "bool",
-            Self::Entity(_) => "Entity",
-            Self::Asset(_) => "asset",
-            Self::Str(_) => "string",
-            Self::Vec2(_) => "Vec2",
-            Self::Vec3(_) => "Vec3",
-            Self::Vec4(_) => "Vec4",
-            Self::Quat(_) => "Quat",
-            Self::Color(_) => "Color",
-            Self::Null => "null",
-            Self::Obj(_) => "array",
-        }
     }
 }
 

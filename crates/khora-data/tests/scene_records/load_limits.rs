@@ -16,6 +16,11 @@
 //! the deepest value a capture accepts, collisions beside a world, the largest
 //! created id, looping and long hierarchies, floats that are not finite.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn a thread to run a load on a stack of a set size"
+)]
+
 use khora_core::script::ScriptValue;
 use khora_data::ecs::{Camera, FieldKind, Name, Parent, SemanticDomain, Transform, World};
 
@@ -117,7 +122,7 @@ fn varint(out: &mut Vec<u8>, mut v: u64) {
 /// A field nested as deep as a capture accepts (an array 63 deep; 64 is
 /// refused by the capture) saves without
 /// error in every encoding — so it must load in every encoding. The text
-/// encoding writes it, then its JSON reader stops at serde_json's own
+/// encoding writes it, then its JSON reader stops at `serde_json`'s own
 /// recursion limit (128 nested arrays and maps, counting the five levels of
 /// the scene document around the value) below the record's.
 #[test]

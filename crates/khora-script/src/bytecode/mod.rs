@@ -60,7 +60,7 @@ pub struct Compiled {
 }
 
 impl Compiled {
-    /// Whether any diagnostic is an error.
+    /// Returns whether any diagnostic is an error.
     pub fn has_errors(&self) -> bool {
         crate::diagnostics::has_errors(&self.diagnostics)
     }
@@ -441,7 +441,7 @@ impl Compiler {
         self.code.len() - 1
     }
 
-    /// The index the next instruction will take — a jump target.
+    /// Returns the index the next instruction will take, a jump target.
     pub fn here(&self) -> usize {
         self.code.len()
     }
@@ -529,7 +529,7 @@ impl Compiler {
     }
 }
 
-/// The numeric shape a written type compiles to.
+/// Returns the numeric shape a written type compiles to.
 pub fn shape_of(ty: &TypeRef) -> Shape {
     match ty {
         // An optional holds its type's values or `null`, and only a value
@@ -557,7 +557,7 @@ pub fn shape_of(ty: &TypeRef) -> Shape {
     }
 }
 
-/// The numeric shape of a state slot — a parameter's or a field's declared type.
+/// Returns the numeric shape of a state slot: a parameter's or a field's declared type.
 ///
 /// Looked up by name rather than tracked alongside, because the slot list is
 /// what the layout records and the layout is what a reload compares. Two
@@ -576,7 +576,7 @@ fn shape_of_state_slot(decl: &crate::ast::StateDecl, slot: &str) -> Shape {
     Shape::Other
 }
 
-/// The compiled name, return shape and source span of a behavior member.
+/// Returns the compiled name, return shape and source span of a behavior member.
 ///
 /// The name comes from [`dispatch`](crate::dispatch), where its reader lives:
 /// a handler compiled under another spelling would never fire. The span is the
@@ -604,7 +604,7 @@ fn member_signature(
     }
 }
 
-/// The parameters and body of a member that compiles to a function.
+/// Returns the parameters and body of a member that compiles to a function.
 ///
 /// Answers `Some` for exactly the members [`member_signature`] names: an index
 /// counted for a body never emitted would shift every function after it.

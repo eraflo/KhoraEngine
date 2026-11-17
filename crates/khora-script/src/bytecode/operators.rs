@@ -158,7 +158,7 @@ impl Compiler {
         (dst, shape)
     }
 
-    /// A call to the engine-type operation `name` on `operands`, placed in
+    /// Compiles a call to the engine-type operation `name` on `operands`, placed in
     /// consecutive registers as every call's arguments are.
     ///
     /// The checker refused any operation the registry lacks, so a missing one
@@ -192,7 +192,7 @@ impl Compiler {
         (dst, shape)
     }
 
-    /// `a ?? b`: `a`, unless it is null — and only then is `b` evaluated.
+    /// Compiles `a ?? b`: `a`, unless it is null, and only then is `b` evaluated.
     ///
     /// The result has the optional's shape: a `float?` falls back to a float
     /// even when the fallback is written as an int, which is widened here so
@@ -254,7 +254,7 @@ impl Compiler {
     }
 }
 
-/// How an operand is named in an operator's engine function: an engine type by
+/// Returns how an operand is named in an operator's engine function: an engine type by
 /// its name, a number as `float`.
 fn operand_name(shape: Shape) -> &'static str {
     match shape {
@@ -265,7 +265,7 @@ fn operand_name(shape: Shape) -> &'static str {
     }
 }
 
-/// An arithmetic operator as a script writes it.
+/// Returns an arithmetic operator as a script writes it.
 fn operator_symbol(op: BinaryOp) -> &'static str {
     match op {
         BinaryOp::Add => "+",

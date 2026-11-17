@@ -303,7 +303,7 @@ fn render_component_card(
     }
 }
 
-/// The prefab's value of the component `type_name`.
+/// Returns the prefab's value of the component `type_name`.
 fn prefab_value_of<'a>(
     prefab: &'a InspectedPrefab,
     type_name: &str,
@@ -327,9 +327,10 @@ fn render_removed_component(
     prefab: &InspectedPrefab,
     type_name: &str,
 ) -> Vec<PropertyEdit> {
+    const ROW_H: f32 = 28.0;
+
     let (ui, theme) = (&mut *p.ui, p.theme);
     let Column { x, w: width } = column;
-    const ROW_H: f32 = 28.0;
     let y = ui.cursor_pos()[1];
     let size = theme.font_size_body;
     let text_y = y + (ROW_H - size) * 0.5 - 1.0;

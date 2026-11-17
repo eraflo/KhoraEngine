@@ -25,6 +25,15 @@ use khora_sdk::khora_core::script::ScriptCatalog;
 use khora_sdk::scripts::CompileTicket;
 use khora_sdk::Runtime;
 
+/// The text editor every installation of the system has, if it has one.
+const TEXT_EDITOR: Option<&str> = if cfg!(target_os = "windows") {
+    Some("notepad")
+} else if cfg!(target_os = "macos") {
+    Some("TextEdit")
+} else {
+    None
+};
+
 /// Brings the mounted scripts in line with the open project, called each
 /// frame with the project open now (`None` when none is).
 ///
@@ -81,15 +90,6 @@ pub(crate) fn open_script(path: &Path) -> std::io::Result<()> {
         None => Err(error),
     })
 }
-
-/// The text editor every installation of the system has, if it has one.
-const TEXT_EDITOR: Option<&str> = if cfg!(target_os = "windows") {
-    Some("notepad")
-} else if cfg!(target_os = "macos") {
-    Some("TextEdit")
-} else {
-    None
-};
 
 #[cfg(test)]
 mod tests;

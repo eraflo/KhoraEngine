@@ -48,7 +48,7 @@ pub(crate) struct Callee<'a> {
 }
 
 impl Callee<'_> {
-    /// How many parameters a call must give: those before the first default.
+    /// Counts the parameters a call must give: those before the first default.
     fn required(&self) -> usize {
         self.defaults
             .iter()
@@ -56,13 +56,13 @@ impl Callee<'_> {
             .unwrap_or(self.params.len())
     }
 
-    /// Whether a call written `args` / `labels` binds plainly: every
+    /// Returns whether a call written `args` / `labels` binds plainly: every
     /// parameter given, in order, none by name.
     pub fn plain(&self, args: &[Expr], labels: &[Option<Label>]) -> bool {
         labels.is_empty() && args.len() == self.params.len()
     }
 
-    /// "2 arguments", "1 to 3 arguments".
+    /// Describes how many arguments a call takes: "2 arguments", "1 to 3 arguments".
     pub fn arity(&self) -> String {
         let (required, all) = (self.required(), self.params.len());
         if required == all {
@@ -95,7 +95,7 @@ pub struct FnInfo {
 }
 
 impl FnInfo {
-    /// A script's own callable, from its parameters.
+    /// Builds a script's own callable, from its parameters.
     pub(crate) fn of_params(params: Vec<Ty>, result: Ty, declared: &[crate::ast::Param]) -> Self {
         Self {
             params,
@@ -106,7 +106,7 @@ impl FnInfo {
         }
     }
 
-    /// What a call to it is bound against.
+    /// Returns what a call to it is bound against.
     pub(crate) fn callee<'a>(&'a self, name: &'a str) -> Callee<'a> {
         Callee {
             name,
@@ -229,8 +229,8 @@ impl Checker {
         (complete && !callee.plain(args, labels)).then_some(bound)
     }
 
-    /// A name `callee` has no parameter for: its parameters listed, the near
-    /// one suggested.
+    /// Reports a name `callee` has no parameter for: its parameters listed, the
+    /// near one suggested.
     fn unknown_parameter(&mut self, callee: &Callee<'_>, name: &str, at: Span) {
         let listed = if callee.names.is_empty() {
             "it takes its arguments in order, unnamed".to_owned()
@@ -331,7 +331,7 @@ impl Checker {
     }
 }
 
-/// The edit distance between two names, for a suggestion.
+/// Returns the edit distance between two names, for a suggestion.
 fn distance(a: &str, b: &str) -> usize {
     let b: Vec<char> = b.chars().collect();
     let mut row: Vec<usize> = (0..=b.len()).collect();

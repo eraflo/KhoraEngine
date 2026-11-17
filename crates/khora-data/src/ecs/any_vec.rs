@@ -27,10 +27,10 @@ pub trait AnyVec: Any + Send + Sync {
     /// Performs a `swap_remove` on the underlying column, removing the element at `index`.
     fn swap_remove_any(&mut self, index: usize);
 
-    /// The number of rows the column holds.
+    /// Returns the number of rows the column holds.
     fn len(&self) -> usize;
 
-    /// Whether the column holds no row.
+    /// Returns whether the column holds no row.
     fn is_empty(&self) -> bool {
         self.len() == 0
     }

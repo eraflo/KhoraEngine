@@ -36,10 +36,6 @@ pub(super) struct Reader<'de, 'r> {
     depth: usize,
 }
 
-fn error(message: impl Into<String>) -> RecordError {
-    RecordError(message.into())
-}
-
 impl<'de, 'r> Reader<'de, 'r> {
     pub(super) fn new(input: &'de [u8], references: &'r mut dyn ReferenceReader) -> Self {
         Self {
@@ -128,7 +124,7 @@ impl<'de, 'r> Reader<'de, 'r> {
         Ok(count)
     }
 
-    /// A byte that is 0 or 1.
+    /// Reads a byte that is 0 or 1.
     fn flag(&mut self, what: &str) -> Result<bool, RecordError> {
         match self.byte()? {
             0 => Ok(false),
@@ -341,6 +337,10 @@ impl<'de> de::Deserializer<'de> for &mut Reader<'de, '_> {
             "a value written by position cannot be skipped without knowing its type",
         ))
     }
+}
+
+fn error(message: impl Into<String>) -> RecordError {
+    RecordError(message.into())
 }
 
 /// A known number of elements, in order.

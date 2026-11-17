@@ -129,7 +129,8 @@ impl World {
         world: *mut World,
         domain: crate::ecs::SemanticDomain,
     ) -> *mut u64 {
-        // A place projection: no reference to the world or its epochs is made.
+        // SAFETY: the caller keeps `world` valid and writable; a place
+        // projection makes no reference to the world or its epochs.
         unsafe { std::ptr::addr_of_mut!((*world).domain_epochs[domain.index()]) }
     }
 

@@ -12,15 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **The project compiler recompiles what a request names, as the pump once
-//! did inside the frame** — a pure function of the request and the files on
-//! disk: the modules named and every module importing one of them, a module
+//! **The project compiler recompiles what a request names** — a pure function
+//! of the request and the files on disk: the modules named and every module importing one of them, a module
 //! whose file is gone withdrawn, a module that does not compile kept (no
 //! reload, its diagnostics reported), what each recompiled module reads
 //! announced, and the record of what each root brings in kept up to date.
 //!
 //! Its mount-time counterpart, [`ProjectCompiler::compile_all`], compiles
 //! every module of a script folder.
+
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn threads to test concurrency"
+)]
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

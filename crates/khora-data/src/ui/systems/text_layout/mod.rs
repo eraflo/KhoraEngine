@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The `ui_text_layout` DataSystem: each `UiText` shaped into a
+//! The `ui_text_layout` `DataSystem`: each `UiText` shaped into a
 //! [`UiTextLayout`] through the runtime's `TextShaper`,
 //! and shaped again only when the text or its font changes.
 
@@ -66,7 +66,7 @@ pub(crate) fn ui_text_layout(
 
     // The texts to shape: their text changed, their font handle did, or
     // their font was registered again — the shaper holds one file per
-    // font, so every text in that font is now shaped with the new one.
+    // font, so every text in that font is shaped with the registered file.
     let mut dirty: HashSet<EntityId> = world
         .query::<(EntityId, Changed<UiText>)>()
         .since(ctx.since)
@@ -87,7 +87,7 @@ pub(crate) fn ui_text_layout(
     dirty.sort_by_key(|entity| (entity.index, entity.generation));
 
     // A layout outlives nothing it was made from: its text gone, or the
-    // font it needs no longer on the entity. Removing a component moves a
+    // font it needs gone from the entity. Removing a component moves a
     // row — it is not a write — so this is checked for every layout.
     let stale: Vec<EntityId> = world
         .query::<(EntityId, &UiTextLayout)>()

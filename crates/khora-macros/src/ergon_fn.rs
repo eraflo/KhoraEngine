@@ -39,7 +39,7 @@ struct Options {
     cost: Option<u64>,
 }
 
-pub fn ergon_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub(crate) fn ergon_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
     let options = match parse_options(attr) {
         Ok(options) => options,
         Err(error) => return error.to_compile_error().into(),
@@ -213,7 +213,7 @@ fn split_params(function: &ItemFn) -> syn::Result<(bool, Params<'_>)> {
     Ok((wants_context, params))
 }
 
-/// The `T` of a `Result<T, _>` return type, if that is what it is.
+/// Returns the `T` of a `Result<T, _>` return type, if that is what it is.
 fn unwrap_result(ty: &Type) -> Option<&Type> {
     let Type::Path(path) = ty else {
         return None;
@@ -232,7 +232,7 @@ fn unwrap_result(ty: &Type) -> Option<&Type> {
     })
 }
 
-/// Whether a parameter is the native context.
+/// Returns whether a parameter is the native context.
 ///
 /// By shape — a mutable reference to something named `NativeContext` — because
 /// that is all a macro can see. Getting it wrong is caught by the compiler
@@ -253,7 +253,7 @@ fn is_context(ty: &Type) -> bool {
         .is_some_and(|segment| segment.ident == "NativeContext")
 }
 
-/// `apply_damage` → `ApplyDamage`.
+/// Converts `snake_case` to `PascalCase`: `apply_damage` → `ApplyDamage`.
 ///
 /// Rust and Ergon disagree about how a function name looks, and the author
 /// should not have to write both. An explicit `name = "…"` wins when the

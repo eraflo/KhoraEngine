@@ -44,22 +44,6 @@ pub(crate) struct Lending<'a> {
     pub(crate) caution: f64,
 }
 
-/// A [`Lending`]'s entries by agent, each the first one naming it.
-pub(crate) struct ByAgent<'a> {
-    /// Each agent's offer, as it quoted it.
-    pub(crate) quoted: HashMap<AgentId, &'a Offer>,
-    /// Each agent's bid, corrected.
-    pub(crate) bids: HashMap<AgentId, &'a Bid>,
-    /// The row the round planned for each agent.
-    pub(crate) planned: HashMap<AgentId, StrategyId>,
-    /// The agents that keep the envelope they hold.
-    pub(crate) kept: HashSet<AgentId>,
-    /// What each kept agent holds, in its quoted units.
-    pub(crate) held: HashMap<AgentId, &'a Envelope>,
-    /// Each (agent, row)'s correction, as the round planned with it.
-    pub(crate) corrections: HashMap<(AgentId, StrategyId), &'a Correction>,
-}
-
 impl<'a> Lending<'a> {
     /// Returns the entries by the agent each names.
     fn by_agent(&self) -> ByAgent<'a> {
@@ -75,6 +59,22 @@ impl<'a> Lending<'a> {
             ),
         }
     }
+}
+
+/// A [`Lending`]'s entries by agent, each the first one naming it.
+pub(crate) struct ByAgent<'a> {
+    /// Each agent's offer, as it quoted it.
+    pub(crate) quoted: HashMap<AgentId, &'a Offer>,
+    /// Each agent's bid, corrected.
+    pub(crate) bids: HashMap<AgentId, &'a Bid>,
+    /// The row the round planned for each agent.
+    pub(crate) planned: HashMap<AgentId, StrategyId>,
+    /// The agents that keep the envelope they hold.
+    pub(crate) kept: HashSet<AgentId>,
+    /// What each kept agent holds, in its quoted units.
+    pub(crate) held: HashMap<AgentId, &'a Envelope>,
+    /// Each (agent, row)'s correction, as the round planned with it.
+    pub(crate) corrections: HashMap<(AgentId, StrategyId), &'a Correction>,
 }
 
 /// Converts `allocation`, decided in measured time, into each agent's quoted

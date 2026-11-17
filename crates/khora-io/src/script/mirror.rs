@@ -142,7 +142,7 @@ fn generate() -> String {
     source
 }
 
-/// One component, as a declaration or as the reason there is none.
+/// Writes one component as a declaration or as the reason there is none.
 fn declaration(registration: &ComponentRegistration) -> String {
     let name = registration.type_name;
 
@@ -200,7 +200,7 @@ fn declaration(registration: &ComponentRegistration) -> String {
     declaration
 }
 
-/// How a script may hold `registration`: as a `component` it writes, or as a
+/// Returns how a script may hold `registration`: as a `component` it writes, or as a
 /// `struct` value only — with the reason, which the module says above it.
 fn writable(registration: &ComponentRegistration) -> (&'static str, Option<String>) {
     let (placed, natives) = khora_script::native::world::PLACEMENT;
@@ -230,7 +230,7 @@ fn writable(registration: &ComponentRegistration) -> (&'static str, Option<Strin
     }
 }
 
-/// A component that has no declaration, and the reason.
+/// Writes a component that has no declaration, and the reason.
 fn not_mirrored(name: &str, reason: &str) -> String {
     format!("// {name} — not mirrored: {reason}.\n")
 }
@@ -262,6 +262,22 @@ mod tests {
     fn compile(source: &str) -> khora_script::CompileOutcome {
         let loader = PreludeLoader::new(MemoryLoader::new().with("main.erg", source));
         compile_module(&loader, "main.erg")
+    }
+
+    /// **The engine's component names are every registered one, sorted, each once.**
+    #[test]
+    fn engine_component_names_lists_every_registration_sorted_once() {
+        let names = engine_component_names();
+
+        assert!(names.windows(2).all(|pair| pair[0] < pair[1]), "{names:?}");
+        for registration in inventory::iter::<ComponentRegistration> {
+            assert!(
+                names.iter().any(|name| name == registration.type_name),
+                "`{}` is missing",
+                registration.type_name
+            );
+        }
+        assert!(names.iter().any(|name| name == "Transform"));
     }
 
     /// **The whole module type-checks.**

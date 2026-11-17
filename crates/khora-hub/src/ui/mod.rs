@@ -19,7 +19,7 @@ pub mod format;
 
 use khora_sdk::tool_ui::UiTheme;
 
-/// The hub's theme — the one switch every hub surface reads its look from.
+/// Returns the hub's theme — the one switch every hub surface reads its look from.
 ///
 /// The hub is light silver: the negative of the editor, which stays in the
 /// deep field, as the hub's icon is the negative of the editor's.

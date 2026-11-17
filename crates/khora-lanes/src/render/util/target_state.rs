@@ -46,7 +46,7 @@ pub(crate) fn scene_depth_state(
     })
 }
 
-/// The one colour target of a scene draw into a target of `key`, alpha
+/// Returns the one colour target of a scene draw into a target of `key`, alpha
 /// blended when the draw blends.
 pub(crate) fn scene_color_targets(key: TargetKey, blend: bool) -> Vec<ColorTargetStateDescriptor> {
     vec![ColorTargetStateDescriptor {
@@ -56,7 +56,7 @@ pub(crate) fn scene_color_targets(key: TargetKey, blend: bool) -> Vec<ColorTarge
     }]
 }
 
-/// The multisampling of a draw into a target of `key`.
+/// Returns the multisampling of a draw into a target of `key`.
 pub(crate) fn scene_multisample(key: TargetKey) -> MultisampleStateDescriptor {
     MultisampleStateDescriptor {
         count: sample_count(key.samples),

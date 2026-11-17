@@ -201,7 +201,7 @@ impl RecordingUiBuilder {
         )
     }
 
-    /// Every tooltip a widget attached with [`UiBuilder::tooltip_for_last`], in order.
+    /// Returns every tooltip a widget attached with [`UiBuilder::tooltip_for_last`], in order.
     ///
     /// All are recorded, whatever they are attached to: the recorder has no
     /// pointer to show them under.
@@ -209,12 +209,12 @@ impl RecordingUiBuilder {
         &self.tooltips
     }
 
-    /// Every recorded call, in paint order.
+    /// Returns every recorded call, in paint order.
     pub fn calls(&self) -> &[PaintCall] {
         &self.calls
     }
 
-    /// All filled rectangles, in paint order.
+    /// Returns all filled rectangles, in paint order.
     pub fn rects_filled(&self) -> Vec<&PaintCall> {
         self.calls
             .iter()
@@ -222,7 +222,7 @@ impl RecordingUiBuilder {
             .collect()
     }
 
-    /// All filled circles, in paint order.
+    /// Returns all filled circles, in paint order.
     pub fn circles_filled(&self) -> Vec<&PaintCall> {
         self.calls
             .iter()
@@ -230,7 +230,7 @@ impl RecordingUiBuilder {
             .collect()
     }
 
-    /// Every string painted, in paint order.
+    /// Returns every string painted, in paint order.
     pub fn texts(&self) -> Vec<&str> {
         self.calls
             .iter()
@@ -241,12 +241,12 @@ impl RecordingUiBuilder {
             .collect()
     }
 
-    /// `true` if any painted string contains `needle`.
+    /// Returns whether any painted string contains `needle`.
     pub fn painted_text(&self, needle: &str) -> bool {
         self.texts().iter().any(|t| t.contains(needle))
     }
 
-    /// The color of the text run whose content contains `needle`, if any.
+    /// Returns the color of the text run whose content contains `needle`, if any.
     pub fn text_color(&self, needle: &str) -> Option<[f32; 4]> {
         self.calls.iter().find_map(|c| match c {
             PaintCall::Text { text, color, .. } if text.contains(needle) => Some(*color),
@@ -254,7 +254,7 @@ impl RecordingUiBuilder {
         })
     }
 
-    /// The font family of the text run whose content contains `needle`.
+    /// Returns the font family of the text run whose content contains `needle`.
     pub fn text_family(&self, needle: &str) -> Option<FontFamilyHint> {
         self.calls.iter().find_map(|c| match c {
             PaintCall::Text { text, family, .. } if text.contains(needle) => Some(*family),
@@ -262,7 +262,7 @@ impl RecordingUiBuilder {
         })
     }
 
-    /// Every fill color used by a filled rect or circle, in paint order.
+    /// Returns every fill color used by a filled rect or circle, in paint order.
     pub fn fill_colors(&self) -> Vec<[f32; 4]> {
         self.calls
             .iter()
@@ -275,12 +275,12 @@ impl RecordingUiBuilder {
             .collect()
     }
 
-    /// `true` if some filled rect or circle used exactly this color.
+    /// Returns whether some filled rect or circle used exactly this color.
     pub fn used_fill(&self, color: [f32; 4]) -> bool {
         self.fill_colors().contains(&color)
     }
 
-    /// The `id_salt`s of every interactive region the widget allocated.
+    /// Returns the `id_salt`s of every interactive region the widget allocated.
     pub fn interact_ids(&self) -> Vec<&str> {
         self.calls
             .iter()

@@ -458,7 +458,7 @@ fn the_agent_runs_the_row_serving_all_the_work_when_it_fits() {
 /// frames.** Lent 1 ms, both lanes fit; serving all the work, the part lane is
 /// the cheaper of two equal results and runs. Its share then falls to a
 /// quarter — the frame's due work grew past what it serves — while its time
-/// stays at 100 µs: the whole lane is now the better quality and still fits.
+/// stays at 100 µs: the whole lane runs at the better quality and still fits.
 /// The agent hears of it as it hears of an impact that worsens at a flat
 /// price — on the frames that follow — not when the full quote ages out a
 /// second later.

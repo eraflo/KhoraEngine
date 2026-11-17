@@ -147,7 +147,7 @@ fn a_reparented_entity_keeps_its_place_among_its_new_siblings() {
 }
 
 /// **A base entity the designer deleted since the save.** The save patches
-/// `A`; the scene no longer has it. The patch is not a whole value — the
+/// `A`; the scene lacks it. The patch is not a whole value — the
 /// load must not build `A` out of it as if it were.
 #[test]
 fn a_patch_for_an_entity_the_scene_lost_is_not_loaded_as_a_whole_value() {

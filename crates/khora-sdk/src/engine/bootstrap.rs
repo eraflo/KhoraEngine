@@ -116,7 +116,7 @@ impl<A: EngineApp> EngineBootstrap<A> {
     /// Does nothing once [`register`](Self::register) has run.
     pub fn setup(&mut self) {
         if let Some(runtime) = self.runtime.as_ref() {
-            // The runtime is now fully populated, so the app can read any
+            // The runtime is fully populated here, so the app can read any
             // engine resource here. Mutation goes through `provide`.
             self.app.setup(&mut self.game_world, runtime);
         }

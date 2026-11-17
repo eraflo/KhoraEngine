@@ -17,7 +17,7 @@
 //! Kept across a hot reload or carried by a save, a body suspended by fuel or
 //! `await` resumes in the code as it is now — exactly, unchanged, rebuilt at
 //! its named site, or restarted from its member's entry. Only when its member
-//! is gone, or no longer takes what it was started with, is it abandoned: then
+//! is gone, or does not take what it was started with, is it abandoned: then
 //! `OnResumeFailed` hears which member it was, and every resume below exact is
 //! reported with its tier.
 

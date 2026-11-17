@@ -18,6 +18,11 @@ use khora_core::memory::*;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+/// The size, in bytes, above which an allocation is considered "large".
+const LARGE_ALLOCATION_THRESHOLD: usize = 1024 * 1024; // 1MB
+/// The size, in bytes, below which an allocation is considered "small".
+const SMALL_ALLOCATION_THRESHOLD: usize = 1024; // 1KB
+
 /// Moves `counter` to what `update` makes of it, as `AtomicUsize::fetch_update`
 /// does with relaxed orderings.
 ///
@@ -37,11 +42,6 @@ fn checked_update(
     }
     Err(current)
 }
-
-/// The size, in bytes, above which an allocation is considered "large".
-const LARGE_ALLOCATION_THRESHOLD: usize = 1024 * 1024; // 1MB
-/// The size, in bytes, below which an allocation is considered "small".
-const SMALL_ALLOCATION_THRESHOLD: usize = 1024; // 1KB
 
 /// A [`GlobalAlloc`] wrapper that counts every allocation in the counters of
 /// `khora_core::memory`.
@@ -70,6 +70,8 @@ impl<A> SaaTrackingAllocator<A> {
     }
 }
 
+// SAFETY: every block comes from and returns to `inner` unchanged; the
+// counters only observe sizes, so `inner`'s guarantees hold as they are.
 unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
     /// Allocates through the inner allocator and counts the block.
     ///
@@ -77,7 +79,8 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
     ///
     /// As [`GlobalAlloc::alloc`]: `layout` has a non-zero size.
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let ptr = self.inner.alloc(layout);
+        // SAFETY: the caller upholds `GlobalAlloc::alloc`'s contract for `layout`.
+        let ptr = unsafe { self.inner.alloc(layout) };
         if !ptr.is_null() {
             let size = layout.size();
             let result = checked_update(&CURRENTLY_ALLOCATED_BYTES, |current| {
@@ -122,7 +125,9 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
             BYTES_DEALLOCATED_LIFETIME.fetch_add(size as u64, Ordering::Relaxed);
         }
 
-        self.inner.dealloc(ptr, layout);
+        // SAFETY: the caller passes a block this allocator gave out, so `inner`
+        // allocated `ptr` with `layout`.
+        unsafe { self.inner.dealloc(ptr, layout) };
     }
 
     /// Allocates zeroed memory through the inner allocator and counts the block.
@@ -131,7 +136,8 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
     ///
     /// As [`GlobalAlloc::alloc_zeroed`].
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        let ptr = self.inner.alloc_zeroed(layout);
+        // SAFETY: the caller upholds `GlobalAlloc::alloc_zeroed`'s contract for `layout`.
+        let ptr = unsafe { self.inner.alloc_zeroed(layout) };
         if !ptr.is_null() {
             let size = layout.size();
             let result = checked_update(&CURRENTLY_ALLOCATED_BYTES, |current| {
@@ -165,7 +171,9 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
     /// As [`GlobalAlloc::realloc`].
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         let old_size = layout.size();
-        let new_ptr = self.inner.realloc(ptr, layout, new_size);
+        // SAFETY: the caller upholds `GlobalAlloc::realloc`'s contract, and
+        // `inner` allocated `ptr` with `layout`.
+        let new_ptr = unsafe { self.inner.realloc(ptr, layout, new_size) };
         if !new_ptr.is_null() {
             TOTAL_REALLOCATIONS.fetch_add(1, Ordering::Relaxed);
             let size_diff = new_size as isize - old_size as isize;

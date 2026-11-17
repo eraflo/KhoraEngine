@@ -119,7 +119,7 @@ pub struct AssetTile<'a> {
 
 /// Paints an asset tile, its thumbnail over its name, and returns what the
 /// user did to it.
-pub fn paint_asset_tile(
+pub(crate) fn paint_asset_tile(
     ui: &mut dyn UiBuilder,
     tile: AssetTile<'_>,
     theme: &UiTheme,
@@ -285,7 +285,7 @@ fn paint_dashed_frame(ui: &mut dyn UiBuilder, rect: [f32; 4], color: [f32; 4]) {
 ///
 /// It sits on the thumbnail's bottom-left corner, clear of the problems badge
 /// and the format glyph. Draw it after the tile, so the chip takes the click.
-pub fn paint_parts_chip(
+pub(crate) fn paint_parts_chip(
     ui: &mut dyn UiBuilder,
     id_salt: &str,
     tile_origin: [f32; 2],
@@ -340,7 +340,7 @@ pub fn paint_parts_chip(
 
 /// Paints the quiet band an open file and its parts sit on, one rect per
 /// grid row the run spans: `tiles` are the run's tile rects, in grid order.
-pub fn paint_parts_band(ui: &mut dyn UiBuilder, tiles: &[[f32; 4]], theme: &UiTheme) {
+pub(crate) fn paint_parts_band(ui: &mut dyn UiBuilder, tiles: &[[f32; 4]], theme: &UiTheme) {
     let mut row: Option<[f32; 4]> = None;
     let flush = |ui: &mut dyn UiBuilder, rect: [f32; 4]| {
         let pad = 3.0;

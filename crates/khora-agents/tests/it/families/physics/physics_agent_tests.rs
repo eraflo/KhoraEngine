@@ -39,11 +39,11 @@ fn make_runtime(
     Arc::new(physics_runtime(provider))
 }
 
-/// Runs the full physics tick `n` times: PreExtract DataSystems
-/// (physics_provider_sync — ECS → provider) → Substrate-Pass flows
+/// Runs the full physics tick `n` times: `PreExtract` `DataSystem`s
+/// (`physics_provider_sync` — ECS → provider) → Substrate-Pass flows
 /// (read-only projection) → CLAD descent (the agent drives the lane →
-/// provider.step) → Maintenance DataSystems (physics_world_writeback —
-/// sync_from_provider).
+/// `provider.step`) → Maintenance `DataSystem`s (`physics_world_writeback` —
+/// `sync_from_provider`).
 ///
 /// Mirrors what `khora-sdk::EngineCore::tick_with_runtime` does in
 /// production but without the renderer / scheduler scaffolding.

@@ -31,8 +31,8 @@ pub const RATE: &str = "Rate";
 /// The scheduling attributes.
 pub const SCHEDULING: [&str; 3] = [CRITICAL, BUDGET, RATE];
 
-/// Returns the schedule `attributes` declare, leaving out any argument
-/// [`report_schedule`] refuses.
+/// Returns the schedule `attributes` declare, leaving out any argument the
+/// checker refuses.
 pub fn schedule_of(attributes: &[Attribute]) -> Schedule {
     let first = |name: &str| attributes.iter().find(|attribute| attribute.name == name);
     Schedule {
@@ -51,7 +51,11 @@ pub fn schedule_of(attributes: &[Attribute]) -> Schedule {
 
 /// Reports `decl`'s scheduling refusals: a wrong argument, a repeat, a rate with
 /// a `FixedUpdate`, and on a system any attribute but these three.
-pub fn report_schedule(decl: &BehaviorDecl, system: bool, diagnostics: &mut Vec<Diagnostic>) {
+pub(crate) fn report_schedule(
+    decl: &BehaviorDecl,
+    system: bool,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
     if system {
         for attribute in &decl.attributes {
             if !SCHEDULING.contains(&attribute.name.as_str()) {
@@ -133,7 +137,7 @@ fn report_arguments(attribute: &Attribute, diagnostics: &mut Vec<Diagnostic>) {
     }
 }
 
-/// Whether `members` — the behavior's, or a state's — declare `FixedUpdate`.
+/// Returns whether `members` — the behavior's, or a state's — declare `FixedUpdate`.
 fn declares_fixed_update(members: &[BehaviorMember]) -> bool {
     members.iter().any(|member| match member {
         BehaviorMember::Method(method) => method.name == crate::lifecycle::FIXED_UPDATE.name,

@@ -26,6 +26,14 @@ use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 use swash::zeno::{Format, Vector};
 use swash::FontRef;
 
+/// Where a glyph's image comes from, in order: a colour outline, a colour
+/// bitmap, the plain outline.
+const SOURCES: [Source; 3] = [
+    Source::ColorOutline(0),
+    Source::ColorBitmap(StrikeWith::BestFit),
+    Source::Outline,
+];
+
 /// The UI glyph rasteriser over swash, built with `Font::BUILT_IN` registered
 /// with [`DEFAULT_FONT`](super::DEFAULT_FONT).
 ///
@@ -36,38 +44,6 @@ pub struct SwashRasterizer {
     // usable.
     state: Mutex<State>,
 }
-
-struct State {
-    fonts: HashMap<AssetUUID, Registered>,
-    scale: ScaleContext,
-}
-
-/// A registered font: its bytes, where the font starts in them, and how many
-/// glyphs it has.
-struct Registered {
-    data: Arc<[u8]>,
-    offset: u32,
-    key: swash::CacheKey,
-    glyph_count: u16,
-}
-
-impl Registered {
-    fn font(&self) -> FontRef<'_> {
-        FontRef {
-            data: &self.data,
-            offset: self.offset,
-            key: self.key,
-        }
-    }
-}
-
-/// Where a glyph's image comes from, in order: a colour outline, a colour
-/// bitmap, the plain outline.
-const SOURCES: [Source; 3] = [
-    Source::ColorOutline(0),
-    Source::ColorBitmap(StrikeWith::BestFit),
-    Source::Outline,
-];
 
 impl SwashRasterizer {
     /// Creates a rasteriser with `Font::BUILT_IN` already registered.
@@ -172,5 +148,29 @@ impl SwashRasterizer {
             kind,
             pixels: image.data,
         })
+    }
+}
+
+struct State {
+    fonts: HashMap<AssetUUID, Registered>,
+    scale: ScaleContext,
+}
+
+/// A registered font: its bytes, where the font starts in them, and how many
+/// glyphs it has.
+struct Registered {
+    data: Arc<[u8]>,
+    offset: u32,
+    key: swash::CacheKey,
+    glyph_count: u16,
+}
+
+impl Registered {
+    fn font(&self) -> FontRef<'_> {
+        FontRef {
+            data: &self.data,
+            offset: self.offset,
+            key: self.key,
+        }
     }
 }

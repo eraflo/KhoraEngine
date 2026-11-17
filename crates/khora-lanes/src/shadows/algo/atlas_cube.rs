@@ -47,7 +47,7 @@ impl AtlasCube {
     ///
     /// `face_resolution` is in texels a side. Whatever was made before a
     /// refusal is given back.
-    pub fn create(
+    pub(crate) fn create(
         device: &dyn GraphicsDevice,
         face_resolution: u32,
         max_cubes: u32,
@@ -97,7 +97,7 @@ impl AtlasCube {
     /// of its cube, `cube_layer`.
     ///
     /// A face whose view is missing is logged and gets no pass.
-    pub fn collect_faces(
+    pub(crate) fn collect_faces(
         &self,
         recorder: &mut PassRecorder<'_>,
         cube_layer: u32,

@@ -24,6 +24,11 @@
 //! Every signing key here is made in a temporary folder: no test reads or
 //! writes the user's home folder.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn threads to test concurrency"
+)]
+
 use std::path::Path;
 
 use khora_core::asset::AssetUUID;

@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! [`AssetEviction`]: releases, under a per-frame budget, the GPU meshes and
-//! materials no live entity references. The projection only ever inserts, and
-//! a cached entry's GPU resources are freed only by an explicit `destroy_*`.
+//! [`AssetEviction`]: releases the GPU meshes and materials no live entity references.
+//!
+//! It releases under a per-frame budget. The projection only ever inserts, and a
+//! cached entry's GPU resources are freed only by an explicit `destroy_*`.
 
 use std::collections::HashSet;
 
@@ -386,7 +387,7 @@ mod tests {
         cache_material(&store, uuid);
 
         // Spawn then despawn: the query skips the orphaned row, so the UUID is
-        // no longer live and becomes evictable.
+        // out of use and becomes evictable.
         let entity = world.spawn(HandleComponent {
             handle: AssetHandle::new(material_stub()),
             uuid,

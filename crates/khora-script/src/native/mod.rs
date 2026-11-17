@@ -63,7 +63,7 @@ pub use function_registry::NativeRegistration;
 pub use function_registry::NativeRegistry;
 pub use host::Host;
 
-/// The engine function a component of an engine type reads.
+/// Returns the engine function a component of an engine type reads.
 ///
 /// One place, because the declaration writes it and both the checker and the
 /// compiler look it up — and two spellings of the same convention would fail

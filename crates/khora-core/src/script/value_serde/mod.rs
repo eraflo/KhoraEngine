@@ -56,12 +56,22 @@ impl std::fmt::Display for ValueSerdeError {
 
 impl std::error::Error for ValueSerdeError {}
 
-/// `value`, written as a [`ScriptValue`].
+/// Writes `value` as a [`ScriptValue`].
+///
+/// # Errors
+///
+/// Fails on what a [`ScriptValue`] cannot hold: a map key that is not text,
+/// an asset identity or an entity that does not read as one.
 pub fn to_value<T: Serialize + ?Sized>(value: &T) -> Result<ScriptValue, ValueSerdeError> {
     value.serialize(ser::Writer)
 }
 
-/// A `T` read from `value`.
+/// Returns a `T` read from `value`.
+///
+/// # Errors
+///
+/// Fails when `value` does not have the shape of a `T`: another type, a
+/// number that does not fit, a field or variant it lacks.
 pub fn from_value<T: DeserializeOwned>(value: &ScriptValue) -> Result<T, ValueSerdeError> {
     T::deserialize(de::Reader(value))
 }

@@ -77,30 +77,6 @@ impl Default for GridLane {
     }
 }
 
-/// What the grid builds on the device.
-#[derive(Debug)]
-struct GridGpu {
-    camera: Block,
-    /// The pipeline and the target it was built for; `None` for a target
-    /// without depth, which the grid cannot test against.
-    pipeline: Option<(TargetKey, RenderPipelineId)>,
-}
-
-/// What the grid lane reads each frame: whether the host shows the grid, the
-/// camera it is seen from, and the target it is drawn into.
-#[derive(LaneInputs)]
-pub struct GridInputs<'f> {
-    /// The host's grid switch.
-    #[bus]
-    pub grid: &'f GridView,
-    /// The frame's views; the first is the camera the grid is seen from.
-    #[bus]
-    pub render_world: &'f RenderWorld,
-    /// The frame's colour and depth attachments.
-    #[frame]
-    pub target: Target,
-}
-
 impl Lane for GridLane {
     type Family = super::GridFamily;
     type Inputs<'f> = GridInputs<'f>;
@@ -219,7 +195,31 @@ impl Lane for GridLane {
     }
 }
 
-/// Group-0 camera layout: a single uniform buffer (vertex + fragment).
+/// What the grid builds on the device.
+#[derive(Debug)]
+struct GridGpu {
+    camera: Block,
+    /// The pipeline and the target it was built for; `None` for a target
+    /// without depth, which the grid cannot test against.
+    pipeline: Option<(TargetKey, RenderPipelineId)>,
+}
+
+/// What the grid lane reads each frame: whether the host shows the grid, the
+/// camera it is seen from, and the target it is drawn into.
+#[derive(LaneInputs)]
+pub struct GridInputs<'f> {
+    /// The host's grid switch.
+    #[bus]
+    pub grid: &'f GridView,
+    /// The frame's views; the first is the camera the grid is seen from.
+    #[bus]
+    pub render_world: &'f RenderWorld,
+    /// The frame's colour and depth attachments.
+    #[frame]
+    pub target: Target,
+}
+
+/// Returns the group-0 camera layout: a single uniform buffer (vertex + fragment).
 fn camera_layout_entries() -> Vec<BindGroupLayoutEntry> {
     crate::render::util::single_uniform_layout(
         khora_core::renderer::api::util::ShaderStageFlags::VERTEX
@@ -230,7 +230,7 @@ fn camera_layout_entries() -> Vec<BindGroupLayoutEntry> {
 
 /// Returns the grid's pipeline for a target of `key`'s formats.
 ///
-/// Alpha-blended, depth-tested (LessEqual) against the scene, whose depth it
+/// Alpha-blended, depth-tested (`LessEqual`) against the scene, whose depth it
 /// never writes.
 fn grid_pipeline_spec(key: TargetKey) -> PipelineSpec {
     use khora_core::renderer::api::pipeline::enums::{

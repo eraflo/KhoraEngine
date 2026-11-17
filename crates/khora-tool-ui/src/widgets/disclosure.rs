@@ -35,7 +35,7 @@ pub struct Group<'a> {
 }
 
 impl<'a> Group<'a> {
-    /// An expanded group with no category tag.
+    /// Builds an expanded group with no category tag.
     pub fn new(name: &'a str, glyph: Icon) -> Self {
         Self {
             glyph,
@@ -58,7 +58,7 @@ impl<'a> Group<'a> {
     }
 }
 
-/// A collapsible group header — the inspector's component headers.
+/// Draws a collapsible group header — the inspector's component headers.
 ///
 /// Deliberately **flat**: a chevron, an icon, a name, and a right-aligned
 /// category tag, over a hover plate. No card, no border, no nesting. A dense

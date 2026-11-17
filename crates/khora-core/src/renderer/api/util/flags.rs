@@ -40,7 +40,7 @@ impl ShaderStageFlags {
     /// reads better than "empty" at a binding's visibility.
     pub const NONE: Self = Self::EMPTY;
 
-    /// The flag set for a single stage.
+    /// Returns the flag set for a single stage.
     pub const fn from_stage(stage: ShaderStage) -> Self {
         match stage {
             ShaderStage::Vertex => Self::VERTEX,

@@ -15,6 +15,11 @@
 //! An [`Interest`]: each owner's announcement, their union, and the
 //! generation that moves with the union alone.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn threads to test concurrency"
+)]
+
 use std::sync::Arc;
 
 use super::{Demand, Interest};
@@ -219,7 +224,7 @@ fn the_generation_stays_when_the_union_does_not_change() {
 }
 
 /// **Owners announce from many threads at once**, as the hot-reload pump and
-/// the frame's DataSystems do: every announcement lands, the union is every
+/// the frame's `DataSystem`s do: every announcement lands, the union is every
 /// owner's last one, and a reader meanwhile always reads a sorted union.
 #[test]
 fn announcing_from_many_threads_ends_with_the_union_of_all() {

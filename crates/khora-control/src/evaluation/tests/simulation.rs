@@ -15,6 +15,11 @@
 //! The simulated engine and its scenarios: deterministic for a seed, run by
 //! every proposer set, and counting each frame over the setpoint once.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn threads to test concurrency"
+)]
+
 use super::*;
 
 use StrategyId::{Balanced, HighPerformance, LowPower};

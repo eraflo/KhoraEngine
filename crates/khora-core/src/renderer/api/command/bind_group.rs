@@ -78,7 +78,7 @@ pub struct BindGroupEntry<'a> {
 }
 
 impl<'a> BindGroupEntry<'a> {
-    /// Helper to create a BindGroupEntry for a buffer with default offset (0) and size (None).
+    /// Builds a `BindGroupEntry` for a buffer with default offset (0) and size (`None`).
     pub fn buffer(
         binding: u32,
         buffer: BufferId,

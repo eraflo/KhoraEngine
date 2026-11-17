@@ -14,8 +14,8 @@
 
 //! **A module that is gone leaves the runtime.** A `ScriptReload` with no
 //! program — its file deleted, its folder moved out of `scripts/`, its root
-//! unmounted — takes the module's program out of the lane: its instances no
-//! longer run, yet they are kept with their fields, so the module coming back
+//! unmounted — takes the module's program out of the lane: its instances stop
+//! running, yet they are kept with their fields, so the module coming back
 //! carries them on as a reload does. A version of it still waiting for its
 //! components is dropped with it, what it read leaves the demand, and each
 //! instance left without its module is reported as an error.

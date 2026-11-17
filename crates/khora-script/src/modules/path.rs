@@ -32,7 +32,7 @@ pub enum PathError {
 }
 
 impl PathError {
-    /// A message naming the rule.
+    /// Returns a message naming the rule.
     pub fn message(self) -> &'static str {
         match self {
             Self::Absolute => "an import path cannot be absolute",
@@ -101,7 +101,7 @@ pub fn normalise(path: &str) -> Result<String, PathError> {
     Ok(joined)
 }
 
-/// Whether the path starts with a Windows drive specifier.
+/// Returns whether the path starts with a Windows drive specifier.
 fn has_drive_letter(path: &str) -> bool {
     let mut chars = path.chars();
     matches!(

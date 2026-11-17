@@ -506,7 +506,7 @@ fn assert_none_refused(what: &str, refused: &[(SpotSample, f32, String)]) {
 
 // ─── Behaviour ──────────────────────────────────────────────────────────────
 
-/// **For a proper cone, the falloff is the smoothstep it has always been** —
+/// **For a proper cone, the falloff is the inner-to-outer smoothstep** —
 /// guarding the cone must not change how a usable spot lights. A proper cone
 /// is one whose inner and outer cosines are at least `1e-4` apart, which every
 /// cone below is by far.

@@ -45,7 +45,7 @@ impl Default for Correction {
 }
 
 impl Correction {
-    /// The factor a round plans with: `factor + caution × spread`.
+    /// Returns the factor a round plans with: `factor + caution × spread`.
     pub fn planned(&self, caution: f64) -> f64 {
         self.factor + caution * self.spread
     }

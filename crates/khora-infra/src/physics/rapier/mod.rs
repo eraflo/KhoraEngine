@@ -27,6 +27,12 @@ pub use world::RapierPhysicsWorld;
 
 // --- Internal Helpers ---
 
+/// Set when the low 64 bits hold an entity.
+///
+/// A flag rather than zero as absent: `EntityId { index: 0, generation: 0 }`,
+/// the first entity a fresh `World` hands out, packs to zero.
+const OWNED: u128 = 1 << 64;
+
 /// Converts a body handle to Rapier's, generation included.
 ///
 /// The conversions in both directions keep the generation, so a stale handle
@@ -52,12 +58,6 @@ pub(super) fn from_rapier_cl_handle(handle: rapier3d::geometry::ColliderHandle) 
     let (index, generation) = handle.into_raw_parts();
     ColliderHandle(SlotId { index, generation }.pack())
 }
-
-/// Set when the low 64 bits hold an entity.
-///
-/// A flag rather than zero as absent: `EntityId { index: 0, generation: 0 }`,
-/// the first entity a fresh `World` hands out, packs to zero.
-const OWNED: u128 = 1 << 64;
 
 /// Packs an entity into the `u128` Rapier carries on every collider.
 ///

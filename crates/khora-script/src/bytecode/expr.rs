@@ -318,7 +318,7 @@ impl Compiler {
         (dst, result)
     }
 
-    /// The value a slot of this shape starts at when nothing was written.
+    /// Returns the value a slot of this shape starts at when nothing was written.
     ///
     /// Zero rather than unset, because `int missed;` reads as a number that
     /// starts at nothing — and an unset slot faults on the first arithmetic
@@ -369,7 +369,7 @@ impl Compiler {
         (dst, Shape::Str)
     }
 
-    /// `&&` and `||`, which must not evaluate their right operand needlessly.
+    /// Compiles `&&` and `||`, which must not evaluate their right operand needlessly.
     pub(super) fn compile_short_circuit(
         &mut self,
         op: BinaryOp,

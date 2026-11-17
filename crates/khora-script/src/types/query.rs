@@ -50,8 +50,7 @@ enum Named {
 }
 
 impl Checker {
-    /// A `system`: checked as a behavior, with what it has no subject for
-    /// refused.
+    /// Checks a `system` as a behavior, refusing what it has no subject for.
     pub(super) fn check_system(&mut self, decl: &BehaviorDecl) {
         for member in &decl.members {
             match member {
@@ -139,7 +138,7 @@ impl Checker {
         }
     }
 
-    /// `foreach (Entity e, ref Health h, Regen? r) with A without B { … }`.
+    /// Checks `foreach (Entity e, ref Health h, Regen? r) with A without B { … }`.
     pub(super) fn check_query(
         &mut self,
         bindings: &[QueryBinding],
@@ -229,7 +228,7 @@ impl Checker {
         self.scopes.pop();
     }
 
-    /// `Entity e`: the row's entity, always there, bound once.
+    /// Checks `Entity e`: the row's entity, always there, bound once.
     fn check_entity_binding(&mut self, binding: &QueryBinding, optional: bool, bound: &mut bool) {
         if optional || binding.write {
             self.error_note(
@@ -247,8 +246,8 @@ impl Checker {
         *bound = true;
     }
 
-    /// A `ref` binding: a system's, of a component that is not a behavior's,
-    /// never optional.
+    /// Checks a `ref` binding: a system's, of a component that is not a
+    /// behavior's, never optional.
     fn check_ref_binding(&mut self, name: &str, optional: bool, span: Span) {
         if self.system.is_none() {
             self.error_note(
@@ -320,7 +319,7 @@ impl Checker {
     }
 }
 
-/// How a binding names its component.
+/// Returns how a binding names its component.
 fn kind(optional: bool) -> Named {
     if optional {
         Named::Optional
@@ -329,8 +328,8 @@ fn kind(optional: bool) -> Named {
     }
 }
 
-/// The subject-reading native `function` reaches, itself or through the free
-/// functions it calls — each followed once, so a cycle ends.
+/// Returns the subject-reading native `function` reaches, itself or through the
+/// free functions it calls — each followed once, so a cycle ends.
 fn reading<'c>(calls: &'c SubjectCalls, function: &str) -> Option<&'c str> {
     let mut seen: HashSet<&str> = HashSet::new();
     let mut next = vec![function];

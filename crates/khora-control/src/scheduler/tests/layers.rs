@@ -18,6 +18,11 @@
 //! holds a wake; it swaps a staged layer in at a frame start; and it builds
 //! its waves from the installed layers.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn threads to test concurrency"
+)]
+
 use super::allocations::{allocation, one_phase};
 use super::{offer_of, place_with, report_of, set_step, Doing};
 use crate::agent_registry::AgentRegistry;
@@ -147,7 +152,7 @@ impl Layer for Brush {
 // ─── A layered agent ────────────────────────────────────────────────────────
 
 /// A layered agent: it installs its first layer on its first wake, stages its
-/// next one when a wake says its quote no longer fits, and logs every wake.
+/// next one when a wake says its quote no more fits, and logs every wake.
 pub(super) struct Painter {
     name: &'static str,
     place: Arc<Mutex<Place>>,

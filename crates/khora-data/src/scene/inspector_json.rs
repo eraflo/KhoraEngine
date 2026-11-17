@@ -31,7 +31,7 @@ use super::record::{
 /// The key that marks a float JSON has no number for.
 const FLOAT_KEY: &str = "$float";
 
-/// `value` as the inspector's JSON; `None` when it cannot be written.
+/// Writes `value` as the inspector's JSON; `None` when it cannot be written.
 pub fn to_json<S: Serialize>(value: &S) -> Option<Value> {
     let mut json = serde_json::to_value(value).ok()?;
     // The record keeps every float as it is: it says which `null`s were one.
@@ -42,6 +42,10 @@ pub fn to_json<S: Serialize>(value: &S) -> Option<Value> {
 }
 
 /// Reads an `S` from the inspector's JSON, `{"$float": …}` markers included.
+///
+/// # Errors
+///
+/// When a marker is malformed, or the JSON does not read as an `S`, with the reason.
 pub fn from_json<S: Serialize + DeserializeOwned>(json: &Value) -> Result<S, String> {
     let mut floats = Vec::new();
     let plain = unmark(json, &mut Vec::new(), &mut floats)?;
@@ -137,7 +141,7 @@ fn mark_items(json: &mut Value, items: &[Record]) {
     }
 }
 
-/// Through the wrappers JSON does not show: a present optional, a newtype.
+/// Looks through the wrappers JSON does not show: a present optional, a newtype.
 fn transparent(record: &Record) -> &Record {
     match record {
         Record::Some(inner) => transparent(inner),
@@ -146,7 +150,7 @@ fn transparent(record: &Record) -> &Record {
     }
 }
 
-/// The marker text of a float with no JSON number.
+/// Returns the marker text of a float with no JSON number.
 fn non_finite(record: &Record) -> Option<&'static str> {
     let value = match *record {
         Record::F32(v) => f64::from(v),
@@ -164,7 +168,7 @@ fn non_finite(record: &Record) -> Option<&'static str> {
     }
 }
 
-/// `json` with every marker replaced by `0`, each marker's path and float
+/// Returns `json` with every marker replaced by `0`, each marker's path and float
 /// collected in `floats`.
 fn unmark(
     json: &Value,
@@ -269,7 +273,7 @@ fn set_in_fields(fields: &mut [(String, Record)], key: &str, rest: &[Step], floa
         .is_some_and(|(_, field)| set_float(field, rest, float))
 }
 
-/// `projection.Perspective.fov_y_radians`, `points.2.x`.
+/// Returns `path` as dotted text: `projection.Perspective.fov_y_radians`, `points.2.x`.
 fn path_text(path: &[Step]) -> String {
     path.iter()
         .map(|step| match step {

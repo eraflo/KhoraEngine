@@ -84,7 +84,7 @@ impl Block {
         }
     }
 
-    /// A uniform block holding one camera.
+    /// Creates a uniform block holding one camera.
     pub fn camera(
         device: &dyn GraphicsDevice,
         layout: BindGroupLayoutId,
@@ -100,7 +100,7 @@ impl Block {
     }
 
     /// Writes `view`'s view-projection and position into the block.
-    pub fn write_camera(
+    pub(crate) fn write_camera(
         &self,
         device: &dyn GraphicsDevice,
         view: &ExtractedView,

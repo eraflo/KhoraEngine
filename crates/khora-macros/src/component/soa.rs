@@ -19,7 +19,8 @@
 use quote::{quote, ToTokens};
 use syn::{DeriveInput, Fields};
 
-/// The `Component` impl carrying `script_methods`, and the `SoaLayout` impl if `layout_soa`.
+/// Returns the `Component` impl carrying `script_methods`, and the `SoaLayout` impl if
+/// `layout_soa`.
 ///
 /// `Err` holds what the derive emits instead when the struct cannot take the
 /// SoA layout: the `Component` impl and a `compile_error!`.
@@ -60,7 +61,7 @@ pub(super) fn component_impls(
                 compile_error!("#[component(layout = \"soa\")] (v1) supports only `f32` fields");
             });
         }
-        field_idents.push(f.ident.clone().unwrap());
+        field_idents.push(f.ident.clone().expect("a named field has an ident"));
     }
     let field_count = field_idents.len();
     let field_names: Vec<String> = field_idents.iter().map(|i| i.to_string()).collect();

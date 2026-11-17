@@ -119,7 +119,7 @@ impl AssetService {
     /// Takes every asset announced since the last call, for the engine to replace its copies.
     ///
     /// After an overflow, every asset this service ever served is returned. The
-    /// single consumer is the `asset_reload` DataSystem.
+    /// single consumer is the `asset_reload` `DataSystem`.
     pub fn take_changes(&self) -> HashSet<AssetUUID> {
         let mut changed: HashSet<AssetUUID> = self
             .changes
@@ -140,7 +140,7 @@ impl AssetService {
 
     /// Returns the stream of assets whose bytes changed, sent by [`invalidate`](Self::invalidate).
     ///
-    /// Drained by its single consumer, the `asset_reload` DataSystem.
+    /// Drained by its single consumer, the `asset_reload` `DataSystem`.
     pub fn changes(&self) -> &Channel<AssetChanged> {
         &self.changes
     }

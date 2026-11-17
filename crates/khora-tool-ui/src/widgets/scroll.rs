@@ -40,7 +40,7 @@ pub struct ScrollState {
 }
 
 impl ScrollState {
-    /// How far down the content is scrolled.
+    /// Returns how far down the content is scrolled.
     pub fn offset(&self) -> f32 {
         self.offset
     }
@@ -91,7 +91,7 @@ impl ScrollState {
         (viewport[3] * visible_frac).max(MIN_THUMB).min(viewport[3])
     }
 
-    /// Whether the content overflows its viewport.
+    /// Returns whether the content overflows its viewport.
     pub fn overflows(&self, viewport: Rect, content_height: f32) -> bool {
         content_height > viewport[3] + 0.5
     }
@@ -236,5 +236,16 @@ mod tests {
         let ui = RecordingUiBuilder::new(200.0, 100.0);
         state.update(&ui, VIEWPORT, 150.0);
         assert_eq!(state.offset(), 50.0, "clamped to the new content height");
+    }
+
+    #[test]
+    fn reset_scrolls_back_to_the_top() {
+        let mut state = ScrollState::default();
+        let ui = RecordingUiBuilder::new(200.0, 100.0).with_scroll(-40.0);
+        state.update(&ui, VIEWPORT, 400.0);
+        assert_eq!(state.offset(), 40.0);
+
+        state.reset();
+        assert_eq!(state.offset(), 0.0);
     }
 }

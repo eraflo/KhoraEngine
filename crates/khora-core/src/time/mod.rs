@@ -80,7 +80,7 @@ impl Time {
         }
     }
 
-    /// How fast the simulated world runs. `1.0` is real time, `0.0` is stopped.
+    /// Returns how fast the simulated world runs. `1.0` is real time, `0.0` is stopped.
     #[must_use]
     pub fn scale(&self) -> f32 {
         self.scale
@@ -94,7 +94,7 @@ impl Time {
         self.scale = scale.max(0.0);
     }
 
-    /// Whether the simulated world is advancing at all.
+    /// Returns whether the simulated world is advancing at all.
     #[must_use]
     pub fn is_running(&self) -> bool {
         self.scale > 0.0

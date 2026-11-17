@@ -20,3 +20,6 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 [dev-dependencies]
 # The dock tree's serde round trip is tested through JSON.
 serde_json = { workspace = true }
+
+[lints]
+workspace = true

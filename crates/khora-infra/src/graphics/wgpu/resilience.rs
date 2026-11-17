@@ -83,7 +83,7 @@ pub(crate) fn classify_acquire(
     }
 }
 
-/// Whether a surface of this size can be rendered: a zero axis (minimized window) cannot.
+/// Returns whether a surface of this size can be rendered: a zero axis (minimized window) cannot.
 ///
 /// The caller skips such a frame without logging an error.
 pub(crate) fn surface_is_renderable(width: u32, height: u32) -> bool {

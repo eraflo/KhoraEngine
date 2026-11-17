@@ -30,6 +30,11 @@ use super::atlas_2d::Atlas2D;
 use super::atlas_cube::AtlasCube;
 use super::pass;
 
+/// The cache label of the shadow camera (light view-projection) layout.
+const SHADOW_CAMERA_LAYOUT_LABEL: &str = "shadow_camera_layout";
+/// The cache label of the shadow model-uniform layout.
+const SHADOW_MODEL_LAYOUT_LABEL: &str = "shadow_model_layout";
+
 /// The resolutions and capacities of one level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Tier {
@@ -44,8 +49,8 @@ pub struct Tier {
 }
 
 impl Tier {
-    /// The graphics memory the level's atlases hold: four bytes a texel.
-    pub const fn atlas_bytes(&self) -> u64 {
+    /// Returns the graphics memory the level's atlases hold: four bytes a texel.
+    pub(crate) const fn atlas_bytes(&self) -> u64 {
         let side_2d = self.atlas_2d_resolution as u64;
         let side_cube = self.cube_face_resolution as u64;
         side_2d * side_2d * self.atlas_2d_max_lights as u64 * 4
@@ -177,7 +182,7 @@ impl ShadowGpu {
         })
     }
 
-    /// The bindings the lit lanes sample the atlases through.
+    /// Returns the bindings the lit lanes sample the atlases through.
     pub fn bindings(&self) -> ShadowGpuBindings {
         super::bindings::build_bindings(&self.atlas_2d, &self.atlas_cube, self.sampler)
     }
@@ -294,7 +299,7 @@ impl ShadowGpu {
     }
 }
 
-/// The comparison sampler both atlases are sampled through.
+/// Returns the comparison sampler both atlases are sampled through.
 pub(crate) fn shadow_sampler_descriptor(
 ) -> khora_core::renderer::api::resource::SamplerDescriptor<'static> {
     use khora_core::renderer::api::pipeline::enums::CompareFunction;
@@ -319,12 +324,7 @@ pub(crate) fn shadow_sampler_descriptor(
     }
 }
 
-/// The cache label of the shadow camera (light view-projection) layout.
-const SHADOW_CAMERA_LAYOUT_LABEL: &str = "shadow_camera_layout";
-/// The cache label of the shadow model-uniform layout.
-const SHADOW_MODEL_LAYOUT_LABEL: &str = "shadow_model_layout";
-
-/// The shadow camera layout: one dynamic-offset uniform buffer, vertex stage only.
+/// Returns the shadow camera layout: one dynamic-offset uniform buffer, vertex stage only.
 fn shadow_camera_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
     crate::render::util::single_uniform_layout(
         khora_core::renderer::api::util::ShaderStageFlags::VERTEX,
@@ -332,7 +332,7 @@ fn shadow_camera_layout_entries() -> Vec<khora_core::renderer::api::command::Bin
     )
 }
 
-/// The shadow model layout: the same shape as the camera's.
+/// Returns the shadow model layout: the same shape as the camera's.
 fn shadow_model_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
     shadow_camera_layout_entries()
 }

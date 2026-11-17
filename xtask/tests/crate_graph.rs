@@ -404,12 +404,6 @@ impl CrateGraph {
 /// (RULES §2b). Every dependency table is read — shipped, dev and per target.
 #[test]
 fn no_workspace_crate_has_an_optional_feature() {
-    let root = repo_root();
-    let workspace = read_manifest(&root.join("Cargo.toml"));
-    let workspace = workspace
-        .get("workspace")
-        .and_then(Value::as_table)
-        .unwrap_or_else(|| panic!("the root manifest has no [workspace]"));
     const ALL_TABLES: &[&str] = &[
         "dependencies",
         "dev-dependencies",
@@ -417,6 +411,13 @@ fn no_workspace_crate_has_an_optional_feature() {
         "build-dependencies",
         "build_dependencies",
     ];
+
+    let root = repo_root();
+    let workspace = read_manifest(&root.join("Cargo.toml"));
+    let workspace = workspace
+        .get("workspace")
+        .and_then(Value::as_table)
+        .unwrap_or_else(|| panic!("the root manifest has no [workspace]"));
     let mut read = 0;
     let mut problems = Vec::new();
     for dir in members(&root, workspace) {

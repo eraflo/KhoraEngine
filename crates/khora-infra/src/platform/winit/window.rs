@@ -47,6 +47,53 @@ impl WinitWindow {
     }
 }
 
+impl HasWindowHandle for WinitWindow {
+    /// Provides the raw window handle required by graphics backends.
+    fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
+        self.inner.window_handle()
+    }
+}
+
+impl HasDisplayHandle for WinitWindow {
+    /// Provides the raw display handle required by graphics backends.
+    fn display_handle(&self) -> Result<DisplayHandle<'_>, HandleError> {
+        self.inner.display_handle()
+    }
+}
+
+impl KhoraWindow for WinitWindow {
+    /// Returns the physical dimensions (width, height) of the window's inner area.
+    fn inner_size(&self) -> (u32, u32) {
+        let size = self.inner.inner_size();
+        (size.width, size.height)
+    }
+
+    /// Returns the display's scale factor, used for HiDPI rendering.
+    fn scale_factor(&self) -> f64 {
+        self.inner.scale_factor()
+    }
+
+    /// Requests that the window be redrawn.
+    fn request_redraw(&self) {
+        self.inner.request_redraw();
+    }
+
+    /// Clones a thread-safe, reference-counted handle to the window.
+    fn clone_handle_arc(&self) -> KhoraWindowHandle {
+        self.inner.clone()
+    }
+
+    /// Returns a stable, unique identifier for the window.
+    fn id(&self) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        self.inner.id().hash(&mut hasher);
+        hasher.finish()
+    }
+}
+
 /// A builder of [`WinitWindow`]s.
 pub struct WinitWindowBuilder {
     title: String,
@@ -139,49 +186,20 @@ impl Default for WinitWindowBuilder {
     }
 }
 
-impl HasWindowHandle for WinitWindow {
-    /// Provides the raw window handle required by graphics backends.
-    fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
-        self.inner.window_handle()
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::WinitWindowBuilder;
 
-impl HasDisplayHandle for WinitWindow {
-    /// Provides the raw display handle required by graphics backends.
-    fn display_handle(&self) -> Result<DisplayHandle<'_>, HandleError> {
-        self.inner.display_handle()
-    }
-}
-
-impl KhoraWindow for WinitWindow {
-    /// Returns the physical dimensions (width, height) of the window's inner area.
-    fn inner_size(&self) -> (u32, u32) {
-        let size = self.inner.inner_size();
-        (size.width, size.height)
-    }
-
-    /// Returns the display's scale factor, used for HiDPI rendering.
-    fn scale_factor(&self) -> f64 {
-        self.inner.scale_factor()
-    }
-
-    /// Requests that the window be redrawn.
-    fn request_redraw(&self) {
-        self.inner.request_redraw();
-    }
-
-    /// Clones a thread-safe, reference-counted handle to the window.
-    fn clone_handle_arc(&self) -> KhoraWindowHandle {
-        self.inner.clone()
-    }
-
-    /// Returns a stable, unique identifier for the window.
-    fn id(&self) -> u64 {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        let mut hasher = DefaultHasher::new();
-        self.inner.id().hash(&mut hasher);
-        hasher.finish()
+    /// **A window opens shown unless the builder hides it.**
+    #[test]
+    fn with_visible_sets_whether_the_window_opens_shown() {
+        assert!(WinitWindowBuilder::new().visible, "shown by default");
+        assert!(!WinitWindowBuilder::new().with_visible(false).visible);
+        assert!(
+            WinitWindowBuilder::new()
+                .with_visible(false)
+                .with_visible(true)
+                .visible
+        );
     }
 }

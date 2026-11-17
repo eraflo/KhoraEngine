@@ -159,22 +159,9 @@ impl WgpuCommandEncoder {
     ///
     /// An escape hatch for backend work the trait does not cover, such as
     /// timestamp profiling.
-    pub fn wgpu_encoder_mut(&mut self) -> Option<&mut wgpu::CommandEncoder> {
+    pub(crate) fn wgpu_encoder_mut(&mut self) -> Option<&mut wgpu::CommandEncoder> {
         self.encoder.as_mut()
     }
-}
-
-/// Returns the live encoder held in `slot`.
-///
-/// Takes the field rather than `&mut self`, so the returned pass can still
-/// borrow the sibling `device`.
-///
-/// # Panics
-///
-/// After `finish()`, which no caller can reach: it consumes the boxed encoder.
-fn encoder_mut(slot: &mut Option<wgpu::CommandEncoder>) -> &mut wgpu::CommandEncoder {
-    slot.as_mut()
-        .expect("command encoder used after finish() — passes must be created before finish()")
 }
 
 impl CommandEncoder for WgpuCommandEncoder {
@@ -378,4 +365,17 @@ impl CommandEncoder for WgpuCommandEncoder {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
+}
+
+/// Returns the live encoder held in `slot`.
+///
+/// Takes the field rather than `&mut self`, so the returned pass can still
+/// borrow the sibling `device`.
+///
+/// # Panics
+///
+/// After `finish()`, which no caller can reach: it consumes the boxed encoder.
+fn encoder_mut(slot: &mut Option<wgpu::CommandEncoder>) -> &mut wgpu::CommandEncoder {
+    slot.as_mut()
+        .expect("command encoder used after finish() — passes must be created before finish()")
 }

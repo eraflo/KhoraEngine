@@ -96,7 +96,10 @@ impl Lane for DrawLane {
         _gpu: &mut GpuSetup<'_>,
         key: Option<TargetKey>,
     ) -> Result<(), LaneError> {
-        self.log.lock().unwrap().push(Event::Prepare(key));
+        self.log
+            .lock()
+            .expect("the log is never poisoned")
+            .push(Event::Prepare(key));
         Ok(())
     }
 
@@ -117,7 +120,10 @@ impl Lane for DrawLane {
         _inputs: &mut DrawInputs,
         out: &mut DrawOutputs,
     ) -> Result<LaneReport, LaneError> {
-        self.log.lock().unwrap().push(Event::Record(level));
+        self.log
+            .lock()
+            .expect("the log is never poisoned")
+            .push(Event::Record(level));
         if self.fail_record {
             return Err(LaneError::InvalidInput {
                 expected: "a record that works",

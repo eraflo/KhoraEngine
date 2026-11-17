@@ -53,8 +53,8 @@ impl BuildPreset {
         }
     }
 
-    /// Compression scheme applied at pack time.
-    pub fn compression(self) -> CompressionKind {
+    /// Returns the compression scheme applied at pack time.
+    pub(crate) fn compression(self) -> CompressionKind {
         match self {
             Self::Debug => CompressionKind::None,
             Self::Release | Self::Shipping => CompressionKind::Lz4,
@@ -84,9 +84,9 @@ impl BuildTarget {
         }
     }
 
-    /// Sub-directory name for the staged build (e.g. `windows` →
+    /// Returns the sub-directory name for the staged build (e.g. `windows` →
     /// `<project>/dist/windows/`).
-    pub fn dir_name(self) -> &'static str {
+    pub(crate) fn dir_name(self) -> &'static str {
         match self {
             Self::Windows => "windows",
             Self::Linux => "linux",
@@ -94,7 +94,8 @@ impl BuildTarget {
         }
     }
 
-    /// Filename suffix appended to the runtime binary on this target.
+    /// Returns the filename suffix appended to the runtime binary on this
+    /// target.
     pub fn exe_suffix(self) -> &'static str {
         match self {
             Self::Windows => ".exe",
@@ -135,13 +136,13 @@ pub struct BuildOutcome {
 
 /// Stages a build for the host OS with the **Release** preset, signed with
 /// the user's key.
-pub fn build_for_host(pvfs: &ProjectVfs, project_name: &str) -> Result<BuildOutcome> {
+pub(crate) fn build_for_host(pvfs: &ProjectVfs, project_name: &str) -> Result<BuildOutcome> {
     let target = BuildTarget::host();
     let signer = user_signer()?;
     build_for_target(pvfs, project_name, target, BuildPreset::Release, &signer)
 }
 
-/// The key the user's builds are signed with, kept in
+/// Loads the key the user's builds are signed with, kept in
 /// `user_dirs::signing_dir` (made on the first build, never in a project).
 fn user_signer() -> Result<PackSigner> {
     let dir = khora_sdk::user_dirs::signing_dir(&khora_sdk::user_dirs::process_env)
@@ -153,7 +154,7 @@ fn user_signer() -> Result<PackSigner> {
 ///
 /// A non-host target fails at the runtime-binary lookup, or is refused by
 /// [`stage_with_cargo_build`]: there is no cross-compilation.
-pub fn build_for_target(
+pub(crate) fn build_for_target(
     pvfs: &ProjectVfs,
     project_name: &str,
     target: BuildTarget,
@@ -504,7 +505,7 @@ fn engine_cache_dir() -> Option<PathBuf> {
     }
 }
 
-/// Recursive file search. Returns `Some(path)` for the first hit.
+/// Searches `dir` recursively and returns the first file named `filename`.
 fn find_file_recursive(dir: &Path, filename: &str) -> Option<PathBuf> {
     let direct = dir.join(filename);
     if direct.is_file() {

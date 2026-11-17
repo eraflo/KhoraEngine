@@ -36,7 +36,7 @@ impl RegistryKind for ResourceKind {
 /// principally data (with at most trivial accessors), not a service.
 ///
 /// **Admission criteria.** A resource lives here when it is principally
-/// data with trivial accessors (HashMaps, settings, caches), is shared
+/// data with trivial accessors (`HashMap`s, settings, caches), is shared
 /// between several lanes / agents / data systems but has no rich business
 /// API, and is *long-lived* (per-tick state belongs in
 /// [`OutputDeck`](crate::lane::OutputDeck) or the frame's own values).

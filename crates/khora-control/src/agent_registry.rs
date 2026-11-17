@@ -60,7 +60,7 @@ impl AgentRegistry {
         }
     }
 
-    /// The module the agent `id` comes from, if one was recorded.
+    /// Returns the module the agent `id` comes from, if one was recorded.
     pub fn origin(&self, id: AgentId) -> Option<&'static str> {
         self.origins
             .iter()
@@ -130,7 +130,7 @@ impl AgentRegistry {
 
     /// Returns an iterator over the agents whose family is not in
     /// `inactive`, in priority order (highest first).
-    pub fn iter_active<'a>(
+    pub(crate) fn iter_active<'a>(
         &'a self,
         inactive: &'a BTreeSet<AgentId>,
     ) -> impl Iterator<Item = &'a Arc<Mutex<dyn Agent>>> + 'a {
@@ -140,7 +140,7 @@ impl AgentRegistry {
             .map(|e| &e.agent)
     }
 
-    /// The agents whose family is not in `inactive`, each with its id, in
+    /// Returns the agents whose family is not in `inactive`, each with its id, in
     /// priority order (highest first).
     pub fn iter_active_with_ids<'a>(
         &'a self,

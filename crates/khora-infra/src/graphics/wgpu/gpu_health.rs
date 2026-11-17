@@ -43,12 +43,12 @@ impl GpuHealth {
         self.out_of_memory.store(true, Ordering::SeqCst);
     }
 
-    /// Whether the device has been reported lost.
+    /// Returns whether the device has been reported lost.
     pub(crate) fn is_device_lost(&self) -> bool {
         self.device_lost.load(Ordering::SeqCst)
     }
 
-    /// Whether the device has reported an out-of-memory condition.
+    /// Returns whether the device has reported an out-of-memory condition.
     pub(crate) fn is_out_of_memory(&self) -> bool {
         self.out_of_memory.load(Ordering::SeqCst)
     }

@@ -27,7 +27,7 @@ use khora_tool_ui::widgets::{self};
 const BAND_H: f32 = 30.0;
 
 /// Renders the band for `entity`, a part of the instance `prefab` describes.
-pub fn render_instance_band(
+pub(crate) fn render_instance_band(
     ui: &mut dyn UiBuilder,
     entity: EntityId,
     prefab: &InspectedPrefab,

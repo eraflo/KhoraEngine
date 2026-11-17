@@ -36,6 +36,10 @@ const TUPLE: Key = ("tuple", "");
 const SEQ: Key = ("seq", "");
 pub(super) const MAP: Key = ("map", "");
 
+/// The placeholder lengths a byte string is answered with, in turn: none,
+/// then the lengths fixed-size values are made of.
+const BYTE_LENGTHS: [usize; 9] = [0, 16, 32, 8, 4, 12, 20, 64, 1];
+
 /// Why a run stopped.
 #[derive(Debug)]
 pub(super) enum TraceError {
@@ -68,7 +72,7 @@ impl de::Error for TraceError {
 /// in every run, whatever the variants chosen, and different for any two places.
 pub(super) type Slot = u64;
 
-/// The slot of position `index` of `owner` / `variant` under `parent`.
+/// Returns the slot of position `index` of `owner` / `variant` under `parent`.
 pub(super) fn child(parent: Slot, owner: Key, variant: &'static str, index: usize) -> Slot {
     let mut hasher = DefaultHasher::new();
     (parent, owner, variant, index).hash(&mut hasher);
@@ -91,7 +95,7 @@ pub(super) struct State {
 }
 
 impl State {
-    /// A measure that grows whenever a run learns something.
+    /// Returns a measure that grows whenever a run learns something.
     fn learned(&self) -> usize {
         self.containers.len()
             + self.none_at.len()
@@ -108,7 +112,7 @@ impl State {
                 .sum::<usize>()
     }
 
-    /// Whether some variant is still worth a run.
+    /// Returns whether some variant is still worth a run.
     fn pending(&self) -> bool {
         self.enums
             .values()
@@ -136,12 +140,12 @@ impl Progress {
         }
     }
 
-    /// A variant traced to the end: one an enum met inside itself can take.
+    /// Returns a variant traced to the end: one an enum met inside itself can take.
     fn ending(&self) -> Option<usize> {
         self.payloads.iter().position(Option::is_some)
     }
 
-    /// The next variant no run has traced yet, if one is worth a try.
+    /// Returns the next variant no run has traced yet, if one is worth a try.
     fn next_untraced(&self) -> Option<usize> {
         let untraced = |index: &usize| self.payloads[*index].is_none();
         (0..self.variants.len())
@@ -219,19 +223,6 @@ pub(super) struct Tracer<'s> {
     pub(super) out: Format,
     /// The last placeholder answered: where, and how many it could have been.
     answered: Option<(Slot, usize)>,
-}
-
-/// The placeholder lengths a byte string is answered with, in turn: none,
-/// then the lengths fixed-size values are made of.
-const BYTE_LENGTHS: [usize; 9] = [0, 16, 32, 8, 4, 12, 20, 64, 1];
-
-/// How a container was entered.
-#[derive(Clone, Copy)]
-enum Entered {
-    /// Traced, and written down.
-    Traced,
-    /// Met again inside itself: read in shadow.
-    Shadow,
 }
 
 impl Tracer<'_> {
@@ -312,11 +303,6 @@ impl Tracer<'_> {
         self.slot = parent;
         result
     }
-}
-
-/// A container's identity: its serde name and the visitor reading it.
-fn key<V>(name: &'static str) -> Key {
-    (name, std::any::type_name::<V>())
 }
 
 impl<'de> de::Deserializer<'de> for &mut Tracer<'_> {
@@ -598,4 +584,18 @@ impl<'de> de::Deserializer<'de> for &mut Tracer<'_> {
         self.out = Format::Named(key);
         result
     }
+}
+
+/// How a container was entered.
+#[derive(Clone, Copy)]
+enum Entered {
+    /// Traced, and written down.
+    Traced,
+    /// Met again inside itself: read in shadow.
+    Shadow,
+}
+
+/// Returns a container's identity: its serde name and the visitor reading it.
+fn key<V>(name: &'static str) -> Key {
+    (name, std::any::type_name::<V>())
 }

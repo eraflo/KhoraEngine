@@ -97,6 +97,18 @@ fn a_fingerprint_is_stable() {
     );
 }
 
+/// A schema traced once is kept in its cell: the second call returns it without tracing.
+#[test]
+fn traced_once_traces_into_its_cell_and_keeps_it() {
+    let cell = std::sync::OnceLock::new();
+    let schema = schema_of::<Pinned>();
+    let expected = (schema.fingerprint(), schema.is_complete());
+
+    assert_eq!(traced_once::<Pinned>(&cell, "Pinned"), expected);
+    assert_eq!(cell.get(), Some(&expected));
+    assert_eq!(traced_once::<Pinned>(&cell, "Pinned"), expected);
+}
+
 mod base {
     use super::*;
     #[derive(Deserialize)]

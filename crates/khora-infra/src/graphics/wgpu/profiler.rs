@@ -52,13 +52,13 @@ impl WgpuTimestampProfiler {
     ///
     /// Call [`set_timestamp_period`](Self::set_timestamp_period) next, with the queue's period.
     pub fn new(device: &wgpu::Device) -> Option<Self> {
+        const RESOLVE_BUFFER_SIZE: u64 = 32; // 4 * u64 timestamps
         let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
             label: Some("Khora GPU Timestamp QuerySet"),
             ty: wgpu::QueryType::Timestamp,
             count: 4,
         });
 
-        const RESOLVE_BUFFER_SIZE: u64 = 32; // 4 * u64 timestamps
         let resolve_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Khora GPU Timestamp Resolve Buffer"),
             size: RESOLVE_BUFFER_SIZE,
@@ -103,7 +103,7 @@ impl WgpuTimestampProfiler {
         log::info!("GPU Timestamp Profiler period set to {:.3} ns.", period_ns);
     }
 
-    /// The timestamp writes of the pass opening the frame: queries 0 and 1.
+    /// Returns the timestamp writes of the pass opening the frame: queries 0 and 1.
     pub(crate) fn compute_pass_a_timestamp_writes(&self) -> wgpu::ComputePassTimestampWrites<'_> {
         wgpu::ComputePassTimestampWrites {
             query_set: &self.query_set,
@@ -112,7 +112,7 @@ impl WgpuTimestampProfiler {
         }
     }
 
-    /// The timestamp writes of the pass closing the frame: queries 2 and 3.
+    /// Returns the timestamp writes of the pass closing the frame: queries 2 and 3.
     pub(crate) fn compute_pass_b_timestamp_writes(&self) -> wgpu::ComputePassTimestampWrites<'_> {
         wgpu::ComputePassTimestampWrites {
             query_set: &self.query_set,
@@ -123,7 +123,7 @@ impl WgpuTimestampProfiler {
 
     /// Waits for the device, then unmaps any staging buffer still pending:
     /// dropping a mapped buffer panics.
-    pub fn shutdown(&mut self, device: &WgpuDevice) {
+    pub(crate) fn shutdown(&mut self, device: &WgpuDevice) {
         log::debug!("Shutting down WgpuTimestampProfiler...");
         device.poll_device_blocking();
 

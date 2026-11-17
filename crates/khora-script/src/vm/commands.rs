@@ -25,6 +25,7 @@
 //! projection of what the loaded programs read, with this frame's own writes
 //! over it — every write is observed as it is queued.
 
+use khora_core::asset::AssetUUID;
 use khora_core::math::Quaternion;
 use khora_core::script::{ComponentName, ScriptValue, WorldCommand};
 
@@ -73,25 +74,7 @@ impl Machine {
                 entity,
                 component,
                 ..
-            } => {
-                let entity = self.entity_at(entity)?;
-                let name = program.string(component).ok_or(Fault::BadString)?;
-                let copy = match host.components.get(name, entity) {
-                    None => Value::Null,
-                    Some(read) => {
-                        let unreadable = |reason: String| Fault::Unreadable {
-                            component: name.to_owned(),
-                            reason,
-                        };
-                        let owned = crate::bridge::to_owned_as(&read, name, &program.structs)
-                            .map_err(|error| unreadable(error.to_string()))?;
-                        host.arena
-                            .import(&owned, program)
-                            .map_err(|error| unreadable(format!("{error:?}")))?
-                    }
-                };
-                self.write(dst, copy)?;
-            }
+            } => self.get_component(program, host, dst, entity, component)?,
             Instruction::HasComponent {
                 dst,
                 entity,
@@ -101,23 +84,7 @@ impl Machine {
                 let name = program.string(component).ok_or(Fault::BadString)?;
                 self.write(dst, Value::Bool(host.components.has(name, entity)))?;
             }
-            Instruction::QueryRows { dst, query } => {
-                let shape = program.query(query).ok_or(Fault::BadString)?;
-                let all: Vec<&str> = shape.all.iter().map(String::as_str).collect();
-                let none: Vec<&str> = shape.none.iter().map(String::as_str).collect();
-                let rows = host
-                    .components
-                    .matching(&all, &none)
-                    .into_iter()
-                    .map(Value::Entity)
-                    .collect::<Vec<_>>();
-                host.swept += rows.len();
-                let handle = host
-                    .arena
-                    .alloc(crate::arena::Object::Array(rows))
-                    .map_err(|_| Fault::ArenaFull)?;
-                self.write(dst, Value::Obj(super::ObjRef::Arena(handle)))?;
-            }
+            Instruction::QueryRows { dst, query } => self.query_rows(program, host, dst, query)?,
             Instruction::QueryHolds {
                 dst, entity, query, ..
             } => {
@@ -137,22 +104,7 @@ impl Machine {
                 entity,
                 material,
                 what,
-            } => {
-                let entity = self.entity_at(entity)?;
-                let material = match self.read(material)? {
-                    Value::Asset(material) => material,
-                    Value::Null => {
-                        let what = program.string(what).unwrap_or("the material");
-                        return Err(Fault::NativeFailed {
-                            name: "SetMaterial",
-                            message: format!("{what} is `null`"),
-                        });
-                    }
-                    other => return Err(mismatch("Material", other)),
-                };
-                host.commands
-                    .push(WorldCommand::SetMaterial { entity, material });
-            }
+            } => self.set_material(program, host, entity, material, what)?,
             Instruction::RemoveComponent { entity, component } => {
                 let entity = self.entity_at(entity)?;
                 let name = program.string(component).ok_or(Fault::BadString)?;
@@ -169,24 +121,7 @@ impl Machine {
                 event,
                 base,
                 argc,
-            } => {
-                let target = self.entity_at(entity)?;
-                let name = program.string(event).ok_or(Fault::BadString)?;
-                let mut raised = khora_core::script::ScriptEvent::new(target, name);
-                for offset in 0..Reg::from(argc) {
-                    let value = self.read(base + offset)?;
-                    // Through the one bridge, so what an event carries is
-                    // exactly what a handler can receive.
-                    let carried =
-                        crate::bridge::from_register(value, &program.strings, &host.arena)
-                            .map_err(|why| Fault::Unraisable {
-                                event: name.to_owned(),
-                                why: why.to_string(),
-                            })?;
-                    raised = raised.with(carried);
-                }
-                host.outbox.push(raised);
-            }
+            } => self.raise(program, host, entity, event, base, argc)?,
             Instruction::SpawnEntity {
                 dst,
                 position,
@@ -198,17 +133,7 @@ impl Machine {
                     Value::Vec3(at) => at,
                     other => return Err(mismatch("Vec3", other)),
                 };
-                let patches = program.spawns.get(spawn as usize).ok_or(Fault::BadString)?;
-                let mut components = Vec::with_capacity(patches.len());
-                let mut next = base;
-                for &patch in patches {
-                    let width = program
-                        .patches
-                        .get(patch as usize)
-                        .map_or(0, |patch| patch.fields.len());
-                    components.push(self.patch_value(program, host, patch, next)?);
-                    next = next.wrapping_add(width as Reg);
-                }
+                let components = self.spawn_components(program, host, spawn, base)?;
                 // Upright: the new entity turns itself in its own `OnSpawn`
                 // when it should face elsewhere.
                 // Its id now, from the world it is for: what follows in the
@@ -235,31 +160,7 @@ impl Machine {
                 base,
                 ..
             } => {
-                let what = || {
-                    program
-                        .spawn_names
-                        .get(spawn as usize)
-                        .filter(|name| !name.is_empty())
-                        .map_or_else(|| "this prefab".to_owned(), String::clone)
-                };
-                let prefab = match self.read(prefab)? {
-                    Value::Asset(prefab) => prefab,
-                    Value::Null => {
-                        return Err(Fault::NoPrefab {
-                            message: format!("{} is `null`", what()),
-                        })
-                    }
-                    other => return Err(mismatch("Prefab", other)),
-                };
-                if host
-                    .prefabs
-                    .as_ref()
-                    .is_some_and(|prefabs| !prefabs.contains(&prefab))
-                {
-                    return Err(Fault::NoPrefab {
-                        message: format!("{} names no prefab", what()),
-                    });
-                }
+                let prefab = self.spawned_prefab(program, host, prefab, spawn)?;
                 let at = match self.read(position)? {
                     Value::Vec3(at) => at,
                     other => return Err(mismatch("Vec3", other)),
@@ -269,17 +170,7 @@ impl Machine {
                     Value::Quat(rotation) => Some(rotation),
                     other => return Err(mismatch("Quat", other)),
                 };
-                let patches = program.spawns.get(spawn as usize).ok_or(Fault::BadString)?;
-                let mut components = Vec::with_capacity(patches.len());
-                let mut next = base;
-                for &patch in patches {
-                    let width = program
-                        .patches
-                        .get(patch as usize)
-                        .map_or(0, |patch| patch.fields.len());
-                    components.push(self.patch_value(program, host, patch, next)?);
-                    next = next.wrapping_add(width as Reg);
-                }
+                let components = self.spawn_components(program, host, spawn, base)?;
                 // Reserved last: a spawn that faults takes no id.
                 let entity = host.reserver.reserve();
                 self.write(dst, Value::Entity(entity))?;
@@ -298,7 +189,174 @@ impl Machine {
         Ok(Step::Next)
     }
 
-    /// The entity in `register`.
+    /// Writes to `dst` a copy of `entity`'s component, or `null` when the
+    /// entity does not hold it.
+    fn get_component(
+        &mut self,
+        program: &Program,
+        host: &mut Host,
+        dst: Reg,
+        entity: Reg,
+        component: u32,
+    ) -> Result<(), Fault> {
+        let entity = self.entity_at(entity)?;
+        let name = program.string(component).ok_or(Fault::BadString)?;
+        let copy = match host.components.get(name, entity) {
+            None => Value::Null,
+            Some(read) => {
+                let unreadable = |reason: String| Fault::Unreadable {
+                    component: name.to_owned(),
+                    reason,
+                };
+                let owned = crate::bridge::to_owned_as(&read, name, &program.structs)
+                    .map_err(|error| unreadable(error.to_string()))?;
+                host.arena
+                    .import(&owned, program)
+                    .map_err(|error| unreadable(format!("{error:?}")))?
+            }
+        };
+        self.write(dst, copy)
+    }
+
+    /// Writes to `dst` an array of the rows matching query `query`.
+    fn query_rows(
+        &mut self,
+        program: &Program,
+        host: &mut Host,
+        dst: Reg,
+        query: u32,
+    ) -> Result<(), Fault> {
+        let shape = program.query(query).ok_or(Fault::BadString)?;
+        let all: Vec<&str> = shape.all.iter().map(String::as_str).collect();
+        let none: Vec<&str> = shape.none.iter().map(String::as_str).collect();
+        let rows = host
+            .components
+            .matching(&all, &none)
+            .into_iter()
+            .map(Value::Entity)
+            .collect::<Vec<_>>();
+        host.swept += rows.len();
+        let handle = host
+            .arena
+            .alloc(crate::arena::Object::Array(rows))
+            .map_err(|_| Fault::ArenaFull)?;
+        self.write(dst, Value::Obj(super::ObjRef::Arena(handle)))
+    }
+
+    fn set_material(
+        &mut self,
+        program: &Program,
+        host: &mut Host,
+        entity: Reg,
+        material: Reg,
+        what: u32,
+    ) -> Result<(), Fault> {
+        let entity = self.entity_at(entity)?;
+        let material = match self.read(material)? {
+            Value::Asset(material) => material,
+            Value::Null => {
+                let what = program.string(what).unwrap_or("the material");
+                return Err(Fault::NativeFailed {
+                    name: "SetMaterial",
+                    message: format!("{what} is `null`"),
+                });
+            }
+            other => return Err(mismatch("Material", other)),
+        };
+        host.commands
+            .push(WorldCommand::SetMaterial { entity, material });
+        Ok(())
+    }
+
+    /// Queues event `event` on `entity`, carrying the `argc` values from `base`.
+    fn raise(
+        &mut self,
+        program: &Program,
+        host: &mut Host,
+        entity: Reg,
+        event: u32,
+        base: Reg,
+        argc: u8,
+    ) -> Result<(), Fault> {
+        let target = self.entity_at(entity)?;
+        let name = program.string(event).ok_or(Fault::BadString)?;
+        let mut raised = khora_core::script::ScriptEvent::new(target, name);
+        for offset in 0..Reg::from(argc) {
+            let value = self.read(base + offset)?;
+            // Through the one bridge, so what an event carries is
+            // exactly what a handler can receive.
+            let carried = crate::bridge::from_register(value, &program.strings, &host.arena)
+                .map_err(|why| Fault::Unraisable {
+                    event: name.to_owned(),
+                    why: why.to_string(),
+                })?;
+            raised = raised.with(carried);
+        }
+        host.outbox.push(raised);
+        Ok(())
+    }
+
+    /// Reads the prefab in `prefab`, refusing `null` and a prefab the host
+    /// does not hold.
+    fn spawned_prefab(
+        &self,
+        program: &Program,
+        host: &Host,
+        prefab: Reg,
+        spawn: u32,
+    ) -> Result<AssetUUID, Fault> {
+        let what = || {
+            program
+                .spawn_names
+                .get(spawn as usize)
+                .filter(|name| !name.is_empty())
+                .map_or_else(|| "this prefab".to_owned(), String::clone)
+        };
+        let prefab = match self.read(prefab)? {
+            Value::Asset(prefab) => prefab,
+            Value::Null => {
+                return Err(Fault::NoPrefab {
+                    message: format!("{} is `null`", what()),
+                })
+            }
+            other => return Err(mismatch("Prefab", other)),
+        };
+        if host
+            .prefabs
+            .as_ref()
+            .is_some_and(|prefabs| !prefabs.contains(&prefab))
+        {
+            return Err(Fault::NoPrefab {
+                message: format!("{} names no prefab", what()),
+            });
+        }
+        Ok(prefab)
+    }
+
+    /// Reads the components of spawn `spawn`, their values following one
+    /// another from `base`.
+    fn spawn_components(
+        &self,
+        program: &Program,
+        host: &Host,
+        spawn: u32,
+        base: Reg,
+    ) -> Result<Vec<(ComponentName, ScriptValue)>, Fault> {
+        let patches = program.spawns.get(spawn as usize).ok_or(Fault::BadString)?;
+        let mut components = Vec::with_capacity(patches.len());
+        let mut next = base;
+        for &patch in patches {
+            let width = program
+                .patches
+                .get(patch as usize)
+                .map_or(0, |patch| patch.fields.len());
+            components.push(self.patch_value(program, host, patch, next)?);
+            next = next.wrapping_add(width as Reg);
+        }
+        Ok(components)
+    }
+
+    /// Returns the entity in `register`.
     pub(super) fn entity_at(
         &self,
         register: Reg,
@@ -309,8 +367,8 @@ impl Machine {
         }
     }
 
-    /// Patch `patch`'s component and its fields' values, read from `base..`,
-    /// as the boundary carries them.
+    /// Reads patch `patch`'s component and its fields' values from `base..`, as
+    /// the boundary carries them.
     fn patch_value(
         &self,
         program: &Program,

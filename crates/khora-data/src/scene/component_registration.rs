@@ -127,6 +127,21 @@ pub struct ComponentRegistration {
 
 inventory::collect!(ComponentRegistration);
 
+impl ComponentRegistration {
+    /// Returns whether a save holds this component: one an author or a tool wrote,
+    /// not one the engine derives or writes while running.
+    pub fn is_saved(&self) -> bool {
+        self.provenance.is_copied_on_duplicate()
+    }
+
+    /// Returns whether a game save keeps this component although a scene does not.
+    ///
+    /// Declared with `#[component(resumable)]` on state play resumes from.
+    pub fn is_resumed(&self) -> bool {
+        self.resumable
+    }
+}
+
 /// A component read from a save, not yet in any world.
 ///
 /// A load reads every component before it adds any, so one that cannot be read
@@ -144,6 +159,10 @@ pub trait PendingComponent: Send {
     fn push_into(self: Box<Self>, column: &mut dyn AnyVec);
 
     /// Adds the component to `entity` on its own, outside a page being built.
+    ///
+    /// # Errors
+    ///
+    /// When the world cannot add the component to `entity`, with the world's reason.
     fn commit(self: Box<Self>, world: &mut World, entity: EntityId) -> Result<(), String>;
 }
 
@@ -204,21 +223,6 @@ pub(crate) fn copy_through_record(
             .map_err(|error| error.to_string())
             .and_then(|staged| staged.component.commit(dst, target)),
     )
-}
-
-impl ComponentRegistration {
-    /// Whether a save holds this component: one an author or a tool wrote,
-    /// not one the engine derives or writes while running.
-    pub fn is_saved(&self) -> bool {
-        self.provenance.is_copied_on_duplicate()
-    }
-
-    /// Whether a game save keeps this component although a scene does not.
-    ///
-    /// Declared with `#[component(resumable)]` on state play resumes from.
-    pub fn is_resumed(&self) -> bool {
-        self.resumable
-    }
 }
 
 /// The registrations, indexed once: the inventory is fixed at link time.

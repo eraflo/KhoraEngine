@@ -24,6 +24,24 @@ use serde::{Deserialize, Serialize};
 /// `UiBuilder` throughout the UI layer.
 pub type DockRect = [f32; 4];
 
+/// Thickness of a splitter's grab band, in points. Wide enough to hit without
+/// aiming, narrow enough not to steal clicks from the panels either side.
+pub const SPLITTER_THICKNESS: f32 = 6.0;
+
+/// Smallest size a tab group may be squeezed to, in points.
+///
+/// Ratios clamp so a drag never collapses a panel to nothing: a hidden panel
+/// comes back only through a layout reset.
+pub const MIN_PANE: f32 = 120.0;
+
+/// Fraction of the shorter side taken by each edge drop band.
+///
+/// Kept under `0.146`, the point where the four bands would together claim half
+/// the area: joining a tab group is the common intent and must stay the easy
+/// target, while a split is the deliberate one and only needs a band wide
+/// enough to hit without aiming (48 px on a 400 px pane).
+const EDGE_BAND: f32 = 0.12;
+
 /// Which way a split divides its area.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SplitAxis {
@@ -49,7 +67,7 @@ pub enum DropZone {
 }
 
 impl DropZone {
-    /// The axis a drop in this zone splits along, or `None` for [`Center`],
+    /// Returns the axis a drop in this zone splits along, or `None` for [`Center`],
     /// which joins an existing group instead of splitting.
     ///
     /// [`Center`]: DropZone::Center
@@ -61,7 +79,7 @@ impl DropZone {
         }
     }
 
-    /// Whether the dropped panel takes the **first** child of the new split.
+    /// Returns whether the dropped panel takes the **first** child of the new split.
     pub const fn takes_first(self) -> bool {
         matches!(self, DropZone::Left | DropZone::Top)
     }
@@ -100,16 +118,6 @@ pub enum DockNode {
     },
 }
 
-/// Thickness of a splitter's grab band, in points. Wide enough to hit without
-/// aiming, narrow enough not to steal clicks from the panels either side.
-pub const SPLITTER_THICKNESS: f32 = 6.0;
-
-/// Smallest size a tab group may be squeezed to, in points.
-///
-/// Ratios clamp so a drag never collapses a panel to nothing: a hidden panel
-/// comes back only through a layout reset.
-pub const MIN_PANE: f32 = 120.0;
-
 /// One tab group placed on screen.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TabGroupLayout {
@@ -122,7 +130,7 @@ pub struct TabGroupLayout {
 }
 
 impl TabGroupLayout {
-    /// Id of the panel whose content should be drawn.
+    /// Returns the id of the panel whose content should be drawn.
     pub fn active_panel(&self) -> Option<&str> {
         self.panels.get(self.active).map(|s| s.as_str())
     }
@@ -169,7 +177,7 @@ impl Default for DockTree {
 }
 
 impl DockTree {
-    /// A dock with nothing in it.
+    /// Builds a dock with nothing in it.
     pub fn empty() -> Self {
         Self {
             root: None,
@@ -177,7 +185,7 @@ impl DockTree {
         }
     }
 
-    /// A dock holding a single panel.
+    /// Builds a dock holding a single panel.
     pub fn single(panel: impl Into<String>) -> Self {
         Self {
             root: Some(DockNode::Tabs {
@@ -188,12 +196,12 @@ impl DockTree {
         }
     }
 
-    /// Whether the dock holds no panels at all.
+    /// Returns whether the dock holds no panels at all.
     pub fn is_empty(&self) -> bool {
         self.root.is_none()
     }
 
-    /// Every panel id in the tree, in traversal order.
+    /// Returns every panel id in the tree, in traversal order.
     pub fn panels(&self) -> Vec<String> {
         let mut out = Vec::new();
         if let Some(root) = &self.root {
@@ -202,7 +210,7 @@ impl DockTree {
         out
     }
 
-    /// Whether `panel` is somewhere in the tree.
+    /// Returns whether `panel` is somewhere in the tree.
     pub fn contains(&self, panel: &str) -> bool {
         self.panels().iter().any(|p| p == panel)
     }
@@ -248,13 +256,12 @@ impl DockTree {
         };
 
         // Resolve the target group first: after `remove` the tree may have
-        // collapsed, and a target that no longer exists must fall back to the
+        // collapsed, and a target missing from it must fall back to the
         // root rather than silently drop the panel.
-        let target_exists = target.is_some_and(|t| node_contains(&root, t));
+        let target_in_tree = target.filter(|t| node_contains(&root, t));
 
         let split_id = self.alloc_split();
-        self.root = Some(if target_exists {
-            let target = target.expect("checked by target_exists");
+        self.root = Some(if let Some(target) = target_in_tree {
             insert_at(root, target, new_group, zone, split_id)
         } else {
             match zone.axis() {
@@ -578,14 +585,6 @@ fn layout_node(node: &DockNode, area: DockRect, out: &mut DockLayout) {
         }
     }
 }
-
-/// Fraction of the shorter side taken by each edge drop band.
-///
-/// Kept under `0.146`, the point where the four bands would together claim half
-/// the area: joining a tab group is the common intent and must stay the easy
-/// target, while a split is the deliberate one and only needs a band wide
-/// enough to hit without aiming (48 px on a 400 px pane).
-const EDGE_BAND: f32 = 0.12;
 
 /// Classifies a pointer position inside `rect` into a drop zone.
 ///

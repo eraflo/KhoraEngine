@@ -16,7 +16,7 @@
 //! the world's own declaration, which wins; refused whole when the file
 //! claims a Rust component's name or names a component nobody knows; and a
 //! failed or abandoned load registers nothing. A scene holding none is
-//! written exactly as it always was.
+//! written with no declarations at all.
 
 use khora_core::math::Vec3;
 use khora_core::script::ScriptValue;
@@ -95,7 +95,7 @@ fn assert_loads(record: &SceneRecord) {
 }
 
 /// The world's own declaration is the truth: a field the file lacks takes
-/// the world's default (`Defaulted`), one the world no longer declares is
+/// the world's default (`Defaulted`), one the world does not declare is
 /// dropped (`Dropped`), one whose kind changed is dropped and takes the
 /// default, an `int` that became a `float` is kept, converted (`Widened`) —
 /// and the rows land in the world's domain, not the file's. The world's
@@ -602,7 +602,7 @@ fn a_damaged_compact_scene_of_declared_components_never_panics() {
     );
 }
 
-/// An `int` read into what is now a `float` field is kept only where it
+/// An `int` read into a field the world declares as `float` is kept only where it
 /// converts losslessly; one that does not (2^24 + 1 has no `f32`) takes the
 /// default — and the report says so for that entity: its value was
 /// dropped, not widened.

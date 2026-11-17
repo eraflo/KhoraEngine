@@ -38,7 +38,7 @@ pub trait UiLayoutView {
     /// Writes the computed transform back to the entity.
     fn set_transform(&mut self, entity: EntityId, transform: UiTransform);
 
-    /// The available layout viewport in physical pixels `(width, height)`.
+    /// Returns the available layout viewport in physical pixels `(width, height)`.
     ///
     /// Layout systems use this as the root `AvailableSpace` so percentage and
     /// `flex` sizing resolve against the real surface rather than a fixed

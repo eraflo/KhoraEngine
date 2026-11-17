@@ -166,15 +166,13 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
                     }
                 }
 
-                // SAFETY: the buffer belongs to the exclusively-held `world`
-                // and `page_id` indexes it (it was checked against
-                // `row_count` above); `matching_page_indices` only lists pages
-                // matching `Q`, so the columns `Q::fetch` reads (and mutably
-                // aliases for `&mut` queries) are present, and `row` is in
-                // bounds.
-                // The page buffer's pointer, never a reference to the page:
-                // that would invalidate the guards handed out earlier.
+                // SAFETY: the buffer belongs to the exclusively-held `world`, and
+                // `page_id` indexes it (checked against `row_count` above). Never
+                // a reference to the page: it would invalidate earlier guards.
                 let page = unsafe { world.storage.pages.as_mut_ptr().add(page_id) };
+                // SAFETY: `matching_page_indices` only lists pages matching `Q`,
+                // so the columns `Q::fetch` reads (and mutably aliases for
+                // `&mut` queries) are present, and `row` is in bounds.
                 let item = unsafe { Q::fetch(page as *const _, row, ctx) };
                 return Some(item);
             } else {
@@ -184,8 +182,8 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
         }
     }
 
-    /// Mutable counterpart of `Query::next_entity_scan`: yields each live
-    /// entity once, joining every term through its live locations.
+    /// Yields each live entity once, mutably, as `Query::next_entity_scan` does,
+    /// joining every term through its live locations.
     fn next_entity_scan(&mut self) -> Option<Q::Item<'a>> {
         loop {
             // SAFETY: as below — a shared reborrow of the exclusively borrowed
@@ -196,11 +194,12 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
                 writable: &self.writable,
                 since: self.since,
             };
-            // SAFETY: same invariant as `next_native` — `world_ptr` came from the
-            // `&'a mut World` given to `QueryMut::new` and that exclusive borrow is
-            // held for `'a`. This shared reborrow ends before `fetch_from_world`
-            // takes its own access below, so the two never overlap.
+            // This shared reborrow ends before `fetch_from_world` takes its own
+            // access below, so the two never overlap.
             let entity = {
+                // SAFETY: same invariant as `next_native` — `world_ptr` came from
+                // the `&'a mut World` given to `QueryMut::new` and that exclusive
+                // borrow is held for `'a`.
                 let world = unsafe { &*self.world_ptr };
                 let (entity, metadata) = world.entities.get(self.current_row_index)?;
                 self.current_row_index += 1;
@@ -213,9 +212,8 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
             // SAFETY: `world_ptr` is the exclusively-borrowed `World` (see above);
             // each live entity is visited once, so the `&mut` items this yields
             // address disjoint rows.
-            if let Some(item) =
-                unsafe { Q::fetch_from_world(self.world_ptr as *const _, entity, ctx) }
-            {
+            let item = unsafe { Q::fetch_from_world(self.world_ptr as *const _, entity, ctx) };
+            if let Some(item) = item {
                 return Some(item);
             }
         }
@@ -269,9 +267,9 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
                 // permission, and which `&mut T` terms would write through. The
                 // reborrow is not used again before the next `next` call, and the
                 // entity exists in the driver page.
-                if let Some(item) =
-                    unsafe { Q::fetch_from_world(self.world_ptr as *const _, entity_id, ctx) }
-                {
+                let item =
+                    unsafe { Q::fetch_from_world(self.world_ptr as *const _, entity_id, ctx) };
+                if let Some(item) = item {
                     return Some(item);
                 }
             } else {

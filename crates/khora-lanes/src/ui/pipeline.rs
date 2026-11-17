@@ -36,7 +36,7 @@ pub(super) const UI_ATLAS_LAYOUT_LABEL: &str = "ui_atlas_layout";
 /// glyph pipeline).
 pub(super) const UI_GLYPH_ATLAS_LAYOUT_LABEL: &str = "ui_glyph_atlas_layout";
 
-/// The UI's filtering sampler, clamped at the atlas's edges.
+/// Returns the UI's filtering sampler, clamped at the atlas's edges.
 pub(super) fn ui_sampler_descriptor(
 ) -> khora_core::renderer::api::resource::SamplerDescriptor<'static> {
     use khora_core::renderer::api::resource::{
@@ -58,7 +58,7 @@ pub(super) fn ui_sampler_descriptor(
     }
 }
 
-/// Set-0 layout: the projection-matrix uniform buffer.
+/// Returns the set-0 layout: the projection-matrix uniform buffer.
 pub(super) fn ui_global_layout_entries() -> Vec<BindGroupLayoutEntry> {
     vec![BindGroupLayoutEntry {
         binding: 0,
@@ -71,7 +71,7 @@ pub(super) fn ui_global_layout_entries() -> Vec<BindGroupLayoutEntry> {
     }]
 }
 
-/// Set-1 layout: the read-only instance storage buffer.
+/// Returns the set-1 layout: the read-only instance storage buffer.
 pub(super) fn ui_instance_layout_entries() -> Vec<BindGroupLayoutEntry> {
     vec![BindGroupLayoutEntry {
         binding: 0,
@@ -84,7 +84,7 @@ pub(super) fn ui_instance_layout_entries() -> Vec<BindGroupLayoutEntry> {
     }]
 }
 
-/// Set-2 layout: the atlas texture + filtering sampler.
+/// Returns the set-2 layout: the atlas texture + filtering sampler.
 pub(super) fn ui_atlas_layout_entries() -> Vec<BindGroupLayoutEntry> {
     vec![
         BindGroupLayoutEntry {
@@ -108,7 +108,7 @@ pub(super) fn ui_atlas_layout_entries() -> Vec<BindGroupLayoutEntry> {
     ]
 }
 
-/// Set-2 layout of the glyph pipeline: the mask atlas, the colour atlas,
+/// Returns the set-2 layout of the glyph pipeline: the mask atlas, the colour atlas,
 /// and the filtering sampler both are read through.
 pub(super) fn ui_glyph_atlas_layout_entries() -> Vec<BindGroupLayoutEntry> {
     let texture = |binding| BindGroupLayoutEntry {

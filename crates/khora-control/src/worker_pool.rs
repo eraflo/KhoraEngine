@@ -61,6 +61,10 @@ impl WorkerPool {
         for _ in 0..size {
             let receiver: Arc<Mutex<Receiver<Message>>> = Arc::clone(&receiver);
             // Spawned once and joined on Drop, never per frame.
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "RULES §5: the scheduler-owned worker pool, spawned once and joined on drop"
+            )]
             let handle = std::thread::spawn(move || loop {
                 let message = {
                     let rx = receiver.lock_recovered();
@@ -87,7 +91,7 @@ impl WorkerPool {
         }
     }
 
-    /// Number of worker threads in the pool.
+    /// Returns the number of worker threads in the pool.
     pub fn thread_count(&self) -> usize {
         self.workers.len()
     }

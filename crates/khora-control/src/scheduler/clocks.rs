@@ -50,7 +50,7 @@ impl ExecutionScheduler {
 
         // The fixed agents' sub-clocks: exactly the time the ticks advanced,
         // each cut at its agent's own step. A frame with no tick leaves them
-        // untouched; an agent whose place no longer holds a step loses its
+        // untouched; an agent whose place holds no step any more loses its
         // clock.
         self.fixed_clocks
             .retain(|id, _| fixed_steps.iter().any(|(fixed, _)| fixed == id));

@@ -86,7 +86,7 @@ impl Hasher for KeyHasher {
 /// A page's columns, by key, hashed with [`KeyHasher`].
 pub type ColumnMap = HashMap<ComponentKey, Box<dyn AnyVec>, BuildHasherDefault<KeyHasher>>;
 
-/// 128-bit FNV-1a: stable across builds and platforms, and computable in a `const`.
+/// Hashes `bytes` with 128-bit FNV-1a: stable across builds and platforms, and `const`.
 ///
 /// Wide enough that two names sharing a hash is no practical concern; a
 /// registry still refuses one.

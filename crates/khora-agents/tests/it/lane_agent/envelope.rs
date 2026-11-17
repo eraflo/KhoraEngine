@@ -665,7 +665,7 @@ static READER_THEN_LOCKER: AgentRegistration = khora_core::register_agent! {
 /// builds its waves, and stamps the permit, from the installed layer's
 /// contention. Pinned to it, the locking lane runs, and its place
 /// declares its lock. Lent 105 µs, the agent takes the reader, 100 µs, which
-/// has no impact: once the reader runs, the place no longer declares the
+/// has no impact: once the reader runs, the place stops declaring the
 /// lock, and declares the reader's own read.
 #[test]
 fn the_lane_a_frame_runs_under_an_envelope_is_the_lane_its_place_declares() {

@@ -24,6 +24,20 @@ use khora_core::agent::gorna::{AgentId, Correction, ProfileRow, StrategyId};
 
 use super::decide::Bid;
 
+/// The most prior runs a seeded row weighs as: a second of this machine's
+/// runs then takes over from what another run learnt.
+const MAX_SEEDED_RUNS: u32 = 20;
+
+/// The largest correction, or spread, a row is planned with.
+///
+/// Past it a measure says nothing a frame could use, and a time so scaled
+/// would overflow.
+const MAX_FACTOR: f64 = 1e3;
+
+/// What a row's fit starts from: an information so small the first run sets
+/// the factor.
+const PRIOR_P: f64 = 1.0e6;
+
 /// The cost book's settings.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CostBookConfig {
@@ -61,43 +75,6 @@ pub struct CostBook {
     /// clock a row's age is read on.
     clocks: Vec<(AgentId, u64)>,
 }
-
-/// What one row learnt: a recursive least-squares fit of measured ≈ factor
-/// × quoted, each older run weighed `forgetting` times less per newer one.
-#[derive(Debug, Clone, Copy)]
-struct Learnt {
-    factor: f64,
-    /// The fit's inverse information, per ms² of quote.
-    p: f64,
-    /// The runs, weighed.
-    runs: f64,
-    /// The squared residuals of the runs' ratios to the factor, weighed.
-    residuals: f64,
-    /// Every run, none forgotten: what the prior's spread is weighed down
-    /// by, so a row run often enough is no longer held to it.
-    seen: f64,
-    /// Its agent's clock at its last run.
-    last_run: u64,
-    /// The runs a seeded row's factor weighs as until its first run here,
-    /// then 0.
-    ///
-    /// That first run sets the fit's information from its own quote.
-    prior_weight: f64,
-}
-
-/// The most prior runs a seeded row weighs as: a second of this machine's
-/// runs then takes over from what another run learnt.
-const MAX_SEEDED_RUNS: u32 = 20;
-
-/// The largest correction, or spread, a row is planned with.
-///
-/// Past it a measure says nothing a frame could use, and a time so scaled
-/// would overflow.
-const MAX_FACTOR: f64 = 1e3;
-
-/// What a row's fit starts from: an information so small the first run sets
-/// the factor.
-const PRIOR_P: f64 = 1.0e6;
 
 impl CostBook {
     /// Creates a book of `cfg` that has learnt nothing yet.
@@ -353,6 +330,29 @@ impl CostBook {
             })
             .collect()
     }
+}
+
+/// What one row learnt: a recursive least-squares fit of measured ≈ factor
+/// × quoted, each older run weighed `forgetting` times less per newer one.
+#[derive(Debug, Clone, Copy)]
+struct Learnt {
+    factor: f64,
+    /// The fit's inverse information, per ms² of quote.
+    p: f64,
+    /// The runs, weighed.
+    runs: f64,
+    /// The squared residuals of the runs' ratios to the factor, weighed.
+    residuals: f64,
+    /// Every run, none forgotten: what the prior's spread is weighed down
+    /// by, so a row run often enough stops being held to it.
+    seen: f64,
+    /// Its agent's clock at its last run.
+    last_run: u64,
+    /// The runs a seeded row's factor weighs as until its first run here,
+    /// then 0.
+    ///
+    /// That first run sets the fit's information from its own quote.
+    prior_weight: f64,
 }
 
 /// Plans each row's host time of `offer` at its correction.

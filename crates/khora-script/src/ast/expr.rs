@@ -234,7 +234,7 @@ pub enum Expr {
 }
 
 impl Expr {
-    /// Where the expression was written.
+    /// Returns where the expression was written.
     pub fn span(&self) -> Span {
         match self {
             Self::Int { span, .. }
@@ -308,7 +308,7 @@ pub enum BinaryOp {
 }
 
 impl BinaryOp {
-    /// The overloadable form, when there is one.
+    /// Returns the overloadable form, when there is one.
     ///
     /// `&&`, `||` and `??` return `None` — they are not overloadable, and this
     /// is where that rule lives rather than being restated at each use.

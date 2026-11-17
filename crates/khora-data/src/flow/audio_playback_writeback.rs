@@ -13,14 +13,14 @@
 // limitations under the License.
 
 //! `AudioPlaybackWriteback` — the playback updates the mixing lane hands back
-//! for the `audio_playback_writeback` DataSystem to apply.
+//! for the `audio_playback_writeback` `DataSystem` to apply.
 
 use khora_core::ecs::entity::EntityId;
 
 use crate::ecs::PlaybackState;
 
 /// A playback change the mixing lane made to one source, applied to its
-/// `AudioSource` by the `audio_playback_writeback` DataSystem.
+/// `AudioSource` by the `audio_playback_writeback` `DataSystem`.
 #[derive(Debug, Clone)]
 pub struct AudioPlaybackUpdate {
     /// Target entity.

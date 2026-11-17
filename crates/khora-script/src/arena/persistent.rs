@@ -50,12 +50,12 @@ pub struct PersistentStore {
 }
 
 impl PersistentStore {
-    /// An empty store.
+    /// Creates an empty store.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// A store with `count` slots, each holding nothing.
+    /// Creates a store with `count` slots, each holding nothing.
     ///
     /// Sized up front from the behavior's field count, so a slot is never
     /// missing and a read never has to invent a default mid-frame.
@@ -65,12 +65,12 @@ impl PersistentStore {
         }
     }
 
-    /// How many slots it holds.
+    /// Returns how many slots it holds.
     pub fn len(&self) -> usize {
         self.slots.len()
     }
 
-    /// Whether it holds nothing.
+    /// Returns whether it holds nothing.
     pub fn is_empty(&self) -> bool {
         self.slots.is_empty()
     }

@@ -42,8 +42,17 @@ pub trait PassField<'f>: Sized {
     /// Declares the pass slot written.
     fn declare(d: &mut Declaration, field: &'static str);
     /// Opens the pass for one record.
+    ///
+    /// # Errors
+    ///
+    /// Fails as `MissingResource` when the agent lent no device.
     fn open(sink: &mut OutputSink<'f>, field: &'static str) -> Result<Self, LaneError>;
     /// Closes the pass into its slot.
+    ///
+    /// # Errors
+    ///
+    /// Refused as `PassNotClosed` when the pass was not closed, as
+    /// `WrittenTwice` when its slot was written already.
     fn commit(self, sink: &mut OutputSink<'f>, field: &'static str) -> Result<(), OutputRefusal>;
 }
 impl<'f, P: PassSlot> PassField<'f> for Pass<'f, P> {
@@ -77,8 +86,16 @@ pub trait DeckOutputField<'f>: Sized {
     fn declare(d: &mut Declaration, field: &'static str);
     /// Opens the slot's value for one record: what it holds this frame, or
     /// its default.
+    ///
+    /// # Errors
+    ///
+    /// Never fails.
     fn open(sink: &mut OutputSink<'f>, field: &'static str) -> Result<Self, LaneError>;
     /// Writes the value into its slot.
+    ///
+    /// # Errors
+    ///
+    /// Refused as `WrittenTwice` when the slot was written already.
     fn commit(self, sink: &mut OutputSink<'f>, field: &'static str) -> Result<(), OutputRefusal>;
 }
 impl<'f, T: Default + Clone + Any + Send + Sync> DeckOutputField<'f> for T {
@@ -103,8 +120,16 @@ pub trait StagedField<'f>: Sized {
     /// Declares the output staged.
     fn declare(d: &mut Declaration, field: &'static str);
     /// Opens the field for one record: nothing staged yet.
+    ///
+    /// # Errors
+    ///
+    /// Never fails.
     fn open(sink: &mut OutputSink<'f>, field: &'static str) -> Result<Self, LaneError>;
     /// Stages what the lane wrote.
+    ///
+    /// # Errors
+    ///
+    /// Refused as `Missing` when the sink was lent no staging.
     fn commit(self, sink: &mut OutputSink<'f>, field: &'static str) -> Result<(), OutputRefusal>;
 }
 impl<'f, T: Staged> StagedField<'f> for Vec<T> {

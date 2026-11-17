@@ -1006,6 +1006,8 @@ fn module_assets_paths_still_resolve() {
 
 #[test]
 fn module_ecs_paths_still_resolve() {
+    const _: khora_data::ecs::ComponentKey = khora_data::ecs::ComponentKey::named("Pinned");
+
     component_trait_items::<khora_data::ecs::Transform>();
     component_trait_identity::<khora_data::ecs::Transform>();
     component_trait_identity_rev::<khora_data::ecs::Transform>();
@@ -1418,7 +1420,6 @@ fn module_ecs_paths_still_resolve() {
     let _ = type_name::<khora_data::ecs::ComponentKey>();
     let _ = component_key_variants as fn(&khora_data::ecs::ComponentKey);
     let _ = khora_data::ecs::ComponentKey::of::<khora_data::ecs::Transform>;
-    const _: khora_data::ecs::ComponentKey = khora_data::ecs::ComponentKey::named("Pinned");
     is_clone::<khora_data::ecs::ComponentKey>();
     is_copy::<khora_data::ecs::ComponentKey>();
     is_debug::<khora_data::ecs::ComponentKey>();
@@ -2817,13 +2818,14 @@ fn derive_generated_mirrors_still_resolve() {
 /// The roles of the data layer's registrations, and what a Flow is handed.
 #[test]
 fn role_and_flow_context_paths_are_public() {
+    type Roles = Vec<(&'static str, khora_data::ecs::Role)>;
+    type Families = std::collections::BTreeSet<khora_core::agent::gorna::AgentId>;
+    type Checked = Result<(), khora_data::ecs::ServesUnknownFamily>;
+
     let _ = type_name::<khora_data::ecs::Role>();
     let _ = khora_data::ecs::Role::Upkeep;
     let _ = khora_data::ecs::Role::Serves;
     let _ = type_name::<khora_data::ecs::ServesUnknownFamily>();
-    type Roles = Vec<(&'static str, khora_data::ecs::Role)>;
-    type Families = std::collections::BTreeSet<khora_core::agent::gorna::AgentId>;
-    type Checked = Result<(), khora_data::ecs::ServesUnknownFamily>;
     let _: fn(Roles, &Families) -> Checked = khora_data::ecs::check_roles;
     let _ = khora_data::ecs::registered_roles;
     let _ = type_name::<khora_data::flow::FlowContext>();
@@ -2841,23 +2843,24 @@ fn role_and_flow_context_paths_are_public() {
 #[test]
 fn a_staged_component_has_a_name_of_its_own() {
     use khora_data::scene::StagedComponent;
+    type Stage = fn(
+        &khora_data::scene::record::Record,
+        &mut dyn khora_data::scene::record::ReferenceReader,
+    ) -> Result<StagedComponent, khora_data::scene::record::RecordError>;
     fn staged_component_fields(x: &StagedComponent) {
         let _ = &x.component;
         let _: &Vec<khora_data::scene::record::ReportEntry> = &x.report;
     }
+    fn stage_of(x: &khora_data::scene::ComponentRegistration) -> Stage {
+        x.stage
+    }
+
     let _ = type_name::<StagedComponent>();
     let _ = staged_component_fields as fn(&StagedComponent);
     same_type(
         PhantomData::<khora_data::scene::StagedComponent>,
         PhantomData::<khora_data::scene::component_registration::StagedComponent>,
     );
-    type Stage = fn(
-        &khora_data::scene::record::Record,
-        &mut dyn khora_data::scene::record::ReferenceReader,
-    ) -> Result<StagedComponent, khora_data::scene::record::RecordError>;
-    fn stage_of(x: &khora_data::scene::ComponentRegistration) -> Stage {
-        x.stage
-    }
     let _ = stage_of as fn(&khora_data::scene::ComponentRegistration) -> Stage;
 
     let _ = type_name::<khora_data::scene::Prepared>();

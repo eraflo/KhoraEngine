@@ -102,7 +102,7 @@ impl EntityStore {
     }
 
     /// Holds back `id`, a fresh index at the end of the store a reserver already handed out.
-    pub fn hold_fresh(&mut self, id: EntityId) {
+    pub(crate) fn hold_fresh(&mut self, id: EntityId) {
         debug_assert_eq!(id.index as usize, self.entities.len());
         self.entities.push((id, None));
         self.reserved.insert(id.index);
@@ -111,7 +111,7 @@ impl EntityStore {
     /// Holds back a recycled id for a reserver, `None` when no index is free.
     ///
     /// Its generation moves on, so it never names what lived there.
-    pub fn reserve_recycled(&mut self) -> Option<EntityId> {
+    pub(crate) fn reserve_recycled(&mut self) -> Option<EntityId> {
         let index = self.freed_entities.pop()?;
         let (id_slot, _) = &mut self.entities[index as usize];
         id_slot.generation += 1;
@@ -121,7 +121,7 @@ impl EntityStore {
     }
 
     /// Returns whether a slot freed by a despawn waits to be reused.
-    pub fn has_freed(&self) -> bool {
+    pub(crate) fn has_freed(&self) -> bool {
         !self.freed_entities.is_empty()
     }
 
@@ -142,7 +142,7 @@ impl EntityStore {
     }
 
     /// Returns the metadata of the live entity `id`, `None` for a stale generation.
-    pub fn get_metadata_mut(&mut self, id: EntityId) -> Option<&mut EntityMetadata> {
+    pub(crate) fn get_metadata_mut(&mut self, id: EntityId) -> Option<&mut EntityMetadata> {
         self.entities
             .get_mut(id.index as usize)
             .and_then(|(slot_id, meta)| {

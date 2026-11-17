@@ -116,8 +116,8 @@ fn save_as_material(
     }
 }
 
-/// The RON text of `entity`'s inline material, in the decoder's shape:
-/// what a `.kmat` holds. Why not, when it has none or it cannot be encoded.
+/// Encodes `entity`'s inline material as RON text, in the decoder's shape: what
+/// a `.kmat` holds. Why not, when it has none or it cannot be encoded.
 fn inline_material_ron(world: &GameWorld, entity: EntityId) -> Result<String, String> {
     let material = match world.get_component::<MaterialRef>(entity) {
         Some(MaterialRef::Inline { material, .. }) => material,

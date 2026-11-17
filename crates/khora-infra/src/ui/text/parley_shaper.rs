@@ -37,21 +37,6 @@ pub struct ParleyShaper {
     state: Mutex<State>,
 }
 
-/// Parley's contexts, with one font context per font.
-///
-/// Alone in its context, a font is never mistaken for another of its family:
-/// the same file under two ids, or a font and its reload.
-struct State {
-    fonts: HashMap<AssetUUID, Registered>,
-    layout: LayoutContext<()>,
-}
-
-/// One registered font: its own font context and the family it declares.
-struct Registered {
-    context: FontContext,
-    family: String,
-}
-
 impl ParleyShaper {
     /// Creates a shaper with `Font::BUILT_IN` already registered.
     pub fn new() -> Self {
@@ -160,7 +145,22 @@ impl TextShaper for ParleyShaper {
     }
 }
 
-/// The text as it is drawn: a tab as four spaces, and no other control
+/// Parley's contexts, with one font context per font.
+///
+/// Alone in its context, a font is never mistaken for another of its family:
+/// the same file under two ids, or a font and its reload.
+struct State {
+    fonts: HashMap<AssetUUID, Registered>,
+    layout: LayoutContext<()>,
+}
+
+/// One registered font: its own font context and the family it declares.
+struct Registered {
+    context: FontContext,
+    family: String,
+}
+
+/// Returns the text as it is drawn: a tab as four spaces, and no other control
 /// character but line breaks.
 ///
 /// Fonts have no glyph for a tab: it would come back as the box of `.notdef`.

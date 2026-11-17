@@ -24,7 +24,7 @@ use super::scene_record::SceneRecord;
 /// Why a scene file could not be read.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SceneFileReadError {
-    /// Written in a format this engine no longer reads.
+    /// Written in an older format, which this engine does not read.
     OldFormat(u8),
     /// Written in a format newer than this engine.
     NewerFormat(u8),

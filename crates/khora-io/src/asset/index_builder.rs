@@ -81,6 +81,11 @@ impl<'a> IndexBuilder<'a> {
     /// Returns the metadata of every asset under the root, sorted by forward-slash path.
     ///
     /// Empty when `assets_root` does not exist, as in a fresh project.
+    ///
+    /// # Errors
+    ///
+    /// None is returned: a file that cannot be read is listed without its
+    /// dependencies, the failure logged.
     pub fn build_metadata(&self) -> Result<Vec<AssetMetadata>> {
         if !self.assets_root.exists() {
             return Ok(Vec::new());
@@ -145,6 +150,10 @@ impl<'a> IndexBuilder<'a> {
     }
 
     /// Returns the metadata bincode-encoded, as [`crate::asset::AssetIndex::new`] reads it.
+    ///
+    /// # Errors
+    ///
+    /// When the metadata cannot be encoded.
     pub fn build_index_bytes(&self) -> Result<Vec<u8>> {
         let metadata = self.build_metadata()?;
         let cfg = bincode::config::standard();

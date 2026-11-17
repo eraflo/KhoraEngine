@@ -184,7 +184,7 @@ struct RecordVisitor {
 }
 
 impl RecordVisitor {
-    /// The reader of a value one level inside this one.
+    /// Returns the reader of a value one level inside this one.
     fn inner(&self) -> RecordSeed {
         RecordSeed {
             depth: self.depth + 1,
@@ -286,7 +286,7 @@ impl<'de> Visitor<'de> for RecordVisitor {
     }
 }
 
-/// The float a `$float` marker holds.
+/// Returns the float a `$float` marker holds.
 fn float_marker<E: de::Error>(value: &Record) -> Result<f64, E> {
     match value {
         Record::Str(text) if text == "inf" => Ok(f64::INFINITY),
@@ -298,7 +298,7 @@ fn float_marker<E: de::Error>(value: &Record) -> Result<f64, E> {
     }
 }
 
-/// How a self-describing text format writes a float it has no number for.
+/// Returns how a self-describing text format writes a float it has no number for.
 fn non_finite_name(value: f64) -> Option<&'static str> {
     if value.is_nan() {
         Some("nan")
@@ -328,7 +328,7 @@ fn serialize_float<S: Serializer>(
     }
 }
 
-/// The reference an `$entity` marker holds.
+/// Returns the reference an `$entity` marker holds.
 fn entity_marker<E: de::Error>(value: &Record) -> Result<EntityRef, E> {
     match value {
         Record::None | Record::Unit => Ok(EntityRef::Outside),
@@ -342,7 +342,7 @@ fn entity_marker<E: de::Error>(value: &Record) -> Result<EntityRef, E> {
     }
 }
 
-/// The identity an `$asset` marker holds.
+/// Returns the identity an `$asset` marker holds.
 fn asset_marker<E: de::Error>(value: &Record) -> Result<AssetUUID, E> {
     match value {
         Record::Str(text) => text

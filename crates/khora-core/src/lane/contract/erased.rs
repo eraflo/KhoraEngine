@@ -63,19 +63,19 @@ pub enum NotPrepared {
 
 /// A lane with its types erased.
 pub trait AnyLane: Send {
-    /// The lane's type name, for messages.
+    /// Returns the lane's type name, for messages.
     fn name(&self) -> &'static str;
 
-    /// The lane's family.
+    /// Returns the lane's family.
     fn family(&self) -> TypeId;
 
-    /// Everything the lane reads, and everything its family writes.
+    /// Returns everything the lane reads, and everything its family writes.
     fn declaration(&self) -> Declaration;
 
-    /// The lane's levels.
+    /// Returns the lane's levels.
     fn levels(&self) -> &[Level];
 
-    /// Whether the device can run the lane.
+    /// Returns whether the device can run the lane.
     fn supports(&self, caps: &DeviceCaps) -> bool;
 
     /// Runs one frame at `level`, costing every level on the inputs fetched.
@@ -225,8 +225,8 @@ impl<L: Lane> AnyLane for Erased<L> {
 }
 
 impl<L: Lane> Erased<L> {
-    /// Fetch, prepare if the target changed, cost every level on what was
-    /// fetched, record at `level`, give back what the record left, commit.
+    /// Fetches, prepares if the target changed, costs every level on what was fetched, records at
+    /// `level`, gives back what the record left, and commits.
     fn record(
         &mut self,
         level: usize,

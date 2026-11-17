@@ -194,11 +194,18 @@ impl<T: Component> WorldQuery for &T {
         row_index: usize,
         _ctx: FetchContext<'_>,
     ) -> Self::Item<'a> {
-        let page = &*page_ptr;
-        // The caller guarantees the column exists and holds the row.
-        let column: &dyn AnyVec = &**page.columns.get(&ComponentKey::of::<T>()).unwrap();
-        let vec: &Vec<T> = column.as_any().downcast_ref::<Vec<T>>().unwrap();
-        vec.get_unchecked(row_index)
+        // SAFETY: the caller guarantees `page_ptr` points to a valid page.
+        let page = unsafe { &*page_ptr };
+        let column: &dyn AnyVec = &**page
+            .columns
+            .get(&ComponentKey::of::<T>())
+            .expect("the caller guarantees the page holds a `T` column");
+        let vec: &Vec<T> = column
+            .as_any()
+            .downcast_ref::<Vec<T>>()
+            .expect("the column keyed by `T` holds `T`s");
+        // SAFETY: the caller guarantees `row_index` is in bounds.
+        unsafe { vec.get_unchecked(row_index) }
     }
 
     unsafe fn fetch_from_world<'a>(
@@ -206,7 +213,8 @@ impl<T: Component> WorldQuery for &T {
         entity_id: EntityId,
         _ctx: FetchContext<'_>,
     ) -> Option<Self::Item<'a>> {
-        let world = &*world;
+        // SAFETY: the caller guarantees `world` is valid.
+        let world = unsafe { &*world };
         let location = live_location::<T>(world, entity_id)?;
         let page = &world.storage.pages[location.page_id as usize];
         let column = page.columns.get(&ComponentKey::of::<T>())?;
@@ -243,22 +251,31 @@ impl<T: Component> WorldQuery for &mut T {
         row_index: usize,
         ctx: FetchContext<'_>,
     ) -> Self::Item<'a> {
-        // UNSAFE: We cast the const pointer to a mutable one.
-        // This is safe ONLY if the query engine guarantees no other access.
+        // The cast to a mutable pointer holds only because the query engine
+        // guarantees no other access to the row.
         let page_ptr = page_ptr as *mut ComponentPage;
-        let page = &mut *page_ptr;
-        let column = page.columns.get_mut(&ComponentKey::of::<T>()).unwrap();
-        let vec = column.as_any_mut().downcast_mut::<Vec<T>>().unwrap();
+        // SAFETY: the caller guarantees `page_ptr` is valid and keeps write
+        // permission over the page for `'a`.
+        let page = unsafe { &mut *page_ptr };
+        let column = page
+            .columns
+            .get_mut(&ComponentKey::of::<T>())
+            .expect("the caller guarantees the page holds a `T` column");
+        let vec = column
+            .as_any_mut()
+            .downcast_mut::<Vec<T>>()
+            .expect("the column keyed by `T` holds `T`s");
         debug_assert!(row_index < vec.len());
         // Through the buffer's pointer, never a slice: `get_unchecked_mut`
         // reborrows the whole column `&mut`, which invalidates every item an
         // earlier call handed out from it.
-        let value = vec.as_mut_ptr().add(row_index);
+        // SAFETY: the caller guarantees `row_index` is in bounds.
+        let value = unsafe { vec.as_mut_ptr().add(row_index) };
         let key = ComponentKey::of::<T>();
-        {
-            let (observed, epoch) = ctx.writable(key);
-            Mut::in_page(value, page_ptr, key, observed, epoch, row_index, ctx.tick)
-        }
+        let (observed, epoch) = ctx.writable(key);
+        // SAFETY: `value` and `page_ptr` point into the same live page, and the
+        // caller guarantees no other reference to this item exists.
+        unsafe { Mut::in_page(value, page_ptr, key, observed, epoch, row_index, ctx.tick) }
     }
 
     unsafe fn fetch_from_world<'a>(
@@ -266,15 +283,21 @@ impl<T: Component> WorldQuery for &mut T {
         entity_id: EntityId,
         ctx: FetchContext<'_>,
     ) -> Option<Self::Item<'a>> {
-        let location = live_location::<T>(&*world, entity_id)?;
+        // SAFETY: the caller guarantees `world` is valid.
+        let location = live_location::<T>(unsafe { &*world }, entity_id)?;
         let key = ComponentKey::of::<T>();
         let (tick, (observed, epoch)) = (ctx.tick, ctx.writable(key));
-        let page = page_of_world(world, location.page_id)?;
+        // SAFETY: the caller keeps write permission over the world, and no
+        // reference to the page is live.
+        let page = unsafe { page_of_world(world, location.page_id) }?;
         let row = location.row_index as usize;
-        let column = (*page).columns.get_mut(&ComponentKey::of::<T>())?;
+        // SAFETY: `page` points into the world's page buffer, checked in bounds.
+        let column = unsafe { (*page).columns.get_mut(&ComponentKey::of::<T>()) }?;
         let vec = column.as_any_mut().downcast_mut::<Vec<T>>()?;
-        let value = column_item(vec, row)?;
-        Some(Mut::in_page(value, page, key, observed, epoch, row, tick))
+        // SAFETY: the caller guarantees no other reference to this item.
+        let value = unsafe { column_item(vec, row) }?;
+        // SAFETY: `value` and `page` point into the same live page.
+        Some(unsafe { Mut::in_page(value, page, key, observed, epoch, row, tick) })
     }
 }
 
@@ -295,7 +318,8 @@ impl<T: Component> WorldQuery for Option<&T> {
         row_index: usize,
         _ctx: FetchContext<'_>,
     ) -> Self::Item<'a> {
-        let page = &*page_ptr;
+        // SAFETY: the caller guarantees `page_ptr` points to a valid page.
+        let page = unsafe { &*page_ptr };
         let column = page.columns.get(&ComponentKey::of::<T>())?;
         let vec = column.as_any().downcast_ref::<Vec<T>>()?;
         vec.get(row_index)
@@ -306,7 +330,8 @@ impl<T: Component> WorldQuery for Option<&T> {
         entity_id: EntityId,
         _ctx: FetchContext<'_>,
     ) -> Option<Self::Item<'a>> {
-        let world = &*world;
+        // SAFETY: the caller guarantees `world` is valid.
+        let world = unsafe { &*world };
         // A dead entity fails the join; a live one lacking `T` — no row in
         // `T`'s domain, or no `T` column in that row's page — yields `Some(None)`.
         live_metadata(world, entity_id)?;
@@ -347,15 +372,17 @@ impl<T: Component> WorldQuery for Option<&mut T> {
         ctx: FetchContext<'_>,
     ) -> Self::Item<'a> {
         let page_ptr = page_ptr as *mut ComponentPage;
-        let page = &mut *page_ptr;
+        // SAFETY: the caller guarantees `page_ptr` is valid and keeps write
+        // permission over the page for `'a`.
+        let page = unsafe { &mut *page_ptr };
         let key = ComponentKey::of::<T>();
         let column = page.columns.get_mut(&key)?;
         let vec = column.as_any_mut().downcast_mut::<Vec<T>>()?;
-        let value = column_item(vec, row_index)?;
+        // SAFETY: the caller guarantees no other reference to this item.
+        let value = unsafe { column_item(vec, row_index) }?;
         let (observed, epoch) = ctx.writable(key);
-        Some(Mut::in_page(
-            value, page_ptr, key, observed, epoch, row_index, ctx.tick,
-        ))
+        // SAFETY: `value` and `page_ptr` point into the same live page.
+        Some(unsafe { Mut::in_page(value, page_ptr, key, observed, epoch, row_index, ctx.tick) })
     }
 
     unsafe fn fetch_from_world<'a>(
@@ -365,23 +392,30 @@ impl<T: Component> WorldQuery for Option<&mut T> {
     ) -> Option<Self::Item<'a>> {
         // Same contract as `Option<&T>`: a dead entity fails the join, a live
         // one lacking `T` yields `Some(None)`.
-        live_metadata(&*world, entity_id)?;
-        let Some(location) = live_location::<T>(&*world, entity_id) else {
+        // SAFETY: the caller guarantees `world` is valid.
+        let world_ref = unsafe { &*world };
+        live_metadata(world_ref, entity_id)?;
+        let Some(location) = live_location::<T>(world_ref, entity_id) else {
             return Some(None);
         };
         let key = ComponentKey::of::<T>();
         let (tick, (observed, epoch)) = (ctx.tick, ctx.writable(key));
-        let Some(page) = page_of_world(world, location.page_id) else {
+        // SAFETY: the caller keeps write permission over the world, and no
+        // reference to the page is live.
+        let Some(page) = (unsafe { page_of_world(world, location.page_id) }) else {
             return Some(None);
         };
         let row = location.row_index as usize;
+        // SAFETY: `page` points into the world's page buffer, checked in bounds.
+        let columns = unsafe { &mut (*page).columns };
         Some(
-            (*page)
-                .columns
+            columns
                 .get_mut(&ComponentKey::of::<T>())
                 .and_then(|column| column.as_any_mut().downcast_mut::<Vec<T>>())
-                .and_then(|vec| column_item(vec, row))
-                .map(|value| Mut::in_page(value, page, key, observed, epoch, row, tick)),
+                // SAFETY: the caller guarantees no other reference to this item.
+                .and_then(|vec| unsafe { column_item(vec, row) })
+                // SAFETY: `value` and `page` point into the same live page.
+                .map(|value| unsafe { Mut::in_page(value, page, key, observed, epoch, row, tick) }),
         )
     }
 }
@@ -397,9 +431,11 @@ impl<T: Component> WorldQuery for Option<&mut T> {
 /// `world` keeps write permission over the world, and no reference to the
 /// page is live.
 unsafe fn page_of_world(world: *const World, page_id: u32) -> Option<*mut ComponentPage> {
-    let world = &mut *(world as *mut World);
+    // SAFETY: the caller keeps write permission over the world.
+    let world = unsafe { &mut *(world as *mut World) };
     let pages = &mut world.storage.pages;
-    ((page_id as usize) < pages.len()).then(|| pages.as_mut_ptr().add(page_id as usize))
+    // SAFETY: `page_id` is in bounds, checked here.
+    ((page_id as usize) < pages.len()).then(|| unsafe { pages.as_mut_ptr().add(page_id as usize) })
 }
 
 /// Returns the pointer to item `row` of `vec`, through the buffer's pointer.
@@ -414,7 +450,8 @@ unsafe fn page_of_world(world: *const World, page_id: u32) -> Option<*mut Compon
 unsafe fn column_item<T>(vec: &mut Vec<T>, row: usize) -> Option<*mut T> {
     // `row` is in bounds, checked here, and the caller guarantees no other
     // reference to that item is live; the pointer reaches that item alone.
-    (row < vec.len()).then(|| vec.as_mut_ptr().add(row))
+    // SAFETY: `row` is in bounds, checked here.
+    (row < vec.len()).then(|| unsafe { vec.as_mut_ptr().add(row) })
 }
 
 // A tuple of terms, up to twelve.
@@ -474,15 +511,17 @@ macro_rules! impl_query_tuple {
                 row_index: usize,
                 ctx: FetchContext<'_>,
             ) -> Self::Item<'a> {
-                ($($Q::fetch(page_ptr, row_index, ctx),)*)
+                // SAFETY: each term's contract is the tuple's, which the caller upholds.
+                ($(unsafe { $Q::fetch(page_ptr, row_index, ctx) },)*)
             }
 
             unsafe fn fetch_from_world<'a>(
                 world: *const World,
                 entity_id: EntityId,
-        ctx: FetchContext<'_>,
+                ctx: FetchContext<'_>,
             ) -> Option<Self::Item<'a>> {
-                Some(($($Q::fetch_from_world(world, entity_id, ctx)?,)*))
+                // SAFETY: each term's contract is the tuple's, which the caller upholds.
+                Some(($(unsafe { $Q::fetch_from_world(world, entity_id, ctx) }?,)*))
             }
         }
     };
@@ -590,8 +629,10 @@ impl WorldQuery for EntityId {
         row_index: usize,
         _ctx: FetchContext<'_>,
     ) -> Self::Item<'a> {
-        let page = &*page_ptr;
-        *page.entities.get_unchecked(row_index)
+        // SAFETY: the caller guarantees `page_ptr` points to a valid page.
+        let page = unsafe { &*page_ptr };
+        // SAFETY: the caller guarantees `row_index` is in bounds.
+        unsafe { *page.entities.get_unchecked(row_index) }
     }
 
     unsafe fn fetch_from_world<'a>(

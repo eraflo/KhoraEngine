@@ -618,7 +618,7 @@ fn duplicate_entity_of_an_instance_root_makes_a_second_instance() {
     );
 }
 
-/// An instance whose prefab can no longer be read — its `.kprefab` deleted,
+/// An instance whose prefab cannot be read — its `.kprefab` deleted,
 /// or no project open — still duplicates, as a scene with it still saves:
 /// the copy holds the root and its barrel, with the original's values.
 #[test]

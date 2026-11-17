@@ -32,8 +32,8 @@ use crate::types::Ty;
 use crate::vm::{Instruction, Reg, Value};
 
 impl Compiler {
-    /// `object.method(args)` — or, `optional`, `object?.method(args)` — when
-    /// `object` is an array, or `None`.
+    /// Compiles `object.method(args)` (with `optional`, `object?.method(args)`)
+    /// when `object` is an array, or returns `None`.
     pub(super) fn compile_array_method(
         &mut self,
         object: &Expr,
@@ -126,7 +126,7 @@ impl Compiler {
         Some(self.constant(Value::Unit, Shape::Other))
     }
 
-    /// The value at the end of `at`, walked from `start`.
+    /// Returns the value at the end of `at`, walked from `start`.
     fn walk_to(&mut self, start: Reg, at: &[At]) -> Reg {
         at.iter()
             .fold(start, |current, &place| self.step_into(current, place))

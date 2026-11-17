@@ -27,6 +27,11 @@
 //! eight frames, every sum exact in binary — except where the sixty-frames,
 //! ten-hertz case is the point.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn threads to test concurrency"
+)]
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use khora_core::script::{EventQueue, ScriptEvent, ScriptSnapshot};
@@ -618,7 +623,7 @@ const FAULTING_WALKER: &str = "behavior Walker {
     void Update(float dt) { last = dt; n = n / zero; }
 }";
 
-/// The same `Walker`, edited so it no longer faults.
+/// The same `Walker`, edited so it does not fault.
 const FIXED_WALKER: &str = "behavior Walker {
     int zero = 0;
     int n = 1;

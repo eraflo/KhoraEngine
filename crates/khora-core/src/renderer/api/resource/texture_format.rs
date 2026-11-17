@@ -55,25 +55,6 @@ pub enum TextureFormat {
     Depth32FloatStencil8,
 }
 
-/// How the values stored in a texture are to be interpreted by the sampler.
-///
-/// It belongs to the texture's role, not its file: one PNG is a colour map or a
-/// data map depending on the material slot using it. The decoder reports the
-/// layout, the consumer the colour space, and
-/// [`TextureFormat::with_color_space`] combines them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum TextureColorSpace {
-    /// sRGB-encoded values the sampler linearizes, for authored colour.
-    ///
-    /// Base colour and emissive maps.
-    Srgb,
-    /// Linear values sampled verbatim, for data maps and any float/HDR texture.
-    ///
-    /// Normal, metallic-roughness and occlusion maps: transforming them would
-    /// break the lighting math.
-    Linear,
-}
-
 impl TextureFormat {
     /// Returns the format to upload this decoded layout into for `color_space`.
     ///
@@ -113,6 +94,25 @@ impl TextureFormat {
             TextureFormat::Depth32FloatStencil8 => 5,
         }
     }
+}
+
+/// How the values stored in a texture are to be interpreted by the sampler.
+///
+/// It belongs to the texture's role, not its file: one PNG is a colour map or a
+/// data map depending on the material slot using it. The decoder reports the
+/// layout, the consumer the colour space, and
+/// [`TextureFormat::with_color_space`] combines them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TextureColorSpace {
+    /// sRGB-encoded values the sampler linearizes, for authored colour.
+    ///
+    /// Base colour and emissive maps.
+    Srgb,
+    /// Linear values sampled verbatim, for data maps and any float/HDR texture.
+    ///
+    /// Normal, metallic-roughness and occlusion maps: transforming them would
+    /// break the lighting math.
+    Linear,
 }
 
 #[cfg(test)]

@@ -15,7 +15,7 @@
 //! Laying content out without painting it, to know its size first.
 //!
 //! A scrolled view clamps its offset to its content's height before it
-//! paints: painted with an offset its content no longer reaches, it shows
+//! paints: painted with an offset past the end of its content, it shows
 //! nothing. When that height is only known by laying the content out — text
 //! wrapped at the real font's widths, lines that come and go — the content
 //! is laid out once on a [`Measuring`] builder, which paints nothing and
@@ -32,7 +32,7 @@ pub struct Measuring<'a> {
 }
 
 impl<'a> Measuring<'a> {
-    /// A builder laying out as `real` would, painting nothing.
+    /// Wraps `real` in a builder that lays out as it would, painting nothing.
     pub fn new(real: &'a dyn UiBuilder) -> Self {
         Self { real }
     }

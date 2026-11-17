@@ -20,13 +20,13 @@
 //! [`Resident`](Residency::Resident)), and what it makes it on (its
 //! [`Target`](Residency::Target): the device, or a pool on it).
 //!
-//! The data layer runs each residency as a `PreExtract` DataSystem, after the
+//! The data layer runs each residency as a `PreExtract` `DataSystem`, after the
 //! asset reload: a [`Resident`] store remembers which copy of the source each
 //! resident was made from, so a source the reload replaced is made again and
 //! the stale resident released. Hot reload is the store's job, not each
 //! residency's.
 //!
-//! Only the contract lives here; the residencies and their DataSystems are in
+//! Only the contract lives here; the residencies and their `DataSystem`s are in
 //! `khora-data`, the devices in `khora-infra`.
 
 use std::collections::HashMap;
@@ -71,7 +71,7 @@ impl std::error::Error for ResidencyError {}
 
 /// Moving an asset to the device that uses it.
 pub trait Residency: Send + Sync + 'static {
-    /// The residency's name: its DataSystem's name, as telemetry and
+    /// The residency's name: its `DataSystem`'s name, as telemetry and
     /// `runs_after` name it.
     const NAME: &'static str;
     /// The kind of device its residents live on.
@@ -125,13 +125,13 @@ impl<R: Residency> Default for Resident<R> {
 }
 
 impl<R: Residency> Resident<R> {
-    /// An empty store.
+    /// Returns an empty store.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// The resident kept under `key`, whatever copy it was made from.
+    /// Returns the resident kept under `key`, whatever copy it was made from.
     pub fn get(&self, key: &ResidentKey) -> Option<R::Resident> {
         self.entries
             .read_recovered()
@@ -192,12 +192,12 @@ impl<R: Residency> Resident<R> {
         }
     }
 
-    /// The number of residents kept.
+    /// Returns the number of residents kept.
     pub fn len(&self) -> usize {
         self.entries.read_recovered().len()
     }
 
-    /// Whether no resident is kept.
+    /// Returns whether no resident is kept.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }

@@ -34,6 +34,9 @@ pub use project::ProjectTrustState;
 pub use quarantine::{QuarantineKey, Refusals};
 pub use store::{ProjectTrust, TrustStore};
 
+/// One mebibyte.
+const MIB: u64 = 1 << 20;
+
 /// How much a file is trusted, from the most to the least.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Trust {
@@ -48,6 +51,25 @@ pub enum Trust {
     Imported,
     /// A game save.
     Save,
+}
+
+impl Trust {
+    /// Returns whether a file read at this trust has the strict caps: anything but
+    /// the engine's own files and a trusted project's.
+    pub fn is_strict(self) -> bool {
+        !matches!(self, Trust::Engine | Trust::Project)
+    }
+
+    /// Returns the trust in a sentence's words: `"trusted project"`, `"downloaded file"`, …
+    pub fn label(self) -> &'static str {
+        match self {
+            Trust::Engine => "engine",
+            Trust::Project => "trusted project",
+            Trust::Restricted => "restricted project",
+            Trust::Imported => "downloaded file",
+            Trust::Save => "save",
+        }
+    }
 }
 
 /// What a file is, by its asset type, for its size cap.
@@ -90,28 +112,6 @@ impl FileKind {
     }
 }
 
-impl Trust {
-    /// Whether a file read at this trust has the strict caps: anything but
-    /// the engine's own files and a trusted project's.
-    pub fn is_strict(self) -> bool {
-        !matches!(self, Trust::Engine | Trust::Project)
-    }
-
-    /// Returns the trust in a sentence's words: `"trusted project"`, `"downloaded file"`, …
-    pub fn label(self) -> &'static str {
-        match self {
-            Trust::Engine => "engine",
-            Trust::Project => "trusted project",
-            Trust::Restricted => "restricted project",
-            Trust::Imported => "downloaded file",
-            Trust::Save => "save",
-        }
-    }
-}
-
-/// One mebibyte.
-const MIB: u64 = 1 << 20;
-
 /// Returns the size, in bytes, past which a file of `kind` read at `trust` is refused.
 ///
 /// See the book: concepts/trust.md, "The guard".
@@ -129,7 +129,7 @@ pub fn size_cap(kind: FileKind, trust: Trust) -> u64 {
     }
 }
 
-/// Whether `head`, the start of a file, reads as text: UTF-8 with no NUL.
+/// Returns whether `head`, the start of a file, reads as text: UTF-8 with no NUL.
 ///
 /// A head cut inside its last character is still text: it starts a longer file.
 pub fn looks_like_text(head: &[u8]) -> bool {
@@ -191,43 +191,6 @@ pub enum SecurityReason {
     Tampered,
 }
 
-/// A file the engine refused to read.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct SecurityRefusal {
-    /// The file, as it was given.
-    pub path: PathBuf,
-    /// How much it was trusted.
-    pub trust: Trust,
-    /// Where it was refused.
-    pub layer: TrustLayer,
-    /// Why.
-    pub reason: SecurityReason,
-}
-
-impl SecurityRefusal {
-    /// Returns what refused the file, in a sentence's words: `"file guard"`, `"type check"`, …
-    ///
-    /// A file whose bytes are not its type's was refused by the type check,
-    /// whichever layer saw it.
-    pub fn refused_by(&self) -> &'static str {
-        if matches!(self.reason, SecurityReason::WrongType { .. }) {
-            return "type check";
-        }
-        match self.layer {
-            TrustLayer::File => "file guard",
-            TrustLayer::Decoder => "decoder",
-            TrustLayer::Content => "type check",
-            TrustLayer::Pack => "pack",
-        }
-    }
-}
-
-impl std::fmt::Display for SecurityRefusal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {}", self.path.display(), self.reason)
-    }
-}
-
 impl std::fmt::Display for SecurityReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -265,7 +228,7 @@ impl SecurityReason {
         )
     }
 
-    /// What to do about a file refused for this reason.
+    /// Returns what to do about a file refused for this reason.
     pub fn remedy(&self) -> &'static str {
         match self {
             SecurityReason::Escape => {
@@ -298,14 +261,51 @@ impl SecurityReason {
     }
 }
 
+/// A file the engine refused to read.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct SecurityRefusal {
+    /// The file, as it was given.
+    pub path: PathBuf,
+    /// How much it was trusted.
+    pub trust: Trust,
+    /// Where it was refused.
+    pub layer: TrustLayer,
+    /// Why.
+    pub reason: SecurityReason,
+}
+
+impl SecurityRefusal {
+    /// Returns what refused the file, in a sentence's words: `"file guard"`, `"type check"`, …
+    ///
+    /// A file whose bytes are not its type's was refused by the type check,
+    /// whichever layer saw it.
+    pub fn refused_by(&self) -> &'static str {
+        if matches!(self.reason, SecurityReason::WrongType { .. }) {
+            return "type check";
+        }
+        match self.layer {
+            TrustLayer::File => "file guard",
+            TrustLayer::Decoder => "decoder",
+            TrustLayer::Content => "type check",
+            TrustLayer::Pack => "pack",
+        }
+    }
+}
+
+impl std::fmt::Display for SecurityRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.path.display(), self.reason)
+    }
+}
+
 /// The first bytes of the formats several decoders share.
 pub(crate) mod magic {
-    /// A RIFF file holding a WAVE.
+    /// Returns whether `head` starts a RIFF file holding a WAVE.
     pub(crate) fn is_wav(head: &[u8]) -> bool {
         head.len() >= 12 && head.starts_with(b"RIFF") && &head[8..12] == b"WAVE"
     }
 
-    /// An MP3: an ID3 tag, or an MPEG audio frame's sync word.
+    /// Returns whether `head` starts an MP3: an ID3 tag, or an MPEG audio frame's sync word.
     pub(crate) fn is_mp3(head: &[u8]) -> bool {
         head.starts_with(b"ID3") || (head.len() >= 2 && head[0] == 0xFF && head[1] & 0xE0 == 0xE0)
     }

@@ -367,7 +367,7 @@ impl AffineTransform {
         unit(image).unwrap_or_else(|| self.rotation() * local)
     }
 
-    /// The three basis axes made unit, an axis scaled to zero rebuilt from the two others.
+    /// Returns the three basis axes made unit, an axis scaled to zero rebuilt from the two others.
     ///
     /// `None` when the basis is not finite, two axes are zero, or a zero axis's survivors are
     /// parallel.
@@ -468,7 +468,7 @@ impl AffineTransform {
         Self(mat)
     }
 
-    /// The rotation and *signed* scale this transform is made of.
+    /// Returns the rotation and *signed* scale this transform is made of.
     ///
     /// A mirror is a negative scale on the first axis, so rotation ∘ scale rebuilds the
     /// transform, which [`Self::rotation`] and [`Self::scale`] cannot.

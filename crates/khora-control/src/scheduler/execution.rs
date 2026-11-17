@@ -68,7 +68,7 @@ impl ExecutionScheduler {
         self.execute_agents(&agents, run);
     }
 
-    /// Runs the phase's agents wave by wave, in [`sort_agents`](super::roster::sort_agents) order.
+    /// Runs the phase's agents wave by wave, in the order the roster sorts them.
     ///
     /// Waves run in order, so Hard dependencies hold. A wave of one runs inline into the
     /// frame's deck; a larger wave's members run on the worker pool into private deck

@@ -272,8 +272,8 @@ fn a_name_before_a_block_after_every_or_after_is_not_a_literal() {
 
 // ─── `new` ──────────────────────────────────────────────────────────────────
 
-/// **`new` stays refused**, with the message it has always had — and its note
-/// now shows how a struct is built: with its literal.
+/// **`new` is refused**, and its note shows how a struct is built: with its
+/// literal.
 #[test]
 fn new_points_at_the_struct_literal() {
     let found = errors(

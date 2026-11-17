@@ -89,7 +89,7 @@ impl EditorCamera {
     }
 
     /// Pans the target in the camera's local XY plane.
-    pub fn pan(&mut self, delta_x: f32, delta_y: f32) {
+    pub(crate) fn pan(&mut self, delta_x: f32, delta_y: f32) {
         let right = self.right();
         let up = self.up();
         let speed = self.pan_speed * self.distance * 0.1;
@@ -113,12 +113,12 @@ impl EditorCamera {
     }
 
     /// Returns the camera's up direction.
-    pub fn up(&self) -> Vec3 {
+    pub(crate) fn up(&self) -> Vec3 {
         self.right().cross(self.forward()).normalize()
     }
 
     /// Builds a [`ViewInfo`] for the given viewport dimensions.
-    pub fn view_info(&self, width: f32, height: f32) -> ViewInfo {
+    pub(crate) fn view_info(&self, width: f32, height: f32) -> ViewInfo {
         let pos = self.position();
         let view_matrix = Mat4::look_at_rh(pos, self.target, Vec3::Y).unwrap_or(Mat4::IDENTITY);
         let aspect = if height > 0.0 { width / height } else { 1.0 };

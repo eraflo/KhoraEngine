@@ -18,7 +18,7 @@
 
 use quote::{quote, ToTokens};
 
-/// The declared check's path, if any.
+/// Returns the declared check's path, if any.
 ///
 /// Read in a pass of its own whose errors are kept: a check that silently
 /// vanished would leave its values unchecked.
@@ -40,7 +40,7 @@ pub(crate) fn check_path(input: &syn::DeriveInput) -> syn::Result<Option<syn::Pa
     Ok(check)
 }
 
-/// What the declared check adds to the registration of `name`: its stage step and its hook.
+/// Returns what the declared check adds to the registration of `name`: its stage step and its hook.
 ///
 /// The stage step reports an `Unusable` entry per field a loaded `value`
 /// cannot be used with, keeping the value; the running world's checks call

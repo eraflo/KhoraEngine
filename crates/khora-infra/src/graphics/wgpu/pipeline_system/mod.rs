@@ -191,7 +191,7 @@ struct Inner {
     rebuilt: bool,
 }
 
-/// A composer holding the engine's lib modules, added in their order — each
+/// Builds a composer holding the engine's lib modules, added in their order — each
 /// after the ones it imports — with `base_defs`.
 fn engine_composer(base_defs: &HashMap<String, ShaderDefValue>) -> Result<Composer, RenderError> {
     let mut composer = Composer::default();
@@ -210,7 +210,7 @@ fn engine_composer(base_defs: &HashMap<String, ShaderDefValue>) -> Result<Compos
     Ok(composer)
 }
 
-/// The wgpu/naga_oil [`PipelineSystem`] backend, put in `runtime.backends`
+/// The wgpu/`naga_oil` [`PipelineSystem`] backend, put in `runtime.backends`
 /// as `Arc<dyn PipelineSystem>`.
 ///
 /// Holds its one lock across device calls: the device's lock is the leaf below

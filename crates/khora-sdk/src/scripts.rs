@@ -268,7 +268,7 @@ fn watched_name(runtime: &Runtime, assets_root: &Path) -> PathBuf {
 
 /// Unmounts the scripts under `assets_root`, at any frame, so none of them runs again.
 ///
-/// The root is no longer watched; what its modules declared is orphaned, kept
+/// The root is not watched afterwards; what its modules declared is orphaned, kept
 /// with its data as for a deleted file; their programs, queued or installed,
 /// are withdrawn, and what they read is forgotten.
 pub fn unmount(runtime: &Runtime, assets_root: &Path) {
@@ -290,7 +290,7 @@ pub fn unmount(runtime: &Runtime, assets_root: &Path) {
     if let Some(dir) = script_dir(assets_root) {
         modules.extend(module_names(&dir));
     }
-    // The files it held outside its script folder are no longer the
+    // The files it held outside its script folder stop being the
     // project's to show.
     if let Some(problems) = runtime.resources.get::<Arc<Problems>>() {
         khora_io::script::problems::clear_misplaced(problems, &named);
@@ -359,7 +359,7 @@ pub fn unmount(runtime: &Runtime, assets_root: &Path) {
             reads.withdraw(&ScriptReads::incoming(module));
         }
     }
-    // A module no longer mounted has nothing wrong with it to show.
+    // A module not mounted any more has nothing wrong with it to show.
     if let Some(problems) = runtime.resources.get::<Arc<Problems>>() {
         for module in &modules {
             problems.report(

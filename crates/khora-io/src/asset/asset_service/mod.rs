@@ -361,7 +361,7 @@ impl AssetService {
         Ok(())
     }
 
-    /// Whether the last [`load`](Self::load) of `uuid` failed and nothing changed since.
+    /// Returns whether the last [`load`](Self::load) of `uuid` failed and nothing changed since.
     ///
     /// Loading it again would fail the same way, so a caller resolving every tick skips it.
     pub fn has_failed(&self, uuid: &AssetUUID) -> bool {

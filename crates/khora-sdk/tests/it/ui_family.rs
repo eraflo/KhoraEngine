@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! The UI as the engine runs it: one agent, built from the UI family's
-//! registration, in every mode; its pass, composited where it always was —
+//! registration, in every mode; its pass, composited at its fixed place —
 //! after the transparent pass, before the grid; and the text backends it
 //! draws through, installed by default and kept when the application brings
 //! its own.

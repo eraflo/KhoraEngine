@@ -1,0 +1,62 @@
+# Settings of the clippy lints the workspace turns on (`[workspace.lints]` in
+# the root `Cargo.toml`). A deliberate exception is marked where it stands,
+# with `#[expect(<lint>, reason = "…")]`.
+
+# A test may unwrap, print and `dbg!`: a panic is how it fails, its output is
+# shown only when it does.
+allow-unwrap-in-tests = true
+allow-print-in-tests = true
+allow-dbg-in-tests = true
+
+# RULES §5: concurrency goes through the DCC. The DCC's own thread and the
+# scheduler's worker pool are the two exceptions, each marked where it spawns.
+disallowed-methods = [
+    { path = "std::thread::spawn", reason = "RULES §5: concurrency goes through the DCC" },
+    { path = "std::thread::Builder::spawn", reason = "RULES §5: concurrency goes through the DCC" },
+]
+
+# RULES §1: math goes through `khora_core::math`, never raw `glam`. Clippy
+# names types one by one, not a crate: these are glam's public types. No
+# workspace crate depends on glam, so the paths resolve only once one does
+# (`allow-invalid` keeps them quiet until then).
+disallowed-types = [
+    { path = "glam::Vec2", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::Vec3", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::Vec3A", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::Vec4", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::Mat2", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::Mat3", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::Mat3A", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::Mat4", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::Quat", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::Affine2", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::Affine3A", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::DVec2", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::DVec3", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::DVec4", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::DMat3", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::DMat4", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::DQuat", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::IVec2", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::IVec3", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::IVec4", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::UVec2", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::UVec3", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+    { path = "glam::UVec4", reason = "RULES §1: math goes through khora_core::math", allow-invalid = true },
+]
+
+# Words `doc_markdown` would take for code but are prose: formats, layouts and
+# product names. A code identifier is never listed here: it takes backticks.
+doc-valid-idents = [
+    "..",
+    "MessagePack",
+    "SoA",
+    "AoS",
+    "AoSoA",
+    "OKLab",
+    "HiDPI",
+    "GeForce",
+    "SemiBold",
+    "DirectX12",
+    "CommonMark",
+]

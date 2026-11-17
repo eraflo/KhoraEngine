@@ -21,8 +21,8 @@
 //! Its expansion names `::khora_script::native::{NativeFn, NativeRegistration,
 //! ScriptType}`, `::khora_script::vm::Value::Unit` and
 //! `::khora_script::inventory::submit!`; a move that drops one of them stops
-//! this module compiling, and a submission that no longer reaches the registry
-//! fails the assertions.
+//! this module compiling, and a submission that misses the registry fails the
+//! assertions.
 //!
 //! The natives are named `guard_probe_*`: `inventory` shares one collection
 //! across the whole test binary, so a plain name would be reserved for every

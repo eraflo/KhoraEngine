@@ -37,7 +37,7 @@ const HEADER_LIFT: f32 = 13.0;
 
 /// Draws the section header `text` above a field: more room above it than
 /// below, less as the card's first row.
-pub fn render_header(ui: &mut dyn UiBuilder, theme: &UiTheme, text: &str, first: bool) {
+pub(crate) fn render_header(ui: &mut dyn UiBuilder, theme: &UiTheme, text: &str, first: bool) {
     let room = if first {
         HEADER_ROOM_FIRST
     } else {
@@ -49,7 +49,12 @@ pub fn render_header(ui: &mut dyn UiBuilder, theme: &UiTheme, text: &str, first:
 }
 
 /// Draws the field's label, saying its tooltip when hovered.
-pub fn render_label(ui: &mut dyn UiBuilder, cx: &FieldContext<'_>, text: &str, color: [f32; 4]) {
+pub(crate) fn render_label(
+    ui: &mut dyn UiBuilder,
+    cx: &FieldContext<'_>,
+    text: &str,
+    color: [f32; 4],
+) {
     match cx.tooltip {
         Some(tooltip) => ui.colored_label_with_tooltip(color, text, tooltip),
         None => ui.colored_label(color, text),
@@ -60,7 +65,7 @@ pub fn render_label(ui: &mut dyn UiBuilder, cx: &FieldContext<'_>, text: &str, c
 /// under it when ranged; returns whether the author changed it.
 ///
 /// Returns `None` when `value` is not a number of `ty`.
-pub fn render_number(
+pub(crate) fn render_number(
     ui: &mut dyn UiBuilder,
     label: &str,
     ty: &ErgonType,
@@ -117,7 +122,7 @@ pub fn render_number(
 }
 
 /// Draws a read-only number's gauge, under its text row.
-pub fn render_read_only_gauge(
+pub(crate) fn render_read_only_gauge(
     ui: &mut dyn UiBuilder,
     cx: &FieldContext<'_>,
     ty: &ErgonType,
@@ -130,8 +135,8 @@ pub fn render_read_only_gauge(
     }
 }
 
-/// The bar under a ranged number: a quiet track, filled to where the value
-/// sits — all amber when it lies outside the range.
+/// Renders the bar under a ranged number: a quiet track, filled to where the
+/// value sits — all amber when it lies outside the range.
 fn render_gauge(
     ui: &mut dyn UiBuilder,
     theme: &UiTheme,
@@ -172,7 +177,7 @@ fn render_gauge(
     }
 }
 
-/// The bounds a `ty` scrubber edits between — an angle's in degrees.
+/// Returns the bounds a `ty` scrubber edits between — an angle's in degrees.
 fn edited_bounds(ty: &ErgonType, range: FieldRange) -> (f32, f32) {
     match ty {
         ErgonType::Angle => (
@@ -183,7 +188,7 @@ fn edited_bounds(ty: &ErgonType, range: FieldRange) -> (f32, f32) {
     }
 }
 
-/// The number `value` holds, as stored.
+/// Returns the number `value` holds, as stored.
 fn numeric(value: &ScriptValue) -> Option<f64> {
     match value {
         ScriptValue::Int(i) => Some(*i as f64),

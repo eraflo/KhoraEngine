@@ -105,6 +105,10 @@ impl<K: RegistryKind> TypedRegistry<K> {
     }
 
     /// Returns a borrow of the registered entry, panicking if absent.
+    ///
+    /// # Panics
+    ///
+    /// Panics when no entry of type `T` is registered here or in a parent.
     pub fn require<T: Send + Sync + 'static>(&self) -> &T {
         self.get::<T>().unwrap_or_else(|| {
             panic!(
@@ -139,13 +143,13 @@ impl<K: RegistryKind> TypedRegistry<K> {
                 .is_some_and(|parent| parent.contains_type_id(id))
     }
 
-    /// Number of entries registered locally.
+    /// Returns the number of entries registered locally.
     #[must_use]
     pub fn len(&self) -> usize {
         self.inner.len()
     }
 
-    /// Whether no entries are registered locally.
+    /// Returns whether no entries are registered locally.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()

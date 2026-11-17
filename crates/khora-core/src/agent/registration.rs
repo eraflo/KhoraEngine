@@ -373,7 +373,7 @@ pub struct RegisteredAgent(pub AgentRegistration);
 
 inventory::collect!(RegisteredAgent);
 
-/// Every registration submitted to the collection, in link order.
+/// Returns every registration submitted to the collection, in link order.
 pub fn registered_agents() -> Vec<&'static AgentRegistration> {
     inventory::iter::<RegisteredAgent>
         .into_iter()
@@ -565,7 +565,7 @@ pub fn check_registrations_in(
     Ok(())
 }
 
-/// Whether a family that runs before `reader` writes the deck slot `slot`.
+/// Returns whether a family that runs before `reader` writes the deck slot `slot`.
 ///
 /// The scheduler runs the fixed-step agents' rounds before the once-per-frame
 /// phase loop, each round in phase order. So a fixed-step reader sees a

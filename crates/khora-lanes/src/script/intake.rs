@@ -73,7 +73,7 @@ pub fn take_in(
     scripts.set_pending(mail);
 }
 
-/// The intake over the engine's scripting world, when there is one.
+/// Runs the intake over the engine's scripting world, when there is one.
 ///
 /// Without one, the reserve and the event channel keep what they hold. While
 /// the family is off this system does not run: the reloads the `loading`

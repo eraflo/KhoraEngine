@@ -13,13 +13,13 @@ use super::AppContext;
 /// Optional lifecycle hooks — implement on the same type as [`App`](super::App)
 /// to hook startup / shutdown without inflating the main trait.
 pub trait AppLifecycle {
-    /// Called once after the backend is up but before the first
-    /// `update`. Apps install their theme / fonts here.
+    /// Runs once after the backend is up but before the first `update`. Apps install their theme /
+    /// fonts here.
     fn on_start(&mut self, ctx: &mut dyn AppContext) {
         let _ = ctx;
     }
 
-    /// Called once when the window is closing. Persist state here.
+    /// Runs once when the window is closing. Persist state here.
     fn on_exit(&mut self) {}
 }
 

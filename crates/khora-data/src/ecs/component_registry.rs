@@ -200,7 +200,7 @@ impl ComponentRegistry {
     /// Returns [`generation`](Self::generation), shared and kept up to date.
     ///
     /// A load prepared off the frame reads it to learn the registry moved since.
-    pub fn published_generation(&self) -> Arc<std::sync::atomic::AtomicU64> {
+    pub(crate) fn published_generation(&self) -> Arc<std::sync::atomic::AtomicU64> {
         Arc::clone(&self.published)
     }
 

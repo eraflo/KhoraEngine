@@ -81,7 +81,7 @@ fn family(faces: Family) -> Vec<NamedFont> {
         .collect()
 }
 
-/// The brand [`FontPack`]: every family, every face.
+/// Returns the brand [`FontPack`]: every family, every face.
 pub fn brand_fonts() -> FontPack {
     FontPack {
         proportional: family(PROPORTIONAL),

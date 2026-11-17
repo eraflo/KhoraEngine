@@ -109,7 +109,7 @@ event Tick(int by);
 event Ticked;
 "#;
 
-/// `FAULTY`, fixed: it no longer divides, and the code is not the same length.
+/// `FAULTY`, fixed: it does not divide, and the code is not the same length.
 const FIXED: &str = r#"
 behavior Guard {
     int zero = 0;

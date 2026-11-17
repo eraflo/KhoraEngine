@@ -925,7 +925,7 @@ impl Sky {
     }
 
     /// An IBL bake of the procedural sky, run on the lane's device: what the
-    /// `ibl_bake` DataSystem publishes before the skybox draws.
+    /// `ibl_bake` `DataSystem` publishes before the skybox draws.
     pub fn bake(&self) -> IblBaker {
         let baker = IblBaker::new();
         self.device.baking.store(true, Ordering::SeqCst);

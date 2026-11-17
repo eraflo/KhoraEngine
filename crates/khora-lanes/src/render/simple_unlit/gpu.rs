@@ -43,7 +43,7 @@ const UNLIT_MODEL_LAYOUT_LABEL: &str = "simple_unlit_model_layout";
 /// The cache label of the unlit per-draw material layout.
 const UNLIT_MATERIAL_LAYOUT_LABEL: &str = "simple_unlit_material_layout";
 
-/// The group-1 (model) layout: one dynamic-offset uniform buffer.
+/// Returns the group-1 (model) layout: one dynamic-offset uniform buffer.
 fn unlit_model_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
     use khora_core::renderer::api::command::{
         BindGroupLayoutEntry, BindingType, BufferBindingType,
@@ -61,7 +61,7 @@ fn unlit_model_layout_entries() -> Vec<khora_core::renderer::api::command::BindG
     }]
 }
 
-/// The group-2 (material) layout: one dynamic-offset uniform buffer.
+/// Returns the group-2 (material) layout: one dynamic-offset uniform buffer.
 ///
 /// The unlit material has no textures, so it does not use the shared material layout.
 fn unlit_material_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry>

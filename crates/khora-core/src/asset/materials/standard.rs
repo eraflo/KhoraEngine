@@ -172,11 +172,6 @@ impl Default for StandardMaterial {
     }
 }
 
-/// The specular strength of a material saved without the field.
-fn full_specular() -> f32 {
-    1.0
-}
-
 impl Asset for StandardMaterial {}
 impl Material for StandardMaterial {
     fn base_color(&self) -> crate::math::LinearRgba {
@@ -238,6 +233,11 @@ impl Material for StandardMaterial {
     fn specular_color_texture(&self) -> Option<AssetUUID> {
         self.specular_color_texture
     }
+}
+
+/// Returns the specular strength of a material saved without the field.
+fn full_specular() -> f32 {
+    1.0
 }
 
 #[cfg(test)]

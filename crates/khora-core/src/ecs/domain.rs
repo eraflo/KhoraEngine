@@ -33,7 +33,7 @@ pub enum SemanticDomain {
     Audio,
     /// For components related to physics simulation.
     Physics,
-    /// For components driving the in-world UI subsystem (UiNode, UiText, etc).
+    /// For components driving the in-world UI subsystem (`UiNode`, `UiText`, etc).
     Ui,
     /// For gameplay logic attached to entities — which behavior an entity runs
     /// and the state that behavior keeps.
@@ -60,8 +60,8 @@ impl SemanticDomain {
         SemanticDomain::Script,
     ];
 
-    /// Dense index of this domain in `0..COUNT`, used to address fixed
-    /// per-domain arrays without a `HashMap` lookup.
+    /// Returns the dense index of this domain in `0..COUNT`, used to address fixed per-domain
+    /// arrays without a `HashMap` lookup.
     pub const fn index(self) -> usize {
         match self {
             SemanticDomain::Spatial => 0,
@@ -73,7 +73,7 @@ impl SemanticDomain {
         }
     }
 
-    /// The domain's name as Ergon spells it in `[Domain(…)]`: `"Physics"`.
+    /// Returns the domain's name as Ergon spells it in `[Domain(…)]`: `"Physics"`.
     pub const fn name(self) -> &'static str {
         match self {
             SemanticDomain::Spatial => "Spatial",
@@ -85,7 +85,7 @@ impl SemanticDomain {
         }
     }
 
-    /// The domain spelled `name`, as [`name`](Self::name) spells it.
+    /// Returns the domain spelled `name`, as [`name`](Self::name) spells it.
     pub fn from_name(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|domain| domain.name() == name)
     }

@@ -31,8 +31,8 @@ use super::{Checker, Ty};
 use crate::ast::{Block, Stmt};
 use crate::diagnostics::Span;
 
-/// Whether running `block` always ends at a `return`.
-pub fn block_returns(block: &Block) -> bool {
+/// Returns whether running `block` always ends at a `return`.
+pub(crate) fn block_returns(block: &Block) -> bool {
     block.statements.iter().any(stmt_returns)
 }
 

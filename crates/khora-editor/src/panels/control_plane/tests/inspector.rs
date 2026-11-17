@@ -1581,7 +1581,7 @@ fn the_inspector_scrolls_when_its_cards_overflow() {
 }
 
 /// **Cards that shrink leave no blank inspector.** Scrolled to the end of a
-/// long decision, the next round no longer lends the probe anything: its
+/// long decision, the next round lends the probe nothing: its
 /// cards are much shorter. On the very first frame that shows them the last
 /// card — the Message — is inside the clip, not scrolled away above it with
 /// blank space below.

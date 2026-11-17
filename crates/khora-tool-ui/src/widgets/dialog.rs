@@ -28,6 +28,26 @@ use super::buttons::{button, Button, ButtonKind};
 use super::paint::{fill, fill_stroke, icon_centered, mono, text, with_alpha};
 use super::Rect;
 
+/// The width of a dialog.
+const BOX_W: f32 = 520.0;
+/// Its inner margin.
+const PAD: f32 = 24.0;
+/// The space between its parts.
+const GAP: f32 = 14.0;
+/// The header's height: the glyph's plate, or the title and its subtitle.
+const HEADER_H: f32 = 40.0;
+/// The glyph's plate.
+const PLATE: f32 = 36.0;
+/// One fact's line, and the plate's inner margin.
+const ROW_H: f32 = 24.0;
+const ROW_PAD: f32 = 12.0;
+/// The labels' column.
+const LABEL_W: f32 = 96.0;
+/// The answers' buttons.
+const BTN_H: f32 = 34.0;
+const BTN_MIN_W: f32 = 88.0;
+const BTN_GAP: f32 = 8.0;
+
 /// One answer a [`Dialog`] offers, and what [`dialog`] returns when it is clicked.
 #[derive(Debug, Clone, Copy)]
 pub struct DialogChoice<'a, A> {
@@ -209,27 +229,7 @@ pub fn dialog<A: Copy>(
     chosen
 }
 
-/// The width of a dialog.
-const BOX_W: f32 = 520.0;
-/// Its inner margin.
-const PAD: f32 = 24.0;
-/// The space between its parts.
-const GAP: f32 = 14.0;
-/// The header's height: the glyph's plate, or the title and its subtitle.
-const HEADER_H: f32 = 40.0;
-/// The glyph's plate.
-const PLATE: f32 = 36.0;
-/// One fact's line, and the plate's inner margin.
-const ROW_H: f32 = 24.0;
-const ROW_PAD: f32 = 12.0;
-/// The labels' column.
-const LABEL_W: f32 = 96.0;
-/// The answers' buttons.
-const BTN_H: f32 = 34.0;
-const BTN_MIN_W: f32 = 88.0;
-const BTN_GAP: f32 = 8.0;
-
-/// `text` cut to fit `width` at `size`, an ellipsis where it was cut: at its
+/// Cuts `text` to fit `width` at `size`, an ellipsis where it was cut: at its
 /// end, or in its `middle` (monospace, for a path).
 fn shorten(ui: &dyn UiBuilder, text: &str, size: f32, width: f32, middle: bool) -> String {
     let family = if middle {
@@ -260,7 +260,7 @@ fn shorten(ui: &dyn UiBuilder, text: &str, size: f32, width: f32, middle: bool) 
     String::new()
 }
 
-/// `text` broken at spaces into lines no wider than `width` at `size`.
+/// Breaks `text` at spaces into lines no wider than `width` at `size`.
 ///
 /// Measured in the proportional face. A word wider than `width` stands on its
 /// own line.

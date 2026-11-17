@@ -22,7 +22,7 @@ use super::declared::DeclaredRecord;
 use super::record::{Record, ReportEntry, ReportKind, VariantPayload};
 use super::scene_record::SceneRecord;
 
-/// Whether `a` and `b` give an asset, anywhere inside them, two different kinds.
+/// Returns whether `a` and `b` give an asset, anywhere inside them, two different kinds.
 pub(crate) fn kinds_conflict(a: &ErgonType, b: &ErgonType) -> bool {
     match (a, b) {
         (ErgonType::Asset(a), ErgonType::Asset(b)) => a != b,
@@ -46,7 +46,7 @@ pub(crate) fn kinds_conflict(a: &ErgonType, b: &ErgonType) -> bool {
     }
 }
 
-/// Whether `value` holds an asset reference anywhere.
+/// Returns whether `value` holds an asset reference anywhere.
 pub(crate) fn value_holds_asset(value: &ScriptValue) -> bool {
     match value {
         ScriptValue::Asset(_) => true,
@@ -56,7 +56,7 @@ pub(crate) fn value_holds_asset(value: &ScriptValue) -> bool {
     }
 }
 
-/// Whether `record` holds an asset reference anywhere.
+/// Returns whether `record` holds an asset reference anywhere.
 fn record_holds_asset(record: &Record) -> bool {
     match record {
         Record::Asset(_) => true,
@@ -81,7 +81,7 @@ fn record_holds_asset(record: &Record) -> bool {
     }
 }
 
-/// The fields of `from` that `to` gives another asset kind, by name.
+/// Returns the fields of `from` that `to` gives another asset kind, by name.
 pub(crate) fn conflicting_fields(from: &DeclaredRecord, to: &DeclaredRecord) -> Vec<String> {
     from.fields
         .iter()

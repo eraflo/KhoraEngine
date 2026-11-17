@@ -115,7 +115,7 @@ pub struct Machine {
 }
 
 impl Machine {
-    /// A machine ready to run `function` with `args`.
+    /// Creates a machine ready to run `function` with `args`.
     ///
     /// Returns `None` when the function does not exist or the wrong number of
     /// arguments was supplied — a caller error, not a script fault.
@@ -123,8 +123,8 @@ impl Machine {
         Self::at(program, program.index_of(function)?, args)
     }
 
-    /// [`new`](Self::new), for the function at `index` — what a caller that
-    /// resolved it once already holds.
+    /// Creates a machine as [`new`](Self::new) does, for the function at `index` —
+    /// what a caller that resolved it once already holds.
     pub fn at(program: &Program, index: usize, args: &[Value]) -> Option<Self> {
         let target = program.functions.get(index)?;
         if args.len() != target.arity {
@@ -157,28 +157,28 @@ impl Machine {
         self.registers.get(base + index as usize).copied()
     }
 
-    /// The value the outermost frame returned, once finished.
+    /// Returns the value the outermost frame returned, once finished.
     pub fn result(&self) -> Value {
         self.registers.first().copied().unwrap_or(Value::Unit)
     }
 
-    /// Whether the program has run to completion (or faulted).
+    /// Returns whether the program has run to completion (or faulted).
     pub fn is_finished(&self) -> bool {
         self.finished
     }
 
-    /// The instruction that will run next. Useful for debugging a suspension.
+    /// Returns the instruction that will run next, for debugging a suspension.
     pub fn program_counter(&self) -> usize {
         self.program_counter
     }
 
-    /// The function the outermost frame runs, by index: the body this machine
-    /// is part-way through.
+    /// Returns the function the outermost frame runs, by index: the body this
+    /// machine is part-way through.
     pub fn outermost(&self) -> Option<usize> {
         self.frames.first().map(|frame| frame.function)
     }
 
-    /// How deep the call stack currently is.
+    /// Returns how deep the call stack currently is.
     pub fn depth(&self) -> usize {
         self.frames.len()
     }
@@ -221,7 +221,7 @@ impl Machine {
         (outcome, fuel.saturating_sub(remaining) + overdraft)
     }
 
-    /// The run loop; leaves in `remaining` the fuel not spent.
+    /// Runs the loop, leaving in `remaining` the fuel not spent.
     ///
     /// `overdraft` gains what the run spent past its fuel, running on to the
     /// next safepoint once the slice was used up.

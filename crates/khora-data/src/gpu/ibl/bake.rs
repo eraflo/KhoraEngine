@@ -253,7 +253,7 @@ fn record_bake(
     })
 }
 
-/// A uniform-buffer bind-group entry.
+/// Builds a uniform-buffer bind-group entry.
 fn uniform_bg_entry<'a>(binding: u32, buffer: BufferId) -> BindGroupEntry<'a> {
     BindGroupEntry {
         binding,
@@ -301,7 +301,7 @@ fn record_face_passes(
     }
 }
 
-/// A bind group of (source texture @0, sampler @1, per-face basis uniform @2).
+/// Builds a bind group of (source texture @0, sampler @1, per-face basis uniform @2).
 ///
 /// Shared by the irradiance convolution and the specular prefilter (a cube) and
 /// the equirectangular projection (a 2D map); only the layout's view dimension

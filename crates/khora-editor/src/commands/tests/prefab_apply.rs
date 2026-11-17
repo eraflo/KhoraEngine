@@ -205,7 +205,7 @@ fn path(steps: &[&str]) -> Vec<String> {
 
 /// Applying the barrel's translation rewrites the turret's file with it —
 /// and with nothing else: the scale the instance also changed stays its
-/// override, and the translation is one no longer.
+/// override, and the translation stops being one.
 #[test]
 fn applying_a_field_rewrites_the_prefab_file() {
     let project = project("prefab-apply-field");

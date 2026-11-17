@@ -113,7 +113,7 @@ pub(super) fn sets_on(
     fields
 }
 
-/// Writes `instance`'s record when a carry into new code has left the World's
+/// Writes `instance`'s record when a carry into the reloaded program has left the World's
 /// behind — though it does not run this frame.
 pub(super) fn record_if_rewritten(
     runtime: &mut super::runtime::ScriptRuntime,

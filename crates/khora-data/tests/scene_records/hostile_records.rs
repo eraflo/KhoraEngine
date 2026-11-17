@@ -15,6 +15,11 @@
 //! Inputs and sequences a scene load must survive: records a tool or a
 //! damaged file could hold, and worlds a load is brought beside.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn a thread to run a load on a stack of a set size"
+)]
+
 use khora_data::ecs::{Camera, Name, Parent, Transform, World};
 use khora_data::scene::record::{EntityRef, ReferenceWriter};
 use khora_data::scene::{component_to_record, registration_named};

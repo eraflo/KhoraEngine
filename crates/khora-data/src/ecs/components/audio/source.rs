@@ -19,6 +19,9 @@ use khora_core::asset::AssetHandle;
 use khora_macros::Component;
 use serde::{Deserialize, Serialize};
 
+/// The priority a source has unless its author gave it another.
+pub const DEFAULT_PRIORITY: u8 = 128;
+
 /// Where a playing sound is in its samples, written back from the audio mixing lane.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlaybackState {
@@ -64,9 +67,6 @@ impl Default for AudioSource {
         }
     }
 }
-
-/// The priority a source has unless its author gave it another.
-pub const DEFAULT_PRIORITY: u8 = 128;
 
 impl AudioSource {
     /// Creates a source of `handle` at full volume that plays as soon as it is added.

@@ -38,7 +38,7 @@ impl<'o, 'r> Writer<'o, 'r> {
         }
     }
 
-    /// One level deeper; refused past [`MAX_DEPTH`] — the reader would
+    /// Goes one level deeper; refused past [`MAX_DEPTH`] — the reader would
     /// refuse it too.
     fn descend(&mut self) -> Result<(), RecordError> {
         self.depth += 1;
@@ -332,6 +332,21 @@ impl ser::SerializeTupleVariant for Compound<'_, '_, '_> {
     }
 }
 
+impl ser::SerializeStructVariant for Compound<'_, '_, '_> {
+    type Ok = ();
+    type Error = RecordError;
+    fn serialize_field<T: Serialize + ?Sized>(
+        &mut self,
+        _key: &'static str,
+        value: &T,
+    ) -> Result<(), RecordError> {
+        self.element(value)
+    }
+    fn end(self) -> Result<(), RecordError> {
+        self.close()
+    }
+}
+
 /// A map's entries, written sorted by their keys' bytes: a map iterates in
 /// whatever order it hashes to, and the same world must make the same bytes.
 pub(super) struct Entries<'w, 'o, 'r> {
@@ -341,7 +356,7 @@ pub(super) struct Entries<'w, 'o, 'r> {
 }
 
 impl Entries<'_, '_, '_> {
-    /// `value` written on its own, at the map's depth.
+    /// Writes `value` on its own, at the map's depth.
     fn bytes_of<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<Vec<u8>, RecordError> {
         let mut bytes = Vec::new();
         let mut writer = Writer {
@@ -378,21 +393,6 @@ impl ser::SerializeMap for Entries<'_, '_, '_> {
         }
         self.writer.ascend();
         Ok(())
-    }
-}
-
-impl ser::SerializeStructVariant for Compound<'_, '_, '_> {
-    type Ok = ();
-    type Error = RecordError;
-    fn serialize_field<T: Serialize + ?Sized>(
-        &mut self,
-        _key: &'static str,
-        value: &T,
-    ) -> Result<(), RecordError> {
-        self.element(value)
-    }
-    fn end(self) -> Result<(), RecordError> {
-        self.close()
     }
 }
 
@@ -453,7 +453,7 @@ impl ser::SerializeStruct for Fields<'_, '_, '_> {
     }
 }
 
-/// The number an entity field holds.
+/// Returns the number an entity field holds.
 fn entity_number<T: Serialize + ?Sized>(value: &T) -> Result<u32, RecordError> {
     struct NoEntities;
     impl ReferenceWriter for NoEntities {

@@ -30,7 +30,7 @@ use crate::app::EditorApp;
 /// CLI project path passed via `--project <path>`.
 pub static PROJECT_PATH: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
 
-/// The Khora logo as the editor's window icon.
+/// Loads the Khora logo as the editor's window icon.
 pub fn load_logo_icon() -> WindowIcon {
     let logo = khora_tool_ui::logo::logo_icon();
     WindowIcon {

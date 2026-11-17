@@ -33,3 +33,6 @@ blake3 = "1.5"
 
 [dev-dependencies]
 serde_json = { workspace = true }
+
+[lints]
+workspace = true

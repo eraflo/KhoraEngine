@@ -116,7 +116,7 @@ impl StorageManager {
     }
 
     /// Returns the id of the page whose signature is bundle `B`'s, creating it if needed.
-    pub fn find_or_create_page_for_bundle<B: ComponentBundle>(&mut self) -> u32 {
+    pub(crate) fn find_or_create_page_for_bundle<B: ComponentBundle>(&mut self) -> u32 {
         // A bundle's components are Rust ones, keyed by their `TypeId`s — in
         // the same order, so the signature stays sorted.
         let bundle_keys: Vec<ComponentKey> =
@@ -132,7 +132,7 @@ impl StorageManager {
     /// Returns the id of the page whose signature is `signature`, creating it if needed.
     ///
     /// `signature` is sorted.
-    pub fn find_or_create_page_for_signature(&mut self, signature: &[ComponentKey]) -> u32 {
+    pub(crate) fn find_or_create_page_for_signature(&mut self, signature: &[ComponentKey]) -> u32 {
         if let Some(&page_id) = self.archetype_map.get(signature) {
             return page_id;
         }

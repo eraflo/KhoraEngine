@@ -21,7 +21,8 @@ use std::path::PathBuf;
 use khora_core::event::{Channel, Supersedes, WhenFull};
 use khora_core::lane::{Reserve, Staging};
 
-use super::{CompileRequest, CompileTicket, ScriptDeclarations};
+use super::{CompileRequest, CompileTicket, Recompiled, ScriptDeclarations};
+use crate::reload::ScriptReload;
 
 fn request(root: &str, modules: &[&str]) -> CompileRequest {
     CompileRequest::new(
@@ -191,4 +192,25 @@ fn a_newer_declaration_set_of_a_module_replaces_the_waiting_one() {
         reserve.take::<ScriptDeclarations>(),
         vec![declarations("ai/guard.erg", 0)]
     );
+}
+
+// ─── Recompiled ─────────────────────────────────────────────────────────────
+
+/// **A recompile counts the modules that compiled**, a withdrawal not among them.
+#[test]
+fn programs_counts_the_compiled_modules_and_not_the_withdrawn() {
+    let reload = |module: &str, program| ScriptReload {
+        module: module.to_owned(),
+        program,
+    };
+    let recompiled = Recompiled {
+        reloads: vec![
+            reload("a.erg", Some(crate::vm::Program::default())),
+            reload("b.erg", None),
+            reload("c.erg", Some(crate::vm::Program::default())),
+        ],
+        declarations: Vec::new(),
+    };
+
+    assert_eq!(recompiled.programs(), 2);
 }

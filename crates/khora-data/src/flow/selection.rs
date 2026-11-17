@@ -71,3 +71,28 @@ impl Selection {
         self.entities.is_empty()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ecs::{Name, Transform};
+
+    #[test]
+    fn an_unscoped_selection_admits_every_entity() {
+        let mut world = World::new();
+        let entity = world.spawn(Transform::default());
+        let selection = Selection::from_entities(Vec::new()).within(&world, None);
+        assert!(selection.admits(entity));
+    }
+
+    #[test]
+    fn a_scoped_selection_admits_only_the_holders_of_its_marker() {
+        let mut world = World::new();
+        let marked = world.spawn((Transform::default(), Name::new("marked")));
+        let unmarked = world.spawn(Transform::default());
+        let selection = Selection::from_entities(vec![marked, unmarked])
+            .within(&world, Some(ComponentKey::of::<Name>()));
+        assert!(selection.admits(marked));
+        assert!(!selection.admits(unmarked));
+    }
+}

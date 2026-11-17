@@ -102,9 +102,9 @@ pub const ENGINE_COMPONENTS_MODULE: &str = "engine/components.erg";
 /// import: a script handles what the engine raises without declaring it.
 pub const ENGINE_EVENTS_MODULE: &str = "engine/events.erg";
 
-/// The source of [`ENGINE_EVENTS_MODULE`]: one `event` per event the engine
-/// raises ([`ENGINE_EVENTS`](khora_core::script::ENGINE_EVENTS)).
-pub fn engine_events_source() -> String {
+/// Returns the source of [`ENGINE_EVENTS_MODULE`]: one `event` per event the
+/// engine raises ([`ENGINE_EVENTS`](khora_core::script::ENGINE_EVENTS)).
+pub(crate) fn engine_events_source() -> String {
     let mut source = String::from(
         "// The events the engine raises. Served by the engine, never written to disk.\n",
     );

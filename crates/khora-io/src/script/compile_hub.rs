@@ -99,7 +99,7 @@ impl CompileHub {
         self.tickets.lock_recovered().landed.remove(&ticket)
     }
 
-    /// Whether the compile filed as `ticket` is still in flight.
+    /// Returns whether the compile filed as `ticket` is still in flight.
     pub fn is_pending(&self, ticket: CompileTicket) -> bool {
         self.tickets.lock_recovered().pending.contains_key(&ticket)
     }

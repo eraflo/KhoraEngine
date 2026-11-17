@@ -16,6 +16,11 @@
 //! scheduler runs the installed layer without calling or locking the agent,
 //! and an allocation the DCC publishes swaps the layer at a frame start.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn threads to test concurrency"
+)]
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};

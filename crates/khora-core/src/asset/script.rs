@@ -54,7 +54,7 @@ pub struct ScriptModule {
 }
 
 impl ScriptModule {
-    /// A module holding `source` and the imports listed.
+    /// Returns a module holding `source` and the imports listed.
     pub fn new(source: impl Into<String>, imports: Vec<String>) -> Self {
         Self {
             source: source.into(),
@@ -62,7 +62,7 @@ impl ScriptModule {
         }
     }
 
-    /// Whether it depends on any other module.
+    /// Returns whether it depends on any other module.
     pub fn is_leaf(&self) -> bool {
         self.imports.is_empty()
     }

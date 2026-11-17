@@ -123,7 +123,7 @@ fn held(row: StrategyId, gate: &Gate, jobs: &SharedJobs, log: &SharedLog) -> Pre
 type MakePreparation = Box<dyn Fn(u32) -> Preparation + Send + Sync>;
 
 /// A layered agent: it installs its first layer in place on its first wake;
-/// each time a wake says its quote no longer fits, it leaves a preparation
+/// each time a wake says its quote no more fits, it leaves a preparation
 /// at its place, up to `limit` of them. It logs every wake.
 struct Sculptor {
     place: Arc<Mutex<Place>>,
@@ -249,7 +249,7 @@ fn rows_ran(log: &SharedLog) -> Vec<StrategyId> {
 // ─── Off the frame ──────────────────────────────────────────────────────────
 
 /// **A slow preparation runs off the frame while the installed layer runs.**
-/// The first layer's first run says its quote no longer fits: the next event
+/// The first layer's first run says its quote no more fits: the next event
 /// pass leaves the low row's preparation at the place, held at its gate. It
 /// starts on a thread other than the frame's, and frame after frame
 /// completes in time meanwhile, each running the installed layer; nothing is
@@ -373,11 +373,11 @@ fn a_switch_lands_at_the_first_frame_start_after_its_preparation_ended() {
 }
 
 /// **A family has at most one preparation under way.** Its installed layer
-/// says on every run that its quote no longer fits, so the agent asks for a
+/// says on every run that its quote no more fits, so the agent asks for a
 /// new row on every frame. While the first preparation is held, frames go by
 /// and no second one starts; the place waits for the latest row asked. Let
 /// through, the preparations run one after the other — never two at once —
-/// the first one's layer, no longer wanted, is kept, and a later row is
+/// the first one's layer, not wanted any more, is kept, and a later row is
 /// installed.
 #[test]
 fn a_family_has_at_most_one_preparation_under_way() {

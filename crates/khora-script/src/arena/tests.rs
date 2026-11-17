@@ -18,7 +18,7 @@
 //! not silently followed into whatever landed there next. Freeing a frame's
 //! memory wholesale is only safe because that case is caught.
 
-use super::{Arena, ArenaError, Object, Persisted, PersistentStore};
+use super::{Arena, ArenaError, Object, Owned, Persisted, PersistentStore};
 use crate::vm::Value;
 
 fn array(values: &[i64]) -> Object {
@@ -215,4 +215,15 @@ fn the_persistent_store_outlives_what_the_arena_drops() {
         ))),
         "the copy survived the frame the original did not"
     );
+}
+
+/// **An owned value is stored inline when scalar, by value otherwise.**
+#[test]
+fn an_owned_scalar_persists_inline_and_anything_else_by_value() {
+    assert_eq!(
+        Owned::Scalar(Value::Int(4)).persisted(),
+        Persisted::Scalar(Value::Int(4))
+    );
+    let text = Owned::Str("hi".to_owned());
+    assert_eq!(text.persisted(), Persisted::Owned(text.clone()));
 }

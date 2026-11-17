@@ -14,7 +14,7 @@
 
 //! khora-agents integration tests, compiled as one test binary.
 //!
-//! Each file under `tests/` used to be its own executable, and each executable
+//! Every file under `tests/` is a module of this one executable: each executable
 //! is a full link of wgpu, rapier and egui. One binary links once.
 
 mod agent_negotiation_snapshot_test;

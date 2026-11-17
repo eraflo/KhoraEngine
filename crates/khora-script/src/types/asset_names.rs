@@ -21,8 +21,8 @@ use crate::diagnostics::Span;
 use super::Checker;
 
 impl Checker {
-    /// Whether `item` is a struct, a component or a behavior named like an
-    /// asset kind — refused, and checked no further.
+    /// Returns whether `item` is a struct, a component or a behavior named like
+    /// an asset kind — refused, and checked no further.
     pub(super) fn asset_named(item: &Item) -> bool {
         matches!(
             item,

@@ -28,7 +28,7 @@ pub struct FrameReport {
 }
 
 impl FrameReport {
-    /// The frame's critical path: the longest busy time among the measured
+    /// Returns the frame's critical path: the longest busy time among the measured
     /// devices; `None` when no device was measured.
     pub fn critical(&self) -> Option<Duration> {
         let busy = &self.busy;

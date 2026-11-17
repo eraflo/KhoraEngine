@@ -43,7 +43,15 @@ const VIRTUAL_VOICE: Duration = Duration::from_nanos(50);
 /// What a block costs before any voice: clearing, limiting, pushing it.
 const BLOCK: Duration = Duration::from_micros(2);
 
-/// A level of the lane: the voices it mixes at most.
+/// The levels, cheapest first, and the voices each mixes at most.
+const LEVELS: [Level; 3] = [
+    voices(StrategyId::LowPower, "8 voices", Impact::Minor),
+    voices(StrategyId::Balanced, "32 voices", Impact::Minor),
+    voices(StrategyId::HighPerformance, "128 voices", Impact::None),
+];
+const VOICE_CAPS: [usize; 3] = [8, 32, 128];
+
+/// Builds a level of the lane, which holds no memory: it differs by the voices it mixes.
 const fn voices(id: StrategyId, name: &'static str, impact: Impact) -> Level {
     Level {
         id,
@@ -57,14 +65,6 @@ const fn voices(id: StrategyId, name: &'static str, impact: Impact) -> Level {
         },
     }
 }
-
-/// The levels, cheapest first, and the voices each mixes at most.
-const LEVELS: [Level; 3] = [
-    voices(StrategyId::LowPower, "8 voices", Impact::Minor),
-    voices(StrategyId::Balanced, "32 voices", Impact::Minor),
-    voices(StrategyId::HighPerformance, "128 voices", Impact::None),
-];
-const VOICE_CAPS: [usize; 3] = [8, 32, 128];
 
 /// A lane that spatialises the frame's playing sources and mixes them into the mix bus.
 ///
@@ -82,26 +82,6 @@ pub struct SpatialMixingLane {
     playing: Vec<(usize, Rank)>,
     /// Whether each source of the View is mixed this frame.
     mixed: Vec<bool>,
-}
-
-/// What a lane mixes the most audible sources by: priority first, then the
-/// gain at the listener.
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Rank {
-    priority: u8,
-    gain: f32,
-}
-
-/// What the mixing lane reads each frame: the sources the `AudioFlow`
-/// projected, and the bus the backend's callback drains.
-#[derive(LaneInputs)]
-pub struct SpatialMixingInputs<'f> {
-    /// The listener and every source, snapshotted for this frame.
-    #[bus]
-    pub view: &'f AudioView,
-    /// The bus the mixed block is pushed into.
-    #[resource]
-    pub mix_bus: &'f Arc<dyn AudioMixBus>,
 }
 
 impl Lane for SpatialMixingLane {
@@ -211,7 +191,27 @@ impl SpatialMixingLane {
     }
 }
 
-/// Whether `source` is heard this frame.
+/// What a lane mixes the most audible sources by: priority first, then the
+/// gain at the listener.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Rank {
+    priority: u8,
+    gain: f32,
+}
+
+/// What the mixing lane reads each frame: the sources the `AudioFlow`
+/// projected, and the bus the backend's callback drains.
+#[derive(LaneInputs)]
+pub struct SpatialMixingInputs<'f> {
+    /// The listener and every source, snapshotted for this frame.
+    #[bus]
+    pub view: &'f AudioView,
+    /// The bus the mixed block is pushed into.
+    #[resource]
+    pub mix_bus: &'f Arc<dyn AudioMixBus>,
+}
+
+/// Returns whether `source` is heard this frame.
 ///
 /// It is started or plays by itself, has frames left, and sits at a finite
 /// place with a finite volume.
@@ -227,7 +227,7 @@ fn plays(source: &AudioSourceSnapshot) -> bool {
     before_its_end && frames > 0 && placed && source.volume.is_finite()
 }
 
-/// The number of frames in `source`'s sound; zero for an empty one.
+/// Returns the number of frames in `source`'s sound; zero for an empty one.
 fn frames_of(source: &AudioSourceSnapshot) -> usize {
     let sound = &source.handle;
     sound
@@ -237,7 +237,7 @@ fn frames_of(source: &AudioSourceSnapshot) -> usize {
         .unwrap_or(0)
 }
 
-/// The state `source` starts the frame in: its own, or the start of its
+/// Returns the state `source` starts the frame in: its own, or the start of its
 /// sound when it plays by itself.
 fn starting_state(source: &AudioSourceSnapshot) -> Option<PlaybackState> {
     match &source.state {
@@ -267,7 +267,7 @@ fn gain_and_pan(source: &AudioSourceSnapshot, listener: Option<AffineTransform>)
     (gain, pan)
 }
 
-/// How audible `source` is: what its voice is ranked by.
+/// Returns how audible `source` is: what its voice is ranked by.
 fn rank(source: &AudioSourceSnapshot, listener: Option<AffineTransform>) -> Rank {
     Rank {
         priority: source.priority,
@@ -329,7 +329,7 @@ fn mix_voice(
     Some(PlaybackState { cursor })
 }
 
-/// How many frames of `source`'s sound one frame of the stream plays.
+/// Returns how many frames of `source`'s sound one frame of the stream plays.
 fn playback_ratio(source: &AudioSourceSnapshot, stream: &StreamInfo) -> f64 {
     f64::from(source.handle.sample_rate) / f64::from(stream.sample_rate)
 }

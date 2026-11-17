@@ -44,6 +44,9 @@ const AGENT_ROW_HEIGHT: f32 = 60.0;
 
 const FRAME_TARGET_MS: f32 = 16.67;
 
+/// How many recent frame-time samples the summary sparkline keeps.
+const FRAME_HISTORY: usize = 48;
+
 /// One agent as read for one frame's UI.
 #[derive(Debug, Clone)]
 struct AgentSnapshot {
@@ -96,9 +99,6 @@ fn crate_label(origin: Option<&str>) -> String {
         .filter(|name| !name.is_empty())
         .map_or_else(|| "other".to_owned(), |name| name.replace('_', "-"))
 }
-
-/// How many recent frame-time samples the summary sparkline keeps.
-const FRAME_HISTORY: usize = 48;
 
 /// The Control Plane panel.
 pub struct ControlPlanePanel {

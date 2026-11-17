@@ -14,9 +14,9 @@
 
 //! The compile of what the hot-reload pump files announces what a recompiled
 //! module will read to the demand on the script flow, as the owner
-//! `module:<name>`, before it stages the program — so the frame that relays a behavior's rows out for the new
-//! code also projects what the new code reads, and the lane swaps the program
-//! in that same frame. An edit that does not compile sends nothing, and
+//! `module:<name>`, before it stages the program — so the frame that relays a
+//! behavior's rows out for the recompiled program also projects what that
+//! program reads, and the lane swaps the program in that same frame. An edit that does not compile sends nothing, and
 //! announces nothing.
 
 use std::sync::Arc;

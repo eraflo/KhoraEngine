@@ -56,24 +56,12 @@ struct RingSlot {
 pub struct UniformRingBuffer {
     /// The ring buffer slots, one per frame-in-flight.
     slots: Vec<RingSlot>,
-    /// The current slot index (cycles 0..MAX_FRAMES_IN_FLIGHT).
+    /// The current slot index (cycles `0..MAX_FRAMES_IN_FLIGHT`).
     current_index: usize,
     /// The size of the uniform data in bytes.
     data_size: u64,
     /// Debug label for logging.
     label: &'static str,
-}
-
-/// Gives back the slots a ring built before one of its creations was refused.
-fn give_back(device: &dyn GraphicsDevice, slots: &[RingSlot], label: &str) {
-    for slot in slots {
-        if let Err(e) = device.destroy_bind_group(slot.bind_group) {
-            log::warn!("UniformRingBuffer({label}): Failed to destroy bind group: {e:?}");
-        }
-        if let Err(e) = device.destroy_buffer(slot.buffer) {
-            log::warn!("UniformRingBuffer({label}): Failed to destroy buffer: {e:?}");
-        }
-    }
 }
 
 impl UniformRingBuffer {
@@ -220,6 +208,18 @@ impl UniformRingBuffer {
                     e
                 );
             }
+        }
+    }
+}
+
+/// Gives back the slots a ring built before one of its creations was refused.
+fn give_back(device: &dyn GraphicsDevice, slots: &[RingSlot], label: &str) {
+    for slot in slots {
+        if let Err(e) = device.destroy_bind_group(slot.bind_group) {
+            log::warn!("UniformRingBuffer({label}): Failed to destroy bind group: {e:?}");
+        }
+        if let Err(e) = device.destroy_buffer(slot.buffer) {
+            log::warn!("UniformRingBuffer({label}): Failed to destroy buffer: {e:?}");
         }
     }
 }

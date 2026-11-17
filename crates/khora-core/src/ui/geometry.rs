@@ -43,7 +43,7 @@ impl Margin {
         right: 0.0,
     };
 
-    /// Same value on every side.
+    /// Builds a margin with the same value on every side.
     #[inline]
     pub const fn same(value: f32) -> Self {
         Self {
@@ -54,7 +54,7 @@ impl Margin {
         }
     }
 
-    /// Symmetric padding (different `vertical` and `horizontal` values).
+    /// Builds a symmetric margin (different `vertical` and `horizontal` values).
     #[inline]
     pub const fn symmetric(horizontal: f32, vertical: f32) -> Self {
         Self {

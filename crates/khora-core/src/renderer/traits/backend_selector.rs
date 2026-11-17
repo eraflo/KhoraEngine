@@ -34,7 +34,7 @@ pub trait GraphicsBackendSelector<TAdapter> {
     /// The error type returned if backend selection fails.
     type Error: std::fmt::Debug + std::fmt::Display + Send + Sync + 'static;
 
-    /// Asynchronously selects the best available graphics adapter based on the provided configuration.
+    /// Selects, asynchronously, the best available graphics adapter for the provided configuration.
     ///
     /// This method will attempt to honor the preferences in the `config` (e.g.,
     /// prefer a discrete GPU, or a specific backend API like Vulkan), falling back
@@ -53,7 +53,7 @@ pub trait GraphicsBackendSelector<TAdapter> {
         config: &BackendSelectionConfig,
     ) -> Result<BackendSelectionResult<TAdapter>, Self::Error>;
 
-    /// Asynchronously queries and lists all available adapters for a specific backend API.
+    /// Lists, asynchronously, every available adapter for a specific backend API.
     ///
     /// # Arguments
     ///
@@ -68,7 +68,7 @@ pub trait GraphicsBackendSelector<TAdapter> {
         backend_type: GraphicsBackendType,
     ) -> Result<Vec<GraphicsAdapterInfo>, Self::Error>;
 
-    /// Synchronously checks if a specific backend API is supported on the current platform.
+    /// Checks, synchronously, whether a specific backend API is supported on the current platform.
     ///
     /// # Arguments
     ///

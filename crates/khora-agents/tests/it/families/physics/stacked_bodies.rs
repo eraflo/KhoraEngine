@@ -71,7 +71,7 @@ impl Rig {
     }
 
     /// One full frame, in the order `EngineCore::run_app_update` runs it:
-    /// PreSimulation, PostSimulation (transform propagation), PreExtract
+    /// `PreSimulation`, `PostSimulation` (transform propagation), `PreExtract`
     /// (provider sync) data systems → Substrate-Pass flows → the agent with its
     /// own contention (provider step) → Maintenance (write-back).
     fn frame(&mut self) {
@@ -609,8 +609,8 @@ fn a_collider_that_gets_a_body_later_stays_where_it_is_drawn() {
 
 /// An entity whose body is taken away keeps its collider, standalone, where
 /// the entity is drawn. Removing the body removed the shapes attached to it,
-/// and the entity's `Collider.handle` went on naming a collider that no longer
-/// existed.
+/// and the entity's `Collider.handle` went on naming a collider that had stopped
+/// existing.
 ///
 /// Static body with its collider at `(−3, 1, 0)`, half-extent 0.5; the
 /// `RigidBody` is removed: the box is still there, top at 1.5.

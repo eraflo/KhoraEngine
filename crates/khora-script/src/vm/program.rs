@@ -146,24 +146,13 @@ pub struct BehaviorLayout {
     pub schedule: Schedule,
 }
 
-/// The scheduling attributes of a behavior or a system, as declared.
-#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
-pub struct Schedule {
-    /// `[Critical]`: served first from the frame's fuel, still bounded by it.
-    pub critical: bool,
-    /// `[Budget(d)]`: the per-frame ceiling, in seconds.
-    pub budget: Option<f32>,
-    /// `[Rate(f)]`: how often an instance takes its turn, in hertz.
-    pub rate: Option<f32>,
-}
-
 impl BehaviorLayout {
-    /// The slot a field name occupies.
+    /// Returns the slot a field name occupies.
     pub fn slot_of(&self, field: &str) -> Option<usize> {
         self.fields.iter().position(|known| known == field)
     }
 
-    /// The slot holding which state the behavior is in.
+    /// Returns the slot holding which state the behavior is in.
     ///
     /// Sits between the behavior's fields and the state's, so adding a field
     /// moves it — which is exactly why a reload matches by name and never by
@@ -172,7 +161,7 @@ impl BehaviorLayout {
         self.fields.len()
     }
 
-    /// Where a state's own data begins.
+    /// Returns where a state's own data begins.
     ///
     /// A behavior with no states reserves no discriminant: there is nothing to
     /// record, and a slot held for a state that cannot exist would be one more
@@ -181,13 +170,13 @@ impl BehaviorLayout {
         self.fields.len() + usize::from(!self.states.is_empty())
     }
 
-    /// Where the timers' countdowns begin, after the widest state.
+    /// Returns where the timers' countdowns begin, after the widest state.
     pub fn timer_slot(&self, index: usize) -> usize {
         let widest = self.states.iter().map(|s| s.slots.len()).max().unwrap_or(0);
         self.state_data_slot() + widest + index
     }
 
-    /// How many slots an instance of this behavior needs.
+    /// Returns how many slots an instance of this behavior needs.
     ///
     /// Sized for the largest state, since only one is ever live, plus one
     /// countdown per timer.
@@ -195,12 +184,12 @@ impl BehaviorLayout {
         self.timer_slot(self.timers.len())
     }
 
-    /// The discriminant a state name compiles to.
+    /// Returns the discriminant a state name compiles to.
     pub fn state_index(&self, name: &str) -> Option<usize> {
         self.states.iter().position(|state| state.name == name)
     }
 
-    /// The state a discriminant names.
+    /// Returns the state a discriminant names.
     pub fn state_at(&self, index: usize) -> Option<&StateLayout> {
         self.states.get(index)
     }
@@ -263,6 +252,17 @@ impl BehaviorLayout {
         }
         store
     }
+}
+
+/// The scheduling attributes of a behavior or a system, as declared.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub struct Schedule {
+    /// `[Critical]`: served first from the frame's fuel, still bounded by it.
+    pub critical: bool,
+    /// `[Budget(d)]`: the per-frame ceiling, in seconds.
+    pub budget: Option<f32>,
+    /// `[Rate(f)]`: how often an instance takes its turn, in hertz.
+    pub rate: Option<f32>,
 }
 
 /// A whole compiled module.
@@ -328,6 +328,65 @@ pub struct Program {
     pub handlers: crate::dispatch::HandlerTable,
 }
 
+impl Program {
+    /// Returns the struct named `name`, with its index.
+    pub fn struct_named(&self, name: &str) -> Option<(u16, &StructLayout)> {
+        self.structs
+            .iter()
+            .enumerate()
+            .find(|(_, layout)| layout.name == name)
+            .and_then(|(index, layout)| Some((u16::try_from(index).ok()?, layout)))
+    }
+
+    /// Returns the index of the function named `name`.
+    pub fn index_of(&self, name: &str) -> Option<usize> {
+        self.functions.iter().position(|f| f.name == name)
+    }
+
+    /// Returns the query at `index`.
+    pub fn query(&self, index: u32) -> Option<&QueryShape> {
+        self.queries.get(index as usize)
+    }
+
+    /// Returns the literal at `index`.
+    pub fn string(&self, index: u32) -> Option<&str> {
+        self.strings.get(index as usize).map(String::as_str)
+    }
+
+    /// Returns the field layout of the named behavior.
+    pub fn layout(&self, behavior: &str) -> Option<&BehaviorLayout> {
+        self.behaviors.iter().find(|b| b.name == behavior)
+    }
+
+    /// Returns the function named `name`.
+    pub fn function(&self, name: &str) -> Option<&Function> {
+        self.functions.iter().find(|f| f.name == name)
+    }
+
+    /// Returns a number identifying this program's code, whatever order its functions sit in.
+    ///
+    /// A machine resumed into a program with the same fingerprint resumes
+    /// exactly; otherwise [`resume`](super::resume()) looks further, function by
+    /// function and site by site.
+    pub fn fingerprint(&self) -> u64 {
+        let sum = self
+            .functions
+            .iter()
+            .fold(0u64, |sum, function| sum.wrapping_add(function.fingerprint));
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"khora.ergon.program");
+        hasher.update(&sum.to_le_bytes());
+        hasher.update(&(self.functions.len() as u64).to_le_bytes());
+        first_u64(hasher.finalize().as_bytes())
+    }
+
+    /// Returns the most a run can spend past its fuel: the costliest stretch of
+    /// code between two safepoints, natives at their declared cost.
+    pub fn max_overdraft(&self) -> u64 {
+        self.max_overdraft
+    }
+}
+
 /// An event's signature: its name and the types of its payload, in order.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EventSignature {
@@ -349,8 +408,8 @@ pub struct QueryShape {
 }
 
 impl QueryShape {
-    /// How many components a row is checked against.
-    pub fn width(&self) -> usize {
+    /// Returns how many components a row is checked against.
+    pub(crate) fn width(&self) -> usize {
         self.all.len() + self.none.len()
     }
 }
@@ -437,67 +496,8 @@ pub struct StructLayout {
     pub defaults: Vec<Option<crate::arena::Owned>>,
 }
 
-impl Program {
-    /// The struct named `name`, with its index.
-    pub fn struct_named(&self, name: &str) -> Option<(u16, &StructLayout)> {
-        self.structs
-            .iter()
-            .enumerate()
-            .find(|(_, layout)| layout.name == name)
-            .and_then(|(index, layout)| Some((u16::try_from(index).ok()?, layout)))
-    }
-
-    /// The index of the function named `name`.
-    pub fn index_of(&self, name: &str) -> Option<usize> {
-        self.functions.iter().position(|f| f.name == name)
-    }
-
-    /// The query at `index`.
-    pub fn query(&self, index: u32) -> Option<&QueryShape> {
-        self.queries.get(index as usize)
-    }
-
-    /// The literal at `index`.
-    pub fn string(&self, index: u32) -> Option<&str> {
-        self.strings.get(index as usize).map(String::as_str)
-    }
-
-    /// The field layout of the named behavior.
-    pub fn layout(&self, behavior: &str) -> Option<&BehaviorLayout> {
-        self.behaviors.iter().find(|b| b.name == behavior)
-    }
-
-    /// The function named `name`.
-    pub fn function(&self, name: &str) -> Option<&Function> {
-        self.functions.iter().find(|f| f.name == name)
-    }
-
-    /// Returns a number identifying this program's code, whatever order its functions sit in.
-    ///
-    /// A machine resumed into a program with the same fingerprint resumes
-    /// exactly; otherwise [`resume`](super::resume()) looks further, function by
-    /// function and site by site.
-    pub fn fingerprint(&self) -> u64 {
-        let sum = self
-            .functions
-            .iter()
-            .fold(0u64, |sum, function| sum.wrapping_add(function.fingerprint));
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(b"khora.ergon.program");
-        hasher.update(&sum.to_le_bytes());
-        hasher.update(&(self.functions.len() as u64).to_le_bytes());
-        first_u64(hasher.finalize().as_bytes())
-    }
-
-    /// The most a run can spend past its fuel: the costliest stretch of code
-    /// between two safepoints, natives at their declared cost.
-    pub fn max_overdraft(&self) -> u64 {
-        self.max_overdraft
-    }
-}
-
-/// The first eight bytes of a hash, little-endian: the width every persisted
-/// fingerprint has.
+/// Returns the first eight bytes of a hash, little-endian: the width every
+/// persisted fingerprint has.
 pub(crate) fn first_u64(bytes: &[u8; 32]) -> u64 {
     let mut first = [0u8; 8];
     first.copy_from_slice(&bytes[..8]);

@@ -50,6 +50,10 @@ impl AssetService {
     ///
     /// Asset ids come from `registry`: a path it freezes keeps its recorded
     /// UUID, every other path gets its `new_v5` default.
+    ///
+    /// # Errors
+    ///
+    /// When `<project_root>/assets/` cannot be indexed.
     pub fn open_loose_files(
         project_root: &Path,
         registry: &AssetIdRegistry,

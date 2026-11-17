@@ -745,3 +745,43 @@ fn a_background_run_that_panicked_reports_it_stalled_with_its_message() {
         "the report says the run panicked: {report:?}"
     );
 }
+
+/// **Winding down waits for the run under way.** The oven's run is held at its
+/// gate; the gate opens and the scheduler winds down at once: when
+/// `wind_down` returns, the run has finished, and its place is free.
+#[test]
+fn wind_down_waits_for_the_background_run_under_way() {
+    let bakes = SharedBakes::default();
+    let gate = Gate::closed();
+    let (runtime, channel) = runtime_with_mail();
+    let oven = Oven::new(
+        "oven",
+        Baker::new("oven", StrategyId::Balanced, &gate, &bakes).taking(&channel),
+    );
+    let place = oven.place();
+    let (mut scheduler, _rx) = scheduling(vec![shared(oven)]);
+    let runtime = Arc::new(runtime);
+    let mut world = World::new();
+    channel.send(Batch(1));
+    frames_until(
+        &mut scheduler,
+        &mut world,
+        &runtime,
+        "the oven's run to start",
+        || started(&bakes) == 1,
+    );
+    assert_eq!(finished(&bakes), 0, "the run is held at its gate");
+
+    gate.let_through();
+    scheduler.wind_down();
+
+    assert_eq!(
+        finished(&bakes),
+        1,
+        "wind_down returned before the run ended"
+    );
+    assert!(
+        place.try_lock().is_ok(),
+        "the place is handed back once the scheduler wound down"
+    );
+}

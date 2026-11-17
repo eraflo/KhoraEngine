@@ -15,8 +15,6 @@
 //! The container of every saved scene and game save: a fixed-size
 //! [`SceneHeader`] naming the payload's encoding, then the payload.
 
-use std::convert::TryInto;
-
 /// A unique byte sequence to identify Khora Scene Files. ("KHORASCN").
 pub const HEADER_MAGIC_BYTES: [u8; 8] = *b"KHORASCN";
 
@@ -50,19 +48,10 @@ pub struct SceneHeader {
     /// The scene format the file was written in (see `SCENE_FORMAT_VERSION`).
     pub format_version: u8,
     /// A null-padded UTF-8 string naming the encoding of the payload,
-    /// e.g. "KH_COMPACT_V2", "KH_TEXT_V2".
+    /// e.g. `"KH_COMPACT_V2"`, `"KH_TEXT_V2"`.
     pub encoding_id: [u8; ENCODING_ID_LEN],
     /// The length of the payload data that follows this header, in bytes.
     pub payload_length: u64,
-}
-
-/// A logical representation of a full scene file in memory.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SceneFile {
-    /// The parsed header data.
-    pub header: SceneHeader,
-    /// The raw, variable-length payload data.
-    pub payload: Vec<u8>,
 }
 
 // The header is read by hand, not by `serde`: its layout is fixed.
@@ -77,27 +66,25 @@ impl SceneHeader {
     /// A message when the slice is shorter than [`SIZE`](Self::SIZE) or the
     /// magic bytes are neither a scene's nor a save's.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, &'static str> {
+        const SHORT: &str = "Not enough bytes to form a valid header";
         if bytes.len() < Self::SIZE {
-            return Err("Not enough bytes to form a valid header");
+            return Err(SHORT);
         }
 
-        let magic_bytes: [u8; 8] = bytes[0..8].try_into().unwrap();
+        let (&magic_bytes, rest) = bytes.split_first_chunk::<8>().ok_or(SHORT)?;
         if magic_bytes != HEADER_MAGIC_BYTES && magic_bytes != SAVE_MAGIC_BYTES {
             return Err("Invalid magic bytes; not a Khora scene or save file");
         }
 
-        let format_version = bytes[8];
-
-        let encoding_id: [u8; ENCODING_ID_LEN] = bytes[9..9 + ENCODING_ID_LEN].try_into().unwrap();
-
-        let payload_length =
-            u64::from_le_bytes(bytes[9 + ENCODING_ID_LEN..Self::SIZE].try_into().unwrap());
+        let (&format_version, rest) = rest.split_first().ok_or(SHORT)?;
+        let (&encoding_id, rest) = rest.split_first_chunk::<ENCODING_ID_LEN>().ok_or(SHORT)?;
+        let (&payload_length, _) = rest.split_first_chunk::<8>().ok_or(SHORT)?;
 
         Ok(Self {
             magic_bytes,
             format_version,
             encoding_id,
-            payload_length,
+            payload_length: u64::from_le_bytes(payload_length),
         })
     }
 
@@ -111,6 +98,15 @@ impl SceneHeader {
         bytes[9 + ENCODING_ID_LEN..Self::SIZE].copy_from_slice(&payload_bytes);
         bytes
     }
+}
+
+/// A logical representation of a full scene file in memory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SceneFile {
+    /// The parsed header data.
+    pub header: SceneHeader,
+    /// The raw, variable-length payload data.
+    pub payload: Vec<u8>,
 }
 
 impl SceneFile {

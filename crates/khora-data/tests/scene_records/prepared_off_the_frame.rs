@@ -236,7 +236,7 @@ fn a_dead_reference_prepared_on_a_worker_names_the_worlds_nowhere_entity() {
 
 /// **A load prepared before the world's components changed says so**: it
 /// carries the generation of the catalogue it was prepared against, which
-/// the world's catalogue no longer has. A load prepared after carries the
+/// differs from the world's current one. A load prepared after carries the
 /// new one.
 #[test]
 fn a_load_prepared_before_a_declaration_change_carries_the_older_generation() {
@@ -569,7 +569,7 @@ fn a_load_prepared_for_one_world_leaves_another_world_untouched() {
 /// **A load prepared before a declaration changed lands as a load prepared
 /// now would, or not at all.** Prepared while the world knew no `Health` —
 /// so the load would register the file's — then the world declares a
-/// `Health` of its own with other fields. A load prepared now reads the
+/// `Health` of its own with other fields. A load prepared at that point reads the
 /// file's `Health` onto the world's by name and reports every field it
 /// drops; the stale load, committed, must not drop them in silence.
 #[test]

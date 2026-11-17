@@ -35,7 +35,7 @@ pub struct EventInfo {
 }
 
 impl EventInfo {
-    /// `Damaged(int, Entity)` — as a message names it.
+    /// Returns the event's signature as a message names it: `Damaged(int, Entity)`.
     pub fn signature(&self, name: &str) -> String {
         format!(
             "{name}({})",
@@ -49,8 +49,8 @@ impl EventInfo {
 }
 
 impl Checker {
-    /// The events the engine raises: in scope in every module, whether or not
-    /// it was compiled with the module serving them.
+    /// Collects the events the engine raises: in scope in every module, whether
+    /// or not it was compiled with the module serving them.
     pub(super) fn collect_engine_events(&mut self) {
         for event in khora_core::script::ENGINE_EVENTS {
             let params = event
@@ -161,7 +161,7 @@ impl Checker {
             .insert(name.clone(), EventInfo { params, names });
     }
 
-    /// `target.Raise(E(args))`: `E` an event in scope, its arguments its
+    /// Checks `target.Raise(E(args))`: `E` an event in scope, its arguments its
     /// payload.
     pub(super) fn check_raise(&mut self, args: &[Expr], at: Span, context: &Context) -> Ty {
         let construction = match args {
@@ -234,8 +234,8 @@ impl Checker {
         Ty::Void
     }
 
-    /// The string form, `Raise("Damaged", 3)`: refused with the declaration
-    /// and the raise to write instead.
+    /// Refuses the string form, `Raise("Damaged", 3)`, with the declaration and
+    /// the raise to write instead.
     fn raise_by_name(&mut self, name: &str, payload: &[Expr], at: Span, context: &Context) {
         let types: Vec<Ty> = payload
             .iter()
@@ -259,7 +259,7 @@ impl Checker {
         );
     }
 
-    /// `Raise(target, E(…))` — the free form, refused with its rewrite.
+    /// Refuses `Raise(target, E(…))`, the free form, with its rewrite.
     pub(super) fn refuse_free_raise(&mut self, args: &[Expr], span: Span, context: &Context) -> Ty {
         let rewrite = match args.split_first() {
             Some((receiver, rest)) => format!(
@@ -286,7 +286,7 @@ impl Checker {
         Ty::Error
     }
 
-    /// `E(args)` anywhere but a raise's argument.
+    /// Refuses `E(args)` anywhere but a raise's argument.
     pub(super) fn refuse_construction(&mut self, event: &str, span: Span) {
         self.error_note(
             format!("`{event}` is an event: it is raised, not stored"),
@@ -295,7 +295,7 @@ impl Checker {
         );
     }
 
-    /// `on E(…)`: `E` an event in scope, the handler taking all of its
+    /// Checks `on E(…)`: `E` an event in scope, the handler taking all of its
     /// payload or none of it.
     pub(super) fn check_handler_signature(&mut self, handler: &HandlerDecl) {
         let Some(info) = self.events.get(&handler.event).cloned() else {
@@ -343,7 +343,7 @@ impl Checker {
     }
 }
 
-/// Why a value of `ty` cannot ride an event, if it cannot.
+/// Returns why a value of `ty` cannot ride an event, if it cannot.
 fn uncarried(ty: &Ty) -> Option<&'static str> {
     match ty {
         Ty::Optional(_) => Some("an optional"),

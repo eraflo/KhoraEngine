@@ -30,7 +30,7 @@ pub type DeclaredRow = (String, Vec<(String, ScriptValue)>);
 ///
 /// A behavior's state companion shows only `playing`; it and a system's
 /// fields are the engine's, read only.
-pub fn declared_cards(world: &World, entity: EntityId, playing: bool) -> Vec<DeclaredCard> {
+pub(crate) fn declared_cards(world: &World, entity: EntityId, playing: bool) -> Vec<DeclaredCard> {
     let mut cards = Vec::new();
     for vtable in world.components().iter() {
         if !matches!(vtable.key, ComponentKey::Declared(_)) {
@@ -85,7 +85,7 @@ pub fn declared_cards(world: &World, entity: EntityId, playing: bool) -> Vec<Dec
 
 /// Applies one edit of a declared component; `false` when `edit` is not one.
 /// A value its field refuses is logged and leaves the row as it was.
-pub fn apply_declared_edit(world: &mut World, edit: &PropertyEdit) -> bool {
+pub(crate) fn apply_declared_edit(world: &mut World, edit: &PropertyEdit) -> bool {
     match edit {
         PropertyEdit::SetDeclaredField {
             entity,
@@ -156,7 +156,7 @@ pub fn apply_declared_edit(world: &mut World, edit: &PropertyEdit) -> bool {
 ///
 /// The components and behaviors a module declares now that the entity does
 /// not hold yet; never what the engine writes (a state companion, a system's).
-pub fn addable_declared(world: &World, entity: EntityId) -> Vec<AddableComponent> {
+pub(crate) fn addable_declared(world: &World, entity: EntityId) -> Vec<AddableComponent> {
     world
         .components()
         .iter()
@@ -176,9 +176,9 @@ pub fn addable_declared(world: &World, entity: EntityId) -> Vec<AddableComponent
         .collect()
 }
 
-/// The declared components a scene keeps that `entity` holds, each with its
-/// fields — what a prefab instance is compared with its prefab by.
-pub fn authored_rows(world: &World, entity: EntityId) -> Vec<DeclaredRow> {
+/// Returns the declared components a scene keeps that `entity` holds, each with
+/// its fields — what a prefab instance is compared with its prefab by.
+pub(crate) fn authored_rows(world: &World, entity: EntityId) -> Vec<DeclaredRow> {
     let mut rows: Vec<DeclaredRow> = world
         .components()
         .iter()
@@ -195,9 +195,9 @@ pub fn authored_rows(world: &World, entity: EntityId) -> Vec<DeclaredRow> {
     rows
 }
 
-/// `fields` of `from` as `to` names them: an entity the row references is
-/// the entity of the same identity in `to`, or none.
-pub fn rebound_fields(
+/// Returns `fields` of `from` as `to` names them: an entity the row references
+/// is the entity of the same identity in `to`, or none.
+pub(crate) fn rebound_fields(
     fields: &[(String, ScriptValue)],
     from: &World,
     to: &World,
@@ -230,7 +230,7 @@ fn rebound_value(value: &ScriptValue, from: &World, to: &World) -> ScriptValue {
 /// Read as a load reads it (`PackedLayout::fit`): a field still declared keeps
 /// a value its type takes, widened where exact; one gained has its default;
 /// one dropped is gone. Kept as it is where `world` declares no `name`.
-pub fn conformed(
+pub(crate) fn conformed(
     world: &World,
     name: &str,
     fields: Vec<(String, ScriptValue)>,
@@ -257,8 +257,8 @@ pub fn conformed(
         .collect()
 }
 
-/// The fields of `live` whose values differ from `prefab`'s, by name.
-pub fn field_overrides(
+/// Returns the fields of `live` whose values differ from `prefab`'s, by name.
+pub(crate) fn field_overrides(
     live: &[(String, ScriptValue)],
     prefab: &[(String, ScriptValue)],
 ) -> Vec<String> {
@@ -273,7 +273,7 @@ pub fn field_overrides(
         .collect()
 }
 
-/// The value of `field` in `fields`.
+/// Returns the value of `field` in `fields`.
 pub fn field_of<'a>(fields: &'a [(String, ScriptValue)], field: &str) -> Option<&'a ScriptValue> {
     fields
         .iter()
@@ -296,7 +296,7 @@ pub struct PairedRow {
 ///
 /// `twin` is its counterpart in the prefab's `scratch` expansion, whose rows
 /// are read as `world` declares them now.
-pub fn paired_rows(
+pub(crate) fn paired_rows(
     world: &World,
     member: EntityId,
     scratch: &World,
@@ -328,9 +328,9 @@ pub fn paired_rows(
         .collect()
 }
 
-/// The system `entity` is the one entity of, by the component holding its
-/// fields — `None` for any other entity.
-pub fn system_of(world: &World, entity: EntityId) -> Option<String> {
+/// Returns the system `entity` is the one entity of, by the component holding
+/// its fields — `None` for any other entity.
+pub(crate) fn system_of(world: &World, entity: EntityId) -> Option<String> {
     world
         .components()
         .iter()

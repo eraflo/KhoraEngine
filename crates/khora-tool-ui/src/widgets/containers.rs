@@ -23,7 +23,7 @@ use super::{right, text_y, Rect};
 /// Height of a card's header strip.
 const HEAD_H: f32 = 40.0;
 
-/// A titled panel card: an icon, a title, a hairline, and a body.
+/// Draws a titled panel card: an icon, a title, a hairline, and a body.
 ///
 /// Returns the **body rect** — the area inside the card, below the header —
 /// so the caller fills it however it likes. Cards do not nest: a card inside a
@@ -66,8 +66,8 @@ pub fn card(ui: &mut dyn UiBuilder, theme: &UiTheme, rect: Rect, glyph: Icon, ti
     ]
 }
 
-/// The rect a card's header-right slot occupies — for a status chip or a small
-/// action button aligned with the title.
+/// Returns the rect a card's header-right slot occupies — for a status chip or
+/// a small action button aligned with the title.
 pub fn card_action_slot(rect: Rect, width: f32) -> Rect {
     let pad = 16.0;
     [

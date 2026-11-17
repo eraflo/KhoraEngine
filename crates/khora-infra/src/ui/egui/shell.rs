@@ -286,200 +286,260 @@ impl EditorShell for EguiEditorShell {
         let right_max = (screen_w * RIGHT_MAX_FRAC).max(RIGHT_MIN + 60.0);
         let bottom_max = (screen_h * BOTTOM_MAX_FRAC).max(BOTTOM_MIN + 80.0);
 
-        // ── Top bar(s) ─────────────────────────────────
-        // Each TopBar panel becomes its own fixed-height TopBottomPanel,
-        // stacked in registration order from the top down.
-        for (idx, panel) in self.top_panels.iter_mut().enumerate() {
-            let height = panel.preferred_size().unwrap_or(DEFAULT_TOPBAR_HEIGHT);
-            let panel_id = format!("editor_topbar_{}_{}", idx, panel.id());
-            egui::Panel::top(panel_id)
-                .exact_size(height)
-                .resizable(false)
-                .show_inside(root_ui, |ui| {
-                    let mut builder = EguiUiBuilder::new(ui, vt);
-                    panel.ui(&mut builder);
-                });
-        }
+        show_top_bars(root_ui, &mut self.top_panels, vt);
+        // Declared before the resizable Bottom so egui reserves vertical
+        // space for them correctly.
+        show_status_bars(root_ui, &mut self.status_panels, vt);
+        show_spine(root_ui, &mut self.spine_panels, vt);
+        show_bottom(
+            root_ui,
+            &mut self.bottom_panels,
+            &mut self.active_bottom_tab,
+            vt,
+            bottom_default,
+            bottom_max,
+        );
+        show_sidebar(
+            root_ui,
+            egui::Panel::left("editor_left"),
+            &mut self.left_panels,
+            vt,
+            [left_default, LEFT_MIN, left_max],
+        );
+        show_sidebar(
+            root_ui,
+            egui::Panel::right("editor_right"),
+            &mut self.right_panels,
+            vt,
+            [right_default, RIGHT_MIN, right_max],
+        );
+        show_center(root_ui, &mut self.center_panels, vt);
+        show_floating(&ctx, &mut self.floating_panels, vt);
+        show_covers(&ctx, &mut self.cover_panels, vt);
+    }
+}
 
-        // ── Status bar(s) ──────────────────────────────
-        // Stacked from the bottom up. Declared BEFORE the resizable Bottom so
-        // egui reserves vertical space for it correctly.
-        for (idx, panel) in self.status_panels.iter_mut().enumerate() {
-            let height = panel.preferred_size().unwrap_or(DEFAULT_STATUSBAR_HEIGHT);
-            let panel_id = format!("editor_statusbar_{}_{}", idx, panel.id());
-            egui::Panel::bottom(panel_id)
-                .exact_size(height)
-                .resizable(false)
-                .show_inside(root_ui, |ui| {
-                    let mut builder = EguiUiBuilder::new(ui, vt);
-                    panel.ui(&mut builder);
-                });
-        }
+/// Shows each `TopBar` panel as its own fixed-height panel, stacked in
+/// registration order from the top down.
+fn show_top_bars(
+    root_ui: &mut egui::Ui,
+    panels: &mut [Box<dyn EditorPanel>],
+    vt: &HashMap<ViewportTextureHandle, egui::TextureId>,
+) {
+    for (idx, panel) in panels.iter_mut().enumerate() {
+        let height = panel.preferred_size().unwrap_or(DEFAULT_TOPBAR_HEIGHT);
+        let panel_id = format!("editor_topbar_{}_{}", idx, panel.id());
+        egui::Panel::top(panel_id)
+            .exact_size(height)
+            .resizable(false)
+            .show_inside(root_ui, |ui| {
+                let mut builder = EguiUiBuilder::new(ui, vt);
+                panel.ui(&mut builder);
+            });
+    }
+}
 
-        // ── Spine (fixed left strip) ──────────────────
-        // The layout assumes one spine: further spine panels stack inside the
-        // first one's panel.
-        if !self.spine_panels.is_empty() {
-            let width = self.spine_panels[0]
-                .preferred_size()
-                .unwrap_or(DEFAULT_SPINE_WIDTH);
-            egui::Panel::left("editor_spine")
-                .exact_size(width)
-                .resizable(false)
-                .show_inside(root_ui, |ui| {
-                    for panel in &mut self.spine_panels {
-                        let mut builder = EguiUiBuilder::new(ui, vt);
-                        panel.ui(&mut builder);
-                    }
-                });
-        }
+/// Shows each `StatusBar` panel as its own fixed-height panel, stacked from the
+/// bottom up.
+fn show_status_bars(
+    root_ui: &mut egui::Ui,
+    panels: &mut [Box<dyn EditorPanel>],
+    vt: &HashMap<ViewportTextureHandle, egui::TextureId>,
+) {
+    for (idx, panel) in panels.iter_mut().enumerate() {
+        let height = panel.preferred_size().unwrap_or(DEFAULT_STATUSBAR_HEIGHT);
+        let panel_id = format!("editor_statusbar_{}_{}", idx, panel.id());
+        egui::Panel::bottom(panel_id)
+            .exact_size(height)
+            .resizable(false)
+            .show_inside(root_ui, |ui| {
+                let mut builder = EguiUiBuilder::new(ui, vt);
+                panel.ui(&mut builder);
+            });
+    }
+}
 
-        // ── Bottom (resizable, tabbed) ─────────────────
-        if !self.bottom_panels.is_empty() {
-            let active_tab = &mut self.active_bottom_tab;
-            let panels = &mut self.bottom_panels;
-            // Panel-supplied preferred size is treated as an *additional*
-            // floor — useful for panels that need more than the global
-            // minimum. Proportional default still wins on big screens.
-            let panel_min = panels[0].preferred_size().unwrap_or(0.0);
-            let default_h = bottom_default.max(panel_min);
-
-            egui::Panel::bottom("editor_bottom")
-                .default_size(default_h)
-                .min_size(BOTTOM_MIN)
-                .max_size(bottom_max.max(default_h + 1.0))
-                .resizable(true)
-                .show_inside(root_ui, |ui| {
-                    // The inner UI spans the whole panel rect: a paint-only
-                    // panel allocates nothing, so egui would store the minimum
-                    // in `PanelState` and snap the panel back on every release.
-                    ui.set_min_size(ui.max_rect().size());
-                    if panels.len() > 1 {
-                        ui.horizontal(|ui| {
-                            ui.add_space(8.0);
-                            for (i, panel) in panels.iter().enumerate() {
-                                let active = *active_tab == i;
-                                if ui.selectable_label(active, panel.title()).clicked() {
-                                    *active_tab = i;
-                                }
-                                ui.add_space(2.0);
-                            }
-                        });
-                        ui.add(egui::Separator::default().spacing(2.0));
-                    }
-
-                    if let Some(panel) = panels.get_mut(*active_tab) {
-                        // Only the area below the tab bar, or the panel's
-                        // header would paint over the tabs and its content be
-                        // clipped.
-                        let remaining = ui.available_rect_before_wrap();
-                        let mut child = ui.new_child(
-                            egui::UiBuilder::new()
-                                .max_rect(remaining)
-                                .layout(egui::Layout::top_down(egui::Align::Min)),
-                        );
-                        child.set_min_size(remaining.size());
-                        let mut builder = EguiUiBuilder::new(&mut child, vt);
-                        panel.ui(&mut builder);
-                    }
-                });
-        }
-
-        // ── Left sidebar (resizable) ──────────────────
-        if !self.left_panels.is_empty() {
-            let panel_min = self.left_panels[0].preferred_size().unwrap_or(0.0);
-            let default_w = left_default.max(panel_min);
-            let panels = &mut self.left_panels;
-            egui::Panel::left("editor_left")
-                .default_size(default_w)
-                .min_size(LEFT_MIN)
-                .max_size(left_max.max(default_w + 1.0))
-                .resizable(true)
-                .show_inside(root_ui, |ui| {
-                    // As for the bottom panel: without `set_min_size`, a
-                    // resize is reverted on release.
-                    ui.set_min_size(ui.max_rect().size());
-                    for panel in panels.iter_mut() {
-                        let mut builder = EguiUiBuilder::new(ui, vt);
-                        panel.ui(&mut builder);
-                    }
-                });
-        }
-
-        // ── Right sidebar (resizable) ─────────────────
-        if !self.right_panels.is_empty() {
-            let panel_min = self.right_panels[0].preferred_size().unwrap_or(0.0);
-            let default_w = right_default.max(panel_min);
-            let panels = &mut self.right_panels;
-            egui::Panel::right("editor_right")
-                .default_size(default_w)
-                .min_size(RIGHT_MIN)
-                .max_size(right_max.max(default_w + 1.0))
-                .resizable(true)
-                .show_inside(root_ui, |ui| {
-                    // Same rationale as the left panel above.
-                    ui.set_min_size(ui.max_rect().size());
-                    for panel in panels.iter_mut() {
-                        let mut builder = EguiUiBuilder::new(ui, vt);
-                        panel.ui(&mut builder);
-                    }
-                });
-        }
-
-        // ── Central area ──────────────────────────────
-        egui::CentralPanel::default().show_inside(root_ui, |ui| {
-            if self.center_panels.is_empty() {
-                ui.centered_and_justified(|ui| {
-                    ui.label("");
-                });
-            } else {
-                for panel in &mut self.center_panels {
-                    let mut builder = EguiUiBuilder::new(ui, vt);
-                    panel.ui(&mut builder);
-                }
+/// Shows the fixed left strip, sized by the first spine panel.
+///
+/// The layout assumes one spine: further spine panels stack inside the first
+/// one's panel.
+fn show_spine(
+    root_ui: &mut egui::Ui,
+    panels: &mut [Box<dyn EditorPanel>],
+    vt: &HashMap<ViewportTextureHandle, egui::TextureId>,
+) {
+    if panels.is_empty() {
+        return;
+    }
+    let width = panels[0].preferred_size().unwrap_or(DEFAULT_SPINE_WIDTH);
+    egui::Panel::left("editor_spine")
+        .exact_size(width)
+        .resizable(false)
+        .show_inside(root_ui, |ui| {
+            for panel in panels.iter_mut() {
+                let mut builder = EguiUiBuilder::new(ui, vt);
+                panel.ui(&mut builder);
             }
         });
+}
 
-        // ── Floating overlays (z-ordered) ─────────────
-        // egui::Area lets us render free-floating UI on top of the rest. The
-        // panel is responsible for all its own positioning / sizing.
-        for entry in &mut self.floating_panels {
-            let area_id = egui::Id::new(("editor_floating", entry.panel.id()));
-            // `Area` is not a panel: it floats in its own layer above the
-            // layout rather than carving space out of a parent `Ui`, so it
-            // still takes the context directly.
-            egui::Area::new(area_id)
-                .order(egui::Order::Foreground)
-                .interactable(true)
-                .show(&ctx, |ui| {
-                    let mut builder = EguiUiBuilder::new(ui, vt);
-                    entry.panel.ui(&mut builder);
-                });
-        }
+/// Shows the resizable bottom slot, with a tab bar when it holds more than
+/// one panel.
+fn show_bottom(
+    root_ui: &mut egui::Ui,
+    panels: &mut [Box<dyn EditorPanel>],
+    active_tab: &mut usize,
+    vt: &HashMap<ViewportTextureHandle, egui::TextureId>,
+    bottom_default: f32,
+    bottom_max: f32,
+) {
+    if panels.is_empty() {
+        return;
+    }
+    // Panel-supplied preferred size is treated as an *additional*
+    // floor — useful for panels that need more than the global
+    // minimum. Proportional default still wins on big screens.
+    let panel_min = panels[0].preferred_size().unwrap_or(0.0);
+    let default_h = bottom_default.max(panel_min);
 
-        // ── Cover (full screen, above everything) ─────
-        // A loading or splash screen, taking every click. Its panel paints in a
-        // `Ui` of its own on the area's layer: a new area's content is hidden on
-        // its first frame, while egui measures it, and a cover shows at once.
-        let screen = ctx.content_rect();
-        for panel in &mut self.cover_panels {
-            let area_id = egui::Id::new(("editor_cover", panel.id()));
-            egui::Area::new(area_id)
-                .order(egui::Order::Tooltip)
-                .fixed_pos(screen.min)
-                .interactable(true)
-                .fade_in(false)
-                .show(&ctx, |ui| {
-                    ui.allocate_rect(screen, egui::Sense::click());
+    egui::Panel::bottom("editor_bottom")
+        .default_size(default_h)
+        .min_size(BOTTOM_MIN)
+        .max_size(bottom_max.max(default_h + 1.0))
+        .resizable(true)
+        .show_inside(root_ui, |ui| {
+            // The inner UI spans the whole panel rect: a paint-only
+            // panel allocates nothing, so egui would store the minimum
+            // in `PanelState` and snap the panel back on every release.
+            ui.set_min_size(ui.max_rect().size());
+            if panels.len() > 1 {
+                ui.horizontal(|ui| {
+                    ui.add_space(8.0);
+                    for (i, panel) in panels.iter().enumerate() {
+                        let active = *active_tab == i;
+                        if ui.selectable_label(active, panel.title()).clicked() {
+                            *active_tab = i;
+                        }
+                        ui.add_space(2.0);
+                    }
                 });
-            let layer = egui::LayerId::new(egui::Order::Tooltip, area_id);
-            let mut ui = egui::Ui::new(
-                ctx.clone(),
-                area_id.with("paint"),
-                egui::UiBuilder::new().layer_id(layer).max_rect(screen),
-            );
-            let mut builder = EguiUiBuilder::new(&mut ui, vt);
-            panel.ui(&mut builder);
+                ui.add(egui::Separator::default().spacing(2.0));
+            }
+
+            if let Some(panel) = panels.get_mut(*active_tab) {
+                // Only the area below the tab bar, or the panel's
+                // header would paint over the tabs and its content be
+                // clipped.
+                let remaining = ui.available_rect_before_wrap();
+                let mut child = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(remaining)
+                        .layout(egui::Layout::top_down(egui::Align::Min)),
+                );
+                child.set_min_size(remaining.size());
+                let mut builder = EguiUiBuilder::new(&mut child, vt);
+                panel.ui(&mut builder);
+            }
+        });
+}
+
+/// Shows a resizable sidebar on `side`, sized by `[default, min, max]`.
+fn show_sidebar(
+    root_ui: &mut egui::Ui,
+    side: egui::Panel,
+    panels: &mut [Box<dyn EditorPanel>],
+    vt: &HashMap<ViewportTextureHandle, egui::TextureId>,
+    [default, min, max]: [f32; 3],
+) {
+    if panels.is_empty() {
+        return;
+    }
+    let panel_min = panels[0].preferred_size().unwrap_or(0.0);
+    let default_w = default.max(panel_min);
+    side.default_size(default_w)
+        .min_size(min)
+        .max_size(max.max(default_w + 1.0))
+        .resizable(true)
+        .show_inside(root_ui, |ui| {
+            // As for the bottom panel: without `set_min_size`, a
+            // resize is reverted on release.
+            ui.set_min_size(ui.max_rect().size());
+            for panel in panels.iter_mut() {
+                let mut builder = EguiUiBuilder::new(ui, vt);
+                panel.ui(&mut builder);
+            }
+        });
+}
+
+fn show_center(
+    root_ui: &mut egui::Ui,
+    panels: &mut [Box<dyn EditorPanel>],
+    vt: &HashMap<ViewportTextureHandle, egui::TextureId>,
+) {
+    egui::CentralPanel::default().show_inside(root_ui, |ui| {
+        if panels.is_empty() {
+            ui.centered_and_justified(|ui| {
+                ui.label("");
+            });
+        } else {
+            for panel in panels.iter_mut() {
+                let mut builder = EguiUiBuilder::new(ui, vt);
+                panel.ui(&mut builder);
+            }
         }
+    });
+}
+
+/// Shows each floating panel in its own area, in z-order; the panel places
+/// and sizes itself.
+fn show_floating(
+    ctx: &egui::Context,
+    entries: &mut [FloatingEntry],
+    vt: &HashMap<ViewportTextureHandle, egui::TextureId>,
+) {
+    for entry in entries.iter_mut() {
+        let area_id = egui::Id::new(("editor_floating", entry.panel.id()));
+        // `Area` is not a panel: it floats in its own layer above the
+        // layout rather than carving space out of a parent `Ui`, so it
+        // still takes the context directly.
+        egui::Area::new(area_id)
+            .order(egui::Order::Foreground)
+            .interactable(true)
+            .show(ctx, |ui| {
+                let mut builder = EguiUiBuilder::new(ui, vt);
+                entry.panel.ui(&mut builder);
+            });
+    }
+}
+
+/// Shows each cover panel full screen, above everything, taking every click.
+///
+/// Its panel paints in a `Ui` of its own on the area's layer: a new area's
+/// content is hidden on its first frame, while egui measures it, and a cover
+/// shows at once.
+fn show_covers(
+    ctx: &egui::Context,
+    panels: &mut [Box<dyn EditorPanel>],
+    vt: &HashMap<ViewportTextureHandle, egui::TextureId>,
+) {
+    let screen = ctx.content_rect();
+    for panel in panels.iter_mut() {
+        let area_id = egui::Id::new(("editor_cover", panel.id()));
+        egui::Area::new(area_id)
+            .order(egui::Order::Tooltip)
+            .fixed_pos(screen.min)
+            .interactable(true)
+            .fade_in(false)
+            .show(ctx, |ui| {
+                ui.allocate_rect(screen, egui::Sense::click());
+            });
+        let layer = egui::LayerId::new(egui::Order::Tooltip, area_id);
+        let mut ui = egui::Ui::new(
+            ctx.clone(),
+            area_id.with("paint"),
+            egui::UiBuilder::new().layer_id(layer).max_rect(screen),
+        );
+        let mut builder = EguiUiBuilder::new(&mut ui, vt);
+        panel.ui(&mut builder);
     }
 }

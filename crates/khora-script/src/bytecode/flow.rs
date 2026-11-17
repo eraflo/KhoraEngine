@@ -50,7 +50,7 @@ struct Bound<'a> {
 }
 
 impl Compiler {
-    /// `break;` — to the first instruction after the innermost loop.
+    /// Compiles `break;`, a jump to the first instruction after the innermost loop.
     pub(super) fn compile_break(&mut self, span: Span) {
         self.end_row_for_break();
         let jump = self.emit(Instruction::Jump { target: usize::MAX });
@@ -60,7 +60,7 @@ impl Compiler {
         }
     }
 
-    /// `continue;` — to the innermost loop's next iteration.
+    /// Compiles `continue;`, a jump to the innermost loop's next iteration.
     pub(super) fn compile_continue(&mut self, span: Span) {
         let target = match self.loops.last() {
             Some(context) => context.continue_target,
@@ -79,7 +79,7 @@ impl Compiler {
         }
     }
 
-    /// How many loops are open around the code being compiled.
+    /// Returns how many loops are open around the code being compiled.
     pub(super) fn loop_depth(&self) -> usize {
         self.loops.len()
     }
@@ -177,7 +177,7 @@ impl Compiler {
         self.naming.leave_branch();
     }
 
-    /// `if (cond) { … } else …`, and `if (var x = e) { … } else …`.
+    /// Compiles `if (cond) { … } else …`, and `if (var x = e) { … } else …`.
     pub(super) fn compile_if(
         &mut self,
         condition: &Expr,
@@ -208,7 +208,7 @@ impl Compiler {
         }
     }
 
-    /// `while (cond) { … }`, and `while (var x = e) { … }`.
+    /// Compiles `while (cond) { … }`, and `while (var x = e) { … }`.
     pub(super) fn compile_while(&mut self, condition: &Expr, body: &Block) {
         // The back-edge lands here, on a safepoint that is also the
         // statement's start. Temporaries are released before it, so a
@@ -227,7 +227,7 @@ impl Compiler {
         self.exit_loop(context);
     }
 
-    /// `match (subject) { … }` — taking an optional apart.
+    /// Compiles `match (subject) { … }`, taking an optional apart.
     ///
     /// The subject is evaluated once and read only by the arms' tests, which
     /// run before any arm's body, so a body is free to reuse its register.

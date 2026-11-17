@@ -62,9 +62,6 @@ pub struct Quaternion {
     pub w: f32,
 }
 
-/// Alias for [`Quaternion`] for brevity.
-pub type Quat = Quaternion;
-
 impl Quaternion {
     /// The identity quaternion, representing no rotation.
     pub const IDENTITY: Quaternion = Quaternion {
@@ -397,6 +394,9 @@ impl Neg for Quaternion {
         }
     }
 }
+
+/// Alias for [`Quaternion`] for brevity.
+pub type Quat = Quaternion;
 
 #[cfg(test)]
 mod tests {

@@ -36,6 +36,22 @@ pub(super) struct Known {
     pub(super) timing: ExecutionTiming,
 }
 
+impl Known {
+    /// Returns the step the agent's family runs at, read from its place; `None` for a
+    /// family that runs every frame.
+    pub(super) fn fixed_step(&self) -> Option<Duration> {
+        self.place
+            .lock_recovered()
+            .fixed_step()
+            .filter(|step| !step.is_zero())
+    }
+
+    /// Returns what the agent competes for this frame: its installed layer's declaration.
+    pub(super) fn contention(&self) -> Contention {
+        self.place.lock_recovered().contention()
+    }
+}
+
 /// An agent, with its lock and what the scheduler knows of it.
 pub(super) type MetAgent = (Arc<Mutex<dyn Agent>>, Known);
 
@@ -72,22 +88,6 @@ impl KnownAgents {
         met.retain(|_, (seen, _)| seen.strong_count() > 0);
         met.insert(key, (Arc::downgrade(agent), known.clone()));
         Some(known)
-    }
-}
-
-impl Known {
-    /// Returns the step the agent's family runs at, read from its place; `None` for a
-    /// family that runs every frame.
-    pub(super) fn fixed_step(&self) -> Option<Duration> {
-        self.place
-            .lock_recovered()
-            .fixed_step()
-            .filter(|step| !step.is_zero())
-    }
-
-    /// Returns what the agent competes for this frame: its installed layer's declaration.
-    pub(super) fn contention(&self) -> Contention {
-        self.place.lock_recovered().contention()
     }
 }
 

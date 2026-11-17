@@ -25,7 +25,7 @@ Each profile contains:
 - `knowledge/` — persistent memory.
 - `agents/` — specialist sub-agents (scoped tools).
 - `skills/` — task workflows (SKILL.md).
-- `hooks/` — doc-change, bootstrap, teardown, secret-scan.
+- `hooks/` — doc-change, bootstrap, teardown, secret-scan, lint-file (engine).
 - `installer/` — the Node CLI for that profile.
 
 ---

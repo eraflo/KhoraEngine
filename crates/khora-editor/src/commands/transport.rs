@@ -34,6 +34,10 @@ pub const PLAY_FAMILIES: [AgentId; 3] = [
     khora_sdk::khora_core::audio::AUDIO,
 ];
 
+/// Why Play is refused in a restricted project.
+const PLAY_REFUSED: &str =
+    "Play is off in restricted mode: playing runs this project's scripts. Trust the project to play it.";
+
 /// Opens editing: switches the [`PLAY_FAMILIES`] off. The editor's `setup` calls it.
 pub fn start_editing(runtime: &Runtime) {
     follow(runtime, PlayMode::Editing);
@@ -120,10 +124,6 @@ pub fn process_transport(
         follow(runtime, mode);
     }
 }
-
-/// Why Play is refused in a restricted project.
-const PLAY_REFUSED: &str =
-    "Play is off in restricted mode: playing runs this project's scripts. Trust the project to play it.";
 
 fn play_mode(editor_state: &Arc<Mutex<EditorState>>) -> PlayMode {
     editor_state

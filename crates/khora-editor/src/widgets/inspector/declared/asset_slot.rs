@@ -73,7 +73,7 @@ pub fn picker_entries(kind: AssetKind, entries: &[AssetEntry]) -> Vec<&AssetEntr
 /// whether the author changed it.
 ///
 /// An `optional` one is cleared with its context menu.
-pub fn render_asset(
+pub(crate) fn render_asset(
     ui: &mut dyn UiBuilder,
     label: &str,
     kind: AssetKind,
@@ -180,7 +180,7 @@ pub fn render_asset(
 ///
 /// Entries by name, folder muted, path as tooltip; a search field when
 /// `searchable` and there are more than `SEARCH_FROM`.
-pub fn pick_asset(
+pub(crate) fn pick_asset(
     ui: &mut dyn UiBuilder,
     kind: AssetKind,
     held: Option<AssetUUID>,
@@ -240,8 +240,8 @@ pub fn pick_asset(
     picked
 }
 
-/// The icon and the words in the well: the asset's name and its folder, the
-/// kind asked for, or the asset gone from the project.
+/// Paints the icon and the words in the well: the asset's name and its folder,
+/// the kind asked for, or the asset gone from the project.
 fn paint_contents(
     ui: &mut dyn UiBuilder,
     rect: [f32; 4],
@@ -309,7 +309,7 @@ fn paint_line(ui: &mut dyn UiBuilder, at: [f32; 2], text: &str, size: f32, color
     );
 }
 
-/// The entry of `cx`'s list a drag of `payload` carries, where it is an
+/// Returns the entry of `cx`'s list a drag of `payload` carries, where it is an
 /// asset of `kind` dragged from that very list.
 fn dragged_entry<'a>(
     payload: u64,
@@ -322,14 +322,14 @@ fn dragged_entry<'a>(
         .filter(|entry| entry.asset_type.script_kind() == Some(kind))
 }
 
-/// `missing · ` and the first group of `uuid`.
+/// Returns `missing · ` and the first group of `uuid`.
 fn missing_text(uuid: AssetUUID) -> String {
     let text = uuid.to_string();
     format!("missing · {}", &text[..8])
 }
 
-/// A file name without its extension; a name that is all extension stays
-/// whole.
+/// Returns a file name without its extension; a name that is all extension
+/// stays whole.
 fn stem(name: &str) -> &str {
     match name.rsplit_once('.') {
         Some((stem, _)) if !stem.is_empty() => stem,
@@ -337,12 +337,14 @@ fn stem(name: &str) -> &str {
     }
 }
 
-/// A path under `assets/` with forward slashes, whatever the platform wrote.
+/// Returns a path under `assets/` with forward slashes, whatever the platform
+/// wrote.
 fn display_path(path: &str) -> String {
     path.replace('\\', "/")
 }
 
-/// The folder holding the asset at `path`; empty at the root of `assets/`.
+/// Returns the folder holding the asset at `path`; empty at the root of
+/// `assets/`.
 fn folder_of(path: &str) -> String {
     let path = display_path(path);
     match path.rsplit_once('/') {

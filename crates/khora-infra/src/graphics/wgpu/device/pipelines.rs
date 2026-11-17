@@ -337,8 +337,8 @@ impl WgpuDevice {
     }
 }
 
-/// The wgpu attributes of each vertex buffer the pipeline reads, one list
-/// per buffer: the storage the buffer layouts borrow.
+/// Returns the wgpu attributes of each vertex buffer the pipeline reads, one
+/// list per buffer: the storage the buffer layouts borrow.
 fn vertex_attributes(descriptor: &RenderPipelineDescriptor) -> Vec<Vec<wgpu::VertexAttribute>> {
     descriptor
         .vertex_buffers_layout
@@ -359,7 +359,7 @@ fn vertex_attributes(descriptor: &RenderPipelineDescriptor) -> Vec<Vec<wgpu::Ver
         .collect()
 }
 
-/// The wgpu layout of each vertex buffer, borrowing its attributes from
+/// Returns the wgpu layout of each vertex buffer, borrowing its attributes from
 /// `attributes` (built by [`vertex_attributes`], in the same order).
 fn vertex_buffer_layouts<'a>(
     descriptor: &RenderPipelineDescriptor,
@@ -380,7 +380,7 @@ fn vertex_buffer_layouts<'a>(
         .collect()
 }
 
-/// The pipeline's primitive state, converted to wgpu.
+/// Converts the pipeline's primitive state to wgpu.
 fn primitive_state(descriptor: &RenderPipelineDescriptor) -> wgpu::PrimitiveState {
     wgpu::PrimitiveState {
         topology: descriptor.primitive_state.topology.into_wgpu(),
@@ -399,8 +399,8 @@ fn primitive_state(descriptor: &RenderPipelineDescriptor) -> wgpu::PrimitiveStat
     }
 }
 
-/// The pipeline's depth-stencil state, converted to wgpu; `None` when it
-/// has none.
+/// Converts the pipeline's depth-stencil state to wgpu; `None` when it has
+/// none.
 fn depth_stencil_state(descriptor: &RenderPipelineDescriptor) -> Option<wgpu::DepthStencilState> {
     descriptor
         .depth_stencil_state
@@ -433,7 +433,7 @@ fn depth_stencil_state(descriptor: &RenderPipelineDescriptor) -> Option<wgpu::De
         })
 }
 
-/// The pipeline's color targets, converted to wgpu.
+/// Converts the pipeline's color targets to wgpu.
 fn color_target_states(
     descriptor: &RenderPipelineDescriptor,
 ) -> Vec<Option<wgpu::ColorTargetState>> {
@@ -461,7 +461,7 @@ fn color_target_states(
         .collect()
 }
 
-/// The fragment shader's entry point, for a pipeline that has a fragment
+/// Returns the fragment shader's entry point, for a pipeline that has a fragment
 /// shader module.
 fn fragment_entry_point<'d>(
     descriptor: &'d RenderPipelineDescriptor,

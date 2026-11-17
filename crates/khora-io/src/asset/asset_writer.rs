@@ -26,5 +26,9 @@ pub trait AssetWriter: Send + Sync {
     ///
     /// Creates the missing directories. The path has the shape an
     /// `AssetSource::Path` records, so the next index build lists the file.
+    ///
+    /// # Errors
+    ///
+    /// When a directory cannot be created or the file cannot be written.
     fn write_bytes(&self, rel_path: &Path, bytes: &[u8]) -> Result<()>;
 }

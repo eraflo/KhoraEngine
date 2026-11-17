@@ -37,7 +37,7 @@ pub fn tint(c: Color, factor: f32) -> Color {
     [c[0], c[1], c[2], (c[3] * factor).clamp(0.0, 1.0)]
 }
 
-/// Linearly interpolates between two colors. `t` is clamped to `0..=1`.
+/// Interpolates linearly between two colors, `t` clamped to `0..=1`.
 #[inline]
 pub fn lerp_color(a: Color, b: Color, t: f32) -> Color {
     let t = t.clamp(0.0, 1.0);
@@ -106,14 +106,14 @@ pub fn vertical_gradient(
     }
 }
 
-/// A 1px horizontal separator across `[x0, x1]` at `y`, in the theme's
+/// Draws a 1px horizontal separator across `[x0, x1]` at `y`, in the theme's
 /// separator color.
 #[inline]
 pub fn hairline_h(ui: &mut dyn UiBuilder, theme: &UiTheme, x0: f32, x1: f32, y: f32) {
     ui.paint_line([x0, y], [x1, y], theme.separator, 1.0);
 }
 
-/// A 1px vertical separator down `[y0, y1]` at `x`.
+/// Draws a 1px vertical separator down `[y0, y1]` at `x`.
 #[inline]
 pub fn hairline_v(ui: &mut dyn UiBuilder, theme: &UiTheme, y0: f32, y1: f32, x: f32) {
     ui.paint_line([x, y0], [x, y1], theme.separator, 1.0);
@@ -262,7 +262,10 @@ pub fn selection_bar(ui: &mut dyn UiBuilder, rect: Rect, color: Color) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::RecordingUiBuilder;
+    use crate::testing::{PaintCall, RecordingUiBuilder};
+
+    const RED: Color = [1.0, 0.0, 0.0, 1.0];
+    const BLUE: Color = [0.0, 0.0, 1.0, 1.0];
 
     #[test]
     fn with_alpha_replaces_and_clamps() {
@@ -312,5 +315,149 @@ mod tests {
             Some(FontFamilyHint::Monospace),
             "numbers must render in the monospace face"
         );
+    }
+
+    #[test]
+    fn stroke_outlines_the_rect_with_its_colour_and_width() {
+        let mut ui = RecordingUiBuilder::new(100.0, 40.0);
+        stroke(&mut ui, [1.0, 2.0, 30.0, 10.0], RED, 4.0, 2.0);
+        assert_eq!(
+            ui.calls(),
+            &[PaintCall::RectStroke {
+                min: [1.0, 2.0],
+                size: [30.0, 10.0],
+                color: RED,
+                rounding: 4.0,
+                thickness: 2.0,
+            }]
+        );
+    }
+
+    #[test]
+    fn fill_stroke_fills_first_then_strokes_one_pixel_wide() {
+        let mut ui = RecordingUiBuilder::new(100.0, 40.0);
+        fill_stroke(&mut ui, [0.0, 0.0, 30.0, 10.0], BLUE, RED, 3.0);
+        assert!(matches!(
+            ui.calls(),
+            [
+                PaintCall::RectFilled {
+                    color: BLUE,
+                    rounding: 3.0,
+                    ..
+                },
+                PaintCall::RectStroke {
+                    color: RED,
+                    rounding: 3.0,
+                    thickness: 1.0,
+                    ..
+                },
+            ]
+        ));
+    }
+
+    #[test]
+    fn vertical_gradient_runs_from_top_to_bottom_colour_in_strips() {
+        let mut ui = RecordingUiBuilder::new(100.0, 40.0);
+        vertical_gradient(&mut ui, [0.0, 0.0, 10.0, 40.0], RED, BLUE, 4);
+        let colours = ui.fill_colors();
+        assert_eq!(colours.len(), 4);
+        assert_eq!(colours[0], RED);
+        assert_eq!(colours[3], BLUE);
+
+        let mut ui = RecordingUiBuilder::new(100.0, 40.0);
+        vertical_gradient(&mut ui, [0.0, 0.0, 10.0, 40.0], RED, BLUE, 0);
+        assert_eq!(ui.fill_colors(), [RED, BLUE], "at least two strips");
+    }
+
+    #[test]
+    fn hairlines_are_one_pixel_lines_in_the_separator_colour() {
+        let theme = crate::brand::khora_dark();
+        let mut ui = RecordingUiBuilder::new(100.0, 40.0);
+        hairline_h(&mut ui, &theme, 0.0, 50.0, 8.0);
+        hairline_v(&mut ui, &theme, 2.0, 30.0, 9.0);
+        assert_eq!(
+            ui.calls(),
+            &[
+                PaintCall::Line {
+                    from: [0.0, 8.0],
+                    to: [50.0, 8.0],
+                    color: theme.separator,
+                    thickness: 1.0,
+                },
+                PaintCall::Line {
+                    from: [9.0, 2.0],
+                    to: [9.0, 30.0],
+                    color: theme.separator,
+                    thickness: 1.0,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn icon_centered_paints_the_glyph_centred_in_the_icon_face() {
+        let mut ui = RecordingUiBuilder::new(100.0, 40.0);
+        icon_centered(&mut ui, [0.0, 0.0, 20.0, 20.0], Icon::Trash, 12.0, RED);
+        assert!(matches!(
+            ui.calls(),
+            [PaintCall::Text {
+                pos: [10.0, 4.0],
+                family: FontFamilyHint::Icons,
+                align: TextAlign::Center,
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn eyebrow_paints_its_label_uppercase_in_the_disabled_colour() {
+        let theme = crate::brand::khora_dark();
+        let mut ui = RecordingUiBuilder::new(100.0, 40.0);
+        eyebrow(&mut ui, &theme, [0.0, 0.0], "Recent");
+        assert_eq!(ui.text_color("RECENT"), Some(theme.text_disabled));
+        assert_eq!(ui.text_family("RECENT"), Some(FontFamilyHint::Monospace));
+    }
+
+    #[test]
+    fn text_in_starts_at_the_padding_and_centres_vertically() {
+        let mut ui = RecordingUiBuilder::new(100.0, 40.0);
+        text_in(
+            &mut ui,
+            [10.0, 0.0, 80.0, 20.0],
+            "row",
+            10.0,
+            RED,
+            6.0,
+            FontFamilyHint::Proportional,
+        );
+        assert!(matches!(
+            ui.calls(),
+            [PaintCall::Text {
+                pos: [16.0, 5.0],
+                align: TextAlign::Left,
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn text_centered_anchors_the_text_at_the_rect_centre() {
+        let mut ui = RecordingUiBuilder::new(100.0, 40.0);
+        text_centered(
+            &mut ui,
+            [0.0, 0.0, 40.0, 20.0],
+            "ok",
+            10.0,
+            RED,
+            FontFamilyHint::Monospace,
+        );
+        assert!(matches!(
+            ui.calls(),
+            [PaintCall::Text {
+                pos: [20.0, 5.0],
+                align: TextAlign::Center,
+                ..
+            }]
+        ));
     }
 }

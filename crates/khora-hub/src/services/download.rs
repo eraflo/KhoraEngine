@@ -16,7 +16,7 @@ use std::sync::mpsc;
 
 /// Messages sent from the download thread to the UI.
 pub enum DownloadMessage {
-    /// Progress update: (bytes_downloaded, total_bytes).
+    /// Progress update: (`bytes_downloaded`, `total_bytes`).
     Progress(u64, u64),
     /// Download and extraction completed successfully.
     Completed {
@@ -38,7 +38,7 @@ fn engines_dir() -> PathBuf {
 }
 
 /// Returns the install directory of engine `version`: `~/.khora/engines/<version>/`.
-pub fn engine_install_dir(version: &str) -> PathBuf {
+pub(crate) fn engine_install_dir(version: &str) -> PathBuf {
     engines_dir().join(version)
 }
 
@@ -50,7 +50,7 @@ pub fn engine_install_dir(version: &str) -> PathBuf {
 /// # Errors
 ///
 /// Fails when the filesystem refuses the deletion partway.
-pub fn uninstall_engine(version: &str) -> std::io::Result<()> {
+pub(crate) fn uninstall_engine(version: &str) -> std::io::Result<()> {
     let dir = engine_install_dir(version);
     if dir.is_dir() {
         std::fs::remove_dir_all(&dir)?;
@@ -63,7 +63,11 @@ pub fn uninstall_engine(version: &str) -> std::io::Result<()> {
 /// The archives are extracted to `~/.khora/engines/<version>/editor/` and
 /// `runtime/`. A runtime that fails leaves `EngineInstall.runtime_binary` at
 /// `None`; the engine is still installed. Poll the returned `Receiver` every frame.
-pub fn start_download(
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the hub runs no engine: a network call runs on its own thread"
+)]
+pub(crate) fn start_download(
     editor_asset: &GithubAsset,
     runtime_asset: Option<&GithubAsset>,
     version: &str,
@@ -273,7 +277,7 @@ fn extract_zip(data: &[u8], dest_dir: &std::path::Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Recursively searches for a file by name in a directory tree.
+/// Searches a directory tree, recursively, for a file by name.
 fn find_file_recursive(dir: &std::path::Path, filename: &str) -> Option<PathBuf> {
     // Check the direct path first
     let direct = dir.join(filename);

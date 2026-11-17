@@ -24,6 +24,9 @@ mod hints;
 
 pub use hints::{FieldHints, FieldRange};
 
+/// The engine types a script names, as [`ErgonType::Engine`] holds them.
+const ENGINE_TYPES: [&str; 5] = ["Vec2", "Vec3", "Vec4", "Quat", "Color"];
+
 /// The Ergon type of a component field.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ErgonType {
@@ -65,11 +68,8 @@ pub enum ErgonType {
     },
 }
 
-/// The engine types a script names, as [`ErgonType::Engine`] holds them.
-const ENGINE_TYPES: [&str; 5] = ["Vec2", "Vec3", "Vec4", "Quat", "Color"];
-
 impl ErgonType {
-    /// A struct known by its name only.
+    /// Returns a struct known by its name only.
     pub fn named_struct(name: impl Into<String>) -> Self {
         Self::Struct {
             name: name.into(),
@@ -146,7 +146,7 @@ impl ErgonType {
         Some(Self::parse_suffixes(text, at, ty))
     }
 
-    /// `ty` with the `?` and `[]` that follow it at `at`.
+    /// Returns `ty` with the `?` and `[]` that follow it at `at`.
     fn parse_suffixes(text: &[u8], at: &mut usize, mut ty: Self) -> Self {
         loop {
             match text.get(*at) {
@@ -187,7 +187,7 @@ impl ErgonType {
         }
     }
 
-    /// Whether `value` is a value of this type, and so fits a field of it.
+    /// Returns whether `value` is a value of this type, and so fits a field of it.
     ///
     /// A `string` for an `int?`, or a struct of another shape, does not. An
     /// `int` is taken where a `float` is, as everywhere a script writes one.
@@ -314,7 +314,7 @@ pub struct FieldValueError {
 }
 
 impl FieldValueError {
-    /// A field of type `T` refused `found`.
+    /// Returns a field of type `T` refused `found`.
     fn of<T: ScriptField>(found: impl Into<String>) -> Self {
         Self {
             expected: T::ergon().to_string(),
@@ -337,11 +337,16 @@ impl std::fmt::Display for FieldValueError {
 /// — `u64`, `usize`, `f64`, wider than Ergon's `int` and `float` — simply does
 /// not implement it.
 pub trait ScriptField: Sized {
-    /// Its Ergon type.
+    /// Returns its Ergon type.
     fn ergon() -> ErgonType;
-    /// The value, as a script sees it.
+    /// Returns the value, as a script sees it.
     fn to_script(&self) -> ScriptValue;
-    /// The field's value from a script's, refusing one it cannot hold.
+    /// Returns the field's value from a script's, refusing one it cannot hold.
+    ///
+    /// # Errors
+    ///
+    /// [`FieldValueError`] when `value` is of another type, or out of the field's
+    /// range.
     fn from_script(value: &ScriptValue) -> Result<Self, FieldValueError>;
 }
 
@@ -376,8 +381,8 @@ macro_rules! integer_field {
                 fn to_script(&self) -> ScriptValue {
                     ScriptValue::Int(i64::from(*self))
                 }
-                /// Range-checked: a value the field cannot hold is refused,
-                /// never wrapped.
+                /// Converts a script value, range-checked: a value the field cannot hold is
+                /// refused, never wrapped.
                 fn from_script(value: &ScriptValue) -> Result<Self, FieldValueError> {
                     match value {
                         ScriptValue::Int(v) => <$ty>::try_from(*v).map_err(|_| FieldValueError {
@@ -404,8 +409,8 @@ macro_rules! plain_field {
                 fn to_script(&self) -> ScriptValue {
                     ScriptValue::$variant(self.clone())
                 }
-                /// An engine value with a non-finite lane is refused, as a
-                /// non-finite `float` is: a NaN translation is not a place.
+                /// Converts a script value, refusing one with a non-finite lane as a non-finite
+                /// `float` is: a NaN translation is not a place.
                 fn from_script(value: &ScriptValue) -> Result<Self, FieldValueError> {
                     match value {
                         ScriptValue::$variant(v) if value.is_finite() => Ok(v.clone()),
@@ -483,7 +488,7 @@ pub mod probe {
     pub struct Probe<T>(PhantomData<fn() -> T>);
 
     impl<T> Probe<T> {
-        /// The probe of `T`.
+        /// Returns the probe of `T`.
         #[allow(clippy::new_without_default)]
         pub fn new() -> Self {
             Self(PhantomData)
@@ -497,11 +502,11 @@ pub mod probe {
 
     /// The answer for a [`ScriptField`].
     pub trait ViaScriptField<T> {
-        /// Its Ergon type.
+        /// Returns its Ergon type.
         fn ergon_of(&self) -> Option<ErgonType>;
-        /// How it reads.
+        /// Returns how it reads.
         fn reader(&self) -> Option<FieldReader<T>>;
-        /// How it is written.
+        /// Returns how it is written.
         fn writer(&self) -> Option<FieldWriter<T>>;
     }
 
@@ -519,11 +524,11 @@ pub mod probe {
 
     /// The answer for any other type: a script cannot reach it.
     pub trait ViaNothing<T> {
-        /// None.
+        /// Returns `None`.
         fn ergon_of(&self) -> Option<ErgonType>;
-        /// None.
+        /// Returns `None`.
         fn reader(&self) -> Option<FieldReader<T>>;
-        /// None.
+        /// Returns `None`.
         fn writer(&self) -> Option<FieldWriter<T>>;
     }
 

@@ -24,8 +24,17 @@ pub trait LaneOutputs<'f>: Sized {
     fn declare(d: &mut Declaration);
 
     /// Opens every field for one record.
+    ///
+    /// # Errors
+    ///
+    /// Fails when a field cannot be opened: a `#[pass]` with no device lent.
     fn open(sink: &mut OutputSink<'f>) -> Result<Self, LaneError>;
 
     /// Commits every field into `sink`, running the output guards.
+    ///
+    /// # Errors
+    ///
+    /// Refused, naming the field, when a guard refuses it: a slot written twice,
+    /// a pass not closed, a staged output with no staging.
     fn commit(self, sink: &mut OutputSink<'f>) -> Result<(), OutputRefusal>;
 }

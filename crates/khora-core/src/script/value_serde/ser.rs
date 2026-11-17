@@ -29,11 +29,6 @@ impl ser::Error for ValueSerdeError {
 /// The serializer every value is written through.
 pub(super) struct Writer;
 
-/// A variant with a payload: `Struct[(variant, payload)]`.
-fn variant(name: &str, payload: ScriptValue) -> ScriptValue {
-    ScriptValue::Struct(vec![(name.to_owned(), payload)])
-}
-
 impl ser::Serializer for Writer {
     type Ok = ScriptValue;
     type Error = ValueSerdeError;
@@ -371,4 +366,9 @@ impl ser::SerializeStructVariant for Fields {
     fn end(self) -> Result<ScriptValue, ValueSerdeError> {
         self.finish()
     }
+}
+
+/// Returns a variant with a payload: `Struct[(variant, payload)]`.
+fn variant(name: &str, payload: ScriptValue) -> ScriptValue {
+    ScriptValue::Struct(vec![(name.to_owned(), payload)])
 }

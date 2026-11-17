@@ -148,6 +148,36 @@ pub fn clippy() -> Result<()> {
     Ok(())
 }
 
+/// Builds every workspace crate's docs, private items included, warnings denied.
+///
+/// Checks the rustdoc lints of `[workspace.lints.rustdoc]`, which clippy does not run:
+/// a broken or private intra-doc link, a bare URL, a stray HTML tag.
+///
+/// # Errors
+///
+/// Fails when rustdoc reports any warning, or the command cannot be run.
+pub fn doc() -> Result<()> {
+    print_task_start("Building the Docs", MAGNIFIER, BLUE);
+    println!(
+        "{}💡 Info:{} Building the docs of every crate, private items included, warnings as errors",
+        BOLD, RESET
+    );
+    execute_command_with_env(
+        "cargo",
+        &[
+            "doc",
+            SCOPE[0],
+            "--no-deps",
+            "--document-private-items",
+            SCOPE[2],
+            "--locked",
+        ],
+        &[("RUSTDOCFLAGS", "-D warnings")],
+        "Docs",
+    )?;
+    Ok(())
+}
+
 /// Runs the doc tests, which nextest does not run.
 pub fn doc_test() -> Result<()> {
     print_task_start("Running Doc Tests", TEST_TUBE, GREEN);
@@ -159,7 +189,7 @@ pub fn doc_test() -> Result<()> {
     Ok(())
 }
 
-/// Runs what CI checks, fastest failure first: format, feature unification, clippy, tests, doc tests.
+/// Runs what CI checks, fastest failure first: format, feature unification, clippy, docs, tests, doc tests.
 ///
 /// Run it once a change is done; while iterating, `cargo t -p <crate> [filter]`.
 ///
@@ -171,6 +201,7 @@ pub fn gate() -> Result<()> {
     format()?;
     hakari()?;
     clippy()?;
+    doc()?;
     test()?;
     doc_test()?;
     println!(

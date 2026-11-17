@@ -83,14 +83,14 @@ pub fn resume(
     })
 }
 
-/// A function name without the behavior it belongs to.
+/// Returns a function name without the behavior it belongs to.
 fn member_of(function: &str) -> &str {
     function
         .split_once('.')
         .map_or(function, |(_, member)| member)
 }
 
-/// Whether `frame`'s function is, in `program`, the code it was frozen in.
+/// Returns whether `frame`'s function is, in `program`, the code it was frozen in.
 fn unchanged(frame: &FrozenFrame, program: &Program) -> bool {
     frame.fingerprint != 0
         && program
@@ -108,7 +108,7 @@ struct Call {
     return_pc: usize,
 }
 
-/// The machine with every edited frame laid out again at its site in
+/// Rebuilds the machine with every edited frame laid out again at its site in
 /// `program`, and every unchanged frame kept as it was frozen.
 ///
 /// A frame whose function kept its fingerprint is the same code: its window,
@@ -291,7 +291,7 @@ fn matched_locals<'s>(site: &'s Site, old: &[FrozenLocal]) -> Option<Vec<(u8, u6
         .collect()
 }
 
-/// The body run again from its entry, with the arguments it was given.
+/// Restarts the body from its entry, with the arguments it was given.
 fn restart(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
     let name = &frozen.frames.first()?.function;
     let function = program.function(name)?;
@@ -325,7 +325,7 @@ fn restart(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
     Some(machine)
 }
 
-/// Whether a local of type `ty` can hold `value`.
+/// Returns whether a local of type `ty` can hold `value`.
 ///
 /// What [`fits`] says, plus an `int` in a float-typed local — the VM widens one
 /// where a float is read, so `float x = 1;` holds an `Int` — and nothing written yet.
@@ -338,7 +338,7 @@ fn holds(value: &FrozenValue, ty: &str, structs: &[crate::vm::StructLayout]) -> 
         || (float && matches!(value, FrozenValue::Int(_)))
 }
 
-/// Whether `value` can be a `ty`, as far as its kind says.
+/// Returns whether `value` can be a `ty`, as far as its kind says.
 ///
 /// A type whose values freeze as nothing more specific than their kind — a
 /// struct, an array — is taken on trust.

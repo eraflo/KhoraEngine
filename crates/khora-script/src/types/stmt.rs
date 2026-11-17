@@ -500,8 +500,8 @@ impl Checker {
     }
 }
 
-/// Whether a value of type `ty` declared without one can start at a zero of
-/// its own: `0`, `0.0`, `false`, `""`, `null`, `[]`.
+/// Returns whether a value of type `ty` declared without one can start at a
+/// zero of its own: `0`, `0.0`, `false`, `""`, `null`, `[]`.
 ///
 /// An entity has none — index 0 is a real entity — and neither has a vector,
 /// a rotation (its identity is not four zeroes) or a struct.

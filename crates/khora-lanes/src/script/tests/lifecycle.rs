@@ -291,7 +291,7 @@ fn a_farewell_already_said_is_not_said_again() {
     hurt.push(ScriptEvent::new(entity(0), "Damaged").with(ScriptValue::Int(1)));
     run_behaviors(&frame(0.016), &hurt, &mut runtime, &mut host, u64::MAX);
 
-    // The boundary applied the despawn, so the next view no longer lists it.
+    // The boundary applied the despawn, so the next view leaves it out.
     let empty = ScriptView {
         left_scope: Vec::new(),
         fixed_steps: 0,

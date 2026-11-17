@@ -124,37 +124,6 @@ pub struct Place {
     wanted: Option<StrategyId>,
 }
 
-/// The installed layer of a place, checked out with its terms for one run off the frame.
-///
-/// The place holds nothing of it meanwhile, so no lock is held across frames;
-/// it comes back through [`Place::check_in`].
-pub struct CheckedOut {
-    held: Held,
-    terms: Terms,
-}
-
-impl CheckedOut {
-    /// The row the layer runs.
-    pub fn row(&self) -> StrategyId {
-        self.held.layer.row()
-    }
-
-    /// One run of the layer, on the terms it was checked out with.
-    pub fn run(&mut self, context: &mut EngineContext<'_>) -> LayerRun {
-        self.held.layer.run(&self.terms, context)
-    }
-
-    /// What the layer competes for: the permit its run is stamped with.
-    pub fn contention(&self) -> Contention {
-        self.held.layer.contention()
-    }
-
-    /// What the run staged, for the reserve.
-    pub fn staged(&mut self) -> crate::lane::Staging {
-        self.held.layer.staged()
-    }
-}
-
 impl Place {
     /// Returns the place of `agent`'s family, empty, with a [`Wake::FirstFrame`] waiting.
     ///
@@ -206,12 +175,12 @@ impl Place {
         self.report(row, level, &terms, switch, run)
     }
 
-    /// Whether the installed layer is checked out for a run off the frame.
+    /// Returns whether the installed layer is checked out for a run off the frame.
     pub fn is_out(&self) -> bool {
         self.out.is_some()
     }
 
-    /// The row of the layer installed, if one is.
+    /// Returns the row of the layer installed, if one is.
     pub fn installed_row(&self) -> Option<StrategyId> {
         self.installed
             .as_ref()
@@ -219,12 +188,12 @@ impl Place {
             .or(self.out)
     }
 
-    /// The row of the layer staged for the next frame start, if one is.
+    /// Returns the row of the layer staged for the next frame start, if one is.
     pub fn staged_row(&self) -> Option<StrategyId> {
         self.staged.as_ref().map(|held| held.layer.row())
     }
 
-    /// The rows of the layers kept ready, oldest first, with the epochs each has left.
+    /// Returns the rows of the layers kept ready, oldest first, with the epochs each has left.
     pub fn kept(&self) -> Vec<(StrategyId, u32)> {
         self.kept
             .iter()
@@ -232,7 +201,7 @@ impl Place {
             .collect()
     }
 
-    /// The wakes gathered since the agent was last woken, oldest first.
+    /// Returns the wakes gathered since the agent was last woken, oldest first.
     pub fn wakes(&self) -> &[Wake] {
         &self.wakes
     }
@@ -247,7 +216,7 @@ impl Place {
         std::mem::take(&mut self.wakes)
     }
 
-    /// The terms the installed layer runs on.
+    /// Returns the terms the installed layer runs on.
     pub fn terms(&self) -> &Terms {
         &self.terms
     }
@@ -266,7 +235,7 @@ impl Place {
         }
     }
 
-    /// The step the scheduler sub-steps a fixed-step family by, read each frame.
+    /// Returns the step the scheduler sub-steps a fixed-step family by, read each frame.
     pub fn fixed_step(&self) -> Option<Duration> {
         self.terms.fixed_step
     }
@@ -279,7 +248,7 @@ impl Place {
         }
     }
 
-    /// What the last run gave back: its report and the costs it found.
+    /// Returns what the last run gave back: its report and the costs it found.
     pub fn last_run(&self) -> &LastRun {
         &self.last
     }
@@ -370,7 +339,7 @@ impl Place {
         Some(preparation)
     }
 
-    /// The row of the preparation the place waits for, waiting or under way.
+    /// Returns the row of the preparation the place waits for, waiting or under way.
     pub fn pending_row(&self) -> Option<StrategyId> {
         let pending = self
             .waiting
@@ -543,7 +512,7 @@ impl Place {
         report
     }
 
-    /// What the installed layer competes for; nothing while none is.
+    /// Returns what the installed layer competes for; nothing while none is.
     pub fn contention(&self) -> Contention {
         self.installed
             .as_ref()
@@ -570,7 +539,7 @@ impl Place {
         });
     }
 
-    /// Whether the installed layer and the kept ones fit `envelope`'s memory
+    /// Returns whether the installed layer and the kept ones fit `envelope`'s memory
     /// on every device.
     fn memory_fits(&self, envelope: &Envelope) -> bool {
         let held = self
@@ -592,7 +561,38 @@ impl Place {
     }
 }
 
-/// How well a run kept to `limit`: the limit over the busiest device's time,
+/// The installed layer of a place, checked out with its terms for one run off the frame.
+///
+/// The place holds nothing of it meanwhile, so no lock is held across frames;
+/// it comes back through [`Place::check_in`].
+pub struct CheckedOut {
+    held: Held,
+    terms: Terms,
+}
+
+impl CheckedOut {
+    /// Returns the row the layer runs.
+    pub fn row(&self) -> StrategyId {
+        self.held.layer.row()
+    }
+
+    /// Runs the layer once, on the terms it was checked out with.
+    pub fn run(&mut self, context: &mut EngineContext<'_>) -> LayerRun {
+        self.held.layer.run(&self.terms, context)
+    }
+
+    /// Returns what the layer competes for: the permit its run is stamped with.
+    pub fn contention(&self) -> Contention {
+        self.held.layer.contention()
+    }
+
+    /// Returns what the run staged, for the reserve.
+    pub fn staged(&mut self) -> crate::lane::Staging {
+        self.held.layer.staged()
+    }
+}
+
+/// Returns how well a run kept to `limit`: the limit over the busiest device's time,
 /// at most `1.0`; `1.0` when no time was lent or none was taken.
 fn on_time(limit: Duration, measured: &PerDevice<Duration>) -> f32 {
     let took = measured

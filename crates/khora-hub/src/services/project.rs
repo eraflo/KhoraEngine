@@ -13,6 +13,9 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
+/// The version a new project's game starts at.
+const FIRST_GAME_VERSION: &str = "0.1.0";
+
 /// Minimal project descriptor persisted as `project.json` in the root of the project.
 #[derive(Serialize)]
 struct ProjectDescriptor<'a> {
@@ -23,9 +26,6 @@ struct ProjectDescriptor<'a> {
     engine_version: &'a str,
     created_at: u64,
 }
-
-/// The version a new project's game starts at.
-const FIRST_GAME_VERSION: &str = "0.1.0";
 
 /// Git initialization mode for new projects.
 #[derive(Debug, Clone, Default)]
@@ -229,7 +229,7 @@ fn default_readme(name: &str, engine_version: &str) -> String {
 ///
 /// Build Game then runs `cargo build` instead of stamping `khora-runtime`. The
 /// file's presence is the whole contract: it is not parsed.
-pub fn has_native_code(project_root: &Path) -> bool {
+pub(crate) fn has_native_code(project_root: &Path) -> bool {
     project_root.join("Cargo.toml").is_file()
 }
 
@@ -244,7 +244,7 @@ pub fn has_native_code(project_root: &Path) -> bool {
 ///
 /// Fails when the project already has a `Cargo.toml` (see [`has_native_code`])
 /// or a file cannot be written.
-pub fn add_native_code(
+pub(crate) fn add_native_code(
     project_root: &Path,
     project_name: &str,
     engine_version: &str,
@@ -393,7 +393,7 @@ pub fn launch_editor(editor_binary: &str, project_path: &Path) -> Result<()> {
 /// # Errors
 ///
 /// Fails when the system has no way to open the folder.
-pub fn reveal_in_explorer(path: &Path) -> Result<()> {
+pub(crate) fn reveal_in_explorer(path: &Path) -> Result<()> {
     open::that(path).with_context(|| format!("Failed to open '{}'", path.display()))?;
     Ok(())
 }

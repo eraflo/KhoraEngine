@@ -219,7 +219,8 @@ impl super::EditorApp {
         }
     }
 
-    /// The trust of the project open: `Trusted` when the engine shares none.
+    /// Returns the trust of the project open: `Trusted` when the engine shares
+    /// none.
     pub(super) fn project_trust(&self) -> khora_sdk::trust::ProjectTrust {
         self.project_trust_state
             .as_ref()

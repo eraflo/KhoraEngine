@@ -114,8 +114,8 @@ enum Stance {
     Running,
 }
 
-/// A map keyed by an enum whose key variant was renamed: the entry's value is
-/// still read, so what the read dropped inside it is still reported.
+/// A map keyed by an enum whose key variant is read through its alias: the entry's
+/// value is read, so what the read dropped inside it is reported.
 #[test]
 fn a_dropped_field_inside_a_map_entry_under_a_renamed_key_is_reported() {
     let old = Record::Map(vec![(

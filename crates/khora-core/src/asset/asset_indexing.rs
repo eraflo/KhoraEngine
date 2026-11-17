@@ -23,7 +23,7 @@ use super::{IndexRequest, IndexedAssets};
 pub trait AssetIndexing: Send + Sync {
     /// Indexes `request`'s project, with the [`Lease`] its result holds to.
     ///
-    /// The lease stops holding once the project it was filed for is no longer
+    /// The lease stops holding once the project it was filed for stops being
     /// the one open. Never panics: a failure is an `Err` in
     /// [`IndexedAssets::index`].
     fn index_leased(&self, request: &IndexRequest) -> (IndexedAssets, Option<Lease>);

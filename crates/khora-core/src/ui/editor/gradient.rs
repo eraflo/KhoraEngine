@@ -98,7 +98,7 @@ pub(super) fn color_at_offset(stops: &[GradientStop], t: f32) -> [f32; 4] {
 /// Returns the vertex centroid of a polygon of at least 3 points, `None` for fewer.
 ///
 /// Where a backend without gradient fills samples the gradient for its flat colour.
-pub fn flat_fill_point(points: &[[f32; 2]]) -> Option<[f32; 2]> {
+pub(crate) fn flat_fill_point(points: &[[f32; 2]]) -> Option<[f32; 2]> {
     if points.len() < 3 {
         return None;
     }

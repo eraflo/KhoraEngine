@@ -53,3 +53,6 @@ winresource = "0.1"
 # The seeded `main.erg` must compile. A dev-dependency, so the shipped hub
 # still links nothing of the language.
 khora-script = { path = "../khora-script" }
+
+[lints]
+workspace = true

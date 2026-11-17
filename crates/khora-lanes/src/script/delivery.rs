@@ -53,7 +53,7 @@ pub(super) fn deliver_events(
                 match done.outcome {
                     Run::Completed => delivered += 1,
                     Run::Suspended(why) => {
-                        // The handler is kept and resumes next. The event now
+                        // The handler is kept and resumes next. The event
                         // lives in that machine, so it counts as delivered:
                         // putting it back as well would run its handler a
                         // second time once the first one finishes.

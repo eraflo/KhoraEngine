@@ -16,8 +16,6 @@
 //!
 //! Concrete implementations of external dependencies.
 
-#![warn(missing_docs)]
-
 pub mod audio;
 pub mod graphics;
 pub mod memory;

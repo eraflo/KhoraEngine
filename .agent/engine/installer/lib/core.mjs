@@ -164,13 +164,23 @@ export function installGitHook(ctx) {
     `# >>> khora-ai:secret-scan >>>`,
     `# <<< khora-ai:secret-scan <<<`,
     `${node} ${binRel} scan-secrets --staged || exit 1`);
+  // The engine's per-file convention checks on the staged Rust files.
+  if (ctx.profile === 'engine') {
+    upsertManagedBlock(hookPath,
+      `# >>> khora-ai:lint-file >>>`,
+      `# <<< khora-ai:lint-file <<<`,
+      `${node} .agent/${ctx.profile}/installer/bin/lint-file.mjs --staged || exit 1`);
+  }
   try { fs.chmodSync(hookPath, 0o755); } catch { /* windows: ignore */ }
-  log.ok('git pre-commit hook wired (sync + secret-scan)');
+  log.ok(`git pre-commit hook wired (sync + secret-scan${ctx.profile === 'engine' ? ' + lint-file' : ''})`);
 }
 
 export function removeGitHook(ctx) {
   const hookPath = path.join(ctx.repoRoot, '.git', 'hooks', 'pre-commit');
   removeManagedBlock(hookPath, `# >>> khora-ai:${ctx.profile} >>>`, `# <<< khora-ai:${ctx.profile} <<<`);
+  if (ctx.profile === 'engine') {
+    removeManagedBlock(hookPath, `# >>> khora-ai:lint-file >>>`, `# <<< khora-ai:lint-file <<<`);
+  }
   // Only drop the shared secret-scan line if no profile remains installed.
   const m = readManifest(ctx);
   if (Object.keys(m.profiles).length === 0) {

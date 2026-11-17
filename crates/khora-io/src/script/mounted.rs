@@ -29,12 +29,6 @@ use crate::script::layout::script_dir;
 #[derive(Debug, Default)]
 pub struct MountedScripts(Mutex<Records>);
 
-#[derive(Debug, Default)]
-struct Records {
-    by_root: BTreeMap<PathBuf, BTreeSet<String>>,
-    closed: BTreeSet<PathBuf>,
-}
-
 impl MountedScripts {
     /// Records `modules` as brought in by `root`.
     pub fn record(&self, root: &Path, modules: impl IntoIterator<Item = String>) {
@@ -69,7 +63,7 @@ impl MountedScripts {
             .insert(module.to_owned());
     }
 
-    /// Whether `root` was unmounted and not mounted again since.
+    /// Returns whether `root` was unmounted and not mounted again since.
     pub fn is_closed(&self, root: &Path) -> bool {
         self.0.lock_recovered().closed.contains(&key(root))
     }
@@ -111,6 +105,12 @@ impl MountedScripts {
             })
             .collect()
     }
+}
+
+#[derive(Debug, Default)]
+struct Records {
+    by_root: BTreeMap<PathBuf, BTreeSet<String>>,
+    closed: BTreeSet<PathBuf>,
 }
 
 /// Returns `root` made absolute, as the watch reports it, so a mount and the

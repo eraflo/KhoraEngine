@@ -489,7 +489,7 @@ fn a_scene_round_trips_declared_components_in_every_encoding() {
 }
 
 /// A world that never heard of a declared component — no script ran in it
-/// yet, or the project no longer declares it — registers it from the scene
+/// yet, or the project has stopped declaring it — registers it from the scene
 /// that holds it: its name and key, its domain, its fields and defaults.
 #[test]
 fn a_scene_registers_its_declared_components_in_a_fresh_world() {

@@ -47,12 +47,12 @@ const NAMED: uuid::Uuid = uuid::Uuid::from_u128(0x6b68_6f72_615f_6e61_6d65_645f_
 pub struct PersistentId(u64);
 
 impl PersistentId {
-    /// An authored identity from 63 random bits; the top bit is ignored.
+    /// Returns an authored identity from 63 random bits; the top bit is ignored.
     pub fn authored(bits: u64) -> Self {
         Self(bits & !CREATED)
     }
 
-    /// A fresh authored identity, drawn at random.
+    /// Returns a fresh authored identity, drawn at random.
     pub fn random_authored() -> Self {
         Self::authored(uuid::Uuid::new_v4().as_u64_pair().0)
     }
@@ -77,22 +77,22 @@ impl PersistentId {
         Self::authored(uuid::Uuid::new_v5(&NAMED, text.as_bytes()).as_u64_pair().0)
     }
 
-    /// The `n`-th identity of the created namespace.
+    /// Returns the `n`-th identity of the created namespace.
     pub fn created(n: u64) -> Self {
         Self(n | CREATED)
     }
 
-    /// Whether the game created this entity rather than an author.
+    /// Returns whether the game created this entity rather than an author.
     pub fn is_created(self) -> bool {
         self.0 & CREATED != 0
     }
 
-    /// The raw 64 bits, as a file stores them.
+    /// Returns the raw 64 bits, as a file stores them.
     pub fn to_bits(self) -> u64 {
         self.0
     }
 
-    /// The identity a file stored as `bits`.
+    /// Returns the identity a file stored as `bits`.
     pub fn from_bits(bits: u64) -> Self {
         Self(bits)
     }

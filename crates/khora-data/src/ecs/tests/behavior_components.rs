@@ -137,7 +137,7 @@ fn a_world_of_rust_components_lists_no_behavior() {
 }
 
 /// The role is read when asked, not remembered: a component whose module
-/// stopped declaring it a behavior is no longer one.
+/// stopped declaring it a behavior is not one.
 #[test]
 fn a_component_whose_role_is_cleared_is_no_longer_a_behavior() {
     let mut world = World::new();
@@ -145,4 +145,25 @@ fn a_component_whose_role_is_cleared_is_no_longer_a_behavior() {
     world.set_script_role(guard, None);
 
     assert!(world.behavior_components().is_empty());
+}
+
+/// **A behavior and a system run from their module, in source order**; a
+/// state companion runs nowhere.
+#[test]
+fn runs_names_the_module_and_order_of_a_behavior_or_a_system_only() {
+    let behavior = ScriptRole::Behavior {
+        module: "guards.ergon".to_owned(),
+        order: 2,
+    };
+    let system = ScriptRole::System {
+        module: "score.ergon".to_owned(),
+        order: 0,
+    };
+    let state = ScriptRole::BehaviorState {
+        behavior: "Guard".to_owned(),
+    };
+
+    assert_eq!(behavior.runs(), Some(("guards.ergon", 2)));
+    assert_eq!(system.runs(), Some(("score.ergon", 0)));
+    assert_eq!(state.runs(), None);
 }

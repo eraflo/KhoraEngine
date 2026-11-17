@@ -48,9 +48,9 @@ pub(super) fn carry_instance(
     instance.fields =
         persistence::carried_across(old, layout, &instance.fields, instance.pending.as_ref());
     // A body part-way through (and one a load restored behind its `OnLoad`)
-    // is a position in the old code. Carried now rather than when it next
+    // is a position in the former program. Carried now rather than when it next
     // runs, so nothing, a save taken in between above all, goes on holding a
-    // position the program no longer has.
+    // position the program has dropped.
     for slot in [&mut instance.pending, &mut instance.after_load] {
         let Some(pending) = slot.take() else {
             continue;

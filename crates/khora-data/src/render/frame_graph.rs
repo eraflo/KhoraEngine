@@ -325,6 +325,11 @@ impl std::error::Error for PassOrderError {}
 ///
 /// Slots no edge orders against each other are taken by name, so the order
 /// does not depend on the order the linker happened to collect them in.
+///
+/// # Errors
+///
+/// Returns a [`PassOrderError`] naming the slots of a cycle when the `after`
+/// edges of `passes` form one.
 pub fn pass_order<'a>(
     passes: &[&'a PassRegistration],
 ) -> Result<Vec<&'a PassRegistration>, PassOrderError> {
@@ -387,6 +392,11 @@ fn find_cycle(
 /// every registration.
 ///
 /// Checked once at boot.
+///
+/// # Errors
+///
+/// Returns a [`PassOrderError`] when the registered slots' `after` edges form a
+/// cycle.
 pub fn registered_pass_order() -> Result<Vec<&'static PassRegistration>, PassOrderError> {
     let passes: Vec<&'static PassRegistration> = inventory::iter::<PassRegistration>().collect();
     pass_order(&passes)

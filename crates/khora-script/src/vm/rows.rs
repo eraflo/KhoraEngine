@@ -134,7 +134,7 @@ impl Machine {
         }
     }
 
-    /// The fields of the component copy in `register`.
+    /// Returns the fields of the component copy in `register`.
     fn row_fields(
         &self,
         program: &Program,

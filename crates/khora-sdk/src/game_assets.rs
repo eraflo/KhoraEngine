@@ -231,7 +231,7 @@ pub(crate) fn check_pack_seal(exe_dir: &Path, pack_key: Option<PackKey>) -> Resu
     read_manifest(exe_dir, &bytes, pack_key).map(|_| ())
 }
 
-/// Whether the game beside `exe_dir` is packed: `data.pack` and its
+/// Returns whether the game beside `exe_dir` is packed: `data.pack` and its
 /// precomputed `index.bin` sit beside the binary.
 pub(crate) fn is_packed(exe_dir: &Path) -> bool {
     exe_dir.join("data.pack").is_file() && exe_dir.join("index.bin").is_file()
@@ -342,6 +342,17 @@ mod tests {
         let mut engine = EngineCore::<OwnMain>::new();
         engine.bootstrap_sealed(OwnMain, runtime, &GameSeal::new(exe_dir, key));
         engine
+    }
+
+    /// **A game with nothing beside it does not open**: `open_game_assets`
+    /// finds neither a pack nor `assets/`, and says so.
+    #[test]
+    fn open_game_assets_refuses_a_folder_with_neither_pack_nor_assets() {
+        std::env::set_var(khora_io::profiles::PROFILES_VAR, profiles_scratch());
+        let game = GameDir::new("own-main-empty");
+        let mut runtime = crate::winit_adapters::engine_runtime();
+
+        assert!(open_game_assets::<OwnMain>(&mut runtime, game.path()).is_err());
     }
 
     /// **A game opening its own pack compiles the pack's scripts.**

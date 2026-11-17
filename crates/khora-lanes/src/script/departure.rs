@@ -37,7 +37,7 @@ impl ScriptRuntime {
         });
     }
 
-    /// Returns the instances whose entity the predicate no longer keeps, and
+    /// Returns the instances whose entity the predicate stops keeping, and
     /// which have not yet said goodbye, as `(entity, behavior, module)`.
     ///
     /// The farewell is a run, which needs a host and a budget: the caller runs
@@ -46,9 +46,9 @@ impl ScriptRuntime {
         self.departed_behaviors(|entity, _| alive(entity))
     }
 
-    /// [`departed`](Self::departed), by instance: an entity still alive whose
+    /// Works as [`departed`](Self::departed), by instance: an entity still alive whose
     /// behavior was detached — its component removed — has left too.
-    pub fn departed_behaviors(
+    pub(crate) fn departed_behaviors(
         &self,
         alive: impl Fn(EntityId, &str) -> bool,
     ) -> Vec<(EntityId, String, String)> {
@@ -81,15 +81,15 @@ impl ScriptRuntime {
     ///
     /// Called with the frame's live entities, which is how a despawned one's
     /// fields are released. Sweeping rather than reacting to a despawn: the
-    /// lane never sees the despawn, only the view that no longer contains it,
+    /// lane never sees the despawn, only the view that stops containing it,
     /// and deriving the answer means nothing has to be notified.
     pub fn retain_live(&mut self, alive: impl Fn(EntityId) -> bool) {
         self.retain_behaviors(|entity, _| alive(entity));
     }
 
-    /// [`retain_live`](Self::retain_live), by instance: a behavior detached
+    /// Works as [`retain_live`](Self::retain_live), by instance: a behavior detached
     /// from an entity that lives on is forgotten too.
-    pub fn retain_behaviors(&mut self, alive: impl Fn(EntityId, &str) -> bool) {
+    pub(crate) fn retain_behaviors(&mut self, alive: impl Fn(EntityId, &str) -> bool) {
         self.instances
             .retain(|(entity, behavior), _| alive(*entity, behavior));
         self.attached.retain(alive);
@@ -123,7 +123,7 @@ pub(super) fn farewell_departed(
 
         host.entity = Some(entity);
         // An entity that has left the view has no pose to give: `Position()`
-        // faults rather than answering with where it used to be. A behavior
+        // faults rather than answering with where it last was. A behavior
         // detached from an entity still in the view reads where it is.
         host.position = positions.get(&entity).copied();
         host.fields = std::mem::take(&mut runtime.instance(entity, &behavior).fields);

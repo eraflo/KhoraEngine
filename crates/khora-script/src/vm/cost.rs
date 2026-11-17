@@ -18,9 +18,9 @@
 use super::instruction::Instruction;
 
 impl Instruction {
-    /// Where a run stops when it cannot pay for this one, when that is not
-    /// the instruction itself.
-    pub fn stops_at(&self) -> Option<usize> {
+    /// Returns where a run stops when it cannot pay for this one, when that is
+    /// not the instruction itself.
+    pub(crate) fn stops_at(&self) -> Option<usize> {
         match self {
             Self::RemoveAt {
                 charged: true,
@@ -31,7 +31,7 @@ impl Instruction {
         }
     }
 
-    /// What running this costs from the fuel budget.
+    /// Returns what running this costs from the fuel budget.
     ///
     /// A safepoint costs nothing: it marks a place rather than doing work. An
     /// instruction that builds, writes or compares `count` values pays for each:

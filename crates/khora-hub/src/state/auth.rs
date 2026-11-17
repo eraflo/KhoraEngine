@@ -24,7 +24,7 @@ pub enum AuthState {
 }
 
 impl AuthState {
-    pub fn token(&self) -> Option<&str> {
+    pub(crate) fn token(&self) -> Option<&str> {
         if let Self::Connected { token, .. } = self {
             Some(token.as_str())
         } else {
@@ -32,7 +32,7 @@ impl AuthState {
         }
     }
 
-    pub fn is_connected(&self) -> bool {
+    pub(crate) fn is_connected(&self) -> bool {
         matches!(self, Self::Connected { .. })
     }
 }

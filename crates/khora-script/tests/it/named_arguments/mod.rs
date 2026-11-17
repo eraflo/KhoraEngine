@@ -24,7 +24,7 @@
 //!
 //! What takes names: a script `fn`, a behavior method, a state method, an
 //! engine function (its Rust parameter names), an engine constructor (its
-//! fields), an event's payload, and `become`'s state data — which is now
+//! fields), an event's payload, and `become`'s state data — which is
 //! checked against the state's parameters, labelled or not. Array methods, the
 //! component operations and `Spawn` take none.
 //!

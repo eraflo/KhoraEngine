@@ -26,7 +26,7 @@ pub(super) const WIDTH: f32 = 1440.0;
 /// The composition's size, in its own units.
 pub(super) const HEIGHT: f32 = 900.0;
 
-/// A colour from its sRGB hex bytes, opaque.
+/// Returns the opaque colour of the sRGB hex bytes `hex`.
 pub(super) const fn rgb(hex: u32) -> Color {
     [
         ((hex >> 16) & 0xff) as f32 / 255.0,
@@ -36,7 +36,7 @@ pub(super) const fn rgb(hex: u32) -> Color {
     ]
 }
 
-/// `c` with its alpha multiplied by `a`.
+/// Returns `c` with its alpha multiplied by `a`.
 pub(super) fn fade(c: Color, a: f32) -> Color {
     [c[0], c[1], c[2], c[3] * a.clamp(0.0, 1.0)]
 }
@@ -92,7 +92,12 @@ pub(super) struct Canvas<'u> {
 impl<'u> Canvas<'u> {
     /// Fills `rect` with `backdrop` and fits the composition inside it, the
     /// whole frame at `opacity` (0..=1).
-    pub fn new(ui: &'u mut dyn UiBuilder, rect: Rect, backdrop: Color, opacity: f32) -> Self {
+    pub(super) fn new(
+        ui: &'u mut dyn UiBuilder,
+        rect: Rect,
+        backdrop: Color,
+        opacity: f32,
+    ) -> Self {
         let opacity = opacity.clamp(0.0, 1.0);
         ui.paint_rect_filled(
             [rect[0], rect[1]],
@@ -122,7 +127,7 @@ impl<'u> Canvas<'u> {
     }
 
     /// Runs `f` with the group opacity multiplied by `a`.
-    pub fn group(&mut self, a: f32, f: impl FnOnce(&mut Self)) {
+    pub(super) fn group(&mut self, a: f32, f: impl FnOnce(&mut Self)) {
         let saved = self.alpha;
         self.alpha *= a.clamp(0.0, 1.0);
         if self.alpha > 0.0 {
@@ -132,7 +137,7 @@ impl<'u> Canvas<'u> {
     }
 
     /// Runs `f` with `local` composed onto the current transform.
-    pub fn transformed(&mut self, local: Local, f: impl FnOnce(&mut Self)) {
+    pub(super) fn transformed(&mut self, local: Local, f: impl FnOnce(&mut Self)) {
         let saved = self.local;
         self.local = Local {
             dx: saved.dx + local.dx * saved.s,
@@ -145,7 +150,7 @@ impl<'u> Canvas<'u> {
 
     /// Runs `f` clipped, in addition, to the convex polygon `region`
     /// (composition units, current transform).
-    pub fn clipped(&mut self, region: &[[f32; 2]], f: impl FnOnce(&mut Self)) {
+    pub(super) fn clipped(&mut self, region: &[[f32; 2]], f: impl FnOnce(&mut Self)) {
         let region: Vec<[f32; 2]> = region.iter().map(|&p| self.to_screen(p)).collect();
         let narrowed = clip_polygon(&region, &self.clip);
         let saved = std::mem::replace(&mut self.clip, narrowed);
@@ -155,8 +160,8 @@ impl<'u> Canvas<'u> {
         self.clip = saved;
     }
 
-    /// A composition point on screen.
-    pub fn to_screen(&self, p: [f32; 2]) -> [f32; 2] {
+    /// Maps a composition point to the screen.
+    pub(super) fn to_screen(&self, p: [f32; 2]) -> [f32; 2] {
         let q = self.local.map(p);
         [
             self.origin[0] + q[0] * self.scale,
@@ -164,13 +169,13 @@ impl<'u> Canvas<'u> {
         ]
     }
 
-    /// A composition length on screen.
-    pub fn len(&self, l: f32) -> f32 {
+    /// Maps a composition length to the screen.
+    pub(super) fn len(&self, l: f32) -> f32 {
         l * self.local.s * self.scale
     }
 
     /// Fills the convex polygon `points`.
-    pub fn poly(&mut self, points: &[[f32; 2]], fill: Fill<'_>) {
+    pub(super) fn poly(&mut self, points: &[[f32; 2]], fill: Fill<'_>) {
         if self.alpha <= 0.0 || points.len() < 3 {
             return;
         }
@@ -212,7 +217,7 @@ impl<'u> Canvas<'u> {
     }
 
     /// Fills a circle, as a 48-gon.
-    pub fn circle(&mut self, center: [f32; 2], r: f32, fill: Fill<'_>) {
+    pub(super) fn circle(&mut self, center: [f32; 2], r: f32, fill: Fill<'_>) {
         if r <= 0.0 || !r.is_finite() {
             return;
         }
@@ -225,9 +230,9 @@ impl<'u> Canvas<'u> {
         self.poly(&ring, fill);
     }
 
-    /// A straight stroke from `a` to `b`, `width` composition units wide;
+    /// Strokes a straight line from `a` to `b`, `width` composition units wide;
     /// `round` adds round caps.
-    pub fn line(&mut self, a: [f32; 2], b: [f32; 2], width: f32, color: Color, round: bool) {
+    pub(super) fn line(&mut self, a: [f32; 2], b: [f32; 2], width: f32, color: Color, round: bool) {
         if self.alpha <= 0.0 || width <= 0.0 {
             return;
         }
@@ -254,8 +259,8 @@ impl<'u> Canvas<'u> {
         }
     }
 
-    /// The first `progress` (0..=1) of the line from `a` to `b`.
-    pub fn line_part(
+    /// Strokes the first `progress` (0..=1) of the line from `a` to `b`.
+    pub(super) fn line_part(
         &mut self,
         a: [f32; 2],
         b: [f32; 2],
@@ -272,8 +277,14 @@ impl<'u> Canvas<'u> {
         self.line(a, end, width, color, round);
     }
 
-    /// The first `progress` (0..=1) of the closed outline through `points`.
-    pub fn outline_part(&mut self, points: &[[f32; 2]], progress: f32, width: f32, color: Color) {
+    /// Strokes the first `progress` (0..=1) of the closed outline through `points`.
+    pub(super) fn outline_part(
+        &mut self,
+        points: &[[f32; 2]],
+        progress: f32,
+        width: f32,
+        color: Color,
+    ) {
         let n = points.len();
         if n < 2 {
             return;
@@ -301,14 +312,14 @@ impl<'u> Canvas<'u> {
         }
     }
 
-    /// The closed outline through `points`.
-    pub fn outline(&mut self, points: &[[f32; 2]], width: f32, color: Color) {
+    /// Strokes the closed outline through `points`.
+    pub(super) fn outline(&mut self, points: &[[f32; 2]], width: f32, color: Color) {
         self.outline_part(points, 1.0, width, color);
     }
 
-    /// `text` set in `lettering`, centred on `x`, its baseline at `baseline`,
-    /// painted glyph by glyph.
-    pub fn tracked_text(&mut self, text: &str, x: f32, baseline: f32, lettering: Lettering) {
+    /// Paints `text` in `lettering`, centred on `x`, its baseline at `baseline`,
+    /// glyph by glyph.
+    pub(super) fn tracked_text(&mut self, text: &str, x: f32, baseline: f32, lettering: Lettering) {
         let Lettering {
             size,
             tracking,
@@ -361,7 +372,7 @@ pub(super) struct Lettering {
     pub color: Color,
 }
 
-/// A butt-ended stroke from `a` to `b`, `width` wide, as a quad.
+/// Returns the quad of a butt-ended stroke from `a` to `b`, `width` wide.
 pub(super) fn bar(a: [f32; 2], b: [f32; 2], width: f32) -> [[f32; 2]; 4] {
     let d = [b[0] - a[0], b[1] - a[1]];
     let len = (d[0] * d[0] + d[1] * d[1]).sqrt().max(1e-6);
@@ -374,7 +385,7 @@ pub(super) fn bar(a: [f32; 2], b: [f32; 2], width: f32) -> [[f32; 2]; 4] {
     ]
 }
 
-/// A disc of radius `r` around `c`, as a 24-gon.
+/// Returns a disc of radius `r` around `c`, as a 24-gon.
 fn disc(c: [f32; 2], r: f32) -> Vec<[f32; 2]> {
     (0..24)
         .map(|i| {
@@ -384,7 +395,7 @@ fn disc(c: [f32; 2], r: f32) -> Vec<[f32; 2]> {
         .collect()
 }
 
-/// `stops` with every alpha multiplied by `a`.
+/// Returns `stops` with every alpha multiplied by `a`.
 fn faded(stops: &[GradientStop], a: f32) -> Vec<GradientStop> {
     stops
         .iter()
@@ -395,12 +406,12 @@ fn faded(stops: &[GradientStop], a: f32) -> Vec<GradientStop> {
         .collect()
 }
 
-/// Which side of the directed edge `a → b` the point `p` is on (> 0 left).
+/// Returns which side of the directed edge `a → b` the point `p` is on (> 0 left).
 fn cross(a: [f32; 2], b: [f32; 2], p: [f32; 2]) -> f32 {
     (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])
 }
 
-/// The clip polygon's winding sign (+1 counter-clockwise in screen axes).
+/// Returns the clip polygon's winding sign (+1 counter-clockwise in screen axes).
 fn winding(clip: &[[f32; 2]]) -> f32 {
     let n = clip.len();
     let area: f32 = (0..n)
@@ -416,7 +427,7 @@ fn winding(clip: &[[f32; 2]]) -> f32 {
     }
 }
 
-/// Whether `p`, grown by `r`, lies inside the convex `clip`.
+/// Returns whether `p`, grown by `r`, lies inside the convex `clip`.
 fn inside_all(clip: &[[f32; 2]], p: [f32; 2], r: f32) -> bool {
     let w = winding(clip);
     let n = clip.len();
@@ -429,7 +440,7 @@ fn inside_all(clip: &[[f32; 2]], p: [f32; 2], r: f32) -> bool {
     })
 }
 
-/// Sutherland–Hodgman: `subject` clipped to the convex `clip`.
+/// Clips `subject` to the convex `clip` (Sutherland–Hodgman).
 pub(super) fn clip_polygon(subject: &[[f32; 2]], clip: &[[f32; 2]]) -> Vec<[f32; 2]> {
     if clip.len() < 3 {
         return Vec::new();

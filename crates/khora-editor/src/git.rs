@@ -17,7 +17,7 @@
 /// Returns the git branch checked out in the project at `project_root`.
 ///
 /// `None` when the project is not a git repository or its HEAD is detached.
-pub fn read_git_branch(project_root: &std::path::Path) -> Option<String> {
+pub(crate) fn read_git_branch(project_root: &std::path::Path) -> Option<String> {
     let head_path = project_root.join(".git").join("HEAD");
     let head = std::fs::read_to_string(head_path).ok()?;
     let line = head.lines().next()?;

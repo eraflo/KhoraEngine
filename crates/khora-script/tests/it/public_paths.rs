@@ -2203,16 +2203,16 @@ fn ergon_fn_native_fn_literal() -> ::khora_script::native::NativeFn {
 
 #[test]
 fn paths_emitted_by_ergon_fn_still_resolve() {
-    ergon_fn_script_type_items::<f32>();
-    let _ = ergon_fn_native_fn_literal as fn() -> ::khora_script::native::NativeFn;
-    let _ = ::khora_script::native::NativeRegistration;
-    let _ = ::khora_script::vm::Value::Unit;
     // `ergon_fn` itself, re-exported from `khora_macros` at the crate root.
     #[allow(unused_imports)]
     use ::khora_script::ergon_fn as _;
     // `::khora_script::inventory::submit!` is expanded by the `ergon_fn`
     // module; the collector it submits to must be the one `native` iterates.
     fn is_collected<T: ::khora_script::inventory::Collect>() {}
+    ergon_fn_script_type_items::<f32>();
+    let _ = ergon_fn_native_fn_literal as fn() -> ::khora_script::native::NativeFn;
+    let _ = ::khora_script::native::NativeRegistration;
+    let _ = ::khora_script::vm::Value::Unit;
     is_collected::<::khora_script::native::NativeRegistration>();
 }
 

@@ -134,12 +134,12 @@ impl Declaration {
         self
     }
 
-    /// The inputs declared, in field order.
+    /// Returns the inputs declared, in field order.
     pub fn inputs(&self) -> &[Declared<SourceKind>] {
         &self.inputs
     }
 
-    /// The outputs declared, in field order.
+    /// Returns the outputs declared, in field order.
     pub fn outputs(&self) -> &[Declared<SinkKind>] {
         &self.outputs
     }
@@ -193,9 +193,13 @@ pub trait LaneInputs<'f>: Sized {
     fn declare(d: &mut Declaration);
 
     /// Fetches every field from `src`, running the guards.
+    ///
+    /// # Errors
+    ///
+    /// Refused, naming the first field a guard refuses.
     fn fetch(src: &mut InputSource<'f>) -> Result<Self, InputRefusal>;
 
-    /// The target the inputs draw into, when they have one.
+    /// Returns the target the inputs draw into, when they have one.
     fn target_key(&self) -> Option<TargetKey> {
         None
     }

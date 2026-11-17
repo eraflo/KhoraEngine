@@ -25,7 +25,7 @@ use super::{to_owned, Unrepresentable};
 use crate::arena::{Owned, Persisted};
 use crate::vm::StructLayout;
 
-/// The stored form of `value`, for a slot declared `ty`.
+/// Returns the stored form of `value`, for a slot declared `ty`.
 ///
 /// # Errors
 ///
@@ -41,7 +41,7 @@ pub fn to_persisted_as(
     })
 }
 
-/// The owned form of `value`, for a slot declared `ty` (as written).
+/// Returns the owned form of `value`, for a slot declared `ty` (as written).
 ///
 /// # Errors
 ///

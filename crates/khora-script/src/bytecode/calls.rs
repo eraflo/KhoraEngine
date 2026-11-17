@@ -25,7 +25,7 @@ use crate::types::Bound;
 use crate::vm::{Instruction, Reg};
 
 impl Compiler {
-    /// How the checker bound the call at `at`, when it names an argument or
+    /// Returns how the checker bound the call at `at`, when it names an argument or
     /// leaves one out.
     pub(super) fn binding_of(&self, at: usize) -> Option<std::rc::Rc<[Bound]>> {
         self.bindings.get(&at).cloned()

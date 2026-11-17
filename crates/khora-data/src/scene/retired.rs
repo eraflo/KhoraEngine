@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Component types a project no longer has, on purpose.
+//! Component types a project removed on purpose.
 //!
 //! A save holding an unknown component fails the whole load; a retired one is
 //! skipped and reported as `Retired`.
@@ -26,7 +26,7 @@ pub struct RetiredComponent {
 
 inventory::collect!(RetiredComponent);
 
-/// Whether saves may hold `name` without it being an error.
+/// Returns whether saves may hold `name` without it being an error.
 pub fn is_retired(name: &str) -> bool {
     inventory::iter::<RetiredComponent>
         .into_iter()

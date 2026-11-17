@@ -13,7 +13,7 @@ use khora_sdk::editor_ui::{Icon, InspectedEntity};
 
 /// Picks an Inspector header icon based on the most "interesting"
 /// component on the entity. The fallback is a cube (mesh-like).
-pub fn pick_icon(i: &InspectedEntity) -> Icon {
+pub(crate) fn pick_icon(i: &InspectedEntity) -> Icon {
     let names: std::collections::HashSet<&str> = i
         .components_json
         .iter()
@@ -31,7 +31,7 @@ pub fn pick_icon(i: &InspectedEntity) -> Icon {
 }
 
 /// Picks a short type tag for the Inspector meta row.
-pub fn pick_type_tag(i: &InspectedEntity) -> &'static str {
+pub(crate) fn pick_type_tag(i: &InspectedEntity) -> &'static str {
     let names: std::collections::HashSet<&str> = i
         .components_json
         .iter()
@@ -49,7 +49,7 @@ pub fn pick_type_tag(i: &InspectedEntity) -> &'static str {
 }
 
 /// Returns a component card's icon for its domain tag.
-pub fn icon_for_domain_tag(tag: Option<u8>) -> Icon {
+pub(crate) fn icon_for_domain_tag(tag: Option<u8>) -> Icon {
     match tag {
         Some(0) => Icon::Axes,   // Spatial
         Some(1) => Icon::Image,  // Render

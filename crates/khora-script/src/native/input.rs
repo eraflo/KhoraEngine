@@ -34,7 +34,7 @@ use khora_macros::ergon_fn;
 
 use super::{NativeContext, NativeError};
 
-/// `Pressed(string action) -> bool` — whether the action is held right now.
+/// Returns whether the action is held right now: `Pressed(string action) -> bool`.
 ///
 /// The question movement asks, every frame it runs.
 #[ergon_fn]
@@ -42,7 +42,7 @@ fn pressed(context: &mut NativeContext<'_>, action: String) -> Result<bool, Nati
     Ok(context.input.is_pressed(&action))
 }
 
-/// `JustPressed(string action) -> bool` — whether it became held this frame.
+/// Returns whether the action became held this frame: `JustPressed(string action) -> bool`.
 ///
 /// The question a jump asks. Distinct from [`pressed`] because holding a key is
 /// not pressing it repeatedly, and a behavior that could not tell them apart

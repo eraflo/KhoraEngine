@@ -38,7 +38,7 @@ impl ColumnTicks {
     /// Returns the latest tick `row` may have been written at: `max(τ, φ)`.
     ///
     /// Exact while the row holds its own tick. What a row carries when it moves.
-    pub fn carried(&self, row: usize) -> Tick {
+    pub(crate) fn carried(&self, row: usize) -> Tick {
         let own = self
             .rows
             .as_ref()
@@ -87,7 +87,7 @@ impl ColumnTicks {
     ///
     /// Yes when the row's history was dropped above `since`, since it is not known.
     /// See the book: concepts/change-detection-formal.md, "The answer a reader gets".
-    pub fn changed_since(&self, row: usize, since: Tick) -> bool {
+    pub(crate) fn changed_since(&self, row: usize, since: Tick) -> bool {
         if self.summary <= since {
             return false;
         }

@@ -68,7 +68,7 @@ impl std::error::Error for OverlayError {}
 /// 4. [`end_frame_and_render`](Self::end_frame_and_render) — finalizes the UI,
 ///    tessellates, and renders onto the current render target.
 pub trait EditorOverlay: Send + Sync {
-    /// Process a raw window event for the overlay.
+    /// Processes a raw window event for the overlay.
     ///
     /// The `event` parameter is a type-erased `winit::event::WindowEvent`.
     ///
@@ -96,6 +96,10 @@ pub trait EditorOverlay: Send + Sync {
     /// `render_state` is a type-erased struct containing the GPU resources
     /// needed for rendering (device, queue, encoder, target view, etc.).
     /// The concrete type depends on the backend.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the overlay cannot be rendered with `render_state`.
     fn end_frame_and_render(&mut self, render_state: &mut dyn Any) -> Result<(), OverlayError>;
 
     /// Returns `true` if the overlay wants exclusive pointer input this frame.
@@ -108,9 +112,9 @@ pub trait EditorOverlay: Send + Sync {
     /// When `true`, keyboard events should not be forwarded to the game.
     fn wants_keyboard_input(&self) -> bool;
 
-    /// Downcasting support.
+    /// Returns the overlay as `Any`, for downcasting.
     fn as_any(&self) -> &dyn Any;
 
-    /// Mutable downcasting support.
+    /// Returns the overlay as a mutable `Any`, for downcasting.
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }

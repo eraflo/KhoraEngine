@@ -95,7 +95,7 @@ fn clock_under_a_trickle(
     let mut cut_turns = 0;
     for n in 1..=cut {
         let report = frame_of(view, runtime, delta_of(n), trickle(n));
-        // A turn that ran and stopped part-way: the path that used to drop
+        // A turn that ran and stopped part-way: the path that could drop
         // the frame's delta.
         if report.spent > 0 && part_way(runtime, 0, "Clock", &Body::Update) {
             cut_turns += 1;
@@ -208,7 +208,7 @@ const STRIKER: &str = "behavior Striker {
 event Go;";
 
 /// **An `await` reached under cuts waits its half second from where it
-/// stopped, and no longer.** `Striker`'s handler is cut by a thin slice on
+/// stopped, and not past it.** `Striker`'s handler is cut by a thin slice on
 /// its way to `await 0.5s`: the wait starts at the frame it parks, fed none
 /// of the time its body spent cut, and the strike lands exactly thirty-two
 /// 1/64-s frames later. Its `Update`, held off the whole time, is handed all

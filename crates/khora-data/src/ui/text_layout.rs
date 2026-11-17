@@ -23,7 +23,7 @@ use khora_macros::Component;
 /// A text's glyphs at their pen positions, in the font and size it was shaped
 /// with.
 ///
-/// `Derived`: the `ui_text_layout` DataSystem writes it from the entity's
+/// `Derived`: the `ui_text_layout` `DataSystem` writes it from the entity's
 /// `UiText` and font handle, and it is never saved.
 #[derive(Debug, Clone, PartialEq, Default, Component)]
 #[component(domain = Ui, provenance = Derived)]

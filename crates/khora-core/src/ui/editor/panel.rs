@@ -24,16 +24,16 @@ pub use super::panel_location::PanelLocation;
 /// startup. The shell calls [`ui()`](Self::ui) each frame for every visible
 /// panel.
 pub trait EditorPanel: Send + Sync {
-    /// Unique identifier (used for dock serialization and lookup).
+    /// Returns the unique identifier, used for dock serialization and lookup.
     fn id(&self) -> &str;
 
-    /// Human-readable title shown in the tab / panel header.
+    /// Returns the human-readable title shown in the tab / panel header.
     fn title(&self) -> &str;
 
-    /// Build the panel contents for the current frame.
+    /// Builds the panel contents for the current frame.
     fn ui(&mut self, ui: &mut dyn UiBuilder);
 
-    /// Preferred size hint, in logical points.
+    /// Returns the preferred size hint, in logical points.
     ///
     /// Interpretation depends on the panel's [`PanelLocation`]:
     ///

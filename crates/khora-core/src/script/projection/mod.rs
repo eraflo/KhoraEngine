@@ -29,15 +29,15 @@ use super::{ComponentName, ScriptValue, WorldCommand};
 
 /// A copy of one component column, read row by row as script values.
 pub trait ColumnSnapshot: Send + Sync {
-    /// The number of rows.
+    /// Returns the number of rows.
     fn len(&self) -> usize;
 
-    /// Whether the copy holds no row.
+    /// Returns whether the copy holds no row.
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    /// Row `row`, as a `ScriptValue::Struct` of the fields a script reaches.
+    /// Returns row `row`, as a `ScriptValue::Struct` of the fields a script reaches.
     fn read(&self, row: usize) -> ScriptValue;
 }
 
@@ -55,7 +55,7 @@ pub struct ProjectedComponent {
 }
 
 impl ProjectedComponent {
-    /// A projected component from its snapshots, the index of its live
+    /// Returns a projected component from its snapshots, the index of its live
     /// holders into them, and its default row.
     pub fn new(
         name: ComponentName,
@@ -71,7 +71,7 @@ impl ProjectedComponent {
         }
     }
 
-    /// `entity`'s row, converted — `None` when it does not hold the component.
+    /// Returns `entity`'s row, converted — `None` when it does not hold the component.
     ///
     /// Only this row is converted: a projection of ten thousand holders read
     /// once costs one conversion.
@@ -80,27 +80,27 @@ impl ProjectedComponent {
         Some(self.columns.get(column as usize)?.read(row as usize))
     }
 
-    /// Whether `entity` holds the component.
+    /// Returns whether `entity` holds the component.
     pub fn has(&self, entity: EntityId) -> bool {
         self.index.contains_key(&entity)
     }
 
-    /// How many live entities hold it.
+    /// Returns how many live entities hold it.
     pub fn holders(&self) -> usize {
         self.index.len()
     }
 
-    /// Every live holder, in no particular order.
+    /// Returns every live holder, in no particular order.
     pub fn entities(&self) -> impl Iterator<Item = EntityId> + '_ {
         self.index.keys().copied()
     }
 
-    /// The component's default row.
+    /// Returns the component's default row.
     pub fn default_row(&self) -> Option<&ScriptValue> {
         self.default.as_ref()
     }
 
-    /// Every holder, with its converted row — for comparing two projections.
+    /// Returns every holder, with its converted row — for comparing two projections.
     fn rows(&self) -> HashMap<EntityId, ScriptValue> {
         self.index
             .keys()
@@ -126,19 +126,19 @@ pub struct ComponentProjection {
 }
 
 impl ComponentProjection {
-    /// A projection of `components`.
+    /// Returns a projection of `components`.
     pub fn new(components: Vec<ProjectedComponent>) -> Self {
         Self { components }
     }
 
-    /// The projected component named `name`.
+    /// Returns the projected component named `name`.
     pub fn component(&self, name: &str) -> Option<&ProjectedComponent> {
         self.components
             .iter()
             .find(|component| component.name.as_str() == name)
     }
 
-    /// The names of every projected component.
+    /// Returns the names of every projected component.
     pub fn names(&self) -> Vec<&ComponentName> {
         self.components
             .iter()
@@ -146,7 +146,7 @@ impl ComponentProjection {
             .collect()
     }
 
-    /// How many rows the projection indexed, every component together.
+    /// Returns how many rows the projection indexed, every component together.
     pub fn rows(&self) -> usize {
         self.components
             .iter()
@@ -154,7 +154,7 @@ impl ComponentProjection {
             .sum()
     }
 
-    /// Whether nothing is projected.
+    /// Returns whether nothing is projected.
     pub fn is_empty(&self) -> bool {
         self.components.is_empty()
     }
@@ -195,7 +195,7 @@ pub struct FrameComponents {
 }
 
 impl FrameComponents {
-    /// The working set of a frame over `projection`, nothing written yet.
+    /// Returns the working set of a frame over `projection`, nothing written yet.
     pub fn new(projection: Arc<ComponentProjection>) -> Self {
         Self {
             projection,
@@ -204,13 +204,13 @@ impl FrameComponents {
         }
     }
 
-    /// A turn starts: what it writes from here can be undone.
+    /// Starts a turn: what it writes from here can be undone.
     pub fn begin_turn(&mut self) {
         self.journal.clear();
     }
 
-    /// The turn faulted: every write it made is undone, so no later turn
-    /// reads what the frame's end will never apply.
+    /// Undoes the turn that faulted: every write it made is undone, so no later turn reads what the
+    /// frame's end will never apply.
     pub fn undo_turn(&mut self) {
         while let Some((key, before)) = self.journal.pop() {
             match before {
@@ -230,7 +230,7 @@ impl FrameComponents {
         self.journal.push((key, before));
     }
 
-    /// `entity`'s copy of component `name` — `None` when it does not hold it.
+    /// Returns `entity`'s copy of component `name` — `None` when it does not hold it.
     pub fn get(&self, name: &str, entity: EntityId) -> Option<ScriptValue> {
         match self.overlay.get(&(ComponentName::new(name), entity)) {
             Some(written) => written.clone(),
@@ -238,7 +238,7 @@ impl FrameComponents {
         }
     }
 
-    /// Whether `entity` holds component `name`.
+    /// Returns whether `entity` holds component `name`.
     pub fn has(&self, name: &str, entity: EntityId) -> bool {
         match self.overlay.get(&(ComponentName::new(name), entity)) {
             Some(written) => written.is_some(),
@@ -249,7 +249,7 @@ impl FrameComponents {
         }
     }
 
-    /// The entities holding every component of `all` and none of `none`, in
+    /// Returns the entities holding every component of `all` and none of `none`, in
     /// entity order — the rows of a query, as this frame's scripts see them.
     ///
     /// The candidates are the holders of the component of `all` the fewest
@@ -280,14 +280,14 @@ impl FrameComponents {
             .map_or(0, |driver| self.holders_of(driver).count())
     }
 
-    /// The component of `all` with the fewest candidates.
+    /// Returns the component of `all` with the fewest candidates.
     fn driver<'a>(&self, all: &[&'a str]) -> Option<&'a str> {
         all.iter()
             .copied()
             .min_by_key(|name| self.holders_of(name).count())
     }
 
-    /// The candidate holders of `name`: its projected holders and the
+    /// Returns the candidate holders of `name`: its projected holders and the
     /// entities this frame added it to — some may have lost it since.
     fn holders_of<'s>(&'s self, name: &'s str) -> impl Iterator<Item = EntityId> + 's {
         let projected = self
@@ -449,14 +449,14 @@ impl FrameComponents {
         }
     }
 
-    /// The projected component `name`, when the working set tracks it.
+    /// Returns the projected component `name`, when the working set tracks it.
     fn tracked(&self, name: &ComponentName) -> Option<&ProjectedComponent> {
         self.projection.component(name.as_str())
     }
 }
 
-/// `copy` with the fields `patch` names written over it, in the copy's own
-/// order; a field the copy lacks is added after its own.
+/// Returns `copy` with the fields `patch` names written over it, in the copy's own order; a field
+/// the copy lacks is added after its own.
 fn merged(copy: ScriptValue, patch: &ScriptValue) -> ScriptValue {
     let ScriptValue::Struct(mut fields) = copy else {
         return copy;

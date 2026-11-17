@@ -251,7 +251,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Whether an `e` at the cursor really starts an exponent.
+    /// Returns whether an `e` at the cursor really starts an exponent.
     ///
     /// Without this, `2end` would lex as a malformed float rather than `2`
     /// followed by the identifier `end`.
@@ -387,7 +387,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// The escape at the cursor, a `\` and its letter, written into `text`.
+    /// Writes the escape at the cursor, a `\` and its letter, into `text`.
     pub(super) fn escape_into(&mut self, text: &mut String) {
         self.offset += 1;
         let escape = self.bump();
@@ -515,7 +515,7 @@ fn is_ident_continue(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_'
 }
 
-/// Length in bytes of the UTF-8 sequence starting with `first`.
+/// Returns the length in bytes of the UTF-8 sequence starting with `first`.
 fn utf8_len(first: u8) -> usize {
     match first {
         0x00..=0x7F => 1,

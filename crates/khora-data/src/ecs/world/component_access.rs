@@ -106,13 +106,12 @@ impl World {
         entity_id: EntityId,
     ) -> Option<PageIndex> {
         let (id_in_world, metadata_slot) = self.entities.get_mut(entity_id.index as usize)?;
-        if id_in_world.generation != entity_id.generation || metadata_slot.is_none() {
+        if id_in_world.generation != entity_id.generation {
             return None;
         }
+        let metadata = metadata_slot.as_mut()?;
 
         let domain = self.storage.registry.get_domain(TypeId::of::<C>())?;
-
-        let metadata = metadata_slot.as_mut().unwrap();
         let location = metadata.locations.remove(&domain);
 
         if let Some(loc) = location {
@@ -131,10 +130,10 @@ impl World {
     /// `None` if the entity is not alive or does not hold the component.
     pub fn get_mut<T: Component>(&mut self, entity_id: EntityId) -> Option<Mut<'_, T>> {
         let (id_in_world, metadata_opt) = self.entities.get(entity_id.index as usize)?;
-        if id_in_world.generation != entity_id.generation || metadata_opt.is_none() {
+        if id_in_world.generation != entity_id.generation {
             return None;
         }
-        let metadata = metadata_opt.as_ref().unwrap();
+        let metadata = metadata_opt.as_ref()?;
 
         let domain = self.storage.registry.get_domain(TypeId::of::<T>())?;
         let location = *metadata.locations.get(&domain)?;
@@ -267,10 +266,10 @@ impl World {
     /// stores it field-SoA; [`clone_component`](Self::clone_component) reads any layout.
     pub fn get<T: Component>(&self, entity_id: EntityId) -> Option<&T> {
         let (id_in_world, metadata_opt) = self.entities.get(entity_id.index as usize)?;
-        if id_in_world.generation != entity_id.generation || metadata_opt.is_none() {
+        if id_in_world.generation != entity_id.generation {
             return None;
         }
-        let metadata = metadata_opt.as_ref().unwrap();
+        let metadata = metadata_opt.as_ref()?;
 
         let domain = self.storage.registry.get_domain(TypeId::of::<T>())?;
         let location = metadata.locations.get(&domain)?;

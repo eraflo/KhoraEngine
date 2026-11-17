@@ -147,7 +147,7 @@ pub enum Stmt {
 }
 
 impl Stmt {
-    /// Where the statement was written.
+    /// Returns where the statement was written.
     pub fn span(&self) -> Span {
         match self {
             Self::Let { span, .. }
@@ -197,7 +197,7 @@ pub enum Pattern {
 }
 
 impl Pattern {
-    /// Where the pattern was written.
+    /// Returns where the pattern was written.
     pub fn span(&self) -> Span {
         match self {
             Self::Null(span) | Self::Wildcard(span) => *span,

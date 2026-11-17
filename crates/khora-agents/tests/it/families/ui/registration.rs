@@ -231,7 +231,7 @@ fn boot_refuses_the_ui_family_without_the_glyph_atlas() {
 // ─── The agent ──────────────────────────────────────────────────────────────
 
 /// **The UI reads the image atlas without locking it.** The `image_on_gpu`
-/// DataSystem places every UI image before any agent runs; the lane only
+/// `DataSystem` places every UI image before any agent runs; the lane only
 /// reads the atlas's view and rects. The old agent locked it, which kept
 /// every other reader of the atlas out of its wave.
 #[test]

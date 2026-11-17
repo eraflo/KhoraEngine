@@ -25,7 +25,7 @@ use crate::diagnostics::Diagnostic;
 use crate::lexer::TokenKind;
 
 impl Parser {
-    /// The arguments up to the closing `)`, which is left for the caller —
+    /// Parses the arguments up to the closing `)`, which is left for the caller —
     /// with the name each is given, empty when none is named.
     pub(super) fn parse_arguments(&mut self) -> Parse<(Vec<Expr>, Vec<Option<Label>>)> {
         let mut args = Vec::new();

@@ -20,7 +20,7 @@
 //! type name: the field's declared type supplies it when the value goes back
 //! into the store. Its fields are matched **by name** against the struct as
 //! the code now declares it — a survivor keeps its value, a field the struct
-//! no longer declares is dropped, a new one takes its declared default or its
+//! stops declaring is dropped, a new one takes its declared default or its
 //! type's zero; a struct missing a field that has neither does not fit, and
 //! the behavior field takes its own default.
 

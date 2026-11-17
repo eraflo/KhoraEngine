@@ -165,8 +165,8 @@ impl Checker {
         Ty::Error
     }
 
-    /// `object.name(args)` and `object?.name(args)`, or `None` when the callee
-    /// is not a method call.
+    /// Checks `object.name(args)` and `object?.name(args)`, or returns `None`
+    /// when the callee is not a method call.
     pub(super) fn check_method_call(
         &mut self,
         callee: &Expr,
@@ -228,7 +228,7 @@ impl Checker {
         Some(Ty::Error)
     }
 
-    /// `xs.Push(v)` and `xs.RemoveAt(i)`.
+    /// Checks `xs.Push(v)` and `xs.RemoveAt(i)`.
     fn check_array_method(
         &mut self,
         object: &Expr,
@@ -283,8 +283,8 @@ impl Checker {
         Ty::Void
     }
 
-    /// `entity.name`: an entity has no fields — reported at the line, about
-    /// what was written.
+    /// Reports `entity.name`: an entity has no fields — reported at the line,
+    /// about what was written.
     pub(super) fn entity_field(
         &mut self,
         object: &Expr,
@@ -309,8 +309,8 @@ impl Checker {
     }
 }
 
-/// Whether `expr` names somewhere a value is kept: a variable or a field,
-/// or an element or struct field of one.
+/// Returns whether `expr` names somewhere a value is kept: a variable or a
+/// field, or an element or struct field of one.
 fn is_place(expr: &Expr) -> bool {
     match expr {
         Expr::Ident { .. } => true,

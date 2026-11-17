@@ -16,6 +16,11 @@
 //! host time corrected, and the decision; what an agent is lent is checked by
 //! lending it as the scheduler would ([`lend`]).
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn threads to test concurrency"
+)]
+
 use super::*;
 use khora_core::agent::gorna::protocol::Trigger;
 

@@ -270,7 +270,7 @@ fn apply_one(
     }
 }
 
-/// The local `Transform`, the authored one: the derived `GlobalTransform` would
+/// Returns the local `Transform`, the authored one: the derived `GlobalTransform` would
 /// be overwritten by the next propagation.
 fn transform_mut(world: &mut World, entity: EntityId) -> Result<Mut<'_, Transform>, ApplyError> {
     if !world.contains(entity) {
@@ -363,7 +363,7 @@ pub(super) fn set_component(
         .map_err(|error| rejected_by(component)(describe(&error)))
 }
 
-/// The slots `value` writes, by the component's field names.
+/// Returns the slots `value` writes, by the component's field names.
 ///
 /// A component's fields are a `ScriptValue::Struct`; `Unit` names none; a
 /// component with a single field (`Name`) also takes its value bare.
@@ -399,7 +399,7 @@ fn patch_of<'v>(
     }
 }
 
-/// A refused typed write, in words.
+/// Describes a refused typed write in words.
 fn describe(error: &FieldWriteError) -> String {
     match error {
         FieldWriteError::NoSuchField(field) => format!("it has no field `{field}`"),
@@ -502,7 +502,7 @@ fn write_hierarchy(
         .map(|written| written.map_err(rejected_by(component))))
 }
 
-/// The key of the component named `component`, on a live entity.
+/// Returns the key of the component named `component`, on a live entity.
 pub(super) fn key_of(
     world: &World,
     entity: EntityId,

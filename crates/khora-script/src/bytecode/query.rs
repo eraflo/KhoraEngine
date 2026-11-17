@@ -227,7 +227,7 @@ impl Compiler {
         self.close_scope(inner);
         self.naming.leave_branch();
 
-        // A row the query no longer holds goes straight to the next.
+        // A row the query does not hold goes straight to the next.
         self.patch_to_here(skip);
         let step = self.registers.mark();
         let (one, _) = self.constant(Value::Int(1), Shape::Int);
@@ -245,7 +245,7 @@ impl Compiler {
 }
 
 impl Compiler {
-    /// How many fields `component` has.
+    /// Returns how many fields `component` has.
     fn field_count(&self, component: &str) -> u16 {
         self.component_decls
             .get(component)
@@ -265,7 +265,7 @@ impl Compiler {
         }
     }
 
-    /// Before a `break`: the row of the sweep it leaves, when it leaves one.
+    /// Ends, before a `break`, the row of the sweep it leaves, when it leaves one.
     pub(super) fn end_row_for_break(&mut self) {
         let depth = self.loop_depth();
         if let Some(row) = self
@@ -278,7 +278,7 @@ impl Compiler {
         }
     }
 
-    /// Before a `return`: the row of every sweep it leaves, innermost first.
+    /// Ends, before a `return`, the row of every sweep it leaves, innermost first.
     pub(super) fn end_rows_for_return(&mut self) {
         for row in self.row_writes.clone().iter().rev() {
             self.emit_row_writes(row);
@@ -286,7 +286,7 @@ impl Compiler {
     }
 }
 
-/// The component a binding copies, and whether it is optional — `None` for
+/// Returns the component a binding copies, and whether it is optional; `None` for
 /// the row's entity.
 fn bound_component(ty: &TypeRef) -> Option<(&str, bool)> {
     match ty {

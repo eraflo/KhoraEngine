@@ -23,7 +23,7 @@ use super::theme::AXIS_COLORS_KEY;
 use super::ui_builder::EguiUiBuilder;
 
 impl EguiUiBuilder<'_> {
-    /// A labelled dragged number kept inside `min..=max` by every edit; a
+    /// Shows a labelled dragged number kept inside `min..=max` by every edit; a
     /// value already outside is shown as it is until edited.
     pub(super) fn edit_f32_in(
         &mut self,
@@ -52,7 +52,7 @@ impl EguiUiBuilder<'_> {
         changed
     }
 
-    /// A row of three dragged numbers, each after its axis letter.
+    /// Shows a row of three dragged numbers, each after its axis letter.
     pub(super) fn edit_vec3(&mut self, label: &str, value: &mut [f32; 3], speed: f32) -> bool {
         // The axis colour rides on the letter, not on a filled badge: three
         // saturated badges per row would turn the inspector into a rainbow.
@@ -99,7 +99,7 @@ impl EguiUiBuilder<'_> {
         changed
     }
 
-    /// A combo box over `options`, salted by `id_salt`; true when a pick
+    /// Shows a combo box over `options`, salted by `id_salt`; true when a pick
     /// changed `current`.
     pub(super) fn pick_option(
         &mut self,
@@ -127,7 +127,7 @@ impl EguiUiBuilder<'_> {
         changed
     }
 
-    /// A single-line text field placed at `rect`, as a rename field is:
+    /// Shows a single-line text field placed at `rect`, as a rename field is:
     /// Escape cancels, Enter or a click elsewhere commits.
     pub(super) fn edit_inline_text(
         &mut self,

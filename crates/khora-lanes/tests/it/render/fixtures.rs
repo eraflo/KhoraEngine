@@ -1186,7 +1186,7 @@ impl Renderer {
     }
 
     /// An IBL bake of the procedural sky, run on the lane's device: what the
-    /// `ibl_bake` DataSystem publishes before the lit lanes draw.
+    /// `ibl_bake` `DataSystem` publishes before the lit lanes draw.
     pub fn bake(&self) -> IblBaker {
         let baker = IblBaker::new();
         self.device.baking.store(true, Ordering::SeqCst);

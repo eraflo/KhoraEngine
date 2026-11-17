@@ -50,8 +50,7 @@ fn a_handle_round_trips_its_slot() {
 }
 
 /// The index occupies the low half, so a generation of zero packs to the
-/// index itself — which is what every handle written before this change
-/// held, and why they keep meaning what they meant.
+/// index itself: a handle holding only its index keeps addressing that slot.
 #[test]
 fn a_first_generation_handle_is_its_index() {
     let slot = SlotId {

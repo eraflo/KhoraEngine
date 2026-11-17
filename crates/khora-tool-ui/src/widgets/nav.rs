@@ -21,7 +21,7 @@ use khora_core::ui::{UiBuilder, UiTheme};
 use super::paint::{fill, fill_stroke, icon, selection_bar, text, text_centered, tint};
 use super::{text_y, Rect};
 
-/// A segmented control: mutually exclusive views of the *same* thing (Properties | Debug).
+/// Draws a segmented control: mutually exclusive views of the *same* thing (Properties | Debug).
 ///
 /// Moving between different things is [`nav_item`]'s job. Returns
 /// `Some(index)` when a segment was clicked.
@@ -67,7 +67,7 @@ pub fn segmented_tabs(
     clicked
 }
 
-/// A sidebar / spine navigation entry — icon, label, brand-tinted when active.
+/// Draws a sidebar / spine navigation entry — icon, label, brand-tinted when active.
 ///
 /// This is for switching *place* (Recent / Engines / Settings). The active
 /// state is a brand tint, not the gold selection colour: gold is reserved for
@@ -121,8 +121,10 @@ pub fn nav_item(
     out
 }
 
-/// A dock tab (Console | Assets | GORNA stream). The active tab is lifted onto
-/// the panel background so it reads as connected to the content below it.
+/// Draws a dock tab (Console | Assets | GORNA stream).
+///
+/// The active tab is lifted onto the panel background so it reads as connected
+/// to the content below it.
 pub fn panel_tab(
     ui: &mut dyn UiBuilder,
     theme: &UiTheme,
@@ -156,8 +158,10 @@ pub fn panel_tab(
     out
 }
 
-/// A breadcrumb trail. The last crumb is the current location and renders in
-/// the primary ink; the rest are muted and separated by chevrons.
+/// Draws a breadcrumb trail.
+///
+/// The last crumb is the current location and renders in the primary ink; the
+/// rest are muted and separated by chevrons.
 pub fn breadcrumb(ui: &mut dyn UiBuilder, theme: &UiTheme, rect: Rect, crumbs: &[&str]) {
     let size = theme.font_size_caption + 1.0;
     let y = text_y(rect, size);
@@ -187,7 +191,7 @@ pub enum StepState {
     Pending,
 }
 
-/// A vertical step rail: "what happens when I press Create".
+/// Draws a vertical step rail: "what happens when I press Create".
 ///
 /// Steps are numbered because they *are* a sequence: the number carries real
 /// ordering information.
@@ -257,7 +261,7 @@ pub fn step_rail(
     }
 }
 
-/// A selectable card, as in the engine-version picker: a radio in card clothing.
+/// Draws a selectable card, as in the engine-version picker: a radio in card clothing.
 ///
 /// Exactly one of a set, with room for metadata the plain control has no
 /// space for.
@@ -322,7 +326,7 @@ pub fn radio_card(
     out
 }
 
-/// A selectable row with a gold selection bar — hierarchy nodes, palette rows.
+/// Draws a selectable row with a gold selection bar — hierarchy nodes, palette rows.
 ///
 /// Gold is the selection colour and *only* the selection colour; that is what
 /// makes "what am I acting on" instantly legible anywhere in the tools.
@@ -551,5 +555,29 @@ mod tests {
         assert_eq!(ui.circles_filled().len(), 1);
         assert!(ui.painted_text("Scaffold"));
         assert!(ui.painted_text("git init"));
+    }
+
+    #[test]
+    fn panel_tab_lifts_only_the_active_tab_onto_the_background() {
+        let t = khora_dark();
+        let rect = [0.0, 0.0, 90.0, 24.0];
+
+        let mut ui = RecordingUiBuilder::new(200.0, 30.0);
+        panel_tab(
+            &mut ui,
+            &t,
+            rect,
+            "console",
+            Some(Icon::Layers),
+            "Console",
+            true,
+        );
+        assert!(ui.used_fill(t.background));
+        assert_eq!(ui.text_color("Console"), Some(t.text));
+
+        let mut ui = RecordingUiBuilder::new(200.0, 30.0);
+        panel_tab(&mut ui, &t, rect, "assets", None, "Assets", false);
+        assert!(!ui.used_fill(t.background));
+        assert_eq!(ui.text_color("Assets"), Some(t.text_muted));
     }
 }

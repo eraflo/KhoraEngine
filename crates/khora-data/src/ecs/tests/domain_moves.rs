@@ -166,7 +166,7 @@ fn a_domain_move_keeps_every_value() {
         );
     }
     // `alone` holds Wake and nothing else, so its Script and Physics rows are
-    // distinct pages: the one it left no longer holds Wake. `crowded` is not
+    // distinct pages: the one it left holds no Wake. `crowded` is not
     // checked this way — a bundle spawned across several domains shares one
     // page today, so its Script and Physics locations are the same page.
     assert!(

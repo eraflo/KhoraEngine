@@ -36,6 +36,7 @@ mod config;
 mod decision_loop;
 mod epochs;
 mod forecast;
+mod inbox;
 
 pub use config::DccConfig;
 
@@ -124,7 +125,7 @@ impl DccService {
     /// Sets the [`AdaptationMode`] for an agent, from any thread.
     ///
     /// Takes effect on the next arbitration tick. See the book:
-    /// concepts/gorna.md, "AdaptationMode — the developer-control surface".
+    /// concepts/gorna.md, "`AdaptationMode` — the developer-control surface".
     pub fn set_adaptation_mode(&self, agent_id: AgentId, mode: AdaptationMode) {
         if let Ok(mut modes) = self.adaptation_modes.write() {
             modes.insert(agent_id, mode);
@@ -203,7 +204,7 @@ impl DccService {
         self.recorded_decisions()
     }
 
-    /// A snapshot of the decisions recorded so far (glass-box; safe any time).
+    /// Returns a snapshot of the decisions recorded so far (glass-box; safe any time).
     pub fn recorded_decisions(&self) -> DecisionTrace {
         self.recorded_trace
             .read()
@@ -232,7 +233,7 @@ impl DccService {
         }
     }
 
-    /// Whether a replay is currently in progress (trace not yet exhausted).
+    /// Returns whether a replay is currently in progress (trace not yet exhausted).
     pub fn is_replaying(&self) -> bool {
         self.replay
             .read()
@@ -284,12 +285,12 @@ impl DccService {
         self.decision_watch.clone()
     }
 
-    /// The monitor the DCC reads the hardware from, if it was given one.
+    /// Returns the monitor the DCC reads the hardware from, if it was given one.
     pub fn hardware_monitor(&self) -> Option<Arc<dyn HardwareMonitor>> {
         self.hardware_monitor.read_recovered().clone()
     }
 
-    /// The scheduler's channel, if one is connected.
+    /// Returns the scheduler's channel, if one is connected.
     fn connected_channel(&self) -> Option<BudgetChannel> {
         connected(&self.budget_channel)
     }
@@ -335,7 +336,7 @@ impl Drop for DccService {
     }
 }
 
-/// The channel in `slot`, if one is connected.
+/// Returns the channel in `slot`, if one is connected.
 fn connected(slot: &std::sync::RwLock<Option<BudgetChannel>>) -> Option<BudgetChannel> {
     slot.read_recovered().clone()
 }

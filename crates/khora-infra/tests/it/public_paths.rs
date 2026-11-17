@@ -214,10 +214,10 @@ fn module_audio_paths_still_resolve() {
 
 #[test]
 fn module_memory_paths_still_resolve() {
-    let _ = type_name::<khora_infra::memory::SaaTrackingAllocator<std::alloc::System>>();
     // `const fn`: a `static` global allocator is built with it.
     const _: khora_infra::memory::SaaTrackingAllocator<std::alloc::System> =
         khora_infra::memory::SaaTrackingAllocator::new(std::alloc::System);
+    let _ = type_name::<khora_infra::memory::SaaTrackingAllocator<std::alloc::System>>();
     is_debug::<khora_infra::memory::SaaTrackingAllocator<std::alloc::System>>();
     is_default::<khora_infra::memory::SaaTrackingAllocator<std::alloc::System>>();
     is_clone::<khora_infra::memory::SaaTrackingAllocator<std::alloc::System>>();

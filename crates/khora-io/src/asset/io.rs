@@ -25,6 +25,10 @@ pub trait AssetIo: Send + Sync {
     ///
     /// One backend serves reads from several threads at once, each returning
     /// exactly its own source's bytes: it shares no cursor between calls.
+    ///
+    /// # Errors
+    ///
+    /// When the source is not in this backend or its bytes cannot be read.
     fn load_bytes(&self, source: &AssetSource) -> Result<Vec<u8>>;
 
     /// Returns the file `source` is read from, which a refusal of its bytes names.

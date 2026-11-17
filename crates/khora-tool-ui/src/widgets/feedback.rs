@@ -23,7 +23,7 @@ use super::chips::Tone;
 use super::paint::{fill_stroke, icon, stroke, text, text_centered, tint};
 use super::{text_y, Rect};
 
-/// A transient banner / toast: icon, bold title, explanatory body, dismiss.
+/// Draws a transient banner / toast: icon, bold title, explanatory body, dismiss.
 ///
 /// The tone tints the plate and the icon; the text stays in the normal ink so
 /// it remains readable — coloured body text on a coloured plate is the classic
@@ -84,8 +84,8 @@ pub fn banner(
     out
 }
 
-/// An empty state. It teaches the interface instead of announcing a void:
-/// a glyph, what this place is for, and (optionally) the way out of it.
+/// Draws an empty state that teaches the interface instead of announcing a
+/// void: a glyph, what this place is for, and (optionally) the way out of it.
 ///
 /// The dashed border says "content belongs here" — a solid card would read as
 /// a thing rather than the absence of things.
@@ -136,7 +136,7 @@ pub fn empty_state(
     }
 }
 
-/// A tooltip plate — elevated surface, strong border, caption text.
+/// Draws a tooltip plate — elevated surface, strong border, caption text.
 pub fn tooltip(ui: &mut dyn UiBuilder, theme: &UiTheme, rect: Rect, label: &str) {
     fill_stroke(
         ui,
@@ -287,5 +287,15 @@ mod tests {
             "",
         );
         assert!(ui.painted_text("Empty scene"));
+    }
+
+    #[test]
+    fn tooltip_is_a_plate_with_its_label_in_text_colour() {
+        let t = khora_dark();
+        let mut ui = RecordingUiBuilder::new(200.0, 40.0);
+        tooltip(&mut ui, &t, [0.0, 0.0, 120.0, 24.0], "Save scene");
+
+        assert!(ui.used_fill(t.surface_interactive));
+        assert_eq!(ui.text_color("Save scene"), Some(t.text));
     }
 }

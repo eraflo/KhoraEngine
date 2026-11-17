@@ -26,7 +26,7 @@ use std::time::Instant;
 pub struct MetricId {
     /// The broad category of the metric (e.g., "renderer", "memory").
     pub namespace: String,
-    /// The specific name of the metric (e.g., "frame_time_ms", "triangles_rendered").
+    /// The specific name of the metric (e.g., `"frame_time_ms"`, `"triangles_rendered"`).
     pub name: String,
     /// Optional, sorted key-value pairs for dimensional filtering.
     pub labels: Vec<(String, String)>,
@@ -189,7 +189,7 @@ pub struct Metric {
 }
 
 impl Metric {
-    /// A convenience constructor for creating a new `Counter` metric.
+    /// Creates a `Counter` metric.
     pub fn new_counter(id: MetricId, description: impl Into<String>, initial_value: u64) -> Self {
         Self {
             metadata: MetricMetadata::new(id, MetricType::Counter, description, "count"),
@@ -197,7 +197,7 @@ impl Metric {
         }
     }
 
-    /// A convenience constructor for creating a new `Gauge` metric.
+    /// Creates a `Gauge` metric.
     pub fn new_gauge(
         id: MetricId,
         description: impl Into<String>,
@@ -210,7 +210,7 @@ impl Metric {
         }
     }
 
-    /// A convenience constructor for creating a new `Histogram` metric.
+    /// Creates a `Histogram` metric.
     pub fn new_histogram(
         id: MetricId,
         description: impl Into<String>,
@@ -301,12 +301,12 @@ mod tests {
 
     #[test]
     fn test_metric_value_types() {
+        use crate::math::PI;
+
         let counter = MetricValue::Counter(42);
         assert_eq!(counter.metric_type(), MetricType::Counter);
         assert_eq!(counter.as_counter(), Some(42));
         assert_eq!(counter.as_f64(), Some(42.0));
-
-        use crate::math::PI;
 
         let gauge = MetricValue::Gauge(PI as f64);
         assert_eq!(gauge.metric_type(), MetricType::Gauge);

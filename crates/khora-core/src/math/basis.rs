@@ -29,8 +29,7 @@ pub(super) const PARALLEL_SINE: f32 = 1e-6;
 /// direction nor its sign is information.
 pub(super) const NOISE_FLOOR: f32 = 1e-6;
 
-/// `v` made unit whatever its magnitude — `None` when it is zero or not
-/// finite.
+/// Returns `v` made unit whatever its magnitude — `None` when it is zero or not finite.
 ///
 /// Divided by its largest component first, `v` neither underflows nor
 /// overflows when squared (`Vec3::normalize` also gives up below an absolute
@@ -49,7 +48,7 @@ pub(super) fn unit(v: Vec3) -> Option<Vec3> {
     Some(v / v.length())
 }
 
-/// The part of the unit vector `v` perpendicular to the unit vector `onto`,
+/// Returns the part of the unit vector `v` perpendicular to the unit vector `onto`,
 /// made unit — `None` when `v` is (nearly) parallel to `onto`.
 pub(super) fn unit_rejection(v: Vec3, onto: Vec3) -> Option<Vec3> {
     let rejection = v - onto * v.dot(onto);
@@ -59,7 +58,7 @@ pub(super) fn unit_rejection(v: Vec3, onto: Vec3) -> Option<Vec3> {
     unit(rejection)
 }
 
-/// Three perpendicular unit axes keeping the `known` ones, the others rebuilt right-handed.
+/// Returns three perpendicular unit axes keeping the `known` ones, the others rebuilt right-handed.
 ///
 /// An axis scaled to zero has no direction of its own; rebuilt, a flattened pose keeps the
 /// rotation it shows.
@@ -85,7 +84,7 @@ pub(super) fn complete_basis(known: [Option<Vec3>; 3]) -> [Vec3; 3] {
     }
 }
 
-/// A unit vector perpendicular to the unit vector `v`.
+/// Returns a unit vector perpendicular to the unit vector `v`.
 fn any_perpendicular(v: Vec3) -> Vec3 {
     let helper = if v.x.abs() < 0.9 { Vec3::X } else { Vec3::Y };
     v.cross(helper).normalize()

@@ -103,16 +103,6 @@ impl Schema {
     }
 }
 
-/// Returns the 64-bit FNV-1a of `text`, the fingerprint of a schema or of several combined.
-pub fn fingerprint_of(text: &str) -> u64 {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in text.bytes() {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    hash
-}
-
 impl fmt::Display for Schema {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.write_format(f, &self.root, &mut Vec::new())?;
@@ -245,6 +235,16 @@ impl Schema {
         write!(f, "{{{}}}", fields.names.join(","))?;
         self.write_list(f, &fields.formats, open)
     }
+}
+
+/// Returns the 64-bit FNV-1a of `text`, the fingerprint of a schema or of several combined.
+pub fn fingerprint_of(text: &str) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in text.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
 }
 
 /// Returns `T`'s fingerprint and whether its trace was complete, traced once into `cell`.

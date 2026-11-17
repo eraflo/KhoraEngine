@@ -40,7 +40,7 @@ pub struct Registers {
 }
 
 impl Registers {
-    /// An allocator with `parameters` registers already spoken for.
+    /// Creates an allocator with `parameters` registers already spoken for.
     ///
     /// Parameters occupy `0..parameters` because that is where the VM's calling
     /// convention puts them, so the callee needs no prologue to move them.
@@ -73,7 +73,7 @@ impl Registers {
         self.name(index)
     }
 
-    /// The register `index` is, noting when there is none.
+    /// Returns the register `index` is, noting when there is none.
     fn name(&mut self, index: usize) -> Reg {
         match Reg::try_from(index) {
             Ok(register) => register,
@@ -84,12 +84,12 @@ impl Registers {
         }
     }
 
-    /// Whether the function needed more registers than exist.
-    pub fn overflowed(&self) -> bool {
+    /// Returns whether the function needed more registers than exist.
+    pub(crate) fn overflowed(&self) -> bool {
         self.overflowed
     }
 
-    /// The current top, to be restored by [`Self::release_to`].
+    /// Returns the current top, to be restored by [`Self::release_to`].
     pub fn mark(&self) -> usize {
         self.next
     }
@@ -102,7 +102,7 @@ impl Registers {
         self.next = mark.max(self.locals);
     }
 
-    /// The temporaries taken and not yet released, lowest first.
+    /// Returns the temporaries taken and not yet released, lowest first.
     pub fn live_temporaries(&self) -> Vec<Reg> {
         (self.locals..self.next)
             .map(|register| register as Reg)
@@ -121,7 +121,7 @@ impl Registers {
         self.next = self.locals;
     }
 
-    /// How many registers the function's frame needs.
+    /// Returns how many registers the function's frame needs.
     pub fn frame_size(&self) -> usize {
         self.high_water.max(1)
     }

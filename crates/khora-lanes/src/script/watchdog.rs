@@ -14,6 +14,7 @@
 
 //! How long a body may run without finishing: the game time it ran, reported
 //! at [`WATCHDOG_WARN`] and faulted at [`WATCHDOG_FAULT`].
+//!
 //! See the book: concepts/scripting/turns.md, "A body that never finishes".
 
 use khora_core::script::RecordedFault;

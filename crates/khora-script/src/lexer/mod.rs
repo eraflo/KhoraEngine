@@ -53,7 +53,7 @@ pub struct Lexed {
 }
 
 impl Lexed {
-    /// Every token and diagnostic moved `base` bytes along: the module starts
+    /// Moves every token and diagnostic `base` bytes along: the module starts
     /// there in the program's offset space.
     pub fn shifted(mut self, base: u32) -> Self {
         if base == 0 {
@@ -68,7 +68,7 @@ impl Lexed {
         self
     }
 
-    /// Whether any diagnostic is an error.
+    /// Returns whether any diagnostic is an error.
     pub fn has_errors(&self) -> bool {
         crate::diagnostics::has_errors(&self.diagnostics)
     }

@@ -27,6 +27,13 @@ pub use super::collider_handle::ColliderHandle;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RigidBodyHandle(pub u64);
 
+impl RigidBodyHandle {
+    /// Returns the slot and generation this addresses.
+    pub const fn slot(self) -> SlotId {
+        SlotId::unpack(self.0)
+    }
+}
+
 /// A backend slot and the generation that says which occupant is meant.
 ///
 /// Both handle types are one of these packed into a `u64`. Packed rather than
@@ -52,12 +59,5 @@ impl SlotId {
             index: packed as u32,
             generation: (packed >> 32) as u32,
         }
-    }
-}
-
-impl RigidBodyHandle {
-    /// The slot and generation this addresses.
-    pub const fn slot(self) -> SlotId {
-        SlotId::unpack(self.0)
     }
 }

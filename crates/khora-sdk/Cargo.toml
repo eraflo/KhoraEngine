@@ -38,3 +38,6 @@ workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 # Parses the raw WGSL strings the SDK hands to the text renderer and the egui
 # overlay (tests/it/editor_shader_sources.rs). Same version khora-infra uses.
 naga = { version = "29.0.3", features = ["wgsl-in"] }
+
+[lints]
+workspace = true

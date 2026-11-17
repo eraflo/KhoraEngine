@@ -21,7 +21,8 @@ use crate::graphics::wgpu::profiler::WgpuTimestampProfiler;
 use khora_core::math::{Extent2D, LinearRgba};
 use khora_core::platform::window::KhoraWindow;
 use khora_core::renderer::api::command::{
-    LoadOp, Operations, RenderPassColorAttachment, RenderPassDescriptor, StoreOp,
+    LoadOp, Operations, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
+    RenderPassDescriptor, StoreOp,
 };
 use khora_core::renderer::api::device::{GraphicsAdapterInfo, RenderSettings, RenderStats};
 use khora_core::renderer::api::gpu_scene::RenderObject;
@@ -167,7 +168,6 @@ impl RenderSystem for WgpuRenderSystem {
                 base_mip_level: 0,
             };
 
-            use khora_core::renderer::api::command::RenderPassDepthStencilAttachment;
             let depth_attachment = self.depth_texture_view.as_ref().map(|depth_view| {
                 RenderPassDepthStencilAttachment {
                     view: depth_view,

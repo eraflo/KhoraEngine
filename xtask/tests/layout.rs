@@ -18,6 +18,10 @@
 //! crate's manifest directory) and fails with the **complete, sorted** list of
 //! violations, so a failing run is the to-do list.
 //!
+//! The checks that read one file at a time live in the xtask library
+//! (`xtask/src/lint/`), which `cargo xtask lint-file` runs on given files;
+//! the tests here run them over the whole tree.
+//!
 //! Rust checks scan `crates/*/src`, `xtask/src` and `examples/*/src`. Every
 //! walk skips `target/`, `.git/`, `.codegraph/` and `node_modules/` at any
 //! depth; the generated wrappers and tool state at the root (`.claude/`,
@@ -33,7 +37,7 @@
 //! Ergon spec). A check fails when
 //!
 //! - a violation's path is not listed (no new debt),
-//! - a listed path no longer violates the check (stale: remove the line in the
+//! - a listed path stops violating the check (stale: remove the line in the
 //!   commit that fixes it — the list only shrinks),
 //! - the allowlist itself is malformed (unknown check, missing or batch-less
 //!   reason, duplicate line) — reported by every check.
@@ -47,52 +51,10 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Directory names never walked into, wherever they appear.
-const SKIP_DIRS: &[&str] = &["target", ".git", ".codegraph", "node_modules"];
-
-/// Directories at the repository root never walked into: generated AI
-/// wrappers and tool state, not part of the tree the checks govern.
-/// `.agent/` and `.github/` are sources and stay scanned.
-const SKIP_ROOT_DIRS: &[&str] = &[
-    ".claude",
-    ".cursor",
-    ".gemini",
-    ".codegraph",
-    ".gitagent",
-    ".khora",
-    ".impeccable",
-    ".dist",
-];
-
-/// Largest number of non-test lines a Rust file may hold.
-const MAX_NON_TEST_LINES: usize = 700;
-
-/// Every check, as named in the allowlist (each is its test's name).
-const RATCHETED_CHECKS: &[&str] = &[
-    "no_file_and_folder_module_pair",
-    "no_orphan_rust_files",
-    "test_files_follow_convention",
-    "non_test_code_under_700_lines",
-    "wgsl_only_in_shader_tree",
-    "no_tracked_ignored_files",
-    "relative_links_resolve",
-    "cited_source_paths_exist",
-    "no_duplicate_asset_files",
-    "one_spelling_of_util",
-    "no_generic_module_file_names",
-    "docs_pages_are_kebab_case",
-    "no_stuttering_file_names",
-    "retired_file_names",
-    "constants_come_before_the_code",
-    "private_helpers_come_after_the_primary_type_impls",
-    "each_file_holds_one_primary_type",
-    "functions_under_200_lines",
-    "doc_summary_is_short",
-    "inline_comments_are_short",
-];
+use xtask::lint::*;
 
 /// Module names too generic to say what a file holds: each is shared by
 /// unrelated types across the workspace. Banned as a file module
@@ -181,13 +143,6 @@ const RETIRED_FILE_NAMES: &[(&str, &str)] = &[
         "lights live in the `renderer/light/` folder",
     ),
 ];
-
-/// Words one of which an allowlist reason must contain: the batch that
-/// removes the entry.
-const BATCH_WORDS: &[&str] = &["B0", "B1", "B2", "B3", "B4", "B5", "B6", "P7", "Ergon"];
-
-/// Repository-relative path of the ratchet allowlist.
-const ALLOWLIST: &str = "xtask/tests/layout_allow.txt";
 
 /// The one directory `.wgsl` files may live in.
 const SHADER_TREE: &str = "crates/khora-infra/src/graphics/shader/shaders/";
@@ -733,7 +688,7 @@ fn docs_pages_are_kebab_case() {
 /// A file named after a type it declares is exempt, because "a file is named
 /// after its primary type" comes first: `physics/physics_debug_data.rs` holds
 /// `PhysicsDebugData`, `asset/asset_uuid.rs` would hold `AssetUUID`. "Named after"
-/// means the file stem is the type's snake_case name, acronyms kept whole
+/// means the file stem is the type's `snake_case` name, acronyms kept whole
 /// (`AssetUUID` → `asset_uuid`). Keyed by the file.
 #[test]
 fn no_stuttering_file_names() {
@@ -865,149 +820,6 @@ fn is_kebab_case(stem: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Tree walking
-// ---------------------------------------------------------------------------
-
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| panic!("{} has no parent", env!("CARGO_MANIFEST_DIR")))
-}
-
-/// `crates/*/src`, `examples/*/src`, `xtask/src` — those that exist.
-fn rust_src_roots(root: &Path) -> Vec<PathBuf> {
-    let mut roots = Vec::new();
-    for group in ["crates", "examples"] {
-        for member in child_dirs(&root.join(group)) {
-            let src = member.join("src");
-            if src.is_dir() {
-                roots.push(src);
-            }
-        }
-    }
-    let xtask = root.join("xtask/src");
-    if xtask.is_dir() {
-        roots.push(xtask);
-    }
-    roots.sort();
-    roots
-}
-
-fn child_dirs(dir: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    let mut dirs: Vec<PathBuf> = entries
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| path.is_dir() && !is_skipped(path))
-        .collect();
-    dirs.sort();
-    dirs
-}
-
-/// True for a directory the walkers must not enter:
-///
-/// - one named in `SKIP_DIRS` (`target/`, `.git/`, `.codegraph/`,
-///   `node_modules/`), at any depth;
-/// - one named in `SKIP_ROOT_DIRS`, directly under the repository root
-///   (generated wrappers and tool state: `.claude/`, `.cursor/`, `.gemini/`,
-///   `.codegraph/`, `.gitagent/`, `.khora/`, `.impeccable/`, `.dist/`);
-/// - one holding a `.git` entry, file or directory — another checkout (a git
-///   worktree, a submodule, a nested clone) whose files are copies, not this
-///   tree's. Only directories below the walk's start are tested, so the
-///   repository root, which holds `.git/` itself, is still walked.
-fn is_skipped(path: &Path) -> bool {
-    let Some(name) = path.file_name() else {
-        return false;
-    };
-    SKIP_DIRS.iter().any(|skip| name == *skip)
-        || (path.parent() == Some(repo_root().as_path())
-            && SKIP_ROOT_DIRS.iter().any(|skip| name == *skip))
-        || path.join(".git").exists()
-}
-
-/// Every file under `dir`, recursively, sorted. Directories `is_skipped`
-/// rejects are not entered.
-fn walk_files(dir: &Path) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(current) = stack.pop() {
-        let Ok(entries) = fs::read_dir(&current) else {
-            continue;
-        };
-        for path in entries.filter_map(Result::ok).map(|entry| entry.path()) {
-            if path.is_dir() {
-                if !is_skipped(&path) {
-                    stack.push(path);
-                }
-            } else if path.is_file() {
-                files.push(path);
-            }
-        }
-    }
-    files.sort();
-    files
-}
-
-/// Every directory strictly below `dir`, recursively, sorted. Directories
-/// `is_skipped` rejects are neither listed nor entered.
-fn walk_dirs(dir: &Path) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-    let mut stack = child_dirs(dir);
-    while let Some(current) = stack.pop() {
-        stack.extend(child_dirs(&current));
-        dirs.push(current);
-    }
-    dirs.sort();
-    dirs
-}
-
-/// Repository-relative path with `/` separators.
-fn rel(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root)
-        .unwrap_or(path)
-        .components()
-        .map(|component| component.as_os_str().to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join("/")
-}
-
-fn file_name(path: &Path) -> String {
-    path.file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default()
-}
-
-fn has_extension(path: &Path, ext: &str) -> bool {
-    path.extension().is_some_and(|found| found == ext)
-}
-
-/// Resolves `.` and `..` lexically, without touching the file system.
-fn normalize(path: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                out.pop();
-            }
-            other => out.push(other.as_os_str()),
-        }
-    }
-    out
-}
-
-fn read_text(path: &Path) -> String {
-    let text = fs::read_to_string(path)
-        .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()));
-    text.strip_prefix('\u{feff}')
-        .map(str::to_owned)
-        .unwrap_or(text)
-}
-
-// ---------------------------------------------------------------------------
 // git
 // ---------------------------------------------------------------------------
 
@@ -1043,15 +855,6 @@ struct RustFile {
     decls: Vec<ModDecl>,
 }
 
-/// A `mod <name>;` item: a module whose body lives in another file.
-struct ModDecl {
-    name: String,
-    /// 1-based line of the `mod` item.
-    line: usize,
-    cfg_test: bool,
-    path_attr: Option<String>,
-}
-
 fn rust_files(root: &Path) -> Vec<RustFile> {
     let mut files = Vec::new();
     for src in rust_src_roots(root) {
@@ -1077,192 +880,6 @@ fn is_crate_or_folder_root(file: &RustFile) -> bool {
         file_name(&file.path).as_str(),
         "lib.rs" | "main.rs" | "mod.rs"
     ) || file.path.starts_with(file.src.join("bin"))
-}
-
-/// True when a directory between `src` and `path` is named `tests`.
-fn under_tests_dir(src: &Path, path: &Path) -> bool {
-    path.parent()
-        .and_then(|dir| dir.strip_prefix(src).ok())
-        .is_some_and(|dir| dir.components().any(|c| c.as_os_str() == "tests"))
-}
-
-/// The files a declaration may resolve to.
-fn decl_targets(file: &Path, decl: &ModDecl) -> Vec<PathBuf> {
-    let dir = file.parent().unwrap_or(Path::new(""));
-    if let Some(path) = &decl.path_attr {
-        return vec![normalize(&dir.join(path))];
-    }
-    let owner = match file_name(file).as_str() {
-        "lib.rs" | "main.rs" | "mod.rs" => dir.to_path_buf(),
-        _ => dir.join(file.file_stem().unwrap_or_default()),
-    };
-    vec![
-        normalize(&owner.join(format!("{}.rs", decl.name))),
-        normalize(&owner.join(&decl.name).join("mod.rs")),
-    ]
-}
-
-/// Out-of-line module declarations, with the attributes stacked above them.
-fn mod_decls(text: &str) -> Vec<ModDecl> {
-    let mut decls = Vec::new();
-    let mut attrs: Vec<String> = Vec::new();
-    for (index, raw) in text.lines().enumerate() {
-        let line = raw.trim();
-        if line.is_empty() || line.starts_with("//") {
-            continue;
-        }
-        let (line_attrs, item) = split_outer_attrs(line);
-        attrs.extend(line_attrs);
-        if item.is_empty() {
-            continue;
-        }
-        if let Some((name, true)) = mod_item(item) {
-            decls.push(ModDecl {
-                name,
-                line: index + 1,
-                cfg_test: attrs.iter().any(|attr| is_cfg_test(attr)),
-                path_attr: attrs.iter().find_map(|attr| path_attr(attr)),
-            });
-        }
-        attrs.clear();
-    }
-    decls
-}
-
-/// Splits leading `#[…]` attributes off a line; returns them and the rest.
-fn split_outer_attrs(line: &str) -> (Vec<String>, &str) {
-    let mut attrs = Vec::new();
-    let mut rest = line;
-    while rest.starts_with("#[") {
-        let mut depth = 0usize;
-        let mut end = None;
-        for (index, ch) in rest.char_indices() {
-            match ch {
-                '[' => depth += 1,
-                ']' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end = Some(index + 1);
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-        match end {
-            Some(end) => {
-                attrs.push(rest[..end].to_owned());
-                rest = rest[end..].trim_start();
-            }
-            None => {
-                attrs.push(rest.to_owned());
-                rest = "";
-            }
-        }
-    }
-    (attrs, rest)
-}
-
-/// `[pub[(…)]] mod <name>` → the name, and whether the item is out-of-line
-/// (`;`) rather than inline (`{`).
-fn mod_item(item: &str) -> Option<(String, bool)> {
-    let mut rest = item;
-    if let Some(after) = rest.strip_prefix("pub") {
-        rest = after.trim_start();
-        if rest.starts_with('(') {
-            rest = &rest[rest.find(')')? + 1..];
-        }
-        rest = rest.trim_start();
-    }
-    let rest = rest.strip_prefix("mod ")?.trim_start();
-    let name: String = rest
-        .chars()
-        .take_while(|ch| ch.is_alphanumeric() || *ch == '_')
-        .collect();
-    if name.is_empty() {
-        return None;
-    }
-    let after = rest[name.len()..].trim_start();
-    Some((name, after.starts_with(';')))
-}
-
-/// `#[cfg(test)]`, or `#[cfg(all(…))]` with `test` among its terms, in any
-/// place.
-fn is_cfg_test(attr: &str) -> bool {
-    let compact: String = attr.chars().filter(|ch| !ch.is_whitespace()).collect();
-    if compact == "#[cfg(test)]" {
-        return true;
-    }
-    let Some(terms) = compact
-        .strip_prefix("#[cfg(all(")
-        .and_then(|rest| rest.strip_suffix("))]"))
-    else {
-        return false;
-    };
-    let mut depth = 0usize;
-    let mut start = 0;
-    let mut found = false;
-    for (at, ch) in terms.char_indices() {
-        match ch {
-            '(' => depth += 1,
-            ')' => depth = depth.saturating_sub(1),
-            ',' if depth == 0 => {
-                found |= &terms[start..at] == "test";
-                start = at + 1;
-            }
-            _ => {}
-        }
-    }
-    found || &terms[start..] == "test"
-}
-
-/// The string of a `#[path = "…"]` attribute.
-fn path_attr(attr: &str) -> Option<String> {
-    let inner = attr.strip_prefix("#[")?.trim_start();
-    let value = inner.strip_prefix("path")?.trim_start().strip_prefix('=')?;
-    let start = value.find('"')? + 1;
-    let len = value[start..].find('"')?;
-    Some(value[start..start + len].to_owned())
-}
-
-fn has_inner_cfg_test(text: &str) -> bool {
-    text.lines().any(|line| {
-        let compact: String = line.chars().filter(|ch| !ch.is_whitespace()).collect();
-        compact == "#![cfg(test)]" || compact.starts_with("#![cfg(all(test,")
-    })
-}
-
-/// 0-based line of the `#[cfg(test)]` attribute opening the first inline test
-/// module (`#[cfg(test)] … mod <name> {`), if any.
-fn first_inline_test_module(text: &str) -> Option<usize> {
-    let lines: Vec<&str> = text.lines().collect();
-    let mut start: Option<usize> = None;
-    let mut cfg_test = false;
-    for (index, raw) in lines.iter().enumerate() {
-        let line = raw.trim();
-        if line.is_empty() || line.starts_with("//") {
-            continue;
-        }
-        let (attrs, item) = split_outer_attrs(line);
-        if !attrs.is_empty() && start.is_none() {
-            start = Some(index);
-        }
-        cfg_test |= attrs.iter().any(|attr| is_cfg_test(attr));
-        if item.is_empty() {
-            continue;
-        }
-        if cfg_test && matches!(mod_item(item), Some((_, false))) {
-            return start;
-        }
-        start = None;
-        cfg_test = false;
-    }
-    None
-}
-
-/// Lines counted by the size ratchet.
-fn non_test_lines(text: &str) -> usize {
-    first_inline_test_module(text).unwrap_or_else(|| text.lines().count())
 }
 
 /// True when the file opens an inline test module after nothing but blank
@@ -1299,13 +916,6 @@ fn preamble_then_tests(text: &str) -> bool {
 // Allowlist
 // ---------------------------------------------------------------------------
 
-/// Violations of one check: repo-relative key → what is wrong there.
-type Violations = BTreeMap<String, BTreeSet<String>>;
-
-fn add(violations: &mut Violations, key: String, detail: String) {
-    violations.entry(key).or_default().insert(detail);
-}
-
 /// Compares a check's violations with its allowlist entries and fails with
 /// every new violation, every stale entry and every allowlist problem.
 fn ratchet(check: &str, what: &str, violations: &Violations) {
@@ -1337,59 +947,6 @@ fn ratchet(check: &str, what: &str, violations: &Violations) {
         problems.len(),
         problems.join("\n  ")
     );
-}
-
-/// Entries per check, and the problems found while reading the file.
-fn read_allowlist(root: &Path) -> (BTreeMap<String, BTreeSet<String>>, Vec<String>) {
-    let mut entries: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    let mut problems = Vec::new();
-    let Ok(text) = fs::read_to_string(root.join(ALLOWLIST)) else {
-        return (entries, problems);
-    };
-    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
-    for (index, raw) in text.lines().enumerate() {
-        let (line, reason) = raw.split_once('#').unwrap_or((raw, ""));
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let fields: Vec<&str> = line.split_whitespace().collect();
-        let [check, path] = fields.as_slice() else {
-            problems.push(format!(
-                "{ALLOWLIST}:{}: expected `<check-name> <path>  # reason`, got `{raw}`",
-                index + 1
-            ));
-            continue;
-        };
-        if !RATCHETED_CHECKS.contains(check) {
-            problems.push(format!(
-                "{ALLOWLIST}:{}: `{check}` is not a layout check",
-                index + 1
-            ));
-            continue;
-        }
-        let names_batch = reason
-            .split(|ch: char| !ch.is_alphanumeric())
-            .any(|word| BATCH_WORDS.contains(&word));
-        if !names_batch {
-            problems.push(format!(
-                "{ALLOWLIST}:{}: `{path}` needs a `# reason` naming the batch that removes it \
-                 (one of {BATCH_WORDS:?})",
-                index + 1
-            ));
-        }
-        if !entries
-            .entry((*check).to_owned())
-            .or_default()
-            .insert((*path).to_owned())
-        {
-            problems.push(format!(
-                "{ALLOWLIST}:{}: `{path}` is listed twice",
-                index + 1
-            ));
-        }
-    }
-    (entries, problems)
 }
 
 // ---------------------------------------------------------------------------
@@ -2028,7 +1585,7 @@ fn a_book_link_to_a_rendered_page_resolves() {
 // ---------------------------------------------------------------------------
 
 /// Lanes consume Views from the `LaneBus`; the `World` is the Flows' and the
-/// DataSystems' to read. So no Rust file under `crates/khora-lanes/src` names
+/// `DataSystem`s' to read. So no Rust file under `crates/khora-lanes/src` names
 /// `World` as a word outside comments — not in a `use`, not in a signature,
 /// not in a downcast. `RenderWorld` and the like are other words. Keyed by
 /// file and line.
@@ -2453,7 +2010,7 @@ fn registrations_live_in_their_family_folder() {
 /// `crates/khora-lanes/src/`, the folders it moved out of —
 /// `crates/khora-lanes/src/<domain>_lane/` and
 /// `crates/khora-agents/src/<domain>_agent/`, `<domain>` read from
-/// `FAMILY_FOLDERS` — no longer exist.
+/// `FAMILY_FOLDERS` — do not exist.
 #[test]
 fn a_moved_family_leaves_no_old_folder() {
     let root = repo_root();
@@ -2586,15 +2143,16 @@ fn register_agent_calls(text: &str) -> Vec<usize> {
 /// registers nothing or two families.
 #[test]
 fn family_folder_check_names_what_a_family_folder_lacks() {
+    const ONE: &str = "inventory::submit! { RegisteredAgent(khora_core::register_agent! { }) }\n";
+    const TWO: &str = "khora_core::register_agent! { }\nkhora_core::register_agent! { }\n";
+    const MENTION: &str = "// `register_agent!` is called below.\n";
+
     let dir = std::env::temp_dir().join(format!(
         "khora-layout-family-folder-{}-{:?}",
         std::process::id(),
         std::thread::current().id()
     ));
     let _ = fs::remove_dir_all(&dir);
-    const ONE: &str = "inventory::submit! { RegisteredAgent(khora_core::register_agent! { }) }\n";
-    const TWO: &str = "khora_core::register_agent! { }\nkhora_core::register_agent! { }\n";
-    const MENTION: &str = "// `register_agent!` is called below.\n";
     let write_tree = |base: &Path, files: &[(&str, &str)]| -> std::io::Result<()> {
         for (file, text) in files {
             let path = base.join(file);
@@ -3299,8 +2857,8 @@ const MATERIAL_PROJECTION_ITEMS: &[&str] = &[
     "fn material_variant",
 ];
 
-/// The names of the material projection, which `gpu/projection.rs` no longer
-/// spells in code, its tests included: the material tests moved with them.
+/// The names of the material projection, which `gpu/projection.rs` must not
+/// spell in code, its tests included: the material tests live with them.
 const MATERIAL_PROJECTION_NAMES: &[&str] = &[
     "sync_materials",
     "MaterialProjector",
@@ -3505,12 +3063,6 @@ fn implements_residency(line: &str) -> bool {
 /// that registers or implements a residency, with its line.
 #[test]
 fn residency_check_names_a_residency_made_outside_its_folder() {
-    let dir = std::env::temp_dir().join(format!(
-        "khora-layout-residency-sites-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    let _ = fs::remove_dir_all(&dir);
     const MACRO_DEFINITION: &str = "\
 /// ```ignore
 /// register_residency!(name = ImageOnGpu::NAME, run = image_on_gpu_system);
@@ -3522,6 +3074,13 @@ macro_rules! register_residency {
     };
 }
 ";
+
+    let dir = std::env::temp_dir().join(format!(
+        "khora-layout-residency-sites-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
     let write_tree = |base: &Path, files: &[(&str, &str)]| -> std::io::Result<()> {
         for (file, text) in files {
             let path = base.join(file);
@@ -3631,18 +3190,19 @@ fn residency_check_names_an_impl_whose_header_rustfmt_splits() {
 /// a helper file and a sub-folder.
 #[test]
 fn residency_folder_check_names_what_is_not_one_file_per_residency() {
-    let dir = std::env::temp_dir().join(format!(
-        "khora-layout-residency-folder-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    let _ = fs::remove_dir_all(&dir);
     const ONE: &str =
         "impl Residency for X {}\ncrate::register_residency!(name = X::NAME, run = run);\n";
     const TWO: &str = "crate::register_residency!(name = \"a\", run = a);\ncrate::register_residency!(name = \"b\", run = b);\n";
     const NONE: &str =
         "//! Registers with `register_residency!`.\nimpl Residency for MeshOnGpu {}\n";
     const MODULE: &str = "macro_rules! register_residency {\n    () => { $crate::register_residency!(name = n, run = r); };\n}\n";
+
+    let dir = std::env::temp_dir().join(format!(
+        "khora-layout-residency-folder-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
     let write_tree = |base: &Path, files: &[(&str, &str)]| -> std::io::Result<()> {
         for (file, text) in files {
             let path = base.join(file);
@@ -3698,183 +3258,6 @@ fn residency_folder_check_names_what_is_not_one_file_per_residency() {
         );
     }
     assert_eq!(bad_problems.len(), 5, "{bad_problems:#?}");
-}
-
-/// Whether the `r` at `at` opens a raw string: it follows no identifier
-/// character, or only the `b` of a byte raw string (`br"…"`).
-fn opens_raw_string(chars: &[char], at: usize) -> bool {
-    let ident = |at: usize| chars.get(at).is_some_and(|&ch| is_ident_char(ch));
-    match at.checked_sub(1) {
-        None => true,
-        Some(before) if chars[before] == 'b' => before == 0 || !ident(before - 1),
-        Some(before) => !ident(before),
-    }
-}
-
-/// `text` with every `//` and `/* */` comment blanked out (doc comments
-/// included), keeping string and character literals and every newline, so
-/// line numbers survive.
-fn strip_rust_comments(text: &str) -> String {
-    let chars: Vec<char> = text.chars().collect();
-    let mut out = String::with_capacity(text.len());
-    let mut i = 0;
-    let blank = |c: char| if c == '\n' { '\n' } else { ' ' };
-    while i < chars.len() {
-        let c = chars[i];
-        let next = chars.get(i + 1).copied();
-        if c == '/' && next == Some('/') {
-            while i < chars.len() && chars[i] != '\n' {
-                out.push(' ');
-                i += 1;
-            }
-        } else if c == '/' && next == Some('*') {
-            let mut depth = 0usize;
-            while i < chars.len() {
-                if chars[i] == '/' && chars.get(i + 1) == Some(&'*') {
-                    depth += 1;
-                    out.push_str("  ");
-                    i += 2;
-                } else if chars[i] == '*' && chars.get(i + 1) == Some(&'/') {
-                    depth -= 1;
-                    out.push_str("  ");
-                    i += 2;
-                    if depth == 0 {
-                        break;
-                    }
-                } else {
-                    out.push(blank(chars[i]));
-                    i += 1;
-                }
-            }
-        } else if c == '"' {
-            out.push(c);
-            i += 1;
-            while i < chars.len() && chars[i] != '"' {
-                if chars[i] == '\\' && i + 1 < chars.len() {
-                    out.push(chars[i]);
-                    i += 1;
-                }
-                out.push(chars[i]);
-                i += 1;
-            }
-            if i < chars.len() {
-                out.push('"');
-                i += 1;
-            }
-        } else if c == 'r'
-            && (next == Some('"') || next == Some('#'))
-            && opens_raw_string(&chars, i)
-        {
-            // A raw string: r"…", r#"…"#, br"…", …
-            let mut j = i + 1;
-            let mut hashes = 0;
-            while chars.get(j) == Some(&'#') {
-                hashes += 1;
-                j += 1;
-            }
-            if chars.get(j) != Some(&'"') {
-                out.push(c);
-                i += 1;
-                continue;
-            }
-            let closing: String = std::iter::once('"')
-                .chain(std::iter::repeat_n('#', hashes))
-                .collect();
-            let body_start = j + 1;
-            let rest: String = chars[body_start..].iter().collect();
-            let end = rest.find(&closing).map_or(chars.len(), |at| {
-                body_start + rest[..at].chars().count() + closing.chars().count()
-            });
-            out.extend(chars[i..end].iter());
-            i = end;
-        } else if c == '\'' {
-            // A character literal ('x', '\n', '\''); otherwise a lifetime.
-            let literal_end = match (next, chars.get(i + 2), chars.get(i + 3)) {
-                // The escaped character sits at `i + 2`; the closing quote follows.
-                (Some('\\'), _, _) => chars
-                    .get(i + 3..)
-                    .and_then(|rest| rest.iter().position(|&ch| ch == '\''))
-                    .map(|at| i + 3 + at + 1),
-                (Some(_), Some('\''), _) => Some(i + 3),
-                _ => None,
-            };
-            match literal_end {
-                Some(end) if end <= chars.len() => {
-                    out.extend(chars[i..end].iter());
-                    i = end;
-                }
-                _ => {
-                    out.push(c);
-                    i += 1;
-                }
-            }
-        } else {
-            out.push(c);
-            i += 1;
-        }
-    }
-    out
-}
-
-fn is_ident_char(c: char) -> bool {
-    c.is_alphanumeric() || c == '_'
-}
-
-/// Whether `line` holds `word` as a whole identifier.
-fn names_word(line: &str, word: &str) -> bool {
-    line.match_indices(word).any(|(at, _)| {
-        let before = line[..at].chars().next_back();
-        let after = line[at + word.len()..].chars().next();
-        !before.is_some_and(is_ident_char) && !after.is_some_and(is_ident_char)
-    })
-}
-
-/// The 1-based lines of `code` that read the `runtime` field of a binding
-/// holding an `EngineContext`.
-fn runtime_field_reads(code: &str) -> Vec<usize> {
-    let mut bindings = BTreeSet::new();
-    for (at, _) in code.match_indices("EngineContext") {
-        let before = code[..at].trim_end();
-        // `name: &mut EngineContext` / `name: &EngineContext`
-        let typed = before
-            .strip_suffix("&mut")
-            .or_else(|| before.strip_suffix('&'))
-            .map(str::trim_end)
-            .and_then(|b| b.strip_suffix(':'));
-        // `let [mut] name = EngineContext::…`
-        let built = before.strip_suffix('=');
-        if let Some(prefix) = typed.or(built) {
-            let name: String = prefix
-                .trim_end()
-                .chars()
-                .rev()
-                .take_while(|c| is_ident_char(*c))
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect();
-            if !name.is_empty() && name != "self" {
-                bindings.insert(name);
-            }
-        }
-    }
-
-    let mut lines = BTreeSet::new();
-    for (index, line) in code.lines().enumerate() {
-        for name in &bindings {
-            let access = format!("{name}.runtime");
-            let reads = line.match_indices(&access).any(|(at, _)| {
-                let before = line[..at].chars().next_back();
-                let after = line[at + access.len()..].chars().next();
-                !before.is_some_and(|c| is_ident_char(c) || c == '.')
-                    && !after.is_some_and(|c| is_ident_char(c) || c == '(')
-            });
-            if reads {
-                lines.insert(index + 1);
-            }
-        }
-    }
-    lines.into_iter().collect()
 }
 
 /// The comment stripper keeps code and literals, blanks comments, and keeps
@@ -3936,7 +3319,7 @@ fn built() {
 const TYPE_NAMES_NOT_SCANNED: &[&str] = &["sandbox"];
 
 /// Public type names two items may share, each with why (a type re-declared
-/// per backend, say). An entry with no reason, or whose name is no longer
+/// per backend, say). An entry with no reason, or whose name is not
 /// declared twice, fails the check.
 const TYPE_NAMES_SHARED: &[(&str, &str)] = &[
     ("UiBorder", "khora-data's UI component mirrors khora-core's UI value type of the same name, converted with `From`"),
@@ -3977,8 +3360,8 @@ fn no_public_type_name_is_declared_twice() {
 
 /// The public type names declared more than once under `root/crates/*/src`
 /// and not in `shared`, each as `<Name>: declared <n> times: <path>:<line>, …`
-/// (paths relative to `root`), and every `shared` entry with no reason or no
-/// longer declared twice. Sorted.
+/// (paths relative to `root`), and every `shared` entry with no reason or not
+/// declared twice. Sorted.
 fn type_name_problems(root: &Path, shared: &[(&str, &str)]) -> Vec<String> {
     let mut sites: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for member in child_dirs(&root.join("crates")) {
@@ -4022,44 +3405,6 @@ fn type_name_problems(root: &Path, shared: &[(&str, &str)]) -> Vec<String> {
     }
     problems.sort();
     problems
-}
-
-/// The `.rs` files under `src` that are not test code, with their text:
-/// neither `tests.rs`, nor under a `tests/` folder, nor `#![cfg(test)]`, nor
-/// declared by a `#[cfg(test)] mod` (a folder module, with all it holds).
-fn non_test_rust_files(src: &Path) -> Vec<(PathBuf, String)> {
-    let files: Vec<(PathBuf, String)> = walk_files(src)
-        .into_iter()
-        .filter(|path| has_extension(path, "rs"))
-        .map(|path| {
-            let text = read_text(&path);
-            (normalize(&path), text)
-        })
-        .collect();
-    let mut test_files = BTreeSet::new();
-    let mut test_folders = Vec::new();
-    for (path, text) in &files {
-        for decl in mod_decls(text).iter().filter(|decl| decl.cfg_test) {
-            for target in decl_targets(path, decl) {
-                if file_name(&target) == "mod.rs" {
-                    if let Some(folder) = target.parent() {
-                        test_folders.push(folder.to_path_buf());
-                    }
-                }
-                test_files.insert(target);
-            }
-        }
-    }
-    files
-        .into_iter()
-        .filter(|(path, text)| {
-            file_name(path) != "tests.rs"
-                && !under_tests_dir(src, path)
-                && !has_inner_cfg_test(text)
-                && !test_files.contains(path)
-                && !test_folders.iter().any(|folder| path.starts_with(folder))
-        })
-        .collect()
 }
 
 /// The public types `text` declares outside its tests, each as its 1-based
@@ -4238,12 +3583,6 @@ fn public_type_name(item: &str) -> Option<String> {
 /// passes; one listed without a reason, or declared once, is named.
 #[test]
 fn type_name_check_names_each_public_name_declared_twice() {
-    let dir = std::env::temp_dir().join(format!(
-        "khora-layout-type-names-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    let _ = fs::remove_dir_all(&dir);
     const ALPHA_LIB: &str = "\
 //! Alpha: `pub struct Commented;`
 pub struct Shared;
@@ -4289,6 +3628,13 @@ pub mod inner {
 pub struct NotInTests;
 pub struct Lonely;
 ";
+
+    let dir = std::env::temp_dir().join(format!(
+        "khora-layout-type-names-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
     let files: &[(&str, &str)] = &[
         ("crates/alpha/src/lib.rs", ALPHA_LIB),
         (
@@ -4354,12 +3700,6 @@ pub struct Lonely;
 /// `TextureViewId` and `SamplerId` below its `cpu_texture_tests` module.
 #[test]
 fn type_name_check_reads_the_code_after_an_inline_test_module() {
-    let dir = std::env::temp_dir().join(format!(
-        "khora-layout-type-names-after-tests-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    let _ = fs::remove_dir_all(&dir);
     const ALPHA_LIB: &str = "\
 pub struct Above;
 #[cfg(test)]
@@ -4369,6 +3709,13 @@ mod cpu_texture_tests {
 impl Above {}
 pub struct Twin;
 ";
+
+    let dir = std::env::temp_dir().join(format!(
+        "khora-layout-type-names-after-tests-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
     let files: &[(&str, &str)] = &[
         ("crates/alpha/src/lib.rs", ALPHA_LIB),
         (
@@ -4397,785 +3744,6 @@ pub struct Twin;
                 .to_owned()
         ]
     );
-}
-
-// ---------------------------------------------------------------------------
-// In-file order
-// ---------------------------------------------------------------------------
-//
-// A file reads in one order: module doc, imports, constants, the primary
-// type, its impls, private helpers, tests. The checks below read a file's
-// top-level items (`top_level_items`) and name what is out of that order.
-// They scan the non-test files of every Rust `src/` tree (`crates/*/src`,
-// `examples/*/src`, `xtask/src`): a `tests.rs`, a file under a `tests/`
-// folder, a `#![cfg(test)]` file and a file declared by `#[cfg(test)] mod`
-// are test code, and are not read.
-
-/// What a top-level item is, as far as the in-file order checks need.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ItemKind {
-    /// `use`, and `extern crate`.
-    Use,
-    Const,
-    Static,
-    /// `type Name = …;`
-    TypeAlias,
-    Struct,
-    Enum,
-    Union,
-    Trait,
-    Impl,
-    Fn,
-    Mod,
-    /// A macro call (`inventory::submit! { … }`) or a `macro_rules!`.
-    Macro,
-    /// Anything else (an `extern "C" { … }` block).
-    Other,
-}
-
-impl ItemKind {
-    /// The keyword a report names the item by.
-    fn word(self) -> &'static str {
-        match self {
-            ItemKind::Use => "use",
-            ItemKind::Const => "const",
-            ItemKind::Static => "static",
-            ItemKind::TypeAlias => "type",
-            ItemKind::Struct => "struct",
-            ItemKind::Enum => "enum",
-            ItemKind::Union => "union",
-            ItemKind::Trait => "trait",
-            ItemKind::Impl => "impl",
-            ItemKind::Fn => "fn",
-            ItemKind::Mod => "mod",
-            ItemKind::Macro => "macro",
-            ItemKind::Other => "item",
-        }
-    }
-}
-
-/// A top-level item of a Rust file.
-#[derive(Debug)]
-struct TopItem {
-    /// 1-based line of the item itself, below its attributes.
-    line: usize,
-    kind: ItemKind,
-    /// The name the item declares; for an `impl`, the name of the type it is
-    /// for (`impl<T> Trait for Foo<T>` → `Foo`); `_` for `const _`; empty when
-    /// the item names nothing (`use`, a macro call).
-    name: String,
-    /// No visibility at all: not `pub`, nor `pub(crate)`, `pub(super)`, ….
-    private: bool,
-    /// Under `#[cfg(test)]` or `#[cfg(all(test, …))]`.
-    cfg_test: bool,
-    /// A `mod` whose body is written in place (`mod x { … }`), not in a file
-    /// of its own (`mod x;`).
-    inline: bool,
-    /// The item's code, its outer attributes included, with comments and the
-    /// contents of literals blanked.
-    code: String,
-}
-
-impl TopItem {
-    /// `fn name`, `struct Name`, `impl Name`, … as a report shows it.
-    fn label(&self) -> String {
-        if self.name.is_empty() {
-            self.kind.word().to_owned()
-        } else {
-            format!("{} {}", self.kind.word(), self.name)
-        }
-    }
-
-    /// A test module: an inline `#[cfg(test)] mod x { … }`, or the
-    /// declaration `#[cfg(test)] mod tests;` of the file holding the tests.
-    fn is_test_module(&self) -> bool {
-        self.kind == ItemKind::Mod && self.cfg_test && (self.inline || self.name == "tests")
-    }
-
-    /// An inline `#[cfg(test)] mod x { … }`.
-    fn is_inline_test_module(&self) -> bool {
-        self.kind == ItemKind::Mod && self.cfg_test && self.inline
-    }
-}
-
-/// Each non-test Rust file of `root`'s Rust `src/` trees, as its path
-/// relative to `root` and its top-level items. Sorted by path.
-fn order_scanned_files(root: &Path) -> Vec<(String, Vec<TopItem>)> {
-    let mut files = Vec::new();
-    for src in rust_src_roots(root) {
-        for (path, text) in non_test_rust_files(&src) {
-            files.push((rel(root, &path), top_level_items(&text)));
-        }
-    }
-    files.sort_by(|a, b| a.0.cmp(&b.0));
-    files
-}
-
-/// The top-level items of a Rust file, in order.
-///
-/// Comments and the contents of string and character literals are blanked
-/// first, so a brace, a `;` or a line at column 0 inside one is not read as
-/// code. An item runs from its first token to the `;` that ends it at bracket
-/// depth 0 or, for an item with a body (`fn`, `impl`, `struct … { }`,
-/// `mod … { }`, a macro call in braces), to the brace that closes that body.
-/// A `const`, `static`, `type` or `use` always runs to its `;`, so
-/// `const X: Foo = Foo { … };` is one item. Inner attributes (`#![…]`) are
-/// skipped; outer attributes belong to the item below them.
-fn top_level_items(text: &str) -> Vec<TopItem> {
-    let code = blank_literals(&strip_rust_comments(text));
-    let chars: Vec<char> = code.chars().collect();
-    let newlines = |range: &[char]| range.iter().filter(|&&ch| ch == '\n').count();
-    let mut items = Vec::new();
-    let mut attrs: Vec<String> = Vec::new();
-    let mut line = 1usize;
-    let mut i = 0usize;
-    while i < chars.len() {
-        let c = chars[i];
-        if c.is_whitespace() || c == ';' {
-            if c == '\n' {
-                line += 1;
-            }
-            i += 1;
-            continue;
-        }
-        if c == '#' {
-            let inner = chars.get(i + 1) == Some(&'!');
-            let open = if inner { i + 2 } else { i + 1 };
-            if chars.get(open) == Some(&'[') {
-                let end = closing_bracket(&chars, open);
-                line += newlines(&chars[i..end]);
-                if !inner {
-                    attrs.push(chars[i..end].iter().collect());
-                }
-                i = end;
-                continue;
-            }
-        }
-
-        // An item starts here. Its header runs to the first `{` or `;` outside
-        // parentheses and brackets.
-        let mut depth = 0usize;
-        let mut stop = chars.len();
-        for (j, &ch) in chars.iter().enumerate().skip(i) {
-            match ch {
-                '(' | '[' => depth += 1,
-                ')' | ']' => depth = depth.saturating_sub(1),
-                '{' | ';' if depth == 0 => {
-                    stop = j;
-                    break;
-                }
-                _ => {}
-            }
-        }
-        let header: String = chars[i..stop].iter().collect();
-        let (kind, name, private) = classify_item(&header);
-        let to_semicolon = matches!(
-            kind,
-            ItemKind::Const | ItemKind::Static | ItemKind::TypeAlias | ItemKind::Use
-        );
-        let mut depth = 0usize;
-        let mut end = chars.len();
-        for (j, &ch) in chars.iter().enumerate().skip(i) {
-            match ch {
-                '(' | '[' | '{' => depth += 1,
-                ')' | ']' | '}' => {
-                    depth = depth.saturating_sub(1);
-                    if depth == 0 && ch == '}' && !to_semicolon {
-                        end = j + 1;
-                        break;
-                    }
-                }
-                ';' if depth == 0 => {
-                    end = j + 1;
-                    break;
-                }
-                _ => {}
-            }
-        }
-        items.push(TopItem {
-            line,
-            kind,
-            name,
-            private,
-            cfg_test: attrs.iter().any(|attr| is_cfg_test(attr)),
-            inline: kind == ItemKind::Mod && chars.get(stop) == Some(&'{'),
-            code: attrs.concat() + &chars[i..end].iter().collect::<String>(),
-        });
-        attrs.clear();
-        line += newlines(&chars[i..end]);
-        i = end;
-    }
-    items
-}
-
-/// The index just past the `]` closing the `[` at `open`, or the end.
-fn closing_bracket(chars: &[char], open: usize) -> usize {
-    let mut depth = 0usize;
-    for (at, &ch) in chars.iter().enumerate().skip(open) {
-        match ch {
-            '[' => depth += 1,
-            ']' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return at + 1;
-                }
-            }
-            _ => {}
-        }
-    }
-    chars.len()
-}
-
-/// `code` (comments already blanked) with the contents of every string
-/// literal (`"…"`, `r#"…"#`, `b"…"`, `br"…"`) and character literal blanked,
-/// quotes and newlines kept, so line numbers survive.
-fn blank_literals(code: &str) -> String {
-    let chars: Vec<char> = code.chars().collect();
-    let mut out = String::with_capacity(code.len());
-    let blank = |ch: char| if ch == '\n' { '\n' } else { ' ' };
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        let after_ident = i > 0 && is_ident_char(chars[i - 1]);
-        let raw_quote_search = match (c, chars.get(i + 1)) {
-            ('r', _) if !after_ident => Some(i + 1),
-            ('b', Some('r')) if !after_ident => Some(i + 2),
-            _ => None,
-        };
-        if let Some(mut j) = raw_quote_search {
-            let mut hashes = 0;
-            while chars.get(j) == Some(&'#') {
-                hashes += 1;
-                j += 1;
-            }
-            if chars.get(j) == Some(&'"') {
-                out.extend(&chars[i..=j]);
-                let mut k = j + 1;
-                while k < chars.len()
-                    && !(chars[k] == '"' && (1..=hashes).all(|h| chars.get(k + h) == Some(&'#')))
-                {
-                    out.push(blank(chars[k]));
-                    k += 1;
-                }
-                let end = (k + 1 + hashes).min(chars.len());
-                out.extend(&chars[k.min(chars.len())..end]);
-                i = end;
-                continue;
-            }
-        }
-        if c == '"' {
-            out.push('"');
-            i += 1;
-            while i < chars.len() && chars[i] != '"' {
-                if chars[i] == '\\' && i + 1 < chars.len() {
-                    out.push(' ');
-                    out.push(blank(chars[i + 1]));
-                    i += 2;
-                    continue;
-                }
-                out.push(blank(chars[i]));
-                i += 1;
-            }
-            if i < chars.len() {
-                out.push('"');
-                i += 1;
-            }
-            continue;
-        }
-        if c == '\'' {
-            // A character literal ('x', '\n', '\''); otherwise a lifetime.
-            let end = match (chars.get(i + 1), chars.get(i + 2)) {
-                (Some('\\'), _) => chars
-                    .get(i + 3..)
-                    .and_then(|rest| rest.iter().position(|&ch| ch == '\''))
-                    .map(|at| i + 3 + at + 1),
-                (Some(_), Some('\'')) => Some(i + 3),
-                _ => None,
-            };
-            if let Some(end) = end.filter(|&end| end <= chars.len()) {
-                out.push('\'');
-                out.extend(std::iter::repeat_n(' ', end - i - 2));
-                out.push('\'');
-                i = end;
-                continue;
-            }
-        }
-        out.push(c);
-        i += 1;
-    }
-    out
-}
-
-/// The leading identifier of `text` (empty when it starts otherwise).
-fn leading_ident(text: &str) -> &str {
-    let len = text
-        .char_indices()
-        .find(|&(_, ch)| !is_ident_char(ch))
-        .map_or(text.len(), |(at, _)| at);
-    &text[..len]
-}
-
-/// What an item's header (its text up to its body or its `;`) declares: its
-/// kind, its name, and whether it has no visibility at all.
-fn classify_item(header: &str) -> (ItemKind, String, bool) {
-    let header = header.split_whitespace().collect::<Vec<_>>().join(" ");
-    let mut rest = header.as_str();
-    let private = leading_ident(rest) != "pub";
-    if !private {
-        rest = rest["pub".len()..].trim_start();
-        if rest.starts_with('(') {
-            rest = rest.find(')').map_or("", |at| &rest[at + 1..]).trim_start();
-        }
-    }
-    loop {
-        let word = leading_ident(rest);
-        let after = rest[word.len()..].trim_start();
-        let next = leading_ident(after);
-        let kind = match word {
-            "default" | "async" | "unsafe" | "safe" => {
-                rest = after;
-                continue;
-            }
-            "const" if matches!(next, "fn" | "unsafe" | "async" | "extern") => {
-                rest = after;
-                continue;
-            }
-            "extern" if next == "crate" => return (ItemKind::Use, String::new(), private),
-            "extern" => {
-                // `extern "C" fn …` is a function; `extern "C" { … }` a block.
-                let after_abi = match after.strip_prefix('"') {
-                    Some(abi) => abi.find('"').map_or("", |at| &abi[at + 1..]).trim_start(),
-                    None => after,
-                };
-                if leading_ident(after_abi).is_empty() {
-                    return (ItemKind::Other, String::new(), private);
-                }
-                rest = after_abi;
-                continue;
-            }
-            "impl" => return (ItemKind::Impl, impl_self_type(after), private),
-            "const" => ItemKind::Const,
-            "static" => ItemKind::Static,
-            "type" => ItemKind::TypeAlias,
-            "struct" => ItemKind::Struct,
-            "enum" => ItemKind::Enum,
-            "union" => ItemKind::Union,
-            "trait" => ItemKind::Trait,
-            "fn" => ItemKind::Fn,
-            "mod" => ItemKind::Mod,
-            "use" => return (ItemKind::Use, String::new(), private),
-            "macro_rules" => return (ItemKind::Macro, String::new(), private),
-            _ if !word.is_empty() && (after.starts_with('!') || after.starts_with("::")) => {
-                return (ItemKind::Macro, String::new(), private);
-            }
-            _ => return (ItemKind::Other, String::new(), private),
-        };
-        let name = if kind == ItemKind::Static && next == "mut" {
-            leading_ident(after["mut".len()..].trim_start())
-        } else {
-            next
-        };
-        return (kind, name.to_owned(), private);
-    }
-}
-
-/// The name of the type an `impl` is for, from the header text after `impl`:
-/// `<T> Trait for Foo<T>` → `Foo`, `Foo` → `Foo`, `<T> Trait for &mut
-/// a::Bar` → `Bar`.
-fn impl_self_type(after_impl: &str) -> String {
-    let mut rest = after_impl.trim_start();
-    // Skip the impl's own generics; `->` inside them is no closing angle.
-    if rest.starts_with('<') {
-        let mut depth = 0i32;
-        for (at, ch) in rest.char_indices() {
-            match ch {
-                '<' => depth += 1,
-                '>' if !rest[..at].ends_with('-') => depth -= 1,
-                _ => {}
-            }
-            if depth == 0 {
-                rest = &rest[at + 1..];
-                break;
-            }
-        }
-    }
-    // The type after ` for ` at angle depth 0, if this is a trait impl.
-    let mut depth = 0i32;
-    for (at, ch) in rest.char_indices() {
-        match ch {
-            '<' => depth += 1,
-            '>' if !rest[..at].ends_with('-') => depth -= 1,
-            _ => {}
-        }
-        if depth == 0 && rest[at..].starts_with(" where ") {
-            rest = &rest[..at];
-            break;
-        }
-        if depth == 0 && rest[at..].starts_with(" for ") {
-            rest = &rest[at + " for ".len()..];
-            break;
-        }
-    }
-    let mut ty = rest.trim_start();
-    loop {
-        let before = ty;
-        ty = ty.trim_start_matches(['&', '!']).trim_start();
-        if let Some(lifetime) = ty.strip_prefix('\'') {
-            ty = lifetime[leading_ident(lifetime).len()..].trim_start();
-        }
-        for word in ["mut", "dyn"] {
-            if leading_ident(ty) == word {
-                ty = ty[word.len()..].trim_start();
-            }
-        }
-        if ty == before {
-            break;
-        }
-    }
-    let path: String = ty
-        .chars()
-        .take_while(|&ch| is_ident_char(ch) || ch == ':')
-        .collect();
-    path.rsplit("::").next().unwrap_or_default().to_owned()
-}
-
-/// Every non-test file under `root` in which a top-level item follows the
-/// test module (an inline `#[cfg(test)] mod x { … }`, or the declaration
-/// `#[cfg(test)] mod tests;`), each as `<path>: …`. Sorted.
-fn tests_last_problems(root: &Path) -> Vec<String> {
-    let mut problems = Vec::new();
-    for (path, items) in order_scanned_files(root) {
-        let Some(at) = items.iter().position(TopItem::is_test_module) else {
-            continue;
-        };
-        let after: Vec<String> = items[at + 1..]
-            .iter()
-            .map(|item| format!("`{}` (line {})", item.label(), item.line))
-            .collect();
-        if !after.is_empty() {
-            problems.push(format!(
-                "{path}: {} after the test module `{}` (line {}): {}",
-                after.len(),
-                items[at].name,
-                items[at].line,
-                after.join(", ")
-            ));
-        }
-    }
-    problems
-}
-
-/// Every non-test file under `root` holding more than one inline test module
-/// (`#[cfg(test)] mod x { … }` at the top level), or one not named `tests`,
-/// each as `<path>: …`. A `#[cfg(test)] mod x;` declaration names a file of
-/// its own and is not counted. Sorted.
-fn inline_test_module_problems(root: &Path) -> Vec<String> {
-    let mut problems = Vec::new();
-    for (path, items) in order_scanned_files(root) {
-        let inline: Vec<&TopItem> = items
-            .iter()
-            .filter(|item| item.is_inline_test_module())
-            .collect();
-        let mut found = Vec::new();
-        if inline.len() > 1 {
-            let lines: Vec<String> = inline.iter().map(|item| item.line.to_string()).collect();
-            found.push(format!(
-                "{} inline test modules (lines {})",
-                inline.len(),
-                lines.join(", ")
-            ));
-        }
-        for item in inline.iter().filter(|item| item.name != "tests") {
-            found.push(format!(
-                "inline test module `{}` (line {}) is not named `tests`",
-                item.name, item.line
-            ));
-        }
-        if !found.is_empty() {
-            problems.push(format!("{path}: {}", found.join("; ")));
-        }
-    }
-    problems
-}
-
-/// Every non-test folder `mod.rs` under `root` holding an inline test module,
-/// each as `<path>: …`. Sorted.
-fn mod_rs_inline_test_problems(root: &Path) -> Vec<String> {
-    let mut problems = Vec::new();
-    for (path, items) in order_scanned_files(root) {
-        if !path.ends_with("/mod.rs") {
-            continue;
-        }
-        let inline: Vec<String> = items
-            .iter()
-            .filter(|item| item.is_inline_test_module())
-            .map(|item| format!("`{}` (line {})", item.name, item.line))
-            .collect();
-        if !inline.is_empty() {
-            problems.push(format!(
-                "{path}: inline test module {} (move it to `tests.rs`, declared \
-                 `#[cfg(test)] mod tests;`)",
-                inline.join(", ")
-            ));
-        }
-    }
-    problems
-}
-
-/// Per non-test file under `root`: each `const` or `static` declared after
-/// the file's first type, `impl` or function (`struct`, `enum`, `union`,
-/// `trait`, `impl`, `fn`). Items under `#[cfg(test)]` are not read; neither
-/// is `const _` (a compile-time assertion about the type above it). A `type`
-/// alias is neither code nor a constant here.
-fn constants_first_violations(root: &Path) -> Violations {
-    let mut violations = Violations::new();
-    for (path, items) in order_scanned_files(root) {
-        let items: Vec<&TopItem> = items.iter().filter(|item| !item.cfg_test).collect();
-        let Some(first) = items.iter().position(|item| {
-            matches!(
-                item.kind,
-                ItemKind::Struct
-                    | ItemKind::Enum
-                    | ItemKind::Union
-                    | ItemKind::Trait
-                    | ItemKind::Impl
-                    | ItemKind::Fn
-            )
-        }) else {
-            continue;
-        };
-        for item in &items[first + 1..] {
-            if matches!(item.kind, ItemKind::Const | ItemKind::Static) && item.name != "_" {
-                add(
-                    &mut violations,
-                    path.clone(),
-                    format!(
-                        "line {}: `{}` after `{}` (line {})",
-                        item.line,
-                        item.label(),
-                        items[first].label(),
-                        items[first].line
-                    ),
-                );
-            }
-        }
-    }
-    violations
-}
-
-/// Per non-test file under `root`: each private free function (no `pub` of
-/// any kind) declared between the file's first `struct` or `enum` (taken as
-/// its primary type) and the last `impl` of that type (`impl Foo`,
-/// `impl Trait for Foo`, generics aside). Items under `#[cfg(test)]` are not
-/// read. A file whose first type has no `impl` has nothing to check.
-fn helpers_after_impls_violations(root: &Path) -> Violations {
-    let mut violations = Violations::new();
-    for (path, items) in order_scanned_files(root) {
-        let items: Vec<&TopItem> = items.iter().filter(|item| !item.cfg_test).collect();
-        let Some(primary) = items
-            .iter()
-            .position(|item| matches!(item.kind, ItemKind::Struct | ItemKind::Enum))
-        else {
-            continue;
-        };
-        let name = &items[primary].name;
-        let Some(last_impl) = items
-            .iter()
-            .rposition(|item| item.kind == ItemKind::Impl && &item.name == name)
-        else {
-            continue;
-        };
-        for item in items.iter().take(last_impl).skip(primary + 1) {
-            if item.kind == ItemKind::Fn && item.private {
-                add(
-                    &mut violations,
-                    path.clone(),
-                    format!(
-                        "line {}: `{}` between `{}` (line {}) and its last impl (line {})",
-                        item.line,
-                        item.label(),
-                        items[primary].label(),
-                        items[primary].line,
-                        items[last_impl].line
-                    ),
-                );
-            }
-        }
-    }
-    violations
-}
-
-/// Per non-test file under `root`: the file's **families**, when it holds
-/// more than one — one detail string, `<n> primary types: `struct Foo` (line
-/// N), `enum Bar` (line M)`, each family by its representative, in line
-/// order (see [`type_families`]).
-///
-/// A file's top-level items are joined into families by naming: a type and
-/// its impls are one node, and any item (another type, a free `fn`, a
-/// `const`, a `static`, an alias, a macro call) that names a type as a whole
-/// word joins it — comments and literal contents blanked, `use` and `mod`
-/// items and `#[cfg(test)]` ones aside, an enum's variant names not read as
-/// types. A family is a group holding a type with a visibility; one is the
-/// file's primary type with what serves it.
-fn primary_type_violations(root: &Path) -> Violations {
-    let mut violations = Violations::new();
-    for (path, items) in order_scanned_files(root) {
-        let families = type_families(&items);
-        if families.len() > 1 {
-            let listed: Vec<String> = families
-                .iter()
-                .map(|ty| format!("`{}` (line {})", ty.label(), ty.line))
-                .collect();
-            add(
-                &mut violations,
-                path,
-                format!("{} primary types: {}", families.len(), listed.join(", ")),
-            );
-        }
-    }
-    violations
-}
-
-/// The families of a file's top-level `items`, each by its representative,
-/// in line order. Every item but a `use`, a `mod` and a `#[cfg(test)]` one is
-/// a node, a type's impls joined to it; an item naming a type joins it. A
-/// family is a connected group holding a non-private type; its
-/// representative is its first non-private type that no other type of the
-/// group names, else its first non-private type.
-fn type_families(items: &[TopItem]) -> Vec<&TopItem> {
-    let is_type = |item: &TopItem| {
-        matches!(
-            item.kind,
-            ItemKind::Struct | ItemKind::Enum | ItemKind::Union | ItemKind::Trait
-        )
-    };
-    let items: Vec<&TopItem> = items
-        .iter()
-        .filter(|item| !item.cfg_test && !matches!(item.kind, ItemKind::Use | ItemKind::Mod))
-        .collect();
-    let enums: Vec<&str> = (items.iter())
-        .filter(|item| item.kind == ItemKind::Enum)
-        .map(|item| item.name.as_str())
-        .collect();
-    // Each item's node: a type's own; an impl joins the type it is for, when
-    // the file declares it; any other item a node of its own.
-    let types: Vec<usize> = (0..items.len()).filter(|&i| is_type(items[i])).collect();
-    let node_of = |i: usize| -> usize {
-        if items[i].kind == ItemKind::Impl {
-            if let Some(&ty) = types.iter().find(|&&ty| items[ty].name == items[i].name) {
-                return ty;
-            }
-        }
-        i
-    };
-    let mut parent: Vec<usize> = (0..items.len()).collect();
-    fn find(parent: &mut [usize], mut at: usize) -> usize {
-        while parent[at] != at {
-            parent[at] = parent[parent[at]];
-            at = parent[at];
-        }
-        at
-    }
-    // `named[ty]`: whether another type of the file (its declaration or its
-    // impls) names `ty`.
-    let mut named = vec![false; items.len()];
-    for (i, item) in items.iter().enumerate() {
-        let node = node_of(i);
-        let code = if item.kind == ItemKind::Enum {
-            blank_variant_names(&item.code)
-        } else {
-            item.code.clone()
-        };
-        for &ty in &types {
-            if ty == node || !names_type(&code, &items[ty].name, &enums) {
-                continue;
-            }
-            let (a, b) = (find(&mut parent, node), find(&mut parent, ty));
-            parent[a] = b;
-            if is_type(items[node]) {
-                named[ty] = true;
-            }
-        }
-    }
-    let mut families: Vec<&TopItem> = Vec::new();
-    let mut seen: Vec<usize> = Vec::new();
-    for &ty in &types {
-        let group = find(&mut parent, ty);
-        if seen.contains(&group) {
-            continue;
-        }
-        let members: Vec<usize> = (types.iter().copied())
-            .filter(|&other| !items[other].private && find(&mut parent, other) == group)
-            .collect();
-        let Some(&first) = members.first() else {
-            continue;
-        };
-        seen.push(group);
-        let representative = (members.iter().copied())
-            .find(|&other| !named[other])
-            .unwrap_or(first);
-        families.push(items[representative]);
-    }
-    families.sort_by_key(|item| item.line);
-    families
-}
-
-/// Whether `code` names the type `word`: as a whole identifier, not as a
-/// variant of an enum of `enums` (`Kind::Word`).
-fn names_type(code: &str, word: &str, enums: &[&str]) -> bool {
-    code.match_indices(word).any(|(at, _)| {
-        let before = code[..at].chars().next_back();
-        let after = code[at + word.len()..].chars().next();
-        let whole = !before.is_some_and(is_ident_char) && !after.is_some_and(is_ident_char);
-        let variant = (code[..at].strip_suffix("::"))
-            .is_some_and(|path| enums.iter().any(|name| names_suffix(path, name)));
-        whole && !variant
-    })
-}
-
-/// Whether `path` ends with the whole identifier `name`.
-fn names_suffix(path: &str, name: &str) -> bool {
-    path.strip_suffix(name)
-        .is_some_and(|rest| !rest.chars().next_back().is_some_and(is_ident_char))
-}
-
-/// An enum's `code` with the name of each of its variants blanked, where it
-/// is declared: what a variant is called names no type.
-fn blank_variant_names(code: &str) -> String {
-    let chars: Vec<char> = code.chars().collect();
-    let Some(open) = chars.iter().position(|&ch| ch == '{') else {
-        return code.to_owned();
-    };
-    let mut out = chars.clone();
-    let mut depth = 0usize;
-    let mut expect_name = true;
-    let mut i = open + 1;
-    while i < chars.len() {
-        let ch = chars[i];
-        match ch {
-            '#' if depth == 0 && chars.get(i + 1) == Some(&'[') => {
-                i = closing_bracket(&chars, i + 1);
-                continue;
-            }
-            '(' | '[' | '{' => depth += 1,
-            ')' | ']' => depth = depth.saturating_sub(1),
-            '}' if depth == 0 => break,
-            '}' => depth -= 1,
-            ',' if depth == 0 => expect_name = true,
-            _ if expect_name && depth == 0 && is_ident_char(ch) => {
-                let start = i;
-                while i < chars.len() && is_ident_char(chars[i]) {
-                    i += 1;
-                }
-                out[start..i].iter_mut().for_each(|blank| *blank = ' ');
-                expect_name = false;
-                continue;
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    out.into_iter().collect()
 }
 
 /// Tests come last in a file: after the test module — an inline
@@ -5256,6 +3824,208 @@ fn each_file_holds_one_primary_type() {
         "each_file_holds_one_primary_type",
         "files holding more than one primary type (split them, one file per type)",
         &primary_type_violations(&repo_root()),
+    );
+}
+
+/// **A type and its impls are contiguous.** Between a type (`struct`,
+/// `enum`, `union`, `trait`, `type`) and its last `impl`, no function, type,
+/// trait, constant, static or alias stands (`const _`, macro calls and
+/// `#[cfg(test)]` items aside). Keyed by the file.
+#[test]
+fn a_type_and_its_impls_are_contiguous() {
+    ratchet(
+        "a_type_and_its_impls_are_contiguous",
+        "items between a type and its impls (move them below the last impl, or to a file of \
+         their own)",
+        &contiguous_impl_violations(&repo_root()),
+    );
+}
+
+/// **A comment states what holds, never the code's history.** A history
+/// phrase (`no longer`, `formerly`, `is now`, `used to be`…) in any comment of
+/// the files the comment checks read, code in backticks and quoted text
+/// aside. Keyed by the file.
+#[test]
+fn comments_tell_no_history() {
+    ratchet(
+        "comments_tell_no_history",
+        "comments telling history (state what holds; history goes in the commit message)",
+        &history_violations(&repo_root()),
+    );
+}
+
+/// **A function's doc summary opens on a verb in the third person**
+/// (`Returns`, `Builds`, `Is`), in the non-test files of the `src` trees;
+/// trait impl methods and `#[test]` functions aside. Keyed by the file.
+#[test]
+fn fn_summaries_start_with_a_verb() {
+    ratchet(
+        "fn_summaries_start_with_a_verb",
+        "function summaries not opening on a verb (\"Returns…\", \"Builds…\")",
+        &summary_verb_violations(&repo_root()),
+    );
+}
+
+/// **Every public function is named by a test of its crate** (RULES §1): a
+/// heuristic reading whether each `pub fn` of a crate's non-test `src` code
+/// appears as a word in its tests. Keyed by `<file>::<function>`.
+#[test]
+fn every_public_fn_is_named_by_a_test() {
+    ratchet(
+        "every_public_fn_is_named_by_a_test",
+        "public functions no test of their crate names (add a unit test, RULES §1)",
+        &untested_public_fn_violations(&repo_root()),
+    );
+}
+
+/// Collects, per crate of `root`'s `crates/`, each `pub fn` of its non-test
+/// `src` code that no test source of the crate names, keyed `<path>::<name>`.
+///
+/// A test source is a `#[cfg(test)]` item, a test file of `src` (a
+/// `tests.rs`, a file under `tests/`, a `#![cfg(test)]` file or one declared
+/// by `#[cfg(test)] mod`) or a file under the crate's `tests/`. Not read: a
+/// `pub fn` under `#[cfg(test)]`, `fn main`, a proc-macro entry point and a
+/// name a macro builds.
+fn untested_public_fn_violations(root: &Path) -> Violations {
+    let mut violations = Violations::new();
+    for member in child_dirs(&root.join("crates")) {
+        let src = member.join("src");
+        if !src.is_dir() {
+            continue;
+        }
+        let code = non_test_rust_files(&src);
+        let named = test_identifiers(&member, &code);
+        for (path, text) in &code {
+            for (line, name) in public_fns(text) {
+                if !named.contains(&name) {
+                    add(
+                        &mut violations,
+                        format!("{}::{name}", rel(root, path)),
+                        format!("line {line}: `pub fn {name}` is named by no test of its crate"),
+                    );
+                }
+            }
+        }
+    }
+    violations
+}
+
+/// The identifiers the test sources of the crate at `member` hold, comments
+/// and literal contents aside; `code` is its non-test `src` files.
+fn test_identifiers(member: &Path, code: &[(PathBuf, String)]) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    let mut read = |text: &str| {
+        names.extend(
+            text.split(|ch: char| !is_ident_char(ch))
+                .filter(|word| !word.is_empty())
+                .map(str::to_owned),
+        );
+    };
+    let non_test: BTreeSet<&PathBuf> = code.iter().map(|(path, _)| path).collect();
+    for path in walk_files(&member.join("src")) {
+        if has_extension(&path, "rs") && !non_test.contains(&normalize(&path)) {
+            read(&blank_literals(&strip_rust_comments(&read_text(&path))));
+        }
+    }
+    for (_, text) in code {
+        let chars: Vec<char> = blank_literals(&strip_rust_comments(text)).chars().collect();
+        for range in cfg_test_item_ranges(&chars) {
+            read(&chars[range].iter().collect::<String>());
+        }
+    }
+    for path in walk_files(&member.join("tests")) {
+        if has_extension(&path, "rs") {
+            read(&blank_literals(&strip_rust_comments(&read_text(&path))));
+        }
+    }
+    names
+}
+
+/// Each `pub fn` of `text` outside `#[cfg(test)]` items, as its 1-based line
+/// and its name; `fn main`, proc-macro entry points and `$name` left out.
+fn public_fns(text: &str) -> Vec<(usize, String)> {
+    let chars: Vec<char> = blank_literals(&strip_rust_comments(text)).chars().collect();
+    let tests = cfg_test_item_ranges(&chars);
+    let word_at = |at: usize| -> String {
+        chars[at..]
+            .iter()
+            .take_while(|&&ch| is_ident_char(ch))
+            .collect()
+    };
+    let skip_space = |mut at: usize| {
+        while chars.get(at).is_some_and(|ch| ch.is_whitespace()) {
+            at += 1;
+        }
+        at
+    };
+    let mut found = Vec::new();
+    for at in 0..chars.len() {
+        let starts_word = at == 0 || !is_ident_char(chars[at - 1]);
+        if !starts_word || word_at(at) != "pub" || tests.iter().any(|range| range.contains(&at)) {
+            continue;
+        }
+        let mut next = skip_space(at + 3);
+        loop {
+            let word = word_at(next);
+            if !matches!(word.as_str(), "const" | "async" | "unsafe" | "extern") {
+                break;
+            }
+            next = skip_space(next + word.len());
+            if chars.get(next) == Some(&'"') {
+                let close = chars[next + 1..].iter().position(|&ch| ch == '"');
+                next = skip_space(next + 2 + close.unwrap_or(0));
+            }
+        }
+        if word_at(next) != "fn" {
+            continue;
+        }
+        let name = word_at(skip_space(next + 2));
+        let item_start = chars[..at]
+            .iter()
+            .rposition(|&ch| matches!(ch, ';' | '{' | '}'))
+            .map_or(0, |end| end + 1);
+        let header: String = chars[item_start..at].iter().collect();
+        let macro_entry = header.contains("proc_macro");
+        if name.is_empty() || name == "main" || macro_entry {
+            continue;
+        }
+        let line = chars[..at].iter().filter(|&&ch| ch == '\n').count() + 1;
+        found.push((line, name));
+    }
+    found
+}
+
+/// The untested-function check names a `pub fn` no test of its crate names,
+/// and passes one named by an inline test, one named by a file of the crate's
+/// `tests/`, a `pub(crate) fn`, a test-only `pub fn`, a proc-macro entry
+/// point and `fn main`.
+#[test]
+fn untested_function_check_names_a_public_fn_no_test_names() {
+    let dir = order_temp_dir("untested-fn");
+    let files: Vec<(&str, &str)> = vec![
+        (
+            "crates/alpha/src/lib.rs",
+            "pub fn lonely() {}\npub fn unit_tested() {}\npub fn it_tested() {}\n\
+             pub(crate) fn inner() {}\n#[proc_macro_derive(X)]\npub fn derive_x() {}\n\
+             pub fn main() {}\n#[cfg(test)]\nmod tests {\n    pub fn helper() {}\n    \
+             #[test]\n    fn pins() {\n        super::unit_tested();\n    }\n}\n",
+        ),
+        (
+            "crates/alpha/tests/it/main.rs",
+            "#[test]\nfn pins() {\n    // lonely() is not called here.\n    alpha::it_tested();\n}\n",
+        ),
+    ];
+    let setup = write_order_tree(&dir, &files);
+    let violations = untested_public_fn_violations(&dir);
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+
+    assert_eq!(
+        violation_list(violations),
+        vec![(
+            "crates/alpha/src/lib.rs::lonely".to_owned(),
+            vec!["line 1: `pub fn lonely` is named by no test of its crate".to_owned()]
+        )]
     );
 }
 
@@ -5568,7 +4338,6 @@ fn a_test_module_is_read_whatever_the_place_of_test_in_its_cfg_all() {
 /// macros only.
 #[test]
 fn constants_check_names_a_constant_after_the_code() {
-    let dir = order_temp_dir("constants");
     const GOOD: &str = "\
 use std::fmt;
 const A: u8 = 1;
@@ -5590,6 +4359,8 @@ mod tests {
     const D: u8 = 5;
 }
 ";
+
+    let dir = order_temp_dir("constants");
     let files: &[(&str, &str)] = &[
         (
             "crates/alpha/src/lib.rs",
@@ -5640,7 +4411,6 @@ mod tests {
 /// `#[cfg(test)]` helper, and a file whose primary type has no impl.
 #[test]
 fn helpers_check_names_a_helper_between_the_type_and_its_impls() {
-    let dir = order_temp_dir("helpers");
     const GOOD: &str = "\
 pub struct Good<T>(T);
 impl<T> Good<T> {}
@@ -5677,6 +4447,8 @@ impl std::fmt::Debug for Bad {
 }
 fn after() {}
 ";
+
+    let dir = order_temp_dir("helpers");
     let files: &[(&str, &str)] = &[
         (
             "crates/alpha/src/lib.rs",
@@ -6279,452 +5051,6 @@ pub struct Locked {
             &["`enum SourceKind` (line 1)", "`struct Locked` (line 5)"]
         )]
     );
-}
-
-// ---------------------------------------------------------------------------
-// Comments
-// ---------------------------------------------------------------------------
-//
-// Code says how; comments say what and why (`.agent/engine/conventions.md`,
-// comments section). A comment's text is what follows `//` on a line, string
-// and character literal contents blanked first, so a `//` inside a literal
-// opens no comment. Two strict checks read every Rust file of the scanned
-// trees, test files included; two ratchets read the non-test files of the
-// `src` trees.
-
-/// Every comment line under `root` that names a plan or review label, or an
-/// inline `//` comment opening on a numbered step, as `path:line: comment`.
-///
-/// Reads every `.rs` file of `crates/*/src`, `crates/*/tests`, `xtask/src`,
-/// `xtask/tests` and `examples/*/src`; block comments count.
-fn plan_label_problems(root: &Path) -> Vec<String> {
-    let mut problems = Vec::new();
-    for (path, text) in comment_scanned_files(root) {
-        let comments = comments_of(&text);
-        for run in runs(&comments) {
-            // A run is read whole, so a cited heading that wraps is blanked whole.
-            let mut joined = String::new();
-            let mut spans = Vec::with_capacity(run.len());
-            for comment in run {
-                let start = joined.len();
-                joined.push_str(&comment.text);
-                spans.push(start..joined.len());
-                joined.push(' ');
-            }
-            let blanked = without_cited_headings(&joined);
-            for (comment, span) in run.iter().zip(spans) {
-                let numbered =
-                    comment.kind == CommentKind::Line && opens_on_numbered_step(&comment.text);
-                if numbered || names_plan_label(&blanked[span]) {
-                    problems.push(format!("{path}:{}: {}", comment.line, comment.text.trim()));
-                }
-            }
-        }
-    }
-    problems
-}
-
-/// Per non-test file of `root`'s `src` trees: each `///` block whose first
-/// paragraph runs over more than 2 lines, as `line N: summary of K lines`.
-fn doc_summary_violations(root: &Path) -> Violations {
-    let mut violations = Violations::new();
-    for src in rust_src_roots(root) {
-        for (path, text) in non_test_rust_files(&src) {
-            let docs: Vec<Comment> = comments_of(&text)
-                .into_iter()
-                .filter(|comment| comment.kind == CommentKind::Doc && comment.whole_line)
-                .collect();
-            for block in runs(&docs) {
-                let blank = |comment: &&Comment| comment.text[3..].trim().is_empty();
-                let mut lines = block.iter().skip_while(blank).peekable();
-                let Some(first) = lines.peek().map(|comment| comment.line) else {
-                    continue;
-                };
-                let summary = lines.take_while(|comment| !blank(comment)).count();
-                if summary > 2 {
-                    add(
-                        &mut violations,
-                        rel(root, &path),
-                        format!("line {first}: summary of {summary} lines"),
-                    );
-                }
-            }
-        }
-    }
-    violations
-}
-
-/// Per non-test file of `root`'s `src` trees: each run of more than 4
-/// indented `//` comment lines, as `line N: K comment lines`.
-fn inline_comment_violations(root: &Path) -> Violations {
-    let mut violations = Violations::new();
-    for src in rust_src_roots(root) {
-        for (path, text) in non_test_rust_files(&src) {
-            let inline: Vec<Comment> = comments_of(&text)
-                .into_iter()
-                .filter(|comment| {
-                    comment.kind == CommentKind::Line && comment.whole_line && comment.indented
-                })
-                .collect();
-            for run in runs(&inline) {
-                let opening = run[0].text.trim_start_matches('/').trim_start();
-                if run.len() > 4 && !opening.starts_with("SAFETY:") {
-                    add(
-                        &mut violations,
-                        rel(root, &path),
-                        format!("line {}: {} comment lines", run[0].line, run.len()),
-                    );
-                }
-            }
-        }
-    }
-    violations
-}
-
-/// Every book citation under `root` that names a missing page or heading, as
-/// `path:line: what is missing`. Reads the files `plan_label_problems` reads.
-fn book_citation_problems(root: &Path) -> Vec<String> {
-    let mut problems = Vec::new();
-    for (path, text) in comment_scanned_files(root) {
-        let comments = comments_of(&text);
-        for (at, comment) in comments.iter().enumerate() {
-            // A citation wrapped onto the next comment line is read whole.
-            let next = comments
-                .get(at + 1)
-                .filter(|next| next.line == comment.line + 1)
-                .map_or("", |next| {
-                    next.text.trim_start_matches(['/', '!', '*']).trim_start()
-                });
-            let joined = format!("{} {next}", comment.text.trim_end());
-            let own = comment.text.trim_end().len();
-            for (page, heading) in book_citations(&joined)
-                .into_iter()
-                .filter(|(_, _, start)| *start < own)
-                .map(|(page, heading, _)| (page, heading))
-            {
-                let file = root.join(&page);
-                let missing = if !file.is_file() {
-                    Some(format!("no page `{page}`"))
-                } else {
-                    heading
-                        .filter(|heading| !has_heading(&read_text(&file), heading))
-                        .map(|heading| format!("no heading \"{heading}\" in `{page}`"))
-                };
-                if let Some(missing) = missing {
-                    problems.push(format!("{path}:{}: {missing}", comment.line));
-                }
-            }
-        }
-    }
-    problems
-}
-
-/// What a comment is: a line comment, an item doc, a module doc, or a block
-/// comment (or a line inside one).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CommentKind {
-    Line,
-    Doc,
-    Inner,
-    Block,
-}
-
-/// One line's comment, read from a file.
-#[derive(Clone, Debug)]
-struct Comment {
-    /// 1-based line.
-    line: usize,
-    kind: CommentKind,
-    /// From the comment's opening `//` or `/*` (inside a block comment, from
-    /// the line's first character) to the end of the line.
-    text: String,
-    /// Nothing but whitespace before the comment on its line.
-    whole_line: bool,
-    /// The line starts with whitespace.
-    indented: bool,
-}
-
-/// The comment of each line of `text` that holds one, told from code by
-/// `strip_rust_comments`, which blanks comments and keeps literals.
-fn comments_of(text: &str) -> Vec<Comment> {
-    let stripped = strip_rust_comments(text);
-    let mut comments = Vec::new();
-    let mut in_block = false;
-    for (index, (raw, code)) in text.lines().zip(stripped.lines()).enumerate() {
-        let raw: Vec<char> = raw.chars().collect();
-        let code: Vec<char> = code.chars().collect();
-        let Some(start) = (0..raw.len()).find(|&at| code.get(at) != Some(&raw[at])) else {
-            // A blank line inside a block comment keeps it open.
-            in_block = in_block && raw.iter().all(|ch| ch.is_whitespace());
-            continue;
-        };
-        let comment: String = raw[start..].iter().collect();
-        let first = raw.iter().position(|ch| !ch.is_whitespace()).unwrap_or(0);
-        let kind = if in_block && start == first {
-            CommentKind::Block
-        } else if comment.starts_with("///") && !comment.starts_with("////") {
-            CommentKind::Doc
-        } else if comment.starts_with("//!") {
-            CommentKind::Inner
-        } else if comment.starts_with("//") {
-            CommentKind::Line
-        } else {
-            CommentKind::Block
-        };
-        in_block = block_open_after(&raw, &code, start, in_block && start == first);
-        comments.push(Comment {
-            line: index + 1,
-            kind,
-            text: comment,
-            whole_line: start == first,
-            indented: raw.first().is_some_and(|ch| ch.is_whitespace()),
-        });
-    }
-    comments
-}
-
-/// Whether a block comment is still open at the end of a line, its `raw`
-/// and comment-blanked `code` characters from `start` on: `/*` and `*/` are
-/// counted where they are comment, nesting kept, until a `//` outside any
-/// block ends the line. `open` says the line starts inside one.
-fn block_open_after(raw: &[char], code: &[char], start: usize, open: bool) -> bool {
-    let comment = |at: usize| code.get(at) != raw.get(at);
-    let mut depth = usize::from(open);
-    let mut at = start;
-    while at + 1 < raw.len() {
-        let pair = (raw[at], raw[at + 1]);
-        if comment(at) && comment(at + 1) {
-            match pair {
-                ('/', '*') => {
-                    depth += 1;
-                    at += 2;
-                    continue;
-                }
-                ('*', '/') if depth > 0 => {
-                    depth -= 1;
-                    at += 2;
-                    continue;
-                }
-                ('/', '/') if depth == 0 => return false,
-                _ => {}
-            }
-        }
-        at += 1;
-    }
-    depth > 0
-}
-
-/// `comments` cut into runs of consecutive lines.
-fn runs(comments: &[Comment]) -> Vec<&[Comment]> {
-    let mut runs = Vec::new();
-    let mut start = 0;
-    for at in 1..=comments.len() {
-        if at == comments.len() || comments[at].line != comments[at - 1].line + 1 {
-            if start < at {
-                runs.push(&comments[start..at]);
-            }
-            start = at;
-        }
-    }
-    runs
-}
-
-/// Every `.rs` file the comment checks read, as its repo-relative path and
-/// its text: `crates/*/src`, `crates/*/tests`, `xtask/src`, `xtask/tests`
-/// and `examples/*/src`, test files included.
-fn comment_scanned_files(root: &Path) -> Vec<(String, String)> {
-    let mut trees = rust_src_roots(root);
-    for member in child_dirs(&root.join("crates")) {
-        trees.push(member.join("tests"));
-    }
-    trees.push(root.join("xtask/tests"));
-    let mut files = Vec::new();
-    for tree in trees.into_iter().filter(|tree| tree.is_dir()) {
-        for path in walk_files(&tree) {
-            if has_extension(&path, "rs") {
-                files.push((rel(root, &path), read_text(&path)));
-            }
-        }
-    }
-    files.sort();
-    files
-}
-
-/// `comment` with the quoted heading of each book citation blanked: a book
-/// page's heading that numbers its steps is its text, not a plan label.
-fn without_cited_headings(comment: &str) -> String {
-    let mut out = comment.to_owned();
-    for (open, close) in cited_heading_spans(comment) {
-        out.replace_range(open..close, &" ".repeat(close - open));
-    }
-    out
-}
-
-/// The byte span of each heading `comment` cites, quotes aside: the quoted text
-/// right after a cited page as `, "…"`, as [`book_citations`] reads it.
-fn cited_heading_spans(comment: &str) -> Vec<(usize, usize)> {
-    let path_len = |text: &str| -> Option<usize> {
-        let path: String = text
-            .chars()
-            .take_while(|&ch| ch.is_alphanumeric() || matches!(ch, '/' | '-' | '_' | '.'))
-            .collect();
-        path.find(".md").map(|end| end + 3)
-    };
-    let heading_after = |from: usize| -> Option<(usize, usize)> {
-        let rest = &comment[from..];
-        let ticks = rest.len() - rest.trim_start_matches('`').len();
-        let open = from + ticks + rest[ticks..].strip_prefix(", \"").map(|_| 3)?;
-        let close = open + comment[open..].find('"')?;
-        Some((open, close))
-    };
-    let mut spans = Vec::new();
-    for (at, _) in comment.match_indices("docs/src/") {
-        if let Some(len) = path_len(&comment[at..]) {
-            spans.extend(heading_after(at + len));
-        }
-    }
-    for (at, marker) in comment.match_indices("See the book:") {
-        let after = at + marker.len();
-        let start = after + (comment[after..].len() - comment[after..].trim_start().len());
-        if let Some(len) = path_len(&comment[start..]) {
-            spans.extend(heading_after(start + len));
-        }
-    }
-    spans
-}
-
-/// Whether `comment` names a plan or review label: a phase, a step or a
-/// review round with its number or letter, a review tag, a spec by number.
-fn names_plan_label(comment: &str) -> bool {
-    let chars: Vec<char> = comment.chars().collect();
-    let boundary = |at: usize| at == 0 || !is_ident_char(chars[at - 1]);
-    let digit = |at: usize| chars.get(at).is_some_and(char::is_ascii_digit);
-    let word = |at: usize, word: &str| {
-        word.chars()
-            .enumerate()
-            .all(|(k, ch)| chars.get(at + k) == Some(&ch))
-    };
-    let digits_end = |mut at: usize| {
-        while digit(at) {
-            at += 1;
-        }
-        at
-    };
-    (0..chars.len()).any(|at| {
-        let labelled = |name: &str| word(at, name) && boundary(at) && digit(at + name.len());
-        if labelled("Phase ") || labelled("Round ") || labelled("round ") {
-            return true;
-        }
-        if labelled("Steps ") || labelled("spec ") || labelled("Spec ") {
-            return true;
-        }
-        // A phase named by a capital letter.
-        if word(at, "Phase ")
-            && boundary(at)
-            && chars.get(at + 6).is_some_and(char::is_ascii_uppercase)
-            && !chars.get(at + 7).is_some_and(|&ch| is_ident_char(ch))
-        {
-            return true;
-        }
-        if labelled("Step ") || labelled("step ") {
-            let mut end = digits_end(at + 5);
-            if chars.get(end).is_some_and(char::is_ascii_lowercase) {
-                end += 1;
-            }
-            return !chars.get(end).is_some_and(|&ch| is_ident_char(ch));
-        }
-        if chars[at] == 'R' && boundary(at) && digit(at + 1) {
-            return chars.get(digits_end(at + 1)) == Some(&':');
-        }
-        if word(at, "faute ") {
-            let after = at + 6;
-            return digit(after) || (chars.get(after) == Some(&'#') && digit(after + 1));
-        }
-        word(at, "ergon-E") && digit(at + 7)
-    })
-}
-
-/// Whether a `//` comment opens on a numbered step: `// 1. `, `// 2b. `,
-/// `// 2b-bis. `, `// 3) `, `// 6–8. `, `// (1) `.
-fn opens_on_numbered_step(comment: &str) -> bool {
-    let rest = comment.trim_start_matches('/').trim_start();
-    let number = |text: &str| -> Option<usize> {
-        let digits = text.chars().take_while(char::is_ascii_digit).count();
-        (digits > 0).then(|| {
-            let letter = text[digits..].starts_with(|ch: char| ch.is_ascii_lowercase());
-            digits + usize::from(letter)
-        })
-    };
-    if let Some(inner) = rest.strip_prefix('(') {
-        return number(inner).is_some_and(|end| {
-            (inner[end..].strip_prefix(')'))
-                .is_some_and(|after| after.starts_with(char::is_whitespace))
-        });
-    }
-    let Some(mut end) = number(rest) else {
-        return false;
-    };
-    let mut tail = &rest[end..];
-    tail = tail.strip_prefix("-bis").unwrap_or(tail);
-    // A range of steps: `6–8.`, `6-8.`.
-    if let Some(range) = tail.strip_prefix('–').or_else(|| tail.strip_prefix('-')) {
-        if let Some(second) = number(range) {
-            end = second;
-            tail = &range[end..];
-        }
-    }
-    let Some(after) = tail.strip_prefix('.').or_else(|| tail.strip_prefix(')')) else {
-        return false;
-    };
-    after.starts_with(char::is_whitespace)
-}
-
-/// The book pages `comment` cites, each with the heading it names and where
-/// the citation starts: a path `docs/src/….md`, or `See the book: <path under
-/// docs/src>.md`, either followed by `, "Heading"`. Paths are repo-relative.
-fn book_citations(comment: &str) -> Vec<(String, Option<String>, usize)> {
-    let path_at = |text: &str| -> Option<String> {
-        let path: String = text
-            .chars()
-            .take_while(|&ch| ch.is_alphanumeric() || matches!(ch, '/' | '-' | '_' | '.'))
-            .collect();
-        let end = path.find(".md")?;
-        Some(path[..end + 3].to_owned())
-    };
-    // `, "Heading"` right after a path, a closing backtick allowed between.
-    let heading_after = |rest: &str| {
-        rest.trim_start_matches('`')
-            .strip_prefix(", \"")
-            .and_then(|quoted| quoted.find('"').map(|end| quoted[..end].to_owned()))
-    };
-    let mut cited = Vec::new();
-    for (at, _) in comment.match_indices("docs/src/") {
-        if let Some(path) = path_at(&comment[at..]) {
-            let heading = heading_after(&comment[at + path.len()..]);
-            cited.push((path, heading, at));
-        }
-    }
-    for (at, marker) in comment.match_indices("See the book:") {
-        let rest = comment[at + marker.len()..].trim_start();
-        let Some(path) = path_at(rest) else {
-            continue;
-        };
-        let heading = heading_after(&rest[path.len()..]);
-        cited.push((format!("docs/src/{path}"), heading, at));
-    }
-    cited
-}
-
-/// Whether `page` holds `heading` as a heading line: one to six `#`, a
-/// space, then exactly the heading.
-fn has_heading(page: &str, heading: &str) -> bool {
-    page.lines().any(|line| {
-        let hashes = line.chars().take_while(|&ch| ch == '#').count();
-        (1..=6).contains(&hashes)
-            && line[hashes..]
-                .strip_prefix(' ')
-                .is_some_and(|text| text.trim_end() == heading)
-    })
 }
 
 /// **No comment carries a plan or review label, nor numbers a step.** A
@@ -7763,175 +6089,6 @@ fn book_citation_check_names_the_heading_quoted_after_a_page_path() {
 // nested in others — in the non-test files of every Rust `src/` tree, and
 // names those longer than `MAX_FN_LINES`.
 
-/// Largest number of lines a non-test function may span, from its `fn`
-/// keyword to the brace closing its body.
-const MAX_FN_LINES: usize = 200;
-
-/// A function with a body, as the length check reads it.
-#[derive(Debug, PartialEq, Eq)]
-struct FnSpan {
-    /// 1-based line of the `fn` keyword.
-    line: usize,
-    name: String,
-    /// Lines from the `fn` keyword to the brace closing the body, both
-    /// counted.
-    lines: usize,
-}
-
-/// Every function with a body in `text`, in order, at any depth: free
-/// functions, methods of `impl` and `trait` blocks, functions nested in
-/// others. Comments and literal contents are blanked first. Not read: a
-/// function without a body (`fn f();` in a trait), a function type
-/// (`fn(u8) -> u8`), a name a macro builds (`fn $name`, `fn #name`), and
-/// anything inside an item under `#[cfg(test)]` (an inline test module, a
-/// test helper, a test-only `impl`).
-fn function_spans(text: &str) -> Vec<FnSpan> {
-    let code = blank_literals(&strip_rust_comments(text));
-    let chars: Vec<char> = code.chars().collect();
-    let mut line_at = Vec::with_capacity(chars.len());
-    let mut line = 1usize;
-    for &ch in &chars {
-        line_at.push(line);
-        if ch == '\n' {
-            line += 1;
-        }
-    }
-    let tests = cfg_test_item_ranges(&chars);
-    let in_tests = |at: usize| tests.iter().any(|range| range.contains(&at));
-    let mut spans = Vec::new();
-    let mut i = 0usize;
-    while i + 2 < chars.len() {
-        let keyword = chars[i] == 'f'
-            && chars[i + 1] == 'n'
-            && chars[i + 2].is_whitespace()
-            && (i == 0 || !is_ident_char(chars[i - 1]));
-        if !keyword || in_tests(i) {
-            i += 1;
-            continue;
-        }
-        let mut at = i + 2;
-        while chars.get(at).is_some_and(|ch| ch.is_whitespace()) {
-            at += 1;
-        }
-        let name: String = chars[at..]
-            .iter()
-            .take_while(|&&ch| is_ident_char(ch))
-            .collect();
-        if !name.starts_with(|ch: char| ch.is_alphabetic() || ch == '_') {
-            i += 2;
-            continue;
-        }
-        at += name.chars().count();
-        // The body opens at the first `{` outside parentheses and brackets;
-        // a `;` there first means no body.
-        let mut depth = 0usize;
-        let mut open = None;
-        for (j, &ch) in chars.iter().enumerate().skip(at) {
-            match ch {
-                '(' | '[' => depth += 1,
-                ')' | ']' => depth = depth.saturating_sub(1),
-                '{' if depth == 0 => {
-                    open = Some(j);
-                    break;
-                }
-                ';' if depth == 0 => break,
-                _ => {}
-            }
-        }
-        if let Some(open) = open {
-            let mut braces = 0usize;
-            let mut close = chars.len() - 1;
-            for (j, &ch) in chars.iter().enumerate().skip(open) {
-                match ch {
-                    '{' => braces += 1,
-                    '}' => {
-                        braces -= 1;
-                        if braces == 0 {
-                            close = j;
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            spans.push(FnSpan {
-                line: line_at[i],
-                name,
-                lines: line_at[close] - line_at[i] + 1,
-            });
-        }
-        i = at;
-    }
-    spans
-}
-
-/// The character ranges of `chars` (comments and literals blanked) held by
-/// an item under `#[cfg(test)]` or `#[cfg(all(test, …))]`, at any depth: from
-/// the attribute to the `;` ending the item or the brace closing its body.
-fn cfg_test_item_ranges(chars: &[char]) -> Vec<std::ops::Range<usize>> {
-    let mut ranges = Vec::new();
-    let mut i = 0usize;
-    while i < chars.len() {
-        if chars[i] != '#' || chars.get(i + 1) != Some(&'[') {
-            i += 1;
-            continue;
-        }
-        let attr_end = closing_bracket(chars, i + 1);
-        let attr: String = chars[i..attr_end].iter().collect();
-        if !is_cfg_test(&attr) {
-            i = attr_end;
-            continue;
-        }
-        let mut depth = 0usize;
-        let mut end = chars.len();
-        for (j, &ch) in chars.iter().enumerate().skip(attr_end) {
-            match ch {
-                '(' | '[' | '{' => depth += 1,
-                ')' | ']' | '}' => {
-                    depth = depth.saturating_sub(1);
-                    if depth == 0 && ch == '}' {
-                        end = j + 1;
-                        break;
-                    }
-                }
-                ';' if depth == 0 => {
-                    end = j + 1;
-                    break;
-                }
-                _ => {}
-            }
-        }
-        ranges.push(i..end);
-        i = end;
-    }
-    ranges
-}
-
-/// Per non-test file under `root`: each function with a body spanning more
-/// than `max` lines (`function_spans`), keyed `<path>::<name>`.
-fn long_function_violations(root: &Path, max: usize) -> Violations {
-    let mut violations = Violations::new();
-    for src in rust_src_roots(root) {
-        for (path, text) in non_test_rust_files(&src) {
-            let path = rel(root, &path);
-            for span in function_spans(&text)
-                .into_iter()
-                .filter(|span| span.lines > max)
-            {
-                add(
-                    &mut violations,
-                    format!("{path}::{}", span.name),
-                    format!(
-                        "line {}: `fn {}` spans {} lines",
-                        span.line, span.name, span.lines
-                    ),
-                );
-            }
-        }
-    }
-    violations
-}
-
 /// A non-test function spans at most `MAX_FN_LINES` lines, from its `fn`
 /// keyword to the brace closing its body: free functions, methods of `impl`
 /// and `trait` blocks, nested functions alike. Keyed by `<file>::<function>`.
@@ -8011,16 +6168,17 @@ mod tests {
 /// long test in an inline test module.
 #[test]
 fn function_length_check_names_each_function_over_the_bound() {
+    // Spans 5 lines: over a bound of 4.
+    const LONG: &str = "fn long() {\n    let a = 1;\n    let b = 2;\n    let _ = a + b;\n}\n";
+    // Spans 4 lines: at the bound.
+    const AT_BOUND: &str = "fn at_bound() {\n    let a = 1;\n    let _ = a;\n}\n";
+
     let dir = std::env::temp_dir().join(format!(
         "khora-layout-fn-length-{}-{:?}",
         std::process::id(),
         std::thread::current().id()
     ));
     let _ = fs::remove_dir_all(&dir);
-    // Spans 5 lines: over a bound of 4.
-    const LONG: &str = "fn long() {\n    let a = 1;\n    let b = 2;\n    let _ = a + b;\n}\n";
-    // Spans 4 lines: at the bound.
-    const AT_BOUND: &str = "fn at_bound() {\n    let a = 1;\n    let _ = a;\n}\n";
     let methods =
         "pub struct Big;\nimpl Big {\n    pub fn grow(&self) {\n        let a = 1;\n        \
                    let b = 2;\n        let _ = a + b;\n    }\n}\n";

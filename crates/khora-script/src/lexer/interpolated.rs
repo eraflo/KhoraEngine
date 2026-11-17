@@ -25,7 +25,7 @@ use super::token::{Piece, TokenKind};
 use crate::diagnostics::{Diagnostic, Span};
 
 impl Lexer<'_> {
-    /// `$"…"`, its `$` at `start` and its `"` next.
+    /// Lexes `$"…"`, its `$` at `start` and its `"` next.
     pub(super) fn lex_interpolated(&mut self, start: usize) -> Option<TokenKind> {
         self.offset += 2;
         let mut pieces: Vec<Piece> = Vec::new();
@@ -114,7 +114,7 @@ impl Lexer<'_> {
         }
     }
 
-    /// Where the hole opened just before `from` closes: the `}` matching its
+    /// Returns where the hole opened just before `from` closes: the `}` matching its
     /// `{`, past any string inside it — `None` when the line ends first.
     fn hole_end(&self, from: usize) -> Option<usize> {
         let bytes = self.bytes;

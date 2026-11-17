@@ -69,7 +69,7 @@ pub struct FormatPlan {
 }
 
 impl Machine {
-    /// `$"…"`: `count` values from `base` shown by `plan`, joined into one
+    /// Runs `$"…"`: joins `count` values from `base`, shown by `plan`, into one
     /// new text — one allocation, whatever the holes.
     pub(super) fn step_format(
         &mut self,
@@ -162,12 +162,12 @@ pub(crate) fn show(value: Value, shown: Shown, out: &mut String) {
     }
 }
 
-/// A float in its shortest form that keeps its point: `2.0`, `0.1`, `1e-7`.
+/// Writes a float in its shortest form that keeps its point: `2.0`, `0.1`, `1e-7`.
 fn float(value: f32, out: &mut String) {
     let _ = write!(out, "{value:?}");
 }
 
-/// `(1.0, 2.0, 3.0)`.
+/// Writes components as `(1.0, 2.0, 3.0)`.
 fn components(values: &[f32], out: &mut String) {
     out.push('(');
     for (at, value) in values.iter().enumerate() {

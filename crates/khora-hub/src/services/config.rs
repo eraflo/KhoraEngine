@@ -56,7 +56,7 @@ pub struct HubConfig {
 
 impl HubConfig {
     /// Returns the path to the hub configuration file.
-    pub fn config_path() -> PathBuf {
+    pub(crate) fn config_path() -> PathBuf {
         dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join(".khora")
@@ -64,7 +64,7 @@ impl HubConfig {
     }
 
     /// Loads the configuration from disk, or the defaults when it is missing or unreadable.
-    pub fn load() -> Self {
+    pub(crate) fn load() -> Self {
         let path = Self::config_path();
         if path.exists() {
             match std::fs::read_to_string(&path) {
@@ -81,7 +81,7 @@ impl HubConfig {
     /// # Errors
     ///
     /// Fails when the folder cannot be created or the file cannot be written.
-    pub fn save(&self) -> Result<()> {
+    pub(crate) fn save(&self) -> Result<()> {
         let text = serde_json::to_string_pretty(self)?;
         // Whole or not at all: a failed save leaves the previous file.
         khora_sdk::fs::write_atomic(&Self::config_path(), text.as_bytes())?;
@@ -91,7 +91,7 @@ impl HubConfig {
     /// Moves `path` to the front of the recent projects, adding it if new.
     ///
     /// The list keeps the 20 most recently opened.
-    pub fn push_recent(&mut self, name: &str, path: &Path, engine_version: &str) {
+    pub(crate) fn push_recent(&mut self, name: &str, path: &Path, engine_version: &str) {
         let path_str = path.to_string_lossy().to_string();
         self.recent_projects.retain(|p| p.path != path_str);
         self.recent_projects.insert(
@@ -110,7 +110,7 @@ impl HubConfig {
     }
 
     /// Returns the dev-mode engine install if the local repo is configured.
-    pub fn dev_engine(&self) -> Option<EngineInstall> {
+    pub(crate) fn dev_engine(&self) -> Option<EngineInstall> {
         let repo = self.local_engine_repo.as_deref()?;
         let exe_suffix = if cfg!(windows) { ".exe" } else { "" };
         let editor = PathBuf::from(repo)

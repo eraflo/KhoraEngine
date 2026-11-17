@@ -129,7 +129,7 @@ impl GameWorld {
         self.loads.as_ref()
     }
 
-    /// The serialization service, reading this world's prefabs.
+    /// Returns the serialization service, reading this world's prefabs.
     fn serialization(&self) -> SerializationService {
         match &self.prefabs {
             Some(source) => SerializationService::with_prefabs(source.clone()),

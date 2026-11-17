@@ -20,7 +20,7 @@ pub struct AuthenticatedUser {
 }
 
 /// Fetches the authenticated user via `GET /user`.
-pub fn get_authenticated_user(token: &str) -> Result<AuthenticatedUser> {
+pub(crate) fn get_authenticated_user(token: &str) -> Result<AuthenticatedUser> {
     let client = authed_client(token)?;
     let response = client
         .get("https://api.github.com/user")

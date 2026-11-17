@@ -18,7 +18,7 @@
 use quote::{quote, ToTokens};
 use syn::Fields;
 
-/// The `Component` methods a script reaches the included fields through, by slot.
+/// Returns the `Component` methods a script reaches the included fields through, by slot.
 ///
 /// The same list builds the `Serializable` mirror and the field schema, so a
 /// skipped field is out of all three. A field whose type is not a
@@ -117,7 +117,7 @@ pub(crate) fn script_methods(fields: &Fields, included_fields: &[&syn::Field]) -
     }
 }
 
-/// The registration's `script_default`: the component's `Default`, as a script reads it.
+/// Returns the registration's `script_default`: the component's `Default`, as a script reads it.
 ///
 /// A script's `Add` starts from it in the frame's working set.
 pub(crate) fn script_default(name: &syn::Ident) -> impl ToTokens {

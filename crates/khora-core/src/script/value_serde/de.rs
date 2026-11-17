@@ -268,6 +268,37 @@ impl<'de> de::Deserializer<'de> for Reader<'de> {
     }
 }
 
+impl<'de> de::VariantAccess<'de> for Reader<'de> {
+    type Error = ValueSerdeError;
+
+    fn unit_variant(self) -> Result<(), ValueSerdeError> {
+        Ok(())
+    }
+
+    fn newtype_variant_seed<T: DeserializeSeed<'de>>(
+        self,
+        seed: T,
+    ) -> Result<T::Value, ValueSerdeError> {
+        seed.deserialize(self)
+    }
+
+    fn tuple_variant<V: Visitor<'de>>(
+        self,
+        _: usize,
+        visitor: V,
+    ) -> Result<V::Value, ValueSerdeError> {
+        de::Deserializer::deserialize_seq(self, visitor)
+    }
+
+    fn struct_variant<V: Visitor<'de>>(
+        self,
+        _: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, ValueSerdeError> {
+        de::Deserializer::deserialize_map(self, visitor)
+    }
+}
+
 struct Items<'v>(std::slice::Iter<'v, ScriptValue>);
 
 impl<'de> de::SeqAccess<'de> for Items<'de> {
@@ -367,36 +398,5 @@ impl<'de> de::EnumAccess<'de> for Variant<'de> {
     ) -> Result<(T::Value, Reader<'de>), ValueSerdeError> {
         let name = seed.deserialize(self.name.into_deserializer())?;
         Ok((name, Reader(self.payload)))
-    }
-}
-
-impl<'de> de::VariantAccess<'de> for Reader<'de> {
-    type Error = ValueSerdeError;
-
-    fn unit_variant(self) -> Result<(), ValueSerdeError> {
-        Ok(())
-    }
-
-    fn newtype_variant_seed<T: DeserializeSeed<'de>>(
-        self,
-        seed: T,
-    ) -> Result<T::Value, ValueSerdeError> {
-        seed.deserialize(self)
-    }
-
-    fn tuple_variant<V: Visitor<'de>>(
-        self,
-        _: usize,
-        visitor: V,
-    ) -> Result<V::Value, ValueSerdeError> {
-        de::Deserializer::deserialize_seq(self, visitor)
-    }
-
-    fn struct_variant<V: Visitor<'de>>(
-        self,
-        _: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, ValueSerdeError> {
-        de::Deserializer::deserialize_map(self, visitor)
     }
 }

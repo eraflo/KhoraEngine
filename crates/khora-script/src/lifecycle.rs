@@ -20,20 +20,6 @@
 
 use crate::types::Ty;
 
-/// A member the engine invokes on its own.
-pub struct Lifecycle {
-    /// The name an author writes.
-    pub name: &'static str,
-    /// The parameters it must take, in order.
-    pub params: &'static [Ty],
-    /// Whether the engine actually calls it yet.
-    ///
-    /// `false` says the hook is reserved but inert, and the checker warns rather
-    /// than staying silent: a body that never runs is not something an author
-    /// should have to discover by watching nothing happen.
-    pub called: bool,
-}
-
 /// `void Update(float dt)` — once per frame, budget permitting.
 pub static UPDATE: Lifecycle = Lifecycle {
     name: "Update",
@@ -111,7 +97,21 @@ pub static ALL: &[&Lifecycle] = &[
     &FIXED_UPDATE,
 ];
 
-/// The lifecycle member a name denotes, if it denotes one.
+/// A member the engine invokes on its own.
+pub struct Lifecycle {
+    /// The name an author writes.
+    pub name: &'static str,
+    /// The parameters it must take, in order.
+    pub params: &'static [Ty],
+    /// Whether the engine actually calls it yet.
+    ///
+    /// `false` says the hook is reserved but inert, and the checker warns rather
+    /// than staying silent: a body that never runs is not something an author
+    /// should have to discover by watching nothing happen.
+    pub called: bool,
+}
+
+/// Returns the lifecycle member a name denotes, if it denotes one.
 pub fn of(name: &str) -> Option<&'static Lifecycle> {
     ALL.iter().copied().find(|hook| hook.name == name)
 }

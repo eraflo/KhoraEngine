@@ -114,7 +114,7 @@ impl<C1: Component> ComponentBundle for C1 {
         let column = page
             .columns
             .get_mut(&ComponentKey::of::<C1>())
-            .unwrap()
+            .expect("the caller's page holds this bundle's columns")
             .as_mut();
         self.push_into_column(column);
     }
@@ -171,7 +171,11 @@ macro_rules! impl_bundle_tuple {
 
             unsafe fn add_to_page(self, page: &mut ComponentPage) {
                 $(
-                    let column = page.columns.get_mut(&ComponentKey::of::<$C>()).unwrap().as_mut();
+                    let column = page
+                        .columns
+                        .get_mut(&ComponentKey::of::<$C>())
+                        .expect("the caller's page holds this bundle's columns")
+                        .as_mut();
                     self.$idx.push_into_column(column);
                 )*
             }

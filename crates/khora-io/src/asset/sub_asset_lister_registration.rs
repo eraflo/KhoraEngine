@@ -46,7 +46,7 @@ pub struct SubAssetListerRegistration {
 
 inventory::collect!(SubAssetListerRegistration);
 
-/// Whether files of index type `type_name` can hold sub-assets: a lister is registered for it.
+/// Returns whether files of index type `type_name` can hold sub-assets: a lister is registered for it.
 ///
 /// Such a file's parts can change with its bytes.
 pub fn type_may_hold_sub_assets(type_name: &str) -> bool {

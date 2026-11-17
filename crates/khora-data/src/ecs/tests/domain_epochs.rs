@@ -327,7 +327,7 @@ fn domain_epoch_moves_on_spawn_despawn_and_migration() {
     assert_raised(&world, SemanticDomain::Spatial, spatial, "a migration");
     assert_eq!(others(&world, SemanticDomain::Spatial), rest);
 
-    // A second migration onto the page `b` now lives in: a row arrives on a
+    // A second migration onto the page `b` lives in: a row arrives on a
     // page that exists, a row is left behind on another.
     next_run(&mut world);
     let spatial = world.domain_epoch(SemanticDomain::Spatial);

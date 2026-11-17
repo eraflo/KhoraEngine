@@ -47,7 +47,7 @@ pub(super) fn refuse_stranded_agents(dcc: &DccService, order: &[ExecutionPhase])
     }
 }
 
-/// One `LaneAgent` per family registration linked into the binary, each
+/// Builds one `LaneAgent` per family registration linked into the binary, each
 /// registered with `dcc` for its registration's modes.
 ///
 /// The registrations are fixed when the program is built, so a refused set is
@@ -114,7 +114,7 @@ pub(super) fn register_lane_agents(
         .collect()
 }
 
-/// The execution scheduler over `dcc`'s agents, running `phase_order`.
+/// Builds the execution scheduler over `dcc`'s agents, running `phase_order`.
 pub(super) fn build_scheduler(
     phase_order: &[ExecutionPhase],
     dcc: &mut DccService,

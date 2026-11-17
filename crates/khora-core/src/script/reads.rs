@@ -35,7 +35,7 @@ impl ScriptReads {
     /// The owner holding what the installed programs read.
     pub const LOADED: &'static str = "loaded";
 
-    /// The owner holding what `module`'s incoming program reads, until it is
+    /// Returns the owner holding what `module`'s incoming program reads, until it is
     /// installed.
     pub fn incoming(module: &str) -> String {
         format!("module:{module}")
@@ -62,5 +62,17 @@ mod tests {
 
         assert_eq!(reads.wanted(), names(&["Collider", "RigidBody"]));
         assert!(reads.covers(&names(&["Collider"])));
+    }
+
+    /// **An incoming program's reads have an owner of their own**, apart from
+    /// the installed programs' and from every other module's.
+    #[test]
+    fn an_incoming_programs_reads_have_an_owner_of_their_own() {
+        assert_eq!(ScriptReads::incoming("ai/guard.erg"), "module:ai/guard.erg");
+        assert_ne!(ScriptReads::incoming("loaded"), ScriptReads::LOADED);
+        assert_ne!(
+            ScriptReads::incoming("a.erg"),
+            ScriptReads::incoming("b.erg")
+        );
     }
 }

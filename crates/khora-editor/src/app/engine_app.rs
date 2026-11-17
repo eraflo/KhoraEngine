@@ -267,6 +267,8 @@ impl EngineApp for EditorApp {
         event: &dyn std::any::Any,
         _window: &dyn KhoraWindow,
     ) -> bool {
+        use winit::event::WindowEvent;
+
         let Some(overlay_arc) = self.overlay.as_ref() else {
             return false;
         };
@@ -294,7 +296,6 @@ impl EngineApp for EditorApp {
         let Some(we) = we else {
             return consumed_by_egui;
         };
-        use winit::event::WindowEvent;
 
         // Track the cursor position so MouseInput events (which carry no
         // position of their own) can be tested against the viewport rect.

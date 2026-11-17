@@ -23,8 +23,16 @@ pub use super::no_op_resource_resolver::NoOpResourceResolver;
 /// an asset file.
 pub trait GltfResourceResolver: Send + Sync {
     /// Resolves an external buffer URI to its binary data.
+    ///
+    /// # Errors
+    ///
+    /// When the URI cannot be resolved or its data cannot be read.
     fn resolve_buffer(&self, uri: &str) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>>;
 
     /// Resolves an external image URI to its binary data.
+    ///
+    /// # Errors
+    ///
+    /// When the URI cannot be resolved or its data cannot be read.
     fn resolve_image(&self, uri: &str) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>>;
 }

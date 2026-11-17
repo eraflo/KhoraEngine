@@ -267,10 +267,14 @@ impl Mat4 {
     /// * `z_near`: Distance to the near clipping plane (must be positive).
     /// * `z_far`: Distance to the far clipping plane (must be positive and > `z_near`).
     ///
-    /// The planes are a precondition: passing others is a programming error
-    /// and panics. Values that come from data — a camera or a light authored
-    /// in a scene, an inspector, a script — go through
-    /// [`Mat4::try_perspective_rh_zo`] instead.
+    /// Values that come from data — a camera or a light authored in a scene,
+    /// an inspector, a script — go through [`Mat4::try_perspective_rh_zo`]
+    /// instead.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless `0 < z_near < z_far`: the planes are a precondition, and
+    /// passing others is a programming error.
     #[inline]
     pub fn perspective_rh_zo(
         fov_y_radians: f32,
@@ -285,7 +289,7 @@ impl Mat4 {
         Self::perspective_unchecked(fov_y_radians, aspect_ratio, z_near, z_far)
     }
 
-    /// The perspective of [`Mat4::perspective_rh_zo`], with no check at all.
+    /// Returns the perspective of [`Mat4::perspective_rh_zo`], with no check at all.
     #[inline]
     fn perspective_unchecked(
         fov_y_radians: f32,
@@ -655,7 +659,7 @@ impl Mul<Vec4> for Mat4 {
     }
 }
 
-/// Whether every entry of `m` is finite.
+/// Returns whether every entry of `m` is finite.
 #[inline]
 fn is_finite(m: &Mat4) -> bool {
     m.cols

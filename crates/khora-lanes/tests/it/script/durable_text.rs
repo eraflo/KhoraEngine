@@ -360,7 +360,7 @@ fn a_machine_saved_mid_await_keeps_its_strings() {
 // ─── Reloads ────────────────────────────────────────────────────────────────
 
 /// **Rebuilt across a hot reload.** The code after the `await` was edited, so
-/// the attack is carried into the new code at its site — with the string it
+/// the attack is carried into the reloaded program at its site — with the string it
 /// built carried by value.
 #[test]
 fn a_rebuilt_frame_keeps_its_held_strings() {

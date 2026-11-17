@@ -101,7 +101,7 @@ impl HubApp {
     }
 
     /// Returns a short label describing the current screen.
-    pub fn screen_label(&self) -> &'static str {
+    pub(crate) fn screen_label(&self) -> &'static str {
         match self.screen {
             Screen::Home => "Projects",
             Screen::NewProject => "New Project",
@@ -113,7 +113,7 @@ impl HubApp {
     /// Returns the New Project engine choices: installed engines, then releases to download.
     ///
     /// A release is offered only when it is not installed and has an editor for this platform.
-    pub fn engine_choices(&self) -> Vec<EngineChoice> {
+    pub(crate) fn engine_choices(&self) -> Vec<EngineChoice> {
         let mut out: Vec<EngineChoice> = self
             .available_engines()
             .into_iter()
@@ -142,7 +142,7 @@ impl HubApp {
     }
 
     /// Returns all available engine options (dev + installed).
-    pub fn available_engines(&self) -> Vec<EngineInstall> {
+    pub(crate) fn available_engines(&self) -> Vec<EngineInstall> {
         let mut engines = Vec::new();
         if let Some(dev) = self.config.dev_engine() {
             engines.push(dev);
@@ -230,7 +230,7 @@ impl HubApp {
     ///
     /// Its name and engine version come from `project.json`, or else from the
     /// folder name and `dev`.
-    pub fn open_existing_project(&mut self, path: PathBuf) {
+    pub(crate) fn open_existing_project(&mut self, path: PathBuf) {
         let descriptor_path = path.join("project.json");
         let (name, engine_version) = if descriptor_path.exists() {
             let text = std::fs::read_to_string(&descriptor_path).unwrap_or_default();
@@ -262,7 +262,7 @@ impl HubApp {
     }
 
     /// Starts the GitHub OAuth device flow, unless one is already running.
-    pub fn start_github_auth(&mut self) {
+    pub(crate) fn start_github_auth(&mut self) {
         if matches!(self.settings.auth, AuthState::Connecting { .. })
             || self.settings.auth_rx.is_some()
         {
@@ -279,7 +279,7 @@ impl HubApp {
     /// Creates the GitHub repository when a remote is asked for. Without a
     /// GitHub session, or when the creation fails, it falls back to a local
     /// repository and says so in a banner.
-    pub fn build_git_init(&mut self) -> project::GitInit {
+    pub(crate) fn build_git_init(&mut self) -> project::GitInit {
         if !self.new_project.git_init {
             return project::GitInit::None;
         }
@@ -320,7 +320,7 @@ impl HubApp {
     /// Creates the New Project screen's project with `engine`, trusts it and opens it.
     ///
     /// Call once the engine a project creation waited for is downloaded.
-    pub fn finalize_new_project_creation(&mut self, engine: &EngineInstall) {
+    pub(crate) fn finalize_new_project_creation(&mut self, engine: &EngineInstall) {
         self.new_project.creating_after_download = false;
 
         let version = engine.version.clone();

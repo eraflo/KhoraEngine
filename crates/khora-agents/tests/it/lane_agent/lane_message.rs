@@ -184,7 +184,7 @@ fn a_report_carries_the_runs_message() {
 }
 
 /// **A refusal says what went wrong instead**: the lane did not run, so its
-/// last message no longer stands. Once it records again, it is its message
+/// last message stops standing. Once it records again, it is its message
 /// that stands.
 #[test]
 fn a_refusal_replaces_the_lanes_message_until_it_records_again() {

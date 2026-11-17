@@ -16,6 +16,11 @@
 //! on and the places' fixed steps as they are at that frame, however many
 //! frames ran before.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn threads to test concurrency"
+)]
+
 use super::activation::{runtime_with, switch};
 use super::{hosted, hosted_at, set_step, Family};
 use crate::agent_registry::AgentRegistry;

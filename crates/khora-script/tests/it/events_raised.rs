@@ -520,8 +520,8 @@ fn a_raise_stopped_inside_its_payload_resumes_with_the_whole_payload() {
 
 /// **A raise carries what the declaration it runs under says.** The event's
 /// first parameter became a `float` while the body waited inside the raise;
-/// the frame is rebuilt into the new code, so the `7` it raises is the float
-/// the declaration now names — not the `int` the old code had computed.
+/// the frame is rebuilt into the reloaded program, so the `7` it raises is the
+/// float the declaration names — not the `int` the former program had computed.
 #[test]
 fn a_raise_rebuilt_after_its_parameter_became_a_float_carries_a_float() {
     let before = striking_guard(STRUCK_INT, "later += 1;");

@@ -79,7 +79,7 @@ const LEAVING: Project = &[
 /// **A removed behavior is not told of its entity's later despawn.** The
 /// leaver shares its entity with `Stay`; its component is removed, and later
 /// the entity is despawned. Whatever the removal itself said, the despawn
-/// says nothing more to a behavior that was no longer there: the witness the
+/// says nothing more to a behavior that had left: the witness the
 /// leaver's `OnDespawn` marks is not marked by it.
 #[test]
 fn a_removed_behavior_is_not_told_of_its_entity_later_despawn() {

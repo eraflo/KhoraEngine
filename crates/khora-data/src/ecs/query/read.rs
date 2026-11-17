@@ -32,7 +32,7 @@ pub struct Query<'a, Q: WorldQuery> {
 
     current_page_index: usize,
 
-    /// The next row of the current page (in EntityScan mode: the next entity-store slot).
+    /// The next row of the current page (in `EntityScan` mode: the next entity-store slot).
     current_row_index: usize,
 
     /// Holds the `&'a World` borrow for the iterator's lifetime.
@@ -121,8 +121,8 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
                 let row = self.current_row_index;
                 self.current_row_index += 1;
 
-                // A migration leaves the old page's signature unchanged, so an
-                // entity can appear in a matched page it no longer lives in.
+                // A migration leaves the source page's signature unchanged, so
+                // an entity can appear in a matched page it has left.
                 if let Some(domain) = self.plan.driver_domain {
                     if !is_live_row(world, page_id, row, page.entities[row], domain) {
                         continue;
@@ -226,9 +226,8 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
                 // SAFETY: `world` is a valid `&World` borrowed for `'a` (see the
                 // deref above); `fetch_from_world` only reads peer columns through
                 // it for an entity that exists in the driver page.
-                if let Some(item) =
-                    unsafe { Q::fetch_from_world(world as *const _, entity_id, ctx) }
-                {
+                let item = unsafe { Q::fetch_from_world(world as *const _, entity_id, ctx) };
+                if let Some(item) = item {
                     return Some(item);
                 }
             } else {

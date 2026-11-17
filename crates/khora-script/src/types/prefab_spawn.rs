@@ -22,7 +22,7 @@ use crate::diagnostics::Span;
 
 use super::{Checker, Context, Ty};
 
-/// Whether `ty` is a prefab, or one that may be `null`.
+/// Returns whether `ty` is a prefab, or one that may be `null`.
 pub(crate) fn is_prefab(ty: &Ty) -> bool {
     match ty {
         Ty::Asset(AssetKind::Prefab) => true,
@@ -32,7 +32,7 @@ pub(crate) fn is_prefab(ty: &Ty) -> bool {
 }
 
 impl Checker {
-    /// `Spawn(position, C { … }, …)` or `Spawn(prefab, C { … }, …, at: p,
+    /// Checks `Spawn(position, C { … }, …)` or `Spawn(prefab, C { … }, …, at: p,
     /// facing: q)` — the new entity, or the instance's root, named at once.
     pub(super) fn check_any_spawn(
         &mut self,

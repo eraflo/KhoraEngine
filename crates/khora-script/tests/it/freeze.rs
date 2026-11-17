@@ -389,8 +389,8 @@ fn a_thawed_frame_finds_its_function_by_name_not_by_position() {
     );
 }
 
-/// A frame whose function the program no longer has is refused — resuming it
-/// would run whatever now sits at that position.
+/// A frame whose function the program lacks is refused — resuming it would run
+/// whatever sits at that position.
 #[test]
 fn thawing_into_a_program_without_the_function_gives_none() {
     let frozen = frozen_inside_the_call();
@@ -431,7 +431,7 @@ fn a_literal_register_round_trips_to_the_same_text() {
     assert_eq!(thawed.resolve_str(register, &moved, &host), Ok("hello"));
 }
 
-/// A literal the program no longer has cannot be read back as anything.
+/// A literal the program lacks cannot be read back as anything.
 #[test]
 fn a_literal_the_program_lacks_does_not_thaw() {
     let program = pausing_literal(&["hello"], 0);

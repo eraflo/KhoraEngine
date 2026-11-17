@@ -24,7 +24,7 @@ use crate::exec::*;
 use crate::term::*;
 use anyhow::Result;
 
-/// Run the AI wrapper installer for the given profile, forwarding `args`
+/// Runs the AI wrapper installer for the given profile, forwarding `args`
 /// (e.g. `["install", "all"]`) to the Node CLI.
 pub fn run(profile: &str, args: &[String]) -> Result<()> {
     print_task_start("AI Wrapper Installer", ROCKET, CYAN);

@@ -93,21 +93,21 @@ impl<'a> EngineContext<'a> {
         }
     }
 
-    /// The same context, reading the earlier phases' slots from `earlier`
+    /// Returns the same context, reading the earlier phases' slots from `earlier`
     /// while it writes into its own deck.
     pub fn with_earlier_deck(mut self, earlier: &'a OutputDeck) -> Self {
         self.earlier = Some(earlier);
         self
     }
 
-    /// The deck as the earlier phases and waves left it, to read other agents' slots from.
+    /// Returns the deck as the earlier phases and waves left it, to read other agents' slots from.
     ///
     /// The frame's deck itself, unless the agent writes into a wave's shard.
     pub fn earlier_deck(&self) -> &OutputDeck {
         self.earlier.unwrap_or(self.deck)
     }
 
-    /// A runtime resource or service the agent declared.
+    /// Returns a runtime resource or service the agent declared.
     ///
     /// `None` when the agent did not declare it — with an error naming the
     /// agent, the type and what to add — or when the runtime simply does not
@@ -124,7 +124,7 @@ impl<'a> EngineContext<'a> {
         self.look_up::<T>()
     }
 
-    /// A resource the agent declared it would **lock**.
+    /// Returns a resource the agent declared it would **lock**.
     ///
     /// Same lookup as [`resource`](Self::resource) and a stricter permit:
     /// declaring a read is not declaring a lock, because the scheduler groups
@@ -137,7 +137,7 @@ impl<'a> EngineContext<'a> {
         self.look_up::<T>()
     }
 
-    /// The three runtime containers, searched in one pass.
+    /// Returns the three runtime containers, searched in one pass.
     ///
     /// `backends` is searched too: the physics provider and the render system
     /// are handed out behind a `Mutex`, so they are contention like any lock.
@@ -169,6 +169,8 @@ mod tests {
     struct Watched(u32);
     struct Unwatched;
     struct Backend(u32);
+    #[derive(Debug, Default, PartialEq)]
+    struct Score(u32);
 
     /// A context stamped with `permit`, over a runtime holding one of each.
     fn context_with(permit: &Contention) -> (Arc<Runtime>, LaneBus, OutputDeck, Contention) {
@@ -265,5 +267,29 @@ mod tests {
         let ctx = EngineContext::for_agent(runtime, &bus, &mut deck, &permit, None);
 
         assert!(ctx.resource::<Backend>().is_none());
+    }
+
+    /// **Earlier slots are read from the earlier deck when there is one.**
+    ///
+    /// Otherwise from the context's own deck; the input source of its lane
+    /// reads them the same way.
+    #[test]
+    fn earlier_slots_are_read_from_the_earlier_deck_when_there_is_one() {
+        let (runtime, bus, mut shard, permit) = context_with(&Contention::none());
+        shard.slot::<Score>().0 = 1;
+        let mut earlier = OutputDeck::new();
+        earlier.slot::<Score>().0 = 2;
+        {
+            let own =
+                EngineContext::for_agent(Arc::clone(&runtime), &bus, &mut shard, &permit, None);
+            assert_eq!(own.earlier_deck().get::<Score>(), Some(&Score(1)));
+        }
+
+        let ctx = EngineContext::for_agent(runtime, &bus, &mut shard, &permit, None)
+            .with_earlier_deck(&earlier);
+
+        assert_eq!(ctx.earlier_deck().get::<Score>(), Some(&Score(2)));
+        let mut source = ctx.input_source();
+        assert_eq!(source.deck_slot::<Score>("score"), Some(&Score(2)));
     }
 }

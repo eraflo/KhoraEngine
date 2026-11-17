@@ -49,7 +49,7 @@ pub(super) struct ColliderAliases {
 }
 
 impl ColliderAliases {
-    /// The Rapier collider an engine handle names.
+    /// Returns the Rapier collider an engine handle names.
     pub(super) fn rapier_of(&self, handle: ColliderHandle) -> RapierCollider {
         self.aliases
             .get(&handle)
@@ -57,7 +57,7 @@ impl ColliderAliases {
             .unwrap_or_else(|| to_rapier_cl_handle(handle))
     }
 
-    /// The engine handle of a Rapier collider.
+    /// Returns the engine handle of a Rapier collider.
     pub(super) fn khora_of(&self, handle: RapierCollider) -> ColliderHandle {
         self.aliased
             .get(&handle)
@@ -65,7 +65,7 @@ impl ColliderAliases {
             .unwrap_or_else(|| from_rapier_cl_handle(handle))
     }
 
-    /// `handle` now names `new`, which replaced `old` while it touched
+    /// Records that `handle` names `new`, which replaced `old` while it touched
     /// `touching`.
     pub(super) fn replaced(
         &mut self,
@@ -84,14 +84,14 @@ impl ColliderAliases {
         }
     }
 
-    /// `handle`, naming `collider`, was removed.
+    /// Forgets `handle`, naming `collider`, once it is removed.
     pub(super) fn removed(&mut self, handle: ColliderHandle, collider: RapierCollider) {
         self.aliases.remove(&handle);
         self.aliased.remove(&collider);
         self.pending.retain(|r| r.new != collider);
     }
 
-    /// A step's events in engine handles, without the leave-and-return a
+    /// Rewrites a step's events in engine handles, without the leave-and-return a
     /// replacement raised with what it still touches.
     pub(super) fn settle(&mut self, events: &mut Vec<CollisionEvent>) {
         if self.pending.is_empty() && self.aliased.is_empty() {

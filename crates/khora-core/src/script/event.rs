@@ -24,7 +24,7 @@
 //! register call, so there is none to forget, and no unregister call, so there
 //! is none to forget either. An event is delivered by asking whether the target
 //! entity's behavior declares a handler for it — which means a despawned entity
-//! stops receiving events because it is no longer there to be asked, not
+//! stops receiving events because it is not there to be asked, not
 //! because something remembered to detach it.
 //!
 //! That is the difference from a subscription list, and it is not a
@@ -39,6 +39,15 @@ use crate::ecs::entity::EntityId;
 use super::ScriptValue;
 
 pub use super::engine_event::{EngineEvent, ENGINE_EVENTS, SEPARATED, TOUCHED};
+
+/// How many engine-raised events may wait for the scripting agent.
+///
+/// Nothing coalesces them, so this is a real ceiling rather than a count of
+/// distinct subjects. Sized for several frames of a busy scene: the agent
+/// drains every frame it runs, and the case that fills this is an agent that
+/// has not run at all — a stall, or a scene with no scripts — where the oldest
+/// event is also the least worth delivering.
+pub const ENGINE_EVENT_BACKLOG: usize = 4096;
 
 /// Something that happened, addressed to one entity.
 #[derive(Debug, Clone, PartialEq)]
@@ -60,22 +69,8 @@ impl crate::event::Supersedes for ScriptEvent {
     // events, and a producer that meant to send one should send one.
 }
 
-/// How many engine-raised events may wait for the scripting agent.
-///
-/// Nothing coalesces them, so this is a real ceiling rather than a count of
-/// distinct subjects. Sized for several frames of a busy scene: the agent
-/// drains every frame it runs, and the case that fills this is an agent that
-/// has not run at all — a stall, or a scene with no scripts — where the oldest
-/// event is also the least worth delivering.
-pub const ENGINE_EVENT_BACKLOG: usize = 4096;
-
-/// A channel for the events the engine raises for scripts.
-pub fn engine_event_channel() -> crate::event::Channel<ScriptEvent> {
-    crate::event::Channel::bounded(ENGINE_EVENT_BACKLOG, crate::event::WhenFull::DropOldest)
-}
-
 impl ScriptEvent {
-    /// An event carrying nothing.
+    /// Returns an event carrying nothing.
     pub fn new(target: EntityId, name: impl Into<String>) -> Self {
         Self {
             target,
@@ -91,6 +86,11 @@ impl ScriptEvent {
     }
 }
 
+/// Returns a channel for the events the engine raises for scripts.
+pub fn engine_event_channel() -> crate::event::Channel<ScriptEvent> {
+    crate::event::Channel::bounded(ENGINE_EVENT_BACKLOG, crate::event::WhenFull::DropOldest)
+}
+
 /// Events waiting to be delivered.
 ///
 /// Queued rather than delivered where they arise, for the same reason commands
@@ -103,7 +103,7 @@ pub struct EventQueue {
 }
 
 impl EventQueue {
-    /// An empty queue.
+    /// Returns an empty queue.
     pub fn new() -> Self {
         Self::default()
     }
@@ -113,7 +113,7 @@ impl EventQueue {
         self.events.push(event);
     }
 
-    /// How many are waiting.
+    /// Returns how many are waiting.
     pub fn len(&self) -> usize {
         self.events.len()
     }
@@ -124,12 +124,12 @@ impl EventQueue {
         self.events.truncate(len);
     }
 
-    /// Whether none are.
+    /// Returns whether no event is waiting.
     pub fn is_empty(&self) -> bool {
         self.events.is_empty()
     }
 
-    /// The queued events, in the order they were raised.
+    /// Returns the queued events, in the order they were raised.
     pub fn as_slice(&self) -> &[ScriptEvent] {
         &self.events
     }
@@ -139,7 +139,7 @@ impl EventQueue {
         self.events.drain(..)
     }
 
-    /// Everything addressed to one entity, in order.
+    /// Returns everything addressed to one entity, in order.
     pub fn for_entity(&self, entity: EntityId) -> impl Iterator<Item = &ScriptEvent> + '_ {
         self.events.iter().filter(move |e| e.target == entity)
     }

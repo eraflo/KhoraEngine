@@ -207,7 +207,7 @@ impl DynamicUniformRingBuffer {
         aligned as u64 * max_elements as u64 * MAX_FRAMES_IN_FLIGHT as u64
     }
 
-    /// The bytes every chunk of every slot holds.
+    /// Returns the bytes every chunk of every slot holds.
     pub fn bytes(&self) -> u64 {
         self.slots
             .iter()

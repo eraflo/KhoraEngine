@@ -42,7 +42,7 @@ fn world_with_a_camera() -> (World, EntityId, PersistentId) {
     (world, camera, id)
 }
 
-/// What a load of that camera reports: a field the code no longer has, and
+/// What a load of that camera reports: a field the code lacks, and
 /// the near plane its check finds unusable.
 fn report_on(id: PersistentId) -> LoadReport {
     LoadReport {

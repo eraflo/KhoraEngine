@@ -52,6 +52,10 @@ impl PackManifest {
     }
 
     /// Encodes the manifest into the on-disk byte vector.
+    ///
+    /// # Errors
+    ///
+    /// When the entries cannot be encoded.
     pub fn encode(&self) -> Result<Vec<u8>> {
         let mut entries: Vec<ManifestEntry> = self.by_uuid.values().cloned().collect();
         // Sorted so two builds of one project encode the same bytes; by digest,
@@ -63,6 +67,10 @@ impl PackManifest {
     }
 
     /// Decodes the on-disk byte vector into a manifest ready for lookup.
+    ///
+    /// # Errors
+    ///
+    /// When `bytes` are not an encoded manifest.
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         let cfg = bincode::config::standard();
         let (entries, _): (Vec<ManifestEntry>, _) = bincode::serde::decode_from_slice(bytes, cfg)
@@ -76,7 +84,7 @@ impl PackManifest {
         self.by_uuid.is_empty()
     }
 
-    /// Number of recorded entries.
+    /// Returns the number of recorded entries.
     pub fn len(&self) -> usize {
         self.by_uuid.len()
     }

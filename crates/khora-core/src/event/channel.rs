@@ -63,7 +63,7 @@ pub trait Supersedes {
     /// against every queued item, quadratic work for a busy stream.
     const COALESCES: bool = false;
 
-    /// Whether `self`, arriving now, replaces `earlier` in place.
+    /// Returns whether `self`, arriving now, replaces `earlier` in place.
     fn supersedes(&self, earlier: &Self) -> bool {
         let _ = earlier;
         false
@@ -102,17 +102,6 @@ pub struct Channel<T> {
     /// Behind its own lock, not the ring's, so naming a cursor never delays a
     /// read of the stream: several readers still take `ring` shared.
     named: Arc<Mutex<HashMap<&'static str, Cursor>>>,
-}
-
-struct Ring<T> {
-    items: VecDeque<T>,
-    /// Stream position of `items[0]`.
-    base: u64,
-    capacity: usize,
-    when_full: WhenFull,
-    dropped: u64,
-    /// Unread items discarded on purpose, apart from overflow.
-    discarded: u64,
 }
 
 // Written out rather than derived: a derive would demand `T: Clone`, which an
@@ -185,7 +174,7 @@ impl<T: Supersedes> Channel<T> {
         ring.items.push_back(item);
     }
 
-    /// Everything `cursor` has not seen, advancing it past what is returned.
+    /// Returns everything `cursor` has not seen, advancing it past what is returned.
     ///
     /// Takes the lock **shared**, so several readers run at once. A cursor left
     /// behind by a drop resumes at the oldest item still held rather than
@@ -213,7 +202,7 @@ impl<T: Supersedes> Channel<T> {
             .collect()
     }
 
-    /// Everything `reader` has not seen, remembering its position by name.
+    /// Returns everything `reader` has not seen, remembering its position by name.
     ///
     /// For a reader with nowhere to keep a [`Cursor`], such as a `DataSystem`.
     /// Prefer [`read`](Self::read) otherwise: this takes a second lock, and two
@@ -335,7 +324,7 @@ impl<T: Supersedes> Channel<T> {
         cursor.0 = end;
     }
 
-    /// How many unread items were discarded on purpose since the channel was made.
+    /// Returns how many unread items were discarded on purpose since the channel was made.
     ///
     /// Counts [`discard_unread`](Self::discard_unread) and
     /// [`skip_to_end`](Self::skip_to_end), not overflow.
@@ -343,19 +332,19 @@ impl<T: Supersedes> Channel<T> {
         self.ring.read().map(|ring| ring.discarded).unwrap_or(0)
     }
 
-    /// How many sends were lost, since the channel was made.
+    /// Returns how many sends were lost, since the channel was made.
     ///
     /// What a monitor reads to notice a channel losing items.
     pub fn dropped(&self) -> u64 {
         self.ring.read().map(|ring| ring.dropped).unwrap_or(0)
     }
 
-    /// How many unread items are held.
+    /// Returns how many unread items are held.
     pub fn len(&self) -> usize {
         self.ring.read().map(|ring| ring.items.len()).unwrap_or(0)
     }
 
-    /// Whether none are.
+    /// Returns whether no unread item is held.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -376,4 +365,15 @@ impl<T> std::fmt::Debug for Channel<T> {
             Err(_) => write!(f, "Channel<{}>(locked)", std::any::type_name::<T>()),
         }
     }
+}
+
+struct Ring<T> {
+    items: VecDeque<T>,
+    /// Stream position of `items[0]`.
+    base: u64,
+    capacity: usize,
+    when_full: WhenFull,
+    dropped: u64,
+    /// Unread items discarded on purpose, apart from overflow.
+    discarded: u64,
 }

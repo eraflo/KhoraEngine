@@ -60,22 +60,22 @@ impl Rect2D {
         }
     }
 
-    /// Width of the rectangle.
+    /// Returns the width of the rectangle.
     pub fn width(&self) -> f32 {
         self.max.x - self.min.x
     }
 
-    /// Height of the rectangle.
+    /// Returns the height of the rectangle.
     pub fn height(&self) -> f32 {
         self.max.y - self.min.y
     }
 
-    /// Size as a [`Vec2`] (`width`, `height`).
+    /// Returns the size as a [`Vec2`] (`width`, `height`).
     pub fn size(&self) -> Vec2 {
         Vec2::new(self.width(), self.height())
     }
 
-    /// Center point of the rectangle.
+    /// Returns the center point of the rectangle.
     pub fn center(&self) -> Vec2 {
         Vec2::new(
             (self.min.x + self.max.x) * 0.5,

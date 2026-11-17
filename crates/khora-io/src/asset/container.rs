@@ -46,6 +46,10 @@ pub trait AssetContainer: Send + Sync + 'static {
     ///
     /// `source_path` is relative to the assets root, for files next to it. The
     /// opened value is cached per container uuid and shared by its sub-assets.
+    ///
+    /// # Errors
+    ///
+    /// When the bytes are not a container this opener reads.
     fn open(&self, bytes: &[u8], source_path: &Path) -> anyhow::Result<Arc<dyn Any + Send + Sync>>;
 
     /// Opens the container within `limits`; by default, [`Self::open`], ignoring them.
@@ -64,6 +68,10 @@ pub trait AssetContainer: Send + Sync + 'static {
 
     /// Extracts the sub-asset `label` of index type `type_name` from an
     /// opened container, boxed as the concrete asset type for `type_name`.
+    ///
+    /// # Errors
+    ///
+    /// When the container holds no sub-asset `label` of type `type_name`.
     fn extract(
         &self,
         opened: &(dyn Any + Send + Sync),

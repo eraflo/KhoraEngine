@@ -32,7 +32,7 @@ impl LaneFamily for AudioFamily {
 }
 
 /// What every audio lane writes: one playback update per source, drained by
-/// the `audio_playback_writeback` DataSystem.
+/// the `audio_playback_writeback` `DataSystem`.
 #[derive(LaneOutputs)]
 pub struct AudioOutputs {
     /// The playback state of every source after this frame's mix.

@@ -80,7 +80,7 @@ pub trait Agent: Send + Sync {
     /// Reports what the agent ran on its last frame.
     fn report(&self) -> Report;
 
-    /// The family's place, where its installed [`Layer`] runs and its wakes gather.
+    /// Returns the family's place, where its installed [`Layer`] runs and its wakes gather.
     ///
     /// The scheduler asks once and keeps it: on a quiet frame it neither
     /// calls nor locks the agent.

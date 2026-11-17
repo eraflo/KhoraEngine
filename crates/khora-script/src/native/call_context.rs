@@ -89,7 +89,12 @@ pub struct NativeContext<'a> {
 }
 
 impl NativeContext<'_> {
-    /// The text a string value stands for.
+    /// Returns the text a string value stands for.
+    ///
+    /// # Errors
+    ///
+    /// A [`NativeError`] when the value is not a string, is not in the running
+    /// program, or was freed with an earlier frame.
     pub fn string(&self, value: Value) -> Result<&str, NativeError> {
         crate::vm::resolve_str(value, self.strings, self.arena).map_err(|error| match error {
             StrError::NotAString(found) => NativeError::new(format!(

@@ -2118,17 +2118,18 @@ fn lane_is_the_contract_lane() {
 /// `plumbing/`) the file sits in.
 #[test]
 fn every_lane_module_path_names_its_items() {
+    #[allow(dead_code)]
+    fn staged_by_module_path<T: khora_core::lane::reserve::Staged>() {}
+    #[allow(dead_code)]
+    fn family_by_module_path<T: khora_core::lane::family::LaneFamily>() {}
+
     // plumbing
     let _ = type_name::<khora_core::lane::host_views::HostViews>();
     let _ = type_name::<khora_core::lane::lease::Lease>();
     let _ = type_name::<khora_core::lane::lease::Leases<u32>>();
     let _ = type_name::<khora_core::lane::reserve::Reserve>();
     let _ = type_name::<khora_core::lane::staging::Staging>();
-    #[allow(dead_code)]
-    fn staged_by_module_path<T: khora_core::lane::reserve::Staged>() {}
     // contract
-    #[allow(dead_code)]
-    fn family_by_module_path<T: khora_core::lane::family::LaneFamily>() {}
     let _ = type_name::<khora_core::lane::family::Semantics>();
     let _ = type_name::<khora_core::lane::level::Impact>();
     let _ = type_name::<khora_core::lane::level::Level>();
@@ -2162,6 +2163,20 @@ fn every_lane_module_path_names_its_items() {
 /// modules, not copies: one type (or one trait) under both paths.
 #[test]
 fn lane_root_reexports_are_the_module_items() {
+    // A type bounded by either `Staged` path satisfies the other.
+    #[allow(dead_code)]
+    fn needs_root_staged<T: khora_core::lane::Staged>() {}
+    #[allow(dead_code)]
+    fn needs_module_staged<T: khora_core::lane::reserve::Staged>() {}
+    #[allow(dead_code)]
+    fn bounded_by_module_path<T: khora_core::lane::reserve::Staged>() {
+        needs_root_staged::<T>();
+    }
+    #[allow(dead_code)]
+    fn bounded_by_root_path<T: khora_core::lane::Staged>() {
+        needs_module_staged::<T>();
+    }
+
     same_type(
         PhantomData::<khora_core::lane::HostViews>,
         PhantomData::<khora_core::lane::host_views::HostViews>,
@@ -2182,20 +2197,6 @@ fn lane_root_reexports_are_the_module_items() {
         PhantomData::<khora_core::lane::Staging>,
         PhantomData::<khora_core::lane::staging::Staging>,
     );
-
-    // A type bounded by either `Staged` path satisfies the other.
-    #[allow(dead_code)]
-    fn needs_root_staged<T: khora_core::lane::Staged>() {}
-    #[allow(dead_code)]
-    fn needs_module_staged<T: khora_core::lane::reserve::Staged>() {}
-    #[allow(dead_code)]
-    fn bounded_by_module_path<T: khora_core::lane::reserve::Staged>() {
-        needs_root_staged::<T>();
-    }
-    #[allow(dead_code)]
-    fn bounded_by_root_path<T: khora_core::lane::Staged>() {
-        needs_module_staged::<T>();
-    }
 }
 
 /// How far an offered cost can be trusted is a `CostBasis` — measured,
@@ -2250,6 +2251,9 @@ fn a_lane_run_has_a_name_of_its_own() {
 #[test]
 fn a_prepared_layer_has_a_name_of_its_own() {
     use khora_core::agent::layer::{Preparation, PreparedLayer};
+    #[allow(dead_code)]
+    fn layer_is_the_agent_trait<T: khora_core::agent::layer::Layer>() {}
+
     let _ = type_name::<PreparedLayer>();
     is_debug::<PreparedLayer>();
     same_type(
@@ -2259,9 +2263,6 @@ fn a_prepared_layer_has_a_name_of_its_own() {
     let _ =
         Preparation::run as fn(Preparation, &mut khora_core::EngineContext<'_>) -> PreparedLayer;
     let _ = PreparedLayer::row as fn(&PreparedLayer) -> khora_core::agent::gorna::StrategyId;
-
-    #[allow(dead_code)]
-    fn layer_is_the_agent_trait<T: khora_core::agent::layer::Layer>() {}
 }
 
 /// The agent registration collection lives in `khora_core`: the newtype a

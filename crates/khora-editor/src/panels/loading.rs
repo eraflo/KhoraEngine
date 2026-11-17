@@ -39,31 +39,6 @@ pub struct LoadingPanel {
     signals: Arc<Signals>,
 }
 
-/// What the editor and the panel tell each other once the panel lives in the
-/// shell: the editor is ready; the screen has faded out.
-#[derive(Default)]
-struct Signals {
-    ready: AtomicBool,
-    done: AtomicBool,
-}
-
-/// The editor's hold on a [`LoadingPanel`] it handed to the shell.
-#[derive(Clone)]
-pub struct LoadingHandle(Arc<Signals>);
-
-impl LoadingHandle {
-    /// Tells the panel the editor is ready: it plays to the end of its
-    /// chapter, then fades out.
-    pub fn ready(&self) {
-        self.0.ready.store(true, Ordering::Release);
-    }
-
-    /// Whether the panel has faded out and can be removed.
-    pub fn is_done(&self) -> bool {
-        self.0.done.load(Ordering::Acquire)
-    }
-}
-
 impl LoadingPanel {
     /// The panel's id, the one to remove it by.
     pub const ID: &'static str = "khora.editor.loading";
@@ -96,7 +71,7 @@ impl LoadingPanel {
         self.screen.ready(now);
     }
 
-    /// Whether the fade is over at `now`, and the panel can be removed.
+    /// Returns whether the fade is over at `now`, and the panel can be removed.
     pub fn is_done(&self, now: f32) -> bool {
         self.screen.state(now) == LoadingState::Done
     }
@@ -135,6 +110,31 @@ impl EditorPanel for LoadingPanel {
         });
         let now = origin.elapsed().as_secs_f32();
         self.paint_at(ui, now);
+    }
+}
+
+/// What the editor and the panel tell each other once the panel lives in the
+/// shell: the editor is ready; the screen has faded out.
+#[derive(Default)]
+struct Signals {
+    ready: AtomicBool,
+    done: AtomicBool,
+}
+
+/// The editor's hold on a [`LoadingPanel`] it handed to the shell.
+#[derive(Clone)]
+pub struct LoadingHandle(Arc<Signals>);
+
+impl LoadingHandle {
+    /// Tells the panel the editor is ready: it plays to the end of its
+    /// chapter, then fades out.
+    pub fn ready(&self) {
+        self.0.ready.store(true, Ordering::Release);
+    }
+
+    /// Returns whether the panel has faded out and can be removed.
+    pub fn is_done(&self) -> bool {
+        self.0.done.load(Ordering::Acquire)
     }
 }
 

@@ -32,31 +32,48 @@ use super::{NativeError, NativeFn};
 
 // ─── Numbers ────────────────────────────────────────────────────────────────
 
-/// Magnitude, without the sign.
+static BUILTINS: &[&NativeFn] = &[
+    &ERGON_ABS,
+    &ERGON_FLOOR,
+    &ERGON_CEIL,
+    &ERGON_ROUND,
+    &ERGON_SIGN,
+    &ERGON_MIN,
+    &ERGON_MAX,
+    &ERGON_SQRT,
+    &ERGON_CLAMP,
+    &ERGON_LERP,
+    &ERGON_LOG,
+    &ERGON_WARN,
+    &ERGON_ERROR,
+    &ERGON_LENGTH,
+];
+
+/// Returns the magnitude, without the sign.
 #[ergon_fn]
 fn abs(x: f32) -> f32 {
     x.abs()
 }
 
-/// The largest whole number no greater.
+/// Returns the largest whole number no greater.
 #[ergon_fn]
 fn floor(x: f32) -> f32 {
     x.floor()
 }
 
-/// The smallest whole number no less.
+/// Returns the smallest whole number no less.
 #[ergon_fn]
 fn ceil(x: f32) -> f32 {
     x.ceil()
 }
 
-/// The nearest whole number.
+/// Returns the nearest whole number.
 #[ergon_fn]
 fn round(x: f32) -> f32 {
     x.round()
 }
 
-/// `-1`, `0` or `1`.
+/// Returns `-1`, `0` or `1`.
 #[ergon_fn]
 fn sign(x: f32) -> f32 {
     // `f32::signum` answers 1.0 for +0.0 and -1.0 for -0.0, which reads as a
@@ -69,19 +86,19 @@ fn sign(x: f32) -> f32 {
     }
 }
 
-/// The smaller of two.
+/// Returns the smaller of two.
 #[ergon_fn]
 fn min(a: f32, b: f32) -> f32 {
     a.min(b)
 }
 
-/// The larger of two.
+/// Returns the larger of two.
 #[ergon_fn]
 fn max(a: f32, b: f32) -> f32 {
     a.max(b)
 }
 
-/// The non-negative square root.
+/// Returns the non-negative square root.
 ///
 /// Negative input is a fault rather than a `NaN`. A `NaN` propagates silently
 /// through every later calculation and surfaces as an entity that has vanished
@@ -145,7 +162,7 @@ fn error(message: String) {
     log::error!("[script] {message}");
 }
 
-/// How many characters a string holds.
+/// Returns how many characters a string holds.
 ///
 /// Characters, not bytes: it is what an author can count, and what the arena's
 /// own length already reports.
@@ -154,7 +171,7 @@ fn length(text: String) -> i64 {
     text.chars().count() as i64
 }
 
-/// Every built-in, in the order they are registered.
+/// Returns every built-in, in the order they are registered.
 ///
 /// A written list rather than the `inventory` submissions these also make: the
 /// order decides the index compiled bytecode addresses, and the built-ins are
@@ -163,20 +180,3 @@ fn length(text: String) -> i64 {
 pub fn builtins() -> &'static [&'static NativeFn] {
     BUILTINS
 }
-
-static BUILTINS: &[&NativeFn] = &[
-    &ERGON_ABS,
-    &ERGON_FLOOR,
-    &ERGON_CEIL,
-    &ERGON_ROUND,
-    &ERGON_SIGN,
-    &ERGON_MIN,
-    &ERGON_MAX,
-    &ERGON_SQRT,
-    &ERGON_CLAMP,
-    &ERGON_LERP,
-    &ERGON_LOG,
-    &ERGON_WARN,
-    &ERGON_ERROR,
-    &ERGON_LENGTH,
-];

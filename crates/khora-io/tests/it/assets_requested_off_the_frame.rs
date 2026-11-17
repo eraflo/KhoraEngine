@@ -18,7 +18,7 @@
 //! while it is pending. The `loading` family's work is played here by hand, as
 //! the scheduler runs it at the background: the requests filed are taken,
 //! decoded through the service's `AssetDecoding` and staged under their
-//! lease into the engine's reserve. The `asset_intake` DataSystem then takes
+//! lease into the engine's reserve. The `asset_intake` `DataSystem` then takes
 //! them in at the boundary: into the service's cache and bookkeeping, and
 //! into the `AssetStore`.
 //!
@@ -37,7 +37,10 @@ use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, Role, SystemContext, Tick, TickPhase, World};
 use khora_data::AssetStore;
-use khora_io::asset::{AssetService, FileLoader, IndexBuilder, MeshDispatcher, Requested};
+use khora_io::asset::{
+    attach_decoding, install_decoding, AssetService, FileLoader, IndexBuilder, MeshDispatcher,
+    Requested,
+};
 use khora_telemetry::MetricsRegistry;
 
 // ─── The harness ────────────────────────────────────────────────────────────
@@ -235,6 +238,36 @@ fn font_data(requested: Requested<Font>) -> Option<Vec<u8>> {
 }
 
 // ─── Requesting ─────────────────────────────────────────────────────────────
+
+/// **A decode hub installed before its asset service decodes once attached
+/// to it.** Without a service, the hub answers that there is none; attached
+/// after the service is installed, it decodes through it. Attaching on a
+/// runtime with no hub does nothing.
+#[test]
+fn a_hub_installed_before_its_service_decodes_once_attached() {
+    let project = Project::new(&[(FONT, FONT_BYTES)]);
+    attach_decoding(&Runtime::default());
+    let mut runtime = Runtime::default();
+    install_decoding(&mut runtime);
+    let decoding = runtime
+        .resources
+        .get::<Arc<dyn AssetDecoding>>()
+        .cloned()
+        .expect("`install_decoding` installs the decoding");
+    assert!(
+        decoding
+            .decode(&font(), TypeId::of::<Font>())
+            .value
+            .is_err(),
+        "no service to decode through"
+    );
+
+    runtime.services.insert(Arc::clone(&project.service));
+    attach_decoding(&runtime);
+
+    let decoded = decoding.decode(&font(), TypeId::of::<Font>());
+    assert!(decoded.value.is_ok(), "{:?}", decoded.value.err());
+}
 
 /// **A request for an asset not cached files one decode and answers
 /// `Pending`.** The request names the asset and the type asked for.
@@ -699,7 +732,7 @@ fn a_part_of_a_gltf_changed_while_its_decode_is_in_flight_is_never_installed_sta
     assert_eq!(answer(&project.svc().request::<Mesh>(&part)), "Pending");
     let in_flight = project.decode(&project.filed());
 
-    // The glTF now reads another buffer, its triangle half the size.
+    // The edited glTF reads another buffer, its triangle half the size.
     let (gltf, _) = triangle_gltf_with_buffer("tri2.bin");
     project.write("models/tri.gltf", &gltf);
     project.write("models/tri2.bin", &half_triangle_bin());

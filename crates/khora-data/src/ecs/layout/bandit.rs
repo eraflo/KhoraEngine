@@ -60,12 +60,12 @@ impl Ucb1 {
         }
     }
 
-    /// The number of arms.
+    /// Returns the number of arms.
     pub fn arm_count(&self) -> usize {
         self.arms.len()
     }
 
-    /// Number of times `arm` has been pulled (0 if out of range).
+    /// Returns the number of times `arm` has been pulled (0 if out of range).
     pub fn pulls(&self, arm: usize) -> u64 {
         self.arms.get(arm).map(|a| a.pulls).unwrap_or(0)
     }
@@ -106,7 +106,7 @@ impl Ucb1 {
         self.total += 1;
     }
 
-    /// The current best arm by observed mean reward (pure exploitation), or
+    /// Returns the current best arm by observed mean reward (pure exploitation), or
     /// `None` until at least one arm has been pulled.
     pub fn best_arm(&self) -> Option<usize> {
         self.arms
@@ -121,7 +121,7 @@ impl Ucb1 {
             .map(|(i, _)| i)
     }
 
-    /// The observed mean reward for `arm`, or `None` if it hasn't been pulled.
+    /// Returns the observed mean reward for `arm`, or `None` if it hasn't been pulled.
     pub fn mean_reward(&self, arm: usize) -> Option<f64> {
         self.arms.get(arm).filter(|a| a.pulls > 0).map(|a| a.mean)
     }
@@ -188,12 +188,12 @@ impl SlidingWindowUcb1 {
         }
     }
 
-    /// The number of arms.
+    /// Returns the number of arms.
     pub fn arm_count(&self) -> usize {
         self.arms.len()
     }
 
-    /// How many rewards are currently retained for `arm` (capped at the window).
+    /// Returns how many rewards are retained for `arm` (capped at the window).
     pub fn samples(&self, arm: usize) -> usize {
         self.arms.get(arm).map(|a| a.count()).unwrap_or(0)
     }
@@ -231,7 +231,7 @@ impl SlidingWindowUcb1 {
         }
     }
 
-    /// The best arm by current windowed mean (pure exploitation), or `None`
+    /// Returns the best arm by current windowed mean (pure exploitation), or `None`
     /// until at least one arm has a reward.
     pub fn best_arm(&self) -> Option<usize> {
         self.arms
@@ -246,7 +246,7 @@ impl SlidingWindowUcb1 {
             .map(|(i, _)| i)
     }
 
-    /// The current windowed mean reward for `arm`, or `None` if its window is
+    /// Returns the current windowed mean reward for `arm`, or `None` if its window is
     /// empty.
     pub fn mean_reward(&self, arm: usize) -> Option<f64> {
         self.arms

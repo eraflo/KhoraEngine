@@ -281,7 +281,7 @@ impl Project {
     }
 
     /// One frame of the systems the image goes through: the boundary's
-    /// intake of what was decoded off the frame, then the PreExtract reload,
+    /// intake of what was decoded off the frame, then the `PreExtract` reload,
     /// resolver and residency.
     fn frame(&self, world: &mut World) {
         let mut deck = OutputDeck::new();

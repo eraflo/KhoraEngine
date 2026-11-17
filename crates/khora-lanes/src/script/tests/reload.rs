@@ -68,7 +68,7 @@ fn hurt_one_guard() -> (ScriptRuntime, Host) {
     (runtime, host)
 }
 
-/// Runs one quiet frame, the first a reloaded instance runs in its new code.
+/// Runs one quiet frame, the first a reloaded instance runs in its reloaded program.
 fn settle(runtime: &mut ScriptRuntime, host: &mut Host) {
     run_behaviors(&view_of(1), &EventQueue::new(), runtime, host, u64::MAX);
 }
@@ -131,7 +131,7 @@ fn a_new_field_gets_its_declared_default() {
 }
 
 /// And the edited code is what runs — a reload that preserved state while
-/// leaving the old code running would be worse than none.
+/// leaving the former program running would be worse than none.
 #[test]
 fn the_edited_code_is_what_runs_afterwards() {
     let (mut runtime, mut host) = hurt_one_guard();

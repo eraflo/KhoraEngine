@@ -180,7 +180,7 @@ inventory::submit! {
     }
 }
 
-/// Whether `component` is a behavior's — what its writeback reports on.
+/// Returns whether `component` is a behavior's — what its writeback reports on.
 fn is_behavior(world: &World, component: &str) -> bool {
     world
         .components()

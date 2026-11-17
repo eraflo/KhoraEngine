@@ -15,6 +15,11 @@
 //! The shared reader: decoding off the service's lock, across threads and
 //! index replacements, without touching the service's caches.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn threads to test concurrency"
+)]
+
 use super::*;
 
 #[test]
@@ -33,6 +38,26 @@ fn a_reader_decodes_a_file_to_the_value_load_returns() {
     let from_load = svc.load::<TestNote>(&note()).unwrap();
     assert_eq!(from_reader.text, "hello");
     assert_eq!(from_reader.text, from_load.text);
+}
+
+/// A reader hands a file's bytes undecoded, and refuses a sub-asset, which has none of its own.
+#[test]
+fn a_reader_reads_a_files_raw_bytes_and_refuses_a_sub_assets() {
+    let svc = shared_service(shared_files());
+    let reader = svc.reader();
+
+    assert_eq!(
+        reader.read_raw(&note()).expect("the note's bytes"),
+        b"hello"
+    );
+    assert_eq!(
+        reader.read_raw(&hero()).expect("the container's bytes"),
+        HERO_BYTES
+    );
+    assert!(
+        reader.read_raw(&hero_body()).is_err(),
+        "a sub-asset has no bytes of its own"
+    );
 }
 
 #[test]

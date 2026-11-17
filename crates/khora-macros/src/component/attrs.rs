@@ -52,7 +52,7 @@ impl ComponentAttrs {
     }
 }
 
-/// Whether the component opts into the field-SoA layout: `#[component(layout = "soa")]`.
+/// Returns whether the component opts into the field-SoA layout: `#[component(layout = "soa")]`.
 ///
 /// Only a struct whose fields are all `f32` can take it. Other `key = value`
 /// metas are consumed, as in the `no_serializable` scan, so `layout` is found
@@ -76,7 +76,7 @@ fn layout_soa(input: &DeriveInput) -> bool {
     })
 }
 
-/// Whether the component carries `#[component(no_serializable)]`.
+/// Returns whether the component carries `#[component(no_serializable)]`.
 ///
 /// The `else if` branch consumes the other `key = value` metas so the walk
 /// reaches this flag whatever the key order: `parse_nested_meta` aborts on the
@@ -99,7 +99,8 @@ fn no_serializable(input: &DeriveInput) -> bool {
     })
 }
 
-/// Whether the component carries `#[component(resumable)]`: runtime state a game save keeps.
+/// Returns whether the component carries `#[component(resumable)]`: runtime state a game save
+/// keeps.
 ///
 /// Walked like `no_serializable`, consuming the `key = value` metas it does not read.
 fn resumable(input: &DeriveInput) -> bool {
@@ -120,7 +121,7 @@ fn resumable(input: &DeriveInput) -> bool {
     })
 }
 
-/// The `domain`, `provenance` (`Authored` when absent) and `formerly` keys.
+/// Returns the `domain`, `provenance` (`Authored` when absent) and `formerly` keys.
 ///
 /// See the book: how-to/add-a-component.md, "Step 3 — Say who writes it".
 /// All are read in one pass that consumes the other `key = value` pairs: a

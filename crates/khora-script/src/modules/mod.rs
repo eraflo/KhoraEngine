@@ -73,18 +73,18 @@ pub struct Resolved {
 }
 
 impl Resolved {
-    /// Whether any diagnostic is an error.
+    /// Returns whether any diagnostic is an error.
     pub fn has_errors(&self) -> bool {
         crate::diagnostics::has_errors(&self.diagnostics)
     }
 
-    /// A resolved module by path.
+    /// Returns the resolved module at `path`.
     pub fn get(&self, path: &str) -> Option<&ResolvedModule> {
         self.modules.iter().find(|m| m.path == path)
     }
 }
 
-/// The modules a source file imports, deduplicated, in source order.
+/// Returns the modules a source file imports, deduplicated, in source order.
 ///
 /// Parsed rather than scanned for the word `import`: the string `"import"`
 /// inside a literal or a comment is not one, and a dependency graph built from
@@ -167,7 +167,7 @@ struct Resolver<'a> {
 }
 
 impl<'a> Resolver<'a> {
-    /// Depth-first, so a module's imports are appended before it is.
+    /// Visits `path` depth-first, so a module's imports are appended before it is.
     ///
     /// `from` is the import statement that led here, so a missing file is
     /// reported at the line that asked for it rather than at the top of a

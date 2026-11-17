@@ -66,7 +66,7 @@ impl CommandHistory {
 
     /// Forgets every command — after the world was replaced, when the
     /// entities their edits name are gone.
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.undo_stack.clear();
         self.redo_stack.clear();
     }
@@ -96,12 +96,12 @@ impl CommandHistory {
         Some(forward)
     }
 
-    /// Whether there is anything to undo.
+    /// Returns whether there is anything to undo.
     pub fn can_undo(&self) -> bool {
         !self.undo_stack.is_empty()
     }
 
-    /// Whether there is anything to redo.
+    /// Returns whether there is anything to redo.
     pub fn can_redo(&self) -> bool {
         !self.redo_stack.is_empty()
     }
@@ -112,7 +112,7 @@ impl CommandHistory {
     }
 
     /// Returns the description of the next redoable command.
-    pub fn redo_description(&self) -> Option<&str> {
+    pub(crate) fn redo_description(&self) -> Option<&str> {
         self.redo_stack.last().map(|c| c.description.as_str())
     }
 

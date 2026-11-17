@@ -286,7 +286,7 @@ fn a_prepared_layer_is_staged_with_its_measured_time_while_its_row_is_wanted() {
     assert_eq!(ran(&log), vec!["old", "new", "new"]);
 }
 
-/// **A prepared layer whose row is no longer wanted is kept ready.** The
+/// **A prepared layer whose row is unwanted when it lands is kept ready.** The
 /// low row's preparation is under way when the agent asks for the balanced
 /// row instead. Handed back, the low layer is not staged: it is kept, with
 /// every epoch, and the balanced preparation is the one taken next.
@@ -568,7 +568,7 @@ fn a_failed_preparation_leaves_the_installed_layer_on_the_new_agents_part_and_it
 /// layers at the next frame start.** Two layers of 1000 bytes — one
 /// installed, one kept — fit 3000 bytes. While a switch is prepared, the
 /// envelope shrinks to 1500: the frame start swaps nothing, but the kept
-/// layer no longer fits beside the installed one, and is released there.
+/// layer stops fitting beside the installed one, and is released there.
 #[test]
 fn a_tighter_envelope_set_while_pending_releases_kept_layers_at_the_next_frame_start() {
     let log = Ran::default();

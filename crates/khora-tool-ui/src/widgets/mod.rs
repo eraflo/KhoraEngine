@@ -86,19 +86,19 @@ pub type Rect = [f32; 4];
 /// An RGBA color as `[r, g, b, a]`, sRGB in `0..=1` (see [`crate::brand`]).
 pub type Color = [f32; 4];
 
-/// Right edge of a rect.
+/// Returns the right edge of a rect.
 #[inline]
 pub fn right(r: Rect) -> f32 {
     r[0] + r[2]
 }
 
-/// Bottom edge of a rect.
+/// Returns the bottom edge of a rect.
 #[inline]
 pub fn bottom(r: Rect) -> f32 {
     r[1] + r[3]
 }
 
-/// Centre point of a rect.
+/// Returns the centre point of a rect.
 #[inline]
 pub fn center(r: Rect) -> [f32; 2] {
     [r[0] + r[2] * 0.5, r[1] + r[3] * 0.5]
@@ -115,7 +115,7 @@ pub fn shrink(r: Rect, d: f32) -> Rect {
     ]
 }
 
-/// The baseline `y` that vertically centres text of `size` inside `rect`.
+/// Returns the baseline `y` that vertically centres text of `size` inside `rect`.
 ///
 /// Text is anchored at its top edge by [`UiBuilder::paint_text_styled`], so
 /// this returns the top, not the typographic baseline.
@@ -133,3 +133,6 @@ pub fn text_y(rect: Rect, size: f32) -> f32 {
 pub fn on_primary(theme: &UiTheme) -> Color {
     theme.text_inverse
 }
+
+#[cfg(test)]
+mod tests;

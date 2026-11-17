@@ -58,7 +58,8 @@ pub struct FieldContext<'a> {
 }
 
 impl FieldContext<'_> {
-    /// A field of a struct the row holds: its hints are not the row's.
+    /// Returns the context of a field of a struct the row holds: its hints are
+    /// not the row's.
     fn child(&self, part: &str) -> FieldContext<'_> {
         FieldContext {
             theme: self.theme,
@@ -72,7 +73,8 @@ impl FieldContext<'_> {
         }
     }
 
-    /// An item of a list the row holds: held to the row's range.
+    /// Returns the context of an item of a list the row holds: held to the
+    /// row's range.
     fn item(&self, part: &str) -> FieldContext<'_> {
         FieldContext {
             range: self.range,
@@ -166,14 +168,15 @@ pub fn value_text(
 
 /// Returns an entity as a slot shows it: its name, or its index where the
 /// scene tree does not know it.
-pub fn entity_text(entity: EntityId, names: &HashMap<EntityId, String>) -> String {
+pub(crate) fn entity_text(entity: EntityId, names: &HashMap<EntityId, String>) -> String {
     names
         .get(&entity)
         .cloned()
         .unwrap_or_else(|| format!("Entity {}", entity.index))
 }
 
-/// A float as an author reads it: no trailing zeros, at most four decimals.
+/// Formats a float as an author reads it: no trailing zeros, at most four
+/// decimals.
 fn trim(value: f32) -> String {
     let text = format!("{value:.4}");
     let text = text.trim_end_matches('0').trim_end_matches('.');
@@ -207,8 +210,8 @@ pub fn render_field(
     changed
 }
 
-/// Whether the row of a `ty` field holding `value` draws its label with the
-/// field's tooltip: a number's, a read-only scalar's, an empty optional's.
+/// Returns whether the row of a `ty` field holding `value` draws its label with
+/// the field's tooltip: a number's, a read-only scalar's, an empty optional's.
 fn labels_itself(ty: &ErgonType, value: &ScriptValue, read_only: bool) -> bool {
     match (ty, value) {
         (_, ScriptValue::Array(items)) if !items.is_empty() => false,
@@ -275,7 +278,7 @@ fn render_read_only(
     }
 }
 
-/// `ty` without the optional around it: what a value it holds is.
+/// Returns `ty` without the optional around it: what a value it holds is.
 fn item_or_self(ty: &ErgonType) -> ErgonType {
     match ty {
         ErgonType::Optional(inner) => item_or_self(inner),
@@ -283,7 +286,7 @@ fn item_or_self(ty: &ErgonType) -> ErgonType {
     }
 }
 
-/// The type of an item of a `ty` array — `Any` where `ty` says nothing.
+/// Returns the type of an item of a `ty` array — `Any` where `ty` says nothing.
 fn item_type(ty: &ErgonType) -> ErgonType {
     match ty {
         ErgonType::Array(inner) => (**inner).clone(),
@@ -292,7 +295,7 @@ fn item_type(ty: &ErgonType) -> ErgonType {
     }
 }
 
-/// The type of the field `name` of a `ty` struct — `Any` where unknown.
+/// Returns the type of the field `name` of a `ty` struct — `Any` where unknown.
 fn field_type(ty: &ErgonType, name: &str) -> ErgonType {
     match ty {
         ErgonType::Struct {
@@ -307,7 +310,7 @@ fn field_type(ty: &ErgonType, name: &str) -> ErgonType {
     }
 }
 
-/// The type `value` shows it holds, where the declaration says `Any`.
+/// Returns the type `value` shows it holds, where the declaration says `Any`.
 fn type_of(value: &ScriptValue) -> ErgonType {
     match value {
         ScriptValue::Bool(_) => ErgonType::Bool,
@@ -350,7 +353,7 @@ fn render_editable(
     }
 }
 
-/// A scalar, text or engine value.
+/// Renders a scalar, text or engine value.
 fn render_leaf(
     ui: &mut dyn UiBuilder,
     label: &str,
@@ -420,7 +423,7 @@ fn render_leaf(
     }
 }
 
-/// One drag value per axis, on one row.
+/// Renders one drag value per axis, on one row.
 fn render_axes(ui: &mut dyn UiBuilder, label: &str, axes: &mut [f32]) -> bool {
     let mut changed = false;
     ui.horizontal(&mut |row| {
@@ -432,7 +435,7 @@ fn render_axes(ui: &mut dyn UiBuilder, label: &str, axes: &mut [f32]) -> bool {
     changed
 }
 
-/// `T?`: the value, or `none`, and the toggle between them.
+/// Renders `T?`: the value, or `none`, and the toggle between them.
 fn render_optional(
     ui: &mut dyn UiBuilder,
     label: &str,
@@ -474,8 +477,8 @@ fn render_optional(
     changed
 }
 
-/// `T[]`: a row per item — each with a context menu to move or remove it —
-/// and a button that adds one.
+/// Renders `T[]`: a row per item — each with a context menu to move or remove
+/// it — and a button that adds one.
 fn render_array(
     ui: &mut dyn UiBuilder,
     label: &str,
@@ -552,7 +555,7 @@ fn render_array(
     changed
 }
 
-/// A struct: a collapsing block, a row per field.
+/// Renders a struct: a collapsing block, a row per field.
 fn render_struct(
     ui: &mut dyn UiBuilder,
     label: &str,

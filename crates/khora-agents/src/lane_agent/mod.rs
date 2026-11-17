@@ -108,111 +108,6 @@ pub struct LaneAgent {
     place: Arc<Mutex<Place>>,
 }
 
-/// What the DCC lent an agent for an epoch.
-#[derive(Debug, Clone)]
-struct Lent {
-    epoch: Epoch,
-    /// `None` when the round could not price the agent: its rows run at
-    /// their own price, within the pin and the allowed rows.
-    envelope: Option<Envelope>,
-    pin: Option<StrategyId>,
-    allowed: Option<Vec<StrategyId>>,
-}
-
-/// Builds the agent of `registration`'s family, its menu holding every level
-/// of every lane `caps` supports.
-pub fn lane_agent(registration: &'static AgentRegistration, caps: &DeviceCaps) -> LaneAgent {
-    let (makers, lanes): (Vec<MakeLane>, Vec<Box<dyn AnyLane>>) = registration
-        .lanes
-        .iter()
-        .map(|make| (*make, make()))
-        .filter(|(_, lane)| lane.supports(caps))
-        .unzip();
-    let contentions = lanes
-        .iter()
-        .map(|lane| lane.declaration().contention())
-        .collect();
-    let menu: Vec<Row> = lanes
-        .iter()
-        .enumerate()
-        .flat_map(|(lane, erased)| {
-            erased
-                .levels()
-                .iter()
-                .enumerate()
-                .map(move |(level, offered)| Row {
-                    lane,
-                    level,
-                    id: offered.id,
-                    memory: offered.memory,
-                })
-        })
-        .collect();
-    // The level the registration names to start on, the first row without
-    // one; boot refuses a level no row offers.
-    let current = registration
-        .default_level
-        .and_then(|level| menu.iter().position(|row| row.id == level))
-        .unwrap_or(0);
-    let levels: Vec<Level> = lanes
-        .iter()
-        .flat_map(|erased| erased.levels().iter().copied())
-        .collect();
-    let rows = menu.len();
-    LaneAgent {
-        registration,
-        lanes: lanes.into_iter().map(Mutex::new).collect(),
-        makers,
-        contentions,
-        quotes: vec![None; menu.len()],
-        menu,
-        current,
-        levels,
-        default_row: current,
-        lent: None,
-        over_budget: false,
-        failed: vec![false; rows],
-        full_quote: None,
-        place: Arc::new(Mutex::new(place_of(registration))),
-    }
-}
-
-/// Returns the family's place, holding from the start the step its
-/// registration runs at: the scheduler reads it there each frame.
-fn place_of(registration: &AgentRegistration) -> Place {
-    let mut place = Place::new(registration.agent);
-    place.set_fixed_step(registration.fixed_step);
-    place
-}
-
-/// Returns the inputs of one run as the agent lends them.
-///
-/// The bus, the earlier phases' deck and the runtime, with the budget lent,
-/// the fixed step, and the frame's target and clear colour.
-fn lend<'c>(
-    context: &'c EngineContext<'_>,
-    budget: Option<Duration>,
-    fixed_step: Option<Duration>,
-    frame: Option<&FrameContext>,
-) -> InputSource<'c> {
-    let mut source = context.input_source();
-    if let Some(time) = budget {
-        source = source.with_budget(Budget { time });
-    }
-    if let Some(step) = fixed_step {
-        source = source.with_step(FixedStep(step));
-    }
-    if let Some(frame) = frame {
-        if let Some(target) = frame.get::<Target>() {
-            source = source.with_target(*target);
-        }
-        if let Some(clear) = frame.get::<ClearColor>() {
-            source = source.with_clear_color(*clear);
-        }
-    }
-    source
-}
-
 impl LaneAgent {
     /// Returns the time lent to a `#[budget]` lane: the envelope's on its
     /// busiest device; `None` while no envelope is lent.
@@ -225,39 +120,6 @@ impl LaneAgent {
                 time.cpu.max(time.gpu).max(time.npu).max(time.other)
             })
     }
-}
-
-/// Sets the step a fixed-step family's `agent` runs at, over its
-/// registration's default.
-///
-/// A game's setting decides it (the physics step). The place holds it, the
-/// one source the scheduler and the agent read. A family that runs every
-/// frame is left as it is.
-pub fn set_fixed_step(agent: &mut LaneAgent, step: Duration) {
-    let mut place = agent.locked_place();
-    if place.fixed_step().is_some() && !step.is_zero() {
-        place.set_fixed_step(Some(step));
-    }
-}
-
-/// Drives one frame of `agent`'s place for a caller with no scheduler (a
-/// test, a tool), and returns the run's report, `None` when nothing ran.
-///
-/// The wakes the run raises are answered at once, so the next call runs what
-/// they chose.
-pub fn run_frame(agent: &mut LaneAgent, context: &mut EngineContext<'_>) -> Option<Report> {
-    agent.whole_frame(context)
-}
-
-/// Releases what every lane of `agent` built on the device, the lanes that
-/// never ran included, and every layer its place holds.
-pub fn shut_down_lanes(agent: &mut LaneAgent, gpu: &mut GpuSetup<'_>) {
-    for lane in &mut agent.lanes {
-        lane.get_mut()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .shutdown(gpu);
-    }
-    agent.locked_place().shutdown(gpu);
 }
 
 impl Agent for LaneAgent {
@@ -431,7 +293,7 @@ impl Agent for LaneAgent {
     /// envelope.
     ///
     /// A failed row is fallen back from, a lane whose input is unusable loses
-    /// its price, and every lane is quoted again when the quotes may no longer
+    /// its price, and every lane is quoted again when the quotes may stop
     /// hold.
     fn wake(&mut self, why: &[Wake], place: &mut Place, context: &mut EngineContext<'_>) {
         self.answer(why, place, context);
@@ -496,4 +358,142 @@ impl Agent for LaneAgent {
             .reading::<Arc<dyn PipelineSystem>>();
         contention
     }
+}
+
+/// What the DCC lent an agent for an epoch.
+#[derive(Debug, Clone)]
+struct Lent {
+    epoch: Epoch,
+    /// `None` when the round could not price the agent: its rows run at
+    /// their own price, within the pin and the allowed rows.
+    envelope: Option<Envelope>,
+    pin: Option<StrategyId>,
+    allowed: Option<Vec<StrategyId>>,
+}
+
+/// Builds the agent of `registration`'s family, its menu holding every level
+/// of every lane `caps` supports.
+pub fn lane_agent(registration: &'static AgentRegistration, caps: &DeviceCaps) -> LaneAgent {
+    let (makers, lanes): (Vec<MakeLane>, Vec<Box<dyn AnyLane>>) = registration
+        .lanes
+        .iter()
+        .map(|make| (*make, make()))
+        .filter(|(_, lane)| lane.supports(caps))
+        .unzip();
+    let contentions = lanes
+        .iter()
+        .map(|lane| lane.declaration().contention())
+        .collect();
+    let menu: Vec<Row> = lanes
+        .iter()
+        .enumerate()
+        .flat_map(|(lane, erased)| {
+            erased
+                .levels()
+                .iter()
+                .enumerate()
+                .map(move |(level, offered)| Row {
+                    lane,
+                    level,
+                    id: offered.id,
+                    memory: offered.memory,
+                })
+        })
+        .collect();
+    // The level the registration names to start on, the first row without
+    // one; boot refuses a level no row offers.
+    let current = registration
+        .default_level
+        .and_then(|level| menu.iter().position(|row| row.id == level))
+        .unwrap_or(0);
+    let levels: Vec<Level> = lanes
+        .iter()
+        .flat_map(|erased| erased.levels().iter().copied())
+        .collect();
+    let rows = menu.len();
+    LaneAgent {
+        registration,
+        lanes: lanes.into_iter().map(Mutex::new).collect(),
+        makers,
+        contentions,
+        quotes: vec![None; menu.len()],
+        menu,
+        current,
+        levels,
+        default_row: current,
+        lent: None,
+        over_budget: false,
+        failed: vec![false; rows],
+        full_quote: None,
+        place: Arc::new(Mutex::new(place_of(registration))),
+    }
+}
+
+/// Sets the step a fixed-step family's `agent` runs at, over its
+/// registration's default.
+///
+/// A game's setting decides it (the physics step). The place holds it, the
+/// one source the scheduler and the agent read. A family that runs every
+/// frame is left as it is.
+pub fn set_fixed_step(agent: &mut LaneAgent, step: Duration) {
+    let mut place = agent.locked_place();
+    if place.fixed_step().is_some() && !step.is_zero() {
+        place.set_fixed_step(Some(step));
+    }
+}
+
+/// Drives one frame of `agent`'s place for a caller with no scheduler (a
+/// test, a tool), and returns the run's report, `None` when nothing ran.
+///
+/// The wakes the run raises are answered at once, so the next call runs what
+/// they chose.
+pub fn run_frame(agent: &mut LaneAgent, context: &mut EngineContext<'_>) -> Option<Report> {
+    agent.whole_frame(context)
+}
+
+/// Releases what every lane of `agent` built on the device, the lanes that
+/// never ran included, and every layer its place holds.
+pub fn shut_down_lanes(agent: &mut LaneAgent, gpu: &mut GpuSetup<'_>) {
+    for lane in &mut agent.lanes {
+        lane.get_mut()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .shutdown(gpu);
+    }
+    agent.locked_place().shutdown(gpu);
+}
+
+/// Returns the family's place, holding from the start the step its
+/// registration runs at: the scheduler reads it there each frame.
+fn place_of(registration: &AgentRegistration) -> Place {
+    let mut place = Place::new(registration.agent);
+    place.set_fixed_step(registration.fixed_step);
+    place
+}
+
+/// Returns the inputs of one run as the agent lends them.
+///
+/// The bus, the earlier phases' deck and the runtime, with the budget lent,
+/// the fixed step, and the frame's target and clear colour.
+fn lend<'c>(
+    context: &'c EngineContext<'_>,
+    budget: Option<Duration>,
+    fixed_step: Option<Duration>,
+    frame: Option<&FrameContext>,
+) -> InputSource<'c> {
+    let mut source = context.input_source();
+    if let Some(time) = budget {
+        source = source.with_budget(Budget { time });
+    }
+    if let Some(step) = fixed_step {
+        source = source.with_step(FixedStep(step));
+    }
+    if let Some(frame) = frame {
+        if let Some(target) = frame.get::<Target>() {
+            source = source.with_target(*target);
+        }
+        if let Some(clear) = frame.get::<ClearColor>() {
+            source = source.with_clear_color(*clear);
+        }
+    }
+    source
 }

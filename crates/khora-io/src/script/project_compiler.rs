@@ -244,14 +244,14 @@ impl ScriptCompiler for ProjectCompiler {
 }
 
 impl ProjectCompiler {
-    /// Whether `root` is mounted: not unmounted since. With no record of mounts, every root is.
+    /// Returns whether `root` is mounted: not unmounted since. With no record of mounts, every root is.
     fn is_mounted(&self, root: &Path) -> bool {
         self.mounted
             .as_ref()
             .is_none_or(|mounted| !mounted.is_closed(root))
     }
 
-    /// Whether the modules filed under `root` hold `module` now.
+    /// Returns whether the modules filed under `root` hold `module` now.
     fn provides(&self, root: &Path, module: &str) -> bool {
         match &self.pack {
             Some(pack) => {
@@ -261,7 +261,7 @@ impl ProjectCompiler {
         }
     }
 
-    /// Returns what a request for a root no longer mounted hands on.
+    /// Returns what a request for an unmounted root hands on.
     ///
     /// A module another mounted root provides by name is compiled from there;
     /// any other is withdrawn, with its declarations, reads and problems.
@@ -312,7 +312,7 @@ impl ProjectCompiler {
 
     /// Recompiles the modules `request` names and every module importing one.
     ///
-    /// Withdraws those its root no longer holds. Returns what came out, and
+    /// Withdraws those its root stops holding. Returns what came out, and
     /// every module it went through.
     fn compile_mounted(&self, request: &CompileRequest) -> (Recompiled, BTreeSet<String>) {
         let root = request.root.as_path();
@@ -411,7 +411,7 @@ impl std::fmt::Debug for PackScripts {
 }
 
 impl PackScripts {
-    /// Whether `root` is the one the pack's scripts are filed under, however it is spelled.
+    /// Returns whether `root` is the one the pack's scripts are filed under, however it is spelled.
     fn is_root(&self, root: &Path) -> bool {
         crate::asset::root_path::absolute(root) == crate::asset::root_path::absolute(&self.root)
     }

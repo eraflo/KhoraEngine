@@ -28,6 +28,18 @@ use std::time::{Duration, Instant};
 
 use super::index_builder::should_skip_file;
 
+/// How many changes are kept for readers that have not caught up.
+///
+/// A backstop against a subscriber that stops reading, not a tuning knob: a
+/// project-wide reformat is hundreds.
+const RETAINED: usize = 4096;
+
+/// How long a burst that dropped events must be quiet before its rescan.
+const QUIET: Duration = Duration::from_secs(1);
+
+/// How many change events a watched root lets through a second.
+const EVENTS_PER_SECOND: u32 = 512;
+
 /// The kind of change that happened to an asset on disk.
 ///
 /// A rename is a `Removed` of the old path and a `Created` of the new one.
@@ -59,12 +71,6 @@ pub struct EventBudget {
     dropped: Option<Instant>,
 }
 
-/// How long a burst that dropped events must be quiet before its rescan.
-const QUIET: Duration = Duration::from_secs(1);
-
-/// How many change events a watched root lets through a second.
-const EVENTS_PER_SECOND: u32 = 512;
-
 impl EventBudget {
     /// Returns a budget of `per_second` events a second, full at first.
     pub fn new(per_second: u32) -> Self {
@@ -77,7 +83,7 @@ impl EventBudget {
         }
     }
 
-    /// Whether an event at `now` is let through.
+    /// Returns whether an event at `now` is let through.
     pub fn admit(&mut self, now: Instant) -> bool {
         if let Some(counted) = self.counted {
             let refilled = now.saturating_duration_since(counted).as_secs_f64() * self.per_second;
@@ -93,7 +99,7 @@ impl EventBudget {
         }
     }
 
-    /// Whether a rescan is due at `now`: true once, after a burst that
+    /// Returns whether a rescan is due at `now`: true once, after a burst that
     /// dropped events has been quiet a second.
     pub fn take_rescan(&mut self, now: Instant) -> bool {
         match self.dropped {
@@ -126,6 +132,13 @@ impl AssetChangeEvent {
     }
 }
 
+impl Supersedes for AssetChangeEvent {
+    // Not coalescing: the channel would scan everything queued on `notify`'s
+    // thread, quadratic on a branch switch of thousands of distinct paths. One
+    // save's burst arrives consecutively, so the constructor drops an immediate
+    // repeat in O(1); readers de-duplicate the rest.
+}
+
 /// A watch of the file changes under one assets root; dropping it stops the watch.
 pub struct AssetWatcher {
     // Kept alive for its Drop side-effect (releases the OS handle).
@@ -139,19 +152,6 @@ pub struct AssetWatcher {
     /// How many events the root lets through; the rescan a dropping burst
     /// calls for is delivered by the next poll after it.
     budget: Arc<Mutex<EventBudget>>,
-}
-
-/// How many changes are kept for readers that have not caught up.
-///
-/// A backstop against a subscriber that stops reading, not a tuning knob: a
-/// project-wide reformat is hundreds.
-const RETAINED: usize = 4096;
-
-impl Supersedes for AssetChangeEvent {
-    // Not coalescing: the channel would scan everything queued on `notify`'s
-    // thread, quadratic on a branch switch of thousands of distinct paths. One
-    // save's burst arrives consecutively, so the constructor drops an immediate
-    // repeat in O(1); readers de-duplicate the rest.
 }
 
 impl AssetWatcher {
@@ -261,7 +261,7 @@ impl AssetWatcher {
     }
 }
 
-/// Whether `next` says nothing the event just before it did not.
+/// Returns whether `next` says nothing the event just before it did not.
 ///
 /// Only `Modified` collapses: one save fires several in a row. Two `Created`
 /// or `Removed` in a row are two facts a consumer reindexes on.
@@ -429,10 +429,10 @@ mod tests {
         /// A rename without its side is read from the disk: the path that exists is where it went.
         #[test]
         fn a_rename_without_its_side_is_read_from_the_disk() {
+            use notify::event::{ModifyKind, RenameMode};
             let dir = tempfile::tempdir().expect("a temp dir");
             let root: Arc<Path> = Arc::from(dir.path());
             std::fs::write(dir.path().join("there.erg"), "behavior B {}").expect("writes");
-            use notify::event::{ModifyKind, RenameMode};
             let rename = notify::EventKind::Modify(ModifyKind::Name(RenameMode::Any));
 
             let arrived = translate_event(&rename, &dir.path().join("there.erg"), &root, None)

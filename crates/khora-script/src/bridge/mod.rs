@@ -73,11 +73,16 @@ impl Unrepresentable {
 
 macro_rules! define_to_register {
     ($($variant:ident : $rust:ty ;)*) => {
-        /// The register form of a boundary value.
+        /// Returns the register form of a boundary value.
         ///
         /// Takes the arena because text has to *live* somewhere to be named by a
         /// register, and a boundary string has no index in the running
         /// program's constant table.
+        ///
+        /// # Errors
+        ///
+        /// [`Unrepresentable::NoRoom`] when the arena has no room for a string, and
+        /// [`Unrepresentable`] for a list or a struct, which a register cannot hold.
         pub fn to_register(
             value: &ScriptValue,
             arena: &mut Arena,
@@ -117,10 +122,15 @@ khora_core::script_value_table!(define_to_register);
 
 macro_rules! define_from_register {
     ($($variant:ident : $rust:ty ;)*) => {
-        /// The boundary form of a register value.
+        /// Returns the boundary form of a register value.
         ///
         /// Needs the program's literals *and* the arena because a string lives
         /// in one or the other and the value only says which.
+        ///
+        /// # Errors
+        ///
+        /// [`Unrepresentable`] for a string that does not resolve, a list, or
+        /// `null`, none of which the engine can take.
         pub fn from_register(
             value: Value,
             strings: &[String],
@@ -160,7 +170,11 @@ khora_core::script_value_table!(define_from_register);
 
 macro_rules! define_to_persisted {
     ($($variant:ident : $rust:ty ;)*) => {
-        /// The stored form of a boundary value.
+        /// Returns the stored form of a boundary value.
+        ///
+        /// # Errors
+        ///
+        /// [`Unrepresentable`] for a struct, or a list holding one.
         pub fn to_persisted(value: &ScriptValue) -> Result<Persisted, Unrepresentable> {
             Ok(match value {
                 $(ScriptValue::$variant(inner) => Persisted::Scalar(Value::$variant(*inner)),)*
@@ -190,12 +204,17 @@ khora_core::script_value_table!(define_to_persisted);
 
 macro_rules! define_from_persisted {
     ($($variant:ident : $rust:ty ;)*) => {
-        /// The boundary form of a stored value.
+        /// Returns the boundary form of a stored value.
         ///
         /// `Ok(None)` means *nothing was ever written here* — distinct from a
         /// value that happens to be empty. A scene recording "this field has no
         /// value" would load it as such and shadow the default the initialiser
         /// is meant to give it.
+        ///
+        /// # Errors
+        ///
+        /// [`Unrepresentable`] for a string or a list held by reference, in the
+        /// value or anywhere inside it.
         pub fn from_persisted(value: &Persisted) -> Result<Option<ScriptValue>, Unrepresentable> {
             Ok(match value {
                 Persisted::Scalar(scalar) => match scalar {
@@ -226,8 +245,12 @@ macro_rules! define_from_persisted {
 }
 khora_core::script_value_table!(define_from_persisted);
 
-/// The owned form of a boundary value: what an array's element, or a field,
-/// keeps of it.
+/// Returns the owned form of a boundary value: what an array's element, or a
+/// field, keeps of it.
+///
+/// # Errors
+///
+/// [`Unrepresentable`] when [`to_persisted`] refuses the value.
 pub fn to_owned(value: &ScriptValue) -> Result<Owned, Unrepresentable> {
     Ok(match to_persisted(value)? {
         Persisted::Scalar(scalar) => Owned::Scalar(scalar),
@@ -235,9 +258,14 @@ pub fn to_owned(value: &ScriptValue) -> Result<Owned, Unrepresentable> {
     })
 }
 
-/// The boundary form of an owned value. An element nothing was written to
-/// reads as `Unit`.
-pub fn from_owned(owned: &Owned) -> Result<ScriptValue, Unrepresentable> {
+/// Returns the boundary form of an owned value.
+///
+/// An element nothing was written to reads as `Unit`.
+///
+/// # Errors
+///
+/// [`Unrepresentable`] for a scalar holding a string or a list by reference.
+pub(crate) fn from_owned(owned: &Owned) -> Result<ScriptValue, Unrepresentable> {
     Ok(match owned {
         Owned::Scalar(scalar) => {
             from_persisted(&Persisted::Scalar(*scalar))?.unwrap_or(ScriptValue::Unit)

@@ -17,7 +17,7 @@
 /// The step the physics lane reports on the
 /// [`OutputDeck`](khora_core::lane::OutputDeck).
 ///
-/// Its presence tells the `physics_world_writeback` DataSystem the simulation
+/// Its presence tells the `physics_world_writeback` `DataSystem` the simulation
 /// advanced this frame; a frame whose lane did not run has none, and the
 /// writeback does nothing.
 #[derive(Debug, Default, Clone, Copy)]

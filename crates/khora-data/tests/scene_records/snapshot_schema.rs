@@ -169,8 +169,8 @@ mod pair_after {
 }
 
 /// Containers are keyed by their serde name alone: a second `Inner` from
-/// another module overwrites the first, and a change to the first no longer
-/// reaches the fingerprint.
+/// another module overwrites the first, and a change to the first does not
+/// reach the fingerprint.
 #[test]
 fn two_types_sharing_a_serde_name_are_both_fingerprinted() {
     assert_ne!(
@@ -479,7 +479,7 @@ fn machines() -> Vec<khora_core::script::FrozenMachine> {
 
 /// A frozen machine, held directly — no wrapper, no form to tell apart —
 /// through a record and every self-describing carrier of one, through
-/// serde_json and rmp directly, and by position.
+/// `serde_json` and `rmp` directly, and by position.
 #[test]
 fn a_frozen_machine_round_trips_everywhere() {
     use khora_core::script::FrozenMachine;

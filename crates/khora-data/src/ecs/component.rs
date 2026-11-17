@@ -123,6 +123,10 @@ pub trait Component: Clone + 'static + Send + Sync {
     ///
     /// The check [`write_field`](Self::write_field) makes, so a row can be
     /// checked whole before any field is written. Default: every value refused.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`FieldValueError`] when the field cannot hold `value`.
     fn check_field(_slot: usize, value: &ScriptValue) -> Result<(), FieldValueError> {
         Err(FieldValueError {
             expected: "a field a script can write".to_owned(),
@@ -133,6 +137,11 @@ pub trait Component: Clone + 'static + Send + Sync {
     /// Writes the field at `slot`, refusing a value it cannot hold.
     ///
     /// Default: every write refused.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`FieldValueError`] when the field cannot hold `value`; the
+    /// field is left as it was.
     fn write_field(&mut self, _slot: usize, value: &ScriptValue) -> Result<(), FieldValueError> {
         Err(FieldValueError {
             expected: "a field a script can write".to_owned(),

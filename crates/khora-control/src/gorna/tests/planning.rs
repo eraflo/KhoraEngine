@@ -242,7 +242,7 @@ fn a_gain_below_the_switch_charge_lends_no_envelope_the_upgrade_fits() {
 /// **An envelope held to its floor leaves no lever.**
 ///
 /// `oak`, held on its 1 ms floor by the switch charge, is lent an envelope its
-/// 2 ms row no longer fits: no row above its floor fits, so a lower target
+/// 2 ms row no more fits: no row above its floor fits, so a lower target
 /// takes nothing back, and the allocation must say so — the governor reads
 /// `lever` to know whether lowering the target would change anything.
 #[test]

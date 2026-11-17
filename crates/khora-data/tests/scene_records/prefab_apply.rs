@@ -475,7 +475,7 @@ fn another_instance_takes_an_applied_value_on_its_next_load() {
     assert_eq!(translation(&loaded, barrel), Vec3::new(5.0, 1.0, 0.0));
 }
 
-/// An instance whose prefab can no longer be read has nothing to apply to:
+/// An instance whose prefab cannot be read has nothing to apply to:
 /// the apply is refused.
 #[test]
 fn applying_to_an_instance_whose_prefab_is_gone_is_refused() {

@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The engine's math types as a script sees them: a constructor and one
-//! accessor per component each. An accessor is named `Vec3.x`, which no source
+//! The engine's math types as a script sees them.
+//!
+//! Each has a constructor and one accessor per component. An accessor is named `Vec3.x`, which no source
 //! can spell, so only the lowering of `v.x` reaches it and `X` stays free.
 //! See the book: concepts/scripting/under-the-hood.md, "Adding a type to the language".
 

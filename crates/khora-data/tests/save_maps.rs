@@ -49,13 +49,16 @@ mod scene {
 #[derive(Debug, Clone, PartialEq, Default, Component)]
 #[component(domain = Spatial)]
 pub struct Lexicon {
+    /// Each word and its meaning.
     pub words: BTreeMap<String, String>,
 }
 
 /// A struct holding a real map beside a plain field.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Entries {
+    /// Each word and its count.
     pub words: BTreeMap<String, u32>,
+    /// A plain field beside the map.
     pub count: u32,
 }
 
@@ -63,7 +66,9 @@ pub struct Entries {
 #[derive(Debug, Clone, PartialEq, Default, Component)]
 #[component(domain = Spatial)]
 pub struct Glossary {
+    /// The struct holding the map.
     pub entries: Entries,
+    /// A plain field beside it.
     pub label: String,
 }
 
@@ -200,11 +205,13 @@ fn a_key_removed_from_a_nested_map_stays_removed_in_every_encoding() {
     }
 }
 
-/// A component whose type was renamed: older saves call it `LegacyWard`.
+/// A component whose type has a former name: older saves call it `LegacyWard`.
 #[derive(Debug, Clone, PartialEq, Default, Component)]
 #[component(domain = Spatial, formerly = "LegacyWard")]
 pub struct Ward {
+    /// The ward's reach.
     pub radius: f32,
+    /// The ward's strength.
     pub power: f32,
 }
 

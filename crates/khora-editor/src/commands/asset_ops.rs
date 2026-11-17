@@ -176,7 +176,7 @@ struct IndexedAsset {
     display_name: String,
 }
 
-/// `uuid` as the open project's index knows it, if it does.
+/// Returns `uuid` as the open project's index knows it, if it does.
 fn indexed_asset(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     uuid: AssetUUID,

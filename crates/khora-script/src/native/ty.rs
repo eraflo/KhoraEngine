@@ -54,7 +54,7 @@ pub enum NativeTy {
 }
 
 impl NativeTy {
-    /// The checker's type for this.
+    /// Returns the checker's type for this.
     pub fn to_ty(self) -> Ty {
         match self {
             Self::Void => Ty::Void,

@@ -334,18 +334,7 @@ fn load_game_reports_a_value_the_save_could_not_hold() {
     use khora_data::scene::record::{Record, ReportKind};
     use khora_data::scene::{read_save_file, write_save_file, CompactEncoding};
 
-    let service = SerializationService::new();
-    let played = played();
-    let save_file = service
-        .save_game(
-            &played.world,
-            played.base_id,
-            &played.base_file,
-            SerializationGoal::EditorInterchange,
-        )
-        .expect("the game saves");
-
-    /// Field `name` of a component's cell.
+    /// Returns field `name` of a component's cell.
     fn field_in<'r>(cell: &'r mut Record, name: &str) -> Option<&'r mut Record> {
         match cell {
             Record::Struct { fields, .. } => fields
@@ -359,6 +348,17 @@ fn load_game_reports_a_value_the_save_could_not_hold() {
             _ => None,
         }
     }
+
+    let service = SerializationService::new();
+    let played = played();
+    let save_file = service
+        .save_game(
+            &played.world,
+            played.base_id,
+            &played.base_file,
+            SerializationGoal::EditorInterchange,
+        )
+        .expect("the game saves");
 
     // The hand edit: the guard's `Guard.health` given the text its
     // `Guard#state.state` holds ("Chase") — a well-formed value, of another

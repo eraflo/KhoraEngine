@@ -11,7 +11,7 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
-pub use super::authenticated_user::get_authenticated_user;
+pub(crate) use super::authenticated_user::get_authenticated_user;
 
 /// A GitHub repository — subset of the `POST /user/repos` response we care about.
 #[derive(Debug, Clone, Deserialize)]
@@ -20,7 +20,7 @@ pub struct CreatedRepo {
     pub clone_url: String,
 }
 
-/// An HTTP client that sends `token` as a bearer to the GitHub API.
+/// Builds an HTTP client that sends `token` as a bearer to the GitHub API.
 pub(super) fn authed_client(token: &str) -> Result<reqwest::blocking::Client> {
     use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue};
 
@@ -44,7 +44,7 @@ pub(super) fn authed_client(token: &str) -> Result<reqwest::blocking::Client> {
 }
 
 /// Creates a new repository under the authenticated user via `POST /user/repos`.
-pub fn create_repo(token: &str, name: &str, private: bool) -> Result<CreatedRepo> {
+pub(crate) fn create_repo(token: &str, name: &str, private: bool) -> Result<CreatedRepo> {
     let client = authed_client(token)?;
     let body = serde_json::json!({
         "name": name,

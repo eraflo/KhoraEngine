@@ -197,7 +197,7 @@ impl ProjectVfs {
         Ok(opened)
     }
 
-    /// The project's asset service, locked for the length of a statement.
+    /// Locks the project's asset service for the length of a statement.
     pub fn assets(&self) -> MutexGuard<'_, AssetService> {
         self.asset_service.lock_recovered()
     }
@@ -242,7 +242,7 @@ impl ProjectVfs {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// Re-walks `<root>/assets/` and swaps the VFS index, on the frame.
+    /// Walks `<root>/assets/` again and swaps the VFS index, on the frame.
     ///
     /// What [`Self::reindex`] does without an engine, and what the setup-time
     /// scene load does. Freezes the derived UUIDs it now lists, saving the
@@ -265,7 +265,7 @@ impl ProjectVfs {
     ///
     /// Refills the prefab catalog from the new index and moves the project's generation.
     /// Freezes the derived UUIDs it now lists, saving the registry if any.
-    pub fn index_landed(&mut self) {
+    pub(crate) fn index_landed(&mut self) {
         self.freeze_derived_ids();
         if let Some(catalog) = &self.prefab_catalog {
             catalog.replace(khora_sdk::prefab_catalog(&self.assets()));
@@ -311,7 +311,7 @@ impl ProjectVfs {
     }
 
     /// Returns the actions kept until the edited scene was back.
-    pub fn release(&mut self) -> Vec<AfterIndex> {
+    pub(crate) fn release(&mut self) -> Vec<AfterIndex> {
         std::mem::take(&mut self.held)
     }
 
@@ -414,7 +414,7 @@ impl ProjectVfs {
 
     /// Resolves a forward-slash relative path to its UUID through the identity registry.
     ///
-    /// The frozen identity if the asset was renamed, else the `new_v5` default.
+    /// A renamed asset keeps its frozen identity; any other gets the `new_v5` default.
     /// Use it whenever an asset the user could have renamed is looked up by path.
     pub fn resolve_uuid(&self, rel_path_fwd_slash: &str) -> AssetUUID {
         self.registry.resolve(rel_path_fwd_slash)
@@ -427,7 +427,7 @@ impl ProjectVfs {
             && self.abs_of(rel_path_fwd_slash).is_file()
     }
 
-    /// Absolute path of an asset given its forward-slash relative path.
+    /// Returns the absolute path of the asset at forward-slash path `rel_fwd`.
     fn abs_of(&self, rel_fwd: &str) -> PathBuf {
         let mut p = self.assets_root.clone();
         for seg in rel_fwd.split('/').filter(|s| !s.is_empty()) {
@@ -439,7 +439,7 @@ impl ProjectVfs {
     /// Creates an empty folder under `assets/` at `rel_dir` (forward-slash).
     ///
     /// The VFS indexes files only: [`Self::list_dirs`] is what shows it.
-    pub fn create_folder(&mut self, rel_dir: &str) -> Result<()> {
+    pub(crate) fn create_folder(&mut self, rel_dir: &str) -> Result<()> {
         let abs = self.abs_of(rel_dir);
         std::fs::create_dir_all(&abs)
             .with_context(|| format!("Failed to create folder {}", abs.display()))?;
@@ -485,7 +485,7 @@ impl ProjectVfs {
 
     /// Moves an asset into `dest_dir` (forward-slash folder, `""` = assets root),
     /// keeping its file name. Thin wrapper over [`Self::rename_asset`].
-    pub fn move_asset(&mut self, src_rel: &str, dest_dir: &str) -> Result<()> {
+    pub(crate) fn move_asset(&mut self, src_rel: &str, dest_dir: &str) -> Result<()> {
         let file_name = src_rel.rsplit('/').next().unwrap_or(src_rel);
         let new_rel = if dest_dir.is_empty() {
             file_name.to_string()
@@ -497,7 +497,7 @@ impl ProjectVfs {
 
     /// Sends an asset to the OS recycle bin (reversible), drops its registry
     /// entry, and rebuilds the index.
-    pub fn delete_to_trash(&mut self, rel: &str) -> Result<()> {
+    pub(crate) fn delete_to_trash(&mut self, rel: &str) -> Result<()> {
         let abs = self.abs_of(rel);
         if !abs.exists() {
             bail!("Asset does not exist: {}", abs.display());
@@ -514,7 +514,7 @@ impl ProjectVfs {
     /// Duplicates an asset next to itself with a unique ` copy` suffix, returning its path.
     ///
     /// The copy is a **new asset**, with no registry entry: a fresh `new_v5` identity.
-    pub fn duplicate_asset(&mut self, rel: &str) -> Result<String> {
+    pub(crate) fn duplicate_asset(&mut self, rel: &str) -> Result<String> {
         let src_abs = self.abs_of(rel);
         if !src_abs.exists() {
             bail!("Asset does not exist: {}", src_abs.display());
@@ -591,7 +591,7 @@ impl ProjectVfs {
     /// Lists every folder under `assets/` as sorted forward-slash paths, the root excluded.
     ///
     /// The VFS indexes files only, so an empty folder shows only here.
-    pub fn list_dirs(&self) -> Vec<String> {
+    pub(crate) fn list_dirs(&self) -> Vec<String> {
         let mut dirs = Vec::new();
         for entry in walkdir::WalkDir::new(&self.assets_root)
             .follow_links(false)
@@ -624,30 +624,13 @@ impl ProjectVfs {
     }
 }
 
-/// The project's prefabs, read through its VFS: a prefab is the scene file its asset id names.
-///
-/// Locks the VFS for each read, so it can be handed to a load or a save that does not hold it.
-pub struct ProjectPrefabs<'a>(pub &'a std::sync::Mutex<ProjectVfs>);
-
-impl khora_sdk::khora_data::scene::PrefabSource for ProjectPrefabs<'_> {
-    fn prefab(
-        &self,
-        id: AssetUUID,
-    ) -> std::result::Result<khora_sdk::khora_data::scene::SceneRecord, String> {
-        self.0
-            .lock()
-            .map_err(|_| "the project VFS is poisoned".to_owned())?
-            .prefab_record(id)
-    }
-}
-
 impl ProjectVfs {
-    /// The asset id of the file a write to `rel_path` lands on.
+    /// Returns the asset id of the file a write to `rel_path` lands on.
     ///
     /// Not simply the id of the path as typed: on a file system that ignores
     /// case, `Turret.kprefab` overwrites `turret.kprefab`, whose id is another.
     /// The file already there, under the name it has, is the one that counts.
-    pub fn written_asset_id(&self, rel_path_fwd_slash: &str) -> AssetUUID {
+    pub(crate) fn written_asset_id(&self, rel_path_fwd_slash: &str) -> AssetUUID {
         let existing = std::fs::canonicalize(self.assets_root.join(rel_path_fwd_slash))
             .ok()
             .and_then(|file| khora_sdk::fs::relative_to(&file, &self.assets_root))
@@ -655,8 +638,8 @@ impl ProjectVfs {
         self.resolve_uuid(existing.as_deref().unwrap_or(rel_path_fwd_slash))
     }
 
-    /// The file of the asset known as `id`, relative to `assets/`, as the
-    /// index knows it.
+    /// Returns the file of the asset known as `id`, relative to `assets/`, as
+    /// the index knows it.
     pub fn rel_path_of(&self, id: AssetUUID) -> Option<String> {
         let assets = self.assets();
         let source = &assets.index().get_metadata(&id)?.source_path;
@@ -664,10 +647,10 @@ impl ProjectVfs {
         Some(asset_key(rel))
     }
 
-    /// Whether `id` names a part of a file (a glTF's scene, mesh, material…).
+    /// Returns whether `id` names a part of a file (a glTF's scene, mesh, material…).
     ///
     /// Such a part shares its file's path and is never written.
-    pub fn is_part_of_a_file(&self, id: AssetUUID) -> bool {
+    pub(crate) fn is_part_of_a_file(&self, id: AssetUUID) -> bool {
         self.assets()
             .index()
             .get_metadata(&id)
@@ -675,7 +658,7 @@ impl ProjectVfs {
             .is_some_and(|source| matches!(source, khora_sdk::AssetSource::Sub { .. }))
     }
 
-    /// The record of the prefab known as `id`.
+    /// Reads the record of the prefab known as `id`.
     ///
     /// A `.kprefab` file is read afresh each time, as the editor rewrites it
     /// in place; a prefab inside another file (a glTF scene) is decoded
@@ -694,6 +677,23 @@ impl ProjectVfs {
         let file =
             khora_sdk::SceneFile::from_bytes(&bytes).map_err(|error| format!("{error:?}"))?;
         khora_sdk::khora_data::scene::read_scene_file(&file).map_err(|error| error.to_string())
+    }
+}
+
+/// The project's prefabs, read through its VFS: a prefab is the scene file its asset id names.
+///
+/// Locks the VFS for each read, so it can be handed to a load or a save that does not hold it.
+pub struct ProjectPrefabs<'a>(pub &'a std::sync::Mutex<ProjectVfs>);
+
+impl khora_sdk::khora_data::scene::PrefabSource for ProjectPrefabs<'_> {
+    fn prefab(
+        &self,
+        id: AssetUUID,
+    ) -> std::result::Result<khora_sdk::khora_data::scene::SceneRecord, String> {
+        self.0
+            .lock()
+            .map_err(|_| "the project VFS is poisoned".to_owned())?
+            .prefab_record(id)
     }
 }
 
@@ -901,7 +901,7 @@ mod tests {
 
     /// **A project opened freezes the derived UUIDs of the index it opened with.**
     ///
-    /// `textures/a.png` was renamed to `textures/b.png` and a file made again
+    /// With `textures/a.png` renamed to `textures/b.png` and a file made again
     /// at `textures/a.png` while the editor was closed: the index the project
     /// opens over gives it a derived UUID, which the opened project freezes,
     /// so it stays that file's once `textures/b.png` is gone.

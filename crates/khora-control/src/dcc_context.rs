@@ -16,6 +16,10 @@
 
 pub use khora_core::platform::{BatteryLevel, ThermalStatus};
 
+/// Memory pressure at or above which the DCC clamps the budget multiplier to a
+/// hard safety ceiling, regardless of where the frame governor currently sits.
+pub const MEMORY_PRESSURE_CRITICAL: f32 = 0.95;
+
 /// Hardware context observed by the DCC.
 #[derive(Debug, Clone, Default)]
 pub struct HardwareState {
@@ -76,10 +80,6 @@ impl Default for DccContext {
     }
 }
 
-/// Memory pressure at or above which the DCC clamps the budget multiplier to a
-/// hard safety ceiling, regardless of where the frame governor currently sits.
-pub const MEMORY_PRESSURE_CRITICAL: f32 = 0.95;
-
 impl DccContext {
     /// Recomputes [`DccContext::memory_pressure`] from the RAM in use and the budget.
     ///
@@ -98,7 +98,7 @@ impl DccContext {
     }
 }
 
-/// The hard ceiling on the budget multiplier for the current context.
+/// Returns the hard ceiling on the budget multiplier for the current context.
 ///
 /// It only ever lowers the multiplier, at once, on `Critical` thermal or
 /// battery or near-budget memory, without waiting for the governor.

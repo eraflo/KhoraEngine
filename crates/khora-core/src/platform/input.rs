@@ -18,6 +18,13 @@
 //! SDL, etc.) translate their native events into these abstract events via
 //! adapter functions in `khora-infra`.
 
+/// How much OS input is kept for readers that have not caught up.
+///
+/// A frame of a fast typist is tens of events, so this is several seconds of
+/// backlog. It bounds the queue of a reader that stopped reading: the window
+/// minimised, a system that ran once and never again.
+pub const INPUT_BACKLOG: usize = 2048;
+
 /// An engine-internal representation of a user input event.
 ///
 /// This enum is backend-agnostic and represents the high-level input actions
@@ -66,6 +73,12 @@ pub enum InputEvent {
     /// window, then keeps sprinting when focus comes back. Whoever derives
     /// state from this stream has to let go of everything on it.
     FocusLost,
+}
+
+impl crate::event::Supersedes for InputEvent {
+    // Nothing coalesces. A key pressed twice is two presses, and collapsing
+    // them is how a double-tap reads as a single one — the failure `InputMap`'s
+    // `HashSet`s already have and this stream exists to avoid.
 }
 
 /// An engine-internal representation of a mouse button.
@@ -296,23 +309,10 @@ pub enum KeyCode {
     Unidentified,
 }
 
-/// How much OS input is kept for readers that have not caught up.
-///
-/// A frame of a fast typist is tens of events, so this is several seconds of
-/// backlog. It bounds the queue of a reader that stopped reading: the window
-/// minimised, a system that ran once and never again.
-pub const INPUT_BACKLOG: usize = 2048;
-
 /// Returns a channel for the OS input of the frames nobody has read yet.
 ///
 /// It drops the oldest when full: in input the recent matters, and the stale
 /// is worth less than the stall that keeping it would cost.
 pub fn input_channel() -> crate::event::Channel<InputEvent> {
     crate::event::Channel::bounded(INPUT_BACKLOG, crate::event::WhenFull::DropOldest)
-}
-
-impl crate::event::Supersedes for InputEvent {
-    // Nothing coalesces. A key pressed twice is two presses, and collapsing
-    // them is how a double-tap reads as a single one — the failure `InputMap`'s
-    // `HashSet`s already have and this stream exists to avoid.
 }

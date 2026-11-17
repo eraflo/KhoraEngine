@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The `glyphs_on_gpu` DataSystem: every glyph of every text rasterised once
+//! The `glyphs_on_gpu` `DataSystem`: every glyph of every text rasterised once
 //! and placed in the [`GlyphAtlas`] before the agents
 //! run; a full atlas is built again from the glyphs in use.
 
@@ -68,8 +68,8 @@ pub(crate) fn glyphs_on_gpu(
         made: HashMap::new(),
     };
 
-    // The glyphs a full atlas left out are tried again once a glyph that
-    // was in use is no longer — only a glyph going away makes room.
+    // The glyphs a full atlas left out are tried again once a glyph in
+    // use goes out of use — only a glyph going away makes room.
     let mut rebuilt: Vec<GlyphKind> = Vec::new();
     let mut left_out: HashMap<GlyphKey, GlyphKind> = HashMap::new();
     let mut in_use: Option<Vec<GlyphKey>> = None;

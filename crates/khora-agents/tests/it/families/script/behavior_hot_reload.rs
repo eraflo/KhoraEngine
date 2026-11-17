@@ -14,9 +14,9 @@
 
 //! **A hot reload lands in one frame**: the `World`'s
 //! relayout of a behavior's component and the lane's swap of its program
-//! happen in the same frame, so no frame runs old code over rows already
+//! happen in the same frame, so no frame runs the former program over rows already
 //! relaid for the new one — and what the `World` keeps of a running
-//! instance, its state companion, names the new code from that frame on.
+//! instance, its state companion, names the reloaded program from that frame on.
 
 use khora_core::asset::AssetUUID;
 use khora_core::ecs::entity::EntityId;
@@ -226,7 +226,7 @@ const COUNTING_AFTER: Project = &[(
 /// meanwhile.** Sent straight into the channel, it reads a component the
 /// frame did not project: in that frame the guard takes no turn — counted
 /// deferred — the event addressed to it arrives the next frame, and the next
-/// frame runs the new code.
+/// frame runs the reloaded program.
 #[test]
 fn an_unannounced_reload_waits_a_frame_in_which_its_instances_take_no_turn() {
     let mut world = World::new();
@@ -374,8 +374,8 @@ fn winding() -> (Session, EntityId) {
 }
 
 /// **A starved instance's companion follows the reload.** No fuel reaches
-/// the guard in the edit's frame; its wait was carried into the new code all
-/// the same, and the `World`'s `Guard#state` says so — the new code's
+/// the guard in the edit's frame; its wait was carried into the reloaded program all
+/// the same, and the `World`'s `Guard#state` says so — the reloaded program's
 /// fingerprint, the renamed datum gone and the new one at its default.
 #[test]
 fn a_starved_instances_companion_names_the_new_code_after_the_edits_frame() {
@@ -430,8 +430,8 @@ fn a_starved_instances_abandoned_wait_is_owed_in_the_companion() {
 
 /// **A save taken right after the edit's frame resumes exactly.** The
 /// guard was starved in that frame; the save holds what the companion holds,
-/// so loaded under the new code its wait comes back at the exact tier — not
-/// taken back from the old code — and nothing is owed.
+/// so loaded under the reloaded program its wait comes back at the exact tier — not
+/// taken back from the former program — and nothing is owed.
 #[test]
 fn a_save_right_after_the_edits_frame_resumes_exactly_under_the_new_code() {
     assert_ne!(
@@ -721,7 +721,7 @@ const RESTORED_EDITED: Project = &[(
 /// **An arrival held across a reload is restored by the code it first runs
 /// in.** A save caught the guard chasing, its countdown part-run and its
 /// `Wind` waiting. Loaded, it has no fuel for two frames, and its module is
-/// reloaded in the second: its first turn, under the new code, resumes the
+/// reloaded in the second: its first turn, under the reloaded program, resumes the
 /// wait, keeps the state and its data by name, keeps the countdown, and owes
 /// `OnLoad`.
 #[test]
@@ -833,8 +833,8 @@ const COUNTING_BY_TWO: Project = &[(
 /// removed and added again between two frames — a fresh component, at zero —
 /// and its module is edited the same frame, which has no fuel for it. The
 /// record the reload owes is the instance's that left; the one that arrived
-/// starts from what it was added with, and counts from there under the new
-/// code.
+/// starts from what it was added with, and counts from there under the reloaded
+/// program.
 #[test]
 fn a_behavior_added_back_in_a_starved_edits_frame_keeps_what_it_was_added_with() {
     let mut session = Session::new(World::new(), COUNTING);
@@ -955,8 +955,8 @@ fn assert_retyped_in_step(session: &mut Session, tag: EntityId) {
 
 /// **World and lane agree on a retyped field's default.** `name` was a
 /// text; the edit makes it an `int?`. The `World` relays the row out with
-/// `name` at `null`, and the lane starts the field at `null` too — the new
-/// code reads nothing in it — and the value the turn then writes lands.
+/// `name` at `null`, and the lane starts the field at `null` too — the reloaded
+/// program reads nothing in it — and the value the turn then writes lands.
 #[test]
 fn a_retyped_field_starts_at_the_same_default_in_the_world_and_the_lane() {
     let (mut session, tag) = named();
@@ -967,8 +967,8 @@ fn a_retyped_field_starts_at_the_same_default_in_the_world_and_the_lane() {
     assert_retyped_in_step(&mut session, tag);
 }
 
-/// **The same when the edit also starts a read**: announced, the new code
-/// runs in the frame the row is retyped, and no old code writes a text into
+/// **The same when the edit also starts a read**: announced, the reloaded program
+/// runs in the frame the row is retyped, and the former program never writes a text into
 /// the retyped column.
 #[test]
 fn a_retyped_field_in_an_edit_that_starts_a_read_agrees_in_the_edits_frame() {
@@ -985,7 +985,7 @@ fn a_retyped_field_in_an_edit_that_starts_a_read_agrees_in_the_edits_frame() {
 }
 
 /// **And when that edit arrives unannounced**: the frame it waits in runs
-/// no old code over the retyped row, and the frame after runs the new code
+/// never the former program over the retyped row, and the frame after runs the reloaded program
 /// from the agreed default.
 #[test]
 fn a_retyped_field_in_an_unannounced_edit_agrees_once_the_edit_runs() {

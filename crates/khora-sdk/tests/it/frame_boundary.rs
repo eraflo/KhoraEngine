@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The frame boundary, as the engine runs it: the `Boundary` DataSystems are
+//! The frame boundary, as the engine runs it: the `Boundary` `DataSystem`s are
 //! the first of the frame, once per frame, after the families on and off are
 //! settled and before `PreSimulation` — so a boundary system serving a family
 //! switched off before the frame does not run in it.
@@ -105,7 +105,7 @@ fn taken(steps: &Steps) -> Vec<&'static str> {
     std::mem::take(&mut *steps.0.lock_recovered())
 }
 
-/// **The boundary is the frame's first DataSystem phase, after the frame
+/// **The boundary is the frame's first `DataSystem` phase, after the frame
 /// settles.** Each frame runs its `Boundary` systems once, before any
 /// `PreSimulation` one. The audio family is switched off between two frames:
 /// the next frame settles it before its boundary, so the boundary system

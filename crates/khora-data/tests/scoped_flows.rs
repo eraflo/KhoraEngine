@@ -341,7 +341,7 @@ fn a_scope_moved_to_another_marker_brings_its_entities_in_as_arrivals() {
 
 /// **An entity already run carries on when its family becomes scoped to a
 /// marker it holds**: it never left the family's work, so it does not arrive
-/// again; the unmarked one is no longer run.
+/// again; the unmarked one stops running.
 #[test]
 fn a_marked_entity_carries_on_when_its_family_becomes_scoped() {
     let mut world = World::new();

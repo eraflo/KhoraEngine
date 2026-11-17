@@ -26,7 +26,7 @@ pub(super) struct SandboxGame {
     frame_count: u64,
     player: Option<khora_sdk::prelude::ecs::EntityId>,
     controller: PlayerController,
-    /// The engine's InputMap, kept at `setup` for `update` to query actions.
+    /// The engine's `InputMap`, kept at `setup` for `update` to query actions.
     ///
     /// `update` receives no `Runtime` to find it in.
     input_map: Option<Arc<Mutex<InputMap>>>,

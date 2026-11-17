@@ -44,10 +44,10 @@ pub trait Lane: Send + 'static {
     /// What the lane reads each frame.
     type Inputs<'f>: LaneInputs<'f>;
 
-    /// The levels the lane offers, cheapest first.
+    /// Returns the levels the lane offers, cheapest first.
     fn levels(&self) -> &[Level];
 
-    /// Whether the device can run the lane at all.
+    /// Returns whether the device can run the lane at all.
     ///
     /// A lane that cannot is removed from the menu at boot.
     fn supports(&self, caps: &DeviceCaps) -> bool {
@@ -73,7 +73,7 @@ pub trait Lane: Send + 'static {
         Ok(())
     }
 
-    /// What running `level` on these inputs costs this frame.
+    /// Returns what running `level` on these inputs costs this frame.
     fn cost(&self, level: usize, inputs: &Self::Inputs<'_>) -> Cost;
 
     /// Records one frame's work at `level`.

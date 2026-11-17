@@ -23,7 +23,7 @@ use crate::exec::*;
 use crate::term::*;
 use anyhow::Result;
 
-/// `cargo xtask hub-dev`: builds the editor and runtime in debug, then runs the hub in release.
+/// Builds the editor and runtime in debug, then runs the hub in release (`cargo xtask hub-dev`).
 ///
 /// The hub's `dev_engine()` looks for both binaries in `<workspace>/target/debug/`.
 /// Two cargo invocations rather than `cargo build --workspace`: only the

@@ -30,17 +30,6 @@ pub enum ComponentShape {
     Opaque,
 }
 
-/// One field of a component, as its author declared it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FieldSchema {
-    /// The field's name. For a tuple struct, its index as a string.
-    pub name: &'static str,
-    /// The declared Rust type, verbatim — `f32`, `Vec3`, `Option<EntityId>`.
-    ///
-    /// Kept verbatim so a generator can name the type it could not express.
-    pub ty: &'static str,
-}
-
 impl ComponentShape {
     /// Returns the fields, or an empty slice for an opaque shape.
     ///
@@ -51,6 +40,17 @@ impl ComponentShape {
             Self::Opaque => &[],
         }
     }
+}
+
+/// One field of a component, as its author declared it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FieldSchema {
+    /// The field's name. For a tuple struct, its index as a string.
+    pub name: &'static str,
+    /// The declared Rust type, verbatim — `f32`, `Vec3`, `Option<EntityId>`.
+    ///
+    /// Kept verbatim so a generator can name the type it could not express.
+    pub ty: &'static str,
 }
 
 #[cfg(test)]

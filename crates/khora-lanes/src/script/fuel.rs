@@ -172,7 +172,7 @@ impl ScriptRuntime {
             })
     }
 
-    /// The mean whole turn of each behavior, by module and name, over the
+    /// Returns the mean whole turn of each behavior, by module and name, over the
     /// instances that have finished one.
     pub(super) fn known_turns(&self) -> HashMap<(&str, &str), f64> {
         let mut sums: HashMap<(&str, &str), (f64, u32)> = HashMap::new();
@@ -207,7 +207,7 @@ pub(super) enum TurnEnd {
 }
 
 impl TurnEnd {
-    /// How `outcome` ended its turn.
+    /// Returns how `outcome` ended its turn.
     pub(super) fn of(outcome: &Outcome) -> Self {
         match outcome {
             Outcome::Completed { .. } => Self::Finished { completed: true },

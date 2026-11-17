@@ -27,6 +27,10 @@ use khora_core::platform::MachineIdentity;
 use khora_core::Runtime;
 use khora_io::profiles::{load, profile_path, save, ProfilePlace, PROFILES_VAR, SHIPPED_PROFILE};
 
+/// How often, at most, what the DCC learnt is written while the game runs:
+/// a run that ends without shutting down keeps what it learnt until then.
+const SAVE_EVERY: Duration = Duration::from_secs(5);
+
 /// The folder a packed game ships its build-time profile in, beside its
 /// `runtime.json`.
 ///
@@ -34,10 +38,6 @@ use khora_io::profiles::{load, profile_path, save, ProfilePlace, PROFILES_VAR, S
 /// player's boot reads no shipped profile.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ShippedProfileDir(pub(crate) PathBuf);
-
-/// How often, at most, what the DCC learnt is written while the game runs:
-/// a run that ends without shutting down keeps what it learnt until then.
-const SAVE_EVERY: Duration = Duration::from_secs(5);
 
 /// The profile of this machine running this game: where it is filed, and
 /// what was last written there.
@@ -152,7 +152,7 @@ impl Profiles {
     }
 }
 
-/// The profile at `path`, when there is one that reads.
+/// Returns the profile at `path`, when there is one that reads.
 fn read(path: &std::path::Path) -> Option<CostProfile> {
     match load(path) {
         Ok(profile) => profile,
@@ -163,7 +163,7 @@ fn read(path: &std::path::Path) -> Option<CostProfile> {
     }
 }
 
-/// Whether `profile` was learnt by this engine version running `game` —
+/// Returns whether `profile` was learnt by this engine version running `game` —
 /// and on `machine`, when one is named.
 fn fits(profile: &CostProfile, game: &GameIdentity, machine: Option<&MachineIdentity>) -> bool {
     let fits = profile.engine_version == crate::ENGINE_VERSION

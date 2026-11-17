@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What a statement *says*, as a short stable key: its syntax tree, spans left
-//! out; a compound statement by its **header** only.
+//! What a statement *says*, as a short stable key.
+//!
+//! The key hashes its syntax tree, spans left out; a compound statement by its
+//! **header** only.
 //! See the book: concepts/scripting/saves-and-edits.md, "A body part-way through, in tiers".
 //!
 //! Every match below is exhaustive on purpose: a node added to the tree must
@@ -23,16 +25,16 @@ use std::collections::HashMap;
 
 use crate::ast::{BinaryOp, Expr, Pattern, Stmt, TypeRef, UnaryOp};
 
-/// The kind and key of a statement: `("let", "4b1d0a77")`.
+/// Returns the kind and key of a statement: `("let", "4b1d0a77")`.
 pub fn statement_key(statement: &Stmt) -> (&'static str, String) {
     statement_key_with(statement, &HashMap::new())
 }
 
-/// [`statement_key`], hashing each raised event's signature (`event name → its parameter types`).
+/// Returns [`statement_key`], hashing each raised event's signature (`event name → its parameter types`).
 ///
 /// A raise whose event changed its payload is another statement, so a frame
 /// stopped in it is not rebuilt with a value of the payload's old type.
-pub fn statement_key_with(
+pub(crate) fn statement_key_with(
     statement: &Stmt,
     signatures: &HashMap<String, String>,
 ) -> (&'static str, String) {
@@ -42,7 +44,7 @@ pub fn statement_key_with(
     (kind, key.hex8())
 }
 
-/// The key of a field's default, where an initialiser has no statements.
+/// Returns the key of a field's default, where an initialiser has no statements.
 pub fn field_key(name: &str, default: Option<&Expr>) -> String {
     let mut key = Key::new();
     key.text(name);
@@ -53,22 +55,22 @@ pub fn field_key(name: &str, default: Option<&Expr>) -> String {
     key.hex8()
 }
 
-/// The key of a state's entry, inlined where an initialiser enters it.
+/// Returns the key of a state's entry, inlined where an initialiser enters it.
 pub fn state_key(state: &str) -> String {
     let mut key = Key::new();
     key.text(state);
     key.hex8()
 }
 
-/// The key of a `match` arm, from its pattern: an arm's sites keep their
+/// Returns the key of a `match` arm, from its pattern: an arm's sites keep their
 /// names when another arm is added, removed or edited.
-pub fn arm_key(pattern: &Pattern) -> String {
+pub(crate) fn arm_key(pattern: &Pattern) -> String {
     let mut key = Key::new();
     key.pattern(pattern);
     key.hex8()
 }
 
-/// A written type, as a script writes it: `int`, `Vec3?`, `Map<string, int>`.
+/// Spells a written type as a script writes it: `int`, `Vec3?`, `Map<string, int>`.
 pub fn type_name(ty: &TypeRef) -> String {
     match ty {
         TypeRef::Void => "void".to_owned(),
@@ -93,7 +95,7 @@ impl Key<'_> {
         Self(hasher, None)
     }
 
-    /// The first four bytes, as eight lowercase hex digits.
+    /// Returns the first four bytes, as eight lowercase hex digits.
     fn hex8(&self) -> String {
         self.0.finalize().as_bytes()[..4]
             .iter()
@@ -105,7 +107,7 @@ impl Key<'_> {
         self.0.update(&[tag]);
     }
 
-    /// The names a call gives its arguments, in the order written; nothing
+    /// Hashes the names a call gives its arguments, in the order written; nothing
     /// for a call that names none.
     fn labels(&mut self, labels: &[Option<crate::ast::Label>]) {
         if labels.is_empty() {
@@ -117,7 +119,7 @@ impl Key<'_> {
         }
     }
 
-    /// Length-prefixed, so `ab` + `c` and `a` + `bc` differ.
+    /// Hashes `text` length-prefixed, so `ab` + `c` and `a` + `bc` differ.
     fn text(&mut self, text: &str) {
         self.0.update(&(text.len() as u64).to_le_bytes());
         self.0.update(text.as_bytes());
@@ -127,7 +129,7 @@ impl Key<'_> {
         self.0.update(&bits.to_le_bytes());
     }
 
-    /// A statement's header, returning its kind.
+    /// Hashes a statement's header, returning its kind.
     fn header(&mut self, statement: &Stmt) -> &'static str {
         match statement {
             Stmt::Let {

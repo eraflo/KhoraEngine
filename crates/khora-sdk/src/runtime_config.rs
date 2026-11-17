@@ -27,6 +27,9 @@ pub const RUNTIME_CONFIG_FILE: &str = "runtime.json";
 /// and the scene the editor creates by default.
 pub const DEFAULT_SCENE_REL_PATH: &str = "scenes/default.kscene";
 
+/// The version of a game that names none.
+pub const DEFAULT_GAME_VERSION: &str = "0.1.0";
+
 /// The `runtime.json` the editor's Build Game writes next to the runtime binary.
 ///
 /// A missing file means the defaults, as when the runtime runs against a
@@ -52,21 +55,6 @@ pub struct RuntimeConfig {
     /// The game's version, from the project's `project.json`; [`DEFAULT_GAME_VERSION`] when absent.
     #[serde(default = "default_game_version")]
     pub game_version: String,
-}
-
-/// The version of a game that names none.
-pub const DEFAULT_GAME_VERSION: &str = "0.1.0";
-
-fn default_game_version() -> String {
-    DEFAULT_GAME_VERSION.to_owned()
-}
-
-fn default_project_name() -> String {
-    "Khora Runtime".to_owned()
-}
-
-fn default_scene_rel_path() -> String {
-    DEFAULT_SCENE_REL_PATH.to_owned()
 }
 
 impl RuntimeConfig {
@@ -139,4 +127,16 @@ impl RuntimeConfig {
             .clone()
             .unwrap_or_else(|| self.project_name.clone())
     }
+}
+
+fn default_game_version() -> String {
+    DEFAULT_GAME_VERSION.to_owned()
+}
+
+fn default_project_name() -> String {
+    "Khora Runtime".to_owned()
+}
+
+fn default_scene_rel_path() -> String {
+    DEFAULT_SCENE_REL_PATH.to_owned()
 }

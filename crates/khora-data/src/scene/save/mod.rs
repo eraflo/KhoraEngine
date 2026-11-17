@@ -13,7 +13,8 @@
 // limitations under the License.
 
 //! A game save: how a running world differs from the scene it started from,
-//! merged three-way into the scene as it is now on load.
+//! merged three-way into the scene as it stands at load time.
+//!
 //! See the book: concepts/saves.md, "Loading a save: a three-way merge".
 
 use std::collections::{HashMap, HashSet};
@@ -82,7 +83,7 @@ pub struct SaveRecord {
 pub struct RemovedComponents {
     /// The scene's entity.
     pub entity: PersistentId,
-    /// The components it no longer has, by name.
+    /// The components the game removed from it, by name.
     pub components: Vec<String>,
 }
 
@@ -352,7 +353,7 @@ pub fn compose(base: &SceneRecord, save: &SaveRecord) -> SceneRecord {
 
 /// Does [`compose`], and returns what it left out.
 ///
-/// That is what the save changed that the scene no longer has: the author's removal wins.
+/// That is what the save changed that the scene does not have: the author's removal wins.
 ///
 /// # Errors
 /// The scene or the save cannot be read.
@@ -463,11 +464,17 @@ pub fn promote(base: &SceneRecord, save: &SaveRecord) -> SceneRecord {
 /// Reads and checks a composed game record against `world`, as [`prepare`](super::prepare) does.
 ///
 /// Unlike a scene, it admits the runtime components a save keeps to resume.
+///
+/// # Errors
+/// As [`prepare`](super::prepare).
 pub fn prepare_game(world: &mut World, record: &SceneRecord) -> Result<Prepared, LoadFailure> {
     prepare_kept(world, record, Kept::Game)
 }
 
 /// Does [`prepare_game`] without the world, reading `catalog` and reserving ids into `hold`.
+///
+/// # Errors
+/// As [`prepare`](super::prepare).
 pub fn prepare_game_with(
     catalog: &crate::scene::LoadCatalog,
     hold: khora_core::ecs::ReservationHold,
@@ -477,6 +484,9 @@ pub fn prepare_game_with(
 }
 
 /// Returns `save` written with `encoding` behind a save header.
+///
+/// # Errors
+/// The encoding cannot write the save.
 pub fn write_save_file(
     save: &SaveRecord,
     encoding: &dyn SceneEncoding,
@@ -485,6 +495,10 @@ pub fn write_save_file(
 }
 
 /// Returns the save a save file holds.
+///
+/// # Errors
+/// The file is not a save, is of an older or newer format, names an unknown
+/// encoding, or its payload does not decode.
 pub fn read_save_file(file: &SceneFile) -> Result<SaveRecord, SceneFileReadError> {
     check_save_format(file)?;
     let id = encoding_of(file);

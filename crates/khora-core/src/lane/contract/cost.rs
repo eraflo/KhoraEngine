@@ -101,4 +101,23 @@ mod tests {
 
         assert_eq!(read.share, None);
     }
+
+    /// **The share served is held within `0.0..=1.0`**: no share is all of
+    /// the work, one that is not a number is none of it.
+    #[test]
+    fn the_share_served_is_held_within_zero_and_one() {
+        let served = |share| {
+            Cost {
+                share,
+                ..Cost::default()
+            }
+            .served()
+        };
+
+        assert_eq!(served(None), 1.0);
+        assert_eq!(served(Some(0.25)), 0.25);
+        assert_eq!(served(Some(2.0)), 1.0);
+        assert_eq!(served(Some(-1.0)), 0.0);
+        assert_eq!(served(Some(f32::NAN)), 0.0);
+    }
 }

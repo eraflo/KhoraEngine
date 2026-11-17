@@ -26,12 +26,12 @@ use std::sync::Arc;
 pub struct Lease(Arc<dyn Fn() -> bool + Send + Sync>);
 
 impl Lease {
-    /// A lease that holds while `holds` answers yes.
+    /// Returns a lease that holds while `holds` answers yes.
     pub fn new(holds: impl Fn() -> bool + Send + Sync + 'static) -> Self {
         Self(Arc::new(holds))
     }
 
-    /// Whether the lease still holds.
+    /// Returns whether the lease still holds.
     pub fn holds(&self) -> bool {
         (self.0)()
     }
@@ -65,17 +65,17 @@ impl<T> Leases<T> {
         self.groups.push((items, lease));
     }
 
-    /// Every item added, group after group, leases put aside.
+    /// Returns every item added, group after group, leases put aside.
     pub fn items(&self) -> impl Iterator<Item = &T> {
         self.groups.iter().flat_map(|(items, _)| items)
     }
 
-    /// The groups, in the order they were added.
+    /// Returns the groups, in the order they were added.
     pub(crate) fn into_groups(self) -> Vec<(Vec<T>, Option<Lease>)> {
         self.groups
     }
 
-    /// Whether nothing was added.
+    /// Returns whether nothing was added.
     pub fn is_empty(&self) -> bool {
         self.groups.iter().all(|(items, _)| items.is_empty())
     }

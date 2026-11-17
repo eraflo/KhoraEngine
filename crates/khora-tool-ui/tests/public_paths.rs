@@ -88,11 +88,12 @@ fn tab_group_layout_fields(x: &khora_tool_ui::dock::TabGroupLayout) {
 
 #[test]
 fn module_dock_paths_still_resolve() {
+    const _: f32 = khora_tool_ui::dock::MIN_PANE;
+    const _: f32 = khora_tool_ui::dock::SPLITTER_THICKNESS;
+
     // `DockRect` is a plain `[f32; 4]` (x, y, w, h) — the geometry every
     // layout call takes.
     let _: khora_tool_ui::dock::DockRect = [0.0; 4];
-    const _: f32 = khora_tool_ui::dock::MIN_PANE;
-    const _: f32 = khora_tool_ui::dock::SPLITTER_THICKNESS;
     let _ = type_name::<khora_tool_ui::dock::DockLayout>();
     let _ = dock_layout_fields as fn(&khora_tool_ui::dock::DockLayout);
     is_debug::<khora_tool_ui::dock::DockLayout>();

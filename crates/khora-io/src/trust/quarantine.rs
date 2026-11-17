@@ -28,6 +28,9 @@ use crate::fs::{real_path, FileStamp, Keyed, RonStore, RootName};
 
 use super::{SecurityReason, SecurityRefusal};
 
+/// The most refusals kept that quarantine nothing: past it, the oldest go.
+const MAX_REPORTED: usize = 256;
+
 /// What a quarantined file is held by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum QuarantineKey {
@@ -84,61 +87,6 @@ pub struct Refusals {
     /// The refusals these were handed over to: every call goes there.
     successor: Mutex<Option<Arc<Refusals>>>,
 }
-
-/// What the refusals hold.
-#[derive(Default)]
-struct Held {
-    /// The files quarantined, by their real path.
-    quarantined: HashMap<PathBuf, Entry>,
-    /// The refusals reported that quarantine nothing, each once.
-    reported: Vec<SecurityRefusal>,
-    /// What these refusals changed since they last wrote the store, by real
-    /// path: the entry put there, or `None` for one taken out.
-    ///
-    /// A write applies only these, so another run sharing the store keeps its own.
-    changed: HashMap<PathBuf, Option<Entry>>,
-}
-
-/// One quarantined file, as the store keeps it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-struct Entry {
-    refusal: SecurityRefusal,
-    key: QuarantineKey,
-    /// Its real path, what it is held by; empty in a store that does not record it.
-    #[serde(default)]
-    at: PathBuf,
-    /// The file has read with another content since: it is not reported,
-    /// and the content refused is refused again should it come back.
-    #[serde(default)]
-    superseded: bool,
-}
-
-impl Entry {
-    /// The path the entry is held by.
-    fn place(&self) -> PathBuf {
-        if self.at.as_os_str().is_empty() {
-            real_path(&self.refusal.path)
-        } else {
-            self.at.clone()
-        }
-    }
-
-    /// Whether the entry was refused at `trust` for its size or a limit.
-    fn is_strict_at(&self, trust: super::Trust) -> bool {
-        self.refusal.trust == trust && self.refusal.reason.is_size_or_limit()
-    }
-}
-
-impl Keyed for Entry {
-    type Key = PathBuf;
-
-    fn key(&self) -> PathBuf {
-        self.place()
-    }
-}
-
-/// The most refusals kept that quarantine nothing: past it, the oldest go.
-const MAX_REPORTED: usize = 256;
 
 impl std::fmt::Debug for Refusals {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -250,7 +198,7 @@ impl Refusals {
         this.report(&held);
     }
 
-    /// Whether the file at `abs_path`, as `key` says it is now, is
+    /// Returns whether the file at `abs_path`, as `key` says it is now, is
     /// quarantined.
     pub fn is_quarantined(&self, abs_path: &Path, key: &QuarantineKey) -> bool {
         let this = self.current();
@@ -258,7 +206,7 @@ impl Refusals {
         find(&held, abs_path).is_some_and(|(_, entry)| entry.key == *key)
     }
 
-    /// Whether anything is quarantined at `abs_path`, whatever it holds.
+    /// Returns whether anything is quarantined at `abs_path`, whatever it holds.
     ///
     /// A reader hashes a file's bytes only when it is.
     pub fn holds(&self, abs_path: &Path) -> bool {
@@ -270,7 +218,7 @@ impl Refusals {
     /// Notes that the file at `abs_path` read, as `key` says it is now.
     ///
     /// A file quarantined by its stamp leaves the quarantine; one quarantined
-    /// for another content is set aside, no longer reported.
+    /// for another content is set aside, and stops being reported.
     pub fn note_read(&self, abs_path: &Path, key: &QuarantineKey) {
         let this = self.current();
         let mut held = this.held.lock_recovered();
@@ -298,7 +246,7 @@ impl Refusals {
 
     /// Notes that the file at `abs_path` holds again the content it was
     /// quarantined for: it is reported again.
-    pub fn note_refused_again(&self, abs_path: &Path) {
+    pub(crate) fn note_refused_again(&self, abs_path: &Path) {
         let this = self.current();
         let mut held = this.held.lock_recovered();
         let Some(at) = find(&held, abs_path)
@@ -379,7 +327,7 @@ impl Refusals {
         Current::HandedOver(last)
     }
 
-    /// The refusals these were handed over to, if any.
+    /// Returns the refusals these were handed over to, if any.
     fn successor(&self) -> Option<Arc<Refusals>> {
         self.successor.lock_recovered().clone()
     }
@@ -450,6 +398,58 @@ impl Refusals {
     }
 }
 
+/// What the refusals hold.
+#[derive(Default)]
+struct Held {
+    /// The files quarantined, by their real path.
+    quarantined: HashMap<PathBuf, Entry>,
+    /// The refusals reported that quarantine nothing, each once.
+    reported: Vec<SecurityRefusal>,
+    /// What these refusals changed since they last wrote the store, by real
+    /// path: the entry put there, or `None` for one taken out.
+    ///
+    /// A write applies only these, so another run sharing the store keeps its own.
+    changed: HashMap<PathBuf, Option<Entry>>,
+}
+
+/// One quarantined file, as the store keeps it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct Entry {
+    refusal: SecurityRefusal,
+    key: QuarantineKey,
+    /// Its real path, what it is held by; empty in a store that does not record it.
+    #[serde(default)]
+    at: PathBuf,
+    /// The file has read with another content since: it is not reported,
+    /// and the content refused is refused again should it come back.
+    #[serde(default)]
+    superseded: bool,
+}
+
+impl Entry {
+    /// Returns the path the entry is held by.
+    fn place(&self) -> PathBuf {
+        if self.at.as_os_str().is_empty() {
+            real_path(&self.refusal.path)
+        } else {
+            self.at.clone()
+        }
+    }
+
+    /// Returns whether the entry was refused at `trust` for its size or a limit.
+    fn is_strict_at(&self, trust: super::Trust) -> bool {
+        self.refusal.trust == trust && self.refusal.reason.is_size_or_limit()
+    }
+}
+
+impl Keyed for Entry {
+    type Key = PathBuf;
+
+    fn key(&self) -> PathBuf {
+        self.place()
+    }
+}
+
 /// The refusals a call acts on: these, or the last these were handed over to.
 enum Current<'a> {
     Here(&'a Refusals),
@@ -467,7 +467,7 @@ impl std::ops::Deref for Current<'_> {
     }
 }
 
-/// The entry held for `abs_path` — by its real path, else by the path a
+/// Finds the entry held for `abs_path` — by its real path, else by the path a
 /// refusal named it by — with the path it is held by.
 fn find<'a>(held: &'a Held, abs_path: &Path) -> Option<(PathBuf, &'a Entry)> {
     let at = real_path(abs_path);
@@ -480,7 +480,7 @@ fn find<'a>(held: &'a Held, abs_path: &Path) -> Option<(PathBuf, &'a Entry)> {
         .map(|(at, entry)| (at.clone(), entry))
 }
 
-/// The problem a refusal is reported as.
+/// Returns the problem a refusal is reported as.
 fn problem_of(refusal: &SecurityRefusal) -> Problem {
     Problem {
         note: Some(refusal.reason.remedy().to_owned()),

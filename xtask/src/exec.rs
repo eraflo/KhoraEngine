@@ -10,11 +10,25 @@ use std::time::Instant;
 use crate::term::*;
 
 pub fn execute_command(cmd: &str, args: &[&str], task_name: &str) -> Result<()> {
+    execute_command_with_env(cmd, args, &[], task_name)
+}
+
+/// Runs `cmd` like [`execute_command`], with `envs` set in its environment.
+///
+/// # Errors
+///
+/// Fails when the command cannot be started or exits unsuccessfully.
+pub fn execute_command_with_env(
+    cmd: &str,
+    args: &[&str],
+    envs: &[(&str, &str)],
+    task_name: &str,
+) -> Result<()> {
     let start_time = Instant::now();
     print_command_info(cmd, args);
 
     let mut command = Command::new(cmd);
-    command.args(args);
+    command.args(args).envs(envs.iter().copied());
 
     let status = command.status()?;
     let duration = start_time.elapsed();

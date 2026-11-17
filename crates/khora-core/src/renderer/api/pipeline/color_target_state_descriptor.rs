@@ -39,8 +39,8 @@ pub struct BlendStateDescriptor {
 }
 
 impl BlendStateDescriptor {
-    /// Standard (non-premultiplied) alpha blending:
-    /// `dst = src.rgb * src.a + dst.rgb * (1 - src.a)`.
+    /// Returns standard (non-premultiplied) alpha blending: `dst = src.rgb * src.a + dst.rgb * (1 -
+    /// src.a)`.
     ///
     /// The alpha channel accumulates coverage with `One / OneMinusSrcAlpha`, so
     /// compositing several transparent layers leaves a correct destination

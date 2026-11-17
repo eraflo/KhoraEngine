@@ -26,15 +26,6 @@ use serde::{Deserialize, Serialize};
 
 use super::PackManifest;
 
-/// An Ed25519 public key: what a runtime verifies a pack with.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct PackKey(pub [u8; 32]);
-
-/// The user's key pair, signing the packs their builds make.
-pub struct PackSigner {
-    pair: Ed25519KeyPair,
-}
-
 /// The file the key pair is kept in, under its folder.
 const KEY_FILE: &str = "pack.key";
 
@@ -51,6 +42,15 @@ const MAX_MANIFEST_BYTES: usize = 64 << 20;
 /// What a signature is made over, before the index hash and the manifest:
 /// a signature of anything else never verifies as a pack's.
 const DOMAIN: &[u8] = b"khora pack manifest v1\0";
+
+/// An Ed25519 public key: what a runtime verifies a pack with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PackKey(pub [u8; 32]);
+
+/// The user's key pair, signing the packs their builds make.
+pub struct PackSigner {
+    pair: Ed25519KeyPair,
+}
 
 impl PackSigner {
     /// Returns the key pair at `<dir>/pack.key`, made and written atomically when absent.
@@ -112,6 +112,10 @@ impl PackSigner {
     }
 
     /// Signs `manifest` over the `index.bin` whose bytes are `index_bytes`.
+    ///
+    /// # Errors
+    ///
+    /// When `manifest` cannot be encoded.
     pub fn sign(&self, manifest: &PackManifest, index_bytes: &[u8]) -> Result<SignedManifest> {
         let manifest = manifest.encode()?;
         let index = *blake3::hash(index_bytes).as_bytes();
@@ -128,7 +132,7 @@ impl PackSigner {
     }
 }
 
-/// What a signature covers: the domain, the index's hash, the manifest.
+/// Returns what a signature covers: the domain, the index's hash, the manifest.
 fn signed_bytes(index: &[u8; 32], manifest: &[u8]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(DOMAIN.len() + index.len() + manifest.len());
     bytes.extend_from_slice(DOMAIN);
@@ -151,6 +155,10 @@ pub struct SignedManifest {
 
 impl SignedManifest {
     /// Encodes the bytes of `manifest.bin`, behind the magic `KH_SIGNED_MANIFEST_V1`.
+    ///
+    /// # Errors
+    ///
+    /// When the signed manifest cannot be encoded.
     pub fn encode(&self) -> Result<Vec<u8>> {
         let mut bytes = MAGIC.to_vec();
         let body = bincode::serde::encode_to_vec(self, bincode::config::standard())

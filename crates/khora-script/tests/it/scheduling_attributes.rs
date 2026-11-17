@@ -188,13 +188,13 @@ fn a_negated_frequency_in_a_default_is_refused_as_a_rate() {
 /// and a name, as `2 s` is for durations.
 #[test]
 fn hz_is_a_suffix_only_when_it_touches_the_number_as_a_whole_word() {
+    use khora_script::TokenKind::{Frequency, Ident, Int};
     let kinds: Vec<khora_script::TokenKind> = khora_script::lex("1e1hz 1_0hz 10 hz 10hza hz")
         .tokens
         .into_iter()
         .map(|token| token.kind)
         .filter(|kind| *kind != khora_script::TokenKind::Eof)
         .collect();
-    use khora_script::TokenKind::{Frequency, Ident, Int};
     assert_eq!(
         kinds,
         vec![

@@ -20,7 +20,7 @@ use khora_core::asset::AssetUUID;
 
 use crate::asset::decoders::decode_material;
 
-/// Whether [`extract_dependencies`] has a real extractor for `asset_type`.
+/// Returns whether [`extract_dependencies`] has a real extractor for `asset_type`.
 ///
 /// The index builder reads a file's bytes only for such a type. Keep it in
 /// sync with the populated arms of [`extract_dependencies`].

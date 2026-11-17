@@ -43,8 +43,8 @@ struct Waited {
 ///
 /// Installed in the runtime as `Arc<Readiness>`; the engine calls
 /// [`EngineApp::startup_ready`](crate::EngineApp::startup_ready) once, on the
-/// first frame it is ready or timed out. A ticket counts as landed once its hub
-/// no longer holds it pending: waiting never takes its outcome, which the tool
+/// first frame it is ready or timed out. A ticket counts as landed when its hub
+/// holds it pending no more: waiting never takes its outcome, which the tool
 /// still reads from the hub. Its lock is a leaf, never held while a hub is asked.
 pub struct Readiness {
     waited: Mutex<Waited>,
@@ -198,7 +198,7 @@ pub(crate) fn settle(runtime: &Runtime, now: Instant) -> bool {
     }
 }
 
-/// The problem a ticket late at the startup's timeout is reported as.
+/// Returns the problem a ticket late at the startup's timeout is reported as.
 fn late_problem(ticket: &ReadinessTicket) -> Problem {
     let (kind, number) = match ticket {
         ReadinessTicket::Index(ticket) => ("project index", ticket.0),
@@ -230,14 +230,14 @@ impl Drop for ReadinessHold {
 /// How far a startup's wait has come: `landed` of the `waited` tickets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ReadinessProgress {
-    /// The tickets waited on whose hub no longer holds them pending.
+    /// The tickets waited on whose hub holds them pending no more.
     pub landed: usize,
     /// The tickets waited on, in all.
     pub waited: usize,
 }
 
 impl ReadinessProgress {
-    /// The share of the tickets landed, from `0.0` to `1.0`.
+    /// Returns the share of the tickets landed, from `0.0` to `1.0`.
     pub fn fraction(&self) -> f32 {
         if self.waited == 0 {
             return 1.0;

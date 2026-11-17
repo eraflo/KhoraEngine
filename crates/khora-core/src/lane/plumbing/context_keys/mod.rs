@@ -35,7 +35,7 @@ pub use clear_color::ClearColor;
 pub struct ColorTargetSize(pub crate::math::Extent2D);
 
 impl ColorTargetSize {
-    /// The target's aspect ratio, width over height; `1.0` when either side
+    /// Returns the target's aspect ratio, width over height; `1.0` when either side
     /// is zero (a minimised window has no shape to follow).
     pub fn aspect(&self) -> f32 {
         let crate::math::Extent2D { width, height } = self.0;

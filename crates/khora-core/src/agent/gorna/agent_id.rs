@@ -27,12 +27,12 @@ use serde::{Deserialize, Serialize};
 pub struct AgentId(&'static str);
 
 impl AgentId {
-    /// The agent named `name`.
+    /// Returns the agent named `name`.
     pub const fn new(name: &'static str) -> Self {
         Self(name)
     }
 
-    /// The agent's name.
+    /// Returns the agent's name.
     pub fn name(&self) -> &'static str {
         self.0
     }

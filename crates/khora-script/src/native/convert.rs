@@ -46,7 +46,7 @@ pub trait ScriptType: Sized {
     fn to_value(self, context: &mut NativeContext<'_>) -> Result<Value, NativeError>;
 }
 
-/// The message for a value that arrived in the wrong shape.
+/// Builds the message for a value that arrived in the wrong shape.
 fn mismatch(expected: &str, found: Value) -> NativeError {
     NativeError::new(format!(
         "an engine function expected {expected} but the call supplied {} — \

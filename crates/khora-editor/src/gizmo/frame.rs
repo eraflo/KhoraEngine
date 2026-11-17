@@ -44,7 +44,7 @@ pub struct SelectionFrame {
 ///
 /// The pivot is the mean of the selected origins, so a multi-selection rotates
 /// and scales as one body rather than each entity about itself.
-pub fn selection_frame(
+pub(crate) fn selection_frame(
     world: &GameWorld,
     editor_state: &EditorState,
     view_info: &ViewInfo,
@@ -232,7 +232,8 @@ fn range_gizmo(range: f32) -> GizmoKind {
     }
 }
 
-/// World-space origin of `entity`, preferring the propagated global transform.
+/// Returns the world-space origin of `entity`, preferring the propagated global
+/// transform.
 fn world_origin(world: &GameWorld, entity: EntityId) -> Vec3 {
     if let Some(global) = world.get_component::<GlobalTransform>(entity) {
         return global.0 .0.cols[3].truncate();

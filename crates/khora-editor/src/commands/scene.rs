@@ -22,6 +22,10 @@ use khora_sdk::{EditorState, GameWorld, SerializationGoal};
 use crate::project_vfs::ProjectVfs;
 use crate::{build_game, scene_io};
 
+/// Why Build Game is refused in a restricted project.
+const BUILD_REFUSED: &str = "Build Game is off in restricted mode: building runs this project's \
+                             code. Trust the project to build it.";
+
 /// Saves the scene, through the project VFS when the path lies under `<project>/assets/`.
 ///
 /// A Save-As elsewhere writes with `std::fs`. Saves under the
@@ -43,7 +47,7 @@ pub fn save_scene_dispatch(
 /// Saves as [`save_scene_dispatch`] does, under an explicit serialization goal.
 ///
 /// `HumanReadableDebug` for a JSON scene, `PortableBinary` for MessagePack.
-pub fn save_scene_dispatch_with_goal(
+pub(crate) fn save_scene_dispatch_with_goal(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &GameWorld,
     path_str: &str,
@@ -199,7 +203,7 @@ pub fn land_scene_loads(
     replaced
 }
 
-/// A load that changed nothing, as a problem of the `Load` source.
+/// Reports a load that changed nothing as a problem of the `Load` source.
 fn load_failed(message: String) -> khora_sdk::khora_core::problems::Problem {
     khora_sdk::khora_core::problems::Problem::new(
         khora_sdk::khora_core::problems::ProblemSeverity::Error,
@@ -207,7 +211,7 @@ fn load_failed(message: String) -> khora_sdk::khora_core::problems::Problem {
     )
 }
 
-/// Whether Build Game is refused in a project at `trust`: a restricted
+/// Returns whether Build Game is refused in a project at `trust`: a restricted
 /// project's build would run its code.
 ///
 /// Says why in `EditorState::refusal` when refused; a trusted project leaves it as it was.
@@ -225,10 +229,6 @@ pub fn build_game_refused(
     true
 }
 
-/// Why Build Game is refused in a restricted project.
-const BUILD_REFUSED: &str = "Build Game is off in restricted mode: building runs this project's \
-                             code. Trust the project to build it.";
-
 /// Builds the game for the host under `<project>/dist/<target>/`.
 ///
 /// It writes the `runtime.json` from which the staged binary loads the
@@ -236,7 +236,7 @@ const BUILD_REFUSED: &str = "Build Game is off in restricted mode: building runs
 ///
 /// Progress and the final path go to the log. See the book:
 /// reference/editor.md, "09 — Build Game".
-pub fn run_build_game(
+pub(crate) fn run_build_game(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     editor_state: &Arc<Mutex<EditorState>>,
 ) {
@@ -283,6 +283,6 @@ pub fn run_build_game(
 ///
 /// The app keeps it as `picked_project` and opens it before the next frame, at
 /// what the user decided of it.
-pub fn pick_project_folder() -> Option<std::path::PathBuf> {
+pub(crate) fn pick_project_folder() -> Option<std::path::PathBuf> {
     rfd::FileDialog::new().pick_folder()
 }

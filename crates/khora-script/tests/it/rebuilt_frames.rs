@@ -262,6 +262,7 @@ fn every_cut_resumed_into_edited_code_finishes_with_the_edited_result() {
 /// and, if taken back, run a little.
 #[test]
 fn a_malformed_frozen_machine_resumes_or_is_refused_without_panicking() {
+    type Mutation = (&'static str, Box<dyn Fn(&mut FrozenMachine)>);
     let source = |tail: &str| {
         format!(
             "behavior Guard {{
@@ -288,7 +289,6 @@ fn a_malformed_frozen_machine_resumes_or_is_refused_without_panicking() {
     let caller_site = good.frames[0].site.clone();
     let await_site = good.frames[1].site.clone();
 
-    type Mutation = (&'static str, Box<dyn Fn(&mut FrozenMachine)>);
     let mutations: Vec<Mutation> = vec![
         ("a huge base", Box::new(|m| m.frames[1].base = u64::MAX)),
         (

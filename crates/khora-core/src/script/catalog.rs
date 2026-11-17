@@ -29,19 +29,6 @@ use crate::sync::RwLockExt;
 #[derive(Debug, Default)]
 pub struct ScriptCatalog(RwLock<CatalogData>);
 
-/// The catalog's contents.
-#[derive(Debug, Default, Clone, PartialEq)]
-pub struct CatalogData {
-    /// Every name a loaded module declares (components, behaviors, systems),
-    /// sorted, each once.
-    ///
-    /// A new declaration of one of these is refused.
-    pub declared: Vec<ComponentName>,
-    /// Moves on every change of `declared`, never otherwise: a reader that
-    /// saw this generation has the current set.
-    pub declared_generation: u64,
-}
-
 impl ScriptCatalog {
     /// Replaces the declared names; `true` when they changed.
     ///
@@ -59,16 +46,29 @@ impl ScriptCatalog {
         true
     }
 
-    /// Every name a loaded module declares now, sorted.
+    /// Returns every name a loaded module declares now, sorted.
     pub fn declared(&self) -> Vec<ComponentName> {
         self.0.read_recovered().declared.clone()
     }
 
-    /// The generation of the declared names: moves on every change of the
+    /// Returns the generation of the declared names: moves on every change of the
     /// set, never otherwise.
     pub fn declared_generation(&self) -> u64 {
         self.0.read_recovered().declared_generation
     }
+}
+
+/// The catalog's contents.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct CatalogData {
+    /// Every name a loaded module declares (components, behaviors, systems),
+    /// sorted, each once.
+    ///
+    /// A new declaration of one of these is refused.
+    pub declared: Vec<ComponentName>,
+    /// Moves on every change of `declared`, never otherwise: a reader that
+    /// saw this generation has the current set.
+    pub declared_generation: u64,
 }
 
 #[cfg(test)]

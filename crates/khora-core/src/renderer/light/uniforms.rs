@@ -18,6 +18,16 @@ pub use super::culling_uniforms_data::CullingUniformsData;
 use crate::math::LinearRgba;
 use crate::renderer::api::shader::defs::ShaderDefs;
 
+/// Maximum number of directional lights in the global lighting buffer: the
+/// shader's `MAX_DIRECTIONAL_LIGHTS`, from [`ShaderDefs`].
+pub const MAX_DIRECTIONAL_LIGHTS: usize = ShaderDefs::MAX_DIRECTIONAL_LIGHTS as usize;
+/// Maximum number of point lights in the global lighting buffer: the
+/// shader's `MAX_POINT_LIGHTS`, from [`ShaderDefs`].
+pub const MAX_POINT_LIGHTS: usize = ShaderDefs::MAX_POINT_LIGHTS as usize;
+/// Maximum number of spot lights in the global lighting buffer: the shader's
+/// `MAX_SPOT_LIGHTS`, from [`ShaderDefs`].
+pub const MAX_SPOT_LIGHTS: usize = ShaderDefs::MAX_SPOT_LIGHTS as usize;
+
 /// Data for a single directional light, formatted for GPU consumption.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
@@ -28,7 +38,7 @@ pub struct DirectionalLightUniform {
     pub color: LinearRgba,
     /// View-projection matrix for the shadow map.
     pub shadow_view_proj: [[f32; 4]; 4],
-    /// Shadow parameters: x = shadow_map_index, y = shadow_bias, z = shadow_normal_bias, w = padding.
+    /// Shadow parameters: x = `shadow_map_index`, y = `shadow_bias`, z = `shadow_normal_bias`, w = padding.
     pub shadow_params: [f32; 4],
 }
 
@@ -40,7 +50,7 @@ pub struct PointLightUniform {
     pub position: [f32; 4], // w is range
     /// Color (rgb) and Intensity (a).
     pub color: LinearRgba,
-    /// Shadow parameters: x = shadow_map_index (-1 if no shadow), y = shadow_bias, z = shadow_normal_bias, w = padding.
+    /// Shadow parameters: x = `shadow_map_index` (-1 if no shadow), y = `shadow_bias`, z = `shadow_normal_bias`, w = padding.
     pub shadow_params: [f32; 4],
 }
 
@@ -58,19 +68,9 @@ pub struct SpotLightUniform {
     pub params: [f32; 4], // x = outer_cone_cos, yzw = padding
     /// View-projection matrix for the shadow map.
     pub shadow_view_proj: [[f32; 4]; 4],
-    /// Shadow parameters: x = shadow_map_index, y = shadow_bias, z = shadow_normal_bias, w = padding.
+    /// Shadow parameters: x = `shadow_map_index`, y = `shadow_bias`, z = `shadow_normal_bias`, w = padding.
     pub shadow_params: [f32; 4],
 }
-
-/// Maximum number of directional lights in the global lighting buffer: the
-/// shader's `MAX_DIRECTIONAL_LIGHTS`, from [`ShaderDefs`].
-pub const MAX_DIRECTIONAL_LIGHTS: usize = ShaderDefs::MAX_DIRECTIONAL_LIGHTS as usize;
-/// Maximum number of point lights in the global lighting buffer: the
-/// shader's `MAX_POINT_LIGHTS`, from [`ShaderDefs`].
-pub const MAX_POINT_LIGHTS: usize = ShaderDefs::MAX_POINT_LIGHTS as usize;
-/// Maximum number of spot lights in the global lighting buffer: the shader's
-/// `MAX_SPOT_LIGHTS`, from [`ShaderDefs`].
-pub const MAX_SPOT_LIGHTS: usize = ShaderDefs::MAX_SPOT_LIGHTS as usize;
 
 /// The structure of the global lighting uniform buffer.
 #[repr(C)]

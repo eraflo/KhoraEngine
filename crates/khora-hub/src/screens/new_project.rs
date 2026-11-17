@@ -29,7 +29,7 @@ const RAIL_W: f32 = 260.0;
 const ROW: f32 = 32.0;
 
 /// Renders the new-project screen.
-pub fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
+pub(crate) fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     if !app.new_project.has_fetched_once && app.new_project.fetch_rx.is_none() {
         app.new_project.fetch_rx = Some(github::fetch_releases_async());
     }
@@ -68,27 +68,45 @@ pub fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     );
     y += 28.0;
 
-    // ── Basics ──
-    eyebrow(ui, &t, [x, y], "Basics");
+    y = show_basics(app, ui, &t, x, y, form_w);
+    let choices = app.engine_choices();
+    y = show_engine(app, ui, &t, x, y, form_w, &choices);
+    y = show_source_control(app, ui, &t, x, y, form_w);
+    y = show_progress(app, ui, &t, x, y, form_w);
+    show_actions(app, ui, &t, x, y, form_w, &choices);
+
+    // ── The rail: what pressing Create actually does ──
+    let rail_x = x + form_w + 40.0;
+    if widgets::right(r) - rail_x >= RAIL_W {
+        show_rail(app, ui, &t, [rail_x, r[1] + 96.0, RAIL_W, 200.0]);
+    }
+}
+
+/// Renders the name and parent directory fields from `y`, and returns the `y`
+/// below them.
+fn show_basics(
+    app: &mut HubApp,
+    ui: &mut dyn UiBuilder,
+    t: &UiTheme,
+    x: f32,
+    mut y: f32,
+    form_w: f32,
+) -> f32 {
+    eyebrow(ui, t, [x, y], "Basics");
     y += 20.0;
 
     let name_invalid = !app.new_project.name.trim().is_empty()
         && project_dir(app).map(|p| p.exists()).unwrap_or(false);
 
-    field_label(ui, &t, [x, y], "Project name");
+    field_label(ui, t, [x, y], "Project name");
     y += 18.0;
-    let inner = input_frame(ui, &t, [x, y, form_w, ROW], "np-name", name_invalid);
+    let inner = input_frame(ui, t, [x, y, form_w, ROW], "np-name", name_invalid);
     ui.region_at("np-name", inner, &mut |ui| {
         ui.text_edit_singleline(&mut app.new_project.name);
     });
     y += ROW + 4.0;
     if name_invalid {
-        error_line(
-            ui,
-            &t,
-            [x, y],
-            "A folder with that name already exists here",
-        );
+        error_line(ui, t, [x, y], "A folder with that name already exists here");
         y += 18.0;
     }
     y += 8.0;
@@ -96,16 +114,16 @@ pub fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     let parent = PathBuf::from(app.new_project.path.trim());
     let dir_invalid = !app.new_project.path.trim().is_empty() && !parent.is_dir();
 
-    field_label(ui, &t, [x, y], "Parent directory");
+    field_label(ui, t, [x, y], "Parent directory");
     y += 18.0;
     let field_w = form_w - 108.0;
-    let inner = input_frame(ui, &t, [x, y, field_w, ROW], "np-path", dir_invalid);
+    let inner = input_frame(ui, t, [x, y, field_w, ROW], "np-path", dir_invalid);
     ui.region_at("np-path", inner, &mut |ui| {
         ui.text_edit_singleline(&mut app.new_project.path);
     });
     if button(
         ui,
-        &t,
+        t,
         [x + field_w + 8.0, y, 100.0, ROW],
         "np-browse",
         Button::new("Browse…", ButtonKind::Ghost).icon(Icon::FolderOpen),
@@ -117,7 +135,7 @@ pub fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     }
     y += ROW + 4.0;
     if dir_invalid {
-        error_line(ui, &t, [x, y], "That directory doesn't exist");
+        error_line(ui, t, [x, y], "That directory doesn't exist");
         y += 18.0;
     } else if let Some(dest) = project_dir(app) {
         mono(
@@ -129,13 +147,23 @@ pub fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
         );
         y += 16.0;
     }
-    y += 12.0;
+    y + 12.0
+}
 
-    // ── Engine ──
-    eyebrow(ui, &t, [x, y], "Engine");
+/// Renders a card per engine in `choices` from `y`, and returns the `y` below
+/// them.
+fn show_engine(
+    app: &mut HubApp,
+    ui: &mut dyn UiBuilder,
+    t: &UiTheme,
+    x: f32,
+    mut y: f32,
+    form_w: f32,
+    choices: &[EngineChoice],
+) -> f32 {
+    eyebrow(ui, t, [x, y], "Engine");
     y += 20.0;
 
-    let choices = app.engine_choices();
     for (i, choice) in choices.iter().enumerate() {
         let (label, meta) = match choice {
             EngineChoice::Installed(e) => (e.version.clone(), "installed".to_owned()),
@@ -146,7 +174,7 @@ pub fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
         };
         if radio_card(
             ui,
-            &t,
+            t,
             [x, y, form_w, 38.0],
             &format!("np-engine-{i}"),
             &label,
@@ -159,15 +187,24 @@ pub fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
         }
         y += 38.0 + 6.0;
     }
-    y += 8.0;
+    y + 8.0
+}
 
-    // ── Source control ──
-    eyebrow(ui, &t, [x, y], "Source control");
+/// Renders the git options from `y`, and returns the `y` below them.
+fn show_source_control(
+    app: &mut HubApp,
+    ui: &mut dyn UiBuilder,
+    t: &UiTheme,
+    x: f32,
+    mut y: f32,
+    form_w: f32,
+) -> f32 {
+    eyebrow(ui, t, [x, y], "Source control");
     y += 20.0;
 
     if checkbox(
         ui,
-        &t,
+        t,
         [x, y, form_w, 24.0],
         "np-git",
         "Initialize a git repository",
@@ -187,7 +224,7 @@ pub fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
 
         if checkbox(
             ui,
-            &t,
+            t,
             [nest_x, y, form_w - 26.0, 24.0],
             "np-git-remote",
             "Create a GitHub repository",
@@ -200,67 +237,89 @@ pub fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
         y += 28.0;
 
         if app.new_project.git_remote {
-            let deep_x = nest_x + 26.0;
-
-            field_label(ui, &t, [deep_x, y], "Repository name");
-            y += 18.0;
-            let inner = input_frame(ui, &t, [deep_x, y, form_w - 52.0, ROW], "np-repo", false);
-            ui.region_at("np-repo", inner, &mut |ui| {
-                ui.text_edit_singleline(&mut app.new_project.remote_repo_name);
-            });
-            y += ROW + 8.0;
-
-            if checkbox(
-                ui,
-                &t,
-                [deep_x, y, form_w - 52.0, 24.0],
-                "np-private",
-                "Private repository",
-                app.new_project.remote_private,
-            )
-            .clicked
-            {
-                app.new_project.remote_private = !app.new_project.remote_private;
-            }
-            y += 26.0;
-
-            if checkbox(
-                ui,
-                &t,
-                [deep_x, y, form_w - 52.0, 24.0],
-                "np-push",
-                "Push the initial commit",
-                app.new_project.remote_push,
-            )
-            .clicked
-            {
-                app.new_project.remote_push = !app.new_project.remote_push;
-            }
-            y += 26.0;
-
-            if !app.settings.auth.is_connected() {
-                error_line(
-                    ui,
-                    &t,
-                    [deep_x, y],
-                    "Not connected to GitHub — this will fall back to local-only",
-                );
-                y += 20.0;
-            }
+            y = show_remote(app, ui, t, nest_x + 26.0, y, form_w);
         }
 
         ui.paint_line([x + 12.0, nest_top], [x + 12.0, y - 6.0], t.border, 1.0);
     }
-    y += 12.0;
+    y + 12.0
+}
 
-    // ── Progress / status ──
+/// Renders the GitHub repository options at `deep_x` from `y`, and returns the
+/// `y` below them.
+fn show_remote(
+    app: &mut HubApp,
+    ui: &mut dyn UiBuilder,
+    t: &UiTheme,
+    deep_x: f32,
+    mut y: f32,
+    form_w: f32,
+) -> f32 {
+    field_label(ui, t, [deep_x, y], "Repository name");
+    y += 18.0;
+    let inner = input_frame(ui, t, [deep_x, y, form_w - 52.0, ROW], "np-repo", false);
+    ui.region_at("np-repo", inner, &mut |ui| {
+        ui.text_edit_singleline(&mut app.new_project.remote_repo_name);
+    });
+    y += ROW + 8.0;
+
+    if checkbox(
+        ui,
+        t,
+        [deep_x, y, form_w - 52.0, 24.0],
+        "np-private",
+        "Private repository",
+        app.new_project.remote_private,
+    )
+    .clicked
+    {
+        app.new_project.remote_private = !app.new_project.remote_private;
+    }
+    y += 26.0;
+
+    if checkbox(
+        ui,
+        t,
+        [deep_x, y, form_w - 52.0, 24.0],
+        "np-push",
+        "Push the initial commit",
+        app.new_project.remote_push,
+    )
+    .clicked
+    {
+        app.new_project.remote_push = !app.new_project.remote_push;
+    }
+    y += 26.0;
+
+    if !app.settings.auth.is_connected() {
+        error_line(
+            ui,
+            t,
+            [deep_x, y],
+            "Not connected to GitHub — this will fall back to local-only",
+        );
+        y += 20.0;
+    }
+    y
+}
+
+/// Renders the download progress and the last status from `y`, and returns the
+/// `y` below them.
+fn show_progress(
+    app: &HubApp,
+    ui: &mut dyn UiBuilder,
+    t: &UiTheme,
+    x: f32,
+    mut y: f32,
+    form_w: f32,
+) -> f32 {
     if let Some((done, total_bytes)) = app.new_project.download_progress {
         let ratio = if total_bytes == 0 {
             0.0
         } else {
             done as f32 / total_bytes as f32
         };
-        progress_row(ui, &t, [x, y, form_w, 22.0], "Downloading engine", ratio);
+        progress_row(ui, t, [x, y, form_w, 22.0], "Downloading engine", ratio);
         y += 30.0;
     }
     if let Some(status) = app.new_project.status.as_ref() {
@@ -272,8 +331,19 @@ pub fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
         text(ui, [x, y], status, t.font_size_caption + 1.0, color);
         y += 20.0;
     }
+    y
+}
 
-    // ── Actions ──
+/// Renders the Create and Cancel buttons from `y`, acting on a click.
+fn show_actions(
+    app: &mut HubApp,
+    ui: &mut dyn UiBuilder,
+    t: &UiTheme,
+    x: f32,
+    mut y: f32,
+    form_w: f32,
+    choices: &[EngineChoice],
+) {
     y += 6.0;
     ui.paint_line([x, y], [x + form_w, y], t.separator, 1.0);
     y += 16.0;
@@ -281,7 +351,7 @@ pub fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     let busy = app.new_project.creating_after_download || app.new_project.download_rx.is_some();
     if button(
         ui,
-        &t,
+        t,
         [x, y, 150.0, ROW],
         "np-create",
         Button::new(
@@ -293,11 +363,11 @@ pub fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     )
     .clicked
     {
-        handle_create(app, &choices);
+        handle_create(app, choices);
     }
     if button(
         ui,
-        &t,
+        t,
         [x + 158.0, y, 90.0, ROW],
         "np-cancel",
         Button::new("Cancel", ButtonKind::Ghost),
@@ -305,12 +375,6 @@ pub fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     .clicked
     {
         app.screen = Screen::Home;
-    }
-
-    // ── The rail: what pressing Create actually does ──
-    let rail_x = x + form_w + 40.0;
-    if widgets::right(r) - rail_x >= RAIL_W {
-        show_rail(app, ui, &t, [rail_x, r[1] + 96.0, RAIL_W, 200.0]);
     }
 }
 
@@ -381,7 +445,7 @@ fn show_rail(app: &HubApp, ui: &mut dyn UiBuilder, t: &UiTheme, rect: [f32; 4]) 
     );
 }
 
-/// The folder that would be created, if both fields are filled in.
+/// Returns the folder that would be created, if both fields are filled in.
 fn project_dir(app: &HubApp) -> Option<PathBuf> {
     let name = app.new_project.name.trim();
     let parent = app.new_project.path.trim();

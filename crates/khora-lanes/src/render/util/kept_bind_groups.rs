@@ -30,7 +30,7 @@ pub(crate) struct KeptBindGroups<K> {
 }
 
 impl<K: PartialEq> KeptBindGroups<K> {
-    /// No bind group yet, holding at most `capacity`.
+    /// Creates a cache with no bind group yet, holding at most `capacity`.
     pub fn new(capacity: usize) -> Self {
         Self {
             capacity: capacity.max(1),
@@ -38,7 +38,7 @@ impl<K: PartialEq> KeptBindGroups<K> {
         }
     }
 
-    /// The bind group of `key`: the one kept, else the one `make` creates.
+    /// Returns the bind group of `key`: the one kept, else the one `make` creates.
     pub fn get(
         &mut self,
         key: K,

@@ -20,7 +20,7 @@ use quote::{quote, ToTokens};
 
 use super::attrs::ComponentAttrs;
 
-/// The domain registration of `name`, when it declares
+/// Returns the domain registration of `name`, when it declares
 /// `#[component(domain = …)]`; nothing otherwise.
 pub(super) fn domain_registration(name: &syn::Ident, domain: Option<&syn::Ident>) -> impl ToTokens {
     match domain {
@@ -37,7 +37,7 @@ pub(super) fn domain_registration(name: &syn::Ident, domain: Option<&syn::Ident>
     }
 }
 
-/// The `ComponentRegistration` of `name`, saved through its mirror `serializable_name`.
+/// Returns the `ComponentRegistration` of `name`, saved through its mirror `serializable_name`.
 ///
 /// It carries `field_schema`, the schema traced once into the static
 /// `schema_cell`, and the declared `check`.

@@ -24,13 +24,6 @@ use khora_core::lane::{Lane, LaneReport};
 use super::work::{load, Waiting};
 use super::{LoadingFamily, LoadingInputs, LoadingOutputs};
 
-/// A lane that loads the units its budget covers, always at least one.
-///
-/// The project indexes go first, then the scenes, the script roots and the
-/// assets, each kind in filing order. What it does not take waits for the next run.
-#[derive(Debug, Default)]
-pub struct PacedLane;
-
 const LEVELS: [Level; 1] = [Level {
     id: StrategyId::Balanced,
     name: "paced",
@@ -42,6 +35,13 @@ const LEVELS: [Level; 1] = [Level {
         other: 0,
     },
 }];
+
+/// A lane that loads the units its budget covers, always at least one.
+///
+/// The project indexes go first, then the scenes, the script roots and the
+/// assets, each kind in filing order. What it does not take waits for the next run.
+#[derive(Debug, Default)]
+pub struct PacedLane;
 
 impl Lane for PacedLane {
     type Family = LoadingFamily;
@@ -67,7 +67,7 @@ impl Lane for PacedLane {
     }
 }
 
-/// The time the run is lent; none limits nothing.
+/// Returns the time the run is lent; none limits nothing.
 fn time_lent(inputs: &LoadingInputs<'_>) -> Option<std::time::Duration> {
     inputs.budget.map(|budget| budget.time)
 }

@@ -192,7 +192,7 @@ fn a_datum_added_by_an_edit_takes_its_default_not_another_states_datum() {
 
 /// **A parameter a retype leaves behind does not keep another state's datum.**
 /// The guard chases with `string seen = "x"`; an edit makes it `int seen`. The
-/// carried text no longer fits and is left behind — but a parameter has no
+/// carried text no more fits and is left behind — but a parameter has no
 /// default for the re-entry to write, so its slot must not keep what the
 /// layout's entry into `Patrol` put there: `float other = 2.5`, in an `int`.
 #[test]

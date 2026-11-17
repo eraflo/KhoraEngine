@@ -176,8 +176,8 @@ fn a_script_the_pump_compiles_is_recorded_for_its_root() {
     );
 }
 
-/// **A module the pump withdraws is forgotten for its root**: the root no
-/// longer brings it in.
+/// **A module the pump withdraws is forgotten for its root**: the root
+/// stops bringing it in.
 #[test]
 fn a_script_the_pump_withdraws_is_forgotten_for_its_root() {
     let assets = tempfile::TempDir::new().expect("a temp dir");

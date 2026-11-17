@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The `ui_text_layout` DataSystem, run against a shaper that records what it
+//! The `ui_text_layout` `DataSystem`, run against a shaper that records what it
 //! is asked: what is shaped, when, and with what it is registered.
 
 use std::collections::HashSet;
@@ -662,7 +662,7 @@ fn a_shaper_refusal_is_not_retried_every_frame() {
 }
 
 /// **A refused reshape leaves no layout**: the text's old layout, from a font
-/// it no longer uses, is removed rather than kept.
+/// it has stopped using, is removed rather than kept.
 #[test]
 fn a_refused_reshape_removes_the_old_layout() {
     let mut scene = Scene::new();
@@ -720,7 +720,7 @@ fn the_registration_runs_in_pre_extract_after_the_asset_resolver_observing_text_
 /// handle brought the data. That happens when a text is spawned after its
 /// font's file changed: the resolver loads the new file for the new text, while
 /// the older texts keep the handle they had. Their layouts were made from data
-/// the shaper no longer holds, and the glyph ids in them name glyphs of the old
+/// the shaper has dropped, and the glyph ids in them name glyphs of the former
 /// file.
 #[test]
 fn a_font_registered_again_reshapes_every_text_laid_out_in_it() {

@@ -34,6 +34,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::vm::Value;
 
+/// How many objects one frame may allocate.
+///
+/// A bound rather than unbounded growth: a script looping on `[…]` would
+/// otherwise take the process down. Hitting the ceiling faults one behavior;
+/// growing without limit takes the whole game.
+const CAPACITY: usize = 65_536;
+
 /// A handle to something in the arena.
 ///
 /// Carries the generation it was minted in so a reference that outlived its
@@ -45,12 +52,12 @@ pub struct ArenaRef {
 }
 
 impl ArenaRef {
-    /// The generation this reference belongs to.
+    /// Returns the generation this reference belongs to.
     pub fn generation(self) -> u32 {
         self.generation
     }
 
-    /// A reference to nothing, in no frame: every arena refuses it.
+    /// Returns a reference to nothing, in no frame: every arena refuses it.
     ///
     /// What text built while running becomes once its frame is gone for good —
     /// after a save, say. Its generation is one no arena reaches in practice
@@ -81,7 +88,7 @@ pub enum Object {
 }
 
 impl Object {
-    /// The element count of an array, or the character count of a string.
+    /// Returns the element count of an array, or the character count of a string.
     pub fn len(&self) -> usize {
         match self {
             Self::Array(values) => values.len(),
@@ -92,12 +99,12 @@ impl Object {
         }
     }
 
-    /// Whether it holds nothing.
+    /// Returns whether it holds nothing.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    /// Short type name, for fault messages.
+    /// Returns the short type name, for fault messages.
     pub fn type_name(&self) -> &'static str {
         match self {
             Self::Array(_) => "array",
@@ -130,7 +137,7 @@ pub enum ArenaError {
 }
 
 impl ArenaError {
-    /// A message naming what went wrong.
+    /// Returns a message naming what went wrong.
     pub fn message(self) -> String {
         match self {
             Self::Stale { reference, current } => format!(
@@ -143,7 +150,7 @@ impl ArenaError {
         }
     }
 
-    /// The reasoning, so the rule reads as a design rather than a limit.
+    /// Returns the reasoning, so the rule reads as a design rather than a limit.
     pub fn note(self) -> &'static str {
         match self {
             Self::Stale { .. } => {
@@ -155,13 +162,6 @@ impl ArenaError {
         }
     }
 }
-
-/// How many objects one frame may allocate.
-///
-/// A bound rather than unbounded growth: a script looping on `[…]` would
-/// otherwise take the process down. Hitting the ceiling faults one behavior;
-/// growing without limit takes the whole game.
-const CAPACITY: usize = 65_536;
 
 /// A bump allocator emptied once per frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -177,7 +177,7 @@ impl Default for Arena {
 }
 
 impl Arena {
-    /// An empty arena.
+    /// Creates an empty arena.
     pub fn new() -> Self {
         Self {
             objects: Vec::new(),
@@ -187,17 +187,17 @@ impl Arena {
         }
     }
 
-    /// The current generation.
+    /// Returns the current generation.
     pub fn generation(&self) -> u32 {
         self.generation
     }
 
-    /// How many objects are live.
+    /// Returns how many objects are live.
     pub fn len(&self) -> usize {
         self.objects.len()
     }
 
-    /// Whether nothing is allocated.
+    /// Returns whether nothing is allocated.
     pub fn is_empty(&self) -> bool {
         self.objects.is_empty()
     }
@@ -252,7 +252,7 @@ impl Arena {
         self.generation = self.generation.wrapping_add(1).max(1);
     }
 
-    /// Whether a reference belongs to this generation.
+    /// Checks that a reference belongs to this generation.
     fn check(&self, reference: ArenaRef) -> Result<(), ArenaError> {
         if reference.generation != self.generation {
             return Err(ArenaError::Stale {

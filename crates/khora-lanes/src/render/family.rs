@@ -25,6 +25,10 @@ use khora_macros::LaneOutputs;
 pub use super::lit_inputs::LitInputs;
 pub use super::unlit_inputs::UnlitInputs;
 
+/// The scene renderer's name: the render family's agent, which other
+/// families of the frame run after.
+pub const RENDERER: AgentId = <RenderFamily as LaneFamily>::AGENT;
+
 /// The render family. Its output is presentation: a cheaper level draws the
 /// same scene with less light, never a different set of objects.
 pub struct RenderFamily;
@@ -46,7 +50,3 @@ pub struct RenderOutputs<'f> {
     #[pass]
     pub transparent: Pass<'f, TransparentPassSlot>,
 }
-
-/// The scene renderer's name: the render family's agent, which other
-/// families of the frame run after.
-pub const RENDERER: AgentId = <RenderFamily as LaneFamily>::AGENT;

@@ -98,7 +98,7 @@ impl FakeDecoding {
     }
 
     /// The asset `uuid` changed since it was asked for: what was decoded for
-    /// it no longer counts.
+    /// it stops counting.
     fn change(&self, uuid: AssetUUID) {
         self.current[&uuid].store(false, Ordering::SeqCst);
     }
@@ -195,7 +195,7 @@ impl FakeIndexing {
     }
 
     /// Another project replaced the one at `root` since its index was asked
-    /// for: what was indexed for it no longer counts.
+    /// for: what was indexed for it stops counting.
     fn replace(&self, root: &str) {
         self.flag(std::path::Path::new(root))
             .store(false, Ordering::SeqCst);

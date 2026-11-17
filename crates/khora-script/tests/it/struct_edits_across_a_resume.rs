@@ -19,7 +19,8 @@
 //! name, its fields matched by name — so an edit that reorders a struct's
 //! fields, or retypes one, must leave a resumed frame either rebuilt correctly
 //! or not rebuilt at all (restarted, or abandoned). It must never finish by
-//! faulting on a value the old code put where the new code expects another.
+//! faulting on a value the former program put where the reloaded program
+//! expects another.
 
 use khora_core::script::PendingBody;
 use khora_script::vm::{resume, Machine, Program, Run, Value};

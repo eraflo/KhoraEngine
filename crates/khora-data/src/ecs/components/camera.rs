@@ -18,6 +18,12 @@ use khora_core::problems::ProblemSeverity;
 use khora_macros::Component;
 use serde::{Deserialize, Serialize};
 
+/// The dotted paths of a camera's fields in its serialized form.
+const NEAR_FIELD: &str = "z_near";
+const FAR_FIELD: &str = "z_far";
+const FOV_FIELD: &str = "projection.Perspective.fov_y_radians";
+const HEIGHT_FIELD: &str = "projection.Orthographic.height";
+
 /// How a camera projects the world: perspective or orthographic.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum ProjectionType {
@@ -119,7 +125,7 @@ impl Camera {
         self.try_project(aspect).ok_or(CameraProblem::Unprojectable)
     }
 
-    /// The projection at `aspect`, or `None` when the math refuses it.
+    /// Returns the projection at `aspect`, or `None` when the math refuses it.
     fn try_project(&self, aspect: f32) -> Option<Mat4> {
         match self.projection {
             ProjectionType::Perspective { fov_y_radians } => {
@@ -210,6 +216,12 @@ impl Camera {
     }
 }
 
+impl Default for Camera {
+    fn default() -> Self {
+        Self::default_perspective()
+    }
+}
+
 /// Why a [`Camera`]'s values make no image.
 ///
 /// Each problem names its field ([`CameraProblem::field`], the dotted path
@@ -289,18 +301,6 @@ impl std::fmt::Display for CameraProblem {
                 write!(f, "these values are too extreme to make an image")
             }
         }
-    }
-}
-
-/// The dotted paths of a camera's fields in its serialized form.
-const NEAR_FIELD: &str = "z_near";
-const FAR_FIELD: &str = "z_far";
-const FOV_FIELD: &str = "projection.Perspective.fov_y_radians";
-const HEIGHT_FIELD: &str = "projection.Orthographic.height";
-
-impl Default for Camera {
-    fn default() -> Self {
-        Self::default_perspective()
     }
 }
 

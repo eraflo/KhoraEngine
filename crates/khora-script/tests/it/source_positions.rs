@@ -16,7 +16,7 @@
 //! every module its entry imports, merged into one tree, and each of its
 //! diagnostics is located — module, 1-based line, column in characters —
 //! through the outcome's source map. Parse, resolve, check and compile
-//! diagnostics alike; their text is what it always was.
+//! diagnostics alike; locating them leaves their text as it is.
 
 use khora_script::{compile_module, CompileOutcome, Location, MemoryLoader, Severity, Span};
 

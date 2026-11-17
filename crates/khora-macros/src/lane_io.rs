@@ -40,7 +40,7 @@ const INPUT_SOURCES: &[&str] = &[
 /// The output attributes.
 const OUTPUT_SINKS: &[&str] = &["pass", "deck", "staged"];
 
-/// The impl header's pieces: the struct's generics with the frame lifetime
+/// Returns the impl header's pieces: the struct's generics with the frame lifetime
 /// `'f` in them, the lifetime itself, and the struct's own type generics.
 fn frame_generics(input: &DeriveInput) -> (syn::Generics, Lifetime) {
     let mut generics = input.generics.clone();
@@ -57,7 +57,7 @@ fn frame_generics(input: &DeriveInput) -> (syn::Generics, Lifetime) {
     }
 }
 
-/// The struct's named fields, or the error saying why it has none.
+/// Returns the struct's named fields, or the error saying why it has none.
 fn named_fields<'a>(input: &'a DeriveInput, derive: &str) -> syn::Result<Vec<&'a Field>> {
     match &input.data {
         Data::Struct(data) => match &data.fields {
@@ -158,13 +158,13 @@ fn annotate<'a>(
     })
 }
 
-/// A local of the generated code, hygienic: no field of the struct, whatever
+/// Returns a local of the generated code, hygienic: no field of the struct, whatever
 /// its name, can shadow it.
 fn local(name: &str) -> Ident {
     Ident::new(name, proc_macro::Span::mixed_site().into())
 }
 
-/// The path of the check for `attribute`, called with the field's type and
+/// Returns the path of the check for `attribute`, called with the field's type and
 /// spanned on it.
 fn check(attribute: &str, ty: &syn::Type) -> impl ToTokens {
     let function = format_ident!("{}_field", attribute);
@@ -172,7 +172,7 @@ fn check(attribute: &str, ty: &syn::Type) -> impl ToTokens {
 }
 
 /// Derives `::khora_core::lane::io::LaneInputs`.
-pub fn derive_lane_inputs(input: TokenStream) -> TokenStream {
+pub(crate) fn derive_lane_inputs(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     match lane_inputs(&input) {
         Ok(tokens) => tokens.into_token_stream().into(),
@@ -273,7 +273,7 @@ fn lane_inputs(input: &DeriveInput) -> syn::Result<impl ToTokens> {
 }
 
 /// Derives `::khora_core::lane::io::LaneOutputs`.
-pub fn derive_lane_outputs(input: TokenStream) -> TokenStream {
+pub(crate) fn derive_lane_outputs(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     match lane_outputs(&input) {
         Ok(tokens) => tokens.into_token_stream().into(),

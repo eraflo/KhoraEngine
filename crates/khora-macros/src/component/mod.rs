@@ -30,7 +30,7 @@ use crate::script_fields::script_methods;
 use attrs::ComponentAttrs;
 use fields::FieldSplit;
 
-pub fn derive_component(input: TokenStream) -> TokenStream {
+pub(crate) fn derive_component(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
     let serializable_name = format_ident!("Serializable{}", name);

@@ -100,7 +100,7 @@ fn cycle_in(parents: &HashMap<EntityId, EntityId>) -> Option<EntityId> {
 }
 
 impl World {
-    /// Re-parents `child`, or detaches it when `new_parent` is `None`.
+    /// Moves `child` under `new_parent`, or detaches it when `new_parent` is `None`.
     ///
     /// Moves [`Parent`] on the child and [`Children`] on the parent together.
     /// Returns `false` when the edge is refused: a missing entity, or a parent

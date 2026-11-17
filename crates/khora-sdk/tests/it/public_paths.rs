@@ -293,6 +293,21 @@ mod trait_items {
 
 #[test]
 fn module_crate_root_paths_still_resolve() {
+    #[allow(unused_imports)]
+    use khora_sdk::inventory as _; // `pub extern crate`
+    #[allow(unused_imports)]
+    use khora_sdk::khora_core as _; // module `khora_core`
+    #[allow(unused_imports)]
+    use khora_sdk::khora_data as _; // module `khora_data`
+    #[allow(unused_imports)]
+    use khora_sdk::khora_lanes as _; // module `khora_lanes`
+    #[allow(unused_imports)]
+    use khora_sdk::winit as _; // module `winit`
+                               // Spelled by the hub's generated `main.rs` template and by the editor and
+                               // runtime binaries, as a `static` global allocator built by a `const fn`
+                               // with the default inner allocator.
+    const _: khora_sdk::prelude::SaaTrackingAllocator =
+        khora_sdk::prelude::SaaTrackingAllocator::new(std::alloc::System);
     let _ = type_name::<khora_sdk::AgentHints>();
     same_type(
         PhantomData::<khora_sdk::AgentHints>,
@@ -753,11 +768,6 @@ fn module_crate_root_paths_still_resolve() {
     let _ = khora_sdk::PACK_MAGIC;
     assert_eq!(khora_sdk::PACK_MAGIC, khora_io::asset::PACK_MAGIC);
     let _ = khora_sdk::prelude::PRIMARY_VIEWPORT;
-    // Spelled by the hub's generated `main.rs` template and by the editor and
-    // runtime binaries, as a `static` global allocator built by a `const fn`
-    // with the default inner allocator.
-    const _: khora_sdk::prelude::SaaTrackingAllocator =
-        khora_sdk::prelude::SaaTrackingAllocator::new(std::alloc::System);
     let _ = khora_sdk::PRIMARY_VIEWPORT;
     let _ = type_name::<khora_sdk::PackBuilder>();
     same_type(
@@ -992,14 +1002,6 @@ fn module_crate_root_paths_still_resolve() {
         &khora_sdk::instantiate_subtree,
         &khora_data::scene::instantiate_subtree,
     );
-    #[allow(unused_imports)]
-    use khora_sdk::inventory as _; // `pub extern crate`
-    #[allow(unused_imports)]
-    use khora_sdk::khora_core as _; // module `khora_core`
-    #[allow(unused_imports)]
-    use khora_sdk::khora_data as _; // module `khora_data`
-    #[allow(unused_imports)]
-    use khora_sdk::khora_lanes as _; // module `khora_lanes`
     let _ = khora_sdk::run_default;
     let _ = type_name::<khora_sdk::RuntimeConfig>();
     let _ = runtime_config_fields as fn(&khora_sdk::RuntimeConfig);
@@ -1019,8 +1021,6 @@ fn module_crate_root_paths_still_resolve() {
     let _ = khora_sdk::spawn_cube_at;
     let _ = khora_sdk::spawn_plane;
     let _ = khora_sdk::spawn_sphere;
-    #[allow(unused_imports)]
-    use khora_sdk::winit as _; // module `winit`
 }
 
 #[test]

@@ -20,7 +20,7 @@ pub struct Banner {
 impl Banner {
     const DEFAULT_TTL: Duration = Duration::from_secs(5);
 
-    pub fn info(message: impl Into<String>) -> Self {
+    pub(crate) fn info(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
             is_error: false,
@@ -36,7 +36,7 @@ impl Banner {
         }
     }
 
-    pub fn is_expired(&self) -> bool {
+    pub(crate) fn is_expired(&self) -> bool {
         Instant::now() >= self.expires_at
     }
 }

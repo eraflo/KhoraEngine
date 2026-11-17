@@ -136,13 +136,6 @@ impl Problem {
 #[derive(Debug, Default)]
 pub struct Problems(std::sync::RwLock<Held>);
 
-/// What is held: each source's list, and how many changes there were.
-#[derive(Debug, Default)]
-struct Held {
-    by_source: std::collections::HashMap<ProblemSource, Vec<Problem>>,
-    generation: u64,
-}
-
 impl Problems {
     /// Replaces what `source` reported last with `problems`; an empty list
     /// clears it.
@@ -194,14 +187,14 @@ impl Problems {
         all
     }
 
-    /// What `source` reported last, as it reported it; empty when it holds
+    /// Returns what `source` reported last, as it reported it; empty when it holds
     /// nothing.
     pub fn of_source(&self, source: &ProblemSource) -> Vec<Problem> {
         let held = self.0.read_recovered();
         held.by_source.get(source).cloned().unwrap_or_default()
     }
 
-    /// How many errors and warnings are located in `module`.
+    /// Returns how many errors and warnings are located in `module`.
     pub fn of_module(&self, module: &str) -> (usize, usize) {
         self.all()
             .iter()
@@ -219,6 +212,13 @@ impl Problems {
     pub fn generation(&self) -> u64 {
         self.0.read_recovered().generation
     }
+}
+
+/// What is held: each source's list, and how many changes there were.
+#[derive(Debug, Default)]
+struct Held {
+    by_source: std::collections::HashMap<ProblemSource, Vec<Problem>>,
+    generation: u64,
 }
 
 /// Errors before warnings.
@@ -335,6 +335,22 @@ mod tests {
         let mut held = messages(&problems);
         held.sort();
         assert_eq!(held, vec!["lamp", "registration", "running"]);
+    }
+
+    /// **A source's problems read back as it reported them**, in its order; a
+    /// source that reported nothing holds nothing.
+    #[test]
+    fn of_source_reads_back_one_sources_report_as_given() {
+        let problems = Problems::default();
+        let reported = vec![
+            warning("guard.erg", 9, 1, "second"),
+            error("guard.erg", 1, 1, "first"),
+        ];
+        problems.report(compile("guard.erg"), reported.clone());
+        problems.report(compile("lamp.erg"), vec![error("lamp.erg", 1, 1, "lamp")]);
+
+        assert_eq!(problems.of_source(&compile("guard.erg")), reported);
+        assert!(problems.of_source(&ProblemSource::Running).is_empty());
     }
 
     /// **Errors come first, then by module, line and column** — whatever

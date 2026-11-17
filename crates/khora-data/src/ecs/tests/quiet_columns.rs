@@ -86,7 +86,7 @@ fn changed<T: Component>(world: &World, since: u64) -> Vec<EntityId> {
     )
 }
 
-/// The registered `ecs_maintenance` DataSystem.
+/// Returns the registered `ecs_maintenance` `DataSystem`.
 fn ecs_maintenance() -> fn(&mut World, &Runtime, &mut OutputDeck, SystemContext) {
     inventory::iter::<DataSystemRegistration>
         .into_iter()

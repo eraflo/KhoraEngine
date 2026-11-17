@@ -90,7 +90,9 @@ impl khora_data::scene::record::ReferenceReader for NoEntities {
 #[derive(Debug, Clone, PartialEq, Default, Component)]
 #[component(domain = Physics)]
 pub struct GuardMass {
+    /// The mass, in kilograms.
     pub kg: f32,
+    /// A name to tell the values apart.
     pub label: String,
 }
 
@@ -102,8 +104,11 @@ pub struct GuardMass {
 #[derive(Debug, Clone, Copy, PartialEq, Default, Component)]
 #[component(layout = "soa", domain = Physics)]
 pub struct GuardSpin {
+    /// The spin about the x axis.
     pub x: f32,
+    /// The spin about the y axis.
     pub y: f32,
+    /// The spin about the z axis.
     pub z: f32,
 }
 

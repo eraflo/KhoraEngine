@@ -30,7 +30,7 @@ const DEFAULT_NAME: &str = "NewScript";
 /// The extension of an Ergon file.
 const EXTENSION: &str = "erg";
 
-/// The folder a new script goes in when made from `folder`.
+/// Returns the folder a new script goes in when made from `folder`.
 ///
 /// The engine compiles the scripts under `scripts/` and no others, so a script
 /// made anywhere else would never run: it goes to `scripts/` instead. Made in

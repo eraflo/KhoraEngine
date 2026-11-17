@@ -103,7 +103,7 @@ pub fn transform_propagation_system(world: &mut World) {
     }
 }
 
-/// A simulated pose, sized as the authored hierarchy sizes the entity.
+/// Sizes a simulated pose as the authored hierarchy sizes the entity.
 ///
 /// A provider reports where a body is and how it is turned — never its size,
 /// so the pose alone would draw a body scaled 2 at scale 1 from its first

@@ -26,7 +26,7 @@ use khora_core::renderer::api::command::{
 use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::traits::{CommandEncoder, RenderPass};
 
-/// The colour attachment of a scene pass into `target`, cleared or loaded.
+/// Returns the colour attachment of a scene pass into `target`, cleared or loaded.
 pub(crate) fn scene_color(
     target: &SceneTarget,
     load: LoadOp<LinearRgba>,
@@ -43,7 +43,7 @@ pub(crate) fn scene_color(
     }
 }
 
-/// The depth attachment of a scene pass into `target`, cleared to the far
+/// Returns the depth attachment of a scene pass into `target`, cleared to the far
 /// plane or loaded.
 pub(crate) fn scene_depth(
     target: &SceneTarget,

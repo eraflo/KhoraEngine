@@ -40,25 +40,6 @@ pub struct Mut<'w, T> {
     _row: PhantomData<&'w mut T>,
 }
 
-/// Where a guard notes its write.
-#[derive(Clone, Copy)]
-enum Ticks {
-    /// The column's ticks, reached directly.
-    #[cfg(test)]
-    Column(*mut ColumnTicks),
-    /// The ticks of column `key` in `page`, looked up when the write is noted.
-    ///
-    /// Looked up late so guards over one column may live together. An
-    /// `observed` column without row ticks gains them on the first write.
-    Page {
-        page: *mut ComponentPage,
-        key: ComponentKey,
-        observed: bool,
-        /// The change epoch of the column's domain, raised with the write.
-        epoch: *mut u64,
-    },
-}
-
 impl<'w, T> Mut<'w, T> {
     /// Returns a guard over `value`, row `row` of the column whose ticks are `ticks`.
     ///
@@ -204,4 +185,23 @@ impl<T: fmt::Debug> fmt::Debug for Mut<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (**self).fmt(f)
     }
+}
+
+/// Where a guard notes its write.
+#[derive(Clone, Copy)]
+enum Ticks {
+    /// The column's ticks, reached directly.
+    #[cfg(test)]
+    Column(*mut ColumnTicks),
+    /// The ticks of column `key` in `page`, looked up when the write is noted.
+    ///
+    /// Looked up late so guards over one column may live together. An
+    /// `observed` column without row ticks gains them on the first write.
+    Page {
+        page: *mut ComponentPage,
+        key: ComponentKey,
+        observed: bool,
+        /// The change epoch of the column's domain, raised with the write.
+        epoch: *mut u64,
+    },
 }

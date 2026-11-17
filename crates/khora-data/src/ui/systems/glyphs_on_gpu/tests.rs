@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The `glyphs_on_gpu` DataSystem, run against a device that records the
+//! The `glyphs_on_gpu` `DataSystem`, run against a device that records the
 //! textures it makes, what is uploaded into them and what is destroyed, and a
 //! rasteriser that records what it is asked.
 

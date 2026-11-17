@@ -15,7 +15,7 @@
 //! Scene loads filed by a host with a [`LoadTicket`], prepared off the frame
 //! and committed at a frame's boundary, in the order filed.
 //!
-//! The `loading` family prepares a load; the `scene_intake` DataSystem commits
+//! The `loading` family prepares a load; the `scene_intake` `DataSystem` commits
 //! it and files its outcome under the ticket, for `take_outcome`.
 //!
 //! See the book: concepts/serialization.md, "Atomic loading".
@@ -129,7 +129,7 @@ impl SceneLoadHub {
         self.tickets.lock_recovered().landed.remove(&ticket)
     }
 
-    /// Whether the load filed as `ticket` is still in flight.
+    /// Returns whether the load filed as `ticket` is still in flight.
     pub fn is_pending(&self, ticket: LoadTicket) -> bool {
         self.tickets.lock_recovered().pending.contains(&ticket)
     }
@@ -316,7 +316,7 @@ fn read(source: &SceneSource) -> Result<SceneFile, SerializationServiceError> {
     })
 }
 
-/// A load that failed before it adapted anything.
+/// Returns a load that failed before it adapted anything.
 fn failed(message: String) -> LoadFailure {
     LoadFailure {
         message,

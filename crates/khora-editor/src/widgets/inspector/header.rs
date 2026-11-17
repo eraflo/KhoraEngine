@@ -33,7 +33,7 @@ pub struct InspectorHeader<'a> {
 
 /// Paints the Inspector's rich header — large icon tile + name + meta row
 /// (tag + status pill + id). Returns the bottom edge in screen-space.
-pub fn paint_inspector_header(
+pub(crate) fn paint_inspector_header(
     p: &mut Painter<'_>,
     origin: [f32; 2],
     width: f32,

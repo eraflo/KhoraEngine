@@ -57,8 +57,8 @@ pub fn ergon_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
     ergon_fn::ergon_fn(attr, item)
 }
 
-/// A derive macro that implements the `khora_data::ecs::Component` trait
-/// and generates a serializable mirror struct with `From` conversions.
+/// Derives the `khora_data::ecs::Component` trait and generates a serializable mirror struct with
+/// `From` conversions.
 ///
 /// For a component like:
 /// ```ignore

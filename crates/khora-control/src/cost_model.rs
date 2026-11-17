@@ -103,12 +103,12 @@ impl CostModel {
         }
     }
 
-    /// Number of samples currently held.
+    /// Returns the number of samples currently held.
     pub fn len(&self) -> usize {
         self.samples.len()
     }
 
-    /// Whether no samples have been recorded.
+    /// Returns whether no samples have been recorded.
     pub fn is_empty(&self) -> bool {
         self.samples.is_empty()
     }
@@ -163,7 +163,7 @@ impl CostModel {
         self.best_fit().map(|(class, c)| c * class.f(n))
     }
 
-    /// The most recently recorded observation's time in milliseconds, if any.
+    /// Returns the most recently recorded observation's time in milliseconds, if any.
     ///
     /// The fallback when [`predict_ms`](Self::predict_ms) has no fit: a stable
     /// workload never yields two distinct `n`.

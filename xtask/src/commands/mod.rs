@@ -18,3 +18,4 @@ pub mod assets_config;
 pub mod ci;
 pub mod dev;
 pub mod landing;
+pub mod lint_file;

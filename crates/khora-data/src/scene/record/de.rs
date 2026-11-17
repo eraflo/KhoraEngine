@@ -26,17 +26,26 @@ use super::{EntityRef, Record, RecordError, VariantPayload, ASSET_NAME, ENTITY_N
 
 /// Turns the references a save kept into entities of the world being loaded.
 pub trait ReferenceReader {
-    /// The entity `reference` stands for in the world being loaded.
+    /// Returns the entity `reference` stands for in the world being loaded.
+    ///
+    /// # Errors
+    ///
+    /// When `reference` stands for no entity this reader can give.
     fn read_entity(&mut self, reference: EntityRef) -> Result<EntityId, RecordError>;
 }
 
 /// Reads a `T` from `record`, matching fields by name.
 ///
 /// A field the record lacks takes its serde default where the type declares
-/// one (`#[serde(default)]`, an `Option`), a field the type no longer has is
+/// one (`#[serde(default)]`, an `Option`), a field the type does not have is
 /// ignored, a renamed one is read through its serde alias, and a number is
-/// converted when that loses nothing. Anything else is an error, never a
-/// panic: a record comes from a file, and a file is input.
+/// converted when that loses nothing.
+///
+/// # Errors
+///
+/// When the record nests deeper than `MAX_DEPTH`, does not read as a `T`, or holds
+/// a reference `references` refuses: an error, never a panic, for a record comes
+/// from a file, and a file is input.
 pub fn from_record<T: DeserializeOwned>(
     record: &Record,
     references: &mut dyn ReferenceReader,
@@ -44,7 +53,7 @@ pub fn from_record<T: DeserializeOwned>(
     read_watched(record, references, &mut Blind)
 }
 
-/// [`from_record`], noting what the read did on `watch`.
+/// Reads as [`from_record`] does, noting what the read did on `watch`.
 pub(super) fn read_watched<T: DeserializeOwned>(
     record: &Record,
     references: &mut dyn ReferenceReader,
@@ -130,31 +139,8 @@ impl Reader<'_, '_, '_> {
     }
 }
 
-/// A short name for a record's kind, for error messages.
-fn kind(record: &Record) -> &'static str {
-    match record {
-        Record::Unit => "a unit",
-        Record::Bool(_) => "a bool",
-        Record::I64(_) | Record::U64(_) => "an integer",
-        Record::F32(_) | Record::F64(_) | Record::Decimal(_) => "a float",
-        Record::Char(_) => "a char",
-        Record::Str(_) => "a string",
-        Record::Bytes(_) => "bytes",
-        Record::None | Record::Some(_) => "an optional",
-        Record::Seq(_) => "a sequence",
-        Record::Map(_) => "a map",
-        Record::UnitStruct { .. } => "a unit struct",
-        Record::Struct { .. } => "a struct",
-        Record::TupleStruct { .. } => "a tuple struct",
-        Record::Newtype { .. } => "a newtype",
-        Record::Variant { .. } => "an enum variant",
-        Record::Entity(_) => "an entity reference",
-        Record::Asset(_) => "an asset reference",
-    }
-}
-
 impl<'a, 'c, 'r> Reader<'a, 'c, 'r> {
-    /// A reader over a value inside this one, reached by `step`.
+    /// Returns a reader over a value inside this one, reached by `step`.
     fn below<'s>(&'s mut self, record: &'a Record, step: Option<Step>) -> Reader<'a, 's, 'r> {
         let node = match step {
             Some(step) => self.cx.watch.child(self.node, step),
@@ -235,34 +221,6 @@ impl<'a, 'c, 'r> Reader<'a, 'c, 'r> {
             cx: self.cx,
             node,
         })
-    }
-}
-
-/// An entity, presented the way `EntityId` deserializes: its two numbers.
-fn entity_fields(
-    entity: EntityId,
-) -> MapDeserializer<'static, std::array::IntoIter<(&'static str, u32), 2>, RecordError> {
-    MapDeserializer::new([("index", entity.index), ("generation", entity.generation)].into_iter())
-}
-
-/// An asset identity, presented as the sixteen bytes it serializes to.
-struct AssetBytes([u8; 16]);
-
-impl<'de> de::Deserializer<'de> for AssetBytes {
-    type Error = RecordError;
-
-    fn is_human_readable(&self) -> bool {
-        false
-    }
-
-    fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, RecordError> {
-        visitor.visit_bytes(&self.0)
-    }
-
-    serde::forward_to_deserialize_any! {
-        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
-        bytes byte_buf option unit unit_struct newtype_struct seq tuple
-        tuple_struct map struct enum identifier ignored_any
     }
 }
 
@@ -582,5 +540,56 @@ impl<'de> de::Deserializer<'de> for Reader<'_, '_, '_> {
     ) -> Result<V::Value, RecordError> {
         self.note(Event::Ignored);
         visitor.visit_unit()
+    }
+}
+
+/// Returns a short name for a record's kind, for error messages.
+fn kind(record: &Record) -> &'static str {
+    match record {
+        Record::Unit => "a unit",
+        Record::Bool(_) => "a bool",
+        Record::I64(_) | Record::U64(_) => "an integer",
+        Record::F32(_) | Record::F64(_) | Record::Decimal(_) => "a float",
+        Record::Char(_) => "a char",
+        Record::Str(_) => "a string",
+        Record::Bytes(_) => "bytes",
+        Record::None | Record::Some(_) => "an optional",
+        Record::Seq(_) => "a sequence",
+        Record::Map(_) => "a map",
+        Record::UnitStruct { .. } => "a unit struct",
+        Record::Struct { .. } => "a struct",
+        Record::TupleStruct { .. } => "a tuple struct",
+        Record::Newtype { .. } => "a newtype",
+        Record::Variant { .. } => "an enum variant",
+        Record::Entity(_) => "an entity reference",
+        Record::Asset(_) => "an asset reference",
+    }
+}
+
+/// Presents an entity the way `EntityId` deserializes: its two numbers.
+fn entity_fields(
+    entity: EntityId,
+) -> MapDeserializer<'static, std::array::IntoIter<(&'static str, u32), 2>, RecordError> {
+    MapDeserializer::new([("index", entity.index), ("generation", entity.generation)].into_iter())
+}
+
+/// An asset identity, presented as the sixteen bytes it serializes to.
+struct AssetBytes([u8; 16]);
+
+impl<'de> de::Deserializer<'de> for AssetBytes {
+    type Error = RecordError;
+
+    fn is_human_readable(&self) -> bool {
+        false
+    }
+
+    fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, RecordError> {
+        visitor.visit_bytes(&self.0)
+    }
+
+    serde::forward_to_deserialize_any! {
+        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
+        bytes byte_buf option unit unit_struct newtype_struct seq tuple
+        tuple_struct map struct enum identifier ignored_any
     }
 }

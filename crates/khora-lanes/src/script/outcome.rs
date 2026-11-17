@@ -51,7 +51,7 @@ pub(super) enum Outcome {
 }
 
 impl Outcome {
-    /// A fault, with what had been spent when it happened.
+    /// Builds a fault, with what had been spent when it happened.
     ///
     /// Most of the ways a turn can fault format the same `Fault` the same way,
     /// and each one has to remember to carry `spent` — a turn whose cost is
@@ -63,7 +63,7 @@ impl Outcome {
         }
     }
 
-    /// What it cost, however it ended.
+    /// Returns what it cost, however it ended.
     pub(super) fn spent(&self) -> u64 {
         match self {
             Self::Completed { spent }

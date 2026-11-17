@@ -27,7 +27,7 @@ pub(crate) enum Kept {
 }
 
 impl Kept {
-    /// Whether this kind of document keeps `reg`'s component.
+    /// Returns whether this kind of document keeps `reg`'s component.
     pub(crate) fn keeps(self, reg: &ComponentRegistration) -> bool {
         match self {
             Self::Scene => reg.is_saved(),

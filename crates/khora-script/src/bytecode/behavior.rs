@@ -250,7 +250,7 @@ impl Compiler {
     }
 }
 
-/// A field's default as data: the constant written, else its type's neutral value.
+/// Returns a field's default as data: the constant written, else its type's neutral value.
 ///
 /// The constant is completed against the program's structs. The checker
 /// refuses anything else; a program that was refused gets `null`.

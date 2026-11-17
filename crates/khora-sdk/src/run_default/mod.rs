@@ -69,16 +69,6 @@ impl DefaultRuntimeApp {
     }
 }
 
-/// Installs in `runtime` what the game beside `exe_dir` runs with, its pack verified with `pack_key`.
-///
-/// No asset service is installed, the error logged, when there is neither a
-/// pack nor `assets/`, or the pack is refused.
-fn install_game(runtime: &mut Runtime, exe_dir: &Path, pack_key: Option<PackKey>) {
-    if let Err(e) = open_game_assets_with::<DefaultRuntimeApp>(runtime, exe_dir, pack_key) {
-        log::error!("khora-sdk run_default: the game's assets did not open: {e:#}");
-    }
-}
-
 impl EngineApp for DefaultRuntimeApp {
     /// A game keeps what the engine learns of the machine it runs on.
     fn keeps_user_files() -> bool {
@@ -245,6 +235,16 @@ pub fn run_default() -> Result<()> {
         install_game(runtime, &exe_dir, stamped_pack_key());
     })?;
     Ok(())
+}
+
+/// Installs in `runtime` what the game beside `exe_dir` runs with, its pack verified with `pack_key`.
+///
+/// No asset service is installed, the error logged, when there is neither a
+/// pack nor `assets/`, or the pack is refused.
+fn install_game(runtime: &mut Runtime, exe_dir: &Path, pack_key: Option<PackKey>) {
+    if let Err(e) = open_game_assets_with::<DefaultRuntimeApp>(runtime, exe_dir, pack_key) {
+        log::error!("khora-sdk run_default: the game's assets did not open: {e:#}");
+    }
 }
 
 #[cfg(test)]

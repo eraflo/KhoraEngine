@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The decision core of adaptive memory layout: bandits, switching rules, and
-//! the read-only [`LayoutAdvisor`]. None of it repacks storage.
+//! The decision core of adaptive memory layout: bandits, switching rules, and an advisor.
+//!
+//! The [`LayoutAdvisor`] is read-only: none of it repacks storage.
 //! See the book: concepts/agdf.md, "The decision core, and why Layer 3 is deferred".
 
 mod bandit;

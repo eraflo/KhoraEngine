@@ -332,6 +332,16 @@ impl EditorApp {
     }
 }
 
+impl khora_sdk::PhaseProvider for EditorApp {
+    fn custom_phases(&self) -> Vec<khora_sdk::ExecutionPhase> {
+        Vec::new()
+    }
+
+    fn removed_phases(&self) -> Vec<khora_sdk::ExecutionPhase> {
+        Vec::new()
+    }
+}
+
 /// What decides which instance an entity belongs to.
 ///
 /// The entity, the project files' generation, and its ancestors with the
@@ -343,7 +353,7 @@ struct ViewKey {
     ancestry: Vec<(EntityId, Option<khora_sdk::khora_core::asset::AssetUUID>)>,
 }
 
-/// `entity` and its ancestors, each with the prefab it links to.
+/// Returns `entity` and its ancestors, each with the prefab it links to.
 fn ancestry(
     world: &GameWorld,
     entity: EntityId,
@@ -466,16 +476,6 @@ fn revert_prefab_instance(
             }
         }
         Err(e) => log::error!("Failed to read the prefab to revert to: {e}"),
-    }
-}
-
-impl khora_sdk::PhaseProvider for EditorApp {
-    fn custom_phases(&self) -> Vec<khora_sdk::ExecutionPhase> {
-        Vec::new()
-    }
-
-    fn removed_phases(&self) -> Vec<khora_sdk::ExecutionPhase> {
-        Vec::new()
     }
 }
 

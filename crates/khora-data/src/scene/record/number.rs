@@ -46,22 +46,24 @@ impl Number {
         matches!(self, Self::Single(_) | Self::Double(_) | Self::Decimal(_))
     }
 
-    /// As an exact integer, if it is one. Floats qualify only when integral:
-    /// a fraction dropped on the way to an integer field is data lost.
+    /// Returns it as an exact integer, if it is one.
+    ///
+    /// Floats qualify only when integral: a fraction dropped on the way to an
+    /// integer field is data lost.
     pub(super) fn integer(self) -> Option<i128> {
+        // 2^64 bounds every integer field; beyond it `as` would saturate and
+        // pass a wrong value off as exact.
+        const LIMIT: f64 = 18_446_744_073_709_551_616.0;
         let float = match self {
             Self::Signed(v) => return Some(v.into()),
             Self::Unsigned(v) => return Some(v.into()),
             Self::Single(v) => f64::from(v),
             Self::Double(v) | Self::Decimal(v) => v,
         };
-        // 2^64 bounds every integer field; beyond it `as` would saturate and
-        // pass a wrong value off as exact.
-        const LIMIT: f64 = 18_446_744_073_709_551_616.0;
         (float.is_finite() && float.fract() == 0.0 && float.abs() < LIMIT).then_some(float as i128)
     }
 
-    /// As an `f64`, if that loses nothing.
+    /// Returns it as an `f64`, if that loses nothing.
     pub(super) fn double(self) -> Option<f64> {
         match self {
             Self::Single(v) => Some(f64::from(v)),
@@ -71,7 +73,7 @@ impl Number {
         }
     }
 
-    /// As an `f32`, if that loses nothing.
+    /// Returns it as an `f32`, if that loses nothing.
     pub(super) fn single(self) -> Option<f32> {
         match self {
             Self::Single(v) => Some(v),
@@ -97,7 +99,7 @@ impl Number {
     }
 }
 
-/// `float` when it is exactly the integer `exact`.
+/// Returns `float` when it is exactly the integer `exact`.
 ///
 /// Compared through `i128`, which holds every `i64` and `u64`: comparing in
 /// `f64`, or casting back with `as`, would call `i64::MAX` exactly

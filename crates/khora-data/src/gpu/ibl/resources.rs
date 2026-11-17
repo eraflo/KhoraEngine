@@ -33,23 +33,6 @@ use khora_core::renderer::api::util::ShaderStageFlags;
 use khora_core::renderer::error::RenderError;
 use khora_core::renderer::GraphicsDevice;
 
-/// The per-face basis the bake shaders read, in world space.
-///
-/// A texel's direction is `normalize(forward + ndc.x*right + ndc.y*up)`.
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub(super) struct FaceBasisUniform {
-    pub(super) forward: [f32; 4],
-    pub(super) right: [f32; 4],
-    pub(super) up: [f32; 4],
-    /// The unit direction toward the sun (w unused), where the sky bake draws
-    /// its disk.
-    ///
-    /// The other bake shaders declare only the first three fields: a uniform
-    /// buffer larger than the shader's struct is valid.
-    pub(super) sun: [f32; 4],
-}
-
 /// The six cube faces in wgpu layer order (+X, -X, +Y, -Y, +Z, -Z).
 ///
 /// Each basis gives a texel the direction wgpu's cube sampling maps to it, so
@@ -92,6 +75,23 @@ pub(super) const FACE_BASES: [FaceBasisUniform; 6] = [
         sun: [0.0; 4],
     }, // -Z
 ];
+
+/// The per-face basis the bake shaders read, in world space.
+///
+/// A texel's direction is `normalize(forward + ndc.x*right + ndc.y*up)`.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub(super) struct FaceBasisUniform {
+    pub(super) forward: [f32; 4],
+    pub(super) right: [f32; 4],
+    pub(super) up: [f32; 4],
+    /// The unit direction toward the sun (w unused), where the sky bake draws
+    /// its disk.
+    ///
+    /// The other bake shaders declare only the first three fields: a uniform
+    /// buffer larger than the shader's struct is valid.
+    pub(super) sun: [f32; 4],
+}
 
 /// The views of a colour cubemap the bake samples and renders to: one `Cube`
 /// view and one `D2` view per face.
@@ -234,7 +234,7 @@ pub(super) fn create_cube(
     })
 }
 
-/// A single uniform-buffer bind-group layout entry (the per-face basis).
+/// Builds a single uniform-buffer bind-group layout entry (the per-face basis).
 pub(super) fn uniform_entry(binding: u32) -> BindGroupLayoutEntry {
     BindGroupLayoutEntry {
         binding,

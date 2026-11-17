@@ -25,6 +25,9 @@ use crate::diagnostics::Span;
 use crate::types::Ty;
 use crate::vm::{Instruction, Reg, SiteKind, Value};
 
+/// How many elements an array literal places in registers at a time.
+const CHUNK: usize = 16;
+
 /// One step of a path written through: an element, or a struct's field.
 enum Step<'a> {
     Index(&'a Expr),
@@ -46,11 +49,8 @@ pub(super) enum At {
     Field(u16, u16),
 }
 
-/// How many elements an array literal places in registers at a time.
-const CHUNK: usize = 16;
-
-/// The shape a checked type compiles to.
-pub fn shape_of_ty(ty: &Ty) -> Shape {
+/// Returns the shape a checked type compiles to.
+pub(crate) fn shape_of_ty(ty: &Ty) -> Shape {
     match ty {
         Ty::Int => Shape::Int,
         Ty::Float | Ty::Duration | Ty::Angle => Shape::Float,
@@ -62,7 +62,7 @@ pub fn shape_of_ty(ty: &Ty) -> Shape {
     }
 }
 
-/// Whether `expr` produces a value nobody else names — one binding it need
+/// Returns whether `expr` produces a value nobody else names, one binding it need
 /// not copy.
 fn fresh(expr: &Expr) -> bool {
     matches!(
@@ -72,7 +72,7 @@ fn fresh(expr: &Expr) -> bool {
 }
 
 impl Compiler {
-    /// What the checker found `expr` to be.
+    /// Returns what the checker found `expr` to be.
     pub(super) fn type_of(&self, expr: &Expr) -> Option<&Ty> {
         self.types.get(&(std::ptr::from_ref(expr) as usize))
     }
@@ -98,7 +98,7 @@ impl Compiler {
         (dst, shape)
     }
 
-    /// `[a, b, …]`, built in chunks: `NewArray` for the first, `Extend` for the rest.
+    /// Compiles `[a, b, …]` in chunks: `NewArray` for the first, `Extend` for the rest.
     ///
     /// A literal longer than the registers a frame can lay out still builds.
     pub(super) fn compile_array(&mut self, elements: &[Expr]) -> (Reg, Shape) {
@@ -144,7 +144,7 @@ impl Compiler {
         (dst, Shape::Object)
     }
 
-    /// `xs[i]`.
+    /// Compiles `xs[i]`.
     pub(super) fn compile_index(
         &mut self,
         whole: &Expr,
@@ -163,7 +163,7 @@ impl Compiler {
         (dst, shape)
     }
 
-    /// `d.Seconds`, `a.Radians`, `a.Degrees`: a unit read as a plain float.
+    /// Compiles `d.Seconds`, `a.Radians`, `a.Degrees`: a unit read as a plain float.
     ///
     /// A duration is held in seconds and an angle in radians, so two of the
     /// three are the value itself.
@@ -191,7 +191,7 @@ impl Compiler {
         Some((dst, Shape::Float))
     }
 
-    /// `xs.Length` and `s.Length`, when `object` is an array or a string.
+    /// Compiles `xs.Length` and `s.Length`, when `object` is an array or a string.
     pub(super) fn compile_length(&mut self, object: &Expr, name: &str) -> Option<(Reg, Shape)> {
         let measured = matches!(self.type_of(object), Some(Ty::Array(_) | Ty::Str));
         if name != "Length" || !measured {
@@ -203,7 +203,7 @@ impl Compiler {
         Some((dst, Shape::Int))
     }
 
-    /// `root[i][j] = v` and `root[i] op= v`.
+    /// Compiles `root[i][j] = v` and `root[i] op= v`.
     pub(super) fn compile_place_assign(
         &mut self,
         target: &Expr,
@@ -231,7 +231,7 @@ impl Compiler {
         (written, element)
     }
 
-    /// The root variable of `target` and its steps, outermost first; `None` when not rooted at one.
+    /// Returns the root variable of `target` and its steps, outermost first; `None` when not rooted at one.
     ///
     /// Each index operand is evaluated into a register of its own before
     /// anything else of the write, since what follows may change a local an
@@ -278,7 +278,7 @@ impl Compiler {
         Some((name, at))
     }
 
-    /// The register a path's root is in, with the field's slot to write it back to.
+    /// Returns the register a path's root is in, with the field's slot to write it back to.
     ///
     /// A local's own register, or, for a behavior field, a copy loaded for
     /// the update.
@@ -382,7 +382,7 @@ impl Compiler {
         written
     }
 
-    /// `foreach (T x in xs) { … }` — over a snapshot of `xs`.
+    /// Compiles `foreach (T x in xs) { … }` over a snapshot of `xs`.
     ///
     /// Three hidden locals, named so no script can spell them, hold the
     /// snapshot, the position and the length, so a frame suspended inside the

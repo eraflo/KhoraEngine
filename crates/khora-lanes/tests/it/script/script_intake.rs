@@ -313,7 +313,7 @@ fn an_uncovered_reload_waits_and_is_installed_once_covered() {
 /// **A newer reload of a module replaces its waiting one.** The first edit
 /// waits for `Marker`; the next frame `Marker` is covered, but a second edit
 /// arrived — it alone counts, and waits for `Beacon`. The first edit never
-/// lands, and what it read is no longer wanted.
+/// lands, and what it read is not wanted any more.
 #[test]
 fn a_newer_reload_supersedes_a_waiting_one() {
     let wired = Wired::new(Some(COUNTING));
@@ -350,7 +350,7 @@ fn a_newer_reload_supersedes_a_waiting_one() {
 
 /// **A gone module is withdrawn, its entry with it.** A reload with no
 /// program takes the module out of the scripting world, and what the pump
-/// had announced for it is no longer wanted.
+/// had announced for it is not wanted any more.
 #[test]
 fn a_gone_module_is_withdrawn_with_its_entry() {
     let wired = Wired::new(Some(COUNTING));

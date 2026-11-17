@@ -25,14 +25,14 @@ use super::record::{LoadReport, ReportEntry, ReportKind};
 use crate::ecs::World;
 
 impl Prepared {
-    /// Whether this load was prepared for `world`, whose reserver holds its ids.
+    /// Returns whether this load was prepared for `world`, whose reserver holds its ids.
     ///
     /// A load committed into another world adds nothing.
     pub fn is_for(&self, world: &World) -> bool {
         self.hold.is_over(&world.reserver())
     }
 
-    /// Whether `world`'s components are those this load was prepared against.
+    /// Returns whether `world`'s components are those this load was prepared against.
     ///
     /// A load that is not current is prepared again as it commits.
     pub fn is_current(&self, world: &World) -> bool {
@@ -42,7 +42,7 @@ impl Prepared {
     /// Returns the hold of this load's ids, ready to reserve them again.
     ///
     /// A load prepared again reuses it, so it takes no new slots.
-    pub fn into_hold(self) -> khora_core::ecs::ReservationHold {
+    pub(crate) fn into_hold(self) -> khora_core::ecs::ReservationHold {
         self.hold.recycle();
         self.hold
     }
@@ -189,5 +189,63 @@ fn not_loaded(mut report: LoadReport, reason: String) -> Applied {
     Applied {
         entities: Vec::new(),
         report,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use khora_core::math::Vec3;
+    use khora_core::script::ScriptValue;
+
+    use crate::ecs::{
+        ComponentProvenance, FieldKind, PackedField, PackedLayout, RuntimeComponentDecl,
+        SemanticDomain, Transform, World,
+    };
+    use crate::scene::{capture_world, prepare, SceneRecord};
+
+    /// A record of one authored entity holding a `Transform`.
+    fn one_entity() -> SceneRecord {
+        let mut src = World::new();
+        let entity = src.spawn(Transform::from_translation(Vec3::new(1.0, 2.0, 3.0)));
+        src.mark_authored(entity).expect("authored");
+        capture_world(&src).expect("captures")
+    }
+
+    #[test]
+    fn a_load_is_for_the_world_it_was_prepared_in_only() {
+        let record = one_entity();
+        let mut world = World::new();
+        let other = World::new();
+        let prepared = prepare(&mut world, &record).expect("prepares");
+
+        assert!(prepared.is_for(&world));
+        assert!(!prepared.is_for(&other));
+        prepared.abandon(&mut world);
+    }
+
+    #[test]
+    fn a_load_stops_being_current_once_its_world_registers_a_component() {
+        let record = one_entity();
+        let mut world = World::new();
+        let prepared = prepare(&mut world, &record).expect("prepares");
+        assert!(prepared.is_current(&world));
+
+        world
+            .register_runtime_component(RuntimeComponentDecl {
+                name: "Charge".to_owned(),
+                domain: SemanticDomain::Spatial,
+                provenance: ComponentProvenance::Authored,
+                resumable: false,
+                layout: PackedLayout::new(vec![PackedField {
+                    name: "amount".to_owned(),
+                    kind: FieldKind::Int,
+                    default: ScriptValue::Int(0),
+                }])
+                .expect("a valid layout"),
+            })
+            .expect("`Charge` registers");
+
+        assert!(!prepared.is_current(&world));
+        prepared.abandon(&mut world);
     }
 }

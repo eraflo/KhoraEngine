@@ -30,7 +30,7 @@ pub(crate) trait ModuleSource {
     /// Returns every module there, each with the modules it imports.
     fn modules(&self) -> &BTreeMap<String, Vec<String>>;
 
-    /// Whether `module` is there.
+    /// Returns whether `module` is there.
     fn holds(&self, module: &str) -> bool;
 
     /// Returns the source of `module`; `None` when it is not there, or was refused.

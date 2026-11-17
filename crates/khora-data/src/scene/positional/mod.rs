@@ -25,6 +25,12 @@ use serde::Serialize;
 
 use super::record::{RecordError, ReferenceReader, ReferenceWriter};
 
+/// How many elements a sequence may hold beyond the bytes they take.
+///
+/// Room for elements that take no bytes (a unit, a marker), and no more. The
+/// writer refuses a longer one, so whatever is written reads back.
+pub(crate) const FREE_ELEMENTS: usize = 256;
+
 /// Appends `value` to `out`, positionally, its entities through `references`.
 ///
 /// # Errors
@@ -73,19 +79,13 @@ pub(crate) fn write_varint(out: &mut Vec<u8>, mut value: u64) {
     }
 }
 
-/// How many elements a sequence may hold beyond the bytes they take.
-///
-/// Room for elements that take no bytes (a unit, a marker), and no more. The
-/// writer refuses a longer one, so whatever is written reads back.
-pub(crate) const FREE_ELEMENTS: usize = 256;
-
-/// Zig-zag: maps signed to unsigned so small magnitudes stay short as
+/// Maps signed to unsigned by zig-zag, so small magnitudes stay short as
 /// varints (0→0, -1→1, 1→2, -2→3).
 fn zigzag(value: i64) -> u64 {
     ((value << 1) ^ (value >> 63)) as u64
 }
 
-/// The inverse of [`zigzag`].
+/// Returns the inverse of [`zigzag`].
 fn unzigzag(value: u64) -> i64 {
     ((value >> 1) as i64) ^ -((value & 1) as i64)
 }

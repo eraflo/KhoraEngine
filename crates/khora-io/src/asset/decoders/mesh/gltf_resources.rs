@@ -26,7 +26,7 @@ use super::GltfResourceResolver;
 
 type BoxError = Box<dyn Error + Send + Sync>;
 
-/// Every buffer of the file, in document order, so `buffer.index()` indexes the result.
+/// Loads every buffer of the file, in document order, so `buffer.index()` indexes the result.
 ///
 /// `base_dir` is the glTF file's folder, relative to the assets root.
 pub(super) fn load_buffers(
@@ -68,7 +68,7 @@ pub(super) fn load_buffers(
     Ok(buffers)
 }
 
-/// The encoded bytes (PNG, JPEG…) of `image`, a member of `document`.
+/// Returns the encoded bytes (PNG, JPEG…) of `image`, a member of `document`.
 pub(super) fn image_bytes(
     document: &gltf::Document,
     image: &gltf::Image<'_>,
@@ -87,7 +87,7 @@ pub(super) fn image_bytes(
     }
 }
 
-/// The bytes of a base64 `data:` URI, whatever its media type.
+/// Decodes the bytes of a base64 `data:` URI, whatever its media type.
 pub(super) fn decode_data_uri(uri: &str) -> Result<Vec<u8>, BoxError> {
     let (header, data) = uri
         .strip_prefix("data:")
@@ -105,7 +105,7 @@ pub(super) fn decode_data_uri(uri: &str) -> Result<Vec<u8>, BoxError> {
         .map_err(Into::into)
 }
 
-/// The asset-root-relative path (forward slashes) a relative URI names from
+/// Returns the asset-root-relative path (forward slashes) a relative URI names from
 /// `base_dir`, or why it may not be read.
 ///
 /// glTF resolves a URI against the file's own folder, so an export works
@@ -148,7 +148,7 @@ pub(super) fn resolve_relative_uri(base_dir: &Path, uri: &str) -> Result<String,
     Ok(parts.join("/"))
 }
 
-/// `text` with every `%XX` escape replaced by its byte, if the result is
+/// Replaces every `%XX` escape of `text` by its byte, if the result is
 /// UTF-8 and every escape is well formed.
 fn percent_decode(text: &str) -> Option<String> {
     let bytes = text.as_bytes();
@@ -170,7 +170,7 @@ fn percent_decode(text: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-/// The start of a long URI, for an error message.
+/// Returns the start of a long URI, for an error message.
 fn truncated(uri: &str) -> &str {
     let end = uri
         .char_indices()

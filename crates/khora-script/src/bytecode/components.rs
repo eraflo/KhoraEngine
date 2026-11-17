@@ -29,7 +29,7 @@ use crate::vm::{Instruction, Patch, Reg, Value, WriteMode};
 type Literal<'e> = (&'e str, &'e [(String, crate::diagnostics::Span, Expr)]);
 
 impl Compiler {
-    /// `object.name(args)` when `object` is an entity, or `None`.
+    /// Compiles `object.name(args)` when `object` is an entity, or returns `None`.
     pub(super) fn compile_entity_method(
         &mut self,
         object: &Expr,
@@ -94,7 +94,7 @@ impl Compiler {
         }
     }
 
-    /// `Spawn(position, C1 { … }, …)`, or the prefab form when the first
+    /// Compiles `Spawn(position, C1 { … }, …)`, or the prefab form when the first
     /// argument is a prefab.
     pub(super) fn compile_spawn(
         &mut self,
@@ -146,7 +146,7 @@ impl Compiler {
         (dst, Shape::Other)
     }
 
-    /// `Spawn(prefab, C1 { … }, …, at: position, facing: rotation)`.
+    /// Compiles `Spawn(prefab, C1 { … }, …, at: position, facing: rotation)`.
     ///
     /// Every argument is evaluated in the order written, each into the register
     /// the instruction reads it from; a missing `facing:` is `null`, the
@@ -257,7 +257,7 @@ impl Compiler {
         (self.program.spawns.len() - 1) as u32
     }
 
-    /// `entity.Set(C { … })` and `entity.Add(C { … })`.
+    /// Compiles `entity.Set(C { … })` and `entity.Add(C { … })`.
     fn compile_write(
         &mut self,
         mode: WriteMode,
@@ -281,7 +281,7 @@ impl Compiler {
         self.constant(Value::Unit, Shape::Other)
     }
 
-    /// `entity.Get(C)` and `entity.Has(C)`; the component joins the
+    /// Compiles `entity.Get(C)` and `entity.Has(C)`; the component joins the
     /// program's read set, which decides what the frame projects.
     fn compile_read(&mut self, copy: bool, object: &Expr, component: &str) -> (Reg, Shape) {
         self.record_read(component);
@@ -324,7 +324,7 @@ impl Compiler {
         }
     }
 
-    /// `entity.SetMaterial(m)`.
+    /// Compiles `entity.SetMaterial(m)`.
     fn compile_set_material(&mut self, object: &Expr, material: &Expr) -> (Reg, Shape) {
         let mark = self.registers.mark();
         let entity = self.registers.temp();
@@ -355,7 +355,7 @@ impl Compiler {
         self.constant(Value::Unit, Shape::Other)
     }
 
-    /// `target.Raise(E(args))`: the payload in consecutive registers, an
+    /// Compiles `target.Raise(E(args))`: the payload in consecutive registers, an
     /// `int` given where the event says `float` arriving as that float.
     fn compile_raise(
         &mut self,
@@ -444,7 +444,7 @@ impl Compiler {
         base
     }
 
-    /// One field of a component literal into `slot` — an `int` given where
+    /// Compiles one field of a component literal into `slot`, an `int` given where
     /// the component declares a `float` arriving as that float.
     fn compile_literal_field(
         &mut self,
@@ -473,7 +473,7 @@ impl Compiler {
         self.registers.release_to(inner);
     }
 
-    /// `expr` evaluated into `slot`.
+    /// Compiles `expr`, evaluated into `slot`.
     fn place(&mut self, expr: &Expr, slot: Reg) {
         let inner = self.registers.mark();
         let (register, _) = self.compile_expr(expr);
@@ -486,7 +486,7 @@ impl Compiler {
         self.registers.release_to(inner);
     }
 
-    /// The patch of `component` writing `fields`, shared with every write of
+    /// Returns the patch of `component` writing `fields`, shared with every write of
     /// the same fields in the same order.
     fn component_patch(
         &mut self,
@@ -512,7 +512,7 @@ impl Compiler {
         index as u32
     }
 
-    /// The index of `text` among the program's strings — deduplicated: the
+    /// Returns the index of `text` among the program's strings, deduplicated: the
     /// same text written in twenty places is one entry.
     pub(super) fn intern(&mut self, text: &str) -> u32 {
         let index = match self.program.strings.iter().position(|known| known == text) {
@@ -526,7 +526,7 @@ impl Compiler {
     }
 }
 
-/// A component literal's name and fields, when `expr` is one.
+/// Returns a component literal's name and fields, when `expr` is one.
 fn literal(expr: &Expr) -> Option<Literal<'_>> {
     match expr {
         Expr::StructLit { name, fields, .. } => Some((name.as_str(), fields.as_slice())),

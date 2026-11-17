@@ -33,7 +33,7 @@ pub(super) const DOMAIN: &str = "Domain";
 
 /// Returns the refusals of the project's components: an engine name, a wrong
 /// attribute, a field the engine cannot store or start a row at.
-pub fn report_script_components(resolved: &Resolved, engine: &[String]) -> Vec<Diagnostic> {
+pub(crate) fn report_script_components(resolved: &Resolved, engine: &[String]) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     for decl in script_components(resolved).map(|(_, decl)| decl) {
         if engine.contains(&decl.name) {
@@ -101,7 +101,7 @@ pub fn declared_components(resolved: &Resolved, program: &Program) -> Vec<Declar
     declared
 }
 
-/// Every `component` written outside the engine's module, with its module.
+/// Lists every `component` written outside the engine's module, with its module.
 fn script_components(resolved: &Resolved) -> impl Iterator<Item = (&ResolvedModule, &StructDecl)> {
     resolved
         .modules
@@ -119,7 +119,8 @@ fn script_components(resolved: &Resolved) -> impl Iterator<Item = (&ResolvedModu
         })
 }
 
-/// One `[Domain(X)]` at most, naming a domain; nothing else.
+/// Reports any attribute but `[Domain(X)]`, and a `[Domain(X)]` that is
+/// repeated or names no domain.
 fn report_attributes(attributes: &[Attribute], diagnostics: &mut Vec<Diagnostic>) {
     let mut placed = false;
     for attribute in attributes {
@@ -164,7 +165,7 @@ fn report_attributes(attributes: &[Attribute], diagnostics: &mut Vec<Diagnostic>
     }
 }
 
-/// The domain names, as an author writes them.
+/// Returns the domain names, as an author writes them.
 pub(super) fn known_domains() -> String {
     SemanticDomain::ALL
         .iter()
@@ -173,7 +174,7 @@ pub(super) fn known_domains() -> String {
         .join(", ")
 }
 
-/// The domain `[Domain(X)]` names, when it names one.
+/// Returns the domain `[Domain(X)]` names, when it names one.
 pub(super) fn domain_of(attributes: &[Attribute]) -> Option<SemanticDomain> {
     attributes
         .iter()
@@ -184,7 +185,7 @@ pub(super) fn domain_of(attributes: &[Attribute]) -> Option<SemanticDomain> {
         })
 }
 
-/// A field the engine cannot store, or that has nothing to start a row at.
+/// Reports a field the engine cannot store, or that has nothing to start a row at.
 fn report_field(field: &Field, diagnostics: &mut Vec<Diagnostic>) {
     if ergon_type(&field.ty).is_none() {
         diagnostics.push(
@@ -225,7 +226,7 @@ fn report_field(field: &Field, diagnostics: &mut Vec<Diagnostic>) {
     }
 }
 
-/// Where in `expr`, a default, a float literal stands for no finite number.
+/// Returns where in `expr`, a default, a float literal stands for no finite number.
 pub(super) fn non_finite(expr: &Expr) -> Option<crate::diagnostics::Span> {
     match expr {
         Expr::Float { value, span }
@@ -239,8 +240,9 @@ pub(super) fn non_finite(expr: &Expr) -> Option<crate::diagnostics::Span> {
     }
 }
 
-/// What a field type is to the engine's storage. `None` for one it cannot
-/// store (`Map<…>`).
+/// Returns what a field type is to the engine's storage.
+///
+/// `None` for one it cannot store (`Map<…>`).
 pub(crate) fn ergon_type(ty: &TypeRef) -> Option<ErgonType> {
     Some(match ty {
         TypeRef::Void | TypeRef::Generic { .. } => return None,
@@ -295,8 +297,8 @@ pub(super) fn with_struct_fields(
     }
 }
 
-/// A field's default as the engine stores it: the declared one, completed,
-/// else the type's zero.
+/// Returns a field's default as the engine stores it: the declared one,
+/// completed, else the type's zero.
 fn default_of(program: &Program, component: &str, slot: usize, ty: &TypeRef) -> ScriptValue {
     let declared = program
         .struct_named(component)

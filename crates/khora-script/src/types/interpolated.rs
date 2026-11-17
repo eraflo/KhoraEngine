@@ -48,7 +48,7 @@ impl Checker {
     }
 }
 
-/// Whether a value of `ty` can be shown as text.
+/// Returns whether a value of `ty` can be shown as text.
 fn shown(ty: &Ty) -> bool {
     match ty {
         Ty::Int
@@ -66,7 +66,7 @@ fn shown(ty: &Ty) -> bool {
     }
 }
 
-/// How a message names the hole `expr`.
+/// Returns how a message names the hole `expr`.
 fn what(expr: &Expr) -> String {
     match expr {
         Expr::Ident { name, .. } => name.clone(),
@@ -74,7 +74,7 @@ fn what(expr: &Expr) -> String {
     }
 }
 
-/// `$"…"` written for `text + value`: what a refusal of the sum suggests.
+/// Returns the `$"…"` written for `text + value`: what a refusal of the sum suggests.
 pub(super) fn suggested(text: &Expr, value: &Expr) -> String {
     let lead = match text {
         Expr::Str { value, .. } => value.replace('{', "{{").replace('}', "}}"),
@@ -83,12 +83,12 @@ pub(super) fn suggested(text: &Expr, value: &Expr) -> String {
     format!("$\"{lead}{{{}}}\"", spelled(value))
 }
 
-/// A place written to, as a message repeats it.
+/// Spells a place written to, as a message repeats it.
 pub(super) fn spelled_target(expr: &Expr) -> String {
     spelled(expr)
 }
 
-/// `expr` as a hole would hold it, where it is short enough to repeat.
+/// Spells `expr` as a hole would hold it, where it is short enough to repeat.
 fn spelled(expr: &Expr) -> String {
     match expr {
         Expr::Int { value, .. } => value.to_string(),

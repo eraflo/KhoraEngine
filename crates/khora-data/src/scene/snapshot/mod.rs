@@ -204,7 +204,7 @@ pub fn prepare_snapshot_with(
     Ok(prepared)
 }
 
-/// The snapshot `file` holds, read once.
+/// Reads the snapshot `file` holds, once.
 fn parse(file: &SceneFile) -> Result<Snapshot<'_>, LoadFailure> {
     let refused = |message: String| failure(message, LoadReport::default());
     let encoding = encoding_of(file);
@@ -215,7 +215,7 @@ fn parse(file: &SceneFile) -> Result<Snapshot<'_>, LoadFailure> {
     Snapshot::read(&file.payload).map_err(refused)
 }
 
-/// `snapshot`, checked against `world`.
+/// Prepares `snapshot`, checked against `world`.
 fn prepare_parsed(
     world: &crate::scene::LoadCatalog,
     hold: khora_core::ecs::ReservationHold,
@@ -284,7 +284,7 @@ fn prepare_parsed(
     Ok(prepared)
 }
 
-/// A declared component's row, from the values the snapshot holds.
+/// Stages a declared component's row from the values the snapshot holds.
 fn stage_declared(load: &DeclaredLoad, values: Vec<ScriptValue>) -> super::StagedComponent {
     load.stage_values(values)
 }
@@ -317,21 +317,6 @@ struct Snapshot<'p> {
     table: Vec<Entry>,
     entities: Vec<PersistentId>,
     pages: Vec<SnapshotPage<'p>>,
-}
-
-struct SnapshotPage<'p> {
-    /// Indices into the component table.
-    components: Vec<usize>,
-    rows: Vec<PersistentId>,
-    /// Each column's values, a byte slice per row.
-    values: Vec<Vec<&'p [u8]>>,
-}
-
-// How many payloads this thread read, for the tests that bound how often a
-// load reads its snapshot.
-#[cfg(test)]
-thread_local! {
-    static PAYLOADS_READ: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 impl<'p> Snapshot<'p> {
@@ -467,7 +452,22 @@ impl<'p> Snapshot<'p> {
     }
 }
 
-/// The registration a snapshot's component is read with: this build's own
+struct SnapshotPage<'p> {
+    /// Indices into the component table.
+    components: Vec<usize>,
+    rows: Vec<PersistentId>,
+    /// Each column's values, a byte slice per row.
+    values: Vec<Vec<&'p [u8]>>,
+}
+
+// How many payloads this thread read, for the tests that bound how often a
+// load reads its snapshot.
+#[cfg(test)]
+thread_local! {
+    static PAYLOADS_READ: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Returns the registration a snapshot's component is read with: this build's own
 /// name for it, its schema the one that wrote it, a component a save holds.
 fn registration_for(
     name: &str,
@@ -526,7 +526,7 @@ impl<'p> Input<'p> {
         Ok(taken)
     }
 
-    /// A length, then that many bytes of UTF-8.
+    /// Reads a length, then that many bytes of UTF-8.
     fn text(&mut self) -> Result<&'p str, String> {
         let len = self.count(1)?;
         std::str::from_utf8(self.take(len)?).map_err(|_| "a name that is not UTF-8".to_owned())

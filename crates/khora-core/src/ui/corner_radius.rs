@@ -25,7 +25,7 @@ pub struct CornerRadius {
 }
 
 impl CornerRadius {
-    /// All corners share `value`.
+    /// Builds radii where all corners share `value`.
     #[inline]
     pub const fn same(value: f32) -> Self {
         Self {

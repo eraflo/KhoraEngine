@@ -91,7 +91,7 @@ use crate::ecs::{Role, SemanticDomain, World};
 /// }
 /// ```
 pub trait Flow: Send + Sync {
-    /// The View this Flow publishes into the LaneBus.
+    /// The View this Flow publishes into the `LaneBus`.
     ///
     /// `Clone` so a cached view is republished without projecting again.
     type View: std::any::Any + Send + Sync + Clone + 'static;

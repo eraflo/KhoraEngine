@@ -29,7 +29,7 @@
 //! atlases never share a view.
 //!
 //! The glyph atlas is filled as the engine fills it: by the engine's own
-//! `glyphs_on_gpu` DataSystem, over a world of laid-out texts, rasterising
+//! `glyphs_on_gpu` `DataSystem`, over a world of laid-out texts, rasterising
 //! through a fake rasteriser whose images have known sizes and offsets, on a
 //! ledger of its own counting from [`GLYPH_IDS`]. Every draw the lane records
 //! is kept with the pipeline and the bind groups bound when it was made, so a

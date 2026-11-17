@@ -121,6 +121,31 @@ pub struct Prepared {
     pub(super) source: Option<Source>,
 }
 
+impl Prepared {
+    /// Returns the id reserved for each entity the load brings, in record order.
+    pub(crate) fn reserved(&self) -> Vec<EntityId> {
+        self.entities.iter().map(|(_, entity)| *entity).collect()
+    }
+
+    /// Returns the generation of the catalogue the load was prepared against.
+    ///
+    /// Older than [`World::load_catalog`]'s once the world's components changed.
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// Records what the load was read from, to prepare it again should its
+    /// world's components change before it commits.
+    pub(super) fn set_source(&mut self, source: Source) {
+        self.source = Some(source);
+    }
+
+    /// Sets the declarations to register when the load commits.
+    pub(super) fn set_register(&mut self, register: Vec<RuntimeComponentDecl>) {
+        self.register = register;
+    }
+}
+
 /// What a load prepared off the frame was read from.
 #[derive(Clone)]
 pub(super) enum Source {
@@ -152,7 +177,7 @@ pub(super) enum Loaded {
 }
 
 impl Loaded {
-    /// Its name.
+    /// Returns its name.
     pub(super) fn name(&self) -> &str {
         match self {
             Self::Rust(reg) => reg.type_name,
@@ -160,7 +185,7 @@ impl Loaded {
         }
     }
 
-    /// Its key in the world's pages.
+    /// Returns its key in the world's pages.
     pub(super) fn key(&self) -> ComponentKey {
         match self {
             Self::Rust(reg) => ComponentKey::Rust(reg.type_id),
@@ -192,8 +217,8 @@ pub(super) fn plan_declared(
     Ok(loads)
 }
 
-/// The declarations among `loads` the world does not have yet, of the
-/// components `used` names: a declaration no page holds registers nothing.
+/// Returns the declarations among `loads` the world does not have yet, of
+/// the components `used` names: a declaration no page holds registers nothing.
 pub(super) fn to_register<'n>(
     loads: &HashMap<String, Arc<DeclaredLoad>>,
     used: impl IntoIterator<Item = &'n str>,
@@ -230,7 +255,9 @@ pub(super) fn readings(world: &mut World, wanted: usize) -> (Arc<LoadCatalog>, R
     (world.load_catalog(), world.hold_reservations())
 }
 
-/// [`prepare`] without the world: it reads `catalog`, and `hold` holds the ids it reserves.
+/// Prepares a load as [`prepare`] does, without the world: it reads `catalog`.
+///
+/// `hold` holds the ids it reserves.
 ///
 /// Runs on any thread; only [`commit`](Prepared::commit) needs the world. The
 /// ids stay held until the load is committed, abandoned or dropped.
@@ -248,8 +275,10 @@ pub fn prepare_with(
     Ok(prepared)
 }
 
-/// [`prepare`], the entity known as `given.0` landing at `given.1` — an id
-/// reserved before the load, which the load neither reserves nor gives back.
+/// Prepares a load as [`prepare`] does, landing the entity known as `given.0` at `given.1`.
+///
+/// `given.1` is an id reserved before the load, which the load neither reserves nor gives
+/// back.
 pub(crate) fn prepare_at(
     world: &mut World,
     record: &SceneRecord,
@@ -259,8 +288,9 @@ pub(crate) fn prepare_at(
     prepare_given(&catalog, hold, record, Kept::Scene, Some(given))
 }
 
-/// [`prepare`], keeping the components `kept` keeps and skipping, reported,
-/// any other the record holds.
+/// Prepares a load as [`prepare`] does, keeping only the components `kept` keeps.
+///
+/// Any other component the record holds is skipped and reported.
 pub(super) fn prepare_kept(
     world: &mut World,
     record: &SceneRecord,
@@ -270,7 +300,7 @@ pub(super) fn prepare_kept(
     prepare_given(&catalog, hold, record, kept, None)
 }
 
-/// [`prepare_kept`], without the world.
+/// Prepares a load as [`prepare_kept`] does, without the world.
 pub(super) fn prepare_kept_with(
     catalog: &LoadCatalog,
     hold: ReservationHold,
@@ -459,77 +489,8 @@ pub(super) fn prepare_pages(
         &mut dyn ReferenceReader,
     ) -> Result<StagedComponent, RecordError>,
 ) -> Result<Prepared, LoadFailure> {
-    let mut known = HashSet::new();
-    for id in entities {
-        if !known.insert(*id) {
-            return Err(failure(
-                format!("entity {:#x} is recorded twice", id.to_bits()),
-                report,
-            ));
-        }
-    }
-
-    let mut domains_of: HashMap<PersistentId, Vec<SemanticDomain>> = HashMap::new();
-    for plan in &plans {
-        let mut page_domains: Vec<SemanticDomain> = Vec::new();
-        for (index, (_, loaded)) in plan.columns.iter().enumerate() {
-            // Where the file kept it: what decides whether its pages fit
-            // together.
-            let domain = match loaded {
-                Loaded::Rust(reg) => world.domain_of(ComponentKey::Rust(reg.type_id)),
-                Loaded::Declared(load) => Some(load.file_domain),
-            };
-            let Some(domain) = domain else {
-                return Err(failure(
-                    format!(
-                        "component `{}` is not registered in this world",
-                        loaded.name()
-                    ),
-                    report,
-                ));
-            };
-            if plan.columns[..index]
-                .iter()
-                .any(|(_, known)| known.key() == loaded.key())
-            {
-                return Err(failure(
-                    format!("component `{}` appears twice in one page", loaded.name()),
-                    report,
-                ));
-            }
-            if !page_domains.contains(&domain) {
-                page_domains.push(domain);
-            }
-        }
-        let mut in_page = HashSet::new();
-        for id in plan.rows {
-            if !known.contains(id) {
-                return Err(failure(
-                    format!(
-                        "a page holds entity {:#x}, which the record does not list",
-                        id.to_bits()
-                    ),
-                    report,
-                ));
-            }
-            if !in_page.insert(*id) {
-                return Err(failure(
-                    format!("entity {:#x} has two rows in one page", id.to_bits()),
-                    report,
-                ));
-            }
-            let taken = domains_of.entry(*id).or_default();
-            if page_domains.iter().any(|domain| taken.contains(domain)) {
-                return Err(failure(
-                    format!(
-                        "entity {:#x} is in two pages of the same domain",
-                        id.to_bits()
-                    ),
-                    report,
-                ));
-            }
-            taken.extend(page_domains.iter().copied());
-        }
+    if let Err(message) = check_plans(world, entities, &plans) {
+        return Err(failure(message, report));
     }
 
     let reserved: HashMap<PersistentId, EntityId> = entities
@@ -646,29 +607,76 @@ pub(super) fn prepare_pages(
     })
 }
 
-impl Prepared {
-    /// The id reserved for each entity the load brings, in record order.
-    pub(crate) fn reserved(&self) -> Vec<EntityId> {
-        self.entities.iter().map(|(_, entity)| *entity).collect()
+/// Checks that a load's pages fit together; returns why they don't.
+///
+/// Every entity is listed once, a page holds only listed entities, once each,
+/// a component appears once per page, and an entity has one page per domain.
+fn check_plans(
+    world: &LoadCatalog,
+    entities: &[PersistentId],
+    plans: &[PagePlan<'_>],
+) -> Result<(), String> {
+    let mut known = HashSet::new();
+    for id in entities {
+        if !known.insert(*id) {
+            return Err(format!("entity {:#x} is recorded twice", id.to_bits()));
+        }
     }
 
-    /// Returns the generation of the catalogue the load was prepared against.
-    ///
-    /// Older than [`World::load_catalog`]'s once the world's components changed.
-    pub fn generation(&self) -> u64 {
-        self.generation
+    let mut domains_of: HashMap<PersistentId, Vec<SemanticDomain>> = HashMap::new();
+    for plan in plans {
+        let mut page_domains: Vec<SemanticDomain> = Vec::new();
+        for (index, (_, loaded)) in plan.columns.iter().enumerate() {
+            // Where the file kept it: what decides whether its pages fit
+            // together.
+            let domain = match loaded {
+                Loaded::Rust(reg) => world.domain_of(ComponentKey::Rust(reg.type_id)),
+                Loaded::Declared(load) => Some(load.file_domain),
+            };
+            let Some(domain) = domain else {
+                return Err(format!(
+                    "component `{}` is not registered in this world",
+                    loaded.name()
+                ));
+            };
+            if plan.columns[..index]
+                .iter()
+                .any(|(_, known)| known.key() == loaded.key())
+            {
+                return Err(format!(
+                    "component `{}` appears twice in one page",
+                    loaded.name()
+                ));
+            }
+            if !page_domains.contains(&domain) {
+                page_domains.push(domain);
+            }
+        }
+        let mut in_page = HashSet::new();
+        for id in plan.rows {
+            if !known.contains(id) {
+                return Err(format!(
+                    "a page holds entity {:#x}, which the record does not list",
+                    id.to_bits()
+                ));
+            }
+            if !in_page.insert(*id) {
+                return Err(format!(
+                    "entity {:#x} has two rows in one page",
+                    id.to_bits()
+                ));
+            }
+            let taken = domains_of.entry(*id).or_default();
+            if page_domains.iter().any(|domain| taken.contains(domain)) {
+                return Err(format!(
+                    "entity {:#x} is in two pages of the same domain",
+                    id.to_bits()
+                ));
+            }
+            taken.extend(page_domains.iter().copied());
+        }
     }
-
-    /// What the load was read from, to prepare it again should its world's
-    /// components change before it commits.
-    pub(super) fn set_source(&mut self, source: Source) {
-        self.source = Some(source);
-    }
-
-    /// The declarations to register when the load commits.
-    pub(super) fn set_register(&mut self, register: Vec<RuntimeComponentDecl>) {
-        self.register = register;
-    }
+    Ok(())
 }
 
 pub(super) fn failure(message: String, report: LoadReport) -> LoadFailure {

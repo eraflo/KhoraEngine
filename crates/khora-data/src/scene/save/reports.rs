@@ -61,3 +61,59 @@ pub fn about_what_loads(
         .filter(|entry| loads(entry) && seen.insert(entry.clone()))
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use khora_core::ecs::PersistentId;
+    use khora_core::math::Vec3;
+
+    use super::about_what_loads;
+    use crate::ecs::{Transform, World};
+    use crate::scene::capture_world;
+    use crate::scene::record::{ReportEntry, ReportKind};
+
+    fn entry(
+        entity: Option<PersistentId>,
+        component: Option<&str>,
+        kind: ReportKind,
+    ) -> ReportEntry {
+        ReportEntry {
+            entity,
+            component: component.map(str::to_owned),
+            path: String::new(),
+            kind,
+        }
+    }
+
+    #[test]
+    fn only_entries_about_what_the_record_loads_are_kept_each_once() {
+        let mut src = World::new();
+        let spawned = src.spawn(Transform::from_translation(Vec3::new(1.0, 0.0, 0.0)));
+        src.mark_authored(spawned).expect("authored");
+        let record = capture_world(&src).expect("captures");
+        let loaded = record.entities[0];
+        let gone = PersistentId::from_bits(loaded.to_bits() ^ 1);
+
+        let held = entry(Some(loaded), Some("Transform"), ReportKind::Defaulted);
+        let not_held = entry(Some(loaded), Some("Camera"), ReportKind::Defaulted);
+        let removed = entry(Some(gone), Some("Transform"), ReportKind::RemovedFromScene);
+        let retired_here = entry(Some(loaded), Some("Old"), ReportKind::Retired);
+        let retired_elsewhere = entry(Some(gone), Some("Old"), ReportKind::Retired);
+        let about_nothing = entry(None, None, ReportKind::Widened);
+
+        let kept = about_what_loads(
+            &record,
+            [
+                held.clone(),
+                not_held,
+                removed.clone(),
+                retired_here.clone(),
+                retired_elsewhere,
+                about_nothing.clone(),
+                held.clone(),
+            ],
+        );
+
+        assert_eq!(kept, vec![held, removed, retired_here, about_nothing]);
+    }
+}

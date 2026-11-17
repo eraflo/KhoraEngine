@@ -35,19 +35,6 @@ const PIECE_T: [GradientStop; 2] = stops2(0xf7fafc, 0xcdd9e5);
 const PIECE_R: [GradientStop; 2] = stops2(0xd3dde8, 0x8ea4bc);
 const PIECE_B: [GradientStop; 2] = stops2(0xb9c8d7, 0x7a91aa);
 
-const fn stops2(a: u32, b: u32) -> [GradientStop; 2] {
-    [
-        GradientStop {
-            offset: 0.0,
-            color: rgb(a),
-        },
-        GradientStop {
-            offset: 1.0,
-            color: rgb(b),
-        },
-    ]
-}
-
 /// The glow behind the cut: the light's centre and middle, fading out.
 const GLOW: [GradientStop; 3] = [
     GradientStop {
@@ -80,6 +67,19 @@ const LIT: [GradientStop; 3] = [
     },
 ];
 
+const fn stops2(a: u32, b: u32) -> [GradientStop; 2] {
+    [
+        GradientStop {
+            offset: 0.0,
+            color: rgb(a),
+        },
+        GradientStop {
+            offset: 1.0,
+            color: rgb(b),
+        },
+    ]
+}
+
 pub(super) fn paint(c: &mut Canvas<'_>, t: f32) {
     let p_tick = ez(t / 1.2);
     let p_frame = ez((t - 0.4) / 1.8);
@@ -87,7 +87,7 @@ pub(super) fn paint(c: &mut Canvas<'_>, t: f32) {
     let p_piece = ez((t - 3.4) / 1.4);
     // The hole, as wide as the cut will be, then the cuts carved out of it
     // along the gold lines. Once carved, the pieces stand at their gap and the
-    // carving is no longer drawn: the same shape.
+    // carving is not drawn: the same shape.
     let p_hole = eo((t - 5.0) / 0.6, 3.0);
     let p_carve = ez((t - 5.7) / 1.8);
     let carved = t >= 5.7 + 1.8;
@@ -120,17 +120,7 @@ pub(super) fn paint(c: &mut Canvas<'_>, t: f32) {
 
     // The left piece as a door, seen in perspective.
     let ang = door * 74.0_f32.to_radians();
-    let foc = 1100.0;
-    let hinge_x = -200.0 - sway_a;
-    let door_pts: Vec<[f32; 2]> = p[0]
-        .iter()
-        .map(|&[x, y]| {
-            let w = x + 200.0;
-            let z = w * ang.sin();
-            let sc = foc / (foc - z);
-            [hinge_x + w * ang.cos() * sc, y * sc]
-        })
-        .collect();
+    let door_pts = door_points(&p[0], ang, -200.0 - sway_a);
     let shift = |q: &[[f32; 2]], dx: f32, dy: f32| -> Vec<[f32; 2]> {
         q.iter().map(|&[x, y]| [x + dx, y + dy]).collect()
     };
@@ -179,17 +169,7 @@ pub(super) fn paint(c: &mut Canvas<'_>, t: f32) {
             c.group(0.55 * (1.0 - p_piece), |c| {
                 c.outline_part(&square, p_frame, 0.8, TRACE);
             });
-            c.group(0.5 * p_tick * (1.0 - 0.6 * p_piece), |c| {
-                for corner in [
-                    [[-236.0, -212.0], [-236.0, -236.0], [-212.0, -236.0]],
-                    [[212.0, -236.0], [236.0, -236.0], [236.0, -212.0]],
-                    [[236.0, 212.0], [236.0, 236.0], [212.0, 236.0]],
-                    [[-212.0, 236.0], [-236.0, 236.0], [-236.0, 212.0]],
-                ] {
-                    c.line(corner[0], corner[1], 0.8, TRACE, false);
-                    c.line(corner[1], corner[2], 0.8, TRACE, false);
-                }
-            });
+            c.group(0.5 * p_tick * (1.0 - 0.6 * p_piece), trace_corners);
             c.group(p_piece, |c| {
                 c.poly(
                     &door_pts,
@@ -250,7 +230,39 @@ pub(super) fn paint(c: &mut Canvas<'_>, t: f32) {
         });
     });
 
-    // The name, tightening as it arrives.
+    paint_name(c, t, fade);
+}
+
+/// Projects the left piece's points as a door swung open by `ang` on its
+/// hinge at `hinge_x`, seen in perspective.
+fn door_points(piece: &[[f32; 2]], ang: f32, hinge_x: f32) -> Vec<[f32; 2]> {
+    let foc = 1100.0;
+    piece
+        .iter()
+        .map(|&[x, y]| {
+            let w = x + 200.0;
+            let z = w * ang.sin();
+            let sc = foc / (foc - z);
+            [hinge_x + w * ang.cos() * sc, y * sc]
+        })
+        .collect()
+}
+
+/// Draws the four corner ticks around the square.
+fn trace_corners(c: &mut Canvas<'_>) {
+    for corner in [
+        [[-236.0, -212.0], [-236.0, -236.0], [-212.0, -236.0]],
+        [[212.0, -236.0], [236.0, -236.0], [236.0, -212.0]],
+        [[236.0, 212.0], [236.0, 236.0], [212.0, 236.0]],
+        [[-212.0, 236.0], [-236.0, 236.0], [-236.0, 212.0]],
+    ] {
+        c.line(corner[0], corner[1], 0.8, TRACE, false);
+        c.line(corner[1], corner[2], 0.8, TRACE, false);
+    }
+}
+
+/// Paints the name, tightening as it arrives, faded by `fade`.
+fn paint_name(c: &mut Canvas<'_>, t: f32, fade: f32) {
     let wm = ez((t - 6.6) / 1.8) * (1.0 - fade);
     let lift = 10.0 * (1.0 - wm);
     c.group(wm, |c| {

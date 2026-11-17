@@ -67,7 +67,7 @@ impl Default for DecisionView {
 pub struct DecisionWatch(Arc<RwLock<Option<DecisionView>>>);
 
 impl DecisionWatch {
-    /// The last decision published, if one was.
+    /// Returns the last decision published, if one was.
     pub fn latest(&self) -> Option<DecisionView> {
         // A writer that panicked left a whole view or the one before: either
         // is a decision the DCC made, so a poisoned lock is still read.

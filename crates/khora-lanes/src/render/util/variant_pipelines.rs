@@ -45,7 +45,7 @@ pub(crate) struct Surface<'v> {
 }
 
 impl Surface<'static> {
-    /// An opaque, single-sided, untextured surface: the pipeline a lane warms
+    /// Returns an opaque, single-sided, untextured surface: the pipeline a lane warms
     /// when it is prepared.
     pub fn plain() -> Self {
         Self {
@@ -80,7 +80,7 @@ impl VariantPipelines {
     /// Keeps what was asked for while the target is `key`; a new key forgets it all.
     ///
     /// The pipelines themselves belong to the `PipelineSystem`.
-    pub fn retarget(&mut self, key: TargetKey) {
+    pub(crate) fn retarget(&mut self, key: TargetKey) {
         if self.key != Some(key) {
             self.built.clear();
             self.key = Some(key);

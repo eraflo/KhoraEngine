@@ -14,7 +14,10 @@
 
 //! The scene tree as an editor panel: the frame it draws each tick.
 
+use std::collections::HashSet;
+
 use khora_sdk::editor_ui::*;
+use khora_sdk::prelude::ecs::EntityId;
 
 use super::drop::dispatch_asset_drop;
 use super::rows::{
@@ -43,7 +46,7 @@ impl EditorPanel for SceneTreePanel {
     fn ui(&mut self, ui: &mut dyn UiBuilder) {
         let theme = self.theme.clone();
         let panel_rect = ui.panel_rect();
-        let [px, py, pw, _] = panel_rect;
+        let [px, _, pw, _] = panel_rect;
 
         paint_panel_header(ui, panel_rect, HEADER_HEIGHT, &theme);
 
@@ -55,13 +58,6 @@ impl EditorPanel for SceneTreePanel {
         };
 
         let total_count = state_guard.entity_count;
-
-        let icons_total_w = 30.0;
-        let icons_left = px + pw - icons_total_w;
-        let spawn_from_menu: std::cell::Cell<Option<SpawnShape>> = std::cell::Cell::new(None);
-
-        let tab_x = px + 6.0;
-        let tab_y = py + (HEADER_HEIGHT - 22.0) * 0.5;
         let filter_lower = state_guard.search_filter.to_lowercase();
         let filter_active = !filter_lower.is_empty();
         let filtered_roots: Vec<SceneNode> = if filter_active {
@@ -79,130 +75,16 @@ impl EditorPanel for SceneTreePanel {
             total_count
         };
 
-        let badge = if filter_active {
-            format!("{}/{}", visible_count, total_count)
+        let (badge, count_text) = if filter_active {
+            (
+                format!("{}/{}", visible_count, total_count),
+                format!("{} / {}", visible_count, total_count),
+            )
         } else {
-            format!("{}", total_count)
+            (format!("{}", total_count), format!("{}", total_count))
         };
-
-        // Only the count: the dock tab above already names the panel.
-        paint::text(
-            ui,
-            [tab_x, tab_y + 5.0],
-            &badge,
-            theme.font_size_caption,
-            theme.text_muted,
-        );
-        let _ = icons_left;
-
-        // Inset 12px from the right edge, clear of the dock splitter's grab band.
-        let add_rect = [px + pw - 34.0, py + 6.0, 22.0, 22.0];
-        let add_int = ui.interact_rect("h-act-plus", add_rect);
-        if add_int.hovered {
-            ui.paint_rect_filled(
-                [add_rect[0], add_rect[1]],
-                [add_rect[2], add_rect[3]],
-                theme.surface_active,
-                4.0,
-            );
-        }
-        paint::icon(
-            ui,
-            [add_rect[0] + 5.0, add_rect[1] + 5.0],
-            Icon::Plus,
-            13.0,
-            if add_int.hovered {
-                theme.text
-            } else {
-                theme.text_dim
-            },
-        );
-        // Right-click offers the background menu's list: the button is a
-        // shortcut, not a second way to create things.
-        ui.context_menu_last(&mut |menu| {
-            for shape in SpawnShape::ALL {
-                if menu.button(shape.label()) {
-                    spawn_from_menu.set(Some(shape));
-                    menu.close_menu();
-                }
-            }
-        });
-        if add_int.clicked {
-            spawn_from_menu.set(Some(SpawnShape::Empty));
-        }
-        if let Some(shape) = spawn_from_menu.take() {
-            state_guard.push_request(EditorRequest::Spawn(shape));
-        }
-
-        let toolbar_y = py + HEADER_HEIGHT;
-        let search_x = px + 8.0;
-        let search_w = pw - 16.0;
-        let search_h = 24.0;
-        ui.paint_rect_filled(
-            [search_x, toolbar_y + 4.0],
-            [search_w, search_h],
-            theme.background,
-            theme.radius_sm,
-        );
-        ui.paint_rect_stroke(
-            [search_x, toolbar_y + 4.0],
-            [search_w, search_h],
-            with_alpha(theme.separator, 0.55),
-            theme.radius_sm,
-            1.0,
-        );
-        paint::icon(
-            ui,
-            [search_x + 8.0, toolbar_y + 9.0],
-            Icon::Search,
-            12.0,
-            theme.text_muted,
-        );
-        // The count only where it leaves the input room.
-        let count_w = if search_w >= 200.0 {
-            let count_text = if filter_active {
-                format!("{} / {}", visible_count, total_count)
-            } else {
-                format!("{}", total_count)
-            };
-            ui.paint_text_styled(
-                [search_x + search_w - 8.0, toolbar_y + 11.0],
-                &count_text,
-                10.0,
-                theme.text_muted,
-                FontFamilyHint::Monospace,
-                TextAlign::Right,
-            );
-            56.0
-        } else {
-            0.0
-        };
-
-        let input_w = (search_w - 32.0 - count_w).max(40.0);
-        let search_filter_ref = &mut state_guard.search_filter;
-        ui.region_at(
-            "hierarchy-search",
-            [search_x + 24.0, toolbar_y + 6.0, input_w, 20.0],
-            &mut |ui_inner| {
-                ui_inner.text_edit_singleline(search_filter_ref);
-            },
-        );
-
-        let section_y = toolbar_y + TOOLBAR_HEIGHT + 4.0;
-        ui.paint_text_styled(
-            [px + 14.0, section_y],
-            "ACTIVE SCENE",
-            10.0,
-            theme.text_muted,
-            FontFamilyHint::Proportional,
-            TextAlign::Left,
-        );
-        ui.paint_line(
-            [px + 102.0, section_y + 6.0],
-            [px + 102.0 + pw - 110.0, section_y + 6.0],
-            with_alpha(theme.separator, 0.55),
-            1.0,
-        );
+        show_header(ui, &theme, panel_rect, &mut state_guard, &badge);
+        let section_y = show_search(ui, &theme, panel_rect, &mut state_guard, &count_text);
 
         let selected = state_guard.selection.clone();
         // Dims the rows it names; nothing fills it yet.
@@ -259,29 +141,7 @@ impl EditorPanel for SceneTreePanel {
         // The rename field, drawn over the row that asked for it. Inside the
         // clip so a renamed row scrolled out of view takes its field with it.
         if let (Some(entity), Some(rect)) = (renaming, rename_rect.get()) {
-            let take_focus = !self.rename_focused;
-            self.rename_focused = true;
-            let event = ui.inline_text_field(
-                rect,
-                "hier-rename",
-                &mut state_guard.rename_buffer,
-                take_focus,
-            );
-            match event {
-                InlineEditEvent::Committed => {
-                    let new_name = state_guard.rename_buffer.trim().to_owned();
-                    if !new_name.is_empty() {
-                        state_guard.push_edit(PropertyEdit::SetName(entity, new_name));
-                    }
-                    state_guard.renaming_entity = None;
-                    self.rename_focused = false;
-                }
-                InlineEditEvent::Cancelled => {
-                    state_guard.renaming_entity = None;
-                    self.rename_focused = false;
-                }
-                _ => {}
-            }
+            show_rename_field(ui, entity, rect, &mut state_guard, &mut self.rename_focused);
         } else if renaming.is_none() {
             self.rename_focused = false;
         }
@@ -303,101 +163,294 @@ impl EditorPanel for SceneTreePanel {
         let panel_bottom = panel_rect[1] + panel_rect[3];
         let empty_h = (panel_bottom - row_y).max(0.0);
         if empty_h > 4.0 {
-            let _empty_int = ui.interact_rect("scene-tree-empty", [px, row_y, pw, empty_h]);
-            if let Some(packed) = ui.dnd_take_drop_payload() {
-                // An entity dropped here goes to the root; an asset is placed.
-                if payload_is_entity(packed) {
-                    pending.set(Some(EditorAction::Reparent {
-                        child: unpack_entity(packed),
-                        new_parent: None,
-                    }));
-                } else if let Some(idx) = unpack_asset_drag(packed, asset_epoch) {
-                    pending.set(Some(EditorAction::DropAsset {
-                        idx: idx as usize,
-                        target: None,
-                    }));
-                }
-            }
-            ui.context_menu_last(&mut |menu| {
-                menu.menu_button("Add", &mut |sub| {
-                    if sub.button("Empty") {
-                        pending.set(Some(EditorAction::Spawn(SpawnShape::Empty)));
-                        sub.close_menu();
-                    }
-                    if sub.button("Cube") {
-                        pending.set(Some(EditorAction::Spawn(SpawnShape::Cube)));
-                        sub.close_menu();
-                    }
-                    if sub.button("Sphere") {
-                        pending.set(Some(EditorAction::Spawn(SpawnShape::Sphere)));
-                        sub.close_menu();
-                    }
-                    if sub.button("Plane") {
-                        pending.set(Some(EditorAction::Spawn(SpawnShape::Plane)));
-                        sub.close_menu();
-                    }
-                    sub.separator();
-                    if sub.button("Camera") {
-                        pending.set(Some(EditorAction::Spawn(SpawnShape::Camera)));
-                        sub.close_menu();
-                    }
-                    if sub.button("Light") {
-                        pending.set(Some(EditorAction::Spawn(SpawnShape::Light)));
-                        sub.close_menu();
-                    }
-                });
-            });
+            show_background(ui, [px, row_y, pw, empty_h], asset_epoch, &pending);
         }
 
         if let Some(action) = pending.into_inner() {
-            match action {
-                EditorAction::Select(eid) => {
-                    if state_guard.ctrl_held {
-                        state_guard.toggle_select(eid);
-                    } else {
-                        state_guard.select(eid);
-                    }
-                }
-                EditorAction::ToggleCollapse(eid) => {
-                    if !self.collapsed.remove(&eid) {
-                        self.collapsed.insert(eid);
-                    }
-                }
-                EditorAction::Rename(eid) => {
-                    // The field opens on the current name: renaming is
-                    // usually editing, not retyping.
-                    let current = find_node_name(&state_guard.scene_roots, eid).unwrap_or_default();
-                    state_guard.renaming_entity = Some(eid);
-                    state_guard.rename_buffer = current;
-                    self.rename_focused = false;
-                }
-                EditorAction::Duplicate(entity) => {
-                    state_guard.push_request(EditorRequest::DuplicateEntity { entity });
-                }
-                EditorAction::Delete(entity) => {
-                    state_guard.push_request(EditorRequest::DeleteEntity { entity });
-                }
-                EditorAction::Spawn(shape) => {
-                    state_guard.push_request(EditorRequest::Spawn(shape));
-                }
-                EditorAction::Reparent { child, new_parent } => {
-                    if Some(child) != new_parent {
-                        state_guard.push_request(EditorRequest::Reparent {
-                            child,
-                            parent: new_parent,
-                        });
-                    }
-                }
-                EditorAction::SaveAsPrefab(entity) => {
-                    state_guard.push_request(EditorRequest::SaveAsPrefab { entity });
-                }
-                EditorAction::SaveAsMaterial(entity, name) => {
-                    state_guard.push_request(EditorRequest::SaveAsMaterial { entity, name });
-                }
-                EditorAction::DropAsset { idx, target } => {
-                    dispatch_asset_drop(&mut state_guard, idx, target);
-                }
+            apply_action(
+                action,
+                &mut state_guard,
+                &mut self.collapsed,
+                &mut self.rename_focused,
+            );
+        }
+    }
+}
+
+/// Paints the entity count and the add button, whose menu queues a spawn.
+fn show_header(
+    ui: &mut dyn UiBuilder,
+    theme: &UiTheme,
+    panel_rect: [f32; 4],
+    state: &mut EditorState,
+    badge: &str,
+) {
+    let [px, py, pw, _] = panel_rect;
+    let spawn_from_menu: std::cell::Cell<Option<SpawnShape>> = std::cell::Cell::new(None);
+    let tab_x = px + 6.0;
+    let tab_y = py + (HEADER_HEIGHT - 22.0) * 0.5;
+
+    // Only the count: the dock tab above already names the panel.
+    paint::text(
+        ui,
+        [tab_x, tab_y + 5.0],
+        badge,
+        theme.font_size_caption,
+        theme.text_muted,
+    );
+
+    // Inset 12px from the right edge, clear of the dock splitter's grab band.
+    let add_rect = [px + pw - 34.0, py + 6.0, 22.0, 22.0];
+    let add_int = ui.interact_rect("h-act-plus", add_rect);
+    if add_int.hovered {
+        ui.paint_rect_filled(
+            [add_rect[0], add_rect[1]],
+            [add_rect[2], add_rect[3]],
+            theme.surface_active,
+            4.0,
+        );
+    }
+    paint::icon(
+        ui,
+        [add_rect[0] + 5.0, add_rect[1] + 5.0],
+        Icon::Plus,
+        13.0,
+        if add_int.hovered {
+            theme.text
+        } else {
+            theme.text_dim
+        },
+    );
+    // Right-click offers the background menu's list: the button is a
+    // shortcut, not a second way to create things.
+    ui.context_menu_last(&mut |menu| {
+        for shape in SpawnShape::ALL {
+            if menu.button(shape.label()) {
+                spawn_from_menu.set(Some(shape));
+                menu.close_menu();
             }
+        }
+    });
+    if add_int.clicked {
+        spawn_from_menu.set(Some(SpawnShape::Empty));
+    }
+    if let Some(shape) = spawn_from_menu.take() {
+        state.push_request(EditorRequest::Spawn(shape));
+    }
+}
+
+/// Paints the search field and the section title under it; returns the
+/// title's top, where the rows start below.
+fn show_search(
+    ui: &mut dyn UiBuilder,
+    theme: &UiTheme,
+    panel_rect: [f32; 4],
+    state: &mut EditorState,
+    count_text: &str,
+) -> f32 {
+    let [px, py, pw, _] = panel_rect;
+    let toolbar_y = py + HEADER_HEIGHT;
+    let search_x = px + 8.0;
+    let search_w = pw - 16.0;
+    let search_h = 24.0;
+    ui.paint_rect_filled(
+        [search_x, toolbar_y + 4.0],
+        [search_w, search_h],
+        theme.background,
+        theme.radius_sm,
+    );
+    ui.paint_rect_stroke(
+        [search_x, toolbar_y + 4.0],
+        [search_w, search_h],
+        with_alpha(theme.separator, 0.55),
+        theme.radius_sm,
+        1.0,
+    );
+    paint::icon(
+        ui,
+        [search_x + 8.0, toolbar_y + 9.0],
+        Icon::Search,
+        12.0,
+        theme.text_muted,
+    );
+    // The count only where it leaves the input room.
+    let count_w = if search_w >= 200.0 {
+        ui.paint_text_styled(
+            [search_x + search_w - 8.0, toolbar_y + 11.0],
+            count_text,
+            10.0,
+            theme.text_muted,
+            FontFamilyHint::Monospace,
+            TextAlign::Right,
+        );
+        56.0
+    } else {
+        0.0
+    };
+
+    let input_w = (search_w - 32.0 - count_w).max(40.0);
+    let search_filter_ref = &mut state.search_filter;
+    ui.region_at(
+        "hierarchy-search",
+        [search_x + 24.0, toolbar_y + 6.0, input_w, 20.0],
+        &mut |ui_inner| {
+            ui_inner.text_edit_singleline(search_filter_ref);
+        },
+    );
+
+    let section_y = toolbar_y + TOOLBAR_HEIGHT + 4.0;
+    ui.paint_text_styled(
+        [px + 14.0, section_y],
+        "ACTIVE SCENE",
+        10.0,
+        theme.text_muted,
+        FontFamilyHint::Proportional,
+        TextAlign::Left,
+    );
+    ui.paint_line(
+        [px + 102.0, section_y + 6.0],
+        [px + 102.0 + pw - 110.0, section_y + 6.0],
+        with_alpha(theme.separator, 0.55),
+        1.0,
+    );
+    section_y
+}
+
+/// Shows the rename field over its row; commits the new name on Enter and
+/// closes the field on Enter or Escape.
+fn show_rename_field(
+    ui: &mut dyn UiBuilder,
+    entity: EntityId,
+    rect: [f32; 4],
+    state: &mut EditorState,
+    rename_focused: &mut bool,
+) {
+    let take_focus = !*rename_focused;
+    *rename_focused = true;
+    let event = ui.inline_text_field(rect, "hier-rename", &mut state.rename_buffer, take_focus);
+    match event {
+        InlineEditEvent::Committed => {
+            let new_name = state.rename_buffer.trim().to_owned();
+            if !new_name.is_empty() {
+                state.push_edit(PropertyEdit::SetName(entity, new_name));
+            }
+            state.renaming_entity = None;
+            *rename_focused = false;
+        }
+        InlineEditEvent::Cancelled => {
+            state.renaming_entity = None;
+            *rename_focused = false;
+        }
+        _ => {}
+    }
+}
+
+/// Takes a drop on the empty area under the rows and offers its Add menu.
+fn show_background(
+    ui: &mut dyn UiBuilder,
+    area: [f32; 4],
+    asset_epoch: u64,
+    pending: &std::cell::Cell<Option<EditorAction>>,
+) {
+    let _empty_int = ui.interact_rect("scene-tree-empty", area);
+    if let Some(packed) = ui.dnd_take_drop_payload() {
+        // An entity dropped here goes to the root; an asset is placed.
+        if payload_is_entity(packed) {
+            pending.set(Some(EditorAction::Reparent {
+                child: unpack_entity(packed),
+                new_parent: None,
+            }));
+        } else if let Some(idx) = unpack_asset_drag(packed, asset_epoch) {
+            pending.set(Some(EditorAction::DropAsset {
+                idx: idx as usize,
+                target: None,
+            }));
+        }
+    }
+    ui.context_menu_last(&mut |menu| {
+        menu.menu_button("Add", &mut |sub| {
+            if sub.button("Empty") {
+                pending.set(Some(EditorAction::Spawn(SpawnShape::Empty)));
+                sub.close_menu();
+            }
+            if sub.button("Cube") {
+                pending.set(Some(EditorAction::Spawn(SpawnShape::Cube)));
+                sub.close_menu();
+            }
+            if sub.button("Sphere") {
+                pending.set(Some(EditorAction::Spawn(SpawnShape::Sphere)));
+                sub.close_menu();
+            }
+            if sub.button("Plane") {
+                pending.set(Some(EditorAction::Spawn(SpawnShape::Plane)));
+                sub.close_menu();
+            }
+            sub.separator();
+            if sub.button("Camera") {
+                pending.set(Some(EditorAction::Spawn(SpawnShape::Camera)));
+                sub.close_menu();
+            }
+            if sub.button("Light") {
+                pending.set(Some(EditorAction::Spawn(SpawnShape::Light)));
+                sub.close_menu();
+            }
+        });
+    });
+}
+
+/// Applies the action a row or a menu asked for.
+fn apply_action(
+    action: EditorAction,
+    state_guard: &mut EditorState,
+    collapsed: &mut HashSet<EntityId>,
+    rename_focused: &mut bool,
+) {
+    match action {
+        EditorAction::Select(eid) => {
+            if state_guard.ctrl_held {
+                state_guard.toggle_select(eid);
+            } else {
+                state_guard.select(eid);
+            }
+        }
+        EditorAction::ToggleCollapse(eid) => {
+            if !collapsed.remove(&eid) {
+                collapsed.insert(eid);
+            }
+        }
+        EditorAction::Rename(eid) => {
+            // The field opens on the current name: renaming is
+            // usually editing, not retyping.
+            let current = find_node_name(&state_guard.scene_roots, eid).unwrap_or_default();
+            state_guard.renaming_entity = Some(eid);
+            state_guard.rename_buffer = current;
+            *rename_focused = false;
+        }
+        EditorAction::Duplicate(entity) => {
+            state_guard.push_request(EditorRequest::DuplicateEntity { entity });
+        }
+        EditorAction::Delete(entity) => {
+            state_guard.push_request(EditorRequest::DeleteEntity { entity });
+        }
+        EditorAction::Spawn(shape) => {
+            state_guard.push_request(EditorRequest::Spawn(shape));
+        }
+        EditorAction::Reparent { child, new_parent } => {
+            if Some(child) != new_parent {
+                state_guard.push_request(EditorRequest::Reparent {
+                    child,
+                    parent: new_parent,
+                });
+            }
+        }
+        EditorAction::SaveAsPrefab(entity) => {
+            state_guard.push_request(EditorRequest::SaveAsPrefab { entity });
+        }
+        EditorAction::SaveAsMaterial(entity, name) => {
+            state_guard.push_request(EditorRequest::SaveAsMaterial { entity, name });
+        }
+        EditorAction::DropAsset { idx, target } => {
+            dispatch_asset_drop(state_guard, idx, target);
         }
     }
 }

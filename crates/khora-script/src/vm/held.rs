@@ -56,7 +56,7 @@ impl PartialEq for Origins {
     }
 }
 
-/// The arena handle a text or object value names, if it names one.
+/// Returns the arena handle a text or object value names, if it names one.
 fn arena_handle(value: Value) -> Option<ArenaRef> {
     match value {
         Value::Str(StrRef::Arena(handle)) | Value::Obj(ObjRef::Arena(handle)) => Some(handle),
@@ -64,7 +64,7 @@ fn arena_handle(value: Value) -> Option<ArenaRef> {
     }
 }
 
-/// The held reference of the same kind as `value`, at `index`.
+/// Returns the held reference of the same kind as `value`, at `index`.
 fn held_like(value: Value, index: u32) -> Value {
     match value {
         Value::Obj(_) => Value::Obj(ObjRef::Held(index)),
@@ -164,8 +164,8 @@ impl Machine {
         }
     }
 
-    /// What a field keeps of `value`: text and arrays by value, everything else
-    /// as it is.
+    /// Returns what a field keeps of `value`: text and arrays by value, everything
+    /// else as it is.
     ///
     /// An arena handle would be stale by the next frame, and a field is exactly
     /// what has to outlive one — a behavior's field and a state's data alike.

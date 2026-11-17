@@ -17,6 +17,9 @@
 
 use khora_sdk::Runtime;
 
+/// Stable id of the sandbox's procedural environment map.
+pub(super) const ENV_ASSET_NAME: &str = "sandbox/studio_env";
+
 /// Builds a small procedural checkerboard `CpuTexture` and stores it in the shared asset store.
 ///
 /// Returns its `AssetUUID`, to set as a material's `base_color_texture`; the
@@ -59,19 +62,17 @@ pub(super) fn register_checker_texture(
 
     let uuid = AssetUUID::new_v5("sandbox/checker_albedo");
     if let Some(assets) = runtime.resources.get::<khora_sdk::khora_data::AssetStore>() {
-        assets
-            .store::<CpuTexture>()
-            .write()
-            .unwrap()
-            .insert(uuid, AssetHandle::new(cpu));
+        match assets.store::<CpuTexture>().write() {
+            Ok(mut store) => store.insert(uuid, AssetHandle::new(cpu)),
+            Err(_) => {
+                log::error!("sandbox: texture store poisoned; checker texture not registered")
+            }
+        }
     } else {
         log::warn!("sandbox: AssetStore not found; checker texture not registered");
     }
     uuid
 }
-
-/// Stable id of the sandbox's procedural environment map.
-pub(super) const ENV_ASSET_NAME: &str = "sandbox/studio_env";
 
 /// Builds a procedural **equirectangular HDR** studio environment, registered as a `CpuTexture`.
 ///
@@ -186,12 +187,17 @@ pub(super) fn register_environment_map(
         return uuid;
     };
     if let Some(assets) = runtime.resources.get::<khora_sdk::khora_data::AssetStore>() {
-        assets
-            .store::<CpuTexture>()
-            .write()
-            .unwrap()
-            .insert(uuid, AssetHandle::new(cpu));
-        log::info!("sandbox: registered procedural HDR environment ({W}x{H} equirectangular)");
+        match assets.store::<CpuTexture>().write() {
+            Ok(mut store) => {
+                store.insert(uuid, AssetHandle::new(cpu));
+                log::info!(
+                    "sandbox: registered procedural HDR environment ({W}x{H} equirectangular)"
+                );
+            }
+            Err(_) => {
+                log::error!("sandbox: texture store poisoned; environment map not registered")
+            }
+        }
     } else {
         log::warn!("sandbox: AssetStore not found; environment map not registered");
     }

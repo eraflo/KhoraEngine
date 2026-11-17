@@ -35,19 +35,6 @@ pub struct LoadCatalog {
     rust: HashSet<String>,
 }
 
-/// A component declared while the engine runs, as the catalogue knows it.
-#[derive(Debug, Clone)]
-pub struct CatalogDeclared {
-    /// Its key in the world's pages.
-    pub key: ComponentKey,
-    /// The domain the world keeps it in.
-    pub domain: SemanticDomain,
-    /// Its fields, as the world lays its rows out.
-    pub layout: Arc<PackedLayout>,
-    /// Whether a game save keeps it to resume.
-    pub resumable: bool,
-}
-
 impl LoadCatalog {
     /// Returns the catalogue's generation.
     ///
@@ -69,8 +56,8 @@ impl LoadCatalog {
         self.declared.get(name)
     }
 
-    /// Whether the world registers a Rust component under `name`.
-    pub fn names_rust(&self, name: &str) -> bool {
+    /// Returns whether the world registers a Rust component under `name`.
+    pub(crate) fn names_rust(&self, name: &str) -> bool {
         self.rust.contains(name)
     }
 
@@ -122,6 +109,19 @@ impl LoadCatalog {
             rust,
         }
     }
+}
+
+/// A component declared while the engine runs, as the catalogue knows it.
+#[derive(Debug, Clone)]
+pub struct CatalogDeclared {
+    /// Its key in the world's pages.
+    pub key: ComponentKey,
+    /// The domain the world keeps it in.
+    pub domain: SemanticDomain,
+    /// Its fields, as the world lays its rows out.
+    pub layout: Arc<PackedLayout>,
+    /// Whether a game save keeps it to resume.
+    pub resumable: bool,
 }
 
 #[cfg(test)]

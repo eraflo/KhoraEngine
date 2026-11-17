@@ -17,7 +17,7 @@
 //! The engine has no mode: every family is on until the application switches
 //! it off. A request is only a request; it takes effect at the frame boundary,
 //! when the engine [`settle`](Activation::settle)s it, so a whole frame — its
-//! DataSystems, its Flows, its agents and the DCC — sees one state.
+//! `DataSystem`s, its Flows, its agents and the DCC — sees one state.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::RwLock;
@@ -61,18 +61,8 @@ pub struct Activation {
     state: RwLock<Switches>,
 }
 
-#[derive(Debug, Default)]
-struct Switches {
-    known: BTreeSet<AgentId>,
-    /// Every family not plainly on, as requested; a family absent is on.
-    requested: BTreeMap<AgentId, State>,
-    /// The same, in force.
-    in_force: BTreeMap<AgentId, State>,
-    generation: u64,
-}
-
 impl Activation {
-    /// Every family in `families` known and on.
+    /// Creates an activation with every family in `families` known and on.
     ///
     /// A request naming a family outside `families` is refused.
     pub fn new(families: impl IntoIterator<Item = AgentId>) -> Self {
@@ -123,7 +113,7 @@ impl Activation {
         self.request(family, State::Scoped(marker))
     }
 
-    /// The state in force of `family`. A family the engine does not know is
+    /// Returns the state in force of `family`. A family the engine does not know is
     /// never switched, so it is on.
     pub fn state(&self, family: AgentId) -> State {
         self.state
@@ -134,12 +124,12 @@ impl Activation {
             .unwrap_or(State::On)
     }
 
-    /// Whether `family` runs, in the state in force: on, or scoped.
+    /// Returns whether `family` runs, in the state in force: on, or scoped.
     pub fn is_active(&self, family: AgentId) -> bool {
         self.state(family) != State::Off
     }
 
-    /// The families off, in the state in force. A scoped family is not one.
+    /// Returns the families off, in the state in force. A scoped family is not one.
     pub fn inactive(&self) -> BTreeSet<AgentId> {
         self.state
             .read_recovered()
@@ -150,7 +140,7 @@ impl Activation {
             .collect()
     }
 
-    /// The families scoped in the state in force, each with its marker.
+    /// Returns the families scoped in the state in force, each with its marker.
     pub fn scopes(&self) -> Vec<(AgentId, &'static str)> {
         self.state
             .read_recovered()
@@ -163,7 +153,7 @@ impl Activation {
             .collect()
     }
 
-    /// A number that moves each time the state in force changes, never
+    /// Returns a number that moves each time the state in force changes, never
     /// otherwise.
     pub fn generation(&self) -> u64 {
         self.state.read_recovered().generation
@@ -193,6 +183,16 @@ impl Activation {
         };
         Ok(())
     }
+}
+
+#[derive(Debug, Default)]
+struct Switches {
+    known: BTreeSet<AgentId>,
+    /// Every family not plainly on, as requested; a family absent is on.
+    requested: BTreeMap<AgentId, State>,
+    /// The same, in force.
+    in_force: BTreeMap<AgentId, State>,
+    generation: u64,
 }
 
 #[cfg(test)]
@@ -294,6 +294,22 @@ mod tests {
         assert_eq!(activation.generation(), start);
         assert_eq!(activation.state(stranger), State::On);
         assert!(activation.inactive().is_empty());
+    }
+
+    /// **An admitted family can be switched; one already known keeps its state.**
+    #[test]
+    fn an_admitted_family_can_be_switched_and_a_known_one_keeps_its_state() {
+        let activation = engine();
+        let stranger = AgentId::new("stranger");
+        activation.deactivate(SCRIPT).expect("a known family");
+        assert!(activation.settle());
+
+        activation.admit([stranger, SCRIPT]);
+
+        assert_eq!(activation.state(SCRIPT), State::Off, "already known: kept");
+        assert_eq!(activation.deactivate(stranger), Ok(()));
+        assert!(activation.settle());
+        assert_eq!(activation.state(stranger), State::Off);
     }
 
     /// **A scoped family is on, limited to its marker.**

@@ -20,6 +20,7 @@
 //! for that to happen at all.
 
 mod engine_types;
+mod host;
 mod named_arguments;
 mod world;
 

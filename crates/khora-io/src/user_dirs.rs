@@ -22,6 +22,15 @@ use khora_core::app::GameIdentity;
 
 use crate::profiles::{path_safe, ProfilePlace};
 
+/// The folder the pack signing key is kept in, under the Khora folder.
+const SIGNING_DIR: &str = "signing";
+
+/// The trust store's file name.
+const TRUST_FILE: &str = "trust.ron";
+
+/// The quarantine list's file name.
+const QUARANTINE_FILE: &str = "quarantine.ron";
+
 /// Returns the process's environment variable `key`: the `env` the functions here read in a run.
 pub fn process_env(key: &str) -> Option<OsString> {
     std::env::var_os(key)
@@ -90,15 +99,6 @@ pub fn trust_path(env: &dyn Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
 pub fn signing_dir(env: &dyn Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
     khora_dir(env).map(|khora| khora.join(SIGNING_DIR))
 }
-
-/// The folder the pack signing key is kept in, under the Khora folder.
-const SIGNING_DIR: &str = "signing";
-
-/// The trust store's file name.
-const TRUST_FILE: &str = "trust.ron";
-
-/// The quarantine list's file name.
-const QUARANTINE_FILE: &str = "quarantine.ron";
 
 #[cfg(test)]
 mod tests {

@@ -13,8 +13,9 @@
 // limitations under the License.
 
 //! Taking a suspended body back into the script as it is now, from a save or
-//! across a hot reload, in the same tiers. See the book:
-//! concepts/scripting/saves-and-edits.md, "A body part-way through, in tiers".
+//! across a hot reload, in the same tiers.
+//!
+//! See the book: concepts/scripting/saves-and-edits.md, "A body part-way through, in tiers".
 
 use khora_core::script::{FrozenMachine, PendingBody, ScriptSnapshot};
 use khora_script::vm::{Abandoned, BehaviorLayout, Program, ResumeTier};
@@ -52,6 +53,12 @@ pub fn resume(
 ///
 /// The same tiers as a load, through the same written-down form: the machine
 /// is frozen against `old`, every position named, and resumed into `new`.
+///
+/// # Errors
+///
+/// Returns [`Abandoned`] when the machine does not belong to `old`, when the
+/// schedule its body finishes is gone from `new`, or when `new` cannot take
+/// its position back; the caller then owes the behavior its `OnResumeFailed`.
 pub fn carry(
     pending: &Pending,
     old: &Program,

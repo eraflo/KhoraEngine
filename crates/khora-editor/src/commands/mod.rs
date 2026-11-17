@@ -43,8 +43,8 @@ pub use prefab::apply_queued_instances;
 pub use prefab::save_queued_prefabs;
 pub use prefab::spawn_queued_prefabs;
 pub use scene::build_game_refused;
-pub use scene::pick_project_folder;
-pub use scene::run_build_game;
+pub(crate) use scene::pick_project_folder;
+pub(crate) use scene::run_build_game;
 pub use scene::save_scene_dispatch;
 pub use scene::{land_scene_loads, open_scene_dispatch};
 #[cfg(test)]

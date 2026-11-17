@@ -27,6 +27,7 @@ crate, not a member.
 ## Build commands
 - `cargo gate` — what CI checks (fmt → clippy → nextest → doc tests); run once before a commit
 - `cargo t -p <crate> [filter]` — targeted tests while iterating (nextest, `--all-features`)
+- `cargo xtask lint-file <files…>` — the per-file convention checks of `xtask/tests/layout.rs` (in-file order, sizes, comments, crate boundaries) on given `.rs` files, no compile; prints `path:line: check: message`, honours `xtask/tests/layout_allow.txt`, exits 1 on a finding. Run by the Claude Code `PostToolUse` hook on every Rust file written and by the pre-commit hook on the staged ones (`.agent/engine/hooks/lint-file.md`)
 - `cargo run -p sandbox` / `cargo run -p khora-editor` — run an app
 - `mdbook build docs/` — documentation
 - `node .agent/engine/installer/bin/khora-ai.mjs sweep [--days N] [--max-gb G] [--dry-run] [--force]` — prune `target/`: incremental caches unused for N days (3) and side dirs (miri, a nightly clippy, scratch targets) unused as long; then, when the `debug`/`release` profiles together exceed G GiB (20; `doc/` never counts), every incremental cache first, and the profiles whole only if still over. Runs at the start of every Claude Code session (SessionStart hook), at most once per 12 h (`target/.khora-sweep-stamp`; `--force` ignores it). A full clean can fail a build running at that moment — rerun it. Tests: `node --test ".agent/engine/installer/lib/*.test.mjs"`.

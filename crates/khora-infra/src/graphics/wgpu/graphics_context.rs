@@ -185,7 +185,7 @@ impl WgpuGraphicsContext {
     }
 
     /// Reconfigures the underlying surface (swapchain) when the window is resized.
-    pub fn resize(&mut self, new_width: u32, new_height: u32) {
+    pub(crate) fn resize(&mut self, new_width: u32, new_height: u32) {
         if new_width > 0 && new_height > 0 {
             log::info!(
                 "WGPUGraphicsContext: Resizing surface configuration to {new_width}x{new_height}"
@@ -202,7 +202,7 @@ impl WgpuGraphicsContext {
 
     /// Acquires the next swapchain texture; each outcome is a
     /// [`wgpu::CurrentSurfaceTexture`] variant.
-    pub fn get_current_texture(&self) -> wgpu::CurrentSurfaceTexture {
+    pub(crate) fn get_current_texture(&self) -> wgpu::CurrentSurfaceTexture {
         self.surface.get_current_texture()
     }
 
@@ -216,13 +216,8 @@ impl WgpuGraphicsContext {
         &self.queue
     }
 
-    /// Returns the swapchain's current configuration.
-    pub fn surface_configuration(&self) -> &wgpu::SurfaceConfiguration {
-        &self.surface_config
-    }
-
     /// Returns the colour the screen is cleared to before a frame.
-    pub fn get_clear_color(&self) -> wgpu::Color {
+    pub(crate) fn get_clear_color(&self) -> wgpu::Color {
         wgpu::Color {
             r: 0.01,
             g: 0.02,
@@ -232,7 +227,7 @@ impl WgpuGraphicsContext {
     }
 
     /// Returns the swapchain's size in pixels, as `(width, height)`.
-    pub fn get_size(&self) -> (u32, u32) {
+    pub(crate) fn get_size(&self) -> (u32, u32) {
         (self.surface_config.width, self.surface_config.height)
     }
 }

@@ -186,7 +186,7 @@ pub trait Material: Asset + AsAny + MaterialClone {
         AlphaMode::Opaque
     }
 
-    /// Whether the material is rendered double-sided (back faces not culled).
+    /// Returns whether the material is rendered double-sided (back faces not culled).
     /// `false` (the default) culls back faces for correctly-wound meshes.
     fn double_sided(&self) -> bool {
         false

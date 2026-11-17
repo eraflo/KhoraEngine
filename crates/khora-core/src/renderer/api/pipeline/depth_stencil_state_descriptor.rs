@@ -34,7 +34,7 @@ pub struct DepthStencilStateDescriptor {
     pub stencil_read_mask: u32,
     /// A bitmask for writing to the stencil buffer.
     pub stencil_write_mask: u32,
-    /// The depth bias_state.
+    /// The depth bias state.
     pub bias: DepthBiasState,
 }
 

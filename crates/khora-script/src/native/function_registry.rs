@@ -79,12 +79,12 @@ pub struct NativeRegistry {
 }
 
 impl NativeRegistry {
-    /// An empty registry — a script can call nothing.
+    /// Creates an empty registry — a script can call nothing.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// The registry every program gets: the language's own built-ins.
+    /// Builds the registry every program gets: the language's own built-ins.
     pub fn with_builtins() -> Self {
         let mut registry = Self::new();
         for function in builtins() {
@@ -93,7 +93,7 @@ impl NativeRegistry {
         registry
     }
 
-    /// The built-ins plus everything `#[ergon_fn]` has registered.
+    /// Builds the built-ins plus everything `#[ergon_fn]` has registered.
     ///
     /// **This is the registry the engine runs on.** The compiler, the type
     /// checker and the [`Host`](super::Host) all take it, which is not a convenience: a
@@ -148,32 +148,32 @@ impl NativeRegistry {
         }
     }
 
-    /// The index a name resolves to.
+    /// Returns the index a name resolves to.
     pub fn index_of(&self, name: &str) -> Option<usize> {
         self.functions.iter().position(|f| f.name == name)
     }
 
-    /// The function a name resolves to.
+    /// Returns the function a name resolves to.
     pub fn get(&self, name: &str) -> Option<&'static NativeFn> {
         self.index_of(name).map(|index| self.functions[index])
     }
 
-    /// The function at an index.
+    /// Returns the function at an index.
     pub fn at(&self, index: usize) -> Option<&'static NativeFn> {
         self.functions.get(index).copied()
     }
 
-    /// Whether none are exposed.
+    /// Returns whether none are exposed.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    /// How many functions are exposed.
+    /// Returns how many functions are exposed.
     pub fn len(&self) -> usize {
         self.functions.len()
     }
 
-    /// Every function, in index order.
+    /// Returns every function, in index order.
     pub fn iter(&self) -> impl Iterator<Item = &'static NativeFn> + '_ {
         self.functions.iter().copied()
     }

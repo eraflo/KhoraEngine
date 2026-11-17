@@ -23,7 +23,7 @@ mod mat4;
 pub use mat3::Mat3;
 pub use mat4::Mat4;
 
-/// Whether a matrix with determinant `det` is invertible, `scale` being the product of its
+/// Returns whether a matrix with determinant `det` is invertible, `scale` being the product of its
 /// column lengths.
 ///
 /// By Hadamard's inequality `|det| ≤ scale`, so `|det| / scale` says, whatever the size, how

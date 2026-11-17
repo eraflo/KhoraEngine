@@ -96,7 +96,7 @@ impl Default for Host {
 }
 
 impl Host {
-    /// A host exposing everything the engine registered.
+    /// Creates a host exposing everything the engine registered.
     ///
     /// [`NativeRegistry::discovered`] rather than just the built-ins, and it has
     /// to match what the program was compiled against — which is why
@@ -167,7 +167,7 @@ impl Host {
         std::mem::take(&mut self.arena)
     }
 
-    /// A host exposing nothing at all, for a program that must call nothing.
+    /// Creates a host exposing nothing at all, for a program that must call nothing.
     pub fn bare() -> Self {
         Self {
             natives: NativeRegistry::new(),
@@ -200,7 +200,7 @@ impl Host {
         std::mem::take(&mut self.outbox)
     }
 
-    /// The narrow view a native gets.
+    /// Returns the narrow view a native gets.
     ///
     /// `strings` comes from the program rather than the host: the same host
     /// runs whatever program the frame hands it, and a string constant belongs

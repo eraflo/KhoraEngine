@@ -31,17 +31,6 @@ pub(crate) struct ResizeDebounce {
     last_applied: Option<Instant>,
 }
 
-/// A size waiting to be applied.
-#[derive(Debug)]
-struct Pending {
-    size: (u32, u32),
-    /// Requests of `size` after the first one; a new size restarts it.
-    repeats: u32,
-    /// Polls since something became pending, whatever size it is now: a drag
-    /// that never settles still reaches the target.
-    polls: u32,
-}
-
 impl ResizeDebounce {
     /// A size is applied once this long has passed since the last apply.
     pub(crate) const QUIET: Duration = Duration::from_millis(120);
@@ -50,7 +39,7 @@ impl ResizeDebounce {
     /// A size pending for this many polls is applied, settled or not.
     pub(crate) const MAX_PENDING_POLLS: u32 = 10;
 
-    /// Nothing pending, nothing applied yet.
+    /// Creates a debounce with nothing pending and nothing applied yet.
     pub(crate) fn new() -> Self {
         Self {
             pending: None,
@@ -58,7 +47,7 @@ impl ResizeDebounce {
         }
     }
 
-    /// The size wanted now; called once per frame by whoever owns the shape.
+    /// Records the size wanted now; called once per frame by whoever owns the shape.
     pub(crate) fn request(&mut self, size: (u32, u32), _now: Instant) {
         match &mut self.pending {
             Some(pending) if pending.size == size => {
@@ -78,7 +67,7 @@ impl ResizeDebounce {
         }
     }
 
-    /// The size to apply this frame, if any. `current` = the target's size.
+    /// Returns the size to apply this frame, if any; `current` is the target's size.
     pub(crate) fn poll(&mut self, current: (u32, u32), now: Instant) -> Option<(u32, u32)> {
         let pending = self.pending.as_mut()?;
         if pending.size == current {
@@ -98,6 +87,17 @@ impl ResizeDebounce {
         self.last_applied = Some(now);
         self.pending.take().map(|pending| pending.size)
     }
+}
+
+/// A size waiting to be applied.
+#[derive(Debug)]
+struct Pending {
+    size: (u32, u32),
+    /// Requests of `size` after the first one; a new size restarts it.
+    repeats: u32,
+    /// Polls since something became pending, whatever size it is now: a drag
+    /// that never settles still reaches the target.
+    polls: u32,
 }
 
 /// Clamps a requested extent to `1..=max` on both sides.

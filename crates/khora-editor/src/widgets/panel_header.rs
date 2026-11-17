@@ -22,7 +22,7 @@ use khora_tool_ui::widgets::with_alpha;
 
 /// Paints a keyboard-shortcut chip ("⌘", "K", "Esc"); returns its right edge
 /// in screen space.
-pub fn paint_kbd_chip(
+pub(crate) fn paint_kbd_chip(
     ui: &mut dyn UiBuilder,
     origin: [f32; 2],
     label: &str,
@@ -52,7 +52,7 @@ pub fn paint_kbd_chip(
 }
 
 /// Paints a round status dot with a faint halo.
-pub fn paint_status_dot(ui: &mut dyn UiBuilder, center: [f32; 2], color: [f32; 4]) {
+pub(crate) fn paint_status_dot(ui: &mut dyn UiBuilder, center: [f32; 2], color: [f32; 4]) {
     ui.paint_circle_filled(center, 3.5, color);
     ui.paint_circle_filled(center, 5.5, with_alpha(color, 0.18));
 }
@@ -61,7 +61,7 @@ pub fn paint_status_dot(ui: &mut dyn UiBuilder, center: [f32; 2], color: [f32; 4
 ///
 /// Returns its interaction (a click opens the command palette) and its right
 /// edge in screen space.
-pub fn paint_search_pill(
+pub(crate) fn paint_search_pill(
     ui: &mut dyn UiBuilder,
     origin: [f32; 2],
     width: f32,
@@ -113,7 +113,7 @@ pub fn paint_search_pill(
 }
 
 /// Paints a panel header tab; returns whether it was clicked, and its width.
-pub fn panel_tab(
+pub(crate) fn panel_tab(
     ui: &mut dyn UiBuilder,
     id_salt: &str,
     origin: [f32; 2],
@@ -189,7 +189,7 @@ pub fn panel_tab(
 
 /// Paints a panel header's strip: a vertical gradient over `height`, and a
 /// hairline under it.
-pub fn paint_panel_header(
+pub(crate) fn paint_panel_header(
     ui: &mut dyn UiBuilder,
     panel_rect: [f32; 4],
     height: f32,

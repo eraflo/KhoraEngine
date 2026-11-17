@@ -26,20 +26,6 @@ pub struct ColumnBatch {
     values: Vec<ScriptValue>,
 }
 
-/// Why a batch, or a row of one, was refused.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BatchShapeError {
-    /// The batch names this field twice: a row would write it twice.
-    DuplicateField(String),
-    /// A row holds a number of values other than the batch's fields.
-    WrongWidth {
-        /// How many fields the batch writes.
-        expected: usize,
-        /// How many values the row held.
-        found: usize,
-    },
-}
-
 impl ColumnBatch {
     /// Creates an empty batch writing `fields`.
     ///
@@ -84,22 +70,22 @@ impl ColumnBatch {
         Ok(())
     }
 
-    /// The fields every row writes, in the order a row holds their values.
+    /// Returns the fields every row writes, in the order a row holds their values.
     pub fn fields(&self) -> &[String] {
         &self.fields
     }
 
-    /// How many rows the batch holds.
+    /// Returns how many rows the batch holds.
     pub fn len(&self) -> usize {
         self.entities.len()
     }
 
-    /// Whether the batch holds no row.
+    /// Returns whether the batch holds no row.
     pub fn is_empty(&self) -> bool {
         self.entities.is_empty()
     }
 
-    /// Every row, in the order it was pushed: its entity and its values, one
+    /// Returns every row, in the order it was pushed: its entity and its values, one
     /// per field.
     pub fn rows(&self) -> impl Iterator<Item = (EntityId, &[ScriptValue])> + '_ {
         let width = self.fields.len();
@@ -108,4 +94,18 @@ impl ColumnBatch {
             .enumerate()
             .map(move |(row, entity)| (*entity, &self.values[row * width..(row + 1) * width]))
     }
+}
+
+/// Why a batch, or a row of one, was refused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BatchShapeError {
+    /// The batch names this field twice: a row would write it twice.
+    DuplicateField(String),
+    /// A row holds a number of values other than the batch's fields.
+    WrongWidth {
+        /// How many fields the batch writes.
+        expected: usize,
+        /// How many values the row held.
+        found: usize,
+    },
 }

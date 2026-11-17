@@ -112,6 +112,7 @@ describe('generateClaude — settings.json', () => {
 
 const ENGINE_SWEEP = 'node "${CLAUDE_PROJECT_DIR}/.agent/engine/installer/bin/khora-ai.mjs" sweep';
 const ENGINE_SYNC = 'node "${CLAUDE_PROJECT_DIR}/.agent/engine/installer/bin/khora-ai.mjs" sync --if-changed "$CLAUDE_TOOL_INPUT_FILE_PATH"';
+const ENGINE_LINT = 'node "${CLAUDE_PROJECT_DIR}/.agent/engine/installer/bin/lint-file.mjs" "$CLAUDE_TOOL_INPUT_FILE_PATH"';
 const GAMEDEV_SYNC = 'node "${CLAUDE_PROJECT_DIR}/.agent/gamedev/installer/bin/khora-ai.mjs" sync --if-changed "$CLAUDE_TOOL_INPUT_FILE_PATH"';
 const GAMEDEV_SYNC_LEGACY = 'node .agent/gamedev/installer/bin/khora-ai.mjs sync --if-changed "$CLAUDE_TOOL_INPUT_FILE_PATH"';
 
@@ -126,7 +127,7 @@ describe('mergeClaudeHooks — $CLAUDE_PROJECT_DIR commands', () => {
 
   test('the PostToolUse sync hook is anchored on $CLAUDE_PROJECT_DIR', () => {
     const out = merge({});
-    assert.deepEqual(commands(out.PostToolUse), [ENGINE_SYNC]);
+    assert.deepEqual(commands(out.PostToolUse), [ENGINE_SYNC, ENGINE_LINT]);
     assert.equal(out.PostToolUse[0].matcher, 'Write|Edit');
   });
 
@@ -136,7 +137,7 @@ describe('mergeClaudeHooks — $CLAUDE_PROJECT_DIR commands', () => {
       PostToolUse: [group('node .agent/engine/installer/bin/khora-ai.mjs sync --if-changed "$CLAUDE_TOOL_INPUT_FILE_PATH"', { matcher: 'Write|Edit' })],
     });
     assert.deepEqual(commands(out.SessionStart), [ENGINE_SWEEP]);
-    assert.deepEqual(commands(out.PostToolUse), [ENGINE_SYNC]);
+    assert.deepEqual(commands(out.PostToolUse), [ENGINE_SYNC, ENGINE_LINT]);
   });
 
   test('re-merging the anchored hooks is idempotent', () => {
@@ -144,7 +145,7 @@ describe('mergeClaudeHooks — $CLAUDE_PROJECT_DIR commands', () => {
     const twice = merge(JSON.parse(JSON.stringify(once)));
     assert.deepEqual(twice, once);
     assert.deepEqual(commands(twice.SessionStart), [ENGINE_SWEEP]);
-    assert.deepEqual(commands(twice.PostToolUse), [ENGINE_SYNC]);
+    assert.deepEqual(commands(twice.PostToolUse), [ENGINE_SYNC, ENGINE_LINT]);
   });
 });
 
@@ -268,7 +269,7 @@ describe('hook commands work under both hook shells', () => {
     const out = merge({});
     for (const c of [...commands(out.SessionStart), ...commands(out.PostToolUse)]) {
       assert.doesNotMatch(c, bareProjectDir, `breaks under the PowerShell hook shell: ${c}`);
-      assert.ok(c.includes('${CLAUDE_PROJECT_DIR}/.agent/engine/installer/bin/khora-ai.mjs'), c);
+      assert.ok(c.includes('${CLAUDE_PROJECT_DIR}/.agent/engine/installer/bin/'), c);
     }
   });
 
@@ -279,5 +280,72 @@ describe('hook commands work under both hook shells', () => {
       assert.doesNotMatch(c, bareProjectDir, `breaks under the PowerShell hook shell: ${c}`);
       assert.ok(c.includes('${CLAUDE_PROJECT_DIR}/.agent/gamedev/installer/bin/khora-ai.mjs'), c);
     }
+  });
+});
+
+// ── the lint-file hook: per-file convention checks on every Rust file written ──
+
+describe('mergeClaudeHooks — PostToolUse lint-file hook', () => {
+  const lintGroups = (out) => (out.PostToolUse ?? []).filter((g) => (g.hooks ?? []).some((h) => h.command === ENGINE_LINT));
+
+  test('adds one Write|Edit hook running bin/lint-file.mjs on the written path, with a timeout', () => {
+    const groups = lintGroups(merge({}));
+    assert.equal(groups.length, 1, 'expected exactly one lint-file hook');
+    assert.equal(groups[0].matcher, 'Write|Edit');
+    assert.equal(groups[0].hooks[0].type, 'command');
+    assert.ok(groups[0].hooks[0].timeout >= 60, 'a cargo rebuild of xtask needs more than the default timeout');
+  });
+
+  test('re-merging keeps one lint-file hook, next to a user PostToolUse hook', () => {
+    const user = group('echo user-post', { matcher: 'Write' });
+    const once = merge({ PostToolUse: [user] });
+    const twice = merge(JSON.parse(JSON.stringify(once)));
+    assert.equal(lintGroups(twice).length, 1);
+    assert.equal(count(commands(twice.PostToolUse), 'echo user-post'), 1);
+  });
+
+  test('a lint-file hook from a previous install is replaced, not duplicated', () => {
+    const old = group('node .agent/engine/installer/bin/lint-file.mjs', { matcher: 'Write|Edit' });
+    const post = commands(merge({ PostToolUse: [old] }).PostToolUse);
+    assert.deepEqual(post, [ENGINE_SYNC, ENGINE_LINT]);
+  });
+
+  test('the gamedev profile gets no lint-file hook', () => {
+    const out = providers.mergeClaudeHooks({}, { profile: 'gamedev' });
+    assert.ok(!commands(out.PostToolUse).some((c) => c.includes('lint-file')), JSON.stringify(out.PostToolUse));
+  });
+});
+
+describe('installGitHook — pre-commit lint-file block', () => {
+  function tmpGitRepo(t) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'khora-hook-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 5 }));
+    fs.mkdirSync(path.join(root, '.git', 'hooks'), { recursive: true });
+    return root;
+  }
+  const quiet = (fn) => {
+    const { log } = console;
+    console.log = () => {};
+    try { return fn(); } finally { console.log = log; }
+  };
+
+  test('the engine install writes one block running lint-file.mjs --staged, and keeps it once', async (t) => {
+    const core = await import('./core.mjs');
+    const root = tmpGitRepo(t);
+    const ctx = { repoRoot: root, profile: 'engine', agentDir: path.join(root, '.agent') };
+    quiet(() => core.installGitHook(ctx));
+    quiet(() => core.installGitHook(ctx));
+    const hook = fs.readFileSync(path.join(root, '.git', 'hooks', 'pre-commit'), 'utf8');
+    const line = 'node .agent/engine/installer/bin/lint-file.mjs --staged || exit 1';
+    assert.equal(hook.split(line).length - 1, 1, hook);
+    assert.equal(hook.split('# >>> khora-ai:lint-file >>>').length - 1, 1, hook);
+  });
+
+  test('the gamedev install writes no lint-file block', async (t) => {
+    const core = await import('./core.mjs');
+    const root = tmpGitRepo(t);
+    quiet(() => core.installGitHook({ repoRoot: root, profile: 'gamedev', agentDir: path.join(root, '.agent') }));
+    const hook = fs.readFileSync(path.join(root, '.git', 'hooks', 'pre-commit'), 'utf8');
+    assert.ok(!hook.includes('lint-file'), hook);
   });
 });

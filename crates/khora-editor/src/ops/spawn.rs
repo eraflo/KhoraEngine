@@ -34,7 +34,7 @@ fn default_surface_material() -> khora_sdk::prelude::materials::StandardMaterial
 ///
 /// A default surface material makes it render at once; the mesh loads from its
 /// `MeshRef::Asset` on the next tick.
-pub fn spawn_mesh_asset(
+pub(crate) fn spawn_mesh_asset(
     world: &mut GameWorld,
     uuid: khora_sdk::khora_core::asset::AssetUUID,
     point: [f32; 3],

@@ -288,7 +288,7 @@ fn an_update_for_a_behavior_the_entity_does_not_hold_is_not_applied() {
 
 /// **The invariant the writeback keeps.**
 ///
-/// A companion whose entity no longer
+/// A companion whose entity does not
 /// holds its behavior — removed by a command or by the editor — is removed,
 /// even on a frame no behavior reported anything: a behavior attached again
 /// starts afresh.
@@ -320,7 +320,7 @@ fn a_companion_whose_entity_lost_its_behavior_is_removed() {
 }
 
 /// An entity despawned earlier the same frame has nowhere to put its state,
-/// which is correct — there is no longer anything to save.
+/// which is correct — there is nothing left to save.
 #[test]
 fn an_update_for_a_despawned_entity_is_dropped() {
     let mut world = World::new();

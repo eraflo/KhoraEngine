@@ -43,17 +43,6 @@ const SKY_UNIFORM_LAYOUT_LABEL: &str = "skybox_uniform_layout";
 /// The cache label of the group-1 (environment cube and sampler) layout.
 const SKY_ENV_LAYOUT_LABEL: &str = "skybox_env_layout";
 
-/// The sky's uniform block, laid out as `SkyUniforms` in `skybox.wgsl`.
-///
-/// The inverse view-projection gives each pixel its world-space view ray;
-/// `camera_pos` is the ray's origin.
-#[repr(C, align(16))]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct SkyUniforms {
-    inv_view_proj: [[f32; 4]; 4],
-    camera_pos: [f32; 4],
-}
-
 /// The lane's one level: the uniform block is the memory it holds.
 const LEVELS: [Level; 1] = [Level {
     id: StrategyId::Balanced,
@@ -72,6 +61,17 @@ const RECORD_CPU: Duration = Duration::from_micros(20);
 /// What painting one pixel of sky costs on the device.
 const PIXEL_GPU_SECS: f64 = 5e-11;
 
+/// The sky's uniform block, laid out as `SkyUniforms` in `skybox.wgsl`.
+///
+/// The inverse view-projection gives each pixel its world-space view ray;
+/// `camera_pos` is the ray's origin.
+#[repr(C, align(16))]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct SkyUniforms {
+    inv_view_proj: [[f32; 4]; 4],
+    camera_pos: [f32; 4],
+}
+
 /// A lane that paints the environment cube where the opaque geometry left the far plane.
 ///
 /// One level. The visible sky is the environment the lit surfaces reflect.
@@ -79,37 +79,6 @@ const PIXEL_GPU_SECS: f64 = 5e-11;
 pub struct SkyboxLane {
     /// What it built on the device; `None` before the first prepare and after shutdown.
     gpu: Option<SkyGpu>,
-}
-
-/// What the skybox builds on the device.
-#[derive(Debug)]
-struct SkyGpu {
-    /// The group-1 layout the env bind group is made with.
-    env_layout: BindGroupLayoutId,
-    /// The uniform block.
-    sky_buffer: BufferId,
-    /// The group-0 bind group over the uniform block.
-    sky_bind_group: BindGroupId,
-    /// The pipeline and the target it was built for; `None` for a target
-    /// without depth, which the sky cannot test against.
-    pipeline: Option<(TargetKey, RenderPipelineId)>,
-    /// The env-cube bind group and the cube view it binds.
-    env_bind_group: Option<(TextureViewId, BindGroupId)>,
-}
-
-/// What the skybox lane reads each frame: the camera, the target it paints
-/// and the environment the IBL bake published.
-#[derive(LaneInputs)]
-pub struct SkyboxInputs<'f> {
-    /// The frame's views; the first is the camera the sky is seen from.
-    #[bus]
-    pub render_world: &'f RenderWorld,
-    /// The frame's colour and depth attachments.
-    #[frame]
-    pub target: Target,
-    /// The bake whose environment cube the sky samples.
-    #[resource]
-    pub ibl: &'f IblBaker,
 }
 
 impl Lane for SkyboxLane {
@@ -227,6 +196,37 @@ impl Lane for SkyboxLane {
     }
 }
 
+/// What the skybox builds on the device.
+#[derive(Debug)]
+struct SkyGpu {
+    /// The group-1 layout the env bind group is made with.
+    env_layout: BindGroupLayoutId,
+    /// The uniform block.
+    sky_buffer: BufferId,
+    /// The group-0 bind group over the uniform block.
+    sky_bind_group: BindGroupId,
+    /// The pipeline and the target it was built for; `None` for a target
+    /// without depth, which the sky cannot test against.
+    pipeline: Option<(TargetKey, RenderPipelineId)>,
+    /// The env-cube bind group and the cube view it binds.
+    env_bind_group: Option<(TextureViewId, BindGroupId)>,
+}
+
+/// What the skybox lane reads each frame: the camera, the target it paints
+/// and the environment the IBL bake published.
+#[derive(LaneInputs)]
+pub struct SkyboxInputs<'f> {
+    /// The frame's views; the first is the camera the sky is seen from.
+    #[bus]
+    pub render_world: &'f RenderWorld,
+    /// The frame's colour and depth attachments.
+    #[frame]
+    pub target: Target,
+    /// The bake whose environment cube the sky samples.
+    #[resource]
+    pub ibl: &'f IblBaker,
+}
+
 /// Builds the layouts, the uniform block and its bind group.
 ///
 /// A refused bind group gives the buffer back.
@@ -304,7 +304,7 @@ fn destroy_sky_gpu(sky: SkyGpu, device: &dyn GraphicsDevice) {
     }
 }
 
-/// Group-0 layout: one uniform buffer, seen by the fragment stage only.
+/// Returns the group-0 layout: one uniform buffer, seen by the fragment stage only.
 fn sky_uniform_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
     use khora_core::renderer::api::command::{
         BindGroupLayoutEntry, BindingType, BufferBindingType,
@@ -321,7 +321,7 @@ fn sky_uniform_layout_entries() -> Vec<khora_core::renderer::api::command::BindG
     }]
 }
 
-/// Group-1 layout: environment cube at 0, filtering sampler at 1.
+/// Returns the group-1 layout: environment cube at 0, filtering sampler at 1.
 fn env_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
     use khora_core::renderer::api::command::{
         BindGroupLayoutEntry, BindingType, SamplerBindingType, TextureSampleType,

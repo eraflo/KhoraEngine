@@ -50,7 +50,7 @@ impl InputState {
     /// Called when the window loses focus: a release made while another
     /// application is in front never arrives. A stuck middle button orbits on
     /// plain motion; a stuck `ctrl_held` silently disables the gizmo shortcuts.
-    pub fn release_all(&mut self) {
+    pub(crate) fn release_all(&mut self) {
         self.middle_down = false;
         self.right_down = false;
         self.shift_held = false;
@@ -67,8 +67,8 @@ impl InputState {
     }
 }
 
-/// The cursor ray for a screen position, or `None` when the viewport has not
-/// been laid out yet.
+/// Returns the cursor ray for a screen position, or `None` when the viewport
+/// has not been laid out yet.
 fn cursor_ray(
     camera: &Arc<Mutex<EditorCamera>>,
     cursor: Option<(f32, f32)>,
@@ -83,7 +83,7 @@ fn cursor_ray(
 /// Drives the editor camera and the global shortcuts from the frame's input events.
 ///
 /// Takes the world for `Delete`.
-pub fn process_events(
+pub(crate) fn process_events(
     state: &mut InputState,
     inputs: &[InputEvent],
     world: &mut khora_sdk::GameWorld,
@@ -95,11 +95,6 @@ pub fn process_events(
         .ok()
         .map(|s| (s.viewport_screen_rect, s.play_mode))
         .unwrap_or((None, PlayMode::Editing));
-    let cursor_in_viewport = |x: f32, y: f32| {
-        viewport_rect
-            .map(|[rx, ry, rw, rh]| x >= rx && x < rx + rw && y >= ry && y < ry + rh)
-            .unwrap_or(false)
-    };
     // Only Editing navigates the editor camera: in Play and Paused the scene's
     // camera renders, and moving the editor's would blur the two modes.
     let editor_cam_navigable = play_mode == PlayMode::Editing;
@@ -114,64 +109,14 @@ pub fn process_events(
                 // viewport: a drag begun over the inspector never grabs it.
                 let started_in_viewport = state
                     .last_cursor_pos
-                    .map(|(x, y)| cursor_in_viewport(x, y))
+                    .map(|(x, y)| in_viewport(viewport_rect, x, y))
                     .unwrap_or(false);
                 if started_in_viewport {
                     match button {
                         MouseButton::Middle => state.middle_down = true,
                         MouseButton::Right => state.right_down = true,
-                        // Left click grabs a gizmo handle, or picks an entity.
                         MouseButton::Left => {
-                            let ray = cursor_ray(camera, state.last_cursor_pos, viewport_rect);
-                            let view = viewport_rect.and_then(|[_, _, rw, rh]| {
-                                camera.lock().ok().map(|cam| cam.view_info(rw, rh))
-                            });
-
-                            if let (Some(ray), Some(view)) = (ray, view) {
-                                // A handle under the cursor wins over whatever
-                                // is behind it: the manipulator sits on top of
-                                // its own object, so picking first would make
-                                // it impossible to grab.
-                                let grabbed = editor_state.lock().ok().and_then(|s| {
-                                    let frame = gizmo::selection_frame(world, &s, &view)?;
-                                    let axis = pick_handle(
-                                        s.gizmo_mode,
-                                        frame.pivot,
-                                        &frame.basis,
-                                        frame.size,
-                                        &ray,
-                                    )?;
-                                    let drag = GizmoDrag::begin(
-                                        s.gizmo_mode,
-                                        axis,
-                                        frame.pivot,
-                                        &frame.basis,
-                                        frame.size,
-                                        &ray,
-                                    )?;
-                                    Some((drag, gizmo::capture_starts(world, &s)))
-                                });
-
-                                if let Some((drag, starts)) = grabbed {
-                                    state.gizmo_drag = Some(drag);
-                                    state.gizmo_starts = starts;
-                                } else if let Ok(mut s) = editor_state.lock() {
-                                    match crate::picking::pick_entity(world, &ray) {
-                                        // Ctrl extends the selection, the
-                                        // same modifier the hierarchy uses.
-                                        Some(entity) if state.ctrl_held => s.toggle_select(entity),
-                                        Some(entity) => s.select(entity),
-                                        // Clicking empty space deselects —
-                                        // otherwise there is no way to let
-                                        // go of a selection in the viewport.
-                                        None if !state.ctrl_held => {
-                                            s.clear_selection();
-                                            s.inspected = None;
-                                        }
-                                        None => {}
-                                    }
-                                }
-                            }
+                            press_left(state, world, editor_state, camera, viewport_rect)
                         }
                         _ => {}
                     }
@@ -190,82 +135,7 @@ pub fn process_events(
                 _ => {}
             },
             InputEvent::KeyPressed { key_code } => {
-                if matches!(key_code, KeyCode::ShiftLeft | KeyCode::ShiftRight) {
-                    state.shift_held = true;
-                }
-                if matches!(key_code, KeyCode::ControlLeft | KeyCode::ControlRight) {
-                    state.ctrl_held = true;
-                }
-
-                if !state.ctrl_held {
-                    let tool = match key_code {
-                        KeyCode::KeyQ => Some(GizmoMode::Select),
-                        KeyCode::KeyW => Some(GizmoMode::Move),
-                        KeyCode::KeyE => Some(GizmoMode::Rotate),
-                        KeyCode::KeyR => Some(GizmoMode::Scale),
-                        _ => None,
-                    };
-                    if let Some(tool) = tool {
-                        // A drag belongs to the tool it started with — its
-                        // grabbed parameter means nothing under another one.
-                        state.end_gizmo_drag();
-                        if let Ok(mut s) = editor_state.lock() {
-                            s.gizmo_mode = tool;
-                        }
-                    }
-                }
-
-                if *key_code == KeyCode::Delete {
-                    if let Ok(mut s) = editor_state.lock() {
-                        ops::delete_selection(world, &mut s);
-                    }
-                }
-
-                if *key_code == KeyCode::KeyK && state.ctrl_held {
-                    if let Ok(mut s) = editor_state.lock() {
-                        s.command_palette_open = !s.command_palette_open;
-                    }
-                }
-
-                // Ctrl+S — the shortcut every editor has, and the one whose
-                // absence people discover by losing work.
-                if *key_code == KeyCode::KeyS && state.ctrl_held {
-                    if let Ok(mut s) = editor_state.lock() {
-                        s.push_request(EditorRequest::Menu(MenuAction::Save));
-                    }
-                }
-
-                // Ctrl+1 / Ctrl+2 — workspace switching, as the design doc
-                // specifies. Plain digits stay free for future tool bindings.
-                if state.ctrl_held {
-                    let mode = match key_code {
-                        KeyCode::Digit1 => Some(EditorMode::Scene),
-                        KeyCode::Digit2 => Some(EditorMode::ControlPlane),
-                        _ => None,
-                    };
-                    if let Some(mode) = mode {
-                        if let Ok(mut s) = editor_state.lock() {
-                            s.active_mode = mode;
-                        }
-                    }
-                }
-
-                // Escape retreats one level: closes the palette, else clears
-                // the selection.
-                if *key_code == KeyCode::Escape {
-                    if let Ok(mut s) = editor_state.lock() {
-                        if s.command_palette_open {
-                            s.command_palette_open = false;
-                        } else if !s.selection.is_empty() {
-                            s.clear_selection();
-                            s.inspected = None;
-                        }
-                    }
-                }
-
-                // Ctrl+Z / Ctrl+Y stay unbound: nothing pushes onto
-                // `CommandHistory`, and a shortcut that silently does nothing
-                // teaches that edits are reversible when they are not.
+                press_key(state, *key_code, world, editor_state);
             }
             InputEvent::KeyReleased { key_code } => {
                 if matches!(key_code, KeyCode::ShiftLeft | KeyCode::ShiftRight) {
@@ -275,43 +145,18 @@ pub fn process_events(
                     state.ctrl_held = false;
                 }
             }
-            InputEvent::MouseMoved { x, y } => {
-                // A manipulation in progress owns the pointer: the camera must
-                // not also move, or the object being dragged slides out from
-                // under the cursor.
-                if state.gizmo_drag.is_some() {
-                    if let Some(ray) = cursor_ray(camera, Some((*x, *y)), viewport_rect) {
-                        let delta = state.gizmo_drag.as_mut().and_then(|d| d.update(&ray));
-                        if let Some(delta) = delta {
-                            gizmo::apply_delta(world, delta, &state.gizmo_starts);
-                        }
-                    }
-                    state.prev_cursor = Some((*x, *y));
-                    continue;
-                }
-
-                if editor_cam_navigable && cursor_in_viewport(*x, *y) {
-                    if let Some((px, py)) = state.prev_cursor {
-                        let dx = x - px;
-                        let dy = y - py;
-
-                        if let Ok(mut cam) = camera.lock() {
-                            // As in Blender, Unity, Unreal and Godot: middle
-                            // orbits, shift+middle pans.
-                            if state.middle_down && state.shift_held {
-                                cam.pan(dx, dy);
-                            } else if state.middle_down || state.right_down {
-                                cam.orbit(dx, dy);
-                            }
-                        }
-                    }
-                }
-                state.prev_cursor = Some((*x, *y));
-            }
+            InputEvent::MouseMoved { x, y } => move_mouse(
+                state,
+                (*x, *y),
+                world,
+                camera,
+                viewport_rect,
+                editor_cam_navigable,
+            ),
             InputEvent::MouseWheelScrolled { delta_y, .. } => {
                 let in_view = state
                     .last_cursor_pos
-                    .map(|(x, y)| cursor_in_viewport(x, y))
+                    .map(|(x, y)| in_viewport(viewport_rect, x, y))
                     .unwrap_or(false);
                 if editor_cam_navigable && in_view {
                     if let Ok(mut cam) = camera.lock() {
@@ -321,4 +166,188 @@ pub fn process_events(
             }
         }
     }
+}
+
+/// Tells whether a screen position falls inside the laid-out viewport.
+fn in_viewport(viewport: Option<[f32; 4]>, x: f32, y: f32) -> bool {
+    viewport
+        .map(|[rx, ry, rw, rh]| x >= rx && x < rx + rw && y >= ry && y < ry + rh)
+        .unwrap_or(false)
+}
+
+/// Grabs the gizmo handle under the cursor, or picks the entity there.
+fn press_left(
+    state: &mut InputState,
+    world: &mut khora_sdk::GameWorld,
+    editor_state: &Arc<Mutex<EditorState>>,
+    camera: &Arc<Mutex<EditorCamera>>,
+    viewport_rect: Option<[f32; 4]>,
+) {
+    let ray = cursor_ray(camera, state.last_cursor_pos, viewport_rect);
+    let view = viewport_rect
+        .and_then(|[_, _, rw, rh]| camera.lock().ok().map(|cam| cam.view_info(rw, rh)));
+    let (Some(ray), Some(view)) = (ray, view) else {
+        return;
+    };
+
+    // A handle under the cursor wins over whatever is behind it: the
+    // manipulator sits on top of its own object, so picking first would make
+    // it impossible to grab.
+    let grabbed = editor_state.lock().ok().and_then(|s| {
+        let frame = gizmo::selection_frame(world, &s, &view)?;
+        let axis = pick_handle(s.gizmo_mode, frame.pivot, &frame.basis, frame.size, &ray)?;
+        let drag = GizmoDrag::begin(
+            s.gizmo_mode,
+            axis,
+            frame.pivot,
+            &frame.basis,
+            frame.size,
+            &ray,
+        )?;
+        Some((drag, gizmo::capture_starts(world, &s)))
+    });
+
+    if let Some((drag, starts)) = grabbed {
+        state.gizmo_drag = Some(drag);
+        state.gizmo_starts = starts;
+    } else if let Ok(mut s) = editor_state.lock() {
+        match crate::picking::pick_entity(world, &ray) {
+            // Ctrl extends the selection, the same modifier the hierarchy uses.
+            Some(entity) if state.ctrl_held => s.toggle_select(entity),
+            Some(entity) => s.select(entity),
+            // Clicking empty space deselects — otherwise there is no way to
+            // let go of a selection in the viewport.
+            None if !state.ctrl_held => {
+                s.clear_selection();
+                s.inspected = None;
+            }
+            None => {}
+        }
+    }
+}
+
+/// Applies a key press: the held modifiers, the gizmo tools and the editor shortcuts.
+fn press_key(
+    state: &mut InputState,
+    key_code: KeyCode,
+    world: &mut khora_sdk::GameWorld,
+    editor_state: &Arc<Mutex<EditorState>>,
+) {
+    if matches!(key_code, KeyCode::ShiftLeft | KeyCode::ShiftRight) {
+        state.shift_held = true;
+    }
+    if matches!(key_code, KeyCode::ControlLeft | KeyCode::ControlRight) {
+        state.ctrl_held = true;
+    }
+
+    if !state.ctrl_held {
+        let tool = match key_code {
+            KeyCode::KeyQ => Some(GizmoMode::Select),
+            KeyCode::KeyW => Some(GizmoMode::Move),
+            KeyCode::KeyE => Some(GizmoMode::Rotate),
+            KeyCode::KeyR => Some(GizmoMode::Scale),
+            _ => None,
+        };
+        if let Some(tool) = tool {
+            // A drag belongs to the tool it started with — its grabbed
+            // parameter means nothing under another one.
+            state.end_gizmo_drag();
+            if let Ok(mut s) = editor_state.lock() {
+                s.gizmo_mode = tool;
+            }
+        }
+    }
+
+    if key_code == KeyCode::Delete {
+        if let Ok(mut s) = editor_state.lock() {
+            ops::delete_selection(world, &mut s);
+        }
+    }
+
+    if key_code == KeyCode::KeyK && state.ctrl_held {
+        if let Ok(mut s) = editor_state.lock() {
+            s.command_palette_open = !s.command_palette_open;
+        }
+    }
+
+    // Ctrl+S — the shortcut every editor has, and the one whose absence
+    // people discover by losing work.
+    if key_code == KeyCode::KeyS && state.ctrl_held {
+        if let Ok(mut s) = editor_state.lock() {
+            s.push_request(EditorRequest::Menu(MenuAction::Save));
+        }
+    }
+
+    // Ctrl+1 / Ctrl+2 — workspace switching, as the design doc specifies.
+    // Plain digits stay free for future tool bindings.
+    if state.ctrl_held {
+        let mode = match key_code {
+            KeyCode::Digit1 => Some(EditorMode::Scene),
+            KeyCode::Digit2 => Some(EditorMode::ControlPlane),
+            _ => None,
+        };
+        if let Some(mode) = mode {
+            if let Ok(mut s) = editor_state.lock() {
+                s.active_mode = mode;
+            }
+        }
+    }
+
+    // Escape retreats one level: closes the palette, else clears the
+    // selection.
+    if key_code == KeyCode::Escape {
+        if let Ok(mut s) = editor_state.lock() {
+            if s.command_palette_open {
+                s.command_palette_open = false;
+            } else if !s.selection.is_empty() {
+                s.clear_selection();
+                s.inspected = None;
+            }
+        }
+    }
+
+    // Ctrl+Z / Ctrl+Y stay unbound: nothing pushes onto `CommandHistory`,
+    // and a shortcut that silently does nothing teaches that edits are
+    // reversible when they are not.
+}
+
+/// Moves the dragged gizmo, or orbits and pans the editor camera.
+fn move_mouse(
+    state: &mut InputState,
+    (x, y): (f32, f32),
+    world: &mut khora_sdk::GameWorld,
+    camera: &Arc<Mutex<EditorCamera>>,
+    viewport_rect: Option<[f32; 4]>,
+    editor_cam_navigable: bool,
+) {
+    // A manipulation in progress owns the pointer: the camera must not also
+    // move, or the object being dragged slides out from under the cursor.
+    if state.gizmo_drag.is_some() {
+        if let Some(ray) = cursor_ray(camera, Some((x, y)), viewport_rect) {
+            let delta = state.gizmo_drag.as_mut().and_then(|d| d.update(&ray));
+            if let Some(delta) = delta {
+                gizmo::apply_delta(world, delta, &state.gizmo_starts);
+            }
+        }
+        state.prev_cursor = Some((x, y));
+        return;
+    }
+
+    if editor_cam_navigable && in_viewport(viewport_rect, x, y) {
+        if let Some((px, py)) = state.prev_cursor {
+            let dx = x - px;
+            let dy = y - py;
+
+            if let Ok(mut cam) = camera.lock() {
+                // As in Blender, Unity, Unreal and Godot: middle orbits,
+                // shift+middle pans.
+                if state.middle_down && state.shift_held {
+                    cam.pan(dx, dy);
+                } else if state.middle_down || state.right_down {
+                    cam.orbit(dx, dy);
+                }
+            }
+        }
+    }
+    state.prev_cursor = Some((x, y));
 }

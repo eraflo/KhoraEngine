@@ -200,7 +200,7 @@ impl WgpuDevice {
     }
 
     /// Describes the adapter the device runs on; the first description stays.
-    pub fn set_adapter_info(&self, info: GraphicsAdapterInfo) {
+    pub(crate) fn set_adapter_info(&self, info: GraphicsAdapterInfo) {
         let _ = self.internal.adapter.set(info);
     }
 
@@ -210,7 +210,7 @@ impl WgpuDevice {
         let _ = self.internal.adapter_handle.set(adapter);
     }
 
-    /// The surface the render system last configured.
+    /// Returns the surface the render system last configured.
     fn surface(&self) -> SurfaceInfo {
         match self.internal.surface.lock() {
             Ok(surface) => *surface,
@@ -298,12 +298,12 @@ impl WgpuDevice {
         )
     }
 
-    /// The wgpu device: thread-safe, called without any lock.
+    /// Returns the wgpu device: thread-safe, called without any lock.
     pub(crate) fn wgpu_device(&self) -> &wgpu::Device {
         &self.internal.device
     }
 
-    /// The wgpu queue: thread-safe, called without any lock.
+    /// Returns the wgpu queue: thread-safe, called without any lock.
     pub(crate) fn wgpu_queue(&self) -> &wgpu::Queue {
         &self.internal.queue
     }
@@ -327,7 +327,7 @@ impl WgpuDevice {
 
     /// Retrieves a reference-counted pointer to the internal WGPU render pipeline.
     /// Returns `None` if the ID is invalid or the registry mutex is poisoned.
-    pub fn get_wgpu_render_pipeline(
+    pub(crate) fn get_wgpu_render_pipeline(
         &self,
         id: RenderPipelineId,
     ) -> Option<Arc<wgpu::RenderPipeline>> {
@@ -338,7 +338,7 @@ impl WgpuDevice {
 
     /// Retrieves a reference-counted pointer to the internal WGPU compute pipeline.
     /// Returns `None` if the ID is invalid or the registry mutex is poisoned.
-    pub fn get_wgpu_compute_pipeline(
+    pub(crate) fn get_wgpu_compute_pipeline(
         &self,
         id: ComputePipelineId,
     ) -> Option<Arc<wgpu::ComputePipeline>> {
@@ -353,7 +353,7 @@ impl WgpuDevice {
 
     /// Retrieves a reference-counted pointer to the internal WGPU buffer.
     /// Returns `None` if the ID is invalid or the registry mutex is poisoned.
-    pub fn get_wgpu_buffer(&self, id: api_buf::BufferId) -> Option<Arc<wgpu::Buffer>> {
+    pub(crate) fn get_wgpu_buffer(&self, id: api_buf::BufferId) -> Option<Arc<wgpu::Buffer>> {
         self.with_registry(|r| r.buffers.get(&id).map(|e| Arc::clone(&e.wgpu_buffer)))
             .ok()
             .flatten()
@@ -361,7 +361,7 @@ impl WgpuDevice {
 
     /// Retrieves a reference-counted pointer to the internal WGPU texture view.
     /// Returns `None` if the ID is invalid or the registry mutex is poisoned.
-    pub fn get_wgpu_texture_view(
+    pub(crate) fn get_wgpu_texture_view(
         &self,
         id: &api_tex::TextureViewId,
     ) -> Option<Arc<wgpu::TextureView>> {
@@ -372,7 +372,7 @@ impl WgpuDevice {
 
     /// Retrieves a reference-counted pointer to the internal WGPU bind group.
     /// Returns `None` if the ID is invalid or the registry mutex is poisoned.
-    pub fn get_wgpu_bind_group(&self, id: BindGroupId) -> Option<Arc<wgpu::BindGroup>> {
+    pub(crate) fn get_wgpu_bind_group(&self, id: BindGroupId) -> Option<Arc<wgpu::BindGroup>> {
         self.with_registry(|r| {
             r.bind_groups
                 .get(&id)
@@ -395,7 +395,7 @@ impl WgpuDevice {
     }
 
     /// Runs the callbacks of finished GPU work, such as `map_async`, without blocking.
-    pub fn poll_device_non_blocking(&self) {
+    pub(crate) fn poll_device_non_blocking(&self) {
         if let Err(e) = self.internal.device.poll(wgpu::PollType::Poll) {
             log::warn!("Failed to poll device (non-blocking): {:?}", e);
         }
@@ -425,11 +425,11 @@ impl WgpuDevice {
     }
 
     /// Returns `true` if the device reported an out-of-memory condition.
-    pub fn is_device_out_of_memory(&self) -> bool {
+    pub(crate) fn is_device_out_of_memory(&self) -> bool {
         self.internal.health.is_out_of_memory()
     }
 
-    /// Creates a texture view for a raw wgpu::Texture (e.g., from the swap chain)
+    /// Creates a texture view for a raw `wgpu::Texture` (e.g., from the swap chain)
     /// and registers it with the device, returning an abstract ID.
     pub(crate) fn register_texture_view(
         &self,

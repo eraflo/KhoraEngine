@@ -46,7 +46,7 @@ impl AppliedWrites {
         });
     }
 
-    /// Whether a command from `from` on — written after a turn — wrote
+    /// Returns whether a command from `from` on — written after a turn — wrote
     /// `field` of `component` on `entity` and applied.
     pub fn field_written_from(
         &self,
@@ -61,13 +61,13 @@ impl AppliedWrites {
             .is_some_and(|&index| index >= from)
     }
 
-    /// Whether `component` on `entity` was written whole this frame — added,
+    /// Returns whether `component` on `entity` was written whole this frame — added,
     /// replaced or removed — and the write applied.
-    pub fn whole_written(&self, entity: EntityId, component: &str) -> bool {
+    pub(crate) fn whole_written(&self, entity: EntityId, component: &str) -> bool {
         self.whole.contains_key(&(entity, component.to_owned()))
     }
 
-    /// Every field written this frame, with the positions of its applied
+    /// Returns every field written this frame, with the positions of its applied
     /// writes in order: entity, component, field, positions.
     pub fn fields(&self) -> impl Iterator<Item = (EntityId, &str, &str, &[usize])> {
         self.fields
@@ -82,7 +82,7 @@ impl AppliedWrites {
             })
     }
 
-    /// Whether a command from `from` on wrote `component` on `entity` whole —
+    /// Returns whether a command from `from` on wrote `component` on `entity` whole —
     /// added, replaced or removed it — and applied.
     pub fn whole_written_from(&self, entity: EntityId, component: &str, from: usize) -> bool {
         self.whole

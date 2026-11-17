@@ -14,11 +14,16 @@
 
 //! The shaper and the rasteriser called from many threads at once.
 //!
-//! A DataSystem may shape and rasterise while another registers a reloaded
+//! A `DataSystem` may shape and rasterise while another registers a reloaded
 //! font. Eight threads call one shaper and one rasteriser in shuffled orders,
 //! and a test fails, instead of hanging, if they have not all come back within
 //! [`WATCHDOG`] (see `graphics/wgpu/device/tests/concurrency.rs` for why a
 //! panic and not an abort).
+
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn threads to test concurrency"
+)]
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::mpsc::{self, RecvTimeoutError};

@@ -22,3 +22,6 @@ anyhow = "1.0"
 log = "0.4.29"
 bytemuck = { version = "1.25", features = ["derive"] }
 workspace-hack = { version = "0.1", path = "../../workspace-hack" }
+
+[lints]
+workspace = true

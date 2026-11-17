@@ -14,7 +14,7 @@
 
 //! **A playback update lands on the source it was made for.** The mixing lane
 //! writes one update per source of the `AudioView`; the
-//! `audio_playback_writeback` DataSystem applies each one to that source's
+//! `audio_playback_writeback` `DataSystem` applies each one to that source's
 //! `AudioSource`, whatever else the world holds.
 
 use khora_core::asset::AssetHandle;
@@ -25,7 +25,7 @@ use khora_data::assets::SoundData;
 use khora_data::ecs::{AudioSource, DataSystemRegistration, GlobalTransform, PlaybackState, World};
 use khora_data::flow::{AudioFlow, AudioPlaybackUpdate, AudioPlaybackWriteback, Flow, Selection};
 
-/// The writeback DataSystem, as the engine collects it.
+/// The writeback `DataSystem`, as the engine collects it.
 fn writeback() -> &'static DataSystemRegistration {
     inventory::iter::<DataSystemRegistration>
         .into_iter()

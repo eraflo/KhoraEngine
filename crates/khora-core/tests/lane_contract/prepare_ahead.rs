@@ -95,7 +95,10 @@ impl Lane for SketchLane {
         _gpu: &mut GpuSetup<'_>,
         key: Option<TargetKey>,
     ) -> Result<(), LaneError> {
-        self.log.lock().unwrap().push(Event::Prepare(level, key));
+        self.log
+            .lock()
+            .expect("the log is never poisoned")
+            .push(Event::Prepare(level, key));
         if self.fail_prepare {
             return Err(LaneError::InvalidInput {
                 expected: "a prepare that works",
@@ -115,7 +118,10 @@ impl Lane for SketchLane {
         _inputs: &mut SketchInputs,
         out: &mut SketchOutputs,
     ) -> Result<LaneReport, LaneError> {
-        self.log.lock().unwrap().push(Event::Record(level));
+        self.log
+            .lock()
+            .expect("the log is never poisoned")
+            .push(Event::Record(level));
         out.sketched = Sketched(1);
         Ok(LaneReport {
             done: 1.0,

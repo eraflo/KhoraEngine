@@ -79,12 +79,12 @@ impl LaneBus {
         self.views.contains_key(&TypeId::of::<V>())
     }
 
-    /// Number of views currently published.
+    /// Returns the number of views currently published.
     pub fn len(&self) -> usize {
         self.views.len()
     }
 
-    /// Whether no views are published.
+    /// Returns whether no views are published.
     pub fn is_empty(&self) -> bool {
         self.views.is_empty()
     }
@@ -102,12 +102,12 @@ impl LaneBus {
         self.frame = frame;
     }
 
-    /// The frame views are stamped with now.
+    /// Returns the frame views are stamped with now.
     pub fn frame(&self) -> FrameId {
         self.frame
     }
 
-    /// The frame the view of type `V` was published in, or `None` if none was.
+    /// Returns the frame the view of type `V` was published in, or `None` if none was.
     pub fn stamp_of<V: Any + Send + Sync>(&self) -> Option<FrameId> {
         self.stamps.get(&TypeId::of::<V>()).copied()
     }

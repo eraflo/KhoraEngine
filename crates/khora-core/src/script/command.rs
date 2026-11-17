@@ -39,7 +39,7 @@ impl ComponentName {
         Self(name.into())
     }
 
-    /// The name.
+    /// Returns the name.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -178,85 +178,8 @@ pub enum WorldCommand {
     },
 }
 
-/// What an absolute write lands on.
-///
-/// Only what one command can *silently overwrite* for another. Accumulating
-/// commands have no target because they cannot lose a write.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum WriteTarget {
-    /// The entity's translation.
-    Translation,
-    /// The entity's rotation.
-    Rotation,
-    /// The entity's scale.
-    Scale,
-    /// The entity's parent.
-    Parent,
-    /// Whether the entity exists at all.
-    Existence,
-    /// The entity's material.
-    Material,
-    /// One component's value.
-    Component(ComponentName),
-    /// One field of one component.
-    Field(ComponentName, String),
-}
-
-/// A [`WriteTarget`] borrowed from the command that writes it, so counting
-/// the targets of a large batch allocates nothing per cell.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum WriteTargetRef<'a> {
-    /// The entity's translation.
-    Translation,
-    /// The entity's rotation.
-    Rotation,
-    /// The entity's scale.
-    Scale,
-    /// The entity's parent.
-    Parent,
-    /// Whether the entity exists at all.
-    Existence,
-    /// The entity's material.
-    Material,
-    /// One component's value, whole.
-    Component(&'a ComponentName),
-    /// One field of one component.
-    Field(&'a ComponentName, &'a str),
-}
-
-impl WriteTargetRef<'_> {
-    /// The owned target.
-    pub fn into_owned(self) -> WriteTarget {
-        match self {
-            Self::Translation => WriteTarget::Translation,
-            Self::Rotation => WriteTarget::Rotation,
-            Self::Scale => WriteTarget::Scale,
-            Self::Parent => WriteTarget::Parent,
-            Self::Existence => WriteTarget::Existence,
-            Self::Material => WriteTarget::Material,
-            Self::Component(name) => WriteTarget::Component(name.clone()),
-            Self::Field(name, field) => WriteTarget::Field(name.clone(), field.to_owned()),
-        }
-    }
-}
-
-impl std::fmt::Display for WriteTarget {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Translation => f.write_str("translation"),
-            Self::Rotation => f.write_str("rotation"),
-            Self::Scale => f.write_str("scale"),
-            Self::Parent => f.write_str("parent"),
-            Self::Existence => f.write_str("existence"),
-            Self::Material => f.write_str("material"),
-            Self::Component(name) => write!(f, "component {name}"),
-            Self::Field(name, field) => write!(f, "component {name} field {field}"),
-        }
-    }
-}
-
 impl WorldCommand {
-    /// The entity the command acts on, if it acts on an existing one.
+    /// Returns the entity the command acts on, if it acts on an existing one.
     ///
     /// `None` for a spawn, whose subject does not exist yet, and for
     /// [`Self::WriteColumn`], which acts on many.
@@ -325,6 +248,83 @@ impl WorldCommand {
             }
             // A spawn writes over nothing: its entity did not exist.
             Self::Translate { .. } | Self::Spawn { .. } | Self::SpawnPrefab { .. } => {}
+        }
+    }
+}
+
+/// What an absolute write lands on.
+///
+/// Only what one command can *silently overwrite* for another. Accumulating
+/// commands have no target because they cannot lose a write.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum WriteTarget {
+    /// The entity's translation.
+    Translation,
+    /// The entity's rotation.
+    Rotation,
+    /// The entity's scale.
+    Scale,
+    /// The entity's parent.
+    Parent,
+    /// Whether the entity exists at all.
+    Existence,
+    /// The entity's material.
+    Material,
+    /// One component's value.
+    Component(ComponentName),
+    /// One field of one component.
+    Field(ComponentName, String),
+}
+
+impl std::fmt::Display for WriteTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Translation => f.write_str("translation"),
+            Self::Rotation => f.write_str("rotation"),
+            Self::Scale => f.write_str("scale"),
+            Self::Parent => f.write_str("parent"),
+            Self::Existence => f.write_str("existence"),
+            Self::Material => f.write_str("material"),
+            Self::Component(name) => write!(f, "component {name}"),
+            Self::Field(name, field) => write!(f, "component {name} field {field}"),
+        }
+    }
+}
+
+/// A [`WriteTarget`] borrowed from the command that writes it, so counting
+/// the targets of a large batch allocates nothing per cell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum WriteTargetRef<'a> {
+    /// The entity's translation.
+    Translation,
+    /// The entity's rotation.
+    Rotation,
+    /// The entity's scale.
+    Scale,
+    /// The entity's parent.
+    Parent,
+    /// Whether the entity exists at all.
+    Existence,
+    /// The entity's material.
+    Material,
+    /// One component's value, whole.
+    Component(&'a ComponentName),
+    /// One field of one component.
+    Field(&'a ComponentName, &'a str),
+}
+
+impl WriteTargetRef<'_> {
+    /// Returns the owned target.
+    pub fn into_owned(self) -> WriteTarget {
+        match self {
+            Self::Translation => WriteTarget::Translation,
+            Self::Rotation => WriteTarget::Rotation,
+            Self::Scale => WriteTarget::Scale,
+            Self::Parent => WriteTarget::Parent,
+            Self::Existence => WriteTarget::Existence,
+            Self::Material => WriteTarget::Material,
+            Self::Component(name) => WriteTarget::Component(name.clone()),
+            Self::Field(name, field) => WriteTarget::Field(name.clone(), field.to_owned()),
         }
     }
 }

@@ -84,7 +84,7 @@ impl Checker {
         true
     }
 
-    /// `object.name(args)` where `object` is an entity.
+    /// Checks `object.name(args)` where `object` is an entity.
     pub(super) fn check_entity_method(
         &mut self,
         object: &Expr,
@@ -200,7 +200,7 @@ impl Checker {
         Some(info.result)
     }
 
-    /// The free form of an entity operation, refused with its rewrite —
+    /// Refuses the free form of an entity operation with its rewrite, returning
     /// `true` when `name` is one.
     pub(super) fn refuse_free_form(
         &mut self,
@@ -234,8 +234,8 @@ impl Checker {
         true
     }
 
-    /// `Spawn(Vec3 position, C { … }, …)` — the new entity, named at once —
-    /// its position's type `checked` when it was already checked.
+    /// Checks `Spawn(Vec3 position, C { … }, …)` — the new entity, named at
+    /// once — its position's type `checked` when it was already checked.
     pub(super) fn check_spawn(
         &mut self,
         args: &[Expr],
@@ -267,7 +267,7 @@ impl Checker {
         Ty::Entity
     }
 
-    /// The one component literal of `Set` or `Add`.
+    /// Checks the one component literal of `Set` or `Add`.
     fn check_patch_arguments(&mut self, name: &str, args: &[Expr], at: Span, context: &Context) {
         if args.len() != 1 {
             self.error(
@@ -313,8 +313,10 @@ impl Checker {
         }
     }
 
-    /// A component literal given to `operation`: every field named exists and
-    /// takes its value. Returns the component's name when it is one.
+    /// Checks a component literal given to `operation`: every field named
+    /// exists and takes its value.
+    ///
+    /// Returns the component's name when it is one.
     pub(super) fn check_patch<'e>(
         &mut self,
         expr: &'e Expr,
@@ -361,7 +363,7 @@ impl Checker {
         Some(name)
     }
 
-    /// `e.Remove(C)`: a bare component name.
+    /// Checks `e.Remove(C)`: a bare component name.
     fn check_removed(&mut self, args: &[Expr], at: Span, context: &Context) {
         if args.len() != 1 {
             self.error(
@@ -390,8 +392,9 @@ impl Checker {
         }
     }
 
-    /// `e.Get(C)` and `e.Has(C)`: a bare component name. Returns it when it is
-    /// one.
+    /// Checks `e.Get(C)` and `e.Has(C)`: a bare component name.
+    ///
+    /// Returns it when it is one.
     fn check_read(
         &mut self,
         operation: &str,
@@ -473,7 +476,8 @@ impl Checker {
         false
     }
 
-    /// `name` is not a component a script writes — with what to do instead.
+    /// Reports that `name` is not a component a script writes, with what to do
+    /// instead.
     fn not_a_component(&mut self, name: &str, span: Span) {
         let (placed, natives) = crate::native::world::PLACEMENT;
         let note = if name == placed {
@@ -497,7 +501,7 @@ impl Checker {
         );
     }
 
-    /// A component used where a value goes.
+    /// Reports a component used where a value goes.
     pub(super) fn component_as_value(&mut self, name: &str, span: Span) {
         self.error_note(
             format!("`{name}` is a component"),
@@ -509,7 +513,7 @@ impl Checker {
     }
 }
 
-/// The variable or `this` a place is rooted at.
+/// Returns the variable or `this` a place is rooted at.
 fn root_of(expr: &Expr) -> &Expr {
     match expr {
         Expr::Field { object, .. } | Expr::Index { object, .. } => root_of(object),
@@ -517,7 +521,7 @@ fn root_of(expr: &Expr) -> &Expr {
     }
 }
 
-/// `expr` as an author would have written it, for a rewrite in a message.
+/// Renders `expr` as an author would have written it, for a rewrite in a message.
 pub(super) fn sketch(expr: &Expr) -> String {
     match expr {
         Expr::Int { value, .. } => value.to_string(),
@@ -553,8 +557,8 @@ pub(super) fn sketch(expr: &Expr) -> String {
     }
 }
 
-/// `expr` as the left of a `.`: an operation is parenthesised, so the rewrite
-/// calls the method on what the author wrote, not on its last operand.
+/// Renders `expr` as the left of a `.`: an operation is parenthesised, so the
+/// rewrite calls the method on what the author wrote, not on its last operand.
 pub(super) fn sketch_receiver(expr: &Expr) -> String {
     match expr {
         Expr::Binary { .. }

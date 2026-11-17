@@ -68,7 +68,7 @@ impl Runtime {
         Self::default()
     }
 
-    /// The entry of type `T`, looked for in the resources, then the services,
+    /// Returns the entry of type `T`, looked for in the resources, then the services,
     /// then the backends.
     #[must_use]
     pub fn look_up<T: Send + Sync + 'static>(&self) -> Option<&T> {
@@ -78,7 +78,7 @@ impl Runtime {
             .or_else(|| self.backends.get::<T>())
     }
 
-    /// Whether any of the three containers holds an entry of the type `id`
+    /// Returns whether any of the three containers holds an entry of the type `id`
     /// names.
     #[must_use]
     pub fn holds(&self, id: std::any::TypeId) -> bool {

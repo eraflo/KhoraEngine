@@ -904,7 +904,7 @@ fn material_globals(
         .collect()
 }
 
-/// A function's name without naga_oil's module decoration.
+/// Returns a function's name without `naga_oil`'s module decoration.
 fn undecorated(name: &str) -> &str {
     name.split("X_naga_oil_mod_X").next().unwrap_or(name)
 }

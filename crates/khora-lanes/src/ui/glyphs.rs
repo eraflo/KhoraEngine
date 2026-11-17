@@ -48,7 +48,7 @@ pub(super) fn glyph_instances_of(scene: &UiScene, atlas: &GlyphAtlas) -> Vec<UiI
     instances
 }
 
-/// The key `glyphs_on_gpu` placed `glyph` of `text` under.
+/// Returns the key `glyphs_on_gpu` placed `glyph` of `text` under.
 fn key_of(text: &ExtractedUiText, glyph: &ShapedGlyph) -> GlyphKey {
     GlyphKey::new(text.font, glyph.id, text.size_px, glyph.x)
 }

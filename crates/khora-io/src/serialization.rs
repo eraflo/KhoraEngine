@@ -102,7 +102,7 @@ impl SerializationService {
         }
     }
 
-    /// Where this service reads prefabs from.
+    /// Returns where this service reads prefabs from.
     fn prefabs(&self) -> &dyn PrefabSource {
         match &self.prefabs {
             Some(source) => source.as_ref(),
@@ -125,6 +125,11 @@ impl SerializationService {
     }
 
     /// Saves the current state of the `World` based on a high-level goal.
+    ///
+    /// # Errors
+    ///
+    /// [`SerializationServiceError::SaveFailed`] when the world cannot be
+    /// captured or encoded.
     pub fn save_world(
         &self,
         world: &World,
@@ -138,6 +143,10 @@ impl SerializationService {
     }
 
     /// Saves as [`save_world`](Self::save_world), linking to the prefabs `prefabs` reads.
+    ///
+    /// # Errors
+    ///
+    /// As [`save_world`](Self::save_world).
     pub fn save_world_with(
         &self,
         world: &World,
@@ -206,7 +215,13 @@ impl SerializationService {
     ///
     /// What it reads of the world is `catalog`; the ids it reserves are held by
     /// `hold` until the load is committed, abandoned or dropped.
-    pub fn prepare_file_with(
+    ///
+    /// # Errors
+    ///
+    /// [`SerializationServiceError::ReadFailed`] when `file` cannot be read, and
+    /// [`SerializationServiceError::LoadFailed`] when its prefabs cannot be
+    /// expanded or the record does not fit `catalog`.
+    pub(crate) fn prepare_file_with(
         file: Arc<SceneFile>,
         catalog: &LoadCatalog,
         hold: ReservationHold,
@@ -230,7 +245,14 @@ impl SerializationService {
     ///
     /// Read against `catalog`, its ids held by `hold`; returns what reading,
     /// expanding and merging adapted too.
-    pub fn prepare_game_with(
+    ///
+    /// # Errors
+    ///
+    /// [`SerializationServiceError::ReadFailed`] when either file cannot be
+    /// read, and [`SerializationServiceError::LoadFailed`] when the prefabs
+    /// cannot be expanded, the save does not merge, or the result does not fit
+    /// `catalog`.
+    pub(crate) fn prepare_game_with(
         save_file: &SceneFile,
         base_file: &SceneFile,
         catalog: &LoadCatalog,
@@ -273,6 +295,10 @@ impl SerializationService {
     }
 
     /// Loads as [`load_world`](Self::load_world), expanding the prefabs `prefabs` reads.
+    ///
+    /// # Errors
+    ///
+    /// As [`load_world`](Self::load_world).
     pub fn load_world_with(
         &self,
         file: &SceneFile,
@@ -302,6 +328,10 @@ impl SerializationService {
     }
 
     /// Replaces as [`replace_world`](Self::replace_world), expanding the prefabs `prefabs` reads.
+    ///
+    /// # Errors
+    ///
+    /// As [`replace_world`](Self::replace_world).
     pub fn replace_world_with(
         &self,
         file: &SceneFile,
@@ -328,6 +358,13 @@ impl SerializationService {
     ///
     /// `base_id` names that scene. A `FastestLoad` goal is written compactly:
     /// a snapshot refuses the engine-written state a save keeps.
+    ///
+    /// # Errors
+    ///
+    /// [`SerializationServiceError::ReadFailed`] when `base_file` cannot be read,
+    /// [`SerializationServiceError::LoadFailed`] when its prefabs cannot be
+    /// expanded, and [`SerializationServiceError::SaveFailed`] when the save
+    /// cannot be captured or encoded.
     pub fn save_game(
         &self,
         world: &World,
@@ -374,6 +411,10 @@ impl SerializationService {
     }
 
     /// Returns the scene a game save was taken against.
+    ///
+    /// # Errors
+    ///
+    /// [`SerializationServiceError::ReadFailed`] when `save_file` is no game save.
     pub fn save_base(&self, save_file: &SceneFile) -> Result<AssetUUID, SerializationServiceError> {
         read_save_file(save_file)
             .map(|save| save.base)
@@ -417,6 +458,76 @@ pub fn prefab_catalog(assets: &AssetService) -> std::collections::BTreeSet<Asset
 #[cfg(test)]
 mod tests {
     use super::*;
+    use khora_data::ecs::{Name, Transform};
+    use khora_data::scene::NoPrefabs;
+
+    /// Returns a world of one authored entity per name.
+    fn world_of(names: &[&str]) -> World {
+        let mut world = World::new();
+        for name in names {
+            let entity = world.spawn((Transform::identity(), Name::new((*name).to_owned())));
+            world.mark_authored(entity).expect("authored");
+        }
+        world
+    }
+
+    /// Returns the names of `world`'s entities, sorted.
+    fn names(world: &World) -> Vec<String> {
+        let mut names: Vec<String> = world
+            .iter_entities()
+            .filter_map(|entity| world.get::<Name>(entity))
+            .map(|name| name.as_str().to_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// Saving with a prefab source holding no prefab writes the scene as `save_world` does.
+    #[test]
+    fn save_world_with_no_prefabs_writes_what_save_world_writes() {
+        let world = world_of(&["Hero"]);
+        let service = SerializationService::new();
+        let goal = SerializationGoal::HumanReadableDebug;
+
+        let with = service
+            .save_world_with(&world, goal, &NoPrefabs)
+            .expect("the world saves");
+        let plain = service.save_world(&world, goal).expect("the world saves");
+
+        assert_eq!(with.to_bytes(), plain.to_bytes());
+    }
+
+    /// Loading with a prefab source adds the scene beside what the world holds.
+    #[test]
+    fn load_world_with_adds_the_scene_beside_the_world() {
+        let service = SerializationService::new();
+        let file = service
+            .save_world(&world_of(&["Hero"]), SerializationGoal::EditorInterchange)
+            .expect("the scene saves");
+        let mut world = world_of(&["Old"]);
+
+        service
+            .load_world_with(&file, &mut world, &NoPrefabs)
+            .expect("the scene loads");
+
+        assert_eq!(names(&world), ["Hero", "Old"]);
+    }
+
+    /// Replacing with a prefab source leaves only the scene in the world.
+    #[test]
+    fn replace_world_with_leaves_only_the_scene() {
+        let service = SerializationService::new();
+        let file = service
+            .save_world(&world_of(&["Hero"]), SerializationGoal::EditorInterchange)
+            .expect("the scene saves");
+        let mut world = world_of(&["Old"]);
+
+        service
+            .replace_world_with(&file, &mut world, &NoPrefabs)
+            .expect("the scene loads");
+
+        assert_eq!(names(&world), ["Hero"]);
+    }
 
     /// The goal picks the encoding; the format version is the one the
     /// engine reads.

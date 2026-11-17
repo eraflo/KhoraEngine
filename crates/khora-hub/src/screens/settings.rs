@@ -21,7 +21,7 @@ use khora_tool_ui::widgets::{
 const CONTENT_W: f32 = 620.0;
 
 /// Renders the settings screen.
-pub fn show_settings(app: &mut HubApp, ui: &mut dyn UiBuilder) {
+pub(crate) fn show_settings(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     let t = crate::ui::theme();
     let r = ui.panel_rect();
     let pad = 24.0;
@@ -52,6 +52,13 @@ pub fn show_settings(app: &mut HubApp, ui: &mut dyn UiBuilder) {
 
 /// Returns the bottom edge of the card it painted.
 fn github_card(app: &mut HubApp, ui: &mut dyn UiBuilder, t: &UiTheme, rect: [f32; 4]) -> f32 {
+    // Copy what we need out of the borrow before mutating `app` in the arms.
+    enum View {
+        Connected(String),
+        Connecting(String),
+        Disconnected,
+    }
+
     let body = card(ui, t, rect, Icon::Github, "GitHub");
 
     // Header-right: the account state, at a glance.
@@ -64,12 +71,6 @@ fn github_card(app: &mut HubApp, ui: &mut dyn UiBuilder, t: &UiTheme, rect: [f32
     let slot = card_action_slot(rect, cw);
     chip(ui, t, [slot[0], slot[1] + 4.0, cw, 18.0], label, tone, true);
 
-    // Copy what we need out of the borrow before mutating `app` in the arms.
-    enum View {
-        Connected(String),
-        Connecting(String),
-        Disconnected,
-    }
     let view = match &app.settings.auth {
         AuthState::Connected { login, .. } => View::Connected(login.clone()),
         AuthState::Connecting { message, .. } => View::Connecting(message.clone()),

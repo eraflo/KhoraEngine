@@ -234,7 +234,7 @@ fn spawning_a_mesh_part_names_it_after_its_file_and_label() {
 }
 
 /// A mesh file spawns under its own identity, named after its file — the
-/// OBJ drop as it always was, by identity now.
+/// OBJ drop keyed by identity.
 #[test]
 fn spawning_a_mesh_file_names_it_after_its_file() {
     let project = GltfProject::with("spawn-mesh-file", &[(CRATE, TRIANGLE_OBJ)]);
@@ -292,8 +292,7 @@ fn assigning_a_gltf_material_references_it() {
     }
 }
 
-/// A `.kmat` assigned to an entity is referenced by its identity, as it
-/// always was.
+/// A `.kmat` assigned to an entity is referenced by its identity.
 #[test]
 fn assigning_a_material_file_references_it() {
     let project = GltfProject::with("assign-material-file", &[(STEEL, "()")]);

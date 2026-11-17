@@ -58,7 +58,7 @@ pub struct Scopes {
 }
 
 impl Scopes {
-    /// An empty stack with one frame open.
+    /// Builds an empty stack with one frame open.
     pub fn new() -> Self {
         Self {
             frames: vec![HashMap::new()],
@@ -109,7 +109,13 @@ impl Scopes {
 
     /// Binds a query's `name` in the innermost frame, written through when
     /// `write` — as [`declare`](Self::declare) otherwise.
-    pub fn declare_query(&mut self, name: &str, ty: Ty, span: Span, write: bool) -> Option<Span> {
+    pub(crate) fn declare_query(
+        &mut self,
+        name: &str,
+        ty: Ty,
+        span: Span,
+        write: bool,
+    ) -> Option<Span> {
         self.bind(name, ty, span, Some(write))
     }
 
@@ -133,7 +139,7 @@ impl Scopes {
         self.frames.iter().rev().find_map(|frame| frame.get(name))
     }
 
-    /// The type of `name`, if bound.
+    /// Returns the type of `name`, if bound.
     pub fn type_of(&self, name: &str) -> Option<Ty> {
         self.lookup(name).map(|binding| binding.ty.clone())
     }

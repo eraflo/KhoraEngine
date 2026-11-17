@@ -83,7 +83,7 @@ impl<'a> PassRecorder<'a> {
     /// Adds a pass into `layer` of `target_view`, seen from `light_pos` through `view_proj`.
     ///
     /// A view the ring refuses is logged, and its light gets no pass.
-    pub fn collect_pass(
+    pub(crate) fn collect_pass(
         &mut self,
         target_view: TextureViewId,
         layer: u32,
@@ -113,14 +113,14 @@ impl<'a> PassRecorder<'a> {
     }
 
     /// Returns the passes collected, in order.
-    pub fn into_passes(self) -> Vec<AttachmentPass> {
+    pub(crate) fn into_passes(self) -> Vec<AttachmentPass> {
         self.passes
     }
 }
 
 /// Records one depth-only render pass into `encoder`: clears its layer, then
 /// draws every caster of `draws`.
-pub fn record_depth_pass(
+pub(crate) fn record_depth_pass(
     encoder: &mut dyn CommandEncoder,
     pipeline: &RenderPipelineId,
     pass_data: &AttachmentPass,
@@ -157,7 +157,7 @@ pub fn record_depth_pass(
 ///
 /// Every pass of the frame draws this one list. A mesh whose transform does
 /// not invert, or whose uniforms the ring refuses, is left out.
-pub fn build_draw_cmds(
+pub(crate) fn build_draw_cmds(
     device: &dyn GraphicsDevice,
     render_world: &RenderWorld,
     gpu_meshes: &Assets<GpuMesh>,

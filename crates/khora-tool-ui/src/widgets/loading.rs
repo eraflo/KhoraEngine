@@ -58,7 +58,7 @@ impl LoadingScreen {
     /// How long the fade out lasts, in seconds.
     pub const FADE: f32 = 0.4;
 
-    /// A loading screen starting `film` at `now`; with `reduced_motion` it
+    /// Builds a loading screen starting `film` at `now`; with `reduced_motion` it
     /// holds the film's still frame.
     pub fn new(film: Film, now: f32, reduced_motion: bool) -> Self {
         Self {
@@ -69,7 +69,7 @@ impl LoadingScreen {
         }
     }
 
-    /// The film's own time at `now`: looping since the start, or the still
+    /// Returns the film's own time at `now`: looping since the start, or the still
     /// frame with reduced motion.
     fn film_time(&self, now: f32) -> f32 {
         if self.reduced_motion {
@@ -79,7 +79,7 @@ impl LoadingScreen {
         }
     }
 
-    /// The app is ready: play on to the end of the current chapter, then fade.
+    /// Marks the app ready: the film plays on to the end of its chapter, then fades.
     ///
     /// Idempotent (the first call fixes the end); with reduced motion the
     /// fade starts at `now`.
@@ -95,8 +95,9 @@ impl LoadingScreen {
         });
     }
 
-    /// Skip, once the app is ready: fade from `now` (if not already fading or
-    /// done). Before [`ready`](Self::ready) it does nothing.
+    /// Skips the film once the app is ready, fading from `now` unless already fading or done.
+    ///
+    /// Before [`ready`](Self::ready) it does nothing.
     pub fn skip(&mut self, now: f32) {
         // Before the app is ready a skip could only take the film away from
         // a tool that is not there yet, so it does nothing.
@@ -106,7 +107,7 @@ impl LoadingScreen {
         }
     }
 
-    /// Where the screen is at `now`.
+    /// Returns where the screen is at `now`.
     pub fn state(&self, now: f32) -> LoadingState {
         match self.end {
             Some(end) if now >= end + Self::FADE => LoadingState::Done,

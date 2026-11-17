@@ -19,6 +19,11 @@
 //! here: each test then fails instead of hanging, and without an adapter logs
 //! why and returns.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn threads to test concurrency"
+)]
+
 use std::borrow::Cow;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::mpsc::{self, RecvTimeoutError};
@@ -995,6 +1000,14 @@ const SUBMIT_COPY_BYTES: u64 = 32 * 1024 * 1024;
 fn waiting_for_the_last_submission_waits_for_every_concurrent_submission() {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+    // Stops the lookup threads on every way out, a failed round included.
+    struct StopOnDrop(Arc<AtomicBool>);
+    impl Drop for StopOnDrop {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::Relaxed);
+        }
+    }
+
     let test = "waiting_for_the_last_submission_waits_for_every_concurrent_submission";
     let Some(gpu) = gpu(test) else {
         return;
@@ -1036,13 +1049,6 @@ fn waiting_for_the_last_submission_waits_for_every_concurrent_submission() {
                 .expect("a test thread spawns")
         })
         .collect();
-    // Stops them on every way out, a failed round included.
-    struct StopOnDrop(Arc<AtomicBool>);
-    impl Drop for StopOnDrop {
-        fn drop(&mut self) {
-            self.0.store(true, Ordering::Relaxed);
-        }
-    }
     let _stop_lookups = StopOnDrop(Arc::clone(&stop));
 
     let mut early = Vec::new();
@@ -1183,18 +1189,11 @@ fn a_resource_destroyed_by_another_thread_is_found_or_not_found() {
     use khora_core::renderer::api::pipeline::PipelineLayoutDescriptor;
     use khora_core::renderer::ResourceError;
 
-    let test = "a_resource_destroyed_by_another_thread_is_found_or_not_found";
-    let Some(gpu) = gpu(test) else {
-        return;
-    };
-    let device: Arc<dyn GraphicsDevice> = Arc::new(headless_device(&gpu));
-
     #[derive(Default)]
     struct Shared {
         buffers: Vec<BufferId>,
         layouts: Vec<BindGroupLayoutId>,
     }
-    let shared = Arc::new(Mutex::new(Shared::default()));
 
     fn found_or_not(call: &str, result: Result<(), ResourceError>) -> Result<(), String> {
         match result {
@@ -1214,6 +1213,14 @@ fn a_resource_destroyed_by_another_thread_is_found_or_not_found() {
             },
         }]
     }
+
+    let test = "a_resource_destroyed_by_another_thread_is_found_or_not_found";
+    let Some(gpu) = gpu(test) else {
+        return;
+    };
+    let device: Arc<dyn GraphicsDevice> = Arc::new(headless_device(&gpu));
+
+    let shared = Arc::new(Mutex::new(Shared::default()));
 
     let mut workers: Vec<(String, Worker)> = Vec::new();
     for thread in 0..2 {

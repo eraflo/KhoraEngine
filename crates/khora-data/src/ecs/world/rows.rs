@@ -84,6 +84,11 @@ impl<'w> RowMut<'w> {
     }
 
     /// Writes the fields the patch names, by slot, all or nothing.
+    ///
+    /// # Errors
+    ///
+    /// A [`FieldWriteError`] if a slot names no field a script can write, or a
+    /// field refuses its value; nothing is written then.
     pub fn write_fields(&mut self, patch: &[(usize, &ScriptValue)]) -> Result<(), FieldWriteError> {
         self.vtable
             .columns
@@ -93,6 +98,10 @@ impl<'w> RowMut<'w> {
     }
 
     /// Writes the field at `slot`, refusing a value it cannot hold.
+    ///
+    /// # Errors
+    ///
+    /// A [`FieldError`] if the field refuses `value`; the row is left unstamped.
     ///
     /// # Panics
     ///

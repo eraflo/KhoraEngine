@@ -73,7 +73,7 @@ pub(super) fn write_back(
         let Some(key) = behavior_key(world, &update.behavior) else {
             continue;
         };
-        // An update for a behavior the entity no longer holds is the last
+        // An update for a behavior the entity does not hold is the last
         // word of one that was removed.
         if world.row(update.entity, key).is_none() {
             continue;
@@ -163,7 +163,7 @@ pub(super) fn write_back(
     }
 }
 
-/// The fields of `row` whose values component `key`'s fields take; the
+/// Returns the fields of `row` whose values component `key`'s fields take; the
 /// others left out, said so.
 fn admitted(
     world: &World,
@@ -194,7 +194,7 @@ fn admitted(
         .collect()
 }
 
-/// Removes every state companion whose entity no longer holds its behavior:
+/// Removes every state companion whose entity does not hold its behavior:
 /// a behavior detached and attached again starts afresh, as a new one does.
 pub(super) fn drop_orphaned_companions(world: &mut World) {
     let pairs: Vec<(ComponentKey, ComponentKey)> = world
@@ -219,7 +219,7 @@ pub(super) fn drop_orphaned_companions(world: &mut World) {
     }
 }
 
-/// The component of the behavior named `behavior`, when one is registered.
+/// Returns the component of the behavior named `behavior`, when one is registered.
 fn behavior_key(world: &World, behavior: &str) -> Option<ComponentKey> {
     let key = world.components().key_named(behavior)?;
     world
@@ -231,7 +231,7 @@ fn behavior_key(world: &World, behavior: &str) -> Option<ComponentKey> {
         .map(|_| key)
 }
 
-/// One column write of `rows` to the fields `names` of component `key`.
+/// Writes `rows` to the fields `names` of component `key`, in one column write.
 fn write(world: &mut World, key: ComponentKey, names: &[String], rows: Rows) {
     let Some(layout) = world
         .components()

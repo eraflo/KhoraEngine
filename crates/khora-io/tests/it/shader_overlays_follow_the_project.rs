@@ -19,7 +19,7 @@
 //! pipeline system's overlays, then reads every `.wgsl` under the watched
 //! roots: a trusted project's each replaces its module; a restricted one's
 //! each is listed under `ProblemSource::Restricted`, the list replaced, so a
-//! project no longer open lists nothing.
+//! closed project lists nothing.
 //!
 //! An overlay on disk when the project opens is used without being saved
 //! again; one applied does not outlive its project's trust nor its project.
@@ -312,7 +312,7 @@ fn a_project_turned_restricted_drops_its_overlays() {
 /// A, trusted, has its overlay `a.wgsl` saved and applied. The tool then
 /// opens project B in its place — A's assets unwatched, B's watched — B
 /// holding `b.wgsl` on disk. Once the pump has run, the overlays were
-/// cleared: A's module is no longer overlaid, B's is.
+/// cleared: A's module is not overlaid, B's is.
 #[test]
 fn another_project_opened_drops_the_overlays_of_the_one_before() {
     let first = Project::with(&[("a.wgsl", "// a")]);
@@ -346,11 +346,11 @@ fn another_project_opened_drops_the_overlays_of_the_one_before() {
     );
 }
 
-/// **A restricted project no longer open lists nothing.** A restricted
+/// **A restricted project once closed lists nothing.** A restricted
 /// project's overlay is saved and listed as ignored; the tool then closes
 /// the project — its assets unwatched, nothing watched. Once the pump has
 /// run, the restricted mode's list was replaced by an empty one: nothing of
-/// a project no longer open is listed.
+/// a closed project is listed.
 #[test]
 fn a_restricted_project_no_longer_open_lists_nothing() {
     let project = Project::with(&[("x.wgsl", "// x")]);
@@ -375,7 +375,7 @@ fn a_restricted_project_no_longer_open_lists_nothing() {
 /// **An overlay deleted while its project is trusted gives its module
 /// back.** A trusted project's overlay is saved and applied, then the file
 /// is deleted: nothing of the project overlays that module any more. Once
-/// the pump has run, the pipeline system no longer holds the overlay — the
+/// the pump has run, the pipeline system holds no overlay of it — the
 /// module is the engine's again, as it is once the project closes.
 #[test]
 fn an_overlay_deleted_while_its_project_is_trusted_gives_its_module_back() {
@@ -430,7 +430,7 @@ fn a_restricted_overlay_is_listed_once_however_its_root_is_named() {
 /// back.** A trusted project's overlay is saved and applied; its whole
 /// `shaders/` folder is then moved out of the project — as a delete to the
 /// recycle bin does — so the watch hears the folder go, not each file in it.
-/// Once the pump has run, the pipeline system no longer holds the overlay.
+/// Once the pump has run, the pipeline system holds no overlay of it.
 #[test]
 fn an_overlay_folder_moved_out_of_a_trusted_project_gives_its_modules_back() {
     let project = Project::with(&[("x.wgsl", "// x")]);
@@ -457,7 +457,7 @@ fn an_overlay_folder_moved_out_of_a_trusted_project_gives_its_modules_back() {
 /// thousands of files at once and deletes the overlay in the same burst: the
 /// watch drops what is past its budget and, once the burst is quiet, asks
 /// for a rescan of the root instead. Once the pump has run the rescan, the
-/// pipeline system no longer holds the deleted overlay.
+/// pipeline system holds none of the deleted overlay.
 #[test]
 fn an_overlay_deleted_in_a_flood_of_changes_gives_its_module_back() {
     let project = Project::with(&[("x.wgsl", "// x")]);

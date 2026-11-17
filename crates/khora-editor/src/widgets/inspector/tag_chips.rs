@@ -30,7 +30,11 @@ thread_local! {
 
 /// Renders a `Tag` value's chips and add row; returns whether the set
 /// changed, for the caller to queue a `SetComponentJson` edit.
-pub fn render_tag_chips(ui: &mut dyn UiBuilder, entity: EntityId, value: &mut Value) -> bool {
+pub(crate) fn render_tag_chips(
+    ui: &mut dyn UiBuilder,
+    entity: EntityId,
+    value: &mut Value,
+) -> bool {
     let arr = match value {
         Value::Array(a) => a,
         _ => {

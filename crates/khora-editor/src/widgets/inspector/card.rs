@@ -35,6 +35,26 @@ pub struct CardPrefab {
     pub can_apply: bool,
 }
 
+impl CardPrefab {
+    fn differs(&self) -> bool {
+        self.added || self.overrides > 0
+    }
+
+    /// Returns the header's quiet note of it: `added`, or how many fields
+    /// override.
+    fn note(&self) -> Option<String> {
+        if self.added {
+            Some("added".to_owned())
+        } else if self.overrides == 1 {
+            Some("1 override".to_owned())
+        } else if self.overrides > 1 {
+            Some(format!("{} overrides", self.overrides))
+        } else {
+            None
+        }
+    }
+}
+
 /// What a card's header was asked this frame — the caller turns it into the
 /// edit its component takes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,31 +83,12 @@ pub struct CardHead<'a> {
     pub prefab: Option<CardPrefab>,
 }
 
-impl CardPrefab {
-    fn differs(&self) -> bool {
-        self.added || self.overrides > 0
-    }
-
-    /// The header's quiet note of it: `added`, or how many fields override.
-    fn note(&self) -> Option<String> {
-        if self.added {
-            Some("added".to_owned())
-        } else if self.overrides == 1 {
-            Some("1 override".to_owned())
-        } else if self.overrides > 1 {
-            Some(format!("{} overrides", self.overrides))
-        } else {
-            None
-        }
-    }
-}
-
 /// Renders one component as a collapsible group in `column`, `body` drawing its content;
 /// returns what the header was asked, if anything.
 ///
 /// Whether the card is open persists in `EditorState::inspector_card_open`,
 /// keyed by entity and title.
-pub fn render_card(
+pub(crate) fn render_card(
     p: &mut Painter<'_>,
     column: Column,
     head: CardHead<'_>,

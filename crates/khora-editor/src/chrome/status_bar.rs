@@ -152,13 +152,14 @@ impl EditorPanel for StatusBarPanel {
     }
 }
 
-/// A vertical rule; returns the x cursor past it.
+/// Paints a vertical rule and returns the x cursor past it.
 fn vsep(ui: &mut dyn UiBuilder, t: &UiTheme, x: f32, r: [f32; 4]) -> f32 {
     ui.paint_line([x, r[1] + 7.0], [x, r[1] + r[3] - 7.0], t.separator, 1.0);
     x + 14.0
 }
 
-/// A vertical rule laid out right-to-left; returns the x cursor left of it.
+/// Paints a vertical rule laid out right-to-left and returns the x cursor left
+/// of it.
 fn vsep_left(ui: &mut dyn UiBuilder, t: &UiTheme, x: f32, r: [f32; 4]) -> f32 {
     ui.paint_line([x, r[1] + 7.0], [x, r[1] + r[3] - 7.0], t.separator, 1.0);
     x - 14.0
@@ -180,8 +181,10 @@ struct Snapshot {
 }
 
 impl Snapshot {
-    /// How healthy the frame loop is, as a `0..=1` ratio — drives the liveness
-    /// dot through the same thresholds every other health indicator uses.
+    /// Returns how healthy the frame loop is, as a `0..=1` ratio.
+    ///
+    /// It drives the liveness dot through the thresholds every other health
+    /// indicator uses.
     fn health(&self) -> f32 {
         (self.fps / 60.0).clamp(0.0, 1.0)
     }

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! [`GlyphAtlas`]: every text's rasterised glyphs on the GPU, a runtime
-//! resource the `glyphs_on_gpu` DataSystem fills before the agents run. Not a
+//! resource the `glyphs_on_gpu` `DataSystem` fills before the agents run. Not a
 //! `Resident<R>`: a glyph is not an asset.
 
 use std::collections::{HashMap, HashSet};
@@ -60,43 +60,6 @@ pub struct GlyphAtlas {
     // A panic while placing leaves the atlases and slots usable: at worst
     // a glyph is placed again.
     state: Mutex<GlyphAtlasState>,
-}
-
-/// What [`GlyphAtlas`]'s lock guards.
-struct GlyphAtlasState {
-    /// The R8 atlas of coverage masks, once a mask needed it.
-    mask: Option<TextureAtlas>,
-    /// The RGBA atlas of colour glyphs, once a colour glyph needed it.
-    color: Option<TextureAtlas>,
-    /// Every glyph rasterised: its slot, or `None` for a glyph that draws
-    /// nothing (a space), so it is not rasterised again.
-    slots: HashMap<GlyphKey, Option<GlyphSlot>>,
-    /// The glyphs a full atlas left out, and the glyphs in use then.
-    ///
-    /// Tried again once one of those is no longer in use: only a glyph going
-    /// away makes room.
-    left_out: Option<LeftOut>,
-}
-
-/// The glyphs a full atlas left out, and the glyphs in use then.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct LeftOut {
-    /// The glyphs left out, each with the atlas it needs.
-    pub(crate) glyphs: HashMap<GlyphKey, GlyphKind>,
-    /// Every glyph in use when they were left out.
-    pub(crate) in_use: HashSet<GlyphKey>,
-}
-
-/// What placing a glyph came to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Placement {
-    /// It is in its atlas.
-    Placed,
-    /// Its atlas has no room left: a rebuild may make some.
-    Full,
-    /// It is larger than an empty atlas: no rebuild ever makes room. It is
-    /// noted as drawn by nothing.
-    NeverFits,
 }
 
 impl GlyphAtlas {
@@ -280,6 +243,50 @@ impl GlyphAtlas {
     }
 }
 
+impl Default for GlyphAtlas {
+    /// An empty atlas of two 1024 px square textures.
+    fn default() -> Self {
+        Self::new(1024)
+    }
+}
+
+/// The glyphs a full atlas left out, and the glyphs in use then.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct LeftOut {
+    /// The glyphs left out, each with the atlas it needs.
+    pub(crate) glyphs: HashMap<GlyphKey, GlyphKind>,
+    /// Every glyph in use when they were left out.
+    pub(crate) in_use: HashSet<GlyphKey>,
+}
+
+/// What placing a glyph came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Placement {
+    /// It is in its atlas.
+    Placed,
+    /// Its atlas has no room left: a rebuild may make some.
+    Full,
+    /// It is larger than an empty atlas: no rebuild ever makes room. It is
+    /// noted as drawn by nothing.
+    NeverFits,
+}
+
+/// What [`GlyphAtlas`]'s lock guards.
+struct GlyphAtlasState {
+    /// The R8 atlas of coverage masks, once a mask needed it.
+    mask: Option<TextureAtlas>,
+    /// The RGBA atlas of colour glyphs, once a colour glyph needed it.
+    color: Option<TextureAtlas>,
+    /// Every glyph rasterised: its slot, or `None` for a glyph that draws
+    /// nothing (a space), so it is not rasterised again.
+    slots: HashMap<GlyphKey, Option<GlyphSlot>>,
+    /// The glyphs a full atlas left out, and the glyphs in use then.
+    ///
+    /// Tried again once one of those goes out of use: only a glyph going
+    /// away makes room.
+    left_out: Option<LeftOut>,
+}
+
 impl GlyphAtlasState {
     /// Returns the atlas of `kind`, made on first need.
     fn atlas_mut(
@@ -326,12 +333,5 @@ fn slot_of(image: &GlyphImage, rect: AtlasRect) -> GlyphSlot {
         height: image.height,
         left: image.left,
         top: image.top,
-    }
-}
-
-impl Default for GlyphAtlas {
-    /// An empty atlas of two 1024 px square textures.
-    fn default() -> Self {
-        Self::new(1024)
     }
 }

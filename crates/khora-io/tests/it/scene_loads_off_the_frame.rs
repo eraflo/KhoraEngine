@@ -17,7 +17,7 @@
 //! the `loading` family's work is played here by hand, as the scheduler
 //! runs it at the background: the requests filed are taken, prepared
 //! through the runtime's `SceneLoading` and staged under their lease into
-//! the engine's reserve. The `scene_intake` DataSystem then commits them at
+//! the engine's reserve. The `scene_intake` `DataSystem` then commits them at
 //! the boundary, in the order they were filed, and files each outcome under
 //! its ticket.
 //!
@@ -459,6 +459,29 @@ fn loads_land_in_the_order_they_were_filed() {
     assert_ok(hub.take_outcome(b), "B");
 }
 
+/// **A cancelled load lands nothing and files no outcome.** Two adds, A then
+/// B; A is withdrawn while in flight: B lands beside what was there, A does
+/// not, and A's ticket is neither pending nor answered.
+#[test]
+fn a_cancelled_load_lands_nothing_and_files_no_outcome() {
+    let mut engine = Engine::new();
+    engine.spawn_named("Old");
+    let hub = engine.hub();
+
+    let a = engine.file(LoadKind::Add(bytes(&scene_of(&["A1"]))));
+    let b = engine.file(LoadKind::Add(bytes(&scene_of(&["B1"]))));
+    hub.cancel(a);
+    engine.settle();
+
+    assert_eq!(engine.names(), names(&["Old", "B1"]), "A lands nothing");
+    assert!(!hub.is_pending(a), "a withdrawn load is not pending");
+    assert!(
+        hub.take_outcome(a).is_none(),
+        "a withdrawn load files no outcome"
+    );
+    assert_ok(hub.take_outcome(b), "B");
+}
+
 /// **Repeated replaces prepared off the frame keep the store bounded** —
 /// the editor's Stop, again and again, each restoring the snapshot taken at
 /// Play: each load is held the slots the previous one freed, so twenty
@@ -541,7 +564,7 @@ fn a_load_prepared_again_still_lands_before_the_loads_filed_after_it() {
 /// **A load prepared again is never lost to a full backlog.** A is
 /// prepared; then the backlog fills with loads filed after it; then the
 /// world declares a component, so A must be prepared again. Its ticket
-/// still ends with one outcome, and is no longer pending.
+/// still ends with one outcome, and stops being pending.
 #[test]
 fn a_load_prepared_again_lands_even_when_the_backlog_is_full() {
     let mut engine = Engine::new();

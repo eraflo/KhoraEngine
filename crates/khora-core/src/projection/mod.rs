@@ -16,7 +16,7 @@
 //!
 //! A `Flow` (khora-data) projects the World into a View; some Flows project only what
 //! somebody asked for — the script flow, only the components a program
-//! reads. The ones asking (a DataSystem, the hot-reload pump, a tool) cannot
+//! reads. The ones asking (a `DataSystem`, the hot-reload pump, a tool) cannot
 //! reach the Flow, and the Flow alone reads the World. An [`Interest`] is
 //! where they meet: each owner announces the items it wants, the Flow
 //! projects their union.

@@ -23,6 +23,9 @@ use khora_macros::LaneOutputs;
 use khora_script::reload::ScriptReload;
 use khora_script::toolchain::{CompileDone, ScriptDeclarations};
 
+/// The `loading` family's agent, by name.
+pub const LOADING: AgentId = <LoadingFamily as LaneFamily>::AGENT;
+
 /// The family whose lanes load scenes, scripts and assets off the frame.
 pub struct LoadingFamily;
 
@@ -92,6 +95,3 @@ khora_script::inventory::submit! {
         khora_core::event::BetweenSessions::Hold,
     )
 }
-
-/// The `loading` family's agent, by name.
-pub const LOADING: AgentId = <LoadingFamily as LaneFamily>::AGENT;

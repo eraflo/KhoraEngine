@@ -17,6 +17,13 @@
 pub use super::collision_event::CollisionEvent;
 pub use super::contact_batch::ContactBatch;
 
+/// How many collisions are kept for readers that have not caught up.
+///
+/// A heavy frame is hundreds of contacts; this is several frames of one. The
+/// case that reaches it is a consumer that stopped reading, where the oldest
+/// contact is also the least worth delivering.
+pub const COLLISION_BACKLOG: usize = 4096;
+
 /// Two entities beginning or ending contact.
 ///
 /// The engine's form of a collision, as distinct from [`CollisionEvent`] which
@@ -38,6 +45,12 @@ pub struct Collision {
     pub b: crate::ecs::entity::EntityId,
 }
 
+impl crate::event::Supersedes for Collision {
+    // Nothing coalesces. Two entities that touch, separate and touch again
+    // within one frame did that twice, and a consumer counting hits is
+    // counting hits.
+}
+
 /// Whether a [`Collision`] began or ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CollisionKind {
@@ -47,20 +60,7 @@ pub enum CollisionKind {
     Stopped,
 }
 
-impl crate::event::Supersedes for Collision {
-    // Nothing coalesces. Two entities that touch, separate and touch again
-    // within one frame did that twice, and a consumer counting hits is
-    // counting hits.
-}
-
-/// How many collisions are kept for readers that have not caught up.
-///
-/// A heavy frame is hundreds of contacts; this is several frames of one. The
-/// case that reaches it is a consumer that stopped reading, where the oldest
-/// contact is also the least worth delivering.
-pub const COLLISION_BACKLOG: usize = 4096;
-
-/// A channel for the contacts the physics lane reports.
+/// Returns a channel for the contacts the physics lane reports.
 pub fn collision_channel() -> crate::event::Channel<Collision> {
     crate::event::Channel::bounded(COLLISION_BACKLOG, crate::event::WhenFull::DropOldest)
 }

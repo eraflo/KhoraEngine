@@ -168,7 +168,7 @@ impl Mesh {
     }
 }
 
-/// The value of an optional per-vertex attribute at `index`, or `default`
+/// Returns the value of an optional per-vertex attribute at `index`, or `default`
 /// when the attribute is absent or shorter than the positions.
 fn attribute_at<T: Copy>(attribute: &Option<Vec<T>>, index: usize, default: T) -> T {
     attribute
@@ -177,7 +177,7 @@ fn attribute_at<T: Copy>(attribute: &Option<Vec<T>>, index: usize, default: T) -
         .unwrap_or(default)
 }
 
-/// One value per corner, read from a per-vertex attribute.
+/// Returns one value per corner, read from a per-vertex attribute.
 fn unweld<T: Copy>(attribute: &Option<Vec<T>>, corners: &[usize]) -> Option<Vec<T>> {
     attribute.as_ref().map(|values| {
         corners

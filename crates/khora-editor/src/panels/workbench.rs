@@ -61,7 +61,7 @@ impl WorkbenchPanel {
     ///
     /// A panel no mode's tree names is never shown: a mode drops a panel
     /// without unregistering it.
-    pub fn add_panel(&mut self, panel: Box<dyn EditorPanel>) {
+    pub(crate) fn add_panel(&mut self, panel: Box<dyn EditorPanel>) {
         self.panels.insert(panel.id().to_owned(), panel);
     }
 

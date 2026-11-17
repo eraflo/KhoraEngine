@@ -55,13 +55,13 @@ impl Ray {
         }
     }
 
-    /// The point `distance` along the ray.
+    /// Returns the point `distance` along the ray.
     #[inline]
     pub fn at(&self, distance: f32) -> Vec3 {
         self.origin + self.direction * distance
     }
 
-    /// The component-wise reciprocal of the direction, as the slab test wants
+    /// Returns the component-wise reciprocal of the direction, as the slab test wants
     /// it.
     ///
     /// A zero component yields an infinity, which [`Aabb::intersect_ray`]
@@ -75,7 +75,7 @@ impl Ray {
         )
     }
 
-    /// Distance to the near face of `aabb`, or `None` if the ray misses it.
+    /// Returns the distance to the near face of `aabb`, or `None` if the ray misses it.
     ///
     /// Negative when the origin is already inside or past the box. Hoist
     /// [`Ray::inv_direction`] and call [`Aabb::intersect_ray`] directly when
@@ -85,8 +85,8 @@ impl Ray {
         aabb.intersect_ray(self.origin, self.inv_direction())
     }
 
-    /// Distance to the plane through `point` with normal `normal`, or `None`
-    /// when the ray is parallel to it or the plane lies behind the origin.
+    /// Returns the distance to the plane through `point` with normal `normal`, or `None` when the
+    /// ray is parallel to it or the plane lies behind the origin.
     ///
     /// `normal` need not be normalised — it only appears in a ratio.
     #[inline]
@@ -99,7 +99,7 @@ impl Ray {
         (distance >= 0.0).then_some(distance)
     }
 
-    /// Perpendicular distance from `point` to the ray.
+    /// Returns the perpendicular distance from `point` to the ray.
     ///
     /// Measured from the *half*-line: a point behind the origin is measured
     /// from the origin itself, not from the line the ray extends backwards
@@ -110,7 +110,7 @@ impl Ray {
         (point - self.at(along)).length()
     }
 
-    /// How far along the line `origin + t * direction` its closest approach to
+    /// Returns how far along the line `origin + t * direction` its closest approach to
     /// this ray sits, or `None` if the two are parallel.
     ///
     /// The classic closest-approach of two skew lines. `direction` must be
@@ -127,7 +127,7 @@ impl Ray {
         Some((alignment * self.direction.dot(between) - direction.dot(between)) / denominator)
     }
 
-    /// The point on segment `a..b` closest to this ray.
+    /// Returns the point on segment `a..b` closest to this ray.
     ///
     /// Falls back to the midpoint when the segment is parallel to the ray or
     /// degenerate — every point on it is then equally close, and a caller

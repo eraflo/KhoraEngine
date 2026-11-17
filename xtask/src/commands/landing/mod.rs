@@ -130,7 +130,7 @@ pub fn document(body: &str, fill: &Fill) -> String {
     )
 }
 
-/// The `frame_NNN.jpg` files in `dir`; zero when the folder is missing.
+/// Counts the `frame_NNN.jpg` files in `dir`; zero when the folder is missing.
 pub fn frame_count(dir: &Path) -> usize {
     fs::read_dir(dir)
         .map(|entries| {

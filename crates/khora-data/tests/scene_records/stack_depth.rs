@@ -17,6 +17,11 @@
 //! Reading the deepest value a record may hold must fit in it, in every
 //! encoding.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn a thread to run a load on a stack of a set size"
+)]
+
 use khora_data::scene::EncodingError;
 
 use super::*;

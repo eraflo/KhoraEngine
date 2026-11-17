@@ -43,15 +43,6 @@ use khora_macros::LaneInputs;
 use super::WireframeOutputs;
 use crate::render::util::Block;
 
-/// The line colour and width, laid out as `WireframeMaterialUniforms` in `wireframe.wgsl`.
-#[repr(C, align(16))]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct WireframeMaterialUniforms {
-    color: [f32; 4],
-    line_width: f32,
-    _padding: [f32; 3],
-}
-
 const WIREFRAME_CAMERA_LAYOUT_LABEL: &str = "wireframe_camera_layout";
 const WIREFRAME_MATERIAL_LAYOUT_LABEL: &str = "wireframe_material_layout";
 
@@ -69,6 +60,15 @@ const BLOCK_BYTES: u64 = (std::mem::size_of::<CameraUniformData>()
         crate::render::util::dynamic_uniform_ring_buffer::DEFAULT_MAX_ELEMENTS,
         crate::render::util::dynamic_uniform_ring_buffer::MIN_UNIFORM_ALIGNMENT,
     );
+
+/// The line colour and width, laid out as `WireframeMaterialUniforms` in `wireframe.wgsl`.
+#[repr(C, align(16))]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct WireframeMaterialUniforms {
+    color: [f32; 4],
+    line_width: f32,
+    _padding: [f32; 3],
+}
 
 /// A lane that draws the edges of every mesh on the GPU over the scene, hidden edges occluded.
 ///
@@ -100,59 +100,6 @@ impl Default for WireframeLane {
             gpu: None,
         }
     }
-}
-
-/// What the wireframe builds on the device.
-#[derive(Debug)]
-struct WireframeGpu {
-    camera: Block,
-    material: Block,
-    /// Per-mesh model transforms: one buffer, a dynamic offset per draw.
-    model_ring: DynamicUniformRingBuffer,
-    /// The pipeline and the target it was built for; `None` for a target
-    /// without depth, which the wireframe cannot test against.
-    pipeline: Option<(TargetKey, RenderPipelineId)>,
-}
-
-impl WireframeGpu {
-    /// The bytes its buffers hold.
-    fn bytes(&self) -> u64 {
-        self.camera.size + self.material.size + self.model_ring.bytes()
-    }
-
-    fn destroy(self, device: &dyn GraphicsDevice) {
-        self.camera.destroy(device);
-        self.material.destroy(device);
-        self.model_ring.destroy(device);
-    }
-}
-
-/// One mesh's draw: its model offset and bind group, and its buffers.
-struct Draw {
-    offset: u32,
-    model: BindGroupId,
-    vertex: BufferId,
-    index: BufferId,
-    format: IndexFormat,
-    count: u32,
-}
-
-/// What the wireframe lane reads each frame: the host's settings, the meshes
-/// and camera, the target and the meshes on the GPU.
-#[derive(LaneInputs)]
-pub struct WireframeInputs<'f> {
-    /// The host's wireframe switch, colour and width.
-    #[bus]
-    pub wireframe: &'f WireframeView,
-    /// The frame's meshes and views; the first view is the camera.
-    #[bus]
-    pub render_world: &'f RenderWorld,
-    /// The frame's colour and depth attachments.
-    #[frame]
-    pub target: Target,
-    /// The store holding the meshes on the GPU.
-    #[resource]
-    pub assets: &'f AssetStore,
 }
 
 impl Lane for WireframeLane {
@@ -300,6 +247,59 @@ impl Lane for WireframeLane {
     }
 }
 
+/// What the wireframe builds on the device.
+#[derive(Debug)]
+struct WireframeGpu {
+    camera: Block,
+    material: Block,
+    /// Per-mesh model transforms: one buffer, a dynamic offset per draw.
+    model_ring: DynamicUniformRingBuffer,
+    /// The pipeline and the target it was built for; `None` for a target
+    /// without depth, which the wireframe cannot test against.
+    pipeline: Option<(TargetKey, RenderPipelineId)>,
+}
+
+impl WireframeGpu {
+    /// Returns the bytes its buffers hold.
+    fn bytes(&self) -> u64 {
+        self.camera.size + self.material.size + self.model_ring.bytes()
+    }
+
+    fn destroy(self, device: &dyn GraphicsDevice) {
+        self.camera.destroy(device);
+        self.material.destroy(device);
+        self.model_ring.destroy(device);
+    }
+}
+
+/// One mesh's draw: its model offset and bind group, and its buffers.
+struct Draw {
+    offset: u32,
+    model: BindGroupId,
+    vertex: BufferId,
+    index: BufferId,
+    format: IndexFormat,
+    count: u32,
+}
+
+/// What the wireframe lane reads each frame: the host's settings, the meshes
+/// and camera, the target and the meshes on the GPU.
+#[derive(LaneInputs)]
+pub struct WireframeInputs<'f> {
+    /// The host's wireframe switch, colour and width.
+    #[bus]
+    pub wireframe: &'f WireframeView,
+    /// The frame's meshes and views; the first view is the camera.
+    #[bus]
+    pub render_world: &'f RenderWorld,
+    /// The frame's colour and depth attachments.
+    #[frame]
+    pub target: Target,
+    /// The store holding the meshes on the GPU.
+    #[resource]
+    pub assets: &'f AssetStore,
+}
+
 /// Pushes the model of every mesh on the GPU into the ring, in the world's
 /// order, and returns their draws.
 fn push_models(
@@ -404,7 +404,7 @@ fn build_wireframe_gpu(
     })
 }
 
-/// A layout of one uniform buffer at binding 0, seen by `visibility`.
+/// Returns a layout of one uniform buffer at binding 0, seen by `visibility`.
 fn uniform_layout_entries(
     visibility: khora_core::renderer::api::util::ShaderStageFlags,
 ) -> Vec<BindGroupLayoutEntry> {
@@ -413,7 +413,7 @@ fn uniform_layout_entries(
 
 /// Returns the wireframe's pipeline for a target of `key`'s formats.
 ///
-/// The mesh vertex layout, alpha-blended, depth-tested (LessEqual) against the
+/// The mesh vertex layout, alpha-blended, depth-tested (`LessEqual`) against the
 /// scene, never writing depth.
 fn wireframe_pipeline_spec(key: TargetKey) -> PipelineSpec {
     use khora_core::renderer::api::gpu_scene::Mesh;

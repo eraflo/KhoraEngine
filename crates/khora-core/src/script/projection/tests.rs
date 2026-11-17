@@ -232,6 +232,25 @@ fn a_remove_hides_the_component_until_it_is_added_again() {
     assert_eq!(frame.get("Health", entity(1)), Some(health(100, 30)));
 }
 
+/// **A faulted turn is undone**: its writes leave the working set as the
+/// turn found it, and what earlier turns wrote stays.
+#[test]
+fn a_faulted_turn_is_undone_and_earlier_turns_stay() {
+    let mut frame = working_set();
+    frame.begin_turn();
+    frame.observe(&set(entity(1), fields(&[("current", ScriptValue::Int(8))])));
+
+    frame.begin_turn();
+    frame.observe(&set(entity(1), fields(&[("max", ScriptValue::Int(12))])));
+    frame.observe(&remove(entity(3)));
+    frame.observe(&add(entity(2), fields(&[])));
+    frame.undo_turn();
+
+    assert_eq!(frame.get("Health", entity(1)), Some(health(8, 10)));
+    assert_eq!(frame.get("Health", entity(3)), Some(health(7, 20)));
+    assert!(!frame.has("Health", entity(2)));
+}
+
 /// Commands about a component nobody reads, and placement commands, leave
 /// the working set as it was.
 #[test]

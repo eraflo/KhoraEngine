@@ -25,16 +25,16 @@ pub(super) type Queues = Vec<(TypeId, Box<dyn Any + Send>)>;
 
 /// One type's outputs of a run, erased so a staging holds every type it staged.
 pub(super) trait Batch: Send {
-    /// Whether the batch holds nothing.
+    /// Returns whether the batch holds nothing.
     fn is_empty(&self) -> bool;
     /// Joins `queues` — the reserve's, by type — replacing and abandoning a
     /// waiting output each new one supersedes.
     fn join(self: Box<Self>, queues: &mut Queues);
     /// Adds the items of `other`, a batch of the same type, after its own.
     fn extend(&mut self, other: Box<dyn Any + Send>);
-    /// The type it carries.
+    /// Returns the type it carries.
     fn type_of(&self) -> TypeId;
-    /// What the batch holds to, if anything.
+    /// Returns what the batch holds to, if anything.
     fn lease(&self) -> Option<&Lease>;
     /// Gives back what every item holds: the batch is not taken in.
     fn abandon(self: Box<Self>);
@@ -117,7 +117,7 @@ impl std::fmt::Debug for Staging {
 }
 
 impl Staging {
-    /// Nothing staged.
+    /// Creates a staging holding nothing.
     pub fn new() -> Self {
         Self::default()
     }
@@ -149,12 +149,12 @@ impl Staging {
         }
     }
 
-    /// Whether nothing was staged.
+    /// Returns whether nothing was staged.
     pub fn is_empty(&self) -> bool {
         self.batches.iter().all(|batch| batch.is_empty())
     }
 
-    /// The batches, by type, for the reserve to take in.
+    /// Returns the batches, by type, for the reserve to take in.
     pub(super) fn into_batches(self) -> Vec<Box<dyn Batch>> {
         self.batches
     }

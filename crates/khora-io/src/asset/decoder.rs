@@ -24,16 +24,24 @@ use std::path::Path;
 /// Concrete decoders live in [`crate::asset::decoders`].
 pub trait AssetDecoder<A: Asset> {
     /// Parses a byte slice and converts it into an instance of the asset `A`.
+    ///
+    /// # Errors
+    ///
+    /// When the bytes are not a valid `A` in this decoder's format.
     fn load(&self, bytes: &[u8]) -> Result<A, Box<dyn Error + Send + Sync>>;
 
     /// Decodes the asset stored at `source_path` (relative to the assets
     /// root), for formats whose files reference other files next to them.
+    ///
+    /// # Errors
+    ///
+    /// When the bytes, or a file they reference, are not a valid `A`.
     fn load_at(&self, bytes: &[u8], source_path: &Path) -> Result<A, Box<dyn Error + Send + Sync>> {
         let _ = source_path;
         self.load(bytes)
     }
 
-    /// Whether `head`, the start of a file, is the start of a file this decoder reads.
+    /// Returns whether `head`, the start of a file, is the start of a file this decoder reads.
     ///
     /// That is its magic bytes, or text (UTF-8, no NUL) for a text format. A file
     /// whose head this refuses is never decoded.

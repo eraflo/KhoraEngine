@@ -26,7 +26,7 @@ use super::handle::SlotId;
 pub struct ColliderHandle(pub u64);
 
 impl ColliderHandle {
-    /// The slot and generation this addresses.
+    /// Returns the slot and generation this addresses.
     pub const fn slot(self) -> SlotId {
         SlotId::unpack(self.0)
     }

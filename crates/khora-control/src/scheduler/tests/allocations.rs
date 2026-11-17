@@ -16,6 +16,11 @@
 //! start, before any agent runs, to every agent it names at once and under
 //! each agent's lock — never in the middle of a frame, and never by the DCC.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn threads to test concurrency"
+)]
+
 use super::{offer_of, place_with, report_of, set_step, Doing};
 use crate::agent_registry::AgentRegistry;
 use crate::budget_channel::BudgetChannel;

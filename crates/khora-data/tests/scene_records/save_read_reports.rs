@@ -396,8 +396,8 @@ fn written_before_the_rename(
     }
 }
 
-/// The entries of `report` — but the save's changes the scene no longer
-/// has, which say so by kind — that speak of an entity, or of a component of
+/// The entries of `report` — but the save's changes the scene lacks,
+/// which say so by kind — that speak of an entity, or of a component of
 /// one, `composed` does not hold.
 fn about_what_was_not_loaded<'r>(
     report: &'r [ReportEntry],
@@ -437,8 +437,8 @@ fn stamina_scene() -> (World, EntityId, EntityId, SceneRecord) {
 }
 
 /// **What reading the scene adapted for an entity the game destroyed is not
-/// an adaptation of the load.** The scene was written before `Stamina.reserve`
-/// was renamed from `points`; the game destroyed the entity holding it. The
+/// an adaptation of the load.** The scene was written under `Stamina.reserve`'s
+/// former name `points`; the game destroyed the entity holding it. The
 /// loaded world has no such entity, so the report has nothing to say of it.
 #[test]
 fn an_adaptation_of_an_entity_the_save_destroyed_is_not_reported() {
@@ -487,9 +487,8 @@ fn an_adaptation_of_a_component_the_save_removed_is_not_reported() {
     );
 }
 
-/// **A change the scene no longer has is reported as such, and only as
-/// such.** The save, written before `Stamina.reserve` was renamed from
-/// `points`, drained the stamina of an entity the author has since deleted
+/// **A change the scene lacks is reported as such, and only as such.**
+/// The save, written under `Stamina.reserve`'s former name `points`, drained the stamina of an entity the author has since deleted
 /// from the scene. The load says the change was dropped; that reading the
 /// dropped change renamed a field is not something the loaded world shows.
 #[test]
@@ -522,8 +521,8 @@ fn a_change_to_an_entity_the_scene_lost_is_reported_only_as_removed_from_scene()
     );
 }
 
-/// The prefab `Pack`: one entity holding a `Stamina`, its file written before
-/// `Stamina.reserve` was renamed from `points`.
+/// The prefab `Pack`: one entity holding a `Stamina`, its file written under
+/// `Stamina.reserve`'s former name `points`.
 fn pack_written_before_the_rename() -> SceneRecord {
     let mut world = World::new();
     let root = world.spawn((
@@ -613,8 +612,8 @@ fn expanding_a_nested_instance_reports_what_reading_its_prefab_adapted() {
 }
 
 /// Coverage: **what reading the scene adapted is reported once when a game
-/// loads on it.** The scene was written before `Stamina.reserve` was renamed
-/// from `points`. One entity's stamina the game left alone; the other's it
+/// loads on it.** The scene was written under `Stamina.reserve`'s former
+/// name `points`. One entity's stamina the game left alone; the other's it
 /// drained, in a save written before the rename too. Each is reported
 /// renamed exactly once across composing and the final load — the scene,
 /// the save's changes and its before-image all name the same place.

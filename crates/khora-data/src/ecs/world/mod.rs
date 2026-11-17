@@ -58,6 +58,9 @@ pub use rows::{RowMut, RowRef};
 pub use runtime::{RegisterError, RelayoutReport, RowError, RuntimeComponentDecl};
 pub use spawn_error::SpawnError;
 
+/// Source of process-unique [`World::instance_id`] values.
+static WORLD_INSTANCE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
 /// The central container for the entire ECS, holding all entities, components, and metadata.
 pub struct World {
     /// Manages entity IDs and metadata.
@@ -87,9 +90,6 @@ pub struct World {
     /// changed.
     load_catalog: std::sync::Mutex<Option<std::sync::Arc<crate::scene::LoadCatalog>>>,
 }
-
-/// Source of process-unique [`World::instance_id`] values.
-static WORLD_INSTANCE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl World {
     /// Allocates a new or recycled `EntityId` and reserves its metadata slot.
@@ -127,7 +127,7 @@ impl World {
         self.storage.find_or_create_page_for_bundle::<B>()
     }
 
-    /// Swap-removes the row at `location`, repointing the moved entity's locations at it.
+    /// Removes the row at `location` by swap, repointing the moved entity's locations at it.
     ///
     /// Takes a row, not an entity: whose row it was never matters. Every
     /// location of the moved entity that addressed the old last row is
@@ -342,7 +342,10 @@ impl World {
         self.note_page_changed(page_id);
 
         let location = PageIndex { page_id, row_index };
-        let metadata = self.entities.get_metadata_mut(entity_id).unwrap();
+        let metadata = self
+            .entities
+            .get_metadata_mut(entity_id)
+            .expect("the caller allocated `entity_id`");
         B::update_metadata(metadata, location, &self.storage.registry);
 
         for domain in metadata.locations.keys() {

@@ -16,7 +16,7 @@ use crate::widgets::Painter;
 use khora_tool_ui::widgets::paint;
 use khora_tool_ui::widgets::with_alpha;
 
-/// One row of "key — value" inside the metadata card.
+/// Paints one row of "key — value" inside the metadata card.
 fn paint_kv_row(
     ui: &mut dyn UiBuilder,
     origin: [f32; 2],
@@ -45,7 +45,7 @@ fn paint_kv_row(
 
 /// Renders the asset pane, led by the quarantine card of a quarantined asset;
 /// returns whether `Release` was clicked.
-pub fn render_asset_pane(
+pub(crate) fn render_asset_pane(
     ui: &mut dyn UiBuilder,
     body_rect: [f32; 4],
     rel_path: &str,
@@ -270,7 +270,7 @@ fn paint_quarantine_card(
 
 /// Paints the asset pane's header, in the entity header's widget; returns its
 /// bottom edge.
-pub fn paint_asset_header(
+pub(crate) fn paint_asset_header(
     ui: &mut dyn UiBuilder,
     origin: [f32; 2],
     width: f32,

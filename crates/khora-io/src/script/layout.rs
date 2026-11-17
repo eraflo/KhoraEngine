@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 /// The folder of an assets root that holds its scripts, matched exactly.
 pub const SCRIPT_DIR: &str = "scripts";
 
-/// Whether `path` names an Ergon file: the extension `.erg` in any case, either separator.
+/// Returns whether `path` names an Ergon file: the extension `.erg` in any case, either separator.
 ///
 /// A `.ERG` is recognised, so it can be reported rather than ignored.
 pub fn is_script_file(path: &str) -> bool {
@@ -31,14 +31,14 @@ pub fn is_script_file(path: &str) -> bool {
         .is_some_and(|extension| extension.eq_ignore_ascii_case(khora_script::modules::EXTENSION))
 }
 
-/// Whether `path` names a file a module can be: its extension exactly `.erg`, either separator.
+/// Returns whether `path` names a file a module can be: its extension exactly `.erg`, either separator.
 ///
 /// The one spelling an import accepts; where it lies decides the rest ([`module_of`]).
 pub fn is_module_file(path: &str) -> bool {
     extension_of(path) == Some(khora_script::modules::EXTENSION)
 }
 
-/// The extension of the file `path` names, when it has a stem before it.
+/// Returns the extension of the file `path` names, when it has a stem before it.
 fn extension_of(path: &str) -> Option<&str> {
     let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
     name.rsplit_once('.')
@@ -74,7 +74,7 @@ pub fn script_dir(assets_root: &Path) -> Option<PathBuf> {
         .filter(|path| path.is_dir())
 }
 
-/// Whether `rel_path` (forward slashes) names an entry under `base` spelled
+/// Returns whether `rel_path` (forward slashes) names an entry under `base` spelled
 /// exactly so, folder by folder, on a file system that ignores case too.
 ///
 /// A module depends on spelling, so a file renamed to another case must read
@@ -97,7 +97,7 @@ pub fn exists_exactly(base: &Path, rel_path: &str) -> bool {
     true
 }
 
-/// Whether `rel_path` under `base` is a file spelled exactly so — see
+/// Returns whether `rel_path` under `base` is a file spelled exactly so — see
 /// [`exists_exactly`].
 pub fn is_file_exactly(base: &Path, rel_path: &str) -> bool {
     exists_exactly(base, rel_path) && base.join(rel_path).is_file()

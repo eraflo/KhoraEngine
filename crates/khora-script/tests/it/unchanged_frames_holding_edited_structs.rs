@@ -19,7 +19,7 @@
 //! reads — not by the types of the fields it never touches. So an edit that
 //! retypes a field elsewhere leaves a holding frame *unchanged*, and it is
 //! thawed as it was frozen, its held struct still the old kind. Going back
-//! into the arena, that struct no longer fits its declaration: the frame must
+//! into the arena, that struct does not fit its declaration: the frame must
 //! still resume — the retyped field at its default, or the frame restarted —
 //! and never fault as though the arena were full.
 

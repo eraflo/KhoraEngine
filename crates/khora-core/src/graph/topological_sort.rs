@@ -40,6 +40,10 @@ pub struct CycleError;
 ///
 /// * `Ok(Vec<T>)`: A vector of nodes in a valid topological order.
 /// * `Err(CycleError)`: If the graph contains one or more cycles.
+///
+/// # Errors
+///
+/// [`CycleError`] when the graph contains one or more cycles.
 pub fn topological_sort<T>(
     nodes: impl IntoIterator<Item = T>,
     edges: impl IntoIterator<Item = (T, T)>,

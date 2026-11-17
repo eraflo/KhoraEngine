@@ -41,7 +41,7 @@ pub struct LoadReport {
 }
 
 impl LoadReport {
-    /// Whether the load read everything exactly as written.
+    /// Returns whether the load read everything exactly as written.
     pub fn is_clean(&self) -> bool {
         self.entries.is_empty()
     }
@@ -58,45 +58,6 @@ pub struct ReportEntry {
     pub path: String,
     /// What happened there.
     pub kind: ReportKind,
-}
-
-/// What a load did to one place in a value.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum ReportKind {
-    /// The save predates this field; it took its default.
-    Defaulted,
-    /// The code no longer has this field; its value was dropped.
-    Dropped,
-    /// The save wrote this field, or variant, under an older name.
-    Renamed {
-        /// The name the save used.
-        from: String,
-    },
-    /// A number was read at another type than it was written, without loss:
-    /// a wider one, or a narrower one when the value is exact.
-    Widened,
-    /// The save holds a component type declared retired; it was skipped.
-    Retired,
-    /// The save holds a component the engine derives or keeps while running;
-    /// it was skipped, and is rebuilt.
-    NotSaved,
-    /// A reference named an entity the save does not hold.
-    DeadReference,
-    /// A game save changed an entity its scene no longer has: the scene's
-    /// removal wins, and the save's changes to it were dropped.
-    RemovedFromScene,
-    /// The value was kept as written, but the component's check says the
-    /// engine cannot use it (a camera whose near plane sits at its eye).
-    Unusable {
-        /// What the check says is wrong, naming the value.
-        message: String,
-    },
-    /// The load added nothing: it was prepared for another world, or failed
-    /// when prepared again after the world's components changed.
-    NotLoaded {
-        /// Why it could not.
-        reason: String,
-    },
 }
 
 impl std::fmt::Display for ReportEntry {
@@ -139,6 +100,45 @@ impl std::fmt::Display for ReportEntry {
     }
 }
 
+/// What a load did to one place in a value.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ReportKind {
+    /// The save predates this field; it took its default.
+    Defaulted,
+    /// The code does not have this field; its value was dropped.
+    Dropped,
+    /// The save wrote this field, or variant, under an older name.
+    Renamed {
+        /// The name the save used.
+        from: String,
+    },
+    /// A number was read at another type than it was written, without loss:
+    /// a wider one, or a narrower one when the value is exact.
+    Widened,
+    /// The save holds a component type declared retired; it was skipped.
+    Retired,
+    /// The save holds a component the engine derives or keeps while running;
+    /// it was skipped, and is rebuilt.
+    NotSaved,
+    /// A reference named an entity the save does not hold.
+    DeadReference,
+    /// A game save changed an entity its scene does not have: the scene's
+    /// removal wins, and the save's changes to it were dropped.
+    RemovedFromScene,
+    /// The value was kept as written, but the component's check says the
+    /// engine cannot use it (a camera whose near plane sits at its eye).
+    Unusable {
+        /// What the check says is wrong, naming the value.
+        message: String,
+    },
+    /// The load added nothing: it was prepared for another world, or failed
+    /// when prepared again after the world's components changed.
+    NotLoaded {
+        /// Why it could not.
+        reason: String,
+    },
+}
+
 /// Returns one [`ReportKind::Unusable`] entry per `Error` a component's check found.
 ///
 /// A `Warning` is no entry: the value is usable. Each entry's `path` is the
@@ -163,6 +163,11 @@ pub fn unusable_entries(problems: Vec<FieldProblem>) -> Vec<ReportEntry> {
 ///
 /// The entries carry paths only; the caller knows the entity and the
 /// component and fills them in.
+///
+/// # Errors
+///
+/// As [`from_record`](super::from_record); and when the value read cannot be written
+/// back as a record.
 pub fn resolve<T: Serialize + DeserializeOwned>(
     record: &Record,
     references: &mut dyn ReferenceReader,
@@ -206,7 +211,7 @@ impl ReferenceWriter for Recall<'_> {
     }
 }
 
-/// `path` extended by a field or variant name.
+/// Returns `path` extended by a field or variant name.
 fn join(path: &str, name: &str) -> String {
     if path.is_empty() {
         name.to_owned()
@@ -224,7 +229,7 @@ fn entry(path: &str, kind: ReportKind) -> ReportEntry {
     }
 }
 
-/// The value itself, past the optional and newtype wrappers the reader went
+/// Returns the value itself, past the optional and newtype wrappers the reader went
 /// through without a step of its own.
 fn unwrapped(mut record: &Record) -> &Record {
     loop {
@@ -235,7 +240,7 @@ fn unwrapped(mut record: &Record) -> &Record {
     }
 }
 
-/// The named fields of a struct, of a struct variant's payload, or of a map
+/// Returns the named fields of a struct, of a struct variant's payload, or of a map
 /// keyed by strings.
 fn named(record: &Record) -> Vec<(&str, &Record)> {
     match record {
@@ -258,7 +263,7 @@ fn named(record: &Record) -> Vec<(&str, &Record)> {
     }
 }
 
-/// The elements of a sequence, or of a tuple variant's payload.
+/// Returns the elements of a sequence, or of a tuple variant's payload.
 fn elements(record: &Record) -> &[Record] {
     match record {
         Record::Seq(items)
@@ -271,7 +276,7 @@ fn elements(record: &Record) -> &[Record] {
     }
 }
 
-/// Whether a value the save wrote resembles one the read produced.
+/// Returns whether a value the save wrote resembles one the read produced.
 ///
 /// Numbers compare across widths, fields only one side has are ignored, and
 /// references compare by kind.
@@ -309,7 +314,7 @@ fn resembles(written: &Record, read: &Record) -> bool {
     }
 }
 
-/// Whether two map keys name the same entry, numbers by value.
+/// Returns whether two map keys name the same entry, numbers by value.
 fn same_key(a: &Record, b: &Record) -> bool {
     let number = |record: &Record| match *record {
         Record::I64(v) => Some(i128::from(v)),
@@ -322,7 +327,7 @@ fn same_key(a: &Record, b: &Record) -> bool {
     }
 }
 
-/// A map key as a path step.
+/// Returns a map key as a path step.
 fn key_label(key: &Record) -> String {
     match key {
         Record::I64(v) => format!("[{v}]"),
@@ -418,7 +423,7 @@ fn walk(
     }
 }
 
-/// A struct the save wrote as a sequence: its elements are its fields in
+/// Walks a struct the save wrote as a sequence: its elements are its fields in
 /// declaration order, and the fields past the last element took defaults.
 fn walk_positional(
     tree: &Tree,
@@ -444,10 +449,10 @@ fn walk_positional(
     }
 }
 
-/// The entries of a map keyed by something other than names.
+/// Walks the entries of a map keyed by something other than names.
 ///
 /// An entry whose key reads back as written is paired with it directly. A
-/// key the read adapted — a renamed variant, say — no longer equals any key
+/// key the read adapted — a renamed variant, say — equals no key
 /// written back, so the entries left over on both sides are paired in turn;
 /// and a written entry left with no counterpart was merged into another by
 /// that adaptation, its value lost.
@@ -497,7 +502,7 @@ fn walk_entries(
     }
 }
 
-/// A variant the save wrote as `written`, read as whatever `read` holds.
+/// Walks a variant the save wrote as `written`, read as whatever `read` holds.
 fn walk_variant(
     tree: &Tree,
     child: usize,
@@ -549,7 +554,7 @@ fn walk_variant(
     }
 }
 
-/// The fields the save held at a struct, against the fields the value has.
+/// Walks the fields the save held at a struct, against the fields the value has.
 ///
 /// A field the save held and the code skipped was dropped (the reader noted
 /// it). A field read under a name the value does not use was read through an
@@ -628,7 +633,7 @@ fn walk_fields(
     }
 }
 
-/// Which of the value's fields `alias` is another name for.
+/// Returns which of the value's fields `alias` is another name for.
 ///
 /// serde lists a struct's accepted names field by field, in declaration
 /// order, each field's own names sorted. So an alias sits between the field

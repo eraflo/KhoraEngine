@@ -133,8 +133,8 @@ impl ControlPlanePanel {
         );
 
         // The cards are measured first without painting, so the scroll is
-        // clamped to the height they take this frame, never an offset they no
-        // longer reach.
+        // clamped to the height they take this frame, never an offset beyond
+        // their reach.
         let view = [x, y + 104.0, w, (h - 108.0).max(0.0)];
         let content_h = {
             let mut measuring = Measuring::new(&*ui);

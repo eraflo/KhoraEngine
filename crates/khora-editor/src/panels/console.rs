@@ -63,7 +63,7 @@ impl Default for LevelFilter {
 }
 
 impl LevelFilter {
-    /// Whether an entry of this level passes the filter.
+    /// Returns whether an entry of this level passes the filter.
     pub fn admits(&self, level: LogLevel) -> bool {
         match level {
             LogLevel::Error => self.error,
@@ -130,16 +130,6 @@ impl ConsolePanel {
             search: String::new(),
             scroll: widgets::ScrollState::default(),
         }
-    }
-}
-
-/// Returns the colour and glyph that stand for a level.
-fn level_style(level: LogLevel, t: &UiTheme) -> ([f32; 4], Icon) {
-    match level {
-        LogLevel::Error => (t.error, Icon::Error),
-        LogLevel::Warn => (t.warning, Icon::Warn),
-        LogLevel::Info => (t.accent_b, Icon::Info),
-        LogLevel::Debug | LogLevel::Trace => (t.text_muted, Icon::Code),
     }
 }
 
@@ -349,6 +339,16 @@ impl EditorPanel for ConsolePanel {
 
         ui.pop_clip_rect();
         widgets::scrollbar(ui, &t, body, content_h, &mut self.scroll, "console-scroll");
+    }
+}
+
+/// Returns the colour and glyph that stand for a level.
+fn level_style(level: LogLevel, t: &UiTheme) -> ([f32; 4], Icon) {
+    match level {
+        LogLevel::Error => (t.error, Icon::Error),
+        LogLevel::Warn => (t.warning, Icon::Warn),
+        LogLevel::Info => (t.accent_b, Icon::Info),
+        LogLevel::Debug | LogLevel::Trace => (t.text_muted, Icon::Code),
     }
 }
 

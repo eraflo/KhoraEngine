@@ -31,7 +31,7 @@ use crate::serialization::{SerializationService, SerializationServiceError};
 ///
 /// Publishes `world`'s catalogue to the runtime's `SceneLoadHub` first, when
 /// it moved. Nothing without a hub or a reserve.
-pub fn take_in_loads(world: &mut World, runtime: &Runtime) {
+pub(crate) fn take_in_loads(world: &mut World, runtime: &Runtime) {
     let Some(hub) = runtime.resources.get::<Arc<SceneLoadHub>>() else {
         return;
     };

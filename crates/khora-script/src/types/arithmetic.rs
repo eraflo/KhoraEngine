@@ -24,7 +24,7 @@ use crate::ast::BinaryOp;
 use crate::diagnostics::Span;
 
 impl Checker {
-    /// The result of arithmetic on two built-in types.
+    /// Returns the result type of arithmetic on two built-in types.
     ///
     /// The unit rules live here, and they are deliberately narrow: a unit may
     /// be added to its own kind, scaled by a number, or divided by its own kind
@@ -75,8 +75,8 @@ impl Checker {
         Ty::Error
     }
 
-    /// The type of the engine-type operation the native `name` performs, or
-    /// an error naming the operation and listing what `engine` does define.
+    /// Returns the type of the engine-type operation the native `name`
+    /// performs, or reports an error naming it and listing what `engine` defines.
     pub(super) fn engine_operator(&mut self, name: String, engine: &str, span: Span) -> Ty {
         if let Some(native) = self.natives.get(&name) {
             return native.result.clone();
@@ -99,7 +99,7 @@ impl Checker {
         Ty::Error
     }
 
-    /// Arithmetic where at least one side carries a unit.
+    /// Returns the result type of arithmetic where at least one side carries a unit.
     fn unit_arithmetic(&mut self, op: BinaryOp, left: &Ty, right: &Ty, span: Span) -> Ty {
         match op {
             // Same unit in, same unit out.
@@ -199,8 +199,8 @@ impl Checker {
     }
 }
 
-/// How an operand is named in an operator native: an engine type by its name,
-/// a number as `float` — an `int` widens where a number is expected.
+/// Returns how an operand is named in an operator native: an engine type by
+/// its name, a number as `float` — an `int` widens where a number is expected.
 fn operand_name(ty: &Ty) -> String {
     match ty {
         Ty::Engine(name) => (*name).to_owned(),
@@ -209,7 +209,7 @@ fn operand_name(ty: &Ty) -> String {
     }
 }
 
-/// How an operator is spelled, for messages.
+/// Returns how an operator is spelled, for messages.
 pub(super) fn operator_text(op: BinaryOp) -> &'static str {
     match op {
         BinaryOp::Add => "+",

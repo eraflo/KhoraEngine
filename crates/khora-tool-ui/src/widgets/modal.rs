@@ -27,6 +27,14 @@ use super::buttons::{button, Button, ButtonKind};
 use super::paint::{fill, fill_stroke, icon_centered, text_centered, tint, with_alpha};
 use super::Rect;
 
+/// Width of the dialog box. Narrow on purpose: a confirmation that needs more
+/// room is asking the wrong question.
+const BOX_W: f32 = 380.0;
+const BOX_H: f32 = 168.0;
+const PAD: f32 = 20.0;
+const BTN_W: f32 = 96.0;
+const BTN_H: f32 = 30.0;
+
 /// What the user did with a [`confirm_modal`] this frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModalChoice {
@@ -52,7 +60,7 @@ pub struct Confirm<'a> {
 }
 
 impl<'a> Confirm<'a> {
-    /// A destructive confirmation.
+    /// Builds a destructive confirmation.
     pub fn danger(title: &'a str, body: &'a str, confirm_label: &'a str) -> Self {
         Self {
             title,
@@ -62,14 +70,6 @@ impl<'a> Confirm<'a> {
         }
     }
 }
-
-/// Width of the dialog box. Narrow on purpose: a confirmation that needs more
-/// room is asking the wrong question.
-const BOX_W: f32 = 380.0;
-const BOX_H: f32 = 168.0;
-const PAD: f32 = 20.0;
-const BTN_W: f32 = 96.0;
-const BTN_H: f32 = 30.0;
 
 /// Paints a centred confirmation dialog over `screen` and returns the choice.
 ///

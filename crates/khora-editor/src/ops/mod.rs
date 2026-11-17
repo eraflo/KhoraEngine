@@ -26,21 +26,21 @@ pub mod prefab_overrides;
 mod scene_tree;
 mod spawn;
 
-pub use asset_drop::{asset_drop, AssetDrop};
+pub(crate) use asset_drop::{asset_drop, AssetDrop};
 pub use hierarchy::delete_selection;
 pub use hierarchy::duplicate_entity;
 pub use hierarchy::process_reparents;
-pub use inspect::add_component_to_entity;
+pub(crate) use inspect::add_component_to_entity;
 #[cfg_attr(not(test), allow(unused_imports))]
 pub use inspect::addable_components;
 pub use inspect::apply_edits;
 pub use inspect::extract_inspected;
 pub use scene_tree::extract_scene_tree;
 pub use spawn::process_spawns;
-pub use spawn::spawn_mesh_asset;
+pub(crate) use spawn::spawn_mesh_asset;
 
 /// Keeps ECS scene-camera activation consistent with the current play mode.
-pub fn sync_scene_cameras_for_mode(world: &mut GameWorld, mode: PlayMode) {
+pub(crate) fn sync_scene_cameras_for_mode(world: &mut GameWorld, mode: PlayMode) {
     let entities: Vec<EntityId> = world.iter_entities().collect();
     let camera_states: Vec<(EntityId, bool)> = entities
         .iter()

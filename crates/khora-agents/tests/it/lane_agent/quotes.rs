@@ -31,6 +31,11 @@
 //! stands in for another), and falls back from the running lane to the best
 //! row left within its envelope.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn threads to test concurrency"
+)]
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -643,7 +648,7 @@ fn without_a_plan(load: u32, counts: &Counts) -> Arc<Runtime> {
 /// quote.** The running lane ran on a load of 100 and quoted 100 µs. On the
 /// next two frames its plan is missing: the runs are refused and quote
 /// nothing, and the agent is woken by the refusal. A missing input gives no
-/// quote, so its row has no price on these inputs and is no longer offered,
+/// quote, so its row has no price on these inputs and is not offered,
 /// while the quoted lane, whose inputs are there, still is.
 #[test]
 fn a_running_lane_refused_its_input_is_not_offered_at_its_old_quote() {

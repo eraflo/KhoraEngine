@@ -37,7 +37,7 @@ pub struct CompileOutcome {
 }
 
 impl CompileOutcome {
-    /// Whether a program came out.
+    /// Returns whether a program came out.
     pub fn succeeded(&self) -> bool {
         self.program.is_some()
     }

@@ -333,7 +333,7 @@ fn a_saved_timer_body_whose_rearm_is_not_a_countdown_does_not_kill_the_schedule(
 // ─── A save taken between an edit and the abandonment it owes ───────────────
 //
 // An edit that only touches other code, or moves code around the body's site,
-// no longer abandons it. What still abandons is the member the body started in
+// never abandons it. What still abandons is the member the body started in
 // being gone: the edit below removes the handler the attack was started from.
 
 const ATTACKER: &str = "behavior Guard {

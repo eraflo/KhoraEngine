@@ -40,7 +40,7 @@ pub fn arrived(arrival: &khora_data::flow::ScriptArrival) -> ScriptSnapshot {
 ///
 /// Starts from the layout's data (every field at its default, the first state,
 /// the countdowns armed) and puts what was saved on top, by name. A field,
-/// state or schedule the script no longer declares is dropped, and one new to
+/// state or schedule the script stops declaring is dropped, and one new to
 /// it takes what the script says: a scene older than its script is no error.
 pub fn store_from_snapshot(layout: &BehaviorLayout, saved: &ScriptSnapshot) -> PersistentStore {
     let mut store = layout.fresh_store();
@@ -145,7 +145,7 @@ fn timer_index(layout: &BehaviorLayout, saved: &TimerRemaining) -> Option<usize>
         .map(|(index, _)| index)
 }
 
-/// What makes one schedule the same schedule as another across a save.
+/// Returns what makes one schedule the same schedule as another across a save.
 ///
 /// The one definition the reader and the writer share: a component added to
 /// one side only would compile, and quietly hand a saved countdown to the
@@ -161,7 +161,7 @@ fn identity_of(
     )
 }
 
-/// The name of the state a schedule belongs to, if any.
+/// Returns the name of the state a schedule belongs to, if any.
 fn owner(layout: &BehaviorLayout, timer: &khora_script::vm::TimerLayout) -> Option<String> {
     timer
         .state
@@ -171,7 +171,7 @@ fn owner(layout: &BehaviorLayout, timer: &khora_script::vm::TimerLayout) -> Opti
 
 /// Writes into `store` each of `fields` its layout declares, by name — the
 /// fields of a component-attached instance written outside the lane.
-pub fn adopt_fields(
+pub(crate) fn adopt_fields(
     layout: &BehaviorLayout,
     store: &mut PersistentStore,
     fields: &[(String, ScriptValue)],
@@ -195,7 +195,7 @@ fn set(
     structs: &[khora_script::vm::StructLayout],
 ) {
     // Carried by name into code that may have retyped it: a value its type can
-    // no longer hold — a `null` in what is now an `int` — is left behind, and
+    // stop holding — a `null` in what is declared an `int` — is left behind, and
     // the field takes its default.
     if let Some(ty) = ty {
         if !khora_script::bridge::fits(value, ty) {
@@ -314,7 +314,7 @@ fn countdowns(layout: &BehaviorLayout, store: &PersistentStore) -> Vec<TimerRema
 /// A schedule whose body is part-way through is recorded rearmed, as that body
 /// will leave it, not due. See the book: concepts/scripting/saves-and-edits.md,
 /// "Timers and waits".
-pub fn snapshot_of(
+pub(crate) fn snapshot_of(
     layout: &BehaviorLayout,
     fields: &PersistentStore,
     pending: Option<&Pending>,
@@ -325,7 +325,7 @@ pub fn snapshot_of(
     snapshot
 }
 
-/// An instance's fields, state and countdowns by name, a schedule whose body
+/// Returns an instance's fields, state and countdowns by name, a schedule whose body
 /// is part-way left rearmed — see [`snapshot_of`].
 fn settled_snapshot(
     layout: &BehaviorLayout,
@@ -348,7 +348,7 @@ fn settled_snapshot(
 /// By name, as a save is read; a schedule whose body is part-way crosses
 /// rearmed, as a save writes it. See the book:
 /// concepts/scripting/saves-and-edits.md, "Fields, by name".
-pub fn carried_across(
+pub(crate) fn carried_across(
     old: &BehaviorLayout,
     new: &BehaviorLayout,
     fields: &PersistentStore,

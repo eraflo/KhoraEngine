@@ -103,11 +103,13 @@ impl EditorPanel for PropertiesPanel {
                 quarantine,
             )
         };
-        let asset_mode = entity_data.is_none() && asset_path.is_some();
+        // The asset pane shows only when no entity is inspected.
+        let shown_asset = asset_path.as_ref().filter(|_| entity_data.is_none());
+        let asset_mode = shown_asset.is_some();
 
         let header_origin = [px, py + HEADER_HEIGHT];
-        let after_header = if asset_mode {
-            paint_asset_header(ui, header_origin, pw, asset_path.as_ref().unwrap(), &theme)
+        let after_header = if let Some(path) = shown_asset {
+            paint_asset_header(ui, header_origin, pw, path, &theme)
         } else {
             match &entity_data {
                 Some((entity, inspected)) => {

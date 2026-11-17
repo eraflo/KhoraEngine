@@ -203,7 +203,7 @@ pub fn addable_components(world: &GameWorld, entity: EntityId) -> Vec<AddableCom
 
 /// Adds a new component to an existing entity: a Rust one through the
 /// inventory registry, a script-declared one with its defaults.
-pub fn add_component_to_entity(world: &mut GameWorld, entity: EntityId, type_name: &str) {
+pub(crate) fn add_component_to_entity(world: &mut GameWorld, entity: EntityId, type_name: &str) {
     for reg in inventory::iter::<khora_sdk::ComponentRegistration> {
         if reg.type_name == type_name {
             if let Err(e) = (reg.create_default)(world.inner_world_mut(), entity) {

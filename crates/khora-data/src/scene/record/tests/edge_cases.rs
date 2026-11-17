@@ -271,15 +271,7 @@ fn a_dropped_field_inside_a_map_keyed_by_number_is_reported() {
 /// an `f32` register cannot hold exactly is refused, not rounded.
 #[test]
 fn narrowing_into_a_frozen_register_is_refused() {
-    let machine = FrozenMachine {
-        body: PendingBody::Sequence,
-        registers: vec![FrozenValue::Float(0.5)],
-        frames: vec![],
-        program_counter: 0,
-        arguments: Vec::new(),
-    };
-    let mut record = to_record(&machine, &mut NoWriter).expect("writes");
-    // Replace the register's f32 with a double it cannot hold exactly.
+    /// Replaces the first `f32` in `record` with a double it cannot hold exactly.
     fn replace_f32(record: &mut Record) -> bool {
         match record {
             Record::F32(_) => {
@@ -300,6 +292,15 @@ fn narrowing_into_a_frozen_register_is_refused() {
             _ => false,
         }
     }
+
+    let machine = FrozenMachine {
+        body: PendingBody::Sequence,
+        registers: vec![FrozenValue::Float(0.5)],
+        frames: vec![],
+        program_counter: 0,
+        arguments: Vec::new(),
+    };
+    let mut record = to_record(&machine, &mut NoWriter).expect("writes");
     assert!(replace_f32(&mut record), "the machine holds an f32");
 
     // The same number is refused where the reader sees the f32 target itself.

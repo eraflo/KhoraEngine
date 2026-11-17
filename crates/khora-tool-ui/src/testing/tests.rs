@@ -90,3 +90,20 @@ fn a_scripted_key_is_pressed_and_no_other() {
     assert!(!ui.key_pressed(KeyCode::Space));
     assert!(!RecordingUiBuilder::new(1.0, 1.0).key_pressed(KeyCode::Escape));
 }
+
+#[test]
+fn the_pixels_per_point_are_one_unless_scripted() {
+    assert_eq!(RecordingUiBuilder::new(10.0, 10.0).pixels_per_point(), 1.0);
+    let ui = RecordingUiBuilder::new(10.0, 10.0).with_pixels_per_point(1.5);
+    assert_eq!(ui.pixels_per_point(), 1.5);
+}
+
+#[test]
+fn the_viewport_image_shows_at_the_panel_origin_only_when_scripted() {
+    let handle = ViewportTextureHandle(7);
+    let mut hidden = RecordingUiBuilder::new(10.0, 10.0);
+    assert_eq!(hidden.viewport_image(handle, [4.0, 4.0]), None);
+
+    let mut shown = RecordingUiBuilder::new(10.0, 10.0).with_viewport_image();
+    assert_eq!(shown.viewport_image(handle, [4.0, 4.0]), Some([0.0, 0.0]));
+}

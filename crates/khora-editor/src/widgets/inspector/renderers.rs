@@ -14,8 +14,12 @@ use serde_json::Value;
 
 // ─── shape detection ────────────────────────────────────────────────
 
+/// The key of the marker the engine writes for a float JSON has no number
+/// for (`khora_data::scene::inspector_json`).
+const FLOAT_KEY: &str = "$float";
+
 /// Returns whether `map` is a vector: numeric `x`, `y`, `z` and nothing else.
-pub fn is_vec3(map: &serde_json::Map<String, Value>) -> bool {
+pub(crate) fn is_vec3(map: &serde_json::Map<String, Value>) -> bool {
     map.len() == 3
         && map.get("x").is_some_and(|v| v.is_number())
         && map.get("y").is_some_and(|v| v.is_number())
@@ -24,7 +28,7 @@ pub fn is_vec3(map: &serde_json::Map<String, Value>) -> bool {
 
 /// Returns whether `map` is a quaternion: numeric `x`, `y`, `z`, `w` and
 /// nothing else.
-pub fn is_quat(map: &serde_json::Map<String, Value>) -> bool {
+pub(crate) fn is_quat(map: &serde_json::Map<String, Value>) -> bool {
     map.len() == 4
         && map.get("x").is_some_and(|v| v.is_number())
         && map.get("y").is_some_and(|v| v.is_number())
@@ -34,7 +38,7 @@ pub fn is_quat(map: &serde_json::Map<String, Value>) -> bool {
 
 /// Returns whether `map` is a colour: numeric `r`, `g`, `b`, `a` and nothing
 /// else.
-pub fn is_color(map: &serde_json::Map<String, Value>) -> bool {
+pub(crate) fn is_color(map: &serde_json::Map<String, Value>) -> bool {
     map.len() == 4
         && map.get("r").is_some_and(|v| v.is_number())
         && map.get("g").is_some_and(|v| v.is_number())
@@ -45,7 +49,7 @@ pub fn is_color(map: &serde_json::Map<String, Value>) -> bool {
 // ─── leaf widgets ───────────────────────────────────────────────────
 
 /// Renders a vector as a drag row; returns whether it changed.
-pub fn render_vec3(
+pub(crate) fn render_vec3(
     ui: &mut dyn UiBuilder,
     map: &mut serde_json::Map<String, Value>,
     _theme: &UiTheme,
@@ -65,7 +69,10 @@ pub fn render_vec3(
 }
 
 /// Renders a quaternion as four drag values; returns whether one changed.
-pub fn render_quat(ui: &mut dyn UiBuilder, map: &mut serde_json::Map<String, Value>) -> bool {
+pub(crate) fn render_quat(
+    ui: &mut dyn UiBuilder,
+    map: &mut serde_json::Map<String, Value>,
+) -> bool {
     let mut changed = false;
     for axis in ["x", "y", "z", "w"] {
         let mut local = json_to_f32(map.get(axis));
@@ -78,7 +85,7 @@ pub fn render_quat(ui: &mut dyn UiBuilder, map: &mut serde_json::Map<String, Val
 }
 
 /// Renders a colour picker; returns whether the colour changed.
-pub fn render_color(
+pub(crate) fn render_color(
     ui: &mut dyn UiBuilder,
     map: &mut serde_json::Map<String, Value>,
     _theme: &UiTheme,
@@ -101,7 +108,7 @@ pub fn render_color(
 
 /// Renders a number as a drag row, in whole steps for a JSON integer; returns
 /// whether it changed.
-pub fn render_number_row(ui: &mut dyn UiBuilder, label: &str, value: &mut Value) -> bool {
+pub(crate) fn render_number_row(ui: &mut dyn UiBuilder, label: &str, value: &mut Value) -> bool {
     // An integer field (`u8`, `u32`, `i64` …) reads back only as a JSON
     // integer: it is dragged in whole steps and written whole.
     if let Some(whole) = integer_of(value) {
@@ -120,7 +127,8 @@ pub fn render_number_row(ui: &mut dyn UiBuilder, label: &str, value: &mut Value)
     changed
 }
 
-/// The integer `value` holds, when it is a JSON integer rather than a float.
+/// Returns the integer `value` holds, when it is a JSON integer rather than a
+/// float.
 fn integer_of(value: &Value) -> Option<i64> {
     match value {
         Value::Number(number) if number.is_u64() || number.is_i64() => number
@@ -140,7 +148,11 @@ fn integer_json(dragged: f32) -> Value {
 }
 
 /// Renders a three-number array as a vector row; returns whether it changed.
-pub fn render_numeric_triple(ui: &mut dyn UiBuilder, label: &str, arr: &mut [Value]) -> bool {
+pub(crate) fn render_numeric_triple(
+    ui: &mut dyn UiBuilder,
+    label: &str,
+    arr: &mut [Value],
+) -> bool {
     let mut v = [
         json_to_f32(Some(&arr[0])),
         json_to_f32(Some(&arr[1])),
@@ -157,7 +169,7 @@ pub fn render_numeric_triple(ui: &mut dyn UiBuilder, label: &str, arr: &mut [Val
 
 /// Renders a four-number array, as a colour when every number lies in
 /// `[0, 1]`; returns whether it changed.
-pub fn render_numeric_quad(
+pub(crate) fn render_numeric_quad(
     ui: &mut dyn UiBuilder,
     label: &str,
     arr: &mut [Value],
@@ -230,16 +242,12 @@ pub fn f32_to_json(f: f32) -> Value {
     }
 }
 
-/// The key of the marker the engine writes for a float JSON has no number
-/// for (`khora_data::scene::inspector_json`).
-const FLOAT_KEY: &str = "$float";
-
 /// Returns whether `map` is the `{"$float": …}` marker of a float.
-pub fn is_float_marker(map: &serde_json::Map<String, Value>) -> bool {
+pub(crate) fn is_float_marker(map: &serde_json::Map<String, Value>) -> bool {
     map.len() == 1 && map.get(FLOAT_KEY).is_some_and(Value::is_string)
 }
 
-/// The float of a `{"$float": "inf" | "-inf" | "nan"}` marker.
+/// Returns the float of a `{"$float": "inf" | "-inf" | "nan"}` marker.
 fn float_marker(v: &Value) -> Option<f32> {
     match v.as_object()?.get(FLOAT_KEY)?.as_str()? {
         "inf" => Some(f32::INFINITY),
@@ -250,7 +258,7 @@ fn float_marker(v: &Value) -> Option<f32> {
 }
 
 /// Returns a `snake_case` field name as the label `"Snake Case"`.
-pub fn humanise(field: &str) -> String {
+pub(crate) fn humanise(field: &str) -> String {
     let mut out = String::with_capacity(field.len());
     let mut up = true;
     for c in field.chars() {

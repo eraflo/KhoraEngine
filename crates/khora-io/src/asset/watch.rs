@@ -115,7 +115,7 @@ impl AssetWatch {
             .map(|watched| watched.root.named.clone())
     }
 
-    /// Everything `subscriber` has not yet seen, on every watched root.
+    /// Returns everything `subscriber` has not yet seen, on every watched root.
     pub fn poll_for(&self, subscriber: &'static str) -> Vec<AssetChangeEvent> {
         self.roots
             .lock_recovered()

@@ -97,7 +97,7 @@ pub struct Button<'a> {
 }
 
 impl<'a> Button<'a> {
-    /// An enabled button with no icon.
+    /// Builds an enabled button with no icon.
     pub fn new(label: &'a str, kind: ButtonKind) -> Self {
         Self {
             label,
@@ -120,7 +120,7 @@ impl<'a> Button<'a> {
     }
 }
 
-/// A text button (optionally with a leading icon).
+/// Draws a text button, optionally with a leading icon.
 ///
 /// Returns the [`Interaction`]; a disabled button never reports `clicked`,
 /// even if the pointer is over it.
@@ -173,7 +173,7 @@ pub fn button(
     }
 }
 
-/// A square icon-only button — toolbar and row-action affordance.
+/// Draws a square icon-only button — toolbar and row-action affordance.
 pub fn icon_button(
     ui: &mut dyn UiBuilder,
     theme: &UiTheme,

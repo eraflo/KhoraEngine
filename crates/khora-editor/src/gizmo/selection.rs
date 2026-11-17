@@ -32,7 +32,7 @@ const GIZMO_SCREEN_FRACTION: f32 = 0.32;
 const RING_SEGMENTS: u32 = 48;
 
 /// Generates a wireframe cube gizmo at the given world-space transform.
-pub fn wireframe_cube(
+pub(crate) fn wireframe_cube(
     transform: &Mat4,
     half_extents: Vec3,
     color: [f32; 4],
@@ -77,7 +77,7 @@ pub fn wireframe_cube(
 ///
 /// Directions are normalised, so a scaled entity gets a square set of axes
 /// rather than one stretched along whichever axis it happens to be scaled on.
-pub fn transform_axes(transform: &Mat4, length: f32) -> Vec<GizmoLineInstance> {
+pub(crate) fn transform_axes(transform: &Mat4, length: f32) -> Vec<GizmoLineInstance> {
     let origin = transform.cols[3].truncate();
 
     [Vec3::X, Vec3::Y, Vec3::Z]
@@ -95,7 +95,7 @@ pub fn transform_axes(transform: &Mat4, length: f32) -> Vec<GizmoLineInstance> {
 ///
 /// Read from the projection matrix, not a field of view passed beside it, so
 /// the gizmo always agrees with what is rendered.
-pub fn gizmo_world_size(view: &ViewInfo, origin: Vec3) -> f32 {
+pub(crate) fn gizmo_world_size(view: &ViewInfo, origin: Vec3) -> f32 {
     // A perspective projection stores `1 / tan(fov_y / 2)` in m11.
     let focal = view.projection_matrix.cols[1].y;
     if focal.abs() < 1e-6 {
@@ -105,11 +105,11 @@ pub fn gizmo_world_size(view: &ViewInfo, origin: Vec3) -> f32 {
     distance / focal * GIZMO_SCREEN_FRACTION
 }
 
-/// The interactive handles for `mode`, drawn at `pivot` along `basis`.
+/// Builds the interactive handles for `mode`, drawn at `pivot` along `basis`.
 ///
 /// Empty for [`GizmoMode::Select`]: the pointer tool manipulates nothing, so
 /// drawing grabbable-looking handles for it would be a lie.
-pub fn manipulator(
+pub(crate) fn manipulator(
     pivot: Vec3,
     basis: &GizmoBasis,
     mode: GizmoMode,
@@ -123,7 +123,8 @@ pub fn manipulator(
     }
 }
 
-/// Three arrows: a shaft out to `size` and a four-barbed head at the tip.
+/// Builds three arrows: a shaft out to `size` and a four-barbed head at the
+/// tip.
 fn move_handles(pivot: Vec3, basis: &GizmoBasis, size: f32) -> Vec<GizmoLineInstance> {
     let head = size * 0.18;
     let mut lines = Vec::with_capacity(GizmoAxis::ALL.len() * 5);
@@ -147,8 +148,8 @@ fn move_handles(pivot: Vec3, basis: &GizmoBasis, size: f32) -> Vec<GizmoLineInst
     lines
 }
 
-/// Three arms, each capped with a small box — the cap is what says "scale"
-/// rather than "move" at a glance.
+/// Builds three arms, each capped with a small box — the cap is what says
+/// "scale" rather than "move" at a glance.
 fn scale_handles(pivot: Vec3, basis: &GizmoBasis, size: f32) -> Vec<GizmoLineInstance> {
     let half = size * 0.09;
     let mut lines = Vec::with_capacity(GizmoAxis::ALL.len() * 13);
@@ -180,7 +181,7 @@ fn scale_handles(pivot: Vec3, basis: &GizmoBasis, size: f32) -> Vec<GizmoLineIns
     lines
 }
 
-/// Three rings, one in each plane normal to a handle.
+/// Builds three rings, one in each plane normal to a handle.
 fn rotate_handles(pivot: Vec3, basis: &GizmoBasis, size: f32) -> Vec<GizmoLineInstance> {
     let mut lines = Vec::with_capacity(GizmoAxis::ALL.len() * RING_SEGMENTS as usize);
 
@@ -252,7 +253,7 @@ pub fn camera_frustum(
 }
 
 /// Generates a wireframe sphere for point lights.
-pub fn wireframe_sphere(
+pub(crate) fn wireframe_sphere(
     transform: &Mat4,
     radius: f32,
     segments: u32,
@@ -305,7 +306,7 @@ pub fn wireframe_sphere(
 }
 
 /// Generates a directional light icon (arrow).
-pub fn directional_light_icon(
+pub(crate) fn directional_light_icon(
     transform: &Mat4,
     length: f32,
     color: [f32; 4],
@@ -341,7 +342,7 @@ pub struct SelectionGizmo {
 }
 
 /// Generates all gizmo lines for a set of selected entities.
-pub fn generate_selection_gizmos(
+pub(crate) fn generate_selection_gizmos(
     selected_entities: &[SelectionGizmo],
     gizmo_mode: GizmoMode,
 ) -> Vec<GizmoLineInstance> {

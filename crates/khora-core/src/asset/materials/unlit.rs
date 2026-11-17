@@ -35,9 +35,9 @@ use super::AlphaMode;
 ///
 /// # Performance
 ///
-/// UnlitMaterial is the fastest material type in Khora. It requires minimal
+/// `UnlitMaterial` is the fastest material type in Khora. It requires minimal
 /// shader calculations and is suitable for scenes with thousands of objects.
-/// The RenderAgent may choose unlit rendering as a fallback strategy when
+/// The `RenderAgent` may choose unlit rendering as a fallback strategy when
 /// performance budgets are tight.
 ///
 /// # Examples

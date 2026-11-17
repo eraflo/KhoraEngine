@@ -29,6 +29,15 @@ use crate::flow::{Flow, Selection};
 use crate::register_flow;
 use crate::render::{primary_view, ExtractedView};
 
+/// World-space distance the directional shadow cascade covers, measured
+/// from the camera near plane along each frustum edge.
+///
+/// A directional light has no position, so its map is fitted to a bounded
+/// slice of the frustum: over a 1000-unit far plane, a 2048² atlas gives about
+/// one unit per texel and small casters lose their shadows. A quality
+/// constant, not a scene value.
+const SHADOW_CASCADE_DISTANCE: f32 = 60.0;
+
 /// The view-projections one shadow-casting light publishes.
 ///
 /// A sun or a spot has one, sampled from the depth-array atlas; a point light
@@ -147,7 +156,7 @@ impl Flow for ShadowFlow {
 
 register_flow!(ShadowFlow);
 
-/// Whether every entry of `m` is finite.
+/// Returns whether every entry of `m` is finite.
 fn is_finite(m: &Mat4) -> bool {
     m.cols
         .iter()
@@ -186,15 +195,6 @@ fn compute_single_shadow_view_proj(
         ),
     }
 }
-
-/// World-space distance the directional shadow cascade covers, measured
-/// from the camera near plane along each frustum edge.
-///
-/// A directional light has no position, so its map is fitted to a bounded
-/// slice of the frustum: over a 1000-unit far plane, a 2048² atlas gives about
-/// one unit per texel and small casters lose their shadows. A quality
-/// constant, not a scene value.
-const SHADOW_CASCADE_DISTANCE: f32 = 60.0;
 
 /// Returns the cascaded shadow map's view-projection for a directional light.
 fn directional_shadow_view_proj(direction: Vec3, camera: &ExtractedView) -> Mat4 {

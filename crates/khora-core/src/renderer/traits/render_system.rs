@@ -59,6 +59,11 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
     ///
     /// On success, it returns a `Vec` of `ResourceMonitor` trait objects that the
     /// telemetry system can use to track GPU-specific resources like VRAM.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the device, the surface or another backend resource cannot be
+    /// created.
     fn init(
         &mut self,
         window: &dyn KhoraWindow,
@@ -77,6 +82,10 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
     ///
     /// Serves code outside the agents (tests, demos); the engine's frames go
     /// through the frame graph.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the frame cannot be acquired, recorded or submitted.
     fn render(
         &mut self,
         renderables: &[RenderObject],
@@ -102,18 +111,30 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
     /// The returned [`FrameTargets`] are inserted into the per-frame
     /// `FrameContext` so agents can address the same color/depth attachments.
     /// The matching [`end_frame`](Self::end_frame) presents the result.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the swapchain or viewport texture cannot be acquired.
     fn begin_frame(&mut self) -> Result<FrameTargets, RenderError>;
 
     /// Ends the current visual frame by presenting the swapchain texture.
     ///
     /// Called exactly once per frame by the engine, **after** the frame graph
     /// has been compiled and submitted.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the frame cannot be presented.
     fn end_frame(&mut self) -> Result<RenderStats, RenderError>;
 
     /// Renders an editor overlay on top of the current frame.
     ///
     /// Called between the frame graph submission and [`end_frame`](Self::end_frame).
     /// The default implementation is a no-op (no overlay).
+    ///
+    /// # Errors
+    ///
+    /// Fails when the overlay cannot be rendered; the default never fails.
     fn render_overlay(
         &mut self,
         _overlay: &mut dyn crate::ui::EditorOverlay,
@@ -131,7 +152,7 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
     /// Allows mutable downcasting to a concrete `RenderSystem` type.
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 
-    /// Whether [`begin_frame`](Self::begin_frame) targets an offscreen viewport
+    /// Returns whether [`begin_frame`](Self::begin_frame) targets an offscreen viewport
     /// instead of the swapchain.
     ///
     /// When `true`, the engine skips its own [`end_frame`](Self::end_frame) call

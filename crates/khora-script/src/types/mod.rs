@@ -75,13 +75,13 @@ pub struct Checked {
 }
 
 impl Checked {
-    /// Whether any diagnostic is an error.
+    /// Returns whether any diagnostic is an error.
     pub fn has_errors(&self) -> bool {
         crate::diagnostics::has_errors(&self.diagnostics)
     }
 }
 
-/// Type-checks a parsed module.
+/// Checks the types of a parsed module.
 pub fn check(module: &Module) -> Checked {
     check_with(module, &crate::native::NativeRegistry::discovered())
 }
@@ -156,7 +156,7 @@ pub struct Context {
 }
 
 impl Context {
-    /// A context for a member that cannot suspend.
+    /// Builds a context for a member that cannot suspend.
     pub fn sync(member: impl Into<String>, returns: Ty) -> Self {
         Self {
             allows_await: false,
@@ -309,7 +309,7 @@ impl Checker {
 
     /// Resolves the type of a local given its value: a component names the
     /// type of a copy (`Health? h = e.Get(Health);`).
-    pub fn resolve_copy(&mut self, ty: &crate::ast::TypeRef) -> Ty {
+    pub(crate) fn resolve_copy(&mut self, ty: &crate::ast::TypeRef) -> Ty {
         if named_component(ty, &self.components).is_none() {
             return self.resolve(ty);
         }
@@ -634,7 +634,7 @@ impl Checker {
     }
 }
 
-/// The names of the states declared directly in `members`.
+/// Collects the names of the states declared directly in `members`.
 fn collect_state_names(members: &[BehaviorMember]) -> Vec<String> {
     members
         .iter()
@@ -645,7 +645,7 @@ fn collect_state_names(members: &[BehaviorMember]) -> Vec<String> {
         .collect()
 }
 
-/// A written type, spelled back for a message.
+/// Spells a written type back, for a message.
 fn written_name(ty: &crate::ast::TypeRef) -> String {
     use crate::ast::TypeRef;
     match ty {
@@ -660,7 +660,7 @@ fn written_name(ty: &crate::ast::TypeRef) -> String {
     }
 }
 
-/// The component `ty` names, at any depth (`RigidBody`, `RigidBody[]`,
+/// Returns the component `ty` names, at any depth (`RigidBody`, `RigidBody[]`,
 /// `RigidBody?`), with where it is written.
 fn named_component(
     ty: &crate::ast::TypeRef,

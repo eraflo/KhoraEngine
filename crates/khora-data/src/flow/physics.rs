@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `PhysicsFlow`, which publishes the physics statistics, and the
-//! `physics_provider_sync` DataSystem, which registers the world's bodies and
-//! colliders with the [`PhysicsProvider`] before the physics lane steps.
+//! `PhysicsFlow` and the `physics_provider_sync` `DataSystem`.
+//!
+//! The flow publishes the physics statistics; the system registers the world's
+//! bodies and colliders with the [`PhysicsProvider`] before the physics lane steps.
 
 use crate::ecs::SystemContext;
 use std::collections::{HashMap, HashSet};
@@ -80,7 +81,7 @@ register_flow!(PhysicsFlow);
 /// Registers the world's bodies and colliders with the [`PhysicsProvider`]
 /// before the physics lane steps it.
 ///
-/// A DataSystem rather than part of the Flow: it writes the handles back into
+/// A `DataSystem` rather than part of the Flow: it writes the handles back into
 /// the components.
 fn physics_provider_sync(
     world: &mut World,
@@ -130,7 +131,7 @@ fn active_camera_position(world: &World) -> Option<Vec3> {
 /// removes what no entity holds.
 ///
 /// Each new handle is written into its component, where the
-/// `physics_world_writeback` DataSystem finds it.
+/// `physics_world_writeback` `DataSystem` finds it.
 fn sync_to_provider(world: &mut World, provider: &mut dyn PhysicsProvider) {
     let mut active_bodies = HashSet::new();
     let mut active_colliders = HashSet::new();

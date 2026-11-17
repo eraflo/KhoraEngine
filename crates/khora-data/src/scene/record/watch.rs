@@ -53,7 +53,7 @@ pub(super) enum Event {
 
 /// Where the reader notes what it does.
 pub(super) trait Watcher {
-    /// The node for the value reached from `parent` by `step`.
+    /// Returns the node for the value reached from `parent` by `step`.
     fn child(&mut self, parent: usize, step: Step) -> usize;
     /// Notes `event` at `node`.
     fn note(&mut self, node: usize, event: Event);

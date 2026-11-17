@@ -97,32 +97,6 @@ pub struct InputMap {
     just_released: HashSet<Action>,
 }
 
-/// What the action map says, for a consumer that cannot hold the map.
-///
-/// A lane declares no `InputMap`, so a `Flow` projects this into its view: the
-/// lane reads a snapshot of engine state, never the state. It holds only the
-/// two questions gameplay asks: "is it held" (movement) and "did it fire this
-/// frame" (a jump).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct InputSnapshot {
-    /// Actions held right now.
-    pub pressed: HashSet<String>,
-    /// Actions that became held this frame.
-    pub just_pressed: HashSet<String>,
-}
-
-impl InputSnapshot {
-    /// Whether the action is held.
-    pub fn is_pressed(&self, action: &str) -> bool {
-        self.pressed.contains(action)
-    }
-
-    /// Whether it became held this frame.
-    pub fn just_pressed(&self, action: &str) -> bool {
-        self.just_pressed.contains(action)
-    }
-}
-
 impl InputMap {
     /// Creates an empty map with no bindings.
     pub fn new() -> Self {
@@ -190,7 +164,7 @@ impl InputMap {
         self.just_released.iter().any(|a| a.as_str() == action)
     }
 
-    /// What a consumer that cannot hold the map should be told.
+    /// Returns what a consumer that cannot hold the map should be told.
     ///
     /// Allocates: the sets are owned, because the snapshot outlives the lock it
     /// was read under and crosses into a lane that may run on another thread.
@@ -266,6 +240,32 @@ impl InputMap {
                 }
             }
         }
+    }
+}
+
+/// What the action map says, for a consumer that cannot hold the map.
+///
+/// A lane declares no `InputMap`, so a `Flow` projects this into its view: the
+/// lane reads a snapshot of engine state, never the state. It holds only the
+/// two questions gameplay asks: "is it held" (movement) and "did it fire this
+/// frame" (a jump).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct InputSnapshot {
+    /// Actions held right now.
+    pub pressed: HashSet<String>,
+    /// Actions that became held this frame.
+    pub just_pressed: HashSet<String>,
+}
+
+impl InputSnapshot {
+    /// Returns whether the action is held.
+    pub fn is_pressed(&self, action: &str) -> bool {
+        self.pressed.contains(action)
+    }
+
+    /// Returns whether it became held this frame.
+    pub fn just_pressed(&self, action: &str) -> bool {
+        self.just_pressed.contains(action)
     }
 }
 

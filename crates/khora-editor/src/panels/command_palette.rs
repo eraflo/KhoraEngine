@@ -23,20 +23,12 @@ use crate::widgets::panel_header::paint_kbd_chip;
 use khora_tool_ui::widgets::paint;
 use khora_tool_ui::widgets::with_alpha;
 
-/// A single palette command.
-#[derive(Debug, Clone)]
-struct Command {
-    label: &'static str,
-    description: &'static str,
-    action: EditorRequest,
-    icon: Icon,
-}
-
-#[derive(Debug, Clone)]
-struct Section {
-    title: &'static str,
-    items: &'static [Command],
-}
+/// Height of the modal's header, which holds the query field.
+const HEADER_H: f32 = 56.0;
+/// Inner horizontal padding of the modal.
+const PAD: f32 = 18.0;
+/// Vertical distance from one result row to the next.
+const ROW_PITCH: f32 = 36.0 + 2.0;
 
 const QUICK_ACTIONS: &[Command] = &[
     Command {
@@ -133,6 +125,21 @@ const SECTIONS: &[Section] = &[
     },
 ];
 
+/// A single palette command.
+#[derive(Debug, Clone)]
+struct Command {
+    label: &'static str,
+    description: &'static str,
+    action: EditorRequest,
+    icon: Icon,
+}
+
+#[derive(Debug, Clone)]
+struct Section {
+    title: &'static str,
+    items: &'static [Command],
+}
+
 /// Floating modal command palette.
 pub struct CommandPalettePanel {
     state: Arc<Mutex<EditorState>>,
@@ -158,14 +165,6 @@ impl CommandPalettePanel {
             list_scroll: 0.0,
         }
     }
-}
-
-fn matches(cmd: &Command, query_lower: &str) -> bool {
-    if query_lower.is_empty() {
-        return true;
-    }
-    cmd.label.to_lowercase().contains(query_lower)
-        || cmd.description.to_lowercase().contains(query_lower)
 }
 
 impl EditorPanel for CommandPalettePanel {
@@ -202,72 +201,20 @@ impl EditorPanel for CommandPalettePanel {
         let modal_x = sx + (sw - modal_w) * 0.5;
         let modal_y = sy + sh * 0.14;
         let modal_h = 480.0_f32.min(sh - modal_y - 32.0);
+        let modal = [modal_x, modal_y, modal_w, modal_h];
 
         // A click inside the modal must not close the palette.
         let backdrop_int = ui.interact_rect("cmdk-backdrop", [sx, sy, sw, sh]);
-        let modal_int = ui.interact_rect("cmdk-modal-eat", [modal_x, modal_y, modal_w, modal_h]);
+        let modal_int = ui.interact_rect("cmdk-modal-eat", modal);
         if backdrop_int.clicked && !modal_int.hovered {
             if let Ok(mut s) = self.state.lock() {
                 s.command_palette_open = false;
             }
         }
 
-        ui.paint_rect_filled(
-            [modal_x, modal_y],
-            [modal_w, modal_h],
-            theme.surface_elevated,
-            theme.radius_xl,
-        );
-        ui.paint_rect_stroke(
-            [modal_x, modal_y],
-            [modal_w, modal_h],
-            with_alpha(theme.primary, 0.25),
-            theme.radius_xl,
-            1.0,
-        );
-        ui.paint_rect_stroke(
-            [modal_x + 1.0, modal_y + 1.0],
-            [modal_w - 2.0, modal_h - 2.0],
-            with_alpha(theme.primary, 0.05),
-            theme.radius_xl - 1.0,
-            1.0,
-        );
+        paint_modal_header(ui, &theme, modal);
 
-        let header_h = 56.0;
-        let pad = 18.0;
-        let input_y = modal_y + (header_h - 28.0) * 0.5;
-
-        // The sign, in place of a search glyph.
-        khora_tool_ui::widgets::sign(
-            ui,
-            &theme,
-            [modal_x + pad + 9.0, modal_y + header_h * 0.5],
-            14.0,
-            1.0,
-        );
-
-        let esc_x = modal_x + modal_w - pad - 30.0;
-        paint_kbd_chip(ui, [esc_x, input_y + 6.0], "esc", &theme);
-
-        ui.paint_line(
-            [modal_x + pad - 6.0, modal_y + header_h],
-            [modal_x + modal_w - pad + 6.0, modal_y + header_h],
-            with_alpha(theme.separator, 0.55),
-            1.0,
-        );
-
-        let q_lower = self.query.to_lowercase();
-        let mut visible: Vec<(&Section, Vec<&Command>)> = Vec::new();
-        for section in SECTIONS {
-            let items: Vec<&Command> = section
-                .items
-                .iter()
-                .filter(|c| matches(c, &q_lower))
-                .collect();
-            if !items.is_empty() {
-                visible.push((section, items));
-            }
-        }
+        let visible = visible_sections(&self.query.to_lowercase());
         let total: usize = visible.iter().map(|(_, items)| items.len()).sum();
         if self.active >= total.max(1) {
             self.active = 0;
@@ -275,9 +222,9 @@ impl EditorPanel for CommandPalettePanel {
 
         let body_rect = [
             modal_x,
-            modal_y + header_h + 4.0,
+            modal_y + HEADER_H + 4.0,
             modal_w,
-            modal_h - header_h - 56.0,
+            modal_h - HEADER_H - 56.0,
         ];
 
         // The raw key state: the arrows must move the selection while the
@@ -297,17 +244,53 @@ impl EditorPanel for CommandPalettePanel {
         // The row loop may move the selection on hover; the scroll follows
         // the selection as it was before.
         let active_now = self.active;
-        let list_scroll_prev = self.list_scroll;
-        let query_ref = &mut self.query;
-        let active_ref = &mut self.active;
-        let mut to_dispatch: Option<EditorRequest> = None;
-        let mut close_after = false;
-        let theme_for_closure = theme.clone();
+        let (mut to_dispatch, mut close_after) =
+            self.show_query_input(ui, modal, take_focus, &visible);
 
+        let scroll = scroll_to_active(&visible, active_now, self.list_scroll, body_rect[3]);
+        self.list_scroll = scroll;
+
+        if let Some(action) = self.paint_rows(ui, &theme, modal, body_rect, &visible) {
+            to_dispatch = Some(action);
+            close_after = true;
+        }
+        self.paint_footer(ui, &theme, modal);
+
+        if let Some(action) = to_dispatch {
+            if let Ok(mut s) = self.state.lock() {
+                s.push_request(action);
+            }
+        }
+        if close_after {
+            if let Ok(mut s) = self.state.lock() {
+                s.command_palette_open = false;
+            }
+            self.query.clear();
+            self.active = 0;
+        }
+    }
+}
+
+impl CommandPalettePanel {
+    /// Shows the query field; returns the command Enter picked and whether
+    /// Enter or Escape closes the palette.
+    fn show_query_input(
+        &mut self,
+        ui: &mut dyn UiBuilder,
+        modal: [f32; 4],
+        take_focus: bool,
+        visible: &[(&Section, Vec<&Command>)],
+    ) -> (Option<EditorRequest>, bool) {
+        let mut to_dispatch = None;
+        let mut close_after = false;
+        let [modal_x, modal_y, modal_w, _] = modal;
+        let input_y = modal_y + (HEADER_H - 28.0) * 0.5;
+        let query_ref = &mut self.query;
+        let active = self.active;
         let input_rect = [
-            modal_x + pad + 28.0,
+            modal_x + PAD + 28.0,
             input_y,
-            modal_w - pad * 2.0 - 80.0,
+            modal_w - PAD * 2.0 - 80.0,
             28.0,
         ];
         ui.region_at("cmd-palette-input", input_rect, &mut |ui_inner| {
@@ -320,9 +303,9 @@ impl EditorPanel for CommandPalettePanel {
             }
             if ui_inner.is_last_item_enter_pressed() {
                 let mut idx = 0usize;
-                'outer: for (_, items) in &visible {
+                'outer: for (_, items) in visible {
                     for cmd in items {
-                        if idx == *active_ref {
+                        if idx == active {
                             to_dispatch = Some(cmd.action.clone());
                             close_after = true;
                             break 'outer;
@@ -332,52 +315,27 @@ impl EditorPanel for CommandPalettePanel {
                 }
             }
         });
+        (to_dispatch, close_after)
+    }
 
-        let row_pitch = 36.0 + 2.0;
-        let content_h = visible
-            .iter()
-            .map(|(_, items)| 18.0 + items.len() as f32 * row_pitch)
-            .sum::<f32>()
-            + 8.0;
-        // The palette is driven from the keyboard: the view tracks the active
-        // row, not the wheel.
-        let active_top = {
-            let mut y = 8.0;
-            let mut seen = 0usize;
-            for (_, items) in &visible {
-                y += 18.0;
-                for _ in items.iter() {
-                    if seen == active_now {
-                        break;
-                    }
-                    seen += 1;
-                    y += row_pitch;
-                }
-                if seen == active_now {
-                    break;
-                }
-            }
-            y
-        };
-        let view_h = body_rect[3];
-        let scroll = if content_h <= view_h {
-            0.0
-        } else {
-            // Nudged only as much as needed, so the list does not jump.
-            let want_min = (active_top + row_pitch - view_h).max(0.0);
-            let want_max = active_top;
-            list_scroll_prev
-                .clamp(want_min, want_max)
-                .min(content_h - view_h)
-        };
-        self.list_scroll = scroll;
-
+    /// Paints the result rows and returns the command of the row clicked;
+    /// hovering a row makes it active.
+    fn paint_rows(
+        &mut self,
+        ui: &mut dyn UiBuilder,
+        theme: &UiTheme,
+        modal: [f32; 4],
+        body_rect: [f32; 4],
+        visible: &[(&Section, Vec<&Command>)],
+    ) -> Option<EditorRequest> {
+        let mut clicked = None;
+        let [modal_x, _, modal_w, _] = modal;
         ui.push_clip_rect(body_rect);
         let mut idx = 0usize;
-        let mut row_y = body_rect[1] + 8.0 - scroll;
-        for (section, items) in &visible {
+        let mut row_y = body_rect[1] + 8.0 - self.list_scroll;
+        for (section, items) in visible {
             ui.paint_text_styled(
-                [modal_x + pad, row_y],
+                [modal_x + PAD, row_y],
                 section.title,
                 10.0,
                 theme.text_muted,
@@ -387,9 +345,9 @@ impl EditorPanel for CommandPalettePanel {
             row_y += 18.0;
 
             for cmd in items {
-                let active = idx == *active_ref;
-                let row_x = modal_x + pad - 4.0;
-                let row_w = modal_w - pad * 2.0 + 8.0;
+                let active = idx == self.active;
+                let row_x = modal_x + PAD - 4.0;
+                let row_w = modal_w - PAD * 2.0 + 8.0;
                 let row_h = 36.0;
 
                 // The editor's one selection bar. The icon sits bare: a plate
@@ -433,11 +391,10 @@ impl EditorPanel for CommandPalettePanel {
                 let interaction =
                     ui.interact_rect(&format!("cmdk-row-{}", idx), [row_x, row_y, row_w, row_h]);
                 if interaction.hovered {
-                    *active_ref = idx;
+                    self.active = idx;
                 }
                 if interaction.clicked {
-                    to_dispatch = Some(cmd.action.clone());
-                    close_after = true;
+                    clicked = Some(cmd.action.clone());
                 }
 
                 row_y += row_h + 1.0;
@@ -456,7 +413,12 @@ impl EditorPanel for CommandPalettePanel {
             );
         }
         ui.pop_clip_rect();
+        clicked
+    }
 
+    /// Paints the footer: the key hints and the engine version.
+    fn paint_footer(&self, ui: &mut dyn UiBuilder, theme: &UiTheme, modal: [f32; 4]) {
+        let [modal_x, modal_y, modal_w, modal_h] = modal;
         let footer_y = modal_y + modal_h - 40.0;
         ui.paint_line(
             [modal_x, footer_y],
@@ -464,9 +426,9 @@ impl EditorPanel for CommandPalettePanel {
             with_alpha(theme.separator, 0.55),
             1.0,
         );
-        let mut fx = modal_x + pad;
+        let mut fx = modal_x + PAD;
         for (chip, text) in [("↑↓", " Navigate"), ("↵", " Select"), ("esc", " Close")] {
-            let after = paint_kbd_chip(ui, [fx, footer_y + 14.0], chip, &theme);
+            let after = paint_kbd_chip(ui, [fx, footer_y + 14.0], chip, theme);
             paint::text(
                 ui,
                 [after + 4.0, footer_y + 14.0],
@@ -484,28 +446,127 @@ impl EditorPanel for CommandPalettePanel {
             .unwrap_or_else(|| "dev".to_owned());
         let version_label = format!("khora · v{}", engine_version);
         ui.paint_text_styled(
-            [modal_x + modal_w - pad, footer_y + 14.0],
+            [modal_x + modal_w - PAD, footer_y + 14.0],
             &version_label,
             10.0,
             theme.text_muted,
             FontFamilyHint::Monospace,
             TextAlign::Right,
         );
+    }
+}
 
-        let _ = theme_for_closure;
-        if let Some(action) = to_dispatch {
-            if let Ok(mut s) = self.state.lock() {
-                s.push_request(action);
-            }
-        }
-        if close_after {
-            if let Ok(mut s) = self.state.lock() {
-                s.command_palette_open = false;
-            }
-            self.query.clear();
-            self.active = 0;
+/// Paints the modal's plate and its header: the sign, the `esc` chip and the rule under them.
+fn paint_modal_header(ui: &mut dyn UiBuilder, theme: &UiTheme, modal: [f32; 4]) {
+    let [modal_x, modal_y, modal_w, modal_h] = modal;
+    ui.paint_rect_filled(
+        [modal_x, modal_y],
+        [modal_w, modal_h],
+        theme.surface_elevated,
+        theme.radius_xl,
+    );
+    ui.paint_rect_stroke(
+        [modal_x, modal_y],
+        [modal_w, modal_h],
+        with_alpha(theme.primary, 0.25),
+        theme.radius_xl,
+        1.0,
+    );
+    ui.paint_rect_stroke(
+        [modal_x + 1.0, modal_y + 1.0],
+        [modal_w - 2.0, modal_h - 2.0],
+        with_alpha(theme.primary, 0.05),
+        theme.radius_xl - 1.0,
+        1.0,
+    );
+
+    let input_y = modal_y + (HEADER_H - 28.0) * 0.5;
+
+    // The sign, in place of a search glyph.
+    khora_tool_ui::widgets::sign(
+        ui,
+        theme,
+        [modal_x + PAD + 9.0, modal_y + HEADER_H * 0.5],
+        14.0,
+        1.0,
+    );
+
+    let esc_x = modal_x + modal_w - PAD - 30.0;
+    paint_kbd_chip(ui, [esc_x, input_y + 6.0], "esc", theme);
+
+    ui.paint_line(
+        [modal_x + PAD - 6.0, modal_y + HEADER_H],
+        [modal_x + modal_w - PAD + 6.0, modal_y + HEADER_H],
+        with_alpha(theme.separator, 0.55),
+        1.0,
+    );
+}
+
+/// Returns the sections with at least one command matching the lowercase query, each with those commands.
+fn visible_sections(query_lower: &str) -> Vec<(&'static Section, Vec<&'static Command>)> {
+    let mut visible: Vec<(&Section, Vec<&Command>)> = Vec::new();
+    for section in SECTIONS {
+        let items: Vec<&Command> = section
+            .items
+            .iter()
+            .filter(|c| matches(c, query_lower))
+            .collect();
+        if !items.is_empty() {
+            visible.push((section, items));
         }
     }
+    visible
+}
+
+/// Returns the list scroll that keeps the active row in view, moved from
+/// `previous` only as much as needed.
+fn scroll_to_active(
+    visible: &[(&Section, Vec<&Command>)],
+    active: usize,
+    previous: f32,
+    view_h: f32,
+) -> f32 {
+    let content_h = visible
+        .iter()
+        .map(|(_, items)| 18.0 + items.len() as f32 * ROW_PITCH)
+        .sum::<f32>()
+        + 8.0;
+    // The palette is driven from the keyboard: the view tracks the active
+    // row, not the wheel.
+    let active_top = {
+        let mut y = 8.0;
+        let mut seen = 0usize;
+        for (_, items) in visible {
+            y += 18.0;
+            for _ in items.iter() {
+                if seen == active {
+                    break;
+                }
+                seen += 1;
+                y += ROW_PITCH;
+            }
+            if seen == active {
+                break;
+            }
+        }
+        y
+    };
+    if content_h <= view_h {
+        0.0
+    } else {
+        // Nudged only as much as needed, so the list does not jump.
+        let want_min = (active_top + ROW_PITCH - view_h).max(0.0);
+        let want_max = active_top;
+        previous.clamp(want_min, want_max).min(content_h - view_h)
+    }
+}
+
+fn matches(cmd: &Command, query_lower: &str) -> bool {
+    if query_lower.is_empty() {
+        return true;
+    }
+    cmd.label.to_lowercase().contains(query_lower)
+        || cmd.description.to_lowercase().contains(query_lower)
 }
 
 #[cfg(test)]

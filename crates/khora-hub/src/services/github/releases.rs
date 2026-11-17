@@ -25,24 +25,13 @@ pub struct GithubRelease {
     pub assets: Vec<GithubAsset>,
 }
 
-/// A downloadable file attached to a release.
-#[derive(Debug, Clone, Deserialize)]
-pub struct GithubAsset {
-    /// The file name.
-    pub name: String,
-    /// The URL a plain download fetches it from.
-    pub browser_download_url: String,
-    /// Its size, in bytes.
-    pub size: u64,
-}
-
 impl GithubRelease {
     /// Returns the engine archive, holding `khora-editor`, for the current OS.
     ///
     /// Release archives are named `khora-engine-{platform}.{ext}`, the platform
     /// being `windows-x86_64`, `linux-x86_64` or `macos-aarch64`. The hub's own
     /// archive (`khora-hub-*`) is never offered: the hub does not download itself.
-    pub fn editor_asset(&self) -> Option<&GithubAsset> {
+    pub(crate) fn editor_asset(&self) -> Option<&GithubAsset> {
         let needle = if cfg!(windows) {
             "khora-engine-windows"
         } else if cfg!(target_os = "macos") {
@@ -58,7 +47,7 @@ impl GithubRelease {
     /// It is named `khora-runtime-{platform}.{ext}`, as for
     /// [`Self::editor_asset`]. A release without one still edits; only the
     /// editor's Build Game needs the runtime.
-    pub fn runtime_asset(&self) -> Option<&GithubAsset> {
+    pub(crate) fn runtime_asset(&self) -> Option<&GithubAsset> {
         let needle = if cfg!(windows) {
             "khora-runtime-windows"
         } else if cfg!(target_os = "macos") {
@@ -70,13 +59,24 @@ impl GithubRelease {
     }
 }
 
-/// Fetches all releases from the KhoraEngine GitHub repository.
+/// A downloadable file attached to a release.
+#[derive(Debug, Clone, Deserialize)]
+pub struct GithubAsset {
+    /// The file name.
+    pub name: String,
+    /// The URL a plain download fetches it from.
+    pub browser_download_url: String,
+    /// Its size, in bytes.
+    pub size: u64,
+}
+
+/// Fetches all releases from the `KhoraEngine` GitHub repository.
 ///
 /// # Errors
 ///
 /// Fails when GitHub cannot be reached, answers with an error status or
 /// sends JSON that does not parse.
-pub fn fetch_releases() -> Result<Vec<GithubRelease>> {
+pub(crate) fn fetch_releases() -> Result<Vec<GithubRelease>> {
     let client = reqwest::blocking::Client::builder()
         .user_agent("khora-hub/0.1")
         .timeout(std::time::Duration::from_secs(10))
@@ -100,7 +100,12 @@ pub fn fetch_releases() -> Result<Vec<GithubRelease>> {
 }
 
 /// Runs [`fetch_releases`] in the background and returns the channel of its outcome.
-pub fn fetch_releases_async() -> std::sync::mpsc::Receiver<Result<Vec<GithubRelease>, String>> {
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the hub runs no engine: a network call runs on its own thread"
+)]
+pub(crate) fn fetch_releases_async() -> std::sync::mpsc::Receiver<Result<Vec<GithubRelease>, String>>
+{
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let result = fetch_releases().map_err(|e| e.to_string());

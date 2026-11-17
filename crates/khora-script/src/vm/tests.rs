@@ -244,6 +244,28 @@ fn a_suspended_machine_survives_serialization() {
     assert_eq!(revived.result(), Value::Int(42));
 }
 
+/// **A machine inside a call stands in the callee, its entry outermost.**
+/// Without sites, the callee is named with the counter.
+#[test]
+fn a_machine_inside_a_call_stands_in_the_callee_with_the_entry_outermost() {
+    let program = calling_program();
+    let mut machine = Machine::new(&program, "Main", &[]).expect("entry exists");
+    let mut host = Host::new();
+    for _ in 0..8 {
+        if machine.frames.len() == 2 {
+            break;
+        }
+        machine.run(&program, &mut host, 1);
+    }
+    assert_eq!(machine.frames.len(), 2, "the premise: inside `Double`");
+
+    assert_eq!(machine.outermost(), Some(0), "`Main` is function 0");
+    assert_eq!(
+        machine.standing(&program),
+        format!("Double@{}", machine.program_counter())
+    );
+}
+
 #[test]
 fn arguments_arrive_in_the_first_registers() {
     let program = calling_program();

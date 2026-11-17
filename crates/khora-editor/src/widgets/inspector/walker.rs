@@ -101,7 +101,7 @@ impl<'a> Marks<'a> {
     /// overrides the prefab's.
     ///
     /// For a card whose rows another walker draws.
-    pub fn mark_field(
+    pub(crate) fn mark_field(
         &mut self,
         ui: &mut dyn UiBuilder,
         field: &str,
@@ -192,7 +192,7 @@ fn render_object(
 ) -> bool {
     // Single-key objects are serde-tagged enum variants.
     if map.len() == 1 {
-        let key = map.keys().next().cloned().unwrap();
+        let key = map.keys().next().cloned().expect("a one-key map has a key");
 
         // A switchable enum: picking a variant replaces the payload with that
         // variant's defaults.
@@ -218,8 +218,14 @@ fn render_object(
             }
             // Fall through to recurse into the (possibly newly-typed)
             // inner.
-            let inner_key = map.keys().next().cloned().unwrap();
-            let inner = map.get_mut(&inner_key).unwrap();
+            let inner_key = map
+                .keys()
+                .next()
+                .cloned()
+                .expect("an unchanged one-key map still has its key");
+            let inner = map
+                .get_mut(&inner_key)
+                .expect("the key was just read from the map");
             marks.path.push(inner_key);
             let changed = match inner {
                 Value::Object(m) if !is_float_marker(m) => render_object(ui, m, theme, marks),
@@ -231,7 +237,7 @@ fn render_object(
         }
 
         // Unknown enum — read-only label fallback.
-        let inner = map.get_mut(&key).unwrap();
+        let inner = map.get_mut(&key).expect("the key was read from the map");
         ui.colored_label(theme.text_dim, &format!("Variant: {}", key));
         marks.path.push(key);
         let changed = match inner {
@@ -259,7 +265,7 @@ fn render_object(
     let keys: Vec<String> = map.keys().cloned().collect();
     for key in keys {
         let label = humanise(&key);
-        let val = map.get_mut(&key).unwrap();
+        let val = map.get_mut(&key).expect("the key was read from the map");
         marks.path.push(key);
         if render_field(ui, &label, val, theme, marks) {
             changed = true;

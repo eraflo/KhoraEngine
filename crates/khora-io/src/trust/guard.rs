@@ -43,28 +43,8 @@ pub struct FileGuard {
     refusals: Arc<Refusals>,
 }
 
-/// Why a [`FileGuard`] read returned no bytes.
-#[derive(Debug)]
-pub enum ReadError {
-    /// The guard refused the file.
-    Refused(SecurityRefusal),
-    /// The file could not be read: missing, or the system refused it.
-    Io(std::io::Error),
-}
-
-impl std::fmt::Display for ReadError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ReadError::Refused(refusal) => write!(f, "refused: {refusal}"),
-            ReadError::Io(error) => write!(f, "{error}"),
-        }
-    }
-}
-
-impl std::error::Error for ReadError {}
-
 impl FileGuard {
-    /// A guard reading under `root` at `trust`, reporting its refusals to
+    /// Creates a guard reading under `root` at `trust`, reporting its refusals to
     /// `refusals`.
     pub fn new(root: impl Into<PathBuf>, trust: Trust, refusals: Arc<Refusals>) -> Self {
         Self {
@@ -75,17 +55,17 @@ impl FileGuard {
         }
     }
 
-    /// The root the guard reads under.
+    /// Returns the root the guard reads under.
     pub fn root(&self) -> &Path {
         &self.root
     }
 
-    /// The trust the guard reads at.
+    /// Returns the trust the guard reads at.
     pub fn trust(&self) -> Trust {
         self.trust
     }
 
-    /// The refusals the guard reports to.
+    /// Returns the refusals the guard reports to.
     pub fn refusals(&self) -> &Arc<Refusals> {
         &self.refusals
     }
@@ -181,7 +161,27 @@ impl FileGuard {
     }
 }
 
-/// Whether `rel`, read as written, leaves the folder it is joined to: an
+/// Why a [`FileGuard`] read returned no bytes.
+#[derive(Debug)]
+pub enum ReadError {
+    /// The guard refused the file.
+    Refused(SecurityRefusal),
+    /// The file could not be read: missing, or the system refused it.
+    Io(std::io::Error),
+}
+
+impl std::fmt::Display for ReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReadError::Refused(refusal) => write!(f, "refused: {refusal}"),
+            ReadError::Io(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for ReadError {}
+
+/// Returns whether `rel`, read as written, leaves the folder it is joined to: an
 /// absolute path, or `..` past its start.
 fn leaves(rel: &Path) -> bool {
     let mut depth = 0usize;
@@ -199,7 +199,7 @@ fn leaves(rel: &Path) -> bool {
     false
 }
 
-/// Whether the file at `path` carries the system's download mark: Windows'
+/// Returns whether the file at `path` carries the system's download mark: Windows'
 /// `Zone.Identifier` stream.
 fn downloaded(path: &Path) -> bool {
     if cfg!(windows) {

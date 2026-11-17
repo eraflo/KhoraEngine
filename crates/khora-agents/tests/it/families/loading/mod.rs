@@ -1001,7 +1001,7 @@ fn background_frame(
 /// Lent 25 ms with nothing filed, the agent quotes both lanes on empty
 /// mailboxes and runs rush. Then every frame three scene loads are filed —
 /// 60 ms of work, more than twice the envelope. Each rush run loads them
-/// all; its run must price what it loaded, so the agent finds rush no longer
+/// all; its run must price what it loaded, so the agent finds rush no more
 /// fits and moves to paced, which fits — as `choose` does on fresh quotes.
 /// Priced on what a run leaves in its fields, rush always costs nothing, and
 /// the agent never leaves it.

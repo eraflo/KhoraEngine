@@ -44,7 +44,7 @@ pub(super) struct ElementCaps {
 }
 
 impl ElementCaps {
-    /// The caps `limits` give.
+    /// Returns the caps `limits` give.
     pub(super) fn of(limits: &Limits) -> Self {
         let vertices = usize::try_from(limits.max_elements).unwrap_or(usize::MAX);
         Self {
@@ -270,7 +270,7 @@ fn check_span(
     Ok(())
 }
 
-/// The bytes of `view` inside its loaded buffer, or why they are not there.
+/// Returns the bytes of `view` inside its loaded buffer, or why they are not there.
 pub(super) fn view_bytes<'b>(
     view: &gltf::buffer::View<'_>,
     buffers: &'b [Vec<u8>],
@@ -315,7 +315,7 @@ pub(super) fn check_image(document: &gltf::Document, index: usize) -> Result<(),
     }
 }
 
-/// The size in bytes of one element of `data_type` × `dimensions`, padding of
+/// Returns the size in bytes of one element of `data_type` × `dimensions`, padding of
 /// matrix columns aside (no attribute the importer reads is a matrix).
 fn element_size(data_type: DataType, dimensions: Dimensions) -> usize {
     let component = match data_type {

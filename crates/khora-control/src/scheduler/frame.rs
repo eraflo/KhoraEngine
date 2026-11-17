@@ -238,7 +238,7 @@ impl ExecutionScheduler {
     }
 }
 
-/// The agents whose family is off, as the runtime's [`Activation`] holds
+/// Returns the agents whose family is off, as the runtime's [`Activation`] holds
 /// them; none without one.
 fn inactive_families(runtime: &Runtime) -> BTreeSet<AgentId> {
     runtime

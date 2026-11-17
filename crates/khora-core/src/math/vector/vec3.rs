@@ -193,7 +193,7 @@ impl Vec3 {
         self.distance_squared(other).sqrt()
     }
 
-    /// Linearly interpolates from `start` to `end` by `t`, which is not clamped.
+    /// Interpolates linearly from `start` to `end` by `t`, which is not clamped.
     #[inline]
     pub fn lerp(start: Self, end: Self, t: f32) -> Self {
         Self {

@@ -9,6 +9,7 @@ description: Validates an engine change by compiling and running the workspace t
 
 | Need | Command |
 |---|---|
+| **After writing a file** — the per-file convention checks, no compile, under a second | `cargo xtask lint-file <files…>` (prints `path:line: check: message`; exit 1 on a finding) |
 | **While iterating** — the tests you are working on | `cargo t -p <crate> [filter]` (nextest, `--all-features`) |
 | **When the change is done** — what CI checks, stops at the first failure | `cargo gate` (fmt → clippy → nextest → doc tests) |
 | Run an app | `cargo run -p sandbox` / `-p khora-editor` / `-p khora-hub` |
@@ -18,6 +19,10 @@ crate it selects that depends on the change: `-p khora-lanes` relinks the lanes'
 a workspace-wide run relinks agents, SDK, editor and hub too (about 6 min).
 
 ## Rhythm — where the time goes
+
+- After each file you write, the Claude Code hook runs `cargo xtask lint-file` on it and hands you its
+  findings (`.agent/engine/hooks/lint-file.md`); fix them before moving on. Before a report, run it on
+  every `.rs` file you touched.
 
 - While iterating, run **only** `cargo t -p <crate> [filter]`. No clippy, no full suite: clippy compiles
   in check mode and shares nothing with a test build, and the full suite is the gate's job.

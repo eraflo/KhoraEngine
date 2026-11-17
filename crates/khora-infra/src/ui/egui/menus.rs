@@ -21,7 +21,7 @@ use khora_core::ui::editor::UiBuilder;
 use super::ui_builder::EguiUiBuilder;
 
 impl EguiUiBuilder<'_> {
-    /// The last item's context menu, with `f` building its content.
+    /// Opens the last item's context menu, with `f` building its content.
     pub(super) fn open_context_menu_last(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         // Cloned, not taken: the response must stay the last one for a
         // following call such as `tooltip_for_last`. The clone is cheap.
@@ -34,8 +34,8 @@ impl EguiUiBuilder<'_> {
         }
     }
 
-    /// A menu opened by a click on the last item, closed by a click outside
-    /// it, with `f` building its content.
+    /// Opens a menu on a click on the last item, closed by a click outside it,
+    /// with `f` building its content.
     pub(super) fn open_menu_on_click_last(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         // A clone, as for the context menu: the response stays the last one.
         // A click inside — into a search field, say — keeps it open; a pick
@@ -51,7 +51,7 @@ impl EguiUiBuilder<'_> {
         }
     }
 
-    /// The context menu of the panel's remaining space, with `f` building
+    /// Opens the context menu of the panel's remaining space, with `f` building
     /// its content.
     pub(super) fn open_context_menu_panel(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         // Allocate remaining space at the bottom of the scroll area so the

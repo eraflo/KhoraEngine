@@ -74,7 +74,7 @@ pub fn scene_names(roots: &[SceneNode]) -> HashMap<EntityId, String> {
     names
 }
 
-/// The prefab's fields of the declared component `name`.
+/// Returns the prefab's fields of the declared component `name`.
 fn prefab_fields<'p>(
     prefab: &'p InspectedPrefab,
     name: &str,
@@ -86,7 +86,7 @@ fn prefab_fields<'p>(
         .map(|(_, fields)| fields.as_slice())
 }
 
-/// The prefab's value of the field `field` of `name`.
+/// Returns the prefab's value of the field `field` of `name`.
 fn prefab_field<'p>(
     prefab: &'p InspectedPrefab,
     name: &str,
@@ -98,8 +98,8 @@ fn prefab_field<'p>(
         .map(|(_, value)| value)
 }
 
-/// The edits that bring `name` back to its prefab's: each overridden field
-/// set back — or, where the instance added it, the component taken off.
+/// Returns the edits that bring `name` back to its prefab's: each overridden
+/// field set back — or, where the instance added it, the component taken off.
 fn reverted(entity: EntityId, name: &str, prefab: &InspectedPrefab) -> Vec<PropertyEdit> {
     let added = prefab
         .components
@@ -301,8 +301,8 @@ pub fn render_declared_cards(
     }
 }
 
-/// The quiet line under a card's title. An orphan's reads as a warning: the
-/// data stays, but no script will run it.
+/// Renders the quiet line under a card's title. An orphan's reads as a warning:
+/// the data stays, but no script will run it.
 fn render_provenance(ui: &mut dyn UiBuilder, card: &DeclaredCard, theme: &UiTheme) {
     let text = provenance_line(card);
     let size = theme.font_size_caption;

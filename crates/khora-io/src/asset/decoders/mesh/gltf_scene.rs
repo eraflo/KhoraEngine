@@ -38,12 +38,12 @@ const KEY_PREFIX: &str = "gltf-node:";
 /// decomposable matrix). Measured on the unit axes, so it holds at any scale.
 const ORTHOGONALITY_TOLERANCE: f32 = 1e-4;
 
-/// The key of the scene's root.
+/// Returns the key of the scene's root.
 pub(super) fn root_key() -> PersistentId {
     PersistentId::named(KEY_PREFIX)
 }
 
-/// The key of the member whose path segment is `segment`, under the member
+/// Returns the key of the member whose path segment is `segment`, under the member
 /// keyed `parent`.
 ///
 /// Built on the parent's key rather than the whole path, so a deep hierarchy
@@ -52,7 +52,7 @@ pub(super) fn member_key(parent: PersistentId, segment: &str) -> PersistentId {
     PersistentId::named(&format!("{KEY_PREFIX}{:016x}/{segment}", parent.to_bits()))
 }
 
-/// The record of scene `scene` of `document`, its sub-assets named under `container`.
+/// Builds the record of scene `scene` of `document`, its sub-assets named under `container`.
 ///
 /// `None` is the default scene, else the first, else every mesh once. The root
 /// is named after the scene, else `file_stem`.
@@ -100,16 +100,6 @@ struct Builder {
     container: AssetUUID,
     /// Each member and its parent, with the member's depth, in file order.
     edges: Vec<(EntityId, EntityId, usize)>,
-}
-
-/// A node waiting to be placed: under `parent` (keyed `parent_key`), at
-/// `depth`, as path segment `segment`.
-struct Pending<'a> {
-    node: gltf::Node<'a>,
-    parent: EntityId,
-    parent_key: PersistentId,
-    segment: String,
-    depth: usize,
 }
 
 impl Builder {
@@ -216,7 +206,7 @@ impl Builder {
         Ok(())
     }
 
-    /// An entity named `name`, placed by `transform`, keyed `key`.
+    /// Spawns an entity named `name`, placed by `transform`, keyed `key`.
     fn spawn(
         &mut self,
         name: Name,
@@ -245,6 +235,16 @@ impl Builder {
         }
         Ok(())
     }
+}
+
+/// A node waiting to be placed: under `parent` (keyed `parent_key`), at
+/// `depth`, as path segment `segment`.
+struct Pending<'a> {
+    node: gltf::Node<'a>,
+    parent: EntityId,
+    parent_key: PersistentId,
+    segment: String,
+    depth: usize,
 }
 
 /// Queues `siblings` (children of `parent`, keyed `parent_key`) so they pop
@@ -283,7 +283,7 @@ fn push_siblings<'a>(
     pending.extend(queued.into_iter().rev());
 }
 
-/// `name` with the characters a path gives a meaning to escaped, so two
+/// Escapes the characters of `name` a path gives a meaning to, so two
 /// different trees never spell the same path.
 fn escape(name: &str) -> String {
     let mut escaped = String::with_capacity(name.len());
@@ -296,7 +296,7 @@ fn escape(name: &str) -> String {
     escaped
 }
 
-/// The node's local transform as translation, rotation and scale.
+/// Returns the node's local transform as translation, rotation and scale.
 ///
 /// A value that is not finite, or a `matrix` that is no translation, rotation
 /// and scale (a shear, a projection), is refused.
@@ -327,7 +327,7 @@ fn node_transform(node: &gltf::Node<'_>) -> anyhow::Result<Transform> {
     }
 }
 
-/// `matrix` (column-major) as translation, rotation and scale.
+/// Decomposes `matrix` (column-major) into translation, rotation and scale.
 ///
 /// Each axis column is a unit direction times a scale; the directions must be
 /// perpendicular, or the matrix shears. An axis scaled to zero has no
@@ -378,7 +378,7 @@ fn decompose(index: usize, matrix: &[[f32; 4]; 4]) -> anyhow::Result<Transform> 
     ))
 }
 
-/// Three perpendicular unit axes, keeping the known `directions` and
+/// Returns three perpendicular unit axes, keeping the known `directions` and
 /// completing the missing ones (axes scaled to zero) right-handed.
 fn complete_basis(directions: [Option<Vec3>; 3]) -> [Vec3; 3] {
     let known: Vec<usize> = (0..3).filter(|&i| directions[i].is_some()).collect();

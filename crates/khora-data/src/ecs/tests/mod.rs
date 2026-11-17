@@ -927,7 +927,13 @@ fn test_transversal_sparse_join() {
 }
 
 #[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn threads to test concurrency"
+)]
 fn test_transversal_concurrency() {
+    use std::sync::Arc;
+
     let mut world = World::default();
     world.register_component::<Position>(SemanticDomain::Spatial);
     world.register_component::<RenderTag>(SemanticDomain::Render);
@@ -941,7 +947,6 @@ fn test_transversal_concurrency() {
     }
 
     // Wrap World in Arc for sharing (note: query is &self, so it should be Send/Sync)
-    use std::sync::Arc;
     let world = Arc::new(world);
     let mut handles = Vec::new();
 
@@ -1568,7 +1573,7 @@ fn emptied_page_slot_is_recycled() {
 
     let pages_before = world.storage.pages.len();
 
-    // The emptied {RenderId} page slot is now free. A brand-new archetype must
+    // The emptied {RenderId} page slot is free. A brand-new archetype must
     // recycle it rather than grow the pages vec.
     let p = world.spawn(Position(1));
     assert_eq!(
@@ -1884,7 +1889,7 @@ fn recycled_index_in_same_page_as_dead_orphan() {
 }
 
 /// Deterministic model-based churn: spawn / add / remove / despawn /
-/// remove_component_domain / budget-1 compaction, checked after every step.
+/// `remove_component_domain` / budget-1 compaction, checked after every step.
 #[test]
 fn model_based_churn_with_partial_compaction() {
     use khora_core::ecs::entity::EntityId;
@@ -2605,7 +2610,7 @@ fn native_foreign_option_and_without_keep_entity_whose_colocated_component_was_r
 
 #[test]
 fn native_unregistered_driver_with_registered_option_yields_nothing() {
-    // An unregistered component can no longer be stored — the spawn is
+    // An unregistered component cannot be stored — the spawn is
     // refused — so a query driven by one finds no row, and does not panic
     // over the registered `Option` term beside it.
     let mut world = World::new();

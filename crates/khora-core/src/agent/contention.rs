@@ -56,7 +56,7 @@ pub struct Contention {
 }
 
 impl Contention {
-    /// An agent that contends for nothing.
+    /// Returns an agent that contends for nothing.
     pub fn none() -> Self {
         Self::default()
     }
@@ -85,17 +85,17 @@ impl Contention {
         self
     }
 
-    /// Whether the agent declared reaching `T` at all.
+    /// Returns whether the agent declared reaching `T` at all.
     pub fn may_reach(&self, ty: TypeId) -> bool {
         self.reads.contains(&ty) || self.writes.contains(&ty)
     }
 
-    /// Whether the agent declared **locking** `T`.
+    /// Returns whether the agent declared **locking** `T`.
     pub fn may_lock(&self, ty: TypeId) -> bool {
         self.writes.contains(&ty)
     }
 
-    /// What two agents in the same wave would fight over.
+    /// Returns what two agents in the same wave would fight over.
     ///
     /// Reads do not conflict with reads. Everything else does: two writers
     /// serialise on the lock, and a reader beside a writer sees a half-written
@@ -192,6 +192,20 @@ mod tests {
         let other = Contention::none().writing_deck([TypeId::of::<Draws>()]);
 
         assert_eq!(one.conflicts_with(&other), vec![TypeId::of::<Draws>()]);
+    }
+
+    /// A reader of a deck slot beside its writer would read an empty slot, so
+    /// it counts, whichever side is asked; two readers of one slot do not.
+    #[test]
+    fn a_deck_slot_read_beside_its_writer_conflicts() {
+        let reader = Contention::none().reading_deck([TypeId::of::<Draws>()]);
+        let writer = Contention::none().writing_deck([TypeId::of::<Draws>()]);
+        let other_reader = Contention::none().reading_deck([TypeId::of::<Draws>()]);
+
+        assert_eq!(reader.deck_reads, vec![TypeId::of::<Draws>()]);
+        assert_eq!(reader.conflicts_with(&writer), vec![TypeId::of::<Draws>()]);
+        assert_eq!(writer.conflicts_with(&reader), vec![TypeId::of::<Draws>()]);
+        assert!(reader.conflicts_with(&other_reader).is_empty());
     }
 
     /// Different resources are not a conflict, however many each agent names.

@@ -15,7 +15,7 @@
 //! Prefabs and duplicates: a subtree written down and brought back fresh.
 //!
 //! An instance is collapsed to a link and its differences on save, and expanded
-//! from the prefab as it is now on load.
+//! from the prefab as it stands at load time.
 //! See the book: concepts/prefabs.md, "A link, not a copy".
 
 use std::collections::{HashMap, HashSet};
@@ -53,6 +53,9 @@ use rekey::{members, moved_record, rekeyed};
 use siblings::{children_of, restore_sibling_order};
 use sources::{Except, ReadOnce};
 
+/// The registered name of the component linking an instance root to its prefab.
+const LINK: &str = "PrefabInstance";
+
 /// Where the prefabs a record links to are read from.
 pub trait PrefabSource {
     /// Returns the record of the prefab `id` as its file holds it, nested instances collapsed.
@@ -71,9 +74,6 @@ impl PrefabSource for NoPrefabs {
         Err(format!("no prefab source to read the prefab {id} from"))
     }
 }
-
-/// The registered name of the component linking an instance root to its prefab.
-const LINK: &str = "PrefabInstance";
 
 fn failed(message: String) -> LoadFailure {
     LoadFailure {
@@ -228,33 +228,6 @@ fn expand_in(
         laid_out.insert(instance.root, composed.entities);
     }
 
-    // Each instance where its root stands; an instance whose layout names
-    // another's root lays that one out there too.
-    fn lay(
-        id: PersistentId,
-        laid_out: &mut HashMap<PersistentId, Vec<PersistentId>>,
-        seen: &mut HashSet<PersistentId>,
-        entities: &mut Vec<PersistentId>,
-    ) {
-        match laid_out.remove(&id) {
-            Some(layout) => {
-                for each in layout {
-                    if each == id {
-                        if seen.insert(id) {
-                            entities.push(id);
-                        }
-                    } else {
-                        lay(each, laid_out, seen, entities);
-                    }
-                }
-            }
-            None => {
-                if seen.insert(id) {
-                    entities.push(id);
-                }
-            }
-        }
-    }
     let mut entities = Vec::new();
     let mut seen = HashSet::new();
     for id in &record.entities {
@@ -275,6 +248,35 @@ fn expand_in(
     Ok((record_from(entities, rows, &sources), report))
 }
 
+/// Lays `id`'s instance out where its root stands, into `entities`.
+///
+/// An instance whose layout names another's root lays that one out there too.
+fn lay(
+    id: PersistentId,
+    laid_out: &mut HashMap<PersistentId, Vec<PersistentId>>,
+    seen: &mut HashSet<PersistentId>,
+    entities: &mut Vec<PersistentId>,
+) {
+    match laid_out.remove(&id) {
+        Some(layout) => {
+            for each in layout {
+                if each == id {
+                    if seen.insert(id) {
+                        entities.push(id);
+                    }
+                } else {
+                    lay(each, laid_out, seen, entities);
+                }
+            }
+        }
+        None => {
+            if seen.insert(id) {
+                entities.push(id);
+            }
+        }
+    }
+}
+
 /// Returns `record` with every prefab instance it links to expanded from `prefabs`.
 ///
 /// See the book: concepts/prefabs.md, "Identity inside an instance".
@@ -290,8 +292,11 @@ pub fn expand(
 
 /// Does [`expand`], and returns what the merges left out.
 ///
-/// That is what an instance changed that its prefab no longer has: the prefab's
+/// That is what an instance changed that its prefab does not have: the prefab's
 /// removal wins.
+///
+/// # Errors
+/// As [`expand`].
 pub fn expand_reporting(
     record: &SceneRecord,
     prefabs: &dyn PrefabSource,
@@ -306,6 +311,9 @@ pub fn expand_reporting(
 /// A nested instance is part of its outer instance's differences. An instance
 /// whose prefab cannot be read is written whole, its link kept on its root.
 /// See the book: concepts/prefabs.md, "When a prefab cannot be read".
+///
+/// # Errors
+/// An instance's differences from its prefab cannot be written.
 pub fn collapse(
     record: &SceneRecord,
     prefabs: &dyn PrefabSource,
@@ -550,6 +558,9 @@ pub fn instantiate_prefab_at(
 ///
 /// A prefab instance inside is written as a link to its prefab, read from
 /// `prefabs`, or whole when the prefab cannot be read.
+///
+/// # Errors
+/// The subtree cannot be captured or collapsed, or the file cannot be encoded.
 pub fn serialize_subtree(
     world: &World,
     root: EntityId,
@@ -565,6 +576,9 @@ pub fn serialize_subtree(
 ///
 /// An instance of `written`, or of a prefab containing it, is written whole,
 /// never as a link to the file it is written into.
+///
+/// # Errors
+/// As [`serialize_subtree`].
 pub fn serialize_prefab(
     world: &World,
     root: EntityId,
@@ -585,6 +599,10 @@ pub fn serialize_prefab(
 ///
 /// Plain entities and instance roots take new authored ids; an instance's
 /// members take the ids derived from its new root.
+///
+/// # Errors
+/// The bytes are not a scene file, its record does not read or cannot be
+/// brought in, or it holds no entity. `world` is then left as it was.
 pub fn instantiate_subtree(
     world: &mut World,
     bytes: &[u8],

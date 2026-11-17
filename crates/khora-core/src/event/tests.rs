@@ -362,3 +362,43 @@ fn a_new_channel_has_discarded_nothing() {
 
     assert_eq!(events.discarded(), 0, "a drain is a read, not a discard");
 }
+
+// ─── Withdrawing ────────────────────────────────────────────────────────────
+
+/// **`retain` keeps only the held items it accepts**, in their order.
+#[test]
+fn retain_keeps_only_the_held_items_it_accepts() {
+    let events = channel(8);
+    events.send(Happening(1));
+    events.send(Happening(2));
+    events.send(Happening(3));
+
+    events.retain(|item| item.0 != 2);
+
+    assert_eq!(events.drain(), vec![Happening(1), Happening(3)]);
+}
+
+// ─── Mailboxes ──────────────────────────────────────────────────────────────
+
+/// **A mailbox holds mail while its channel holds an item**, and none on a
+/// runtime without the channel.
+#[test]
+fn a_mailbox_holds_mail_while_its_channel_holds_an_item() {
+    let mailbox = Mailbox::of::<Happening>(
+        crate::agent::gorna::AgentId::new("listener"),
+        Reader::Take,
+        BetweenSessions::Drop,
+    );
+    let mut runtime = crate::runtime::Runtime::new();
+    assert!(!mailbox.holds_mail(&runtime), "no channel");
+    runtime.resources.insert(channel::<Happening>(4));
+    assert!(!mailbox.holds_mail(&runtime), "an empty channel");
+
+    runtime
+        .resources
+        .get::<Channel<Happening>>()
+        .expect("inserted above")
+        .send(Happening(1));
+
+    assert!(mailbox.holds_mail(&runtime));
+}

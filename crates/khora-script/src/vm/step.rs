@@ -180,34 +180,34 @@ impl Machine {
         }
     }
 
-    /// `NegInt`: the integer in `src`, negated, into `dst`.
+    /// Negates the integer in `src` into `dst` (`NegInt`).
     fn neg_int(&mut self, dst: Reg, src: Reg) -> Result<Step, Fault> {
         let value = self.int(src)?;
         self.write(dst, Value::Int(value.wrapping_neg()))?;
         Ok(Step::Next)
     }
 
-    /// `NegFloat`: the float in `src`, negated, into `dst`.
+    /// Negates the float in `src` into `dst` (`NegFloat`).
     fn neg_float(&mut self, dst: Reg, src: Reg) -> Result<Step, Fault> {
         let value = self.float(src)?;
         self.write(dst, Value::Float(-value))?;
         Ok(Step::Next)
     }
 
-    /// `IntToFloat`: the number in `src`, as a float, into `dst`.
+    /// Writes the number in `src`, as a float, into `dst` (`IntToFloat`).
     fn int_to_float(&mut self, dst: Reg, src: Reg) -> Result<Step, Fault> {
         let value = self.float(src)?;
         self.write(dst, Value::Float(value))?;
         Ok(Step::Next)
     }
 
-    /// `FloatToInt`: the float in `src`, truncated, into `dst`.
+    /// Writes the float in `src`, truncated, into `dst` (`FloatToInt`).
     fn float_to_int(&mut self, dst: Reg, src: Reg) -> Result<Step, Fault> {
-        let value = self.float(src)?;
         // Every float in `[-2^63, 2^63)` truncates to an `i64`; past it,
         // or not a number at all, there is no `int` to give — and a
         // saturated one would be a wrong answer nobody asked for.
         const BOUND: f64 = 9_223_372_036_854_775_808.0;
+        let value = self.float(src)?;
         let wide = f64::from(value);
         if !wide.is_finite() || !(-BOUND..BOUND).contains(&wide) {
             return Err(Fault::InvalidCast {
@@ -218,7 +218,7 @@ impl Machine {
         Ok(Step::Next)
     }
 
-    /// `Eq`: whether `lhs` and `rhs` hold the same value, into `dst`.
+    /// Writes whether `lhs` and `rhs` hold the same value into `dst` (`Eq`).
     fn equal(
         &mut self,
         dst: Reg,
@@ -246,7 +246,7 @@ impl Machine {
         Ok(Step::Next)
     }
 
-    /// `Not`: the bool in `src`, negated, into `dst`.
+    /// Negates the bool in `src` into `dst` (`Not`).
     fn not(&mut self, dst: Reg, src: Reg) -> Result<Step, Fault> {
         let value = self.read(src)?;
         let flag = value.as_bool().ok_or(Fault::TypeMismatch {
@@ -257,7 +257,7 @@ impl Machine {
         Ok(Step::Next)
     }
 
-    /// `JumpIfNot`: a jump to `target` when the bool in `cond` is false.
+    /// Jumps to `target` when the bool in `cond` is false (`JumpIfNot`).
     fn jump_if_not(&mut self, cond: Reg, target: usize, code_len: usize) -> Result<Step, Fault> {
         let value = self.read(cond)?;
         let taken = value.as_bool().ok_or(Fault::TypeMismatch {
@@ -272,7 +272,7 @@ impl Machine {
         }
     }
 
-    /// `Become`: enters a behavior's state, with its arguments.
+    /// Enters a behavior's state, with its arguments (`Become`).
     fn step_become(
         &mut self,
         instruction: &Instruction,
@@ -315,7 +315,7 @@ impl Machine {
         Ok(Step::Next)
     }
 
-    /// `LoadField`: one of the running behavior's fields into `dst`.
+    /// Loads one of the running behavior's fields into `dst` (`LoadField`).
     fn load_field(
         &mut self,
         dst: Reg,
@@ -341,8 +341,8 @@ impl Machine {
         Ok(Step::Next)
     }
 
-    /// `Concat`: the text of `lhs` then `rhs`, as a new arena string, into
-    /// `dst`.
+    /// Writes the text of `lhs` then `rhs`, as a new arena string, into `dst`
+    /// (`Concat`).
     fn concat(
         &mut self,
         dst: Reg,
@@ -366,8 +366,8 @@ impl Machine {
         Ok(Step::Next)
     }
 
-    /// `Await`: yields for the duration in `seconds`, with `dst` already
-    /// written for the resume.
+    /// Yields for the duration in `seconds`, with `dst` already written for the
+    /// resume (`Await`).
     fn await_for(&mut self, seconds: Reg, dst: Reg, host: &mut Host) -> Result<Step, Fault> {
         let value = self.read(seconds)?;
         let wait = value.as_float().ok_or(Fault::TypeMismatch {
@@ -434,7 +434,7 @@ impl Machine {
         Ok(Step::Next)
     }
 
-    /// An integer operation that can refuse its operands — division by zero.
+    /// Runs an integer operation that can refuse its operands — division by zero.
     fn checked_int_op(
         &mut self,
         dst: Reg,
@@ -462,7 +462,7 @@ impl Machine {
         Ok(Step::Next)
     }
 
-    /// `lhs < rhs` when `strict`, `lhs <= rhs` otherwise.
+    /// Writes `lhs < rhs` when `strict`, `lhs <= rhs` otherwise, into `dst`.
     ///
     /// Two integers compare as integers: routing them through `f32` would lose
     /// precision above 2^24, and a comparison that goes wrong on large counters

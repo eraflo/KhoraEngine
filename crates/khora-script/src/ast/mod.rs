@@ -81,7 +81,7 @@ pub enum Item {
 }
 
 impl Item {
-    /// The declared name, for duplicate detection and import resolution.
+    /// Returns the declared name, for duplicate detection and import resolution.
     pub fn name(&self) -> &str {
         match self {
             Self::Struct(decl) | Self::Component(decl) => &decl.name,
@@ -91,7 +91,7 @@ impl Item {
         }
     }
 
-    /// The name's span, so "already declared" can point at both sites.
+    /// Returns the name's span, so "already declared" can point at both sites.
     pub fn name_span(&self) -> Span {
         match self {
             Self::Struct(decl) | Self::Component(decl) => decl.name_span,

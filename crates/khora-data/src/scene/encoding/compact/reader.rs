@@ -48,57 +48,8 @@ pub(super) struct Reader<'t> {
     pub(super) names_left: Cell<usize>,
 }
 
-/// A value opened and waiting for its parts.
-enum Open<'t> {
-    Some,
-    Newtype {
-        name: String,
-    },
-    Seq {
-        items: Vec<Record>,
-        left: usize,
-    },
-    Map {
-        entries: Vec<(Record, Record)>,
-        key: Option<Record>,
-        left: usize,
-    },
-    TupleStruct {
-        name: String,
-        items: Vec<Record>,
-        left: usize,
-    },
-    Struct {
-        name: String,
-        fields: Vec<(String, Record)>,
-        names: &'t [usize],
-    },
-    VariantNewtype {
-        enum_name: String,
-        variant: String,
-    },
-    VariantTuple {
-        enum_name: String,
-        variant: String,
-        items: Vec<Record>,
-        left: usize,
-    },
-    VariantStruct {
-        enum_name: String,
-        variant: String,
-        fields: Vec<(String, Record)>,
-        names: &'t [usize],
-    },
-}
-
-/// What reading a tag gave: a whole value, or one opened.
-enum Started<'t> {
-    Whole(Record),
-    Opened(Open<'t>),
-}
-
 impl<'t> Reader<'t> {
-    /// The name `id` stands for, charged to the file's allowance of names.
+    /// Returns the name `id` stands for, charged to the file's allowance of names.
     pub(super) fn name(&self, id: usize) -> Result<String, EncodingError> {
         let name = &self.symbols[id];
         let left = self
@@ -275,30 +226,51 @@ impl<'t> Reader<'t> {
     }
 }
 
-/// Room for a struct's fields — once the file is known to hold a byte for
-/// each of them.
-fn fields_for(names: &[usize], input: &Input<'_>) -> Result<Vec<(String, Record)>, EncodingError> {
-    if names.len() > input.left() {
-        return Err(error("the file ends early".to_owned()));
-    }
-    Ok(room(names.len()))
-}
-
-/// Room for the `claimed` parts of a value, up to [`ROOM_UP_FRONT`].
-fn room<T>(claimed: usize) -> Vec<T> {
-    Vec::with_capacity(claimed.min(ROOM_UP_FRONT))
-}
-
-/// Where a value stands once given a part, or once opened.
-enum Step<'t> {
-    /// Whole: it goes to the value around it.
-    Done(Record),
-    /// It waits for more parts.
-    Waiting(Open<'t>),
+/// A value opened and waiting for its parts.
+enum Open<'t> {
+    Some,
+    Newtype {
+        name: String,
+    },
+    Seq {
+        items: Vec<Record>,
+        left: usize,
+    },
+    Map {
+        entries: Vec<(Record, Record)>,
+        key: Option<Record>,
+        left: usize,
+    },
+    TupleStruct {
+        name: String,
+        items: Vec<Record>,
+        left: usize,
+    },
+    Struct {
+        name: String,
+        fields: Vec<(String, Record)>,
+        names: &'t [usize],
+    },
+    VariantNewtype {
+        enum_name: String,
+        variant: String,
+    },
+    VariantTuple {
+        enum_name: String,
+        variant: String,
+        items: Vec<Record>,
+        left: usize,
+    },
+    VariantStruct {
+        enum_name: String,
+        variant: String,
+        fields: Vec<(String, Record)>,
+        names: &'t [usize],
+    },
 }
 
 impl<'t> Open<'t> {
-    /// A value just opened: whole already if it has no parts.
+    /// Returns the step a value just opened takes: whole already if it has no parts.
     fn opened(self) -> Step<'t> {
         let empty = match &self {
             Self::Seq { left, .. }
@@ -357,7 +329,7 @@ impl<'t> Open<'t> {
         Ok(self.opened())
     }
 
-    /// The value, whole. A one-part value is closed by `accept`, never here.
+    /// Returns the value, whole. A one-part value is closed by `accept`, never here.
     fn close(self) -> Record {
         match self {
             Self::Seq { items, .. } => Record::Seq(items),
@@ -392,4 +364,32 @@ impl<'t> Open<'t> {
             Self::Some | Self::Newtype { .. } | Self::VariantNewtype { .. } => Record::Unit,
         }
     }
+}
+
+/// What reading a tag gave: a whole value, or one opened.
+enum Started<'t> {
+    Whole(Record),
+    Opened(Open<'t>),
+}
+
+/// Where a value stands once given a part, or once opened.
+enum Step<'t> {
+    /// Whole: it goes to the value around it.
+    Done(Record),
+    /// It waits for more parts.
+    Waiting(Open<'t>),
+}
+
+/// Allocates room for a struct's fields — once the file is known to hold a byte for
+/// each of them.
+fn fields_for(names: &[usize], input: &Input<'_>) -> Result<Vec<(String, Record)>, EncodingError> {
+    if names.len() > input.left() {
+        return Err(error("the file ends early".to_owned()));
+    }
+    Ok(room(names.len()))
+}
+
+/// Allocates room for the `claimed` parts of a value, up to [`ROOM_UP_FRONT`].
+fn room<T>(claimed: usize) -> Vec<T> {
+    Vec::with_capacity(claimed.min(ROOM_UP_FRONT))
 }

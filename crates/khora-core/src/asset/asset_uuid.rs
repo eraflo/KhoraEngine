@@ -49,12 +49,12 @@ impl std::str::FromStr for AssetUUID {
 }
 
 impl AssetUUID {
-    /// The identity whose sixteen bytes are `bytes`.
+    /// Returns the identity whose sixteen bytes are `bytes`.
     pub const fn from_bytes(bytes: [u8; 16]) -> Self {
         Self(Uuid::from_bytes(bytes))
     }
 
-    /// The sixteen bytes of this identity.
+    /// Returns the sixteen bytes of this identity.
     pub fn as_bytes(&self) -> &[u8; 16] {
         self.0.as_bytes()
     }
@@ -72,7 +72,7 @@ impl AssetUUID {
         Self(Uuid::new_v5(&ASSET_NAMESPACE_UUID, path_str.as_bytes()))
     }
 
-    /// The identity of the asset named `label` inside the asset `container`
+    /// Returns the identity of the asset named `label` inside the asset `container`
     /// (a glTF file's mesh, material, texture or scene).
     ///
     /// It is derived from `container`'s identity, so a renamed file keeps its

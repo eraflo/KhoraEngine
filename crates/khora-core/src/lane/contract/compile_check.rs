@@ -50,7 +50,7 @@ pub struct InputOps<'f, T> {
     pub target: fn(&T) -> Option<TargetKey>,
 }
 
-/// A field that names no target.
+/// Returns a field that names no target.
 fn no_target<T>(_field: &T) -> Option<TargetKey> {
     None
 }
@@ -64,6 +64,11 @@ pub trait BusField<'f>: Sized {
     /// Declares the View read.
     fn declare(d: &mut Declaration, field: &'static str);
     /// Fetches the View published for this frame.
+    ///
+    /// # Errors
+    ///
+    /// Refused as `Missing` when the bus holds no View, as `Stale` when it was
+    /// published for another frame.
     fn fetch(src: &mut InputSource<'f>, field: &'static str) -> Result<Self, InputRefusal>;
 }
 impl<'f, V: Any + Send + Sync> BusField<'f> for &'f V {
@@ -85,6 +90,10 @@ pub trait DeckInputField<'f>: Sized {
     /// Declares the slot read.
     fn declare(d: &mut Declaration, field: &'static str);
     /// Fetches the slot, if an earlier phase wrote it.
+    ///
+    /// # Errors
+    ///
+    /// Never refused: a slot no earlier phase wrote is `None`.
     fn fetch(src: &mut InputSource<'f>, field: &'static str) -> Result<Self, InputRefusal>;
 }
 impl<'f, T: Any + Send + Sync> DeckInputField<'f> for Option<&'f T> {
@@ -105,6 +114,10 @@ pub trait ResidentField<'f>: Sized {
     /// Declares the residency's store read.
     fn declare(d: &mut Declaration, field: &'static str);
     /// Fetches the residency's store.
+    ///
+    /// # Errors
+    ///
+    /// Refused as `Missing` when the runtime holds no such store.
     fn fetch(src: &mut InputSource<'f>, field: &'static str) -> Result<Self, InputRefusal>;
 }
 impl<'f, R: Residency> ResidentField<'f> for &'f Resident<R> {
@@ -125,6 +138,10 @@ pub trait ResourceField<'f>: Sized {
     /// Declares the runtime entry read.
     fn declare(d: &mut Declaration, field: &'static str);
     /// Fetches the runtime entry.
+    ///
+    /// # Errors
+    ///
+    /// Refused as `Missing` when the runtime holds no such entry.
     fn fetch(src: &mut InputSource<'f>, field: &'static str) -> Result<Self, InputRefusal>;
 }
 impl<'f, T: Any + Send + Sync> ResourceField<'f> for &'f T {
@@ -146,6 +163,11 @@ pub trait LockedField<'f>: Sized {
     /// Declares the lock of the registered `Arc<Mutex<T>>`.
     fn declare(d: &mut Declaration, field: &'static str);
     /// Takes the lock.
+    ///
+    /// # Errors
+    ///
+    /// Refused as `Missing` when the runtime holds no such entry, as
+    /// `LockPoisoned`, or as `LockTimedOut` past the deadline.
     fn fetch(src: &mut InputSource<'f>, field: &'static str) -> Result<Self, InputRefusal>;
 }
 impl<'f, T: ?Sized + Send + 'static> LockedField<'f> for Locked<'f, T> {
@@ -166,6 +188,11 @@ pub trait BudgetField: Sized {
     /// Declares the budget read.
     fn declare(d: &mut Declaration, field: &'static str);
     /// Fetches the budget.
+    ///
+    /// # Errors
+    ///
+    /// Refused as `NoBudget` by a `Budget` field without a budget of some time;
+    /// never by an `Option<Budget>` field.
     fn fetch(src: &mut InputSource<'_>, field: &'static str) -> Result<Self, InputRefusal>;
 }
 impl BudgetField for Budget {
@@ -199,6 +226,10 @@ pub trait TakeField<'f>: Sized {
     /// Declares the channel taken from.
     fn declare(d: &mut Declaration, field: &'static str);
     /// Drains the channel.
+    ///
+    /// # Errors
+    ///
+    /// Refused as `Missing` when the runtime holds no such channel.
     fn fetch(src: &mut InputSource<'f>, field: &'static str) -> Result<Self, InputRefusal>;
 }
 impl<'f, T: Supersedes + Clone + Send + Sync + 'static> TakeField<'f> for Vec<T> {
@@ -219,8 +250,13 @@ pub trait FrameField: Sized {
     /// Declares the frame value read.
     fn declare(d: &mut Declaration, field: &'static str);
     /// Fetches the frame value.
+    ///
+    /// # Errors
+    ///
+    /// Refused as `Missing` when the frame has no such value, as `BadTarget`
+    /// for a target without a size (or, for a `SceneTarget`, a depth attachment).
     fn fetch(src: &mut InputSource<'_>, field: &'static str) -> Result<Self, InputRefusal>;
-    /// The target the value names, if it is one.
+    /// Returns the target the value names, if it is one.
     fn target_key(&self) -> Option<TargetKey>;
 }
 impl FrameField for Target {

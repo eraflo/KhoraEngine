@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Image-based lighting: [`IblBaker`] bakes the environment, irradiance and
-//! specular cubes and the BRDF table the lit lanes sample at group 3, on its own
-//! encoder outside the frame, and again whenever the environment changes.
+//! Image-based lighting: [`IblBaker`] bakes the cubes and the BRDF table the lit lanes sample.
+//!
+//! It bakes the environment, irradiance and specular cubes and the BRDF table read at group 3,
+//! on its own encoder outside the frame, and again whenever the environment changes.
 
 use std::sync::RwLock;
 
@@ -79,6 +80,14 @@ const PREFILTER_LAYOUT: &str = "ibl_prefilter";
 /// a high afternoon sun, so the default environment still reads as a sky.
 const DEFAULT_SUN_DIRECTION: Vec3 = Vec3::new(0.35, 0.78, 0.52);
 
+/// How many ticks the bake waits for a selected environment asset to finish
+/// loading before falling back to the procedural sky.
+///
+/// The lit lanes skip rendering entirely until the IBL bindings exist, so
+/// waiting forever on an asset that never arrives (a mistyped UUID, a missing
+/// file) would leave the screen black. This bounds the wait and logs loudly.
+const MAX_ENV_WAIT_TICKS: u32 = 120;
+
 /// What an IBL bake was made from: the environment the scene selected and the
 /// exact texture handle the bake read.
 ///
@@ -101,7 +110,7 @@ impl IblSource {
     }
 }
 
-/// The IBL bake service, a shared resource the `ibl_bake` DataSystem drives.
+/// The IBL bake service, a shared resource the `ibl_bake` `DataSystem` drives.
 ///
 /// [`ensure_baked`] is called every frame with the scene's [`IblSource`], and
 /// bakes only when it differs from the one the current bake was made from.
@@ -114,14 +123,6 @@ pub struct IblBaker {
     baked: RwLock<Option<(IblSource, IblResources)>>,
     env_wait: std::sync::atomic::AtomicU32,
 }
-
-/// How many ticks the bake waits for a selected environment asset to finish
-/// loading before falling back to the procedural sky.
-///
-/// The lit lanes skip rendering entirely until the IBL bindings exist, so
-/// waiting forever on an asset that never arrives (a mistyped UUID, a missing
-/// file) would leave the screen black. This bounds the wait and logs loudly.
-const MAX_ENV_WAIT_TICKS: u32 = 120;
 
 impl IblBaker {
     /// Creates an unbaked baker. The bake happens lazily on the first

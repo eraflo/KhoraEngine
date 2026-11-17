@@ -303,7 +303,7 @@ fn a_looping_virtual_voice_wraps_like_a_real_one() {
     );
 }
 
-/// The writeback DataSystem applies updates by position, so the lane lists
+/// The writeback `DataSystem` applies updates by position, so the lane lists
 /// one update per source in the view's order, mixed or virtual alike.
 #[test]
 fn every_source_gets_its_update_in_view_order() {

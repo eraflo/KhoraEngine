@@ -29,7 +29,7 @@ pub struct GpuSetup<'a> {
 }
 
 impl<'a> GpuSetup<'a> {
-    /// A setup on `device`.
+    /// Returns a setup on `device`.
     pub fn new(device: &'a dyn GraphicsDevice) -> Self {
         Self {
             device: Some(device),
@@ -38,7 +38,7 @@ impl<'a> GpuSetup<'a> {
         }
     }
 
-    /// A setup with no graphics device.
+    /// Returns a setup with no graphics device.
     pub fn headless() -> Self {
         Self {
             device: None,
@@ -47,12 +47,12 @@ impl<'a> GpuSetup<'a> {
         }
     }
 
-    /// The graphics device, when there is one.
+    /// Returns the graphics device, when there is one.
     pub fn device(&self) -> Option<&'a dyn GraphicsDevice> {
         self.device
     }
 
-    /// The same setup, building its pipelines and layouts through
+    /// Returns the same setup, building its pipelines and layouts through
     /// `pipelines`.
     pub fn with_pipelines(
         mut self,
@@ -62,7 +62,7 @@ impl<'a> GpuSetup<'a> {
         self
     }
 
-    /// The pipeline system, when there is one.
+    /// Returns the pipeline system, when there is one.
     pub fn pipelines(&self) -> Option<&'a dyn crate::renderer::traits::PipelineSystem> {
         self.pipelines
     }

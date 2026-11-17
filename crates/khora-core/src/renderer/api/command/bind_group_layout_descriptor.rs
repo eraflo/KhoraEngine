@@ -38,7 +38,7 @@ pub struct BindGroupLayoutEntry {
 }
 
 impl BindGroupLayoutEntry {
-    /// Helper to create a BindGroupLayoutEntry for a buffer resource.
+    /// Builds a `BindGroupLayoutEntry` for a buffer resource.
     pub fn buffer(
         binding: u32,
         visibility: ShaderStageFlags,

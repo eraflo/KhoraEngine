@@ -17,7 +17,7 @@
 use khora_core::renderer::api::command::{BindGroupLayoutEntry, BindingType, BufferBindingType};
 use khora_core::renderer::api::util::ShaderStageFlags;
 
-/// A layout of one uniform buffer at binding 0, seen by `visibility`.
+/// Returns a layout of one uniform buffer at binding 0, seen by `visibility`.
 ///
 /// `dynamic_offset` is for a buffer shared by several draws, each bound at its
 /// own offset.

@@ -37,7 +37,7 @@ pub struct MachineIdentity {
 }
 
 impl MachineIdentity {
-    /// A short, stable key: 16 lowercase hex digits of a hash of every field,
+    /// Returns a short, stable key: 16 lowercase hex digits of a hash of every field,
     /// the same on every run and every build.
     ///
     /// The hash is FNV-1a 64 (offset basis `0xcbf29ce484222325`, prime

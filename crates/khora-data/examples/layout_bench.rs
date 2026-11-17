@@ -29,9 +29,14 @@
 //! This is a standalone proof-of-concept; it does not touch the engine's
 //! storage or query path.
 
-// Index-based loops are intentional here: they mirror how each physical layout
-// is actually traversed, which is the whole point of the comparison.
-#![allow(clippy::needless_range_loop)]
+#![expect(
+    clippy::needless_range_loop,
+    reason = "index-based loops mirror how each physical layout is traversed, which is what the benchmark compares"
+)]
+#![expect(
+    clippy::print_stdout,
+    reason = "a benchmark example: printing its table is its job"
+)]
 
 use std::hint::black_box;
 use std::time::Instant;
@@ -389,12 +394,14 @@ fn main() {
             bandit.mean_reward(arm).unwrap_or(0.0)
         );
     }
-    let best = bandit.best_arm().unwrap();
+    let best = bandit
+        .best_arm()
+        .expect("every arm was pulled in the rounds above");
     println!("\n  → bandit picked: {}", ARMS[best]);
 
     let fastest = (0..3)
         .min_by(|&a, &b| baseline[a].total_cmp(&baseline[b]))
-        .unwrap();
+        .expect("the range of three arms is not empty");
     println!("  → baseline fastest: {}", ARMS[fastest]);
     let speedup = baseline[0] / baseline[fastest];
     println!(

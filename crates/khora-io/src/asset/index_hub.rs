@@ -43,7 +43,7 @@ struct IndexTickets {
 
 /// The project indexes in flight: the requests filed, and the outcomes landed, by ticket.
 ///
-/// It is the runtime's [`AssetIndexing`]; the `asset_index_intake` DataSystem
+/// It is the runtime's [`AssetIndexing`]; the `asset_index_intake` `DataSystem`
 /// lands each index. Its locks are leaves.
 pub struct IndexHub {
     requests: Channel<IndexRequest>,
@@ -56,12 +56,6 @@ pub struct IndexHub {
     /// through. `None` until both are installed: a test's index reads files as they are.
     through: Mutex<Option<ReadThrough>>,
 }
-
-/// The run's refusals and the trust of the project open.
-type ReadThrough = (
-    Arc<crate::trust::Refusals>,
-    Arc<crate::trust::ProjectTrustState>,
-);
 
 impl IndexHub {
     fn new() -> Self {
@@ -117,7 +111,7 @@ impl IndexHub {
         self.tickets.lock_recovered().landed.remove(&ticket)
     }
 
-    /// Whether the index filed as `ticket` is still in flight.
+    /// Returns whether the index filed as `ticket` is still in flight.
     pub fn is_pending(&self, ticket: IndexTicket) -> bool {
         self.tickets.lock_recovered().pending.contains_key(&ticket)
     }
@@ -180,6 +174,12 @@ impl AssetIndexing for IndexHub {
         (indexed, Some(lease))
     }
 }
+
+/// The run's refusals and the trust of the project open.
+type ReadThrough = (
+    Arc<crate::trust::Refusals>,
+    Arc<crate::trust::ProjectTrustState>,
+);
 
 /// Builds the index of `<project_root>/assets/`, ids from the project's registry.
 ///

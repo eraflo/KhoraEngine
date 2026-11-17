@@ -36,7 +36,7 @@ pub enum Axis {
 }
 
 impl Axis {
-    /// The single letter shown in the field.
+    /// Returns the single letter shown in the field.
     pub fn letter(self) -> &'static str {
         match self {
             Axis::X => "X",
@@ -45,7 +45,7 @@ impl Axis {
         }
     }
 
-    /// The theme slot for this axis.
+    /// Returns the theme slot for this axis.
     pub fn color(self, theme: &UiTheme) -> Color {
         match self {
             Axis::X => theme.axis_x,
@@ -55,7 +55,7 @@ impl Axis {
     }
 }
 
-/// One component of a vector: an axis letter in its axis colour, and the value
+/// Draws one component of a vector: an axis letter in its axis colour, and the value
 /// right-aligned in monospace.
 ///
 /// The colour is carried by the *letter*, not the whole field — a fully tinted
@@ -96,7 +96,7 @@ pub fn axis_field(
     out
 }
 
-/// A search / filter input: the frame, the icon and the placeholder.
+/// Draws a search / filter input: the frame, the icon and the placeholder.
 ///
 /// Purely presentational: the caller owns the text and hosts the real text
 /// edit inside the frame through [`UiBuilder::region_at`].
@@ -137,7 +137,7 @@ pub fn search_field(
     out
 }
 
-/// A text-input frame; returns the **inner rect** to host the real text edit in.
+/// Draws a text-input frame and returns the **inner rect** to host the real text edit in.
 ///
 /// The caller hosts it through [`UiBuilder::region_at`].
 ///
@@ -169,7 +169,7 @@ pub fn input_frame(
     ]
 }
 
-/// A field label — the small caption above an input.
+/// Draws a field label — the small caption above an input.
 pub fn field_label(ui: &mut dyn UiBuilder, theme: &UiTheme, pos: [f32; 2], label: &str) {
     text(
         ui,
@@ -180,7 +180,7 @@ pub fn field_label(ui: &mut dyn UiBuilder, theme: &UiTheme, pos: [f32; 2], label
     );
 }
 
-/// A validation message under a field: a warning glyph and the reason.
+/// Draws a validation message under a field: a warning glyph and the reason.
 ///
 /// It says what is wrong *and* enough to fix it — "Directory doesn't exist"
 /// beats "Invalid".
@@ -196,8 +196,9 @@ pub fn error_line(ui: &mut dyn UiBuilder, theme: &UiTheme, pos: [f32; 2], messag
     );
 }
 
-/// A checkbox with its label. Returns the [`Interaction`]; the caller owns the
-/// boolean and flips it on `clicked`.
+/// Draws a checkbox with its label and returns its [`Interaction`].
+///
+/// The caller owns the boolean and flips it on `clicked`.
 pub fn checkbox(
     ui: &mut dyn UiBuilder,
     theme: &UiTheme,
@@ -237,8 +238,8 @@ pub fn checkbox(
     out
 }
 
-/// A labelled property row: a fixed-width label gutter on the left, and the
-/// value rect returned for the caller to fill.
+/// Draws a labelled property row: a fixed-width label gutter on the left, and
+/// the value rect left for the caller to fill.
 ///
 /// Returns the rect the value control should paint into. The gutter is a
 /// constant so every row in a panel aligns — the single biggest thing that
@@ -466,5 +467,18 @@ mod tests {
         let mut value = 150.0_f32;
         assert!(ui.drag_value_f32_in("Power", &mut value, 0.5, 0.0, 100.0));
         assert_eq!(value, 100.0);
+    }
+
+    #[test]
+    fn field_label_is_dim_proportional_caption_text() {
+        let t = khora_dark();
+        let mut ui = RecordingUiBuilder::new(200.0, 20.0);
+        field_label(&mut ui, &t, [4.0, 2.0], "Project name");
+
+        assert_eq!(ui.text_color("Project name"), Some(t.text_dim));
+        assert_eq!(
+            ui.text_family("Project name"),
+            Some(FontFamilyHint::Proportional)
+        );
     }
 }

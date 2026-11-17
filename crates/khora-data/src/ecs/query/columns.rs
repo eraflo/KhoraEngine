@@ -44,8 +44,12 @@ impl<T: SoaLayout> WorldQuery for Soa<T> {
         row_index: usize,
         _ctx: FetchContext<'_>,
     ) -> Self::Item<'a> {
-        let page = &*page_ptr;
-        let column: &dyn AnyVec = &**page.columns.get(&ComponentKey::of::<T>()).unwrap();
+        // SAFETY: the caller guarantees `page_ptr` points to a valid page.
+        let page = unsafe { &*page_ptr };
+        let column: &dyn AnyVec = &**page
+            .columns
+            .get(&ComponentKey::of::<T>())
+            .expect("the caller guarantees the page holds a `T` column");
         let soa = column
             .as_any()
             .downcast_ref::<FieldSoaColumn<T>>()
@@ -58,7 +62,8 @@ impl<T: SoaLayout> WorldQuery for Soa<T> {
         entity_id: EntityId,
         _ctx: FetchContext<'_>,
     ) -> Option<Self::Item<'a>> {
-        let world = &*world;
+        // SAFETY: the caller guarantees `world` is valid.
+        let world = unsafe { &*world };
         world.clone_component::<T>(entity_id)
     }
 }

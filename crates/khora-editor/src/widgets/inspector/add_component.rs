@@ -41,14 +41,14 @@ const UI_DOMAIN_TAG: u8 = 4;
 /// The menu and the card list both ask here, so they cannot drift. False for
 /// what the engine or a tool writes (`GlobalTransform`, `Parent`), for what is
 /// shown elsewhere, and for unregistered types.
-pub fn is_author_facing(type_name: &str) -> bool {
+pub(crate) fn is_author_facing(type_name: &str) -> bool {
     if SURFACED_ELSEWHERE.contains(&type_name) {
         return false;
     }
     khora_sdk::khora_data::scene::provenance_of(type_name).is_some_and(|p| p.is_hand_authorable())
 }
 
-/// The file name of a module path, as a menu entry names its script.
+/// Returns the file name of a module path, as a menu entry names its script.
 fn module_file(module: &str) -> &str {
     module.rsplit(['/', '\\']).next().unwrap_or(module)
 }
@@ -57,7 +57,7 @@ fn module_file(module: &str) -> &str {
 /// [`EditorState::addable_components`], grouped by domain.
 ///
 /// A pick queues an `EditorRequest::AddComponent`, applied next frame.
-pub fn render_add_component(
+pub(crate) fn render_add_component(
     ui: &mut dyn UiBuilder,
     entity: EntityId,
     _inspected: &InspectedEntity,

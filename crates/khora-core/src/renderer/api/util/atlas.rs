@@ -45,6 +45,10 @@ pub struct TextureAtlas {
 
 impl TextureAtlas {
     /// Creates a new texture atlas with the specified size.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the device cannot create the atlas texture or its view.
     pub fn new(
         device: &dyn GraphicsDevice,
         size: u32,
@@ -158,7 +162,7 @@ impl TextureAtlas {
         })
     }
 
-    /// Whether an image `width` × `height` fits this atlas once empty: a
+    /// Returns whether an image `width` × `height` fits this atlas once empty: a
     /// `false` means no rebuild will ever make room for it.
     pub fn could_hold(&self, width: u32, height: u32) -> bool {
         fits_when_empty(self.size, self.padding, width, height)
@@ -180,7 +184,7 @@ impl TextureAtlas {
     }
 }
 
-/// Whether an image fits an empty atlas of side `size` whose images keep
+/// Returns whether an image fits an empty atlas of side `size` whose images keep
 /// `padding` pixels from each other and from the edges.
 fn fits_when_empty(size: u32, padding: u32, width: u32, height: u32) -> bool {
     let margins = padding.saturating_mul(2);
@@ -189,7 +193,30 @@ fn fits_when_empty(size: u32, padding: u32, width: u32, height: u32) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::fits_when_empty;
+    use super::{fits_when_empty, TextureAtlas, TextureId, TextureViewId};
+
+    /// An atlas of side `size`, its images `padding` pixels apart, partly filled.
+    fn atlas(size: u32, padding: u32) -> TextureAtlas {
+        TextureAtlas {
+            texture: TextureId(0),
+            view: TextureViewId(0),
+            size,
+            cursor_x: size,
+            cursor_y: size,
+            row_height: size,
+            padding,
+        }
+    }
+
+    /// **An atlas could hold what an empty one of its size and padding fits**,
+    /// however full it is now.
+    #[test]
+    fn an_atlas_could_hold_what_fits_it_once_empty() {
+        let full = atlas(32, 2);
+
+        assert!(full.could_hold(28, 28));
+        assert!(!full.could_hold(29, 28), "no rebuild makes room for it");
+    }
 
     /// An image fits an empty atlas when it leaves the padding on both sides,
     /// along each axis.

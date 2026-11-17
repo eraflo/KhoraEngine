@@ -765,7 +765,7 @@ fn an_opened_project_shows_the_version_its_game_is_built_at() {
 /// **A project that does not open shows no version.**
 ///
 /// The editor's `Open` fails; the editor runs with no project, so the version
-/// the project's `project.json` gave as it started opening is no longer shown.
+/// the project's `project.json` gave as it started opening is hidden.
 #[test]
 fn a_project_that_does_not_open_shows_no_version() {
     let project = Project::with("no-version-shown", &[("textures/crate.png", b"PNG")]);

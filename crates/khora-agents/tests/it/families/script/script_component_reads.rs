@@ -777,7 +777,7 @@ fn a_waiting_reload_replaced_before_it_installs_never_runs() {
     assert_eq!(session.int(entity, "Probe", "version"), Some(3));
 }
 
-/// **The read set shrinks with the programs.** A reload that no longer reads
+/// **The read set shrinks with the programs.** A reload that stops reading
 /// a component stops its projection: nothing is projected that no loaded
 /// program names.
 #[test]

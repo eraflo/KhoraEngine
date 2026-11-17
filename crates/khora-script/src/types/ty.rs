@@ -12,11 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Resolved types: [`Ty`] is what a thing is, [`TypeRef`]
-//! what the author wrote. `Duration` and `Angle` are distinct from `Float` and
+//! Resolved types: [`Ty`] is what a thing is, [`TypeRef`] what the author wrote.
+//!
+//! `Duration` and `Angle` are distinct from `Float` and
 //! from each other, so `2s + 90deg` and `float x = cooldown;` are refused.
 
 use crate::ast::TypeRef;
+
+/// The engine types a script may name.
+///
+/// Listed rather than derived: the API surface is a decision. Each name needs a
+/// `Value` variant, a constructor and accessors, or it type-checks and fails at
+/// its first use.
+///
+/// `every_engine_type_is_declared`
+/// holds the two together.
+pub const ENGINE_TYPES: &[&str] = &["Vec2", "Vec3", "Vec4", "Quat", "Color"];
 
 /// A resolved type.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,29 +68,8 @@ pub enum Ty {
     Error,
 }
 
-/// The engine types a script may name.
-///
-/// Listed rather than derived: the API surface is a decision. Each name needs a
-/// `Value` variant, a constructor and accessors, or it type-checks and fails at
-/// its first use.
-///
-/// `every_engine_type_is_declared`
-/// holds the two together.
-pub const ENGINE_TYPES: &[&str] = &["Vec2", "Vec3", "Vec4", "Quat", "Color"];
-
-/// Returns the note for a field of a bare asset type.
-///
-/// There is no asset literal, so the field starts at `null` and its asset is
-/// chosen in the inspector.
-pub(crate) fn asset_field_note(kind: khora_core::asset::AssetKind) -> String {
-    format!(
-        "make it `{}?` and choose it in the inspector: there is no asset literal, so it starts at `null`",
-        kind.ergon_name()
-    )
-}
-
 impl Ty {
-    /// The name to print in a diagnostic.
+    /// Returns the name to print in a diagnostic.
     pub fn name(&self) -> String {
         match self {
             Self::Void => "void".to_owned(),
@@ -102,7 +92,7 @@ impl Ty {
         }
     }
 
-    /// Whether a value of this type can be used where `expected` is wanted.
+    /// Returns whether a value of type `provided` can be used where this type is wanted.
     ///
     /// Only one implicit widening exists — an `int` literal where a `float` is
     /// wanted. Everything else must be written out, which is what keeps
@@ -128,12 +118,12 @@ impl Ty {
         }
     }
 
-    /// Whether this is an optional that must be tested before use.
+    /// Returns whether this is an optional that must be tested before use.
     pub fn is_optional(&self) -> bool {
         matches!(self, Self::Optional(_))
     }
 
-    /// The type inside an optional, or the type itself.
+    /// Returns the type inside an optional, or the type itself.
     ///
     /// Used after a null test has narrowed a binding.
     pub fn unwrapped(&self) -> Ty {
@@ -143,12 +133,12 @@ impl Ty {
         }
     }
 
-    /// Whether arithmetic may be performed on this type at all.
+    /// Returns whether arithmetic may be performed on this type at all.
     pub fn is_numeric(&self) -> bool {
         matches!(self, Self::Int | Self::Float)
     }
 
-    /// Whether this is one of the unit types, which follow their own
+    /// Returns whether this is one of the unit types, which follow their own
     /// arithmetic rules.
     pub fn is_unit(&self) -> bool {
         matches!(self, Self::Duration | Self::Angle)
@@ -184,6 +174,17 @@ pub fn resolve(ty: &TypeRef, known_struct: &dyn Fn(&str) -> bool) -> Option<Ty> 
             )
         }
     })
+}
+
+/// Returns the note for a field of a bare asset type.
+///
+/// There is no asset literal, so the field starts at `null` and its asset is
+/// chosen in the inspector.
+pub(crate) fn asset_field_note(kind: khora_core::asset::AssetKind) -> String {
+    format!(
+        "make it `{}?` and choose it in the inspector: there is no asset literal, so it starts at `null`",
+        kind.ergon_name()
+    )
 }
 
 /// Resolves a bare name.

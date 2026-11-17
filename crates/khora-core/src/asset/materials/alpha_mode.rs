@@ -60,7 +60,7 @@ pub enum AlphaMode {
     /// The material uses full alpha blending.
     ///
     /// This mode produces smooth transparency but requires objects to be rendered
-    /// in back-to-front order for correct results. The RenderAgent may choose
+    /// in back-to-front order for correct results. The `RenderAgent` may choose
     /// different rendering strategies based on the number of blend-mode objects
     /// in the scene to balance quality and performance.
     Blend,

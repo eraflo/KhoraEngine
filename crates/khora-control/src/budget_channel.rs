@@ -70,7 +70,7 @@ pub struct BudgetChannel {
 }
 
 impl BudgetChannel {
-    /// A channel no allocation was published on yet.
+    /// Creates a channel no allocation was published on yet.
     pub fn new() -> Self {
         Self::default()
     }
@@ -91,7 +91,7 @@ impl BudgetChannel {
         self.inner.waiting.lock_recovered().push(allocation, true);
     }
 
-    /// Whether `other` is this very channel (a clone of it), not one alike.
+    /// Returns whether `other` is this very channel (a clone of it), not one alike.
     pub(crate) fn is(&self, other: &BudgetChannel) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
@@ -99,7 +99,7 @@ impl BudgetChannel {
     /// Withdraws the replayed allocations still waiting their turn, from the cold thread.
     ///
     /// A stopped replay lends no more of its epochs; a live one waiting stays.
-    pub fn withdraw_in_turn(&self) {
+    pub(crate) fn withdraw_in_turn(&self) {
         self.inner
             .waiting
             .lock_recovered()

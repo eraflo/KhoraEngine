@@ -273,7 +273,7 @@ impl Aabb {
             && self.max.z >= other.max.z
     }
 
-    /// Intersection test against a ray using the Slab Method.
+    /// Tests the box against a ray with the slab method.
     ///
     /// `inv_dir` should be `1.0 / ray.direction`. If a component of direction is zero, `inv_dir` should be infinity.
     /// Returns the distance to the intersection point if it occurs.

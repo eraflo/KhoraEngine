@@ -90,6 +90,8 @@ pub struct CpalAudioStream {
 // requires `Send + Sync`; the engine takes the same constraint that every
 // other CPAL-backed audio engine in the Rust ecosystem accepts.
 unsafe impl Send for CpalAudioStream {}
+// SAFETY: the stream is never touched through `&self` after `open`: no method
+// reaches it, so shared references across threads read only `info`.
 unsafe impl Sync for CpalAudioStream {}
 
 impl AudioStream for CpalAudioStream {

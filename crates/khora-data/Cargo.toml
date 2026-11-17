@@ -30,3 +30,6 @@ wide = "0.7"            # explicit-SIMD probe for the layout benchmark (example 
 name = "data"
 path = "benches/data/main.rs"
 harness = false
+
+[lints]
+workspace = true

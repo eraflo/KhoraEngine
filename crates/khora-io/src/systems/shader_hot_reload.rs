@@ -27,6 +27,9 @@ use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
 
 use crate::asset::{AssetChangeEvent, AssetChangeKind, AssetWatch};
 
+/// Root segment every composable shader module path carries.
+const LOGICAL_ROOT: &str = "khora";
+
 /// What the shader pump last applied the project's overlays for: the watched roots and their trust.
 ///
 /// A runtime resource, held as `Arc<OverlaysSeen>`.
@@ -75,9 +78,6 @@ struct WatchedRoot {
 
 /// The watch's generation and the trust state's: while both hold, the roots and their trust do.
 type Generations = (u64, u64);
-
-/// Root segment every composable shader module path carries.
-const LOGICAL_ROOT: &str = "khora";
 
 /// Maps a watcher-relative `.wgsl` path to its logical shader module name.
 ///

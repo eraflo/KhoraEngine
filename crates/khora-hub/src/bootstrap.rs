@@ -87,8 +87,7 @@ impl App for HubApp {
     }
 }
 
-/// The hub's icon — the app icon with its colours swapped — as its window
-/// icon.
+/// Loads the hub's window icon: the app icon with its colours swapped.
 fn load_logo_icon() -> WindowIconInput {
     let logo = khora_tool_ui::logo::hub_logo_icon();
     WindowIconInput {
@@ -98,9 +97,9 @@ fn load_logo_icon() -> WindowIconInput {
     }
 }
 
-/// Hub binary entry point. Sets up logging, builds the window config,
-/// hands the `HubApp` to the engine runtime.
-pub fn run() -> anyhow::Result<()> {
+/// Runs the hub: sets up logging, builds the window config and hands the
+/// `HubApp` to the engine runtime.
+pub(crate) fn run() -> anyhow::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let window = WindowConfigInput {

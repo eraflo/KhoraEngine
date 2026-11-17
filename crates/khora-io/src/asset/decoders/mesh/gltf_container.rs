@@ -54,6 +54,10 @@ const MAPPED_EXTENSIONS: &[&str] = &["KHR_materials_emissive_strength", "KHR_mat
 /// | `material{i}` | material `i`, as a [`StandardMaterial`] |
 /// | `material_default` | the glTF default material, for primitives without one |
 /// | `texture{i}` | the image of texture `i` |
+///
+/// # Errors
+///
+/// When the bytes are glTF but do not parse.
 pub fn list_gltf_sub_assets(bytes: &[u8]) -> anyhow::Result<Vec<SubAssetEntry>> {
     if !MeshDispatcher::is_gltf(bytes) {
         return Ok(Vec::new());
@@ -109,7 +113,7 @@ impl GltfContainer {
 
     /// Creates a container reading external files through `resolver`, such as
     /// a packed game's.
-    pub fn resolving_with(resolver: Arc<dyn GltfResourceResolver>) -> Self {
+    pub(crate) fn resolving_with(resolver: Arc<dyn GltfResourceResolver>) -> Self {
         Self { resolver }
     }
 
@@ -119,20 +123,6 @@ impl GltfContainer {
             resolver: Arc::new(FileSystemResolver::guarded(guard)),
         }
     }
-}
-
-/// A glTF file, parsed and validated once, with every buffer it points at.
-struct OpenedGltf {
-    document: gltf::Document,
-    buffers: Vec<Vec<u8>>,
-    /// The file's folder, relative to the assets root: external images are
-    /// read from there.
-    base_dir: PathBuf,
-    /// The file's name without its extension: the name of a scene that has
-    /// none.
-    file_stem: String,
-    /// How many elements its parts may make the importer produce.
-    caps: ElementCaps,
 }
 
 impl AssetContainer for GltfContainer {
@@ -300,6 +290,20 @@ impl AssetContainer for GltfContainer {
     }
 }
 
+/// A glTF file, parsed and validated once, with every buffer it points at.
+struct OpenedGltf {
+    document: gltf::Document,
+    buffers: Vec<Vec<u8>>,
+    /// The file's folder, relative to the assets root: external images are
+    /// read from there.
+    base_dir: PathBuf,
+    /// The file's name without its extension: the name of a scene that has
+    /// none.
+    file_stem: String,
+    /// How many elements its parts may make the importer produce.
+    caps: ElementCaps,
+}
+
 /// One sub-asset label, parsed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Label {
@@ -339,7 +343,7 @@ impl Label {
             .map(Self::Texture)
     }
 
-    /// The index type of the sub-asset this label names.
+    /// Returns the index type of the sub-asset this label names.
     fn type_name(self) -> &'static str {
         match self {
             Self::Scene(_) => "prefab",
@@ -350,7 +354,7 @@ impl Label {
     }
 }
 
-/// A decimal index written without sign or padding, as the lister writes it.
+/// Parses a decimal index written without sign or padding, as the lister writes it.
 fn index(digits: &str) -> Option<usize> {
     let canonical = !digits.is_empty()
         && digits.bytes().all(|b| b.is_ascii_digit())
@@ -358,7 +362,7 @@ fn index(digits: &str) -> Option<usize> {
     canonical.then(|| digits.parse().ok()).flatten()
 }
 
-/// Whether some primitive names no material, and so uses the glTF default.
+/// Returns whether some primitive names no material, and so uses the glTF default.
 fn uses_default_material(document: &gltf::Document) -> bool {
     document
         .meshes()
@@ -366,7 +370,7 @@ fn uses_default_material(document: &gltf::Document) -> bool {
         .any(|primitive| primitive.material().index().is_none())
 }
 
-/// A glTF material as a [`StandardMaterial`]: its texture slots name the
+/// Converts a glTF material to a [`StandardMaterial`]: its texture slots name the
 /// file's `texture{i}` sub-assets.
 fn standard_material(material: &gltf::Material<'_>, container: AssetUUID) -> StandardMaterial {
     let texture = |index: usize| Some(AssetUUID::sub_asset(container, &format!("texture{index}")));
@@ -422,7 +426,7 @@ fn standard_material(material: &gltf::Material<'_>, container: AssetUUID) -> Sta
     }
 }
 
-/// The material glTF gives a primitive that names none: every property at its
+/// Returns the material glTF gives a primitive that names none: every property at its
 /// default — white, fully metallic and rough, opaque, single-sided.
 fn default_material() -> StandardMaterial {
     StandardMaterial {
@@ -520,7 +524,7 @@ fn warn_unmapped_features(document: &gltf::Document, source_path: &Path) {
     }
 }
 
-/// An importer's error as a container's: a limit that stopped it stays a
+/// Converts an importer's error to a container's: a limit that stopped it stays a
 /// [`LimitExceeded`], what the reader refuses the file by.
 fn kept(error: Box<dyn std::error::Error + Send + Sync>) -> anyhow::Error {
     match error.downcast::<LimitExceeded>() {

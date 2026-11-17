@@ -192,7 +192,7 @@ mod tests {
 
     // Define a test bitflag type using the macro
     khora_bitflags! {
-        /// TestFlags for macro verification
+        /// `TestFlags` for macro verification
         pub struct TestFlags: u32 {
             const FLAG_A = 1 << 0;
             const FLAG_B = 1 << 1;

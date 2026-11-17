@@ -37,7 +37,7 @@ impl Default for TaffyLayoutSystem {
 }
 
 impl TaffyLayoutSystem {
-    /// Creates a new TaffyLayoutSystem.
+    /// Creates a new `TaffyLayoutSystem`.
     pub fn new() -> Self {
         Self {
             taffy: TaffyTree::new(),

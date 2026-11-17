@@ -903,7 +903,7 @@ fn two_runs_sharing_a_store_keep_each_others_quarantine() {
     );
 }
 
-/// **A file refused for its size is no longer reported once it fits.**
+/// **A file refused for its size stops being reported once it fits.**
 ///
 /// A script over its strict cap is refused `TooLarge` and quarantined by its
 /// stamp; made smaller, as the remedy asks, it reads — and its refusal leaves
@@ -1059,7 +1059,7 @@ fn a_file_quarantined_by_another_run_after_a_release_here_stays_in_the_store() {
     );
 }
 
-/// **A file read with another content is no longer reported.**
+/// **A file read with another content stops being reported.**
 ///
 /// Its content quarantined, the file reads once it holds other bytes; it leaves
 /// the problems and `quarantined()`, though its old content is still refused
@@ -1104,7 +1104,7 @@ fn a_file_read_with_another_content_is_no_longer_reported() {
 /// **Refusals handed over keep a file that reads again unreported.**
 ///
 /// A guard made before the run's refusals were known quarantined a file's
-/// content, then read the file with other content — it is no longer reported.
+/// content, then read the file with other content — it stops being reported.
 /// Handed over to the run's refusals, the file must stay unreported there,
 /// while its old content stays refused.
 #[test]

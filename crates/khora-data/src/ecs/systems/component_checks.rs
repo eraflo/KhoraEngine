@@ -97,6 +97,7 @@ pub(crate) fn component_checks(
     problems.report(ProblemSource::Data, found);
 }
 
+/// Describes `problem` in words, as
 /// `Camera.z_near on entity 3v0: near must be greater than 0 (it is 0)`.
 fn describe(problem: &Problem) -> String {
     format!(

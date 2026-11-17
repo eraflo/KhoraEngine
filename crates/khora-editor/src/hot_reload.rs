@@ -203,7 +203,8 @@ pub fn land_reindex(
     with_world
 }
 
-/// Of the material assignments `actions` that landed, those to apply now.
+/// Selects, of the material assignments `actions` that landed, those to apply
+/// now.
 ///
 /// One for a scene chosen before the open one is dropped. One saved while the
 /// scene was played is for the played scene: applied while it plays, dropped
@@ -302,7 +303,7 @@ mod tests {
         std::fs::write(prefabs.join("bullet.kprefab"), b"prefab bytes")?;
         std::fs::write(prefabs.join("rocket.kprefab"), b"prefab bytes")?;
 
-        // `rocket` was renamed from `missile`: it keeps the identity it had.
+        // `rocket` is the renamed `missile`: it keeps the identity it had.
         let frozen = AssetUUID::new_v5("prefabs/missile.kprefab");
         let mut registry = AssetIdRegistry::load(&root);
         registry.freeze("prefabs/rocket.kprefab", frozen);

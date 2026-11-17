@@ -38,6 +38,26 @@ use crate::ecs::{
     PackedLayout, RuntimeComponentDecl, SemanticDomain, World,
 };
 
+/// Every field kind, as a file names it.
+const KINDS: [(FieldKind, &str); 10] = [
+    (FieldKind::Bool, "Bool"),
+    (FieldKind::Int, "Int"),
+    (FieldKind::Float, "Float"),
+    (FieldKind::Vec2, "Vec2"),
+    (FieldKind::Vec3, "Vec3"),
+    (FieldKind::Vec4, "Vec4"),
+    (FieldKind::Quat, "Quat"),
+    (FieldKind::Color, "Color"),
+    (FieldKind::Entity, "Entity"),
+    (FieldKind::Value, "Value"),
+];
+
+/// An entity no world holds: what a default naming an entity reads as.
+const NO_ENTITY: EntityId = EntityId {
+    index: u32::MAX,
+    generation: u32::MAX,
+};
+
 /// A declared component, as a file describes it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -71,7 +91,7 @@ pub struct DeclaredFieldRecord {
     pub default: Record,
 }
 
-/// The declaration a file holds for `vtable`'s component, when it is one
+/// Returns the declaration a file holds for `vtable`'s component, when it is one
 /// declared while the engine runs.
 pub(super) fn declaration_of(vtable: &ComponentVTable) -> Option<DeclaredRecord> {
     let layout = vtable.columns.packed()?;
@@ -83,7 +103,7 @@ pub(super) fn declaration_of(vtable: &ComponentVTable) -> Option<DeclaredRecord>
     ))
 }
 
-/// The declaration of the component `name`, kept in `domain`, whose rows
+/// Returns the declaration of the component `name`, kept in `domain`, whose rows
 /// `layout` lays out.
 pub(super) fn declaration(
     name: &str,
@@ -135,7 +155,7 @@ pub(crate) fn described<'a>(
         .collect()
 }
 
-/// `declared` as one value, for a format that writes a record's parts
+/// Writes `declared` as one value, for a format that writes a record's parts
 /// itself: `{ name, domain, fields: [{ name, kind, default }] }`.
 pub(crate) fn declaration_to_record(declared: &DeclaredRecord) -> Record {
     let text = |value: &str| Record::Str(value.to_owned());
@@ -178,7 +198,7 @@ pub(crate) fn declaration_to_record(declared: &DeclaredRecord) -> Record {
     record
 }
 
-/// The declaration [`declaration_to_record`] wrote.
+/// Returns the declaration [`declaration_to_record`] wrote.
 pub(crate) fn declaration_from_record(record: &Record) -> Result<DeclaredRecord, String> {
     fn part<'r>(record: &'r Record, name: &str) -> Result<&'r Record, String> {
         let Record::Struct { fields, .. } = record else {
@@ -229,7 +249,7 @@ pub(crate) fn declaration_from_record(record: &Record) -> Result<DeclaredRecord,
     })
 }
 
-/// The part `name` of a declaration's record, when it has one.
+/// Returns the part `name` of a declaration's record, when it has one.
 fn record_part<'r>(record: &'r Record, name: &str) -> Option<&'r Record> {
     let Record::Struct { fields, .. } = record else {
         return None;
@@ -239,20 +259,6 @@ fn record_part<'r>(record: &'r Record, name: &str) -> Option<&'r Record> {
         .find(|(known, _)| known == name)
         .map(|(_, value)| value)
 }
-
-/// Every field kind, as a file names it.
-const KINDS: [(FieldKind, &str); 10] = [
-    (FieldKind::Bool, "Bool"),
-    (FieldKind::Int, "Int"),
-    (FieldKind::Float, "Float"),
-    (FieldKind::Vec2, "Vec2"),
-    (FieldKind::Vec3, "Vec3"),
-    (FieldKind::Vec4, "Vec4"),
-    (FieldKind::Quat, "Quat"),
-    (FieldKind::Color, "Color"),
-    (FieldKind::Entity, "Entity"),
-    (FieldKind::Value, "Value"),
-];
 
 pub(crate) fn kind_name(kind: FieldKind) -> &'static str {
     KINDS
@@ -268,7 +274,7 @@ pub(crate) fn kind_named(name: &str) -> Option<FieldKind> {
         .map(|(kind, _)| *kind)
 }
 
-/// The declaration of every saved component `world` declares while it runs,
+/// Returns the declaration of every saved component `world` declares while it runs,
 /// sorted by name: what a record is read under to compare it with `world`.
 pub(crate) fn declarations_of(world: &World) -> Vec<DeclaredRecord> {
     let mut declared: Vec<DeclaredRecord> = world
@@ -294,13 +300,14 @@ pub(crate) fn register_all(world: &mut World, declared: &[DeclaredRecord]) {
     }
 }
 
-/// Whether a document `kept` keeps `vtable`'s component, one declared while the engine runs.
+/// Returns whether a document `kept` keeps `vtable`'s component, one declared while the engine
+/// runs.
 pub(super) fn is_saved_declared(vtable: &ComponentVTable, kept: Kept) -> bool {
     vtable.rust.is_none()
         && (vtable.provenance.is_copied_on_duplicate() || (kept == Kept::Game && vtable.resumable))
 }
 
-/// Row `row` of a declared component's `column`, as a record: its fields by
+/// Writes row `row` of a declared component's `column` as a record: its fields by
 /// name.
 pub(super) fn write_value(
     vtable: &ComponentVTable,
@@ -330,7 +337,7 @@ pub(super) fn write_value(
     })
 }
 
-/// `value` as a cell writes it: the tagged script value, its entities
+/// Encodes `value` as a cell writes it: the tagged script value, its entities
 /// through `references`.
 fn encode(
     value: &ScriptValue,
@@ -339,7 +346,7 @@ fn encode(
     to_record(value, references)
 }
 
-/// The script value a cell holds.
+/// Returns the script value a cell holds.
 fn decode(
     record: &Record,
     references: &mut dyn ReferenceReader,
@@ -373,6 +380,101 @@ pub(crate) struct DeclaredLoad {
     pub(crate) register: Option<RuntimeComponentDecl>,
     /// Whether it is runtime state a game save keeps and a scene does not.
     pub(crate) resumable: bool,
+}
+
+impl DeclaredLoad {
+    /// Reads one row of the component from `record`: a struct, or the map a
+    /// format that writes no struct names reads it back as.
+    pub(crate) fn stage_record(
+        &self,
+        record: &Record,
+        references: &mut dyn ReferenceReader,
+    ) -> Result<StagedComponent, RecordError> {
+        let mut values = Vec::new();
+        let mut read = |field: &str, value: &Record| -> Result<(), RecordError> {
+            let value = decode(value, references)
+                .map_err(|error| RecordError(format!("`{field}`: {error}")))?;
+            values.push((field.to_owned(), value));
+            Ok(())
+        };
+        match record {
+            Record::Struct { fields, .. } => {
+                for (field, value) in fields {
+                    read(field, value)?;
+                }
+            }
+            Record::Map(entries) => {
+                for (field, value) in entries {
+                    let Record::Str(field) = field else {
+                        return Err(RecordError(
+                            "a field named by something not text".to_owned(),
+                        ));
+                    };
+                    read(field, value)?;
+                }
+            }
+            Record::Unit | Record::UnitStruct { .. } => {}
+            _ => return Err(RecordError("not a component's fields".to_owned())),
+        }
+        Ok(self.staged(values))
+    }
+
+    /// Stages one row of the component from its fields' values, in the file's
+    /// declaration order — what a snapshot holds.
+    pub(crate) fn stage_values(&self, values: Vec<ScriptValue>) -> StagedComponent {
+        let named = self.file_fields.iter().cloned().zip(values).collect();
+        self.staged(named)
+    }
+
+    /// Reads a row of `values` by field name onto the planned fields, with what it adapted.
+    ///
+    /// A missing field takes its default, a value no field takes is dropped, and
+    /// an `int` for a `float` field is converted where it converts exactly.
+    fn staged(&self, values: Vec<(String, ScriptValue)>) -> StagedComponent {
+        let mut report: Vec<ReportEntry> = Vec::new();
+        let entry = |report: &mut Vec<ReportEntry>, path: &str, kind: ReportKind| {
+            report.push(ReportEntry {
+                entity: None,
+                component: Some(self.name.to_string()),
+                path: path.to_owned(),
+                kind,
+            });
+        };
+        let mut kept = Vec::with_capacity(values.len());
+        for (field, value) in values {
+            let Some(slot) = self.layout.slot_of(&field) else {
+                entry(&mut report, &field, ReportKind::Dropped);
+                continue;
+            };
+            if self.rekinded_fields.contains(&field) && value_holds_asset(&value) {
+                entry(&mut report, &field, ReportKind::Dropped);
+                continue;
+            }
+            match fit(&self.layout, slot, value) {
+                Some((value, widened)) => {
+                    if widened {
+                        entry(&mut report, &field, ReportKind::Widened);
+                    }
+                    kept.push((field, value));
+                }
+                None => entry(&mut report, &field, ReportKind::Dropped),
+            }
+        }
+        for field in self.layout.fields() {
+            if !kept.iter().any(|(name, _)| *name == field.name)
+                && !report.iter().any(|done| done.path == field.name)
+            {
+                entry(&mut report, &field.name, ReportKind::Defaulted);
+            }
+        }
+        StagedComponent {
+            component: Box::new(StagedDeclared {
+                key: self.key,
+                values: kept,
+            }),
+            report,
+        }
+    }
 }
 
 /// Plans reading the file's `declared` component into `world`.
@@ -491,7 +593,7 @@ pub(crate) fn plan_fields(
     })
 }
 
-/// A layout of `fields`, each of its type in `types` where one is known.
+/// Builds a layout of `fields`, each of its type in `types` where one is known.
 fn typed_layout(
     fields: Vec<PackedField>,
     types: Vec<Option<ErgonType>>,
@@ -502,102 +604,7 @@ fn typed_layout(
     PackedLayout::typed(fields, types.into_iter().flatten().collect())
 }
 
-impl DeclaredLoad {
-    /// Reads one row of the component from `record`: a struct, or the map a
-    /// format that writes no struct names reads it back as.
-    pub(crate) fn stage_record(
-        &self,
-        record: &Record,
-        references: &mut dyn ReferenceReader,
-    ) -> Result<StagedComponent, RecordError> {
-        let mut values = Vec::new();
-        let mut read = |field: &str, value: &Record| -> Result<(), RecordError> {
-            let value = decode(value, references)
-                .map_err(|error| RecordError(format!("`{field}`: {error}")))?;
-            values.push((field.to_owned(), value));
-            Ok(())
-        };
-        match record {
-            Record::Struct { fields, .. } => {
-                for (field, value) in fields {
-                    read(field, value)?;
-                }
-            }
-            Record::Map(entries) => {
-                for (field, value) in entries {
-                    let Record::Str(field) = field else {
-                        return Err(RecordError(
-                            "a field named by something not text".to_owned(),
-                        ));
-                    };
-                    read(field, value)?;
-                }
-            }
-            Record::Unit | Record::UnitStruct { .. } => {}
-            _ => return Err(RecordError("not a component's fields".to_owned())),
-        }
-        Ok(self.staged(values))
-    }
-
-    /// One row of the component from its fields' values, in the file's
-    /// declaration order — what a snapshot holds.
-    pub(crate) fn stage_values(&self, values: Vec<ScriptValue>) -> StagedComponent {
-        let named = self.file_fields.iter().cloned().zip(values).collect();
-        self.staged(named)
-    }
-
-    /// Reads a row of `values` by field name onto the planned fields, with what it adapted.
-    ///
-    /// A missing field takes its default, a value no field takes is dropped, and
-    /// an `int` for a `float` field is converted where it converts exactly.
-    fn staged(&self, values: Vec<(String, ScriptValue)>) -> StagedComponent {
-        let mut report: Vec<ReportEntry> = Vec::new();
-        let entry = |report: &mut Vec<ReportEntry>, path: &str, kind: ReportKind| {
-            report.push(ReportEntry {
-                entity: None,
-                component: Some(self.name.to_string()),
-                path: path.to_owned(),
-                kind,
-            });
-        };
-        let mut kept = Vec::with_capacity(values.len());
-        for (field, value) in values {
-            let Some(slot) = self.layout.slot_of(&field) else {
-                entry(&mut report, &field, ReportKind::Dropped);
-                continue;
-            };
-            if self.rekinded_fields.contains(&field) && value_holds_asset(&value) {
-                entry(&mut report, &field, ReportKind::Dropped);
-                continue;
-            }
-            match fit(&self.layout, slot, value) {
-                Some((value, widened)) => {
-                    if widened {
-                        entry(&mut report, &field, ReportKind::Widened);
-                    }
-                    kept.push((field, value));
-                }
-                None => entry(&mut report, &field, ReportKind::Dropped),
-            }
-        }
-        for field in self.layout.fields() {
-            if !kept.iter().any(|(name, _)| *name == field.name)
-                && !report.iter().any(|done| done.path == field.name)
-            {
-                entry(&mut report, &field.name, ReportKind::Defaulted);
-            }
-        }
-        StagedComponent {
-            component: Box::new(StagedDeclared {
-                key: self.key,
-                values: kept,
-            }),
-            report,
-        }
-    }
-}
-
-/// `value` as field `slot` of `layout` holds it once read, and whether it
+/// Returns `value` as field `slot` of `layout` holds it once read, and whether it
 /// was widened — [`PackedLayout::fit`].
 fn fit(layout: &PackedLayout, slot: usize, value: ScriptValue) -> Option<(ScriptValue, bool)> {
     layout.fit(slot, &value)
@@ -649,12 +656,6 @@ impl ReferenceWriter for Outside {
         EntityRef::Outside
     }
 }
-
-/// An entity no world holds: what a default naming an entity reads as.
-const NO_ENTITY: EntityId = EntityId {
-    index: u32::MAX,
-    generation: u32::MAX,
-};
 
 /// Reads every entity as [`NO_ENTITY`]: what a default naming an entity is
 /// read as wherever a file holds one.

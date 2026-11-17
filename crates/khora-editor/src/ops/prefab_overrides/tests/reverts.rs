@@ -177,8 +177,8 @@ fn reverting_a_field_clears_its_override_and_keeps_the_others() {
     );
 }
 
-/// Reverting a removed light inserts the prefab's light again: the root no
-/// longer overrides anything.
+/// Reverting a removed light inserts the prefab's light again: the root
+/// overrides nothing.
 #[test]
 fn reverting_a_removed_component_brings_back_the_prefabs() {
     let mut placed = placed();
@@ -206,8 +206,7 @@ fn reverting_a_removed_component_brings_back_the_prefabs() {
     assert_eq!(inspected.override_count(), 0);
 }
 
-/// Reverting an added tag removes it: the sight no longer overrides
-/// anything.
+/// Reverting an added tag removes it: the sight overrides nothing.
 #[test]
 fn reverting_an_added_component_removes_it() {
     let mut placed = placed();

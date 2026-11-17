@@ -16,7 +16,7 @@ use std::path::Path;
 use std::process::Command;
 
 /// Runs `git <args...>` in `cwd`. Returns stdout on success.
-pub fn run_git(cwd: &Path, args: &[&str]) -> Result<String> {
+pub(crate) fn run_git(cwd: &Path, args: &[&str]) -> Result<String> {
     let output = Command::new("git")
         .args(args)
         .current_dir(cwd)
@@ -32,7 +32,7 @@ pub fn run_git(cwd: &Path, args: &[&str]) -> Result<String> {
 }
 
 /// Returns true if `git` is reachable on PATH.
-pub fn git_available() -> bool {
+pub(crate) fn git_available() -> bool {
     Command::new("git")
         .arg("--version")
         .output()
@@ -40,11 +40,15 @@ pub fn git_available() -> bool {
         .unwrap_or(false)
 }
 
-/// `git init -b main` + identity fallback + initial commit of all files.
+/// Runs `git init -b main` and commits every file, with a fallback identity.
 ///
 /// `author` is used as a fallback identity if `user.name` / `user.email` are
 /// not configured globally — we never overwrite an existing global config.
-pub fn init_with_initial_commit(repo: &Path, author_name: &str, author_email: &str) -> Result<()> {
+pub(crate) fn init_with_initial_commit(
+    repo: &Path,
+    author_name: &str,
+    author_email: &str,
+) -> Result<()> {
     run_git(repo, &["init", "-b", "main"])?;
 
     // Set local identity only if global one is missing — avoid touching the
@@ -66,7 +70,7 @@ fn has_local_identity(repo: &Path) -> bool {
 }
 
 /// Adds `origin` and (optionally) pushes `main` upstream.
-pub fn add_remote_and_push(repo: &Path, remote_url: &str, push: bool) -> Result<()> {
+pub(crate) fn add_remote_and_push(repo: &Path, remote_url: &str, push: bool) -> Result<()> {
     run_git(repo, &["remote", "add", "origin", remote_url])?;
     if push {
         run_git(repo, &["push", "-u", "origin", "main"])?;

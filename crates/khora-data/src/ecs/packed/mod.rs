@@ -52,6 +52,111 @@ pub enum FieldKind {
     Value,
 }
 
+impl FieldKind {
+    /// Returns the bytes the kind takes inline, `None` for a [`Value`](Self::Value),
+    /// stored out of line.
+    fn size(self) -> Option<usize> {
+        Some(match self {
+            Self::Bool => 1,
+            Self::Int | Self::Vec2 | Self::Entity => 8,
+            Self::Float => 4,
+            Self::Vec3 => 12,
+            Self::Vec4 | Self::Quat | Self::Color => 16,
+            Self::Value => return None,
+        })
+    }
+
+    /// Returns how Ergon spells the kind — `Value`, any value, as `any`.
+    pub(crate) fn spelling(self) -> &'static str {
+        match self {
+            Self::Bool => "bool",
+            Self::Int => "int",
+            Self::Float => "float",
+            Self::Vec2 => "Vec2",
+            Self::Vec3 => "Vec3",
+            Self::Vec4 => "Vec4",
+            Self::Quat => "Quat",
+            Self::Color => "Color",
+            Self::Entity => "Entity",
+            Self::Value => "any",
+        }
+    }
+
+    /// Returns the kind of a field of Ergon type `ty`: a scalar or an engine type is
+    /// its own kind, anything else — text, an array, an optional — `Value`.
+    pub fn of(ty: &khora_core::script::ErgonType) -> Self {
+        use khora_core::script::ErgonType;
+        match ty {
+            ErgonType::Bool => Self::Bool,
+            ErgonType::Int => Self::Int,
+            // A time and an angle are floats in their own unit.
+            ErgonType::Float | ErgonType::Duration | ErgonType::Angle => Self::Float,
+            ErgonType::Entity => Self::Entity,
+            ErgonType::Engine("Vec2") => Self::Vec2,
+            ErgonType::Engine("Vec3") => Self::Vec3,
+            ErgonType::Engine("Vec4") => Self::Vec4,
+            ErgonType::Engine("Quat") => Self::Quat,
+            ErgonType::Engine("Color") => Self::Color,
+            _ => Self::Value,
+        }
+    }
+
+    /// Returns whether a value of this kind may be kept when its field becomes of kind `to`.
+    ///
+    /// Same kind, or `int` to `float`, each value kept only where it
+    /// [converts losslessly](Self::widened).
+    pub(crate) fn widens(self, to: FieldKind) -> bool {
+        self == to || (self == Self::Int && to == Self::Float)
+    }
+
+    /// Returns `value`, of this kind, as a field of kind `to` keeps it.
+    ///
+    /// `None` for another kind, or an `int` a `float` would round (past 2^24).
+    pub(crate) fn widened(self, to: FieldKind, value: &ScriptValue) -> Option<ScriptValue> {
+        match (self, to, value) {
+            (Self::Int, Self::Float, ScriptValue::Int(v)) => {
+                let float = *v as f32;
+                (float as i64 == *v).then_some(ScriptValue::Float(float))
+            }
+            _ if self == to => Some(value.clone()),
+            _ => None,
+        }
+    }
+
+    /// Returns `value` as this kind stores it, refusing a non-finite number as a Rust field does.
+    ///
+    /// An `int` is taken as the float it names.
+    pub(crate) fn accept(self, value: &ScriptValue) -> Option<ScriptValue> {
+        self.stored(value).filter(ScriptValue::is_finite)
+    }
+
+    /// Returns `value` as this kind stores it, finite or not; `None` when it is not one.
+    pub(crate) fn stored(self, value: &ScriptValue) -> Option<ScriptValue> {
+        match (self, value) {
+            (Self::Float, ScriptValue::Int(v)) => Some(ScriptValue::Float(*v as f32)),
+            (_, other) if self.holds(other) => Some(other.clone()),
+            _ => None,
+        }
+    }
+
+    /// Returns whether `value` is a value of this kind.
+    pub(crate) fn holds(self, value: &ScriptValue) -> bool {
+        matches!(
+            (self, value),
+            (Self::Bool, ScriptValue::Bool(_))
+                | (Self::Int, ScriptValue::Int(_))
+                | (Self::Float, ScriptValue::Float(_))
+                | (Self::Vec2, ScriptValue::Vec2(_))
+                | (Self::Vec3, ScriptValue::Vec3(_))
+                | (Self::Vec4, ScriptValue::Vec4(_))
+                | (Self::Quat, ScriptValue::Quat(_))
+                | (Self::Color, ScriptValue::Color(_))
+                | (Self::Entity, ScriptValue::Entity(_))
+                | (Self::Value, _)
+        )
+    }
+}
+
 /// One field of a run-time component.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PackedField {
@@ -84,15 +189,6 @@ pub struct PackedLayout {
     /// Engine-written state, such as a suspended behavior's registers, is kept
     /// as computed. Set from the component's provenance.
     finite: bool,
-}
-
-/// Where one field sits in a row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Place {
-    /// At this byte offset of the row's inline part.
-    Inline(usize),
-    /// At this index of the row's out-of-line slots.
-    Boxed(usize),
 }
 
 impl PackedLayout {
@@ -164,7 +260,7 @@ impl PackedLayout {
         Ok(layout)
     }
 
-    /// The Ergon type of field `slot`, where known.
+    /// Returns the Ergon type of field `slot`, where known.
     pub fn ty(&self, slot: usize) -> Option<&ErgonType> {
         self.types.get(slot).and_then(Option::as_ref)
     }
@@ -187,7 +283,7 @@ impl PackedLayout {
         self.finite = provenance.is_copied_on_duplicate();
     }
 
-    /// Whether `other` holds the same fields, of the same types.
+    /// Returns whether `other` holds the same fields, of the same types.
     pub fn same_as(&self, other: &PackedLayout) -> bool {
         self.fields == other.fields && self.types == other.types
     }
@@ -218,135 +314,39 @@ impl PackedLayout {
         }
     }
 
-    /// The fields, in declaration order.
+    /// Returns the fields, in declaration order.
     pub fn fields(&self) -> &[PackedField] {
         &self.fields
     }
 
-    /// The slot of the field named `name`.
+    /// Returns the slot of the field named `name`.
     pub fn slot_of(&self, name: &str) -> Option<usize> {
         self.fields.iter().position(|field| field.name == name)
     }
 
-    /// Where field `slot` sits in a row.
+    /// Returns where field `slot` sits in a row.
     pub(crate) fn place(&self, slot: usize) -> Option<Place> {
         self.places.get(slot).copied()
     }
 
-    /// Bytes of a row's inline part.
+    /// Returns the size in bytes of a row's inline part.
     pub(crate) fn stride(&self) -> usize {
         self.stride
     }
 
-    /// Out-of-line slots per row.
+    /// Returns the number of out-of-line slots per row.
     pub(crate) fn boxed(&self) -> usize {
         self.boxed
     }
 }
 
-impl FieldKind {
-    /// Bytes the kind takes inline, `None` for a [`Value`](Self::Value),
-    /// stored out of line.
-    fn size(self) -> Option<usize> {
-        Some(match self {
-            Self::Bool => 1,
-            Self::Int | Self::Vec2 | Self::Entity => 8,
-            Self::Float => 4,
-            Self::Vec3 => 12,
-            Self::Vec4 | Self::Quat | Self::Color => 16,
-            Self::Value => return None,
-        })
-    }
-
-    /// How Ergon spells the kind — `Value`, any value, as `any`.
-    pub(crate) fn spelling(self) -> &'static str {
-        match self {
-            Self::Bool => "bool",
-            Self::Int => "int",
-            Self::Float => "float",
-            Self::Vec2 => "Vec2",
-            Self::Vec3 => "Vec3",
-            Self::Vec4 => "Vec4",
-            Self::Quat => "Quat",
-            Self::Color => "Color",
-            Self::Entity => "Entity",
-            Self::Value => "any",
-        }
-    }
-
-    /// The kind of a field of Ergon type `ty`: a scalar or an engine type is
-    /// its own kind, anything else — text, an array, an optional — `Value`.
-    pub fn of(ty: &khora_core::script::ErgonType) -> Self {
-        use khora_core::script::ErgonType;
-        match ty {
-            ErgonType::Bool => Self::Bool,
-            ErgonType::Int => Self::Int,
-            // A time and an angle are floats in their own unit.
-            ErgonType::Float | ErgonType::Duration | ErgonType::Angle => Self::Float,
-            ErgonType::Entity => Self::Entity,
-            ErgonType::Engine("Vec2") => Self::Vec2,
-            ErgonType::Engine("Vec3") => Self::Vec3,
-            ErgonType::Engine("Vec4") => Self::Vec4,
-            ErgonType::Engine("Quat") => Self::Quat,
-            ErgonType::Engine("Color") => Self::Color,
-            _ => Self::Value,
-        }
-    }
-
-    /// Returns whether a value of this kind may be kept when its field becomes of kind `to`.
-    ///
-    /// Same kind, or `int` to `float`, each value kept only where it
-    /// [converts losslessly](Self::widened).
-    pub(crate) fn widens(self, to: FieldKind) -> bool {
-        self == to || (self == Self::Int && to == Self::Float)
-    }
-
-    /// Returns `value`, of this kind, as a field of kind `to` keeps it.
-    ///
-    /// `None` for another kind, or an `int` a `float` would round (past 2^24).
-    pub(crate) fn widened(self, to: FieldKind, value: &ScriptValue) -> Option<ScriptValue> {
-        match (self, to, value) {
-            (Self::Int, Self::Float, ScriptValue::Int(v)) => {
-                let float = *v as f32;
-                (float as i64 == *v).then_some(ScriptValue::Float(float))
-            }
-            _ if self == to => Some(value.clone()),
-            _ => None,
-        }
-    }
-
-    /// Returns `value` as this kind stores it, refusing a non-finite number as a Rust field does.
-    ///
-    /// An `int` is taken as the float it names.
-    pub(crate) fn accept(self, value: &ScriptValue) -> Option<ScriptValue> {
-        self.stored(value).filter(ScriptValue::is_finite)
-    }
-
-    /// Returns `value` as this kind stores it, finite or not; `None` when it is not one.
-    pub(crate) fn stored(self, value: &ScriptValue) -> Option<ScriptValue> {
-        match (self, value) {
-            (Self::Float, ScriptValue::Int(v)) => Some(ScriptValue::Float(*v as f32)),
-            (_, other) if self.holds(other) => Some(other.clone()),
-            _ => None,
-        }
-    }
-
-    /// Whether `value` is a value of this kind.
-    pub(crate) fn holds(self, value: &ScriptValue) -> bool {
-        matches!(
-            (self, value),
-            (Self::Bool, ScriptValue::Bool(_))
-                | (Self::Int, ScriptValue::Int(_))
-                | (Self::Float, ScriptValue::Float(_))
-                | (Self::Vec2, ScriptValue::Vec2(_))
-                | (Self::Vec3, ScriptValue::Vec3(_))
-                | (Self::Vec4, ScriptValue::Vec4(_))
-                | (Self::Quat, ScriptValue::Quat(_))
-                | (Self::Color, ScriptValue::Color(_))
-                | (Self::Entity, ScriptValue::Entity(_))
-                | (Self::Value, _)
-        )
-    }
+/// Where one field sits in a row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Place {
+    /// At this byte offset of the row's inline part.
+    Inline(usize),
+    /// At this index of the row's out-of-line slots.
+    Boxed(usize),
 }
 
 /// Writes `value`, of an inline kind, into `bytes` — exactly its size.

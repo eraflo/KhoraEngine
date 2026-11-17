@@ -35,7 +35,7 @@ impl Device {
     /// Every device, in the order of [`PerDevice`]'s fields.
     pub const ALL: [Device; 4] = [Device::Cpu, Device::Gpu, Device::Npu, Device::Other];
 
-    /// This device's value in `values`.
+    /// Returns this device's value in `values`.
     pub fn get<T: Copy>(self, values: &PerDevice<T>) -> T {
         match self {
             Device::Cpu => values.cpu,
@@ -45,7 +45,7 @@ impl Device {
         }
     }
 
-    /// This device's value in `values`, to change it.
+    /// Returns this device's value in `values`, to change it.
     pub fn get_mut<T>(self, values: &mut PerDevice<T>) -> &mut T {
         match self {
             Device::Cpu => &mut values.cpu,

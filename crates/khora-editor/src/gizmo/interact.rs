@@ -52,7 +52,7 @@ impl GizmoAxis {
     /// All three handles, in draw and hit-test order.
     pub const ALL: [Self; 3] = [Self::X, Self::Y, Self::Z];
 
-    /// Index of this axis into a [`GizmoBasis`].
+    /// Returns the index of this axis into a [`GizmoBasis`].
     pub const fn index(self) -> usize {
         match self {
             Self::X => 0,
@@ -61,7 +61,7 @@ impl GizmoAxis {
         }
     }
 
-    /// The colour this handle is drawn in.
+    /// Returns the colour this handle is drawn in.
     ///
     /// Defined once, here, so the geometry generator and anything that
     /// highlights the grabbed handle cannot disagree about which axis is which.
@@ -77,7 +77,7 @@ impl GizmoAxis {
 /// World-space directions of the three handles, indexed by [`GizmoAxis::index`].
 pub type GizmoBasis = [Vec3; 3];
 
-/// The frame the handles are drawn and dragged in for `mode`.
+/// Returns the frame the handles are drawn and dragged in for `mode`.
 ///
 /// Object-aligned for [`GizmoMode::Scale`] (see the module docs), world-aligned
 /// otherwise.
@@ -304,8 +304,8 @@ pub fn pick_handle(
     best.map(|(_, axis)| axis)
 }
 
-/// The scalar the drag is measured in: distance along the axis for Move and
-/// Scale, angle around it for Rotate.
+/// Returns the scalar the drag is measured in: distance along the axis for Move
+/// and Scale, angle around it for Rotate.
 fn drag_parameter(mode: GizmoMode, pivot: Vec3, direction: Vec3, ray: &Ray) -> Option<f32> {
     match mode {
         GizmoMode::Rotate => {
@@ -318,7 +318,8 @@ fn drag_parameter(mode: GizmoMode, pivot: Vec3, direction: Vec3, ray: &Ray) -> O
     }
 }
 
-/// A stable pair of unit axes perpendicular to `axis` and to each other.
+/// Returns a stable pair of unit axes perpendicular to `axis` and to each
+/// other.
 ///
 /// Any perpendicular pair would do for measuring an *angular difference* or for
 /// sweeping a ring; what matters is that the same `axis` always yields the same
@@ -338,8 +339,8 @@ pub fn perpendiculars(axis: Vec3) -> (Vec3, Vec3) {
     (u, axis.cross(u))
 }
 
-/// How near the ray passes to a translate/scale arm: distance along the ray,
-/// and how far it misses by.
+/// Measures how near the ray passes to a translate/scale arm: distance along
+/// the ray, and how far it misses by.
 fn arm_proximity(pivot: Vec3, direction: Vec3, size: f32, ray: &Ray) -> Option<(f32, f32)> {
     // The segment, not the line it lies on: the arm stops at `size`, so the
     // empty space beyond its tip must not be grabbable out to infinity.
@@ -351,8 +352,8 @@ fn arm_proximity(pivot: Vec3, direction: Vec3, size: f32, ray: &Ray) -> Option<(
     Some((along_ray, ray.distance_to_point(point)))
 }
 
-/// How near the ray passes to a rotation ring: distance along the ray, and how
-/// far the hit lands from the ring itself.
+/// Measures how near the ray passes to a rotation ring: distance along the ray,
+/// and how far the hit lands from the ring itself.
 fn ring_proximity(pivot: Vec3, axis: Vec3, size: f32, ray: &Ray) -> Option<(f32, f32)> {
     let along_ray = ray.intersect_plane(pivot, axis)?;
     let miss = ((ray.at(along_ray) - pivot).length() - size).abs();

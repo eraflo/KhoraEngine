@@ -50,7 +50,7 @@ fn guard<'w>(
     tick: u64,
 ) -> Mut<'w, Position> {
     // SAFETY: both pointers come from exclusive borrows held for `'w`, which
-    // the guard outlives no longer; nothing else reaches either while it does.
+    // the guard does not outlive; nothing else reaches either while it does.
     unsafe { Mut::new(ptr::from_mut(value), ptr::from_mut(ticks), row, Tick(tick)) }
 }
 

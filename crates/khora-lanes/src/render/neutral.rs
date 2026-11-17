@@ -172,7 +172,7 @@ impl Built {
     }
 }
 
-/// A 1×1 texture of `layers` layers and its sampling view — a cube view
+/// Creates a 1×1 texture of `layers` layers and its sampling view — a cube view
 /// when `cube`, else a 2D one — recorded in `built`.
 fn texture(
     device: &dyn GraphicsDevice,

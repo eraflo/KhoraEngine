@@ -46,7 +46,7 @@ enum Kind {
 
 /// Returns the hints `field`'s attributes declare, leaving out any attribute
 /// [`report_field_attributes`] refuses.
-pub fn hints_of(field: &Field) -> FieldHints {
+pub(crate) fn hints_of(field: &Field) -> FieldHints {
     let first = |name: &str| {
         field
             .attributes
@@ -65,7 +65,7 @@ pub fn hints_of(field: &Field) -> FieldHints {
 }
 
 /// Reports what is wrong with the attributes of `field`, one the inspector shows.
-pub fn report_field_attributes(field: &Field, diagnostics: &mut Vec<Diagnostic>) {
+pub(crate) fn report_field_attributes(field: &Field, diagnostics: &mut Vec<Diagnostic>) {
     for (at, attribute) in field.attributes.iter().enumerate() {
         if !FIELD_ATTRIBUTES.contains(&attribute.name.as_str()) {
             diagnostics.push(
@@ -120,7 +120,7 @@ pub fn report_field_attributes(field: &Field, diagnostics: &mut Vec<Diagnostic>)
 
 /// Returns the refusals of attributes written on fields the inspector never
 /// shows: a struct's and a state's, in every module but the engine's.
-pub fn report_misplaced(resolved: &Resolved) -> Vec<Diagnostic> {
+pub(crate) fn report_misplaced(resolved: &Resolved) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let items = resolved
         .modules
@@ -146,7 +146,7 @@ pub fn report_misplaced(resolved: &Resolved) -> Vec<Diagnostic> {
     diagnostics
 }
 
-/// The attributes written on the fields of `decl`'s states.
+/// Reports the attributes written on the fields of `decl`'s states.
 fn report_state_fields(decl: &BehaviorDecl, diagnostics: &mut Vec<Diagnostic>) {
     fn walk(members: &[BehaviorMember], in_state: bool, diagnostics: &mut Vec<Diagnostic>) {
         for member in members {
@@ -217,8 +217,8 @@ fn report_range(field: &Field, attribute: &Attribute, diagnostics: &mut Vec<Diag
     report_default(field, attribute, kind, range, diagnostics);
 }
 
-/// A default outside `range`: a new row would start where editing cannot
-/// bring it back.
+/// Reports a default outside `range`: a new row would start where editing
+/// cannot bring it back.
 fn report_default(
     field: &Field,
     attribute: &Attribute,
@@ -278,8 +278,8 @@ fn report_default(
     }
 }
 
-/// What `ty` may be ranged as: a number, a duration or an angle, or an
-/// optional or array of one.
+/// Returns what `ty` may be ranged as: a number, a duration or an angle, or
+/// an optional or array of one.
 fn kind_of(ty: &TypeRef) -> Option<Kind> {
     match ty {
         TypeRef::Optional { inner, .. } => kind_of(inner),
@@ -295,8 +295,8 @@ fn kind_of(ty: &TypeRef) -> Option<Kind> {
     }
 }
 
-/// The two bounds `attribute` gives for a field of `kind`, in its stored
-/// unit — or `None` unless it gives exactly two of that kind.
+/// Returns the two bounds `attribute` gives for a field of `kind`, in its
+/// stored unit — or `None` unless it gives exactly two of that kind.
 fn range_of(attribute: &Attribute, kind: Kind) -> Option<FieldRange> {
     match attribute.args.as_slice() {
         [min, max] => Some(FieldRange {
@@ -307,14 +307,14 @@ fn range_of(attribute: &Attribute, kind: Kind) -> Option<FieldRange> {
     }
 }
 
-/// Whether `range` holds something: finite bounds, the first below the
-/// second.
+/// Returns whether `range` holds something: finite bounds, the first below
+/// the second.
 fn not_empty(range: FieldRange) -> bool {
     range.min.is_finite() && range.max.is_finite() && range.min < range.max
 }
 
-/// The value a literal of `kind` stands for, in its stored unit — seconds,
-/// radians; negated included. A `float` takes integer literals as well.
+/// Returns the value a literal of `kind` stands for, in its stored unit —
+/// seconds, radians; negated included. A `float` takes integer literals as well.
 fn bound(kind: Kind, expr: &Expr) -> Option<f64> {
     match (kind, expr) {
         (Kind::Int | Kind::Float, Expr::Int { value, .. }) => Some(*value as f64),
@@ -348,7 +348,7 @@ fn leaves(expr: &Expr, kind: Kind, values: &mut Vec<f64>) -> Option<()> {
     }
 }
 
-/// `value` as the author writes a literal of `kind`.
+/// Returns `value` as the author writes a literal of `kind`.
 fn shown(kind: Kind, value: f64) -> String {
     match kind {
         Kind::Int => format!("{}", value as i64),
@@ -358,7 +358,7 @@ fn shown(kind: Kind, value: f64) -> String {
     }
 }
 
-/// The one text `attribute` gives, not blank.
+/// Returns the one text `attribute` gives, not blank.
 fn text_of(attribute: &Attribute) -> Option<String> {
     match attribute.args.as_slice() {
         [Expr::Str { value, .. }] if !value.trim().is_empty() => Some(value.clone()),

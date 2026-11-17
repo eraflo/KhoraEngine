@@ -15,6 +15,11 @@
 //! The guards a fetch runs: a refusal names the field, a warning lets the
 //! lane run on the value as it is.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn threads to test concurrency"
+)]
+
 use khora_core::gpu::GpuSetup;
 use khora_core::lane::erased::{AnyLane, Erased, RunOutcome};
 use khora_core::lane::guard::{InputRefusal, InputWarning, Reason, SourceKind, ValueProblem};

@@ -174,7 +174,7 @@ impl World {
                 score_a.cmp(&score_b)
             })
             .copied()
-            .unwrap(); // `domains` holds at least two.
+            .expect("`domains` holds at least two");
 
         let mut peer_domains = domains;
         peer_domains.remove(&driver_domain);

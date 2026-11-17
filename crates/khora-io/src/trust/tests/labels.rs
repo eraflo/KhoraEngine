@@ -41,6 +41,20 @@ fn each_trust_is_named_in_a_sentence() {
     }
 }
 
+/// **Only the engine's files and a trusted project's escape the strict caps.**
+#[test]
+fn only_engine_and_trusted_project_files_escape_the_strict_caps() {
+    for (trust, strict) in [
+        (Trust::Engine, false),
+        (Trust::Project, false),
+        (Trust::Restricted, true),
+        (Trust::Imported, true),
+        (Trust::Save, true),
+    ] {
+        assert_eq!(trust.is_strict(), strict, "{trust:?}");
+    }
+}
+
 /// **What refused a file is named by its layer**, the content's as a type check.
 #[test]
 fn what_refused_a_file_is_named_by_its_layer() {

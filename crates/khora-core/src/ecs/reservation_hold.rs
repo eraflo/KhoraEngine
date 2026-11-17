@@ -42,7 +42,7 @@ pub struct ReservationHold {
 }
 
 impl ReservationHold {
-    /// An id no other reservation and no live entity holds, held until the
+    /// Returns an id no other reservation and no live entity holds, held until the
     /// load commits it or the hold gives it back. Never fails.
     pub fn reserve(&self) -> EntityId {
         let spare = self.spare.lock_recovered().pop();
@@ -67,7 +67,7 @@ impl ReservationHold {
         self.spare.lock_recovered().extend(ids);
     }
 
-    /// Whether this hold reserves through `reserver`.
+    /// Returns whether this hold reserves through `reserver`.
     pub fn is_over(&self, reserver: &Arc<EntityReserver>) -> bool {
         Arc::ptr_eq(&self.reserver, reserver)
     }
@@ -84,7 +84,7 @@ impl Drop for ReservationHold {
 }
 
 impl EntityReserver {
-    /// A hold over this reserver: ids reserved through it survive the frame's
+    /// Returns a hold over this reserver: ids reserved through it survive the frame's
     /// end until committed, abandoned or dropped.
     pub fn hold(self: &Arc<Self>) -> ReservationHold {
         self.hold_these(Vec::new())
@@ -144,6 +144,49 @@ mod tests {
             next, held,
             "the dropped hold's ids were not handed out again"
         );
+    }
+
+    /// **A recycled hold hands its uncommitted ids out again, first**: a load
+    /// prepared again reuses them.
+    #[test]
+    fn a_recycled_hold_hands_its_uncommitted_ids_out_again_first() {
+        let reserver = Arc::new(EntityReserver::new());
+        let hold = reserver.hold();
+        let committed = hold.reserve();
+        let kept = hold.reserve();
+        assert!(hold.commit(committed));
+
+        hold.recycle();
+
+        assert_eq!(hold.reserve(), kept);
+        assert_ne!(hold.reserve(), committed, "a committed id is never reused");
+    }
+
+    /// **A hold is over the reserver it was made from**, and no other.
+    #[test]
+    fn a_hold_is_over_the_reserver_it_was_made_from() {
+        let reserver = Arc::new(EntityReserver::new());
+        let other = Arc::new(EntityReserver::new());
+        let hold = reserver.hold();
+
+        assert!(hold.is_over(&reserver));
+        assert!(!hold.is_over(&other));
+    }
+
+    /// **A hold over given ids hands them out first, and the frame's end does
+    /// not take them back.**
+    #[test]
+    fn a_hold_over_given_ids_hands_them_out_first() {
+        let reserver = Arc::new(EntityReserver::new());
+        let given = EntityId {
+            index: 7,
+            generation: 1,
+        };
+        let hold = reserver.hold_these(vec![given]);
+
+        assert_eq!(hold.reserve(), given);
+        assert!(reserver.take_unspent().is_empty(), "held, not unspent");
+        assert!(hold.commit(given));
     }
 
     /// **A hold's ids are its own.** Holds, and ordinary reservations, taken

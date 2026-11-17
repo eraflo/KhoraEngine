@@ -39,7 +39,7 @@ impl PhysicsSettings {
     /// would freeze the engine.
     pub const MIN_STEP: Duration = Duration::from_micros(500);
 
-    /// Whether these are the settings a game that sets nothing has.
+    /// Returns whether these are the settings a game that sets nothing has.
     pub fn is_default(&self) -> bool {
         *self == Self::default()
     }
@@ -51,13 +51,6 @@ impl Default for PhysicsSettings {
             step: Self::DEFAULT_STEP,
         }
     }
-}
-
-/// The section as it is written: the step in seconds, absent for the default.
-#[derive(Serialize, Deserialize)]
-struct Written {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    step: Option<f64>,
 }
 
 impl Serialize for PhysicsSettings {
@@ -97,6 +90,13 @@ impl<'de> Deserialize<'de> for PhysicsSettings {
         }
         Ok(Self { step })
     }
+}
+
+/// The section as it is written: the step in seconds, absent for the default.
+#[derive(Serialize, Deserialize)]
+struct Written {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    step: Option<f64>,
 }
 
 #[cfg(test)]

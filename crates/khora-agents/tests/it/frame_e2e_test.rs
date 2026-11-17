@@ -18,7 +18,7 @@
 //! World ──► Flow (Substrate Pass) ──► LaneBus ──► (Lane consumption)
 //! ```
 //!
-//! These tests exercise the Flow / LaneBus / scheduler wiring **without a GPU
+//! These tests exercise the Flow / `LaneBus` / scheduler wiring **without a GPU
 //! or any backend service**. The real domain Flows (`RenderFlow`, `ShadowFlow`,
 //! `AudioFlow`) are read-only projectors: given an ECS `World` and a `Runtime`
 //! they publish typed Views into a `LaneBus`, which is exactly what the engine
@@ -125,7 +125,10 @@ fn record_previous_pose(
         .resources
         .get::<khora_core::interpolation::SharedTransformInterpolation>()
         .expect("runtime_with_alpha inserts the interpolation store");
-    store.write().unwrap().record(entity, pose);
+    store
+        .write()
+        .expect("no test panics while holding the interpolation store")
+        .record(entity, pose);
 }
 
 // ─── 1. Spawn → Flow → Bus ──────────────────────────────────────────────
@@ -420,7 +423,7 @@ fn multi_domain_views_are_coherent() {
 // ─── 4. Transform propagation feeds the flows ───────────────────────────
 
 /// Spawns a parent + child hierarchy, runs the `transform_propagation`
-/// DataSystem (the `PostSimulation`-phase maintenance step that composes
+/// `DataSystem` (the `PostSimulation`-phase maintenance step that composes
 /// `Transform` into `GlobalTransform`), then runs the Substrate Pass. The
 /// child's `GlobalTransform` must compose the parent's, and the projected
 /// `RenderWorld` mesh for the child must carry that composed world-space

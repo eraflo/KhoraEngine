@@ -26,7 +26,7 @@ use super::signing::PackKey;
 #[used]
 static PACK_KEY_SLOT: [u8; 64] = slot(*b"KHORA PACK KEY SLOT, ED25519 v1:");
 
-/// A slot holding `magic` and no key.
+/// Returns a slot holding `magic` and no key.
 const fn slot(magic: [u8; 32]) -> [u8; 64] {
     let mut slot = [0u8; 64];
     let mut i = 0;

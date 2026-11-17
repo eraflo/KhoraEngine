@@ -16,6 +16,7 @@
 //! filled paths (plain or with a gradient), text, on the panel's own layer
 //! or on the overlay layer above every panel.
 
+use egui::epaint::{PathShape, PathStroke};
 use khora_core::ui::editor::ui_builder::FontFamilyHint;
 use khora_core::ui::editor::{LinearGradient, RadialGradient};
 
@@ -23,7 +24,7 @@ use super::convert::{color_to_egui, corner_of, font_id_for, rect_at};
 use super::ui_builder::EguiUiBuilder;
 
 impl EguiUiBuilder<'_> {
-    /// `points` tessellated as a white, anti-aliased fill: the coverage a
+    /// Tessellates `points` as a white, anti-aliased fill: the coverage a
     /// gradient fill then tints vertex by vertex.
     pub(super) fn white_fill(&self, points: &[[f32; 2]]) -> egui::epaint::Mesh {
         use egui::epaint::{Mesh, PathShape, PathStroke, Tessellator};
@@ -42,7 +43,7 @@ impl EguiUiBuilder<'_> {
         mesh
     }
 
-    /// A painter on the top foreground layer, clipped only to the whole screen.
+    /// Returns a painter on the top foreground layer, clipped only to the whole screen.
     ///
     /// For overlay affordances (drag ghosts) that stay visible when the cursor
     /// leaves the current panel's clip rect.
@@ -59,7 +60,6 @@ impl EguiUiBuilder<'_> {
         if points.len() < 3 {
             return;
         }
-        use egui::epaint::{PathShape, PathStroke};
         let pts: Vec<egui::Pos2> = points.iter().map(|p| egui::pos2(p[0], p[1])).collect();
         self.ui.painter().add(egui::Shape::Path(PathShape {
             points: pts,
@@ -95,7 +95,7 @@ impl EguiUiBuilder<'_> {
         self.ui.painter().add(egui::Shape::mesh(mesh));
     }
 
-    /// The size `text` takes laid out on one line, in points.
+    /// Returns the size `text` takes laid out on one line, in points.
     pub(super) fn text_size(&self, text: &str, size: f32, family: FontFamilyHint) -> [f32; 2] {
         let font_id = font_id_for(family, size);
         // The painter's helper handles the font atlas's mutability (egui 0.33).

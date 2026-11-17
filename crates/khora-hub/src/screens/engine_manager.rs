@@ -23,7 +23,7 @@ const CONTENT_W: f32 = 760.0;
 const ROW_H: f32 = 44.0;
 
 /// Renders the engine manager.
-pub fn show_engine_manager(app: &mut HubApp, ui: &mut dyn UiBuilder) {
+pub(crate) fn show_engine_manager(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     if !app.engine_manager.has_fetched_once && app.engine_manager.fetch_rx.is_none() {
         app.engine_manager.fetching = true;
         app.engine_manager.has_fetched_once = true;

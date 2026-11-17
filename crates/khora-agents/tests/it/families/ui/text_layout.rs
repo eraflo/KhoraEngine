@@ -171,7 +171,7 @@ fn settle(world: &mut World, runtime: &Runtime) {
 /// **A text whose font was refused stays without a layout when edited.** A
 /// reload that hands the shaper data it cannot read takes the text's layout
 /// away; editing the text afterwards must not bring back a layout shaped in
-/// the font's previous data, which the entity no longer holds. Parley keeps a
+/// the font's previous data, which the entity has stopped holding. Parley keeps a
 /// font's last good registration when a new one is refused, so a reshape
 /// that does not know of the refusal finds the old font still there.
 #[test]

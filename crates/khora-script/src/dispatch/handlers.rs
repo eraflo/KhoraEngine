@@ -55,7 +55,7 @@ impl std::fmt::Debug for HandlerTable {
 }
 
 impl HandlerTable {
-    /// The handlers of `event` in `behavior`, if it handles it.
+    /// Returns the handlers of `event` in `behavior`, if it handles it.
     pub fn of<'p>(
         &'p self,
         program: &'p Program,

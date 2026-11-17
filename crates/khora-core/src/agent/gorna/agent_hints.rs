@@ -47,7 +47,7 @@ pub enum EngineHint {
 }
 
 impl EngineHint {
-    /// The agent this hint targets.
+    /// Returns the agent this hint targets.
     pub fn agent(&self) -> AgentId {
         match self {
             EngineHint::Cap { agent, .. } | EngineHint::Prioritize { agent, .. } => *agent,

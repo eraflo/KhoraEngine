@@ -40,7 +40,7 @@ pub struct OutputSink<'f> {
 }
 
 impl<'f> OutputSink<'f> {
-    /// A sink committing into `deck`.
+    /// Returns a sink committing into `deck`.
     pub fn new(deck: &'f mut OutputDeck) -> Self {
         Self {
             deck,
@@ -60,25 +60,25 @@ impl<'f> OutputSink<'f> {
         self
     }
 
-    /// The same sink, its `#[pass]` outputs opening an encoder on `device`.
+    /// Returns the same sink, its `#[pass]` outputs opening an encoder on `device`.
     pub fn with_device(mut self, device: &'f dyn GraphicsDevice) -> Self {
         self.device = Some(device);
         self
     }
 
-    /// The device `#[pass]` outputs open on, when the agent lent one.
+    /// Returns the device `#[pass]` outputs open on, when the agent lent one.
     pub fn device(&self) -> Option<&'f dyn GraphicsDevice> {
         self.device
     }
 
-    /// The same sink, its `#[pass]` outputs lending `pipelines` to the lane
+    /// Returns the same sink, its `#[pass]` outputs lending `pipelines` to the lane
     /// that records into them.
     pub fn with_pipelines(mut self, pipelines: &'f dyn PipelineSystem) -> Self {
         self.pipelines = Some(pipelines);
         self
     }
 
-    /// The pipeline system `#[pass]` outputs lend, when the agent lent one.
+    /// Returns the pipeline system `#[pass]` outputs lend, when the agent lent one.
     pub fn pipelines(&self) -> Option<&'f dyn PipelineSystem> {
         self.pipelines
     }
@@ -134,8 +134,8 @@ impl<'f> OutputSink<'f> {
         Ok(())
     }
 
-    /// What the slot `T` holds this frame so far, or its default.
-    pub fn opening<T: Default + Clone + Any + Send + Sync>(&self) -> T {
+    /// Returns what the slot `T` holds this frame so far, or its default.
+    pub(crate) fn opening<T: Default + Clone + Any + Send + Sync>(&self) -> T {
         self.seed
             .and_then(|seed| seed.get::<T>())
             .cloned()
@@ -161,7 +161,7 @@ impl<'f> OutputSink<'f> {
     /// # Errors
     ///
     /// As [`put`](Self::put).
-    pub fn put_pass<P: PassSlot>(
+    pub(crate) fn put_pass<P: PassSlot>(
         &mut self,
         field: &'static str,
         pass: P,
@@ -186,5 +186,34 @@ impl<'f> OutputSink<'f> {
         self.written.push(slot);
         *self.deck.slot::<T>() = value;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Debug, Default, PartialEq)]
+    struct Score(u32);
+
+    /// **A slot is written once a frame through a sink**: a second `put` is
+    /// refused, naming its field, and the first value stays.
+    #[test]
+    fn a_second_put_into_one_slot_is_refused_and_the_first_value_stays() {
+        let mut deck = OutputDeck::new();
+        {
+            let mut sink = OutputSink::new(&mut deck);
+            assert_eq!(sink.put("score", Score(1)), Ok(()));
+            assert_eq!(
+                sink.put("again", Score(2)),
+                Err(OutputRefusal {
+                    field: "again",
+                    sink: SinkKind::Deck,
+                    reason: Reason::WrittenTwice,
+                })
+            );
+        }
+
+        assert_eq!(deck.get::<Score>(), Some(&Score(1)));
     }
 }

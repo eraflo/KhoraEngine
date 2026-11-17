@@ -121,7 +121,7 @@ fn misplaced(runtime: &Runtime, rel_path: &str) -> Vec<Problem> {
 }
 
 /// **A file outside `scripts/` is reported at mount and not compiled**, and
-/// the modules in place are named as they always were.
+/// the modules in place keep their names.
 #[test]
 fn mounting_reports_a_script_outside_the_script_folder_and_compiles_the_rest() {
     let assets = Assets::with(

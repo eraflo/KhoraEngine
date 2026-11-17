@@ -21,7 +21,7 @@ use crate::ast::{Item, Module};
 use super::{shape_of, Compiler, Shape};
 
 impl Compiler {
-    /// The events the module declares — its own, its imports', the engine's:
+    /// Collects the events the module declares (its own, its imports', the engine's):
     /// their shapes for the raises, their signatures for the program.
     pub(super) fn collect_events(&mut self, module: &Module) {
         for event in khora_core::script::ENGINE_EVENTS {

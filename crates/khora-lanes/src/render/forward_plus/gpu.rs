@@ -46,7 +46,7 @@ const FP_CULLING_LAYOUT_LABEL: &str = "forward_plus_culling_layout";
 /// shadow view-projection buffer hold this many entries each.
 pub(super) const LIGHT_BUFFER_CAPACITY: usize = 1024;
 
-/// The group-1 (model) layout: one dynamic-offset uniform buffer.
+/// Returns the group-1 (model) layout: one dynamic-offset uniform buffer.
 fn fp_model_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
     use khora_core::renderer::api::command::{
         BindGroupLayoutEntry, BindingType, BufferBindingType,
@@ -64,7 +64,7 @@ fn fp_model_layout_entries() -> Vec<khora_core::renderer::api::command::BindGrou
     }]
 }
 
-/// The group-3 (lighting) layout: every lighting input in one bind group.
+/// Returns the group-3 (lighting) layout: every lighting input in one bind group.
 ///
 /// The light list (0), the shared shadow atlases (1 to 3), the per-tile culling
 /// results (4 to 6), the per-light shadow view-projections (7) and the IBL (8 to 11).
@@ -114,7 +114,7 @@ fn fp_lighting_layout_entries() -> Vec<khora_core::renderer::api::command::BindG
     entries
 }
 
-/// The compute culling pass's layout.
+/// Returns the compute culling pass's layout.
 fn fp_culling_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
     use khora_core::renderer::api::command::{BindGroupLayoutEntry, BufferBindingType};
     use khora_core::renderer::api::util::ShaderStageFlags;

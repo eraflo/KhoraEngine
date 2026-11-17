@@ -29,26 +29,26 @@ use std::sync::RwLock;
 /// - Lock-free reads when possible
 #[derive(Debug)]
 pub struct InMemoryBackend {
-    /// The core storage - RwLock allows concurrent reads
+    /// The core storage; its `RwLock` allows concurrent reads.
     storage: RwLock<HashMap<MetricId, Metric>>,
 }
 
 impl InMemoryBackend {
-    /// Create a new in-memory backend
+    /// Creates a new in-memory backend
     pub fn new() -> Self {
         Self {
             storage: RwLock::new(HashMap::new()),
         }
     }
 
-    /// Create a new in-memory backend with initial capacity
+    /// Creates a new in-memory backend with initial capacity
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             storage: RwLock::new(HashMap::with_capacity(capacity)),
         }
     }
 
-    /// Get statistics about this backend
+    /// Returns statistics about this backend
     pub fn get_stats(&self) -> BackendStats {
         let storage = self.storage.read_recovered();
 
@@ -77,7 +77,7 @@ impl InMemoryBackend {
         }
     }
 
-    /// Get metrics by namespace
+    /// Returns the metrics by namespace
     pub fn get_metrics_by_namespace(&self, namespace: &str) -> Vec<Metric> {
         let storage = self.storage.read_recovered();
         storage
@@ -87,7 +87,7 @@ impl InMemoryBackend {
             .collect()
     }
 
-    /// Get metrics by type
+    /// Returns the metrics by type
     pub fn get_metrics_by_type(&self, metric_type: MetricType) -> Vec<Metric> {
         let storage = self.storage.read_recovered();
         storage
@@ -97,7 +97,11 @@ impl InMemoryBackend {
             .collect()
     }
 
-    /// Bulk insert metrics (more efficient than individual puts)
+    /// Inserts metrics in bulk, more efficiently than one put each.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetricsError::StorageError`] when the storage lock is poisoned.
     pub fn put_metrics(&self, metrics: Vec<Metric>) -> MetricsResult<()> {
         let mut storage = self
             .storage
@@ -111,7 +115,11 @@ impl InMemoryBackend {
         Ok(())
     }
 
-    /// Remove metrics by namespace
+    /// Removes the metrics by namespace
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MetricsError::StorageError`] when the storage lock is poisoned.
     pub fn remove_metrics_by_namespace(&self, namespace: &str) -> MetricsResult<usize> {
         let mut storage = self
             .storage

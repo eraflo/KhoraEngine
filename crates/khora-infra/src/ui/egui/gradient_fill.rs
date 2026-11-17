@@ -26,6 +26,14 @@ use khora_core::ui::editor::{GradientStop, LinearGradient, RadialGradient};
 /// triangle counts as crossing the line.
 const STOP_EPSILON: f32 = 1e-4;
 
+/// The most triangles subdivision may make of one fill: past it, triangles
+/// are left as they are, so no gradient fill can cost more than this.
+const MAX_TRIANGLES: usize = 65_536;
+
+/// The finest subdivision, in points: below half a point, finer triangles
+/// change nothing on screen.
+const FINEST: f32 = 0.5;
+
 /// Splits every triangle of `mesh` that straddles a stop of `gradient`, so no
 /// triangle spans one.
 ///
@@ -86,7 +94,7 @@ fn split_along(mesh: &mut egui::epaint::Mesh, gradient: &LinearGradient<'_>, sto
     mesh.indices = out;
 }
 
-/// Whether two or more stops sit at `offset`.
+/// Returns whether two or more stops sit at `offset`.
 fn is_hard_edge(gradient: &LinearGradient<'_>, offset: f32) -> bool {
     gradient
         .stops
@@ -121,7 +129,7 @@ fn unshare_line(mesh: &mut egui::epaint::Mesh, gradient: &LinearGradient<'_>, st
     }
 }
 
-/// The gradient offset of a triangle's centroid: which side of a line it is on.
+/// Returns the gradient offset of a triangle's centroid: which side of a line it is on.
 fn side_of<G: GradientField + ?Sized>(
     mesh: &egui::epaint::Mesh,
     gradient: &G,
@@ -157,14 +165,6 @@ fn lerp_vertex(mesh: &mut egui::epaint::Mesh, i: u32, j: u32, t: f32) -> u32 {
     mesh.vertices.push(v);
     (mesh.vertices.len() - 1) as u32
 }
-
-/// The most triangles subdivision may make of one fill: past it, triangles
-/// are left as they are, so no gradient fill can cost more than this.
-const MAX_TRIANGLES: usize = 65_536;
-
-/// The finest subdivision, in points: below half a point, finer triangles
-/// change nothing on screen.
-const FINEST: f32 = 0.5;
 
 /// Splits the triangles of `mesh` at edge midpoints until no edge is longer
 /// than `max_edge`.
@@ -270,7 +270,7 @@ fn subdivide_by(mesh: &mut egui::epaint::Mesh, limit: impl Fn(&[[f32; 2]; 3]) ->
     mesh.indices = out;
 }
 
-/// The nearest and farthest distances from `c` to the triangle `tri`.
+/// Returns the nearest and farthest distances from `c` to the triangle `tri`.
 fn distance_range(c: [f32; 2], tri: &[[f32; 2]; 3]) -> (f32, f32) {
     let dist = |p: [f32; 2]| ((p[0] - c[0]).powi(2) + (p[1] - c[1]).powi(2)).sqrt();
     let far = tri.iter().map(|&p| dist(p)).fold(0.0, f32::max);
@@ -298,11 +298,11 @@ fn distance_range(c: [f32; 2], tri: &[[f32; 2]; 3]) -> (f32, f32) {
 
 /// A colour field over window space, sampled by [`tint`] at each vertex.
 pub(crate) trait GradientField {
-    /// The field's offset at `p`, on the scale its stops use.
+    /// Returns the field's offset at `p`, on the scale its stops use.
     fn offset_at(&self, p: [f32; 2]) -> f32;
-    /// The colour stops, sorted by offset.
+    /// Returns the colour stops, sorted by offset.
     fn stops(&self) -> &[GradientStop];
-    /// The colour at `p`.
+    /// Returns the colour at `p`.
     fn color_at(&self, p: [f32; 2]) -> [f32; 4];
 }
 

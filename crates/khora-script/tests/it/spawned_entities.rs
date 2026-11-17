@@ -19,7 +19,7 @@
 //! turn — the working set holds what the spawn attached, and a later write
 //! merges onto it. The `Spawn` command carries the reserved id, and every
 //! command naming `b` after it names that same id. A value left unused is
-//! still a spawn, as it always was.
+//! still a spawn.
 
 use std::collections::HashMap;
 use std::sync::Arc;

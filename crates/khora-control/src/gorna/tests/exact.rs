@@ -280,7 +280,7 @@ fn generate(rng: &mut Rng, max_agents: usize, max_rows: usize) -> Case {
 /// 1.0; `pine` (Optional) 1 ms at
 /// 0.4 or 1.5 ms at 1.0. `pine`'s upgrade gains 0.5 × 0.6 over 0.5 ms
 /// (0.0006 per µs), `oak`'s 1.0 × 0.6 over 2.9 ms (0.0002 per µs): the Q-RAM
-/// pass takes `pine`'s first, and then `oak`'s no longer fits (3.9 + 1.5 ms).
+/// pass takes `pine`'s first, and then `oak`'s no more fits (3.9 + 1.5 ms).
 /// It lends 1.0 × 0.4 + 0.5 × 1.0 = 0.9. `oak` upgraded alone fits
 /// (3.9 + 1 ms) and lends 1.0 × 1.0 + 0.5 × 0.4 = 1.2, the optimum.
 #[test]
@@ -912,7 +912,7 @@ fn the_exact_search_stops_at_its_node_budget() {
 /// - `ash`, allowed `LowPower..=Balanced` (`Bounded`), takes `Balanced`;
 /// - `ash`, capped at 5 ms, takes its 4 ms `Balanced`, not its 9 ms top row;
 /// - `ash`, `Stable`, keeps 6 ms and 10 MiB that the graphics processor's
-///   8 MiB can no longer hold: that envelope becomes its ceiling, and it
+///   8 MiB cannot hold any more: that envelope becomes its ceiling, and it
 ///   takes `Balanced` (4 ms), not its 8 ms top row, which the frame and the
 ///   memory would both hold;
 /// - `ash`, `Stable`, keeps a 5 ms envelope that fits, and `birch`, late,

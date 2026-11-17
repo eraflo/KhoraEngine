@@ -17,7 +17,7 @@
 //! the time the turns ran; the runtime's rate is the fuel spent per
 //! millisecond of *that*, and its overhead the rest of the run. Fuel is the
 //! time lent less the overhead, at the rate: a run whose overhead is most of
-//! its time no longer drags the rate down with it, frame after frame, to
+//! its time stops dragging the rate down with it, frame after frame, to
 //! nothing.
 
 use std::time::Duration;

@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Residencies: meshes, materials and UI images made usable by the GPU across
-//! frames, each a [`Residency`](khora_core::residency::Residency) registered
-//! with [`register_residency!`](crate::register_residency).
+//! Residencies: meshes, materials and UI images made usable by the GPU across frames.
+//!
+//! Each is a [`Residency`](khora_core::residency::Residency) registered with
+//! [`register_residency!`](crate::register_residency).
 
 mod image_on_gpu;
 mod material_on_gpu;
@@ -23,7 +24,7 @@ mod mesh_on_gpu;
 pub use image_on_gpu::{AtlasTarget, ImageOnGpu};
 pub use mesh_on_gpu::MeshOnGpu;
 
-/// Registers a residency's DataSystem: at `PreExtract`, after the asset
+/// Registers a residency's `DataSystem`: at `PreExtract`, after the asset
 /// reload and the resolver, so it sees this frame's copies of the assets.
 ///
 /// ```ignore

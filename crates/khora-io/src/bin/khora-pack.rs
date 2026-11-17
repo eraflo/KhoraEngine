@@ -22,6 +22,8 @@ use std::process::ExitCode;
 
 use khora_io::asset::PackBuilder;
 
+static SINK: Stderr = Stderr;
+
 /// The log's one sink: stderr.
 struct Stderr;
 
@@ -30,6 +32,10 @@ impl log::Log for Stderr {
         metadata.level() <= log::Level::Info
     }
 
+    #[expect(
+        clippy::print_stderr,
+        reason = "the log sink: a `log::Log` calling `log::*` would recurse"
+    )]
     fn log(&self, record: &log::Record<'_>) {
         if self.enabled(record.metadata()) {
             eprintln!("{}: {}", record.level(), record.args());
@@ -38,8 +44,6 @@ impl log::Log for Stderr {
 
     fn flush(&self) {}
 }
-
-static SINK: Stderr = Stderr;
 
 fn main() -> ExitCode {
     let _ = log::set_logger(&SINK).map(|()| log::set_max_level(log::LevelFilter::Info));

@@ -195,6 +195,10 @@ impl World {
     ///
     /// Its generation moves whenever a component is registered, declared,
     /// relaid out, moved to another domain or given another provenance.
+    ///
+    /// # Panics
+    ///
+    /// If the world has no nowhere entity, which every world makes as it is created.
     pub fn load_catalog(&self) -> Arc<crate::scene::LoadCatalog> {
         let nowhere = self
             .nowhere
@@ -242,6 +246,12 @@ impl World {
     }
 
     /// Registers a component declared while the engine runs, keyed by its name in every world.
+    ///
+    /// # Errors
+    ///
+    /// [`RegisterError::NameTaken`] if a Rust component has the name,
+    /// [`RegisterError::AlreadyRegistered`] if a declared one has it, and
+    /// [`RegisterError::KeyCollision`] if another declared name hashes to the same key.
     pub fn register_runtime_component(
         &mut self,
         decl: RuntimeComponentDecl,
@@ -263,6 +273,11 @@ impl World {
     /// A field keeps its value where its name and kind are unchanged, or an
     /// `int` became a `float`; it takes its default where it is new, changed
     /// kind, or changed Ergon type (`string?` to `int?`).
+    ///
+    /// # Errors
+    ///
+    /// [`RegisterError::Unknown`] if no component has `key`, and
+    /// [`RegisterError::NotRuntime`] if it is a Rust component.
     pub fn relayout(
         &mut self,
         key: ComponentKey,
@@ -352,6 +367,10 @@ impl World {
     }
 
     /// Gives declared component `key` a new provenance and resumability, relaying out its rows.
+    ///
+    /// # Errors
+    ///
+    /// [`RegisterError::Unknown`] if no declared component has `key`.
     pub fn set_provenance(
         &mut self,
         key: ComponentKey,
@@ -374,6 +393,11 @@ impl World {
     }
 
     /// Moves a declared component to `domain`, each row to its entity's page there, values intact.
+    ///
+    /// # Errors
+    ///
+    /// [`RegisterError::Unknown`] if no component has `key`, and
+    /// [`RegisterError::NotRuntime`] if it is a Rust component.
     pub fn move_component_domain(
         &mut self,
         key: ComponentKey,
@@ -438,6 +462,12 @@ impl World {
     ///
     /// `value` is a `ScriptValue::Struct` or `Unit`. Nothing is attached when
     /// a field refuses its value.
+    ///
+    /// # Errors
+    ///
+    /// A [`RowError`] if the entity is not alive, no declared component has
+    /// `key`, the entity already holds it, `value` is not fields, names an
+    /// unknown field, or a field refuses its value.
     pub fn add_runtime_component(
         &mut self,
         entity: EntityId,

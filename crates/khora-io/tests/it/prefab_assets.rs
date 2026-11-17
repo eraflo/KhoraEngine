@@ -27,7 +27,7 @@ use khora_data::scene::{
     capture_subtree, write_scene_file, CompactEncoding, PrefabSource, SceneRecord,
 };
 use khora_io::asset::{AssetIdRegistry, AssetService};
-use khora_io::serialization::{prefab_catalog, AssetPrefabs};
+use khora_io::serialization::{prefab_catalog, read_prefab, AssetPrefabs};
 use khora_telemetry::MetricsRegistry;
 
 /// A one-entity prefab named `name`.
@@ -148,6 +148,24 @@ fn an_asset_that_is_not_a_prefab_is_refused() {
         "a scene was read as a prefab"
     );
     assert!(prefabs.prefab(AssetUUID::new()).is_err());
+}
+
+/// **`read_prefab` reads a prefab from a service**, and refuses a scene and
+/// an id no file has, each with a message.
+#[test]
+fn read_prefab_reads_a_prefab_and_refuses_anything_else() {
+    let project = Project::new();
+    let written = named_prefab("Bullet");
+    project.write("prefabs/bullet.kprefab", &written);
+    project.write("scenes/level.kscene", &named_prefab("Level"));
+    let mut assets = project.open();
+
+    assert_eq!(
+        read_prefab(&mut assets, AssetUUID::new_v5("prefabs/bullet.kprefab")),
+        Ok(written)
+    );
+    assert!(read_prefab(&mut assets, AssetUUID::new_v5("scenes/level.kscene")).is_err());
+    assert!(read_prefab(&mut assets, AssetUUID::new()).is_err());
 }
 
 /// **The catalog is exactly the project's prefabs**: every `.kprefab`, and

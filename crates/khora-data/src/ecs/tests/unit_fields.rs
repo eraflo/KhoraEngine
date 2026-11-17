@@ -160,3 +160,43 @@ fn a_float_inside_a_struct_field_becoming_a_duration_keeps_its_values() {
         vec![("timer".to_owned(), timer(3.5))]
     );
 }
+
+/// **A value read from a file fits a field strictly**: an `int` becomes a
+/// `float` only where it converts exactly, and says it was widened.
+#[test]
+fn fit_widens_only_an_exact_int_into_a_float_field() {
+    let layout = typed(&[
+        ("speed", ErgonType::Float, ScriptValue::Float(0.0)),
+        ("count", ErgonType::Int, ScriptValue::Int(0)),
+    ]);
+
+    assert_eq!(
+        layout.fit(0, &ScriptValue::Int(3)),
+        Some((ScriptValue::Float(3.0), true))
+    );
+    assert_eq!(
+        layout.fit(0, &ScriptValue::Float(0.5)),
+        Some((ScriptValue::Float(0.5), false))
+    );
+    assert_eq!(
+        layout.fit(1, &ScriptValue::Int(3)),
+        Some((ScriptValue::Int(3), false))
+    );
+    // 2^24 + 1 has no exact `f32`.
+    assert_eq!(layout.fit(0, &ScriptValue::Int(16_777_217)), None);
+    assert_eq!(layout.fit(1, &ScriptValue::Float(0.5)), None);
+    assert_eq!(layout.fit(2, &ScriptValue::Int(3)), None);
+}
+
+/// **Two layouts are the same when their fields and their types are**: a
+/// `float` field and a `Duration` one store alike, yet differ.
+#[test]
+fn same_as_compares_the_fields_and_their_types() {
+    let layout = typed(&[("wait", ErgonType::Float, ScriptValue::Float(1.0))]);
+    let timed = typed(&[("wait", ErgonType::Duration, ScriptValue::Float(1.0))]);
+    let renamed = typed(&[("delay", ErgonType::Float, ScriptValue::Float(1.0))]);
+
+    assert!(layout.same_as(&layout.clone()));
+    assert!(!layout.same_as(&timed));
+    assert!(!layout.same_as(&renamed));
+}

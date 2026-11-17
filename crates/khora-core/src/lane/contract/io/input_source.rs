@@ -62,7 +62,7 @@ pub struct InputSource<'f> {
 }
 
 impl<'f> InputSource<'f> {
-    /// A source for `frame`, reading `bus` and `runtime`.
+    /// Returns a source for `frame`, reading `bus` and `runtime`.
     pub fn new(frame: FrameId, bus: &'f LaneBus, runtime: &'f Runtime) -> Self {
         Self {
             frame,
@@ -116,7 +116,7 @@ impl<'f> InputSource<'f> {
     ///
     /// Not waiting, a held lock is refused at once as `LockTimedOut`, and no
     /// deadline is started.
-    pub fn set_waiting(&mut self, waits: bool) -> bool {
+    pub(crate) fn set_waiting(&mut self, waits: bool) -> bool {
         std::mem::replace(&mut self.waits, waits)
     }
 
@@ -137,21 +137,21 @@ impl<'f> InputSource<'f> {
     /// Sets whether a `#[take]` drains its channel; returns the old value.
     ///
     /// A quote or a preparation reads the requests and leaves them for the run.
-    pub fn set_taking(&mut self, takes: bool) -> bool {
+    pub(crate) fn set_taking(&mut self, takes: bool) -> bool {
         std::mem::replace(&mut self.takes, takes)
     }
 
-    /// The frame the source is for.
+    /// Returns the frame the source is for.
     pub fn frame(&self) -> FrameId {
         self.frame
     }
 
-    /// Every source a fetch reached so far.
+    /// Returns every source a fetch reached so far.
     pub fn touched(&self) -> Declaration {
         self.touched.clone()
     }
 
-    /// The warnings fetches raised so far.
+    /// Returns the warnings fetches raised so far.
     pub fn warnings(&self) -> &[InputWarning] {
         &self.warnings
     }
@@ -161,7 +161,7 @@ impl<'f> InputSource<'f> {
         self.touched.read::<T>(field, kind);
     }
 
-    /// The View `V`, published for this frame.
+    /// Returns the View `V`, published for this frame.
     ///
     /// # Errors
     ///
@@ -185,13 +185,13 @@ impl<'f> InputSource<'f> {
         Ok(view)
     }
 
-    /// The slot `T` an earlier phase wrote, if it did.
+    /// Returns the slot `T` an earlier phase wrote, if it did.
     pub fn deck_slot<T: Any + Send + Sync>(&mut self, field: &'static str) -> Option<&'f T> {
         self.touch::<T>(field, SourceKind::Deck);
         self.deck.and_then(|deck| deck.get::<T>())
     }
 
-    /// The runtime entry `T`, read without locking.
+    /// Returns the runtime entry `T`, read without locking.
     ///
     /// # Errors
     ///
@@ -210,7 +210,7 @@ impl<'f> InputSource<'f> {
         })
     }
 
-    /// The runtime entry registered as `Arc<Mutex<T>>`, locked.
+    /// Returns the runtime entry registered as `Arc<Mutex<T>>`, locked.
     ///
     /// Every lock of one fetch shares one deadline from its first wait: the
     /// lane's budget, or [`LOCK_WAIT`] without a positive one, at most
@@ -263,8 +263,7 @@ impl<'f> InputSource<'f> {
 
     /// Drains every request the runtime's `Channel<T>` holds, for a `#[take]` field.
     ///
-    /// A source not taking ([`set_taking`](Self::set_taking)) reads them and
-    /// leaves them.
+    /// A source not taking (a quote, a preparation) reads them and leaves them.
     ///
     /// # Errors
     ///
@@ -303,7 +302,7 @@ impl<'f> InputSource<'f> {
         }
     }
 
-    /// The frame's target, when it has a size.
+    /// Returns the frame's target, when it has a size.
     ///
     /// # Errors
     ///
@@ -322,12 +321,15 @@ impl<'f> InputSource<'f> {
         Ok(target)
     }
 
-    /// The frame's target, when it has a size and a depth attachment.
+    /// Returns the frame's target, when it has a size and a depth attachment.
     ///
     /// # Errors
     ///
     /// As [`target`](Self::target), and `BadTarget` without a depth attachment.
-    pub fn scene_target(&mut self, field: &'static str) -> Result<SceneTarget, InputRefusal> {
+    pub(crate) fn scene_target(
+        &mut self,
+        field: &'static str,
+    ) -> Result<SceneTarget, InputRefusal> {
         let target = self.target(field)?;
         let depth = target.depth.ok_or(InputRefusal {
             field,
@@ -342,7 +344,7 @@ impl<'f> InputSource<'f> {
         })
     }
 
-    /// The colour the frame's target is cleared to.
+    /// Returns the colour the frame's target is cleared to.
     ///
     /// # Errors
     ///
@@ -356,7 +358,7 @@ impl<'f> InputSource<'f> {
         })
     }
 
-    /// The step the lane's agent runs it at.
+    /// Returns the step the lane's agent runs it at.
     ///
     /// # Errors
     ///
@@ -370,13 +372,14 @@ impl<'f> InputSource<'f> {
         })
     }
 
-    /// The budget the lane was lent, zero included; `None` when its agent was never budgeted.
-    pub fn lent_budget(&mut self, field: &'static str) -> Option<Budget> {
+    /// Returns the budget the lane was lent, zero included; `None` when its agent was never
+    /// budgeted.
+    pub(crate) fn lent_budget(&mut self, field: &'static str) -> Option<Budget> {
         self.touch::<Budget>(field, SourceKind::Budget);
         self.budget
     }
 
-    /// The lane's budget, when it has a positive one.
+    /// Returns the lane's budget, when it has a positive one.
     ///
     /// # Errors
     ///
@@ -408,5 +411,34 @@ impl<'f> InputSource<'f> {
                 problems,
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::math::LinearRgba;
+
+    /// **The clear colour is read from the source that was given one**, and
+    /// refused as `Missing` by one that was not.
+    #[test]
+    fn the_clear_color_is_read_only_from_a_source_given_one() {
+        let bus = LaneBus::new();
+        let runtime = Runtime::new();
+        let red = LinearRgba::RED;
+
+        let mut given =
+            InputSource::new(bus.frame(), &bus, &runtime).with_clear_color(ClearColor(red));
+        let mut bare = InputSource::new(bus.frame(), &bus, &runtime);
+
+        assert_eq!(given.clear_color("clear").map(|c| c.0), Ok(red));
+        assert_eq!(
+            bare.clear_color("clear").map(|c| c.0),
+            Err(InputRefusal {
+                field: "clear",
+                source: SourceKind::Frame,
+                reason: Reason::Missing,
+            })
+        );
     }
 }

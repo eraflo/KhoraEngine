@@ -158,13 +158,13 @@ impl GltfBuilder {
         )
     }
 
-    /// A normalised UNSIGNED_BYTE VEC4 accessor.
+    /// A normalised `UNSIGNED_BYTE` `VEC4` accessor.
     pub(super) fn unorm8x4(&mut self, values: &[[u8; 4]]) -> usize {
         let bytes: Vec<u8> = values.iter().flatten().copied().collect();
         self.accessor(&bytes, UNSIGNED_BYTE, values.len(), "VEC4", true, None)
     }
 
-    /// A normalised UNSIGNED_SHORT VEC4 accessor.
+    /// A normalised `UNSIGNED_SHORT` `VEC4` accessor.
     pub(super) fn unorm16x4(&mut self, values: &[[u16; 4]]) -> usize {
         let bytes: Vec<u8> = values
             .iter()
@@ -173,7 +173,7 @@ impl GltfBuilder {
         self.accessor(&bytes, UNSIGNED_SHORT, values.len(), "VEC4", true, None)
     }
 
-    /// An UNSIGNED_INT SCALAR index accessor.
+    /// An `UNSIGNED_INT` `SCALAR` index accessor.
     pub(super) fn indices(&mut self, values: &[u32]) -> usize {
         let bytes: Vec<u8> = values.iter().flat_map(|i| i.to_le_bytes()).collect();
         self.accessor(&bytes, UNSIGNED_INT, values.len(), "SCALAR", false, None)

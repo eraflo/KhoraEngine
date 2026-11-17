@@ -35,7 +35,7 @@ use crate::trust::{FileGuard, ProjectTrustState, Refusals};
 ///
 /// Files each outcome in the runtime's `IndexHub`, and makes the runtime's
 /// `PrefabCatalog` follow the new index. Nothing without a hub or a reserve.
-pub fn take_in_indexes(runtime: &Runtime) {
+pub(crate) fn take_in_indexes(runtime: &Runtime) {
     let (Some(hub), Some(reserve)) = (
         runtime.resources.get::<Arc<IndexHub>>(),
         runtime.look_up::<Reserve>(),

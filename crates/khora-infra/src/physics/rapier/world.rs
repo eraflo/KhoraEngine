@@ -32,7 +32,7 @@ use super::{
     from_rapier_cl_handle, from_rapier_rb_handle, stamp_owner, stamped_owner, to_rapier_rb_handle,
 };
 
-/// Implementation of the `PhysicsProvider` trait using the Rapier3D physics engine.
+/// Implementation of the `PhysicsProvider` trait using the `Rapier3D` physics engine.
 pub struct RapierPhysicsWorld {
     rigid_body_set: RigidBodySet,
     collider_set: ColliderSet,
@@ -430,7 +430,7 @@ impl RapierPhysicsWorld {
         }
     }
 
-    /// Whether the narrow phase holds contact points for this collider.
+    /// Returns whether the narrow phase holds contact points for this collider.
     fn has_cached_contacts(&self, collider: RapierCollider) -> bool {
         self.narrow_phase
             .contact_pairs_with(collider)
@@ -500,7 +500,7 @@ impl RapierPhysicsWorld {
     }
 }
 
-/// The collider of a pair that is not `this` one.
+/// Returns the collider of a pair that is not `this` one.
 fn other_of(a: RapierCollider, b: RapierCollider, this: RapierCollider) -> RapierCollider {
     if a == this {
         b
@@ -509,7 +509,7 @@ fn other_of(a: RapierCollider, b: RapierCollider, this: RapierCollider) -> Rapie
     }
 }
 
-/// The Rapier shape of a world-size [`ColliderShape`].
+/// Returns the Rapier shape of a world-size [`ColliderShape`].
 fn to_rapier_shape(shape: &ColliderShape) -> SharedShape {
     match *shape {
         ColliderShape::Box(half) => SharedShape::cuboid(half.x, half.y, half.z),
@@ -518,8 +518,8 @@ fn to_rapier_shape(shape: &ColliderShape) -> SharedShape {
     }
 }
 
-/// Whether `current` is already the shape `wanted` describes, to within what a
-/// frame's sync can produce from an unchanged authored shape and scale.
+/// Returns whether `current` is already the shape `wanted` describes, to within
+/// what a frame's sync can produce from an unchanged authored shape and scale.
 ///
 /// Relative, because the size is the authored one times the column lengths of
 /// a world matrix that carries the solver's rotation: rounding there grows
@@ -547,7 +547,7 @@ fn same_shape(current: &dyn Shape, wanted: &ColliderShape) -> bool {
     }
 }
 
-/// The events a collider raises; a sensor always reports them.
+/// Returns the events a collider raises; a sensor always reports them.
 ///
 /// A sensor exists to say what enters it: a silent one would be a trigger
 /// that never triggers.
@@ -559,7 +559,7 @@ fn events_of(desc: &ColliderDesc) -> ActiveEvents {
     }
 }
 
-/// A collider's density: zero for a sensor, Rapier's default otherwise.
+/// Returns a collider's density: zero for a sensor, Rapier's default otherwise.
 ///
 /// A sensor is a volume that notices, not matter: it must not shift its
 /// body's mass or centre of mass.
@@ -571,8 +571,8 @@ fn density_of(is_sensor: bool) -> f32 {
     }
 }
 
-/// Which pairs a collider is tested against — a pair is kept when either side
-/// asks for it.
+/// Returns which pairs a collider is tested against: a pair is kept when either
+/// side asks for it.
 ///
 /// Rapier's default skips pairs with no dynamic body. A sensor also wants
 /// kinematic bodies (a platform entering a trigger) but not fixed ones, or a
@@ -590,8 +590,8 @@ fn collision_types_of(desc: &ColliderDesc) -> ActiveCollisionTypes {
     types
 }
 
-/// Whether two poses are the same to within what a frame's sync can produce
-/// from an unchanged authored pose.
+/// Returns whether two poses are the same to within what a frame's sync can
+/// produce from an unchanged authored pose.
 fn same_pose(a: &Pose, b: &Pose) -> bool {
     const EPS: f32 = 1e-6;
     // Rotations compared component-wise (either sign: `q` and `-q` are one

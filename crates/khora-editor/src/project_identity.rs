@@ -41,8 +41,8 @@ pub fn project_version(root: &Path) -> String {
     )
 }
 
-/// The project at `root`'s `project.json`, parsed; `None` when it has none
-/// or one that does not parse.
+/// Reads and parses the `project.json` of the project at `root`; `None` when it
+/// has none or one that does not parse.
 fn project_json(root: &Path) -> Option<serde_json::Value> {
     let text = std::fs::read_to_string(root.join("project.json")).ok()?;
     serde_json::from_str(&text).ok()
@@ -56,7 +56,7 @@ pub fn field(json: &serde_json::Value, key: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// `json`'s `version`, trimmed; `0.1.0` when it names none.
+/// Returns `json`'s `version`, trimmed; `0.1.0` when it names none.
 fn version_of(json: &serde_json::Value) -> String {
     field(json, "version").unwrap_or_else(|| khora_sdk::DEFAULT_GAME_VERSION.to_owned())
 }

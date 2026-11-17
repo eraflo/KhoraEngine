@@ -57,7 +57,7 @@ impl InstanceMail<'_> {
         }
     }
 
-    /// Sits `instance` out of the frame: its record follows what it is now owed,
+    /// Sits `instance` out of the frame: its record follows what it is owed at this point,
     /// and what it was sent waits for the turn that will listen.
     pub(super) fn sit_out(
         &self,

@@ -84,27 +84,6 @@ impl LinearRgba {
     }
 }
 
-// --- Helper functions for sRGB conversion ---
-/// Converts an sRGB component to linear space.
-#[inline]
-fn srgb_to_linear(c: f32) -> f32 {
-    if c <= 0.04045 {
-        c / 12.92
-    } else {
-        ((c + 0.055) / 1.055).powf(2.4)
-    }
-}
-
-/// Converts a linear component to sRGB space.
-#[inline]
-fn linear_to_srgb(c: f32) -> f32 {
-    if c <= 0.0031308 {
-        c * 12.92
-    } else {
-        1.055 * c.powf(1.0 / 2.4) - 0.055
-    }
-}
-
 // --- Conversions ---
 impl LinearRgba {
     /// Creates a `LinearRgba` from a [`Vec4`].
@@ -286,7 +265,7 @@ impl LinearRgba {
         Self { a, ..*self }
     }
 
-    /// Linearly interpolates from `start` to `end` by `t`, clamped to `[0.0, 1.0]`.
+    /// Interpolates linearly from `start` to `end` by `t`, clamped to `[0.0, 1.0]`.
     #[inline]
     pub fn lerp(start: Self, end: Self, t: f32) -> Self {
         let t = t.clamp(0.0, 1.0);
@@ -381,6 +360,27 @@ impl Div<f32> for LinearRgba {
     fn div(self, scalar: f32) -> Self::Output {
         let inv_scalar = 1.0 / scalar;
         self * inv_scalar
+    }
+}
+
+// --- Helper functions for sRGB conversion ---
+/// Converts an sRGB component to linear space.
+#[inline]
+fn srgb_to_linear(c: f32) -> f32 {
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+/// Converts a linear component to sRGB space.
+#[inline]
+fn linear_to_srgb(c: f32) -> f32 {
+    if c <= 0.0031308 {
+        c * 12.92
+    } else {
+        1.055 * c.powf(1.0 / 2.4) - 0.055
     }
 }
 

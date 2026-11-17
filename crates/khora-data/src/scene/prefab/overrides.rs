@@ -35,6 +35,10 @@ use super::{
 };
 use crate::ecs::{Parent, PrefabInstance, World};
 
+/// The fields of a root's `Transform` that place the instance in its scene
+/// rather than describe the prefab: never applied with the whole instance.
+const PLACEMENT: [&str; 2] = ["translation", "rotation"];
+
 /// The prefab instance an entity belongs to: its root in the live world and
 /// the prefab it links to.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -131,10 +135,6 @@ pub fn prefab_world(
     apply(&mut scratch, &base, Identity::Keep)?;
     Ok(scratch)
 }
-
-/// The fields of a root's `Transform` that place the instance in its scene
-/// rather than describe the prefab: never applied with the whole instance.
-const PLACEMENT: [&str; 2] = ["translation", "rotation"];
 
 /// Returns `instance`'s prefab with `what` written into it from the live world.
 ///

@@ -56,21 +56,6 @@ pub const TIERS: [Tier; 3] = [
     },
 ];
 
-/// A level of the lane: its tier's atlases are the graphics memory it holds.
-const fn level(id: StrategyId, name: &'static str, impact: Impact, tier: Tier) -> Level {
-    Level {
-        id,
-        name,
-        impact,
-        memory: PerDevice {
-            cpu: 0,
-            gpu: tier.atlas_bytes(),
-            npu: 0,
-            other: 0,
-        },
-    }
-}
-
 const LEVELS: [Level; 3] = [
     level(
         StrategyId::LowPower,
@@ -103,6 +88,21 @@ const DRAW_GPU: Duration = Duration::from_micros(2);
 /// The label the lane's resources are named by.
 const LABEL: &str = "Shadows";
 
+/// Builds a level of the lane: its tier's atlases are the graphics memory it holds.
+const fn level(id: StrategyId, name: &'static str, impact: Impact, tier: Tier) -> Level {
+    Level {
+        id,
+        name,
+        impact,
+        memory: PerDevice {
+            cpu: 0,
+            gpu: tier.atlas_bytes(),
+            npu: 0,
+            other: 0,
+        },
+    }
+}
+
 /// A lane that renders each shadowed light's depth into the 2D and the cube atlas.
 ///
 /// The 2D atlas holds directional and spot lights, the cube atlas point lights.
@@ -113,21 +113,6 @@ pub struct ShadowsLane {
     /// What the current level built on the device; `None` before the first
     /// prepare and after shutdown.
     gpu: Option<ShadowGpu>,
-}
-
-/// What the shadows lane reads each frame: the lights and meshes, each
-/// shadowed light's matrices, and the meshes on the GPU.
-#[derive(LaneInputs)]
-pub struct ShadowsInputs<'f> {
-    /// The frame's lights and meshes.
-    #[bus]
-    pub render_world: &'f RenderWorld,
-    /// The view-projections of every shadow-casting light.
-    #[bus]
-    pub shadows: &'f ShadowView,
-    /// The store holding the meshes on the GPU.
-    #[resource]
-    pub assets: &'f AssetStore,
 }
 
 impl Lane for ShadowsLane {
@@ -230,4 +215,19 @@ impl Lane for ShadowsLane {
             built.destroy(device);
         }
     }
+}
+
+/// What the shadows lane reads each frame: the lights and meshes, each
+/// shadowed light's matrices, and the meshes on the GPU.
+#[derive(LaneInputs)]
+pub struct ShadowsInputs<'f> {
+    /// The frame's lights and meshes.
+    #[bus]
+    pub render_world: &'f RenderWorld,
+    /// The view-projections of every shadow-casting light.
+    #[bus]
+    pub shadows: &'f ShadowView,
+    /// The store holding the meshes on the GPU.
+    #[resource]
+    pub assets: &'f AssetStore,
 }

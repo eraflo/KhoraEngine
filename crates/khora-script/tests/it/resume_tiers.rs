@@ -311,8 +311,8 @@ fn a_local_renamed_alone_resumes_exactly() {
     );
 }
 
-/// A local in scope at the site was renamed, in a function whose code also
-/// changed: the frame cannot be rebuilt, so the body runs again from its
+/// A local in scope at the site takes another name, in a function whose code
+/// also changes: the frame cannot be rebuilt, so the body runs again from its
 /// entry — and what it did before the cut happens again.
 #[test]
 fn a_local_renamed_before_the_await_restarts_the_body() {
@@ -398,8 +398,8 @@ fn a_restarted_body_receives_its_original_arguments() {
     );
 }
 
-/// A literal a register holds that the new program no longer has cannot be
-/// read back: the frame cannot be rebuilt.
+/// A literal a register holds that the reloaded program lacks cannot be read
+/// back: the frame cannot be rebuilt.
 #[test]
 fn a_literal_missing_from_the_new_program_restarts_the_body() {
     let original = guard(
@@ -447,7 +447,7 @@ fn a_deleted_member_is_abandoned() {
 }
 
 /// The member is still there with other parameters: the arguments it was
-/// started with no longer fit it.
+/// started with do not fit it.
 #[test]
 fn a_member_whose_parameters_changed_is_abandoned() {
     let aim = "async void Aim(int by) {

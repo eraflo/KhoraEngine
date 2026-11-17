@@ -12,6 +12,6 @@ pub mod banner;
 pub mod status_bar;
 pub mod title_bar;
 
-pub use banner::paint_banner;
-pub use status_bar::{STATUS_HEIGHT, show_status_bar};
-pub use title_bar::{TITLE_BAR_HEIGHT, show_title_bar};
+pub(crate) use banner::paint_banner;
+pub(crate) use status_bar::{STATUS_HEIGHT, show_status_bar};
+pub(crate) use title_bar::{TITLE_BAR_HEIGHT, show_title_bar};

@@ -22,6 +22,11 @@ impl WgpuRenderSystem {
     /// current graphics context.
     ///
     /// Must be called after [`RenderSystem::init`](khora_core::renderer::traits::RenderSystem::init).
+    ///
+    /// # Errors
+    ///
+    /// [`RenderError::NotInitialized`] before `init`, and
+    /// [`RenderError::Internal`] when the graphics context's lock is poisoned.
     pub fn create_editor_overlay(
         &self,
         event_loop: &winit::event_loop::ActiveEventLoop,
@@ -48,6 +53,11 @@ impl WgpuRenderSystem {
     /// The overlay is an [`EguiOverlay`](crate::ui::egui::overlay::EguiOverlay),
     /// the shell an [`EguiEditorShell`](crate::ui::egui::shell::EguiEditorShell).
     /// Must be called after [`RenderSystem::init`](khora_core::renderer::traits::RenderSystem::init).
+    ///
+    /// # Errors
+    ///
+    /// Those of [`create_editor_overlay`](Self::create_editor_overlay) and
+    /// [`create_viewport_target`](Self::create_viewport_target).
     pub fn create_editor_overlay_and_shell(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,

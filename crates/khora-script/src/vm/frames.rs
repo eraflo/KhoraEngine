@@ -40,7 +40,7 @@ pub(super) struct Frame {
 }
 
 impl Machine {
-    /// Where a run starts: the frame depth, the function, the instruction.
+    /// Returns where a run starts: the frame depth, the function, the instruction.
     pub(super) fn entry_point(&self) -> (usize, usize, usize) {
         (
             self.frames.len(),
@@ -49,7 +49,7 @@ impl Machine {
         )
     }
 
-    /// The function the innermost frame runs.
+    /// Returns the function the innermost frame runs.
     pub(super) fn function_index(&self) -> usize {
         self.frames
             .last()

@@ -31,7 +31,7 @@ pub enum ProceduralMeshKind {
 /// An authored reference to a mesh: the only form a mesh is saved in.
 ///
 /// A resolver `DataSystem` (in `khora-io`) turns it into a `HandleComponent<Mesh>`,
-/// and again whenever its [`uuid`](Self::uuid) no longer matches the handle's.
+/// and again whenever its [`uuid`](Self::uuid) differs from the handle's.
 /// Build `Procedural` with [`MeshRef::procedural`], so its UUID matches its parameters.
 #[derive(Debug, Clone, PartialEq)]
 pub enum MeshRef {
@@ -85,6 +85,15 @@ impl MeshRef {
     }
 }
 
+impl From<SerializableMeshRef> for MeshRef {
+    fn from(on_disk: SerializableMeshRef) -> Self {
+        match on_disk {
+            SerializableMeshRef::Procedural { kind, params } => Self::procedural(kind, params),
+            SerializableMeshRef::Asset(uuid) => Self::Asset(uuid),
+        }
+    }
+}
+
 /// The saved form of a [`MeshRef`]: a procedural UUID is left out, recomputed on load.
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename = "MeshRef")]
@@ -108,15 +117,6 @@ impl From<&MeshRef> for SerializableMeshRef {
     }
 }
 
-impl From<SerializableMeshRef> for MeshRef {
-    fn from(on_disk: SerializableMeshRef) -> Self {
-        match on_disk {
-            SerializableMeshRef::Procedural { kind, params } => Self::procedural(kind, params),
-            SerializableMeshRef::Asset(uuid) => Self::Asset(uuid),
-        }
-    }
-}
-
 /// Writes a page row's `MeshRef` as a record.
 fn mesh_ref_to_record(
     column: &dyn crate::ecs::AnyVec,
@@ -127,7 +127,7 @@ fn mesh_ref_to_record(
     crate::scene::record::to_record(&SerializableMeshRef::from(&mesh_ref), references)
 }
 
-/// The schema of a mesh reference's positional form, traced once.
+/// Returns the schema of a mesh reference's positional form, traced once.
 fn mesh_ref_schema() -> (u64, bool) {
     static SCHEMA: std::sync::OnceLock<(u64, bool)> = std::sync::OnceLock::new();
     crate::scene::schema::traced_once::<SerializableMeshRef>(&SCHEMA, "MeshRef")

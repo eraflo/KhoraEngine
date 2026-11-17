@@ -165,7 +165,7 @@ fn descend(world: &World, roots: Vec<EntityId>, seen: &mut HashSet<EntityId>) ->
     entities
 }
 
-/// The registrations of the components `kept` keeps, by type.
+/// Returns the registrations of the components `kept` keeps, by type.
 fn kept_registrations(kept: Kept) -> HashMap<TypeId, &'static ComponentRegistration> {
     inventory::iter::<ComponentRegistration>
         .into_iter()
@@ -209,7 +209,7 @@ fn capture(
     })
 }
 
-/// The declaration of every declared component `pages` hold, sorted by name.
+/// Returns the declaration of every declared component `pages` hold, sorted by name.
 pub(super) fn declarations_in<V>(pages: &[CapturedPage<'_, V>]) -> Vec<super::DeclaredRecord> {
     let mut declared: Vec<&ComponentVTable> = pages
         .iter()
@@ -235,7 +235,7 @@ pub(super) enum Saved<'w> {
 }
 
 impl<'w> Saved<'w> {
-    /// Its name.
+    /// Returns its name.
     pub(super) fn name(&self) -> &'w str {
         match self {
             Self::Rust(reg) => reg.type_name,
@@ -243,7 +243,7 @@ impl<'w> Saved<'w> {
         }
     }
 
-    /// Its key in the world's pages.
+    /// Returns its key in the world's pages.
     pub(super) fn key(&self) -> ComponentKey {
         match self {
             Self::Rust(reg) => ComponentKey::Rust(reg.type_id),

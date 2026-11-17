@@ -47,7 +47,7 @@ impl Compiler {
     }
 
     /// Compiles sibling statements, each starting at a named safepoint.
-    pub fn compile_statements(&mut self, statements: &[Stmt]) {
+    pub(crate) fn compile_statements(&mut self, statements: &[Stmt]) {
         self.naming.open_block();
         for statement in statements {
             self.naming.enter(statement);
@@ -278,7 +278,7 @@ impl Compiler {
             None => {
                 // Every slot reserved before any argument is compiled:
                 // compiling one takes temporaries of its own, so reserving as
-                // we go would leave the next slot no longer adjacent.
+                // we go would leave the next slot apart from the last.
                 let base = self.registers.temp();
                 let slots: Vec<Reg> = std::iter::once(base)
                     .chain((1..args.len()).map(|_| self.registers.temp()))

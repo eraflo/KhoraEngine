@@ -42,7 +42,7 @@ impl PackedColumn {
         }
     }
 
-    /// The fields this column's rows hold.
+    /// Returns the fields this column's rows hold.
     pub(crate) fn layout(&self) -> &PackedLayout {
         &self.layout
     }
@@ -61,7 +61,7 @@ impl PackedColumn {
         }
     }
 
-    /// The value of field `slot` in row `row`.
+    /// Returns the value of field `slot` in row `row`.
     pub(crate) fn get(&self, row: usize, slot: usize) -> Option<ScriptValue> {
         if row >= self.rows {
             return None;
@@ -95,7 +95,7 @@ impl PackedColumn {
         Ok(())
     }
 
-    /// Whether `slot` names a field and `row` a row.
+    /// Returns whether `slot` names a field and `row` a row.
     pub(crate) fn has(&self, row: usize, slot: usize) -> bool {
         row < self.rows && slot < self.layout.fields().len()
     }
@@ -190,6 +190,24 @@ impl AnyVec for PackedColumn {
     }
 }
 
+/// A copy of a declared component's column.
+impl ColumnSnapshot for PackedColumn {
+    fn len(&self) -> usize {
+        self.rows
+    }
+
+    fn read(&self, row: usize) -> ScriptValue {
+        ScriptValue::Struct(
+            self.layout
+                .fields()
+                .iter()
+                .enumerate()
+                .filter_map(|(slot, field)| Some((field.name.clone(), self.get(row, slot)?)))
+                .collect(),
+        )
+    }
+}
+
 /// The column operations of a declared component: its columns are [`PackedColumn`]s of
 /// its layout.
 pub(crate) struct PackedColumns {
@@ -275,24 +293,6 @@ impl ColumnOps for PackedColumns {
             .downcast_ref::<PackedColumn>()
             .expect("a declared component's column is packed");
         Box::new(column.clone())
-    }
-}
-
-/// A copy of a declared component's column.
-impl ColumnSnapshot for PackedColumn {
-    fn len(&self) -> usize {
-        self.rows
-    }
-
-    fn read(&self, row: usize) -> ScriptValue {
-        ScriptValue::Struct(
-            self.layout
-                .fields()
-                .iter()
-                .enumerate()
-                .filter_map(|(slot, field)| Some((field.name.clone(), self.get(row, slot)?)))
-                .collect(),
-        )
     }
 }
 

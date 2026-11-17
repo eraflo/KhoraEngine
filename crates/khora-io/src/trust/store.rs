@@ -60,35 +60,6 @@ pub struct TrustStore {
     held: Mutex<Held>,
 }
 
-/// What a store holds in memory.
-#[derive(Default)]
-struct Held {
-    /// The decisions as the store file last read them.
-    read: HashMap<PathBuf, ProjectTrust>,
-    /// The decisions this store could not write, kept for the run over what the file says.
-    ///
-    /// A user is never asked again for a project they answered.
-    unwritten: HashMap<PathBuf, ProjectTrust>,
-    /// The store file's stamp when it was last read: while it holds, the file
-    /// is not read again.
-    stamp: Option<FileStamp>,
-}
-
-/// One decision as the store keeps it.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Entry {
-    project: PathBuf,
-    decision: ProjectTrust,
-}
-
-impl Keyed for Entry {
-    type Key = PathBuf;
-
-    fn key(&self) -> PathBuf {
-        self.project.clone()
-    }
-}
-
 impl TrustStore {
     /// Creates a store over the file `store`, read when it exists; in memory only without one.
     pub fn new(store: Option<PathBuf>) -> Self {
@@ -160,7 +131,36 @@ impl TrustStore {
     }
 }
 
-/// The decisions a store's entries hold, by project.
+/// What a store holds in memory.
+#[derive(Default)]
+struct Held {
+    /// The decisions as the store file last read them.
+    read: HashMap<PathBuf, ProjectTrust>,
+    /// The decisions this store could not write, kept for the run over what the file says.
+    ///
+    /// A user is never asked again for a project they answered.
+    unwritten: HashMap<PathBuf, ProjectTrust>,
+    /// The store file's stamp when it was last read: while it holds, the file
+    /// is not read again.
+    stamp: Option<FileStamp>,
+}
+
+/// One decision as the store keeps it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Entry {
+    project: PathBuf,
+    decision: ProjectTrust,
+}
+
+impl Keyed for Entry {
+    type Key = PathBuf;
+
+    fn key(&self) -> PathBuf {
+        self.project.clone()
+    }
+}
+
+/// Returns the decisions a store's entries hold, by project.
 fn decisions(entries: BTreeMap<PathBuf, Entry>) -> HashMap<PathBuf, ProjectTrust> {
     entries
         .into_iter()

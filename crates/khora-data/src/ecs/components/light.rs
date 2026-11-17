@@ -261,7 +261,7 @@ impl Light {
     }
 }
 
-/// The rule of a direction at `field`: finite and not zero. A tiny one
+/// Checks a direction at `field`: finite and not zero. A tiny one
 /// still points (the engine scales it), however small its squared length.
 fn check_direction(problems: &mut Vec<FieldProblem>, field: &'static str, d: Vec3) {
     let finite = d.x.is_finite() && d.y.is_finite() && d.z.is_finite();
@@ -273,7 +273,7 @@ fn check_direction(problems: &mut Vec<FieldProblem>, field: &'static str, d: Vec
     }
 }
 
-/// The range rules of a point or spot light at `field`.
+/// Checks the range of a point or spot light at `field`.
 fn check_range(problems: &mut Vec<FieldProblem>, field: &'static str, range: f32, shadow: bool) {
     if !range.is_finite() {
         problems.push(error(

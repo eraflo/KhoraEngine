@@ -53,7 +53,7 @@ impl Arbiters {
         Arbiters::PlannedOnQuotes,
     ];
 
-    /// The set's name, as a table prints it.
+    /// Returns the set's name, as a table prints it.
     pub fn name(self) -> &'static str {
         match self {
             Arbiters::Greedy => "greedy",
@@ -63,7 +63,7 @@ impl Arbiters {
         }
     }
 
-    /// The arbiter running this set's proposers.
+    /// Returns the arbiter running this set's proposers.
     pub(crate) fn arbiter(self) -> Arbiter {
         match self {
             Arbiters::Greedy => Arbiter::with(vec![Box::new(Greedy)]),

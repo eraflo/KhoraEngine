@@ -15,11 +15,11 @@
 //! A hot reload lands in step with the frame, taken in before the lane runs.
 //!
 //! A module whose reload still waits for the components it reads runs none
-//! of its instances — never the old code over rows already relaid for the
+//! of its instances — never the former program over rows already relaid for the
 //! new one. A behavior moved to another module is carried at its turn, from
 //! the program its store was built for. And an instance a reload carried
 //! reports what it now is that very frame, starved or quiet, so the state the
-//! scene holds names the new code.
+//! scene holds names the reloaded program.
 
 use std::sync::Arc;
 
@@ -191,8 +191,8 @@ event Hit(int by);";
 
 /// **While its reload waits, a module's instances take no turn.** The
 /// reload reads a component the view did not project, so it waits a frame;
-/// its guard does not run the old code meanwhile — counted deferred, its
-/// event kept for the frame that runs the new code.
+/// its guard does not run the former program meanwhile — counted deferred, its
+/// event kept for the frame that runs the reloaded program.
 #[test]
 fn an_instance_of_a_module_whose_reload_waits_takes_no_turn() {
     let mut stage = Stage::new(MODULE, COUNTING);
@@ -235,7 +235,7 @@ fn an_instance_of_a_module_whose_reload_waits_takes_no_turn() {
     );
 }
 
-/// **A newcomer arriving while its module waits is held for the new code.**
+/// **A newcomer arriving while its module waits is held for the reloaded program.**
 /// Run under the old program, it would spawn there, and the new `OnSpawn`
 /// would never run for it.
 #[test]
@@ -340,7 +340,7 @@ const NOTHING: &str = "fn void Nothing() { }";
 /// **A behavior moved to another module is carried at its turn.** `Guard`
 /// leaves `a.erg` for `b.erg`, which orders its fields otherwise, while the
 /// guard is hurt and part-way through `Wind`: its fields cross by name, and
-/// its wait lands in the new code.
+/// its wait lands in the reloaded program.
 #[test]
 fn a_behavior_moved_to_another_module_keeps_its_fields_and_its_wait() {
     let mut stage = Stage::new("ai/a.erg", GUARD_IN_A);
@@ -388,7 +388,7 @@ const GUARD_IN_B_WITHOUT_STRIKE: &str = "behavior Guard {
     void OnResumeFailed(string member) { failed += 1; }
 }";
 
-/// **A moved behavior's body the new code cannot take back is owed its
+/// **A moved behavior's body the reloaded program cannot take back is owed its
 /// `OnResumeFailed`** — never abandoned in silence.
 #[test]
 fn a_moved_behavior_whose_wait_is_gone_hears_on_resume_failed() {
@@ -434,7 +434,7 @@ event Hurt(int by);";
 /// there.** An edit is the author's answer to whatever faulted: moving the
 /// broken `Guard` to `b.erg` with the fix, then editing `b.erg` again, each
 /// is one — the guard is not left disabled for good because the module it
-/// faulted in no longer declares it.
+/// faulted in stops declaring it.
 #[test]
 fn a_faulted_behavior_moved_to_another_module_runs_again_once_fixed_there() {
     let mut stage = Stage::new("ai/a.erg", BROKEN_IN_A);
@@ -498,8 +498,8 @@ event Spotted;";
 
 /// **A starved instance a reload carried reports its new state that very
 /// frame.** No fuel reaches it; its wait and its state's data were carried
-/// into the new code all the same, and what the writeback receives says so
-/// — or a save taken now would hold a position the program no longer has.
+/// into the reloaded program all the same, and what the writeback receives says so
+/// — or a save taken now would hold a position the program has dropped.
 #[test]
 fn a_starved_instance_carried_by_a_reload_reports_its_carried_state() {
     let mut stage = Stage::new(MODULE, WINDING);
@@ -549,7 +549,7 @@ const STANDING_RETUNED: &str = "behavior Guard {
 event Spotted;";
 
 /// **A quiet instance a reload carried reports its new state too**: it has
-/// nothing to do this frame, yet its state's data are now the new code's.
+/// nothing to do this frame, yet its state's data belong to the reloaded program.
 #[test]
 fn a_quiet_instance_carried_by_a_reload_reports_its_carried_state() {
     let mut stage = Stage::new(MODULE, STANDING);

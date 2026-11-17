@@ -32,7 +32,7 @@ impl Parser {
         self.parse_assignment()
     }
 
-    /// An expression that may be the narrowing form `var name = value`.
+    /// Parses an expression that may be the narrowing form `var name = value`.
     ///
     /// Only conditions accept it: `if (var enemy = SeeEnemy())` reads as one
     /// thought, whereas allowing it anywhere would let a declaration hide in
@@ -441,7 +441,7 @@ impl Parser {
         }
     }
 
-    /// An expression a block follows directly: `Name {` there opens the
+    /// Parses an expression a block follows directly: `Name {` there opens the
     /// block, so a struct literal is not looked for.
     pub(super) fn parse_expr_before_block(&mut self) -> Parse<Expr> {
         let outer = std::mem::replace(&mut self.no_struct_literal, true);
@@ -450,7 +450,7 @@ impl Parser {
         parsed
     }
 
-    /// Whether the name under the cursor opens `Name { }` or `Name { field: …`.
+    /// Returns whether the name under the cursor opens `Name { }` or `Name { field: …`.
     fn at_struct_literal(&self) -> bool {
         if self.no_struct_literal || !matches!(self.peek_at(1), TokenKind::LBrace) {
             return false;
@@ -462,7 +462,7 @@ impl Parser {
         }
     }
 
-    /// `Name { field: value, … }`.
+    /// Parses `Name { field: value, … }`.
     fn parse_struct_literal(&mut self, name: String, name_span: Span) -> Parse<Expr> {
         self.advance(); // the name
         self.advance(); // `{`
@@ -497,7 +497,7 @@ impl Parser {
         })
     }
 
-    /// Whether `(` opens a cast rather than a group.
+    /// Returns whether `(` opens a cast rather than a group.
     ///
     /// Only the built-in numeric conversions are treated as casts. Widening the
     /// rule would make `(x)` ambiguous with a cast to a user type named `x`,

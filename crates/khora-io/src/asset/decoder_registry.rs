@@ -137,6 +137,10 @@ impl DecoderRegistry {
     }
 
     /// Decodes an asset of the specified type from raw bytes.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::decode_at`].
     pub fn decode<A: Asset>(&self, type_name: &str, bytes: &[u8]) -> Result<A> {
         self.decode_at(type_name, bytes, Path::new(""))
     }
@@ -145,6 +149,11 @@ impl DecoderRegistry {
     ///
     /// `source_path` is relative to the assets root, for formats that read files
     /// next to their own.
+    ///
+    /// # Errors
+    ///
+    /// When no decoder is registered for `type_name`, the decoder refuses the
+    /// bytes, or it produces another type than `A`.
     pub fn decode_at<A: Asset>(
         &self,
         type_name: &str,
@@ -161,7 +170,7 @@ impl DecoderRegistry {
         Ok(*asset_boxed)
     }
 
-    /// Whether the decoder registered for `type_name` reads a file starting
+    /// Returns whether the decoder registered for `type_name` reads a file starting
     /// with `head`; `None` when none is registered.
     pub fn sniff(&self, type_name: &str, head: &[u8]) -> Option<bool> {
         self.decoders
@@ -199,20 +208,7 @@ impl DecoderRegistry {
             .ok_or_else(|| anyhow!("No decoder registered for asset type '{}'", type_name))?;
         decoder.decode_any_limited(bytes, source_path, limits, &self.metrics)
     }
-}
 
-/// Returns a decoder's error as the service carries it.
-///
-/// A [`LimitExceeded`] stays one, since the reader refuses the file by it; any
-/// other error is kept by its message.
-fn error_of(error: Box<dyn std::error::Error + Send + Sync>) -> anyhow::Error {
-    match error.downcast::<LimitExceeded>() {
-        Ok(limit) => anyhow::Error::new(*limit),
-        Err(error) => anyhow!(error.to_string()),
-    }
-}
-
-impl DecoderRegistry {
     /// Decodes the file at `source_path` as whatever type the `type_name` decoder produces.
     pub(crate) fn decode_any_at(
         &self,
@@ -225,5 +221,16 @@ impl DecoderRegistry {
             .get(type_name)
             .ok_or_else(|| anyhow!("No decoder registered for asset type '{}'", type_name))?;
         decoder.decode_any(bytes, source_path, &self.metrics)
+    }
+}
+
+/// Returns a decoder's error as the service carries it.
+///
+/// A [`LimitExceeded`] stays one, since the reader refuses the file by it; any
+/// other error is kept by its message.
+fn error_of(error: Box<dyn std::error::Error + Send + Sync>) -> anyhow::Error {
+    match error.downcast::<LimitExceeded>() {
+        Ok(limit) => anyhow::Error::new(*limit),
+        Err(error) => anyhow!(error.to_string()),
     }
 }

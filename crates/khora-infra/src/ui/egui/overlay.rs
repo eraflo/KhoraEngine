@@ -204,4 +204,6 @@ impl EditorOverlay for EguiOverlay {
 // wgpu types which are Send+Sync. egui_winit::State requires Send which it
 // satisfies on desktop platforms.
 unsafe impl Send for EguiOverlay {}
+// SAFETY: every `&self` method reaches only `ctx`, an `egui::Context`, which
+// is `Sync`; the other fields are reached through `&mut self` alone.
 unsafe impl Sync for EguiOverlay {}

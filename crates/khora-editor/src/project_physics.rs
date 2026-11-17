@@ -24,7 +24,7 @@ use khora_sdk::khora_core::physics::PhysicsSettings;
 /// The defaults stand in when the file is missing, unreadable or has no
 /// `physics` section; a section that does not read (a zero or negative step)
 /// is reported and the defaults kept.
-pub fn project_physics(root: &Path) -> PhysicsSettings {
+pub(crate) fn project_physics(root: &Path) -> PhysicsSettings {
     let path = root.join("project.json");
     let Ok(text) = std::fs::read_to_string(&path) else {
         return PhysicsSettings::default();

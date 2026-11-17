@@ -28,6 +28,9 @@ use crate::{
 };
 use khora_data::scene::loading::{LoadKind, SceneFetch, SceneSource};
 
+/// Where the binary that runs the game sits, set once by `run_default`.
+pub(super) static GAME_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
 /// The game being opened: what was filed, until it lands.
 pub(super) struct GameOpening {
     /// The scene the game starts in, by its path under `assets/`.
@@ -183,6 +186,3 @@ impl SceneFetch for GameScene {
             .map_err(|error| format!("{error:#}"))
     }
 }
-
-/// Where the binary that runs the game sits, set once by `run_default`.
-pub(super) static GAME_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();

@@ -298,7 +298,7 @@ fn a_handler_stops_firing_once_the_entity_is_gone() {
     .expect("delivered while alive");
     assert_eq!(host.commands.len(), 1, "it asked to be despawned");
 
-    // The engine applied that command; the entity is no longer alive.
+    // The engine applied that command; the entity is dead.
     let after = ScriptEvent::new(target, "Damaged").with(ScriptValue::Int(5));
     assert_eq!(
         deliver(&program, "Guard", &after, &mut host, u64::MAX, living(&[])).err(),
@@ -761,7 +761,7 @@ mod states {
         assert_eq!(layout.slot_count(), 3);
     }
 
-    /// **The transition.** `become` writes which state it is now in.
+    /// **The transition.** `become` writes which state it is in.
     #[test]
     fn become_moves_the_behavior_to_the_named_state() {
         let program = build(GUARD);
@@ -913,7 +913,7 @@ mod states {
 mod timers {
     use super::{build, registry_with_despawn};
     use crate::arena::{Persisted, PersistentStore};
-    use crate::dispatch::{tick_timers, Ticked};
+    use crate::dispatch::{count_down, count_rearm, rearm_after_fault, tick_timers, Ticked};
     use crate::native::Host;
     use crate::vm::{Program, Value};
 
@@ -1053,6 +1053,56 @@ mod timers {
             }
             other => panic!("expected a countdown, found {other:?}"),
         }
+    }
+
+    /// **Counting down runs nothing and spares a held timer.** Half a second
+    /// counted with the `after` held: the `every` is due yet has not run, and
+    /// the `after` kept its time.
+    #[test]
+    fn count_down_counts_every_timer_but_a_held_one_and_runs_nothing() {
+        let program = build(GUARD);
+        let mut host = host_of(&program);
+        let layout = program.layout("Guard").expect("a layout");
+        let (every, after) = (layout.timer_slot(0), layout.timer_slot(1));
+
+        count_down(&program, "Guard", &mut host, 0.5, &[1]);
+
+        assert_eq!(count(&host, 0), 0, "nothing ran");
+        assert_eq!(
+            host.fields.get(every),
+            Some(&Persisted::Scalar(Value::Float(0.0)))
+        );
+        assert_eq!(
+            host.fields.get(after),
+            Some(&Persisted::Scalar(Value::Float(2.0)))
+        );
+    }
+
+    /// **A part-way body's rearm keeps counting**; an `after`'s, `null`, counts nothing.
+    #[test]
+    fn count_rearm_counts_a_float_rearm_and_leaves_null() {
+        let mut every = Value::Float(0.5);
+        count_rearm(&mut every, 0.25);
+        assert_eq!(every, Value::Float(0.25));
+
+        let mut after = Value::Null;
+        count_rearm(&mut after, 0.25);
+        assert_eq!(after, Value::Null);
+    }
+
+    /// **A fault restarts an `every` on its whole interval**; an `after` keeps its rearm.
+    #[test]
+    fn rearm_after_fault_restarts_an_interval_and_keeps_a_delays_rearm() {
+        let program = build(GUARD);
+
+        assert_eq!(
+            rearm_after_fault(&program, "Guard", 0, Value::Float(0.1)),
+            Value::Float(0.5)
+        );
+        assert_eq!(
+            rearm_after_fault(&program, "Guard", 1, Value::Null),
+            Value::Null
+        );
     }
 
     /// A field-driven interval cannot be scheduled before the expression is

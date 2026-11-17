@@ -28,7 +28,7 @@ use khora_core::renderer::GraphicsDevice;
 
 use super::lane::UiGpu;
 
-/// The view of the lane's one-texel fallback, made the first time an atlas
+/// Returns the view of the lane's one-texel fallback, made the first time an atlas
 /// is missing and kept until shutdown.
 pub(super) fn fallback_view(
     built: &mut UiGpu,
@@ -42,7 +42,7 @@ pub(super) fn fallback_view(
     Ok(fallback.1)
 }
 
-/// A one-texel texture and its view, for set 2 while an atlas has none.
+/// Creates a one-texel texture and its view, for set 2 while an atlas has none.
 fn fallback_texture(
     device: &dyn GraphicsDevice,
 ) -> Result<(TextureId, TextureViewId), ResourceError> {

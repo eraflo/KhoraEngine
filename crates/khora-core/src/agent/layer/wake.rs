@@ -25,7 +25,7 @@ pub enum Wake {
     FirstFrame,
     /// An allocation was lent: a new envelope, pin or allowed rows.
     Allocated,
-    /// The running row's quote no longer fits the envelope.
+    /// The running row's quote stopped fitting the envelope.
     QuoteUnfit,
     /// The running row's quote drifted past `QUOTE_DRIFT` from its value at
     /// the last full quote, or had none then.

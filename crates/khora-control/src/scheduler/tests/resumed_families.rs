@@ -20,6 +20,11 @@
 //! moved on. It runs at its own price until an allocation taken after its
 //! resume lends it another. A family never seen off is never withdrawn.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests spawn threads to test concurrency"
+)]
+
 use super::activation::{runtime_with, switch};
 use super::allocations::{allocation, envelope, one_phase, scheduler_over};
 use super::{offer_of, place_with, report_of, Doing};

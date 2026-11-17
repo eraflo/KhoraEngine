@@ -45,6 +45,49 @@ pub struct DecisionTrace {
     pub epochs: Vec<EpochRecord>,
 }
 
+impl Serialize for DecisionTrace {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut table = Table::default();
+        let epochs = self
+            .epochs
+            .iter()
+            .map(|record| written_epoch(record, &mut table))
+            .collect();
+        Written {
+            agents: table.names,
+            epochs,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for DecisionTrace {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let written = Written::<String>::deserialize(deserializer)?;
+        // Each name is kept once, for the program's life; every mention of
+        // the agent shares it.
+        let agents: Vec<AgentId> = written
+            .agents
+            .into_iter()
+            .map(|name| AgentId::new(Box::leak(name.into_boxed_str())))
+            .collect();
+        let named = |index: u32| {
+            agents.get(index as usize).copied().ok_or_else(|| {
+                serde::de::Error::custom(format!(
+                    "the journal names agent #{index}, but its table holds {}",
+                    agents.len()
+                ))
+            })
+        };
+        let epochs = written
+            .epochs
+            .into_iter()
+            .map(|epoch| read_epoch(epoch, &named))
+            .collect::<Result<_, D::Error>>()?;
+        Ok(Self { epochs })
+    }
+}
+
 /// One epoch of a [`DecisionTrace`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct EpochRecord {
@@ -104,49 +147,6 @@ pub struct FrameSummary {
     pub mean: Duration,
 }
 
-impl Serialize for DecisionTrace {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut table = Table::default();
-        let epochs = self
-            .epochs
-            .iter()
-            .map(|record| written_epoch(record, &mut table))
-            .collect();
-        Written {
-            agents: table.names,
-            epochs,
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for DecisionTrace {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let written = Written::<String>::deserialize(deserializer)?;
-        // Each name is kept once, for the program's life; every mention of
-        // the agent shares it.
-        let agents: Vec<AgentId> = written
-            .agents
-            .into_iter()
-            .map(|name| AgentId::new(Box::leak(name.into_boxed_str())))
-            .collect();
-        let named = |index: u32| {
-            agents.get(index as usize).copied().ok_or_else(|| {
-                serde::de::Error::custom(format!(
-                    "the journal names agent #{index}, but its table holds {}",
-                    agents.len()
-                ))
-            })
-        };
-        let epochs = written
-            .epochs
-            .into_iter()
-            .map(|epoch| read_epoch(epoch, &named))
-            .collect::<Result<_, D::Error>>()?;
-        Ok(Self { epochs })
-    }
-}
-
 /// An agent, as the written journal names it: its place in the table.
 type Named = u32;
 
@@ -158,7 +158,7 @@ struct Table {
 }
 
 impl Table {
-    /// `agent`'s place in the table, added at the end the first time.
+    /// Returns `agent`'s place in the table, adding it at the end the first time.
     fn of(&mut self, agent: AgentId) -> Named {
         *self.places.entry(agent).or_insert_with(|| {
             self.names.push(agent.name());
@@ -309,7 +309,7 @@ struct WrittenReport {
     switch: Option<Duration>,
 }
 
-/// `record`, its agents named by their place in `table`.
+/// Writes `record` with its agents named by their place in `table`.
 fn written_epoch(record: &EpochRecord, table: &mut Table) -> WrittenEpoch {
     let allocation = &record.allocation;
     WrittenEpoch {
@@ -409,7 +409,7 @@ fn written_epoch(record: &EpochRecord, table: &mut Table) -> WrittenEpoch {
     }
 }
 
-/// The record `written` holds, its agents read back through `named`.
+/// Returns the record `written` holds, its agents read back through `named`.
 fn read_epoch<E>(
     written: WrittenEpoch,
     named: &impl Fn(Named) -> Result<AgentId, E>,

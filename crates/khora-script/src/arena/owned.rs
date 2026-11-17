@@ -50,8 +50,8 @@ pub enum Owned {
 }
 
 impl Owned {
-    /// How many values it holds, nested ones included — what copying it costs.
-    pub fn size(&self) -> usize {
+    /// Returns how many values it holds, nested ones included — what copying it costs.
+    pub(crate) fn size(&self) -> usize {
         match self {
             Self::Scalar(_) | Self::Str(_) => 1,
             Self::Array(items) => 1 + items.iter().map(Owned::size).sum::<usize>(),
@@ -61,18 +61,18 @@ impl Owned {
         }
     }
 
-    /// Whether it is an array or a struct — what a sized operation is charged
-    /// for.
-    pub fn is_object(&self) -> bool {
+    /// Returns whether it is an array or a struct — what a sized operation is
+    /// charged for.
+    pub(crate) fn is_object(&self) -> bool {
         matches!(self, Self::Array(_) | Self::Struct { .. })
     }
 
-    /// Whether it can be held by a slot declared `ty` (as written), all the way down.
+    /// Returns whether it can be held by a slot declared `ty` (as written), all the way down.
     ///
     /// A struct fits by its name and each field by its declared type. `Unit`
     /// is "nothing written" and fits anything; an empty `ty` (a layout
     /// recorded without types) takes anything on trust.
-    pub fn fits(&self, ty: &str, structs: &[StructLayout]) -> bool {
+    pub(crate) fn fits(&self, ty: &str, structs: &[StructLayout]) -> bool {
         if ty.is_empty() || matches!(self, Self::Scalar(Value::Unit)) {
             return true;
         }
@@ -174,8 +174,8 @@ impl Owned {
         })
     }
 
-    /// The value a field of type `ty` (as written) starts at when nothing was
-    /// written: its zero, or `None` for a type that has none.
+    /// Returns the value a field of type `ty` (as written) starts at when nothing
+    /// was written: its zero, or `None` for a type that has none.
     pub fn zero(ty: &str) -> Option<Owned> {
         if ty.ends_with('?') {
             return Some(Self::Scalar(Value::Null));
@@ -194,7 +194,7 @@ impl Owned {
 }
 
 impl Owned {
-    /// The value a field of `ty` written with no default starts at.
+    /// Returns the value a field of `ty` written with no default starts at.
     ///
     /// Its zero, an engine value's neutral — `Vec3(0, 0, 0)`, the identity
     /// rotation, white — or a struct's own defaults. `None` for a type with
@@ -225,7 +225,7 @@ impl Owned {
         }))
     }
 
-    /// As a store holds it: a scalar inline, anything else by value.
+    /// Returns it as a store holds it: a scalar inline, anything else by value.
     pub fn persisted(&self) -> super::Persisted {
         match self {
             Self::Scalar(value) => super::Persisted::Scalar(*value),
@@ -345,8 +345,8 @@ impl Arena {
         })
     }
 
-    /// Whether `value` holds exactly `owned`, compared in place: a resume in
-    /// the frame that suspended finds what it held still there.
+    /// Returns whether `value` holds exactly `owned`, compared in place: a resume
+    /// in the frame that suspended finds what it held still there.
     pub fn matches(&self, value: Value, owned: &Owned, program: &Program) -> bool {
         match (value, owned) {
             (Value::Str(StrRef::Const(index)), Owned::Str(text)) => {
@@ -390,8 +390,8 @@ impl Arena {
         }
     }
 
-    /// How many values `value` holds, nested ones included — what copying it costs.
-    pub fn size(&self, value: Value) -> usize {
+    /// Returns how many values `value` holds, nested ones included — what copying it costs.
+    pub(crate) fn size(&self, value: Value) -> usize {
         match value {
             Value::Obj(ObjRef::Arena(handle)) => match self.get(handle) {
                 Ok(Object::Array(items) | Object::Struct { fields: items, .. }) => {
@@ -410,7 +410,7 @@ impl Arena {
     /// # Errors
     ///
     /// An [`ArenaError`] when `value` names nothing, or [`ArenaError::Full`].
-    pub fn deep_copy(&mut self, value: Value) -> Result<Value, ArenaError> {
+    pub(crate) fn deep_copy(&mut self, value: Value) -> Result<Value, ArenaError> {
         let Value::Obj(ObjRef::Arena(handle)) = value else {
             return Ok(value);
         };
@@ -434,8 +434,8 @@ impl Arena {
     }
 }
 
-/// What a struct field nothing was saved for starts at: its declared default,
-/// else its type's zero.
+/// Returns what a struct field nothing was saved for starts at: its declared
+/// default, else its type's zero.
 fn filling(layout: &StructLayout, slot: usize, ty: &str) -> Option<Owned> {
     match layout.defaults.get(slot) {
         Some(Some(default)) => Some(default.clone()),

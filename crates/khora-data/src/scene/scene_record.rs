@@ -43,6 +43,49 @@ pub struct SceneRecord {
     pub declared: Vec<DeclaredRecord>,
 }
 
+/// Written as `{"entities": [..], "pages": [{"rows": [..], "columns": {"Name": [..]}}]}`.
+///
+/// Columns are keyed by component name in signature order; `instances` and
+/// `declared` appear only when not empty. See the book: reference/formats.md, "The scene record".
+impl Serialize for SceneRecord {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let linked = !self.instances.is_empty();
+        let described = !self.declared.is_empty();
+        let mut map = serializer.serialize_map(Some(2 + linked as usize + described as usize))?;
+        map.serialize_entry("entities", &Ids(&self.entities))?;
+        map.serialize_entry("pages", &self.pages)?;
+        if linked {
+            map.serialize_entry("instances", &self.instances)?;
+        }
+        if described {
+            map.serialize_entry("declared", &self.declared)?;
+        }
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for SceneRecord {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Raw {
+            entities: Vec<u64>,
+            pages: Vec<RawPage>,
+            #[serde(default)]
+            instances: Vec<InstanceRecord>,
+            #[serde(default)]
+            declared: Vec<DeclaredRecord>,
+        }
+        let raw = Raw::deserialize(deserializer)?;
+        Ok(SceneRecord {
+            entities: ids_from(raw.entities),
+            pages: pages_from(raw.pages),
+            instances: raw.instances,
+            declared: raw.declared,
+        })
+    }
+}
+
 /// A prefab instance kept as a link: the prefab, its root's identity, its differences.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -66,27 +109,6 @@ pub struct PageRecord {
     /// One column per component, in the order of `components`; each holds
     /// one value per row.
     pub columns: Vec<Vec<Record>>,
-}
-
-/// Written as `{"entities": [..], "pages": [{"rows": [..], "columns": {"Name": [..]}}]}`.
-///
-/// Columns are keyed by component name in signature order; `instances` and
-/// `declared` appear only when not empty. See the book: reference/formats.md, "The scene record".
-impl Serialize for SceneRecord {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let linked = !self.instances.is_empty();
-        let described = !self.declared.is_empty();
-        let mut map = serializer.serialize_map(Some(2 + linked as usize + described as usize))?;
-        map.serialize_entry("entities", &Ids(&self.entities))?;
-        map.serialize_entry("pages", &self.pages)?;
-        if linked {
-            map.serialize_entry("instances", &self.instances)?;
-        }
-        if described {
-            map.serialize_entry("declared", &self.declared)?;
-        }
-        map.end()
-    }
 }
 
 impl Serialize for PageRecord {
@@ -142,28 +164,6 @@ fn pages_from(raw: Vec<RawPage>) -> Vec<PageRecord> {
             }
         })
         .collect()
-}
-
-impl<'de> Deserialize<'de> for SceneRecord {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Raw {
-            entities: Vec<u64>,
-            pages: Vec<RawPage>,
-            #[serde(default)]
-            instances: Vec<InstanceRecord>,
-            #[serde(default)]
-            declared: Vec<DeclaredRecord>,
-        }
-        let raw = Raw::deserialize(deserializer)?;
-        Ok(SceneRecord {
-            entities: ids_from(raw.entities),
-            pages: pages_from(raw.pages),
-            instances: raw.instances,
-            declared: raw.declared,
-        })
-    }
 }
 
 /// Reads a record that cannot link to prefabs: a save's or an instance's differences.

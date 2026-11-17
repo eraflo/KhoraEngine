@@ -75,7 +75,7 @@ pub struct Mailbox {
 }
 
 impl Mailbox {
-    /// The mailbox of `family` on the runtime's `Channel<T>`.
+    /// Returns the mailbox of `family` on the runtime's `Channel<T>`.
     pub const fn of<T: Supersedes + Clone + Send + Sync + 'static>(
         family: AgentId,
         reader: Reader,
@@ -100,7 +100,7 @@ impl Mailbox {
         (self.empty)(runtime, self.reader);
     }
 
-    /// Whether `runtime`'s channel holds mail, which wakes a background family taking it.
+    /// Returns whether `runtime`'s channel holds mail, which wakes a background family taking it.
     pub fn holds_mail(&self, runtime: &Runtime) -> bool {
         (self.holds)(runtime)
     }

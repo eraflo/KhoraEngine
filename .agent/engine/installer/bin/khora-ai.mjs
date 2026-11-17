@@ -14,6 +14,7 @@ import { PROVIDERS, generateAgentsMd } from '../lib/providers.mjs';
 import { bootstrapTools } from '../lib/tooling.mjs';
 import { scanSecrets } from '../lib/secrets.mjs';
 import { sweep } from '../lib/sweep.mjs';
+import { hookPath } from '../lib/lint.mjs';
 
 const ALL = Object.keys(PROVIDERS);
 
@@ -76,7 +77,10 @@ async function cmdSync(ctx, rest, flags) {
   // --if-changed <path>: no-op unless the path is under this profile's docs.
   if (flags.has('--if-changed')) {
     const i = rest.indexOf('--if-changed');
-    const raw = rest[i + 1];
+    // The path argument, else `tool_input.file_path` of the hook's stdin JSON:
+    // Claude Code hands a hook its tool input on stdin.
+    const arg = rest[i + 1] && !rest[i + 1].startsWith('--') ? rest[i + 1] : '';
+    const raw = hookPath([arg], arg.trim() || process.stdin.isTTY ? '' : readStdin());
     if (!raw) return;
     const relPath = path.relative(ctx.repoRoot, path.resolve(ctx.repoRoot, raw)).split(path.sep).join('/');
     if (!relPath.startsWith(prefix) || relPath.startsWith(prefix + 'installer/')) return;
@@ -89,6 +93,10 @@ async function cmdSync(ctx, rest, flags) {
   log.step(`Syncing ${ctx.profile} wrappers (${entry.providers.join(', ')})`);
   generateFor(ctx, entry.providers);
   // Re-stage regenerated wrappers? They are gitignored, so nothing to stage.
+}
+
+function readStdin() {
+  try { return fs.readFileSync(0, 'utf8'); } catch { return ''; }
 }
 
 function cmdUninstall(ctx, args) {

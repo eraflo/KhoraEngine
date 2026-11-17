@@ -28,7 +28,7 @@ pub use dynamic_uniform_ring_buffer::DynamicUniformRingBuffer;
 pub(crate) use uniform_layout::single_uniform_layout;
 pub use uniform_ring_buffer::UniformRingBuffer;
 
-/// The sample count of a target with `samples` samples per pixel; a count
+/// Returns the sample count of a target with `samples` samples per pixel; a count
 /// the device cannot name is one sample.
 pub fn sample_count(samples: u32) -> khora_core::renderer::api::resource::SampleCount {
     use khora_core::renderer::api::resource::SampleCount;
