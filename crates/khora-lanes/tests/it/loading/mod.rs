@@ -45,6 +45,7 @@ use khora_core::lane::cost::Cost;
 use khora_core::lane::erased::{AnyLane, Erased, RunOutcome};
 use khora_core::lane::io::{Budget, FrameId, InputSource, OutputSink};
 use khora_core::lane::{LaneBus, Lease, OutputDeck, Reserve, Staging};
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::ecs::World;
 use khora_data::scene::loading::{
@@ -93,10 +94,7 @@ impl FakeDecoding {
     }
 
     fn asked(&self) -> Vec<DecodeRequest> {
-        self.asked
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
+        self.asked.lock_recovered().clone()
     }
 
     /// The asset `uuid` changed since it was asked for: what was decoded for
@@ -121,10 +119,7 @@ impl AssetDecoding for FakeDecoding {
     }
 
     fn decode_leased(&self, request: &DecodeRequest) -> (Decoded, Option<Lease>) {
-        self.asked
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .push(request.clone());
+        self.asked.lock_recovered().push(request.clone());
         let lease = self.current.get(&request.uuid).map(|current| {
             let current = Arc::clone(current);
             Lease::new(move || current.load(Ordering::SeqCst))
@@ -155,19 +150,13 @@ impl FakeCompiler {
     }
 
     fn asked(&self) -> Vec<CompileRequest> {
-        self.asked
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
+        self.asked.lock_recovered().clone()
     }
 }
 
 impl ScriptCompiler for FakeCompiler {
     fn compile(&self, request: &CompileRequest) -> Recompiled {
-        self.asked
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .push(request.clone());
+        self.asked.lock_recovered().push(request.clone());
         match &self.answer {
             Some(answer) => answer.clone(),
             None => Recompiled {
@@ -194,17 +183,11 @@ impl FakeIndexing {
     }
 
     fn asked(&self) -> Vec<IndexTicket> {
-        self.asked
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
+        self.asked.lock_recovered().clone()
     }
 
     fn flag(&self, root: &std::path::Path) -> Arc<AtomicBool> {
-        let mut open = self
-            .open
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut open = self.open.lock_recovered();
         Arc::clone(
             open.entry(root.to_path_buf())
                 .or_insert_with(|| Arc::new(AtomicBool::new(true))),
@@ -221,10 +204,7 @@ impl FakeIndexing {
 
 impl AssetIndexing for FakeIndexing {
     fn index_leased(&self, request: &IndexRequest) -> (IndexedAssets, Option<Lease>) {
-        self.asked
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .push(request.ticket);
+        self.asked.lock_recovered().push(request.ticket);
         let open = self.flag(&request.project_root);
         let indexed = IndexedAssets {
             ticket: request.ticket,
@@ -262,17 +242,11 @@ impl FakeLoading {
     }
 
     fn asked(&self) -> Vec<LoadTicket> {
-        self.asked
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
+        self.asked.lock_recovered().clone()
     }
 
     fn reserved(&self) -> Vec<khora_core::ecs::entity::EntityId> {
-        self.reserved
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
+        self.reserved.lock_recovered().clone()
     }
 
     /// The world's components changed since the loads were prepared.
@@ -283,15 +257,9 @@ impl FakeLoading {
 
 impl SceneLoading for FakeLoading {
     fn prepare_leased(&self, request: SceneLoadRequest) -> (PreparedLoad, Option<Lease>) {
-        self.asked
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .push(request.ticket);
+        self.asked.lock_recovered().push(request.ticket);
         if let Some(hold) = &request.hold {
-            self.reserved
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .push(hold.reserve());
+            self.reserved.lock_recovered().push(hold.reserve());
         }
         let current = Arc::clone(&self.current);
         let prepared = PreparedLoad {
@@ -1634,10 +1602,7 @@ struct LeasingCompiler {
 
 impl LeasingCompiler {
     fn flag(&self, root: &std::path::Path) -> Arc<AtomicBool> {
-        let mut mounted = self
-            .mounted
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut mounted = self.mounted.lock_recovered();
         Arc::clone(
             mounted
                 .entry(root.to_path_buf())

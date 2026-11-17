@@ -16,23 +16,27 @@
 //! See the book: concepts/the-frame.md, "The six-stage descent".
 
 use crate::agent_registry::AgentRegistry;
-use crate::budget_channel::{BudgetChannel, Publication};
+use crate::budget_channel::BudgetChannel;
 use crate::worker_pool::WorkerPool;
 use crossbeam_channel::Sender;
 use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
 use khora_core::agent::dependency::DependencyKind;
 use khora_core::agent::gorna::AgentId;
-use khora_core::agent::timing::AgentImportance;
 use khora_core::agent::{AgentDependency, ExecutionPhase};
 use khora_core::graph::topological_sort;
-use khora_core::lane::OutputDeck;
+use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::telemetry::TelemetryEvent;
 use khora_core::Runtime;
-use known::{Known, KnownAgents};
-use std::collections::{BTreeSet, HashMap};
-use std::sync::{Arc, Mutex, Weak};
+use known::{Known, KnownAgents, MetAgent};
+use lending::Ledger;
+use roster::Roster;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use waves::{build_wave_metas, partition_waves};
+
+#[cfg(test)]
+use execution::FrameRun;
 
 mod background;
 mod clocks;
@@ -43,6 +47,7 @@ mod layers;
 mod lending;
 mod panic_guard;
 mod pooled_run;
+mod roster;
 mod sim_steps;
 mod sub_steps;
 mod waves;
@@ -57,16 +62,6 @@ const COMPONENT_ACCESS_SAMPLE_PERIOD: u64 = 60;
 /// A longer gap is truncated, so the accumulator never demands unbounded catch-up.
 /// See the book: concepts/the-frame.md, "Fixed-timestep simulation and render interpolation".
 const MAX_FRAME_DELTA_SECONDS: f32 = 0.25;
-
-/// An agent of a phase: its lock, its importance, its priority, its
-/// dependencies, and what the scheduler knows of it.
-type AgentSlot = (
-    Arc<Mutex<dyn khora_core::agent::Agent>>,
-    AgentImportance,
-    f32,
-    Vec<AgentDependency>,
-    Known,
-);
 
 /// Which of a phase's agents [`ExecutionScheduler::execute_agents_in_phase`] runs.
 ///
@@ -88,27 +83,17 @@ enum AgentSelection {
 pub struct ExecutionScheduler {
     registry: Arc<Mutex<AgentRegistry>>,
     budget_channel: BudgetChannel,
-    /// What the frame starts took from the channel, oldest first, each with whether it
-    /// was published in turn.
-    ///
-    /// The last is in force; the others are replays an agent of a family on is still owed.
-    taken: Vec<(Publication, bool)>,
-    /// Each agent seen at a frame start, by a weak reference to its lock, with the place
-    /// of the last publication it was handed: it is owed what was taken after it.
-    lent: Vec<(Weak<Mutex<dyn khora_core::agent::Agent>>, u64)>,
-    /// The families seen off at a frame start and not on again since.
-    resting: BTreeSet<AgentId>,
-    /// The families on again, each with the place in force when found on (`None` while
-    /// nothing was taken).
-    ///
-    /// Each is withdrawn at the first frame start its agent is free, and owed only what
-    /// was taken after that place.
-    resuming: Vec<(AgentId, Option<u64>)>,
+    /// What the frame starts took from the channel, and what each agent was handed of it.
+    ledger: Ledger,
     phase_order: Vec<ExecutionPhase>,
     frame_start: Instant,
     frame_budget: Duration,
     /// The last frame's output deck, kept for the engine's I/O boundary to drain.
     last_deck: OutputDeck,
+    /// The deck before it, emptied: the one the next frame writes into.
+    spare_deck: OutputDeck,
+    /// The last frame's bus, emptied, when no work off the frame still held it.
+    spare_bus: Option<LaneBus>,
     /// The observation tunnel to the DCC, for run reports and component access
     /// snapshots; `None` when telemetry is off.
     telemetry: Option<Sender<TelemetryEvent>>,
@@ -139,6 +124,8 @@ pub struct ExecutionScheduler {
     /// Every agent met, with its name, its place and its timing: a quiet
     /// frame locks no agent.
     known: KnownAgents,
+    /// The agents of the families on, and the order each phase runs them in.
+    roster: Roster,
     /// The runs of the families at the background, off the frame.
     background: background::Background,
     /// Whether the host began the frame (`begin_frame`) since the last
@@ -156,14 +143,13 @@ impl ExecutionScheduler {
         Self {
             registry,
             budget_channel: BudgetChannel::new(),
-            taken: Vec::new(),
-            lent: Vec::new(),
-            resting: BTreeSet::new(),
-            resuming: Vec::new(),
+            ledger: Ledger::default(),
             phase_order: ExecutionPhase::DEFAULT_ORDER.to_vec(),
             frame_start: Instant::now(),
             frame_budget: Duration::from_millis(16),
             last_deck: OutputDeck::new(),
+            spare_deck: OutputDeck::new(),
+            spare_bus: None,
             telemetry: None,
             frame_counter: 0,
             last_frame_instant: None,
@@ -174,6 +160,7 @@ impl ExecutionScheduler {
             pool: WorkerPool::new(default_pool_size()),
             undeclared_deck_writes: Mutex::new(Vec::new()),
             known: KnownAgents::default(),
+            roster: Roster::default(),
             background: background::Background::new(default_background_size()),
             begun: false,
         }
@@ -238,25 +225,25 @@ impl ExecutionScheduler {
     ///
     /// A no-op when telemetry is off, or when parallel execution is: every wave
     /// is then a single agent, and the DCC's sum is already exact.
-    fn emit_wave_plan(&self, inactive: &BTreeSet<AgentId>) {
-        let Some(tx) = &self.telemetry else { return };
-        if !self.parallel_execution {
+    fn emit_wave_plan(&mut self) {
+        if self.telemetry.is_none() || !self.parallel_execution {
             return;
         }
         // Mirrors the executor's grouping, so every agent lands in exactly one wave.
         // Fixed-step agents run in the fixed rounds, apart from the once-per-frame
         // ones, so the two never share a wave.
+        self.roster.refresh_fixed();
         let mut waves: Vec<Vec<AgentId>> = Vec::new();
         for &phase in &self.phase_order {
-            let (fixed, once): (Vec<AgentSlot>, Vec<AgentSlot>) = self
-                .phase_slots(phase, inactive)
-                .into_iter()
-                .partition(|slot| self.fixed_slot_id(slot).is_some());
-            for agents in [fixed, once] {
-                if agents.is_empty() {
+            self.roster.prepare(phase);
+            let met = self.roster.met();
+            let (fixed, once) = self.roster.split(phase);
+            for order in [fixed, once] {
+                if order.is_empty() {
                     continue;
                 }
-                let metas = build_wave_metas(&sort_agents(agents));
+                let agents: Vec<&Known> = order.iter().map(|&i| &met[i].1).collect();
+                let metas = build_wave_metas(&agents);
                 for wave in partition_waves(&metas, true) {
                     let ids: Vec<AgentId> = wave.iter().map(|&i| metas[i].id).collect();
                     if !ids.is_empty() {
@@ -265,7 +252,9 @@ impl ExecutionScheduler {
                 }
             }
         }
-        let _ = tx.try_send(TelemetryEvent::WavePlan { waves });
+        if let Some(tx) = &self.telemetry {
+            let _ = tx.try_send(TelemetryEvent::WavePlan { waves });
+        }
     }
 
     /// Connects the observation tunnel to the DCC: run reports and component access
@@ -290,48 +279,23 @@ impl ExecutionScheduler {
     pub fn set_phase_order(&mut self, order: &[ExecutionPhase]) {
         self.phase_order = order.to_vec();
     }
-
-    /// Returns the agents of the families on in `phase`, with their importance, priority
-    /// and dependencies.
-    ///
-    /// Locks no agent: the timing is the one it declared when the scheduler met it.
-    fn phase_slots(&self, phase: ExecutionPhase, inactive: &BTreeSet<AgentId>) -> Vec<AgentSlot> {
-        let agents: Vec<Arc<Mutex<dyn khora_core::agent::Agent>>> = {
-            let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
-            registry.iter_active(inactive).cloned().collect()
-        };
-        agents
-            .into_iter()
-            .filter_map(|agent| {
-                let known = self.known.of(&agent)?;
-                let timing = known.timing.clone();
-                (timing.phase == phase).then_some((
-                    agent,
-                    timing.importance,
-                    timing.priority,
-                    timing.dependencies,
-                    known,
-                ))
-            })
-            .collect()
-    }
-
-    /// Returns the id of the agent in `slot` when its place runs at a fixed step.
-    fn fixed_slot_id(&self, slot: &AgentSlot) -> Option<AgentId> {
-        slot.4.fixed_step().map(|_| slot.4.id)
-    }
 }
 
 /// Orders a phase's agents by their Hard dependencies, then by importance and priority.
 ///
 /// On a dependency cycle, logs an error and keeps the importance and priority order.
-fn sort_agents(mut agents: Vec<AgentSlot>) -> Vec<AgentSlot> {
-    agents.sort_by(|a, b| {
-        let imp_ord = a.1.cmp(&b.1);
+///
+/// `agents` and the result are indices into `met`.
+fn sort_agents(met: &[MetAgent], mut agents: Vec<usize>) -> Vec<usize> {
+    agents.sort_by(|&a, &b| {
+        let (a, b) = (&met[a].1.timing, &met[b].1.timing);
+        let imp_ord = a.importance.cmp(&b.importance);
         if imp_ord != std::cmp::Ordering::Equal {
             return imp_ord;
         }
-        b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal)
+        b.priority
+            .partial_cmp(&a.priority)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     // Build (id -> index) map after the importance sort so the topo result
@@ -339,7 +303,7 @@ fn sort_agents(mut agents: Vec<AgentSlot>) -> Vec<AgentSlot> {
     let id_to_index: std::collections::HashMap<AgentId, usize> = agents
         .iter()
         .enumerate()
-        .map(|(idx, slot)| (slot.4.id, idx))
+        .map(|(idx, &agent)| (met[agent].1.id, idx))
         .collect();
 
     // In the importance + priority order: the topological sort keeps its
@@ -351,9 +315,9 @@ fn sort_agents(mut agents: Vec<AgentSlot>) -> Vec<AgentSlot> {
     // Build hard-dep edges (parent = dep target, child = dependent agent)
     // — the dep target must run first.
     let mut edges: Vec<(AgentId, AgentId)> = Vec::new();
-    for slot in &agents {
-        let agent_id = slot.4.id;
-        for dep in &slot.3 {
+    for &agent in &agents {
+        let agent_id = met[agent].1.id;
+        for dep in &met[agent].1.timing.dependencies {
             if matches!(dep.kind, DependencyKind::Hard) && id_to_index.contains_key(&dep.target) {
                 edges.push((dep.target, agent_id));
             }
@@ -364,7 +328,7 @@ fn sort_agents(mut agents: Vec<AgentSlot>) -> Vec<AgentSlot> {
         Ok(order) => {
             // Reassemble agents in topo order. Equal-priority nodes inherit
             // the importance+priority ordering already applied above.
-            let mut taken: Vec<Option<AgentSlot>> = agents.into_iter().map(Some).collect();
+            let mut taken: Vec<Option<usize>> = agents.into_iter().map(Some).collect();
             order
                 .into_iter()
                 .filter_map(|id| {

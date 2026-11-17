@@ -30,10 +30,8 @@ impl AssetBrowserPanel {
     pub(super) fn grid_tiles(&self) -> Vec<usize> {
         let filter_text = self.search_filter.to_lowercase();
         let current_folder = self.current_folder.clone().unwrap_or_default();
-        let kind_kept = |asset: &FlatAsset| {
-            self.selected_filter
-                .is_none_or(|kind| asset.asset_type == kind)
-        };
+        let kind_kept =
+            |asset: &FlatAsset| self.selected_filter.is_none_or(|kind| asset.tile == kind);
         let named = |asset: &FlatAsset| {
             filter_text.is_empty() || asset.name.to_lowercase().contains(&filter_text)
         };

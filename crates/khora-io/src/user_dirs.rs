@@ -22,6 +22,11 @@ use khora_core::app::GameIdentity;
 
 use crate::profiles::{path_safe, ProfilePlace};
 
+/// Returns the process's environment variable `key`: the `env` the functions here read in a run.
+pub fn process_env(key: &str) -> Option<OsString> {
+    std::env::var_os(key)
+}
+
 /// Returns the user's home folder, read through `env`: `USERPROFILE` on Windows, `HOME` elsewhere.
 pub fn home_dir(env: &dyn Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
     if cfg!(windows) {
@@ -94,3 +99,15 @@ const TRUST_FILE: &str = "trust.ron";
 
 /// The quarantine list's file name.
 const QUARANTINE_FILE: &str = "quarantine.ron";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn process_env_reads_the_process_environment() {
+        let key = "PATH";
+        assert_eq!(process_env(key), std::env::var_os(key));
+        assert_eq!(process_env("KHORA_NO_SUCH_VARIABLE_EVER"), None);
+    }
+}

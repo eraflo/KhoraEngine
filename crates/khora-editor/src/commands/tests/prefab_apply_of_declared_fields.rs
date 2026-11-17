@@ -18,7 +18,7 @@
 
 use std::path::PathBuf;
 
-use khora_sdk::editor_ui::{InspectedPrefab, PrefabApplyScope};
+use khora_sdk::editor_ui::{EditorRequest, InspectedPrefab, PrefabApplyScope};
 use khora_sdk::khora_core::script::{ErgonType, ScriptValue};
 use khora_sdk::khora_data::ecs::{
     ComponentKey, ComponentProvenance, FieldKind, PackedField, PackedLayout, PrefabInstance,
@@ -150,7 +150,13 @@ fn posts(project: &Project, count: usize) -> (GameWorld, ComponentKey, Vec<Entit
     let state = Arc::new(Mutex::new(EditorState::default()));
     for _ in 0..count {
         let post = project.vfs.lock().expect("the project").resolve_uuid(POST);
-        state.lock().expect("the editor state").pending_prefab_spawn = Some((post, None));
+        state
+            .lock()
+            .expect("the editor state")
+            .push_request(EditorRequest::SpawnPrefab {
+                prefab: post,
+                parent: None,
+            });
         process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
     }
     let roots: Vec<EntityId> = world
@@ -206,7 +212,8 @@ fn apply_and_rebase(
     scope: PrefabApplyScope,
 ) {
     let state = Arc::new(Mutex::new(EditorState::default()));
-    state.lock().expect("the editor state").pending_prefab_apply = Some((entity, scope));
+    (state.lock().expect("the editor state"))
+        .push_request(EditorRequest::ApplyToPrefab { entity, scope });
 
     process_pending_prefab_apply(Some(&project.vfs), world, &state);
 

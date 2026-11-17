@@ -16,9 +16,10 @@
 //! against in its turn.
 
 use std::collections::BTreeSet;
-use std::sync::{Arc, PoisonError, RwLock};
+use std::sync::{Arc, RwLock};
 
 use khora_core::asset::AssetUUID;
+use khora_core::sync::RwLockExt;
 
 /// The prefab identities a project holds, a `Runtime` resource replaced whole on reindex.
 ///
@@ -39,7 +40,7 @@ impl PrefabCatalog {
     pub fn replace(&self, prefabs: impl IntoIterator<Item = AssetUUID>) {
         let prefabs = Arc::new(prefabs.into_iter().collect());
         // A panic while replacing leaves a whole set, the old or the new.
-        *self.prefabs.write().unwrap_or_else(PoisonError::into_inner) = prefabs;
+        *self.prefabs.write_recovered() = prefabs;
     }
 
     /// Returns whether the catalog holds the prefab `uuid`.
@@ -49,6 +50,6 @@ impl PrefabCatalog {
 
     /// Returns the catalog as it is now, shared.
     pub fn snapshot(&self) -> Arc<BTreeSet<AssetUUID>> {
-        Arc::clone(&self.prefabs.read().unwrap_or_else(PoisonError::into_inner))
+        Arc::clone(&self.prefabs.read_recovered())
     }
 }

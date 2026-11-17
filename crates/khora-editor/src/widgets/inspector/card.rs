@@ -12,6 +12,9 @@
 
 use khora_sdk::editor_ui::{EditorState, FontFamilyHint, Icon, TextAlign, UiBuilder, UiTheme};
 use khora_sdk::prelude::ecs::EntityId;
+
+use super::display::domain_label;
+use crate::widgets::{Column, Painter};
 use khora_tool_ui::widgets::{
     self, group_header,
     paint::{icon_centered, tint},
@@ -65,7 +68,6 @@ impl CardPrefab {
 
 /// Paints a header row action, a glyph tinted on hover; returns whether it was
 /// clicked.
-#[allow(clippy::too_many_arguments)]
 fn header_action(
     ui: &mut dyn UiBuilder,
     id: &str,
@@ -92,41 +94,57 @@ fn header_action(
     hit.clicked
 }
 
-/// Returns the domain tag shown on a component's card, by its type name.
+/// Returns the tag shown on a component's card: the domain tag it is registered under.
 ///
-/// An unknown component gets no tag rather than a wrong one.
-pub fn category_for(title: &str) -> &'static str {
-    match title {
-        "Transform" | "GlobalTransform" | "Parent" | "Children" => "spatial",
-        "MeshRef" | "MaterialRef" | "Visibility" | "Camera" | "Light" => "render",
-        "RigidBody" | "Collider" | "Velocity" => "physics",
-        "AudioSource" | "AudioListener" => "audio",
-        "Name" | "Tags" => "meta",
-        _ => "",
-    }
+/// A component with no domain gets no tag rather than a wrong one.
+pub fn category_for(domain: Option<u8>) -> &'static str {
+    domain_label(domain).unwrap_or("")
 }
 
-/// Renders one component as a collapsible group, `body` drawing its content;
+/// What a component card's header shows and offers.
+pub struct CardHead<'a> {
+    /// The entity holding the component.
+    pub entity: EntityId,
+    /// The component's name, the card's title.
+    pub title: &'a str,
+    /// The glyph before the title.
+    pub icon: Icon,
+    /// The right-aligned tag; empty for none.
+    pub category: &'a str,
+    /// Whether the component is on; must be `None` until components can be turned off.
+    pub enabled: Option<bool>,
+    /// Whether the header offers to remove the component.
+    pub removable: bool,
+    /// How the component stands against the entity's prefab, if it is an instance's.
+    pub prefab: Option<CardPrefab>,
+}
+
+/// Renders one component as a collapsible group in `column`, `body` drawing its content;
 /// returns what the header was asked, if anything.
 ///
-/// `category` is the right-aligned tag. Whether the card is open persists in
-/// `EditorState::inspector_card_open`, keyed by entity and title.
-#[allow(clippy::too_many_arguments)]
+/// Whether the card is open persists in `EditorState::inspector_card_open`,
+/// keyed by entity and title.
 pub fn render_card(
-    ui: &mut dyn UiBuilder,
-    entity: EntityId,
-    title: &str,
-    icon: Icon,
-    category: &str,
-    enabled: Option<bool>,
-    removable: bool,
-    prefab: Option<CardPrefab>,
-    card_x: f32,
-    card_w: f32,
-    theme: &UiTheme,
+    p: &mut Painter<'_>,
+    column: Column,
+    head: CardHead<'_>,
     state: &mut EditorState,
     body: &mut dyn FnMut(&mut dyn UiBuilder),
 ) -> Option<CardAction> {
+    let (ui, theme) = (&mut *p.ui, p.theme);
+    let CardHead {
+        entity,
+        title,
+        icon,
+        category,
+        enabled,
+        removable,
+        prefab,
+    } = head;
+    let Column {
+        x: card_x,
+        w: card_w,
+    } = column;
     let mut action = None;
     // Keyed on index AND generation: entity slots are recycled, so a key built
     // from the index alone would hand a freshly spawned entity the collapse
@@ -257,20 +275,30 @@ pub fn render_card(
 #[cfg(test)]
 mod tests {
     use super::category_for;
+    use khora_sdk::khora_data::ecs::{AudioSource, MeshRef, RigidBody, Transform, World};
 
-    #[test]
-    fn known_components_get_their_domain_tag() {
-        assert_eq!(category_for("Transform"), "spatial");
-        assert_eq!(category_for("MeshRef"), "render");
-        assert_eq!(category_for("RigidBody"), "physics");
-        assert_eq!(category_for("AudioSource"), "audio");
+    /// The domain tag `World` registered `T` under, as `ComponentJson::domain` carries it.
+    fn registered_tag<T: 'static>(world: &World) -> Option<u8> {
+        world
+            .component_domain(std::any::TypeId::of::<T>())
+            .map(|domain| domain.index() as u8)
     }
 
-    /// An unregistered component must render with *no* tag rather than a
-    /// wrong one — a confidently incorrect label is worse than none.
+    /// A card's tag is the domain its component is registered under.
     #[test]
-    fn unknown_components_get_no_tag() {
-        assert_eq!(category_for("PlayerController"), "");
-        assert_eq!(category_for(""), "");
+    fn known_components_get_their_domain_tag() {
+        let world = World::new();
+        assert_eq!(category_for(registered_tag::<Transform>(&world)), "Spatial");
+        assert_eq!(category_for(registered_tag::<MeshRef>(&world)), "Render");
+        assert_eq!(category_for(registered_tag::<RigidBody>(&world)), "Physics");
+        assert_eq!(category_for(registered_tag::<AudioSource>(&world)), "Audio");
+    }
+
+    /// A component with no registered domain must render with *no* tag rather
+    /// than a wrong one — a confidently incorrect label is worse than none.
+    #[test]
+    fn components_with_no_domain_get_no_tag() {
+        assert_eq!(category_for(None), "");
+        assert_eq!(category_for(Some(u8::MAX)), "");
     }
 }

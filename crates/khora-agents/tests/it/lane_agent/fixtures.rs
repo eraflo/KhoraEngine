@@ -33,7 +33,7 @@
 //! next frame's event pass.
 
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use khora_agents::lane_agent::LaneAgent;
@@ -51,6 +51,7 @@ use khora_core::lane::io::{
 use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneBus, LaneError, OutputDeck};
+use khora_core::sync::LockExt;
 use khora_core::{EngineContext, Runtime};
 
 // ─── Runtime entries ────────────────────────────────────────────────────────
@@ -415,17 +416,11 @@ static RELEASED: Mutex<Vec<(&'static str, u32)>> = Mutex::new(Vec::new());
 
 /// Every releasing lane instance shut down so far, in order.
 pub fn released() -> Vec<(&'static str, u32)> {
-    RELEASED
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .clone()
+    RELEASED.lock_recovered().clone()
 }
 
 fn release(lane: &'static str, instance: u32) {
-    RELEASED
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .push((lane, instance));
+    RELEASED.lock_recovered().push((lane, instance));
 }
 
 /// Records its instance's number; logs its shutdown in [`released`].
@@ -650,21 +645,23 @@ pub fn run_sub_steps(
     bus.set_frame(FrameId(frame));
     let id = agent.id();
 
-    locked(&place).start_frame(&mut GpuSetup::headless());
+    place
+        .lock_recovered()
+        .start_frame(&mut GpuSetup::headless());
 
-    let why = locked(&place).take_wakes();
+    let why = place.lock_recovered().take_wakes();
     if !why.is_empty() {
         let permit = agent.contention();
         let mut context =
             EngineContext::for_agent(Arc::clone(runtime), &bus, deck, &permit, Some(id));
-        let mut held = locked(&place);
+        let mut held = place.lock_recovered();
         agent.wake(&why, &mut held, &mut context);
     }
     prepare_waiting(&place, runtime, &bus, id);
 
     (0..steps)
         .map(|_| {
-            let mut held = locked(&place);
+            let mut held = place.lock_recovered();
             let permit = held.contention();
             let mut context =
                 EngineContext::for_agent(Arc::clone(runtime), &bus, deck, &permit, Some(id));
@@ -679,7 +676,7 @@ pub fn run_sub_steps(
 /// frame and hands it back at the next frame start, which, for a preparation
 /// that takes no time, stages its layer for the same swap.
 pub fn prepare_waiting(place: &Mutex<Place>, runtime: &Arc<Runtime>, bus: &LaneBus, id: AgentId) {
-    let Some(preparation) = locked(place).take_preparation() else {
+    let Some(preparation) = place.lock_recovered().take_preparation() else {
         return;
     };
     let permit = preparation.contention();
@@ -689,7 +686,7 @@ pub fn prepare_waiting(place: &Mutex<Place>, runtime: &Arc<Runtime>, bus: &LaneB
             EngineContext::for_agent(Arc::clone(runtime), bus, &mut scratch, &permit, Some(id));
         preparation.run(&mut context)
     };
-    locked(place).prepared(prepared);
+    place.lock_recovered().prepared(prepared);
 }
 
 /// `agent`'s place: a `LaneAgent` runs as layers.
@@ -700,24 +697,17 @@ pub fn place_of(agent: &LaneAgent) -> Arc<Mutex<Place>> {
 /// The step `agent`'s place holds: what the scheduler sub-steps its family
 /// by; `None` for a family that runs every frame.
 pub fn place_step(agent: &LaneAgent) -> Option<Duration> {
-    locked(&place_of(agent)).fixed_step()
-}
-
-/// `place`, locked.
-pub fn locked(place: &Mutex<Place>) -> MutexGuard<'_, Place> {
-    place
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+    place_of(agent).lock_recovered().fixed_step()
 }
 
 /// The wakes `agent`'s place holds for the next event pass.
 pub fn wakes_of(agent: &LaneAgent) -> Vec<Wake> {
-    locked(&place_of(agent)).wakes().to_vec()
+    place_of(agent).lock_recovered().wakes().to_vec()
 }
 
 /// The row of the layer installed at `agent`'s place.
 pub fn installed_row(agent: &LaneAgent) -> Option<StrategyId> {
-    locked(&place_of(agent)).installed_row()
+    place_of(agent).lock_recovered().installed_row()
 }
 
 /// The strategy ids `agent` offers, in the order it offers them.

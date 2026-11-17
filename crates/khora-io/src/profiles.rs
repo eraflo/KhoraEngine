@@ -135,18 +135,17 @@ pub fn profile_path(
 /// When the file is larger than [`MAX_PROFILE_BYTES`], cannot be read, or is
 /// not a profile (RON).
 pub fn load(path: &Path) -> std::io::Result<Option<CostProfile>> {
-    let size = match std::fs::metadata(path) {
-        Ok(meta) => meta.len(),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error),
+    let text = match crate::fs::read_bounded_to_string(path, MAX_PROFILE_BYTES) {
+        Ok(text) => text,
+        Err(error) if error.is_not_found() => return Ok(None),
+        Err(crate::fs::BoundedReadError::TooLarge { size, .. }) => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("a profile of {size} bytes, over the {MAX_PROFILE_BYTES} read"),
+            ))
+        }
+        Err(error) => return Err(error.into()),
     };
-    if size > MAX_PROFILE_BYTES {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("a profile of {size} bytes, over the {MAX_PROFILE_BYTES} read"),
-        ));
-    }
-    let text = std::fs::read_to_string(path)?;
     ron::from_str(&text)
         .map(Some)
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
@@ -158,28 +157,9 @@ pub fn load(path: &Path) -> std::io::Result<Option<CostProfile>> {
 ///
 /// When the folder or the file cannot be written.
 pub fn save(path: &Path, profile: &CostProfile) -> std::io::Result<()> {
-    if let Some(folder) = path.parent() {
-        std::fs::create_dir_all(folder)?;
-    }
     let text = ron::ser::to_string_pretty(profile, ron::ser::PrettyConfig::default())
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
-    // A `.tmp` of this write's own: two saves at once (two editors, two runs
-    // of one game) never write into one file; the last rename wins whole.
-    let mut tmp = path.as_os_str().to_owned();
-    tmp.push(format!(
-        ".{}.{}.tmp",
-        std::process::id(),
-        NEXT_SAVE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-    ));
-    let tmp = PathBuf::from(tmp);
-    if let Err(error) = std::fs::write(&tmp, text.as_bytes()) {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(error);
-    }
-    std::fs::rename(&tmp, path).inspect_err(|_| {
-        let _ = std::fs::remove_file(&tmp);
-    })
+    // Two saves at once (two editors, two runs of one game) never write into
+    // one file; the last rename wins whole.
+    crate::fs::write_atomic(path, text.as_bytes())
 }
-
-/// Tells this process's saves apart.
-static NEXT_SAVE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);

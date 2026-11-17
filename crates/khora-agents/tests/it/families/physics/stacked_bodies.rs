@@ -509,7 +509,8 @@ fn a_collider_on_a_child_of_a_turned_scaled_body_sits_where_the_child_is_drawn()
     let top = top_under(&rig, drawn.x, drawn.z);
     assert!(
         top.is_some_and(|y| (y - 1.5).abs() < 0.01),
-        "the child's box belongs where the child is drawn, at the size it is drawn — half-extent          0.25 × the parent's scale 2, top at 1.5; the ray there hit {top:?}"
+        "the child's box belongs where the child is drawn, at the size it is drawn — half-extent \
+         0.25 × the parent's scale 2, top at 1.5; the ray there hit {top:?}"
     );
     for (x, z, what) in [(2.0, -1.0, "unscaled"), (4.0, 0.0, "unturned")] {
         let stray = top_under(&rig, x, z);

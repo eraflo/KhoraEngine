@@ -33,6 +33,7 @@ use super::ViewportPanel;
 use crate::camera::EditorCamera;
 use crate::drag_payload::pack_asset_drag;
 use crate::tests::gltf_fixture::{file_entry, part_entry};
+use crate::tests::requests::{dropped_assignments, mesh_spawns, prefab_spawns};
 
 const SHIP: &str = "models/ship.glb";
 const CRATE: &str = "models/crate.obj";
@@ -234,8 +235,8 @@ fn a_gltf_file_dropped_on_the_viewport_spawns_its_scene() {
     let state = drop_on_viewport(entries(), ship());
 
     let state = state.lock().expect("the editor state");
-    assert_eq!(state.pending_prefab_spawn, Some((part("scene"), None)));
-    assert_eq!(state.pending_spawn_mesh_asset, None, "no single-mesh spawn");
+    assert_eq!(prefab_spawns(&state), [(part("scene"), None)]);
+    assert!(mesh_spawns(&state).is_empty(), "no single-mesh spawn");
 }
 
 /// A glTF file whose scene the index does not list spawns as one mesh of
@@ -245,11 +246,11 @@ fn a_gltf_file_without_its_scene_listed_spawns_as_one_mesh_in_the_viewport() {
     let state = drop_on_viewport(vec![file_entry(SHIP, "mesh")], ship());
 
     let state = state.lock().expect("the editor state");
-    let spawned = state
-        .pending_spawn_mesh_asset
-        .map(|(uuid, _, parent)| (uuid, parent));
-    assert_eq!(spawned, Some((ship(), None)));
-    assert_eq!(state.pending_prefab_spawn, None);
+    let spawned: Vec<_> = (mesh_spawns(&state).into_iter())
+        .map(|(uuid, _, parent)| (uuid, parent))
+        .collect();
+    assert_eq!(spawned, [(ship(), None)]);
+    assert!(prefab_spawns(&state).is_empty());
 }
 
 /// **An OBJ dropped onto the viewport still spawns as one mesh**, of its own
@@ -260,11 +261,11 @@ fn an_obj_dropped_on_the_viewport_spawns_its_mesh() {
     let state = drop_on_viewport(entries(), crate_mesh);
 
     let state = state.lock().expect("the editor state");
-    let spawned = state
-        .pending_spawn_mesh_asset
-        .map(|(uuid, _, parent)| (uuid, parent));
-    assert_eq!(spawned, Some((crate_mesh, None)));
-    assert_eq!(state.pending_prefab_spawn, None);
+    let spawned: Vec<_> = (mesh_spawns(&state).into_iter())
+        .map(|(uuid, _, parent)| (uuid, parent))
+        .collect();
+    assert_eq!(spawned, [(crate_mesh, None)]);
+    assert!(prefab_spawns(&state).is_empty());
 }
 
 /// **A mesh part dropped onto the viewport spawns that mesh**, by its own
@@ -274,10 +275,10 @@ fn a_mesh_part_dropped_on_the_viewport_spawns_that_mesh() {
     let state = drop_on_viewport(entries(), part("mesh0/prim0"));
 
     let state = state.lock().expect("the editor state");
-    let spawned = state
-        .pending_spawn_mesh_asset
-        .map(|(uuid, _, parent)| (uuid, parent));
-    assert_eq!(spawned, Some((part("mesh0/prim0"), None)));
+    let spawned: Vec<_> = (mesh_spawns(&state).into_iter())
+        .map(|(uuid, _, parent)| (uuid, parent))
+        .collect();
+    assert_eq!(spawned, [(part("mesh0/prim0"), None)]);
 }
 
 /// A `.kprefab` dropped onto the viewport spawns by its own identity.
@@ -287,7 +288,7 @@ fn a_prefab_file_dropped_on_the_viewport_spawns_it() {
     let state = drop_on_viewport(entries(), turret);
 
     let state = state.lock().expect("the editor state");
-    assert_eq!(state.pending_prefab_spawn, Some((turret, None)));
+    assert_eq!(prefab_spawns(&state), [(turret, None)]);
 }
 
 /// **A material part dropped onto the viewport is assigned to the
@@ -298,8 +299,8 @@ fn a_material_part_dropped_on_the_viewport_is_assigned_to_the_selection() {
 
     let state = state.lock().expect("the editor state");
     assert_eq!(
-        state.pending_assign_texture,
-        Some((part("material0"), selected()))
+        dropped_assignments(&state),
+        [(part("material0"), selected())]
     );
 }
 
@@ -311,8 +312,8 @@ fn a_texture_part_dropped_on_the_viewport_is_assigned_to_the_selection() {
 
     let state = state.lock().expect("the editor state");
     assert_eq!(
-        state.pending_assign_texture,
-        Some((part("texture0"), selected()))
+        dropped_assignments(&state),
+        [(part("texture0"), selected())]
     );
 }
 

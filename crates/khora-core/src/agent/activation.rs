@@ -19,8 +19,9 @@
 //! when the engine [`settle`](Activation::settle)s it, so a whole frame — its
 //! DataSystems, its Flows, its agents and the DCC — sees one state.
 
+use crate::sync::RwLockExt;
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::RwLock;
 
 use super::gorna::AgentId;
 
@@ -54,6 +55,9 @@ impl std::error::Error for UnknownFamily {}
 /// One leaf lock, held only to read or write the two states.
 #[derive(Debug)]
 pub struct Activation {
+    // The lock guards plain sets that every write leaves whole, so a panic
+    // elsewhere while it was held leaves nothing half-written: read through
+    // the poison.
     state: RwLock<Switches>,
 }
 
@@ -84,7 +88,7 @@ impl Activation {
     ///
     /// A family already known keeps its state.
     pub fn admit(&self, families: impl IntoIterator<Item = AgentId>) {
-        self.write().known.extend(families);
+        self.state.write_recovered().known.extend(families);
     }
 
     /// Requests `family` on, from the next [`settle`](Self::settle).
@@ -122,7 +126,8 @@ impl Activation {
     /// The state in force of `family`. A family the engine does not know is
     /// never switched, so it is on.
     pub fn state(&self, family: AgentId) -> State {
-        self.read()
+        self.state
+            .read_recovered()
             .in_force
             .get(&family)
             .copied()
@@ -136,7 +141,8 @@ impl Activation {
 
     /// The families off, in the state in force. A scoped family is not one.
     pub fn inactive(&self) -> BTreeSet<AgentId> {
-        self.read()
+        self.state
+            .read_recovered()
             .in_force
             .iter()
             .filter(|(_, state)| **state == State::Off)
@@ -146,7 +152,8 @@ impl Activation {
 
     /// The families scoped in the state in force, each with its marker.
     pub fn scopes(&self) -> Vec<(AgentId, &'static str)> {
-        self.read()
+        self.state
+            .read_recovered()
             .in_force
             .iter()
             .filter_map(|(family, state)| match state {
@@ -159,13 +166,13 @@ impl Activation {
     /// A number that moves each time the state in force changes, never
     /// otherwise.
     pub fn generation(&self) -> u64 {
-        self.read().generation
+        self.state.read_recovered().generation
     }
 
     /// Makes the requested state the state in force, and says whether that
     /// changed it.
     pub fn settle(&self) -> bool {
-        let mut switches = self.write();
+        let mut switches = self.state.write_recovered();
         if switches.requested == switches.in_force {
             return false;
         }
@@ -175,7 +182,7 @@ impl Activation {
     }
 
     fn request(&self, family: AgentId, state: State) -> Result<(), UnknownFamily> {
-        let mut switches = self.write();
+        let mut switches = self.state.write_recovered();
         if !switches.known.contains(&family) {
             log::warn!("a request to switch `{family}`, which is no registered family, is refused");
             return Err(UnknownFamily(family));
@@ -185,21 +192,6 @@ impl Activation {
             other => switches.requested.insert(family, other),
         };
         Ok(())
-    }
-
-    // The lock guards plain sets that every write leaves whole, so a panic
-    // elsewhere while it was held leaves nothing half-written: read through
-    // the poison.
-    fn read(&self) -> RwLockReadGuard<'_, Switches> {
-        self.state
-            .read()
-            .unwrap_or_else(|poison| poison.into_inner())
-    }
-
-    fn write(&self) -> RwLockWriteGuard<'_, Switches> {
-        self.state
-            .write()
-            .unwrap_or_else(|poison| poison.into_inner())
     }
 }
 

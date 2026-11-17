@@ -38,6 +38,7 @@ use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId};
 use khora_core::renderer::error::ResourceError;
 use khora_core::renderer::traits::{CommandEncoder, ComputePass, GpuProfiler, RenderPass};
 use khora_core::renderer::GraphicsDevice;
+use khora_core::sync::LockExt;
 
 const ENCODERS_ONLY: &str = "a pass output only opens an encoder on the device";
 
@@ -77,30 +78,24 @@ impl EncoderLedger {
         }
     }
 
-    fn log(&self) -> std::sync::MutexGuard<'_, Log> {
-        self.log
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
     /// The buffers of every encoder opened, in order.
     pub fn opened(&self) -> Vec<CommandBufferId> {
-        self.log().opened.clone()
+        self.log.lock_recovered().opened.clone()
     }
 
     /// The buffer each draw was recorded into, in order.
     pub fn draws(&self) -> Vec<CommandBufferId> {
-        self.log().draws.clone()
+        self.log.lock_recovered().draws.clone()
     }
 
     /// The buffers of every encoder finished, in order.
     pub fn finished(&self) -> Vec<CommandBufferId> {
-        self.log().finished.clone()
+        self.log.lock_recovered().finished.clone()
     }
 
     /// The buffers submitted to the queue.
     pub fn submitted(&self) -> Vec<CommandBufferId> {
-        self.log().submitted.clone()
+        self.log.lock_recovered().submitted.clone()
     }
 }
 
@@ -119,11 +114,7 @@ struct LedgerPass {
 
 impl LedgerPass {
     fn draw_logged(&self) {
-        self.log
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .draws
-            .push(self.buffer);
+        self.log.lock_recovered().draws.push(self.buffer);
     }
 }
 
@@ -187,11 +178,7 @@ impl CommandEncoder for LedgerEncoder {
         if self.unfinishable {
             return None;
         }
-        self.log
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .finished
-            .push(self.buffer);
+        self.log.lock_recovered().finished.push(self.buffer);
         Some(self.buffer)
     }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
@@ -305,7 +292,7 @@ impl GraphicsDevice for EncoderLedger {
         unreachable!("{ENCODERS_ONLY}")
     }
     fn create_command_encoder(&self, _label: Option<&str>) -> Box<dyn CommandEncoder> {
-        let mut log = self.log();
+        let mut log = self.log.lock_recovered();
         // Buffer ids start at 100, so a zeroed id is never mistaken for one.
         let buffer = CommandBufferId(100 + log.opened.len() as u64);
         log.opened.push(buffer);
@@ -316,7 +303,7 @@ impl GraphicsDevice for EncoderLedger {
         })
     }
     fn submit_command_buffer(&self, command_buffer: CommandBufferId) {
-        self.log().submitted.push(command_buffer);
+        self.log.lock_recovered().submitted.push(command_buffer);
     }
     fn get_surface_format(&self) -> Option<TextureFormat> {
         None

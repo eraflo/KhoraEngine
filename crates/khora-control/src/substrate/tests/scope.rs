@@ -30,6 +30,7 @@ use khora_core::agent::Activation;
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::script::ScriptValue;
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::ecs::{
     ComponentKey, ComponentProvenance, DataSystemRegistration, FieldKind, PackedField,
@@ -62,13 +63,11 @@ struct ProbeRun {
 static RUNS: Mutex<Vec<ProbeRun>> = Mutex::new(Vec::new());
 
 fn note(probe: &'static str, world: &World, scope: Option<ComponentKey>) {
-    RUNS.lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .push(ProbeRun {
-            world: world.instance_id(),
-            probe,
-            scope,
-        });
+    RUNS.lock_recovered().push(ProbeRun {
+        world: world.instance_id(),
+        probe,
+        scope,
+    });
 }
 
 fn serving(world: &mut World, _: &Runtime, _: &mut OutputDeck, ctx: SystemContext) {
@@ -130,8 +129,7 @@ khora_data::register_flow!(ScopeProbeFlow);
 
 /// The scopes `probe` was handed on `world`, in run order.
 fn scopes_of(probe: &str, world: &World) -> Vec<Option<ComponentKey>> {
-    RUNS.lock()
-        .unwrap_or_else(|e| e.into_inner())
+    RUNS.lock_recovered()
         .iter()
         .filter(|run| run.world == world.instance_id() && run.probe == probe)
         .map(|run| run.scope)

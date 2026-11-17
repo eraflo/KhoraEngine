@@ -27,6 +27,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use crate::sync::LockExt;
 use crate::util::any_map::AnyMap;
 
 /// Per-frame blackboard for cross-agent communication.
@@ -49,34 +50,22 @@ impl FrameContext {
 
     /// Inserts a value into the blackboard, replacing any existing value of the same type.
     pub fn insert<T: Send + Sync + 'static>(&self, value: T) {
-        self.data
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(value);
+        self.data.lock_recovered().insert(value);
     }
 
     /// Retrieves a cloned Arc of a value of the given type, if present.
     pub fn get<T: Send + Sync + 'static>(&self) -> Option<Arc<T>> {
-        self.data
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get::<T>()
+        self.data.lock_recovered().get::<T>()
     }
 
     /// Removes the value of type `T`, returning it if one was stored.
     pub fn remove<T: Send + Sync + 'static>(&self) -> Option<Arc<T>> {
-        self.data
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove::<T>()
+        self.data.lock_recovered().remove::<T>()
     }
 
     /// Returns true if a value of type `T` is stored.
     pub fn contains<T: Send + Sync + 'static>(&self) -> bool {
-        self.data
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .contains::<T>()
+        self.data.lock_recovered().contains::<T>()
     }
 }
 

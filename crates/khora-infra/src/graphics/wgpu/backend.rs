@@ -258,6 +258,7 @@ impl GraphicsBackendSelector<SelectedAdapter> for WgpuBackendSelector {
 mod tests {
     use super::*;
     use crate::graphics::wgpu::tests::gpu::exclusive_gpu;
+    use khora_core::sync::LockExt;
     use std::sync::{Arc, Mutex};
     use wgpu::Backends;
 
@@ -288,10 +289,7 @@ mod tests {
         let asked = Arc::new(Mutex::new(Vec::new()));
         let record = Arc::clone(&asked);
         let selector = WgpuBackendSelector::new(move |backends: Backends| {
-            record
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .push(backends);
+            record.lock_recovered().push(backends);
             if real.contains(backends) && !backends.is_empty() {
                 instance_on(backends)
             } else {
@@ -303,10 +301,7 @@ mod tests {
 
     /// What the factory of `asked` was asked for, so far.
     fn asked_of(asked: &Mutex<Vec<Backends>>) -> Vec<Backends> {
-        asked
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
+        asked.lock_recovered().clone()
     }
 
     /// Whether the platform's own backend yields an adapter, asked alone.

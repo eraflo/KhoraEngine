@@ -289,7 +289,7 @@ impl ViewportPanel {
             },
         );
         if play_hit.clicked && !playing && !restricted {
-            self.dispatch("play");
+            self.dispatch(Transport::Play);
         }
         x += btn + gap;
 
@@ -314,7 +314,7 @@ impl ViewportPanel {
             },
         );
         if pause_hit.clicked && playing {
-            self.dispatch("pause");
+            self.dispatch(Transport::Pause);
         }
         x += btn + gap;
 
@@ -334,14 +334,14 @@ impl ViewportPanel {
             },
         );
         if stop_hit.clicked && running {
-            self.dispatch("stop");
+            self.dispatch(Transport::Stop);
         }
     }
 
-    /// Queues a menu action for the app to pick up next tick.
-    fn dispatch(&self, action: &str) {
+    /// Queues a transport request for the app to pick up before the next frame.
+    fn dispatch(&self, action: Transport) {
         if let Ok(mut s) = self.state.lock() {
-            s.pending_menu_action = Some(action.to_owned());
+            s.push_request(EditorRequest::Transport(action));
         }
     }
 
@@ -520,7 +520,10 @@ impl ViewportPanel {
         match request {
             crate::ops::AssetDrop::Prefab(uuid) => {
                 if let Ok(mut state) = self.state.lock() {
-                    state.pending_prefab_spawn = Some((uuid, None));
+                    state.push_request(EditorRequest::SpawnPrefab {
+                        prefab: uuid,
+                        parent: None,
+                    });
                     log::info!("Viewport: '{}' dropped — instantiating", entry.name);
                 }
             }
@@ -540,7 +543,7 @@ impl ViewportPanel {
                 match abs {
                     Some(abs) => {
                         if let Ok(mut state) = self.state.lock() {
-                            state.pending_scene_load = Some(abs);
+                            state.push_request(EditorRequest::OpenScene { path: abs });
                             log::info!("Viewport: scene '{}' dropped — loading", entry.name);
                         }
                     }
@@ -553,7 +556,11 @@ impl ViewportPanel {
             crate::ops::AssetDrop::Mesh(uuid) => {
                 let point = self.compute_drop_point(ui, viewport_min, viewport_size);
                 if let Ok(mut state) = self.state.lock() {
-                    state.pending_spawn_mesh_asset = Some((uuid, point, None));
+                    state.push_request(EditorRequest::SpawnMesh {
+                        mesh: uuid,
+                        point,
+                        parent: None,
+                    });
                     log::info!(
                         "Viewport: mesh '{}' dropped at [{:.2}, {:.2}, {:.2}]",
                         entry.name,
@@ -567,7 +574,10 @@ impl ViewportPanel {
                 if let Ok(mut state) = self.state.lock() {
                     match state.selection.iter().copied().next() {
                         Some(target) => {
-                            state.pending_assign_texture = Some((uuid, target));
+                            state.push_request(EditorRequest::AssignDropped {
+                                asset: uuid,
+                                entity: target,
+                            });
                             log::info!(
                                 "Viewport: '{}' dropped — assigning to selected entity",
                                 entry.name

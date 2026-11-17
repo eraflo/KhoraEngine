@@ -18,10 +18,7 @@
 use super::sim_steps::{compute_sim_steps, compute_sub_steps, MAX_SIM_STEPS};
 use super::{simulation_scale, ExecutionScheduler, MAX_FRAME_DELTA_SECONDS};
 use khora_core::agent::gorna::AgentId;
-use khora_core::agent::Agent;
 use khora_core::Runtime;
-use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex};
 
 impl ExecutionScheduler {
     /// Advances the frame's clocks and publishes the frame's `Time`.
@@ -29,14 +26,10 @@ impl ExecutionScheduler {
     /// Returns the most sub-steps any fixed agent is owed this frame, or `None` when no
     /// place holds a fixed step. See the book:
     /// concepts/the-frame.md, "Fixed-timestep simulation and render interpolation".
-    pub(super) fn advance_clocks(
-        &mut self,
-        runtime: &Runtime,
-        inactive: &BTreeSet<AgentId>,
-    ) -> Option<u32> {
+    pub(super) fn advance_clocks(&mut self, runtime: &Runtime) -> Option<u32> {
         let now = self.frame_start;
         let tick = khora_core::time::DEFAULT_FIXED_DELTA_SECONDS;
-        let fixed_steps = self.declared_fixed_steps(inactive);
+        let fixed_steps = self.declared_fixed_steps();
         let dt = match self.last_frame_instant {
             Some(prev) => now.duration_since(prev).as_secs_f32(),
             // First frame: advance by exactly one tick (no real history).
@@ -87,15 +80,9 @@ impl ExecutionScheduler {
     ///
     /// Read from the place each frame, so a changed step takes effect next frame. An agent
     /// whose family is off keeps no clock: it owes nothing for the time it sat out.
-    fn declared_fixed_steps(&self, inactive: &BTreeSet<AgentId>) -> Vec<(AgentId, f32)> {
-        let agents: Vec<Arc<Mutex<dyn Agent>>> = {
-            let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
-            registry.iter_active(inactive).cloned().collect()
-        };
-        agents
-            .iter()
-            .filter_map(|agent| {
-                let known = self.known.of(agent)?;
+    fn declared_fixed_steps(&self) -> Vec<(AgentId, f32)> {
+        (self.roster.met().iter())
+            .filter_map(|(_, known)| {
                 let step = known.fixed_step()?.as_secs_f32();
                 (step > 0.0).then_some((known.id, step))
             })

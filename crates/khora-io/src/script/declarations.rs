@@ -33,6 +33,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 
 use khora_core::lane::OutputDeck;
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::ecs::ScriptRole;
 use khora_data::ecs::{
@@ -104,18 +105,18 @@ impl DeclaredComponents {
         let refusals = self.refused.keys().map(|(name, module)| {
             let owner = self.owner_of(name).unwrap_or("another module");
             Problem {
-                severity: ProblemSeverity::Error,
-                module: Some(module.clone()),
-                line: 0,
-                column: 0,
-                message: format!(
-                    "`{name}` is declared by both `{owner}` and `{module}`: it stays as `{owner}` declares it"
+                note: Some(
+                    "a component's name is unique among every component — rename one".to_owned(),
                 ),
-                note: Some("a component's name is unique among every component — rename one".to_owned()),
-                entity: None,
-                behavior: None,
-                component: None,
-                field: None,
+                ..Problem::of_file(
+                    ProblemSeverity::Error,
+                    module.clone(),
+                    0,
+                    0,
+                    format!(
+                        "`{name}` is declared by both `{owner}` and `{module}`: it stays as `{owner}` declares it"
+                    ),
+                )
             }
         });
         let orphans = self
@@ -123,19 +124,17 @@ impl DeclaredComponents {
             .iter()
             .filter(|name| !self.quiet.contains(*name))
             .map(|name| Problem {
-            severity: ProblemSeverity::Warning,
-            module: None,
-            line: 0,
-            column: 0,
-            message: format!(
-                "`{name}` is no longer declared by any script: it stays registered with its data, orphaned"
-            ),
-            note: Some("declare it again to adopt it, or remove it from the entities holding it".to_owned()),
-            entity: None,
-            behavior: None,
-            component: None,
-            field: None,
-        });
+                note: Some(
+                    "declare it again to adopt it, or remove it from the entities holding it"
+                        .to_owned(),
+                ),
+                ..Problem::new(
+                    ProblemSeverity::Warning,
+                    format!(
+                        "`{name}` is no longer declared by any script: it stays registered with its data, orphaned"
+                    ),
+                )
+            });
         refusals.chain(orphans).collect()
     }
 }
@@ -510,7 +509,7 @@ pub fn register_pending(world: &mut World, runtime: &Runtime) -> DeclarationRepo
         log::error!("script components were declared, but the engine keeps no registration state");
         return DeclarationReport::default();
     };
-    let mut state = state.lock().unwrap_or_else(|e| e.into_inner());
+    let mut state = state.lock_recovered();
     let report = apply_declarations(world, &mut state, &batch);
     if let Some(problems) = runtime
         .resources

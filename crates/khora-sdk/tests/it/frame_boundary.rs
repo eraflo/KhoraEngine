@@ -17,6 +17,7 @@
 //! settled and before `PreSimulation` — so a boundary system serving a family
 //! switched off before the frame does not run in it.
 
+use khora_core::sync::LockExt;
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::khora_core::lane::OutputDeck;
@@ -49,7 +50,7 @@ struct Steps(Mutex<Vec<&'static str>>);
 
 fn note(runtime: &Runtime, step: &'static str) {
     if let Some(steps) = runtime.resources.get::<Arc<Steps>>() {
-        steps.0.lock().unwrap_or_else(|e| e.into_inner()).push(step);
+        steps.0.lock_recovered().push(step);
     }
 }
 
@@ -101,7 +102,7 @@ khora_sdk::inventory::submit! {
 
 /// What the probes wrote since the last call.
 fn taken(steps: &Steps) -> Vec<&'static str> {
-    std::mem::take(&mut *steps.0.lock().unwrap_or_else(|e| e.into_inner()))
+    std::mem::take(&mut *steps.0.lock_recovered())
 }
 
 /// **The boundary is the frame's first DataSystem phase, after the frame

@@ -15,6 +15,7 @@
 //! One test at a time owns a GPU device, on one backend: a test holds
 //! [`exclusive_gpu`] for as long as its device is alive.
 
+use khora_core::sync::LockExt;
 use std::sync::{Mutex, MutexGuard};
 
 // Several devices driven at once crash the Khronos Vulkan validation layer
@@ -25,7 +26,7 @@ static GPU: Mutex<()> = Mutex::new(());
 /// The process's turn on the GPU, held until dropped. A test that panicked
 /// while holding it gives it back as it unwinds: the turn is still good.
 pub(crate) fn exclusive_gpu() -> MutexGuard<'static, ()> {
-    GPU.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    GPU.lock_recovered()
 }
 
 /// The backend a GPU test runs on: the platform's own.

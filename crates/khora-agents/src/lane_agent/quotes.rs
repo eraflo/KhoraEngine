@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 use khora_core::lane::cost::Cost;
 use khora_core::lane::io::{Target, TargetKey};
 use khora_core::renderer::api::frame::FrameContext;
+use khora_core::sync::LockExt;
 use khora_core::EngineContext;
 
 use super::{lend, LaneAgent};
@@ -92,10 +93,7 @@ impl LaneAgent {
     ) {
         let quoted = {
             let mut source = lend(context, self.budget(), step, frame);
-            self.lanes[lane]
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .quote(&mut source)
+            self.lanes[lane].lock_recovered().quote(&mut source)
         };
         for (row, offered) in self.menu.iter().zip(self.quotes.iter_mut()) {
             if row.lane == lane {

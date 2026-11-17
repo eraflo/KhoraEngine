@@ -24,6 +24,7 @@ use crate::substrate::{flow_last_seen, run_flows};
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::Activation;
 use khora_core::lane::LaneBus;
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::ecs::{Role, SemanticDomain, Tick, World};
 use khora_data::flow::{Flow, FlowContext, Selection};
@@ -52,8 +53,7 @@ impl Flow for ServingProbeFlow {
     const ROLE: Role = Role::Serves(FAMILY);
 
     fn select(&mut self, world: &World, _runtime: &Runtime, ctx: FlowContext) -> Selection {
-        RUNS.lock()
-            .unwrap_or_else(|e| e.into_inner())
+        RUNS.lock_recovered()
             .push((world.instance_id(), ctx.resumed));
         Selection::new()
     }
@@ -67,8 +67,7 @@ khora_data::register_flow!(ServingProbeFlow, observes = [Watched]);
 
 /// The `resumed` the probe was handed on `world`, in run order.
 fn resumed_on(world: &World) -> Vec<bool> {
-    RUNS.lock()
-        .unwrap_or_else(|e| e.into_inner())
+    RUNS.lock_recovered()
         .iter()
         .filter(|(id, _)| *id == world.instance_id())
         .map(|(_, resumed)| *resumed)

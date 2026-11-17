@@ -16,13 +16,13 @@
 //! it into a failed run, and what the scheduler settles after one — the
 //! place's lock, the run's outcome, the half-done deck writes.
 
-use super::known::locked;
 use super::ExecutionScheduler;
 use khora_core::agent::completion::CompletionOutcome;
 use khora_core::agent::gorna::protocol::Report;
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::Place;
 use khora_core::lane::OutputDeck;
+use khora_core::sync::LockExt;
 use std::sync::Mutex;
 
 /// Runs an agent's work, turning a panic into `false` so the frame goes on.
@@ -42,7 +42,9 @@ pub(super) fn run_guarded(id: AgentId, execute: impl FnOnce()) -> bool {
 /// The report says the run stalled because it panicked, as a background run's does.
 pub(super) fn recover(place: &Mutex<Place>, id: AgentId) -> Option<Report> {
     place.clear_poison();
-    locked(place).run_failed(format!("the run of `{id}` panicked"))
+    place
+        .lock_recovered()
+        .run_failed(format!("the run of `{id}` panicked"))
 }
 
 pub(super) fn outcome_of(ran: bool) -> CompletionOutcome {

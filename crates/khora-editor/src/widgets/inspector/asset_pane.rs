@@ -11,7 +11,8 @@
 
 use khora_sdk::editor_ui::{FontFamilyHint, Icon, QuarantinedAsset, TextAlign, UiBuilder, UiTheme};
 
-use super::header::paint_inspector_header;
+use super::header::{paint_inspector_header, InspectorHeader};
+use crate::widgets::Painter;
 use khora_tool_ui::widgets::paint;
 use khora_tool_ui::widgets::with_alpha;
 
@@ -283,16 +284,17 @@ pub fn paint_asset_header(
         .unwrap_or("file")
         .to_uppercase();
     paint_inspector_header(
-        ui,
+        &mut Painter { ui, theme },
         origin,
         width,
-        Icon::Database,
-        &name,
-        &extension,
-        "Asset",
-        theme.primary,
-        None,
-        theme,
+        &InspectorHeader {
+            icon: Icon::Database,
+            name: &name,
+            type_tag: &extension,
+            status_label: "Asset",
+            status_color: theme.primary,
+            id_label: None,
+        },
     )
 }
 

@@ -30,6 +30,7 @@ use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneBus, LaneError, OutputDeck};
 use khora_core::math::Extent2D;
 use khora_core::renderer::api::resource::{TextureFormat, TextureViewId};
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_macros::{LaneInputs, LaneOutputs};
 
@@ -69,15 +70,11 @@ enum Event {
 type Log = Arc<Mutex<Vec<Event>>>;
 
 fn log_of(log: &Log) -> Vec<Event> {
-    log.lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .clone()
+    log.lock_recovered().clone()
 }
 
 fn note(log: &Log, event: Event) {
-    log.lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .push(event);
+    log.lock_recovered().push(event);
 }
 
 const TWO_LEVELS: &[Level] = &[
@@ -405,7 +402,7 @@ fn a_lane_whose_lock_is_held_elsewhere_is_not_quoted_and_the_quote_never_waits()
             Arc::clone(&release),
         );
         std::thread::spawn(move || {
-            let _guard = counter.lock().unwrap_or_else(|e| e.into_inner());
+            let _guard = counter.lock_recovered();
             held.wait();
             release.wait();
         })
@@ -461,7 +458,7 @@ fn a_quote_leaves_its_source_waiting_with_no_deadline_started() {
         let (counter, held, quoted) =
             (Arc::clone(&counter), Arc::clone(&held), Arc::clone(&quoted));
         std::thread::spawn(move || {
-            let guard = counter.lock().unwrap_or_else(|e| e.into_inner());
+            let guard = counter.lock_recovered();
             held.wait();
             quoted.wait();
             std::thread::sleep(std::time::Duration::from_millis(20));

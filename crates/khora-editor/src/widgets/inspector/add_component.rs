@@ -13,7 +13,7 @@
 //! the entity holds — and groups it by domain tag.
 
 use khora_sdk::editor_ui::{
-    AddableComponent, ComponentOrigin, EditorState, InspectedEntity, UiBuilder,
+    AddableComponent, ComponentOrigin, EditorRequest, EditorState, InspectedEntity, UiBuilder,
 };
 use khora_sdk::prelude::ecs::EntityId;
 
@@ -56,7 +56,7 @@ fn module_file(module: &str) -> &str {
 /// Renders the "+ Add Component" menu of
 /// [`EditorState::addable_components`], grouped by domain.
 ///
-/// A pick sets `EditorState::pending_add_component`, applied next frame.
+/// A pick queues an `EditorRequest::AddComponent`, applied next frame.
 pub fn render_add_component(
     ui: &mut dyn UiBuilder,
     entity: EntityId,
@@ -112,6 +112,9 @@ pub fn render_add_component(
         }
     });
     if let Some(name) = pending.into_inner() {
-        state.pending_add_component = Some((entity, name));
+        state.push_request(EditorRequest::AddComponent {
+            entity,
+            type_name: name,
+        });
     }
 }

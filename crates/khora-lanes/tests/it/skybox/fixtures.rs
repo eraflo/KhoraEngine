@@ -30,7 +30,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 
 use khora_core::gpu::GpuSetup;
 use khora_core::lane::erased::{AnyLane, Erased, LaneRun, RunOutcome};
@@ -61,6 +61,7 @@ use khora_core::renderer::traits::{
     CommandEncoder, ComputePass, GpuProfiler, PipelineSystem, RenderPass,
 };
 use khora_core::renderer::GraphicsDevice;
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::render::{ExtractedView, PassDescriptor, RenderWorld, ResourceId, SkyboxPassSlot};
 use khora_data::{IblBaker, IblSource};
@@ -175,12 +176,6 @@ struct Log {
     submitted: Vec<(CommandBufferId, bool)>,
 }
 
-fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
 /// A device keeping a ledger of what it made, bound, destroyed and recorded.
 #[derive(Debug, Default)]
 pub struct SkyLedger {
@@ -214,7 +209,7 @@ impl SkyLedger {
 
     fn make(&self, kind: GpuKind, label: Option<&str>) -> usize {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
-        locked(&self.log).made.push(Made {
+        self.log.lock_recovered().made.push(Made {
             kind,
             id,
             label: label.unwrap_or_default().to_owned(),
@@ -224,13 +219,14 @@ impl SkyLedger {
     }
 
     fn destroy(&self, kind: GpuKind, id: usize) -> Result<(), ResourceError> {
-        locked(&self.log).destroyed.push((kind, id));
+        self.log.lock_recovered().destroyed.push((kind, id));
         Ok(())
     }
 
     /// Every object the lane made, in order.
     pub fn lane_made(&self) -> Vec<Made> {
-        locked(&self.log)
+        self.log
+            .lock_recovered()
             .made
             .iter()
             .filter(|made| !made.by_bake)
@@ -248,7 +244,8 @@ impl SkyLedger {
 
     /// Every object an IBL bake made.
     pub fn bake_made(&self) -> Vec<Made> {
-        locked(&self.log)
+        self.log
+            .lock_recovered()
             .made
             .iter()
             .filter(|made| made.by_bake)
@@ -258,17 +255,18 @@ impl SkyLedger {
 
     /// Every destroy received so far.
     pub fn destroyed(&self) -> Vec<(GpuKind, usize)> {
-        locked(&self.log).destroyed.clone()
+        self.log.lock_recovered().destroyed.clone()
     }
 
     /// Whether the object `(kind, id)` was destroyed.
     pub fn is_destroyed(&self, kind: GpuKind, id: usize) -> bool {
-        locked(&self.log).destroyed.contains(&(kind, id))
+        self.log.lock_recovered().destroyed.contains(&(kind, id))
     }
 
     /// What `bind_group` binds at `binding`.
     pub fn bound_at(&self, bind_group: BindGroupId, binding: u32) -> Option<Bound> {
-        locked(&self.log)
+        self.log
+            .lock_recovered()
             .bound
             .get(&bind_group.0)
             .and_then(|entries| entries.iter().find(|(at, _)| *at == binding))
@@ -277,7 +275,8 @@ impl SkyLedger {
 
     /// Every write to `buffer`, in order.
     pub fn writes_to(&self, buffer: BufferId) -> Vec<Write> {
-        locked(&self.log)
+        self.log
+            .lock_recovered()
             .writes
             .iter()
             .filter(|write| write.buffer == buffer)
@@ -287,7 +286,8 @@ impl SkyLedger {
 
     /// The buffers of every encoder the lane's frames opened.
     pub fn lane_opened(&self) -> Vec<CommandBufferId> {
-        locked(&self.log)
+        self.log
+            .lock_recovered()
             .opened
             .iter()
             .filter(|(_, by_bake)| !by_bake)
@@ -297,7 +297,7 @@ impl SkyLedger {
 
     /// The buffers of every encoder finished, outside a bake.
     pub fn lane_finished(&self) -> Vec<CommandBufferId> {
-        let log = locked(&self.log);
+        let log = self.log.lock_recovered();
         log.finished
             .iter()
             .filter(|buffer| log.opened.contains(&(**buffer, false)))
@@ -307,7 +307,8 @@ impl SkyLedger {
 
     /// Every render pass the lane's frames recorded.
     pub fn lane_passes(&self) -> Vec<RecordedPass> {
-        locked(&self.log)
+        self.log
+            .lock_recovered()
             .passes
             .iter()
             .filter(|pass| !pass.by_bake)
@@ -317,7 +318,8 @@ impl SkyLedger {
 
     /// The buffers submitted outside a bake.
     pub fn lane_submitted(&self) -> Vec<CommandBufferId> {
-        locked(&self.log)
+        self.log
+            .lock_recovered()
             .submitted
             .iter()
             .filter(|(_, by_bake)| !by_bake)
@@ -340,7 +342,7 @@ struct LedgerRenderPass {
 
 impl Drop for LedgerRenderPass {
     fn drop(&mut self) {
-        locked(&self.log).passes.push(self.pass.clone());
+        self.log.lock_recovered().passes.push(self.pass.clone());
     }
 }
 
@@ -439,7 +441,7 @@ impl CommandEncoder for LedgerEncoder {
         if self.unfinishable && !self.by_bake {
             return None;
         }
-        locked(&self.log).finished.push(self.buffer);
+        self.log.lock_recovered().finished.push(self.buffer);
         Some(self.buffer)
     }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
@@ -497,7 +499,7 @@ impl GraphicsDevice for SkyLedger {
     }
     fn create_bind_group(&self, d: &BindGroupDescriptor) -> Result<BindGroupId, ResourceError> {
         if d.label
-            .is_some_and(|label| locked(&self.refused_bind_groups).contains(&label))
+            .is_some_and(|label| self.refused_bind_groups.lock_recovered().contains(&label))
         {
             return Err(ResourceError::BackendError("bind group refused".into()));
         }
@@ -514,7 +516,7 @@ impl GraphicsDevice for SkyLedger {
                 (entry.binding, bound)
             })
             .collect();
-        locked(&self.log).bound.insert(id, entries);
+        self.log.lock_recovered().bound.insert(id, entries);
         Ok(BindGroupId(id))
     }
     fn destroy_bind_group_layout(&self, id: BindGroupLayoutId) -> Result<(), ResourceError> {
@@ -539,7 +541,7 @@ impl GraphicsDevice for SkyLedger {
         self.destroy(GpuKind::Buffer, id.0)
     }
     fn write_buffer(&self, id: BufferId, _offset: u64, data: &[u8]) -> Result<(), ResourceError> {
-        locked(&self.log).writes.push(Write {
+        self.log.lock_recovered().writes.push(Write {
             buffer: id,
             data: data.to_vec(),
         });
@@ -590,7 +592,7 @@ impl GraphicsDevice for SkyLedger {
     }
     fn create_command_encoder(&self, _label: Option<&str>) -> Box<dyn CommandEncoder> {
         let by_bake = self.baking();
-        let mut log = locked(&self.log);
+        let mut log = self.log.lock_recovered();
         // Buffer ids start at 100, so a zeroed id is never mistaken for one.
         let buffer = CommandBufferId(100 + log.opened.len() as u64);
         log.opened.push((buffer, by_bake));
@@ -603,7 +605,10 @@ impl GraphicsDevice for SkyLedger {
     }
     fn submit_command_buffer(&self, command_buffer: CommandBufferId) {
         let by_bake = self.baking();
-        locked(&self.log).submitted.push((command_buffer, by_bake));
+        self.log
+            .lock_recovered()
+            .submitted
+            .push((command_buffer, by_bake));
     }
     fn get_surface_format(&self) -> Option<TextureFormat> {
         Some(SURFACE_FORMAT)
@@ -657,7 +662,8 @@ impl LedgerPipelines {
 
     /// Every skybox pipeline the lane asked for, in order.
     pub fn skybox_pipelines(&self) -> Vec<Requested> {
-        locked(&self.requested)
+        self.requested
+            .lock_recovered()
             .iter()
             .filter(|requested| !requested.by_bake && requested.shader == SKYBOX_SHADER)
             .cloned()
@@ -691,7 +697,7 @@ impl PipelineSystem for LedgerPipelines {
             return Err(RenderError::Internal("pipeline refused".into()));
         }
         let id = RenderPipelineId(self.next());
-        locked(&self.requested).push(Requested {
+        self.requested.lock_recovered().push(Requested {
             id,
             shader: spec.shader,
             colors: spec

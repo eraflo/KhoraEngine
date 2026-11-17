@@ -22,6 +22,7 @@ use khora_agents::registered_agent::registered_agents;
 use khora_control::DccService;
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::Activation;
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 
 /// Returns the engine's activation: every family linked into the binary, on.
@@ -45,8 +46,7 @@ pub(super) fn engine_activation() -> Arc<Activation> {
 pub(super) fn admit_families(dcc: &DccService, runtime: &Runtime) {
     let families: BTreeSet<AgentId> = dcc
         .agent_registry()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .lock_recovered()
         .all_ids()
         .into_iter()
         .collect();

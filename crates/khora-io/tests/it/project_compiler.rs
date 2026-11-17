@@ -310,18 +310,13 @@ fn a_deleted_module_is_withdrawn_its_declarations_emptied_and_forgotten() {
         ProblemSource::Compile {
             module: "gone.erg".to_owned(),
         },
-        vec![khora_core::problems::Problem {
-            severity: khora_core::problems::ProblemSeverity::Error,
-            module: Some("gone.erg".to_owned()),
-            line: 1,
-            column: 1,
-            message: "an error it had".to_owned(),
-            note: None,
-            entity: None,
-            behavior: None,
-            component: None,
-            field: None,
-        }],
+        vec![khora_core::problems::Problem::of_file(
+            khora_core::problems::ProblemSeverity::Error,
+            "gone.erg",
+            1,
+            1,
+            "an error it had",
+        )],
     );
 
     let compiled = ProjectCompiler::from_runtime(&reporting.runtime)

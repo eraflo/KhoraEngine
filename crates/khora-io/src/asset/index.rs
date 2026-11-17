@@ -104,10 +104,10 @@ mod tests {
         AssetMetadata {
             uuid: AssetUUID::new_v5("a.wgsl"),
             source_path: PathBuf::from(source_path),
-            asset_type_name: "shader".to_owned(),
+            asset_type: khora_core::asset::AssetType::Shader,
             dependencies: Vec::new(),
             variants: HashMap::from([(
-                "default".to_owned(),
+                AssetMetadata::DEFAULT_VARIANT.to_owned(),
                 AssetSource::Path(PathBuf::from("a.wgsl")),
             )]),
             tags: Vec::new(),

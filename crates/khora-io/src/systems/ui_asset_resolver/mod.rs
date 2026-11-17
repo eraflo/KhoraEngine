@@ -25,6 +25,7 @@ use khora_core::asset::font::Font;
 use khora_core::asset::{AssetHandle, AssetUUID};
 use khora_core::ecs::entity::EntityId;
 use khora_core::renderer::api::resource::CpuTexture;
+use khora_core::sync::RwLockExt;
 use khora_core::Runtime;
 use khora_data::ecs::{HandleComponent, World};
 use khora_data::ui::{UiImage, UiText};
@@ -110,10 +111,7 @@ pub(crate) fn resolve_ui_fonts(world: &mut World, runtime: &Runtime) {
                 had_stale_handle,
             } => {
                 if let Some(fonts) = &fonts {
-                    fonts
-                        .write()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .insert(uuid, handle.clone());
+                    fonts.write_recovered().insert(uuid, handle.clone());
                 }
                 let component = HandleComponent { handle, uuid };
                 if had_stale_handle {
@@ -140,7 +138,7 @@ pub(crate) fn resolve_ui_images(world: &World, runtime: &Runtime) {
     let textures = store.store::<CpuTexture>();
 
     let missing: BTreeSet<AssetUUID> = {
-        let held = textures.read().unwrap_or_else(|e| e.into_inner());
+        let held = textures.read_recovered();
         world
             .query::<&UiImage>()
             .map(|image| image.texture)
@@ -166,10 +164,7 @@ pub(crate) fn resolve_ui_images(world: &World, runtime: &Runtime) {
         // One being decoded off the frame is stored when it lands; one that
         // failed is asked for again once an asset changes.
         if let Requested::Ready(texture) = requested {
-            textures
-                .write()
-                .unwrap_or_else(|e| e.into_inner())
-                .insert(uuid, texture);
+            textures.write_recovered().insert(uuid, texture);
         }
     }
 }

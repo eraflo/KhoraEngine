@@ -208,7 +208,7 @@ impl ShadowGpu {
 
         let mut next_atlas_2d_index: u32 = 0;
         let mut next_cube_layer: u32 = 0;
-        let mut passes: Vec<pass::AttachmentPass> = Vec::new();
+        let mut recorder = pass::PassRecorder::new(device, &mut self.camera_ring);
 
         for (i, light) in render_world.lights.iter().enumerate() {
             let Some(matrices) = shadow_view.matrices.get(&i) else {
@@ -232,19 +232,7 @@ impl ShadowGpu {
                             atlas_index: layer as i32,
                         },
                     );
-                    if let Some(p) = super::atlas_2d::collect_pass(
-                        self.atlas_2d.view,
-                        layer,
-                        light.position,
-                        *view_proj,
-                        device,
-                        render_world,
-                        gpu_meshes,
-                        &mut self.camera_ring,
-                        &mut self.model_ring,
-                    ) {
-                        passes.push(p);
-                    }
+                    recorder.collect_pass(self.atlas_2d.view, layer, light.position, *view_proj);
                 }
                 ShadowMatrices::Cube(face_view_projs) => {
                     if next_cube_layer >= tier.cube_max_lights {
@@ -270,23 +258,25 @@ impl ShadowGpu {
                             far_plane,
                         },
                     );
-                    passes.extend(super::atlas_cube::collect_passes(
-                        &self.atlas_cube.face_views,
+                    self.atlas_cube.collect_faces(
+                        &mut recorder,
                         cube_layer,
                         light.position,
                         &face_view_projs,
-                        device,
-                        render_world,
-                        gpu_meshes,
-                        &mut self.camera_ring,
-                        &mut self.model_ring,
-                    ));
+                    );
                 }
             }
         }
 
+        let passes = recorder.into_passes();
+        if passes.is_empty() {
+            return;
+        }
+        // Every pass draws the same casters through the same uploads, so the
+        // models are pushed once a frame, not once per pass.
+        let draws = pass::build_draw_cmds(device, render_world, gpu_meshes, &mut self.model_ring);
         for attachment in &passes {
-            pass::record_depth_pass(encoder, &self.pipeline, attachment);
+            pass::record_depth_pass(encoder, &self.pipeline, attachment, &draws);
         }
     }
 

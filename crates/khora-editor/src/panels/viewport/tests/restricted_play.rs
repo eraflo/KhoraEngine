@@ -19,7 +19,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_sdk::editor_ui::{EditorPanel, EditorState, Icon, UiTheme};
+use khora_sdk::editor_ui::{EditorPanel, EditorRequest, EditorState, Icon, Transport, UiTheme};
 use khora_sdk::ViewportTextureHandle;
 use khora_tool_ui::testing::RecordingUiBuilder;
 
@@ -61,14 +61,11 @@ fn a_restricted_projects_play_is_disabled() {
         Some(theme.text_disabled),
         "Play is drawn disabled"
     );
-    assert_eq!(
-        after.pending_menu_action, None,
-        "a click on Play asks nothing"
-    );
+    assert!(after.requests.is_empty(), "a click on Play asks nothing");
 
     // A trusted project's Play, the same click: it plays, drawn enabled.
     let (trusted, played) = frame(false, viewport().with_click("vp-play"));
-    assert_eq!(played.pending_menu_action.as_deref(), Some("play"));
+    assert_eq!(played.requests, [EditorRequest::Transport(Transport::Play)]);
     assert_ne!(
         trusted.text_color(Icon::Play.glyph()),
         Some(theme.text_disabled)

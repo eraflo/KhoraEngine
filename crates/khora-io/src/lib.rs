@@ -20,6 +20,7 @@
 
 pub mod asset;
 mod asset_prefabs;
+pub mod fs;
 pub mod profiles;
 mod reader_prefabs;
 pub mod scene_loads;

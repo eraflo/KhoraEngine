@@ -20,7 +20,7 @@
 use std::any::TypeId;
 use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 
 use khora_agents::lane_agent::{lane_agent, LaneAgent};
 use khora_agents::registered_agent::registered_agents;
@@ -52,6 +52,7 @@ use khora_core::renderer::traits::{
     CommandEncoder, ComputePass, GpuProfiler, PipelineSystem, RenderPass,
 };
 use khora_core::renderer::GraphicsDevice;
+use khora_core::sync::LockExt;
 use khora_core::{EngineContext, Runtime};
 use khora_data::flow::{ShadowMatrices, ShadowView};
 use khora_data::render::{ExtractedLight, RenderWorld};
@@ -99,12 +100,6 @@ struct Log {
     submitted: Vec<CommandBufferId>,
 }
 
-fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
 /// A device that makes whatever it is asked to, and records the depth
 /// textures it made, the encoders it opened and finished, and what was
 /// submitted to its queue.
@@ -136,7 +131,9 @@ impl SubmitLog {
 
     /// The sides of the square depth textures made, sorted: the atlases.
     pub fn atlas_sides(&self) -> Vec<u32> {
-        let mut sides: Vec<u32> = locked(&self.log)
+        let mut sides: Vec<u32> = self
+            .log
+            .lock_recovered()
             .textures
             .iter()
             .map(|size| size.width)
@@ -147,17 +144,17 @@ impl SubmitLog {
 
     /// The buffers of every encoder opened.
     pub fn opened(&self) -> Vec<CommandBufferId> {
-        locked(&self.log).opened.clone()
+        self.log.lock_recovered().opened.clone()
     }
 
     /// The buffers of every encoder finished.
     pub fn finished(&self) -> Vec<CommandBufferId> {
-        locked(&self.log).finished.clone()
+        self.log.lock_recovered().finished.clone()
     }
 
     /// The buffers submitted to the queue.
     pub fn submitted(&self) -> Vec<CommandBufferId> {
-        locked(&self.log).submitted.clone()
+        self.log.lock_recovered().submitted.clone()
     }
 }
 
@@ -220,7 +217,7 @@ impl CommandEncoder for Finishing {
         if self.unfinishable {
             return None;
         }
-        locked(&self.log).finished.push(self.buffer);
+        self.log.lock_recovered().finished.push(self.buffer);
         Some(self.buffer)
     }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
@@ -303,7 +300,7 @@ impl GraphicsDevice for SubmitLog {
     }
     fn create_texture(&self, d: &TextureDescriptor) -> Result<TextureId, ResourceError> {
         if d.format == TextureFormat::Depth32Float {
-            locked(&self.log).textures.push(d.size);
+            self.log.lock_recovered().textures.push(d.size);
         }
         Ok(TextureId(self.id()))
     }
@@ -337,7 +334,7 @@ impl GraphicsDevice for SubmitLog {
         Ok(())
     }
     fn create_command_encoder(&self, _label: Option<&str>) -> Box<dyn CommandEncoder> {
-        let mut log = locked(&self.log);
+        let mut log = self.log.lock_recovered();
         let buffer = CommandBufferId(100 + log.opened.len() as u64);
         log.opened.push(buffer);
         Box::new(Finishing {
@@ -347,7 +344,7 @@ impl GraphicsDevice for SubmitLog {
         })
     }
     fn submit_command_buffer(&self, command_buffer: CommandBufferId) {
-        locked(&self.log).submitted.push(command_buffer);
+        self.log.lock_recovered().submitted.push(command_buffer);
     }
     fn get_surface_format(&self) -> Option<TextureFormat> {
         Some(TextureFormat::Rgba8UnormSrgb)

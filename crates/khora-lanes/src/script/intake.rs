@@ -21,6 +21,7 @@ use std::sync::{Arc, Mutex};
 use khora_core::event::{BetweenSessions, Channel, Mailbox, Reader};
 use khora_core::projection::Interest;
 use khora_core::script::{ScriptEvent, ScriptReads, SCRIPT};
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, SystemContext, TickPhase};
 use khora_script::reload::ScriptReload;
@@ -81,9 +82,7 @@ fn script_intake(runtime: &Runtime, ctx: SystemContext) {
     let Some(scripts) = runtime.look_up::<Arc<Mutex<ScriptRuntime>>>() else {
         return;
     };
-    let mut scripts = scripts
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut scripts = scripts.lock_recovered();
     take_in(
         &mut scripts,
         ctx.staged::<ScriptReload>(runtime),

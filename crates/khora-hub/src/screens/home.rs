@@ -14,7 +14,7 @@
 
 use crate::app::HubApp;
 use crate::services::config::RecentProject;
-use crate::state::Screen;
+use crate::state::{CardFact, Screen};
 use crate::ui::format::format_ts;
 use khora_sdk::tool_ui::{FontFamilyHint, Icon, Interaction, UiBuilder, UiTheme};
 use khora_sdk::trust::ProjectTrust;
@@ -253,8 +253,8 @@ fn show_main(app: &mut HubApp, ui: &mut dyn UiBuilder) {
         if widgets::bottom(rect) > widgets::bottom(body) {
             break; // Off-screen; the panel doesn't scroll yet.
         }
-        let trust = app.trust_store.decision(std::path::Path::new(&proj.path));
-        project_card(ui, &t, rect, proj, *src_idx, trust, &mut action);
+        let fact = app.home.cards.of(&proj.path, &app.trust_store);
+        project_card(ui, &t, rect, proj, *src_idx, fact, &mut action);
     }
 
     apply_action(app, action);
@@ -266,9 +266,10 @@ fn project_card(
     rect: [f32; 4],
     proj: &RecentProject,
     idx: usize,
-    trust: Option<ProjectTrust>,
+    fact: CardFact,
     action: &mut Option<ProjectAction>,
 ) -> Interaction {
+    let trust = fact.trust;
     // The whole card is the Open affordance. Allocate it first so the icon
     // buttons painted later win the click.
     let card = ui.interact_rect(&format!("hp-card-{idx}"), rect);
@@ -373,7 +374,7 @@ fn project_card(
         }
         bx -= bw + 2.0;
 
-        if !crate::services::project::has_native_code(std::path::Path::new(&proj.path))
+        if !fact.native_code
             && icon_button(
                 ui,
                 t,
@@ -430,6 +431,10 @@ fn project_card(
 }
 
 fn apply_action(app: &mut HubApp, action: Option<ProjectAction>) {
+    if action.is_some() {
+        // An action may decide a project or add its native code.
+        app.home.cards.forget();
+    }
     match action {
         Some(ProjectAction::Open(proj)) => app.launch_project(&proj),
         Some(ProjectAction::AskRemove(idx)) => app.home.remove_confirm = Some(idx),

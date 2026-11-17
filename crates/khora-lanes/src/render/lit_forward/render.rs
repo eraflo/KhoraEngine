@@ -15,17 +15,17 @@
 //! Recording the lane's draw calls for one frame.
 
 use super::gpu::{pipeline_spec, LitGpu, IBL_BASE};
-use crate::render::camera_distance_sq;
 use crate::render::family::{LitInputs, RenderOutputs};
 use crate::render::recording::{
     record_clear, record_draws, record_transparent_pass, scene_color, scene_depth,
 };
+use crate::render::util::lit_draws::{collect_lit_draws, LitDraws, LitPipelines};
 use crate::render::util::variant_pipelines::Surface;
 use khora_core::math::{LinearRgba, Mat4};
 use khora_core::renderer::api::command::{
-    BindGroupDescriptor, BindGroupEntry, DrawCommand, LoadOp, RenderPassDescriptor,
+    BindGroupDescriptor, BindGroupEntry, LoadOp, RenderPassDescriptor,
 };
-use khora_core::renderer::api::gpu_scene::{GpuMesh, ModelUniforms};
+use khora_core::renderer::api::gpu_scene::GpuMesh;
 use khora_core::renderer::api::ibl::fill_ibl_bind_group_entries;
 use khora_core::renderer::api::resource::CameraUniformData;
 use khora_core::renderer::api::shadow::bindings::{binding, fill_shadow_bind_group_entries};
@@ -116,68 +116,20 @@ impl LitGpu {
         let plain = self
             .pipelines
             .get(&Surface::plain(), device, lent, pipeline_spec)?;
-        let mut opaque = Vec::with_capacity(inputs.render_world.meshes.len());
-        let mut blended: Vec<(f32, DrawCommand)> = Vec::new();
-        for mesh in &inputs.render_world.meshes {
-            let Some(gpu_mesh) = gpu_meshes.get(&mesh.cpu_mesh_uuid) else {
-                continue;
-            };
-            // The material projection tags every rendered entity with a
-            // `GpuMaterial` before the render flow runs.
-            let Some(material) = &mesh.gpu_material else {
-                continue;
-            };
-            let surface = Surface {
-                variant: material.variant.clone(),
-                double_sided: material.double_sided,
-                mirrored: mesh.mirrored,
-                blend: material.blend,
-            };
-            let pipeline = match self.pipelines.get(&surface, device, lent, pipeline_spec) {
-                Ok(Some(pipeline)) => pipeline,
-                Ok(None) => match plain {
-                    Some(pipeline) => pipeline,
-                    None => continue,
-                },
-                Err(error) => {
-                    log::error!("LitForward: no pipeline for {surface:?}: {error:?}");
-                    continue;
-                }
-            };
-            let model = mesh.transform.to_matrix();
-            // A degenerate transform has no normal matrix: nothing to draw.
-            let Some(inverse) = model.inverse() else {
-                continue;
-            };
-            let model_uniforms = ModelUniforms {
-                model_matrix: model.to_cols_array_2d(),
-                normal_matrix: inverse.transpose().to_cols_array_2d(),
-            };
-            let model_offset = self
-                .model_ring
-                .push(device, bytemuck::bytes_of(&model_uniforms))
-                .map_err(RenderError::ResourceError)?;
-            let draw = DrawCommand {
-                pipeline,
-                vertex_buffer: gpu_mesh.vertex_buffer,
-                index_buffer: gpu_mesh.index_buffer,
-                index_format: gpu_mesh.index_format,
-                index_count: gpu_mesh.index_count,
-                model_bind_group: Some(*self.model_ring.current_bind_group()),
-                model_offset,
-                material_bind_group: Some(material.bind_group),
-                material_offset: 0,
-            };
-            if material.blend {
-                blended.push((camera_distance_sq(&model, view.position), draw));
-            } else {
-                opaque.push(draw);
-            }
-        }
-        // One `set_pipeline` per variant across the pass; blending is
-        // order-dependent, so the blended draws go farthest first instead.
-        opaque.sort_by_key(|draw| draw.pipeline.0);
-        blended.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        let LitDraws { opaque, blended } = collect_lit_draws(
+            inputs.render_world,
+            gpu_meshes,
+            view.position,
+            device,
+            LitPipelines {
+                kept: &mut self.pipelines,
+                lent,
+                spec: pipeline_spec,
+                plain,
+                label: "LitForward",
+            },
+            &mut self.model_ring,
+        )?;
 
         {
             let color = [scene_color(&target, LoadOp::Clear(clear))];

@@ -60,19 +60,7 @@ fn build_asset_service(
     let assets = exe_dir.join("assets");
 
     let (svc, mode_label) = if is_packed(exe_dir) {
-        // An index is read whole: one past its limit is refused before.
-        let idx_len = std::fs::metadata(&idx)
-            .with_context(|| format!("Failed to read {}", idx.display()))?
-            .len();
-        if idx_len > khora_io::asset::MAX_INDEX_BYTES as u64 {
-            return Err(anyhow!(
-                "{} is {idx_len} bytes, over the {} an index may hold",
-                idx.display(),
-                khora_io::asset::MAX_INDEX_BYTES
-            ));
-        }
-        let bytes =
-            std::fs::read(&idx).with_context(|| format!("Failed to read {}", idx.display()))?;
+        let bytes = read_index(&idx)?;
         let pack_file = std::fs::File::open(&pack)
             .with_context(|| format!("Failed to open {}", pack.display()))?;
         let loader = PackLoader::new(pack_file)
@@ -173,19 +161,22 @@ fn check_pack_seal(exe_dir: &Path, pack_key: Option<PackKey>) -> Result<()> {
     if !is_packed(exe_dir) {
         return refuse_loose_when_stamped(exe_dir, pack_key);
     }
-    let idx = exe_dir.join("index.bin");
-    let len = std::fs::metadata(&idx)
-        .with_context(|| format!("Failed to read {}", idx.display()))?
-        .len();
-    if len > khora_io::asset::MAX_INDEX_BYTES as u64 {
-        return Err(anyhow!(
-            "{} is {len} bytes, over the {} an index may hold",
-            idx.display(),
-            khora_io::asset::MAX_INDEX_BYTES
-        ));
-    }
-    let bytes = std::fs::read(&idx).with_context(|| format!("Failed to read {}", idx.display()))?;
+    let bytes = read_index(&exe_dir.join("index.bin"))?;
     read_manifest(exe_dir, &bytes, pack_key).map(|_| ())
+}
+
+/// Returns the bytes of the pack index at `idx`, read whole: one past its limit is refused.
+fn read_index(idx: &Path) -> Result<Vec<u8>> {
+    let cap = khora_io::asset::MAX_INDEX_BYTES as u64;
+    khora_io::fs::read_bounded(idx, cap).map_err(|error| match error {
+        khora_io::fs::BoundedReadError::TooLarge { size, .. } => anyhow!(
+            "{} is {size} bytes, over the {cap} an index may hold",
+            idx.display()
+        ),
+        khora_io::fs::BoundedReadError::Io(error) => {
+            anyhow::Error::new(error).context(format!("Failed to read {}", idx.display()))
+        }
+    })
 }
 
 /// The [`EngineApp`] of [`run_default`]: it opens the game beside the binary, then idles.

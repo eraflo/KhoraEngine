@@ -16,7 +16,8 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_sdk::khora_core::asset::AssetUUID;
+use khora_sdk::editor_ui::{AssetFileOp, EditorRequest};
+use khora_sdk::khora_core::asset::{AssetType, AssetUUID};
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::{AssetSource, EditorState, GameWorld};
 
@@ -39,32 +40,23 @@ fn refresh_asset_cache(pvfs_arc: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mut
     }
 }
 
-/// Drains the asset browser's file operations: new folder or script, rename, move, trash, duplicate.
+/// Takes the asset browser's queued file operations: new folder or script, rename, move, trash, duplicate.
 ///
-/// Each goes through [`ProjectVfs`], which keeps the identity registry, so
-/// references survive renames and moves. A script written is then revealed.
+/// They run in the order asked. Each goes through [`ProjectVfs`], which keeps
+/// the identity registry, so references survive renames and moves. A script
+/// written is then revealed.
 pub fn process_pending_asset_file_ops(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     editor_state: &Arc<Mutex<EditorState>>,
 ) {
-    let (create, script, rename, move_op, delete, duplicate) = match editor_state.lock() {
-        Ok(mut s) => (
-            s.pending_create_folder.take(),
-            s.pending_create_script.take(),
-            s.pending_rename_asset.take(),
-            s.pending_move_asset.take(),
-            s.pending_delete_asset.take(),
-            s.pending_duplicate_asset.take(),
-        ),
+    let ops = match editor_state.lock() {
+        Ok(mut s) => s.take_requests(|request| match request {
+            EditorRequest::AssetFile(op) => Ok(op),
+            other => Err(other),
+        }),
         Err(_) => return,
     };
-    if create.is_none()
-        && script.is_none()
-        && rename.is_none()
-        && move_op.is_none()
-        && delete.is_none()
-        && duplicate.is_none()
-    {
+    if ops.is_empty() {
         return;
     }
     let Some(pvfs_arc) = project_vfs else {
@@ -72,100 +64,113 @@ pub fn process_pending_asset_file_ops(
         return;
     };
 
-    let mut written_script = None;
+    let mut written_scripts = Vec::new();
     {
         let Ok(mut pvfs) = pvfs_arc.lock() else {
             log::error!("Asset file op: project VFS mutex poisoned");
             return;
         };
-        if let Some(dir) = create {
-            match pvfs.create_folder(&dir) {
-                Ok(()) => log::info!("Created folder '{dir}'"),
-                Err(e) => log::error!("Create folder '{dir}' failed: {e:#}"),
-            }
-        }
-        if let Some((rel, source)) = script {
-            match pvfs.create_asset(&rel, source.as_bytes()) {
-                Ok(()) => {
-                    log::info!("Created script '{rel}'");
-                    // Revealed once the index lists it: at once when the
-                    // project was indexed on the frame.
-                    written_script = pvfs
-                        .after_index(crate::project_vfs::AfterIndex::Reveal(rel))
-                        .and_then(|now| match now {
-                            crate::project_vfs::AfterIndex::Reveal(rel) => Some(rel),
-                            _ => None,
-                        });
-                }
-                Err(e) => log::error!("Create script '{rel}' failed: {e:#}"),
-            }
-        }
-        if let Some((old, new)) = rename {
-            match pvfs.rename_asset(&old, &new) {
-                Ok(()) => log::info!("Renamed '{old}' → '{new}'"),
-                Err(e) => log::error!("Rename '{old}' → '{new}' failed: {e:#}"),
-            }
-        }
-        if let Some((src, dest)) = move_op {
-            match pvfs.move_asset(&src, &dest) {
-                Ok(()) => log::info!("Moved '{src}' → '{dest}/'"),
-                Err(e) => log::error!("Move '{src}' → '{dest}' failed: {e:#}"),
-            }
-        }
-        if let Some(rel) = delete {
-            match pvfs.delete_to_trash(&rel) {
-                Ok(()) => log::info!("Moved '{rel}' to the recycle bin"),
-                Err(e) => log::error!("Delete '{rel}' failed: {e:#}"),
-            }
-        }
-        if let Some(rel) = duplicate {
-            match pvfs.duplicate_asset(&rel) {
-                Ok(new_rel) => log::info!("Duplicated '{rel}' → '{new_rel}'"),
-                Err(e) => log::error!("Duplicate '{rel}' failed: {e:#}"),
+        for op in ops {
+            if let Some(rel) = run_file_op(&mut pvfs, op) {
+                written_scripts.push(rel);
             }
         }
     }
 
     refresh_asset_cache(pvfs_arc, editor_state);
-    if let Some(rel) = written_script {
-        if let Ok(mut s) = editor_state.lock() {
-            s.pending_reveal_asset = Some(rel);
+    if let Ok(mut s) = editor_state.lock() {
+        for rel in written_scripts {
+            s.push_request(EditorRequest::RevealAsset { path: rel });
         }
     }
 }
 
-/// Drains [`EditorState::pending_spawn_mesh_asset`]: spawns a `MeshRef::Asset` entity at the drop.
+/// Carries out one file operation, logging its outcome.
 ///
-/// Set by dragging a mesh tile onto the viewport; the mesh loads on the next tick.
+/// Returns the path of a script written that the index already lists, to reveal now.
+fn run_file_op(pvfs: &mut ProjectVfs, op: AssetFileOp) -> Option<String> {
+    match op {
+        AssetFileOp::CreateFolder { path } => match pvfs.create_folder(&path) {
+            Ok(()) => log::info!("Created folder '{path}'"),
+            Err(e) => log::error!("Create folder '{path}' failed: {e:#}"),
+        },
+        AssetFileOp::CreateScript { path, source } => {
+            match pvfs.create_asset(&path, source.as_bytes()) {
+                Ok(()) => {
+                    log::info!("Created script '{path}'");
+                    // Revealed once the index lists it: at once when the
+                    // project was indexed on the frame.
+                    return pvfs
+                        .after_index(crate::project_vfs::AfterIndex::Reveal(path))
+                        .and_then(|now| match now {
+                            crate::project_vfs::AfterIndex::Reveal(rel) => Some(rel),
+                            _ => None,
+                        });
+                }
+                Err(e) => log::error!("Create script '{path}' failed: {e:#}"),
+            }
+        }
+        AssetFileOp::Rename { from, to } => match pvfs.rename_asset(&from, &to) {
+            Ok(()) => log::info!("Renamed '{from}' → '{to}'"),
+            Err(e) => log::error!("Rename '{from}' → '{to}' failed: {e:#}"),
+        },
+        AssetFileOp::Move { path, into } => match pvfs.move_asset(&path, &into) {
+            Ok(()) => log::info!("Moved '{path}' → '{into}/'"),
+            Err(e) => log::error!("Move '{path}' → '{into}' failed: {e:#}"),
+        },
+        AssetFileOp::Trash { path } => match pvfs.delete_to_trash(&path) {
+            Ok(()) => log::info!("Moved '{path}' to the recycle bin"),
+            Err(e) => log::error!("Delete '{path}' failed: {e:#}"),
+        },
+        AssetFileOp::Duplicate { path } => match pvfs.duplicate_asset(&path) {
+            Ok(new_rel) => log::info!("Duplicated '{path}' → '{new_rel}'"),
+            Err(e) => log::error!("Duplicate '{path}' failed: {e:#}"),
+        },
+    }
+    None
+}
+
+/// Takes the queued [`EditorRequest::SpawnMesh`]s: spawns a `MeshRef::Asset` entity at each drop.
+///
+/// Asked by dragging a mesh tile onto the viewport or a hierarchy row; the
+/// mesh loads on the next tick. The last one spawned is selected.
 pub fn process_pending_spawn_mesh_asset(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
 ) {
-    let pending = match editor_state.lock() {
-        Ok(mut s) => s.pending_spawn_mesh_asset.take(),
-        Err(_) => None,
-    };
-    let Some((uuid, point, parent)) = pending else {
-        return;
-    };
-    let name = indexed_asset(project_vfs, uuid)
-        .map_or_else(|| "Mesh".to_owned(), |asset| asset.display_name);
-    let entity = ops::spawn_mesh_asset(world, uuid, point, &name);
-    // Parent under the hierarchy row it was dropped on, if any.
-    if let Some(parent) = parent {
-        world.set_parent(entity, Some(parent));
+    let spawns = editor_state
+        .lock()
+        .map(|mut s| {
+            s.take_requests(|request| match request {
+                EditorRequest::SpawnMesh {
+                    mesh,
+                    point,
+                    parent,
+                } => Ok((mesh, point, parent)),
+                other => Err(other),
+            })
+        })
+        .unwrap_or_default();
+    for (uuid, point, parent) in spawns {
+        let name = indexed_asset(project_vfs, uuid)
+            .map_or_else(|| "Mesh".to_owned(), |asset| asset.display_name);
+        let entity = ops::spawn_mesh_asset(world, uuid, point, &name);
+        // Parent under the hierarchy row it was dropped on, if any.
+        if let Some(parent) = parent {
+            world.set_parent(entity, Some(parent));
+        }
+        if let Ok(mut s) = editor_state.lock() {
+            s.select(entity);
+        }
+        log::info!("Spawned mesh '{name}' as entity {entity:?} at {point:?}");
     }
-    if let Ok(mut s) = editor_state.lock() {
-        s.select(entity);
-    }
-    log::info!("Spawned mesh '{name}' as entity {entity:?} at {point:?}");
 }
 
 /// An asset of the open project, as the editor names and dispatches it.
 struct IndexedAsset {
-    /// The index type (`"mesh"`, `"material"`, `"texture"`…).
-    type_name: String,
+    /// Its index type.
+    asset_type: AssetType,
     /// The file's stem, followed by the part's label for a part of a file
     /// (`ship mesh1/prim0`).
     display_name: String,
@@ -184,17 +189,17 @@ fn indexed_asset(
         .file_stem()
         .map(|stem| stem.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let display_name = match metadata.variants.get("default") {
+    let display_name = match metadata.default_source() {
         Some(AssetSource::Sub { label, .. }) => format!("{stem} {label}"),
         _ => stem,
     };
     Some(IndexedAsset {
-        type_name: metadata.asset_type_name.clone(),
+        asset_type: metadata.asset_type.clone(),
         display_name,
     })
 }
 
-/// Drains [`EditorState::pending_assign_texture`]: assigns a dropped texture or `.kmat` to an entity.
+/// Takes the queued [`EditorRequest::AssignDropped`]s: assigns each dropped texture or `.kmat` to its entity.
 ///
 /// A `.kmat` becomes a `MaterialRef::Asset`; an image becomes the
 /// `base_color_texture` of a fresh inline standard material.
@@ -203,13 +208,27 @@ pub fn process_pending_assign_texture(
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
 ) {
-    let pending = match editor_state.lock() {
-        Ok(mut s) => s.pending_assign_texture.take(),
-        Err(_) => None,
-    };
-    let Some((uuid, entity)) = pending else {
-        return;
-    };
+    let drops = editor_state
+        .lock()
+        .map(|mut s| {
+            s.take_requests(|request| match request {
+                EditorRequest::AssignDropped { asset, entity } => Ok((asset, entity)),
+                other => Err(other),
+            })
+        })
+        .unwrap_or_default();
+    for (uuid, entity) in drops {
+        assign_dropped(project_vfs, world, uuid, entity);
+    }
+}
+
+/// Gives `entity` the texture or material `uuid` names.
+fn assign_dropped(
+    project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
+    world: &mut GameWorld,
+    uuid: AssetUUID,
+    entity: EntityId,
+) {
     let Some(asset) = indexed_asset(project_vfs, uuid) else {
         log::warn!(
             "Drop of asset {uuid} on entity {entity:?} ignored: the project has no such asset"
@@ -217,12 +236,12 @@ pub fn process_pending_assign_texture(
         return;
     };
     let name = &asset.display_name;
-    match asset.type_name.as_str() {
-        "material" => {
+    match &asset.asset_type {
+        AssetType::Material => {
             world.add_component(entity, MaterialRef::Asset(uuid));
             log::info!("Assigned material '{name}' to entity {entity:?}");
         }
-        "texture" => {
+        AssetType::Texture => {
             let std_mat = khora_sdk::prelude::materials::StandardMaterial {
                 base_color_texture: Some(uuid),
                 ..Default::default()

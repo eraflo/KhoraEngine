@@ -16,11 +16,13 @@
 //! on a placeholder tile, and the file is written named after the behaviour
 //! inside it, under `scripts/` where the engine compiles it.
 
-use khora_sdk::editor_ui::{FontFamilyHint, InlineEditEvent, TextAlign, UiBuilder, UiTheme};
+use khora_sdk::editor_ui::{
+    AssetFileOp, EditorRequest, FontFamilyHint, InlineEditEvent, TextAlign, UiBuilder, UiTheme,
+};
 
 use super::AssetBrowserPanel;
 use crate::panels::problems::view::SCRIPT_DIR;
-use crate::widgets::tile::{paint_asset_tile, AssetTileKind};
+use crate::widgets::tile::{paint_asset_tile, AssetTile, AssetTileKind};
 
 /// The name a new script is offered before anything is typed.
 const DEFAULT_NAME: &str = "NewScript";
@@ -166,7 +168,10 @@ impl AssetBrowserPanel {
         let name = self.free_script_name(&name);
         let rel = format!("{}/{name}.{EXTENSION}", script.folder);
         if let Ok(mut state) = self.state.lock() {
-            state.pending_create_script = Some((rel.clone(), script_source(&name)));
+            state.push_request(EditorRequest::AssetFile(AssetFileOp::CreateScript {
+                path: rel.clone(),
+                source: script_source(&name),
+            }));
         }
         log::info!("Asset browser: creating script '{rel}'");
     }
@@ -224,18 +229,17 @@ pub(super) fn paint_new_script_tile(
     };
     let [x, y] = origin;
     let [w, _] = size;
-    paint_asset_tile(
-        ui,
-        "tile-new-script",
+    let tile = AssetTile {
+        id_salt: "tile-new-script",
         origin,
         size,
-        "",
-        AssetTileKind::Script,
-        true,
-        None,
-        false,
-        theme,
-    );
+        name: "",
+        kind: AssetTileKind::Script,
+        selected: true,
+        badge: None,
+        quarantined: false,
+    };
+    paint_asset_tile(ui, tile, theme);
     // The name typed is not always the name written: say which file it will
     // be, where the tile's own thumbnail has room for it.
     if let Some(file) = file {

@@ -115,8 +115,8 @@ fn decodable_types(svc: &mut AssetService) -> Result<Vec<String>> {
             .index()
             .get_metadata(&uuid)
             .ok_or_else(|| anyhow!("{file} is not indexed"))?
-            .asset_type_name
-            .clone();
+            .asset_type
+            .to_string();
         let no_decoder = match svc.load::<Mesh>(&uuid) {
             Ok(_) => false,
             Err(e) => format!("{e:#}").contains("No decoder registered"),

@@ -18,6 +18,7 @@ use std::borrow::Cow;
 use std::sync::Mutex;
 
 use khora_core::memory::{get_currently_allocated_bytes, get_extended_memory_stats};
+use khora_core::sync::LockExt;
 use khora_core::telemetry::monitoring::{
     MemoryReport, MonitoredResourceType, ResourceMonitor, ResourceUsageReport,
 };
@@ -49,17 +50,14 @@ impl MemoryMonitor {
 
     /// Returns the latest detailed memory report.
     pub fn get_memory_report(&self) -> Option<MemoryReport> {
-        let last_report = self.last_report.lock().unwrap_or_else(|e| e.into_inner());
+        let last_report = self.last_report.lock_recovered();
         *last_report
     }
 
     /// Resets the peak usage counter to the current memory usage.
     pub fn reset_peak_usage(&self) {
         let current_usage = get_currently_allocated_bytes();
-        let mut peak = self
-            .peak_usage_bytes
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut peak = self.peak_usage_bytes.lock_recovered();
         *peak = current_usage;
     }
 
@@ -68,22 +66,16 @@ impl MemoryMonitor {
         let current_usage = get_currently_allocated_bytes();
         let extended_stats = get_extended_memory_stats();
 
-        let mut peak = self
-            .peak_usage_bytes
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut peak = self.peak_usage_bytes.lock_recovered();
         if current_usage > *peak {
             *peak = current_usage;
         }
 
-        let mut last_alloc = self
-            .last_allocation_bytes
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut last_alloc = self.last_allocation_bytes.lock_recovered();
         let allocation_delta = current_usage.saturating_sub(*last_alloc);
         *last_alloc = current_usage;
 
-        let mut count = self.sample_count.lock().unwrap_or_else(|e| e.into_inner());
+        let mut count = self.sample_count.lock_recovered();
         *count += 1;
 
         let report = MemoryReport {
@@ -106,7 +98,7 @@ impl MemoryMonitor {
             average_allocation_size: extended_stats.average_allocation_size,
         };
 
-        let mut last_report = self.last_report.lock().unwrap_or_else(|e| e.into_inner());
+        let mut last_report = self.last_report.lock_recovered();
         *last_report = Some(report);
     }
 }
@@ -122,10 +114,7 @@ impl ResourceMonitor for MemoryMonitor {
 
     fn get_usage_report(&self) -> ResourceUsageReport {
         let current_usage = get_currently_allocated_bytes();
-        let peak_usage = *self
-            .peak_usage_bytes
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let peak_usage = *self.peak_usage_bytes.lock_recovered();
 
         ResourceUsageReport {
             current_bytes: current_usage as u64,

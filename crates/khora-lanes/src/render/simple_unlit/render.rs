@@ -62,14 +62,9 @@ impl UnlitGpu {
             let Some(gpu_mesh) = gpu_meshes.get(&mesh.cpu_mesh_uuid) else {
                 continue;
             };
-            let model = mesh.transform.to_matrix();
             // A degenerate transform has no normal matrix: nothing to draw.
-            let Some(inverse) = model.inverse() else {
+            let Some(model_uniforms) = ModelUniforms::from_model(mesh.transform.to_matrix()) else {
                 continue;
-            };
-            let model_uniforms = ModelUniforms {
-                model_matrix: model.to_cols_array_2d(),
-                normal_matrix: inverse.transpose().to_cols_array_2d(),
             };
             let base_color = mesh
                 .material

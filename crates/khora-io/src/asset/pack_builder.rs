@@ -19,7 +19,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use crossbeam_channel::Sender;
-use khora_core::asset::{asset_key, AssetSource, CompressionKind};
+use khora_core::asset::{asset_key, AssetMetadata, AssetSource, CompressionKind};
 use std::{
     fs::File,
     io::{Seek, SeekFrom, Write},
@@ -165,7 +165,7 @@ impl<'a> PackBuilder<'a> {
         // the index (and in the header's count, which mirrors the index).
         let streamed_total = metadata
             .iter()
-            .filter(|meta| !matches!(meta.variants.get("default"), Some(AssetSource::Sub { .. })))
+            .filter(|meta| !matches!(meta.default_source(), Some(AssetSource::Sub { .. })))
             .count();
         let mut streamed = 0usize;
 
@@ -188,7 +188,7 @@ impl<'a> PackBuilder<'a> {
 
         let mut offset = 0u64;
         for meta in metadata.iter_mut() {
-            let rel_path = match meta.variants.get("default") {
+            let rel_path = match meta.default_source() {
                 Some(AssetSource::Path(p)) => p.clone(),
                 // A sub-asset has no bytes of its own: it is extracted from
                 // its container, which is packed under its own uuid. Its
@@ -250,7 +250,7 @@ impl<'a> PackBuilder<'a> {
                 .with_context(|| format!("Failed to append {} to data.pack", rel_str))?;
 
             meta.variants.insert(
-                "default".to_string(),
+                AssetMetadata::DEFAULT_VARIANT.to_owned(),
                 AssetSource::Packed {
                     offset,
                     size: on_disk_size,
@@ -561,15 +561,15 @@ mod tests {
 
         let hero = AssetUUID::new_v5("models/hero.ksubpack");
         assert!(matches!(
-            vfs.get_metadata(&hero).and_then(|m| m.variants.get("default")),
+            vfs.get_metadata(&hero).and_then(|m| m.default_source()),
             Some(AssetSource::Packed { size, .. }) if *size == HERO.len() as u64
         ));
         for (label, type_name) in [("mesh/Body", "mesh"), ("material/Skin", "material")] {
             let sub = vfs
                 .get_metadata(&AssetUUID::sub_asset(hero, label))
                 .unwrap_or_else(|| panic!("sub '{label}' is in the packed index"));
-            assert_eq!(sub.asset_type_name, type_name);
-            match sub.variants.get("default") {
+            assert_eq!(sub.asset_type, type_name);
+            match sub.default_source() {
                 Some(AssetSource::Sub {
                     container,
                     label: l,
@@ -691,7 +691,7 @@ mod tests {
             .unwrap();
         let vfs = AssetIndex::new(&fs::read(&out.index_bin).unwrap()).unwrap();
         let meta = vfs.iter_all().next().unwrap();
-        let Some(AssetSource::Packed { compression, .. }) = meta.variants.get("default") else {
+        let Some(AssetSource::Packed { compression, .. }) = meta.default_source() else {
             panic!("a packed entry");
         };
         assert_eq!(

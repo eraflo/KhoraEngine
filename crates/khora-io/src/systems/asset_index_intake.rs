@@ -19,6 +19,7 @@ use std::sync::{Arc, Mutex};
 
 use khora_core::asset::{IndexKind, IndexedAssets};
 use khora_core::lane::{OutputDeck, Reserve};
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, SystemContext, TickPhase, World};
 use khora_data::scene::PrefabCatalog;
@@ -62,9 +63,7 @@ fn follow_prefabs(runtime: &Runtime) {
     ) else {
         return;
     };
-    let service = service
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let service = service.lock_recovered();
     catalog.replace(prefab_catalog(&service));
 }
 
@@ -75,9 +74,7 @@ fn take_in(runtime: &Runtime, indexed: IndexedAssets) -> IndexOutcome {
         .services
         .get::<Arc<Mutex<AssetService>>>()
         .ok_or_else(|| "the engine holds no asset service".to_owned())?;
-    let mut service = service
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut service = service.lock_recovered();
     match indexed.kind {
         IndexKind::Reindex => {
             // A host may have opened another project without filing it here.
@@ -93,11 +90,7 @@ fn take_in(runtime: &Runtime, indexed: IndexedAssets) -> IndexOutcome {
         }
         IndexKind::Open => {
             let assets_root = indexed.project_root.join("assets");
-            let refusals = runtime
-                .resources
-                .get::<Arc<Refusals>>()
-                .cloned()
-                .unwrap_or_else(|| Arc::new(Refusals::new(None, None)));
+            let refusals = Refusals::of(runtime);
             let trust = ProjectTrustState::of(runtime).trust();
             let io = Box::new(FileLoader::guarded(FileGuard::new(
                 &assets_root,

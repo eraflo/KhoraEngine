@@ -15,6 +15,7 @@
 //! How the default runtime opens its game off the frame: loose assets indexed
 //! and their scripts compiled, the default scene loaded, each filed by ticket.
 
+use khora_core::sync::LockExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -153,10 +154,7 @@ impl GameOpening {
     fn file_scene(&mut self, world: &mut GameWorld) {
         let uuid = AssetUUID::new_v5(&self.scene);
         let reader = {
-            let service = self
-                .assets
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let service = self.assets.lock_recovered();
             service
                 .index()
                 .get_metadata(&uuid)

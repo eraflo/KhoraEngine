@@ -31,6 +31,7 @@ use khora_core::physics::{
     collision_channel, CharacterControllerOptions, ColliderDesc, ColliderHandle, CollisionEvent,
     PhysicsProvider, PhysicsSettings, RaycastHit, RigidBodyDesc, RigidBodyHandle,
 };
+use khora_core::sync::LockExt;
 use khora_core::{EngineContext, Runtime};
 use khora_lanes::physics::PhysicsFamily;
 
@@ -56,10 +57,7 @@ pub fn physics_registration() -> &'static AgentRegistration {
 /// by.
 pub fn place_step(agent: &LaneAgent) -> Option<std::time::Duration> {
     let place = agent.place();
-    let step = place
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .fixed_step();
+    let step = place.lock_recovered().fixed_step();
     step
 }
 
@@ -133,28 +131,14 @@ impl ScriptedProvider {
 
 /// The steps a [`ScriptedProvider`] recorded so far.
 pub fn recorded(steps: &Arc<Mutex<Vec<f32>>>) -> Vec<f32> {
-    steps
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .clone()
+    steps.lock_recovered().clone()
 }
 
 impl PhysicsProvider for ScriptedProvider {
     fn step(&mut self, dt: f32) {
-        self.steps
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .push(dt);
-        let next = self
-            .script
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .pop_front()
-            .unwrap_or_default();
-        self.pending
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .extend(next);
+        self.steps.lock_recovered().push(dt);
+        let next = self.script.lock_recovered().pop_front().unwrap_or_default();
+        self.pending.lock_recovered().extend(next);
     }
 
     fn set_gravity(&mut self, _gravity: Vec3) {}
@@ -202,12 +186,7 @@ impl PhysicsProvider for ScriptedProvider {
     }
 
     fn take_collision_events(&self) -> Vec<CollisionEvent> {
-        std::mem::take(
-            &mut *self
-                .pending
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner()),
-        )
+        std::mem::take(&mut *self.pending.lock_recovered())
     }
 
     fn entity_of(&self, collider: ColliderHandle) -> Option<EntityId> {

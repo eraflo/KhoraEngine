@@ -148,9 +148,6 @@ impl AssetIdRegistry {
     /// Entries are sorted by UUID, and the write is atomic: a crash mid-write
     /// leaves the previous file whole. Authoring-only.
     pub fn save(&self) -> std::io::Result<()> {
-        let dir = self.project_root.join(REGISTRY_DIR);
-        std::fs::create_dir_all(&dir)?;
-
         let mut entries: Vec<RegistryEntry> = self
             .by_path
             .iter()
@@ -167,10 +164,10 @@ impl AssetIdRegistry {
         let text = ron::ser::to_string_pretty(&file, ron::ser::PrettyConfig::default())
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
-        let final_path = dir.join(REGISTRY_FILE);
-        let tmp_path = dir.join(format!("{REGISTRY_FILE}.tmp"));
-        std::fs::write(&tmp_path, text.as_bytes())?;
-        std::fs::rename(&tmp_path, &final_path)?;
+        // A temporary file of this write's own: two editors saving at once
+        // never write into one.
+        let final_path = self.file_path();
+        crate::fs::write_atomic(&final_path, text.as_bytes())?;
         log::debug!(
             "Asset registry saved ({} frozen entries) → {}",
             self.by_path.len(),

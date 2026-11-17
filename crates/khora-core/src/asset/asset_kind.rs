@@ -61,28 +61,12 @@ impl AssetKind {
     pub fn from_ergon_name(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|kind| kind.ergon_name() == name)
     }
-
-    /// The kind as the asset index names it: `"prefab"`, `"audio"`, …
-    pub fn index_name(self) -> &'static str {
-        match self {
-            Self::Prefab => "prefab",
-            Self::Sound => "audio",
-            Self::Material => "material",
-            Self::Mesh => "mesh",
-            Self::Texture => "texture",
-            Self::Scene => "scene",
-        }
-    }
-
-    /// The kind the asset index names `name`, if any.
-    pub fn from_index_name(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|kind| kind.index_name() == name)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::AssetKind;
+    use crate::asset::AssetType;
 
     /// **Every kind is spelled as Ergon writes its type.**
     #[test]
@@ -98,7 +82,7 @@ mod tests {
     /// index's `audio`, the others their own name in lower case.
     #[test]
     fn each_kind_is_named_as_the_asset_index_names_it() {
-        let named: Vec<&str> = AssetKind::ALL.iter().map(|k| k.index_name()).collect();
+        let named: Vec<AssetType> = AssetKind::ALL.into_iter().map(AssetType::from).collect();
         assert_eq!(
             named,
             ["prefab", "audio", "material", "mesh", "texture", "scene"]
@@ -116,7 +100,7 @@ mod tests {
                 "{kind:?} through its Ergon name"
             );
             assert_eq!(
-                AssetKind::from_index_name(kind.index_name()),
+                AssetType::from(AssetType::from(kind).as_str()).script_kind(),
                 Some(kind),
                 "{kind:?} through its index name"
             );
@@ -137,7 +121,7 @@ mod tests {
             assert_eq!(AssetKind::from_ergon_name(name), None, "{name:?}");
         }
         for name in ["", "Sound", "Prefab", "sound", "font", "script"] {
-            assert_eq!(AssetKind::from_index_name(name), None, "{name:?}");
+            assert_eq!(AssetType::from(name).script_kind(), None, "{name:?}");
         }
     }
 }

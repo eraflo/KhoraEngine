@@ -28,18 +28,20 @@ use super::buttons::{button, Button, ButtonKind};
 use super::paint::{fill, fill_stroke, icon_centered, mono, text, with_alpha};
 use super::Rect;
 
-/// One answer a [`Dialog`] offers.
+/// One answer a [`Dialog`] offers, and what [`dialog`] returns when it is clicked.
 #[derive(Debug, Clone, Copy)]
-pub struct DialogChoice<'a> {
+pub struct DialogChoice<'a, A> {
     /// What the button says.
     pub label: &'a str,
     /// How it is drawn: the one answer the dialog leads to is `Primary`.
     pub kind: ButtonKind,
+    /// What choosing it answers.
+    pub answer: A,
 }
 
-/// What a [`dialog`] shows.
+/// What a [`dialog`] shows, its choices answering an `A`.
 #[derive(Debug, Clone, Copy)]
-pub struct Dialog<'a> {
+pub struct Dialog<'a, A> {
     /// The glyph on the plate above the title, if any.
     pub icon: Option<Icon>,
     /// The question.
@@ -53,22 +55,22 @@ pub struct Dialog<'a> {
     /// A line under the rows.
     pub note: &'a str,
     /// The answers, right-aligned, in order.
-    pub choices: &'a [DialogChoice<'a>],
+    pub choices: &'a [DialogChoice<'a, A>],
 }
 
-/// Paints `spec` over `rect` and returns the index of the choice clicked this frame.
+/// Paints `spec` over `rect` and returns the answer of the choice clicked this frame.
 ///
 /// A dimmed backdrop covers `rect` with the box centred on it, as
 /// [`confirm_modal`](super::confirm_modal) does; a click on the backdrop
 /// chooses nothing. Interaction ids, from `id_salt`: the backdrop is
 /// `"{id_salt}-backdrop"`, the choice at index `i` is `"{id_salt}-choice-{i}"`.
-pub fn dialog(
+pub fn dialog<A: Copy>(
     ui: &mut dyn UiBuilder,
     theme: &UiTheme,
     rect: Rect,
     id_salt: &str,
-    spec: &Dialog<'_>,
-) -> Option<usize> {
+    spec: &Dialog<'_, A>,
+) -> Option<A> {
     let backdrop = ui.interact_rect(&format!("{id_salt}-backdrop"), rect);
     fill(ui, rect, with_alpha(theme.background, 0.72), 0.0);
 
@@ -198,7 +200,7 @@ pub fn dialog(
             Button::new(choice.label, choice.kind),
         );
         if hit.clicked {
-            chosen = Some(index);
+            chosen = Some(choice.answer);
         }
         btn_x += width + BTN_GAP;
     }
@@ -297,18 +299,29 @@ mod tests {
         crate::khora_dark()
     }
 
-    const CHOICES: [DialogChoice<'static>; 3] = [
+    /// What the test dialog's choices answer.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Answer {
+        Close,
+        Restrict,
+        Trust,
+    }
+
+    const CHOICES: [DialogChoice<'static, Answer>; 3] = [
         DialogChoice {
             label: "Close project",
             kind: ButtonKind::Ghost,
+            answer: Answer::Close,
         },
         DialogChoice {
             label: "Open restricted",
             kind: ButtonKind::Ghost,
+            answer: Answer::Restrict,
         },
         DialogChoice {
             label: "Trust and open",
             kind: ButtonKind::Primary,
+            answer: Answer::Trust,
         },
     ];
 
@@ -317,7 +330,7 @@ mod tests {
         ("Build Game", "compiles its Cargo.toml"),
     ];
 
-    fn spec<'a>(rows: &'a [(&'a str, &'a str)]) -> Dialog<'a> {
+    fn spec<'a>(rows: &'a [(&'a str, &'a str)]) -> Dialog<'a, Answer> {
         Dialog {
             icon: Some(Icon::Warn),
             title: TITLE,
@@ -330,7 +343,7 @@ mod tests {
     }
 
     /// One frame of the dialog over `ui`; the choice it returns.
-    fn frame(ui: &mut RecordingUiBuilder, rows: &[(&str, &str)]) -> Option<usize> {
+    fn frame(ui: &mut RecordingUiBuilder, rows: &[(&str, &str)]) -> Option<Answer> {
         dialog(ui, &theme(), SCREEN, "trust", &spec(rows))
     }
 
@@ -395,14 +408,17 @@ mod tests {
         );
     }
 
-    /// **A click on a choice returns its index**, each choice its own;
+    /// **A click on a choice returns its answer**, each choice its own;
     /// nothing clicked returns `None`.
     #[test]
-    fn a_click_on_a_choice_returns_its_index() {
-        for index in 0..CHOICES.len() {
+    fn a_click_on_a_choice_returns_its_answer() {
+        for (index, answer) in [Answer::Close, Answer::Restrict, Answer::Trust]
+            .into_iter()
+            .enumerate()
+        {
             let mut ui = RecordingUiBuilder::new(SCREEN[2], SCREEN[3])
                 .with_click(&format!("trust-choice-{index}"));
-            assert_eq!(frame(&mut ui, &ROWS), Some(index), "choice {index}");
+            assert_eq!(frame(&mut ui, &ROWS), Some(answer), "choice {index}");
         }
         let mut ui = RecordingUiBuilder::new(SCREEN[2], SCREEN[3]);
         assert_eq!(frame(&mut ui, &ROWS), None, "nothing clicked");

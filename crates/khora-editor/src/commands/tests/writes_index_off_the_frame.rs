@@ -26,6 +26,7 @@
 
 use std::path::Path;
 
+use khora_sdk::editor_ui::AssetFileOp;
 use khora_sdk::khora_core::asset::{AssetUUID, Material, StandardMaterial};
 use khora_sdk::khora_core::renderer::api::gpu_scene::Mesh;
 use khora_sdk::{SerializationGoal, SerializationService};
@@ -34,6 +35,7 @@ use super::super::*;
 use crate::hot_reload::{collect_asset_entries, land_reindex};
 use crate::tests::gltf_fixture::{GltfProject, TRIANGLE_OBJ};
 use crate::tests::project_index::IndexingEngine;
+use crate::tests::requests::{reveals, scene_opens};
 use crate::tests::scene_loads::SETTLE_FRAMES;
 
 /// A project holding `files`, serving `engine`'s assets and filing its
@@ -105,7 +107,10 @@ fn a_saved_material_is_assigned_once_its_index_lands() {
     state
         .lock()
         .expect("the editor state")
-        .pending_save_as_material = Some((entity, "Steel".to_owned()));
+        .push_request(EditorRequest::SaveAsMaterial {
+            entity,
+            name: "Steel".to_owned(),
+        });
 
     process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
 
@@ -266,7 +271,10 @@ fn a_script_created_is_revealed_once_indexed() {
     state
         .lock()
         .expect("the editor state")
-        .pending_create_script = Some((PLAYER.to_owned(), "behavior Player { }".to_owned()));
+        .push_request(EditorRequest::AssetFile(AssetFileOp::CreateScript {
+            path: PLAYER.to_owned(),
+            source: "behavior Player { }".to_owned(),
+        }));
 
     process_pending_asset_file_ops(Some(&project.vfs), &state);
 
@@ -275,9 +283,8 @@ fn a_script_created_is_revealed_once_indexed() {
         !engine.indexes(&project.uuid(PLAYER)),
         "nothing was reindexed on the frame"
     );
-    assert_eq!(
-        state.lock().expect("the editor state").pending_reveal_asset,
-        None,
+    assert!(
+        reveals(&state.lock().expect("the editor state")).is_empty(),
         "not revealed before the index holds it"
     );
 
@@ -285,12 +292,8 @@ fn a_script_created_is_revealed_once_indexed() {
 
     assert!(listed(&state, PLAYER), "the browser lists the script");
     assert_eq!(
-        state
-            .lock()
-            .expect("the editor state")
-            .pending_reveal_asset
-            .as_deref(),
-        Some(PLAYER),
+        reveals(&state.lock().expect("the editor state")),
+        [PLAYER],
         "revealed once the index holds it"
     );
 }
@@ -313,8 +316,13 @@ fn a_renamed_asset_keeps_its_uuid_once_reindexed() {
     let state = editor_over(&project);
     let mut world = GameWorld::new();
     let uuid = project.uuid(CRATE);
-    state.lock().expect("the editor state").pending_rename_asset =
-        Some((CRATE.to_owned(), BOX.to_owned()));
+    state
+        .lock()
+        .expect("the editor state")
+        .push_request(EditorRequest::AssetFile(AssetFileOp::Rename {
+            from: CRATE.to_owned(),
+            to: BOX.to_owned(),
+        }));
 
     process_pending_asset_file_ops(Some(&project.vfs), &state);
 
@@ -373,7 +381,10 @@ fn a_saved_prefab_joins_the_catalog_once_indexed() {
     state
         .lock()
         .expect("the editor state")
-        .pending_save_as_prefab_at = Some((turret, TURRET.to_owned()));
+        .push_request(EditorRequest::SaveAsPrefabAt {
+            entity: turret,
+            path: TURRET.to_owned(),
+        });
 
     process_pending_save_as_prefab(Some(&project.vfs), &world, &state);
 
@@ -451,18 +462,15 @@ fn a_scene_missing_from_the_index_opens_once_indexed() {
     {
         let state = state.lock().expect("the editor state");
         assert!(state.opening.is_empty(), "no scene load was filed");
-        assert_eq!(state.pending_scene_load, None, "nothing is queued yet");
+        assert!(scene_opens(&state).is_empty(), "nothing is queued yet");
     }
 
     settle(&engine, &project, &state, &mut world);
 
-    let pending = state
-        .lock()
-        .expect("the editor state")
-        .pending_scene_load
-        .clone();
+    let pending = scene_opens(&state.lock().expect("the editor state"));
     assert!(
-        names_the_file(pending.as_deref(), &project.path(HIDDEN)),
+        pending.len() == 1
+            && names_the_file(pending.first().map(String::as_str), &project.path(HIDDEN)),
         "the scene is queued to open once indexed: {pending:?}"
     );
     assert_eq!(engine.filed(), 1, "one reindex, no other");
@@ -495,7 +503,7 @@ fn a_scene_still_missing_after_its_reindex_is_reported_once() {
 
     assert_eq!(engine.filed(), 1, "no second reindex was filed");
     let state = state.lock().expect("the editor state");
-    assert_eq!(state.pending_scene_load, None, "nothing is queued to open");
+    assert!(scene_opens(&state).is_empty(), "nothing is queued to open");
     assert!(state.opening.is_empty(), "no scene load was filed");
 }
 
@@ -543,7 +551,10 @@ fn a_material_landing_after_the_scene_was_replaced_touches_no_new_entity() {
     state
         .lock()
         .expect("the editor state")
-        .pending_save_as_material = Some((crate_entity, "Steel".to_owned()));
+        .push_request(EditorRequest::SaveAsMaterial {
+            entity: crate_entity,
+            name: "Steel".to_owned(),
+        });
     process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
     assert!(
         !engine.indexes(&project.uuid(STEEL)),
@@ -609,9 +620,8 @@ fn a_new_scene_has_the_last_word_over_a_scene_waiting_for_its_index() {
 
     settle(&engine, &project, &state, &mut world);
 
-    assert_eq!(
-        state.lock().expect("the editor state").pending_scene_load,
-        None,
+    assert!(
+        scene_opens(&state.lock().expect("the editor state")).is_empty(),
         "the scene asked for before the new scene is not opened over it"
     );
 }
@@ -650,9 +660,8 @@ fn a_scene_opened_since_has_the_last_word_over_one_waiting_for_its_index() {
 
     settle(&engine, &project, &state, &mut world);
 
-    assert_eq!(
-        state.lock().expect("the editor state").pending_scene_load,
-        None,
+    assert!(
+        scene_opens(&state.lock().expect("the editor state")).is_empty(),
         "the scene asked for first is not opened over the one asked for last"
     );
 }
@@ -682,11 +691,12 @@ fn a_scene_queued_once_indexed_opens_from_the_path_queued() {
     settle(&engine, &project, &state, &mut world);
 
     // The next update takes the path queued, as `EditorApp::update` does.
-    let queued = state
-        .lock()
-        .expect("the editor state")
-        .pending_scene_load
-        .take()
+    let queued = (state.lock().expect("the editor state"))
+        .take_requests(|request| match request {
+            EditorRequest::OpenScene { path } => Ok(path),
+            other => Err(other),
+        })
+        .pop()
         .expect("the scene is queued to open");
     open_scene_dispatch(
         Some(&project.vfs),
@@ -736,7 +746,10 @@ fn the_material_saved_last_is_the_one_the_entity_wears() {
         state
             .lock()
             .expect("the editor state")
-            .pending_save_as_material = Some((entity, name.to_owned()));
+            .push_request(EditorRequest::SaveAsMaterial {
+                entity,
+                name: name.to_owned(),
+            });
         process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
     }
     assert!(
@@ -783,7 +796,10 @@ fn an_inline_material_changed_since_the_save_is_kept_at_the_landing() {
     state
         .lock()
         .expect("the editor state")
-        .pending_save_as_material = Some((entity, "Steel".to_owned()));
+        .push_request(EditorRequest::SaveAsMaterial {
+            entity,
+            name: "Steel".to_owned(),
+        });
     process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
 
     // The texture is dropped on the entity before the reindex lands.
@@ -791,7 +807,10 @@ fn an_inline_material_changed_since_the_save_is_kept_at_the_landing() {
     state
         .lock()
         .expect("the editor state")
-        .pending_assign_texture = Some((rust, entity));
+        .push_request(EditorRequest::AssignDropped {
+            asset: rust,
+            entity,
+        });
     process_pending_assign_texture(Some(&project.vfs), &mut world, &state);
     assert!(
         matches!(
@@ -838,7 +857,10 @@ fn a_material_saved_just_before_play_is_worn_after_stop() {
     state
         .lock()
         .expect("the editor state")
-        .pending_save_as_material = Some((entity, "Steel".to_owned()));
+        .push_request(EditorRequest::SaveAsMaterial {
+            entity,
+            name: "Steel".to_owned(),
+        });
     process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
 
     apply_play(&mut world, &state);
@@ -898,12 +920,17 @@ fn a_scene_asked_for_as_a_waiting_open_lands_is_not_overwritten() {
         .join("other.kscene")
         .to_string_lossy()
         .into_owned();
-    state.lock().expect("the editor state").pending_scene_load = Some(chosen.clone());
+    state
+        .lock()
+        .expect("the editor state")
+        .push_request(EditorRequest::OpenScene {
+            path: chosen.clone(),
+        });
     settle(&engine, &project, &state, &mut world);
 
     assert_eq!(
-        state.lock().expect("the editor state").pending_scene_load,
-        Some(chosen),
+        scene_opens(&state.lock().expect("the editor state")),
+        [chosen],
         "the scene the author asked for last is the one queued"
     );
 }
@@ -965,7 +992,10 @@ fn a_material_landing_spares_the_same_entity_of_a_scene_opened_since() {
     state
         .lock()
         .expect("the editor state")
-        .pending_save_as_material = Some((crate_entity, "Steel".to_owned()));
+        .push_request(EditorRequest::SaveAsMaterial {
+            entity: crate_entity,
+            name: "Steel".to_owned(),
+        });
     process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
     assert!(
         !engine.indexes(&project.uuid(STEEL)),
@@ -1011,7 +1041,10 @@ fn the_material_saved_last_is_worn_across_a_stop() {
     state
         .lock()
         .expect("the editor state")
-        .pending_save_as_material = Some((entity, "Steel".to_owned()));
+        .push_request(EditorRequest::SaveAsMaterial {
+            entity,
+            name: "Steel".to_owned(),
+        });
     process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
 
     apply_play(&mut world, &state);
@@ -1027,7 +1060,10 @@ fn the_material_saved_last_is_worn_across_a_stop() {
     state
         .lock()
         .expect("the editor state")
-        .pending_save_as_material = Some((restored, "Iron".to_owned()));
+        .push_request(EditorRequest::SaveAsMaterial {
+            entity: restored,
+            name: "Iron".to_owned(),
+        });
     process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
     settle(&engine, &project, &state, &mut world);
 
@@ -1068,7 +1104,10 @@ fn a_material_saved_while_editing_is_worn_after_a_save_during_play() {
     state
         .lock()
         .expect("the editor state")
-        .pending_save_as_material = Some((entity, "Steel".to_owned()));
+        .push_request(EditorRequest::SaveAsMaterial {
+            entity,
+            name: "Steel".to_owned(),
+        });
     process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
 
     apply_play(&mut world, &state);
@@ -1082,7 +1121,10 @@ fn a_material_saved_while_editing_is_worn_after_a_save_during_play() {
     state
         .lock()
         .expect("the editor state")
-        .pending_save_as_material = Some((entity, "Iron".to_owned()));
+        .push_request(EditorRequest::SaveAsMaterial {
+            entity,
+            name: "Iron".to_owned(),
+        });
     process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
     settle(&engine, &project, &state, &mut world);
     super::stop_and_land(&mut world, &state);
@@ -1130,7 +1172,10 @@ fn a_textured_material_saved_just_before_play_is_worn_after_stop() {
     state
         .lock()
         .expect("the editor state")
-        .pending_save_as_material = Some((entity, "Steel".to_owned()));
+        .push_request(EditorRequest::SaveAsMaterial {
+            entity,
+            name: "Steel".to_owned(),
+        });
     process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
 
     apply_play(&mut world, &state);

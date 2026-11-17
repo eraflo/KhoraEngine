@@ -34,6 +34,7 @@ use std::fmt;
 use std::sync::RwLock;
 
 use crate::asset::{Asset, AssetHandle, AssetUUID};
+use crate::sync::RwLockExt;
 
 /// The kind of device a residency makes its residents on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -133,8 +134,7 @@ impl<R: Residency> Resident<R> {
     /// The resident kept under `key`, whatever copy it was made from.
     pub fn get(&self, key: &ResidentKey) -> Option<R::Resident> {
         self.entries
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .read_recovered()
             .get(key)
             .map(|entry| entry.resident.clone())
     }
@@ -153,28 +153,19 @@ impl<R: Residency> Resident<R> {
         source: &AssetHandle<R::Source>,
         target: &mut R::Target<'_>,
     ) -> Result<R::Resident, ResidencyError> {
-        if let Some(entry) = self
-            .entries
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .get(&key)
-        {
+        if let Some(entry) = self.entries.read_recovered().get(&key) {
             if entry.source.as_ref() == Some(source) {
                 return Ok(entry.resident.clone());
             }
         }
         let resident = R::make(source, target)?;
-        let stale = self
-            .entries
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .insert(
-                key,
-                Entry {
-                    source: Some(source.clone()),
-                    resident: resident.clone(),
-                },
-            );
+        let stale = self.entries.write_recovered().insert(
+            key,
+            Entry {
+                source: Some(source.clone()),
+                resident: resident.clone(),
+            },
+        );
         if let Some(stale) = stale {
             R::release(stale.resident, target);
         }
@@ -184,25 +175,18 @@ impl<R: Residency> Resident<R> {
     /// Keeps `resident` under `key` with no source copy behind it. The next
     /// [`ensure`](Self::ensure) of `key` makes it again from its source.
     pub fn insert(&self, key: ResidentKey, resident: R::Resident) {
-        self.entries
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .insert(
-                key,
-                Entry {
-                    source: None,
-                    resident,
-                },
-            );
+        self.entries.write_recovered().insert(
+            key,
+            Entry {
+                source: None,
+                resident,
+            },
+        );
     }
 
     /// Removes the resident under `key` and releases it on `target`.
     pub fn evict(&self, key: &ResidentKey, target: &mut R::Target<'_>) {
-        let removed = self
-            .entries
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .remove(key);
+        let removed = self.entries.write_recovered().remove(key);
         if let Some(entry) = removed {
             R::release(entry.resident, target);
         }
@@ -210,10 +194,7 @@ impl<R: Residency> Resident<R> {
 
     /// The number of residents kept.
     pub fn len(&self) -> usize {
-        self.entries
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .len()
+        self.entries.read_recovered().len()
     }
 
     /// Whether no resident is kept.

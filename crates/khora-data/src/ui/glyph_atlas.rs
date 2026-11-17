@@ -17,11 +17,12 @@
 //! `Resident<R>`: a glyph is not an asset.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::Mutex;
 
 use khora_core::asset::AssetUUID;
 use khora_core::renderer::api::resource::TextureFormat;
 use khora_core::renderer::GraphicsDevice;
+use khora_core::sync::LockExt;
 
 use khora_core::renderer::api::resource::TextureViewId;
 use khora_core::renderer::api::util::{AtlasRect, TextureAtlas};
@@ -56,6 +57,8 @@ pub struct GlyphAtlas {
     /// The side of each atlas, in pixels.
     size: u32,
     /// The atlases and the slots, behind the one lock.
+    // A panic while placing leaves the atlases and slots usable: at worst
+    // a glyph is placed again.
     state: Mutex<GlyphAtlasState>,
 }
 
@@ -112,23 +115,22 @@ impl GlyphAtlas {
         }
     }
 
-    fn state(&self) -> MutexGuard<'_, GlyphAtlasState> {
-        // A panic while placing leaves the atlases and slots usable: at worst
-        // a glyph is placed again.
-        self.state.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
     /// Returns the slot of the glyph `key` names, if it is placed.
     ///
     /// `None` for a glyph not rasterised yet and for one that draws nothing.
     pub fn slot(&self, key: &GlyphKey) -> Option<GlyphSlot> {
-        self.state().slots.get(key).copied().flatten()
+        self.state
+            .lock_recovered()
+            .slots
+            .get(key)
+            .copied()
+            .flatten()
     }
 
     /// Returns the views of the two atlases, `(mask, colour)`; `None` for one
     /// not made yet.
     pub fn views(&self) -> (Option<TextureViewId>, Option<TextureViewId>) {
-        let state = self.state();
+        let state = self.state.lock_recovered();
         (
             state.mask.as_ref().map(TextureAtlas::view),
             state.color.as_ref().map(TextureAtlas::view),
@@ -138,7 +140,8 @@ impl GlyphAtlas {
     /// Returns the number of glyphs placed; one that draws nothing is not
     /// counted.
     pub fn len(&self) -> usize {
-        self.state()
+        self.state
+            .lock_recovered()
             .slots
             .values()
             .filter(|slot| slot.is_some())
@@ -153,12 +156,12 @@ impl GlyphAtlas {
     /// Returns whether the glyph `key` names was rasterised: placed, or known
     /// to draw nothing.
     pub(crate) fn knows(&self, key: &GlyphKey) -> bool {
-        self.state().slots.contains_key(key)
+        self.state.lock_recovered().slots.contains_key(key)
     }
 
     /// Remembers that the glyph `key` names draws nothing (a space).
     pub(crate) fn note_nothing(&self, key: GlyphKey) {
-        self.state().slots.insert(key, None);
+        self.state.lock_recovered().slots.insert(key, None);
     }
 
     /// Forgets every glyph of `font`, whose file changed, so they are made again.
@@ -166,7 +169,10 @@ impl GlyphAtlas {
     /// Their room is not given back: a shelf packer cannot free, so a full
     /// atlas is rebuilt instead.
     pub(crate) fn forget_font(&self, font: AssetUUID) {
-        self.state().slots.retain(|key, _| key.font != font);
+        self.state
+            .lock_recovered()
+            .slots
+            .retain(|key, _| key.font != font);
     }
 
     /// Returns what the atlas knows of the glyph `key` names.
@@ -174,7 +180,7 @@ impl GlyphAtlas {
     /// `None` not rasterised, `Some(None)` drawn by nothing, `Some(Some(_))`
     /// placed.
     pub(crate) fn known(&self, key: &GlyphKey) -> Option<Option<GlyphSlot>> {
-        self.state().slots.get(key).copied()
+        self.state.lock_recovered().slots.get(key).copied()
     }
 
     /// Places `image` as the glyph `key` names in the atlas of its kind,
@@ -186,7 +192,7 @@ impl GlyphAtlas {
         image: &GlyphImage,
     ) -> Placement {
         let size = self.size;
-        let mut state = self.state();
+        let mut state = self.state.lock_recovered();
         let Some(atlas) = state.atlas_mut(device, size, image.kind) else {
             return Placement::Full;
         };
@@ -209,13 +215,13 @@ impl GlyphAtlas {
 
     /// Returns the glyphs a full atlas left out, and the glyphs in use then.
     pub(crate) fn left_out(&self) -> Option<LeftOut> {
-        self.state().left_out.clone()
+        self.state.lock_recovered().left_out.clone()
     }
 
     /// Remembers the glyphs a full atlas left out, with the glyphs in use
     /// now; none left out forgets them.
     pub(crate) fn set_left_out(&self, left_out: LeftOut) {
-        self.state().left_out = (!left_out.glyphs.is_empty()).then_some(left_out);
+        self.state.lock_recovered().left_out = (!left_out.glyphs.is_empty()).then_some(left_out);
     }
 
     /// Builds the atlas of `kind` again with `images` alone, destroying the old
@@ -230,7 +236,7 @@ impl GlyphAtlas {
         images: &[(GlyphKey, GlyphImage)],
     ) -> Vec<GlyphKey> {
         let size = self.size;
-        let mut state = self.state();
+        let mut state = self.state.lock_recovered();
         let old = match kind {
             GlyphKind::Mask => state.mask.take(),
             GlyphKind::Color => state.color.take(),

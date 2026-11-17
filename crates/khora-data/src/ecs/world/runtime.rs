@@ -20,6 +20,7 @@ use std::sync::Arc;
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::ScriptValue;
+use khora_core::sync::{LockExt, RwLockExt};
 
 use super::component_access::AddComponentError;
 use super::World;
@@ -107,7 +108,8 @@ impl std::fmt::Display for RegisterError {
         match self {
             Self::NameTaken { name } => write!(
                 f,
-                "`{name}` already names another component: a component's name is unique among                  Rust and declared components alike"
+                "`{name}` already names another component: a component's name is unique among \
+                 Rust and declared components alike"
             ),
             Self::AlreadyRegistered { name, .. } => write!(
                 f,
@@ -198,10 +200,7 @@ impl World {
             .nowhere
             .expect("a world makes its nowhere entity as it is created");
         let generation = self.storage.registry.generation();
-        let mut cached = self
-            .load_catalog
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut cached = self.load_catalog.lock_recovered();
         match &*cached {
             // Built once per change of the components, so a load in a frame
             // (a prefab a script spawns) pays nothing more.
@@ -237,11 +236,7 @@ impl World {
         if self.storage.registry.len() != known {
             // A cached plan names the domains its components live in, so one
             // made before this registration would look for `T` where it is not.
-            self.planner
-                .query_cache
-                .write()
-                .unwrap_or_else(|e| e.into_inner())
-                .clear();
+            self.planner.query_cache.write_recovered().clear();
         }
         Ok(key)
     }
@@ -422,11 +417,7 @@ impl World {
         }
         self.storage.registry.set_domain(key, domain);
         // A plan names the domains its components live in.
-        self.planner
-            .query_cache
-            .write()
-            .unwrap_or_else(|e| e.into_inner())
-            .clear();
+        self.planner.query_cache.write_recovered().clear();
         for (entity, value, tick) in &held {
             if let Err(error) = self.add_runtime_component_at(*entity, key, value, *tick) {
                 log::error!(

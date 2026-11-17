@@ -25,12 +25,17 @@ use khora_core::renderer::error::RenderError;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
 
+/// The variant of a surface with no texture.
+static PLAIN_VARIANT: ShaderVariantKey = ShaderVariantKey::empty();
+
 /// The kind of surface a lit draw is: what its pipeline differs by on one
 /// target.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct Surface {
+///
+/// It borrows its material's variant, so finding a kept pipeline copies nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct Surface<'v> {
     /// The material's texture variant.
-    pub variant: ShaderVariantKey,
+    pub variant: &'v ShaderVariantKey,
     /// Whether the material is seen from both sides.
     pub double_sided: bool,
     /// Whether the draw's transform mirrors it.
@@ -39,12 +44,12 @@ pub(crate) struct Surface {
     pub blend: bool,
 }
 
-impl Surface {
+impl Surface<'static> {
     /// An opaque, single-sided, untextured surface: the pipeline a lane warms
     /// when it is prepared.
     pub fn plain() -> Self {
         Self {
-            variant: ShaderVariantKey::empty(),
+            variant: &PLAIN_VARIANT,
             double_sided: false,
             mirrored: false,
             blend: false,
@@ -52,11 +57,23 @@ impl Surface {
     }
 }
 
+impl Surface<'_> {
+    /// The surface's three switches, as an index into [`ByFlags`].
+    fn flags(&self) -> usize {
+        usize::from(self.double_sided)
+            | usize::from(self.mirrored) << 1
+            | usize::from(self.blend) << 2
+    }
+}
+
+/// The pipelines of one variant, indexed by [`Surface::flags`].
+type ByFlags = [Option<RenderPipelineId>; 8];
+
 /// The pipelines asked for on one target key.
 #[derive(Debug, Default)]
 pub(crate) struct VariantPipelines {
     key: Option<TargetKey>,
-    built: HashMap<Surface, RenderPipelineId>,
+    built: HashMap<ShaderVariantKey, ByFlags>,
 }
 
 impl VariantPipelines {
@@ -77,22 +94,27 @@ impl VariantPipelines {
     /// was kept.
     pub fn get(
         &mut self,
-        surface: &Surface,
+        surface: &Surface<'_>,
         device: &dyn GraphicsDevice,
         pipelines: Option<&dyn PipelineSystem>,
-        spec: impl FnOnce(&Surface, TargetKey) -> PipelineSpec,
+        spec: impl FnOnce(&Surface<'_>, TargetKey) -> PipelineSpec,
     ) -> Result<Option<RenderPipelineId>, RenderError> {
         let Some(key) = self.key else {
             return Ok(None);
         };
-        if let Some(pipeline) = self.built.get(surface) {
-            return Ok(Some(*pipeline));
+        let flags = surface.flags();
+        if let Some(pipeline) = self
+            .built
+            .get(surface.variant)
+            .and_then(|by_flags| by_flags[flags])
+        {
+            return Ok(Some(pipeline));
         }
         let Some(pipelines) = pipelines else {
             return Ok(None);
         };
         let pipeline = pipelines.pipeline(device, &spec(surface, key))?;
-        self.built.insert(surface.clone(), pipeline);
+        self.built.entry(surface.variant.clone()).or_default()[flags] = Some(pipeline);
         Ok(Some(pipeline))
     }
 

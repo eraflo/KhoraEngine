@@ -21,6 +21,7 @@ use khora_sdk::editor_ui::{AssetEntry, EditorState, UiTheme};
 use khora_sdk::khora_core::asset::AssetUUID;
 
 use super::super::AssetBrowserPanel;
+use crate::tests::requests::prefab_spawns;
 
 const ROCKET: &str = "prefabs/weapons/rocket.kprefab";
 
@@ -33,7 +34,7 @@ fn activating_a_prefab_queues_its_spawn_by_identity() {
         project_folder: Some("project".to_owned()),
         asset_entries: vec![AssetEntry {
             name: "rocket.kprefab".to_owned(),
-            asset_type: "prefab".to_owned(),
+            asset_type: khora_sdk::khora_core::asset::AssetType::Prefab,
             source_path: ROCKET.to_owned(),
             uuid,
             container: None,
@@ -52,8 +53,5 @@ fn activating_a_prefab_queues_its_spawn_by_identity() {
 
     panel.activate_asset(&rocket);
 
-    assert_eq!(
-        state.lock().expect("state").pending_prefab_spawn,
-        Some((uuid, None))
-    );
+    assert_eq!(prefab_spawns(&state.lock().expect("state")), [(uuid, None)]);
 }

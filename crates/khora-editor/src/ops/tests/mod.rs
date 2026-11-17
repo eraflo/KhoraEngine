@@ -14,6 +14,7 @@
 
 use std::collections::HashMap;
 
+use khora_sdk::editor_ui::{EditorRequest, SpawnShape};
 use khora_sdk::khora_core::asset::AssetUUID;
 use khora_sdk::khora_core::ecs::PersistentId;
 use khora_sdk::khora_data::ecs::{PrefabInstance, World};
@@ -154,7 +155,10 @@ fn process_reparents_links_parent_and_child() {
     let parent = world.spawn((Transform::identity(), GlobalTransform::identity()));
     let child = world.spawn((Transform::identity(), GlobalTransform::identity()));
 
-    state.pending_reparent = Some((child, Some(parent)));
+    state.push_request(EditorRequest::Reparent {
+        child,
+        parent: Some(parent),
+    });
     process_reparents(&mut world, &mut state);
 
     assert_eq!(
@@ -171,7 +175,10 @@ fn process_reparents_links_parent_and_child() {
     );
 
     // Detach back to root: Parent drops, parent's Children empties.
-    state.pending_reparent = Some((child, None));
+    state.push_request(EditorRequest::Reparent {
+        child,
+        parent: None,
+    });
     process_reparents(&mut world, &mut state);
     assert!(
         world.get_component::<Parent>(child).is_none(),
@@ -204,9 +211,15 @@ fn spawn_three_level_chain(
         GlobalTransform::identity(),
         Name::new("C"),
     ));
-    state.pending_reparent = Some((b, Some(a)));
+    state.push_request(EditorRequest::Reparent {
+        child: b,
+        parent: Some(a),
+    });
     process_reparents(world, state);
-    state.pending_reparent = Some((c, Some(b)));
+    state.push_request(EditorRequest::Reparent {
+        child: c,
+        parent: Some(b),
+    });
     process_reparents(world, state);
     (a, b, c)
 }
@@ -251,7 +264,10 @@ fn extract_scene_tree_is_stable_across_extractions() {
             GlobalTransform::identity(),
             Name::new("Sibling"),
         ));
-        state.pending_reparent = Some((sibling, None));
+        state.push_request(EditorRequest::Reparent {
+            child: sibling,
+            parent: None,
+        });
         process_reparents(&mut world, &mut state);
     }
 
@@ -350,7 +366,10 @@ fn duplicate_entity_rebuilds_the_subtree_without_stealing_children() {
         GlobalTransform::identity(),
         Name::new("Child"),
     ));
-    state.pending_reparent = Some((child, Some(parent)));
+    state.push_request(EditorRequest::Reparent {
+        child,
+        parent: Some(parent),
+    });
     process_reparents(&mut world, &mut state);
 
     duplicate_entity(&mut world, parent, &mut state, &NoPrefabs);
@@ -414,7 +433,7 @@ fn delete_selection_removes_selected_entity() {
 }
 
 /// `process_spawns` honours a queued spawn request, creating the entity and
-/// selecting it. A simple, dependency-free case ("Empty"/custom tag) keeps
+/// selecting it. A simple, dependency-free case (`SpawnShape::Empty`) keeps
 /// the test off the procedural-mesh path.
 #[test]
 fn process_spawns_creates_and_selects_entity() {
@@ -422,7 +441,7 @@ fn process_spawns_creates_and_selects_entity() {
     let mut state = EditorState::default();
 
     let before = world.iter_entities().count();
-    state.pending_spawn = Some("Marker".to_owned());
+    state.push_request(EditorRequest::Spawn(SpawnShape::Empty));
     process_spawns(&mut world, &mut state);
 
     assert_eq!(
@@ -435,10 +454,10 @@ fn process_spawns_creates_and_selects_entity() {
         .expect("spawn selects the new entity");
     assert_eq!(
         world.get_component::<Name>(spawned).map(|n| n.as_str()),
-        Some("Marker"),
-        "the custom request tag becomes the entity Name"
+        Some("Empty"),
+        "the shape's label becomes the entity Name"
     );
-    assert!(state.pending_spawn.is_none(), "the request is consumed");
+    assert!(state.requests.is_empty(), "the request is consumed");
 }
 
 /// **Duplicating an entity carries its material across.**

@@ -33,6 +33,7 @@ use khora_core::lane::io::TargetKey;
 use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::LaneError;
 use khora_core::lane::{Lane, LaneReport};
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::ecs::World;
 
@@ -201,9 +202,7 @@ fn a_lane_agent_is_neither_called_nor_locked_on_a_quiet_frame() {
     let (holding, held) = mpsc::channel();
     let (release, released) = mpsc::channel::<()>();
     let holder = std::thread::spawn(move || {
-        let _guard = agent
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _guard = agent.lock_recovered();
         let _ = holding.send(());
         released.recv_timeout(Duration::from_secs(3)).is_err()
     });

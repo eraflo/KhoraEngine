@@ -27,5 +27,6 @@ mod forward_plus_group_3;
 mod levels;
 mod lifecycle;
 mod light_buffer_capacity;
+mod lit_draws;
 mod passes;
 mod pipelines;

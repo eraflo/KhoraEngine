@@ -33,7 +33,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 
 use khora_core::asset::{AssetHandle, AssetUUID};
 use khora_core::gpu::GpuSetup;
@@ -71,6 +71,7 @@ use khora_core::renderer::traits::{
     CommandEncoder, ComputePass, GpuProfiler, PipelineSystem, RenderPass,
 };
 use khora_core::renderer::GraphicsDevice;
+use khora_core::sync::{LockExt, RwLockExt};
 use khora_core::Runtime;
 use khora_data::render::{
     ExtractedLight, ExtractedMesh, ExtractedView, PassDescriptor, RenderWorld, ResourceId,
@@ -255,12 +256,6 @@ struct Log {
     submitted: Vec<(CommandBufferId, bool)>,
 }
 
-fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
 /// A device keeping a ledger of what it made, bound, destroyed and recorded.
 #[derive(Debug, Default)]
 pub struct RenderLedger {
@@ -277,7 +272,7 @@ impl RenderLedger {
 
     fn make(&self, kind: GpuKind, label: Option<&str>, size: u64) -> usize {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
-        locked(&self.log).made.push(Made {
+        self.log.lock_recovered().made.push(Made {
             kind,
             id,
             label: label.unwrap_or_default().to_owned(),
@@ -288,13 +283,14 @@ impl RenderLedger {
     }
 
     fn destroy(&self, kind: GpuKind, id: usize) -> Result<(), ResourceError> {
-        locked(&self.log).destroyed.push((kind, id));
+        self.log.lock_recovered().destroyed.push((kind, id));
         Ok(())
     }
 
     /// Every object the lane made, in order.
     pub fn lane_made(&self) -> Vec<Made> {
-        locked(&self.log)
+        self.log
+            .lock_recovered()
             .made
             .iter()
             .filter(|made| !made.by_bake)
@@ -319,17 +315,18 @@ impl RenderLedger {
 
     /// Every destroy received so far.
     pub fn destroyed(&self) -> Vec<(GpuKind, usize)> {
-        locked(&self.log).destroyed.clone()
+        self.log.lock_recovered().destroyed.clone()
     }
 
     /// Whether the object `(kind, id)` was destroyed.
     pub fn is_destroyed(&self, kind: GpuKind, id: usize) -> bool {
-        locked(&self.log).destroyed.contains(&(kind, id))
+        self.log.lock_recovered().destroyed.contains(&(kind, id))
     }
 
     /// What `bind_group` binds at `binding`.
     pub fn bound_at(&self, bind_group: BindGroupId, binding: u32) -> Option<Bound> {
-        locked(&self.log)
+        self.log
+            .lock_recovered()
             .bound
             .get(&bind_group.0)
             .and_then(|entries| entries.iter().find(|(at, _)| *at == binding))
@@ -338,7 +335,8 @@ impl RenderLedger {
 
     /// The buffers of every encoder the lane's frames opened.
     pub fn lane_opened(&self) -> Vec<CommandBufferId> {
-        locked(&self.log)
+        self.log
+            .lock_recovered()
             .opened
             .iter()
             .filter(|(_, by_bake)| !by_bake)
@@ -348,7 +346,8 @@ impl RenderLedger {
 
     /// Every render pass the lane's frames recorded.
     pub fn lane_passes(&self) -> Vec<RecordedPass> {
-        locked(&self.log)
+        self.log
+            .lock_recovered()
             .passes
             .iter()
             .filter(|pass| !pass.by_bake)
@@ -367,7 +366,8 @@ impl RenderLedger {
 
     /// Every compute dispatch the lane's frames recorded.
     pub fn lane_dispatches(&self) -> Vec<Dispatch> {
-        locked(&self.log)
+        self.log
+            .lock_recovered()
             .dispatches
             .iter()
             .filter(|dispatch| !dispatch.by_bake)
@@ -377,7 +377,8 @@ impl RenderLedger {
 
     /// The buffers submitted outside a bake.
     pub fn lane_submitted(&self) -> Vec<CommandBufferId> {
-        locked(&self.log)
+        self.log
+            .lock_recovered()
             .submitted
             .iter()
             .filter(|(_, by_bake)| !by_bake)
@@ -399,7 +400,7 @@ struct LedgerRenderPass {
 
 impl Drop for LedgerRenderPass {
     fn drop(&mut self) {
-        locked(&self.log).passes.push(self.pass.clone());
+        self.log.lock_recovered().passes.push(self.pass.clone());
     }
 }
 
@@ -432,7 +433,7 @@ impl ComputePass<'_> for LedgerComputePass {
     fn set_pipeline(&mut self, _p: &ComputePipelineId) {}
     fn set_bind_group(&mut self, _i: u32, _bg: &BindGroupId, _o: &[u32]) {}
     fn dispatch_workgroups(&mut self, x: u32, y: u32, z: u32) {
-        locked(&self.log).dispatches.push(Dispatch {
+        self.log.lock_recovered().dispatches.push(Dispatch {
             buffer: self.buffer,
             by_bake: self.by_bake,
             workgroups: (x, y, z),
@@ -527,7 +528,7 @@ impl CommandEncoder for LedgerEncoder {
     ) {
     }
     fn finish(self: Box<Self>) -> Option<CommandBufferId> {
-        locked(&self.log).finished.push(self.buffer);
+        self.log.lock_recovered().finished.push(self.buffer);
         Some(self.buffer)
     }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
@@ -603,7 +604,7 @@ impl GraphicsDevice for RenderLedger {
                 (entry.binding, bound)
             })
             .collect();
-        locked(&self.log).bound.insert(id, entries);
+        self.log.lock_recovered().bound.insert(id, entries);
         Ok(BindGroupId(id))
     }
     fn destroy_bind_group_layout(&self, id: BindGroupLayoutId) -> Result<(), ResourceError> {
@@ -686,7 +687,7 @@ impl GraphicsDevice for RenderLedger {
     }
     fn create_command_encoder(&self, _label: Option<&str>) -> Box<dyn CommandEncoder> {
         let by_bake = self.baking();
-        let mut log = locked(&self.log);
+        let mut log = self.log.lock_recovered();
         // Buffer ids start at 100, so a zeroed id is never mistaken for one.
         let buffer = CommandBufferId(100 + log.opened.len() as u64);
         log.opened.push((buffer, by_bake));
@@ -698,7 +699,10 @@ impl GraphicsDevice for RenderLedger {
     }
     fn submit_command_buffer(&self, command_buffer: CommandBufferId) {
         let by_bake = self.baking();
-        locked(&self.log).submitted.push((command_buffer, by_bake));
+        self.log
+            .lock_recovered()
+            .submitted
+            .push((command_buffer, by_bake));
     }
     fn get_surface_format(&self) -> Option<TextureFormat> {
         Some(SURFACE_FORMAT)
@@ -721,6 +725,8 @@ pub struct Requested {
     pub id: RenderPipelineId,
     /// The shader the spec names.
     pub shader: &'static str,
+    /// The shader variant the spec composes.
+    pub variant: ShaderVariantKey,
     /// The spec's colour target formats.
     pub colors: Vec<TextureFormat>,
     /// Whether the spec blends its colour.
@@ -758,7 +764,8 @@ impl LedgerPipelines {
 
     /// Every render pipeline the lane asked for, in order.
     pub fn lane_pipelines(&self) -> Vec<Requested> {
-        locked(&self.requested)
+        self.requested
+            .lock_recovered()
             .iter()
             .filter(|requested| !requested.by_bake)
             .cloned()
@@ -797,9 +804,10 @@ impl PipelineSystem for LedgerPipelines {
         spec: &PipelineSpec,
     ) -> Result<RenderPipelineId, RenderError> {
         let id = RenderPipelineId(self.next());
-        locked(&self.requested).push(Requested {
+        self.requested.lock_recovered().push(Requested {
             id,
             shader: spec.shader,
+            variant: spec.variant.clone(),
             colors: spec
                 .color_targets
                 .iter()
@@ -968,8 +976,7 @@ impl Scene {
         });
         self.assets
             .store::<GpuMesh>()
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .write_recovered()
             .insert(uuid, gpu_mesh.clone());
         let material = GpuMaterial {
             uniform_buffer: BufferId(self.id()),

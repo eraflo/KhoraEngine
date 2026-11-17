@@ -18,7 +18,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_sdk::editor_ui::{AssetEntry, EditorState, UiTheme};
+use khora_sdk::editor_ui::{AssetEntry, EditorRequest, EditorState, UiTheme};
 use khora_sdk::khora_core::asset::AssetUUID;
 use khora_sdk::prelude::ecs::EntityId;
 use khora_sdk::MetricsRegistry;
@@ -26,6 +26,7 @@ use khora_sdk::MetricsRegistry;
 use super::super::AssetBrowserPanel;
 use crate::hot_reload::collect_asset_entries;
 use crate::project_vfs::ProjectVfs;
+use crate::tests::requests::reveals;
 use crate::widgets::tile::AssetTileKind;
 
 /// The path an asset slot asks the browser to reveal: forward slashes, under
@@ -35,7 +36,7 @@ const ROCKET: &str = "prefabs/weapons/rocket.kprefab";
 fn entry(path: &str, asset_type: &str) -> AssetEntry {
     AssetEntry {
         name: path.rsplit('/').next().unwrap_or(path).to_owned(),
-        asset_type: asset_type.to_owned(),
+        asset_type: khora_sdk::khora_core::asset::AssetType::from(asset_type),
         source_path: path.to_owned(),
         uuid: AssetUUID::new_v5(path),
         container: None,
@@ -71,12 +72,17 @@ fn a_revealed_asset_is_selected_in_its_opened_folder_and_inspected() {
         entry("sounds/alarm.wav", "audio"),
         entry(ROCKET, "prefab"),
     ]);
-    state.lock().expect("state").pending_reveal_asset = Some(ROCKET.to_owned());
+    state
+        .lock()
+        .expect("state")
+        .push_request(EditorRequest::RevealAsset {
+            path: ROCKET.to_owned(),
+        });
 
     panel.follow_reveal();
 
     let state = state.lock().expect("state");
-    assert_eq!(state.pending_reveal_asset, None, "the request is consumed");
+    assert!(reveals(&state).is_empty(), "the request is consumed");
     assert_eq!(state.selected_asset, Some(1));
     assert_eq!(state.inspected_asset_path.as_deref(), Some(ROCKET));
     assert!(
@@ -99,12 +105,17 @@ fn a_revealed_asset_is_selected_in_its_opened_folder_and_inspected() {
 #[test]
 fn revealing_an_asset_the_browser_does_not_list_changes_nothing_but_the_request() {
     let (mut panel, state) = browsing(vec![entry("sounds/alarm.wav", "audio")]);
-    state.lock().expect("state").pending_reveal_asset = Some(ROCKET.to_owned());
+    state
+        .lock()
+        .expect("state")
+        .push_request(EditorRequest::RevealAsset {
+            path: ROCKET.to_owned(),
+        });
 
     panel.follow_reveal();
 
     let state = state.lock().expect("state");
-    assert_eq!(state.pending_reveal_asset, None);
+    assert!(reveals(&state).is_empty());
     assert_eq!(state.selected_asset, None);
     assert_eq!(state.inspected_asset_path, None);
     assert_eq!(state.selection.len(), 1, "the entity stays selected");
@@ -136,7 +147,12 @@ fn an_asset_listed_from_the_projects_index_is_revealed_by_its_forward_slash_path
         .ok_or_else(|| anyhow::anyhow!("rocket is not indexed: {entries:?}"))?;
 
     let (mut panel, state) = browsing(entries);
-    state.lock().expect("state").pending_reveal_asset = Some(ROCKET.to_owned());
+    state
+        .lock()
+        .expect("state")
+        .push_request(EditorRequest::RevealAsset {
+            path: ROCKET.to_owned(),
+        });
     panel.follow_reveal();
 
     let state = state.lock().expect("state");

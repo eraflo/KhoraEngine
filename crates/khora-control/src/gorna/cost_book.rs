@@ -19,10 +19,10 @@
 
 use std::time::Duration;
 
-use khora_core::agent::gorna::protocol::{Allocation, Envelope, Offer, Report, Trigger};
+use khora_core::agent::gorna::protocol::{Offer, Report};
 use khora_core::agent::gorna::{AgentId, Correction, ProfileRow, StrategyId};
 
-use super::decide::{hold_to_quotes, Bid};
+use super::decide::Bid;
 
 /// The cost book's settings.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -362,28 +362,36 @@ pub(crate) fn correct(
 ) {
     let (agent, floor) = (offer.agent, offer.floor);
     for row in &mut offer.rows {
-        let factor = planned_factor(corrections, agent, floor, row.id, caution);
+        let correction = correction_of(corrections, agent, row.id);
+        let factor = planned_factor(correction, floor, row.id, caution);
         row.cost.time.cpu = Duration::from_secs_f64(row.cost.time.cpu.as_secs_f64() * factor);
     }
 }
 
-/// Returns the factor `corrections` plan `agent`'s `row` with; 1 for a row
-/// they do not name.
+/// Returns the correction `corrections` name for `agent`'s `row`, the first if several do.
+fn correction_of(
+    corrections: &[(AgentId, StrategyId, Correction)],
+    agent: AgentId,
+    row: StrategyId,
+) -> Option<&Correction> {
+    (corrections.iter())
+        .find(|(named, id, _)| *named == agent && *id == row)
+        .map(|(_, _, correction)| correction)
+}
+
+/// Returns the factor a row is planned with at `correction`; 1 for a row with none.
 ///
 /// A row above `floor` is planned `caution` spreads above its own factor. The
 /// floor is not: the agent runs it whatever is lent, so it is admitted at the
 /// time it is learnt to take.
-fn planned_factor(
-    corrections: &[(AgentId, StrategyId, Correction)],
-    agent: AgentId,
+pub(super) fn planned_factor(
+    correction: Option<&Correction>,
     floor: StrategyId,
     row: StrategyId,
     caution: f64,
 ) -> f64 {
     let caution = if row == floor { 0.0 } else { caution };
-    let factor = (corrections.iter())
-        .find(|(named, id, _)| *named == agent && *id == row)
-        .map_or(1.0, |(_, _, correction)| correction.planned(caution));
+    let factor = correction.map_or(1.0, |correction| correction.planned(caution));
     if factor.is_finite() && factor > 0.0 {
         // A spread however large plans a bounded time.
         factor.min(MAX_FACTOR * (1.0 + caution))
@@ -401,76 +409,10 @@ pub(crate) fn correct_bid(
     corrections: &[(AgentId, StrategyId, Correction)],
     caution: f64,
 ) {
-    let factor = planned_factor(
-        corrections,
-        bid.offer.agent,
-        bid.offer.floor,
-        bid.offer.current,
-        caution,
-    );
+    let correction = correction_of(corrections, bid.offer.agent, bid.offer.current);
+    let factor = planned_factor(correction, bid.offer.floor, bid.offer.current, caution);
     if let Some(kept) = bid.kept.as_mut() {
         kept.time.cpu = Duration::from_secs_f64(kept.time.cpu.as_secs_f64() * factor);
     }
     correct(&mut bid.offer, corrections, caution);
-}
-
-/// Converts `allocation`, decided in measured time, into each agent's quoted
-/// units, held to the plan at the costs the agents quoted (`quoted`).
-///
-/// An agent of `kept` keeps the host time it holds (`held`); in a `Safety`
-/// round, an agent that offered rows is lent its floor; any other is lent its
-/// planned row, which fits unless a cap or a ceiling bounded it. `bids` are
-/// the round's bids, corrected.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn lend_in_quotes(
-    allocation: &mut Allocation,
-    quoted: &[Offer],
-    bids: &[Bid],
-    planned: &[(AgentId, StrategyId)],
-    kept: &[AgentId],
-    held: &[(AgentId, Envelope)],
-    corrections: &[(AgentId, StrategyId, Correction)],
-    caution: f64,
-) {
-    let safety = allocation.trigger == Trigger::Safety;
-    for (agent, envelope) in &mut allocation.envelopes {
-        let Some(bid) = bids.iter().find(|bid| bid.offer.agent == *agent) else {
-            continue;
-        };
-        let offered = !bid.offer.rows.is_empty();
-        if kept.contains(agent) && !(safety && offered) {
-            // Its host time is the one corrected and corrected back: lent as
-            // it is held. The rest of the envelope is as the round shared it
-            // (a memory not known then may be known now).
-            if let Some((_, as_held)) = held.iter().find(|(named, _)| named == agent) {
-                envelope.time.cpu = as_held.time.cpu;
-            }
-            continue;
-        }
-        let row = if safety {
-            Some(bid.offer.floor)
-        } else {
-            (planned.iter())
-                .find(|(named, _)| named == agent)
-                .map(|(_, row)| *row)
-        };
-        let Some(row) = row else {
-            continue;
-        };
-        let factor = planned_factor(corrections, *agent, bid.offer.floor, row, caution);
-        let quote = (quoted.iter())
-            .find(|offer| offer.agent == *agent)
-            .and_then(|offer| offer.rows.iter().find(|candidate| candidate.id == row))
-            .map_or(0.0, |candidate| candidate.cost.time.cpu.as_secs_f64());
-        // The round counts whole microseconds of measured time: an envelope
-        // that falls short of the planned row's quote by less than that, once
-        // divided, is the rounding's, and is made whole. One short by more
-        // was bounded on purpose (a cap, a ceiling) and stays.
-        let mut lent = envelope.time.cpu.as_secs_f64() / factor;
-        if quote > lent && quote - lent <= 1.0e-6 / factor + 1.0e-9 {
-            lent = quote;
-        }
-        envelope.time.cpu = Duration::from_secs_f64(lent);
-    }
-    hold_to_quotes(allocation, quoted, bids, planned, kept);
 }

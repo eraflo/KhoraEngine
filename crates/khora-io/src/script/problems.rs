@@ -41,19 +41,17 @@ pub fn report_compile(problems: &Problems, module: &str, outcome: &CompileOutcom
                 None => (module.to_owned(), 0, 0),
             };
             Problem {
-                severity: match diagnostic.severity {
-                    Severity::Error => ProblemSeverity::Error,
-                    Severity::Warning => ProblemSeverity::Warning,
-                },
-                module: Some(owner),
-                line,
-                column,
-                message: diagnostic.message.clone(),
                 note: diagnostic.note.clone(),
-                entity: None,
-                behavior: None,
-                component: None,
-                field: None,
+                ..Problem::of_file(
+                    match diagnostic.severity {
+                        Severity::Error => ProblemSeverity::Error,
+                        Severity::Warning => ProblemSeverity::Warning,
+                    },
+                    owner,
+                    line,
+                    column,
+                    diagnostic.message.clone(),
+                )
             }
         })
         .collect();
@@ -105,16 +103,8 @@ pub fn misplaced_problem(rel_path: &str) -> Problem {
         )
     };
     Problem {
-        severity: ProblemSeverity::Error,
-        module: None,
-        line: 0,
-        column: 0,
-        message,
         note: Some(note),
-        entity: None,
-        behavior: None,
-        component: None,
-        field: None,
+        ..Problem::new(ProblemSeverity::Error, message)
     }
 }
 
@@ -300,18 +290,10 @@ mod tests {
             ProblemSource::Placement {
                 root: root.path().to_path_buf(),
             },
-            vec![Problem {
-                severity: ProblemSeverity::Error,
-                module: None,
-                line: 0,
-                column: 0,
-                message: "`old.erg` was misplaced".to_owned(),
-                note: None,
-                entity: None,
-                behavior: None,
-                component: None,
-                field: None,
-            }],
+            vec![Problem::new(
+                ProblemSeverity::Error,
+                "`old.erg` was misplaced",
+            )],
         );
 
         report_misplaced(&problems, root.path());
@@ -332,18 +314,13 @@ mod tests {
             ProblemSource::Compile {
                 module: "main.erg".to_owned(),
             },
-            vec![Problem {
-                severity: ProblemSeverity::Warning,
-                module: Some("main.erg".to_owned()),
-                line: 1,
-                column: 1,
-                message: "a warning".to_owned(),
-                note: None,
-                entity: None,
-                behavior: None,
-                component: None,
-                field: None,
-            }],
+            vec![Problem::of_file(
+                ProblemSeverity::Warning,
+                "main.erg",
+                1,
+                1,
+                "a warning",
+            )],
         );
         report_misplaced(&problems, first.path());
         report_misplaced(&problems, second.path());

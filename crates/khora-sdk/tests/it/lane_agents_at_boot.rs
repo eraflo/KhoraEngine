@@ -22,6 +22,7 @@
 //! built-in agent takes. Its third lane runs only on a device with storage buffers, so
 //! it is on the menu only when the engine boots over such a device.
 
+use khora_core::sync::LockExt;
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
@@ -121,8 +122,7 @@ fn address(device: &dyn GraphicsDevice) -> usize {
 
 fn note_shutdown(lane: &'static str, gpu: &GpuSetup<'_>) {
     SHUTDOWNS
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .lock_recovered()
         .push((lane, gpu.device().map(address)));
 }
 
@@ -375,10 +375,7 @@ fn engine_shutdown_releases_every_lane() {
 
     engine.shutdown();
 
-    let shutdowns = SHUTDOWNS
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .clone();
+    let shutdowns = SHUTDOWNS.lock_recovered().clone();
     let on_our_device: Vec<&'static str> = shutdowns
         .iter()
         .filter(|(_, device)| *device == Some(ours))
@@ -557,8 +554,7 @@ impl EngineApp for SquattingGame {
             .get::<Arc<Mutex<khora_sdk::AgentRegistry>>>()
         {
             registry
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .lock_recovered()
                 .register(Arc::clone(&squatter), 1.0);
         }
         runtime.resources.insert(Squatting(squatter));

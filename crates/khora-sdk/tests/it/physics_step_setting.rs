@@ -18,6 +18,7 @@
 //! agent at that step, the scheduler cuts gameplay time by it, the lane steps
 //! the provider by it, and no allocation changes it.
 
+use khora_core::sync::LockExt;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -60,10 +61,7 @@ fn recording_provider() -> (SharedProvider, Arc<Mutex<Vec<f32>>>) {
 
 impl PhysicsProvider for RecordingProvider {
     fn step(&mut self, dt: f32) {
-        self.steps
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .push(dt);
+        self.steps.lock_recovered().push(dt);
     }
     fn set_gravity(&mut self, _gravity: Vec3) {}
     fn add_body(&mut self, _desc: RigidBodyDesc) -> RigidBodyHandle {
@@ -149,10 +147,7 @@ fn game_runtime(provider: &SharedProvider, settings: Option<PhysicsSettings>) ->
 /// The physics agent the engine registered with its DCC.
 fn physics_agent_of(engine: &EngineCore<Game>) -> Arc<Mutex<dyn Agent>> {
     let dcc = engine.dcc().expect("bootstrapped");
-    let registry = dcc
-        .agent_registry()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let registry = dcc.agent_registry().lock_recovered();
     let found = registry
         .iter()
         .find(|agent| {
@@ -167,14 +162,8 @@ fn physics_agent_of(engine: &EngineCore<Game>) -> Arc<Mutex<dyn Agent>> {
 
 /// The step the agent's place holds: what the scheduler sub-steps it by.
 fn declared_step(agent: &Arc<Mutex<dyn Agent>>) -> Option<Duration> {
-    let place = agent
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .place();
-    let step = place
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .fixed_step();
+    let place = agent.lock_recovered().place();
+    let step = place.lock_recovered().fixed_step();
     step
 }
 
@@ -182,8 +171,7 @@ fn declared_step(agent: &Arc<Mutex<dyn Agent>>) -> Option<Duration> {
 /// three the former agent turned into steps of 1/30, 1/60 and 1/120 s.
 fn every_strategy(agent: &Arc<Mutex<dyn Agent>>) -> Vec<StrategyId> {
     let offered: Vec<StrategyId> = agent
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .lock_recovered()
         .offer(&crate::protocol::request())
         .rows
         .iter()
@@ -201,9 +189,7 @@ fn every_strategy(agent: &Arc<Mutex<dyn Agent>>) -> Vec<StrategyId> {
 }
 
 fn apply(agent: &Arc<Mutex<dyn Agent>>, strategy_id: StrategyId) {
-    let mut agent = agent
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut agent = agent.lock_recovered();
     crate::protocol::pin_with(&mut *agent, strategy_id, Duration::from_millis(2));
 }
 
@@ -214,15 +200,11 @@ fn apply(agent: &Arc<Mutex<dyn Agent>>, strategy_id: StrategyId) {
 fn run_once(engine: &EngineCore<Game>, agent: &Arc<Mutex<dyn Agent>>) -> OutputDeck {
     let bus = LaneBus::new();
     let mut deck = OutputDeck::new();
-    let mut agent = agent
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut agent = agent.lock_recovered();
     let permit = agent.contention();
     let id = agent.id();
     let place = agent.place();
-    let mut place = place
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut place = place.lock_recovered();
     let mut context = EngineContext::for_agent(
         Arc::clone(engine.runtime()),
         &bus,
@@ -289,10 +271,7 @@ fn the_physics_agent_steps_the_games_provider_by_the_game_setting() {
 
     run_once(&engine, &agent);
 
-    let recorded = steps
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .clone();
+    let recorded = steps.lock_recovered().clone();
     assert_eq!(
         recorded,
         vec![A_128TH.as_secs_f32()],
@@ -346,10 +325,7 @@ fn an_engine_frame_steps_the_provider_by_the_game_setting_as_often_as_the_tick_h
 
     engine.tick();
 
-    let recorded = steps
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .clone();
+    let recorded = steps.lock_recovered().clone();
     assert_eq!(
         recorded,
         vec![A_128TH.as_secs_f32(); 2],

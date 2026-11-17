@@ -16,9 +16,10 @@
 
 use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::Mutex;
 
 use khora_core::asset::AssetUUID;
+use khora_core::sync::LockExt;
 
 /// The generation each asset last changed at, on one counter.
 ///
@@ -26,6 +27,7 @@ use khora_core::asset::AssetUUID;
 /// every asset. A decode is installed only while none of the files it read
 /// changed after the value it was filed at. Shared with the leases of the
 /// decodes in flight; its lock is a leaf.
+// Whole after every write: read through the poison.
 #[derive(Debug, Default)]
 pub(crate) struct Generations(Mutex<State>);
 
@@ -45,7 +47,7 @@ struct State {
 impl Generations {
     /// Returns the counter's current value, the stamp of a decode filed at this point.
     pub(crate) fn now(&self) -> u64 {
-        self.lock().counter
+        self.0.lock_recovered().counter
     }
 
     /// Whether none of `files` changed after `filed`.
@@ -60,13 +62,13 @@ impl Generations {
     /// Notes that the decode of `uuid` as `type_id` was turned down: the
     /// next request for it files it again.
     pub(crate) fn abandon(&self, uuid: AssetUUID, type_id: TypeId) {
-        self.lock().abandoned.insert((uuid, type_id));
+        self.0.lock_recovered().abandoned.insert((uuid, type_id));
     }
 
     /// Whether the decode of `uuid` as `type_id` was turned down since it
     /// was asked for, forgetting it.
     pub(crate) fn take_abandoned(&self, uuid: AssetUUID, type_id: TypeId) -> bool {
-        self.lock().abandoned.remove(&(uuid, type_id))
+        self.0.lock_recovered().abandoned.remove(&(uuid, type_id))
     }
 
     /// Whether nothing changed at all after `filed`.
@@ -76,7 +78,7 @@ impl Generations {
 
     /// Returns the generation of `uuid`: the counter's value when it last changed.
     pub(crate) fn of(&self, uuid: &AssetUUID) -> u64 {
-        let state = self.lock();
+        let state = self.0.lock_recovered();
         state
             .by_asset
             .get(uuid)
@@ -87,7 +89,7 @@ impl Generations {
 
     /// Moves `uuid` to a new generation: its bytes changed.
     pub(crate) fn bump(&self, uuid: &AssetUUID) {
-        let mut state = self.lock();
+        let mut state = self.0.lock_recovered();
         state.counter += 1;
         let generation = state.counter;
         state.by_asset.insert(*uuid, generation);
@@ -95,16 +97,9 @@ impl Generations {
 
     /// Moves every asset to a new generation: the index was replaced.
     pub(crate) fn bump_all(&self) {
-        let mut state = self.lock();
+        let mut state = self.0.lock_recovered();
         state.counter += 1;
         state.all = state.counter;
-    }
-
-    // Whole after every write: read through the poison.
-    fn lock(&self) -> MutexGuard<'_, State> {
-        self.0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 

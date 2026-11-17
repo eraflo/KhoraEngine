@@ -19,6 +19,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use khora_sdk::editor_ui::{EditorRequest, Transport};
 use khora_sdk::khora_core::agent::gorna::AgentId;
 use khora_sdk::khora_core::agent::Activation;
 use khora_sdk::prelude::SharedTime;
@@ -38,12 +39,7 @@ pub fn start_editing(runtime: &Runtime) {
     follow(runtime, PlayMode::Editing);
 }
 
-/// Whether `action` is one of the transport's.
-pub(crate) fn is_transport(action: &str) -> bool {
-    matches!(action, "play" | "pause" | "stop")
-}
-
-/// Processes the transport action the editor's state holds, leaving any other for `update`.
+/// Processes the transport requests the editor's state holds, leaving any other for `update`.
 ///
 /// Play snapshots the scene and is refused while a restore is under way; Stop
 /// files the scene's restore with the runtime's scene loads. Whatever moved the
@@ -54,21 +50,18 @@ pub fn process_transport(
     editor_state: &Arc<Mutex<EditorState>>,
     runtime: &Runtime,
 ) {
-    let action = editor_state.lock().ok().and_then(|mut state| {
-        if state
-            .pending_menu_action
-            .as_deref()
-            .is_some_and(is_transport)
-        {
-            state.pending_menu_action.take()
-        } else {
-            None
-        }
-    });
+    let actions = editor_state
+        .lock()
+        .map(|mut state| {
+            state.take_requests(|request| match request {
+                EditorRequest::Transport(action) => Ok(action),
+                other => Err(other),
+            })
+        })
+        .unwrap_or_default();
     // A project turned restricted while playing — opened restricted over a
     // play — stops playing: its scripts never run.
-    let restricted = khora_sdk::trust::ProjectTrustState::of(runtime)
-        == khora_sdk::trust::ProjectTrust::Restricted;
+    let restricted = khora_sdk::trust::ProjectTrustState::is_restricted(runtime);
     if restricted && play_mode(editor_state) != PlayMode::Editing {
         log::warn!("Play stops: the project is restricted");
         match runtime.resources.get::<Arc<SceneLoadHub>>() {
@@ -84,14 +77,12 @@ pub fn process_transport(
         }
         ops::sync_scene_cameras_for_mode(world, play_mode(editor_state));
     }
-    if let Some(action) = action {
-        match action.as_str() {
-            "play" => {
+    for action in actions {
+        match action {
+            Transport::Play => {
                 // Playing runs the project's scripts: a restricted project
                 // is not played.
-                if khora_sdk::trust::ProjectTrustState::of(runtime)
-                    == khora_sdk::trust::ProjectTrust::Restricted
-                {
+                if khora_sdk::trust::ProjectTrustState::is_restricted(runtime) {
                     log::warn!("Play is refused: the project is restricted");
                     if let Ok(mut state) = editor_state.lock() {
                         state.refusal = Some(PLAY_REFUSED.to_owned());
@@ -100,8 +91,8 @@ pub fn process_transport(
                     super::apply_play(world, editor_state);
                 }
             }
-            "pause" => super::apply_pause(editor_state),
-            _ => match runtime.resources.get::<Arc<SceneLoadHub>>() {
+            Transport::Pause => super::apply_pause(editor_state),
+            Transport::Stop => match runtime.resources.get::<Arc<SceneLoadHub>>() {
                 Some(loads) => super::apply_stop(world, editor_state, loads),
                 None => {
                     // Play stops all the same: the families go off, and the

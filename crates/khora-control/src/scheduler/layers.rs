@@ -15,12 +15,13 @@
 //! The families' places at a frame: the staged layers swapped in at the
 //! frame start, and the agents woken for the wakes their places gathered.
 
-use super::known::{locked, MetAgent};
+use super::known::MetAgent;
 use super::panic_guard::run_guarded;
 use khora_core::gpu::GpuSetup;
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
+use khora_core::sync::LockExt;
 use khora_core::{EngineContext, Runtime};
 use std::sync::Arc;
 
@@ -31,7 +32,9 @@ use std::sync::Arc;
 pub(super) fn swap_layers(met: &[MetAgent], runtime: &Runtime) {
     let mut gpu = gpu_of(runtime);
     for (_, known) in met {
-        let swapped = run_guarded(known.id, || locked(&known.place).start_frame(&mut gpu));
+        let swapped = run_guarded(known.id, || {
+            known.place.lock_recovered().start_frame(&mut gpu)
+        });
         if !swapped {
             known.place.clear_poison();
         }
@@ -45,7 +48,7 @@ pub(super) fn swap_layers(met: &[MetAgent], runtime: &Runtime) {
 pub(super) fn wake_agents(met: &[MetAgent], runtime: &Arc<Runtime>, bus: &LaneBus) {
     for (agent, known) in met {
         let id = &known.id;
-        let why = locked(&known.place).take_wakes();
+        let why = known.place.lock_recovered().take_wakes();
         if why.is_empty() {
             continue;
         }
@@ -53,7 +56,7 @@ pub(super) fn wake_agents(met: &[MetAgent], runtime: &Arc<Runtime>, bus: &LaneBu
         // so a panic there fails this family's wake, not the frame: its
         // installed layer runs on it as on any frame.
         let woken = run_guarded(*id, || {
-            let mut agent = agent.lock().unwrap_or_else(|e| e.into_inner());
+            let mut agent = agent.lock_recovered();
             let permit = agent.contention();
             let mut scratch = OutputDeck::new();
             let mut context = EngineContext::for_agent(
@@ -63,7 +66,7 @@ pub(super) fn wake_agents(met: &[MetAgent], runtime: &Arc<Runtime>, bus: &LaneBu
                 &permit,
                 Some(*id),
             );
-            let mut place = locked(&known.place);
+            let mut place = known.place.lock_recovered();
             agent.wake(&why, &mut place, &mut context);
         });
         if !woken {
@@ -72,7 +75,7 @@ pub(super) fn wake_agents(met: &[MetAgent], runtime: &Arc<Runtime>, bus: &LaneBu
             // Handed back, so the next event pass wakes the agent for them
             // again: a panic once is not a silent death, nor a lost
             // allocation.
-            let mut place = locked(&known.place);
+            let mut place = known.place.lock_recovered();
             for wake in why {
                 place.raise(wake);
             }

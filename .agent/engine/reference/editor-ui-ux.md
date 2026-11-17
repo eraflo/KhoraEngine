@@ -23,7 +23,8 @@ transform gizmos, dock layout, theme, and the egui/Taffy plumbing.
 - Types (`khora-core/src/ui/editor/state.rs`): `InspectedEntity::prefab: Option<InspectedPrefab>`
   (`root`, `prefab`, `prefab_path`, `is_root`, `components: Vec<ComponentOverride>`, `removed`,
   `prefab_json`, `prefab_declared`, `override_count()`), `ComponentOverride { type_name, added, fields }`,
-  `PrefabApplyScope::{Field, Component, Instance}` queued as `EditorState::pending_prefab_apply`.
+  `PrefabApplyScope::{Field, Component, Instance}` queued as `EditorRequest::ApplyToPrefab`
+  on `EditorState::requests`, the one typed queue every panel asks the app through.
 - Detect / revert: `ops/prefab_overrides/mod.rs` (`json_overrides`, `reverted`, `revert_instance`).
   Apply: `commands/prefab.rs` → `khora_data::scene::apply_to_prefab`. Instance-wide revert:
   `revert_prefab_instance` in `app/mod.rs`.

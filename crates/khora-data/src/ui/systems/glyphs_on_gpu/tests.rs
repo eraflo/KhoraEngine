@@ -39,6 +39,7 @@ use khora_core::renderer::api::resource::{
 use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId};
 use khora_core::renderer::error::ResourceError;
 use khora_core::renderer::traits::{CommandEncoder, GraphicsDevice};
+use khora_core::sync::LockExt;
 use khora_core::ui::text::{
     FontError, GlyphImage, GlyphKey, GlyphKind, GlyphRasterizer, ShapedGlyph,
 };
@@ -83,10 +84,6 @@ const TINY: u32 = 32;
 /// How many masks a [`TINY`] atlas holds.
 const TINY_MASKS: usize = 12;
 
-fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|e| e.into_inner())
-}
-
 // --- the fake rasteriser ---
 
 /// A `GlyphRasterizer` that records every call. A [`SPACE`] draws nothing;
@@ -100,28 +97,32 @@ struct FakeRasterizer {
 impl FakeRasterizer {
     /// Every key it was asked to rasterise, in call order.
     fn asked(&self) -> Vec<GlyphKey> {
-        locked(&self.asked).clone()
+        self.asked.lock_recovered().clone()
     }
 
     /// How many times it was asked to rasterise `key`.
     fn times_asked(&self, key: &GlyphKey) -> usize {
-        locked(&self.asked).iter().filter(|k| *k == key).count()
+        self.asked
+            .lock_recovered()
+            .iter()
+            .filter(|k| *k == key)
+            .count()
     }
 
     /// Every registration, in call order.
     fn registrations(&self) -> Vec<(AssetUUID, Vec<u8>)> {
-        locked(&self.registered).clone()
+        self.registered.lock_recovered().clone()
     }
 }
 
 impl GlyphRasterizer for FakeRasterizer {
     fn register_font(&self, id: AssetUUID, data: Arc<[u8]>) -> Result<(), FontError> {
-        locked(&self.registered).push((id, data.to_vec()));
+        self.registered.lock_recovered().push((id, data.to_vec()));
         Ok(())
     }
 
     fn rasterize(&self, key: &GlyphKey) -> Option<GlyphImage> {
-        locked(&self.asked).push(*key);
+        self.asked.lock_recovered().push(*key);
         if key.glyph == SPACE {
             None
         } else if key.glyph >= COLOR_GLYPHS {
@@ -191,7 +192,7 @@ struct GlyphDevice {
 
 impl GlyphDevice {
     fn log(&self) -> MutexGuard<'_, DeviceLog> {
-        locked(&self.log)
+        self.log.lock_recovered()
     }
 
     fn textures(&self) -> Vec<MadeTexture> {
@@ -1288,7 +1289,7 @@ impl GlyphRasterizer for TallRasterizer {
 
     fn rasterize(&self, key: &GlyphKey) -> Option<GlyphImage> {
         if key.glyph >= OVERSIZED {
-            locked(&self.inner.asked).push(*key);
+            self.inner.asked.lock_recovered().push(*key);
             return Some(GlyphImage {
                 width: 40,
                 height: 40,

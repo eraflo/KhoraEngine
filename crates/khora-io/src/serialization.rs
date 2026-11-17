@@ -19,7 +19,7 @@
 
 use std::sync::Arc;
 
-use khora_core::asset::AssetUUID;
+use khora_core::asset::{AssetType, AssetUUID};
 use khora_core::ecs::ReservationHold;
 use khora_core::scene::{SceneFile, SerializationGoal, SCENE_FORMAT_VERSION};
 use khora_data::ecs::World;
@@ -43,9 +43,6 @@ pub use super::reader_prefabs::ReaderPrefabs;
 
 /// Scene format version produced by today's writers.
 pub const CURRENT_SCENE_VERSION: u32 = SCENE_FORMAT_VERSION as u32;
-
-/// The index type of a prefab.
-pub(crate) const PREFAB: &str = "prefab";
 
 /// An error that can occur within the `SerializationService`.
 #[derive(Debug)]
@@ -392,11 +389,11 @@ impl SerializationService {
 /// be read or decoded.
 pub fn read_prefab(assets: &mut AssetService, id: AssetUUID) -> Result<SceneRecord, String> {
     match assets.index().get_metadata(&id) {
-        Some(metadata) if metadata.asset_type_name == PREFAB => {}
+        Some(metadata) if metadata.asset_type == AssetType::Prefab => {}
         Some(metadata) => {
             return Err(format!(
                 "the asset {id} is a {}, not a prefab",
-                metadata.asset_type_name
+                metadata.asset_type
             ))
         }
         None => return Err(format!("the project holds no asset {id}")),
@@ -412,7 +409,7 @@ pub fn prefab_catalog(assets: &AssetService) -> std::collections::BTreeSet<Asset
     assets
         .index()
         .iter_all()
-        .filter(|metadata| metadata.asset_type_name == PREFAB)
+        .filter(|metadata| metadata.asset_type == AssetType::Prefab)
         .map(|metadata| metadata.uuid)
         .collect()
 }

@@ -25,15 +25,16 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use khora_sdk::editor_ui::{
-    DeclaredCard, DeclaredCardKind, EditorState, FontFamilyHint, InspectedEntity, InspectedPrefab,
-    PrefabApplyScope, PropertyEdit, SceneNode, TextAlign, UiBuilder, UiTheme,
+    DeclaredCard, DeclaredCardKind, EditorRequest, EditorState, FontFamilyHint, InspectedEntity,
+    InspectedPrefab, PrefabApplyScope, PropertyEdit, SceneNode, TextAlign, UiBuilder, UiTheme,
 };
 use khora_sdk::khora_core::script::ScriptValue;
 use khora_sdk::prelude::ecs::EntityId;
 
-use super::card::{render_card, CardAction, CardPrefab};
+use super::card::{render_card, CardAction, CardHead, CardPrefab};
 use super::display::icon_for_domain_tag;
 use super::walker::{FieldAction, Marks};
+use crate::widgets::{Column, Painter};
 use asset_slot::SlotMemory;
 use fields::{render_field, FieldContext};
 
@@ -148,18 +149,16 @@ pub fn restored(entity: EntityId, name: &str, prefab: &InspectedPrefab) -> Vec<P
     edits
 }
 
-/// Draws the declared cards of `inspected` and gathers their edits.
-#[allow(clippy::too_many_arguments)]
+/// Draws the declared cards of `inspected` in `column` and gathers their edits.
 pub fn render_declared_cards(
-    ui: &mut dyn UiBuilder,
+    p: &mut Painter<'_>,
     inspected: &InspectedEntity,
     names: &HashMap<EntityId, String>,
-    card_x: f32,
-    card_w: f32,
-    theme: &UiTheme,
+    column: Column,
     state: &mut EditorState,
     edits: &mut Vec<PropertyEdit>,
 ) {
+    let (ui, theme) = (&mut *p.ui, p.theme);
     let entity = inspected.entity;
     let prefab = inspected.prefab.as_ref();
     // What every asset slot of the cards names and offers: the browser's
@@ -192,17 +191,20 @@ pub fn render_declared_cards(
             Marks::new(&overridden).read_only(prefab.is_some_and(|prefab| prefab.read_only));
         let mut changed: Vec<(String, ScriptValue)> = Vec::new();
         let action = render_card(
-            ui,
-            entity,
-            &card.name,
-            icon,
-            kind_tag(card.kind),
-            None,
-            !card.read_only,
-            card_prefab.filter(|_| !card.read_only),
-            card_x,
-            card_w,
-            theme,
+            &mut Painter {
+                ui: &mut *ui,
+                theme,
+            },
+            column,
+            CardHead {
+                entity,
+                title: &card.name,
+                icon,
+                category: kind_tag(card.kind),
+                enabled: None,
+                removable: !card.read_only,
+                prefab: card_prefab.filter(|_| !card.read_only),
+            },
             state,
             &mut |body| {
                 render_provenance(body, card, theme);
@@ -262,13 +264,13 @@ pub fn render_declared_cards(
                     }
                 }
                 FieldAction::Apply(path) => {
-                    state.pending_prefab_apply = Some((
+                    state.push_request(EditorRequest::ApplyToPrefab {
                         entity,
-                        PrefabApplyScope::Field {
+                        scope: PrefabApplyScope::Field {
                             type_name: card.name.clone(),
                             path,
                         },
-                    ));
+                    });
                 }
             }
         }
@@ -283,12 +285,12 @@ pub fn render_declared_cards(
                 }
             }
             Some(CardAction::Apply) => {
-                state.pending_prefab_apply = Some((
+                state.push_request(EditorRequest::ApplyToPrefab {
                     entity,
-                    PrefabApplyScope::Component {
+                    scope: PrefabApplyScope::Component {
                         type_name: card.name.clone(),
                     },
-                ));
+                });
             }
             None => {}
         }
@@ -296,7 +298,7 @@ pub fn render_declared_cards(
     let memory = memory.into_inner();
     state.asset_picker_query = memory.query;
     if let Some(path) = memory.reveal {
-        state.pending_reveal_asset = Some(path);
+        state.push_request(EditorRequest::RevealAsset { path });
     }
 }
 

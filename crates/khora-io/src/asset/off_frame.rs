@@ -23,6 +23,7 @@ use khora_core::asset::{
 };
 use khora_core::event::{Channel, WhenFull};
 use khora_core::lane::Lease;
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::assets::{AssetStore, Assets};
 
@@ -238,10 +239,7 @@ impl ServiceDecoding {
         Arc<super::AssetReader>,
         Arc<super::generations::Generations>,
     ) {
-        let service = self
-            .service
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let service = self.service.lock_recovered();
         (service.reader(), Arc::clone(&service.generations))
     }
 }
@@ -313,10 +311,7 @@ impl DecodeHub {
 
     /// Returns the attached service, if any.
     fn service(&self) -> Option<Arc<Mutex<AssetService>>> {
-        self.attached
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
+        self.attached.lock_recovered().clone()
     }
 
     /// Attaches the asset service `runtime` holds, unless it is attached already.
@@ -333,13 +328,9 @@ impl DecodeHub {
             return;
         }
         service
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .lock_recovered()
             .use_decode_requests(self.requests.clone(), Arc::clone(&self.generations));
-        *self
-            .attached
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(service);
+        *self.attached.lock_recovered() = Some(service);
     }
 }
 

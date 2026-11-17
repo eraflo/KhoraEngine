@@ -22,6 +22,7 @@ use khora_sdk::prelude::ecs::EntityId;
 
 use super::drop::dispatch_asset_drop;
 use crate::tests::gltf_fixture::{file_entry, part_entry};
+use crate::tests::requests::{dropped_assignments, mesh_spawns, prefab_spawns};
 
 const SHIP: &str = "models/ship.glb";
 const CRATE: &str = "models/crate.obj";
@@ -86,8 +87,8 @@ fn a_gltf_file_dropped_on_the_hierarchy_spawns_its_scene() {
 
     dispatch_asset_drop(&mut state, idx, None);
 
-    assert_eq!(state.pending_prefab_spawn, Some((part("scene"), None)));
-    assert_eq!(state.pending_spawn_mesh_asset, None, "no single-mesh spawn");
+    assert_eq!(prefab_spawns(&state), [(part("scene"), None)]);
+    assert!(mesh_spawns(&state).is_empty(), "no single-mesh spawn");
 }
 
 /// A glTF file dropped onto a row spawns its scene under that row.
@@ -98,10 +99,7 @@ fn a_gltf_file_dropped_on_a_row_spawns_its_scene_under_it() {
 
     dispatch_asset_drop(&mut state, idx, Some(row()));
 
-    assert_eq!(
-        state.pending_prefab_spawn,
-        Some((part("scene"), Some(row())))
-    );
+    assert_eq!(prefab_spawns(&state), [(part("scene"), Some(row()))]);
 }
 
 /// A glTF file whose scene the index does not list — its parts could not be
@@ -112,11 +110,8 @@ fn a_gltf_file_without_its_scene_listed_spawns_as_one_mesh() {
 
     dispatch_asset_drop(&mut state, 0, None);
 
-    assert_eq!(
-        state.pending_spawn_mesh_asset,
-        Some((ship(), [0.0, 0.0, 0.0], None))
-    );
-    assert_eq!(state.pending_prefab_spawn, None);
+    assert_eq!(mesh_spawns(&state), [(ship(), [0.0, 0.0, 0.0], None)]);
+    assert!(prefab_spawns(&state).is_empty());
 }
 
 /// **An OBJ still spawns as one mesh**, of its own identity.
@@ -129,10 +124,10 @@ fn an_obj_dropped_on_the_hierarchy_spawns_its_mesh() {
     dispatch_asset_drop(&mut state, idx, Some(row()));
 
     assert_eq!(
-        state.pending_spawn_mesh_asset,
-        Some((crate_mesh, [0.0, 0.0, 0.0], Some(row())))
+        mesh_spawns(&state),
+        [(crate_mesh, [0.0, 0.0, 0.0], Some(row()))]
     );
-    assert_eq!(state.pending_prefab_spawn, None);
+    assert!(prefab_spawns(&state).is_empty());
 }
 
 /// **A mesh part of a file spawns as that mesh**, by its own identity.
@@ -144,10 +139,10 @@ fn a_mesh_part_dropped_on_the_hierarchy_spawns_that_mesh() {
     dispatch_asset_drop(&mut state, idx, None);
 
     assert_eq!(
-        state.pending_spawn_mesh_asset,
-        Some((part("mesh1/prim0"), [0.0, 0.0, 0.0], None))
+        mesh_spawns(&state),
+        [(part("mesh1/prim0"), [0.0, 0.0, 0.0], None)]
     );
-    assert_eq!(state.pending_prefab_spawn, None);
+    assert!(prefab_spawns(&state).is_empty());
 }
 
 /// A scene part of a file spawns as that scene.
@@ -158,7 +153,7 @@ fn a_scene_part_dropped_on_the_hierarchy_spawns_that_scene() {
 
     dispatch_asset_drop(&mut state, idx, None);
 
-    assert_eq!(state.pending_prefab_spawn, Some((part("scene0"), None)));
+    assert_eq!(prefab_spawns(&state), [(part("scene0"), None)]);
 }
 
 /// A `.kprefab` spawns by its own identity.
@@ -170,7 +165,7 @@ fn a_prefab_file_dropped_on_the_hierarchy_spawns_it() {
 
     dispatch_asset_drop(&mut state, idx, Some(row()));
 
-    assert_eq!(state.pending_prefab_spawn, Some((turret, Some(row()))));
+    assert_eq!(prefab_spawns(&state), [(turret, Some(row()))]);
 }
 
 /// **A material part dropped on a row is assigned to that row's entity**,
@@ -182,10 +177,7 @@ fn a_material_part_dropped_on_a_row_is_assigned_to_it() {
 
     dispatch_asset_drop(&mut state, idx, Some(row()));
 
-    assert_eq!(
-        state.pending_assign_texture,
-        Some((part("material1"), row()))
-    );
+    assert_eq!(dropped_assignments(&state), [(part("material1"), row())]);
 }
 
 /// A texture part dropped on empty space is assigned to the selection.
@@ -201,8 +193,5 @@ fn a_texture_part_dropped_beside_the_rows_is_assigned_to_the_selection() {
 
     dispatch_asset_drop(&mut state, idx, None);
 
-    assert_eq!(
-        state.pending_assign_texture,
-        Some((part("texture0"), selected))
-    );
+    assert_eq!(dropped_assignments(&state), [(part("texture0"), selected)]);
 }

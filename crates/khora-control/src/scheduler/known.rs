@@ -17,7 +17,9 @@
 
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::{Agent, Contention, ExecutionTiming, Place};
-use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use khora_core::sync::LockExt;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 /// An agent as the scheduler knows it from their first meeting.
@@ -37,10 +39,13 @@ pub(super) struct Known {
 /// An agent, with its lock and what the scheduler knows of it.
 pub(super) type MetAgent = (Arc<Mutex<dyn Agent>>, Known);
 
-/// Each agent met, by a weak reference to its lock.
-type Met = Vec<(Weak<Mutex<dyn Agent>>, Known)>;
+/// Each agent met, by the address of its lock.
+///
+/// The weak reference keeps the address taken while the entry lives, so no
+/// other agent can be found under it.
+type Met = HashMap<usize, (Weak<Mutex<dyn Agent>>, Known)>;
 
-/// The agents the scheduler met, by a weak reference to their lock.
+/// The agents the scheduler met, by the address of their lock.
 #[derive(Default)]
 pub(super) struct KnownAgents {
     met: Mutex<Met>,
@@ -51,8 +56,8 @@ impl KnownAgents {
     ///
     /// `None` while a panic poisoned the agent before it was ever met.
     pub(super) fn of(&self, agent: &Arc<Mutex<dyn Agent>>) -> Option<Known> {
-        let weak = Arc::downgrade(agent);
-        if let Some((_, known)) = self.met().iter().find(|(seen, _)| seen.ptr_eq(&weak)) {
+        let key = address_of(agent);
+        if let Some((_, known)) = self.met.lock_recovered().get(&key) {
             return Some(known.clone());
         }
         let known = {
@@ -63,14 +68,10 @@ impl KnownAgents {
                 timing: agent.execution_timing(),
             }
         };
-        let mut met = self.met();
-        met.retain(|(seen, _)| seen.strong_count() > 0);
-        met.push((weak, known.clone()));
+        let mut met = self.met.lock_recovered();
+        met.retain(|_, (seen, _)| seen.strong_count() > 0);
+        met.insert(key, (Arc::downgrade(agent), known.clone()));
         Some(known)
-    }
-
-    fn met(&self) -> MutexGuard<'_, Met> {
-        self.met.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
@@ -78,18 +79,19 @@ impl Known {
     /// Returns the step the agent's family runs at, read from its place; `None` for a
     /// family that runs every frame.
     pub(super) fn fixed_step(&self) -> Option<Duration> {
-        locked(&self.place)
+        self.place
+            .lock_recovered()
             .fixed_step()
             .filter(|step| !step.is_zero())
     }
 
     /// Returns what the agent competes for this frame: its installed layer's declaration.
     pub(super) fn contention(&self) -> Contention {
-        locked(&self.place).contention()
+        self.place.lock_recovered().contention()
     }
 }
 
-/// Locks `place`; a place a panicking layer poisoned is still the family's.
-pub(super) fn locked(place: &Mutex<Place>) -> MutexGuard<'_, Place> {
-    place.lock().unwrap_or_else(|e| e.into_inner())
+/// Returns the address of `agent`'s lock: what names it while it lives.
+pub(super) fn address_of(agent: &Arc<Mutex<dyn Agent>>) -> usize {
+    Arc::as_ptr(agent).cast::<()>() as usize
 }

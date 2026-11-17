@@ -25,7 +25,7 @@ mod prefab_view {
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
 
-    use khora_sdk::editor_ui::{EditorState, InspectedEntity};
+    use khora_sdk::editor_ui::{EditorRequest, EditorState, InspectedEntity};
     use khora_sdk::khora_data::ecs::{PrefabInstance, World};
     use khora_sdk::khora_data::scene::{capture_subtree, write_scene_file, CompactEncoding};
     use khora_sdk::prelude::ecs::*;
@@ -116,7 +116,13 @@ mod prefab_view {
             .lock()
             .expect("the project")
             .resolve_uuid("prefabs/turret.kprefab");
-        state.lock().expect("the editor state").pending_prefab_spawn = Some((turret, None));
+        state
+            .lock()
+            .expect("the editor state")
+            .push_request(EditorRequest::SpawnPrefab {
+                prefab: turret,
+                parent: None,
+            });
         process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
         let root = world
             .iter_entities()
@@ -159,7 +165,13 @@ mod prefab_view {
             .lock()
             .expect("the project")
             .resolve_uuid("prefabs/turret.kprefab");
-        state.lock().expect("the editor state").pending_prefab_spawn = Some((turret, None));
+        state
+            .lock()
+            .expect("the editor state")
+            .push_request(EditorRequest::SpawnPrefab {
+                prefab: turret,
+                parent: None,
+            });
         process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
         let root = world
             .iter_entities()

@@ -49,10 +49,11 @@ use khora_core::lane::io::{Budget, Declaration, InputSource, LaneInputs, Locked}
 use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneError, OutputDeck};
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 
 use super::fixtures::{
-    host_envelope, lend, level, locked, offer_request, place_of, run, Load, LoadAndPlan, Plan,
+    host_envelope, lend, level, offer_request, place_of, run, Load, LoadAndPlan, Plan,
     ProbeOutputs, Recorded, Tally, TallyLock, ANY_MEMORY, LADDER,
 };
 use crate::protocol::{pin, pin_with, said};
@@ -530,7 +531,7 @@ fn a_locking_lane_whose_lock_is_free_is_quoted_and_chosen_as_the_best_row_left()
     run(&mut agent, 3, &frame(100, failing, &counts), &mut deck);
 
     assert_eq!(
-        locked(&place_of(&agent)).staged_row(),
+        place_of(&agent).lock_recovered().staged_row(),
         Some(StrategyId::Balanced),
         "the failure falls back to the best row left, the locking lane"
     );
@@ -570,7 +571,7 @@ fn a_locking_lane_whose_lock_is_held_stays_unquoted_and_is_passed_by_on_a_failur
 
     assert_eq!(counts.locked(), 0, "the locking lane was never quoted");
     assert_eq!(
-        locked(&place_of(&agent)).staged_row(),
+        place_of(&agent).lock_recovered().staged_row(),
         Some(StrategyId::LowPower),
         "the failure falls back to the quoted lane, not the unquoted one"
     );

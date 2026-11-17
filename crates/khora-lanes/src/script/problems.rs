@@ -19,6 +19,7 @@
 use std::sync::{Arc, Mutex};
 
 use khora_core::problems::{Problem, ProblemSeverity, ProblemSource, Problems};
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, TickPhase};
 
@@ -38,18 +39,16 @@ impl ScriptRuntime {
             .flat_map(|((entity, behavior), instance)| {
                 let module = (!instance.module.is_empty()).then(|| instance.module.clone());
                 let dropped = instance.dropped.iter().map(move |(event, why)| Problem {
-                    severity: ProblemSeverity::Warning,
                     module: module.clone(),
-                    line: 0,
-                    column: 0,
-                    message: format!("`{behavior}` was sent `{event}` it could not take: {why}"),
                     note: Some(
                         "a script's raise is checked against the event; this one came from the engine, or was queued before the event changed".to_owned(),
                     ),
                     entity: Some(*entity),
                     behavior: Some(behavior.clone()),
-                    component: None,
-                    field: None,
+                    ..Problem::new(
+                        ProblemSeverity::Warning,
+                        format!("`{behavior}` was sent `{event}` it could not take: {why}"),
+                    )
                 });
                 self.instance_problem(*entity, behavior, instance)
                     .into_iter()
@@ -67,16 +66,11 @@ impl ScriptRuntime {
     ) -> Option<Problem> {
         let module = (!instance.module.is_empty()).then(|| instance.module.clone());
         let problem = |severity, message: String, note: Option<String>| Problem {
-            severity,
             module: module.clone(),
-            line: 0,
-            column: 0,
-            message,
             note,
             entity: Some(entity),
             behavior: Some(behavior.to_owned()),
-            component: None,
-            field: None,
+            ..Problem::new(severity, message)
         };
         // Its module left the runtime — the file deleted, moved out of the
         // script folder, its root unmounted — and no version of it waits: the
@@ -131,10 +125,7 @@ fn report_running_problems(runtime: &Runtime) {
     let Some(scripts) = runtime.services.get::<Arc<Mutex<ScriptRuntime>>>() else {
         return;
     };
-    let running = match scripts.lock() {
-        Ok(scripts) => scripts.running_problems(),
-        Err(poisoned) => poisoned.into_inner().running_problems(),
-    };
+    let running = scripts.lock_recovered().running_problems();
     // Unchanged lists change nothing, so a quiet frame costs the walk only.
     problems.report(ProblemSource::Running, running);
 }

@@ -16,7 +16,7 @@
 //! specular cubes and the BRDF table the lit lanes sample at group 3, on its own
 //! encoder outside the frame, and again whenever the environment changes.
 
-use std::sync::{RwLock, RwLockReadGuard};
+use std::sync::RwLock;
 
 use bake::bake;
 use khora_core::asset::{AssetHandle, AssetUUID};
@@ -26,6 +26,7 @@ use khora_core::renderer::api::resource::CpuTexture;
 use khora_core::renderer::api::resource::TextureFormat;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
+use khora_core::sync::RwLockExt;
 use resources::{normalized_or_default, IblResources};
 
 mod bake;
@@ -109,6 +110,7 @@ impl IblSource {
 #[derive(Default)]
 pub struct IblBaker {
     /// The current bake and the source it was made from.
+    // Only ever replaced whole, so it is read through the poison.
     baked: RwLock<Option<(IblSource, IblResources)>>,
     env_wait: std::sync::atomic::AtomicU32,
 }
@@ -128,20 +130,15 @@ impl IblBaker {
         Self::default()
     }
 
-    /// Returns the current bake, ignoring poisoning: it is only ever replaced
-    /// whole.
-    fn read(&self) -> RwLockReadGuard<'_, Option<(IblSource, IblResources)>> {
-        self.baked.read().unwrap_or_else(|e| e.into_inner())
-    }
-
     /// Returns whether a bake has run.
     pub fn is_baked(&self) -> bool {
-        self.read().is_some()
+        self.baked.read_recovered().is_some()
     }
 
     /// Returns whether the current bake was made from exactly `source`.
     pub fn is_baked_from(&self, source: &IblSource) -> bool {
-        self.read()
+        self.baked
+            .read_recovered()
             .as_ref()
             .is_some_and(|(baked, _)| baked == source)
     }
@@ -207,11 +204,7 @@ impl IblBaker {
                     sun.y,
                     sun.z
                 );
-                let previous = self
-                    .baked
-                    .write()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .replace((source.clone(), res));
+                let previous = self.baked.write_recovered().replace((source.clone(), res));
                 if let Some((_, previous)) = previous {
                     previous.destroy(device);
                 }
@@ -224,7 +217,10 @@ impl IblBaker {
     /// Returns the group-3 IBL bindings once baked, else `None` (lit lanes skip
     /// the IBL term until it is ready).
     pub fn bindings(&self) -> Option<IblGpuBindings> {
-        self.read().as_ref().map(|(_, res)| res.bindings)
+        self.baked
+            .read_recovered()
+            .as_ref()
+            .map(|(_, res)| res.bindings)
     }
 }
 

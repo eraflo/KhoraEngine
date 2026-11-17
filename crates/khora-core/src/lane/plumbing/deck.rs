@@ -115,9 +115,10 @@ impl OutputDeck {
         self.slots.is_empty()
     }
 
-    /// Clears all slots, for a deck reused between ticks.
+    /// Clears all slots and the writes recorded, for a deck reused between ticks.
     pub fn clear(&mut self) {
         self.slots.clear();
+        self.written.clear();
     }
 
     /// Moves the slots of `types` out, as they are, into a deck of their own.
@@ -217,6 +218,19 @@ mod tests {
         deck.slot::<Vec<u8>>().push(2);
         assert_eq!(deck.take::<Vec<u32>>(), vec![1]);
         assert_eq!(deck.take::<Vec<u8>>(), vec![2]);
+    }
+
+    /// **A cleared deck is as a new one: no slot, and no write recorded.**
+    #[test]
+    fn a_cleared_deck_holds_no_slot_and_no_write() {
+        let mut deck = OutputDeck::new();
+        deck.slot::<Vec<u32>>().push(1);
+        deck.clear();
+        assert!(deck.is_empty());
+        assert!(
+            deck.drain_written().is_empty(),
+            "a write before the clear is not the next tick's"
+        );
     }
 
     #[test]

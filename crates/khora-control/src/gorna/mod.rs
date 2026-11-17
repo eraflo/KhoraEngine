@@ -36,6 +36,7 @@ mod admission;
 pub(crate) mod arbiter;
 pub mod cost_book;
 mod decide;
+pub(crate) mod lending;
 mod plan;
 pub mod planning;
 mod round;
@@ -423,15 +424,17 @@ impl GornaArbitrator {
         });
         // Each agent chooses its row by its own quotes: the envelopes are lent
         // in those units, and held to the plan at them.
-        cost_book::lend_in_quotes(
+        lending::lend_in_quotes(
             &mut decision.allocation,
-            &self.offers,
-            &bids,
-            &decision.rows,
-            &decision.kept,
-            &held,
-            &corrections,
-            planning.caution,
+            &lending::Lending {
+                quoted: &self.offers,
+                bids: &bids,
+                planned: &decision.rows,
+                kept: &decision.kept,
+                held: &held,
+                corrections: &corrections,
+                caution: planning.caution,
+            },
         );
         self.planned = planned_rows(&decision, &bids);
         self.corrections = corrections;

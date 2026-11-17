@@ -18,6 +18,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use khora_sdk::editor_ui::{EditorRequest, MenuAction, SpawnShape};
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::{EditorState, GameWorld, PlayMode};
 
@@ -50,7 +51,7 @@ pub use scene::{land_scene_loads, open_scene_dispatch};
 pub use transport::PLAY_FAMILIES;
 pub use transport::{process_transport, start_editing};
 
-/// Processes every pending menu action queued in `EditorState`.
+/// Processes the menu actions queued in `EditorState`, oldest first.
 ///
 /// Returns the folder "File > Open Project…" picked, for the app to open;
 /// a restricted project (`trust`) builds no game.
@@ -74,67 +75,75 @@ pub fn process_menu_actions(
     };
 
     // The transport is processed before the frame (`process_transport`): an
-    // action of its asked since is left for the next frame's.
-    let action = editor_state.lock().ok().and_then(|mut s| {
-        if s.pending_menu_action
-            .as_deref()
-            .is_some_and(transport::is_transport)
-        {
-            None
-        } else {
-            s.pending_menu_action.take()
-        }
-    });
+    // action of its asked since stays queued for the next frame's.
+    let actions = editor_state
+        .lock()
+        .map(|mut s| {
+            s.take_requests(|request| match request {
+                EditorRequest::Menu(action) => Ok(action),
+                other => Err(other),
+            })
+        })
+        .unwrap_or_default();
 
-    let Some(action) = action else {
-        return picked;
-    };
+    for action in actions {
+        run_menu_action(
+            action,
+            project_vfs,
+            editor_state,
+            command_history,
+            world,
+            trust,
+        );
+    }
+    picked
+}
 
-    match action.as_str() {
-        "new_scene" => {
+/// Carries out one menu `action`.
+fn run_menu_action(
+    action: MenuAction,
+    project_vfs: &mut Option<Arc<Mutex<ProjectVfs>>>,
+    editor_state: &Arc<Mutex<EditorState>>,
+    command_history: &Arc<Mutex<CommandHistory>>,
+    world: &mut GameWorld,
+    trust: khora_sdk::trust::ProjectTrust,
+) {
+    match action {
+        MenuAction::NewScene => {
             apply_new_scene(world, editor_state);
             forget_history(command_history);
         }
-        "undo" => apply_undo(editor_state, command_history),
-        "redo" => apply_redo(editor_state, command_history),
-        "delete" => apply_delete(world, editor_state),
-        "quit" => {
+        MenuAction::Delete => apply_delete(world, editor_state),
+        MenuAction::Quit => {
             log::info!("Quit requested from menu");
             std::process::exit(0);
         }
-        "save" => apply_save(project_vfs.as_ref(), world, editor_state),
+        MenuAction::Save => apply_save(project_vfs.as_ref(), world, editor_state),
         // No encoding picker: an editor save is `EditorInterchange`. A path
         // that needs another goal calls `save_scene_dispatch_with_goal`.
-        "save_as" => apply_save_as(project_vfs.as_ref(), world, editor_state),
-        "open" => {
+        MenuAction::SaveAs => apply_save_as(project_vfs.as_ref(), world, editor_state),
+        MenuAction::Open => {
             apply_open(editor_state);
             forget_history(command_history);
         }
-        "spawn_empty" => {
+        MenuAction::SpawnEmpty => {
             if let Ok(mut state) = editor_state.lock() {
-                state.pending_spawn = Some("Empty".to_owned());
+                state.push_request(EditorRequest::Spawn(SpawnShape::Empty));
             }
         }
-        "build_game" => {
+        MenuAction::BuildGame => {
             if !build_game_refused(trust, editor_state) {
                 run_build_game(project_vfs.as_ref(), editor_state);
             }
         }
-        "documentation" => {
+        MenuAction::Documentation => {
             let _ = open::that("https://github.com/eraflo/KhoraEngine");
             log::info!("Opening documentation in browser");
         }
-        "about" => {
+        MenuAction::About => {
             log::info!("Khora Engine v0.1.0-dev - experimental game engine");
         }
-        "preferences" | "reset_layout" => {
-            log::info!("Menu action '{}' (not yet implemented)", action);
-        }
-        other => {
-            log::info!("Unhandled menu action: {}", other);
-        }
     }
-    picked
 }
 
 /// Empties the undo history after the world was replaced.
@@ -174,34 +183,10 @@ fn apply_new_scene(world: &mut GameWorld, editor_state: &Arc<Mutex<EditorState>>
         state.restore_problems.clear();
         // A new scene has nothing a load adapted.
         state.load_problems.clear();
-        state.pending_load_problems = Some(Vec::new());
+        state.push_request(EditorRequest::ReportLoadProblems {
+            problems: Vec::new(),
+        });
         log::info!("New scene created (cleared {} entities)", all.len());
-    }
-}
-
-fn apply_undo(
-    editor_state: &Arc<Mutex<EditorState>>,
-    command_history: &Arc<Mutex<CommandHistory>>,
-) {
-    if let Ok(mut history) = command_history.lock() {
-        if let Some(edit) = history.undo() {
-            if let Ok(mut state) = editor_state.lock() {
-                state.push_edit(edit);
-            }
-        }
-    }
-}
-
-fn apply_redo(
-    editor_state: &Arc<Mutex<EditorState>>,
-    command_history: &Arc<Mutex<CommandHistory>>,
-) {
-    if let Ok(mut history) = command_history.lock() {
-        if let Some(edit) = history.redo() {
-            if let Ok(mut state) = editor_state.lock() {
-                state.push_edit(edit);
-            }
-        }
     }
 }
 
@@ -340,7 +325,9 @@ fn apply_open(editor_state: &Arc<Mutex<EditorState>>) {
         // Opened as a scene the asset browser opens: off the frame, the
         // next update filing it.
         if let Ok(mut state) = editor_state.lock() {
-            state.pending_scene_load = Some(path.to_string_lossy().into_owned());
+            state.push_request(EditorRequest::OpenScene {
+                path: path.to_string_lossy().into_owned(),
+            });
         }
     }
 }

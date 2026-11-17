@@ -19,6 +19,7 @@ use std::sync::{Arc, Mutex};
 
 use khora_core::asset::font::Font;
 use khora_core::asset::AssetUUID;
+use khora_core::sync::LockExt;
 use khora_core::ui::text::{FontError, GlyphImage, GlyphKey, GlyphKind, GlyphRasterizer};
 use swash::scale::image::Content;
 use swash::scale::{Render, ScaleContext, Source, StrikeWith};
@@ -31,6 +32,8 @@ use swash::FontRef;
 /// One leaf lock around the fonts and swash's scaling context: held for one
 /// registration or one glyph, never across a call out of this type.
 pub struct SwashRasterizer {
+    // A panic while rasterising leaves the fonts and the scaling context
+    // usable.
     state: Mutex<State>,
 }
 
@@ -81,12 +84,6 @@ impl SwashRasterizer {
         debug_assert!(built_in.is_ok(), "the default font is readable");
         rasterizer
     }
-
-    fn state(&self) -> std::sync::MutexGuard<'_, State> {
-        // A panic while rasterising leaves the fonts and the scaling context
-        // usable.
-        self.state.lock().unwrap_or_else(|e| e.into_inner())
-    }
 }
 
 impl Default for SwashRasterizer {
@@ -98,7 +95,7 @@ impl Default for SwashRasterizer {
 impl GlyphRasterizer for SwashRasterizer {
     fn register_font(&self, id: AssetUUID, data: Arc<[u8]>) -> Result<(), FontError> {
         let registered = self.read_font(data);
-        let mut state = self.state();
+        let mut state = self.state.lock_recovered();
         match registered {
             // Refused: the id holds no font, not the file it held before.
             Err(error) => {
@@ -142,7 +139,7 @@ impl SwashRasterizer {
 
     /// Rasterises `key` (see [`GlyphRasterizer::rasterize`]).
     fn draw(&self, key: &GlyphKey) -> Option<GlyphImage> {
-        let mut state = self.state();
+        let mut state = self.state.lock_recovered();
         let State { fonts, scale } = &mut *state;
         let registered = fonts.get(&key.font)?;
         // A size of zero is "unscaled" to swash: it would draw the glyph in

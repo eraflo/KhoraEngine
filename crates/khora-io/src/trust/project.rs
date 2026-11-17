@@ -14,12 +14,19 @@
 
 //! The trust of the project open, shared in the runtime's resources.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
+use khora_core::sync::RwLockExt;
 use khora_core::Runtime;
 
 use super::ProjectTrust;
+use crate::fs::RootName;
+
+/// The generations every state of this process draws from: two states, or
+/// two sets of one, never share a number.
+static GENERATIONS: AtomicU64 = AtomicU64::new(1);
 
 /// The trust of the project open, shared in `runtime.resources` as an `Arc<ProjectTrustState>`.
 ///
@@ -27,28 +34,43 @@ use super::ProjectTrust;
 /// folder outside it, such as the previous project still watched, is read as
 /// restricted. A game names none: its trust is that of everything it reads.
 #[derive(Debug)]
-pub struct ProjectTrustState(RwLock<Held>);
+pub struct ProjectTrustState {
+    held: RwLock<Held>,
+    /// Moves on each [`set`](Self::set) and [`set_for`](Self::set_for).
+    generation: AtomicU64,
+}
 
 /// The trust held, and the project it is the trust of.
 #[derive(Debug)]
 struct Held {
     trust: ProjectTrust,
-    /// The project's root, as named and as resolved; `None` for a game's.
-    project: Option<(PathBuf, PathBuf)>,
+    /// The project's root; `None` for a game's.
+    project: Option<RootName>,
 }
 
 impl ProjectTrustState {
     /// A state holding `trust`, of no project in particular.
     pub fn new(trust: ProjectTrust) -> Self {
-        Self(RwLock::new(Held {
-            trust,
-            project: None,
-        }))
+        Self {
+            held: RwLock::new(Held {
+                trust,
+                project: None,
+            }),
+            generation: AtomicU64::new(GENERATIONS.fetch_add(1, Ordering::Relaxed)),
+        }
     }
 
     /// The trust held now.
     pub fn get(&self) -> ProjectTrust {
         self.read(|held| held.trust)
+    }
+
+    /// Returns a number that moves each time the trust or the project is set, even to the same.
+    ///
+    /// A reader compares it to know nothing was set since it last looked; no
+    /// other state of the process ever had it, and none is 0.
+    pub fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
     }
 
     /// Holds `trust` from now on, for the same project.
@@ -59,10 +81,7 @@ impl ProjectTrustState {
     /// Holds `trust` from now on, as the trust of the project at
     /// `project_root`.
     pub fn set_for(&self, project_root: &Path, trust: ProjectTrust) {
-        let resolved = project_root
-            .canonicalize()
-            .unwrap_or_else(|_| project_root.to_path_buf());
-        let project = Some((project_root.to_path_buf(), resolved));
+        let project = Some(RootName::of(project_root));
         self.write(|held| {
             held.trust = trust;
             held.project = project;
@@ -74,15 +93,10 @@ impl ProjectTrustState {
     /// With no project named, every path is read at the trust held.
     pub fn trust_of(&self, path: &Path) -> ProjectTrust {
         let (trust, project) = self.read(|held| (held.trust, held.project.clone()));
-        let Some((named, resolved)) = project else {
+        let Some(project) = project else {
             return trust;
         };
-        let inside = path.starts_with(&named)
-            || path.starts_with(&resolved)
-            || path
-                .canonicalize()
-                .is_ok_and(|real| real.starts_with(&resolved));
-        if inside {
+        if project.holds(path) {
             trust
         } else {
             ProjectTrust::Restricted
@@ -90,17 +104,15 @@ impl ProjectTrustState {
     }
 
     fn read<T>(&self, f: impl FnOnce(&Held) -> T) -> T {
-        match self.0.read() {
-            Ok(held) => f(&held),
-            Err(poisoned) => f(&poisoned.into_inner()),
-        }
+        f(&self.held.read_recovered())
     }
 
     fn write(&self, f: impl FnOnce(&mut Held)) {
-        match self.0.write() {
-            Ok(mut held) => f(&mut held),
-            Err(poisoned) => f(&mut poisoned.into_inner()),
-        }
+        f(&mut self.held.write_recovered());
+        (self.generation).store(
+            GENERATIONS.fetch_add(1, Ordering::Relaxed),
+            Ordering::Release,
+        );
     }
 
     /// Returns the trust of the project `runtime` serves.
@@ -111,6 +123,19 @@ impl ProjectTrustState {
             .resources
             .get::<Arc<ProjectTrustState>>()
             .map_or(ProjectTrust::Trusted, |state| state.get())
+    }
+
+    /// Returns whether the project `runtime` serves is opened restricted.
+    pub fn is_restricted(runtime: &Runtime) -> bool {
+        Self::of(runtime).is_restricted()
+    }
+
+    /// Returns the [`generation`](Self::generation) of the state `runtime` holds; 0 without one.
+    pub fn generation_of(runtime: &Runtime) -> u64 {
+        runtime
+            .resources
+            .get::<Arc<ProjectTrustState>>()
+            .map_or(0, |state| state.generation())
     }
 
     /// Returns the trust `path` is read at in the project `runtime` serves.

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use anyhow::Result;
-use khora_core::asset::{Asset, AssetMetadata, AssetSource, AssetUUID, CompressionKind};
+use khora_core::asset::{Asset, AssetMetadata, AssetSource, AssetType, AssetUUID, CompressionKind};
 use khora_io::asset::{AssetDecoder, AssetService, PackHeader, PackLoader};
 
 use khora_telemetry::MetricsRegistry;
@@ -63,7 +63,7 @@ fn test_load_asset_from_pack() -> Result<()> {
 
     let mut variants = HashMap::new();
     variants.insert(
-        "default".to_string(),
+        AssetMetadata::DEFAULT_VARIANT.to_owned(),
         AssetSource::Packed {
             offset: 0,
             size: texture_data.len() as u64,
@@ -74,7 +74,7 @@ fn test_load_asset_from_pack() -> Result<()> {
     let metadata = AssetMetadata {
         uuid: texture_uuid,
         source_path: "test/texture.png".into(),
-        asset_type_name: "texture".to_string(),
+        asset_type: AssetType::Texture,
         dependencies: vec![],
         variants,
         tags: vec![],
@@ -143,7 +143,7 @@ fn test_load_texture_from_pack() -> Result<()> {
     let texture_uuid = AssetUUID::new_v5("test/texture.png");
     let mut variants = HashMap::new();
     variants.insert(
-        "default".to_string(),
+        AssetMetadata::DEFAULT_VARIANT.to_owned(),
         AssetSource::Packed {
             offset: 0,
             size: png_data.len() as u64,
@@ -154,7 +154,7 @@ fn test_load_texture_from_pack() -> Result<()> {
     let metadata = AssetMetadata {
         uuid: texture_uuid,
         source_path: "test/texture.png".into(),
-        asset_type_name: "texture".to_string(),
+        asset_type: AssetType::Texture,
         dependencies: vec![],
         variants,
         tags: vec![],
@@ -212,7 +212,7 @@ fn test_asset_caching_and_shared_ownership() -> Result<()> {
 
     let mut variants = HashMap::new();
     variants.insert(
-        "default".to_string(),
+        AssetMetadata::DEFAULT_VARIANT.to_owned(),
         AssetSource::Packed {
             offset: 0,
             size: texture_data.len() as u64,
@@ -223,7 +223,7 @@ fn test_asset_caching_and_shared_ownership() -> Result<()> {
     let metadata = AssetMetadata {
         uuid: texture_uuid,
         source_path: "test/texture.png".into(),
-        asset_type_name: "texture".to_string(),
+        asset_type: AssetType::Texture,
         dependencies: vec![],
         variants,
         tags: vec![],

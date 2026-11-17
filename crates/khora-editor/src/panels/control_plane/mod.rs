@@ -23,8 +23,12 @@ use khora_sdk::khora_core::agent::gorna::protocol::Report;
 use khora_sdk::khora_core::agent::gorna::DecisionWatch;
 use khora_sdk::{AgentId, AgentImportance, AgentRegistry, DccContext, ExecutionPhase, StrategyId};
 
+use crate::widgets::{Column, Painter};
+use frame_snapshot::FrameSnapshot;
+
 mod agents;
 mod decision;
+mod frame_snapshot;
 mod inspector;
 mod paint;
 mod schedule;
@@ -203,43 +207,16 @@ impl EditorPanel for ControlPlanePanel {
             .dcc_context
             .as_ref()
             .and_then(|h| h.read().ok().map(|c| c.clone()));
-        let mut snap = self
-            .state
-            .lock()
-            .ok()
-            .map(|s| {
-                (
-                    s.status.fps,
-                    s.status.frame_time_ms,
-                    s.status.memory_used_mb,
-                    s.status.cpu_load,
-                    s.status.gpu_load,
-                    s.status.vram_mb,
-                )
-            })
-            .unwrap_or((0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
-        if let Some(ctx) = dcc_snap.as_ref() {
-            // The probe the engine budgets with is the authority on load and
-            // video memory.
-            snap.3 = ctx.hardware.cpu_load;
-            snap.4 = ctx.hardware.gpu_load;
-            if let Some(vram_used) = ctx.hardware.available_vram.and_then(|avail| {
-                ctx.hardware
-                    .total_vram
-                    .map(|total| (total.saturating_sub(avail)) as f32 / (1024.0 * 1024.0))
-            }) {
-                snap.5 = vram_used;
-            }
-        }
-        self.push_frame_sample(snap.1);
+        let status = self.state.lock().ok().map(|s| s.status.clone());
+        let snap = FrameSnapshot::read(status.as_ref(), dcc_snap.as_ref());
+        self.push_frame_sample(snap.frame_time_ms);
         let frame_samples: Vec<f32> = self.frame_history.iter().copied().collect();
         self.paint_summary_bar(
-            ui,
+            &mut Painter { ui, theme: &theme },
             [px + 8.0, py + 8.0, pw - 16.0, SUMMARY_BAR_HEIGHT],
             snap,
             dcc_snap.as_ref(),
             agents.len(),
-            &theme,
             &frame_samples,
         );
 

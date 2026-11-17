@@ -116,8 +116,13 @@ fn spawning_a_prefab_links_the_instance() {
     let project = project("prefab-spawn", &turret);
     let mut world = GameWorld::new();
     let state = Arc::new(Mutex::new(EditorState::default()));
-    state.lock().expect("the editor state").pending_prefab_spawn =
-        Some((project.uuid(TURRET), None));
+    state
+        .lock()
+        .expect("the editor state")
+        .push_request(EditorRequest::SpawnPrefab {
+            prefab: project.uuid(TURRET),
+            parent: None,
+        });
 
     process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
 
@@ -166,7 +171,10 @@ fn saving_a_subtree_as_a_prefab_keeps_its_instances_linked() {
     state
         .lock()
         .expect("the editor state")
-        .pending_save_as_prefab_at = Some((tower, TOWER.to_owned()));
+        .push_request(EditorRequest::SaveAsPrefabAt {
+            entity: tower,
+            path: TOWER.to_owned(),
+        });
 
     process_pending_save_as_prefab(Some(&project.vfs), &world, &state);
 
@@ -192,8 +200,13 @@ fn saving_a_subtree_as_a_prefab_keeps_its_instances_linked() {
     );
 
     let mut spawned = GameWorld::new();
-    state.lock().expect("the editor state").pending_prefab_spawn =
-        Some((project.uuid(TOWER), None));
+    state
+        .lock()
+        .expect("the editor state")
+        .push_request(EditorRequest::SpawnPrefab {
+            prefab: project.uuid(TOWER),
+            parent: None,
+        });
     process_pending_prefab_spawn(Some(&project.vfs), &mut spawned, &state);
     let mut links: Vec<AssetUUID> = instance_roots(&spawned)
         .into_iter()
@@ -218,20 +231,33 @@ fn saving_an_instance_over_its_own_prefab_keeps_the_prefab_whole() {
     let project = project("prefab-overwrite", &turret);
     let mut world = GameWorld::new();
     let state = Arc::new(Mutex::new(EditorState::default()));
-    state.lock().expect("the editor state").pending_prefab_spawn =
-        Some((project.uuid(TURRET), None));
+    state
+        .lock()
+        .expect("the editor state")
+        .push_request(EditorRequest::SpawnPrefab {
+            prefab: project.uuid(TURRET),
+            parent: None,
+        });
     process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
     let (root, _) = instance_roots(&world)[0];
 
     state
         .lock()
         .expect("the editor state")
-        .pending_save_as_prefab_at = Some((root, TURRET.to_owned()));
+        .push_request(EditorRequest::SaveAsPrefabAt {
+            entity: root,
+            path: TURRET.to_owned(),
+        });
     process_pending_save_as_prefab(Some(&project.vfs), &world, &state);
 
     let mut spawned = GameWorld::new();
-    state.lock().expect("the editor state").pending_prefab_spawn =
-        Some((project.uuid(TURRET), None));
+    state
+        .lock()
+        .expect("the editor state")
+        .push_request(EditorRequest::SpawnPrefab {
+            prefab: project.uuid(TURRET),
+            parent: None,
+        });
     process_pending_prefab_spawn(Some(&project.vfs), &mut spawned, &state);
     assert_eq!(
         spawned.iter_entities().count(),
@@ -251,20 +277,33 @@ fn saving_an_instance_over_its_prefab_under_another_case_keeps_the_prefab_whole(
     let project = project("prefab-overwrite-case", &turret);
     let mut world = GameWorld::new();
     let state = Arc::new(Mutex::new(EditorState::default()));
-    state.lock().expect("the editor state").pending_prefab_spawn =
-        Some((project.uuid(TURRET), None));
+    state
+        .lock()
+        .expect("the editor state")
+        .push_request(EditorRequest::SpawnPrefab {
+            prefab: project.uuid(TURRET),
+            parent: None,
+        });
     process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
     let (root, _) = instance_roots(&world)[0];
 
     state
         .lock()
         .expect("the editor state")
-        .pending_save_as_prefab_at = Some((root, "prefabs/Turret.kprefab".to_owned()));
+        .push_request(EditorRequest::SaveAsPrefabAt {
+            entity: root,
+            path: "prefabs/Turret.kprefab".to_owned(),
+        });
     process_pending_save_as_prefab(Some(&project.vfs), &world, &state);
 
     let mut spawned = GameWorld::new();
-    state.lock().expect("the editor state").pending_prefab_spawn =
-        Some((project.uuid(TURRET), None));
+    state
+        .lock()
+        .expect("the editor state")
+        .push_request(EditorRequest::SpawnPrefab {
+            prefab: project.uuid(TURRET),
+            parent: None,
+        });
     process_pending_prefab_spawn(Some(&project.vfs), &mut spawned, &state);
     assert_eq!(
         spawned.iter_entities().count(),

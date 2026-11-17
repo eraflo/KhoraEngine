@@ -27,6 +27,7 @@ use khora_core::renderer::api::resource::CpuTexture;
 use khora_core::renderer::light::LightType;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
+use khora_core::sync::RwLockExt;
 use khora_core::Runtime;
 
 use crate::ecs::{DataSystemRegistration, TickPhase, World};
@@ -95,7 +96,7 @@ fn ibl_bake_system(
         .and_then(|env| env.texture);
     let texture = environment.and_then(|uuid| {
         let store = runtime.resources.get::<AssetStore>()?.store::<CpuTexture>();
-        let guard = store.read().unwrap_or_else(|e| e.into_inner());
+        let guard = store.read_recovered();
         guard.get(&uuid).cloned()
     });
     let source = IblSource {

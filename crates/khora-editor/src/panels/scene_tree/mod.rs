@@ -67,7 +67,7 @@ enum EditorAction {
     Rename(khora_sdk::prelude::ecs::EntityId),
     Duplicate(khora_sdk::prelude::ecs::EntityId),
     Delete(khora_sdk::prelude::ecs::EntityId),
-    Spawn(String),
+    Spawn(khora_sdk::editor_ui::SpawnShape),
     /// Reparents `child` under `new_parent`, or to the root with `None`.
     Reparent {
         child: khora_sdk::prelude::ecs::EntityId,

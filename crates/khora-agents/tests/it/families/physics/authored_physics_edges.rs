@@ -351,7 +351,8 @@ fn a_crate_resting_on_the_ground_falls_asleep() {
         .expect("a simulated body has a motion");
     assert!(
         motion.linear == Vec3::ZERO && motion.angular == Vec3::ZERO,
-        "a crate at rest for ten seconds is asleep, its velocity exactly zero; it moves at          {motion:?}"
+        "a crate at rest for ten seconds is asleep, its velocity exactly zero; it moves at \
+         {motion:?}"
     );
 }
 

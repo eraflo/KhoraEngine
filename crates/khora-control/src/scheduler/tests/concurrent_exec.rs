@@ -101,12 +101,14 @@ fn a_panicking_agent_is_reported_as_a_failed_completion() {
 
     scheduler.execute_agents_in_phase(
         ExecutionPhase::OUTPUT,
-        &runtime,
-        &BTreeSet::new(),
-        &completion,
-        &bus,
-        &mut deck,
         AgentSelection::All,
+        &mut FrameRun {
+            runtime: &runtime,
+            inactive: &BTreeSet::new(),
+            completion_map: &completion,
+            bus: &bus,
+            deck: &mut deck,
+        },
     );
 
     assert!(

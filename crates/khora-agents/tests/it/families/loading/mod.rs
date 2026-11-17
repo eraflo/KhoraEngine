@@ -48,6 +48,7 @@ use khora_core::lane::guard::{SinkKind, SourceKind};
 use khora_core::lane::io::{Budget, FrameId, InputSource};
 use khora_core::lane::{LaneBus, Lease, Reserve, Staged};
 use khora_core::scene::SerializationGoal;
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::ecs::{Name, Transform, World};
 use khora_data::scene::loading::{
@@ -90,17 +91,11 @@ struct Threads(Mutex<Vec<std::thread::ThreadId>>);
 
 impl Threads {
     fn note(&self) {
-        self.0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .push(std::thread::current().id());
+        self.0.lock_recovered().push(std::thread::current().id());
     }
 
     fn all(&self) -> Vec<std::thread::ThreadId> {
-        self.0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
+        self.0.lock_recovered().clone()
     }
 
     /// Whether the loader ran, and never on the thread running the frames.
@@ -958,9 +953,7 @@ fn background_frame(
         place: &Mutex<khora_core::agent::Place>,
     ) -> std::sync::MutexGuard<'_, khora_core::agent::Place> {
         // A test thread that panicked under the lock still reads the place.
-        place
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        place.lock_recovered()
     }
     let place = agent.place();
     let mut bus = LaneBus::new();

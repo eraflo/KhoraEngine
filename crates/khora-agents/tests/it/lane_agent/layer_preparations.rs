@@ -40,12 +40,13 @@ use khora_core::lane::io::{FrameId, TargetKey};
 use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneBus, LaneError, OutputDeck};
+use khora_core::sync::LockExt;
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
 
 use super::fixtures::{
-    host_envelope, lend, level, locked, offer_request, place_of, run, runtime, wakes_of, NoInputs,
-    Plan, ProbeOutputs, Recorded, LADDER,
+    host_envelope, lend, level, offer_request, place_of, run, runtime, wakes_of, NoInputs, Plan,
+    ProbeOutputs, Recorded, LADDER,
 };
 use crate::protocol::said;
 
@@ -104,10 +105,7 @@ macro_rules! prepared_lane {
                 _gpu: &mut GpuSetup<'_>,
                 _key: Option<TargetKey>,
             ) -> Result<(), LaneError> {
-                $prepares
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
-                    .push(std::thread::current().id());
+                $prepares.lock_recovered().push(std::thread::current().id());
                 if $fails {
                     return Err(LaneError::InvalidInput {
                         expected: "a lane that can be prepared",
@@ -145,10 +143,7 @@ macro_rules! prepared_lane {
 
 /// The threads `prepares` noted.
 fn threads(prepares: &Mutex<Vec<ThreadId>>) -> Vec<ThreadId> {
-    prepares
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .clone()
+    prepares.lock_recovered().clone()
 }
 
 /// A registration of the prepared family: a cheap lane, the default, and a
@@ -181,16 +176,18 @@ fn frame_leaving_preparations(
     let mut bus = LaneBus::new();
     bus.set_frame(FrameId(frame));
     let id = agent.id();
-    locked(&place).start_frame(&mut GpuSetup::headless());
-    let why = locked(&place).take_wakes();
+    place
+        .lock_recovered()
+        .start_frame(&mut GpuSetup::headless());
+    let why = place.lock_recovered().take_wakes();
     if !why.is_empty() {
         let permit = agent.contention();
         let mut context =
             EngineContext::for_agent(Arc::clone(runtime), &bus, deck, &permit, Some(id));
-        let mut held = locked(&place);
+        let mut held = place.lock_recovered();
         agent.wake(&why, &mut held, &mut context);
     }
-    let mut held = locked(&place);
+    let mut held = place.lock_recovered();
     let permit = held.contention();
     let mut context = EngineContext::for_agent(Arc::clone(runtime), &bus, deck, &permit, Some(id));
     held.run(&mut context)
@@ -250,7 +247,7 @@ fn a_switch_leaves_a_preparation_beside_the_installed_layer() {
     );
     {
         let place = place_of(&agent);
-        let place = locked(&place);
+        let place = place.lock_recovered();
         assert_eq!(place.pending_row(), Some(StrategyId::LowPower));
         assert_eq!(place.staged_row(), None, "nothing is staged yet");
         assert_eq!(place.installed_row(), Some(StrategyId::HighPerformance));
@@ -306,7 +303,7 @@ fn while_a_switch_is_prepared_the_installed_layer_reports_in_the_epoch_lent() {
         .expect("the installed layer ran");
 
     assert_eq!(
-        locked(&place_of(&agent)).pending_row(),
+        place_of(&agent).lock_recovered().pending_row(),
         Some(StrategyId::LowPower),
         "the switch is prepared off the frame"
     );
@@ -375,7 +372,7 @@ fn a_row_whose_preparation_failed_is_passed_by_until_the_next_allocation() {
         "the failed row is not prepared again within the allocation"
     );
     assert_eq!(agent.report().row, StrategyId::LowPower);
-    assert_eq!(locked(&place_of(&agent)).pending_row(), None);
+    assert_eq!(place_of(&agent).lock_recovered().pending_row(), None);
 
     agent.apply(Epoch(3), Some(&host_envelope(250)), None, None);
     let mut deck = OutputDeck::new();
@@ -412,7 +409,7 @@ fn run_frame_lands_a_switch_answered_at_its_start_in_the_same_frame() {
 
     assert_eq!(recorded_lane(&deck), Some("cheap"), "swapped in that frame");
     assert_eq!(
-        locked(&place_of(&agent)).pending_row(),
+        place_of(&agent).lock_recovered().pending_row(),
         None,
         "no preparation is left waiting"
     );
@@ -445,7 +442,7 @@ fn run_frame_lands_a_switch_answered_at_its_end_at_the_next_call() {
 
     {
         let place = place_of(&agent);
-        let place = locked(&place);
+        let place = place.lock_recovered();
         assert_eq!(place.pending_row(), None, "no preparation is left waiting");
         assert_eq!(place.staged_row(), Some(StrategyId::Balanced));
     }
@@ -505,7 +502,7 @@ fn under_the_scheduler_the_first_layer_is_prepared_in_place_and_a_switch_off_the
     scheduler.run_frame(&mut world, Arc::clone(&runtime));
     assert_eq!(recorded(&mut scheduler), Some("dear"), "installed at once");
     assert_eq!(threads(&DEAR_D_PREPARES), vec![here], "prepared in place");
-    assert_eq!(locked(&place).pending_row(), None);
+    assert_eq!(place.lock_recovered().pending_row(), None);
 
     scheduler.budget_channel().publish(allocation(2, 150));
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -558,8 +555,10 @@ fn a_switch_prepared_off_the_frame_builds_on_the_runtimes_device() {
         let place = place_of(agent);
         let id = agent.id();
         let bus = bus_with_a_sun();
-        locked(&place).start_frame(&mut GpuSetup::headless());
-        let why = locked(&place).take_wakes();
+        place
+            .lock_recovered()
+            .start_frame(&mut GpuSetup::headless());
+        let why = place.lock_recovered().take_wakes();
         if !why.is_empty() {
             let permit = agent.contention();
             let mut scratch = OutputDeck::new();
@@ -570,12 +569,12 @@ fn a_switch_prepared_off_the_frame_builds_on_the_runtimes_device() {
                 &permit,
                 Some(id),
             );
-            let mut held = locked(&place);
+            let mut held = place.lock_recovered();
             agent.wake(&why, &mut held, &mut context);
         }
         prepare_waiting(&place, runtime, &bus, id);
         let mut deck = OutputDeck::new();
-        let mut held = locked(&place);
+        let mut held = place.lock_recovered();
         let permit = held.contention();
         let mut context =
             EngineContext::for_agent(Arc::clone(runtime), &bus, &mut deck, &permit, Some(id));
@@ -595,7 +594,10 @@ fn a_switch_prepared_off_the_frame_builds_on_the_runtimes_device() {
         None,
     );
     shadow_frame(&mut agent, &runtime);
-    assert_eq!(locked(&place).installed_row(), Some(StrategyId::Balanced));
+    assert_eq!(
+        place.lock_recovered().installed_row(),
+        Some(StrategyId::Balanced)
+    );
     assert_eq!(device.atlas_sides(), vec![256, 1024]);
 
     agent.apply(
@@ -606,7 +608,7 @@ fn a_switch_prepared_off_the_frame_builds_on_the_runtimes_device() {
     );
     shadow_frame(&mut agent, &runtime);
     assert_eq!(
-        locked(&place).staged_row(),
+        place.lock_recovered().staged_row(),
         Some(StrategyId::HighPerformance),
         "the preparation gave the high layer: {:?}",
         said(&agent)
@@ -619,7 +621,7 @@ fn a_switch_prepared_off_the_frame_builds_on_the_runtimes_device() {
 
     let deck = shadow_frame(&mut agent, &runtime);
     assert_eq!(
-        locked(&place).installed_row(),
+        place.lock_recovered().installed_row(),
         Some(StrategyId::HighPerformance)
     );
     assert!(
@@ -658,7 +660,7 @@ fn an_aged_quote_wakes_the_agent_once_while_a_switch_is_prepared() {
         let mut deck = OutputDeck::new();
         frame_leaving_preparations(&mut agent, frame, &runtime, &mut deck);
         assert_eq!(
-            locked(&place_of(&agent)).pending_row(),
+            place_of(&agent).lock_recovered().pending_row(),
             Some(StrategyId::LowPower),
             "the switch is still being prepared at frame {frame}"
         );
@@ -702,7 +704,7 @@ fn the_floor_reports_no_overrun_in_an_epoch_where_a_row_fits() {
         let report = frame_leaving_preparations(&mut agent, frame, &runtime, &mut deck)
             .expect("the installed layer ran");
         assert_eq!(
-            locked(&place_of(&agent)).pending_row(),
+            place_of(&agent).lock_recovered().pending_row(),
             Some(StrategyId::HighPerformance),
             "the dear row is being prepared at frame {frame}"
         );

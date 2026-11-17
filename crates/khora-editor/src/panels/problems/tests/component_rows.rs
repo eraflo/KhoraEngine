@@ -57,33 +57,19 @@ fn names(entity: EntityId) -> Option<String> {
 /// A problem the components' check found: `component`'s `field` on `entity`.
 fn data_problem(entity: EntityId, component: &str, field: &str, message: &str) -> Problem {
     Problem {
-        severity: ProblemSeverity::Error,
-        module: None,
-        line: 0,
-        column: 0,
-        message: message.to_owned(),
-        note: None,
         entity: Some(entity),
-        behavior: None,
         component: Some(component.to_owned()),
         field: Some(field.to_owned()),
+        ..Problem::new(ProblemSeverity::Error, message)
     }
 }
 
 /// A registration problem in no module, on no entity, about no component.
 fn orphan() -> Problem {
-    Problem {
-        severity: ProblemSeverity::Warning,
-        module: None,
-        line: 0,
-        column: 0,
-        message: "`Health` is declared by no module".to_owned(),
-        note: None,
-        entity: None,
-        behavior: None,
-        component: None,
-        field: None,
-    }
+    Problem::new(
+        ProblemSeverity::Warning,
+        "`Health` is declared by no module",
+    )
 }
 
 #[test]
@@ -195,16 +181,12 @@ fn a_module_group_is_titled_by_its_module() {
 #[test]
 fn a_problem_about_a_whole_component_still_names_its_entity() {
     let skipped = Problem {
-        severity: ProblemSeverity::Warning,
-        module: None,
-        line: 0,
-        column: 0,
-        message: "a retired component was skipped (component Lantern, entity 0x2a)".to_owned(),
-        note: None,
         entity: Some(lamp_entity()),
-        behavior: None,
         component: Some("Lantern".to_owned()),
-        field: None,
+        ..Problem::new(
+            ProblemSeverity::Warning,
+            "a retired component was skipped (component Lantern, entity 0x2a)",
+        )
     };
 
     let groups = grouped(&[skipped], &names);

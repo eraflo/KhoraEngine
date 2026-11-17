@@ -95,7 +95,6 @@ impl AgentSnapshot {
 /// under its last line.
 ///
 /// The editor's text calls paint a single line.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn wrapped(
     ui: &mut dyn UiBuilder,
     pos: [f32; 2],

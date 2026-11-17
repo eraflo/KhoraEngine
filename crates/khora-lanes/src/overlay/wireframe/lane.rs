@@ -314,11 +314,11 @@ fn push_models(
             continue;
         };
         let model = extracted.transform.to_matrix();
-        let normal = model.inverse().map(|inv| inv.transpose()).unwrap_or(model);
-        let uniforms = ModelUniforms {
+        // The wireframe reads no normal: a degenerate transform still draws.
+        let uniforms = ModelUniforms::from_model(model).unwrap_or(ModelUniforms {
             model_matrix: model.to_cols_array_2d(),
-            normal_matrix: normal.to_cols_array_2d(),
-        };
+            normal_matrix: model.to_cols_array_2d(),
+        });
         let offset = built
             .model_ring
             .push(device, bytemuck::bytes_of(&uniforms))?;

@@ -26,6 +26,7 @@
 //! it reports.
 
 use crate::ecs::entity::EntityId;
+use crate::sync::RwLockExt;
 
 /// How much a problem matters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -97,6 +98,40 @@ pub struct Problem {
     pub field: Option<String>,
 }
 
+impl Problem {
+    /// Returns a `severity` problem saying `message`, located nowhere, every other field empty.
+    pub fn new(severity: ProblemSeverity, message: impl Into<String>) -> Self {
+        Self {
+            severity,
+            module: None,
+            line: 0,
+            column: 0,
+            message: message.into(),
+            note: None,
+            entity: None,
+            behavior: None,
+            component: None,
+            field: None,
+        }
+    }
+
+    /// Returns a `severity` problem in the file `module` at `line`:`column` (0 for none).
+    pub fn of_file(
+        severity: ProblemSeverity,
+        module: impl Into<String>,
+        line: u32,
+        column: u32,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            module: Some(module.into()),
+            line,
+            column,
+            ..Self::new(severity, message)
+        }
+    }
+}
+
 /// Every source's problems. Shared as an `Arc` in the runtime's resources.
 #[derive(Debug, Default)]
 pub struct Problems(std::sync::RwLock<Held>);
@@ -112,10 +147,7 @@ impl Problems {
     /// Replaces what `source` reported last with `problems`; an empty list
     /// clears it.
     pub fn report(&self, source: ProblemSource, problems: Vec<Problem>) {
-        let mut held = match self.0.write() {
-            Ok(held) => held,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let mut held = self.0.write_recovered();
         let unchanged = match held.by_source.get(&source) {
             Some(before) => *before == problems,
             None => problems.is_empty(),
@@ -136,10 +168,7 @@ impl Problems {
     /// Then sorted by module, line, column, component and field; two compiles
     /// finding one problem in a shared module list it once.
     pub fn all(&self) -> Vec<Problem> {
-        let held = match self.0.read() {
-            Ok(held) => held,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let held = self.0.read_recovered();
         let mut all: Vec<Problem> = held.by_source.values().flatten().cloned().collect();
         all.sort_by(|a, b| {
             (
@@ -168,10 +197,7 @@ impl Problems {
     /// What `source` reported last, as it reported it; empty when it holds
     /// nothing.
     pub fn of_source(&self, source: &ProblemSource) -> Vec<Problem> {
-        let held = match self.0.read() {
-            Ok(held) => held,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let held = self.0.read_recovered();
         held.by_source.get(source).cloned().unwrap_or_default()
     }
 
@@ -191,10 +217,7 @@ impl Problems {
     /// Moves each time a report changes what is held, so a reader can skip a
     /// frame where nothing did.
     pub fn generation(&self) -> u64 {
-        match self.0.read() {
-            Ok(held) => held.generation,
-            Err(poisoned) => poisoned.into_inner().generation,
-        }
+        self.0.read_recovered().generation
     }
 }
 
@@ -224,18 +247,7 @@ mod tests {
         column: u32,
         message: &str,
     ) -> Problem {
-        Problem {
-            severity,
-            module: Some(module.to_owned()),
-            line,
-            column,
-            message: message.to_owned(),
-            note: None,
-            entity: None,
-            behavior: None,
-            component: None,
-            field: None,
-        }
+        Problem::of_file(severity, module, line, column, message)
     }
 
     fn error(module: &str, line: u32, column: u32, message: &str) -> Problem {
@@ -439,16 +451,9 @@ mod tests {
     /// A problem in the scene's data: no module, a component and its field.
     fn data_problem(component: &str, field: &str, message: &str) -> Problem {
         Problem {
-            severity: ProblemSeverity::Error,
-            module: None,
-            line: 0,
-            column: 0,
-            message: message.to_owned(),
-            note: None,
-            entity: None,
-            behavior: None,
             component: Some(component.to_owned()),
             field: Some(field.to_owned()),
+            ..Problem::new(ProblemSeverity::Error, message)
         }
     }
 
@@ -465,5 +470,58 @@ mod tests {
         problems.report(ProblemSource::Data, Vec::new());
 
         assert_eq!(problems.all(), vec![b]);
+    }
+
+    /// A problem located nowhere names its severity and message, every other field empty.
+    #[test]
+    fn new_builds_a_problem_located_nowhere() {
+        let built = Problem::new(ProblemSeverity::Warning, "it may still land");
+
+        assert_eq!(
+            built,
+            Problem {
+                severity: ProblemSeverity::Warning,
+                module: None,
+                line: 0,
+                column: 0,
+                message: "it may still land".to_owned(),
+                note: None,
+                entity: None,
+                behavior: None,
+                component: None,
+                field: None,
+            }
+        );
+    }
+
+    /// A problem in a file holds the file as its module, and its line and column.
+    #[test]
+    fn of_file_builds_a_problem_at_a_position_in_a_file() {
+        let built = Problem::of_file(ProblemSeverity::Error, "guard.erg", 3, 5, "faulted");
+
+        assert_eq!(
+            built,
+            Problem {
+                severity: ProblemSeverity::Error,
+                module: Some("guard.erg".to_owned()),
+                line: 3,
+                column: 5,
+                message: "faulted".to_owned(),
+                note: None,
+                entity: None,
+                behavior: None,
+                component: None,
+                field: None,
+            }
+        );
+    }
+
+    /// A file problem with no position keeps line and column at 0, what "none" means.
+    #[test]
+    fn of_file_at_no_position_holds_line_and_column_zero() {
+        let built = Problem::of_file(ProblemSeverity::Warning, "shaders/a.wgsl", 0, 0, "ignored");
+
+        assert_eq!((built.line, built.column), (0, 0));
+        assert_eq!(built.module.as_deref(), Some("shaders/a.wgsl"));
     }
 }

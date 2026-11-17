@@ -8,26 +8,46 @@
 
 //! Inspector header — composite widget used by the Properties panel.
 
-use khora_sdk::editor_ui::{FontFamilyHint, Icon, TextAlign, UiBuilder, UiTheme};
+use khora_sdk::editor_ui::{FontFamilyHint, Icon, TextAlign};
 
 use khora_tool_ui::widgets::paint;
 use khora_tool_ui::widgets::with_alpha;
 
+use crate::widgets::Painter;
+
+/// What the Inspector's header says of the inspected entity.
+pub struct InspectorHeader<'a> {
+    /// The glyph on the tile.
+    pub icon: Icon,
+    /// The entity's name.
+    pub name: &'a str,
+    /// The tag of what the entity is, such as `Camera`.
+    pub type_tag: &'a str,
+    /// The status pill's word.
+    pub status_label: &'a str,
+    /// The status pill's colour.
+    pub status_color: [f32; 4],
+    /// The entity's id, shown after the pill, if any.
+    pub id_label: Option<&'a str>,
+}
+
 /// Paints the Inspector's rich header — large icon tile + name + meta row
 /// (tag + status pill + id). Returns the bottom edge in screen-space.
-#[allow(clippy::too_many_arguments)]
 pub fn paint_inspector_header(
-    ui: &mut dyn UiBuilder,
+    p: &mut Painter<'_>,
     origin: [f32; 2],
     width: f32,
-    icon: Icon,
-    name: &str,
-    type_tag: &str,
-    status_label: &str,
-    status_color: [f32; 4],
-    id_label: Option<&str>,
-    theme: &UiTheme,
+    header: &InspectorHeader<'_>,
 ) -> f32 {
+    let (ui, theme) = (&mut *p.ui, p.theme);
+    let InspectorHeader {
+        icon,
+        name,
+        type_tag,
+        status_label,
+        status_color,
+        id_label,
+    } = *header;
     let h = 64.0;
     let pad = 12.0;
 

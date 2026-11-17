@@ -23,6 +23,7 @@ use khora_core::asset::{AssetHandle, AssetUUID};
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::OutputDeck;
 use khora_core::math::Vec2;
+use khora_core::sync::LockExt;
 use khora_core::ui::text::{
     FontError, FontFamily, ShapeError, ShapeRequest, ShapedGlyph, ShapedText, TextShaper,
 };
@@ -76,18 +77,12 @@ impl FakeShaper {
 
     /// Every registration, in call order.
     fn registrations(&self) -> Vec<(AssetUUID, Vec<u8>)> {
-        self.registered
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        self.registered.lock_recovered().clone()
     }
 
     /// Every shaping request, in call order.
     fn requests(&self) -> Vec<Request> {
-        self.shaped
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        self.shaped.lock_recovered().clone()
     }
 
     /// Every call of either kind.
@@ -98,11 +93,8 @@ impl FakeShaper {
 
 impl TextShaper for FakeShaper {
     fn register_font(&self, id: AssetUUID, data: Arc<[u8]>) -> Result<FontFamily, FontError> {
-        self.registered
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push((id, data.to_vec()));
-        let mut known = self.known.lock().unwrap_or_else(|e| e.into_inner());
+        self.registered.lock_recovered().push((id, data.to_vec()));
+        let mut known = self.known.lock_recovered();
         if &*data == UNREADABLE {
             known.remove(&id);
             return Err(FontError::Unreadable);
@@ -114,21 +106,13 @@ impl TextShaper for FakeShaper {
     }
 
     fn shape(&self, request: &ShapeRequest<'_>) -> Result<ShapedText, ShapeError> {
-        self.shaped
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push(Request {
-                text: request.text.to_owned(),
-                font: request.font,
-                size_px: request.size_px,
-                max_width: request.max_width,
-            });
-        if !self
-            .known
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .contains(&request.font)
-        {
+        self.shaped.lock_recovered().push(Request {
+            text: request.text.to_owned(),
+            font: request.font,
+            size_px: request.size_px,
+            max_width: request.max_width,
+        });
+        if !self.known.lock_recovered().contains(&request.font) {
             return Err(ShapeError::UnknownFont(request.font));
         }
         Ok(fake_shape(request.text, request.size_px))

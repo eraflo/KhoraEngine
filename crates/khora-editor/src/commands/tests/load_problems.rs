@@ -39,12 +39,7 @@ impl Drop for Folder {
 /// Hands the load's problems to the engine's list, as the editor app does
 /// at the start of each frame.
 fn mirror(problems: &Problems, state: &Arc<Mutex<EditorState>>) {
-    let pending = state
-        .lock()
-        .expect("the editor state")
-        .pending_load_problems
-        .take();
-    if let Some(load) = pending {
+    if let Some(load) = take_load_problems(state) {
         problems.report(ProblemSource::Load, load);
     }
 }

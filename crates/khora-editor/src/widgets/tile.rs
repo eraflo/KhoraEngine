@@ -22,8 +22,8 @@ use khora_tool_ui::widgets::with_alpha;
 
 /// The category an asset tile is drawn as: its tint, icon and format glyph.
 ///
-/// One variant per type name of `khora_io::asset::IndexBuilder::asset_type_for_extension`;
-/// distinctions between extensions belong there.
+/// An `AssetType`'s handler gives it; several types may share one (a prefab
+/// is drawn as a scene).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssetTileKind {
     /// A mesh or model file.
@@ -96,24 +96,44 @@ pub struct AssetTileInteraction {
     pub double_clicked: bool,
 }
 
+/// One asset tile as the grid paints it.
+#[derive(Debug, Clone, Copy)]
+pub struct AssetTile<'a> {
+    /// What tells this tile's interactions from another's.
+    pub id_salt: &'a str,
+    /// The top-left corner, in screen space.
+    pub origin: [f32; 2],
+    /// The whole tile, name included.
+    pub size: [f32; 2],
+    /// The name under the thumbnail.
+    pub name: &'a str,
+    /// The category it is drawn as.
+    pub kind: AssetTileKind,
+    /// Whether it is selected.
+    pub selected: bool,
+    /// The problems its file has, if any.
+    pub badge: Option<crate::panels::problems::view::TileBadge>,
+    /// Whether its file is quarantined.
+    pub quarantined: bool,
+}
+
 /// Paints an asset tile, its thumbnail over its name, and returns what the
 /// user did to it.
-///
-/// `origin` is the top-left corner in screen space; `size` is the whole tile,
-/// name included.
-#[allow(clippy::too_many_arguments)] // UI paint helper — splitting hurts readability.
 pub fn paint_asset_tile(
     ui: &mut dyn UiBuilder,
-    id_salt: &str,
-    origin: [f32; 2],
-    size: [f32; 2],
-    name: &str,
-    kind: AssetTileKind,
-    selected: bool,
-    badge: Option<crate::panels::problems::view::TileBadge>,
-    quarantined: bool,
+    tile: AssetTile<'_>,
     theme: &UiTheme,
 ) -> AssetTileInteraction {
+    let AssetTile {
+        id_salt,
+        origin,
+        size,
+        name,
+        kind,
+        selected,
+        badge,
+        quarantined,
+    } = tile;
     let [w, h] = size;
     let thumb_h = w; // square
     let name_y = origin[1] + thumb_h + 4.0;

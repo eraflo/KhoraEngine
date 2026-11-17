@@ -18,7 +18,7 @@
 
 use std::path::{Path, PathBuf};
 
-use khora_sdk::editor_ui::{InspectedPrefab, PrefabApplyScope};
+use khora_sdk::editor_ui::{EditorRequest, InspectedPrefab, PrefabApplyScope};
 use khora_sdk::khora_core::ecs::PersistentId;
 use khora_sdk::khora_data::ecs::{PrefabInstance, World};
 use khora_sdk::khora_data::scene::{
@@ -144,7 +144,13 @@ fn spawn_turrets(project: &Project, world: &mut GameWorld, count: usize) -> Vec<
             .lock()
             .expect("the project")
             .resolve_uuid(TURRET);
-        state.lock().expect("the editor state").pending_prefab_spawn = Some((turret, None));
+        state
+            .lock()
+            .expect("the editor state")
+            .push_request(EditorRequest::SpawnPrefab {
+                prefab: turret,
+                parent: None,
+            });
         process_pending_prefab_spawn(Some(&project.vfs), world, &state);
     }
     let instances: Vec<Instance> = world
@@ -170,16 +176,13 @@ fn apply_to_prefab(
     scope: PrefabApplyScope,
 ) {
     let state = Arc::new(Mutex::new(EditorState::default()));
-    state.lock().expect("the editor state").pending_prefab_apply = Some((entity, scope));
+    (state.lock().expect("the editor state"))
+        .push_request(EditorRequest::ApplyToPrefab { entity, scope });
 
     process_pending_prefab_apply(Some(&project.vfs), world, &state);
 
     assert!(
-        state
-            .lock()
-            .expect("the editor state")
-            .pending_prefab_apply
-            .is_none(),
+        state.lock().expect("the editor state").requests.is_empty(),
         "the request is drained"
     );
 }
@@ -397,7 +400,8 @@ fn apply_and_rebase(
     scope: PrefabApplyScope,
 ) {
     let state = Arc::new(Mutex::new(EditorState::default()));
-    state.lock().expect("the editor state").pending_prefab_apply = Some((entity, scope));
+    (state.lock().expect("the editor state"))
+        .push_request(EditorRequest::ApplyToPrefab { entity, scope });
 
     process_pending_prefab_apply(Some(&project.vfs), world, &state);
 
@@ -524,12 +528,21 @@ fn a_nested_live_instance_takes_an_applied_component() {
         .lock()
         .expect("the project")
         .resolve_uuid(TURRET);
-    state.lock().expect("the editor state").pending_prefab_spawn = Some((turret, Some(tower)));
+    state
+        .lock()
+        .expect("the editor state")
+        .push_request(EditorRequest::SpawnPrefab {
+            prefab: turret,
+            parent: Some(tower),
+        });
     process_pending_prefab_spawn(Some(&project.vfs), &mut made, &state);
     state
         .lock()
         .expect("the editor state")
-        .pending_save_as_prefab_at = Some((tower, "prefabs/tower.kprefab".to_owned()));
+        .push_request(EditorRequest::SaveAsPrefabAt {
+            entity: tower,
+            path: "prefabs/tower.kprefab".to_owned(),
+        });
     process_pending_save_as_prefab(Some(&project.vfs), &made, &state);
 
     let mut world = GameWorld::new();
@@ -539,7 +552,13 @@ fn a_nested_live_instance_takes_an_applied_component() {
         .lock()
         .expect("the project")
         .resolve_uuid("prefabs/tower.kprefab");
-    state.lock().expect("the editor state").pending_prefab_spawn = Some((tower_prefab, None));
+    state
+        .lock()
+        .expect("the editor state")
+        .push_request(EditorRequest::SpawnPrefab {
+            prefab: tower_prefab,
+            parent: None,
+        });
     process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
     let nested = world
         .iter_entities()

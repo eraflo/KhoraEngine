@@ -260,6 +260,44 @@ fn an_entity_leaving_the_scope_is_forgotten_and_arrives_afresh_when_it_comes_bac
     );
 }
 
+/// **The instances that leave the scope are named once, by entity then
+/// behavior name**: two entities running two behaviors each leave together,
+/// and the frame after names nobody.
+#[test]
+fn the_instances_leaving_the_scope_are_named_in_entity_order() {
+    let mut world = World::new();
+    let sentry = declare_behavior(&mut world, "ai/guard.erg", "Sentry");
+    let guard = declare_behavior(&mut world, "ai/guard.erg", "Guard");
+    let preview = declare_marker(&mut world, "Preview");
+    let first = world.spawn(Transform::identity());
+    let second = world.spawn(Transform::identity());
+    for entity in [second, first] {
+        attach_behavior(&mut world, entity, sentry, 1);
+        attach_behavior(&mut world, entity, guard, 1);
+        mark(&mut world, entity, preview);
+    }
+    let mut flow = ScriptFlow::default();
+    let scoped = |resumed| context(resumed, Some(preview));
+    script_frame(&mut flow, &world, scoped(true));
+
+    unmark(&mut world, second, preview);
+    unmark(&mut world, first, preview);
+    let left = script_frame(&mut flow, &world, scoped(false));
+    let after = script_frame(&mut flow, &world, scoped(false));
+
+    let named = |entity, name: &str| (entity, name.to_owned());
+    assert_eq!(
+        left.left_scope,
+        vec![
+            named(first, "Guard"),
+            named(first, "Sentry"),
+            named(second, "Guard"),
+            named(second, "Sentry"),
+        ]
+    );
+    assert!(after.left_scope.is_empty(), "{:?}", after.left_scope);
+}
+
 /// **A scope moved to another marker brings that marker's entities in as
 /// arrivals**, and forgets the first marker's, which arrive afresh when the
 /// scope moves back.

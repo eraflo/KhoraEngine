@@ -52,7 +52,7 @@ impl PackedResolver {
         let entries = index
             .iter_all()
             .filter_map(|metadata| {
-                let source = metadata.variants.get("default")?;
+                let source = metadata.default_source()?;
                 matches!(source, AssetSource::Packed { .. }).then(|| {
                     (
                         asset_key(&metadata.source_path),

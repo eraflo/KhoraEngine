@@ -53,12 +53,14 @@ nothing of it is used.
 </ol>
 </figure>
 
-The size caps depend on the file's kind and on the trust it is read at:
+The size caps depend on the file's kind, which follows its asset type (see
+[Asset extensions](../reference/project-structure.md#asset-extensions)), and on the
+trust it is read at:
 
 | Kind | Trusted | Restricted, imported |
 |---|---|---|
 | Texture | 256 MiB | 64 MiB |
-| glTF model | 1 GiB | 256 MiB |
+| Mesh (glTF, OBJ, FBX) and a glTF's buffer | 1 GiB | 256 MiB |
 | Audio | 512 MiB | 128 MiB |
 | Font, text, script, shader, other | 64 MiB | 16 MiB |
 

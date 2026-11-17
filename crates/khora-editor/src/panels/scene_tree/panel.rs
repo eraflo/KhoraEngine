@@ -19,10 +19,12 @@ use khora_sdk::editor_ui::*;
 use super::drop::dispatch_asset_drop;
 use super::rows::{
     count_scene_nodes, count_visible_nodes, filter_scene_node, find_node_name, render_node,
+    TreeRows,
 };
 use super::{EditorAction, SceneTreePanel, HEADER_HEIGHT, ROW_HEIGHT, TOOLBAR_HEIGHT};
 use crate::drag_payload::{payload_is_entity, unpack_asset_drag, unpack_entity};
 use crate::widgets::panel_header::paint_panel_header;
+use crate::widgets::{Column, Painter};
 use khora_tool_ui::widgets::paint;
 use khora_tool_ui::widgets::with_alpha;
 
@@ -56,7 +58,7 @@ impl EditorPanel for SceneTreePanel {
 
         let icons_total_w = 30.0;
         let icons_left = px + pw - icons_total_w;
-        let spawn_from_menu: std::cell::Cell<Option<String>> = std::cell::Cell::new(None);
+        let spawn_from_menu: std::cell::Cell<Option<SpawnShape>> = std::cell::Cell::new(None);
 
         let tab_x = px + 6.0;
         let tab_y = py + (HEADER_HEIGHT - 22.0) * 0.5;
@@ -118,18 +120,18 @@ impl EditorPanel for SceneTreePanel {
         // Right-click offers the background menu's list: the button is a
         // shortcut, not a second way to create things.
         ui.context_menu_last(&mut |menu| {
-            for kind in ["Empty", "Cube", "Sphere", "Plane", "Light", "Camera"] {
-                if menu.button(kind) {
-                    spawn_from_menu.set(Some(kind.to_owned()));
+            for shape in SpawnShape::ALL {
+                if menu.button(shape.label()) {
+                    spawn_from_menu.set(Some(shape));
                     menu.close_menu();
                 }
             }
         });
         if add_int.clicked {
-            spawn_from_menu.set(Some("Empty".to_owned()));
+            spawn_from_menu.set(Some(SpawnShape::Empty));
         }
-        if let Some(kind) = spawn_from_menu.take() {
-            state_guard.pending_spawn = Some(kind);
+        if let Some(shape) = spawn_from_menu.take() {
+            state_guard.push_request(EditorRequest::Spawn(shape));
         }
 
         let toolbar_y = py + HEADER_HEIGHT;
@@ -231,22 +233,27 @@ impl EditorPanel for SceneTreePanel {
         ui.push_clip_rect(rows_area);
 
         let mut row_y = rows_top - self.scroll.offset();
+        let rows = TreeRows {
+            selection: &selected,
+            hidden: &hidden,
+            collapsed: &self.collapsed,
+            asset_epoch,
+            renaming,
+            rename_rect: &rename_rect,
+            pending: &pending,
+        };
+        let column = Column::new(px, pw);
         for node in &filtered_roots {
             row_y = render_node(
-                ui,
+                &mut Painter {
+                    ui: &mut *ui,
+                    theme: &theme,
+                },
+                &rows,
+                column,
                 node,
                 0,
-                px,
-                pw,
                 row_y,
-                &selected,
-                &hidden,
-                &theme,
-                &pending,
-                asset_epoch,
-                &self.collapsed,
-                renaming,
-                &rename_rect,
             );
         }
         // The rename field, drawn over the row that asked for it. Inside the
@@ -314,28 +321,28 @@ impl EditorPanel for SceneTreePanel {
             ui.context_menu_last(&mut |menu| {
                 menu.menu_button("Add", &mut |sub| {
                     if sub.button("Empty") {
-                        pending.set(Some(EditorAction::Spawn("Empty".to_owned())));
+                        pending.set(Some(EditorAction::Spawn(SpawnShape::Empty)));
                         sub.close_menu();
                     }
                     if sub.button("Cube") {
-                        pending.set(Some(EditorAction::Spawn("Cube".to_owned())));
+                        pending.set(Some(EditorAction::Spawn(SpawnShape::Cube)));
                         sub.close_menu();
                     }
                     if sub.button("Sphere") {
-                        pending.set(Some(EditorAction::Spawn("Sphere".to_owned())));
+                        pending.set(Some(EditorAction::Spawn(SpawnShape::Sphere)));
                         sub.close_menu();
                     }
                     if sub.button("Plane") {
-                        pending.set(Some(EditorAction::Spawn("Plane".to_owned())));
+                        pending.set(Some(EditorAction::Spawn(SpawnShape::Plane)));
                         sub.close_menu();
                     }
                     sub.separator();
                     if sub.button("Camera") {
-                        pending.set(Some(EditorAction::Spawn("Camera".to_owned())));
+                        pending.set(Some(EditorAction::Spawn(SpawnShape::Camera)));
                         sub.close_menu();
                     }
                     if sub.button("Light") {
-                        pending.set(Some(EditorAction::Spawn("Light".to_owned())));
+                        pending.set(Some(EditorAction::Spawn(SpawnShape::Light)));
                         sub.close_menu();
                     }
                 });
@@ -364,25 +371,28 @@ impl EditorPanel for SceneTreePanel {
                     state_guard.rename_buffer = current;
                     self.rename_focused = false;
                 }
-                EditorAction::Duplicate(eid) => {
-                    state_guard.pending_duplicate = Some(eid);
+                EditorAction::Duplicate(entity) => {
+                    state_guard.push_request(EditorRequest::DuplicateEntity { entity });
                 }
-                EditorAction::Delete(eid) => {
-                    state_guard.pending_delete = Some(eid);
+                EditorAction::Delete(entity) => {
+                    state_guard.push_request(EditorRequest::DeleteEntity { entity });
                 }
-                EditorAction::Spawn(kind) => {
-                    state_guard.pending_spawn = Some(kind);
+                EditorAction::Spawn(shape) => {
+                    state_guard.push_request(EditorRequest::Spawn(shape));
                 }
                 EditorAction::Reparent { child, new_parent } => {
                     if Some(child) != new_parent {
-                        state_guard.pending_reparent = Some((child, new_parent));
+                        state_guard.push_request(EditorRequest::Reparent {
+                            child,
+                            parent: new_parent,
+                        });
                     }
                 }
-                EditorAction::SaveAsPrefab(eid) => {
-                    state_guard.pending_save_as_prefab = Some(eid);
+                EditorAction::SaveAsPrefab(entity) => {
+                    state_guard.push_request(EditorRequest::SaveAsPrefab { entity });
                 }
-                EditorAction::SaveAsMaterial(eid, name) => {
-                    state_guard.pending_save_as_material = Some((eid, name));
+                EditorAction::SaveAsMaterial(entity, name) => {
+                    state_guard.push_request(EditorRequest::SaveAsMaterial { entity, name });
                 }
                 EditorAction::DropAsset { idx, target } => {
                     dispatch_asset_drop(&mut state_guard, idx, target);

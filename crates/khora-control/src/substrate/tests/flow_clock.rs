@@ -19,6 +19,7 @@
 
 use crate::substrate::{flow_last_seen, run_flows};
 use khora_core::lane::LaneBus;
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::ecs::{Role, SemanticDomain, Tick, World};
 use khora_data::flow::{Flow, FlowRegistration, Selection};
@@ -42,8 +43,7 @@ impl Flow for ClockProbeFlow {
     const ROLE: Role = Role::Upkeep;
 
     fn project(&self, world: &World, _sel: &Selection, _runtime: &Runtime) {
-        RUNS.lock()
-            .unwrap_or_else(|e| e.into_inner())
+        RUNS.lock_recovered()
             .push((world.instance_id(), world.current_tick()));
     }
 }
@@ -52,8 +52,7 @@ khora_data::register_flow!(ClockProbeFlow, observes = [Watched]);
 
 /// The ticks the probe ran at on `world`, in run order.
 fn probe_ticks(world: &World) -> Vec<Tick> {
-    RUNS.lock()
-        .unwrap_or_else(|e| e.into_inner())
+    RUNS.lock_recovered()
         .iter()
         .filter(|(id, _)| *id == world.instance_id())
         .map(|(_, tick)| *tick)

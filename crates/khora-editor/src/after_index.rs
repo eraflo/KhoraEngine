@@ -22,10 +22,10 @@ use khora_sdk::prelude::ecs::EntityId;
 /// index to hold what was just written.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AfterIndex {
-    /// Reveals the asset at this forward-slash path in the browser (sets
-    /// `pending_reveal_asset`).
+    /// Reveals the asset at this forward-slash path in the browser (queues
+    /// `EditorRequest::RevealAsset`).
     Reveal(String),
-    /// Opens the scene at this forward-slash project path (sets `pending_scene_load`).
+    /// Opens the scene at this forward-slash project path (queues `EditorRequest::OpenScene`).
     ///
     /// Only if the index now holds it, and no other scene was chosen since
     /// `choice` (`EditorState::scene_choices`) nor is asked for; a scene the

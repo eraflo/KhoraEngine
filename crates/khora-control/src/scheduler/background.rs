@@ -26,9 +26,10 @@ use khora_core::agent::gorna::AgentId;
 use khora_core::agent::{CheckedOut, ExecutionPhase, LayerRun, Place, Preparation, PreparedLayer};
 use khora_core::event::{Mailbox, Reader};
 use khora_core::lane::{LaneBus, OutputDeck, Reserve, Staging};
+use khora_core::sync::LockExt;
 use khora_core::{EngineContext, Runtime};
 
-use super::known::{locked, MetAgent};
+use super::known::MetAgent;
 use super::panic_guard::run_guarded;
 use crate::worker_pool::WorkerPool;
 
@@ -88,7 +89,7 @@ impl Background {
                 continue;
             }
             let out = {
-                let mut place = locked(&known.place);
+                let mut place = known.place.lock_recovered();
                 // Mail on a channel the installed layer takes: a take is
                 // declared as a write of its channel.
                 if !has_mail(*id, runtime, &place.contention().writes) {
@@ -144,7 +145,7 @@ impl Background {
             if self.preparing.contains(id) {
                 continue;
             }
-            let Some(preparation) = locked(&known.place).take_preparation() else {
+            let Some(preparation) = known.place.lock_recovered().take_preparation() else {
                 continue;
             };
             self.preparing.insert(*id);
@@ -165,7 +166,7 @@ impl Background {
     pub(super) fn take_prepared(&mut self) {
         for ready in self.ready_rx.try_iter() {
             self.preparing.remove(&ready.id);
-            locked(&ready.place).prepared(ready.prepared);
+            ready.place.lock_recovered().prepared(ready.prepared);
         }
     }
 
@@ -177,7 +178,10 @@ impl Background {
         let mut reports = Vec::new();
         for finished in self.finished_rx.try_iter() {
             self.running.remove(&finished.id);
-            let report = locked(&finished.place).check_in(finished.out, finished.run);
+            let report = finished
+                .place
+                .lock_recovered()
+                .check_in(finished.out, finished.run);
             match reserve {
                 Some(reserve) => reserve.receive(finished.staged),
                 None if !finished.staged.is_empty() => log::warn!(
@@ -203,17 +207,23 @@ impl Background {
             self.take_prepared();
             for finished in self.finished_rx.try_iter() {
                 self.running.remove(&finished.id);
-                let _ = locked(&finished.place).check_in(finished.out, finished.run);
+                let _ = finished
+                    .place
+                    .lock_recovered()
+                    .check_in(finished.out, finished.run);
             }
             // Every job sends what it gave, panicked or not: the wait ends.
             if !self.preparing.is_empty() {
                 if let Ok(ready) = self.ready_rx.recv_timeout(wait) {
                     self.preparing.remove(&ready.id);
-                    locked(&ready.place).prepared(ready.prepared);
+                    ready.place.lock_recovered().prepared(ready.prepared);
                 }
             } else if let Ok(finished) = self.finished_rx.recv_timeout(wait) {
                 self.running.remove(&finished.id);
-                let _ = locked(&finished.place).check_in(finished.out, finished.run);
+                let _ = finished
+                    .place
+                    .lock_recovered()
+                    .check_in(finished.out, finished.run);
             }
         }
     }

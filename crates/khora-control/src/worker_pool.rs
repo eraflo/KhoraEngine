@@ -20,6 +20,7 @@
 //!
 //! [`ExecutionScheduler`]: crate::scheduler::ExecutionScheduler
 
+use khora_core::sync::LockExt;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -62,7 +63,7 @@ impl WorkerPool {
             // Spawned once and joined on Drop, never per frame.
             let handle = std::thread::spawn(move || loop {
                 let message = {
-                    let rx = receiver.lock().unwrap_or_else(|e| e.into_inner());
+                    let rx = receiver.lock_recovered();
                     rx.recv()
                 };
                 match message {

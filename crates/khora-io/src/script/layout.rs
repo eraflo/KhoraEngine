@@ -108,21 +108,16 @@ pub fn is_file_exactly(base: &Path, rel_path: &str) -> bool {
 /// Forward slashes, sorted; empty for a root that does not exist. Links are
 /// not followed.
 pub fn misplaced(assets_root: &Path) -> Vec<String> {
-    let mut found: Vec<String> = walkdir::WalkDir::new(assets_root)
-        .follow_links(false)
+    let mut found: Vec<String> = crate::fs::files_under(assets_root)
         .into_iter()
-        .filter_map(Result::ok)
         // A file the asset scan and the watch skip — hidden, a swap file — is
         // one the engine never hears of again: listing it would leave an error
         // that no deletion could take back.
-        .filter(|entry| {
-            entry.file_type().is_file()
-                && !crate::asset::should_skip_file(&entry.file_name().to_string_lossy())
+        .filter(|relative| {
+            let name = relative.file_name().unwrap_or_default().to_string_lossy();
+            !crate::asset::should_skip_file(&name)
         })
-        .filter_map(|entry| {
-            let relative = entry.path().strip_prefix(assets_root).ok()?;
-            Some(relative.to_string_lossy().replace('\\', "/"))
-        })
+        .map(|relative| khora_core::asset::asset_key(&relative))
         .filter(|rel_path| is_script_file(rel_path) && module_of(rel_path).is_none())
         .collect();
     found.sort();

@@ -15,6 +15,7 @@
 //! The DCC's last decision, as a tool reads it, and the handle it is
 //! published through.
 
+use crate::sync::RwLockExt;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -70,17 +71,11 @@ impl DecisionWatch {
     pub fn latest(&self) -> Option<DecisionView> {
         // A writer that panicked left a whole view or the one before: either
         // is a decision the DCC made, so a poisoned lock is still read.
-        match self.0.read() {
-            Ok(view) => view.clone(),
-            Err(poisoned) => poisoned.into_inner().clone(),
-        }
+        self.0.read_recovered().clone()
     }
 
     /// Publishes `view` as the last decision, for every clone of the handle.
     pub fn publish(&self, view: DecisionView) {
-        match self.0.write() {
-            Ok(mut slot) => *slot = Some(view),
-            Err(poisoned) => *poisoned.into_inner() = Some(view),
-        }
+        *self.0.write_recovered() = Some(view);
     }
 }

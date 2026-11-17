@@ -22,18 +22,7 @@ use khora_sdk::khora_core::problems::{Problem, ProblemSeverity};
 use crate::panels::problems::view::{module_of_asset, script_tile_counts};
 
 fn problem(severity: ProblemSeverity, module: &str, message: &str) -> Problem {
-    Problem {
-        severity,
-        module: Some(module.to_owned()),
-        line: 1,
-        column: 1,
-        message: message.to_owned(),
-        note: None,
-        entity: None,
-        behavior: None,
-        component: None,
-        field: None,
-    }
+    Problem::of_file(severity, module, 1, 1, message)
 }
 
 /// `ai/guard.erg` with an error and two warnings, `lantern.erg` — the name

@@ -15,6 +15,7 @@
 //! A phase a game removes leaves no agent stranded in it: an agent with no
 //! phase left to run in refuses the boot, naming itself and the phase.
 
+use khora_core::sync::LockExt;
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::khora_core::agent::gorna::AgentId;
@@ -91,8 +92,7 @@ impl EngineApp for StrandedInMutate {
             .resources
             .get::<Arc<Mutex<AgentRegistry>>>()
             .expect("the engine publishes its agent registry before `provide`")
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .lock_recovered()
             .register(agent, 1.0);
     }
 }

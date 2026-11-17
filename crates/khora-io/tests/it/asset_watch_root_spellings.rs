@@ -235,3 +235,28 @@ fn a_root_not_watched_has_no_name() {
     watch.unwatch(scratch.path());
     assert_eq!(watch.named(scratch.path()), None, "unwatched");
 }
+
+/// The generation moves when a root is watched or unwatched, not when one
+/// is watched again under another spelling, and two watches never share one.
+#[test]
+fn the_generation_moves_only_when_the_roots_do() {
+    let scratch = Scratch::new("generation");
+    let root = scratch.path().join("assets");
+    std::fs::create_dir_all(&root).expect("the root");
+    let watch = AssetWatch::default();
+    let start = watch.generation();
+    assert_ne!(start, AssetWatch::default().generation());
+
+    watch.watch(&root).expect("watched");
+    let watched = watch.generation();
+    assert_ne!(watched, start);
+
+    watch
+        .watch(&root.join("..").join("assets"))
+        .expect("the same root again");
+    watch.unwatch(&scratch.path().join("elsewhere"));
+    assert_eq!(watch.generation(), watched, "nothing moved");
+
+    watch.unwatch(&root);
+    assert_ne!(watch.generation(), watched);
+}

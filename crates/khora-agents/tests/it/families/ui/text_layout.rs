@@ -21,6 +21,7 @@ use khora_control::substrate::run_data_systems;
 use khora_core::asset::font::Font;
 use khora_core::asset::AssetDecoding;
 use khora_core::lane::{OutputDeck, Reserve, Staging};
+use khora_core::sync::LockExt;
 use khora_core::ui::text::TextShaper;
 use khora_core::Runtime;
 use khora_data::ecs::{TickPhase, World};
@@ -93,10 +94,7 @@ impl TextShaper for RecordingShaper {
         id: khora_core::asset::AssetUUID,
         data: Arc<[u8]>,
     ) -> Result<khora_core::ui::text::FontFamily, khora_core::ui::text::FontError> {
-        self.registered
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push((id, data.len()));
+        self.registered.lock_recovered().push((id, data.len()));
         self.inner.register_font(id, data)
     }
 
@@ -285,11 +283,7 @@ fn an_edited_font_file_is_registered_again_with_the_shaper() {
         "the handle holds the edited file"
     );
     assert_eq!(
-        shaper
-            .registered
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .last(),
+        shaper.registered.lock_recovered().last(),
         Some(&(font, edited.len())),
         "the shaper was handed the edited file"
     );

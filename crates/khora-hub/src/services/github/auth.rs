@@ -148,24 +148,20 @@ pub fn load_token() -> Option<String> {
 ///
 /// Fails when the file or its folder cannot be written.
 pub fn store_token(token: &str) -> Result<()> {
-    let path = credentials_path();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
     let creds = StoredCredentials {
         github_token: token.to_owned(),
     };
     let text = serde_json::to_string_pretty(&creds)?;
-    std::fs::write(&path, text).context("Failed to write credentials.json")?;
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&path)?.permissions();
-        perms.set_mode(0o600);
-        std::fs::set_permissions(&path, perms)?;
-    }
-
+    // Whole or not at all, and the owner's alone before it is in place.
+    khora_sdk::fs::write_atomic_with(&credentials_path(), |file| {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        }
+        std::io::Write::write_all(file, text.as_bytes())
+    })
+    .context("Failed to write credentials.json")?;
     Ok(())
 }
 

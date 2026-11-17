@@ -17,4 +17,6 @@ pub struct HomeState {
     /// The restricted project whose trust confirmation is open: its card's
     /// `More` menu asked `Trust this project…`.
     pub trust_confirm: Option<crate::services::config::RecentProject>,
+    /// What the cards show of each project's folder, kept between frames.
+    pub cards: super::CardFacts,
 }

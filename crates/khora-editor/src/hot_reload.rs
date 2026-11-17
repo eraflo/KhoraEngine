@@ -13,7 +13,7 @@
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
-use khora_sdk::editor_ui::AssetEntry;
+use khora_sdk::editor_ui::{AssetEntry, EditorRequest};
 use khora_sdk::EditorState;
 use khora_sdk::{AssetChangeKind, AssetSource};
 
@@ -36,8 +36,9 @@ pub fn pump(pvfs_mutex: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mutex<Editor
         return;
     }
 
-    // Coalesce Modified by path (one save fires a flurry); Created/Removed
-    // trigger a full reindex.
+    // Coalesce Modified by path (one save fires a flurry); a file created or
+    // removed triggers a full reindex, unless it is one the index lists, still
+    // on disk.
     let mut needs_reindex = false;
     let mut modified: HashSet<String> = HashSet::new();
     for e in events {
@@ -54,6 +55,13 @@ pub fn pump(pvfs_mutex: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mutex<Editor
                     .collect();
                 modified.extend(files);
                 needs_reindex = true;
+            }
+            AssetChangeKind::Created | AssetChangeKind::Removed
+                if pvfs.indexed_and_present(&e.rel_path) =>
+            {
+                // A save renames a whole new file over the asset: the index
+                // already lists it, so only its cache goes.
+                modified.insert(e.rel_path);
             }
             AssetChangeKind::Created | AssetChangeKind::Removed => {
                 // A file replaced in place (removed, then created) must not
@@ -129,7 +137,8 @@ pub fn land_reindex(
                     state.play_mode == khora_sdk::PlayMode::Editing && state.restoring.is_none(),
                     state.play_mode != khora_sdk::PlayMode::Editing,
                     state.scene_choices,
-                    state.pending_scene_load.is_some(),
+                    (state.requests.iter())
+                        .any(|request| matches!(request, EditorRequest::OpenScene { .. })),
                 )
             });
     let landed = pvfs.land();
@@ -184,11 +193,11 @@ pub fn land_reindex(
         state.asset_entries = entries;
         state.asset_dirs = dirs;
         state.asset_epoch = state.asset_epoch.wrapping_add(1);
-        if reveal.is_some() {
-            state.pending_reveal_asset = reveal;
+        if let Some(path) = reveal {
+            state.push_request(EditorRequest::RevealAsset { path });
         }
-        if open.is_some() {
-            state.pending_scene_load = open;
+        if let Some(path) = open {
+            state.push_request(EditorRequest::OpenScene { path });
         }
     }
     with_world
@@ -241,10 +250,10 @@ pub fn collect_asset_entries(pvfs: &ProjectVfs) -> Vec<AssetEntry> {
         .map(|m| {
             // Forward slashes whatever the platform: the browser's folders,
             // the identity registry and the project VFS all name an asset so.
-            let rel_str = m.source_path.to_string_lossy().replace('\\', "/");
+            let rel_str = khora_sdk::khora_core::asset::asset_key(&m.source_path);
             // A part of a file is named by its label inside the file; the
             // file is named by its file name.
-            let (name, container) = match m.variants.get("default") {
+            let (name, container) = match m.default_source() {
                 Some(AssetSource::Sub { container, label }) => (label.clone(), Some(*container)),
                 _ => (
                     m.source_path
@@ -256,7 +265,7 @@ pub fn collect_asset_entries(pvfs: &ProjectVfs) -> Vec<AssetEntry> {
             };
             AssetEntry {
                 name,
-                asset_type: m.asset_type_name.clone(),
+                asset_type: m.asset_type.clone(),
                 source_path: rel_str,
                 uuid: m.uuid,
                 container,
@@ -442,6 +451,49 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         assert_ne!(state_now.asset_epoch, 1, "the browser is told to rescan");
+    }
+
+    /// **An asset saved over whole is reloaded without indexing the project again.**
+    ///
+    /// A save writes a temporary file and renames it over the asset, which the
+    /// watcher reports as the asset created. The index already lists it: its
+    /// cache is dropped, as for a write in place, and nothing is indexed again.
+    #[test]
+    fn an_asset_saved_over_whole_is_not_indexed_again() {
+        use std::sync::Mutex;
+        use std::time::{Duration, Instant};
+
+        use khora_sdk::EditorState;
+
+        use super::pump;
+        use crate::tests::gltf_fixture::GltfProject;
+
+        // A texture holds no parts, so its own save asks no reindex.
+        const STONE: &str = "textures/stone.png";
+        let project = GltfProject::with("hot-reload-saved-whole", &[(STONE, "first bytes")]);
+        let state = Arc::new(Mutex::new(EditorState {
+            project_folder: Some(project.root.to_string_lossy().into_owned()),
+            asset_entries: collect_asset_entries(&project.vfs.lock().expect("the project")),
+            asset_epoch: 1,
+            ..EditorState::default()
+        }));
+        // The watcher was armed when the project opened; give it a moment.
+        std::thread::sleep(Duration::from_millis(150));
+
+        khora_sdk::fs::write_atomic(&project.path(STONE), b"second bytes")
+            .expect("the file is saved over whole");
+        let deadline = Instant::now() + Duration::from_millis(1500);
+        while Instant::now() < deadline {
+            pump(&project.vfs, &state);
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        let state_now = state.lock().expect("the editor state");
+        assert!(state_now.reindexing.is_none(), "no reindex is filed");
+        assert_eq!(
+            state_now.asset_epoch, 1,
+            "the browser has nothing to rescan"
+        );
     }
 
     /// **A glTF unreadable when indexed lists its parts once it is saved whole.**

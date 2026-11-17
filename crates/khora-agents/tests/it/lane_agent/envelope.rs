@@ -42,12 +42,13 @@ use khora_core::lane::io::{Budget, Declaration, InputSource, LaneInputs};
 use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneError, OutputDeck};
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 
 use super::fixtures::{
-    host_envelope, lend, level, locked, offer_request, place_of, recorded_level, run, runtime,
-    LadderLane, Load, LoadOnly, Plan, ProbeFamily, ProbeOutputs, Recorded, Tally, TallyLock,
-    ANY_MEMORY, LADDER,
+    host_envelope, lend, level, offer_request, place_of, recorded_level, run, runtime, LadderLane,
+    Load, LoadOnly, Plan, ProbeFamily, ProbeOutputs, Recorded, Tally, TallyLock, ANY_MEMORY,
+    LADDER,
 };
 use crate::protocol::pin;
 
@@ -680,7 +681,10 @@ fn the_lane_a_frame_runs_under_an_envelope_is_the_lane_its_place_declares() {
         "the pin named the locking lane"
     );
     assert!(
-        locked(&place_of(&agent)).contention().may_lock(tally_lock),
+        place_of(&agent)
+            .lock_recovered()
+            .contention()
+            .may_lock(tally_lock),
         "the locking lane runs on a place declaring its lock"
     );
 
@@ -694,7 +698,7 @@ fn the_lane_a_frame_runs_under_an_envelope_is_the_lane_its_place_declares() {
         Some("reader"),
         "100 µs fits 105 µs, without impact"
     );
-    let declared = locked(&place_of(&agent)).contention();
+    let declared = place_of(&agent).lock_recovered().contention();
     assert!(
         !declared.may_lock(tally_lock),
         "the reader runs on a place that does not declare the locker's lock"

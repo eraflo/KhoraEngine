@@ -22,9 +22,10 @@ use khora_sdk::editor_ui::*;
 
 use crate::widgets::inspector::asset_pane::{paint_asset_header, render_asset_pane};
 use crate::widgets::inspector::display::{pick_icon, pick_type_tag};
-use crate::widgets::inspector::header::paint_inspector_header;
+use crate::widgets::inspector::header::{paint_inspector_header, InspectorHeader};
 use crate::widgets::inspector::tabs::{DebugTab, InspectorTab, InspectorTabContext, PropertiesTab};
 use crate::widgets::panel_header::paint_panel_header;
+use crate::widgets::Painter;
 
 const HEADER_HEIGHT: f32 = 34.0;
 const INSPECTOR_HEADER_HEIGHT: f32 = 64.0;
@@ -112,18 +113,18 @@ impl EditorPanel for PropertiesPanel {
                 Some((entity, inspected)) => {
                     let icon = pick_icon(inspected);
                     let id_label = format!("id 0x{:04X}", entity.index);
-                    let type_tag = pick_type_tag(inspected);
                     paint_inspector_header(
-                        ui,
+                        &mut Painter { ui, theme: &theme },
                         header_origin,
                         pw,
-                        icon,
-                        &inspected.name,
-                        type_tag,
-                        "Active",
-                        theme.success,
-                        Some(&id_label),
-                        &theme,
+                        &InspectorHeader {
+                            icon,
+                            name: &inspected.name,
+                            type_tag: pick_type_tag(inspected),
+                            status_label: "Active",
+                            status_color: theme.success,
+                            id_label: Some(&id_label),
+                        },
                     )
                 }
                 None => {
@@ -166,7 +167,7 @@ impl EditorPanel for PropertiesPanel {
                 );
                 if release {
                     if let Ok(mut state) = self.state.lock() {
-                        state.pending_release = Some(rel.clone());
+                        state.push_request(EditorRequest::ReleaseAsset { path: rel.clone() });
                     }
                 }
             }

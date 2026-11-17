@@ -30,16 +30,10 @@ fn data_problems(camera: &Camera, entity: EntityId) -> Vec<Problem> {
         .check()
         .into_iter()
         .map(|problem| Problem {
-            severity: problem.severity,
-            module: None,
-            line: 0,
-            column: 0,
-            message: problem.message,
-            note: None,
             entity: Some(entity),
-            behavior: None,
             component: Some("Camera".to_owned()),
             field: Some(problem.field.to_owned()),
+            ..Problem::new(problem.severity, problem.message)
         })
         .collect()
 }
@@ -134,16 +128,13 @@ fn a_problem_on_another_component_s_field_paints_nothing() {
     let camera = Camera::default_perspective();
     let (world, entity) = world_with(camera);
     let elsewhere = vec![Problem {
-        severity: ProblemSeverity::Error,
-        module: None,
-        line: 0,
-        column: 0,
-        message: "range must be greater than 0 (it is 0)".to_owned(),
-        note: None,
         entity: Some(entity),
-        behavior: None,
         component: Some("Light".to_owned()),
         field: Some("light_type.Spot.range".to_owned()),
+        ..Problem::new(
+            ProblemSeverity::Error,
+            "range must be greater than 0 (it is 0)",
+        )
     }];
     let mut value = camera_json(&world, entity);
     let theme = theme();
@@ -165,16 +156,10 @@ fn a_warning_under_a_field_wears_the_warning_colour() {
     let (world, entity) = world_with(camera);
     let message = "far plane is very far from near: depth will band";
     let warning = vec![Problem {
-        severity: ProblemSeverity::Warning,
-        module: None,
-        line: 0,
-        column: 0,
-        message: message.to_owned(),
-        note: None,
         entity: Some(entity),
-        behavior: None,
         component: Some("Camera".to_owned()),
         field: Some("z_far".to_owned()),
+        ..Problem::new(ProblemSeverity::Warning, message)
     }];
     let mut value = camera_json(&world, entity);
     let theme = theme();
@@ -215,16 +200,10 @@ fn a_fixed_field_no_longer_shows_what_the_load_found_unusable() {
         "`z_near` is unusable: near must be greater than 0 (it is 0) (component Camera)";
     let state = EditorState {
         problems: vec![Problem {
-            severity: ProblemSeverity::Warning,
-            module: None,
-            line: 0,
-            column: 0,
-            message: load_message.to_owned(),
-            note: None,
             entity: Some(entity),
-            behavior: None,
             component: Some("Camera".to_owned()),
             field: Some("z_near".to_owned()),
+            ..Problem::new(ProblemSeverity::Warning, load_message)
         }],
         ..EditorState::default()
     };

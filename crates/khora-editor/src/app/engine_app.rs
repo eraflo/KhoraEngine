@@ -17,6 +17,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use khora_sdk::editor_ui::EditorRequest;
 use khora_sdk::khora_core::platform::KhoraWindow;
 use khora_sdk::khora_core::renderer::api::resource::ViewInfo;
 use khora_sdk::khora_core::ui::{EditorOverlay, OverlayScreenDescriptor};
@@ -157,13 +158,19 @@ impl EngineApp for EditorApp {
     }
 
     fn update(&mut self, world: &mut GameWorld, inputs: &[InputEvent]) {
-        // Consume pending scene load (from asset browser double-click).
-        let pending_load = self
+        // The scenes asked to open (the asset browser, a drop, File > Open),
+        // filed in the order asked: the last one asked lands last.
+        let opens = self
             .editor_state
             .lock()
-            .ok()
-            .and_then(|mut s| s.pending_scene_load.take());
-        if let Some(path) = pending_load {
+            .map(|mut s| {
+                s.take_requests(|request| match request {
+                    EditorRequest::OpenScene { path } => Ok(path),
+                    other => Err(other),
+                })
+            })
+            .unwrap_or_default();
+        for path in opens {
             match &self.scene_loads {
                 Some(loads) => {
                     commands::open_scene_dispatch(
@@ -204,13 +211,15 @@ impl EngineApp for EditorApp {
             &self.camera,
         );
 
-        // Wireframe toggle is editor-view state, not a scene command — handle
-        // it here (flipping our own flag) before the scene-command dispatch so
-        // it does not fall through to the "unhandled action" log. The flag is
-        // pushed into the shared `WireframeConfig` in `before_agents`.
+        // Wireframe toggle is editor-view state, not a scene command: it flips
+        // our own flag, pushed into the shared `WireframeConfig` in
+        // `before_agents`. Two toggles in one frame cancel out.
         if let Ok(mut s) = self.editor_state.lock() {
-            if s.pending_menu_action.as_deref() == Some("toggle_wireframe") {
-                s.pending_menu_action = None;
+            let toggles = s.take_requests(|request| match request {
+                EditorRequest::ToggleWireframe => Ok(()),
+                other => Err(other),
+            });
+            if toggles.len() % 2 == 1 {
                 self.wireframe_enabled = !self.wireframe_enabled;
             }
         }

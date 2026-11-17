@@ -17,9 +17,10 @@
 //! one supersedes while it waits is abandoned, never applied.
 
 use std::any::TypeId;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 
 use crate::event::Supersedes;
+use crate::sync::LockExt;
 
 use crate::lane::staging::{Queues, Staging};
 
@@ -44,6 +45,8 @@ pub trait Staged: Supersedes + Sized + Send + 'static {
 /// reserve.
 #[derive(Default, Clone)]
 pub struct Reserve {
+    // The queues are whole after every write, so a panic elsewhere while the
+    // lock was held leaves nothing half-written: read through the poison.
     queues: Arc<Mutex<Queues>>,
     /// What the host staged since the last frame start, in order: it lands
     /// at the next one, after the background runs that ended.
@@ -53,7 +56,7 @@ pub struct Reserve {
 impl std::fmt::Debug for Reserve {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Reserve")
-            .field("types", &self.lock().len())
+            .field("types", &self.queues.lock_recovered().len())
             .finish()
     }
 }
@@ -75,7 +78,7 @@ impl Reserve {
                 batch.abandon();
                 continue;
             }
-            batch.join(&mut self.lock());
+            batch.join(&mut self.queues.lock_recovered());
         }
     }
 
@@ -84,22 +87,14 @@ impl Reserve {
     /// It lands after the background runs that ended by then, so the host's
     /// action has the last word over a run it overtook.
     pub fn stage_from_host(&self, staging: Staging) {
-        self.from_host
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .push(staging);
+        self.from_host.lock_recovered().push(staging);
     }
 
     /// Lands what the host staged since the last frame start, in order.
     ///
     /// Call after the ended background runs were received.
     pub fn land_from_host(&self) {
-        let staged = std::mem::take(
-            &mut *self
-                .from_host
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner()),
-        );
+        let staged = std::mem::take(&mut *self.from_host.lock_recovered());
         for staging in staged {
             self.receive(staging);
         }
@@ -107,7 +102,8 @@ impl Reserve {
 
     /// Takes everything the reserve holds of `T`, oldest first, leaving none.
     pub fn take<T: Staged>(&self) -> Vec<T> {
-        self.lock()
+        self.queues
+            .lock_recovered()
             .iter_mut()
             .find(|(ty, _)| *ty == TypeId::of::<T>())
             .and_then(|(_, queue)| queue.downcast_mut::<Vec<T>>())
@@ -117,7 +113,8 @@ impl Reserve {
 
     /// How many outputs of `T` wait in the reserve.
     pub fn len<T: Staged>(&self) -> usize {
-        self.lock()
+        self.queues
+            .lock_recovered()
             .iter()
             .find(|(ty, _)| *ty == TypeId::of::<T>())
             .and_then(|(_, queue)| queue.downcast_ref::<Vec<T>>())
@@ -127,13 +124,5 @@ impl Reserve {
     /// Whether no output of `T` waits in the reserve.
     pub fn is_empty<T: Staged>(&self) -> bool {
         self.len::<T>() == 0
-    }
-
-    // The queues are whole after every write, so a panic elsewhere while the
-    // lock was held leaves nothing half-written: read through the poison.
-    fn lock(&self) -> MutexGuard<'_, Queues> {
-        self.queues
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }

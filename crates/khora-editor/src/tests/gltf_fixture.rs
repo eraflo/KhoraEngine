@@ -146,7 +146,7 @@ impl GltfProject {
 pub fn file_entry(path: &str, kind: &str) -> AssetEntry {
     AssetEntry {
         name: path.rsplit('/').next().unwrap_or(path).to_owned(),
-        asset_type: kind.to_owned(),
+        asset_type: khora_sdk::khora_core::asset::AssetType::from(kind),
         source_path: path.to_owned(),
         uuid: AssetUUID::new_v5(path),
         container: None,
@@ -160,7 +160,7 @@ pub fn part_entry(path: &str, label: &str, kind: &str) -> AssetEntry {
     let file = AssetUUID::new_v5(path);
     AssetEntry {
         name: label.to_owned(),
-        asset_type: kind.to_owned(),
+        asset_type: khora_sdk::khora_core::asset::AssetType::from(kind),
         source_path: path.to_owned(),
         uuid: AssetUUID::sub_asset(file, label),
         container: Some(file),

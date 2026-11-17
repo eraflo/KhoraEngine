@@ -24,6 +24,7 @@ use std::sync::{Arc, Mutex};
 use khora_core::asset::{AssetIndexing, IndexKind, IndexRequest, IndexTicket, IndexedAssets};
 use khora_core::event::{Channel, WhenFull};
 use khora_core::lane::Lease;
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 
 /// What an index filed off the frame came to: landed, or why not.
@@ -79,7 +80,7 @@ impl IndexHub {
     /// flight lands an error at once, and its result is turned down at the boundary.
     pub fn file(&self, project_root: impl Into<PathBuf>, kind: IndexKind) -> IndexTicket {
         let ticket = IndexTicket(self.next.fetch_add(1, Ordering::Relaxed));
-        let mut tickets = self.tickets();
+        let mut tickets = self.tickets.lock_recovered();
         let generation = match kind {
             IndexKind::Open => {
                 let replaced = std::mem::take(&mut tickets.pending);
@@ -111,20 +112,14 @@ impl IndexHub {
         ticket
     }
 
-    fn tickets(&self) -> std::sync::MutexGuard<'_, IndexTickets> {
-        self.tickets
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
     /// Takes the outcome of the index filed as `ticket`; `None` while in flight, and once taken.
     pub fn take_outcome(&self, ticket: IndexTicket) -> Option<IndexOutcome> {
-        self.tickets().landed.remove(&ticket)
+        self.tickets.lock_recovered().landed.remove(&ticket)
     }
 
     /// Whether the index filed as `ticket` is still in flight.
     pub fn is_pending(&self, ticket: IndexTicket) -> bool {
-        self.tickets().pending.contains_key(&ticket)
+        self.tickets.lock_recovered().pending.contains_key(&ticket)
     }
 
     /// Builds each later project index through a guard reporting to `refusals`.
@@ -135,10 +130,7 @@ impl IndexHub {
         refusals: Arc<crate::trust::Refusals>,
         trust: Arc<crate::trust::ProjectTrustState>,
     ) {
-        let mut through = self
-            .through
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut through = self.through.lock_recovered();
         *through = Some((refusals, trust));
     }
 
@@ -146,7 +138,7 @@ impl IndexHub {
     ///
     /// A ticket superseded by an `Open` meanwhile keeps the outcome it landed with.
     pub(crate) fn land(&self, ticket: IndexTicket, outcome: IndexOutcome) {
-        let mut tickets = self.tickets();
+        let mut tickets = self.tickets.lock_recovered();
         if tickets.pending.remove(&ticket).is_some() {
             tickets.landed.insert(ticket, outcome);
         }
@@ -158,7 +150,8 @@ impl AssetIndexing for IndexHub {
         // Built for the project generation it was filed under: an `Open`
         // filed since turns it down at the boundary.
         let filed_under = self
-            .tickets()
+            .tickets
+            .lock_recovered()
             .pending
             .get(&request.ticket)
             .copied()
@@ -166,11 +159,7 @@ impl AssetIndexing for IndexHub {
         let opened = Arc::clone(&self.opened);
         let lease = Lease::new(move || opened.load(Ordering::Acquire) == filed_under);
         // A walk or a lister that panics fails this index alone.
-        let through = self
-            .through
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone();
+        let through = self.through.lock_recovered().clone();
         let index = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             build_index(&request.project_root, through)
         }))

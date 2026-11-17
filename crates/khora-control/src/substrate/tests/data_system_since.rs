@@ -21,6 +21,7 @@
 use crate::substrate::{data_system_last_seen, run_data_systems};
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::OutputDeck;
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::ecs::{
     Changed, Component, ComponentKey, DataSystemRegistration, SemanticDomain, SystemContext, Tick,
@@ -49,11 +50,8 @@ static RUNS: Mutex<Vec<(u64, Tick, Tick)>> = Mutex::new(Vec::new());
 static READS: Mutex<Vec<(u64, Tick, Vec<EntityId>)>> = Mutex::new(Vec::new());
 
 fn probe(world: &mut World, _: &Runtime, _: &mut OutputDeck, ctx: SystemContext) {
-    RUNS.lock().unwrap_or_else(|e| e.into_inner()).push((
-        world.instance_id(),
-        ctx.since,
-        world.current_tick(),
-    ));
+    RUNS.lock_recovered()
+        .push((world.instance_id(), ctx.since, world.current_tick()));
 }
 
 /// Reads what changed of `Sensor` since its last run — on the worlds that
@@ -70,8 +68,7 @@ fn reader(world: &mut World, _: &Runtime, _: &mut OutputDeck, ctx: SystemContext
         .collect();
     changed.sort_by_key(|entity| entity.index);
     READS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .lock_recovered()
         .push((world.instance_id(), ctx.since, changed));
 }
 
@@ -105,8 +102,7 @@ fn run_phase(world: &mut World) {
 /// `(since handed, tick of the run)` of every probe run on `world`, in run
 /// order.
 fn probe_runs(world: &World) -> Vec<(Tick, Tick)> {
-    RUNS.lock()
-        .unwrap_or_else(|e| e.into_inner())
+    RUNS.lock_recovered()
         .iter()
         .filter(|(id, ..)| *id == world.instance_id())
         .map(|(_, since, tick)| (*since, *tick))
@@ -116,8 +112,7 @@ fn probe_runs(world: &World) -> Vec<(Tick, Tick)> {
 /// `(since handed, entities read)` of every reader run on `world`.
 fn reads(world: &World) -> Vec<(Tick, Vec<EntityId>)> {
     READS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .lock_recovered()
         .iter()
         .filter(|(id, ..)| *id == world.instance_id())
         .map(|(_, since, read)| (*since, read.clone()))

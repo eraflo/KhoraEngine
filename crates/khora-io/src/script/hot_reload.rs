@@ -182,23 +182,19 @@ pub(crate) fn modules_under(
     // A module over its cap is read as importing nothing; the compile refuses it.
     let refusals = refusals
         .cloned()
-        .unwrap_or_else(|| Arc::new(crate::trust::Refusals::new(None, None)));
+        .unwrap_or_else(crate::trust::Refusals::detached);
     let guard = crate::trust::FileGuard::new(root, trust, refusals);
-    walkdir::WalkDir::new(root)
-        .follow_links(false)
+    crate::fs::files_under(root)
         .into_iter()
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_file())
-        .filter_map(|entry| {
-            let relative = entry.path().strip_prefix(root).ok()?;
+        .filter_map(|relative| {
             // Forward slashes, because that is how an `import` writes a path
             // and how a module is named everywhere else.
-            let module = relative.to_string_lossy().replace('\\', "/");
+            let module = khora_core::asset::asset_key(&relative);
             if !is_module_file(&module) {
                 return None;
             }
             let imports = guard
-                .read_to_string(relative)
+                .read_to_string(&relative)
                 .map(|source| {
                     // As the resolver reads them: `./helper.erg` is `helper.erg`.
                     imports_of(&source)

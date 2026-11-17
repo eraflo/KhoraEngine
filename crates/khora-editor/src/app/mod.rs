@@ -19,6 +19,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use khora_sdk::editor_ui::EditorRequest;
 use khora_sdk::khora_core::renderer::api::resource::ViewInfo;
 use khora_sdk::khora_core::ui::EditorOverlay;
 use khora_sdk::prelude::ecs::*;
@@ -90,7 +91,7 @@ pub struct EditorApp {
     startup_hold: Option<khora_sdk::ReadinessHold>,
     /// What the user decided of each project, read when a project is first
     /// opened — never by an editor that opens none, a test's.
-    trust_store: Option<khora_sdk::trust::TrustStore>,
+    trust_store: Option<Arc<khora_sdk::trust::TrustStore>>,
     /// The trust of the project open, as the engine shares it.
     project_trust_state: Option<Arc<khora_sdk::trust::ProjectTrustState>>,
     /// The folder File > Open Project picked, opened once the frame can.
@@ -195,14 +196,11 @@ impl EditorApp {
         ops::process_spawns(world, &mut state);
         ops::process_reparents(world, &mut state);
 
-        if let Some((entity, new_name)) = state.pending_rename.take() {
-            if let Some(mut name) = world.get_component_mut::<Name>(entity) {
-                *name = Name::new(&new_name);
-                log::info!("Renamed entity {:?} to '{}'", entity, new_name);
-            }
-        }
-
-        if let Some(entity) = state.pending_delete.take() {
+        let deletes = state.take_requests(|request| match request {
+            EditorRequest::DeleteEntity { entity } => Ok(entity),
+            other => Err(other),
+        });
+        for entity in deletes {
             world.despawn(entity);
             state.selection.remove(&entity);
             if state.inspected.as_ref().is_some_and(|i| i.entity == entity) {
@@ -211,7 +209,11 @@ impl EditorApp {
             log::info!("Deleted entity {:?}", entity);
         }
 
-        if let Some(entity) = state.pending_duplicate.take() {
+        let duplicates = state.take_requests(|request| match request {
+            EditorRequest::DuplicateEntity { entity } => Ok(entity),
+            other => Err(other),
+        });
+        for entity in duplicates {
             // A duplicated prefab instance stays one: its prefab is read to
             // derive the copy's members from the copy's new root.
             match self.project_vfs.as_deref() {
@@ -230,11 +232,19 @@ impl EditorApp {
             }
         }
 
-        if let Some((entity, type_name)) = state.pending_add_component.take() {
+        let additions = state.take_requests(|request| match request {
+            EditorRequest::AddComponent { entity, type_name } => Ok((entity, type_name)),
+            other => Err(other),
+        });
+        for (entity, type_name) in additions {
             ops::add_component_to_entity(world, entity, &type_name);
         }
 
-        if let Some(entity) = state.pending_prefab_revert.take() {
+        let reverts = state.take_requests(|request| match request {
+            EditorRequest::RevertPrefab { entity } => Ok(entity),
+            other => Err(other),
+        });
+        for entity in reverts {
             revert_prefab_instance(self.project_vfs.as_deref(), world, entity, &mut state);
         }
 
@@ -251,7 +261,11 @@ impl EditorApp {
             state.log_entries.clone_from(&log_entries);
         }
         if let Some(problems) = &self.problems {
-            if let Some(load) = state.pending_load_problems.take() {
+            let loads = state.take_requests(|request| match request {
+                EditorRequest::ReportLoadProblems { problems } => Ok(problems),
+                other => Err(other),
+            });
+            for load in loads {
                 problems.report(khora_sdk::khora_core::problems::ProblemSource::Load, load);
             }
             let generation = problems.generation();

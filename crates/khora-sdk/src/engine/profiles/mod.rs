@@ -79,7 +79,7 @@ impl Profiles {
             .get::<ProfilePlace>()
             .copied()
             .unwrap_or(ProfilePlace::Developer);
-        let path = profile_path(place, &machine, &game, &|key| std::env::var_os(key));
+        let path = profile_path(place, &machine, &game, &khora_io::user_dirs::process_env);
 
         let local = (path.as_deref())
             .and_then(read)

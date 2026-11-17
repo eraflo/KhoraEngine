@@ -302,16 +302,10 @@ pub fn load_problems(
         .entries
         .iter()
         .map(|entry| Problem {
-            severity: ProblemSeverity::Warning,
-            module: None,
-            line: 0,
-            column: 0,
-            message: entry.to_string(),
-            note: None,
             entity: entry.entity.and_then(|id| world.entity_with_id(id)),
-            behavior: None,
             component: entry.component.clone(),
             field: (!entry.path.is_empty()).then(|| entry.path.clone()),
+            ..Problem::new(ProblemSeverity::Warning, entry.to_string())
         })
         .collect()
 }
@@ -373,7 +367,8 @@ pub fn save_scene_to_path_with_goal(
     match service.save_world(world.inner_world(), goal) {
         Ok(scene_file) => {
             let bytes = scene_file.to_bytes();
-            match std::fs::write(path, &bytes) {
+            // Whole or not at all: a failed save leaves the previous file.
+            match khora_sdk::fs::write_atomic(std::path::Path::new(path), &bytes) {
                 Ok(()) => {
                     log::warn!(
                         "Scene saved to '{}' ({} bytes, goal={:?}) — outside project, not VFS-managed.",

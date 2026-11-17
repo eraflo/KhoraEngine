@@ -18,6 +18,7 @@
 use std::sync::Arc;
 
 use khora_core::lane::OutputDeck;
+use khora_core::sync::LockExt;
 use khora_data::flow::PhysicsStepResult;
 
 use super::fixtures::{
@@ -83,11 +84,7 @@ fn a_step_written_at_the_place_holds_across_the_agents_next_wake() {
     let a_30th = std::time::Duration::from_nanos(33_333_333);
     {
         use khora_core::agent::Agent;
-        agent
-            .place()
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .set_fixed_step(Some(a_30th));
+        agent.place().lock_recovered().set_fixed_step(Some(a_30th));
     }
     let mut deck = OutputDeck::new();
 

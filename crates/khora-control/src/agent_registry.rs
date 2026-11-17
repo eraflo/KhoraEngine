@@ -16,6 +16,7 @@
 
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::Agent;
+use khora_core::sync::LockExt;
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
@@ -36,6 +37,8 @@ pub struct AgentRegistry {
     /// Where each agent comes from (a module path, `crate::module`), for
     /// tools; an agent registered without one has none.
     origins: Vec<(AgentId, &'static str)>,
+    /// How many agents were registered: moves with every change to the agents held.
+    generation: u64,
 }
 
 impl AgentRegistry {
@@ -44,6 +47,7 @@ impl AgentRegistry {
         Self {
             entries: Vec::new(),
             origins: Vec::new(),
+            generation: 0,
         }
     }
 
@@ -70,10 +74,7 @@ impl AgentRegistry {
     /// runs in a frame is its family's state in force
     /// ([`Activation`](khora_core::agent::Activation)), not the registry's.
     pub fn register(&mut self, agent: Arc<Mutex<dyn Agent>>, priority: f32) {
-        let id = agent
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .id();
+        let id = agent.lock_recovered().id();
         // One agent per id: the frame's completion map, the phase ordering,
         // GORNA's budgets and the fixed agents' clocks are all keyed by it, so
         // a second agent under a taken id could never be scheduled as itself.
@@ -97,11 +98,19 @@ impl AgentRegistry {
             id,
             priority,
         });
+        self.generation += 1;
         self.entries.sort_by(|a, b| {
             b.priority
                 .partial_cmp(&a.priority)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
+    }
+
+    /// Returns a number that changes whenever the agents held, or their order, change.
+    ///
+    /// What a reader compares to know the agents it read are still the registry's.
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
 
     /// Returns the number of registered agents.
@@ -269,6 +278,32 @@ mod tests {
             Arc::ptr_eq(&kept, &first) && !Arc::ptr_eq(&kept, &second),
             "the first `narrator` stays; the second is never registered"
         );
+    }
+
+    /// **The generation moves with every agent registered, and only then.**
+    ///
+    /// Registering `narrator` moves it; an origin recorded, or a second
+    /// `narrator` refused, leaves it as it was; registering `chorus` moves it
+    /// again.
+    #[test]
+    fn the_generation_moves_with_every_agent_registered() {
+        let mut registry = AgentRegistry::new();
+        let empty = registry.generation();
+
+        registry.register(Recording::named(AgentId::new("narrator")), 1.0);
+        let one = registry.generation();
+        assert_ne!(one, empty, "an agent registered moves it");
+
+        registry.set_origin(AgentId::new("narrator"), "my_game::narrator");
+        registry.register(Recording::named(AgentId::new("narrator")), 2.0);
+        assert_eq!(
+            registry.generation(),
+            one,
+            "an origin, or a duplicate refused, changes no agent held"
+        );
+
+        registry.register(Recording::named(AgentId::new("chorus")), 0.5);
+        assert_ne!(registry.generation(), one, "a second agent moves it again");
     }
 
     /// **The active agents come with their ids.**

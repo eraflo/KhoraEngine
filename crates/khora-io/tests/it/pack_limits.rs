@@ -99,7 +99,7 @@ fn forged_index(out: &PackOutput, rel: &str, forge: impl FnOnce(&mut AssetSource
     forge(
         entry
             .variants
-            .get_mut("default")
+            .get_mut(AssetMetadata::DEFAULT_VARIANT)
             .expect("a packed entry has a default source"),
     );
     bincode::serde::encode_to_vec(&entries, config).expect("the index encodes")

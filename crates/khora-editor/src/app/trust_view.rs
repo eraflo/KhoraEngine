@@ -17,11 +17,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use khora_sdk::editor_ui::EditorRequest;
 use khora_sdk::editor_ui::{EditorShell, PanelLocation, QuarantinedAsset, TrustSummary};
-use khora_sdk::trust::{
-    ProjectTrust, ProjectTrustState, QuarantineKey, Refusals, SecurityReason, SecurityRefusal,
-    Trust, TrustLayer,
-};
+use khora_sdk::fs;
+use khora_sdk::khora_core::asset::asset_key;
+use khora_sdk::trust::{ProjectTrustState, QuarantineKey, Refusals, SecurityRefusal, Trust};
 use khora_sdk::Runtime;
 
 use crate::chrome::RestrictedBarPanel;
@@ -31,9 +31,17 @@ use crate::chrome::RestrictedBarPanel;
 pub(super) struct TrustView {
     /// Whether the restricted bar is on the shell.
     bar_shown: bool,
-    /// The problems' generation and the project folder the quarantine was
-    /// last mirrored at.
-    quarantine_seen: Option<(u64, Option<String>)>,
+    /// What the quarantine was last mirrored at.
+    quarantine_seen: Option<Seen>,
+}
+
+/// The moment the quarantine was mirrored at: it is mirrored again once either moves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Seen {
+    /// The problems' generation.
+    generation: u64,
+    /// The project folder open.
+    project: Option<String>,
 }
 
 impl super::EditorApp {
@@ -42,29 +50,30 @@ impl super::EditorApp {
     /// Called after [`follow_trust_answers`](super::EditorApp::follow_trust_answers).
     /// Mirrors `ProjectTrustState` into `EditorState::restricted` and the run's
     /// `Refusals` into `EditorState::quarantined`, shows the restricted bar while
-    /// restricted, answers `confirm_trust` with what trusting would change, and
-    /// releases `EditorState::pending_release`. See the book:
+    /// restricted, answers `ConfirmTrust` with what trusting would change, and
+    /// releases the assets each `EditorRequest::ReleaseAsset` names. See the book:
     /// reference/editor.md, "11 — Restricted projects".
     pub(super) fn follow_project_trust(&mut self, runtime: &Runtime) {
-        let restricted = ProjectTrustState::of(runtime) == ProjectTrust::Restricted;
+        let restricted = ProjectTrustState::is_restricted(runtime);
         let refusals = runtime.resources.get::<Arc<Refusals>>().cloned();
         let generation = runtime
             .resources
             .get::<Arc<khora_sdk::khora_core::problems::Problems>>()
             .map(|problems| problems.generation());
 
-        let (confirm, release, project) = match self.editor_state.lock() {
+        let (confirm, releases, project) = match self.editor_state.lock() {
             Ok(mut state) => {
                 state.restricted = restricted;
-                let confirm = state.pending_menu_action.as_deref() == Some("confirm_trust");
-                if confirm {
-                    state.pending_menu_action = None;
-                }
-                (
-                    confirm,
-                    state.pending_release.take(),
-                    state.project_folder.clone(),
-                )
+                let confirm = !(state.take_requests(|request| match request {
+                    EditorRequest::ConfirmTrust => Ok(()),
+                    other => Err(other),
+                }))
+                .is_empty();
+                let releases = state.take_requests(|request| match request {
+                    EditorRequest::ReleaseAsset { path } => Ok(path),
+                    other => Err(other),
+                });
+                (confirm, releases, state.project_folder.clone())
             }
             Err(_) => return,
         };
@@ -76,14 +85,18 @@ impl super::EditorApp {
         let root = project.as_deref().map(PathBuf::from);
         let assets = root.as_ref().map(|root| root.join("assets"));
 
-        if let (Some(rel), Some(assets), Some(refusals)) = (release, &assets, &refusals) {
-            match under_assets(&rel) {
-                Some(rel_path) => {
-                    refusals.release(&assets.join(&rel_path));
-                    self.read_again(runtime, &rel_path);
-                    log::info!("'{rel}' is released from the quarantine: it is read again");
+        if let (Some(assets), Some(refusals)) = (&assets, &refusals) {
+            for rel in releases {
+                match under_assets(&rel) {
+                    Some(rel_path) => {
+                        refusals.release(&assets.join(&rel_path));
+                        self.read_again(runtime, &rel_path);
+                        log::info!("'{rel}' is released from the quarantine: it is read again");
+                    }
+                    None => {
+                        log::warn!("'{rel}' names no file of the project: nothing is released")
+                    }
                 }
-                None => log::warn!("'{rel}' names no file of the project: nothing is released"),
             }
         }
 
@@ -96,7 +109,10 @@ impl super::EditorApp {
             }
         }
 
-        let seen = generation.map(|generation| (generation, project.clone()));
+        let seen = generation.map(|generation| Seen {
+            generation,
+            project: project.clone(),
+        });
         if seen.is_some() && seen != self.trust_view.quarantine_seen {
             self.trust_view.quarantine_seen = seen;
             let quarantined = match (&assets, &refusals) {
@@ -158,15 +174,11 @@ impl super::EditorApp {
 /// from what `refusals` holds of it.
 fn trust_summary(root: &Path, refusals: Option<&Refusals>) -> TrustSummary {
     let assets = root.join("assets");
-    let scripts = files_under(&assets.join("scripts"), "erg").len();
+    let scripts = with_extension(&assets.join("scripts"), "erg").count();
     // The shader reload takes any `.wgsl` under the assets as an overlay of
     // the module its path names.
-    let mut overlays: Vec<String> = files_under(&assets, "wgsl")
-        .iter()
-        .filter_map(|path| {
-            let rel = path.strip_prefix(&assets).ok()?;
-            khora_sdk::logical_name_for_shader_path(&rel.to_string_lossy())
-        })
+    let mut overlays: Vec<String> = with_extension(&assets, "wgsl")
+        .filter_map(|rel| khora_sdk::logical_name_for_shader_path(&asset_key(&rel)))
         .collect();
     overlays.sort();
     overlays.dedup();
@@ -174,11 +186,8 @@ fn trust_summary(root: &Path, refusals: Option<&Refusals>) -> TrustSummary {
         (refusals.quarantine().iter())
             .filter(|(refusal, _)| {
                 refusal.trust == Trust::Restricted
-                    && matches!(
-                        refusal.reason,
-                        SecurityReason::TooLarge { .. } | SecurityReason::OverLimit { .. }
-                    )
-                    && under(&refusal.path, root)
+                    && refusal.reason.is_size_or_limit()
+                    && fs::is_under(&refusal.path, root)
             })
             .count()
     });
@@ -207,44 +216,10 @@ fn under_assets(rel: &str) -> Option<PathBuf> {
     (!path.as_os_str().is_empty()).then_some(path)
 }
 
-/// The files under `dir`, at any depth, whose extension is `extension`.
-fn files_under(dir: &Path, extension: &str) -> Vec<PathBuf> {
-    let mut found = Vec::new();
-    let mut pending = vec![dir.to_path_buf()];
-    while let Some(dir) = pending.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            match entry.file_type() {
-                // A link is not followed: it could lead out of the project.
-                Ok(kind) if kind.is_dir() => pending.push(path),
-                Ok(kind)
-                    if kind.is_file()
-                        && path.extension().and_then(|e| e.to_str()) == Some(extension) =>
-                {
-                    found.push(path);
-                }
-                _ => {}
-            }
-        }
-    }
-    found
-}
-
-/// `path` relative to `root`, as given or once both are resolved.
-fn relative(path: &Path, root: &Path) -> Option<PathBuf> {
-    if let Ok(rel) = path.strip_prefix(root) {
-        return Some(rel.to_path_buf());
-    }
-    let (path, root) = (path.canonicalize().ok()?, root.canonicalize().ok()?);
-    path.strip_prefix(root).ok().map(Path::to_path_buf)
-}
-
-/// Whether `path` is under `root`.
-fn under(path: &Path, root: &Path) -> bool {
-    relative(path, root).is_some()
+/// The files under `dir`, at any depth, whose extension is `extension`, by their path under `dir`.
+fn with_extension<'a>(dir: &Path, extension: &'a str) -> impl Iterator<Item = PathBuf> + 'a {
+    (fs::files_under(dir).into_iter())
+        .filter(move |rel| rel.extension().and_then(|e| e.to_str()) == Some(extension))
 }
 
 /// What the asset browser shows of `refusal`, a file of the project whose
@@ -254,53 +229,13 @@ fn shown(
     refusal: &SecurityRefusal,
     key: &QuarantineKey,
 ) -> Option<QuarantinedAsset> {
-    let rel = relative(&refusal.path, assets)?;
-    let rel_path = (rel.components())
-        .map(|part| part.as_os_str().to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join("/");
+    let rel_path = asset_key(&fs::relative_to(&refusal.path, assets)?);
     Some(QuarantinedAsset {
         rel_path,
         reason: refusal.reason.to_string(),
         remedy: refusal.reason.remedy().to_owned(),
-        refused_by: refused_by(refusal).to_owned(),
-        read_as: read_as(refusal.trust).to_owned(),
-        content: held_by(key),
+        refused_by: refusal.refused_by().to_owned(),
+        read_as: refusal.trust.label().to_owned(),
+        content: key.short_label(),
     })
-}
-
-/// What refused the file, in the browser's words.
-fn refused_by(refusal: &SecurityRefusal) -> &'static str {
-    if matches!(refusal.reason, SecurityReason::WrongType { .. }) {
-        return "type check";
-    }
-    match refusal.layer {
-        TrustLayer::File => "file guard",
-        TrustLayer::Decoder => "decoder",
-        TrustLayer::Content => "type check",
-        TrustLayer::Pack => "pack",
-    }
-}
-
-/// The trust a file was read at, in the browser's words.
-fn read_as(trust: Trust) -> &'static str {
-    match trust {
-        Trust::Engine => "engine",
-        Trust::Project => "trusted project",
-        Trust::Restricted => "restricted project",
-        Trust::Imported => "downloaded file",
-        Trust::Save => "save",
-    }
-}
-
-/// What the quarantine holds the file by: its content's hash, shortened, or
-/// its size and date.
-fn held_by(key: &QuarantineKey) -> String {
-    match key {
-        QuarantineKey::Content(hash) => {
-            let hex: String = hash.iter().map(|byte| format!("{byte:02x}")).collect();
-            format!("blake3 {}\u{2026}{}", &hex[..4], &hex[hex.len() - 4..])
-        }
-        QuarantineKey::Stamp { .. } => "size and date".to_owned(),
-    }
 }

@@ -121,15 +121,17 @@ so older project files keep working.
 
 ## Asset extensions
 
-The asset browser categorises files by extension. The mapping is
+A file's asset type comes from its extension. The one table is
 `asset_type_for_extension` in
-[`crates/khora-io/src/asset/index_builder.rs`](https://github.com/eraflo/KhoraEngine/blob/main/crates/khora-io/src/asset/index_builder.rs)
+[`crates/khora-io/src/asset/extensions.rs`](https://github.com/eraflo/KhoraEngine/blob/main/crates/khora-io/src/asset/extensions.rs)
 — it is the engine's, not the editor's, so a packed build classifies identically.
+The index, the asset browser, the decoders and the size caps of the trust guard
+all read it.
 
 | Type | Recognised extensions |
 |------|-----------------------|
 | Mesh | `.gltf`, `.glb`, `.obj`, `.fbx` |
-| Texture | `.png`, `.jpg`, `.jpeg`, `.tga`, `.bmp`, `.hdr` |
+| Texture | `.png`, `.jpg`, `.jpeg`, `.tga`, `.bmp`, `.hdr`, `.gif`, `.webp`, `.tif`, `.tiff`, `.dds`, `.exr` |
 | Audio | `.wav`, `.ogg`, `.mp3`, `.flac` |
 | Shader | `.wgsl`, `.hlsl`, `.glsl` |
 | Material | `.mat`, `.kmat` |
@@ -137,6 +139,7 @@ The asset browser categorises files by extension. The mapping is
 | Font | `.ttf`, `.otf` |
 | Script | `.erg` (Ergon), `.kscript` |
 | Prefab | `.kprefab` |
+| Buffer (`bin`) | `.bin`, a glTF's binary buffer |
 
 An unknown extension is **not** discarded and not lumped together: the file is
 indexed under its own lowercased extension as the type tag, so it shows up in the

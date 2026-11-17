@@ -17,7 +17,8 @@
 //! The app refreshes [`EditorState`] every frame with a snapshot of the ECS
 //! world; panels read it through a shared `Arc<Mutex<EditorState>>`.
 
-use crate::asset::AssetUUID;
+use super::EditorRequest;
+use crate::asset::{AssetType, AssetUUID};
 use crate::ecs::entity::EntityId;
 use std::collections::HashSet;
 
@@ -112,24 +113,14 @@ pub struct EditorState {
     pub search_filter: String,
     /// Whether the Ctrl key is currently held (for multi-select).
     pub ctrl_held: bool,
-    /// A pending spawn request tag (e.g. "Empty", "Cube", "Light", "Camera").
+    /// What the panels asked of the app, oldest first.
     ///
-    /// The app reads and clears it each frame.
-    pub pending_spawn: Option<String>,
-    /// Pending delete request for a specific entity (from context menu).
-    pub pending_delete: Option<EntityId>,
-    /// Pending duplicate request for a specific entity (from context menu).
-    pub pending_duplicate: Option<EntityId>,
+    /// Each consumer takes its own kinds with [`take_requests`](Self::take_requests).
+    pub requests: Vec<EditorRequest>,
     /// Entity currently being renamed (inline text editing).
     pub renaming_entity: Option<EntityId>,
     /// Buffer for the rename text input.
     pub rename_buffer: String,
-    /// Pending rename to apply: (entity, new_name).
-    pub pending_rename: Option<(EntityId, String)>,
-    /// Pending reparent to apply: `(child, new parent)`, `None` for the root.
-    ///
-    /// Set by the scene tree's drag-and-drop, drained by `process_reparents`.
-    pub pending_reparent: Option<(EntityId, Option<EntityId>)>,
 
     // ── Properties Inspector ───────────────────────────
     /// Snapshot of the single-selected entity's components (if any).
@@ -147,10 +138,6 @@ pub struct EditorState {
     ///
     /// A frame where it has not moved copies nothing.
     pub problems_generation: u64,
-    /// What the last scene load adapted, as problems the app reports as the `Load` source.
-    ///
-    /// `Some(empty)` clears them (a new scene).
-    pub pending_load_problems: Option<Vec<crate::problems::Problem>>,
     /// The last load's problems as they were handed over.
     ///
     /// Kept so a Stop, which respawns every entity, can point them at the restored ones.
@@ -195,17 +182,10 @@ pub struct EditorState {
     /// When set, the inspector shows the asset's metadata; an entity selection
     /// clears it.
     pub inspected_asset_path: Option<String>,
-    /// The asset an inspector slot asked to reveal, by its forward-slash path under `assets/`.
-    ///
-    /// The asset browser opens its folder, selects its tile and inspects it,
-    /// as a click on the tile does.
-    pub pending_reveal_asset: Option<String>,
     /// What the open asset picker filters its entries by, shared by every slot.
     ///
     /// One picker is open at a time.
     pub asset_picker_query: String,
-    /// Pending menu action (e.g. "new_scene", "save", "quit").
-    pub pending_menu_action: Option<String>,
     /// Currently set project folder (used for asset scanning).
     pub project_folder: Option<String>,
     /// Human-readable project name (read from `project.json`).
@@ -258,30 +238,19 @@ pub struct EditorState {
     pub restricted: bool,
     /// The open confirmation of trusting the project, with what trusting changes.
     ///
-    /// The restricted bar asks for it through the `confirm_trust` menu action;
+    /// The restricted bar asks for it through [`EditorRequest::ConfirmTrust`];
     /// the app fills it.
     pub trust_confirm: Option<TrustSummary>,
     /// The project's quarantined files, paths relative to the assets root.
     ///
     /// Mirrored from the run's refusals when the problems' generation moves.
     pub quarantined: Vec<QuarantinedAsset>,
-    /// A quarantined asset to release, by its forward-slash path under `assets/`.
-    ///
-    /// Drained by the app.
-    pub pending_release: Option<String>,
 
     // ── Scene file path ──────────────────────────────
     /// Path to the currently open scene file (for Save).
     pub current_scene_path: Option<String>,
-    /// Pending scene load path (set by asset browser double-click, consumed by update).
-    pub pending_scene_load: Option<String>,
 
     // ── Component addition ─────────────────────────────
-    /// Pending component addition: the entity and the component type name (e.g. "Camera").
-    ///
-    /// Set by the inspector or the scene tree context menu, drained by the app.
-    pub pending_add_component: Option<(EntityId, String)>,
-
     /// What "+ Add Component" offers the inspected entity.
     ///
     /// Rust and script-declared components it does not hold, each with its
@@ -306,45 +275,7 @@ pub struct EditorState {
     /// Entities the user hid with the scene tree's eye icon, kept by the UI only.
     pub hidden_entities: HashSet<EntityId>,
 
-    // ── Prefab workflow ────────────────────────────────
-    /// The entity to save as a `.kprefab`, set by "Save as Prefab" in the scene tree.
-    ///
-    /// The editor drains it next frame and asks for the file through a dialog.
-    pub pending_save_as_prefab: Option<EntityId>,
-    /// An entity to save as a prefab at a forward-slash path under `<project>/assets/`.
-    ///
-    /// Set by dropping an entity on the asset browser; written with no dialog.
-    /// A path ending in `/` takes the entity's name as its file stem.
-    pub pending_save_as_prefab_at: Option<(EntityId, String)>,
-    /// A prefab to instantiate as a linked instance, and the entity to parent it under.
-    ///
-    /// Set by a drop on the viewport or hierarchy, or from the asset browser:
-    /// a `.kprefab`, a glTF scene sub-asset, or a glTF file standing for its
-    /// default scene. The parent is the hierarchy row it was dropped on.
-    pub pending_prefab_spawn: Option<(AssetUUID, Option<EntityId>)>,
-    /// An override of the inspected entity to apply to its prefab, and what of it.
-    ///
-    /// Drained next frame: the prefab's file is rewritten and reindexed.
-    pub pending_prefab_apply: Option<(EntityId, PrefabApplyScope)>,
-    /// An entity whose whole prefab instance takes its prefab's values back.
-    ///
-    /// Reverts every value override of every member, and every component
-    /// added to or removed from one. Drained by the app.
-    pub pending_prefab_revert: Option<EntityId>,
-
-    // ── Material authoring workflow ─────────────────────
-    /// An entity's inline material to save as `assets/materials/<name>.kmat`, with the name.
-    ///
-    /// Set by "Save Material as .kmat" on a `MaterialRef::Inline`. The entity
-    /// then references the saved asset through `MaterialRef::Asset`.
-    pub pending_save_as_material: Option<(EntityId, String)>,
-    /// A material to assign to the selection, by identity.
-    ///
-    /// A `.kmat`, or a material inside another file, which a path cannot name.
-    /// Drained next frame into each selected entity's `MaterialRef::Asset`.
-    pub pending_assign_material: Option<AssetUUID>,
-
-    // ── Asset explorer: file operations & scene drop ───
+    // ── Asset explorer ─────────────────────────────────
     /// Every directory under `assets/` (forward-slash, relative), empty ones
     /// too, refreshed with `asset_entries`.
     pub asset_dirs: Vec<String>,
@@ -355,31 +286,6 @@ pub struct EditorState {
     ///
     /// The entries, dirs and epoch are refreshed once its outcome is read.
     pub reindexing: Option<crate::asset::IndexTicket>,
-    /// Create an empty folder at this forward-slash relative path under
-    /// `assets/`. Consumed next frame.
-    pub pending_create_folder: Option<String>,
-    /// Rename/move an asset: `(old_rel, new_rel)`, both forward-slash under
-    /// `assets/`. The identity registry freezes the UUID so references survive.
-    pub pending_rename_asset: Option<(String, String)>,
-    /// Move an asset into a folder: `(src_rel, dest_dir)` (dest_dir `""` = root).
-    pub pending_move_asset: Option<(String, String)>,
-    /// Send an asset to the OS recycle bin: forward-slash relative path.
-    pub pending_delete_asset: Option<String>,
-    /// Duplicate an asset next to itself: forward-slash relative path.
-    pub pending_duplicate_asset: Option<String>,
-    /// Create an Ergon script: `(rel_path, source)`, forward-slash under
-    /// `assets/`. Never overwrites a file. Consumed next frame.
-    pub pending_create_script: Option<(String, String)>,
-    /// A mesh asset to spawn: `(mesh identity, [x,y,z] world point, parent)`.
-    ///
-    /// A mesh file or a mesh sub-asset, dragged onto the viewport (no parent)
-    /// or a hierarchy row (that row's entity as parent).
-    pub pending_spawn_mesh_asset: Option<(AssetUUID, [f32; 3], Option<EntityId>)>,
-    /// A texture or material asset dropped on an entity in the viewport: `(asset, entity)`.
-    ///
-    /// A material is referenced; a texture becomes the base colour of an
-    /// inline standard material.
-    pub pending_assign_texture: Option<(AssetUUID, EntityId)>,
 }
 
 impl EditorState {
@@ -440,6 +346,33 @@ impl EditorState {
     /// Takes all pending edits, for the app to apply.
     pub fn drain_edits(&mut self) -> Vec<PropertyEdit> {
         std::mem::take(&mut self.pending_edits)
+    }
+
+    /// Queues `request` after those already asked.
+    pub fn push_request(&mut self, request: EditorRequest) {
+        self.requests.push(request);
+    }
+
+    /// Takes the requests `take` accepts, oldest first, and leaves the others queued in order.
+    ///
+    /// `take` returns `Ok` with what it keeps of a request it handles, and
+    /// gives any other back as `Err`.
+    pub fn take_requests<T>(
+        &mut self,
+        mut take: impl FnMut(EditorRequest) -> Result<T, EditorRequest>,
+    ) -> Vec<T> {
+        let mut taken = Vec::new();
+        if self.requests.is_empty() {
+            return taken;
+        }
+        let queued = std::mem::take(&mut self.requests);
+        for request in queued {
+            match take(request) {
+                Ok(kept) => taken.push(kept),
+                Err(left) => self.requests.push(left),
+            }
+        }
+        taken
     }
 }
 
@@ -520,8 +453,8 @@ impl Default for StatusBarData {
 pub struct AssetEntry {
     /// Human-readable file/asset name.
     pub name: String,
-    /// Asset type string (e.g. "Mesh", "Texture", "Shader", "Audio").
-    pub asset_type: String,
+    /// What kind of asset it is.
+    pub asset_type: AssetType,
     /// Source path (for display purposes).
     pub source_path: String,
     /// The asset's identity, as the index resolved it through the project's
@@ -570,4 +503,63 @@ pub struct QuarantinedAsset {
     /// What it is held by: `blake3 xxxx…xxxx` for its content, `size and
     /// date` for its stamp.
     pub content: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::{EditorRequest, MenuAction, SpawnShape, Transport};
+    use super::EditorState;
+
+    fn menu(request: EditorRequest) -> Result<MenuAction, EditorRequest> {
+        match request {
+            EditorRequest::Menu(action) => Ok(action),
+            other => Err(other),
+        }
+    }
+
+    /// Two requests asked in one frame are both kept: neither overwrites the other.
+    #[test]
+    fn two_requests_in_one_frame_are_both_kept() {
+        let mut state = EditorState::default();
+        state.push_request(EditorRequest::Menu(MenuAction::SpawnEmpty));
+        state.push_request(EditorRequest::Menu(MenuAction::Delete));
+
+        assert_eq!(
+            state.take_requests(menu),
+            [MenuAction::SpawnEmpty, MenuAction::Delete]
+        );
+        assert!(state.requests.is_empty());
+    }
+
+    /// A consumer takes its own kinds, oldest first, and leaves the others in their order.
+    #[test]
+    fn taking_one_kind_leaves_the_others_in_order() {
+        let mut state = EditorState::default();
+        state.push_request(EditorRequest::Transport(Transport::Play));
+        state.push_request(EditorRequest::Menu(MenuAction::Save));
+        state.push_request(EditorRequest::Spawn(SpawnShape::Cube));
+        state.push_request(EditorRequest::Menu(MenuAction::About));
+        state.push_request(EditorRequest::ToggleWireframe);
+
+        assert_eq!(
+            state.take_requests(menu),
+            [MenuAction::Save, MenuAction::About]
+        );
+        assert_eq!(
+            state.requests,
+            [
+                EditorRequest::Transport(Transport::Play),
+                EditorRequest::Spawn(SpawnShape::Cube),
+                EditorRequest::ToggleWireframe,
+            ]
+        );
+    }
+
+    /// Nothing queued, nothing taken.
+    #[test]
+    fn an_empty_queue_gives_nothing() {
+        let mut state = EditorState::default();
+        assert!(state.take_requests(menu).is_empty());
+        assert!(state.requests.is_empty());
+    }
 }

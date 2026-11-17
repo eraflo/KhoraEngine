@@ -32,6 +32,7 @@ use khora_core::agent::gorna::{AdaptationMode, AgentHints, AgentId, Planning, St
 use khora_core::agent::{Agent, AgentImportance};
 use khora_core::lane::cost::{Cost, PerDevice, PerLink};
 use khora_core::lane::OutputDeck;
+use khora_core::sync::LockExt;
 use khora_data::ecs::{Transform, World};
 
 use super::behavior_session::{attach, Project, Session};
@@ -281,11 +282,7 @@ fn with_free_frame_time_gorna_lends_the_script_family_its_whole_level() {
         "the envelope {envelope:?} covers the whole level {:?}",
         whole.cost.time.cpu
     );
-    let installed = agent
-        .place()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .installed_row();
+    let installed = agent.place().lock_recovered().installed_row();
     assert_eq!(
         installed,
         Some(StrategyId::Balanced),

@@ -13,6 +13,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use khora_sdk::editor_ui::{EditorRequest, MenuAction};
 use khora_sdk::khora_core::math::Ray;
 use khora_sdk::prelude::ecs::EntityId;
 use khora_sdk::prelude::*;
@@ -230,7 +231,7 @@ pub fn process_events(
                 // absence people discover by losing work.
                 if *key_code == KeyCode::KeyS && state.ctrl_held {
                     if let Ok(mut s) = editor_state.lock() {
-                        s.pending_menu_action = Some("save".to_owned());
+                        s.push_request(EditorRequest::Menu(MenuAction::Save));
                     }
                 }
 

@@ -21,6 +21,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::PersistentId;
+use khora_core::sync::LockExt;
 
 use super::World;
 
@@ -88,7 +89,7 @@ impl IdentityCell {
     /// A poisoned lock is taken as it is: every write is one insert or
     /// remove, so a panic leaves the maps whole.
     fn lock(&self) -> MutexGuard<'_, PersistentIds> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+        self.0.lock_recovered()
     }
 
     /// Returns the identities from an exclusive world, taking no lock.

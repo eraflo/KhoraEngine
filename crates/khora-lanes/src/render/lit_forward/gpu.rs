@@ -20,7 +20,7 @@ use crate::render::neutral::NeutralBindings;
 use crate::render::util::dynamic_uniform_ring_buffer::{
     DEFAULT_MAX_ELEMENTS, MIN_UNIFORM_ALIGNMENT,
 };
-use crate::render::util::kept_bind_groups::KeptBindGroups;
+use crate::render::util::kept_bind_groups::{KeptBindGroups, LightingKey};
 use crate::render::util::target_state::{
     scene_color_targets, scene_depth_state, scene_multisample,
 };
@@ -30,14 +30,12 @@ use khora_core::lane::io::TargetKey;
 use khora_core::renderer::api::command::BindGroupLayoutId;
 use khora_core::renderer::api::frame::MAX_FRAMES_IN_FLIGHT;
 use khora_core::renderer::api::gpu_scene::{Mesh, ModelUniforms};
-use khora_core::renderer::api::ibl::IblGpuBindings;
 use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
 use khora_core::renderer::api::pipeline::{
     LayoutKey, LayoutSpec, PipelineSpec, PrimitiveStateDescriptor,
 };
-use khora_core::renderer::api::resource::{BufferId, CameraUniformData};
+use khora_core::renderer::api::resource::CameraUniformData;
 use khora_core::renderer::api::shader::ShaderVariantKey;
-use khora_core::renderer::api::shadow::ShadowGpuBindings;
 use khora_core::renderer::error::RenderError;
 use khora_core::renderer::light::LightingUniforms;
 use khora_core::renderer::traits::PipelineSystem;
@@ -50,14 +48,10 @@ pub(super) const LABEL: &str = "LitForward";
 /// uniforms and the shadow atlases.
 pub(super) const IBL_BASE: u32 = 4;
 
-/// What a group-3 bind group binds: the lighting buffer of the ring slot,
-/// the shadow atlases and the environment.
-pub(super) type LightingKey = (BufferId, ShadowGpuBindings, IblGpuBindings);
-
 /// Returns the forward lane's pipeline for `surface` drawn into a target of `key`.
 ///
 /// The four shared layouts; group 2 resolves to the material variant's textures.
-pub(super) fn pipeline_spec(surface: &Surface, key: TargetKey) -> PipelineSpec {
+pub(super) fn pipeline_spec(surface: &Surface<'_>, key: TargetKey) -> PipelineSpec {
     PipelineSpec {
         label: "LitForward Pipeline",
         shader: "khora::pipelines::lit_forward",
@@ -93,7 +87,7 @@ pub(super) struct LitGpu {
     pub(super) neutral: NeutralBindings,
     /// The pipelines asked for on the current target.
     pub(super) pipelines: VariantPipelines,
-    /// One lighting bind group per buffer of the lighting ring.
+    /// One lighting bind group per buffer of the lighting ring, keyed by it.
     pub(super) lighting_groups: KeptBindGroups<LightingKey>,
 }
 

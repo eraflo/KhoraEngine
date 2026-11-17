@@ -29,6 +29,7 @@ use khora_core::lane::OutputDeck;
 use khora_core::renderer::api::gpu_scene::{GpuMesh, Mesh};
 use khora_core::renderer::api::material::GpuMaterial;
 use khora_core::renderer::api::resource::CpuTexture;
+use khora_core::sync::RwLockExt;
 use khora_core::Runtime;
 use khora_data::assets::Assets;
 use khora_data::ecs::{
@@ -160,10 +161,7 @@ fn resolve_materials(world: &mut World, runtime: &Runtime) {
             load_textures(&**handle, entity, textures, service);
         }
         if let Some(store) = &store {
-            store
-                .write()
-                .unwrap_or_else(|e| e.into_inner())
-                .insert(uuid, handle.clone());
+            store.write_recovered().insert(uuid, handle.clone());
         }
         let component = HandleComponent { handle, uuid };
         if had_stale_handle {
@@ -190,10 +188,7 @@ pub(super) fn load_textures(
     service: &Mutex<AssetService>,
 ) {
     for uuid in material.textures() {
-        let held = textures
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .contains(&uuid);
+        let held = textures.read_recovered().contains(&uuid);
         if held {
             continue;
         }
@@ -206,10 +201,7 @@ pub(super) fn load_textures(
         };
         match requested {
             Requested::Ready(texture) => {
-                textures
-                    .write()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .insert(uuid, texture);
+                textures.write_recovered().insert(uuid, texture);
             }
             Requested::Pending => {}
             Requested::Failed => log::debug!(
@@ -294,10 +286,7 @@ fn resolve_meshes(world: &mut World, runtime: &Runtime) {
     } in pending
     {
         if let Some(store) = &store {
-            store
-                .write()
-                .unwrap_or_else(|e| e.into_inner())
-                .insert(uuid, handle.clone());
+            store.write_recovered().insert(uuid, handle.clone());
         }
         let component = HandleComponent { handle, uuid };
         if had_stale_handle {

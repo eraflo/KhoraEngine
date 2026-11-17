@@ -93,9 +93,9 @@ impl HubApp {
             home: HomeState::default(),
             settings,
             splash: Some((LoadingScreen::new(Film::Sign, 0.0, false), Instant::now())),
-            trust_store: TrustStore::new(khora_sdk::user_dirs::trust_path(&|key| {
-                std::env::var_os(key)
-            })),
+            trust_store: TrustStore::new(khora_sdk::user_dirs::trust_path(
+                &khora_sdk::user_dirs::process_env,
+            )),
             trust_prompt: None,
         }
     }
@@ -206,6 +206,7 @@ impl HubApp {
         if let Some(decision) = answer {
             self.trust_store
                 .decide(std::path::Path::new(&proj.path), decision);
+            self.home.cards.forget();
             self.launch_project(&proj);
         }
     }
@@ -218,6 +219,7 @@ impl HubApp {
             std::path::Path::new(&proj.path),
             khora_sdk::trust::ProjectTrust::Restricted,
         );
+        self.home.cards.forget();
         self.banner = Some(Banner::info(format!(
             "'{}' is restricted: its scripts, shaders and Build Game are off.",
             proj.name
@@ -341,6 +343,7 @@ impl HubApp {
                 // A project the user just made is theirs: trusted.
                 self.trust_store
                     .decide(&root, khora_sdk::trust::ProjectTrust::Trusted);
+                self.home.cards.forget();
 
                 match project::launch_editor(&engine.editor_binary, &root) {
                     Ok(()) => {

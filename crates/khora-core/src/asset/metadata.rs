@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use super::asset_uuid::AssetUUID;
+use super::AssetType;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 
@@ -77,9 +78,11 @@ pub struct AssetMetadata {
     /// the importer and editor tooling.
     pub source_path: PathBuf,
 
-    /// The asset's type name (e.g. `"texture"`, `"mesh"`, `"material"`), which
-    /// selects its decoder.
-    pub asset_type_name: String,
+    /// The asset's type, which selects its decoder.
+    ///
+    /// Written under its former field name, as the plain string it always was.
+    #[serde(rename = "asset_type_name")]
+    pub asset_type: AssetType,
 
     /// The assets this asset directly depends on, such as a material's
     /// textures.
@@ -87,10 +90,56 @@ pub struct AssetMetadata {
 
     /// The engine-ready variants of the asset, keyed by variant name.
     ///
-    /// A key names the variant (e.g. `"default"`, `"LOD0"`, `"4K"`); its value
-    /// is where that variant's bytes are read from.
+    /// A key names the variant ([`Self::DEFAULT_VARIANT`], `"LOD0"`, `"4K"`);
+    /// its value is where that variant's bytes are read from.
     pub variants: HashMap<String, AssetSource>,
 
     /// Semantic tags that group assets, e.g. all the assets of one level.
     pub tags: Vec<String>,
+}
+
+impl AssetMetadata {
+    /// The key of the variant every indexed asset has: its file as it is.
+    pub const DEFAULT_VARIANT: &'static str = "default";
+
+    /// Returns where the default variant's bytes are read from, if it has one.
+    pub fn default_source(&self) -> Option<&AssetSource> {
+        self.variants.get(Self::DEFAULT_VARIANT)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn metadata(variants: HashMap<String, AssetSource>) -> AssetMetadata {
+        AssetMetadata {
+            uuid: AssetUUID::new_v5("a.png"),
+            source_path: PathBuf::from("a.png"),
+            asset_type: AssetType::Texture,
+            dependencies: Vec::new(),
+            variants,
+            tags: Vec::new(),
+        }
+    }
+
+    /// **The default source is the variant keyed `"default"`**, as every index
+    /// and pack has keyed it.
+    #[test]
+    fn the_default_source_is_the_variant_keyed_default() {
+        let file = AssetSource::Path(PathBuf::from("a.png"));
+        let entry = metadata(HashMap::from([("default".to_owned(), file)]));
+        assert!(
+            matches!(entry.default_source(), Some(AssetSource::Path(p)) if p == &PathBuf::from("a.png"))
+        );
+        assert_eq!(AssetMetadata::DEFAULT_VARIANT, "default");
+    }
+
+    /// **An entry with only other variants has no default source.**
+    #[test]
+    fn an_entry_without_the_default_variant_has_no_default_source() {
+        let file = AssetSource::Path(PathBuf::from("a_4k.png"));
+        let entry = metadata(HashMap::from([("4K".to_owned(), file)]));
+        assert!(entry.default_source().is_none());
+    }
 }

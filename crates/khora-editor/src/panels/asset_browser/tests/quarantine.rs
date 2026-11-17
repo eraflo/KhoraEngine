@@ -27,13 +27,14 @@ use khora_tool_ui::testing::RecordingUiBuilder;
 use super::super::AssetBrowserPanel;
 use crate::commands::CommandHistory;
 use crate::panels::PropertiesPanel;
+use crate::tests::requests::releases;
 
 const HUGE: &str = "textures/huge.png";
 
 fn entry(path: &str) -> AssetEntry {
     AssetEntry {
         name: path.rsplit('/').next().unwrap_or(path).to_owned(),
-        asset_type: "texture".to_owned(),
+        asset_type: khora_sdk::khora_core::asset::AssetType::Texture,
         source_path: path.to_owned(),
         uuid: AssetUUID::new_v5(path),
         container: None,
@@ -173,5 +174,5 @@ fn release_asks_to_release_the_asset() {
         pane().with_click("asset-quarantine-release"),
     );
 
-    assert_eq!(after.pending_release.as_deref(), Some(HUGE));
+    assert_eq!(releases(&after), [HUGE]);
 }

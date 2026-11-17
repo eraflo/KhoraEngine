@@ -15,13 +15,13 @@
 //! The file guard: every file the engine reads from a project is read
 //! through one.
 
-use std::io::Read;
 use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use super::{
     size_cap, FileKind, QuarantineKey, Refusals, SecurityReason, SecurityRefusal, Trust, TrustLayer,
 };
+use crate::fs::{read_bounded, BoundedReadError};
 
 /// Reads the files under one root, refusing what leaves it, what is over its
 /// cap and what is quarantined.
@@ -36,6 +36,9 @@ pub struct FileGuard {
     /// The root as it was given: what refusals and the quarantine name files
     /// by.
     root: PathBuf,
+    /// The root resolved, once it first resolves: a root made after the guard
+    /// is read once it exists.
+    real_root: OnceLock<PathBuf>,
     trust: Trust,
     refusals: Arc<Refusals>,
 }
@@ -66,6 +69,7 @@ impl FileGuard {
     pub fn new(root: impl Into<PathBuf>, trust: Trust, refusals: Arc<Refusals>) -> Self {
         Self {
             root: root.into(),
+            real_root: OnceLock::new(),
             trust,
             refusals,
         }
@@ -98,9 +102,9 @@ impl FileGuard {
         if leaves(rel) {
             return Err(self.refuse(named, self.trust, SecurityReason::Escape, None));
         }
-        let real_root = self.root.canonicalize().map_err(ReadError::Io)?;
+        let real_root = self.real_root()?;
         let real = named.canonicalize().map_err(ReadError::Io)?;
-        if !real.starts_with(&real_root) {
+        if !real.starts_with(real_root) {
             return Err(self.refuse(named, self.trust, SecurityReason::Escape, None));
         }
 
@@ -110,37 +114,19 @@ impl FileGuard {
             self.trust
         };
         let cap = size_cap(FileKind::of_path(rel), trust);
-        let file = std::fs::File::open(&real).map_err(ReadError::Io)?;
-        let metadata = file.metadata().map_err(ReadError::Io)?;
-        if metadata.len() > cap {
-            let stamp = metadata
-                .modified()
-                .ok()
-                .map(|modified| QuarantineKey::Stamp {
-                    len: metadata.len(),
-                    modified,
-                });
-            let reason = SecurityReason::TooLarge {
-                size: metadata.len(),
-                cap,
-            };
-            return Err(self.refuse(named, trust, reason, stamp));
-        }
-        let mut bytes = Vec::with_capacity(metadata.len() as usize);
-        file.take(cap + 1)
-            .read_to_end(&mut bytes)
-            .map_err(ReadError::Io)?;
-        if bytes.len() as u64 > cap {
-            // It grew past its cap since its size was read.
-            let reason = SecurityReason::TooLarge {
-                size: bytes.len() as u64,
-                cap,
-            };
-            return Err(self.refuse(named, trust, reason, None));
-        }
+        let bytes = match read_bounded(&real, cap) {
+            Ok(bytes) => bytes,
+            // Keyed by its stamp when its size came from it; one that grew
+            // during the read has no stamp to be held by.
+            Err(BoundedReadError::TooLarge { size, cap, stamp }) => {
+                let reason = SecurityReason::TooLarge { size, cap };
+                return Err(self.refuse(named, trust, reason, stamp.map(QuarantineKey::from)));
+            }
+            Err(BoundedReadError::Io(error)) => return Err(ReadError::Io(error)),
+        };
 
         if self.refusals.holds(&named) {
-            let key = QuarantineKey::Content(*blake3::hash(&bytes).as_bytes());
+            let key = QuarantineKey::of_content(&bytes);
             if self.refusals.is_quarantined(&named, &key) {
                 self.refusals.note_refused_again(&named);
                 return Err(ReadError::Refused(SecurityRefusal {
@@ -165,6 +151,15 @@ impl FileGuard {
         String::from_utf8(bytes).map_err(|error| {
             ReadError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, error))
         })
+    }
+
+    /// Returns the root resolved, resolving it on the first read it resolves for.
+    fn real_root(&self) -> Result<&Path, ReadError> {
+        if let Some(real_root) = self.real_root.get() {
+            return Ok(real_root.as_path());
+        }
+        let resolved = self.root.canonicalize().map_err(ReadError::Io)?;
+        Ok(self.real_root.get_or_init(|| resolved).as_path())
     }
 
     /// Reports a refusal of the file `path` and returns it as an error.

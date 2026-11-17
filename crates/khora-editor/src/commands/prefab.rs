@@ -16,7 +16,9 @@
 
 use std::sync::{Arc, Mutex};
 
+use khora_sdk::editor_ui::EditorRequest;
 use khora_sdk::editor_ui::{PrefabApplyScope, PropertyEdit};
+use khora_sdk::khora_core::asset::AssetUUID;
 use khora_sdk::khora_core::script::ScriptValue;
 use khora_sdk::khora_data::ecs::{PrefabInstance, World};
 use khora_sdk::khora_data::scene::{
@@ -34,9 +36,9 @@ use crate::scene_io;
 
 /// Drains the pending prefab saves, writing the entity's subtree as a `.kprefab`.
 ///
-/// [`EditorState::pending_save_as_prefab_at`], set by a drop on an asset
-/// folder, carries its path under `<project>/assets/` and writes at once;
-/// [`EditorState::pending_save_as_prefab`], from the scene tree's "Save as
+/// [`EditorRequest::SaveAsPrefabAt`], from a drop on an asset folder,
+/// carries its path under `<project>/assets/` and writes at once;
+/// [`EditorRequest::SaveAsPrefab`], from the scene tree's "Save as
 /// Prefab…", asks for the file first.
 pub fn process_pending_save_as_prefab(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
@@ -44,23 +46,40 @@ pub fn process_pending_save_as_prefab(
     editor_state: &Arc<Mutex<EditorState>>,
 ) {
     // Drag-drop path: pre-chosen folder, no dialog.
-    let auto = match editor_state.lock() {
-        Ok(mut s) => s.pending_save_as_prefab_at.take(),
-        Err(_) => None,
-    };
-    if let Some((entity, rel_path)) = auto {
+    let at_paths = editor_state
+        .lock()
+        .map(|mut s| {
+            s.take_requests(|request| match request {
+                EditorRequest::SaveAsPrefabAt { entity, path } => Ok((entity, path)),
+                other => Err(other),
+            })
+        })
+        .unwrap_or_default();
+    for (entity, rel_path) in at_paths {
         save_prefab_to_project_path(project_vfs, world, entity, &rel_path);
     }
 
     // Right-click path: file dialog.
-    let entity = match editor_state.lock() {
-        Ok(mut s) => s.pending_save_as_prefab.take(),
-        Err(_) => None,
-    };
-    let Some(entity) = entity else {
-        return;
-    };
+    let entities = editor_state
+        .lock()
+        .map(|mut s| {
+            s.take_requests(|request| match request {
+                EditorRequest::SaveAsPrefab { entity } => Ok(entity),
+                other => Err(other),
+            })
+        })
+        .unwrap_or_default();
+    for entity in entities {
+        save_prefab_through_dialog(project_vfs, world, entity);
+    }
+}
 
+/// Saves `entity`'s subtree as a `.kprefab` at a file picked through a dialog.
+fn save_prefab_through_dialog(
+    project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
+    world: &GameWorld,
+    entity: EntityId,
+) {
     // The file first: the prefab it is decides what may be linked to.
     let Some(path) = rfd::FileDialog::new()
         .add_filter("Khora Prefab", &["kprefab"])
@@ -114,7 +133,8 @@ pub fn process_pending_save_as_prefab(
         }
     };
 
-    match std::fs::write(&path_str, &bytes) {
+    // Whole or not at all: a failed save leaves the previous file.
+    match khora_sdk::fs::write_atomic(std::path::Path::new(&path_str), &bytes) {
         Ok(()) => log::warn!(
             "Prefab saved to '{}' ({} bytes) — outside project, not VFS-managed.",
             path_str,
@@ -173,7 +193,7 @@ fn write_prefab_through_vfs(pvfs: &mut ProjectVfs, rel_fwd: &str, bytes: &[u8]) 
     log::info!("Prefab saved to '{}' ({} bytes)", rel_fwd, bytes.len());
 }
 
-/// Drains [`EditorState::pending_prefab_spawn`]: spawns the prefab its id names as a linked instance.
+/// Takes the queued [`EditorRequest::SpawnPrefab`]s: spawns each prefab as a linked instance.
 ///
 /// The id is a `.kprefab`, a glTF scene or another sub-asset prefab, read
 /// through the project's VFS; given a parent, the new root is placed under it.
@@ -182,13 +202,27 @@ pub fn process_pending_prefab_spawn(
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
 ) {
-    let pending = match editor_state.lock() {
-        Ok(mut s) => s.pending_prefab_spawn.take(),
-        Err(_) => None,
-    };
-    let Some((prefab, parent)) = pending else {
-        return;
-    };
+    let spawns = editor_state
+        .lock()
+        .map(|mut s| {
+            s.take_requests(|request| match request {
+                EditorRequest::SpawnPrefab { prefab, parent } => Ok((prefab, parent)),
+                other => Err(other),
+            })
+        })
+        .unwrap_or_default();
+    for (prefab, parent) in spawns {
+        spawn_prefab(project_vfs, world, prefab, parent);
+    }
+}
+
+/// Spawns `prefab` as a linked instance, its root under `parent` when given.
+fn spawn_prefab(
+    project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
+    world: &mut GameWorld,
+    prefab: AssetUUID,
+    parent: Option<EntityId>,
+) {
     let Some(pvfs_arc) = project_vfs else {
         log::warn!("Prefab spawn requested ({prefab}) but no project is open");
         return;
@@ -211,7 +245,7 @@ pub fn process_pending_prefab_spawn(
     }
 }
 
-/// Drains [`EditorState::pending_prefab_apply`]: writes what is applied of the instance into its prefab.
+/// Takes the queued [`EditorRequest::ApplyToPrefab`]s: writes what is applied of each instance into its prefab.
 ///
 /// The prefab's file is rewritten through the project's VFS and reindexed;
 /// the other instances in this world follow at once. See the book:
@@ -221,13 +255,28 @@ pub fn process_pending_prefab_apply(
     world: &GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
 ) {
-    let request = match editor_state.lock() {
-        Ok(mut state) => state.pending_prefab_apply.take(),
-        Err(_) => None,
-    };
-    let Some((entity, scope)) = request else {
-        return;
-    };
+    let requests = editor_state
+        .lock()
+        .map(|mut state| {
+            state.take_requests(|request| match request {
+                EditorRequest::ApplyToPrefab { entity, scope } => Ok((entity, scope)),
+                other => Err(other),
+            })
+        })
+        .unwrap_or_default();
+    for (entity, scope) in requests {
+        apply_one_to_prefab(project_vfs, world, editor_state, entity, scope);
+    }
+}
+
+/// Writes what `scope` applies of `entity`'s instance into its prefab.
+fn apply_one_to_prefab(
+    project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
+    world: &GameWorld,
+    editor_state: &Arc<Mutex<EditorState>>,
+    entity: EntityId,
+    scope: PrefabApplyScope,
+) {
     let Some(pvfs_arc) = project_vfs else {
         log::warn!("Apply to prefab ignored: no project is open");
         return;

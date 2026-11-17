@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use khora_core::sync::LockExt;
 use rapier3d::prelude::*;
 use std::sync::{Arc, Mutex};
 
@@ -28,7 +29,7 @@ impl EventHandler for RapierEventHandler {
         event: CollisionEvent,
         _contact_pair: Option<&ContactPair>,
     ) {
-        let mut events = self.events.lock().unwrap_or_else(|e| e.into_inner());
+        let mut events = self.events.lock_recovered();
         match event {
             CollisionEvent::Started(h1, h2, _) => {
                 events.push(khora_core::physics::CollisionEvent::Started(

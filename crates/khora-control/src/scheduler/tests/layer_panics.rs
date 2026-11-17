@@ -25,6 +25,7 @@ use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::{Agent, Contention, ExecutionTiming, Layer, LayerRun, Place, Terms, Wake};
 use khora_core::gpu::GpuSetup;
 use khora_core::lane::cost::PerDevice;
+use khora_core::sync::LockExt;
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -103,10 +104,7 @@ impl Agent for Chooser {
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {
-        self.place
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .lent(epoch);
+        self.place.lock_recovered().lent(epoch);
     }
     fn place(&self) -> Arc<Mutex<Place>> {
         Arc::clone(&self.place)
@@ -254,10 +252,7 @@ impl Agent for Recovering {
         Arc::clone(&self.place)
     }
     fn wake(&mut self, why: &[Wake], place: &mut Place, _context: &mut EngineContext<'_>) {
-        self.woken
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .push(why.to_vec());
+        self.woken.lock_recovered().push(why.to_vec());
         if self.panics_for > 0 {
             self.panics_for -= 1;
             panic!("the wake panics");
@@ -346,8 +341,7 @@ fn a_layer_that_panicked_on_the_frame_reports_it_stalled_with_its_message() {
             "parallel {parallel}: the premise"
         );
         let report = place
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .lock_recovered()
             .last_run()
             .report
             .clone()

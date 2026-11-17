@@ -29,10 +29,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use khora_sdk::editor_ui::{
-    EditorPanel, EditorShell, EditorState, PanelLocation, QuarantinedAsset, StatusBarData,
-    TrustSummary,
+    EditorPanel, EditorRequest, EditorShell, EditorState, PanelLocation, QuarantinedAsset,
+    StatusBarData, TrustSummary,
 };
 use khora_sdk::khora_core::problems::{Problem, ProblemSeverity, ProblemSource, Problems};
+use khora_sdk::khora_core::sync::LockExt;
 use khora_sdk::khora_core::ui::UiTheme;
 use khora_sdk::trust::{
     ProjectTrust, ProjectTrustState, QuarantineKey, Refusals, SecurityReason, SecurityRefusal,
@@ -43,6 +44,7 @@ use khora_sdk::EngineApp;
 use crate::app::project_open::grant_trust;
 use crate::app::EditorApp;
 use crate::tests::project_index::IndexingEngine;
+use crate::tests::requests::releases;
 
 // ─── A shell that records its panels ────────────────────────────────────────
 
@@ -216,7 +218,7 @@ impl Editor {
         let store = Folder::new("store");
         let mut app = <EditorApp as EngineApp>::new();
         // Never the user's own store.
-        app.trust_store = Some(TrustStore::new(Some(store.0.join("trust.ron"))));
+        app.trust_store = Some(Arc::new(TrustStore::new(Some(store.0.join("trust.ron")))));
         app.cache_services(&engine.runtime);
         app.register_panels(&engine.runtime);
         Self {
@@ -361,7 +363,7 @@ fn trust_this_project_opens_the_confirmation_with_what_trusting_changes() {
         other.exists(),
         "the premise: another project's file is refused"
     );
-    editor.state().pending_menu_action = Some("confirm_trust".to_owned());
+    editor.state().push_request(EditorRequest::ConfirmTrust);
 
     editor.frame();
 
@@ -376,7 +378,35 @@ fn trust_this_project_opens_the_confirmation_with_what_trusting_changes() {
         }),
         "what trusting cave-demo changes"
     );
-    assert_eq!(state.pending_menu_action, None, "the action is taken");
+    assert!(state.requests.is_empty(), "the action is taken");
+}
+
+/// **An editor's scratch files are not counted**: a lock beside a script
+/// (`.#door.erg`) or beside an overlay (`.#lighting.wgsl`) is neither a
+/// script nor an overlay trusting would use.
+#[test]
+fn the_confirmation_counts_no_scratch_file() {
+    let folder = Folder::new("confirm-scratch");
+    let root = cave_demo(&folder);
+    folder.write("cave-demo/assets/scripts/.#door.erg", b"lock");
+    folder.write("cave-demo/assets/shaders/.#water.wgsl", b"lock");
+    let mut editor = Editor::new(ProjectTrust::Restricted);
+    editor.open(&root);
+    editor.state().push_request(EditorRequest::ConfirmTrust);
+
+    editor.frame();
+
+    let summary = editor.state().trust_confirm.clone();
+    assert_eq!(
+        summary.as_ref().map(|summary| summary.scripts),
+        Some(4),
+        "the lock beside a script is no script"
+    );
+    assert_eq!(
+        summary.map(|summary| summary.overlays),
+        Some(vec!["khora::lighting".to_owned()]),
+        "the lock beside an overlay is no overlay"
+    );
 }
 
 /// **The quarantine is mirrored, each file by its path under the assets**,
@@ -442,7 +472,9 @@ fn a_released_file_leaves_the_quarantine() {
         Trust::Restricted,
     );
     editor.refusals.refuse(huge, Some(stamp()));
-    editor.state().pending_release = Some("textures/huge.png".to_owned());
+    editor.state().push_request(EditorRequest::ReleaseAsset {
+        path: "textures/huge.png".to_owned(),
+    });
 
     editor.frame();
 
@@ -451,7 +483,7 @@ fn a_released_file_leaves_the_quarantine() {
         "the file is released: {:?}",
         editor.refusals.quarantined()
     );
-    assert_eq!(editor.state().pending_release, None, "the release is taken");
+    assert!(releases(&editor.state()).is_empty(), "the release is taken");
 }
 
 /// **Trusting the project clears what its restricted mode listed.**
@@ -466,16 +498,14 @@ fn granting_trust_clears_what_the_restricted_mode_listed() {
     editor.problems.report(
         ProblemSource::Restricted,
         vec![Problem {
-            severity: ProblemSeverity::Warning,
-            module: Some("shaders/lighting.wgsl".to_owned()),
-            line: 0,
-            column: 0,
-            message: "Shader overlay ignored".to_owned(),
             note: Some("Trust the project to use it.".to_owned()),
-            entity: None,
-            behavior: None,
-            component: None,
-            field: None,
+            ..Problem::of_file(
+                ProblemSeverity::Warning,
+                "shaders/lighting.wgsl",
+                0,
+                0,
+                "Shader overlay ignored",
+            )
         }],
     );
     let store = TrustStore::new(Some(folder.0.join("trust.ron")));
@@ -498,9 +528,7 @@ fn granting_trust_clears_what_the_restricted_mode_listed() {
 fn announced(editor: &Editor) -> Vec<khora_sdk::khora_core::asset::AssetUUID> {
     let mut announced = Vec::new();
     for service in [&editor.engine.shared, &editor.app.shared_assets] {
-        let service = service
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let service = service.lock_recovered();
         announced.extend(service.changes().drain().into_iter().map(|change| change.0));
     }
     announced
@@ -526,7 +554,9 @@ fn a_released_file_is_read_again() {
         Some(stamp()),
     );
     let _ = announced(&editor);
-    editor.state().pending_release = Some("textures/huge.png".to_owned());
+    editor.state().push_request(EditorRequest::ReleaseAsset {
+        path: "textures/huge.png".to_owned(),
+    });
 
     editor.frame();
 
@@ -554,7 +584,9 @@ fn a_release_climbing_out_of_the_assets_releases_nothing() {
     editor
         .refusals
         .refuse(too_large(other, Trust::Restricted), Some(stamp()));
-    editor.state().pending_release = Some("../../other/assets/huge.png".to_owned());
+    editor.state().push_request(EditorRequest::ReleaseAsset {
+        path: "../../other/assets/huge.png".to_owned(),
+    });
 
     editor.frame();
 
@@ -578,11 +610,11 @@ fn a_release_of_an_absolute_path_releases_nothing() {
     editor
         .refusals
         .refuse(too_large(other.clone(), Trust::Restricted), Some(stamp()));
-    editor.state().pending_release = Some(
-        other
+    editor.state().push_request(EditorRequest::ReleaseAsset {
+        path: other
             .to_string_lossy()
             .replace(std::path::MAIN_SEPARATOR, "/"),
-    );
+    });
 
     editor.frame();
 
@@ -608,7 +640,7 @@ fn the_confirmation_names_every_overlay_the_shader_reload_would_use() {
     folder.write("cave-demo/assets/vfx/shaders/fire.wgsl", b"// fire");
     let mut editor = Editor::new(ProjectTrust::Restricted);
     editor.open(&root);
-    editor.state().pending_menu_action = Some("confirm_trust".to_owned());
+    editor.state().push_request(EditorRequest::ConfirmTrust);
 
     editor.frame();
 

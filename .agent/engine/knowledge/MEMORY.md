@@ -55,7 +55,7 @@ Commits `f5b3658c` (3k1), `a89f1086` (3k2), `77955a5a` + `80df266f` (3k3) on `de
   `ReportKind::Unusable` (value kept, judged on the composed value), the `component_checks` DataSystem reports to
   `khora_core::problems::Problems` (`ScriptProblems` lifted; sources `Data`, `Load` added).
 - Editor: message under the field (`Marks::with_problems`), Problems tab grouped by component, load report in
-  Problems (`pending_load_problems`, re-mapped at Stop), "renders nothing" overlay in Play; inf/NaN survive the
+  Problems (`EditorRequest::ReportLoadProblems`, re-mapped at Stop), "renders nothing" overlay in Play; inf/NaN survive the
   inspector JSON (`scene/inspector_json.rs`, `{"$float": "inf"}`).
 - `Mat3::inverse` uses the shared scale-relative `is_invertible` (also refuses a subnormal determinant).
 - Lights: one list, `render::shining_lights` (enabled, no Error in `Light::check`, finite world position, unit

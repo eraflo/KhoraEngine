@@ -15,20 +15,22 @@
 //! The per-frame entry points: the frame start, and the frame run on what it fixed.
 //! See the book: concepts/the-frame.md, "The six-stage descent".
 
-use super::known::MetAgent;
+use super::execution::FrameRun;
 use super::layers::{swap_layers, wake_agents};
+use super::lending::Taken;
 use super::{AgentSelection, ExecutionScheduler, COMPONENT_ACCESS_SAMPLE_PERIOD};
 use crate::substrate;
 use khora_core::agent::completion::AgentCompletionMap;
 use khora_core::agent::completion::CompletionOutcome;
 use khora_core::agent::gorna::AgentId;
-use khora_core::agent::{Activation, Agent, ExecutionPhase};
-use khora_core::lane::{HostViews, LaneBus, OutputDeck};
+use khora_core::agent::{Activation, ExecutionPhase};
+use khora_core::lane::{HostViews, LaneBus};
+use khora_core::sync::LockExt;
 use khora_core::telemetry::TelemetryEvent;
 use khora_core::Runtime;
 use khora_data::ecs::World;
 use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Instant;
 
 impl ExecutionScheduler {
@@ -41,8 +43,12 @@ impl ExecutionScheduler {
     /// begins a frame the host did not. See the book:
     /// concepts/agents-and-lanes.md, "Lanes are layers".
     pub fn begin_frame(&mut self, runtime: &Runtime) {
-        if let Some(next) = self.budget_channel.take() {
-            self.taken.push(next);
+        if let Some(((place, allocation), in_turn)) = self.budget_channel.take() {
+            self.ledger.taken.push(Taken {
+                place,
+                allocation,
+                in_turn,
+            });
         }
         let inactive = inactive_families(runtime);
         // The runs that ended since come back first: a layer staged while its
@@ -59,8 +65,8 @@ impl ExecutionScheduler {
         }
         // Lent before anything locks an agent: the whole frame runs on one epoch.
         self.lend_allocation(&inactive);
-        let met = self.met_agents(&inactive);
-        swap_layers(&met, runtime);
+        self.roster.refresh(&self.registry, &self.known, &inactive);
+        swap_layers(self.roster.met(), runtime);
         self.begun = true;
     }
 
@@ -100,19 +106,21 @@ impl ExecutionScheduler {
         let inactive = inactive_families(&runtime);
 
         // The families, the frame start having lent and swapped.
-        let met = self.met_agents(&inactive);
+        self.roster.refresh(&self.registry, &self.known, &inactive);
+        let met = Arc::clone(self.roster.met());
 
-        let fixed_rounds = self.advance_clocks(&runtime, &inactive);
+        let fixed_rounds = self.advance_clocks(&runtime);
 
         // Kept by the scheduler: agents do not read it through the runtime.
         let completion_map = self.completion_map();
 
         // Publish how agents will be grouped into concurrent waves this
         // frame, so the DCC can budget each wave by its critical path.
-        self.emit_wave_plan(&inactive);
+        self.emit_wave_plan();
 
-        let mut bus = LaneBus::new();
-        let mut deck = OutputDeck::new();
+        // Both come back empty from an earlier frame, their tables kept.
+        let mut bus = self.spare_bus.take().unwrap_or_default();
+        let mut deck = std::mem::take(&mut self.spare_deck);
 
         substrate::run_flows(world, &mut bus, &runtime);
         // Then the Views no Flow produces: the ones the host application set.
@@ -137,17 +145,25 @@ impl ExecutionScheduler {
         // the installed ones, which keep running until they land.
         self.background.prepare(&met, &runtime, &bus);
 
-        self.run_phases(
-            &runtime,
-            &inactive,
-            &completion_map,
-            &bus,
-            &mut deck,
-            fixed_rounds,
-        );
+        let mut run = FrameRun {
+            runtime: &runtime,
+            inactive: &inactive,
+            completion_map: &completion_map,
+            bus: &bus,
+            deck: &mut deck,
+        };
+        self.run_phases(&mut run, fixed_rounds);
 
-        // Kept for the engine to drain at the I/O boundary.
-        self.last_deck = deck;
+        // Kept for the engine to drain at the I/O boundary; what it left in
+        // the deck before is dropped here, at the end of this frame.
+        let mut previous = std::mem::replace(&mut self.last_deck, deck);
+        previous.clear();
+        self.spare_deck = previous;
+        // A run off the frame may still read this bus: then it is not reused.
+        if let Ok(mut bus) = Arc::try_unwrap(bus) {
+            bus.clear();
+            self.spare_bus = Some(bus);
+        }
 
         self.sample_component_access(world);
     }
@@ -157,11 +173,7 @@ impl ExecutionScheduler {
     /// A fixed agent owed no sub-step this frame is marked completed, so an agent
     /// depending on it (a finer-stepped one between two of its steps) still runs.
     fn completion_map(&self) -> Arc<AgentCompletionMap> {
-        let agent_ids = self
-            .registry
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .all_ids();
+        let agent_ids = self.registry.lock_recovered().all_ids();
         let completion_map = Arc::new(AgentCompletionMap::new(&agent_ids));
         for (&id, &due) in &self.fixed_due {
             if due == 0 {
@@ -175,30 +187,16 @@ impl ExecutionScheduler {
     ///
     /// With `fixed_rounds`, the fixed agents first run their sub-steps round by round, and
     /// are then left out of the once-per-frame loop.
-    fn run_phases(
-        &mut self,
-        runtime: &Arc<Runtime>,
-        inactive: &BTreeSet<AgentId>,
-        completion_map: &Arc<AgentCompletionMap>,
-        bus: &Arc<LaneBus>,
-        deck: &mut OutputDeck,
-        fixed_rounds: Option<u32>,
-    ) {
+    fn run_phases(&mut self, run: &mut FrameRun<'_>, fixed_rounds: Option<u32>) {
+        // Read after the event pass, which may have set a place's step.
+        self.roster.refresh_fixed();
         // Each sub-step is a full run, so physics integrates N times while the
         // render below fires once.
         let phases: Vec<ExecutionPhase> = self.phase_order.clone();
         if let Some(rounds) = fixed_rounds {
             for round in 0..rounds {
                 for &phase in &phases {
-                    self.execute_agents_in_phase(
-                        phase,
-                        runtime,
-                        inactive,
-                        completion_map,
-                        bus,
-                        deck,
-                        AgentSelection::FixedRound(round),
-                    );
+                    self.execute_agents_in_phase(phase, AgentSelection::FixedRound(round), run);
                 }
             }
         }
@@ -210,15 +208,7 @@ impl ExecutionScheduler {
         };
 
         for phase in phases {
-            self.execute_agents_in_phase(
-                phase,
-                runtime,
-                inactive,
-                completion_map,
-                bus,
-                deck,
-                selection,
-            );
+            self.execute_agents_in_phase(phase, selection, run);
         }
     }
 
@@ -245,21 +235,6 @@ impl ExecutionScheduler {
                 }
             }
         }
-    }
-
-    /// Returns every agent of a family on, with its lock and what the scheduler knows of it.
-    fn met_agents(&self, inactive: &BTreeSet<AgentId>) -> Vec<MetAgent> {
-        let agents: Vec<Arc<Mutex<dyn Agent>>> = {
-            let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
-            registry.iter_active(inactive).cloned().collect()
-        };
-        agents
-            .into_iter()
-            .filter_map(|agent| {
-                let known = self.known.of(&agent)?;
-                Some((agent, known))
-            })
-            .collect()
     }
 }
 

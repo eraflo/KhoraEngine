@@ -15,87 +15,73 @@
 //! Running one phase's agents, wave by wave: a wave of one inline, a larger
 //! wave on the worker pool.
 
-use super::known::locked;
+use super::known::Known;
 use super::panic_guard::{outcome_of, recover, run_guarded, settle_deck};
 use super::pooled_run::PooledRun;
 use super::waves::{build_wave_metas, check_wave_disjoint, partition_waves};
-use super::{
-    are_hard_dependencies_completed, sort_agents, AgentSelection, AgentSlot, ExecutionScheduler,
-};
+use super::{are_hard_dependencies_completed, AgentSelection, ExecutionScheduler};
 use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
 use khora_core::agent::gorna::protocol::Report;
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::timing::AgentImportance;
 use khora_core::agent::{AgentDependency, ExecutionPhase};
 use khora_core::lane::{LaneBus, OutputDeck};
+use khora_core::sync::LockExt;
 use khora_core::telemetry::TelemetryEvent;
 use khora_core::{EngineContext, Runtime};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+/// What the runs of one frame share: the runtime, the families off, the bus and the deck.
+pub(super) struct FrameRun<'a> {
+    /// The runtime every agent's context reaches.
+    pub(super) runtime: &'a Arc<Runtime>,
+    /// The families off this frame.
+    pub(super) inactive: &'a BTreeSet<AgentId>,
+    /// Each agent's outcome this frame, read by its dependents.
+    pub(super) completion_map: &'a Arc<AgentCompletionMap>,
+    /// The frame's Views, read-only.
+    pub(super) bus: &'a Arc<LaneBus>,
+    /// The frame's outputs.
+    pub(super) deck: &'a mut OutputDeck,
+}
+
 impl ExecutionScheduler {
     /// Runs `phase`'s agents among the families on, `selection` of them.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn execute_agents_in_phase(
         &mut self,
         phase: ExecutionPhase,
-        runtime: &Arc<Runtime>,
-        inactive: &BTreeSet<AgentId>,
-        completion_map: &Arc<AgentCompletionMap>,
-        bus: &Arc<LaneBus>,
-        deck: &mut OutputDeck,
         selection: AgentSelection,
+        run: &mut FrameRun<'_>,
     ) {
-        let agents = self.phase_slots(phase, inactive);
-
-        // Partition by whether the agent's place holds a fixed step, so the
-        // fixed-update sub-loop and the once-per-frame loop never double-run
-        // the same agent.
-        let agents: Vec<AgentSlot> = match selection {
-            AgentSelection::All => agents,
-            AgentSelection::FixedRound(round) => agents
-                .into_iter()
-                .filter(|slot| {
-                    self.fixed_slot_id(slot)
-                        .and_then(|id| self.fixed_due.get(&id))
-                        .is_some_and(|&due| due > round)
-                })
-                .collect(),
-            AgentSelection::ExcludeFixed => agents
-                .into_iter()
-                .filter(|slot| self.fixed_slot_id(slot).is_none())
-                .collect(),
-        };
-
-        if agents.is_empty() {
+        self.roster
+            .refresh(&self.registry, &self.known, run.inactive);
+        self.roster.prepare(phase);
+        let met = Arc::clone(self.roster.met());
+        let order = self.roster.order(phase, selection, &self.fixed_due);
+        if order.is_empty() {
             return;
         }
-
-        let sorted = sort_agents(agents);
-        self.execute_agents(sorted, runtime, completion_map, bus, deck);
+        let agents: Vec<&Known> = order.iter().map(|&i| &met[i].1).collect();
+        self.execute_agents(&agents, run);
     }
 
-    /// Runs the phase's agents wave by wave, in [`sort_agents`] order.
+    /// Runs the phase's agents wave by wave, in [`sort_agents`](super::sort_agents) order.
     ///
     /// Waves run in order, so Hard dependencies hold. A wave of one runs inline into the
     /// frame's deck; a larger wave's members run on the worker pool into private deck
     /// shards, folded back in wave order so the outputs stay deterministic. See the book:
     /// concepts/agents-and-lanes.md, "What an agent declares".
-    fn execute_agents(
-        &self,
-        agents: Vec<AgentSlot>,
-        runtime: &Arc<Runtime>,
-        completion_map: &Arc<AgentCompletionMap>,
-        bus: &Arc<LaneBus>,
-        deck: &mut OutputDeck,
-    ) {
+    fn execute_agents(&self, agents: &[&Known], run: &mut FrameRun<'_>) {
+        let (runtime, completion_map, bus) = (run.runtime, run.completion_map, run.bus);
+        let deck = &mut *run.deck;
         // The inline path only needs a shared `&LaneBus`; the pool jobs clone
         // the `Arc` itself to become `'static`.
         let bus_ref: &LaneBus = bus;
 
         // Read each agent's id and contention once.
-        let metas = build_wave_metas(&agents);
+        let metas = build_wave_metas(agents);
 
         // Returns true if the agent should run (not budget-skipped, hard deps
         // satisfied); marks the skip otherwise.
@@ -116,9 +102,9 @@ impl ExecutionScheduler {
             if wave.len() == 1 {
                 let idx = wave[0];
                 let id = metas[idx].id;
-                let (_, importance, _priority, deps, known) = &agents[idx];
+                let known = agents[idx];
                 let place = &known.place;
-                if !gate(id, *importance, deps) {
+                if !gate(id, known.timing.importance, &known.timing.dependencies) {
                     continue;
                 }
                 let permit = metas[idx].contention.clone();
@@ -134,7 +120,7 @@ impl ExecutionScheduler {
                         Some(id),
                     );
                     run_guarded(id, || {
-                        report = locked(place).run(&mut engine_ctx);
+                        report = place.lock_recovered().run(&mut engine_ctx);
                     })
                 };
                 let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
@@ -158,7 +144,10 @@ impl ExecutionScheduler {
             // Gate on this thread; every survivor runs on the pool.
             let runnable: Vec<usize> = wave
                 .into_iter()
-                .filter(|&idx| gate(metas[idx].id, agents[idx].1, &agents[idx].3))
+                .filter(|&idx| {
+                    let timing = &agents[idx].timing;
+                    gate(metas[idx].id, timing.importance, &timing.dependencies)
+                })
                 .collect();
             if runnable.is_empty() {
                 continue;
@@ -182,7 +171,7 @@ impl ExecutionScheduler {
             let (tx, rx) = std::sync::mpsc::channel::<PooledRun>();
             for &idx in &runnable {
                 let id = metas[idx].id;
-                let place = Arc::clone(&agents[idx].4.place);
+                let place = Arc::clone(&agents[idx].place);
                 let runtime = Arc::clone(runtime);
                 let bus = Arc::clone(bus);
                 let tx = tx.clone();
@@ -205,7 +194,7 @@ impl ExecutionScheduler {
                         )
                         .with_earlier_deck(&earlier);
                         run_guarded(id, || {
-                            report = locked(&place).run(&mut ctx);
+                            report = place.lock_recovered().run(&mut ctx);
                         })
                     };
                     if !ran {

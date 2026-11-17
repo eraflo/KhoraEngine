@@ -28,7 +28,7 @@
 
 use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 
 use khora_core::asset::{AssetHandle, AssetUUID};
 use khora_core::gpu::GpuSetup;
@@ -61,6 +61,7 @@ use khora_core::renderer::traits::{
     CommandEncoder, ComputePass, GpuProfiler, PipelineSystem, RenderPass,
 };
 use khora_core::renderer::GraphicsDevice;
+use khora_core::sync::{LockExt, RwLockExt};
 use khora_core::Runtime;
 use khora_data::flow::{ShadowMatrices, ShadowView};
 use khora_data::render::{
@@ -144,6 +145,9 @@ pub struct RecordedPass {
     pub layer: u32,
     /// The draws it recorded.
     pub draws: u32,
+    /// The model each draw was bound to, as the bind group and dynamic offset
+    /// set at group 1.
+    pub models: Vec<(BindGroupId, u32)>,
 }
 
 #[derive(Debug, Default)]
@@ -154,6 +158,8 @@ struct Log {
     finished: Vec<CommandBufferId>,
     passes: Vec<RecordedPass>,
     submitted: Vec<CommandBufferId>,
+    /// Every buffer written, once per write.
+    writes: Vec<BufferId>,
 }
 
 /// A device keeping a ledger of what it made, destroyed and recorded.
@@ -168,12 +174,6 @@ pub struct ShadowLedger {
     /// The kind, and the 1-based rank among the objects of that kind made
     /// from then on, of an object the device refuses, once.
     refuse_nth: Mutex<Option<(GpuKind, usize)>>,
-}
-
-fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 impl ShadowLedger {
@@ -211,7 +211,7 @@ impl ShadowLedger {
     /// Whether the next object of `kind` is the one to refuse; disarms the
     /// refusal when it is.
     fn refuses(&self, kind: GpuKind) -> Result<(), ResourceError> {
-        let mut refuse = locked(&self.refuse_nth);
+        let mut refuse = self.refuse_nth.lock_recovered();
         if let Some((refused, n)) = *refuse {
             let made = self.made().iter().filter(|made| made.kind == kind).count();
             if refused == kind && made + 1 == n {
@@ -226,7 +226,7 @@ impl ShadowLedger {
 
     fn make(&self, made: Made) -> usize {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
-        locked(&self.log).made.push(Made { id, ..made });
+        self.log.lock_recovered().made.push(Made { id, ..made });
         id
     }
 
@@ -242,23 +242,23 @@ impl ShadowLedger {
     }
 
     fn destroy(&self, kind: GpuKind, id: usize) -> Result<(), ResourceError> {
-        locked(&self.log).destroyed.push((kind, id));
+        self.log.lock_recovered().destroyed.push((kind, id));
         Ok(())
     }
 
     /// Every object made so far.
     pub fn made(&self) -> Vec<Made> {
-        locked(&self.log).made.clone()
+        self.log.lock_recovered().made.clone()
     }
 
     /// Every destroy received so far.
     pub fn destroyed(&self) -> Vec<(GpuKind, usize)> {
-        locked(&self.log).destroyed.clone()
+        self.log.lock_recovered().destroyed.clone()
     }
 
     /// The objects made and not destroyed.
     pub fn alive(&self) -> Vec<Made> {
-        let log = locked(&self.log);
+        let log = self.log.lock_recovered();
         log.made
             .iter()
             .filter(|made| !log.destroyed.contains(&(made.kind, made.id)))
@@ -304,22 +304,37 @@ impl ShadowLedger {
 
     /// The buffers of every encoder opened.
     pub fn opened(&self) -> Vec<CommandBufferId> {
-        locked(&self.log).opened.clone()
+        self.log.lock_recovered().opened.clone()
     }
 
     /// The buffers of every encoder finished.
     pub fn finished(&self) -> Vec<CommandBufferId> {
-        locked(&self.log).finished.clone()
+        self.log.lock_recovered().finished.clone()
     }
 
     /// Every render pass recorded.
     pub fn passes(&self) -> Vec<RecordedPass> {
-        locked(&self.log).passes.clone()
+        self.log.lock_recovered().passes.clone()
     }
 
     /// The buffers submitted to the queue.
     pub fn submitted(&self) -> Vec<CommandBufferId> {
-        locked(&self.log).submitted.clone()
+        self.log.lock_recovered().submitted.clone()
+    }
+
+    /// How many writes went into buffers whose label starts with `label`.
+    pub fn writes_into(&self, label: &str) -> usize {
+        let log = self.log.lock_recovered();
+        log.writes
+            .iter()
+            .filter(|written| {
+                log.made.iter().any(|made| {
+                    made.kind == GpuKind::Buffer
+                        && made.id == written.0
+                        && made.label.starts_with(label)
+                })
+            })
+            .count()
     }
 }
 
@@ -336,13 +351,18 @@ struct LedgerRenderPass {
 
 impl Drop for LedgerRenderPass {
     fn drop(&mut self) {
-        locked(&self.log).passes.push(self.pass.clone());
+        self.log.lock_recovered().passes.push(self.pass.clone());
     }
 }
 
 impl RenderPass<'_> for LedgerRenderPass {
     fn set_pipeline(&mut self, _p: &RenderPipelineId) {}
-    fn set_bind_group(&mut self, _i: u32, _bg: &BindGroupId, _o: &[u32]) {}
+    fn set_bind_group(&mut self, index: u32, bind_group: &BindGroupId, offsets: &[u32]) {
+        if index == 1 {
+            let offset = offsets.first().copied().unwrap_or_default();
+            self.pass.models.push((*bind_group, offset));
+        }
+    }
     fn set_vertex_buffer(&mut self, _s: u32, _b: &BufferId, _o: u64) {}
     fn set_index_buffer(&mut self, _b: &BufferId, _o: u64, _f: IndexFormat) {}
     fn draw(&mut self, _v: std::ops::Range<u32>, _i: std::ops::Range<u32>) {
@@ -380,6 +400,7 @@ impl CommandEncoder for LedgerEncoder {
                 depth,
                 layer,
                 draws: 0,
+                models: Vec::new(),
             },
             log: Arc::clone(&self.log),
         })
@@ -411,7 +432,7 @@ impl CommandEncoder for LedgerEncoder {
         if self.unfinishable {
             return None;
         }
-        locked(&self.log).finished.push(self.buffer);
+        self.log.lock_recovered().finished.push(self.buffer);
         Some(self.buffer)
     }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
@@ -491,7 +512,8 @@ impl GraphicsDevice for ShadowLedger {
     fn destroy_buffer(&self, id: BufferId) -> Result<(), ResourceError> {
         self.destroy(GpuKind::Buffer, id.0)
     }
-    fn write_buffer(&self, _id: BufferId, _offset: u64, _data: &[u8]) -> Result<(), ResourceError> {
+    fn write_buffer(&self, id: BufferId, _offset: u64, _data: &[u8]) -> Result<(), ResourceError> {
+        self.log.lock_recovered().writes.push(id);
         Ok(())
     }
     fn write_buffer_async<'a>(
@@ -504,7 +526,7 @@ impl GraphicsDevice for ShadowLedger {
     }
     fn create_texture(&self, d: &TextureDescriptor) -> Result<TextureId, ResourceError> {
         {
-            let mut refuse = locked(&self.refuse_once);
+            let mut refuse = self.refuse_once.lock_recovered();
             if *refuse == Some(d.size.depth_or_array_layers) {
                 *refuse = None;
                 return Err(ResourceError::BackendError(
@@ -559,7 +581,7 @@ impl GraphicsDevice for ShadowLedger {
         self.destroy(GpuKind::Sampler, id.0)
     }
     fn create_command_encoder(&self, _label: Option<&str>) -> Box<dyn CommandEncoder> {
-        let mut log = locked(&self.log);
+        let mut log = self.log.lock_recovered();
         // Buffer ids start at 100, so a zeroed id is never mistaken for one.
         let buffer = CommandBufferId(100 + log.opened.len() as u64);
         log.opened.push(buffer);
@@ -570,7 +592,7 @@ impl GraphicsDevice for ShadowLedger {
         })
     }
     fn submit_command_buffer(&self, command_buffer: CommandBufferId) {
-        locked(&self.log).submitted.push(command_buffer);
+        self.log.lock_recovered().submitted.push(command_buffer);
     }
     fn get_surface_format(&self) -> Option<TextureFormat> {
         Some(TextureFormat::Rgba8UnormSrgb)
@@ -665,8 +687,7 @@ impl Scene {
         });
         assets
             .store::<GpuMesh>()
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .write_recovered()
             .insert(uuid, gpu_mesh.clone());
         let mut runtime = Runtime::new();
         runtime.resources.insert(assets);
@@ -727,6 +748,14 @@ impl Scene {
             position,
             Some(ShadowMatrices::Cube(Box::new(faces))),
         );
+        self
+    }
+
+    /// The same scene with one more mesh, the first one's, drawn through `model`.
+    pub fn with_mesh(mut self, model: Mat4) -> Self {
+        let mut mesh = self.render_world.meshes[0].clone();
+        mesh.transform = AffineTransform(model);
+        self.render_world.meshes.push(mesh);
         self
     }
 

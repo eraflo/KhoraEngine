@@ -121,7 +121,7 @@ impl AssetReader {
                 &opened,
                 *container,
                 label,
-                &metadata.asset_type_name,
+                metadata.asset_type.as_str(),
             );
         }
         let bytes = self.read(uuid, source)?;
@@ -160,8 +160,7 @@ impl AssetReader {
             .get_metadata(uuid)
             .ok_or_else(|| anyhow!("Asset with UUID {:?} not found in VFS", uuid))?;
         let source = metadata
-            .variants
-            .get("default")
+            .default_source()
             .ok_or_else(|| anyhow!("Asset {:?} has no 'default' variant", uuid))?;
         Ok((metadata, source))
     }
@@ -205,7 +204,7 @@ impl AssetReader {
         self.check_size(metadata, bytes, &limits)?;
         let value = self.guarded(metadata, Content::Bytes(bytes), || {
             self.decoders.decode_any_limited(
-                &metadata.asset_type_name,
+                metadata.asset_type.as_str(),
                 bytes,
                 &metadata.source_path,
                 &limits,
@@ -214,12 +213,12 @@ impl AssetReader {
         if (*value).type_id() != type_id {
             return Err(anyhow!(
                 "Decoder for type '{}' returned a different asset type than requested.",
-                metadata.asset_type_name
+                metadata.asset_type
             ));
         }
         let files = self
             .containers
-            .get(&metadata.asset_type_name)
+            .get(metadata.asset_type.as_str())
             .and_then(|opener| {
                 self.guarded(metadata, Content::Bytes(bytes), || {
                     opener.open_limited(bytes, &metadata.source_path, &limits)
@@ -235,11 +234,11 @@ impl AssetReader {
     /// A file whose extension lies is never decoded; it is quarantined by content.
     fn check_type(&self, metadata: &AssetMetadata, bytes: &[u8]) -> Result<()> {
         let head = &bytes[..bytes.len().min(SNIFFED)];
-        if self.decoders.sniff(&metadata.asset_type_name, head) != Some(false) {
+        if self.decoders.sniff(metadata.asset_type.as_str(), head) != Some(false) {
             return Ok(());
         }
         let reason = SecurityReason::WrongType {
-            expected: metadata.asset_type_name.clone(),
+            expected: metadata.asset_type.to_string(),
         };
         Err(self.refuse(metadata, Content::Bytes(bytes), TrustLayer::Decoder, reason))
     }
@@ -251,12 +250,12 @@ impl AssetReader {
             .get_metadata(container)
             .ok_or_else(|| anyhow!("its container {container} is not in the VFS"))?;
         self.containers
-            .get(&metadata.asset_type_name)
+            .get(metadata.asset_type.as_str())
             .cloned()
             .ok_or_else(|| {
                 anyhow!(
                     "no container registered for '{}' files",
-                    metadata.asset_type_name
+                    metadata.asset_type
                 )
             })
     }
@@ -312,7 +311,7 @@ impl AssetReader {
     /// Its decoder's, or else its file kind's.
     fn limits_of(&self, metadata: &AssetMetadata) -> Limits {
         self.decoders
-            .limits(&metadata.asset_type_name, self.trust)
+            .limits(metadata.asset_type.as_str(), self.trust)
             .unwrap_or_else(|| Limits::of(FileKind::of_path(&metadata.source_path), self.trust))
     }
 
@@ -402,7 +401,7 @@ impl AssetReader {
         layer: TrustLayer,
         reason: SecurityReason,
     ) -> anyhow::Error {
-        let path = (metadata.variants.get("default"))
+        let path = (metadata.default_source())
             .and_then(|source| self.io.locate(source))
             .unwrap_or_else(|| PathBuf::from(&metadata.source_path));
         let refusal = SecurityRefusal {
@@ -417,13 +416,13 @@ impl AssetReader {
             let bytes = match content {
                 Content::Bytes(bytes) => Some(bytes),
                 Content::Reread => {
-                    reread = (metadata.variants.get("default"))
+                    reread = (metadata.default_source())
                         .and_then(|source| self.io.load_bytes(source).ok());
                     reread.as_deref()
                 }
                 Content::Unread => None,
             };
-            let key = bytes.map(|bytes| QuarantineKey::Content(*blake3::hash(bytes).as_bytes()));
+            let key = bytes.map(QuarantineKey::of_content);
             refusals.refuse(refusal, key);
         }
         error

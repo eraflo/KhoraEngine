@@ -15,8 +15,15 @@
 //! Bind groups kept while what they bind holds.
 
 use khora_core::renderer::api::command::BindGroupId;
+use khora_core::renderer::api::ibl::IblGpuBindings;
+use khora_core::renderer::api::resource::BufferId;
+use khora_core::renderer::api::shadow::ShadowGpuBindings;
 use khora_core::renderer::error::ResourceError;
 use khora_core::renderer::GraphicsDevice;
+
+/// What a lit lane's group-3 bind group binds that can change: one buffer of
+/// the lane's, the shadow atlases and the environment.
+pub(crate) type LightingKey = (BufferId, ShadowGpuBindings, IblGpuBindings);
 
 /// Bind groups keyed by what they bind, at most `capacity` of them.
 ///

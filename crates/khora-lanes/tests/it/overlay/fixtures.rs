@@ -34,7 +34,7 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::ops::Range;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 
 use khora_core::asset::{AssetHandle, AssetUUID};
 use khora_core::gpu::GpuSetup;
@@ -68,6 +68,7 @@ use khora_core::renderer::traits::{
     CommandEncoder, ComputePass, GpuProfiler, PipelineSystem, RenderPass,
 };
 use khora_core::renderer::GraphicsDevice;
+use khora_core::sync::{LockExt, RwLockExt};
 use khora_core::ui::editor::GizmoLineInstance;
 use khora_core::Runtime;
 use khora_data::render::{
@@ -215,12 +216,6 @@ struct Log {
     submitted: Vec<CommandBufferId>,
 }
 
-fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
 /// A device keeping a ledger of what it made, bound, destroyed and recorded.
 #[derive(Debug, Default)]
 pub struct Ledger {
@@ -253,23 +248,23 @@ impl Ledger {
     /// buffers, textures, views, samplers and bind groups count.
     pub fn refusing_the(n: usize) -> Self {
         let ledger = Self::default();
-        *locked(&ledger.refused) = Some(n);
+        *ledger.refused.lock_recovered() = Some(n);
         ledger
     }
 
     /// Makes everything from now on.
     pub fn stop_refusing(&self) {
-        *locked(&self.refused) = None;
+        *self.refused.lock_recovered() = None;
     }
 
     fn refuses(&self) -> bool {
         let asked = self.asked.fetch_add(1, Ordering::SeqCst) + 1;
-        *locked(&self.refused) == Some(asked)
+        *self.refused.lock_recovered() == Some(asked)
     }
 
     fn make(&self, kind: GpuKind, label: Option<&str>, size: Option<u64>) -> usize {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
-        locked(&self.log).made.push(Made {
+        self.log.lock_recovered().made.push(Made {
             kind,
             id,
             label: label.unwrap_or_default().to_owned(),
@@ -283,13 +278,13 @@ impl Ledger {
     }
 
     fn destroy(&self, kind: GpuKind, id: usize) -> Result<(), ResourceError> {
-        locked(&self.log).destroyed.push((kind, id));
+        self.log.lock_recovered().destroyed.push((kind, id));
         Ok(())
     }
 
     /// Every object the lane made, in order.
     pub fn made(&self) -> Vec<Made> {
-        locked(&self.log).made.clone()
+        self.log.lock_recovered().made.clone()
     }
 
     /// The objects of `kind` the lane made.
@@ -315,12 +310,12 @@ impl Ledger {
 
     /// Every destroy received so far.
     pub fn destroyed(&self) -> Vec<(GpuKind, usize)> {
-        locked(&self.log).destroyed.clone()
+        self.log.lock_recovered().destroyed.clone()
     }
 
     /// Whether the object `(kind, id)` was destroyed.
     pub fn is_destroyed(&self, kind: GpuKind, id: usize) -> bool {
-        locked(&self.log).destroyed.contains(&(kind, id))
+        self.log.lock_recovered().destroyed.contains(&(kind, id))
     }
 
     /// The buffers the lane made and has not destroyed.
@@ -333,7 +328,8 @@ impl Ledger {
 
     /// What `bind_group` binds at `binding`.
     pub fn bound_at(&self, bind_group: BindGroupId, binding: u32) -> Option<Bound> {
-        locked(&self.log)
+        self.log
+            .lock_recovered()
             .bound
             .get(&bind_group.0)
             .and_then(|entries| entries.iter().find(|(at, _)| *at == binding))
@@ -350,7 +346,8 @@ impl Ledger {
 
     /// Every write to `buffer`, in order.
     pub fn writes_to(&self, buffer: BufferId) -> Vec<Write> {
-        locked(&self.log)
+        self.log
+            .lock_recovered()
             .writes
             .iter()
             .filter(|write| write.buffer == buffer)
@@ -370,22 +367,22 @@ impl Ledger {
 
     /// The buffers of every encoder opened.
     pub fn opened(&self) -> Vec<CommandBufferId> {
-        locked(&self.log).opened.clone()
+        self.log.lock_recovered().opened.clone()
     }
 
     /// The buffers of every encoder finished.
     pub fn finished(&self) -> Vec<CommandBufferId> {
-        locked(&self.log).finished.clone()
+        self.log.lock_recovered().finished.clone()
     }
 
     /// Every render pass recorded.
     pub fn passes(&self) -> Vec<RecordedPass> {
-        locked(&self.log).passes.clone()
+        self.log.lock_recovered().passes.clone()
     }
 
     /// The buffers submitted.
     pub fn submitted(&self) -> Vec<CommandBufferId> {
-        locked(&self.log).submitted.clone()
+        self.log.lock_recovered().submitted.clone()
     }
 }
 
@@ -402,7 +399,7 @@ struct LedgerRenderPass {
 
 impl Drop for LedgerRenderPass {
     fn drop(&mut self) {
-        locked(&self.log).passes.push(self.pass.clone());
+        self.log.lock_recovered().passes.push(self.pass.clone());
     }
 }
 
@@ -511,7 +508,7 @@ impl CommandEncoder for LedgerEncoder {
         if self.unfinishable {
             return None;
         }
-        locked(&self.log).finished.push(self.buffer);
+        self.log.lock_recovered().finished.push(self.buffer);
         Some(self.buffer)
     }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
@@ -594,7 +591,7 @@ impl GraphicsDevice for Ledger {
                 (entry.binding, bound)
             })
             .collect();
-        locked(&self.log).bound.insert(id, entries);
+        self.log.lock_recovered().bound.insert(id, entries);
         Ok(BindGroupId(id))
     }
     fn destroy_bind_group_layout(&self, id: BindGroupLayoutId) -> Result<(), ResourceError> {
@@ -626,7 +623,7 @@ impl GraphicsDevice for Ledger {
         self.destroy(GpuKind::Buffer, id.0)
     }
     fn write_buffer(&self, id: BufferId, offset: u64, data: &[u8]) -> Result<(), ResourceError> {
-        locked(&self.log).writes.push(Write {
+        self.log.lock_recovered().writes.push(Write {
             buffer: id,
             offset,
             data: data.to_vec(),
@@ -696,7 +693,7 @@ impl GraphicsDevice for Ledger {
         self.destroy(GpuKind::Sampler, id.0)
     }
     fn create_command_encoder(&self, _label: Option<&str>) -> Box<dyn CommandEncoder> {
-        let mut log = locked(&self.log);
+        let mut log = self.log.lock_recovered();
         // Buffer ids start at 100, so a zeroed id is never mistaken for one.
         let buffer = CommandBufferId(100 + log.opened.len() as u64);
         log.opened.push(buffer);
@@ -707,7 +704,7 @@ impl GraphicsDevice for Ledger {
         })
     }
     fn submit_command_buffer(&self, command_buffer: CommandBufferId) {
-        locked(&self.log).submitted.push(command_buffer);
+        self.log.lock_recovered().submitted.push(command_buffer);
     }
     fn get_surface_format(&self) -> Option<TextureFormat> {
         Some(SURFACE_FORMAT)
@@ -764,17 +761,18 @@ impl LedgerPipelines {
 
     /// Refuses every pipeline of `shader` from now on.
     pub fn refuse(&self, shader: &'static str) {
-        locked(&self.refused).push(shader);
+        self.refused.lock_recovered().push(shader);
     }
 
     /// Builds every pipeline from now on.
     pub fn stop_refusing(&self) {
-        locked(&self.refused).clear();
+        self.refused.lock_recovered().clear();
     }
 
     /// Every pipeline of `shader` the lane asked for, in order.
     pub fn of(&self, shader: &str) -> Vec<Requested> {
-        locked(&self.requested)
+        self.requested
+            .lock_recovered()
             .iter()
             .filter(|requested| requested.shader == shader)
             .cloned()
@@ -783,7 +781,8 @@ impl LedgerPipelines {
 
     /// The pipeline answered with `id`; panics when none was.
     pub fn by_id(&self, id: RenderPipelineId) -> Requested {
-        locked(&self.requested)
+        self.requested
+            .lock_recovered()
             .iter()
             .find(|requested| requested.id == id)
             .cloned()
@@ -813,11 +812,11 @@ impl PipelineSystem for LedgerPipelines {
         _device: &dyn GraphicsDevice,
         spec: &PipelineSpec,
     ) -> Result<RenderPipelineId, RenderError> {
-        if locked(&self.refused).contains(&spec.shader) {
+        if self.refused.lock_recovered().contains(&spec.shader) {
             return Err(RenderError::Internal("pipeline refused".into()));
         }
         let id = RenderPipelineId(self.next());
-        locked(&self.requested).push(Requested {
+        self.requested.lock_recovered().push(Requested {
             id,
             shader: spec.shader,
             colors: spec
@@ -1048,8 +1047,7 @@ impl Scene {
                 .get::<AssetStore>()
                 .expect("the scene's runtime holds the asset store")
                 .store::<GpuMesh>()
-                .write()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .write_recovered()
                 .insert(uuid, gpu_mesh.clone());
         }
         self.render_world.meshes.push(ExtractedMesh {

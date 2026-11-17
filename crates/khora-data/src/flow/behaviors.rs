@@ -16,7 +16,7 @@
 //! component an entity holds, its row read every frame so the lane sees another
 //! writer's edit, behaviors by module and name, then entities in entity order.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::math::{Quaternion, Vec3};
@@ -31,8 +31,11 @@ use crate::ecs::{ComponentKey, ScriptRole, Transform, World};
 /// What separates a behavior's name from its state companion's.
 const STATE_SUFFIX: &str = "#state";
 
-/// Instances, by entity and behavior.
-type Pairs = HashSet<(EntityId, String)>;
+/// Instances, by entity and behavior component.
+pub(super) type Pairs = HashSet<(EntityId, ComponentKey)>;
+
+/// Each behavior's state companion, by the behavior's component, when one is registered.
+pub(super) type Companions = HashMap<ComponentKey, ComponentKey>;
 
 /// Returns whether `entity`'s row of `behavior` is an instance a program runs.
 ///
@@ -46,27 +49,37 @@ fn runs_on(world: &World, behavior: &BehaviorComponent<'_>, entity: EntityId) ->
     !system || world.entity_with_id(singleton_id(behavior.name)) == Some(entity)
 }
 
-/// Returns every `(entity, behavior)` a component attaches, and those whose
-/// entity holds the behavior's state companion too.
-pub(super) fn attached(world: &World) -> (Pairs, Pairs) {
-    let mut attached = HashSet::new();
-    let mut with_state = HashSet::new();
+/// Fills `everywhere` with every `(entity, behavior)` a component attaches,
+/// `with_state` with those whose entity holds the behavior's state companion too.
+///
+/// Every set is emptied first; `companions` is filled with each behavior's companion.
+pub(super) fn attached(
+    world: &World,
+    everywhere: &mut Pairs,
+    with_state: &mut Pairs,
+    companions: &mut Companions,
+) {
+    everywhere.clear();
+    with_state.clear();
+    companions.clear();
     for behavior in world.behavior_components() {
         let companion = world
             .components()
             .key_named(&format!("{}{STATE_SUFFIX}", behavior.name));
+        if let Some(companion) = companion {
+            companions.insert(behavior.key, companion);
+        }
         for entity in world.holders(behavior.key) {
             if !runs_on(world, &behavior, entity) {
                 continue;
             }
-            let pair = (entity, behavior.name.to_owned());
+            let pair = (entity, behavior.key);
             if companion.is_some_and(|key| world.row(entity, key).is_some()) {
-                with_state.insert(pair.clone());
+                with_state.insert(pair);
             }
-            attached.insert(pair);
+            everywhere.insert(pair);
         }
     }
-    (attached, with_state)
 }
 
 /// Adds to `view` an instance, carrying its row, per behavior an admitted
@@ -77,30 +90,31 @@ pub(super) fn attached(world: &World) -> (Pairs, Pairs) {
 pub(super) fn project_behaviors(
     world: &World,
     selection: &super::Selection,
-    newcomers: &HashSet<(EntityId, String)>,
-    returning: &HashSet<(EntityId, String)>,
+    newcomers: &Pairs,
+    returning: &Pairs,
+    companions: &Companions,
     view: &mut ScriptView,
 ) {
     for behavior in world.behavior_components() {
-        let program = ScriptProgram {
-            module: behavior.module.to_owned(),
-            behavior: behavior.name.to_owned(),
-        };
-        let index = match view.programs.iter().position(|known| *known == program) {
-            Some(index) => index,
-            None => {
-                view.programs.push(program);
-                view.programs.len() - 1
-            }
-        };
-        let companion = world
-            .components()
-            .key_named(&format!("{}{STATE_SUFFIX}", behavior.name));
+        let index =
+            match view.programs.iter().position(|known| {
+                known.module == behavior.module && known.behavior == behavior.name
+            }) {
+                Some(index) => index,
+                None => {
+                    view.programs.push(ScriptProgram {
+                        module: behavior.module.to_owned(),
+                        behavior: behavior.name.to_owned(),
+                    });
+                    view.programs.len() - 1
+                }
+            };
+        let companion = companions.get(&behavior.key).copied();
         let mut rows = world.declared_rows(behavior.key);
         rows.retain(|(entity, _)| selection.admits(*entity) && runs_on(world, &behavior, *entity));
         rows.sort_by_key(|(entity, _)| (entity.index, entity.generation));
         for (entity, fields) in rows {
-            let pair = (entity, behavior.name.to_owned());
+            let pair = (entity, behavior.key);
             // A return into the scope arrives afresh: what its companion
             // holds is its last run in the scope, not a save.
             let observed_from = companion.filter(|_| !returning.contains(&pair));

@@ -38,6 +38,7 @@ use khora_core::lane::io::{Budget, Declaration, InputSource, LaneInputs, LaneOut
 use khora_core::lane::level::Level;
 use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneError, Reserve, Staged};
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::ecs::World;
 
@@ -83,17 +84,13 @@ impl Supersedes for Loaf {
 
 impl Staged for Loaf {
     fn abandon(self) {
-        ABANDONED
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push((self.key, self.batch));
+        ABANDONED.lock_recovered().push((self.key, self.batch));
     }
 }
 
 fn abandoned(key: u32) -> Vec<(u32, u32)> {
     ABANDONED
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .lock_recovered()
         .iter()
         .copied()
         .filter(|(abandoned, _)| *abandoned == key)
@@ -182,12 +179,12 @@ impl Gate {
     }
 
     fn let_through(&self) {
-        *self.open.lock().unwrap_or_else(|e| e.into_inner()) = true;
+        *self.open.lock_recovered() = true;
         self.opened.notify_all();
     }
 
     fn pass(&self) {
-        let open = self.open.lock().unwrap_or_else(|e| e.into_inner());
+        let open = self.open.lock_recovered();
         let _ = self
             .opened
             .wait_timeout_while(open, Duration::from_secs(10), |open| !*open);

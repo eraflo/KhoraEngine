@@ -16,7 +16,7 @@
 
 use khora_sdk::editor_ui::*;
 
-use super::{AgentSnapshot, ControlPlanePanel, AGENT_ROW_HEIGHT};
+use super::{AgentSnapshot, Column, ControlPlanePanel, Painter, AGENT_ROW_HEIGHT};
 use crate::widgets::panel_header::{paint_panel_header, paint_status_dot, panel_tab};
 use khora_tool_ui::widgets::paint;
 use khora_tool_ui::widgets::with_alpha;
@@ -92,7 +92,8 @@ impl ControlPlanePanel {
                 current_section = Some(agent.crate_name.as_str());
             }
             if row_y + AGENT_ROW_HEIGHT >= view[1] && row_y <= view[1] + view[3] {
-                self.paint_agent_row(ui, x + 6.0, row_y, w - 12.0, agent, i, theme);
+                let row = Column::new(x + 6.0, w - 12.0);
+                self.paint_agent_row(&mut Painter { ui, theme }, row, row_y, agent, i);
             }
             row_y += AGENT_ROW_HEIGHT + 2.0;
         }
@@ -108,17 +109,16 @@ impl ControlPlanePanel {
         );
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn paint_agent_row(
         &mut self,
-        ui: &mut dyn UiBuilder,
-        x: f32,
+        p: &mut Painter<'_>,
+        row: Column,
         y: f32,
-        w: f32,
         agent: &AgentSnapshot,
         idx: usize,
-        theme: &UiTheme,
     ) {
+        let (ui, theme) = (&mut *p.ui, p.theme);
+        let Column { x, w } = row;
         let active = self.selected_idx == idx;
         let interaction =
             ui.interact_rect(&format!("cp-agent-{}", idx), [x, y, w, AGENT_ROW_HEIGHT]);

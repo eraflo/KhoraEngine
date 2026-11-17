@@ -369,7 +369,8 @@ fn a_dead_reference_in_a_save_is_reported_once_per_entity() {
         assert_eq!(
             entries_for(&everything, id, "Health", "", &ReportKind::DeadReference).len(),
             1,
-            "{who}: its dead `Health.target` is reported exactly once; compose said              {report:?}, the load said {final_report:?}"
+            "{who}: its dead `Health.target` is reported exactly once; compose said \
+             {report:?}, the load said {final_report:?}"
         );
     }
 }

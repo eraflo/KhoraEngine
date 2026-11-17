@@ -128,16 +128,10 @@ fn a_clean_load_clears_the_previous_load_problems() {
     let (world, camera, id) = world_with_a_camera();
     let problems = Problems::default();
     let data = Problem {
-        severity: ProblemSeverity::Error,
-        module: None,
-        line: 0,
-        column: 0,
-        message: UNUSABLE.to_owned(),
-        note: None,
         entity: Some(camera),
-        behavior: None,
         component: Some("Camera".to_owned()),
         field: Some("z_near".to_owned()),
+        ..Problem::new(ProblemSeverity::Error, UNUSABLE)
     };
     problems.report(ProblemSource::Data, vec![data.clone()]);
     report_load(&problems, &world, &report_on(id));

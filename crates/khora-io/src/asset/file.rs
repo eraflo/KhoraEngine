@@ -18,8 +18,6 @@ use anyhow::{bail, Context, Result};
 use khora_core::asset::AssetSource;
 use std::path::{Path, PathBuf};
 
-use std::sync::Arc;
-
 use super::{AssetIo, AssetWriter};
 use crate::trust::{FileGuard, Refusals, Trust};
 
@@ -34,11 +32,7 @@ impl FileLoader {
     /// Its refusals stay in memory: for a test or a tool with none of its own.
     /// A run reads through [`Self::guarded`].
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self::guarded(FileGuard::new(
-            root,
-            Trust::Project,
-            Arc::new(Refusals::new(None, None)),
-        ))
+        Self::guarded(FileGuard::new(root, Trust::Project, Refusals::detached()))
     }
 
     /// Returns a loader reading every file through `guard`, under the guard's root.
@@ -76,14 +70,10 @@ impl AssetIo for FileLoader {
 }
 
 impl AssetWriter for FileLoader {
+    /// Writes the file whole: a save that fails leaves the previous file as it was.
     fn write_bytes(&self, rel_path: &Path, bytes: &[u8]) -> Result<()> {
         let full_path = self.guard.root().join(rel_path);
-        if let Some(parent) = full_path.parent() {
-            std::fs::create_dir_all(parent).with_context(|| {
-                format!("Failed to create parent directory for {:?}", full_path)
-            })?;
-        }
-        std::fs::write(&full_path, bytes)
+        crate::fs::write_atomic(&full_path, bytes)
             .with_context(|| format!("Failed to write asset: {:?}", full_path))
     }
 }
@@ -102,6 +92,48 @@ mod tests {
             .unwrap();
         let written = std::fs::read(dir.path().join("scenes").join("default.kscene")).unwrap();
         assert_eq!(written, b"SCN");
+    }
+
+    #[test]
+    fn a_save_over_a_file_replaces_it_whole_and_leaves_nothing_beside() {
+        let dir = tempdir().unwrap();
+        let loader = FileLoader::new(dir.path());
+        let rel = Path::new("scenes/level.kscene");
+        loader.write_bytes(rel, b"the first, longer save").unwrap();
+        loader.write_bytes(rel, b"second").unwrap();
+        let folder = dir.path().join("scenes");
+        assert_eq!(
+            std::fs::read(folder.join("level.kscene")).unwrap(),
+            b"second"
+        );
+        let names: Vec<_> = std::fs::read_dir(&folder)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, vec![std::ffi::OsString::from("level.kscene")]);
+    }
+
+    /// A save the system refuses leaves what was there before.
+    #[test]
+    fn a_failed_save_leaves_the_previous_file_intact() {
+        let dir = tempdir().unwrap();
+        let loader = FileLoader::new(dir.path());
+        loader.write_bytes(Path::new("a.kscene"), b"kept").unwrap();
+        // A folder where the file goes: the write lands nowhere.
+        std::fs::create_dir(dir.path().join("b.kscene")).unwrap();
+        std::fs::write(dir.path().join("b.kscene").join("inside"), b"kept too").unwrap();
+        assert!(loader.write_bytes(Path::new("b.kscene"), b"new").is_err());
+        assert_eq!(std::fs::read(dir.path().join("a.kscene")).unwrap(), b"kept");
+        assert_eq!(
+            std::fs::read(dir.path().join("b.kscene").join("inside")).unwrap(),
+            b"kept too"
+        );
+        let mut names: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        names.sort();
+        assert_eq!(names, vec!["a.kscene", "b.kscene"], "no temporary left");
     }
 
     #[test]

@@ -18,14 +18,13 @@
 //!
 //! [`script_commands`]: crate::ecs::systems::script_commands
 
-use std::collections::HashSet;
-
 use khora_core::ecs::entity::EntityId;
 use khora_core::math::{Quaternion, Vec3};
 use khora_core::projection::Interest;
 use khora_core::script::{ScriptReads, ScriptSnapshot, ScriptValue};
 use khora_core::Runtime;
 
+use super::behaviors::{Companions, Pairs};
 use crate::ecs::{SemanticDomain, World};
 use crate::flow::{Flow, FlowContext, Selection};
 use crate::register_flow;
@@ -157,16 +156,16 @@ pub struct ScriptFlow {
     /// Kept here because only the flow sees every frame's entity set. Replaced,
     /// not extended, so a despawned entity is forgotten and a recycled index is
     /// a newcomer again.
-    attached: HashSet<(EntityId, String)>,
+    attached: Pairs,
     /// The attached pairs whose entity held the behavior's state companion
     /// last frame.
     ///
     /// One that holds it no more was detached and attached again between two
     /// frames, and arrives afresh.
-    with_state: HashSet<(EntityId, String)>,
+    with_state: Pairs,
     /// The pairs attached for the first time this frame, computed in
     /// `select` for `project` — which is `&self` and cannot work it out.
-    attached_newcomers: HashSet<(EntityId, String)>,
+    attached_newcomers: Pairs,
     /// The pairs that left the family's scope this frame while still
     /// attached: forgotten, not bid farewell — they were not despawned.
     left_scope: Vec<(EntityId, String)>,
@@ -174,9 +173,17 @@ pub struct ScriptFlow {
     ///
     /// One that comes back arrives afresh: the companion its last run in the
     /// scope left is not a save it is loaded from.
-    out_of_scope: HashSet<(EntityId, String)>,
+    out_of_scope: Pairs,
     /// The newcomers this frame that are such a return, computed in `select`.
-    returning: HashSet<(EntityId, String)>,
+    returning: Pairs,
+    /// Each behavior's state companion, resolved in `select` for `project`.
+    companions: Companions,
+    /// Every pair a component attaches this frame, in the scope or not.
+    everywhere: Pairs,
+    /// Last frame's `attached` and `with_state`, emptied and filled again, so
+    /// a frame allocates no set.
+    spare_attached: Pairs,
+    spare_with_state: Pairs,
 }
 
 impl Flow for ScriptFlow {
@@ -188,42 +195,48 @@ impl Flow for ScriptFlow {
     fn select(&mut self, world: &World, _runtime: &Runtime, ctx: FlowContext) -> Selection {
         self.resumed = ctx.resumed;
         let selection = Selection::new().within(world, ctx.scope);
-        let (everywhere, with_state) = super::behaviors::attached(world);
+        let mut with_state = std::mem::take(&mut self.spare_with_state);
+        super::behaviors::attached(
+            world,
+            &mut self.everywhere,
+            &mut with_state,
+            &mut self.companions,
+        );
+        let everywhere = &self.everywhere;
         // Only what the scope admits is attached for the family; what it
         // stops admitting while still attached left the scope, and what it
         // starts admitting arrives.
-        let attached: HashSet<_> = everywhere
-            .iter()
-            .filter(|(entity, _)| selection.admits(*entity))
-            .cloned()
-            .collect();
-        let mut left_scope: Vec<_> = self
+        let mut attached = std::mem::take(&mut self.spare_attached);
+        attached.clear();
+        attached.extend(
+            everywhere
+                .iter()
+                .filter(|(entity, _)| selection.admits(*entity)),
+        );
+        let left: Vec<_> = self
             .attached
             .iter()
             .filter(|pair| everywhere.contains(*pair) && !attached.contains(*pair))
-            .cloned()
+            .copied()
             .collect();
-        left_scope
-            .sort_by(|(a, x), (b, y)| (a.index, a.generation, x).cmp(&(b.index, b.generation, y)));
-        self.returning = attached
-            .iter()
-            .filter(|pair| !self.attached.contains(*pair) && self.out_of_scope.contains(*pair))
-            .cloned()
-            .collect();
-        self.out_of_scope.extend(left_scope.iter().cloned());
+        self.returning.clear();
+        self.returning.extend(
+            attached
+                .iter()
+                .filter(|pair| !self.attached.contains(*pair) && self.out_of_scope.contains(*pair)),
+        );
+        self.out_of_scope.extend(left.iter().copied());
         self.out_of_scope
             .retain(|pair| everywhere.contains(pair) && !attached.contains(pair));
-        self.left_scope = left_scope;
-        self.attached_newcomers = attached
-            .iter()
-            .filter(|pair| {
+        self.left_scope = named(world, left);
+        self.attached_newcomers.clear();
+        self.attached_newcomers
+            .extend(attached.iter().filter(|pair| {
                 !self.attached.contains(*pair)
                     || (self.with_state.contains(*pair) && !with_state.contains(*pair))
-            })
-            .cloned()
-            .collect();
-        self.attached = attached;
-        self.with_state = with_state;
+            }));
+        self.spare_attached = std::mem::replace(&mut self.attached, attached);
+        self.spare_with_state = std::mem::replace(&mut self.with_state, with_state);
         selection
     }
 
@@ -277,6 +290,7 @@ impl Flow for ScriptFlow {
             sel,
             &self.attached_newcomers,
             &self.returning,
+            &self.companions,
             &mut view,
         );
         view
@@ -288,6 +302,20 @@ impl Flow for ScriptFlow {
 }
 
 register_flow!(ScriptFlow);
+
+/// Returns the instances `left` by entity and behavior name, in entity order.
+fn named(
+    world: &World,
+    left: Vec<(EntityId, crate::ecs::ComponentKey)>,
+) -> Vec<(EntityId, String)> {
+    let components = world.components();
+    let mut named: Vec<(EntityId, String)> = left
+        .into_iter()
+        .filter_map(|(entity, key)| Some((entity, components.vtable(key)?.name.to_string())))
+        .collect();
+    named.sort_by(|(a, x), (b, y)| (a.index, a.generation, x).cmp(&(b.index, b.generation, y)));
+    named
+}
 
 #[cfg(test)]
 mod tests {
@@ -533,6 +561,39 @@ mod tests {
                 .iter()
                 .all(|instance| instance.arrival.is_none()),
             "and nobody arrives again"
+        );
+    }
+
+    /// **An entity spawned on a recycled index arrives, as authored.**
+    ///
+    /// A guard runs a frame and is despawned; the entity spawned after it, on
+    /// its index at the next generation, runs the same behavior and arrives
+    /// with its own fields, not as the one it replaced.
+    #[test]
+    fn an_entity_on_a_recycled_index_arrives_afresh() {
+        let mut world = World::new();
+        let guard = declare_behavior(&mut world, "ai/guard.erg", "Guard");
+        let first = world.spawn(Transform::identity());
+        attach_behavior(&mut world, first, guard, 100);
+        let mut flow = ScriptFlow::default();
+        let _ = run(&mut flow, &world, true);
+        let _ = run(&mut flow, &world, false);
+
+        assert!(world.despawn(first));
+        let second = world.spawn(Transform::identity());
+        attach_behavior(&mut world, second, guard, 40);
+        assert_eq!(second.index, first.index, "the index is recycled");
+
+        let view = run(&mut flow, &world, false);
+        assert_eq!(view.len(), 1);
+        assert_eq!(view.instances[0].entity, second);
+        assert_eq!(
+            view.instances[0].arrival,
+            Some(ScriptArrival {
+                fields: vec![("health".to_owned(), ScriptValue::Int(40))],
+                observed: None,
+            }),
+            "the newcomer arrives with its own fields"
         );
     }
 

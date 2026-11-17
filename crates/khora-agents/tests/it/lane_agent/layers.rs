@@ -40,11 +40,12 @@ use khora_core::lane::io::TargetKey;
 use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneError, OutputDeck};
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 
 use super::fixtures::{
-    host_envelope, installed_row, level, locked, place_of, place_step, run, runtime, wakes_of,
-    Load, NoInputs, Plan, ProbeOutputs, Recorded, ANY_MEMORY, LADDER,
+    host_envelope, installed_row, level, place_of, place_step, run, runtime, wakes_of, Load,
+    NoInputs, Plan, ProbeOutputs, Recorded, ANY_MEMORY, LADDER,
 };
 
 // ─── What the lanes were asked ──────────────────────────────────────────────
@@ -299,7 +300,8 @@ fn a_swap_keeps_the_family_phase_and_outputs() {
     let mut agent = dear_installed(u64::MAX);
     let before = agent.execution_timing();
     let step_before = place_step(&agent);
-    assert!(locked(&place_of(&agent))
+    assert!(place_of(&agent)
+        .lock_recovered()
         .contention()
         .deck
         .contains(&recorded));
@@ -313,7 +315,8 @@ fn a_swap_keeps_the_family_phase_and_outputs() {
     assert_eq!(after.phase, before.phase);
     assert_eq!(place_step(&agent), step_before);
     assert!(
-        locked(&place_of(&agent))
+        place_of(&agent)
+            .lock_recovered()
             .contention()
             .deck
             .contains(&recorded),
@@ -413,7 +416,12 @@ fn a_memory_tight_envelope_releases_the_old_layer_at_once() {
             "{memory} bytes: the dear layer released {released}"
         );
         let place = place_of(&agent);
-        let rows: Vec<StrategyId> = locked(&place).kept().iter().map(|(row, _)| *row).collect();
+        let rows: Vec<StrategyId> = place
+            .lock_recovered()
+            .kept()
+            .iter()
+            .map(|(row, _)| *row)
+            .collect();
         let expected = if kept {
             vec![StrategyId::HighPerformance]
         } else {

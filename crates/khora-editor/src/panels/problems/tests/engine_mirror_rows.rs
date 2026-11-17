@@ -27,19 +27,13 @@ const ENGINE_MIRROR: &str = "engine/components.erg";
 
 #[test]
 fn a_problem_in_the_engine_mirror_does_not_open_a_project_file() {
-    let problem = Problem {
-        severity: ProblemSeverity::Error,
-        module: Some(ENGINE_MIRROR.to_owned()),
-        line: 3,
-        column: 8,
-        message: "`Transform` is declared in both `helper.erg` and `engine/components.erg`"
-            .to_owned(),
-        note: None,
-        entity: None,
-        behavior: None,
-        component: None,
-        field: None,
-    };
+    let problem = Problem::of_file(
+        ProblemSeverity::Error,
+        ENGINE_MIRROR,
+        3,
+        8,
+        "`Transform` is declared in both `helper.erg` and `engine/components.erg`",
+    );
 
     assert_ne!(
         row_action(&problem),

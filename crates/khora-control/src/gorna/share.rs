@@ -15,13 +15,15 @@
 //! The share: the allocation that lends a round's plans, each envelope its
 //! planned cost plus 80 % of the slack, held to the row planned for it.
 
+use std::collections::HashMap;
 use std::time::Duration;
 
-use khora_core::agent::gorna::protocol::{Allocation, CostBasis, Envelope, Offer, OfferRow};
-use khora_core::agent::gorna::{AdaptationMode, AgentId, StrategyId};
+use khora_core::agent::gorna::protocol::{Allocation, CostBasis, Envelope, OfferRow};
+use khora_core::agent::gorna::{AdaptationMode, AgentId};
 use khora_core::lane::cost::{Cost, Device};
 
 use super::admission::{critical_paths, held, late};
+use super::lending::{ByAgent, Lending};
 use super::plan::{within, Plan};
 use super::round::{Bid, Round};
 use super::units::{busiest, fits_envelope, micros, micros_of_ms};
@@ -125,35 +127,38 @@ pub(crate) fn hold_to_plan(envelopes: &mut [(AgentId, Envelope)], bids: &[&Bid],
 /// An agent chooses its row by its own quotes. The agents of `kept` keep
 /// their envelope. `lever` is cleared when no agent has a lever as it sees
 /// its envelope, `bids` giving each one's policies; it is never raised.
-pub(crate) fn hold_to_quotes(
-    allocation: &mut Allocation,
-    quoted: &[Offer],
-    bids: &[Bid],
-    planned: &[(AgentId, StrategyId)],
-    kept: &[AgentId],
-) {
-    for (agent, row) in planned {
-        if kept.contains(agent) {
+pub(crate) fn hold_to_quotes(allocation: &mut Allocation, lending: &Lending<'_>, by: &ByAgent<'_>) {
+    let mut envelope_of: HashMap<AgentId, usize> = HashMap::new();
+    for (at, (agent, _)) in allocation.envelopes.iter().enumerate() {
+        envelope_of.entry(*agent).or_insert(at);
+    }
+    for (agent, row) in lending.planned {
+        if by.kept.contains(agent) {
             continue;
         }
-        let Some(offer) = quoted.iter().find(|offer| offer.agent == *agent) else {
+        let Some(offer) = by.quoted.get(agent) else {
             continue;
         };
         let Some(quoted_row) = offer.rows.iter().find(|candidate| candidate.id == *row) else {
             continue;
         };
-        if let Some((_, envelope)) = (allocation.envelopes.iter_mut()).find(|(id, _)| id == agent) {
+        if let Some(&at) = envelope_of.get(agent) {
             // The planned row still fits, as the agent quotes it.
-            hold(envelope, &offer.rows, quoted_row, &quoted_row.cost);
+            hold(
+                &mut allocation.envelopes[at].1,
+                &offer.rows,
+                quoted_row,
+                &quoted_row.cost,
+            );
         }
     }
     // Whether a lower target can take something back, as the agents see
     // their envelopes: by their quotes.
-    let as_quoted: Vec<Bid> = (bids.iter())
+    let as_quoted: Vec<Bid> = (lending.bids.iter())
         .map(|bid| {
             let mut bid = bid.clone();
-            if let Some(offer) = quoted.iter().find(|offer| offer.agent == bid.offer.agent) {
-                bid.offer = offer.clone();
+            if let Some(offer) = by.quoted.get(&bid.offer.agent) {
+                bid.offer = (*offer).clone();
             }
             bid
         })

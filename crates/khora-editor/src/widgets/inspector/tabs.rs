@@ -13,17 +13,18 @@ use std::sync::{Arc, Mutex};
 
 use crate::commands::CommandHistory;
 use khora_sdk::editor_ui::{
-    EditorState, FontFamilyHint, Icon, InspectedEntity, InspectedPrefab, PrefabApplyScope,
-    PropertyEdit, UiBuilder, UiTheme,
+    ComponentJson, EditorRequest, EditorState, FontFamilyHint, Icon, InspectedEntity,
+    InspectedPrefab, PrefabApplyScope, PropertyEdit, UiBuilder, UiTheme,
 };
 use khora_sdk::prelude::ecs::EntityId;
 use khora_tool_ui::widgets::paint::{icon, text, tint};
 use khora_tool_ui::widgets::{self};
 
 use crate::ops::prefab_overrides::reverted;
+use crate::widgets::{Column, Painter};
 
 use super::add_component::{is_author_facing, render_add_component};
-use super::card::{category_for, render_card, CardAction, CardPrefab};
+use super::card::{category_for, render_card, CardAction, CardHead, CardPrefab};
 use super::declared::{render_declared_cards, restored, scene_names};
 use super::display::icon_for_domain_tag;
 use super::instance_band::render_instance_band;
@@ -91,6 +92,7 @@ impl InspectorTab for PropertiesTab {
                 let panel_rect_inner = ui_inner.panel_rect();
                 let card_x = panel_rect_inner[0];
                 let card_w = panel_rect_inner[2];
+                let column = Column::new(card_x, card_w);
 
                 let mut edits: Vec<PropertyEdit> = Vec::new();
                 let prefab = inspected.prefab.as_ref();
@@ -111,129 +113,28 @@ impl InspectorTab for PropertiesTab {
                     if !is_author_facing(&cj.type_name) {
                         continue;
                     }
-                    let title = cj.type_name.clone();
-                    let mut value = cj.value.clone();
-                    let icon = icon_for_domain_tag(cj.domain);
-                    let mut changed = false;
-                    let overridden: Vec<Vec<String>> = prefab
-                        .map(|prefab| prefab.fields_of(&cj.type_name).to_vec())
-                        .unwrap_or_default();
-                    let prefab_value = prefab.and_then(|prefab| prefab_value_of(prefab, &title));
-                    let added = prefab.is_some_and(|prefab| {
-                        prefab
-                            .components
-                            .iter()
-                            .any(|component| component.type_name == title && component.added)
-                    });
-                    let card_prefab = prefab.map(|prefab| CardPrefab {
-                        overrides: overridden.len(),
-                        added,
-                        can_apply: !prefab.read_only,
-                    });
-                    // The component's own problems on this entity: each
-                    // shown under its field.
-                    let field_problems: Vec<_> = state_guard
-                        .data_problems
-                        .iter()
-                        .filter(|problem| {
-                            problem.module.is_none()
-                                && problem.entity == Some(entity)
-                                && problem.component.as_deref() == Some(cj.type_name.as_str())
-                        })
-                        .cloned()
-                        .collect();
-                    let mut marks = Marks::new(&overridden)
-                        .read_only(prefab.is_some_and(|prefab| prefab.read_only))
-                        .with_problems(&field_problems);
-                    let action = render_card(
-                        ui_inner,
+                    render_component_card(
+                        &mut Painter {
+                            ui: &mut *ui_inner,
+                            theme: &theme,
+                        },
+                        column,
                         entity,
-                        &title,
-                        icon,
-                        category_for(&title),
-                        None,
-                        true, // removable — `is_author_facing` already filtered
-                        card_prefab,
-                        card_x,
-                        card_w,
-                        &theme,
+                        prefab,
+                        cj,
                         &mut state_guard,
-                        &mut |ui_b| {
-                            // Tag has a custom chip renderer — the generic JSON
-                            // walker would render it as `[0] = "alpha", …` rows.
-                            if cj.type_name == "Tag" {
-                                changed = render_tag_chips(ui_b, entity, &mut value);
-                            } else {
-                                changed = render_value_marked(ui_b, &mut value, &theme, &mut marks);
-                            }
-                        },
+                        &mut edits,
                     );
-                    if changed {
-                        edits.push(PropertyEdit::SetComponentJson {
-                            entity,
-                            type_name: cj.type_name.clone(),
-                            value,
-                        });
-                    }
-                    match action {
-                        Some(CardAction::Remove) => edits.push(PropertyEdit::RemoveComponent {
-                            entity,
-                            type_name: title.clone(),
-                        }),
-                        // Added by the instance: reverting takes it off.
-                        // Otherwise the prefab's value comes back whole.
-                        Some(CardAction::Revert) => match prefab_value {
-                            Some(value) if !added => edits.push(PropertyEdit::SetComponentJson {
-                                entity,
-                                type_name: title.clone(),
-                                value: value.clone(),
-                            }),
-                            _ => edits.push(PropertyEdit::RemoveComponent {
-                                entity,
-                                type_name: title.clone(),
-                            }),
-                        },
-                        Some(CardAction::Apply) => {
-                            state_guard.pending_prefab_apply = Some((
-                                entity,
-                                PrefabApplyScope::Component {
-                                    type_name: title.clone(),
-                                },
-                            ));
-                        }
-                        None => {}
-                    }
-                    for action in marks.actions.drain(..) {
-                        match action {
-                            FieldAction::Revert(path) => {
-                                if let Some(prefab_value) = prefab_value {
-                                    edits.push(PropertyEdit::SetComponentJson {
-                                        entity,
-                                        type_name: title.clone(),
-                                        value: reverted(&cj.value, prefab_value, &path),
-                                    });
-                                }
-                            }
-                            FieldAction::Apply(path) => {
-                                state_guard.pending_prefab_apply = Some((
-                                    entity,
-                                    PrefabApplyScope::Field {
-                                        type_name: title.clone(),
-                                        path,
-                                    },
-                                ));
-                            }
-                        }
-                    }
                 }
 
                 render_declared_cards(
-                    ui_inner,
+                    &mut Painter {
+                        ui: &mut *ui_inner,
+                        theme: &theme,
+                    },
                     &inspected,
                     &names,
-                    card_x,
-                    card_w,
-                    &theme,
+                    column,
                     &mut state_guard,
                     &mut edits,
                 );
@@ -250,7 +151,14 @@ impl InspectorTab for PropertiesTab {
                     };
                     for type_name in prefab.removed.iter().filter(shown) {
                         edits.extend(render_removed_component(
-                            ui_inner, entity, prefab, type_name, card_x, card_w, &theme,
+                            &mut Painter {
+                                ui: &mut *ui_inner,
+                                theme: &theme,
+                            },
+                            column,
+                            entity,
+                            prefab,
+                            type_name,
                         ));
                     }
                 }
@@ -263,6 +171,136 @@ impl InspectorTab for PropertiesTab {
                 }
             });
         });
+    }
+}
+
+/// Renders the card of the Rust component `cj` of `entity` in `column`, gathering its edits.
+///
+/// `prefab` is how the entity's instance stands against its prefab, if it is one's.
+fn render_component_card(
+    p: &mut Painter<'_>,
+    column: Column,
+    entity: EntityId,
+    prefab: Option<&InspectedPrefab>,
+    cj: &ComponentJson,
+    state: &mut EditorState,
+    edits: &mut Vec<PropertyEdit>,
+) {
+    let theme = p.theme;
+    let title = cj.type_name.clone();
+    let mut value = cj.value.clone();
+    let icon = icon_for_domain_tag(cj.domain);
+    let mut changed = false;
+    let overridden: Vec<Vec<String>> = prefab
+        .map(|prefab| prefab.fields_of(&cj.type_name).to_vec())
+        .unwrap_or_default();
+    let prefab_value = prefab.and_then(|prefab| prefab_value_of(prefab, &title));
+    let added = prefab.is_some_and(|prefab| {
+        prefab
+            .components
+            .iter()
+            .any(|component| component.type_name == title && component.added)
+    });
+    let card_prefab = prefab.map(|prefab| CardPrefab {
+        overrides: overridden.len(),
+        added,
+        can_apply: !prefab.read_only,
+    });
+    // The component's own problems on this entity: each
+    // shown under its field.
+    let field_problems: Vec<_> = state
+        .data_problems
+        .iter()
+        .filter(|problem| {
+            problem.module.is_none()
+                && problem.entity == Some(entity)
+                && problem.component.as_deref() == Some(cj.type_name.as_str())
+        })
+        .cloned()
+        .collect();
+    let mut marks = Marks::new(&overridden)
+        .read_only(prefab.is_some_and(|prefab| prefab.read_only))
+        .with_problems(&field_problems);
+    let action = render_card(
+        p,
+        column,
+        CardHead {
+            entity,
+            title: &title,
+            icon,
+            category: category_for(cj.domain),
+            enabled: None,
+            // `is_author_facing` already filtered.
+            removable: true,
+            prefab: card_prefab,
+        },
+        state,
+        &mut |ui_b| {
+            // Tag has a custom chip renderer — the generic JSON
+            // walker would render it as `[0] = "alpha", …` rows.
+            if cj.type_name == "Tag" {
+                changed = render_tag_chips(ui_b, entity, &mut value);
+            } else {
+                changed = render_value_marked(ui_b, &mut value, theme, &mut marks);
+            }
+        },
+    );
+    if changed {
+        edits.push(PropertyEdit::SetComponentJson {
+            entity,
+            type_name: cj.type_name.clone(),
+            value,
+        });
+    }
+    match action {
+        Some(CardAction::Remove) => edits.push(PropertyEdit::RemoveComponent {
+            entity,
+            type_name: title.clone(),
+        }),
+        // Added by the instance: reverting takes it off.
+        // Otherwise the prefab's value comes back whole.
+        Some(CardAction::Revert) => match prefab_value {
+            Some(value) if !added => edits.push(PropertyEdit::SetComponentJson {
+                entity,
+                type_name: title.clone(),
+                value: value.clone(),
+            }),
+            _ => edits.push(PropertyEdit::RemoveComponent {
+                entity,
+                type_name: title.clone(),
+            }),
+        },
+        Some(CardAction::Apply) => {
+            state.push_request(EditorRequest::ApplyToPrefab {
+                entity,
+                scope: PrefabApplyScope::Component {
+                    type_name: title.clone(),
+                },
+            });
+        }
+        None => {}
+    }
+    for action in marks.actions.drain(..) {
+        match action {
+            FieldAction::Revert(path) => {
+                if let Some(prefab_value) = prefab_value {
+                    edits.push(PropertyEdit::SetComponentJson {
+                        entity,
+                        type_name: title.clone(),
+                        value: reverted(&cj.value, prefab_value, &path),
+                    });
+                }
+            }
+            FieldAction::Apply(path) => {
+                state.push_request(EditorRequest::ApplyToPrefab {
+                    entity,
+                    scope: PrefabApplyScope::Field {
+                        type_name: title.clone(),
+                        path,
+                    },
+                });
+            }
+        }
     }
 }
 
@@ -283,16 +321,15 @@ fn prefab_value_of<'a>(
 ///
 /// One edit for a Rust component; the addition and each field for a declared
 /// one.
-#[allow(clippy::too_many_arguments)]
 fn render_removed_component(
-    ui: &mut dyn UiBuilder,
+    p: &mut Painter<'_>,
+    column: Column,
     entity: EntityId,
     prefab: &InspectedPrefab,
     type_name: &str,
-    x: f32,
-    width: f32,
-    theme: &UiTheme,
 ) -> Vec<PropertyEdit> {
+    let (ui, theme) = (&mut *p.ui, p.theme);
+    let Column { x, w: width } = column;
     const ROW_H: f32 = 28.0;
     let y = ui.cursor_pos()[1];
     let size = theme.font_size_body;

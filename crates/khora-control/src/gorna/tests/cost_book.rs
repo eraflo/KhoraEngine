@@ -858,15 +858,17 @@ fn the_row_planned_fits_the_envelope_lent_for_it_when_it_fills_the_frame() {
         decision.why
     );
 
-    crate::gorna::cost_book::lend_in_quotes(
+    crate::gorna::lending::lend_in_quotes(
         &mut decision.allocation,
-        &[offer],
-        &bids,
-        &decision.rows,
-        &decision.kept,
-        &held,
-        &corrections,
-        0.0,
+        &crate::gorna::lending::Lending {
+            quoted: &[offer],
+            bids: &bids,
+            planned: &decision.rows,
+            kept: &decision.kept,
+            held: &held,
+            corrections: &corrections,
+            caution: 0.0,
+        },
     );
 
     let lent = lent_to(&decision.allocation, "ash");

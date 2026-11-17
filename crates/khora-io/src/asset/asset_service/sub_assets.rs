@@ -33,7 +33,7 @@ impl AssetService {
             .index
             .get_metadata(uuid)
             .is_some_and(|metadata| {
-                crate::asset::container::type_may_hold_sub_assets(&metadata.asset_type_name)
+                crate::asset::container::type_may_hold_sub_assets(metadata.asset_type.as_str())
             })
     }
 

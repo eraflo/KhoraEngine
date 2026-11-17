@@ -17,7 +17,12 @@
 
 pub mod asset_kind;
 pub mod brand;
+mod column;
 pub mod enum_variants;
 pub mod inspector;
+mod painter;
 pub mod panel_header;
 pub mod tile;
+
+pub use column::Column;
+pub use painter::Painter;

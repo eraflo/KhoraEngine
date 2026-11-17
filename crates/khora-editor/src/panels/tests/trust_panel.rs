@@ -22,7 +22,9 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use khora_sdk::editor_ui::{EditorPanel, EditorState, TrustSummary, UiTheme};
+use khora_sdk::editor_ui::{
+    EditorPanel, EditorRequest, EditorState, TrustAnswer, TrustSummary, UiTheme,
+};
 use khora_tool_ui::testing::RecordingUiBuilder;
 
 use crate::panels::trust::TrustPanel;
@@ -112,25 +114,25 @@ fn the_prompt_names_the_project_and_offers_three_answers() {
     }
 }
 
-/// **Each answer of the prompt is the app's action**: `Close project` →
-/// `cancel_open`, `Open restricted` → `restrict_open`, `Trust and open` →
-/// `trust_open`, as `pending_menu_action`.
+/// **Each answer of the prompt is the app's request**: `Close project` →
+/// `CancelOpen`, `Open restricted` → `RestrictOpen`, `Trust and open` →
+/// `TrustOpen`, queued as an `EditorRequest::Trust`.
 #[test]
 fn each_answer_of_the_prompt_asks_its_action() {
     for (choice, action) in [
-        ("trust-prompt-choice-0", "cancel_open"),
-        ("trust-prompt-choice-1", "restrict_open"),
-        ("trust-prompt-choice-2", "trust_open"),
+        ("trust-prompt-choice-0", TrustAnswer::CancelOpen),
+        ("trust-prompt-choice-1", TrustAnswer::RestrictOpen),
+        ("trust-prompt-choice-2", TrustAnswer::TrustOpen),
     ] {
         let (_, after) = frame(prompting(), screen().with_click(choice));
         assert_eq!(
-            after.pending_menu_action.as_deref(),
-            Some(action),
-            "`{choice}` asks `{action}`"
+            after.requests,
+            [EditorRequest::Trust(action)],
+            "`{choice}` asks `{action:?}`"
         );
     }
     let (_, after) = frame(prompting(), screen());
-    assert_eq!(after.pending_menu_action, None, "no answer, no action");
+    assert!(after.requests.is_empty(), "no answer, no action");
 }
 
 /// **The confirmation says what trusting changes**: the title
@@ -202,7 +204,10 @@ fn trust_and_reopen_asks_to_trust_the_project() {
         screen().with_click("trust-confirm-choice-1"),
     );
 
-    assert_eq!(after.pending_menu_action.as_deref(), Some("trust_project"));
+    assert_eq!(
+        after.requests,
+        [EditorRequest::Trust(TrustAnswer::TrustProject)]
+    );
     assert_eq!(after.trust_confirm, None, "the confirmation is closed");
 }
 
@@ -215,7 +220,7 @@ fn keep_restricted_closes_the_confirmation() {
     );
 
     assert_eq!(after.trust_confirm, None, "the confirmation is closed");
-    assert_eq!(after.pending_menu_action, None, "nothing is asked");
+    assert!(after.requests.is_empty(), "nothing is asked");
     assert!(after.restricted, "the project stays restricted");
 }
 

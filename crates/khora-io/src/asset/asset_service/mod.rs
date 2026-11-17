@@ -25,6 +25,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::{anyhow, Context, Result};
 use khora_core::asset::{Asset, AssetHandle, AssetSource, AssetUUID};
 use khora_core::event::{Channel, WhenFull};
+use khora_core::sync::LockExt;
 use khora_data::assets::Assets;
 use khora_telemetry::MetricsRegistry;
 
@@ -216,9 +217,7 @@ impl AssetService {
     /// Returns the refusals this service reports to; in memory only when none were set.
     pub fn refusals(&mut self) -> Arc<crate::trust::Refusals> {
         let refusals = &mut self.reader_mut().refusals;
-        Arc::clone(
-            refusals.get_or_insert_with(|| Arc::new(crate::trust::Refusals::new(None, None))),
-        )
+        Arc::clone(refusals.get_or_insert_with(crate::trust::Refusals::detached))
     }
 
     /// Sets the trust the files are decoded at, which gives each decode its limits.
@@ -312,7 +311,7 @@ impl AssetService {
 
         if let AssetSource::Sub { container, label } = source {
             return self
-                .extract_sub::<A>(*container, label, &metadata.asset_type_name)
+                .extract_sub::<A>(*container, label, metadata.asset_type.as_str())
                 .map(|asset| (asset, Some(*container)));
         }
 
@@ -326,7 +325,7 @@ impl AssetService {
         let asset = asset.downcast::<A>().map_err(|_| {
             anyhow!(
                 "Decoder for type '{}' returned a different asset type than requested.",
-                metadata.asset_type_name
+                metadata.asset_type
             )
         })?;
         Ok((*asset, None))
@@ -342,9 +341,7 @@ impl AssetService {
 
     /// Returns the inherited set, poisoning ignored: it holds plain uuids.
     pub(super) fn inherited_mut(&self) -> std::sync::MutexGuard<'_, HashSet<AssetUUID>> {
-        self.inherited
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.inherited.lock_recovered()
     }
 
     /// Replaces the index with the one `index_bytes` encode, keeping cached handles.

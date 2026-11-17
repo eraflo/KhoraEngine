@@ -22,6 +22,7 @@ use khora_core::asset::{AssetHandle, AssetUUID};
 use khora_core::renderer::api::gpu_scene::GpuMesh;
 use khora_core::renderer::api::material::GpuMaterial;
 use khora_core::renderer::GraphicsDevice;
+use khora_core::sync::RwLockExt;
 
 use crate::assets::AssetStore;
 use crate::ecs::{HandleComponent, World};
@@ -123,20 +124,10 @@ impl AssetEviction {
     /// the old resources are freed at the next [`tick`](Self::tick), after
     /// the render that may still read them.
     pub fn retire(&mut self, store: &AssetStore, uuid: &AssetUUID) {
-        if let Some(mesh) = store
-            .store::<GpuMesh>()
-            .write()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(uuid)
-        {
+        if let Some(mesh) = store.store::<GpuMesh>().write_recovered().remove(uuid) {
             self.retired_meshes.push(mesh);
         }
-        if let Some(material) = store
-            .store::<GpuMaterial>()
-            .write()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(uuid)
-        {
+        if let Some(material) = store.store::<GpuMaterial>().write_recovered().remove(uuid) {
             self.retired_materials.push(material);
         }
     }
@@ -189,7 +180,7 @@ fn take_orphans<A: khora_core::asset::Asset>(
     // Snapshot the orphaned keys under a read lock, then drop it before taking
     // the write lock — no lock is held across the device `destroy_*` calls.
     let orphans: Vec<AssetUUID> = {
-        let guard = cache.read().unwrap_or_else(|e| e.into_inner());
+        let guard = cache.read_recovered();
         guard
             .keys()
             .filter(|uuid| !live.contains(uuid))
@@ -200,7 +191,7 @@ fn take_orphans<A: khora_core::asset::Asset>(
         return Vec::new();
     }
 
-    let mut guard = cache.write().unwrap_or_else(|e| e.into_inner());
+    let mut guard = cache.write_recovered();
     orphans
         .iter()
         .filter_map(|uuid| guard.remove(uuid))

@@ -19,6 +19,7 @@
 
 use khora_control::DccService;
 use khora_core::event::Channel;
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_telemetry::TelemetryService;
 use std::sync::Arc;
@@ -203,9 +204,7 @@ impl<A: EngineApp> EngineCore<A> {
                 Some(device) => khora_core::gpu::GpuSetup::new(device),
                 None => khora_core::gpu::GpuSetup::headless(),
             };
-            let mut agent = agent
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut agent = agent.lock_recovered();
             khora_agents::lane_agent::shut_down_lanes(&mut agent, &mut gpu);
         }
         self.lane_agents.clear();

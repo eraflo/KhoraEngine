@@ -15,6 +15,7 @@
 //! The modules each mounted root brought in: what the hot-reload pump knows a
 //! gone folder held, since that folder reports only itself.
 
+use khora_core::sync::LockExt;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -37,7 +38,7 @@ struct Records {
 impl MountedScripts {
     /// Records `modules` as brought in by `root`.
     pub fn record(&self, root: &Path, modules: impl IntoIterator<Item = String>) {
-        let mut records = self.lock();
+        let mut records = self.0.lock_recovered();
         let root = key(root);
         records.closed.remove(&root);
         records.by_root.entry(root).or_default().extend(modules);
@@ -47,7 +48,7 @@ impl MountedScripts {
     ///
     /// The root is closed until it is recorded again.
     pub fn forget(&self, root: &Path) -> BTreeSet<String> {
-        let mut records = self.lock();
+        let mut records = self.0.lock_recovered();
         let root = key(root);
         let modules = records.by_root.remove(&root).unwrap_or_default();
         records.closed.insert(root);
@@ -56,7 +57,7 @@ impl MountedScripts {
 
     /// Records one module the pump compiled for `root`, unless the root is closed.
     pub fn record_module(&self, root: &Path, module: &str) {
-        let mut records = self.lock();
+        let mut records = self.0.lock_recovered();
         let root = key(root);
         if records.closed.contains(&root) {
             return;
@@ -70,24 +71,25 @@ impl MountedScripts {
 
     /// Whether `root` was unmounted and not mounted again since.
     pub fn is_closed(&self, root: &Path) -> bool {
-        self.lock().closed.contains(&key(root))
+        self.0.lock_recovered().closed.contains(&key(root))
     }
 
     /// Forgets one module of `root`: one the pump withdrew.
     pub fn forget_module(&self, root: &Path, module: &str) {
-        if let Some(recorded) = self.lock().by_root.get_mut(&key(root)) {
+        if let Some(recorded) = self.0.lock_recovered().by_root.get_mut(&key(root)) {
             recorded.remove(module);
         }
     }
 
     /// Returns every root with a record, made absolute.
     pub fn roots(&self) -> Vec<PathBuf> {
-        self.lock().by_root.keys().cloned().collect()
+        self.0.lock_recovered().by_root.keys().cloned().collect()
     }
 
     /// Returns the modules recorded for `root`.
     pub fn modules_of(&self, root: &Path) -> BTreeSet<String> {
-        self.lock()
+        self.0
+            .lock_recovered()
             .by_root
             .get(&key(root))
             .cloned()
@@ -96,7 +98,8 @@ impl MountedScripts {
 
     /// Returns the modules the roots still mounted bring in: recorded, and on disk now.
     pub fn others(&self) -> BTreeSet<String> {
-        self.lock()
+        self.0
+            .lock_recovered()
             .by_root
             .iter()
             .flat_map(|(root, recorded)| {
@@ -107,13 +110,6 @@ impl MountedScripts {
                 )
             })
             .collect()
-    }
-
-    fn lock(&self) -> std::sync::MutexGuard<'_, Records> {
-        match self.0.lock() {
-            Ok(mounted) => mounted,
-            Err(poisoned) => poisoned.into_inner(),
-        }
     }
 }
 

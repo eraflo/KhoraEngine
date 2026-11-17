@@ -15,6 +15,7 @@
 //! In-memory metrics storage backend.
 
 use crate::storage::backend::{BackendStats, MetricsBackend};
+use khora_core::sync::RwLockExt;
 use khora_core::telemetry::metrics::{Metric, MetricId, MetricType, MetricsError, MetricsResult};
 use std::collections::HashMap;
 use std::sync::RwLock;
@@ -49,7 +50,7 @@ impl InMemoryBackend {
 
     /// Get statistics about this backend
     pub fn get_stats(&self) -> BackendStats {
-        let storage = self.storage.read().unwrap_or_else(|e| e.into_inner());
+        let storage = self.storage.read_recovered();
 
         let mut counter_count = 0;
         let mut gauge_count = 0;
@@ -78,7 +79,7 @@ impl InMemoryBackend {
 
     /// Get metrics by namespace
     pub fn get_metrics_by_namespace(&self, namespace: &str) -> Vec<Metric> {
-        let storage = self.storage.read().unwrap_or_else(|e| e.into_inner());
+        let storage = self.storage.read_recovered();
         storage
             .values()
             .filter(|metric| metric.metadata.id.namespace == namespace)
@@ -88,7 +89,7 @@ impl InMemoryBackend {
 
     /// Get metrics by type
     pub fn get_metrics_by_type(&self, metric_type: MetricType) -> Vec<Metric> {
-        let storage = self.storage.read().unwrap_or_else(|e| e.into_inner());
+        let storage = self.storage.read_recovered();
         storage
             .values()
             .filter(|metric| metric.metadata.metric_type == metric_type)

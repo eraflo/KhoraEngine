@@ -14,9 +14,10 @@
 
 //! The items each owner wants projected, and their union.
 
+use crate::sync::RwLockExt;
 use std::collections::{BTreeMap, BTreeSet};
 use std::marker::PhantomData;
-use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::RwLock;
 
 use super::Demand;
 
@@ -29,6 +30,8 @@ use super::Demand;
 /// union, and never otherwise.
 pub struct Interest<D: Demand> {
     /// Every owner's items and their union, behind the one lock.
+    // Every write settles the union before its guard drops, so a lock
+    // poisoned by a panic elsewhere still guards a whole state: read through.
     state: RwLock<State<D::Item>>,
     _demand: PhantomData<fn() -> D>,
 }
@@ -84,14 +87,14 @@ impl<D: Demand> Interest<D> {
     /// before.
     pub fn announce(&self, owner: impl Into<String>, items: impl IntoIterator<Item = D::Item>) {
         let items: BTreeSet<D::Item> = items.into_iter().collect();
-        let mut state = self.write();
+        let mut state = self.state.write_recovered();
         state.owners.insert(owner.into(), items);
         state.settle();
     }
 
     /// Forgets what `owner` announced; nothing when it announced nothing.
     pub fn withdraw(&self, owner: &str) {
-        let mut state = self.write();
+        let mut state = self.state.write_recovered();
         if state.owners.remove(owner).is_some() {
             state.settle();
         }
@@ -99,31 +102,17 @@ impl<D: Demand> Interest<D> {
 
     /// Every item some owner wants, sorted, each once.
     pub fn wanted(&self) -> Vec<D::Item> {
-        self.read().wanted.iter().cloned().collect()
+        self.state.read_recovered().wanted.iter().cloned().collect()
     }
 
     /// Whether every one of `items` is wanted; `true` for none.
     pub fn covers(&self, items: &[D::Item]) -> bool {
-        let state = self.read();
+        let state = self.state.read_recovered();
         items.iter().all(|item| state.wanted.contains(item))
     }
 
     /// Moves on every change of [`wanted`](Self::wanted), never otherwise.
     pub fn generation(&self) -> u64 {
-        self.read().generation
-    }
-
-    // Every write settles the union before its guard drops, so a lock
-    // poisoned by a panic elsewhere still guards a whole state: read through.
-    fn read(&self) -> RwLockReadGuard<'_, State<D::Item>> {
-        self.state
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
-    fn write(&self) -> RwLockWriteGuard<'_, State<D::Item>> {
-        self.state
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.state.read_recovered().generation
     }
 }

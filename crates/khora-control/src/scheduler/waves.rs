@@ -15,7 +15,7 @@
 //! Grouping a phase's agents into concurrent waves, and checking that the
 //! agents sharing a wave do not contend.
 
-use super::AgentSlot;
+use super::known::Known;
 use khora_core::agent::dependency::DependencyKind;
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::Contention;
@@ -34,13 +34,12 @@ pub(super) struct WaveMeta {
 ///
 /// The context is stamped with the same `Contention` the wave was built from, so what the
 /// scheduler checked and what the agent is held to cannot differ.
-pub(super) fn build_wave_metas(agents: &[AgentSlot]) -> Vec<WaveMeta> {
+pub(super) fn build_wave_metas(agents: &[&Known]) -> Vec<WaveMeta> {
     agents
         .iter()
-        .map(|(_, _, _, deps, known)| WaveMeta {
+        .map(|known| WaveMeta {
             id: known.id,
-            hard_dep_targets: deps
-                .iter()
+            hard_dep_targets: (known.timing.dependencies.iter())
                 .filter(|d| matches!(d.kind, DependencyKind::Hard))
                 .map(|d| d.target)
                 .collect(),

@@ -23,6 +23,7 @@
 //! frame start of its own, in order, however long the frames.
 
 use khora_core::agent::gorna::protocol::Allocation;
+use khora_core::sync::{LockExt, RwLockExt};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -79,7 +80,7 @@ impl BudgetChannel {
     /// Non-blocking. The last one published before a [`sync`](Self::sync)
     /// supersedes the live ones before it.
     pub fn publish(&self, allocation: Allocation) {
-        self.waiting().push(allocation, false);
+        self.inner.waiting.lock_recovered().push(allocation, false);
     }
 
     /// Publishes a replayed allocation that waits its turn, from the cold thread.
@@ -87,7 +88,7 @@ impl BudgetChannel {
     /// It is taken at a frame start of its own, after the ones published in
     /// turn before it; no later publication supersedes it.
     pub fn publish_in_turn(&self, allocation: Allocation) {
-        self.waiting().push(allocation, true);
+        self.inner.waiting.lock_recovered().push(allocation, true);
     }
 
     /// Whether `other` is this very channel (a clone of it), not one alike.
@@ -99,7 +100,11 @@ impl BudgetChannel {
     ///
     /// A stopped replay lends no more of its epochs; a live one waiting stays.
     pub fn withdraw_in_turn(&self) {
-        self.waiting().queue.retain(|(_, in_turn)| !in_turn);
+        self.inner
+            .waiting
+            .lock_recovered()
+            .queue
+            .retain(|(_, in_turn)| !in_turn);
     }
 
     /// Puts the oldest publication waiting in force; called at a frame start.
@@ -115,12 +120,8 @@ impl BudgetChannel {
     /// A publication carries its place among the ones published, so two
     /// publications of one allocation are still two.
     pub(crate) fn take(&self) -> Option<(Publication, bool)> {
-        let next = self.waiting().queue.pop_front()?;
-        *self
-            .inner
-            .current
-            .write()
-            .unwrap_or_else(|e| e.into_inner()) = Some(next.0.clone());
+        let next = self.inner.waiting.lock_recovered().queue.pop_front()?;
+        *self.inner.current.write_recovered() = Some(next.0.clone());
         Some(next)
     }
 
@@ -129,14 +130,9 @@ impl BudgetChannel {
     pub fn latest(&self) -> Option<Arc<Allocation>> {
         self.inner
             .current
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
+            .read_recovered()
             .as_ref()
             .map(|(_, allocation)| Arc::clone(allocation))
-    }
-
-    fn waiting(&self) -> std::sync::MutexGuard<'_, Waiting> {
-        self.inner.waiting.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 

@@ -29,6 +29,8 @@ use tempfile::TempDir;
 
 use super::*;
 
+mod keys_and_releases;
+mod labels;
 mod project_trust;
 mod quarantine_view;
 

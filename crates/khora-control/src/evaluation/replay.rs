@@ -23,7 +23,8 @@ use khora_core::agent::AgentImportance;
 use khora_core::lane::cost::PerLink;
 
 use super::Arbiters;
-use crate::gorna::cost_book::{correct_bid, lend_in_quotes};
+use crate::gorna::cost_book::correct_bid;
+use crate::gorna::lending::{lend_in_quotes, Lending};
 use crate::gorna::{Bid, Round};
 
 /// Decides `trace` again through `arbiters`, each epoch's round rebuilt from
@@ -88,13 +89,15 @@ pub fn replay(trace: &DecisionTrace, arbiters: Arbiters) -> Replay {
         // at their quotes.
         lend_in_quotes(
             &mut decision.allocation,
-            &record.offers,
-            &bids,
-            &decision.rows,
-            &decision.kept,
-            &as_held,
-            corrections,
-            caution,
+            &Lending {
+                quoted: &record.offers,
+                bids: &bids,
+                planned: &decision.rows,
+                kept: &decision.kept,
+                held: &as_held,
+                corrections,
+                caution,
+            },
         );
         let time = started.elapsed();
         if decision.allocation == record.allocation {

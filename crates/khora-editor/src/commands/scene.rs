@@ -16,6 +16,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use khora_sdk::editor_ui::EditorRequest;
 use khora_sdk::{EditorState, GameWorld, SerializationGoal};
 
 use crate::project_vfs::ProjectVfs;
@@ -142,7 +143,7 @@ pub fn land_scene_loads(
                         })
                         .collect();
                     state.load_problems = remapped.clone();
-                    state.pending_load_problems = Some(remapped);
+                    state.push_request(EditorRequest::ReportLoadProblems { problems: remapped });
                     // Every entity was respawned: what named one names
                     // nothing now, or another once a slot is reused.
                     state.clear_entity_references();
@@ -159,7 +160,7 @@ pub fn land_scene_loads(
                         "the scene as Play found it could not be restored, the world is as play left it: {error}"
                     )));
                     state.load_problems = problems.clone();
-                    state.pending_load_problems = Some(problems);
+                    state.push_request(EditorRequest::ReportLoadProblems { problems });
                 }
             }
         }
@@ -178,7 +179,7 @@ pub fn land_scene_loads(
                 // the entities it brought.
                 let load = scene_io::load_problems(world.inner_world(), &report);
                 state.load_problems = load.clone();
-                state.pending_load_problems = Some(load);
+                state.push_request(EditorRequest::ReportLoadProblems { problems: load });
                 state.current_scene_path = Some(path);
                 replaced = true;
             }
@@ -191,7 +192,7 @@ pub fn land_scene_loads(
                     "the scene '{path}' could not be opened: {error}"
                 )));
                 state.load_problems = problems.clone();
-                state.pending_load_problems = Some(problems);
+                state.push_request(EditorRequest::ReportLoadProblems { problems });
             }
         }
     }
@@ -200,18 +201,10 @@ pub fn land_scene_loads(
 
 /// A load that changed nothing, as a problem of the `Load` source.
 fn load_failed(message: String) -> khora_sdk::khora_core::problems::Problem {
-    khora_sdk::khora_core::problems::Problem {
-        severity: khora_sdk::khora_core::problems::ProblemSeverity::Error,
-        module: None,
-        line: 0,
-        column: 0,
+    khora_sdk::khora_core::problems::Problem::new(
+        khora_sdk::khora_core::problems::ProblemSeverity::Error,
         message,
-        note: None,
-        entity: None,
-        behavior: None,
-        component: None,
-        field: None,
-    }
+    )
 }
 
 /// Whether Build Game is refused in a project at `trust`: a restricted
@@ -233,7 +226,8 @@ pub fn build_game_refused(
 }
 
 /// Why Build Game is refused in a restricted project.
-const BUILD_REFUSED: &str = "Build Game is off in restricted mode: building runs this project's                              code. Trust the project to build it.";
+const BUILD_REFUSED: &str = "Build Game is off in restricted mode: building runs this project's \
+                             code. Trust the project to build it.";
 
 /// Builds the game for the host under `<project>/dist/<target>/`.
 ///

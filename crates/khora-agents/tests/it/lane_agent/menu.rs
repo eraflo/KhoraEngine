@@ -28,11 +28,12 @@ use khora_core::gpu::DeviceCaps;
 use khora_core::lane::erased::{AnyLane, Erased};
 use khora_core::lane::family::LaneFamily;
 use khora_core::lane::OutputDeck;
+use khora_core::sync::LockExt;
 
 use super::fixtures::{
-    host_envelope, ladder_cost, lend, locked, offer_request, offered, place_of, place_step,
-    recorded_level, run, runtime, FirstLane, Load, Plan, ProbeFamily, Recorded, SecondLane, Tally,
-    FIXED_LADDER, FIXED_STEP, LADDER, STORAGE_OR_PLAIN, TWO_LANES,
+    host_envelope, ladder_cost, lend, offer_request, offered, place_of, place_step, recorded_level,
+    run, runtime, FirstLane, Load, Plan, ProbeFamily, Recorded, SecondLane, Tally, FIXED_LADDER,
+    FIXED_STEP, LADDER, STORAGE_OR_PLAIN, TWO_LANES,
 };
 use crate::protocol::pin;
 
@@ -193,7 +194,7 @@ fn locks_follow_the_installed_layer_and_reads_cover_every_quoted_lane() {
 
     pin(&mut agent, StrategyId::LowPower);
     run(&mut agent, 1, &runtime, &mut deck);
-    let on_first = locked(&place_of(&agent)).contention();
+    let on_first = place_of(&agent).lock_recovered().contention();
     for read in &first.reads {
         assert!(on_first.reads.contains(read), "the first lane's reads");
     }
@@ -206,7 +207,7 @@ fn locks_follow_the_installed_layer_and_reads_cover_every_quoted_lane() {
     pin(&mut agent, StrategyId::Balanced);
     run(&mut agent, 2, &runtime, &mut deck);
     run(&mut agent, 3, &runtime, &mut deck);
-    let on_second = locked(&place_of(&agent)).contention();
+    let on_second = place_of(&agent).lock_recovered().contention();
     for lock in &second.writes {
         assert!(on_second.writes.contains(lock), "the second lane's locks");
     }
@@ -243,7 +244,10 @@ fn the_agent_declares_the_locks_of_every_lane_it_quotes() {
         "the second lane is quoted under its lock, so the agent declares it"
     );
     assert!(
-        !locked(&place_of(&agent)).contention().may_lock(tally_lock),
+        !place_of(&agent)
+            .lock_recovered()
+            .contention()
+            .may_lock(tally_lock),
         "the installed layer, the first lane, takes no lock"
     );
 }

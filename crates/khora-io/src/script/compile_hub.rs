@@ -24,6 +24,7 @@ use std::sync::{Arc, Mutex};
 
 use khora_core::event::Channel;
 use khora_core::lane::Reserve;
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_script::toolchain::ScriptCompiler;
 
@@ -76,7 +77,7 @@ impl CompileHub {
         let mut request = CompileRequest::new(root, modules);
         request.tickets.insert(ticket);
         let root = request.root.clone();
-        let mut tickets = self.tickets();
+        let mut tickets = self.tickets.lock_recovered();
         // The channel refuses a request it cannot hold: nothing waiting is
         // dropped for this one.
         let refused = self.requests.dropped();
@@ -92,28 +93,22 @@ impl CompileHub {
         ticket
     }
 
-    fn tickets(&self) -> std::sync::MutexGuard<'_, CompileTickets> {
-        self.tickets
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
     /// Takes the outcome of the compile filed as `ticket`, once it landed:
     /// `None` while it is in flight, and once taken.
     pub fn take_outcome(&self, ticket: CompileTicket) -> Option<CompileTicketOutcome> {
-        self.tickets().landed.remove(&ticket)
+        self.tickets.lock_recovered().landed.remove(&ticket)
     }
 
     /// Whether the compile filed as `ticket` is still in flight.
     pub fn is_pending(&self, ticket: CompileTicket) -> bool {
-        self.tickets().pending.contains_key(&ticket)
+        self.tickets.lock_recovered().pending.contains_key(&ticket)
     }
 
     /// Lands `Err("unmounted")` for every ticket of `root` still in flight.
     ///
     /// Call before dropping the root's requests on an unmount.
     pub fn withdraw(&self, root: &Path) {
-        let mut tickets = self.tickets();
+        let mut tickets = self.tickets.lock_recovered();
         let withdrawn: Vec<CompileTicket> = tickets
             .pending
             .iter()
@@ -130,7 +125,7 @@ impl CompileHub {
     ///
     /// A ticket withdrawn meanwhile keeps the outcome it landed with.
     pub(crate) fn land(&self, ticket: CompileTicket, outcome: CompileTicketOutcome) {
-        let mut tickets = self.tickets();
+        let mut tickets = self.tickets.lock_recovered();
         if tickets.pending.remove(&ticket).is_some() {
             tickets.landed.insert(ticket, outcome);
         }

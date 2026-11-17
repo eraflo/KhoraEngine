@@ -17,7 +17,8 @@
 //! See the book: concepts/prefabs.md, "Seeing and editing overrides".
 
 use khora_sdk::editor_ui::{
-    EditorState, FontFamilyHint, Icon, InspectedPrefab, PrefabApplyScope, UiBuilder, UiTheme,
+    EditorRequest, EditorState, FontFamilyHint, Icon, InspectedPrefab, PrefabApplyScope, UiBuilder,
+    UiTheme,
 };
 use khora_sdk::prelude::ecs::EntityId;
 use khora_tool_ui::widgets::paint::{icon, text, tint};
@@ -112,9 +113,12 @@ pub fn render_instance_band(
         );
         if hit.clicked {
             if apply {
-                state.pending_prefab_apply = Some((entity, PrefabApplyScope::Instance));
+                state.push_request(EditorRequest::ApplyToPrefab {
+                    entity,
+                    scope: PrefabApplyScope::Instance,
+                });
             } else {
-                state.pending_prefab_revert = Some(entity);
+                state.push_request(EditorRequest::RevertPrefab { entity });
             }
         }
     }

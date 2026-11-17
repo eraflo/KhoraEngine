@@ -22,6 +22,7 @@
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, RwLock};
 
+use khora_sdk::editor_ui::{EditorRequest, MenuAction, Transport};
 use khora_sdk::khora_core::agent::Activation;
 use khora_sdk::prelude::{SharedTime, Time};
 use khora_sdk::{EditorState, GameWorld, PlayMode, Runtime};
@@ -73,8 +74,11 @@ fn play_families() -> BTreeSet<khora_sdk::khora_core::agent::gorna::AgentId> {
 }
 
 /// Asks `action` of the transport, as its buttons do.
-fn ask(state: &Arc<Mutex<EditorState>>, action: &str) {
-    state.lock().expect("the editor state").pending_menu_action = Some(action.to_owned());
+fn ask(state: &Arc<Mutex<EditorState>>, request: EditorRequest) {
+    state
+        .lock()
+        .expect("the editor state")
+        .push_request(request);
 }
 
 fn play_mode(state: &Arc<Mutex<EditorState>>) -> PlayMode {
@@ -117,7 +121,7 @@ fn play_snapshots_the_scene_then_switches_the_play_families_on() {
     let (mut world, state) = editing(&engine);
     assert_eq!(engine.off_at_the_boundary(), play_families());
 
-    ask(&state, "play");
+    ask(&state, EditorRequest::Transport(Transport::Play));
     process_transport(&mut world, &state, &engine.runtime);
 
     assert_eq!(play_mode(&state), PlayMode::Playing);
@@ -146,12 +150,12 @@ fn stop_restores_the_scene_then_switches_the_play_families_off() {
 
     let engine = engine();
     let (mut world, state) = editing(&engine);
-    ask(&state, "play");
+    ask(&state, EditorRequest::Transport(Transport::Play));
     process_transport(&mut world, &state, &engine.runtime);
     let authored = world.iter_entities().count();
     world.spawn((Transform::identity(), Name::new("Spawned in play")));
 
-    ask(&state, "stop");
+    ask(&state, EditorRequest::Transport(Transport::Stop));
     process_transport(&mut world, &state, &engine.runtime);
 
     assert_eq!(play_mode(&state), PlayMode::Editing);
@@ -180,7 +184,7 @@ fn stop_restores_the_scene_then_switches_the_play_families_off() {
 fn pause_stops_the_clock_and_switches_nothing() {
     let engine = engine();
     let (mut world, state) = editing(&engine);
-    ask(&state, "play");
+    ask(&state, EditorRequest::Transport(Transport::Play));
     process_transport(&mut world, &state, &engine.runtime);
     engine.off_at_the_boundary();
     let snapshot = state
@@ -189,7 +193,7 @@ fn pause_stops_the_clock_and_switches_nothing() {
         .scene_snapshot
         .clone();
 
-    ask(&state, "pause");
+    ask(&state, EditorRequest::Transport(Transport::Pause));
     process_transport(&mut world, &state, &engine.runtime);
 
     assert_eq!(play_mode(&state), PlayMode::Paused);
@@ -199,7 +203,7 @@ fn pause_stops_the_clock_and_switches_nothing() {
         "paused, the play families stay on"
     );
 
-    ask(&state, "play");
+    ask(&state, EditorRequest::Transport(Transport::Play));
     process_transport(&mut world, &state, &engine.runtime);
     assert_eq!(play_mode(&state), PlayMode::Playing);
     assert_eq!(engine.scale(), 1.0, "resumed");
@@ -221,16 +225,12 @@ fn another_action_is_left_for_update() {
     let engine = engine();
     let (mut world, state) = editing(&engine);
 
-    ask(&state, "save");
+    ask(&state, EditorRequest::Menu(MenuAction::Save));
     process_transport(&mut world, &state, &engine.runtime);
 
     assert_eq!(
-        state
-            .lock()
-            .expect("the editor state")
-            .pending_menu_action
-            .as_deref(),
-        Some("save")
+        state.lock().expect("the editor state").requests,
+        [EditorRequest::Menu(MenuAction::Save)]
     );
     assert_eq!(play_mode(&state), PlayMode::Editing);
 }
@@ -257,7 +257,7 @@ fn play_is_refused_in_a_restricted_project() {
     let (mut world, state) = editing(&engine);
     assert_eq!(engine.off_at_the_boundary(), play_families());
 
-    ask(&state, "play");
+    ask(&state, EditorRequest::Transport(Transport::Play));
     process_transport(&mut world, &state, &engine.runtime);
 
     assert_eq!(play_mode(&state), PlayMode::Editing, "Play is refused");
@@ -272,8 +272,8 @@ fn play_is_refused_in_a_restricted_project() {
             "the editor's state says why Play was refused: {:?}",
             state.refusal
         );
-        assert_eq!(
-            state.pending_menu_action, None,
+        assert!(
+            state.requests.is_empty(),
             "the refused action is consumed, not asked again every frame"
         );
     }
@@ -292,7 +292,7 @@ fn play_runs_in_a_trusted_project() {
     at_trust(&mut engine, khora_sdk::trust::ProjectTrust::Trusted);
     let (mut world, state) = editing(&engine);
 
-    ask(&state, "play");
+    ask(&state, EditorRequest::Transport(Transport::Play));
     process_transport(&mut world, &state, &engine.runtime);
 
     assert_eq!(play_mode(&state), PlayMode::Playing);
@@ -351,7 +351,7 @@ fn a_project_turned_restricted_during_play_runs_no_script() {
     let mut engine = engine();
     at_trust(&mut engine, khora_sdk::trust::ProjectTrust::Trusted);
     let (mut world, state) = editing(&engine);
-    ask(&state, "play");
+    ask(&state, EditorRequest::Transport(Transport::Play));
     process_transport(&mut world, &state, &engine.runtime);
     assert!(
         engine.off_at_the_boundary().is_empty(),

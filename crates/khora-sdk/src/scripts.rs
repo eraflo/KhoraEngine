@@ -22,6 +22,7 @@ use khora_core::lane::Reserve;
 use khora_core::problems::{ProblemSource, Problems};
 use khora_core::projection::Interest;
 use khora_core::script::{ScriptCatalog, ScriptReads};
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_io::asset::AssetWatch;
 use khora_io::script::declarations::{DeclaredComponents, ScriptDeclarations};
@@ -283,8 +284,7 @@ pub fn unmount(runtime: &Runtime, assets_root: &Path) {
     // Closed with the project: what they declared is orphaned quietly.
     if let Some(declared) = runtime.resources.get::<Arc<Mutex<DeclaredComponents>>>() {
         declared
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .lock_recovered()
             .unmounting(modules.iter().cloned());
     }
     // Each module declares nothing and runs nothing any more. A withdrawal

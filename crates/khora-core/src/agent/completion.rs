@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use crate::agent::gorna::AgentId;
+use crate::sync::LockExt;
 
 /// What happened to an agent this frame, from the scheduler's point of view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,7 +60,7 @@ impl AgentCompletionMap {
     pub fn mark(&self, id: AgentId, outcome: CompletionOutcome) -> bool {
         match self.entries.get(&id) {
             Some(entry) => {
-                let mut held = entry.lock().unwrap_or_else(|e| e.into_inner());
+                let mut held = entry.lock_recovered();
                 if held.is_none() || outcome == CompletionOutcome::Failed {
                     *held = Some(outcome);
                 }
@@ -72,11 +73,7 @@ impl AgentCompletionMap {
     /// Returns the recorded outcome for `id`, or `None` if the agent has
     /// not yet been marked (or the ID is unknown).
     pub fn outcome(&self, id: AgentId) -> Option<CompletionOutcome> {
-        *self
-            .entries
-            .get(&id)?
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
+        *self.entries.get(&id)?.lock_recovered()
     }
 
     /// Returns `true` if a [`mark`](Self::mark) has been recorded for `id`.

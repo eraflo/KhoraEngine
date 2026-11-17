@@ -15,6 +15,7 @@
 //! sysinfo-based implementation of the HardwareMonitor trait.
 
 use khora_core::platform::{BatteryLevel, HardwareMonitor, ThermalStatus};
+use khora_core::sync::LockExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use sysinfo::{Components, System};
@@ -118,7 +119,7 @@ impl HardwareMonitor for SysinfoMonitor {
             system.refresh_cpu_usage();
         }
         let level = batteries_level(&self.battery_warned);
-        *self.battery.lock().unwrap_or_else(|e| e.into_inner()) = level;
+        *self.battery.lock_recovered() = level;
     }
 
     fn thermal_status(&self) -> ThermalStatus {
@@ -150,7 +151,7 @@ impl HardwareMonitor for SysinfoMonitor {
     }
 
     fn battery_level(&self) -> BatteryLevel {
-        *self.battery.lock().unwrap_or_else(|e| e.into_inner())
+        *self.battery.lock_recovered()
     }
 
     fn cpu_load(&self) -> f32 {

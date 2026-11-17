@@ -23,6 +23,7 @@ use khora_core::renderer::api::gpu_scene::{GpuMesh, Mesh};
 use khora_core::renderer::api::resource::SamplerId;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::residency::Residency;
+use khora_core::sync::RwLockExt;
 
 use crate::assets::AssetStore;
 use crate::ecs::{HandleComponent, Without, World};
@@ -74,17 +75,10 @@ impl ProjectionRegistry {
 
                 // Cache miss: upload to GPU for the first time. A mesh the
                 // device refuses stays untagged and is tried again next frame.
-                if !cache
-                    .read()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .contains(&uuid)
-                {
+                if !cache.read_recovered().contains(&uuid) {
                     match MeshOnGpu::make(mesh_handle_comp, &mut &*device) {
                         Ok(gpu_mesh) => {
-                            cache
-                                .write()
-                                .unwrap_or_else(|e| e.into_inner())
-                                .insert(uuid, gpu_mesh);
+                            cache.write_recovered().insert(uuid, gpu_mesh);
                         }
                         Err(refusal) => {
                             log::error!("{refusal}");
@@ -93,7 +87,7 @@ impl ProjectionRegistry {
                     }
                 }
 
-                if let Some(handle) = cache.read().unwrap_or_else(|e| e.into_inner()).get(&uuid) {
+                if let Some(handle) = cache.read_recovered().get(&uuid) {
                     pending.insert(
                         entity_id,
                         HandleComponent {

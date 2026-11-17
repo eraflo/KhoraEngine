@@ -44,11 +44,7 @@ impl DiskLoader {
     ///
     /// Its refusals are kept in memory only; a run loads through [`Self::guarded`].
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self::guarded(FileGuard::new(
-            root,
-            Trust::Project,
-            Arc::new(Refusals::new(None, None)),
-        ))
+        Self::guarded(FileGuard::new(root, Trust::Project, Refusals::detached()))
     }
 
     /// Creates a loader reading every module through `guard`, under its root.

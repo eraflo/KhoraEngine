@@ -15,9 +15,8 @@
 //! The title bar: brand pill, menus, and the search pill that opens the
 //! command palette.
 //!
-//! Only entries the app handles are offered: each sets
-//! `EditorState::pending_menu_action`, dispatched by
-//! `commands::process_menu_actions`.
+//! Only entries the app handles are offered: each queues an
+//! `EditorRequest::Menu`, carried out by `commands::process_menu_actions`.
 
 use std::sync::{Arc, Mutex};
 
@@ -98,9 +97,9 @@ impl EditorPanel for TitleBarPanel {
         let menu_region = [menus_x, menus_y, MENU_REGION_WIDTH, 24.0];
 
         let state_for_menus = self.state.clone();
-        let dispatch = move |action: &str| {
+        let dispatch = move |action: MenuAction| {
             if let Ok(mut s) = state_for_menus.lock() {
-                s.pending_menu_action = Some(action.to_owned());
+                s.push_request(EditorRequest::Menu(action));
             }
         };
 
@@ -108,25 +107,25 @@ impl EditorPanel for TitleBarPanel {
             ui_inner.horizontal(&mut |ui_inner| {
                 ui_inner.menu_button("File", &mut |m| {
                     if m.button("New Scene") {
-                        dispatch("new_scene");
+                        dispatch(MenuAction::NewScene);
                         m.close_menu();
                     }
                     if m.button("Open…") {
-                        dispatch("open");
+                        dispatch(MenuAction::Open);
                         m.close_menu();
                     }
                     m.separator();
                     if m.button("Save") {
-                        dispatch("save");
+                        dispatch(MenuAction::Save);
                         m.close_menu();
                     }
                     if m.button("Save As…") {
-                        dispatch("save_as");
+                        dispatch(MenuAction::SaveAs);
                         m.close_menu();
                     }
                     m.separator();
                     if m.button("Quit") {
-                        dispatch("quit");
+                        dispatch(MenuAction::Quit);
                         m.close_menu();
                     }
                 });
@@ -135,23 +134,23 @@ impl EditorPanel for TitleBarPanel {
                 // reversible.
                 ui_inner.menu_button("Edit", &mut |m| {
                     if m.button("Delete  Del") {
-                        dispatch("delete");
+                        dispatch(MenuAction::Delete);
                         m.close_menu();
                     }
                 });
                 ui_inner.menu_button("Build", &mut |m| {
                     if m.button("Build Game…") {
-                        dispatch("build_game");
+                        dispatch(MenuAction::BuildGame);
                         m.close_menu();
                     }
                 });
                 ui_inner.menu_button("Help", &mut |m| {
                     if m.button("Documentation") {
-                        dispatch("documentation");
+                        dispatch(MenuAction::Documentation);
                         m.close_menu();
                     }
                     if m.button("About Khora Engine") {
-                        dispatch("about");
+                        dispatch(MenuAction::About);
                         m.close_menu();
                     }
                 });

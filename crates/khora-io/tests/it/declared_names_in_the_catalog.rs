@@ -24,6 +24,7 @@ use khora_core::lane::OutputDeck;
 use khora_core::lane::{Reserve, Staging};
 use khora_core::problems::Problems;
 use khora_core::script::{ComponentName, ScriptCatalog};
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, World};
 use khora_io::script::declarations::{DeclaredComponents, ScriptDeclarations};
@@ -115,10 +116,7 @@ impl Engine {
     }
 
     fn declared_names(&self) -> Vec<ComponentName> {
-        self.state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .declared_names()
+        self.state.lock_recovered().declared_names()
     }
 }
 
@@ -176,11 +174,7 @@ fn a_dropped_declaration_leaves_the_declared_names() {
 
     engine.register(vec![nothing_from("stats.erg")]);
     assert!(
-        engine
-            .state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .is_orphaned("Health"),
+        engine.state.lock_recovered().is_orphaned("Health"),
         "the premise: `Health` is orphaned"
     );
 
@@ -234,8 +228,7 @@ fn unmounting_every_module_empties_the_catalog() {
 
     engine
         .state
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .lock_recovered()
         .unmounting(["stats.erg".to_owned(), "ai/patrol.erg".to_owned()]);
     engine.register(vec![
         nothing_from("stats.erg"),

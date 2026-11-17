@@ -33,6 +33,8 @@ use super::super::fields::{render_field, value_text, FieldContext};
 use super::super::render_declared_cards;
 use super::rendering::{Drawn, Input, Spy};
 use crate::drag_payload::{pack_asset_drag, pack_entity};
+use crate::tests::requests::reveals;
+use crate::widgets::{Column, Painter};
 
 /// The epoch the project's asset list was read at.
 const EPOCH: u64 = 7;
@@ -47,7 +49,7 @@ const ROCKET: usize = 2;
 fn entry(path: &str, asset_type: &str) -> AssetEntry {
     AssetEntry {
         name: path.rsplit('/').next().unwrap_or(path).to_owned(),
-        asset_type: asset_type.to_owned(),
+        asset_type: khora_sdk::khora_core::asset::AssetType::from(asset_type),
         source_path: path.to_owned(),
         uuid: AssetUUID::new_v5(path),
         container: None,
@@ -764,12 +766,13 @@ fn dropping_an_asset_on_a_cards_slot_edits_its_field() {
     let mut ui = Spy::with(dropping(dragged(ROCKET)));
     let mut edits = Vec::new();
     render_declared_cards(
-        &mut ui,
+        &mut Painter {
+            ui: &mut ui,
+            theme: &UiTheme::default(),
+        },
         &inspected,
         &HashMap::new(),
-        0.0,
-        300.0,
-        &UiTheme::default(),
+        Column::new(0.0, 300.0),
         &mut state,
         &mut edits,
     );
@@ -825,12 +828,13 @@ fn frame(inspected: &InspectedEntity, state: &mut EditorState, input: Input) -> 
     let mut ui = Spy::with(input);
     let mut edits = Vec::new();
     render_declared_cards(
-        &mut ui,
+        &mut Painter {
+            ui: &mut ui,
+            theme: &UiTheme::default(),
+        },
         inspected,
         &HashMap::new(),
-        0.0,
-        300.0,
-        &UiTheme::default(),
+        Column::new(0.0, 300.0),
         state,
         &mut edits,
     );
@@ -873,10 +877,7 @@ fn reveal_in_assets_asks_the_browser_for_the_held_assets_path() {
         },
     );
     assert!(edits.is_empty(), "revealing edits nothing: {edits:?}");
-    assert_eq!(
-        state.pending_reveal_asset.as_deref(),
-        Some("prefabs/weapons/rocket.kprefab")
-    );
+    assert_eq!(reveals(&state), ["prefabs/weapons/rocket.kprefab"]);
 }
 
 /// The index writes a path as the platform does; the browser is asked for it
@@ -904,10 +905,7 @@ fn reveal_in_assets_names_the_path_with_forward_slashes() {
             ..Input::default()
         },
     );
-    assert_eq!(
-        state.pending_reveal_asset.as_deref(),
-        Some("prefabs/weapons/rocket.kprefab")
-    );
+    assert_eq!(reveals(&state), ["prefabs/weapons/rocket.kprefab"]);
 }
 
 #[test]

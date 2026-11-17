@@ -20,6 +20,7 @@ use std::sync::{Arc, Mutex};
 use khora_core::asset::font::Font;
 use khora_core::asset::AssetUUID;
 use khora_core::math::Vec2;
+use khora_core::sync::LockExt;
 use khora_core::ui::text::{
     FontError, FontFamily, ShapeError, ShapeRequest, ShapedGlyph, ShapedText, TextShaper,
 };
@@ -31,6 +32,8 @@ use parley::{FontContext, LayoutContext, PositionedLayoutItem, StyleProperty};
 /// One leaf lock around Parley's contexts: held for one registration or one
 /// shaping, never across a call out of this type.
 pub struct ParleyShaper {
+    // A panic while shaping leaves the contexts as Parley left them,
+    // still usable.
     state: Mutex<State>,
 }
 
@@ -64,12 +67,6 @@ impl ParleyShaper {
         debug_assert!(built_in.is_ok(), "the default font is readable");
         shaper
     }
-
-    fn state(&self) -> std::sync::MutexGuard<'_, State> {
-        // A panic while shaping leaves the contexts as Parley left them,
-        // still usable.
-        self.state.lock().unwrap_or_else(|e| e.into_inner())
-    }
 }
 
 impl Default for ParleyShaper {
@@ -86,11 +83,11 @@ impl TextShaper for ParleyShaper {
             Ok(family) => family,
             Err(error) => {
                 // Refused: the id holds no font, not the file it held before.
-                self.state().fonts.remove(&id);
+                self.state.lock_recovered().fonts.remove(&id);
                 return Err(error);
             }
         };
-        self.state().fonts.insert(
+        self.state.lock_recovered().fonts.insert(
             id,
             Registered {
                 context,
@@ -106,7 +103,7 @@ impl TextShaper for ParleyShaper {
         // line width); a negative or zero one breaks at every opportunity.
         let max_width = request.max_width.filter(|width| !width.is_nan());
 
-        let mut state = self.state();
+        let mut state = self.state.lock_recovered();
         let State { fonts, layout } = &mut *state;
         let font = fonts
             .get_mut(&request.font)

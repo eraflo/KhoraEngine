@@ -32,6 +32,7 @@ use khora_core::lane::erased::{AnyLane, Erased, LaneRun, RunOutcome};
 use khora_core::lane::io::{FrameId, InputSource, OutputSink};
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::math::Vec3;
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::assets::SoundData;
 use khora_data::ecs::{AudioListener, AudioSource, GlobalTransform, PlaybackState, World};
@@ -194,10 +195,7 @@ impl CapturedMix {
 
     /// The last block written.
     pub fn last(&self) -> Vec<f32> {
-        self.last
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
+        self.last.lock_recovered().clone()
     }
 
     /// How many blocks were written.
@@ -212,10 +210,7 @@ impl AudioMixBus for CapturedMix {
     }
 
     fn write_block(&self, samples: &[f32]) {
-        let mut last = self
-            .last
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut last = self.last.lock_recovered();
         last.clear();
         last.extend_from_slice(samples);
         self.blocks.fetch_add(1, Ordering::SeqCst);

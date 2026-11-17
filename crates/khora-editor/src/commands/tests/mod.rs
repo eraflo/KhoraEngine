@@ -14,9 +14,10 @@
 
 //! Play and Stop through the editor's own commands.
 
-mod create_script;
+mod asset_file_ops;
 mod gltf_assets;
 mod load_problems;
+mod menu_requests;
 mod play_edits_of_declared_fields;
 mod prefab;
 mod prefab_apply;
@@ -50,6 +51,18 @@ fn land_filed_loads(
         }
     }
     panic!("the editor's scene loads did not land within {SETTLE_FRAMES} frames");
+}
+
+/// Takes the load problems the editor's state asks to report, the last asked, as the app reports them.
+fn take_load_problems(
+    state: &Arc<Mutex<EditorState>>,
+) -> Option<Vec<khora_sdk::khora_core::problems::Problem>> {
+    (state.lock().expect("the editor state"))
+        .take_requests(|request| match request {
+            EditorRequest::ReportLoadProblems { problems } => Ok(problems),
+            other => Err(other),
+        })
+        .pop()
 }
 
 /// Stop, as the editor presses it, played until its restore has landed.

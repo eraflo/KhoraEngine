@@ -19,12 +19,16 @@ use khora_sdk::khora_data::scene::PrefabSource;
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::GameWorld;
 
-/// Drains `state.pending_reparent` and applies it to the ECS hierarchy.
+/// Takes the queued [`EditorRequest::Reparent`]s and applies them to the ECS hierarchy, oldest first.
 ///
-/// Set by `scene_tree`'s drag-and-drop handler. The actual cycle check and
+/// Asked by `scene_tree`'s drag-and-drop handler. The actual cycle check and
 /// `Parent`/`Children` bookkeeping live in `GameWorld::set_parent`.
 pub fn process_reparents(world: &mut GameWorld, state: &mut EditorState) {
-    if let Some((child, new_parent)) = state.pending_reparent.take() {
+    let reparents = state.take_requests(|request| match request {
+        EditorRequest::Reparent { child, parent } => Ok((child, parent)),
+        other => Err(other),
+    });
+    for (child, new_parent) in reparents {
         world.set_parent(child, new_parent);
         log::info!(
             "Reparented {:?} → {:?}",

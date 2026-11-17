@@ -41,6 +41,32 @@ enum FolderAction {
     Move { idx: usize, dest: String },
 }
 
+/// Where the folder tree is painted: its column and theme.
+struct TreeColumn<'a> {
+    /// The column's left edge.
+    x: f32,
+    /// Its width.
+    width: f32,
+    /// The theme its rows are painted in.
+    theme: &'a UiTheme,
+}
+
+/// What a walk of the folder tree gathers, applied once the walk is over.
+///
+/// The rename field needs `&mut self`: the walk only records its rect.
+struct TreeWalk {
+    /// The top of the next row.
+    y: f32,
+    /// The open folder, as the walk's clicks leave it.
+    current: Option<String>,
+    /// The folders toggled open or closed, and their new state.
+    toggled: Vec<(String, bool)>,
+    /// The menu and drop actions.
+    actions: Vec<FolderAction>,
+    /// Where the folder rename field goes, while a folder is renamed.
+    rename_rect: Option<[f32; 4]>,
+}
+
 /// One node of the folder tree built from the flat asset list.
 #[derive(Debug, Default)]
 struct FolderNode {
@@ -123,30 +149,31 @@ impl AssetBrowserPanel {
         theme: &UiTheme,
     ) -> f32 {
         let root = self.build_folder_tree();
-        let mut y = origin_y;
-        let mut new_current = self.current_folder.clone();
-        let mut new_expanded: Vec<(String, bool)> = Vec::new();
-        let mut actions: Vec<FolderAction> = Vec::new();
-        // The rename field needs `&mut self`: the walk only records its rect.
-        let mut rename_rect: Option<[f32; 4]> = None;
-        self.render_folder_node(
-            ui,
-            &root,
-            0,
-            origin_x,
-            &mut y,
-            sidebar_w,
+        let column = TreeColumn {
+            x: origin_x,
+            width: sidebar_w,
             theme,
-            &mut new_current,
-            &mut new_expanded,
-            &mut actions,
-            &mut rename_rect,
-        );
-        for (path, open) in new_expanded {
+        };
+        let mut walk = TreeWalk {
+            y: origin_y,
+            current: self.current_folder.clone(),
+            toggled: Vec::new(),
+            actions: Vec::new(),
+            rename_rect: None,
+        };
+        self.render_folder_node(ui, &root, 0, &column, &mut walk);
+        let TreeWalk {
+            y,
+            current,
+            toggled,
+            actions,
+            rename_rect,
+        } = walk;
+        for (path, open) in toggled {
             self.expanded_folders.insert(path, open);
         }
-        if new_current != self.current_folder {
-            self.current_folder = new_current;
+        if current != self.current_folder {
+            self.current_folder = current;
         }
 
         for action in actions {
@@ -169,7 +196,10 @@ impl AssetBrowserPanel {
                     }
                     if let Some(src) = self.flat.get(idx).map(|a| a.rel_path.clone()) {
                         if let Ok(mut state) = self.state.lock() {
-                            state.pending_move_asset = Some((src.clone(), dest.clone()));
+                            state.push_request(EditorRequest::AssetFile(AssetFileOp::Move {
+                                path: src.clone(),
+                                into: dest.clone(),
+                            }));
                         }
                         log::info!("Asset browser: moving '{src}' into '{dest}'");
                     }
@@ -198,7 +228,12 @@ impl AssetBrowserPanel {
                             };
                             if new_rel != old {
                                 if let Ok(mut state) = self.state.lock() {
-                                    state.pending_rename_asset = Some((old, new_rel));
+                                    state.push_request(EditorRequest::AssetFile(
+                                        AssetFileOp::Rename {
+                                            from: old,
+                                            to: new_rel,
+                                        },
+                                    ));
                                 }
                             }
                         }
@@ -212,23 +247,25 @@ impl AssetBrowserPanel {
         y
     }
 
-    #[allow(clippy::too_many_arguments)]
+    /// Paints `node`'s row at `depth`, then its children's if it is open.
     fn render_folder_node(
         &self,
         ui: &mut dyn UiBuilder,
         node: &FolderNode,
         depth: u32,
-        origin_x: f32,
-        y: &mut f32,
-        sidebar_w: f32,
-        theme: &UiTheme,
-        current: &mut Option<String>,
-        new_expanded: &mut Vec<(String, bool)>,
-        actions: &mut Vec<FolderAction>,
-        rename_rect: &mut Option<[f32; 4]>,
+        column: &TreeColumn<'_>,
+        walk: &mut TreeWalk,
     ) {
-        let row_x = origin_x + 4.0;
-        let row_w = sidebar_w - 8.0;
+        let theme = column.theme;
+        let TreeWalk {
+            y,
+            current,
+            toggled,
+            actions,
+            rename_rect,
+        } = &mut *walk;
+        let row_x = column.x + 4.0;
+        let row_w = column.width - 8.0;
         let label = if node.name.is_empty() {
             "assets"
         } else {
@@ -375,25 +412,13 @@ impl AssetBrowserPanel {
             *current = Some(node.full_path.clone());
             // The chevron is a small target on a narrow sidebar.
             if has_children {
-                new_expanded.push((node.full_path.clone(), !expanded));
+                toggled.push((node.full_path.clone(), !expanded));
             }
         }
         *y += SIDEBAR_ROW_H + 1.0;
         if expanded {
             for child in node.children.values() {
-                self.render_folder_node(
-                    ui,
-                    child,
-                    depth + 1,
-                    origin_x,
-                    y,
-                    sidebar_w,
-                    theme,
-                    current,
-                    new_expanded,
-                    actions,
-                    rename_rect,
-                );
+                self.render_folder_node(ui, child, depth + 1, column, walk);
             }
         }
     }

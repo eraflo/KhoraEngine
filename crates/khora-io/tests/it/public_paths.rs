@@ -370,7 +370,6 @@ fn module_asset_paths_still_resolve() {
     ) = khora_io::asset::DecoderRegistry::register::<khora_data::assets::SoundData>;
     let _ = khora_io::asset::DecoderRegistry::decode::<khora_data::assets::SoundData>;
     let _ = khora_io::asset::DecoderRegistry::decode_at::<khora_data::assets::SoundData>;
-    let _ = khora_io::asset::EXTENSIONLESS_ASSET_TYPE;
     let _ = type_name::<khora_io::asset::FileLoader>();
     let _: fn(std::path::PathBuf) -> khora_io::asset::FileLoader = khora_io::asset::FileLoader::new;
     let _ = khora_io::asset::FileLoader::root;
@@ -553,7 +552,9 @@ fn module_asset_paths_still_resolve() {
     let _ = khora_io::asset::WavDecoder::new;
     is_default::<khora_io::asset::WavDecoder>();
     is_asset_decoder_sound_data::<khora_io::asset::WavDecoder>();
-    let _ = khora_io::asset::asset_type_for_extension;
+    let _ = khora_io::asset::asset_type_for_extension as fn(&str) -> khora_core::asset::AssetType;
+    let _ =
+        khora_io::asset::asset_type_of_path as fn(&std::path::Path) -> khora_core::asset::AssetType;
     let _ = type_name::<khora_io::asset::decoders::font::FontDecoder>();
     let _ = type_name::<khora_io::asset::decoders::FontDecoder>();
     let _ = type_name::<khora_io::asset::font::FontDecoder>();

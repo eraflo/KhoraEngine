@@ -17,6 +17,7 @@
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::AssetEntry;
+use khora_sdk::editor_ui::{EditorRequest, TrustAnswer};
 use khora_sdk::{GameWorld, Runtime};
 
 use crate::project_vfs::ProjectVfs;
@@ -129,19 +130,28 @@ pub(crate) fn start_opening_project(
 }
 
 impl super::EditorApp {
+    /// Returns the store of what the user decided of each project, opened at its first use.
+    ///
+    /// The one the hub shares, `~/.khora/trust.ron`; an editor that opens no
+    /// project never reads it.
+    pub(super) fn trust_store(&mut self) -> std::sync::Arc<khora_sdk::trust::TrustStore> {
+        let store = self.trust_store.get_or_insert_with(|| {
+            std::sync::Arc::new(khora_sdk::trust::TrustStore::new(
+                khora_sdk::user_dirs::trust_path(&khora_sdk::user_dirs::process_env),
+            ))
+        });
+        std::sync::Arc::clone(store)
+    }
+
     /// Opens the project at `root` at what its user decided of it.
     ///
     /// A project nothing was decided of waits for the user's answer
     /// (`EditorState::trust_prompt`); one that opens replaces the project open.
     pub(super) fn open_at_its_trust(&mut self, root: std::path::PathBuf, runtime: &Runtime) {
-        let store = self.trust_store.get_or_insert_with(|| {
-            khora_sdk::trust::TrustStore::new(khora_sdk::user_dirs::trust_path(&|key| {
-                std::env::var_os(key)
-            }))
-        });
+        let store = self.trust_store();
         if let Some(opening) = open_project(
             root,
-            store,
+            &store,
             runtime,
             &self.editor_state,
             &mut self.startup_hold,
@@ -151,41 +161,41 @@ impl super::EditorApp {
         }
     }
 
-    /// Acts on the user's answers about trust, carried by the editor's actions.
+    /// Acts on the user's answers about trust, queued on the editor's state, oldest first.
     ///
-    /// `trust_open` / `restrict_open` decide the project waiting
-    /// (`EditorState::trust_prompt`) and open it, `cancel_open` lets it go;
-    /// `trust_project` trusts the project open.
+    /// `TrustOpen` / `RestrictOpen` decide the project waiting
+    /// (`EditorState::trust_prompt`) and open it, `CancelOpen` lets it go;
+    /// `TrustProject` trusts the project open.
     pub(super) fn follow_trust_answers(&mut self, runtime: &Runtime) {
+        let answers = self
+            .editor_state
+            .lock()
+            .map(|mut state| {
+                state.take_requests(|request| match request {
+                    EditorRequest::Trust(answer) => Ok(answer),
+                    other => Err(other),
+                })
+            })
+            .unwrap_or_default();
+        for answer in answers {
+            self.follow_trust_answer(answer, runtime);
+        }
+    }
+
+    /// Acts on one answer about trust.
+    fn follow_trust_answer(&mut self, answer: TrustAnswer, runtime: &Runtime) {
         use khora_sdk::trust::ProjectTrust;
-        let Some(action) = self.editor_state.lock().ok().and_then(|mut state| {
-            let ours = state
-                .pending_menu_action
-                .as_deref()
-                .is_some_and(|action| TRUST_ACTIONS.contains(&action));
-            if ours {
-                state.pending_menu_action.take()
-            } else {
-                None
-            }
-        }) else {
-            return;
-        };
-        let store = self.trust_store.get_or_insert_with(|| {
-            khora_sdk::trust::TrustStore::new(khora_sdk::user_dirs::trust_path(&|key| {
-                std::env::var_os(key)
-            }))
-        });
+        let store = self.trust_store();
         let waiting = || {
             self.editor_state
                 .lock()
                 .ok()
                 .and_then(|mut state| state.trust_prompt.take())
         };
-        match action.as_str() {
-            "trust_open" | "restrict_open" => {
+        match answer {
+            TrustAnswer::TrustOpen | TrustAnswer::RestrictOpen => {
                 let Some(root) = waiting() else { return };
-                let decision = if action == "trust_open" {
+                let decision = if answer == TrustAnswer::TrustOpen {
                     ProjectTrust::Trusted
                 } else {
                     ProjectTrust::Restricted
@@ -193,16 +203,16 @@ impl super::EditorApp {
                 store.decide(&root, decision);
                 self.open_at_its_trust(root, runtime);
             }
-            "cancel_open" => {
+            TrustAnswer::CancelOpen => {
                 if let Some(root) = waiting() {
                     log::info!("'{}' is not opened", root.display());
                 }
             }
-            _ => {
+            TrustAnswer::TrustProject => {
                 let open =
                     (self.editor_state.lock().ok()).and_then(|state| state.project_folder.clone());
                 match open {
-                    Some(root) => grant_trust(runtime, store, std::path::Path::new(&root)),
+                    Some(root) => grant_trust(runtime, &store, std::path::Path::new(&root)),
                     None => log::warn!("no project is open to trust"),
                 }
             }
@@ -216,14 +226,6 @@ impl super::EditorApp {
             .map_or(khora_sdk::trust::ProjectTrust::Trusted, |state| state.get())
     }
 }
-
-/// The editor's actions that answer about trust.
-const TRUST_ACTIONS: [&str; 4] = [
-    "trust_open",
-    "restrict_open",
-    "cancel_open",
-    "trust_project",
-];
 
 /// Opens the project at `root`, the one way the editor opens a project.
 ///
@@ -323,21 +325,13 @@ pub(crate) fn land_opened_project(
             {
                 problems.report(
                     khora_sdk::khora_core::problems::ProblemSource::Load,
-                    vec![khora_sdk::khora_core::problems::Problem {
-                        severity: khora_sdk::khora_core::problems::ProblemSeverity::Error,
-                        module: None,
-                        line: 0,
-                        column: 0,
-                        message: format!(
+                    vec![khora_sdk::khora_core::problems::Problem::new(
+                        khora_sdk::khora_core::problems::ProblemSeverity::Error,
+                        format!(
                             "the project '{}' could not be opened: {why}",
                             root.display()
                         ),
-                        note: None,
-                        entity: None,
-                        behavior: None,
-                        component: None,
-                        field: None,
-                    }],
+                    )],
                 );
             }
             // The editor runs with no project: nothing of it is shown as

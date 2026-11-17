@@ -197,6 +197,98 @@ fn editor_mode_variants(x: &khora_core::ui::editor::state::EditorMode) {
     }
 }
 
+fn editor_request_variants(x: &khora_core::ui::editor::EditorRequest) {
+    use khora_core::ui::editor::EditorRequest as R;
+    match x {
+        R::Menu(_) => {}
+        R::Transport(_) => {}
+        R::ToggleWireframe => {}
+        R::Trust(_) => {}
+        R::ConfirmTrust => {}
+        R::Spawn(_) => {}
+        R::DeleteEntity { entity: _ } => {}
+        R::DuplicateEntity { entity: _ } => {}
+        R::Reparent {
+            child: _,
+            parent: _,
+        } => {}
+        R::AddComponent {
+            entity: _,
+            type_name: _,
+        } => {}
+        R::RevertPrefab { entity: _ } => {}
+        R::ApplyToPrefab {
+            entity: _,
+            scope: _,
+        } => {}
+        R::SaveAsPrefab { entity: _ } => {}
+        R::SaveAsMaterial { entity: _, name: _ } => {}
+        R::ReportLoadProblems { problems: _ } => {}
+        R::OpenScene { path: _ } => {}
+        R::SpawnPrefab {
+            prefab: _,
+            parent: _,
+        } => {}
+        R::SaveAsPrefabAt { entity: _, path: _ } => {}
+        R::SpawnMesh {
+            mesh: _,
+            point: _,
+            parent: _,
+        } => {}
+        R::AssignMaterial { material: _ } => {}
+        R::AssignDropped {
+            asset: _,
+            entity: _,
+        } => {}
+        R::RevealAsset { path: _ } => {}
+        R::ReleaseAsset { path: _ } => {}
+        R::AssetFile(_) => {}
+    }
+}
+
+fn asset_file_op_variants(x: &khora_core::ui::editor::AssetFileOp) {
+    use khora_core::ui::editor::AssetFileOp as F;
+    match x {
+        F::CreateFolder { path: _ } => {}
+        F::CreateScript { path: _, source: _ } => {}
+        F::Rename { from: _, to: _ } => {}
+        F::Move { path: _, into: _ } => {}
+        F::Trash { path: _ } => {}
+        F::Duplicate { path: _ } => {}
+    }
+}
+
+fn menu_action_variants(x: &khora_core::ui::editor::MenuAction) {
+    use khora_core::ui::editor::MenuAction as M;
+    match x {
+        M::NewScene | M::Open | M::Save | M::SaveAs | M::Quit => {}
+        M::Delete | M::SpawnEmpty | M::BuildGame | M::Documentation | M::About => {}
+    }
+}
+
+fn transport_variants(x: &khora_core::ui::editor::Transport) {
+    use khora_core::ui::editor::Transport as T;
+    match x {
+        T::Play | T::Pause | T::Stop => {}
+    }
+}
+
+fn trust_answer_variants(x: &khora_core::ui::editor::TrustAnswer) {
+    use khora_core::ui::editor::TrustAnswer as A;
+    match x {
+        A::TrustOpen | A::RestrictOpen | A::CancelOpen | A::TrustProject => {}
+    }
+}
+
+fn spawn_shape_items(x: khora_core::ui::editor::SpawnShape) {
+    use khora_core::ui::editor::SpawnShape as S;
+    match x {
+        S::Empty | S::Cube | S::Sphere | S::Plane | S::Light | S::Camera => {}
+    }
+    let _: [S; 6] = S::ALL;
+    let _: &'static str = x.label();
+}
+
 fn editor_state_fields(x: &khora_core::ui::editor::state::EditorState) {
     let _ = (
         &x.scene_roots,
@@ -204,13 +296,9 @@ fn editor_state_fields(x: &khora_core::ui::editor::state::EditorState) {
         &x.entity_count,
         &x.search_filter,
         &x.ctrl_held,
-        &x.pending_spawn,
-        &x.pending_delete,
-        &x.pending_duplicate,
+        &x.requests,
         &x.renaming_entity,
         &x.rename_buffer,
-        &x.pending_rename,
-        &x.pending_reparent,
         &x.inspected,
         &x.pending_edits,
         &x.log_entries,
@@ -223,7 +311,6 @@ fn editor_state_fields(x: &khora_core::ui::editor::state::EditorState) {
         &x.gizmo_mode,
         &x.selected_asset,
         &x.inspected_asset_path,
-        &x.pending_menu_action,
         &x.project_folder,
         &x.project_name,
         &x.project_engine_version,
@@ -231,30 +318,14 @@ fn editor_state_fields(x: &khora_core::ui::editor::state::EditorState) {
         &x.play_mode,
         &x.scene_snapshot,
         &x.current_scene_path,
-        &x.pending_scene_load,
-        &x.pending_add_component,
         &x.addable_components,
         &x.active_mode,
         &x.command_palette_open,
         &x.inspector_card_open,
         &x.current_git_branch,
         &x.hidden_entities,
-        &x.pending_save_as_prefab,
-        &x.pending_save_as_prefab_at,
-        &x.pending_prefab_spawn,
-        &x.pending_prefab_apply,
-        &x.pending_save_as_material,
-        &x.pending_assign_material,
         &x.asset_dirs,
         &x.asset_epoch,
-        &x.pending_create_folder,
-        &x.pending_rename_asset,
-        &x.pending_move_asset,
-        &x.pending_delete_asset,
-        &x.pending_duplicate_asset,
-        &x.pending_create_script,
-        &x.pending_spawn_mesh_asset,
-        &x.pending_assign_texture,
     );
 }
 
@@ -1016,6 +1087,18 @@ fn module_ui_paths_still_resolve() {
     let _ = khora_core::ui::editor::state::EditorState::single_selected;
     let _ = khora_core::ui::editor::state::EditorState::push_edit;
     let _ = khora_core::ui::editor::state::EditorState::drain_edits;
+    let _ = khora_core::ui::editor::state::EditorState::push_request;
+    let _ = |state: &mut khora_core::ui::editor::state::EditorState| -> Vec<()> {
+        state.take_requests(Err)
+    };
+    let _ = editor_request_variants as fn(&khora_core::ui::editor::EditorRequest);
+    let _ = asset_file_op_variants as fn(&khora_core::ui::editor::AssetFileOp);
+    let _ = menu_action_variants as fn(&khora_core::ui::editor::MenuAction);
+    let _ = transport_variants as fn(&khora_core::ui::editor::Transport);
+    let _ = trust_answer_variants as fn(&khora_core::ui::editor::TrustAnswer);
+    let _ = spawn_shape_items as fn(khora_core::ui::editor::SpawnShape);
+    is_debug::<khora_core::ui::editor::EditorRequest>();
+    is_clone::<khora_core::ui::editor::EditorRequest>();
     is_debug::<khora_core::ui::editor::state::EditorState>();
     is_clone::<khora_core::ui::editor::state::EditorState>();
     is_default::<khora_core::ui::editor::state::EditorState>();

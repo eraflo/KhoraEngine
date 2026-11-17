@@ -42,6 +42,7 @@ mod hot_reload_from_the_shared_watch;
 mod hot_reload_of_misplaced_scripts;
 mod hot_reload_of_removed_scripts;
 mod image_residency;
+mod index_files_written_before_asset_types;
 mod machine_profiles;
 mod pack_limits;
 mod prefab_assets;

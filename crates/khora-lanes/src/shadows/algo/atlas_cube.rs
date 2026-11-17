@@ -17,17 +17,16 @@
 
 use std::borrow::Cow;
 
-use crate::render::util::DynamicUniformRingBuffer;
 use khora_core::math::{Extent3D, Mat4};
 use khora_core::renderer::api::resource::{
-    CameraUniformData, ImageAspect, TextureDescriptor, TextureDimension, TextureId, TextureUsage,
+    ImageAspect, TextureDescriptor, TextureDimension, TextureId, TextureUsage,
     TextureViewDescriptor, TextureViewDimension, TextureViewId,
 };
 use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
 use khora_core::renderer::error::{RenderError, ResourceError};
 use khora_core::renderer::GraphicsDevice;
 
-use super::pass::{build_draw_cmds, AttachmentPass};
+use super::pass::PassRecorder;
 
 /// A cube atlas on the device: its depth texture, the cube-array view the lit
 /// lanes bind, and one 2D view per face to render into.
@@ -94,6 +93,35 @@ impl AtlasCube {
         }
     }
 
+    /// Collects the six passes of the point light at `light_pos`, one per face
+    /// of its cube, `cube_layer`.
+    ///
+    /// A face whose view is missing is logged and gets no pass.
+    pub fn collect_faces(
+        &self,
+        recorder: &mut PassRecorder<'_>,
+        cube_layer: u32,
+        light_pos: khora_core::math::Vec3,
+        face_view_projs: &[Mat4; 6],
+    ) {
+        for (face_idx, face_vp) in face_view_projs.iter().enumerate() {
+            let face_view_index = (cube_layer as usize) * 6 + face_idx;
+            let Some(face_view) = self.face_views.get(face_view_index).copied() else {
+                log::error!(
+                    "AtlasCube: missing cube face view {} (cube_layer={}, face={})",
+                    face_view_index,
+                    cube_layer,
+                    face_idx
+                );
+                continue;
+            };
+            // The depth attachment is rebuilt from the source texture and this
+            // layer, ignoring the view's own: it must be the absolute
+            // cube-array layer, or every face of every cube lands in layer 0.
+            recorder.collect_pass(face_view, face_view_index as u32, light_pos, *face_vp);
+        }
+    }
+
     /// Gives the atlas back to the device.
     pub fn destroy(self, device: &dyn GraphicsDevice) {
         for view in self.face_views {
@@ -150,58 +178,4 @@ fn make_views(
         })?);
     }
     Ok((view, face_views))
-}
-
-/// Collects six shadow passes for one point light, one per cube face.
-#[allow(clippy::too_many_arguments)]
-pub fn collect_passes(
-    cube_face_views: &[TextureViewId],
-    cube_layer: u32,
-    light_pos: khora_core::math::Vec3,
-    face_view_projs: &[Mat4; 6],
-    device: &dyn GraphicsDevice,
-    render_world: &khora_data::render::RenderWorld,
-    gpu_meshes: &khora_data::assets::Assets<khora_core::renderer::api::gpu_scene::GpuMesh>,
-    camera_ring: &mut DynamicUniformRingBuffer,
-    model_ring: &mut DynamicUniformRingBuffer,
-) -> Vec<AttachmentPass> {
-    let mut passes = Vec::with_capacity(6);
-    for (face_idx, face_vp) in face_view_projs.iter().enumerate() {
-        let face_view_index = (cube_layer as usize) * 6 + face_idx;
-        let Some(face_view) = cube_face_views.get(face_view_index).copied() else {
-            log::error!(
-                "AtlasCube: missing cube face view {} (cube_layer={}, face={})",
-                face_view_index,
-                cube_layer,
-                face_idx
-            );
-            continue;
-        };
-
-        let camera_data = CameraUniformData {
-            view_projection: face_vp.to_cols_array_2d(),
-            camera_position: [light_pos.x, light_pos.y, light_pos.z, 1.0],
-        };
-        let camera_offset = match camera_ring.push(device, bytemuck::bytes_of(&camera_data)) {
-            Ok(off) => off,
-            Err(e) => {
-                log::error!("AtlasCube: failed to push cube face uniform: {:?}", e);
-                continue;
-            }
-        };
-        let camera_bg = *camera_ring.current_bind_group();
-
-        let draw_cmds = build_draw_cmds(device, render_world, gpu_meshes, model_ring);
-        passes.push(AttachmentPass {
-            // The depth attachment is rebuilt from the source texture and this
-            // layer, ignoring the view's own: it must be the absolute
-            // cube-array layer, or every face of every cube lands in layer 0.
-            target_view: face_view,
-            base_array_layer: face_view_index as u32,
-            camera_bg,
-            camera_offset,
-            draw_cmds,
-        });
-    }
-    passes
 }

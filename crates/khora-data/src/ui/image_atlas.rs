@@ -23,6 +23,7 @@ use khora_core::renderer::api::resource::TextureFormat;
 use khora_core::renderer::api::util::{AtlasRect, TextureAtlas};
 use khora_core::renderer::GraphicsDevice;
 use khora_core::residency::Resident;
+use khora_core::sync::LockExt;
 
 use crate::residency::ImageOnGpu;
 
@@ -110,18 +111,12 @@ impl UiImageAtlas {
 
     /// Records that the atlas refused `id`; `true` the first time.
     pub(crate) fn note_refusal(&self, id: AssetUUID) -> bool {
-        self.refused
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(id)
+        self.refused.lock_recovered().insert(id)
     }
 
     /// Forgets a refusal of `id`, once the image is placed.
     pub(crate) fn forget_refusal(&self, id: &AssetUUID) {
-        self.refused
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(id);
+        self.refused.lock_recovered().remove(id);
     }
 
     /// Reports whether the GPU atlas has been initialized.

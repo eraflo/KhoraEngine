@@ -453,11 +453,8 @@ fn index_lists_the_sub_assets_of_glb_and_gltf_files_under_their_file_uuid() {
             .iter()
             .find(|m| m.uuid == container)
             .unwrap_or_else(|| panic!("{rel} has its own entry"));
-        assert_eq!(own.asset_type_name, "mesh", "{rel} stays a mesh file");
-        assert!(matches!(
-            own.variants.get("default"),
-            Some(AssetSource::Path(_))
-        ));
+        assert_eq!(own.asset_type, "mesh", "{rel} stays a mesh file");
+        assert!(matches!(own.default_source(), Some(AssetSource::Path(_))));
 
         for (label, type_name) in TWO_MATERIAL_SUBS {
             let uuid = AssetUUID::sub_asset(container, label);
@@ -465,9 +462,9 @@ fn index_lists_the_sub_assets_of_glb_and_gltf_files_under_their_file_uuid() {
                 .iter()
                 .find(|m| m.uuid == uuid)
                 .unwrap_or_else(|| panic!("{rel} lists '{label}': {metadata:#?}"));
-            assert_eq!(entry.asset_type_name, type_name, "type of {rel} '{label}'");
+            assert_eq!(entry.asset_type, type_name, "type of {rel} '{label}'");
             assert_eq!(entry.source_path, rel_path, "source of {rel} '{label}'");
-            match entry.variants.get("default") {
+            match entry.default_source() {
                 Some(AssetSource::Sub {
                     container: c,
                     label: l,

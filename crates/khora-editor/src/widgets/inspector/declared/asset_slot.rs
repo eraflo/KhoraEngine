@@ -58,7 +58,7 @@ pub fn asset_text(uuid: AssetUUID, entries: &[AssetEntry]) -> String {
 pub fn picker_entries(kind: AssetKind, entries: &[AssetEntry]) -> Vec<&AssetEntry> {
     let mut offered: Vec<&AssetEntry> = entries
         .iter()
-        .filter(|entry| AssetKind::from_index_name(&entry.asset_type) == Some(kind))
+        .filter(|entry| entry.asset_type.script_kind() == Some(kind))
         .collect();
     offered.sort_by(|a, b| {
         a.name
@@ -319,7 +319,7 @@ fn dragged_entry<'a>(
     let index = unpack_asset_drag(payload, cx.asset_epoch)?;
     cx.assets
         .get(index as usize)
-        .filter(|entry| AssetKind::from_index_name(&entry.asset_type) == Some(kind))
+        .filter(|entry| entry.asset_type.script_kind() == Some(kind))
 }
 
 /// `missing · ` and the first group of `uuid`.

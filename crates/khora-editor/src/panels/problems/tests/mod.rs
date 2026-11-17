@@ -39,16 +39,10 @@ fn problem(
     message: &str,
 ) -> Problem {
     Problem {
-        severity,
         module: module.map(str::to_owned),
         line,
         column,
-        message: message.to_owned(),
-        note: None,
-        entity: None,
-        behavior: None,
-        component: None,
-        field: None,
+        ..Problem::new(severity, message)
     }
 }
 

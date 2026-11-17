@@ -36,7 +36,8 @@ use super::AssetService;
 pub struct DecoderRegistration {
     /// The asset type name the decoder handles (`"texture"`).
     ///
-    /// Matches what `IndexBuilder::asset_type_for_extension` returns for its extensions.
+    /// The [`AssetType`](khora_core::asset::AssetType) name of its extensions, from
+    /// [`asset_type_for_extension`](crate::asset::asset_type_for_extension).
     pub type_name: &'static str,
     /// Registers the decoder on an [`AssetService`].
     ///

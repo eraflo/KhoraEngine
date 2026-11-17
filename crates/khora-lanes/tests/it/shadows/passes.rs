@@ -18,7 +18,7 @@
 
 use khora_core::lane::erased::RunOutcome;
 use khora_core::lane::guard::{OutputRefusal, Reason, SinkKind};
-use khora_core::math::Vec3;
+use khora_core::math::{Mat4, Vec3};
 use khora_core::renderer::api::resource::TextureViewDimension;
 use khora_data::render::ResourceId;
 
@@ -213,4 +213,101 @@ fn a_refused_atlas_leaves_no_half_pass() {
         recorded.frame,
         recorded.pass
     );
+}
+
+/// The label of the ring the lane uploads each mesh's model into.
+const MODEL_RING: &str = "Shadow Model Ring";
+
+/// **Each caster's model is uploaded once a frame**, however many passes draw
+/// it: a sun and a point light are seven passes over the same three meshes,
+/// and every pass binds each mesh to the one upload.
+#[test]
+fn each_mesh_is_uploaded_once_for_every_pass() {
+    let mut shadows = Shadows::new();
+    let scene = Scene::new()
+        .with_mesh(Mat4::from_translation(Vec3::new(2.0, 0.0, 0.0)))
+        .with_mesh(Mat4::from_scale(Vec3::new(2.0, 1.0, 1.0)))
+        .with_sun(view_proj(1.0))
+        .with_lamp(Vec3::new(1.0, 2.0, 3.0), 10.0, faces(1.0));
+
+    shadows.record(HIGH, &scene).recorded();
+
+    let passes = shadows.device.passes();
+    assert_eq!(passes.len(), 7, "one sun pass, six faces: {passes:?}");
+    assert!(
+        passes.iter().all(|pass| pass.draws == 3),
+        "every pass draws the three meshes: {passes:?}"
+    );
+    assert_eq!(
+        shadows.device.writes_into(MODEL_RING),
+        3,
+        "one model upload per mesh"
+    );
+    assert!(
+        passes.iter().all(|pass| pass.models == passes[0].models),
+        "every pass binds the same uploads: {passes:?}"
+    );
+}
+
+/// **A frame with no caster uploads no model**: nothing will draw it.
+#[test]
+fn a_frame_without_casters_uploads_no_model() {
+    let mut shadows = Shadows::new();
+
+    shadows
+        .record(HIGH, &Scene::new().with_unshadowed_sun())
+        .recorded();
+
+    assert_eq!(shadows.device.writes_into(MODEL_RING), 0);
+}
+
+/// **A mesh whose transform has no inverse casts no shadow**, in any pass,
+/// and the others still do.
+#[test]
+fn a_mesh_without_an_inverse_casts_no_shadow() {
+    let mut shadows = Shadows::new();
+    let scene = Scene::new()
+        .with_mesh(Mat4::from_scale(Vec3::new(1.0, 0.0, 1.0)))
+        .with_lamp(Vec3::new(1.0, 2.0, 3.0), 10.0, faces(1.0));
+
+    shadows.record(MEDIUM, &scene).recorded();
+
+    let passes = shadows.device.passes();
+    assert_eq!(passes.len(), 6);
+    assert!(
+        passes.iter().all(|pass| pass.draws == 1),
+        "only the invertible mesh: {passes:?}"
+    );
+}
+
+/// **Every point light draws into its own six layers of the cube atlas, with
+/// the frame's one draw list**: a sun and two lamps are thirteen passes, the
+/// lamps' twelve into cube layers 0 to 11, each binding the same uploads.
+#[test]
+fn two_point_lights_draw_into_their_own_cube_layers_with_the_frames_draws() {
+    let mut shadows = Shadows::new();
+    let scene = Scene::new()
+        .with_mesh(Mat4::from_translation(Vec3::new(2.0, 0.0, 0.0)))
+        .with_sun(view_proj(1.0))
+        .with_lamp(Vec3::new(1.0, 2.0, 3.0), 10.0, faces(1.0))
+        .with_lamp(Vec3::new(-1.0, 2.0, 3.0), 10.0, faces(2.0));
+
+    shadows.record(HIGH, &scene).recorded();
+
+    let passes = shadows.device.passes();
+    assert_eq!(passes.len(), 13, "one sun pass, twelve faces: {passes:?}");
+    let atlas_2d = shadows.device.views_of(TextureViewDimension::D2Array);
+    let mut cube_layers: Vec<u32> = (passes.iter())
+        .filter(|pass| pass.depth.is_some_and(|view| !atlas_2d.contains(&view)))
+        .map(|pass| pass.layer)
+        .collect();
+    cube_layers.sort_unstable();
+    assert_eq!(cube_layers, (0..12).collect::<Vec<u32>>(), "{passes:?}");
+    assert!(
+        passes
+            .iter()
+            .all(|pass| pass.draws == 2 && pass.models == passes[0].models),
+        "every pass draws both meshes through the one upload each: {passes:?}"
+    );
+    assert_eq!(shadows.device.writes_into(MODEL_RING), 2);
 }

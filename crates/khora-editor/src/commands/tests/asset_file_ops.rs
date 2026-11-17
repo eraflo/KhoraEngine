@@ -12,15 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A script the asset browser asked for, written into a project on disk: the
-//! file appears, the browser lists it and is asked to reveal it, and an
-//! existing file is never written over.
+//! File operations the asset browser asked for, run on a project on disk.
+//!
+//! A script asked for appears, the browser lists it and is asked to reveal
+//! it, and an existing file is never written over. Operations asked together
+//! run in the order asked.
 
 use std::path::PathBuf;
 
+use khora_sdk::editor_ui::AssetFileOp;
 use khora_sdk::MetricsRegistry;
 
 use super::super::*;
+use crate::tests::requests::{file_ops, reveals};
 
 const PLAYER: &str = "scripts/Player.erg";
 const SOURCE: &str = "behavior Player { }";
@@ -47,7 +51,7 @@ impl Project {
 /// `assets/`, with their bytes).
 fn project(name: &str, files: &[(&str, &[u8])]) -> Project {
     let root = std::env::temp_dir().join(format!(
-        "khora-editor-create-script-{name}-{}",
+        "khora-editor-asset-file-ops-{name}-{}",
         std::process::id()
     ));
     if root.exists() {
@@ -74,12 +78,16 @@ fn project(name: &str, files: &[(&str, &[u8])]) -> Project {
 
 /// An editor over `project`, a script asked for at `PLAYER`.
 fn asking_for_the_player(project: &Project) -> Arc<Mutex<EditorState>> {
-    Arc::new(Mutex::new(EditorState {
+    let mut state = EditorState {
         project_folder: Some(project.root.to_string_lossy().to_string()),
         asset_epoch: 1,
-        pending_create_script: Some((PLAYER.to_owned(), SOURCE.to_owned())),
         ..EditorState::default()
-    }))
+    };
+    state.push_request(EditorRequest::AssetFile(AssetFileOp::CreateScript {
+        path: PLAYER.to_owned(),
+        source: SOURCE.to_owned(),
+    }));
+    Arc::new(Mutex::new(state))
 }
 
 #[test]
@@ -95,7 +103,7 @@ fn a_queued_script_is_written_listed_and_revealed() {
         "the script is written with its source"
     );
     let state = state.lock().expect("state");
-    assert_eq!(state.pending_create_script, None, "the request is consumed");
+    assert!(file_ops(&state).is_empty(), "the request is consumed");
     assert!(state.asset_epoch > 1, "the browser is told to rescan");
     assert!(
         state
@@ -105,7 +113,7 @@ fn a_queued_script_is_written_listed_and_revealed() {
         "the browser's list holds the script: {:?}",
         state.asset_entries
     );
-    assert_eq!(state.pending_reveal_asset.as_deref(), Some(PLAYER));
+    assert_eq!(reveals(&state), [PLAYER]);
 }
 
 #[test]
@@ -121,8 +129,8 @@ fn a_queued_script_never_writes_over_a_file_and_reveals_nothing() {
         "the author's file is untouched"
     );
     let state = state.lock().expect("state");
-    assert_eq!(state.pending_create_script, None, "the request is consumed");
-    assert_eq!(state.pending_reveal_asset, None);
+    assert!(file_ops(&state).is_empty(), "the request is consumed");
+    assert!(reveals(&state).is_empty());
 }
 
 #[test]
@@ -134,6 +142,76 @@ fn a_queued_script_with_no_project_open_writes_nothing() {
 
     assert!(!project.player().exists(), "a script was written");
     let state = state.lock().expect("state");
-    assert_eq!(state.pending_create_script, None, "the request is consumed");
-    assert_eq!(state.pending_reveal_asset, None);
+    assert!(file_ops(&state).is_empty(), "the request is consumed");
+    assert!(reveals(&state).is_empty());
+}
+
+/// Two scripts asked in one frame are both written and both revealed, in the order asked.
+#[test]
+fn two_scripts_asked_in_one_frame_are_both_written_and_revealed() {
+    const ENEMY: &str = "scripts/Enemy.erg";
+    let project = project("two", &[]);
+    let state = asking_for_the_player(&project);
+    state
+        .lock()
+        .expect("state")
+        .push_request(EditorRequest::AssetFile(AssetFileOp::CreateScript {
+            path: ENEMY.to_owned(),
+            source: "behavior Enemy { }".to_owned(),
+        }));
+
+    process_pending_asset_file_ops(Some(&project.vfs), &state);
+
+    assert!(project.player().exists(), "the first script is written");
+    assert!(
+        project
+            .root
+            .join("assets")
+            .join("scripts")
+            .join("Enemy.erg")
+            .exists(),
+        "the second script is written"
+    );
+    let state = state.lock().expect("state");
+    assert!(file_ops(&state).is_empty(), "both requests are consumed");
+    assert_eq!(reveals(&state), [PLAYER, ENEMY]);
+}
+
+/// Operations asked in one frame run in the order asked: a file moved into a
+/// folder, then renamed there, ends renamed in that folder.
+#[test]
+fn file_operations_asked_in_one_frame_run_in_the_order_asked() {
+    let project = project("in-order", &[("notes.txt", b"the notes")]);
+    let state = Arc::new(Mutex::new(EditorState {
+        project_folder: Some(project.root.to_string_lossy().to_string()),
+        ..EditorState::default()
+    }));
+    {
+        let mut state = state.lock().expect("state");
+        state.push_request(EditorRequest::AssetFile(AssetFileOp::Move {
+            path: "notes.txt".to_owned(),
+            into: "docs".to_owned(),
+        }));
+        state.push_request(EditorRequest::AssetFile(AssetFileOp::Rename {
+            from: "docs/notes.txt".to_owned(),
+            to: "docs/readme.txt".to_owned(),
+        }));
+    }
+
+    process_pending_asset_file_ops(Some(&project.vfs), &state);
+
+    let assets = project.root.join("assets");
+    assert_eq!(
+        std::fs::read(assets.join("docs").join("readme.txt"))
+            .ok()
+            .as_deref(),
+        Some(&b"the notes"[..]),
+        "moved, then renamed"
+    );
+    assert!(!assets.join("notes.txt").exists(), "nothing is left behind");
+    assert!(
+        !assets.join("docs").join("notes.txt").exists(),
+        "the rename ran after the move"
+    );
+    assert!(file_ops(&state.lock().expect("state")).is_empty());
 }

@@ -36,6 +36,7 @@ use khora_core::renderer::api::resource::{
 use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId, ShaderVariantKey};
 use khora_core::renderer::error::{RenderError, ResourceError};
 use khora_core::renderer::traits::{CommandEncoder, GraphicsDevice, PipelineSystem};
+use khora_core::sync::LockExt;
 
 /// One texture the device created.
 #[derive(Debug, Clone)]
@@ -80,13 +81,10 @@ pub(crate) struct RecordingDevice {
 }
 
 impl RecordingDevice {
-    fn log(&self) -> std::sync::MutexGuard<'_, Log> {
-        self.log.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
     /// The bytes of every buffer created with data, in creation order.
     pub fn buffers_with_data(&self) -> Vec<Vec<u8>> {
-        self.log()
+        self.log
+            .lock_recovered()
             .buffers_with_data
             .iter()
             .map(|(_, bytes)| bytes.clone())
@@ -95,12 +93,13 @@ impl RecordingDevice {
 
     /// Every texture created, in creation order.
     pub fn textures(&self) -> Vec<CreatedTexture> {
-        self.log().textures.clone()
+        self.log.lock_recovered().textures.clone()
     }
 
     /// The texture a view was created on.
     pub fn texture_of_view(&self, view: TextureViewId) -> Option<TextureId> {
-        self.log()
+        self.log
+            .lock_recovered()
             .views
             .iter()
             .find(|(v, _)| *v == view)
@@ -109,20 +108,20 @@ impl RecordingDevice {
 
     /// The entries of every bind group created, in creation order.
     pub fn bind_groups(&self) -> Vec<Vec<BoundEntry>> {
-        self.log().bind_groups.clone()
+        self.log.lock_recovered().bind_groups.clone()
     }
 
     pub fn destroyed_textures(&self) -> Vec<TextureId> {
-        self.log().destroyed_textures.clone()
+        self.log.lock_recovered().destroyed_textures.clone()
     }
 
     pub fn destroyed_views(&self) -> Vec<TextureViewId> {
-        self.log().destroyed_views.clone()
+        self.log.lock_recovered().destroyed_views.clone()
     }
 
     /// Every sampler created, in creation order.
     pub fn samplers(&self) -> Vec<SamplerId> {
-        self.log().samplers.clone()
+        self.log.lock_recovered().samplers.clone()
     }
 
     /// Makes the device refuse every sampler (`true`) or accept them again.
@@ -169,7 +168,7 @@ impl GraphicsDevice for RecordingDevice {
         &self,
         _d: &BindGroupLayoutDescriptor,
     ) -> Result<BindGroupLayoutId, ResourceError> {
-        let id = self.log().next();
+        let id = self.log.lock_recovered().next();
         Ok(BindGroupLayoutId(id))
     }
     fn create_bind_group(&self, d: &BindGroupDescriptor) -> Result<BindGroupId, ResourceError> {
@@ -184,7 +183,7 @@ impl GraphicsDevice for RecordingDevice {
                 },
             })
             .collect();
-        let mut log = self.log();
+        let mut log = self.log.lock_recovered();
         log.bind_groups.push(entries);
         let id = log.next();
         Ok(BindGroupId(id))
@@ -196,7 +195,7 @@ impl GraphicsDevice for RecordingDevice {
         Ok(())
     }
     fn create_buffer(&self, _d: &BufferDescriptor) -> Result<BufferId, ResourceError> {
-        let id = self.log().next();
+        let id = self.log.lock_recovered().next();
         Ok(BufferId(id))
     }
     fn create_buffer_with_data(
@@ -204,7 +203,7 @@ impl GraphicsDevice for RecordingDevice {
         _d: &BufferDescriptor,
         data: &[u8],
     ) -> Result<BufferId, ResourceError> {
-        let mut log = self.log();
+        let mut log = self.log.lock_recovered();
         let id = BufferId(log.next());
         log.buffers_with_data.push((id, data.to_vec()));
         Ok(id)
@@ -224,7 +223,7 @@ impl GraphicsDevice for RecordingDevice {
         Box::new(std::future::ready(Ok(())))
     }
     fn create_texture(&self, d: &TextureDescriptor) -> Result<TextureId, ResourceError> {
-        let mut log = self.log();
+        let mut log = self.log.lock_recovered();
         let id = TextureId(log.next());
         log.textures.push(CreatedTexture {
             format: d.format,
@@ -233,7 +232,7 @@ impl GraphicsDevice for RecordingDevice {
         Ok(id)
     }
     fn destroy_texture(&self, id: TextureId) -> Result<(), ResourceError> {
-        self.log().destroyed_textures.push(id);
+        self.log.lock_recovered().destroyed_textures.push(id);
         Ok(())
     }
     fn write_texture(
@@ -251,20 +250,20 @@ impl GraphicsDevice for RecordingDevice {
         texture: TextureId,
         _d: &TextureViewDescriptor,
     ) -> Result<TextureViewId, ResourceError> {
-        let mut log = self.log();
+        let mut log = self.log.lock_recovered();
         let id = TextureViewId(log.next());
         log.views.push((id, texture));
         Ok(id)
     }
     fn destroy_texture_view(&self, id: TextureViewId) -> Result<(), ResourceError> {
-        self.log().destroyed_views.push(id);
+        self.log.lock_recovered().destroyed_views.push(id);
         Ok(())
     }
     fn create_sampler(&self, _d: &SamplerDescriptor) -> Result<SamplerId, ResourceError> {
         if self.refuse_samplers.load(Ordering::Relaxed) {
             return Err(ResourceError::BackendError("no room for a sampler".into()));
         }
-        let mut log = self.log();
+        let mut log = self.log.lock_recovered();
         let id = SamplerId(log.next());
         log.samplers.push(id);
         Ok(id)

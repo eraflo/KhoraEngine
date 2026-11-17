@@ -14,14 +14,15 @@
 
 //! What the user decided of each project: trusted, or opened restricted.
 
-use std::collections::HashMap;
+use khora_core::sync::LockExt;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
 use super::Trust;
+use crate::fs::{real_path, FileStamp, Keyed, RonStore};
 
 /// What the user decided of a project.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -42,6 +43,11 @@ impl ProjectTrust {
             ProjectTrust::Restricted => Trust::Restricted,
         }
     }
+
+    /// Returns whether the project is opened restricted.
+    pub fn is_restricted(self) -> bool {
+        self == ProjectTrust::Restricted
+    }
 }
 
 /// The decision taken for each project, by its canonical path, in a store
@@ -50,7 +56,7 @@ impl ProjectTrust {
 /// Each decision is written at once, over the store as it is then: a hub
 /// and an editor sharing it keep each other's decisions.
 pub struct TrustStore {
-    store: Option<PathBuf>,
+    store: Option<RonStore<Entry>>,
     held: Mutex<Held>,
 }
 
@@ -63,18 +69,9 @@ struct Held {
     ///
     /// A user is never asked again for a project they answered.
     unwritten: HashMap<PathBuf, ProjectTrust>,
-    /// The store file's length and modified time when it was last read:
-    /// while they hold, the file is not read again.
-    stamp: Option<Stamp>,
-}
-
-/// What tells a store file changed: its length and its modified time.
-type Stamp = (u64, std::time::SystemTime);
-
-/// The stamp of the store file at `path`; `None` when it has none to read.
-fn stamp_of(path: &Path) -> Option<Stamp> {
-    let meta = std::fs::metadata(path).ok()?;
-    Some((meta.len(), meta.modified().ok()?))
+    /// The store file's stamp when it was last read: while it holds, the file
+    /// is not read again.
+    stamp: Option<FileStamp>,
 }
 
 /// One decision as the store keeps it.
@@ -84,23 +81,31 @@ struct Entry {
     decision: ProjectTrust,
 }
 
-/// The largest store read: a few decisions.
-const MAX_STORE_BYTES: u64 = 4 << 20;
+impl Keyed for Entry {
+    type Key = PathBuf;
 
-/// A number for each store write of this process: two writes at once never
-/// share their temporary file.
-static WRITES: AtomicU64 = AtomicU64::new(0);
+    fn key(&self) -> PathBuf {
+        self.project.clone()
+    }
+}
 
-/// `path` as the file system resolves it, or as given when it does not.
-fn real_path(path: &Path) -> PathBuf {
-    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+/// The decisions a store's entries hold, by project.
+fn decisions(entries: BTreeMap<PathBuf, Entry>) -> HashMap<PathBuf, ProjectTrust> {
+    entries
+        .into_iter()
+        .map(|(project, entry)| (project, entry.decision))
+        .collect()
 }
 
 impl TrustStore {
     /// Creates a store over the file `store`, read when it exists; in memory only without one.
     pub fn new(store: Option<PathBuf>) -> Self {
-        let stamp = store.as_deref().and_then(stamp_of);
-        let read = store.as_deref().map(read_store).unwrap_or_default();
+        let store = store.map(|path| RonStore::new(path, "trust store"));
+        let stamp = store.as_ref().and_then(RonStore::stamp);
+        let read = store
+            .as_ref()
+            .map(|store| decisions(store.read()))
+            .unwrap_or_default();
         Self {
             store,
             held: Mutex::new(Held {
@@ -116,11 +121,11 @@ impl TrustStore {
     /// The file is read again only when its length or time changed, since
     /// another program sharing it may have decided: asking every frame is cheap.
     pub fn decision(&self, project_root: &Path) -> Option<ProjectTrust> {
-        let mut held = self.lock();
+        let mut held = self.held.lock_recovered();
         if let Some(store) = &self.store {
-            let stamp = stamp_of(store);
+            let stamp = store.stamp();
             if stamp.is_none() || stamp != held.stamp {
-                held.read = read_store(store);
+                held.read = decisions(store.read());
                 held.stamp = stamp;
             }
         }
@@ -135,94 +140,30 @@ impl TrustStore {
     ///
     /// A decision the store cannot write is logged and holds for this run.
     pub fn decide(&self, project_root: &Path, decision: ProjectTrust) {
-        let mut held = self.lock();
+        let mut held = self.held.lock_recovered();
         let at = real_path(project_root);
         let Some(store) = &self.store else {
             held.read.insert(at, decision);
             return;
         };
-        let mut merged = read_store(store);
-        merged.insert(at.clone(), decision);
-        match write_store(store, &merged) {
+        let entry = Entry {
+            project: at.clone(),
+            decision,
+        };
+        let (merged, written) = store.merge([(at.clone(), Some(entry))]);
+        match written {
             Ok(()) => {
                 held.unwritten.remove(&at);
-                held.stamp = stamp_of(store);
+                held.stamp = store.stamp();
             }
             Err(error) => {
                 log::warn!(
                     "Trust: could not write {}: {error}; the decision holds for this run",
-                    store.display()
+                    store.path().display()
                 );
                 held.unwritten.insert(at, decision);
             }
         }
-        held.read = merged;
+        held.read = decisions(merged);
     }
-
-    fn lock(&self) -> std::sync::MutexGuard<'_, Held> {
-        match self.held.lock() {
-            Ok(held) => held,
-            Err(poisoned) => poisoned.into_inner(),
-        }
-    }
-}
-
-/// The decisions of the store at `path`; none when there is no store, or it
-/// does not read (logged).
-fn read_store(path: &Path) -> HashMap<PathBuf, ProjectTrust> {
-    let size = match std::fs::metadata(path) {
-        Ok(meta) => meta.len(),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return HashMap::new(),
-        Err(error) => {
-            log::warn!("Trust: {} is not read: {error}", path.display());
-            return HashMap::new();
-        }
-    };
-    if size > MAX_STORE_BYTES {
-        log::warn!(
-            "Trust: {} is {size} bytes, over the {MAX_STORE_BYTES} read",
-            path.display()
-        );
-        return HashMap::new();
-    }
-    let entries = std::fs::read_to_string(path)
-        .map_err(|error| error.to_string())
-        .and_then(|text| ron::from_str::<Vec<Entry>>(&text).map_err(|error| error.to_string()));
-    match entries {
-        Ok(entries) => entries
-            .into_iter()
-            .map(|entry| (entry.project, entry.decision))
-            .collect(),
-        Err(error) => {
-            log::warn!("Trust: {} is not a trust store: {error}", path.display());
-            HashMap::new()
-        }
-    }
-}
-
-/// Writes `decisions` to `path` whole: to a file beside it, then moved over
-/// it.
-fn write_store(path: &Path, decisions: &HashMap<PathBuf, ProjectTrust>) -> std::io::Result<()> {
-    if let Some(folder) = path.parent() {
-        std::fs::create_dir_all(folder)?;
-    }
-    let mut entries: Vec<Entry> = decisions
-        .iter()
-        .map(|(project, decision)| Entry {
-            project: project.clone(),
-            decision: *decision,
-        })
-        .collect();
-    entries.sort_by(|a, b| a.project.cmp(&b.project));
-    let text = ron::ser::to_string_pretty(&entries, ron::ser::PrettyConfig::default())
-        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
-    let mut tmp = path.as_os_str().to_owned();
-    tmp.push(format!(
-        ".{}.{}.tmp",
-        std::process::id(),
-        WRITES.fetch_add(1, Ordering::Relaxed)
-    ));
-    let tmp = PathBuf::from(tmp);
-    std::fs::write(&tmp, text.as_bytes())?;
-    std::fs::rename(&tmp, path)
 }

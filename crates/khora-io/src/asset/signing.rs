@@ -17,7 +17,6 @@
 //! A pack is sealed against changes, not against someone who rebuilds or
 //! re-stamps the runtime binary. See the book: concepts/trust.md, "Signed packs".
 
-use std::io::Write;
 use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
@@ -62,17 +61,19 @@ impl PackSigner {
     pub fn load_or_create(dir: &Path) -> Result<PackSigner> {
         let path = dir.join(KEY_FILE);
         if path.exists() {
-            let len = std::fs::metadata(&path)
-                .with_context(|| format!("cannot read {}", path.display()))?
-                .len();
-            if len > MAX_KEY_BYTES {
-                return Err(anyhow!(
-                    "{} is {len} bytes: not a pack signing key; it is kept as it is",
-                    path.display()
-                ));
-            }
-            let bytes =
-                std::fs::read(&path).with_context(|| format!("cannot read {}", path.display()))?;
+            let bytes = match crate::fs::read_bounded(&path, MAX_KEY_BYTES) {
+                Ok(bytes) => bytes,
+                Err(crate::fs::BoundedReadError::TooLarge { size, .. }) => {
+                    return Err(anyhow!(
+                        "{} is {size} bytes: not a pack signing key; it is kept as it is",
+                        path.display()
+                    ))
+                }
+                Err(crate::fs::BoundedReadError::Io(error)) => {
+                    return Err(anyhow::Error::new(error)
+                        .context(format!("cannot read {}", path.display())))
+                }
+            };
             let pair = Ed25519KeyPair::from_pkcs8(&bytes).map_err(|_| {
                 anyhow!(
                     "{} is not a pack signing key; it is kept as it is — move it away to \
@@ -85,11 +86,18 @@ impl PackSigner {
         std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
         let document = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new())
             .map_err(|_| anyhow!("the OS random source gave no key"))?;
-        match write_new(&path, document.as_ref()) {
+        // The key is the user's alone, and never replaced.
+        match crate::fs::write_new_private(&path, document.as_ref()) {
             Ok(()) => log::info!("pack signing key made at {}", path.display()),
             // Another build made it first: its key is the user's.
-            Err(error) if is_already_there(&error) => return Self::load_or_create(dir),
-            Err(error) => return Err(error),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                return Self::load_or_create(dir)
+            }
+            Err(error) => {
+                return Err(
+                    anyhow::Error::new(error).context(format!("cannot write {}", path.display()))
+                )
+            }
         }
         let pair = Ed25519KeyPair::from_pkcs8(document.as_ref())
             .map_err(|_| anyhow!("the key just made does not read"))?;
@@ -118,55 +126,6 @@ impl PackSigner {
             signature,
         })
     }
-}
-
-/// Writes `bytes` at `path`, which must not exist: through a file beside it,
-/// linked in place only if nothing is there — a key is never replaced.
-fn write_new(path: &Path, bytes: &[u8]) -> Result<()> {
-    // A name of its own for each write: two builds of one process write
-    // apart.
-    static WRITES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let write = WRITES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let mut tmp = path.as_os_str().to_owned();
-    tmp.push(format!(".{}.{write}.tmp", std::process::id()));
-    let tmp = std::path::PathBuf::from(tmp);
-    {
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            // The key is the user's alone.
-            options.mode(0o600);
-        }
-        let mut file = options
-            .open(&tmp)
-            .with_context(|| format!("cannot write {}", tmp.display()))?;
-        file.write_all(bytes)
-            .and_then(|()| file.sync_all())
-            .with_context(|| format!("cannot write {}", tmp.display()))?;
-    }
-    let linked = match std::fs::hard_link(&tmp, path) {
-        Err(error) if error.kind() != std::io::ErrorKind::AlreadyExists => {
-            // A file system without hard links: the file is made in place,
-            // still never over one that is there.
-            std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(path)
-                .and_then(|mut file| file.write_all(bytes).and_then(|()| file.sync_all()))
-        }
-        linked => linked,
-    };
-    let _ = std::fs::remove_file(&tmp);
-    linked.with_context(|| format!("cannot write {}", path.display()))
-}
-
-/// Whether `error` says the file to make was there already.
-fn is_already_there(error: &anyhow::Error) -> bool {
-    error
-        .downcast_ref::<std::io::Error>()
-        .is_some_and(|io| io.kind() == std::io::ErrorKind::AlreadyExists)
 }
 
 /// What a signature covers: the domain, the index's hash, the manifest.
@@ -205,19 +164,16 @@ impl SignedManifest {
     /// # Errors
     /// [`PackSealError::Missing`] when absent, else as [`decode`](Self::decode).
     pub fn read(path: &Path) -> Result<SignedManifest, PackSealError> {
-        let len = match std::fs::metadata(path) {
-            Ok(meta) => meta.len(),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Err(PackSealError::Missing)
+        let bytes = match crate::fs::read_bounded(path, MAX_MANIFEST_BYTES as u64) {
+            Ok(bytes) => bytes,
+            Err(error) if error.is_not_found() => return Err(PackSealError::Missing),
+            Err(crate::fs::BoundedReadError::TooLarge { size, .. }) => {
+                return Err(PackSealError::Malformed(format!(
+                    "{size} bytes, over the {MAX_MANIFEST_BYTES} a manifest may hold"
+                )))
             }
             Err(error) => return Err(PackSealError::Malformed(error.to_string())),
         };
-        if len > MAX_MANIFEST_BYTES as u64 {
-            return Err(PackSealError::Malformed(format!(
-                "{len} bytes, over the {MAX_MANIFEST_BYTES} a manifest may hold"
-            )));
-        }
-        let bytes = std::fs::read(path).map_err(|e| PackSealError::Malformed(e.to_string()))?;
         Self::decode(&bytes)
     }
 

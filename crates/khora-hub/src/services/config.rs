@@ -82,12 +82,9 @@ impl HubConfig {
     ///
     /// Fails when the folder cannot be created or the file cannot be written.
     pub fn save(&self) -> Result<()> {
-        let path = Self::config_path();
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
         let text = serde_json::to_string_pretty(self)?;
-        std::fs::write(&path, text)?;
+        // Whole or not at all: a failed save leaves the previous file.
+        khora_sdk::fs::write_atomic(&Self::config_path(), text.as_bytes())?;
         Ok(())
     }
 

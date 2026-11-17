@@ -374,6 +374,30 @@ fn a_folder_is_read_at_the_trust_of_the_project_open_only_inside_it() {
     );
 }
 
+/// **A folder reached from the project through `..` is read at its own trust.**
+///
+/// `game/../game2/assets` starts with the project's name but lies in `game2`:
+/// it is read restricted, as `game2/assets` is.
+#[test]
+fn a_folder_reached_out_of_the_project_through_a_parent_is_read_restricted() {
+    let dir = TempDir::new().expect("a temp dir");
+    let game = project_in(dir.path(), "game");
+    let game2 = project_in(dir.path(), "game2");
+    let state = ProjectTrustState::new(ProjectTrust::Restricted);
+    state.set_for(&game, ProjectTrust::Trusted);
+
+    let climbing = game.join("..").join("game2").join("assets");
+    assert_eq!(
+        state.trust_of(&game2.join("assets")),
+        ProjectTrust::Restricted
+    );
+    assert_eq!(
+        state.trust_of(&climbing),
+        ProjectTrust::Restricted,
+        "{climbing:?} lies in game2, outside the project"
+    );
+}
+
 // ─── What trusting a project lifts ──────────────────────────────────────────
 
 /// A refusal of the file `name` under `dir`, at `trust`, for `reason`.

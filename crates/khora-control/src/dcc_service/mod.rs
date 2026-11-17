@@ -19,6 +19,7 @@ use crate::dcc_context::DccContext;
 use crossbeam_channel::{Receiver, Sender};
 use khora_core::agent::Agent;
 use khora_core::platform::HardwareMonitor;
+use khora_core::sync::{LockExt, RwLockExt};
 use khora_core::telemetry::TelemetryEvent;
 use khora_data::ecs::layout::LayoutRecommendation;
 use std::sync::atomic::AtomicBool;
@@ -244,10 +245,7 @@ impl DccService {
     ///
     /// Connected before or after [`start`](Self::start), it carries the next one.
     pub fn connect_budget_channel(&mut self, channel: BudgetChannel) {
-        *self
-            .budget_channel
-            .write()
-            .unwrap_or_else(|e| e.into_inner()) = Some(channel);
+        *self.budget_channel.write_recovered() = Some(channel);
     }
 
     /// Gives the DCC the monitor it reads heat, battery and CPU load from.
@@ -255,10 +253,7 @@ impl DccService {
     /// The DCC's thread reads it on its first tick and about once a second
     /// after, so a slow sensor never lands in a frame.
     pub fn set_hardware_monitor(&self, monitor: Arc<dyn HardwareMonitor>) {
-        *self
-            .hardware_monitor
-            .write()
-            .unwrap_or_else(|e| e.into_inner()) = Some(monitor);
+        *self.hardware_monitor.write_recovered() = Some(monitor);
     }
 
     /// Hands the DCC what a profile learnt of this machine, for its cost book.
@@ -291,10 +286,7 @@ impl DccService {
 
     /// The monitor the DCC reads the hardware from, if it was given one.
     pub fn hardware_monitor(&self) -> Option<Arc<dyn HardwareMonitor>> {
-        self.hardware_monitor
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        self.hardware_monitor.read_recovered().clone()
     }
 
     /// The scheduler's channel, if one is connected.
@@ -307,7 +299,7 @@ impl DccService {
     /// The boot calls it for each family (`register_agent!`). The agent runs
     /// while its family is on ([`Activation`](khora_core::agent::Activation)).
     pub fn register_agent(&self, agent: Arc<std::sync::Mutex<dyn Agent>>, priority: f32) {
-        let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
+        let mut registry = self.registry.lock_recovered();
         registry.register(agent, priority);
     }
 
@@ -323,10 +315,7 @@ impl DccService {
 
     /// Returns the current context.
     pub fn get_context(&self) -> DccContext {
-        self.context
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        self.context.read_recovered().clone()
     }
 
     /// Returns a shared handle to the live context, read without a clone.
@@ -348,7 +337,7 @@ impl Drop for DccService {
 
 /// The channel in `slot`, if one is connected.
 fn connected(slot: &std::sync::RwLock<Option<BudgetChannel>>) -> Option<BudgetChannel> {
-    slot.read().unwrap_or_else(|e| e.into_inner()).clone()
+    slot.read_recovered().clone()
 }
 
 #[cfg(test)]

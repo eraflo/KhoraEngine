@@ -145,13 +145,13 @@ fn villain_body() -> AssetUUID {
 fn file_entry(uuid: AssetUUID, rel: &str) -> AssetMetadata {
     let mut variants = HashMap::new();
     variants.insert(
-        "default".to_string(),
+        AssetMetadata::DEFAULT_VARIANT.to_owned(),
         AssetSource::Path(std::path::PathBuf::from(rel)),
     );
     AssetMetadata {
         uuid,
         source_path: std::path::PathBuf::from(rel),
-        asset_type_name: CONTAINER_TYPE.to_string(),
+        asset_type: CONTAINER_TYPE.into(),
         dependencies: Vec::new(),
         variants,
         tags: Vec::new(),
@@ -167,7 +167,7 @@ fn sub_entry(
 ) -> AssetMetadata {
     let mut variants = HashMap::new();
     variants.insert(
-        "default".to_string(),
+        AssetMetadata::DEFAULT_VARIANT.to_owned(),
         AssetSource::Sub {
             container,
             label: label.to_string(),
@@ -176,7 +176,7 @@ fn sub_entry(
     AssetMetadata {
         uuid,
         source_path: std::path::PathBuf::from(rel),
-        asset_type_name: type_name.to_string(),
+        asset_type: type_name.into(),
         dependencies: Vec::new(),
         variants,
         tags: Vec::new(),
@@ -292,7 +292,7 @@ impl AssetDecoder<TestNote> for NoteDecoder {
 /// The counting container and the note decoder are registered.
 fn shared_service(files: Arc<Mutex<HashMap<std::path::PathBuf, Vec<u8>>>>) -> AssetService {
     let mut note_entry = file_entry(note(), NOTE_PATH);
-    note_entry.asset_type_name = NOTE_TYPE.to_string();
+    note_entry.asset_type = NOTE_TYPE.into();
     let metadata = vec![
         file_entry(hero(), HERO_PATH),
         sub_entry(hero_body(), hero(), HERO_PATH, "mesh/Body", "mesh"),
@@ -386,7 +386,7 @@ fn later() -> AssetUUID {
 
 fn note_entry(path: &str) -> AssetMetadata {
     let mut entry = file_entry(AssetUUID::new_v5(path), path);
-    entry.asset_type_name = NOTE_TYPE.to_string();
+    entry.asset_type = NOTE_TYPE.into();
     entry
 }
 

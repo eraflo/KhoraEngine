@@ -28,6 +28,7 @@ use khora_core::lane::guard::{SinkKind, SourceKind};
 use khora_core::lane::io::Budget;
 use khora_core::lane::level::Impact;
 use khora_core::script::{BehaviorWriteback, CommandBuffer};
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::flow::{PrefabCatalogView, ReservationView, ScriptView};
 use khora_lanes::script::ScriptRuntime;
@@ -225,11 +226,7 @@ fn the_script_agent_runs_every_frame_in_transform_as_critical() {
     let agent = script_agent();
     let timing = agent.execution_timing();
 
-    let step = agent
-        .place()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .fixed_step();
+    let step = agent.place().lock_recovered().fixed_step();
     assert_eq!(step, None, "its place holds no fixed step");
     assert_eq!(timing.phase, ExecutionPhase::TRANSFORM);
     assert_eq!(timing.phase, ExecutionPhase::TRANSFORM);

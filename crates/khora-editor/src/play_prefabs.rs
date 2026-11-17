@@ -18,9 +18,10 @@
 //! Installed in the runtime when the editor starts, before any project is
 //! open: the project is followed, not captured.
 
-use std::sync::{Arc, Mutex, PoisonError, TryLockError};
+use std::sync::{Arc, Mutex, TryLockError};
 
 use khora_sdk::khora_core::asset::AssetUUID;
+use khora_sdk::khora_core::sync::LockExt;
 use khora_sdk::khora_data::scene::{PrefabCatalog, PrefabSource, SceneRecord};
 
 use crate::project_vfs::ProjectVfs;
@@ -35,7 +36,7 @@ impl PlayPrefabs {
     /// It does so however the project was opened; nothing changes while it
     /// stays the one followed.
     pub fn follow(&self, open: Option<&Arc<Mutex<ProjectVfs>>>, catalog: &PrefabCatalog) {
-        let mut followed = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut followed = self.0.lock_recovered();
         let same = match (followed.as_ref(), open) {
             (Some(followed), Some(open)) => Arc::ptr_eq(followed, open),
             (None, None) => true,
@@ -46,10 +47,7 @@ impl PlayPrefabs {
         }
         *followed = open.cloned();
         match open {
-            Some(open) => open
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .follow_prefab_catalog(catalog.clone()),
+            Some(open) => open.lock_recovered().follow_prefab_catalog(catalog.clone()),
             None => catalog.replace(std::iter::empty()),
         }
     }
@@ -59,8 +57,7 @@ impl PrefabSource for PlayPrefabs {
     fn prefab(&self, id: AssetUUID) -> Result<SceneRecord, String> {
         let open = self
             .0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+            .lock_recovered()
             .clone()
             .ok_or_else(|| "no project is open".to_owned())?;
         // Tried, not waited for: the frame boundary must never stall on — or,

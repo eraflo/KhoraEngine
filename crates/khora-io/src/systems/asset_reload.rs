@@ -29,6 +29,7 @@ use khora_core::lane::OutputDeck;
 use khora_core::renderer::api::gpu_scene::{GpuMesh, Mesh};
 use khora_core::renderer::api::material::GpuMaterial;
 use khora_core::renderer::api::resource::CpuTexture;
+use khora_core::sync::RwLockExt;
 use khora_core::Runtime;
 use khora_data::ecs::{Component, DataSystemRegistration, HandleComponent, TickPhase, World};
 use khora_data::{AssetEviction, AssetStore};
@@ -213,7 +214,7 @@ impl Reload<'_> {
         };
         let textures = store.store::<CpuTexture>();
         let held: Vec<(AssetUUID, AssetHandle<CpuTexture>)> = {
-            let guard = textures.read().unwrap_or_else(|e| e.into_inner());
+            let guard = textures.read_recovered();
             changed
                 .iter()
                 .filter_map(|uuid| guard.get(uuid).map(|texture| (*uuid, texture.clone())))
@@ -222,17 +223,11 @@ impl Reload<'_> {
         for (uuid, last_good) in held {
             match self.reload::<CpuTexture>(&uuid, &last_good) {
                 Reloaded::Fresh(texture) => {
-                    textures
-                        .write()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .insert(uuid, texture);
+                    textures.write_recovered().insert(uuid, texture);
                     refreshed.insert(uuid);
                 }
                 Reloaded::Gone => {
-                    textures
-                        .write()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .remove(&uuid);
+                    textures.write_recovered().remove(&uuid);
                     refreshed.insert(uuid);
                 }
                 Reloaded::Kept | Reloaded::Pending => {}
@@ -395,8 +390,7 @@ impl Reload<'_> {
         if let Some(store) = self.store {
             store
                 .store::<A>()
-                .write()
-                .unwrap_or_else(|e| e.into_inner())
+                .write_recovered()
                 .insert(uuid, handle.clone());
         }
     }
@@ -404,11 +398,7 @@ impl Reload<'_> {
     /// Drops the shared copy of `uuid`.
     fn forget<A: Asset>(&self, uuid: &AssetUUID) {
         if let Some(store) = self.store {
-            store
-                .store::<A>()
-                .write()
-                .unwrap_or_else(|e| e.into_inner())
-                .remove(uuid);
+            store.store::<A>().write_recovered().remove(uuid);
         }
     }
 

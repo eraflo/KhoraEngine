@@ -14,6 +14,7 @@
 
 //! Registry for managing resource monitors.
 
+use khora_core::sync::LockExt;
 use khora_core::telemetry::ResourceMonitor;
 use std::sync::{Arc, Mutex};
 
@@ -33,7 +34,7 @@ impl MonitorRegistry {
 
     /// Registers a new resource monitor.
     pub fn register(&self, monitor: Arc<dyn ResourceMonitor>) {
-        let mut monitors_guard = self.monitors.lock().unwrap_or_else(|e| e.into_inner());
+        let mut monitors_guard = self.monitors.lock_recovered();
         let monitor_id = monitor.monitor_id().to_string();
         monitors_guard.push(monitor);
         log::info!("Registered resource monitor: {}", monitor_id);
@@ -41,7 +42,7 @@ impl MonitorRegistry {
 
     /// Calls the `update` method on all registered monitors.
     pub fn update_all(&self) {
-        let monitors_guard = self.monitors.lock().unwrap_or_else(|e| e.into_inner());
+        let monitors_guard = self.monitors.lock_recovered();
         for monitor in monitors_guard.iter() {
             monitor.update();
         }
@@ -49,10 +50,7 @@ impl MonitorRegistry {
 
     /// Returns a clone of all registered monitors.
     pub fn get_all_monitors(&self) -> Vec<Arc<dyn ResourceMonitor>> {
-        self.monitors
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        self.monitors.lock_recovered().clone()
     }
 }
 

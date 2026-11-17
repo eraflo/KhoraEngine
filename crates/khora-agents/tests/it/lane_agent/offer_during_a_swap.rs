@@ -22,9 +22,10 @@ use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::Agent;
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::OutputDeck;
+use khora_core::sync::LockExt;
 
 use super::fixtures::{
-    host_envelope, installed_row, locked, offer_request, place_of, run, runtime, Plan, LADDER,
+    host_envelope, installed_row, offer_request, place_of, run, runtime, Plan, LADDER,
 };
 
 /// **While a layer is staged, the offer's current row is the one running.**
@@ -46,7 +47,7 @@ fn while_a_layer_is_staged_the_offer_names_the_running_row() {
     assert_eq!(report.row, StrategyId::Balanced);
     assert_eq!(installed_row(&agent), Some(StrategyId::Balanced));
     assert_eq!(
-        locked(&place_of(&agent)).staged_row(),
+        place_of(&agent).lock_recovered().staged_row(),
         Some(StrategyId::LowPower),
         "the first level waits for the next frame start"
     );

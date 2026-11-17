@@ -20,7 +20,7 @@ pub mod handlers;
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
-use khora_sdk::khora_core::asset::AssetUUID;
+use khora_sdk::khora_core::asset::{AssetType, AssetUUID};
 
 use crate::widgets::tile::AssetTileKind;
 use khora_tool_ui::widgets::with_alpha;
@@ -57,8 +57,10 @@ struct FlatAsset {
     /// Folder containing the asset (forward-slash, no trailing /). `""`
     /// for assets that sit directly under `assets/`.
     folder: String,
-    asset_type: AssetTileKind,
-    type_name: String,
+    /// The tile it is drawn as.
+    tile: AssetTileKind,
+    /// Its index type.
+    asset_type: AssetType,
     /// The asset's identity, as its index entry gives it.
     uuid: AssetUUID,
     /// The file this asset is a part of (a glTF's mesh, material…), if it
@@ -182,7 +184,9 @@ impl AssetBrowserPanel {
         ) {
             khora_tool_ui::widgets::ModalChoice::Confirmed => {
                 if let Ok(mut state) = self.state.lock() {
-                    state.pending_delete_asset = Some(rel.clone());
+                    state.push_request(EditorRequest::AssetFile(AssetFileOp::Trash {
+                        path: rel.clone(),
+                    }));
                 }
                 log::info!("Asset browser: deleting '{rel}'");
                 self.confirm_delete = None;
@@ -261,7 +265,7 @@ impl AssetBrowserPanel {
 
         self.flat = entries
             .into_iter()
-            .map(|(name, asset_type_name, rel_path, uuid, container)| {
+            .map(|(name, asset_type, rel_path, uuid, container)| {
                 let folder = rel_path
                     .rfind('/')
                     .map(|p| rel_path[..p].to_string())
@@ -270,8 +274,8 @@ impl AssetBrowserPanel {
                     name,
                     rel_path,
                     folder,
-                    asset_type: tile_kind_for(&asset_type_name),
-                    type_name: asset_type_name,
+                    tile: tile_kind_for(&asset_type),
+                    asset_type,
                     uuid,
                     container,
                 }
@@ -291,15 +295,26 @@ impl AssetBrowserPanel {
         }
     }
 
-    /// Shows the asset an inspector slot asked to reveal, as a click on its
-    /// tile would, with its folder opened and no filter hiding it.
+    /// Shows each asset asked to be revealed, as a click on its tile would,
+    /// with its folder opened and no filter hiding it.
+    ///
+    /// Taken in the order asked: the last one revealed is the one selected.
     fn follow_reveal(&mut self) {
-        let Ok(mut state) = self.state.lock() else {
+        let shared = Arc::clone(&self.state);
+        let Ok(mut state) = shared.lock() else {
             return;
         };
-        let Some(path) = state.pending_reveal_asset.take() else {
-            return;
-        };
+        let paths = state.take_requests(|request| match request {
+            EditorRequest::RevealAsset { path } => Ok(path),
+            other => Err(other),
+        });
+        for path in paths {
+            self.reveal(&mut state, path);
+        }
+    }
+
+    /// Shows the asset at `path` as a click on its tile would.
+    fn reveal(&mut self, state: &mut EditorState, path: String) {
         // The parts of a file share its path: the path reveals the file.
         let Some(i) = self
             .flat
@@ -398,7 +413,9 @@ impl AssetBrowserPanel {
         }
         let rel = candidate(&name);
         if let Ok(mut state) = self.state.lock() {
-            state.pending_create_folder = Some(rel.clone());
+            state.push_request(EditorRequest::AssetFile(AssetFileOp::CreateFolder {
+                path: rel.clone(),
+            }));
         }
         log::info!("Asset browser: creating folder '{rel}'");
     }
@@ -471,7 +488,10 @@ impl AssetBrowserPanel {
             } else {
                 format!("{folder}/{stem}.kprefab")
             };
-            state.pending_save_as_prefab_at = Some((entity, rel_path));
+            state.push_request(EditorRequest::SaveAsPrefabAt {
+                entity,
+                path: rel_path,
+            });
             log::info!("Asset browser: entity '{name}' dropped — creating prefab in '{folder}'");
         }
     }
@@ -484,38 +504,43 @@ impl AssetBrowserPanel {
             );
             return;
         };
-        let activation = handler_for(&asset.type_name)
+        let activation = handler_for(&asset.asset_type)
             .map(|h| h.activate(abs_path.clone()))
             .unwrap_or(ActivationKind::OpenExternal { abs_path });
 
         match activation {
             ActivationKind::LoadScene { abs_path } => {
                 if let Ok(mut state) = self.state.lock() {
-                    state.pending_scene_load = Some(abs_path);
+                    state.push_request(EditorRequest::OpenScene { path: abs_path });
                     log::info!("Asset browser: loading scene '{}'", asset.rel_path);
                 }
             }
             ActivationKind::SpawnPrefab => {
                 if let Ok(mut state) = self.state.lock() {
-                    state.pending_prefab_spawn = Some((asset.uuid, None));
+                    state.push_request(EditorRequest::SpawnPrefab {
+                        prefab: asset.uuid,
+                        parent: None,
+                    });
                     log::info!("Asset browser: spawning prefab '{}'", asset.name);
                 }
             }
-            ActivationKind::OpenExternal { abs_path } => match if asset.type_name == "script" {
-                crate::project_scripts::open_script(std::path::Path::new(&abs_path))
-            } else {
-                open::that(&abs_path)
-            } {
-                Ok(()) => log::info!(
-                    "Asset browser: opened '{}' in OS-default application",
-                    asset.rel_path
-                ),
-                Err(e) => log::warn!(
-                    "Asset browser: failed to open '{}' externally: {}",
-                    asset.rel_path,
-                    e
-                ),
-            },
+            ActivationKind::OpenExternal { abs_path } => {
+                match if asset.asset_type == AssetType::Script {
+                    crate::project_scripts::open_script(std::path::Path::new(&abs_path))
+                } else {
+                    open::that(&abs_path)
+                } {
+                    Ok(()) => log::info!(
+                        "Asset browser: opened '{}' in OS-default application",
+                        asset.rel_path
+                    ),
+                    Err(e) => log::warn!(
+                        "Asset browser: failed to open '{}' externally: {}",
+                        asset.rel_path,
+                        e
+                    ),
+                }
+            }
         }
     }
 }

@@ -24,7 +24,9 @@ mod concurrent_exec;
 mod deck_writes;
 mod fixed_agent_sub_clocks;
 mod fixed_step_from_the_place;
+mod frame_bus;
 mod host_views;
+mod last_deck;
 mod layer_panics;
 mod layer_paths;
 mod layer_preparations;
@@ -36,6 +38,7 @@ mod physics_time_stays_on_gameplay_time;
 mod published_fixed_steps;
 mod reports;
 mod resumed_families;
+mod roster;
 mod run_order;
 mod sim_steps;
 mod sub_step_outputs;
@@ -49,6 +52,7 @@ use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::{Agent, Contention, ExecutionTiming, Layer, LayerRun, Place, Terms};
 use khora_core::gpu::GpuSetup;
 use khora_core::lane::cost::{Cost, PerDevice};
+use khora_core::sync::LockExt;
 use khora_core::EngineContext;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -154,10 +158,7 @@ pub(super) fn place_with(
 /// Sets the step `place`'s family runs at, `None` for every frame: what a
 /// game's setting writes.
 pub(super) fn set_step(place: &Mutex<Place>, step: Option<Duration>) {
-    place
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .set_fixed_step(step);
+    place.lock_recovered().set_fixed_step(step);
 }
 
 /// A fake family's declarations and per-frame work: what a hand-written

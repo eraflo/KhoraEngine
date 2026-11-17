@@ -38,11 +38,18 @@ pub(super) fn dispatch_asset_drop(
     match crate::ops::asset_drop(&state.asset_entries, &entry) {
         AssetDrop::Mesh(uuid) => {
             // Under the row it was dropped on, as Unity and Godot do.
-            state.pending_spawn_mesh_asset = Some((uuid, [0.0, 0.0, 0.0], target));
+            state.push_request(EditorRequest::SpawnMesh {
+                mesh: uuid,
+                point: [0.0, 0.0, 0.0],
+                parent: target,
+            });
             log::info!("Hierarchy: mesh '{}' dropped — spawning{under}", entry.name);
         }
         AssetDrop::Prefab(uuid) => {
-            state.pending_prefab_spawn = Some((uuid, target));
+            state.push_request(EditorRequest::SpawnPrefab {
+                prefab: uuid,
+                parent: target,
+            });
             log::info!("Hierarchy: '{}' dropped — instantiating{under}", entry.name);
         }
         AssetDrop::Scene(rel) => {
@@ -50,7 +57,9 @@ pub(super) fn dispatch_asset_drop(
                 let abs = std::path::Path::new(&pf)
                     .join("assets")
                     .join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
-                state.pending_scene_load = Some(abs.to_string_lossy().to_string());
+                state.push_request(EditorRequest::OpenScene {
+                    path: abs.to_string_lossy().to_string(),
+                });
                 log::info!("Hierarchy: scene '{}' dropped — loading", entry.name);
             } else {
                 log::warn!("Hierarchy: cannot load scene '{}' — no project folder", rel);
@@ -59,7 +68,10 @@ pub(super) fn dispatch_asset_drop(
         AssetDrop::Assign(uuid) => {
             match target.or_else(|| state.selection.iter().copied().next()) {
                 Some(entity) => {
-                    state.pending_assign_texture = Some((uuid, entity));
+                    state.push_request(EditorRequest::AssignDropped {
+                        asset: uuid,
+                        entity,
+                    });
                     log::info!("Hierarchy: '{}' dropped — assigning", entry.name);
                 }
                 None => log::warn!(

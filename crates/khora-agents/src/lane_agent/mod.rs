@@ -37,6 +37,7 @@ use khora_core::lane::ClearColor;
 use khora_core::renderer::api::frame::FrameContext;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
+use khora_core::sync::LockExt;
 use khora_core::EngineContext;
 
 mod choice;
@@ -275,9 +276,7 @@ impl Agent for LaneAgent {
     fn offer(&mut self, request: &OfferRequest) -> Offer {
         let (ran, running, health) = {
             let place = Arc::clone(&self.place);
-            let place = place
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let place = place.lock_recovered();
             self.absorb_last_run(&place);
             let health = place
                 .last_run()
@@ -395,9 +394,7 @@ impl Agent for LaneAgent {
         self.over_budget = false;
         self.failed.iter_mut().for_each(|failed| *failed = false);
         let place = Arc::clone(&self.place);
-        let mut place = place
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut place = place.lock_recovered();
         let terms = self.terms(place.fixed_step());
         place.set_terms(terms);
     }

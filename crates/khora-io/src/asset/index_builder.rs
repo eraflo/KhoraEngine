@@ -18,76 +18,25 @@
 
 use crate::asset::container::{SubAssetEntry, SubAssetListerRegistration};
 use crate::asset::dependencies::{extract_dependencies, type_has_dependency_extractor};
+use crate::asset::extensions::asset_type_of_path;
 use crate::asset::id_registry::AssetIdRegistry;
 use anyhow::{anyhow, Context, Result};
-use khora_core::asset::{asset_key, AssetMetadata, AssetSource, AssetUUID};
+use khora_core::asset::{asset_key, AssetMetadata, AssetSource, AssetType, AssetUUID};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
 };
 
-/// Returns the canonical asset type name for a file extension.
+/// Returns whether a file named `name` is left out of the index and of hot-reload events.
 ///
-/// The one mapping the index, the asset browser and the pack builder share; names
-/// are lower case, as decoders are registered. An unknown extension is its own
-/// type, lower-cased: every file under `assets/` is indexed, decoder or not.
-pub fn asset_type_for_extension(ext: &str) -> Option<String> {
-    let lower = ext.to_ascii_lowercase();
-    let canonical: Option<&'static str> = match lower.as_str() {
-        // Mesh formats
-        "gltf" | "glb" | "obj" | "fbx" => Some("mesh"),
-        // Texture formats
-        "png" | "jpg" | "jpeg" | "tga" | "bmp" | "hdr" => Some("texture"),
-        // Audio formats
-        "wav" | "ogg" | "mp3" | "flac" => Some("audio"),
-        // Shader formats
-        "wgsl" | "hlsl" | "glsl" => Some("shader"),
-        // Font formats
-        "ttf" | "otf" => Some("font"),
-        // Scene formats (Khora scene files)
-        "kscene" | "scene" => Some("scene"),
-        // Material formats
-        "kmat" | "mat" => Some("material"),
-        // Script formats. `.erg` is Ergon, the engine's own language; `kscript`
-        // predates it and is kept so a project that used it still indexes.
-        khora_script::modules::EXTENSION | "kscript" => Some("script"),
-        // Prefab formats, instanced through the `SerializationService`.
-        "kprefab" => Some("prefab"),
-        _ => None,
-    };
-    Some(canonical.map(|s| s.to_string()).unwrap_or(lower))
-}
-
-/// The asset type of a file with no extension: indexed, but given no decoder.
-pub const EXTENSIONLESS_ASSET_TYPE: &str = "blob";
-
-/// The file-name prefixes of OS and editor scratch files, never indexed.
-const SCAN_IGNORE_PREFIXES: &[&str] = &[".", "~"];
-
-/// The file-name suffixes of swap and temporary files, never indexed.
-const SCAN_IGNORE_SUFFIXES: &[&str] = &[".tmp", ".swp", ".bak", "~"];
-
-/// Whether a file named `name` is left out of the index and of hot-reload events.
-///
-/// OS scratch files (`.DS_Store`, `.gitkeep`) and swap or backup files
-/// (`*.tmp`, `*.swp`, `*.bak`, `*~`).
+/// [Scratch files](crate::fs::is_scratch), hidden files (`.DS_Store`,
+/// `.gitkeep`) and backups (`*.bak`, `~*`).
 pub fn should_skip_file(name: &str) -> bool {
-    if name.is_empty() {
-        return true;
-    }
-    if SCAN_IGNORE_PREFIXES
-        .iter()
-        .any(|prefix| name.starts_with(prefix))
-    {
-        return true;
-    }
-    if SCAN_IGNORE_SUFFIXES
-        .iter()
-        .any(|suffix| name.ends_with(suffix))
-    {
-        return true;
-    }
-    false
+    name.is_empty()
+        || crate::fs::is_scratch(name)
+        || name.starts_with('.')
+        || name.starts_with('~')
+        || name.ends_with(".bak")
 }
 
 /// A recursive scanner of a project's `assets/` directory into the index's `AssetMetadata`.
@@ -97,6 +46,18 @@ pub struct IndexBuilder<'a> {
     assets_root: &'a Path,
     registry: Option<&'a AssetIdRegistry>,
     guard: Option<&'a crate::trust::FileGuard>,
+}
+
+/// A file the scan found, before it is sorted and read.
+struct Scanned {
+    /// Its forward-slash path under the root: its key and sort order.
+    key: String,
+    /// Its path under the root.
+    rel: PathBuf,
+    /// Its absolute path, read when its type has an extractor or a lister.
+    abs: PathBuf,
+    /// Its type, by its extension.
+    asset_type: AssetType,
 }
 
 impl<'a> IndexBuilder<'a> {
@@ -137,55 +98,39 @@ impl<'a> IndexBuilder<'a> {
             return Ok(Vec::new());
         }
 
-        // The absolute path is kept so a type with an extractor can be read
-        // after sorting.
-        let mut entries: Vec<(String, PathBuf, PathBuf, String)> = Vec::new();
-
-        for entry in walkdir::WalkDir::new(self.assets_root)
-            .follow_links(false)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            if !entry.file_type().is_file() {
-                continue;
-            }
-            let abs = entry.path();
-            let rel = match abs.strip_prefix(self.assets_root) {
-                Ok(r) => r.to_path_buf(),
-                Err(_) => continue,
-            };
-            let file_name = abs.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let mut scanned: Vec<Scanned> = Vec::new();
+        for rel in crate::fs::files_under(self.assets_root) {
+            let file_name = rel.file_name().and_then(|n| n.to_str()).unwrap_or("");
             if should_skip_file(file_name) {
                 continue;
             }
-            let type_name = match rel.extension().and_then(|e| e.to_str()) {
-                Some(ext) => asset_type_for_extension(ext)
-                    .unwrap_or_else(|| EXTENSIONLESS_ASSET_TYPE.to_string()),
-                None => EXTENSIONLESS_ASSET_TYPE.to_string(),
-            };
-            let rel_fwd = asset_key(&rel);
-            entries.push((rel_fwd, rel, abs.to_path_buf(), type_name));
+            scanned.push(Scanned {
+                key: asset_key(&rel),
+                abs: self.assets_root.join(&rel),
+                asset_type: asset_type_of_path(&rel),
+                rel,
+            });
         }
 
         // Sorted before dependencies are extracted, so the visiting order never
         // affects the result.
-        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        scanned.sort_by(|a, b| a.key.cmp(&b.key));
 
-        let mut metadata = Vec::with_capacity(entries.len());
-        for (rel_fwd, rel_path, abs_path, type_name) in entries {
+        let mut metadata = Vec::with_capacity(scanned.len());
+        for file in scanned {
             let uuid = match self.registry {
-                Some(reg) => reg.resolve(&rel_fwd),
-                None => AssetUUID::new_v5(&rel_fwd),
+                Some(reg) => reg.resolve(&file.key),
+                None => AssetUUID::new_v5(&file.key),
             };
             // Only a type with an extractor is read: a texture or a sound never
             // is, so the scan stays one stat per file.
-            let dependencies = if type_has_dependency_extractor(&type_name) {
-                match read_bytes(self.guard, &rel_path, &abs_path) {
-                    Ok(bytes) => extract_dependencies(&type_name, &rel_fwd, &bytes),
+            let dependencies = if type_has_dependency_extractor(file.asset_type.as_str()) {
+                match read_bytes(self.guard, &file.rel, &file.abs) {
+                    Ok(bytes) => extract_dependencies(file.asset_type.as_str(), &file.key, &bytes),
                     Err(e) => {
                         log::warn!(
                             "asset index: failed to read '{}' for dependency extraction: {e}",
-                            rel_fwd
+                            file.key
                         );
                         Vec::new()
                     }
@@ -194,24 +139,19 @@ impl<'a> IndexBuilder<'a> {
                 Vec::new()
             };
             let mut variants = HashMap::with_capacity(1);
-            variants.insert("default".to_string(), AssetSource::Path(rel_path.clone()));
+            variants.insert(
+                AssetMetadata::DEFAULT_VARIANT.to_owned(),
+                AssetSource::Path(file.rel.clone()),
+            );
             metadata.push(AssetMetadata {
                 uuid,
-                source_path: rel_path.clone(),
-                asset_type_name: type_name.clone(),
+                source_path: file.rel.clone(),
+                asset_type: file.asset_type.clone(),
                 dependencies,
                 variants,
                 tags: Vec::new(),
             });
-            push_sub_assets(
-                &mut metadata,
-                uuid,
-                &rel_fwd,
-                &rel_path,
-                &abs_path,
-                &type_name,
-                self.guard,
-            );
+            push_sub_assets(&mut metadata, uuid, &file, self.guard);
         }
         Ok(metadata)
     }
@@ -245,12 +185,10 @@ fn read_bytes(
 fn push_sub_assets(
     metadata: &mut Vec<AssetMetadata>,
     container: AssetUUID,
-    rel_fwd: &str,
-    rel_path: &Path,
-    abs_path: &Path,
-    type_name: &str,
+    file: &Scanned,
     guard: Option<&crate::trust::FileGuard>,
 ) {
+    let (rel_fwd, type_name) = (&file.key, file.asset_type.as_str());
     let mut listers = inventory::iter::<SubAssetListerRegistration>
         .into_iter()
         .filter(|lister| lister.type_name == type_name)
@@ -258,7 +196,7 @@ fn push_sub_assets(
     if listers.peek().is_none() {
         return;
     }
-    let bytes = match read_bytes(guard, rel_path, abs_path) {
+    let bytes = match read_bytes(guard, &file.rel, &file.abs) {
         Ok(bytes) => bytes,
         Err(e) => {
             log::warn!("asset index: failed to read '{rel_fwd}' to list its sub-assets: {e}");
@@ -276,7 +214,7 @@ fn push_sub_assets(
         for SubAssetEntry { label, type_name } in entries {
             let mut variants = HashMap::with_capacity(1);
             variants.insert(
-                "default".to_string(),
+                AssetMetadata::DEFAULT_VARIANT.to_owned(),
                 AssetSource::Sub {
                     container,
                     label: label.clone(),
@@ -284,8 +222,8 @@ fn push_sub_assets(
             );
             metadata.push(AssetMetadata {
                 uuid: AssetUUID::sub_asset(container, &label),
-                source_path: rel_path.to_path_buf(),
-                asset_type_name: type_name,
+                source_path: file.rel.clone(),
+                asset_type: AssetType::from(type_name),
                 dependencies: Vec::new(),
                 variants,
                 tags: Vec::new(),
@@ -297,23 +235,20 @@ fn push_sub_assets(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::asset::AssetIndex;
+    use crate::asset::{asset_type_for_extension, AssetIndex};
     use std::fs;
     use tempfile::tempdir;
 
     #[test]
     fn ext_canonical_mapping() {
-        assert_eq!(asset_type_for_extension("png").as_deref(), Some("texture"));
-        assert_eq!(asset_type_for_extension("PNG").as_deref(), Some("texture"));
-        assert_eq!(asset_type_for_extension("gltf").as_deref(), Some("mesh"));
-        assert_eq!(asset_type_for_extension("kscene").as_deref(), Some("scene"));
-        assert_eq!(
-            asset_type_for_extension("kscript").as_deref(),
-            Some("script")
-        );
+        assert_eq!(asset_type_for_extension("png"), "texture");
+        assert_eq!(asset_type_for_extension("PNG"), "texture");
+        assert_eq!(asset_type_for_extension("gltf"), "mesh");
+        assert_eq!(asset_type_for_extension("kscene"), "scene");
+        assert_eq!(asset_type_for_extension("kscript"), "script");
         // An unknown extension is a type of its own, so the file is still indexed.
-        assert_eq!(asset_type_for_extension("xyz").as_deref(), Some("xyz"));
-        assert_eq!(asset_type_for_extension("MD").as_deref(), Some("md"));
+        assert_eq!(asset_type_for_extension("xyz"), "xyz");
+        assert_eq!(asset_type_for_extension("MD"), "md");
     }
 
     #[test]
@@ -364,7 +299,7 @@ mod tests {
         let metadata = IndexBuilder::new(root).build_metadata().unwrap();
         let by_path: std::collections::HashMap<String, String> = metadata
             .iter()
-            .map(|m| (asset_key(&m.source_path), m.asset_type_name.clone()))
+            .map(|m| (asset_key(&m.source_path), m.asset_type.to_string()))
             .collect();
 
         assert_eq!(
@@ -419,7 +354,7 @@ mod tests {
         assert_eq!(vfs.asset_count(), 1);
         let uuid = AssetUUID::new_v5("textures/foo.png");
         let meta = vfs.get_metadata(&uuid).expect("VFS must surface the asset");
-        assert_eq!(meta.asset_type_name, "texture");
+        assert_eq!(meta.asset_type, "texture");
     }
 
     /// Writes a `StandardMaterial` to `path` as `.kmat` RON — the on-disk form
@@ -457,7 +392,7 @@ mod tests {
         let metadata = IndexBuilder::new(root).build_metadata().unwrap();
         let mat_meta = metadata
             .iter()
-            .find(|m| m.asset_type_name == "material")
+            .find(|m| m.asset_type == "material")
             .expect("the material must be indexed");
 
         let mut expected = vec![base_uuid, normal_uuid];
@@ -469,7 +404,7 @@ mod tests {
 
         // The texture entries themselves must carry no dependencies — they are
         // leaf assets and are never read/parsed.
-        for tex in metadata.iter().filter(|m| m.asset_type_name == "texture") {
+        for tex in metadata.iter().filter(|m| m.asset_type == "texture") {
             assert!(
                 tex.dependencies.is_empty(),
                 "texture '{}' must have no dependencies",
@@ -518,7 +453,7 @@ mod tests {
             .expect("a corrupt material must not abort the index build");
         let mat_meta = metadata
             .iter()
-            .find(|m| m.asset_type_name == "material")
+            .find(|m| m.asset_type == "material")
             .expect("the corrupt material is still indexed");
         assert!(
             mat_meta.dependencies.is_empty(),
@@ -603,7 +538,7 @@ mod tests {
         type_name: &str,
     ) {
         let sub = find(metadata, AssetUUID::sub_asset(container, label));
-        assert_eq!(sub.asset_type_name, type_name, "type of sub '{label}'");
+        assert_eq!(sub.asset_type, type_name, "type of sub '{label}'");
         assert_eq!(
             sub.source_path, container_path,
             "a sub entry's source path is its container's path"
@@ -611,7 +546,7 @@ mod tests {
         assert!(sub.dependencies.is_empty(), "sub '{label}' has no deps");
         assert!(sub.tags.is_empty(), "sub '{label}' has no tags");
         assert_eq!(sub.variants.len(), 1, "sub '{label}' has one variant");
-        match sub.variants.get("default") {
+        match sub.default_source() {
             Some(AssetSource::Sub {
                 container: c,
                 label: l,
@@ -644,10 +579,10 @@ mod tests {
         let rel = Path::new("models").join("hero.ksubtest");
         let file_uuid = AssetUUID::new_v5("models/hero.ksubtest");
         let own = find(&metadata, file_uuid);
-        assert_eq!(own.asset_type_name, TEST_CONTAINER_TYPE);
+        assert_eq!(own.asset_type, TEST_CONTAINER_TYPE);
         assert_eq!(own.source_path, rel);
         assert!(matches!(
-            own.variants.get("default"),
+            own.default_source(),
             Some(AssetSource::Path(p)) if *p == rel
         ));
 
@@ -655,7 +590,7 @@ mod tests {
         assert_sub_entry(&metadata, file_uuid, &rel, "material/Skin", "material");
 
         let texture = find(&metadata, AssetUUID::new_v5("textures/a.png"));
-        assert_eq!(texture.asset_type_name, "texture");
+        assert_eq!(texture.asset_type, "texture");
     }
 
     #[test]
@@ -734,9 +669,9 @@ mod tests {
 
         let broken_rel = Path::new("models").join("broken.ksubfail");
         let broken = find(&metadata, AssetUUID::new_v5("models/broken.ksubfail"));
-        assert_eq!(broken.asset_type_name, FAILING_CONTAINER_TYPE);
+        assert_eq!(broken.asset_type, FAILING_CONTAINER_TYPE);
         assert!(matches!(
-            broken.variants.get("default"),
+            broken.default_source(),
             Some(AssetSource::Path(p)) if *p == broken_rel
         ));
         assert_eq!(
@@ -782,7 +717,7 @@ mod tests {
             .get_metadata(&AssetUUID::sub_asset(hero, "mesh/Body"))
             .expect("the sub entry survives encoding");
         assert!(matches!(
-            body.variants.get("default"),
+            body.default_source(),
             Some(AssetSource::Sub { container, label }) if *container == hero && label == "mesh/Body"
         ));
     }
@@ -866,7 +801,7 @@ mod tests {
             .expect("a refused file does not abort the index");
 
         let big = find(&metadata, AssetUUID::new_v5("materials/big.kmat"));
-        assert_eq!(big.asset_type_name, "material", "its own entry is kept");
+        assert_eq!(big.asset_type, "material", "its own entry is kept");
         assert!(
             big.dependencies.is_empty(),
             "a refused material lists no dependency: {:?}",
@@ -916,7 +851,7 @@ mod tests {
             oversized(HERO_CONTAINER, b'\n'),
         )
         .unwrap();
-        let refusals = std::sync::Arc::new(crate::trust::Refusals::new(None, None));
+        let refusals = crate::trust::Refusals::detached();
         let guard = restricted_guard(root, &refusals);
 
         let metadata = IndexBuilder::new(root)
@@ -926,10 +861,7 @@ mod tests {
 
         let hero = AssetUUID::new_v5("models/hero.ksubtest");
         let own = find(&metadata, hero);
-        assert_eq!(
-            own.asset_type_name, TEST_CONTAINER_TYPE,
-            "its own entry is kept"
-        );
+        assert_eq!(own.asset_type, TEST_CONTAINER_TYPE, "its own entry is kept");
         assert_eq!(
             metadata.len(),
             1,

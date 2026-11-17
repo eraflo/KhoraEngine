@@ -42,6 +42,7 @@ pub mod residency;
 pub mod runtime;
 pub mod scene;
 pub mod script;
+pub mod sync;
 pub mod telemetry;
 pub mod time;
 pub mod ui;

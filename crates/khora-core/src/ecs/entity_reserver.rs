@@ -28,11 +28,14 @@ use std::collections::HashSet;
 use std::sync::Mutex;
 
 use crate::ecs::entity::EntityId;
+use crate::sync::LockExt;
 
 /// Entity ids a world-free caller takes, for the world that owns the reserver
 /// to commit or release at its next exclusive moment.
 #[derive(Debug, Default)]
 pub struct EntityReserver {
+    // A panic while holding the lock leaves the lists as they were: still
+    // ids, still distinct.
     state: Mutex<State>,
 }
 
@@ -61,7 +64,7 @@ impl EntityReserver {
 
     /// An id no other reservation and no live entity holds. Never fails.
     pub fn reserve(&self) -> EntityId {
-        let mut state = self.lock();
+        let mut state = self.state.lock_recovered();
         let id = state.next();
         state.handed.push(id);
         state.served += 1;
@@ -71,7 +74,7 @@ impl EntityReserver {
     /// An id like [`reserve`](Self::reserve) gives, held: never taken back
     /// at a frame's end, until committed or given back.
     pub(crate) fn reserve_held(&self) -> EntityId {
-        let mut state = self.lock();
+        let mut state = self.state.lock_recovered();
         let id = state.next();
         state.held.insert(id);
         id
@@ -80,19 +83,19 @@ impl EntityReserver {
     /// Holds `ids`, slots the owning world gives a hold: never taken back
     /// at a frame's end, until committed or given back.
     pub(crate) fn hold_ids(&self, ids: &[EntityId]) {
-        self.lock().held.extend(ids.iter().copied());
+        self.state.lock_recovered().held.extend(ids.iter().copied());
     }
 
     /// Whether `id` is held and not committed nor given back — and, if so,
     /// forgets it: the load holding it commits it.
     pub fn commit_held(&self, id: EntityId) -> bool {
-        self.lock().held.remove(&id)
+        self.state.lock_recovered().held.remove(&id)
     }
 
     /// Gives back the held `ids` still held: handed out first by the next
     /// reservations.
     pub(crate) fn give_back_held(&self, ids: impl IntoIterator<Item = EntityId>) {
-        let mut state = self.lock();
+        let mut state = self.state.lock_recovered();
         for id in ids {
             if state.held.remove(&id) {
                 state.ready.push(id);
@@ -104,14 +107,14 @@ impl EntityReserver {
     ///
     /// Spawns use the slots loads and frames left ready before growing the store.
     pub fn take_ready(&self) -> Option<EntityId> {
-        self.lock().ready.pop()
+        self.state.lock_recovered().ready.pop()
     }
 
     /// Claims the next fresh index, past the end of the store, for the owning world itself.
     ///
     /// No reservation, from any thread, is handed the same index.
     pub fn claim_fresh(&self) -> u32 {
-        let mut state = self.lock();
+        let mut state = self.state.lock_recovered();
         let index = state.fresh;
         state.fresh += 1;
         index
@@ -122,7 +125,7 @@ impl EntityReserver {
     /// Raises the next fresh index to `from` when it lags, so a fresh id is
     /// never an index the store already holds.
     pub fn fresh_since(&self, from: u32) -> std::ops::Range<u32> {
-        let mut state = self.lock();
+        let mut state = self.state.lock_recovered();
         if state.fresh < from {
             state.fresh = from;
         }
@@ -132,7 +135,7 @@ impl EntityReserver {
     /// Whether this reserver handed out `id` since the world last settled —
     /// and, if so, forgets it: a spawn commits an id once.
     pub fn take_handed(&self, id: EntityId) -> bool {
-        let mut state = self.lock();
+        let mut state = self.state.lock_recovered();
         match state.handed.iter().position(|handed| *handed == id) {
             Some(at) => {
                 state.handed.swap_remove(at);
@@ -145,28 +148,28 @@ impl EntityReserver {
     /// Whether this reserver handed out `id` since the world last settled
     /// and nothing committed it yet — without forgetting it.
     pub fn is_handed(&self, id: EntityId) -> bool {
-        self.lock().handed.contains(&id)
+        self.state.lock_recovered().handed.contains(&id)
     }
 
     /// Every id handed out and not committed: what the world takes back.
     pub fn take_unspent(&self) -> Vec<EntityId> {
-        std::mem::take(&mut self.lock().handed)
+        std::mem::take(&mut self.state.lock_recovered().handed)
     }
 
     /// How many ids are ready to hand out without a fresh index.
     pub fn ready_len(&self) -> usize {
-        self.lock().ready.len()
+        self.state.lock_recovered().ready.len()
     }
 
     /// How many ids were handed out since the last call — and starts the
     /// count again.
     pub fn take_served(&self) -> usize {
-        std::mem::take(&mut self.lock().served)
+        std::mem::take(&mut self.state.lock_recovered().served)
     }
 
     /// Takes back the ready ids past the first `keep`, for the world to free.
     pub fn take_ready_beyond(&self, keep: usize) -> Vec<EntityId> {
-        let mut state = self.lock();
+        let mut state = self.state.lock_recovered();
         let keep = keep.min(state.ready.len());
         state.ready.split_off(keep)
     }
@@ -174,15 +177,7 @@ impl EntityReserver {
     /// Gives the reserver more ids to hand out first — ids the world holds
     /// back for it.
     pub fn refill(&self, ids: impl IntoIterator<Item = EntityId>) {
-        self.lock().ready.extend(ids);
-    }
-
-    fn lock(&self) -> std::sync::MutexGuard<'_, State> {
-        // A panic while holding the lock leaves the lists as they were: still
-        // ids, still distinct.
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.state.lock_recovered().ready.extend(ids);
     }
 }
 

@@ -22,12 +22,13 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 
 use khora_core::ecs::EntityReserver;
 use khora_core::event::{Channel, WhenFull};
 use khora_core::lane::Lease;
 use khora_core::scene::SceneFile;
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::ecs::World;
 use khora_data::scene::loading::{
@@ -75,6 +76,7 @@ pub struct SceneLoadHub {
     requests: Channel<SceneLoadRequest>,
     next: AtomicU64,
     target: Mutex<Option<Arc<Target>>>,
+    // Two sets, whole after every write: read through the poison.
     tickets: Mutex<Tickets>,
 }
 
@@ -101,7 +103,7 @@ impl SceneLoadHub {
     ) -> LoadTicket {
         self.publish(world);
         let ticket = LoadTicket(self.next.fetch_add(1, Ordering::Relaxed));
-        self.tickets().pending.insert(ticket);
+        self.tickets.lock_recovered().pending.insert(ticket);
         let dropped = self.requests.dropped();
         self.requests.send(SceneLoadRequest {
             ticket,
@@ -124,18 +126,18 @@ impl SceneLoadHub {
     /// Takes the outcome of the load filed as `ticket`, once it landed:
     /// `None` while it is in flight, and once taken.
     pub fn take_outcome(&self, ticket: LoadTicket) -> Option<LoadOutcome> {
-        self.tickets().landed.remove(&ticket)
+        self.tickets.lock_recovered().landed.remove(&ticket)
     }
 
     /// Whether the load filed as `ticket` is still in flight.
     pub fn is_pending(&self, ticket: LoadTicket) -> bool {
-        self.tickets().pending.contains(&ticket)
+        self.tickets.lock_recovered().pending.contains(&ticket)
     }
 
     /// Withdraws the load filed as `ticket`, while in flight: it lands nothing, files no outcome.
     pub fn cancel(&self, ticket: LoadTicket) {
         let withdrawn = {
-            let mut tickets = self.tickets();
+            let mut tickets = self.tickets.lock_recovered();
             if !tickets.pending.remove(&ticket) {
                 return;
             }
@@ -157,7 +159,7 @@ impl SceneLoadHub {
         let mut withdrawn = Vec::new();
         let mut turn = Vec::new();
         {
-            let mut tickets = self.tickets();
+            let mut tickets = self.tickets.lock_recovered();
             for load in prepared {
                 if tickets.cancelled.remove(&load.ticket) {
                     withdrawn.push(load);
@@ -181,7 +183,7 @@ impl SceneLoadHub {
 
     /// Puts back the loads of a turn not landed, after one filed again stopped it.
     pub(crate) fn wait_again(&self, loads: impl IntoIterator<Item = PreparedLoad>) {
-        let mut tickets = self.tickets();
+        let mut tickets = self.tickets.lock_recovered();
         for load in loads {
             tickets.waiting.insert(load.ticket, load);
         }
@@ -193,10 +195,7 @@ impl SceneLoadHub {
     pub(crate) fn publish(&self, world: &World) {
         let reserver = world.reserver();
         let generation = world.components().generation();
-        let mut target = self
-            .target
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut target = self.target.lock_recovered();
         if target.as_ref().is_some_and(|target| {
             target.catalog.generation() == generation && Arc::ptr_eq(&target.reserver, &reserver)
         }) {
@@ -211,23 +210,13 @@ impl SceneLoadHub {
 
     /// Files `outcome` under `ticket`: the load landed.
     pub(crate) fn land(&self, ticket: LoadTicket, outcome: LoadOutcome) {
-        let mut tickets = self.tickets();
+        let mut tickets = self.tickets.lock_recovered();
         tickets.pending.remove(&ticket);
         tickets.landed.insert(ticket, outcome);
     }
 
     fn target(&self) -> Option<Arc<Target>> {
-        self.target
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
-    }
-
-    fn tickets(&self) -> MutexGuard<'_, Tickets> {
-        // Two sets, whole after every write: read through the poison.
-        self.tickets
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.target.lock_recovered().clone()
     }
 }
 

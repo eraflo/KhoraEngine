@@ -162,6 +162,9 @@ pub use khora_io::asset::{
     MeshDispatcher, PackBuilder, PackHeader, PackLoader, PackOutput, PackProgress,
     PACK_FORMAT_VERSION, PACK_HEADER_SIZE, PACK_MAGIC,
 };
+/// The file-system helpers the tools share: resolving paths, atomic writes,
+/// bounded reads, walking a tree.
+pub use khora_io::fs;
 pub use khora_io::scene_loads::{install_scene_loading, LoadOutcome, SceneLoadHub};
 pub use khora_io::serialization::{
     prefab_catalog, read_prefab, ReaderPrefabs, SerializationService, SerializationServiceError,

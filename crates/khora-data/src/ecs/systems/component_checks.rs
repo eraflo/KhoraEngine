@@ -50,16 +50,10 @@ pub(crate) fn component_checks(
         };
         for (entity, problem) in check(world) {
             found.push(Problem {
-                severity: problem.severity,
-                module: None,
-                line: 0,
-                column: 0,
-                message: problem.message,
-                note: None,
                 entity: Some(entity),
-                behavior: None,
                 component: Some(registration.type_name.to_owned()),
                 field: Some(problem.field.to_owned()),
+                ..Problem::new(problem.severity, problem.message)
             });
         }
     }
@@ -179,16 +173,8 @@ mod tests {
     /// A problem the running instances reported.
     fn running_problem() -> Problem {
         Problem {
-            severity: ProblemSeverity::Error,
-            module: Some("guard.erg".to_owned()),
-            line: 3,
-            column: 5,
-            message: "faulted".to_owned(),
-            note: None,
-            entity: None,
             behavior: Some("Guard".to_owned()),
-            component: None,
-            field: None,
+            ..Problem::of_file(ProblemSeverity::Error, "guard.erg", 3, 5, "faulted")
         }
     }
 

@@ -26,6 +26,7 @@ use khora_core::renderer::api::resource::CpuTexture;
 use khora_core::renderer::api::util::{AtlasRect, TextureAtlas};
 use khora_core::renderer::GraphicsDevice;
 use khora_core::residency::{DeviceClass, Residency, ResidencyError};
+use khora_core::sync::RwLockExt;
 use khora_core::Runtime;
 
 use crate::ecs::World;
@@ -101,7 +102,7 @@ fn image_on_gpu_system(
         return;
     }
     let textures = store.store::<CpuTexture>();
-    let textures = textures.read().unwrap_or_else(|e| e.into_inner());
+    let textures = textures.read_recovered();
     let Some(mut guard) = atlas.lock_atlas() else {
         return;
     };

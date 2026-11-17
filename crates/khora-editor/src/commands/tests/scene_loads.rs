@@ -25,6 +25,7 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::RwLock;
 
+use khora_sdk::editor_ui::{EditorRequest, Transport};
 use khora_sdk::khora_core::agent::gorna::AgentId;
 use khora_sdk::khora_core::agent::Activation;
 use khora_sdk::prelude::{SharedTime, Time};
@@ -81,8 +82,11 @@ impl Engine {
     }
 }
 
-fn ask(state: &Arc<Mutex<EditorState>>, action: &str) {
-    state.lock().expect("the editor state").pending_menu_action = Some(action.to_owned());
+fn ask(state: &Arc<Mutex<EditorState>>, request: EditorRequest) {
+    state
+        .lock()
+        .expect("the editor state")
+        .push_request(request);
 }
 
 fn play_mode(state: &Arc<Mutex<EditorState>>) -> PlayMode {
@@ -120,13 +124,13 @@ fn stop_restores_the_scene_at_a_later_boundary() {
         .expect("authored");
     let before = observed(&world);
     let state = Arc::new(Mutex::new(EditorState::default()));
-    ask(&state, "play");
+    ask(&state, EditorRequest::Transport(Transport::Play));
     process_transport(&mut world, &state, &engine.runtime);
     assert_eq!(play_mode(&state), PlayMode::Playing, "the premise: playing");
     world.spawn((Transform::identity(), Name::new("Spawned in play")));
     let played = world.iter_entities().count();
 
-    ask(&state, "stop");
+    ask(&state, EditorRequest::Transport(Transport::Stop));
     process_transport(&mut world, &state, &engine.runtime);
 
     assert_eq!(play_mode(&state), PlayMode::Editing, "Editing at once");
@@ -142,7 +146,7 @@ fn stop_restores_the_scene_at_a_later_boundary() {
         "the world is restored only once the restore lands"
     );
 
-    ask(&state, "play");
+    ask(&state, EditorRequest::Transport(Transport::Play));
     process_transport(&mut world, &state, &engine.runtime);
     assert_eq!(
         play_mode(&state),
@@ -243,22 +247,15 @@ fn opening_a_scene_lands_its_problems_after_the_commit() {
         "nothing lands on the frame it is opened"
     );
     assert!(
-        state
-            .lock()
-            .expect("the editor state")
-            .pending_load_problems
-            .is_none(),
+        !(state.lock().expect("the editor state").requests.iter())
+            .any(|request| matches!(request, EditorRequest::ReportLoadProblems { .. })),
         "no problem before the load lands"
     );
 
     let mut problems = None;
     for _ in 0..SETTLE_FRAMES {
         engine.frame(&mut world, &state);
-        problems = state
-            .lock()
-            .expect("the editor state")
-            .pending_load_problems
-            .take();
+        problems = take_load_problems(&state);
         if problems.is_some() {
             break;
         }
@@ -388,9 +385,9 @@ fn an_edit_made_while_the_scene_is_restored_is_refused_or_kept() {
         .mark_authored(root)
         .expect("authored");
     let state = Arc::new(Mutex::new(EditorState::default()));
-    ask(&state, "play");
+    ask(&state, EditorRequest::Transport(Transport::Play));
     process_transport(&mut world, &state, &engine.runtime);
-    ask(&state, "stop");
+    ask(&state, EditorRequest::Transport(Transport::Stop));
     process_transport(&mut world, &state, &engine.runtime);
     assert_eq!(play_mode(&state), PlayMode::Editing, "the premise: editing");
     assert!(restoring(&state), "the premise: the restore is in flight");

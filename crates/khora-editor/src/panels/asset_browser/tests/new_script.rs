@@ -18,17 +18,18 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_sdk::editor_ui::{AssetEntry, EditorState, UiTheme};
+use khora_sdk::editor_ui::{AssetEntry, AssetFileOp, EditorState, UiTheme};
 use khora_sdk::khora_core::asset::AssetUUID;
 
 use super::super::new_script::{behavior_name, script_folder_for, script_source};
 use super::super::AssetBrowserPanel;
+use crate::tests::requests::file_ops;
 use crate::widgets::tile::AssetTileKind;
 
 fn entry(path: &str, asset_type: &str) -> AssetEntry {
     AssetEntry {
         name: path.rsplit('/').next().unwrap_or(path).to_owned(),
-        asset_type: asset_type.to_owned(),
+        asset_type: khora_sdk::khora_core::asset::AssetType::from(asset_type),
         source_path: path.to_owned(),
         uuid: AssetUUID::new_v5(path),
         container: None,
@@ -78,8 +79,13 @@ fn type_name(panel: &mut AssetBrowserPanel, text: &str) {
         .name = text.to_owned();
 }
 
+/// The script queued to be written, path and source; at most one is.
 fn queued(state: &Arc<Mutex<EditorState>>) -> Option<(String, String)> {
-    state.lock().expect("state").pending_create_script.clone()
+    match &file_ops(&state.lock().expect("state"))[..] {
+        [] => None,
+        [AssetFileOp::CreateScript { path, source }] => Some((path.clone(), source.clone())),
+        other => panic!("one script queued at most, nothing else: {other:?}"),
+    }
 }
 
 // ─── Where a script goes ─────────────────────────────────────────────

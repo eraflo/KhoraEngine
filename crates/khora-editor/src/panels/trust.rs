@@ -18,7 +18,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_sdk::editor_ui::{EditorPanel, EditorState, Icon, TrustSummary, UiBuilder, UiTheme};
+use khora_sdk::editor_ui::{
+    EditorPanel, EditorRequest, EditorState, Icon, TrustAnswer, TrustSummary, UiBuilder, UiTheme,
+};
 use khora_tool_ui::widgets::{dialog, ButtonKind, Dialog, DialogChoice};
 
 /// The trust prompt and the trust confirmation.
@@ -103,26 +105,24 @@ impl TrustPanel {
                     DialogChoice {
                         label: "Close project",
                         kind: ButtonKind::Ghost,
+                        answer: TrustAnswer::CancelOpen,
                     },
                     DialogChoice {
                         label: "Open restricted",
                         kind: ButtonKind::Ghost,
+                        answer: TrustAnswer::RestrictOpen,
                     },
                     DialogChoice {
                         label: "Trust and open",
                         kind: ButtonKind::Primary,
+                        answer: TrustAnswer::TrustOpen,
                     },
                 ],
             },
         );
-        let action = match chosen {
-            Some(0) => "cancel_open",
-            Some(1) => "restrict_open",
-            Some(2) => "trust_open",
-            _ => return,
-        };
+        let Some(answer) = chosen else { return };
         if let Ok(mut state) = self.state.lock() {
-            state.pending_menu_action = Some(action.to_owned());
+            state.push_request(EditorRequest::Trust(answer));
         }
     }
 
@@ -172,19 +172,21 @@ impl TrustPanel {
                     DialogChoice {
                         label: "Keep restricted",
                         kind: ButtonKind::Ghost,
+                        answer: None,
                     },
                     DialogChoice {
                         label: "Trust and reopen",
                         kind: ButtonKind::Primary,
+                        answer: Some(TrustAnswer::TrustProject),
                     },
                 ],
             },
         );
-        let Some(choice) = chosen else { return };
+        let Some(answer) = chosen else { return };
         if let Ok(mut state) = self.state.lock() {
             state.trust_confirm = None;
-            if choice == 1 {
-                state.pending_menu_action = Some("trust_project".to_owned());
+            if let Some(answer) = answer {
+                state.push_request(EditorRequest::Trust(answer));
             }
         }
     }

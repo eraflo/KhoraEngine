@@ -19,6 +19,7 @@
 //! scripts read is asked of the script flow through the
 //! [`ScriptReads`](super::ScriptReads) demand, not here.
 
+use crate::sync::RwLockExt;
 use std::sync::RwLock;
 
 use super::ComponentName;
@@ -49,10 +50,7 @@ impl ScriptCatalog {
     pub fn set_declared(&self, mut names: Vec<ComponentName>) -> bool {
         names.sort();
         names.dedup();
-        let mut data = match self.0.write() {
-            Ok(data) => data,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let mut data = self.0.write_recovered();
         if data.declared == names {
             return false;
         }
@@ -63,19 +61,13 @@ impl ScriptCatalog {
 
     /// Every name a loaded module declares now, sorted.
     pub fn declared(&self) -> Vec<ComponentName> {
-        match self.0.read() {
-            Ok(data) => data.declared.clone(),
-            Err(poisoned) => poisoned.into_inner().declared.clone(),
-        }
+        self.0.read_recovered().declared.clone()
     }
 
     /// The generation of the declared names: moves on every change of the
     /// set, never otherwise.
     pub fn declared_generation(&self) -> u64 {
-        match self.0.read() {
-            Ok(data) => data.declared_generation,
-            Err(poisoned) => poisoned.into_inner().declared_generation,
-        }
+        self.0.read_recovered().declared_generation
     }
 }
 
@@ -170,7 +162,8 @@ mod tests {
         let emptied = catalog.declared_generation();
         assert!(
             emptied != grown && emptied != first && emptied != start,
-            "an emptied set moves it to a generation not seen before — even              though the set is the empty one it started as"
+            "an emptied set moves it to a generation not seen before — even \
+             though the set is the empty one it started as"
         );
     }
 }

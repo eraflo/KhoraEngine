@@ -137,7 +137,7 @@ fn a_replacement_overflowing_the_stream_still_names_everything_the_outgoing_serv
         .map(|path| {
             files.insert(std::path::PathBuf::from(path), b"note".to_vec());
             let mut entry = file_entry(AssetUUID::new_v5(path), path);
-            entry.asset_type_name = NOTE_TYPE.to_string();
+            entry.asset_type = NOTE_TYPE.into();
             entry
         })
         .collect();

@@ -17,17 +17,14 @@
 
 use std::borrow::Cow;
 
-use crate::render::util::DynamicUniformRingBuffer;
-use khora_core::math::{Extent3D, Mat4};
+use khora_core::math::Extent3D;
 use khora_core::renderer::api::resource::{
-    CameraUniformData, ImageAspect, TextureDescriptor, TextureDimension, TextureId, TextureUsage,
+    ImageAspect, TextureDescriptor, TextureDimension, TextureId, TextureUsage,
     TextureViewDescriptor, TextureViewDimension, TextureViewId,
 };
 use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
 use khora_core::renderer::error::RenderError;
 use khora_core::renderer::GraphicsDevice;
-
-use super::pass::{build_draw_cmds, AttachmentPass};
 
 /// A 2D atlas on the device: its depth texture and the array view the lit
 /// lanes bind.
@@ -100,44 +97,4 @@ impl Atlas2D {
             log::warn!("Atlas2D: failed to destroy texture: {:?}", e);
         }
     }
-}
-
-/// Collects one shadow pass for a directional or spot light, for
-/// [`super::pass::record_depth_pass`] to replay.
-///
-/// Returns `None` when the light's camera uniform cannot be pushed.
-#[allow(clippy::too_many_arguments)]
-pub fn collect_pass(
-    atlas_view: TextureViewId,
-    layer: u32,
-    light_pos: khora_core::math::Vec3,
-    view_proj: Mat4,
-    device: &dyn GraphicsDevice,
-    render_world: &khora_data::render::RenderWorld,
-    gpu_meshes: &khora_data::assets::Assets<khora_core::renderer::api::gpu_scene::GpuMesh>,
-    camera_ring: &mut DynamicUniformRingBuffer,
-    model_ring: &mut DynamicUniformRingBuffer,
-) -> Option<AttachmentPass> {
-    let camera_data = CameraUniformData {
-        view_projection: view_proj.to_cols_array_2d(),
-        camera_position: [light_pos.x, light_pos.y, light_pos.z, 1.0],
-    };
-    let camera_offset = match camera_ring.push(device, bytemuck::bytes_of(&camera_data)) {
-        Ok(off) => off,
-        Err(e) => {
-            log::error!("Atlas2D: failed to push camera uniform: {:?}", e);
-            return None;
-        }
-    };
-    let camera_bg = *camera_ring.current_bind_group();
-
-    let draw_cmds = build_draw_cmds(device, render_world, gpu_meshes, model_ring);
-
-    Some(AttachmentPass {
-        target_view: atlas_view,
-        base_array_layer: layer,
-        camera_bg,
-        camera_offset,
-        draw_cmds,
-    })
 }

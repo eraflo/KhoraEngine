@@ -30,6 +30,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use crate::lane::LaneBus;
+use crate::sync::LockExt;
 
 /// A View the host set, able to publish a copy of itself.
 trait HostView: Send + Sync {
@@ -64,17 +65,13 @@ impl HostViews {
     /// the one set before.
     pub fn set<V: Any + Send + Sync + Clone>(&self, view: V) {
         self.views
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .lock_recovered()
             .insert(TypeId::of::<V>(), Box::new(view));
     }
 
     /// Publishes a copy of every View set so far into `bus`.
     pub fn publish_into(&self, bus: &mut LaneBus) {
-        let views = self
-            .views
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let views = self.views.lock_recovered();
         for view in views.values() {
             (**view).publish_into(bus);
         }

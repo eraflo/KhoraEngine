@@ -154,7 +154,7 @@ fn fp_culling_layout_entries() -> Vec<khora_core::renderer::api::command::BindGr
 ///
 /// The camera and material layouts are the shared ones, the model and lighting
 /// ones the lane's; group 2 resolves to the material variant's textures.
-pub(super) fn render_pipeline_spec(surface: &Surface, key: TargetKey) -> PipelineSpec {
+pub(super) fn render_pipeline_spec(surface: &Surface<'_>, key: TargetKey) -> PipelineSpec {
     use khora_core::renderer::api::gpu_scene::Mesh;
     use khora_core::renderer::api::pipeline::PrimitiveStateDescriptor;
     use std::borrow::Cow;

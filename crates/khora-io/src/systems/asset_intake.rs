@@ -20,6 +20,7 @@ use std::sync::{Arc, Mutex};
 
 use khora_core::asset::Decoded;
 use khora_core::lane::{OutputDeck, Reserve};
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::assets::AssetStore;
 use khora_data::ecs::{DataSystemRegistration, SystemContext, TickPhase, World};
@@ -49,9 +50,7 @@ pub fn take_in_decoded(runtime: &Runtime) {
         );
         return;
     };
-    let mut service = service
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut service = service.lock_recovered();
     for decoded in decoded {
         service.take_in(decoded, store);
     }
@@ -88,6 +87,7 @@ pub(crate) mod tests {
 
     use khora_core::asset::AssetDecoding;
     use khora_core::lane::{Reserve, Staging};
+    use khora_core::sync::LockExt;
     use khora_core::Runtime;
 
     use crate::asset::AssetService;
@@ -112,11 +112,7 @@ pub(crate) mod tests {
         let reserve = runtime
             .look_up::<Reserve>()
             .expect("the runtime holds the reserve the `loading` family stages into");
-        let filed = service
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .decode_requests()
-            .drain();
+        let filed = service.lock_recovered().decode_requests().drain();
         let decoding: Arc<dyn AssetDecoding> = AssetService::decoding(service);
         let decoded: Vec<_> = filed
             .iter()

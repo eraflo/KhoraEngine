@@ -21,6 +21,7 @@ use khora_sdk::khora_data::ecs::PrefabInstance;
 
 use super::super::*;
 use crate::tests::gltf_fixture::{GltfProject, HULL_COLOR, MAST_COLOR, SHIP_GLTF, TRIANGLE_OBJ};
+use crate::tests::requests::mesh_spawns;
 
 const SHIP: &str = "models/ship.gltf";
 const CRATE: &str = "models/crate.obj";
@@ -107,7 +108,13 @@ fn spawning_a_gltf_scene_places_its_nodes_each_in_its_own_material() {
     let scene = project.sub(SHIP, "scene");
     let mut world = GameWorld::new();
     let state = Arc::new(Mutex::new(EditorState::default()));
-    state.lock().expect("the editor state").pending_prefab_spawn = Some((scene, None));
+    state
+        .lock()
+        .expect("the editor state")
+        .push_request(EditorRequest::SpawnPrefab {
+            prefab: scene,
+            parent: None,
+        });
 
     process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
 
@@ -171,8 +178,13 @@ fn a_gltf_scene_dropped_on_a_row_hangs_under_it() {
     let mut world = GameWorld::new();
     let row = target(&mut world);
     let state = Arc::new(Mutex::new(EditorState::default()));
-    state.lock().expect("the editor state").pending_prefab_spawn =
-        Some((project.sub(SHIP, "scene"), Some(row)));
+    state
+        .lock()
+        .expect("the editor state")
+        .push_request(EditorRequest::SpawnPrefab {
+            prefab: project.sub(SHIP, "scene"),
+            parent: Some(row),
+        });
 
     process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
 
@@ -197,7 +209,11 @@ fn spawning_a_mesh_part_names_it_after_its_file_and_label() {
     state
         .lock()
         .expect("the editor state")
-        .pending_spawn_mesh_asset = Some((mesh, [1.0, 2.0, 3.0], None));
+        .push_request(EditorRequest::SpawnMesh {
+            mesh,
+            point: [1.0, 2.0, 3.0],
+            parent: None,
+        });
 
     process_pending_spawn_mesh_asset(Some(&project.vfs), &mut world, &state);
 
@@ -212,11 +228,7 @@ fn spawning_a_mesh_part_names_it_after_its_file_and_label() {
         .translation;
     assert_eq!([at.x, at.y, at.z], [1.0, 2.0, 3.0], "placed where dropped");
     assert!(
-        state
-            .lock()
-            .expect("the editor state")
-            .pending_spawn_mesh_asset
-            .is_none(),
+        mesh_spawns(&state.lock().expect("the editor state")).is_empty(),
         "the request is consumed"
     );
 }
@@ -233,7 +245,11 @@ fn spawning_a_mesh_file_names_it_after_its_file() {
     state
         .lock()
         .expect("the editor state")
-        .pending_spawn_mesh_asset = Some((mesh, [0.0, 0.0, 0.0], Some(row)));
+        .push_request(EditorRequest::SpawnMesh {
+            mesh,
+            point: [0.0, 0.0, 0.0],
+            parent: Some(row),
+        });
 
     process_pending_spawn_mesh_asset(Some(&project.vfs), &mut world, &state);
 
@@ -263,7 +279,10 @@ fn assigning_a_gltf_material_references_it() {
     state
         .lock()
         .expect("the editor state")
-        .pending_assign_texture = Some((material, entity));
+        .push_request(EditorRequest::AssignDropped {
+            asset: material,
+            entity,
+        });
 
     process_pending_assign_texture(Some(&project.vfs), &mut world, &state);
 
@@ -285,7 +304,10 @@ fn assigning_a_material_file_references_it() {
     state
         .lock()
         .expect("the editor state")
-        .pending_assign_texture = Some((material, entity));
+        .push_request(EditorRequest::AssignDropped {
+            asset: material,
+            entity,
+        });
 
     process_pending_assign_texture(Some(&project.vfs), &mut world, &state);
 
@@ -321,7 +343,10 @@ fn assigning_a_gltf_texture_gives_an_inline_material_on_it() {
     state
         .lock()
         .expect("the editor state")
-        .pending_assign_texture = Some((texture, entity));
+        .push_request(EditorRequest::AssignDropped {
+            asset: texture,
+            entity,
+        });
 
     process_pending_assign_texture(Some(&project.vfs), &mut world, &state);
 
@@ -340,7 +365,10 @@ fn assigning_an_image_file_gives_an_inline_material_on_it() {
     state
         .lock()
         .expect("the editor state")
-        .pending_assign_texture = Some((texture, entity));
+        .push_request(EditorRequest::AssignDropped {
+            asset: texture,
+            entity,
+        });
 
     process_pending_assign_texture(Some(&project.vfs), &mut world, &state);
 
@@ -352,8 +380,13 @@ fn assigning_an_image_file_gives_an_inline_material_on_it() {
 /// Spawns `project`'s `SHIP` scene into `world` as one linked instance.
 fn spawn_ship(project: &GltfProject, world: &mut GameWorld) {
     let state = Arc::new(Mutex::new(EditorState::default()));
-    state.lock().expect("the editor state").pending_prefab_spawn =
-        Some((project.sub(SHIP, "scene"), None));
+    state
+        .lock()
+        .expect("the editor state")
+        .push_request(EditorRequest::SpawnPrefab {
+            prefab: project.sub(SHIP, "scene"),
+            parent: None,
+        });
     process_pending_prefab_spawn(Some(&project.vfs), world, &state);
 }
 
@@ -384,12 +417,12 @@ fn applying_to_a_gltf_scene_never_writes_over_the_gltf_file() {
         .translation
         .y = 9.0;
     let state = Arc::new(Mutex::new(EditorState::default()));
-    state.lock().expect("the editor state").pending_prefab_apply = Some((
-        hull,
-        PrefabApplyScope::Component {
+    (state.lock().expect("the editor state")).push_request(EditorRequest::ApplyToPrefab {
+        entity: hull,
+        scope: PrefabApplyScope::Component {
             type_name: "Transform".to_owned(),
         },
-    ));
+    });
 
     process_pending_prefab_apply(Some(&project.vfs), &world, &state);
 

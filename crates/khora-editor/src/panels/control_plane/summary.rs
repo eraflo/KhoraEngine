@@ -17,22 +17,22 @@
 use khora_sdk::editor_ui::*;
 use khora_sdk::DccContext;
 
-use super::{ControlPlanePanel, FRAME_TARGET_MS};
+use super::{ControlPlanePanel, FrameSnapshot, Painter, FRAME_TARGET_MS};
 use khora_tool_ui::widgets::paint;
 use khora_tool_ui::widgets::with_alpha;
 
 impl ControlPlanePanel {
-    #[allow(clippy::too_many_arguments)] // A paint helper; the args are all data it draws.
+    /// Paints the summary bar over `rect`: the DCC's state, `snap`, and the frame time's trend.
     pub(super) fn paint_summary_bar(
         &self,
-        ui: &mut dyn UiBuilder,
+        p: &mut Painter<'_>,
         rect: [f32; 4],
-        snap: (f32, f32, f32, f32, f32, f32),
+        snap: FrameSnapshot,
         dcc: Option<&DccContext>,
         agent_count: usize,
-        theme: &UiTheme,
         frame_samples: &[f32],
     ) {
+        let (ui, theme) = (&mut *p.ui, p.theme);
         let [x, y, w, h] = rect;
         ui.paint_rect_filled([x, y], [w, h], theme.surface, theme.radius_lg);
         ui.paint_rect_stroke(
@@ -63,8 +63,8 @@ impl ControlPlanePanel {
             "{} agent{} · {:.0} fps · {:.2}/{:.2}ms",
             agent_count,
             if agent_count == 1 { "" } else { "s" },
-            snap.0,
-            snap.1,
+            snap.fps,
+            snap.frame_time_ms,
             FRAME_TARGET_MS,
         );
         ui.paint_text_styled(
@@ -93,7 +93,7 @@ impl ControlPlanePanel {
         let stats_x = x + brand_w.max(220.0);
         let stats_w = (w - brand_w.max(220.0) - 16.0).max(120.0);
         let cell_w = stats_w / 5.0;
-        let frame_frac = (snap.1 / FRAME_TARGET_MS).clamp(0.0, 1.0);
+        let frame_frac = (snap.frame_time_ms / FRAME_TARGET_MS).clamp(0.0, 1.0);
         let frame_color = if frame_frac > 0.85 {
             theme.error
         } else if frame_frac > 0.6 {
@@ -101,19 +101,19 @@ impl ControlPlanePanel {
         } else {
             theme.success
         };
-        let cpu_pct = (snap.3 * 100.0).clamp(0.0, 100.0);
-        let gpu_pct = (snap.4 * 100.0).clamp(0.0, 100.0);
+        let cpu_pct = (snap.cpu_load * 100.0).clamp(0.0, 100.0);
+        let gpu_pct = (snap.gpu_load * 100.0).clamp(0.0, 100.0);
         let stats: [(&str, String, f32, [f32; 4]); 5] = [
             (
                 "FRAME BUDGET",
-                format!("{:.2} / {:.2}ms", snap.1, FRAME_TARGET_MS),
+                format!("{:.2} / {:.2}ms", snap.frame_time_ms, FRAME_TARGET_MS),
                 frame_frac,
                 frame_color,
             ),
             (
                 "CPU",
                 format!("{:.0}%", cpu_pct),
-                snap.3.clamp(0.0, 1.0),
+                snap.cpu_load.clamp(0.0, 1.0),
                 if cpu_pct > 70.0 {
                     theme.warning
                 } else {
@@ -123,7 +123,7 @@ impl ControlPlanePanel {
             (
                 "GPU",
                 format!("{:.0}%", gpu_pct),
-                snap.4.clamp(0.0, 1.0),
+                snap.gpu_load.clamp(0.0, 1.0),
                 if gpu_pct > 70.0 {
                     theme.warning
                 } else {
@@ -132,13 +132,13 @@ impl ControlPlanePanel {
             ),
             (
                 "VRAM",
-                if snap.5 > 0.0 {
-                    format!("{:.1} GB", snap.5 / 1024.0)
+                if snap.vram_mb > 0.0 {
+                    format!("{:.1} GB", snap.vram_mb / 1024.0)
                 } else {
                     "—".to_owned()
                 },
-                if snap.5 > 0.0 {
-                    (snap.5 / 12_288.0).clamp(0.0, 1.0)
+                if snap.vram_mb > 0.0 {
+                    (snap.vram_mb / 12_288.0).clamp(0.0, 1.0)
                 } else {
                     0.0
                 },
@@ -146,8 +146,8 @@ impl ControlPlanePanel {
             ),
             (
                 "HEAP",
-                format!("{:.0} MB", snap.2),
-                (snap.2 / 2048.0).clamp(0.0, 1.0),
+                format!("{:.0} MB", snap.heap_mb),
+                (snap.heap_mb / 2048.0).clamp(0.0, 1.0),
                 theme.primary,
             ),
         ];

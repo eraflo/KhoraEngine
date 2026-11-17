@@ -30,6 +30,7 @@ use khora_core::agent::{
 };
 use khora_core::gpu::GpuSetup;
 use khora_core::lane::cost::PerDevice;
+use khora_core::sync::LockExt;
 use khora_core::telemetry::TelemetryEvent;
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
@@ -370,9 +371,7 @@ impl Held {
         let (holding, held) = mpsc::channel();
         let (release, released) = mpsc::channel::<()>();
         let holder = std::thread::spawn(move || {
-            let _guard = agent
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let _guard = agent.lock_recovered();
             let _ = holding.send(());
             released.recv_timeout(patience).is_err()
         });

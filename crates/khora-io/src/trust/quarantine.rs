@@ -17,11 +17,14 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use khora_core::problems::{Problem, ProblemSeverity, ProblemSource, Problems};
+use khora_core::sync::LockExt;
+use khora_core::Runtime;
 use serde::{Deserialize, Serialize};
+
+use crate::fs::{real_path, FileStamp, Keyed, RonStore, RootName};
 
 use super::{SecurityReason, SecurityRefusal};
 
@@ -39,6 +42,33 @@ pub enum QuarantineKey {
     },
 }
 
+impl QuarantineKey {
+    /// Returns the key of a file holding `bytes`: their BLAKE3 hash.
+    pub fn of_content(bytes: &[u8]) -> QuarantineKey {
+        QuarantineKey::Content(*blake3::hash(bytes).as_bytes())
+    }
+
+    /// Returns what the key holds a file by, in a few words: its hash shortened, or "size and date".
+    pub fn short_label(&self) -> String {
+        match self {
+            QuarantineKey::Content(hash) => {
+                let hex: String = hash.iter().map(|byte| format!("{byte:02x}")).collect();
+                format!("blake3 {}\u{2026}{}", &hex[..4], &hex[hex.len() - 4..])
+            }
+            QuarantineKey::Stamp { .. } => "size and date".to_owned(),
+        }
+    }
+}
+
+impl From<FileStamp> for QuarantineKey {
+    fn from(stamp: FileStamp) -> Self {
+        QuarantineKey::Stamp {
+            len: stamp.len,
+            modified: stamp.modified,
+        }
+    }
+}
+
 /// Every refusal of a run, and the files quarantined.
 ///
 /// Shared by every reader of a run. A refusal is reported to the problems
@@ -48,7 +78,8 @@ pub enum QuarantineKey {
 /// See the book: concepts/trust.md, "The quarantine".
 pub struct Refusals {
     problems: Option<Arc<Problems>>,
-    store: Option<PathBuf>,
+    store: Option<RonStore<Entry>>,
+    // A reader that panicked holding the lock left whole entries.
     held: Mutex<Held>,
     /// The refusals these were handed over to: every call goes there.
     successor: Mutex<Option<Arc<Refusals>>>,
@@ -91,28 +122,46 @@ impl Entry {
             self.at.clone()
         }
     }
+
+    /// Whether the entry was refused at `trust` for its size or a limit.
+    fn is_strict_at(&self, trust: super::Trust) -> bool {
+        self.refusal.trust == trust && self.refusal.reason.is_size_or_limit()
+    }
 }
 
-/// The largest store read: a quarantine list is a few entries.
-const MAX_STORE_BYTES: u64 = 4 << 20;
+impl Keyed for Entry {
+    type Key = PathBuf;
+
+    fn key(&self) -> PathBuf {
+        self.place()
+    }
+}
 
 /// The most refusals kept that quarantine nothing: past it, the oldest go.
 const MAX_REPORTED: usize = 256;
 
-/// A number for each store write of this process: two writes at once never
-/// share their temporary file.
-static WRITES: AtomicU64 = AtomicU64::new(0);
+/// The refusals a call acts on: these, or the last these were handed over to.
+enum Current<'a> {
+    Here(&'a Refusals),
+    HandedOver(Arc<Refusals>),
+}
 
-/// `path` as the file system resolves it, or as given when it does not.
-fn real_path(path: &Path) -> PathBuf {
-    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+impl std::ops::Deref for Current<'_> {
+    type Target = Refusals;
+
+    fn deref(&self) -> &Refusals {
+        match self {
+            Current::Here(refusals) => refusals,
+            Current::HandedOver(refusals) => refusals,
+        }
+    }
 }
 
 impl std::fmt::Debug for Refusals {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Refusals")
-            .field("store", &self.store)
-            .field("quarantined", &self.lock().quarantined.len())
+            .field("store", &self.store.as_ref().map(RonStore::path))
+            .field("quarantined", &self.held.lock_recovered().quarantined.len())
             .finish()
     }
 }
@@ -122,12 +171,12 @@ impl Refusals {
     ///
     /// The store is read when it exists, and written on each change.
     pub fn new(problems: Option<Arc<Problems>>, store: Option<PathBuf>) -> Self {
+        let store = store.map(|path| RonStore::new(path, "quarantine list"));
         let quarantined = store
-            .as_deref()
-            .map(read_store)
+            .as_ref()
+            .map(RonStore::read)
             .unwrap_or_default()
             .into_iter()
-            .map(|entry| (entry.place(), entry))
             .collect();
         let refusals = Self {
             problems,
@@ -138,8 +187,24 @@ impl Refusals {
             }),
             successor: Mutex::new(None),
         };
-        refusals.report(&refusals.lock());
+        refusals.report(&refusals.held.lock_recovered());
         refusals
+    }
+
+    /// Returns the run's refusals `runtime` holds, or [`detached`](Self::detached) ones when it holds none.
+    pub fn of(runtime: &Runtime) -> Arc<Refusals> {
+        runtime
+            .resources
+            .get::<Arc<Refusals>>()
+            .cloned()
+            .unwrap_or_else(Self::detached)
+    }
+
+    /// Returns refusals of no run: reported to no problems, quarantined in memory only.
+    ///
+    /// For a test, or a tool reading with no run of its own.
+    pub fn detached() -> Arc<Refusals> {
+        Arc::new(Self::new(None, None))
     }
 
     /// Hands what these refusals hold, and every later call, over to `successor`.
@@ -155,7 +220,7 @@ impl Refusals {
             }
             next = refusals.successor();
         }
-        let held = std::mem::take(&mut *self.lock());
+        let held = std::mem::take(&mut *self.held.lock_recovered());
         for entry in held.quarantined.into_values() {
             successor.adopt(entry);
         }
@@ -165,40 +230,14 @@ impl Refusals {
         if let Some(problems) = &self.problems {
             problems.report(ProblemSource::Security, Vec::new());
         }
-        *self
-            .successor
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(successor);
-    }
-
-    /// Holds `entry` as a hand-over brings it, superseded or not, and reports and stores it.
-    fn adopt(&self, entry: Entry) {
-        if let Some(successor) = self.successor() {
-            return successor.adopt(entry);
-        }
-        let mut held = self.lock();
-        let at = entry.place();
-        held.changed.insert(at.clone(), Some(entry.clone()));
-        held.quarantined.insert(at, entry);
-        self.write(&mut held);
-        self.report(&held);
-    }
-
-    /// The refusals these were handed over to, if any.
-    fn successor(&self) -> Option<Arc<Refusals>> {
-        self.successor
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
+        *self.successor.lock_recovered() = Some(successor);
     }
 
     /// Reports `refusal`, and quarantines its file by `key`.
     pub fn refuse(&self, refusal: SecurityRefusal, key: Option<QuarantineKey>) {
-        if let Some(successor) = self.successor() {
-            return successor.refuse(refusal, key);
-        }
+        let this = self.current();
         log::warn!("Refused: {refusal}");
-        let mut held = self.lock();
+        let mut held = this.held.lock_recovered();
         match key.filter(|_| refusal.reason != SecurityReason::Escape) {
             Some(key) => {
                 let at = real_path(&refusal.path);
@@ -213,7 +252,7 @@ impl Refusals {
                 }
                 held.changed.insert(at.clone(), Some(entry.clone()));
                 held.quarantined.insert(at, entry);
-                self.write(&mut held);
+                this.write(&mut held);
             }
             None => {
                 if held.reported.contains(&refusal) {
@@ -225,16 +264,14 @@ impl Refusals {
                 held.reported.push(refusal);
             }
         }
-        self.report(&held);
+        this.report(&held);
     }
 
     /// Whether the file at `abs_path`, as `key` says it is now, is
     /// quarantined.
     pub fn is_quarantined(&self, abs_path: &Path, key: &QuarantineKey) -> bool {
-        if let Some(successor) = self.successor() {
-            return successor.is_quarantined(abs_path, key);
-        }
-        let held = self.lock();
+        let this = self.current();
+        let held = this.held.lock_recovered();
         find(&held, abs_path).is_some_and(|(_, entry)| entry.key == *key)
     }
 
@@ -242,10 +279,9 @@ impl Refusals {
     ///
     /// A reader hashes a file's bytes only when it is.
     pub fn holds(&self, abs_path: &Path) -> bool {
-        if let Some(successor) = self.successor() {
-            return successor.holds(abs_path);
-        }
-        find(&self.lock(), abs_path).is_some()
+        let this = self.current();
+        let held = this.held.lock_recovered();
+        find(&held, abs_path).is_some()
     }
 
     /// Notes that the file at `abs_path` read, as `key` says it is now.
@@ -253,10 +289,8 @@ impl Refusals {
     /// A file quarantined by its stamp leaves the quarantine; one quarantined
     /// for another content is set aside, no longer reported.
     pub fn note_read(&self, abs_path: &Path, key: &QuarantineKey) {
-        if let Some(successor) = self.successor() {
-            return successor.note_read(abs_path, key);
-        }
-        let mut held = self.lock();
+        let this = self.current();
+        let mut held = this.held.lock_recovered();
         let Some((at, entry)) = find(&held, abs_path).map(|(at, entry)| (at, entry.clone())) else {
             return;
         };
@@ -275,17 +309,15 @@ impl Refusals {
             }
             QuarantineKey::Content(_) => return,
         }
-        self.write(&mut held);
-        self.report(&held);
+        this.write(&mut held);
+        this.report(&held);
     }
 
     /// Notes that the file at `abs_path` holds again the content it was
     /// quarantined for: it is reported again.
     pub fn note_refused_again(&self, abs_path: &Path) {
-        if let Some(successor) = self.successor() {
-            return successor.note_refused_again(abs_path);
-        }
-        let mut held = self.lock();
+        let this = self.current();
+        let mut held = this.held.lock_recovered();
         let Some(at) = find(&held, abs_path)
             .filter(|(_, entry)| entry.superseded)
             .map(|(at, _)| at)
@@ -297,23 +329,21 @@ impl Refusals {
             let entry = entry.clone();
             held.changed.insert(at, Some(entry));
         }
-        self.write(&mut held);
-        self.report(&held);
+        this.write(&mut held);
+        this.report(&held);
     }
 
     /// Lets the file at `abs_path` be read again.
     pub fn release(&self, abs_path: &Path) {
-        if let Some(successor) = self.successor() {
-            return successor.release(abs_path);
-        }
-        let mut held = self.lock();
+        let this = self.current();
+        let mut held = this.held.lock_recovered();
         let Some(at) = find(&held, abs_path).map(|(at, _)| at) else {
             return;
         };
         held.quarantined.remove(&at);
         held.changed.insert(at, None);
-        self.write(&mut held);
-        self.report(&held);
+        this.write(&mut held);
+        this.report(&held);
     }
 
     /// Releases the refusals made at `trust` for a size or a limit (`TooLarge`, `OverLimit`).
@@ -321,87 +351,33 @@ impl Refusals {
     /// A file refused for what it holds (`WrongType`, `DecoderPanic`), or at
     /// another trust, stays.
     pub fn release_strict(&self, trust: super::Trust) {
-        if let Some(successor) = self.successor() {
-            return successor.release_strict(trust);
-        }
-        let mut held = self.lock();
-        let lifted: Vec<PathBuf> = (held.quarantined.iter())
-            .filter(|(_, entry)| {
-                entry.refusal.trust == trust
-                    && matches!(
-                        entry.refusal.reason,
-                        SecurityReason::TooLarge { .. } | SecurityReason::OverLimit { .. }
-                    )
-            })
-            .map(|(at, _)| at.clone())
-            .collect();
-        if lifted.is_empty() {
-            return;
-        }
-        for at in lifted {
-            held.quarantined.remove(&at);
-            held.changed.insert(at, None);
-        }
-        self.write(&mut held);
-        self.report(&held);
+        self.current()
+            .release_where(|_, entry| entry.is_strict_at(trust));
     }
 
     /// Releases the refusals made at `trust` for a size or a limit, of the files under `root` only.
     pub fn release_strict_under(&self, trust: super::Trust, root: &Path) {
-        if let Some(successor) = self.successor() {
-            return successor.release_strict_under(trust, root);
-        }
-        let real_root = real_path(root);
         // A file is under the project by its real path, or — gone from disk
         // since it was refused — by the path it was refused under.
-        let under = |at: &Path, entry: &Entry| {
-            at.starts_with(&real_root)
-                || entry.refusal.path.starts_with(root)
-                || real_path(&entry.refusal.path).starts_with(&real_root)
-        };
-        let mut held = self.lock();
-        let lifted: Vec<PathBuf> = (held.quarantined.iter())
-            .filter(|(at, entry)| {
-                under(at, entry)
-                    && entry.refusal.trust == trust
-                    && matches!(
-                        entry.refusal.reason,
-                        SecurityReason::TooLarge { .. } | SecurityReason::OverLimit { .. }
-                    )
-            })
-            .map(|(at, _)| at.clone())
-            .collect();
-        if lifted.is_empty() {
-            return;
-        }
-        for at in lifted {
-            held.quarantined.remove(&at);
-            held.changed.insert(at, None);
-        }
-        self.write(&mut held);
-        self.report(&held);
+        let root = RootName::of(root);
+        self.current().release_where(|at, entry| {
+            (at.starts_with(&root.resolved) || root.holds(&entry.refusal.path))
+                && entry.is_strict_at(trust)
+        });
     }
 
     /// Returns the refusals quarantined, but those whose file has read with another content since.
     pub fn quarantined(&self) -> Vec<SecurityRefusal> {
-        if let Some(successor) = self.successor() {
-            return successor.quarantined();
-        }
-        let mut refusals: Vec<SecurityRefusal> = (self.lock().quarantined.values())
-            .filter(|entry| !entry.superseded)
-            .map(|entry| entry.refusal.clone())
-            .collect();
-        refusals.sort_by(|a, b| a.path.cmp(&b.path));
-        refusals
+        (self.quarantine().into_iter())
+            .map(|(refusal, _)| refusal)
+            .collect()
     }
 
     /// Returns the refusals [`quarantined`](Self::quarantined) lists, each with its file's key.
     pub fn quarantine(&self) -> Vec<(SecurityRefusal, QuarantineKey)> {
-        if let Some(successor) = self.successor() {
-            return successor.quarantine();
-        }
+        let this = self.current();
         let mut quarantine: Vec<(SecurityRefusal, QuarantineKey)> =
-            (self.lock().quarantined.values())
+            (this.held.lock_recovered().quarantined.values())
                 .filter(|entry| !entry.superseded)
                 .map(|entry| (entry.refusal.clone(), entry.key))
                 .collect();
@@ -409,12 +385,49 @@ impl Refusals {
         quarantine
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, Held> {
-        // A reader that panicked holding the lock left whole entries.
-        match self.held.lock() {
-            Ok(held) => held,
-            Err(poisoned) => poisoned.into_inner(),
+    /// Returns the refusals every call acts on: the last of the chain these were handed over to.
+    fn current(&self) -> Current<'_> {
+        let Some(mut last) = self.successor() else {
+            return Current::Here(self);
+        };
+        while let Some(next) = last.successor() {
+            last = next;
         }
+        Current::HandedOver(last)
+    }
+
+    /// The refusals these were handed over to, if any.
+    fn successor(&self) -> Option<Arc<Refusals>> {
+        self.successor.lock_recovered().clone()
+    }
+
+    /// Holds `entry` as a hand-over brings it, superseded or not, and reports and stores it.
+    fn adopt(&self, entry: Entry) {
+        let this = self.current();
+        let mut held = this.held.lock_recovered();
+        let at = entry.place();
+        held.changed.insert(at.clone(), Some(entry.clone()));
+        held.quarantined.insert(at, entry);
+        this.write(&mut held);
+        this.report(&held);
+    }
+
+    /// Releases the quarantined files `lift` picks, by the path each is held by.
+    fn release_where(&self, lift: impl Fn(&Path, &Entry) -> bool) {
+        let mut held = self.held.lock_recovered();
+        let lifted: Vec<PathBuf> = (held.quarantined.iter())
+            .filter(|(at, entry)| lift(at, entry))
+            .map(|(at, _)| at.clone())
+            .collect();
+        if lifted.is_empty() {
+            return;
+        }
+        for at in lifted {
+            held.quarantined.remove(&at);
+            held.changed.insert(at, None);
+        }
+        self.write(&mut held);
+        self.report(&held);
     }
 
     /// Reports every refusal held to the problems, replacing the last list.
@@ -443,21 +456,13 @@ impl Refusals {
         let Some(store) = &self.store else {
             return;
         };
-        let mut merged: HashMap<PathBuf, Entry> = read_store(store)
-            .into_iter()
-            .map(|entry| (entry.place(), entry))
-            .collect();
-        for (at, entry) in changed {
-            match entry {
-                Some(entry) => merged.insert(at, entry),
-                None => merged.remove(&at),
-            };
-        }
-        held.quarantined = merged;
-        let mut entries: Vec<&Entry> = held.quarantined.values().collect();
-        entries.sort_by(|a, b| a.at.cmp(&b.at));
-        if let Err(error) = write_store(store, &entries) {
-            log::warn!("Quarantine: could not write {}: {error}", store.display());
+        let (merged, written) = store.merge(changed);
+        held.quarantined = merged.into_iter().collect();
+        if let Err(error) = written {
+            log::warn!(
+                "Quarantine: could not write {}: {error}",
+                store.path().display()
+            );
         }
     }
 }
@@ -478,67 +483,13 @@ fn find<'a>(held: &'a Held, abs_path: &Path) -> Option<(PathBuf, &'a Entry)> {
 /// The problem a refusal is reported as.
 fn problem_of(refusal: &SecurityRefusal) -> Problem {
     Problem {
-        severity: ProblemSeverity::Error,
-        module: Some(refusal.path.display().to_string()),
-        line: 0,
-        column: 0,
-        message: format!("Refused: the file {}", refusal.reason),
         note: Some(refusal.reason.remedy().to_owned()),
-        entity: None,
-        behavior: None,
-        component: None,
-        field: None,
+        ..Problem::of_file(
+            ProblemSeverity::Error,
+            refusal.path.display().to_string(),
+            0,
+            0,
+            format!("Refused: the file {}", refusal.reason),
+        )
     }
-}
-
-/// The entries of the store at `path`; none when there is no store, or it
-/// does not read (logged).
-fn read_store(path: &Path) -> Vec<Entry> {
-    let size = match std::fs::metadata(path) {
-        Ok(meta) => meta.len(),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
-        Err(error) => {
-            log::warn!("Quarantine: {} is not read: {error}", path.display());
-            return Vec::new();
-        }
-    };
-    if size > MAX_STORE_BYTES {
-        log::warn!(
-            "Quarantine: {} is {size} bytes, over the {MAX_STORE_BYTES} read",
-            path.display()
-        );
-        return Vec::new();
-    }
-    match std::fs::read_to_string(path).map(|text| ron::from_str::<Vec<Entry>>(&text)) {
-        Ok(Ok(entries)) => entries,
-        Ok(Err(error)) => {
-            log::warn!(
-                "Quarantine: {} is not a quarantine list: {error}",
-                path.display()
-            );
-            Vec::new()
-        }
-        Err(error) => {
-            log::warn!("Quarantine: {} is not read: {error}", path.display());
-            Vec::new()
-        }
-    }
-}
-
-/// Writes `entries` to `path` whole: to a file beside it, then moved over it.
-fn write_store(path: &Path, entries: &[&Entry]) -> std::io::Result<()> {
-    if let Some(folder) = path.parent() {
-        std::fs::create_dir_all(folder)?;
-    }
-    let text = ron::ser::to_string_pretty(entries, ron::ser::PrettyConfig::default())
-        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
-    let mut tmp = path.as_os_str().to_owned();
-    tmp.push(format!(
-        ".{}.{}.tmp",
-        std::process::id(),
-        WRITES.fetch_add(1, Ordering::Relaxed)
-    ));
-    let tmp = PathBuf::from(tmp);
-    std::fs::write(&tmp, text.as_bytes())?;
-    std::fs::rename(&tmp, path)
 }

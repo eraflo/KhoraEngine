@@ -16,12 +16,13 @@
 
 use std::sync::{Arc, Mutex};
 
+use khora_sdk::editor_ui::EditorRequest;
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::{EditorState, GameWorld};
 
 use crate::project_vfs::{AfterIndex, ProjectVfs};
 
-/// Drains [`EditorState::pending_save_as_material`]: saves the entity's inline material as a `.kmat`.
+/// Takes the queued [`EditorRequest::SaveAsMaterial`]s: saves each entity's inline material as a `.kmat`.
 ///
 /// Writes `assets/materials/<name>.kmat` in the decoder's RON shape, then has
 /// the entity reference the saved asset (`MaterialRef::Asset`) once the index
@@ -31,14 +32,28 @@ pub fn process_pending_save_as_material(
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
 ) {
-    let pending = match editor_state.lock() {
-        Ok(mut s) => s.pending_save_as_material.take(),
-        Err(_) => None,
-    };
-    let Some((entity, name)) = pending else {
-        return;
-    };
+    let requests = editor_state
+        .lock()
+        .map(|mut s| {
+            s.take_requests(|request| match request {
+                EditorRequest::SaveAsMaterial { entity, name } => Ok((entity, name)),
+                other => Err(other),
+            })
+        })
+        .unwrap_or_default();
+    for (entity, name) in requests {
+        save_as_material(project_vfs, world, editor_state, entity, &name);
+    }
+}
 
+/// Saves `entity`'s inline material as `assets/materials/<name>.kmat`.
+fn save_as_material(
+    project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
+    world: &mut GameWorld,
+    editor_state: &Arc<Mutex<EditorState>>,
+    entity: EntityId,
+    name: &str,
+) {
     let Some(pvfs_arc) = project_vfs else {
         log::warn!("Save material as .kmat ignored: no project is open");
         return;
@@ -53,7 +68,7 @@ pub fn process_pending_save_as_material(
         }
     };
 
-    let stem = sanitize_material_name(&name);
+    let stem = sanitize_material_name(name);
     let rel_fwd = format!("materials/{stem}.kmat");
 
     // Its identity, which a restore at Stop keeps: the assignment may land
@@ -154,31 +169,36 @@ pub fn apply_after_index(world: &mut GameWorld, actions: Vec<AfterIndex>) {
     }
 }
 
-/// Drains [`EditorState::pending_assign_material`]: sets `MaterialRef::Asset(uuid)`
+/// Takes the queued [`EditorRequest::AssignMaterial`]s: sets `MaterialRef::Asset(uuid)`
 /// on every selected entity, `uuid` being the chosen material's identity.
+///
+/// Two asked in one frame are both applied, in order: the last one asked is
+/// what the selection references.
 pub fn process_pending_assign_material(
     _project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
 ) {
-    let (rel, targets) = match editor_state.lock() {
+    let (materials, targets) = match editor_state.lock() {
         Ok(mut s) => {
-            let rel = s.pending_assign_material.take();
+            let materials = s.take_requests(|request| match request {
+                EditorRequest::AssignMaterial { material } => Ok(material),
+                other => Err(other),
+            });
             let targets: Vec<EntityId> = s.selection.iter().copied().collect();
-            (rel, targets)
+            (materials, targets)
         }
         Err(_) => return,
     };
-    let Some(uuid) = rel else {
-        return;
-    };
-    if targets.is_empty() {
-        log::warn!("Assign material {uuid} ignored: no entity selected");
-        return;
-    }
-    for entity in targets {
-        world.add_component(entity, MaterialRef::Asset(uuid));
-        log::info!("Assigned material {uuid} to entity {entity:?}");
+    for uuid in materials {
+        if targets.is_empty() {
+            log::warn!("Assign material {uuid} ignored: no entity selected");
+            continue;
+        }
+        for &entity in &targets {
+            world.add_component(entity, MaterialRef::Asset(uuid));
+            log::info!("Assigned material {uuid} to entity {entity:?}");
+        }
     }
 }
 

@@ -17,6 +17,8 @@
 
 use std::path::{Path, PathBuf};
 
+use khora_core::asset::AssetType;
+
 use serde::{Deserialize, Serialize};
 
 mod guard;
@@ -48,39 +50,42 @@ pub enum Trust {
     Save,
 }
 
-/// What a file is, by its extension, for its size cap.
+/// What a file is, by its asset type, for its size cap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FileKind {
     /// An image.
     Texture,
-    /// A glTF file, or a buffer it reads.
+    /// A mesh file: a glTF, or a buffer it reads.
     Gltf,
     /// A sound.
     Audio,
     /// A font.
     Font,
-    /// A text format: script, shader, scene, material.
+    /// A text format: script, shader, scene, material, prefab.
     Text,
     /// Anything else.
     Other,
 }
 
 impl FileKind {
-    /// Returns the kind of the file at `path`, by its extension.
+    /// Returns the kind of the file at `path`, by the asset type of its extension.
     pub fn of_path(path: &Path) -> FileKind {
-        let Some(extension) = path.extension().and_then(|extension| extension.to_str()) else {
-            return FileKind::Other;
-        };
-        match extension.to_ascii_lowercase().as_str() {
-            "png" | "jpg" | "jpeg" | "tga" | "bmp" | "hdr" | "gif" | "webp" | "tif" | "tiff"
-            | "dds" | "ktx2" | "exr" => FileKind::Texture,
-            "gltf" | "glb" | "bin" | "obj" => FileKind::Gltf,
-            "wav" | "ogg" | "mp3" | "flac" => FileKind::Audio,
-            "ttf" | "otf" => FileKind::Font,
-            "erg" | "wgsl" | "kscene" | "kmat" | "kprefab" | "ron" | "json" | "toml" | "txt" => {
-                FileKind::Text
-            }
-            _ => FileKind::Other,
+        FileKind::of_type(&crate::asset::asset_type_of_path(path))
+    }
+
+    /// Returns the kind of a file of asset type `asset_type`.
+    pub fn of_type(asset_type: &AssetType) -> FileKind {
+        match asset_type {
+            AssetType::Texture => FileKind::Texture,
+            AssetType::Mesh | AssetType::Buffer => FileKind::Gltf,
+            AssetType::Audio => FileKind::Audio,
+            AssetType::Font => FileKind::Font,
+            AssetType::Shader
+            | AssetType::Scene
+            | AssetType::Material
+            | AssetType::Script
+            | AssetType::Prefab => FileKind::Text,
+            AssetType::Blob | AssetType::Other(_) => FileKind::Other,
         }
     }
 }
@@ -90,6 +95,17 @@ impl Trust {
     /// the engine's own files and a trusted project's.
     pub fn is_strict(self) -> bool {
         !matches!(self, Trust::Engine | Trust::Project)
+    }
+
+    /// Returns the trust in a sentence's words: `"trusted project"`, `"downloaded file"`, …
+    pub fn label(self) -> &'static str {
+        match self {
+            Trust::Engine => "engine",
+            Trust::Project => "trusted project",
+            Trust::Restricted => "restricted project",
+            Trust::Imported => "downloaded file",
+            Trust::Save => "save",
+        }
     }
 }
 
@@ -186,6 +202,24 @@ pub struct SecurityRefusal {
     pub reason: SecurityReason,
 }
 
+impl SecurityRefusal {
+    /// Returns what refused the file, in a sentence's words: `"file guard"`, `"type check"`, …
+    ///
+    /// A file whose bytes are not its type's was refused by the type check,
+    /// whichever layer saw it.
+    pub fn refused_by(&self) -> &'static str {
+        if matches!(self.reason, SecurityReason::WrongType { .. }) {
+            return "type check";
+        }
+        match self.layer {
+            TrustLayer::File => "file guard",
+            TrustLayer::Decoder => "decoder",
+            TrustLayer::Content => "type check",
+            TrustLayer::Pack => "pack",
+        }
+    }
+}
+
 impl std::fmt::Display for SecurityRefusal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {}", self.path.display(), self.reason)
@@ -216,17 +250,30 @@ impl std::fmt::Display for SecurityReason {
 }
 
 impl SecurityReason {
+    /// Returns whether the file was refused for its size or a decoding limit, not for what it holds.
+    ///
+    /// Trusting a project lifts such a refusal: its caps are larger.
+    pub fn is_size_or_limit(&self) -> bool {
+        matches!(
+            self,
+            SecurityReason::TooLarge { .. } | SecurityReason::OverLimit { .. }
+        )
+    }
+
     /// What to do about a file refused for this reason.
     pub fn remedy(&self) -> &'static str {
         match self {
             SecurityReason::Escape => {
-                "Keep the file inside the project's folder: a path leaving it, or a link                  pointing out of it, is never read."
+                "Keep the file inside the project's folder: a path leaving it, or a link \
+                 pointing out of it, is never read."
             }
             SecurityReason::TooLarge { .. } => {
-                "Make the file smaller, or split it. A file from an untrusted project or                  downloaded from the internet has smaller caps."
+                "Make the file smaller, or split it. A file from an untrusted project or \
+                 downloaded from the internet has smaller caps."
             }
             SecurityReason::WrongType { .. } => {
-                "Check the file: its extension does not match what it holds. Fix or                  replace it, and it is read again."
+                "Check the file: its extension does not match what it holds. Fix or \
+                 replace it, and it is read again."
             }
             SecurityReason::Quarantined => {
                 "Change the file, or release it from quarantine, to have it read again."

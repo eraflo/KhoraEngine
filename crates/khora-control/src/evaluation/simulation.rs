@@ -29,7 +29,8 @@ use super::Arbiters;
 use crate::cost_model::ComplexityClass;
 use crate::dcc_service::FRAME_TIME_MIN_SAMPLES;
 use crate::gorna::arbiter::Arbiter;
-use crate::gorna::cost_book::{correct_bid, lend_in_quotes, CostBook, CostBookConfig};
+use crate::gorna::cost_book::{correct_bid, CostBook, CostBookConfig};
+use crate::gorna::lending::{lend_in_quotes, Lending};
 use crate::gorna::planning::{Planner, PlanningConfig};
 use crate::gorna::{Bid, Round};
 use crate::governor::{FrameGovernor, GovernorConfig};
@@ -396,13 +397,15 @@ impl Simulation {
         // Lent in the agents' quoted units, held to the plan at their quotes.
         lend_in_quotes(
             &mut decision.allocation,
-            &offers,
-            &bids,
-            &decision.rows,
-            &decision.kept,
-            &[],
-            &corrections,
-            caution,
+            &Lending {
+                quoted: &offers,
+                bids: &bids,
+                planned: &decision.rows,
+                kept: &decision.kept,
+                held: &[],
+                corrections: &corrections,
+                caution,
+            },
         );
         self.decision_times.push(started.elapsed());
         self.refusals += decision.refused.len();

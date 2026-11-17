@@ -66,7 +66,7 @@ fn install_refusals(runtime: &mut Runtime, game: &GameIdentity, keeps_user_files
         .copied()
         .unwrap_or(ProfilePlace::Developer);
     let store = keeps_user_files
-        .then(|| quarantine_path(place, game, &|key| std::env::var_os(key)))
+        .then(|| quarantine_path(place, game, &khora_io::user_dirs::process_env))
         .flatten();
     runtime
         .resources

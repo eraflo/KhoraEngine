@@ -19,6 +19,7 @@ pub use crate::after_index::{AfterIndex, Landed};
 use anyhow::{bail, Context, Result};
 use khora_sdk::khora_core::asset::{asset_key, AssetUUID};
 use khora_sdk::khora_core::physics::PhysicsSettings;
+use khora_sdk::khora_core::sync::LockExt;
 #[cfg(test)]
 use khora_sdk::MetricsRegistry;
 use khora_sdk::{
@@ -67,6 +68,9 @@ pub struct ProjectVfs {
     /// The materials to assign that landed while the scene was played or
     /// restored: assigned to the edited scene once it is back.
     held: Vec<AfterIndex>,
+    /// The assets root as named and resolved, resolved once: what a change's
+    /// root is matched against.
+    watched_as: khora_sdk::fs::RootName,
 }
 
 impl ProjectVfs {
@@ -127,6 +131,7 @@ impl ProjectVfs {
 
         Ok(Self {
             root,
+            watched_as: khora_sdk::fs::RootName::of(&assets_root),
             assets_root,
             asset_service: Arc::new(Mutex::new(asset_service)),
             watch,
@@ -170,6 +175,7 @@ impl ProjectVfs {
             .context("Failed to watch the project's assets (filesystem hot reload)")?;
         Ok(Self {
             root,
+            watched_as: khora_sdk::fs::RootName::of(&assets_root),
             assets_root,
             asset_service: service,
             watch,
@@ -186,9 +192,7 @@ impl ProjectVfs {
 
     /// The project's asset service, locked for the length of a statement.
     pub fn assets(&self) -> MutexGuard<'_, AssetService> {
-        self.asset_service
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.asset_service.lock_recovered()
     }
 
     /// Serves this project's assets through `shared`, the engine's service, from now on.
@@ -201,9 +205,7 @@ impl ProjectVfs {
         }
         {
             let mut own = self.assets();
-            let mut target = shared
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut target = shared.lock_recovered();
             std::mem::swap(&mut *own, &mut *target);
             // A uuid is its path unless the registry froze it, so another
             // project's `textures/a.png` is the same uuid: what the engine
@@ -387,6 +389,13 @@ impl ProjectVfs {
     /// Use it whenever an asset the user could have renamed is looked up by path.
     pub fn resolve_uuid(&self, rel_path_fwd_slash: &str) -> AssetUUID {
         self.registry.resolve(rel_path_fwd_slash)
+    }
+
+    /// Returns whether the index lists the asset at `rel_path_fwd_slash` and its file is on disk.
+    pub(crate) fn indexed_and_present(&self, rel_path_fwd_slash: &str) -> bool {
+        let uuid = self.resolve_uuid(rel_path_fwd_slash);
+        self.assets().index().get_metadata(&uuid).is_some()
+            && self.abs_of(rel_path_fwd_slash).is_file()
     }
 
     /// Absolute path of an asset given its forward-slash relative path.
@@ -580,15 +589,9 @@ impl ProjectVfs {
 
     /// Drains the pending hot-reload events under this project's assets root.
     pub fn poll_changes(&self) -> Vec<AssetChangeEvent> {
-        let own = self.assets_root.canonicalize().ok();
-        self.watch
-            .poll_for("editor_vfs")
-            .into_iter()
-            .filter(|event| {
-                *event.root == *self.assets_root
-                    || own.is_some() && event.root.canonicalize().ok() == own
-            })
-            .collect()
+        let mut events = self.watch.poll_for("editor_vfs");
+        events.retain(|event| self.watched_as.names(&event.root));
+        events
     }
 }
 
@@ -618,12 +621,8 @@ impl ProjectVfs {
     pub fn written_asset_id(&self, rel_path_fwd_slash: &str) -> AssetUUID {
         let existing = std::fs::canonicalize(self.assets_root.join(rel_path_fwd_slash))
             .ok()
-            .zip(std::fs::canonicalize(&self.assets_root).ok())
-            .and_then(|(file, root)| {
-                file.strip_prefix(&root)
-                    .ok()
-                    .map(|rel| rel.to_string_lossy().replace('\\', "/"))
-            });
+            .and_then(|file| khora_sdk::fs::relative_to(&file, &self.assets_root))
+            .map(|rel| asset_key(&rel));
         self.resolve_uuid(existing.as_deref().unwrap_or(rel_path_fwd_slash))
     }
 
@@ -633,7 +632,7 @@ impl ProjectVfs {
         let assets = self.assets();
         let source = &assets.index().get_metadata(&id)?.source_path;
         let rel = source.strip_prefix(&self.assets_root).unwrap_or(source);
-        Some(rel.to_string_lossy().replace('\\', "/"))
+        Some(asset_key(rel))
     }
 
     /// Whether `id` names a part of a file (a glTF's scene, mesh, material…).
@@ -643,7 +642,7 @@ impl ProjectVfs {
         self.assets()
             .index()
             .get_metadata(&id)
-            .and_then(|metadata| metadata.variants.get("default"))
+            .and_then(|metadata| metadata.default_source())
             .is_some_and(|source| matches!(source, khora_sdk::AssetSource::Sub { .. }))
     }
 
@@ -707,8 +706,8 @@ mod tests {
                 .index()
                 .get_metadata(&uuid)
                 .ok_or_else(|| anyhow::anyhow!("{file} is not indexed"))?
-                .asset_type_name
-                .clone();
+                .asset_type
+                .to_string();
             let no_decoder = match svc.load::<Mesh>(&uuid) {
                 Ok(_) => false,
                 Err(e) => format!("{e:#}").contains("No decoder registered"),
@@ -935,8 +934,7 @@ mod tests {
         second_vfs.share_assets(&shared);
 
         let announced: Vec<AssetUUID> = shared
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .lock_recovered()
             .changes()
             .drain()
             .into_iter()

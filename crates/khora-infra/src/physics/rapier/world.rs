@@ -19,6 +19,7 @@ use khora_core::physics::{
     BodyType, CharacterControllerOptions, ColliderDesc, ColliderHandle, ColliderShape,
     CollisionEvent, PhysicsProvider, Ray, RaycastHit, RigidBodyDesc, RigidBodyHandle,
 };
+use khora_core::sync::LockExt;
 use rapier3d::control::*;
 use rapier3d::prelude::*;
 use std::sync::{Arc, Mutex};
@@ -91,7 +92,7 @@ impl PhysicsProvider for RapierPhysicsWorld {
             &(),
             &event_handler,
         );
-        let mut events = self.events.lock().unwrap_or_else(|e| e.into_inner());
+        let mut events = self.events.lock_recovered();
         self.aliases.settle(&mut events);
     }
 
@@ -349,7 +350,7 @@ impl PhysicsProvider for RapierPhysicsWorld {
     }
 
     fn take_collision_events(&self) -> Vec<CollisionEvent> {
-        let mut events = self.events.lock().unwrap_or_else(|e| e.into_inner());
+        let mut events = self.events.lock_recovered();
         std::mem::take(&mut *events)
     }
 

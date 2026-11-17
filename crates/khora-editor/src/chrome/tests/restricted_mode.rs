@@ -20,7 +20,7 @@
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
-use khora_sdk::editor_ui::{EditorPanel, EditorState, UiTheme};
+use khora_sdk::editor_ui::{EditorPanel, EditorRequest, EditorState, UiTheme};
 use khora_tool_ui::testing::RecordingUiBuilder;
 
 use crate::chrome::{RestrictedBarPanel, StatusBarPanel};
@@ -145,10 +145,10 @@ fn the_restricted_bar_shows_the_last_refusal_in_place_of_its_description() {
 fn trust_this_project_asks_for_the_confirmation() {
     let (_, after) = bar(restricted(), strip().with_click("restricted-bar-trust"));
 
-    assert_eq!(after.pending_menu_action.as_deref(), Some("confirm_trust"));
+    assert_eq!(after.requests, [EditorRequest::ConfirmTrust]);
 
     let (_, untouched) = bar(restricted(), strip());
-    assert_eq!(untouched.pending_menu_action, None, "no click, no action");
+    assert!(untouched.requests.is_empty(), "no click, no action");
 }
 
 /// **The status bar wears a `restricted` chip, in amber, while the project

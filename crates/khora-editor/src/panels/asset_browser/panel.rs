@@ -15,10 +15,10 @@
 //! The asset browser as an editor panel: the frame it draws each tick.
 
 use khora_sdk::editor_ui::*;
-use khora_sdk::khora_core::asset::AssetUUID;
+use khora_sdk::khora_core::asset::{AssetType, AssetUUID};
 
 use crate::widgets::panel_header::paint_panel_header;
-use crate::widgets::tile::{paint_asset_tile, AssetTileKind};
+use crate::widgets::tile::{paint_asset_tile, AssetTile, AssetTileKind};
 use khora_tool_ui::widgets::paint;
 use khora_tool_ui::widgets::with_alpha;
 
@@ -166,7 +166,7 @@ impl EditorPanel for AssetBrowserPanel {
             let count = if *kind == AssetTileKind::Unknown {
                 self.flat.len()
             } else {
-                self.flat.iter().filter(|a| a.asset_type == *kind).count()
+                self.flat.iter().filter(|a| a.tile == *kind).count()
             };
             let active = self.selected_filter == Some(*kind)
                 || (self.selected_filter.is_none() && *kind == AssetTileKind::Unknown);
@@ -404,18 +404,19 @@ impl EditorPanel for AssetBrowserPanel {
                 continue;
             }
             let selected = self.selected_index == Some(*orig_idx);
-            let interaction = paint_asset_tile(
-                ui,
-                &format!("tile-{}", orig_idx),
-                [tx, ty],
-                [TILE_SIZE, tile_h],
-                &asset.name,
-                asset.asset_type,
+            let id_salt = format!("tile-{orig_idx}");
+            let tile = AssetTile {
+                id_salt: &id_salt,
+                origin: [tx, ty],
+                size: [TILE_SIZE, tile_h],
+                name: &asset.name,
+                kind: asset.tile,
                 selected,
-                counts_of(&asset.rel_path).and_then(crate::panels::problems::view::tile_badge),
-                asset.container.is_none() && quarantined.contains(&asset.rel_path),
-                &theme,
-            );
+                badge: counts_of(&asset.rel_path)
+                    .and_then(crate::panels::problems::view::tile_badge),
+                quarantined: asset.container.is_none() && quarantined.contains(&asset.rel_path),
+            };
+            let interaction = paint_asset_tile(ui, tile, &theme);
             // Stamped with the epoch `flat` was built at, the one `orig_idx`
             // indexes into.
             ui.dnd_attach_drag_payload(pack_asset_drag(
@@ -423,7 +424,7 @@ impl EditorPanel for AssetBrowserPanel {
                 self.last_epoch.unwrap_or(0),
             ));
             if ui.is_last_item_dragged() {
-                dragging_ghost = Some((asset.name.clone(), asset.asset_type));
+                dragging_ghost = Some((asset.name.clone(), asset.tile));
             }
             // Tiles cover the grid, so the grid-wide drop target never sees an
             // entity released onto a tile.
@@ -434,7 +435,7 @@ impl EditorPanel for AssetBrowserPanel {
             }
             let idx = *orig_idx;
             let rel = asset.rel_path.clone();
-            let is_material = asset.type_name == "material";
+            let is_material = asset.asset_type == AssetType::Material;
             let (uuid, name) = (asset.uuid, asset.name.clone());
             let file_ops = asset.container.is_none();
             ui.context_menu_last(&mut |menu| {
@@ -505,7 +506,7 @@ impl EditorPanel for AssetBrowserPanel {
                         "Asset browser: assign material '{name}' ignored — no entity selected"
                     );
                 } else {
-                    state.pending_assign_material = Some(uuid);
+                    state.push_request(EditorRequest::AssignMaterial { material: uuid });
                     log::info!("Asset browser: assigning material '{name}' to selection");
                 }
             }
@@ -525,7 +526,9 @@ impl EditorPanel for AssetBrowserPanel {
         }
         if let Some(rel) = to_duplicate {
             if let Ok(mut state) = self.state.lock() {
-                state.pending_duplicate_asset = Some(rel.clone());
+                state.push_request(EditorRequest::AssetFile(AssetFileOp::Duplicate {
+                    path: rel.clone(),
+                }));
             }
             log::info!("Asset browser: duplicating '{rel}'");
         }
@@ -546,7 +549,7 @@ impl EditorPanel for AssetBrowserPanel {
                 log::info!(
                     "Asset selected: {} ({:?}) — {}",
                     asset.name,
-                    asset.asset_type,
+                    asset.tile,
                     asset.rel_path
                 );
             }
@@ -602,8 +605,12 @@ impl EditorPanel for AssetBrowserPanel {
                                 };
                                 if new_rel != asset.rel_path {
                                     if let Ok(mut state) = self.state.lock() {
-                                        state.pending_rename_asset =
-                                            Some((asset.rel_path.clone(), new_rel));
+                                        state.push_request(EditorRequest::AssetFile(
+                                            AssetFileOp::Rename {
+                                                from: asset.rel_path.clone(),
+                                                to: new_rel,
+                                            },
+                                        ));
                                     }
                                     log::info!("Asset browser: renaming '{}'", asset.rel_path);
                                 }

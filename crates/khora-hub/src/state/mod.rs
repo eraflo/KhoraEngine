@@ -11,6 +11,7 @@
 
 pub mod auth;
 pub mod banner;
+mod card_facts;
 mod engine_choice;
 pub mod engine_manager;
 pub mod home;
@@ -20,6 +21,7 @@ pub mod settings;
 
 pub use auth::AuthState;
 pub use banner::Banner;
+pub use card_facts::{CardFact, CardFacts};
 pub use engine_manager::EngineManagerState;
 pub use home::HomeState;
 pub use new_project::{EngineChoice, NewProjectState};

@@ -144,7 +144,7 @@ pub fn build_for_host(pvfs: &ProjectVfs, project_name: &str) -> Result<BuildOutc
 /// The key the user's builds are signed with, kept in
 /// `user_dirs::signing_dir` (made on the first build, never in a project).
 fn user_signer() -> Result<PackSigner> {
-    let dir = khora_sdk::user_dirs::signing_dir(&|key| std::env::var_os(key))
+    let dir = khora_sdk::user_dirs::signing_dir(&khora_sdk::user_dirs::process_env)
         .ok_or_else(|| anyhow!("Build Game: no home folder to keep the signing key in"))?;
     PackSigner::load_or_create(&dir).context("Build Game: the signing key")
 }
@@ -496,7 +496,7 @@ fn workspace_root_from_target_dir(target_dir: &Path) -> Option<PathBuf> {
 /// Returns `~/.khora/engines/` if accessible. The hub manages this
 /// directory; the editor reads from it.
 fn engine_cache_dir() -> Option<PathBuf> {
-    let p = khora_sdk::user_dirs::khora_dir(&|key| std::env::var_os(key))?.join("engines");
+    let p = khora_sdk::user_dirs::khora_dir(&khora_sdk::user_dirs::process_env)?.join("engines");
     if p.is_dir() {
         Some(p)
     } else {

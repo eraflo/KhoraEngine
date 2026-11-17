@@ -216,7 +216,7 @@ fn asset_metadata_fields(x: &khora_core::asset::AssetMetadata) {
     let _ = (
         &x.uuid,
         &x.source_path,
-        &x.asset_type_name,
+        &x.asset_type,
         &x.dependencies,
         &x.variants,
         &x.tags,
@@ -1573,15 +1573,29 @@ fn module_asset_paths_still_resolve() {
     let _: [khora_core::asset::AssetKind; 6] = khora_core::asset::AssetKind::ALL;
     let _ = khora_core::asset::AssetKind::ergon_name
         as fn(khora_core::asset::AssetKind) -> &'static str;
-    let _ = khora_core::asset::AssetKind::index_name
-        as fn(khora_core::asset::AssetKind) -> &'static str;
     let _ = khora_core::asset::AssetKind::from_ergon_name
-        as fn(&str) -> Option<khora_core::asset::AssetKind>;
-    let _ = khora_core::asset::AssetKind::from_index_name
         as fn(&str) -> Option<khora_core::asset::AssetKind>;
     is_debug::<khora_core::asset::AssetKind>();
     is_clone::<khora_core::asset::AssetKind>();
     is_copy::<khora_core::asset::AssetKind>();
+    let _ = type_name::<khora_core::asset::AssetType>();
+    let _: [khora_core::asset::AssetType; 11] = khora_core::asset::AssetType::KNOWN;
+    let _ = khora_core::asset::AssetType::as_str as fn(&khora_core::asset::AssetType) -> &str;
+    let _ = khora_core::asset::AssetType::from_name as fn(&str) -> khora_core::asset::AssetType;
+    let _ = khora_core::asset::AssetType::of_known_name
+        as fn(&str) -> Option<khora_core::asset::AssetType>;
+    let _ = khora_core::asset::AssetType::script_kind
+        as fn(&khora_core::asset::AssetType) -> Option<khora_core::asset::AssetKind>;
+    is_clone::<khora_core::asset::AssetType>();
+    is_eq::<khora_core::asset::AssetType>();
+    is_hash::<khora_core::asset::AssetType>();
+    is_display::<khora_core::asset::AssetType>();
+    is_from_string::<khora_core::asset::AssetType>();
+    is_serialize::<khora_core::asset::AssetType>();
+    is_deserialize_owned::<khora_core::asset::AssetType>();
+    let _: &str = khora_core::asset::AssetMetadata::DEFAULT_VARIANT;
+    let _ = khora_core::asset::AssetMetadata::default_source
+        as fn(&khora_core::asset::AssetMetadata) -> Option<&khora_core::asset::AssetSource>;
     is_partial_eq::<khora_core::asset::AssetKind>();
     // trait `khora_core::asset::AsAny`: see `as_any_trait_items`
     // trait `khora_core::asset::Asset`: see `asset_trait_items`

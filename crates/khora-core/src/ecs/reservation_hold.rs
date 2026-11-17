@@ -26,6 +26,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::ecs::entity::EntityId;
 use crate::ecs::EntityReserver;
+use crate::sync::LockExt;
 
 /// Ids one load reserves, held across frames until it commits them or gives
 /// them back. Dropping the hold gives back every id it still holds.
@@ -33,6 +34,7 @@ use crate::ecs::EntityReserver;
 pub struct ReservationHold {
     reserver: Arc<EntityReserver>,
     /// The ids reserved through this hold and still held by it.
+    // A panic while held leaves a list of ids: still distinct.
     ids: Mutex<HashSet<EntityId>>,
     /// Ids held for this hold before it reserves anything — slots the world
     /// freed — handed out by [`reserve`](Self::reserve) first.
@@ -43,20 +45,16 @@ impl ReservationHold {
     /// An id no other reservation and no live entity holds, held until the
     /// load commits it or the hold gives it back. Never fails.
     pub fn reserve(&self) -> EntityId {
-        let spare = self
-            .spare
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .pop();
+        let spare = self.spare.lock_recovered().pop();
         let id = spare.unwrap_or_else(|| self.reserver.reserve_held());
-        self.lock().insert(id);
+        self.ids.lock_recovered().insert(id);
         id
     }
 
     /// Commits `id`, one this hold reserved: the hold gives it back no more,
     /// and the world brings it to life. `false` for an id it does not hold.
     pub fn commit(&self, id: EntityId) -> bool {
-        if !self.lock().remove(&id) {
+        if !self.ids.lock_recovered().remove(&id) {
             return false;
         }
         self.reserver.commit_held(id)
@@ -65,23 +63,13 @@ impl ReservationHold {
     /// Makes the ids this hold reserved and did not commit ready to reserve
     /// again, before any other: a load prepared again reuses them.
     pub fn recycle(&self) {
-        let ids = std::mem::take(&mut *self.lock());
-        self.spare
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .extend(ids);
+        let ids = std::mem::take(&mut *self.ids.lock_recovered());
+        self.spare.lock_recovered().extend(ids);
     }
 
     /// Whether this hold reserves through `reserver`.
     pub fn is_over(&self, reserver: &Arc<EntityReserver>) -> bool {
         Arc::ptr_eq(&self.reserver, reserver)
-    }
-
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashSet<EntityId>> {
-        // A panic while held leaves a list of ids: still distinct.
-        self.ids
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
@@ -89,13 +77,8 @@ impl Drop for ReservationHold {
     /// Gives back every id the hold still holds: the next reservations hand
     /// them out again.
     fn drop(&mut self) {
-        let ids = std::mem::take(&mut *self.lock());
-        let spare = std::mem::take(
-            &mut *self
-                .spare
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        );
+        let ids = std::mem::take(&mut *self.ids.lock_recovered());
+        let spare = std::mem::take(&mut *self.spare.lock_recovered());
         self.reserver.give_back_held(ids.into_iter().chain(spare));
     }
 }

@@ -25,6 +25,7 @@ use super::{offer_of, report_of};
 use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::{Agent, Contention, ExecutionTiming, Layer, Place, Preparation, Wake};
+use khora_core::sync::LockExt;
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
 use std::sync::{Arc, Condvar, Mutex};
@@ -245,13 +246,6 @@ fn rows_ran(log: &SharedLog) -> Vec<StrategyId> {
         .collect()
 }
 
-/// `place`, locked.
-fn locked(place: &Mutex<Place>) -> std::sync::MutexGuard<'_, Place> {
-    place
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
 // ─── Off the frame ──────────────────────────────────────────────────────────
 
 /// **A slow preparation runs off the frame while the installed layer runs.**
@@ -299,7 +293,7 @@ fn a_slow_preparation_runs_off_the_frame_while_the_installed_layer_runs() {
     );
     assert_eq!(finished(&jobs), 0, "the preparation is still held");
     {
-        let place = locked(&place);
+        let place = place.lock_recovered();
         assert_eq!(place.installed_row(), Some(StrategyId::HighPerformance));
         assert_eq!(place.staged_row(), None);
         assert_eq!(place.pending_row(), Some(StrategyId::LowPower));
@@ -417,7 +411,7 @@ fn a_family_has_at_most_one_preparation_under_way() {
     }
     std::thread::sleep(Duration::from_millis(50));
     assert_eq!(started(&jobs), 1, "no second preparation while one is held");
-    let waiting = locked(&place).pending_row();
+    let waiting = place.lock_recovered().pending_row();
     assert!(
         waiting.is_some_and(|row| row != StrategyId::Custom(1)),
         "the place waits for a later row than the one under way: {waiting:?}"
@@ -430,7 +424,8 @@ fn a_family_has_at_most_one_preparation_under_way() {
         &runtime,
         "a later row to be installed",
         || {
-            locked(&place)
+            place
+                .lock_recovered()
                 .installed_row()
                 .is_some_and(|row| row != StrategyId::HighPerformance)
         },
@@ -439,7 +434,7 @@ fn a_family_has_at_most_one_preparation_under_way() {
     let jobs = jobs.lock().expect("the jobs lock");
     assert_eq!(jobs.most_at_once, 1, "never two preparations at once");
     assert!(jobs.started.len() >= 2, "{:?}", jobs.started);
-    let place = locked(&place);
+    let place = place.lock_recovered();
     assert_ne!(place.installed_row(), Some(StrategyId::Custom(1)));
     assert!(
         place
@@ -496,7 +491,7 @@ fn a_failed_preparation_wakes_the_agent(failing: Preparation) {
         "every frame ran the installed layer: {ran:?}"
     );
     timed_frame(&mut scheduler, &mut world, &runtime);
-    let place = locked(&place);
+    let place = place.lock_recovered();
     assert_eq!(place.installed_row(), Some(StrategyId::HighPerformance));
     assert_eq!(place.staged_row(), None);
     assert_eq!(place.pending_row(), None);
@@ -624,7 +619,9 @@ fn a_layer_prepared_before_the_engine_shuts_down_is_shut_down() {
     // The preparation's result is on its way back once its job returned.
     std::thread::sleep(Duration::from_millis(50));
     drop(scheduler);
-    locked(&place).shutdown(&mut khora_core::gpu::GpuSetup::headless());
+    place
+        .lock_recovered()
+        .shutdown(&mut khora_core::gpu::GpuSetup::headless());
 
     assert_eq!(
         shut_down.load(std::sync::atomic::Ordering::SeqCst),

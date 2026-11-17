@@ -26,6 +26,7 @@ use crate::governor::FrameGovernor;
 use crate::metrics::MetricStore;
 use crossbeam_channel::Receiver;
 use khora_core::agent::Agent;
+use khora_core::sync::{LockExt, RwLockExt};
 use khora_core::telemetry::monitoring::MonitoredResourceType;
 use khora_core::telemetry::{MetricId, TelemetryEvent};
 use khora_data::ecs::layout::LayoutAdvisor;
@@ -152,10 +153,7 @@ impl DccService {
                 // A sensor read can take milliseconds, and none of it may land
                 // in a frame. See the book: concepts/telemetry.md, "The hardware".
                 if hardware_read.is_none_or(|at| at.elapsed() >= HARDWARE_READ_PERIOD) {
-                    let monitor = hardware_monitor
-                        .read()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .clone();
+                    let monitor = hardware_monitor.read_recovered().clone();
                     if let Some(monitor) = monitor {
                         // Read before the context is locked: the frame's
                         // thread reads it every frame, and must never wait
@@ -166,7 +164,7 @@ impl DccService {
                             monitor.battery_level(),
                             monitor.cpu_load(),
                         );
-                        let mut ctx = context.write().unwrap_or_else(|e| e.into_inner());
+                        let mut ctx = context.write_recovered();
                         ctx.hardware.thermal = thermal;
                         ctx.hardware.battery = battery;
                         ctx.hardware.cpu_load = cpu_load;
@@ -204,15 +202,14 @@ impl DccService {
                                     |capacity| (capacity as f64 * (1.0 - VRAM_HEADROOM)) as u64,
                                 ));
                                 if let Some(ceiling) = ceiling {
-                                    let mut ctx =
-                                        context.write().unwrap_or_else(|e| e.into_inner());
+                                    let mut ctx = context.write_recovered();
                                     ctx.hardware.available_vram =
                                         Some(ceiling.saturating_sub(usage.current_bytes));
                                 }
                             }
                         }
                         TelemetryEvent::HardwareReport(report) => {
-                            let mut ctx = context.write().unwrap_or_else(|e| e.into_inner());
+                            let mut ctx = context.write_recovered();
                             ctx.hardware.thermal = report.thermal;
                             ctx.hardware.battery = report.battery;
                             ctx.hardware.cpu_load = report.cpu_load;
@@ -228,7 +225,7 @@ impl DccService {
                             );
                         }
                         TelemetryEvent::ActivationChanged(inactive) => {
-                            let mut ctx = context.write().unwrap_or_else(|e| e.into_inner());
+                            let mut ctx = context.write_recovered();
                             log::debug!("DCC families off: {:?} → {:?}", ctx.inactive, inactive);
                             if ctx.inactive != inactive {
                                 // The agents asked change with the families on:
@@ -325,7 +322,7 @@ impl DccService {
                 }
 
                 let (mut report, mut ctx_copy) = {
-                    let mut ctx = context.write().unwrap_or_else(|e| e.into_inner());
+                    let mut ctx = context.write_recovered();
                     // The tracking allocator's figures give the memory pressure
                     // the heuristics read.
                     let mem_bytes = store.get_average(&MetricId::new("memory", "current_bytes"));
@@ -441,7 +438,7 @@ impl DccService {
                 // for the scheduler, which lends it at its next frame
                 // start: this thread never lends.
                 let agents: Vec<Arc<std::sync::Mutex<dyn Agent>>> = {
-                    let registry = registry.lock().unwrap_or_else(|e| e.into_inner());
+                    let registry = registry.lock_recovered();
                     registry.iter_active(&ctx_copy.inactive).cloned().collect()
                 };
                 epochs.observe(&agents);

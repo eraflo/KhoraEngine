@@ -19,8 +19,8 @@
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::{
-    AssetEntry, EditorPanel, EditorState, FontFamilyHint, Interaction, TextAlign, UiBuilder,
-    UiTheme,
+    AssetEntry, EditorPanel, EditorRequest, EditorState, FontFamilyHint, Interaction, TextAlign,
+    UiBuilder, UiTheme,
 };
 
 use super::super::AssetBrowserPanel;
@@ -153,7 +153,12 @@ fn a_part_offers_no_file_operation() {
 #[test]
 fn revealing_a_files_path_selects_the_file_not_one_of_its_parts() {
     let (mut panel, state) = browsing(listing());
-    state.lock().expect("state").pending_reveal_asset = Some(SHIP.to_owned());
+    state
+        .lock()
+        .expect("state")
+        .push_request(EditorRequest::RevealAsset {
+            path: SHIP.to_owned(),
+        });
 
     panel.follow_reveal();
 

@@ -20,6 +20,7 @@ use khora_agents::lane_agent::{set_fixed_step, LaneAgent};
 use khora_agents::registered_agent::{lane_agents_in, registered_agents};
 use khora_control::DccService;
 use khora_core::agent::{Agent, ExecutionPhase};
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use std::sync::{Arc, Mutex};
 
@@ -32,14 +33,9 @@ use std::sync::{Arc, Mutex};
 ///
 /// Panics on the first such agent.
 pub(super) fn refuse_stranded_agents(dcc: &DccService, order: &[ExecutionPhase]) {
-    let registry = dcc
-        .agent_registry()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let registry = dcc.agent_registry().lock_recovered();
     for agent in registry.iter() {
-        let agent = agent
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let agent = agent.lock_recovered();
         let phase = agent.execution_timing().phase;
         // The background runs off the frame: no phase order holds it.
         if phase != ExecutionPhase::BACKGROUND && !order.contains(&phase) {
@@ -94,11 +90,7 @@ pub(super) fn register_lane_agents(
     // An application can reach the registry through the runtime before the
     // families are registered: a family's name it took would leave the
     // family never running.
-    let taken = dcc
-        .agent_registry()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .all_ids();
+    let taken = dcc.agent_registry().lock_recovered().all_ids();
     if let Some(registration) = registrations
         .iter()
         .find(|registration| taken.contains(&registration.agent))
@@ -115,8 +107,7 @@ pub(super) fn register_lane_agents(
             let agent = Arc::new(Mutex::new(agent));
             dcc.register_agent(agent.clone() as Arc<Mutex<dyn Agent>>, 1.0);
             dcc.agent_registry()
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .lock_recovered()
                 .set_origin(registration.agent, registration.module);
             agent
         })

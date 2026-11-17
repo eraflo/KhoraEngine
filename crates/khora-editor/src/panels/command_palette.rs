@@ -28,7 +28,7 @@ use khora_tool_ui::widgets::with_alpha;
 struct Command {
     label: &'static str,
     description: &'static str,
-    action: &'static str,
+    action: EditorRequest,
     icon: Icon,
 }
 
@@ -42,25 +42,25 @@ const QUICK_ACTIONS: &[Command] = &[
     Command {
         label: "Save Scene",
         description: "Save the current scene file",
-        action: "save",
+        action: EditorRequest::Menu(MenuAction::Save),
         icon: Icon::Cube,
     },
     Command {
         label: "Play",
         description: "Run scene in editor",
-        action: "play",
+        action: EditorRequest::Transport(Transport::Play),
         icon: Icon::Play,
     },
     Command {
         label: "Pause",
         description: "Pause the running simulation",
-        action: "pause",
+        action: EditorRequest::Transport(Transport::Pause),
         icon: Icon::Pause,
     },
     Command {
         label: "Stop",
         description: "Stop simulation, restore scene",
-        action: "stop",
+        action: EditorRequest::Transport(Transport::Stop),
         icon: Icon::Stop,
     },
 ];
@@ -69,19 +69,19 @@ const CREATE_ACTIONS: &[Command] = &[
     Command {
         label: "New Scene",
         description: "Discard current scene and start fresh",
-        action: "new_scene",
+        action: EditorRequest::Menu(MenuAction::NewScene),
         icon: Icon::Plus,
     },
     Command {
         label: "New Empty Entity",
         description: "Spawn an empty entity in the scene",
-        action: "spawn_empty",
+        action: EditorRequest::Menu(MenuAction::SpawnEmpty),
         icon: Icon::Plus,
     },
     Command {
         label: "Save Scene As…",
         description: "Save under a new filename",
-        action: "save_as",
+        action: EditorRequest::Menu(MenuAction::SaveAs),
         icon: Icon::Cube,
     },
 ];
@@ -90,13 +90,13 @@ const NAVIGATE_ACTIONS: &[Command] = &[
     Command {
         label: "Open Scene…",
         description: "Open a .kscene file",
-        action: "open",
+        action: EditorRequest::Menu(MenuAction::Open),
         icon: Icon::Folder,
     },
     Command {
         label: "Documentation",
         description: "Open Khora Engine docs",
-        action: "documentation",
+        action: EditorRequest::Menu(MenuAction::Documentation),
         icon: Icon::Code,
     },
 ];
@@ -104,7 +104,7 @@ const NAVIGATE_ACTIONS: &[Command] = &[
 const VIEW_ACTIONS: &[Command] = &[Command {
     label: "Toggle Wireframe",
     description: "Show scene meshes as edge lines (debug)",
-    action: "toggle_wireframe",
+    action: EditorRequest::ToggleWireframe,
     icon: Icon::Cube,
 }];
 
@@ -294,7 +294,7 @@ impl EditorPanel for CommandPalettePanel {
         let list_scroll_prev = self.list_scroll;
         let query_ref = &mut self.query;
         let active_ref = &mut self.active;
-        let mut to_dispatch: Option<&'static str> = None;
+        let mut to_dispatch: Option<EditorRequest> = None;
         let mut close_after = false;
         let theme_for_closure = theme.clone();
 
@@ -317,7 +317,7 @@ impl EditorPanel for CommandPalettePanel {
                 'outer: for (_, items) in &visible {
                     for cmd in items {
                         if idx == *active_ref {
-                            to_dispatch = Some(cmd.action);
+                            to_dispatch = Some(cmd.action.clone());
                             close_after = true;
                             break 'outer;
                         }
@@ -430,7 +430,7 @@ impl EditorPanel for CommandPalettePanel {
                     *active_ref = idx;
                 }
                 if interaction.clicked {
-                    to_dispatch = Some(cmd.action);
+                    to_dispatch = Some(cmd.action.clone());
                     close_after = true;
                 }
 
@@ -489,7 +489,7 @@ impl EditorPanel for CommandPalettePanel {
         let _ = theme_for_closure;
         if let Some(action) = to_dispatch {
             if let Ok(mut s) = self.state.lock() {
-                s.pending_menu_action = Some(action.to_owned());
+                s.push_request(action);
             }
         }
         if close_after {

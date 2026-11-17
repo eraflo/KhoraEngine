@@ -54,38 +54,42 @@ pub fn spawn_mesh_asset(
     entity
 }
 
-/// Processes pending spawn requests from the scene tree panel.
+/// Spawns what the queued [`EditorRequest::Spawn`]s ask, oldest first, and selects each.
 pub fn process_spawns(world: &mut GameWorld, state: &mut EditorState) {
-    if let Some(request) = state.pending_spawn.take() {
-        let entity = match request.as_str() {
-            "Cube" => {
+    let shapes = state.take_requests(|request| match request {
+        EditorRequest::Spawn(shape) => Ok(shape),
+        other => Err(other),
+    });
+    for shape in shapes {
+        let entity = match shape {
+            SpawnShape::Cube => {
                 let mat = world.add_material(default_surface_material());
                 khora_sdk::spawn_cube_at(world, khora_sdk::prelude::math::Vec3::ZERO, 1.0)
                     .with_component(Name::new("Cube"))
                     .with_component(mat)
                     .build()
             }
-            "Sphere" => {
+            SpawnShape::Sphere => {
                 let mat = world.add_material(default_surface_material());
                 khora_sdk::spawn_sphere(world, 0.5, 16, 16)
                     .with_component(Name::new("Sphere"))
                     .with_component(mat)
                     .build()
             }
-            "Plane" => {
+            SpawnShape::Plane => {
                 let mat = world.add_material(default_surface_material());
                 khora_sdk::spawn_plane(world, 10.0, 0.0)
                     .with_component(Name::new("Plane"))
                     .with_component(mat)
                     .build()
             }
-            "Light" => world.spawn((
+            SpawnShape::Light => world.spawn((
                 Transform::identity(),
                 GlobalTransform::identity(),
                 Name::new("Light"),
                 Light::directional(),
             )),
-            "Camera" => {
+            SpawnShape::Camera => {
                 let cam = Camera::new_perspective(std::f32::consts::FRAC_PI_4, 0.1, 1000.0);
                 world.spawn((
                     Transform::identity(),
@@ -94,16 +98,16 @@ pub fn process_spawns(world: &mut GameWorld, state: &mut EditorState) {
                     cam,
                 ))
             }
-            _ => world.spawn((
+            SpawnShape::Empty => world.spawn((
                 Transform::identity(),
                 GlobalTransform::identity(),
-                Name::new(&request),
+                Name::new(shape.label()),
             )),
         };
 
         // An author made it: it keeps the identity a scene saves it under.
         world.inner_world_mut().mark_authored(entity);
         state.select(entity);
-        log::info!("Spawned entity {:?} ({})", entity, request);
+        log::info!("Spawned entity {:?} ({})", entity, shape.label());
     }
 }

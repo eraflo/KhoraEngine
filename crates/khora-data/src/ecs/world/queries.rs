@@ -14,6 +14,7 @@
 
 //! Building queries: planning, page matching, the domain bitset.
 
+use khora_core::sync::RwLockExt;
 use std::{any::TypeId, collections::HashSet};
 
 use super::World;
@@ -52,21 +53,13 @@ impl World {
 
         // The plan is cached, never the pages: they are matched on every call.
         let plan = {
-            let cache = self
-                .planner
-                .query_cache
-                .read()
-                .unwrap_or_else(|e| e.into_inner());
+            let cache = self.planner.query_cache.read_recovered();
             if let Some(plan) = cache.get(&plan_key(&type_ids)) {
                 plan.clone()
             } else {
                 drop(cache);
                 let new_plan = self.analyze_query(&type_ids);
-                let mut cache = self
-                    .planner
-                    .query_cache
-                    .write()
-                    .unwrap_or_else(|e| e.into_inner());
+                let mut cache = self.planner.query_cache.write_recovered();
                 cache.insert(plan_key(&type_ids), new_plan.clone());
                 new_plan
             }
@@ -108,21 +101,13 @@ impl World {
         let type_ids = Q::type_ids();
 
         let plan = {
-            let cache = self
-                .planner
-                .query_cache
-                .read()
-                .unwrap_or_else(|e| e.into_inner());
+            let cache = self.planner.query_cache.read_recovered();
             if let Some(plan) = cache.get(&plan_key(&type_ids)) {
                 plan.clone()
             } else {
                 drop(cache);
                 let new_plan = self.analyze_query(&type_ids);
-                let mut cache = self
-                    .planner
-                    .query_cache
-                    .write()
-                    .unwrap_or_else(|e| e.into_inner());
+                let mut cache = self.planner.query_cache.write_recovered();
                 cache.insert(plan_key(&type_ids), new_plan.clone());
                 new_plan
             }

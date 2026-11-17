@@ -81,10 +81,7 @@ impl ProjectCompiler {
 
     /// Returns a loader of the modules under `script_root`, reporting to the runtime's refusals.
     fn loader(&self, script_root: &Path) -> PreludeLoader<DiskLoader> {
-        let refusals = self
-            .refusals
-            .clone()
-            .unwrap_or_else(|| Arc::new(Refusals::new(None, None)));
+        let refusals = self.refusals.clone().unwrap_or_else(Refusals::detached);
         PreludeLoader::new(DiskLoader::guarded(FileGuard::new(
             script_root,
             self.trust(),

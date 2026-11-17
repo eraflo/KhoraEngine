@@ -17,24 +17,15 @@
 use super::gpu::render_pipeline_spec;
 use super::ForwardPlusGpuResources;
 use crate::render::neutral::NeutralBindings;
-use crate::render::util::kept_bind_groups::KeptBindGroups;
+use crate::render::util::kept_bind_groups::{KeptBindGroups, LightingKey};
 use crate::render::util::variant_pipelines::{Surface, VariantPipelines};
 use khora_core::lane::io::TargetKey;
-use khora_core::renderer::api::ibl::IblGpuBindings;
-use khora_core::renderer::api::resource::BufferId;
-use khora_core::renderer::api::shadow::ShadowGpuBindings;
 use khora_core::renderer::error::RenderError;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
 
 /// The label the lane's resources are named by.
 const LABEL: &str = "Forward+";
-
-/// What a group-3 bind group binds besides the fixed light buffers.
-///
-/// The light lists (rebuilt when the target outgrows them), the shadow atlases
-/// and the environment.
-pub(super) type LightingKey = (BufferId, ShadowGpuBindings, IblGpuBindings);
 
 /// Forward+'s buffers, its neutral bindings, the pipelines it drew with on
 /// the current target and the group-3 bind group over them.
@@ -44,6 +35,8 @@ pub(super) struct PlusGpu {
     pub(super) pipelines: VariantPipelines,
     /// The one group-3 bind group, kept while what it binds holds: the light
     /// buffers are not rotated, so every frame in flight binds the same.
+    ///
+    /// Its key's buffer is the light index list, rebuilt when the target outgrows it.
     pub(super) lighting_group: KeptBindGroups<LightingKey>,
 }
 

@@ -36,10 +36,11 @@ use khora_core::lane::guard::InputRefusal;
 use khora_core::lane::io::{Budget, Declaration, InputSource, LaneInputs};
 use khora_core::lane::level::Level;
 use khora_core::lane::{Lane, LaneError, LaneReport, OutputDeck};
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 
 use super::fixtures::{
-    host_envelope, installed_row, level, locked, place_of, recorded_level, run, runtime, Plan,
+    host_envelope, installed_row, level, place_of, recorded_level, run, runtime, Plan,
     ProbeOutputs, Recorded, LADDER,
 };
 
@@ -146,7 +147,7 @@ static PRICED: AgentRegistration = khora_core::register_agent! {
 
 /// The terms `agent`'s place lends its layer.
 fn terms_of(agent: &LaneAgent) -> Terms {
-    locked(&place_of(agent)).terms().clone()
+    place_of(agent).lock_recovered().terms().clone()
 }
 
 /// What the lane recorded on `deck`'s last run.

@@ -24,6 +24,7 @@ use khora_core::agent::gorna::AgentId;
 use khora_core::agent::Activation;
 use khora_core::event::Supersedes;
 use khora_core::lane::{OutputDeck, Reserve, Staged, Staging};
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, Role, SystemContext, TickPhase, World};
 
@@ -46,11 +47,7 @@ fn apply_recipes(_: &mut World, runtime: &Runtime, _: &mut OutputDeck, ctx: Syst
         return;
     };
     let taken = ctx.staged::<Recipe>(runtime);
-    applied
-        .0
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .extend(taken);
+    applied.0.lock_recovered().extend(taken);
 }
 
 inventory::submit! {
@@ -88,8 +85,7 @@ fn applied(runtime: &Runtime) -> Vec<Recipe> {
         .get::<Applied>()
         .expect("the applied recipes")
         .0
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .lock_recovered()
         .clone()
 }
 

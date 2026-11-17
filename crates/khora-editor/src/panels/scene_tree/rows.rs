@@ -14,12 +14,36 @@
 
 //! Rows of the tree: filtering, counting, drawing one node and its children.
 
+use std::cell::Cell;
+use std::collections::HashSet;
+
 use khora_sdk::editor_ui::*;
+use khora_sdk::prelude::ecs::EntityId;
 
 use super::{EditorAction, ROW_HEIGHT, ROW_PAD_X};
 use crate::drag_payload::{pack_entity, payload_is_entity, unpack_asset_drag, unpack_entity};
 use khora_tool_ui::widgets::paint;
 use khora_tool_ui::widgets::with_alpha;
+
+use crate::widgets::{Column, Painter};
+
+/// What one frame's rows are drawn against, and where they record what was asked.
+pub(super) struct TreeRows<'a> {
+    /// The selected entities.
+    pub selection: &'a HashSet<EntityId>,
+    /// The entities hidden with the eye icon, dimmed.
+    pub hidden: &'a HashSet<EntityId>,
+    /// The entities whose subtree is folded.
+    pub collapsed: &'a HashSet<EntityId>,
+    /// The epoch an asset drag must carry: an older one was read before a rescan.
+    pub asset_epoch: u64,
+    /// The entity being renamed, if any.
+    pub renaming: Option<EntityId>,
+    /// Where the rename field goes, set once the renamed row is found.
+    pub rename_rect: &'a Cell<Option<[f32; 4]>>,
+    /// What a row was asked this frame.
+    pub pending: &'a Cell<Option<EditorAction>>,
+}
 
 /// Returns `node` filtered by a lowercase `needle`, `None` when nothing in it
 /// matches.
@@ -79,29 +103,28 @@ fn entity_icon(kind: EntityIcon) -> Icon {
     }
 }
 
-/// Paints the row of `node` at `y` and, unless folded, its children's; returns
-/// the y under the last row.
-#[allow(clippy::too_many_arguments)]
+/// Paints the row of `node` at `y` in `column` and, unless folded, its children's;
+/// returns the y under the last row.
 pub(super) fn render_node(
-    ui: &mut dyn UiBuilder,
+    p: &mut Painter<'_>,
+    rows: &TreeRows<'_>,
+    column: Column,
     node: &SceneNode,
     depth: u32,
-    px: f32,
-    pw: f32,
     y: f32,
-    selection: &std::collections::HashSet<khora_sdk::prelude::ecs::EntityId>,
-    hidden: &std::collections::HashSet<khora_sdk::prelude::ecs::EntityId>,
-    theme: &UiTheme,
-    pending: &std::cell::Cell<Option<EditorAction>>,
-    // Refuses an asset drag whose index was read before a rescan.
-    asset_epoch: u64,
-    collapsed: &std::collections::HashSet<khora_sdk::prelude::ecs::EntityId>,
-    // The entity being renamed, and where its field should go once found.
-    renaming: Option<khora_sdk::prelude::ecs::EntityId>,
-    rename_rect: &std::cell::Cell<Option<[f32; 4]>>,
 ) -> f32 {
-    let row_x = px + 4.0;
-    let row_w = pw - 8.0;
+    let (ui, theme) = (&mut *p.ui, p.theme);
+    let TreeRows {
+        selection,
+        hidden,
+        collapsed,
+        asset_epoch,
+        renaming,
+        rename_rect,
+        pending,
+    } = *rows;
+    let row_x = column.x + 4.0;
+    let row_w = column.w - 8.0;
     let is_selected = selection.contains(&node.entity);
     let is_hidden = hidden.contains(&node.entity);
 
@@ -260,22 +283,7 @@ pub(super) fn render_node(
         return next_y;
     }
     for child in &node.children {
-        next_y = render_node(
-            ui,
-            child,
-            depth + 1,
-            px,
-            pw,
-            next_y,
-            selection,
-            hidden,
-            theme,
-            pending,
-            asset_epoch,
-            collapsed,
-            renaming,
-            rename_rect,
-        );
+        next_y = render_node(p, rows, column, child, depth + 1, next_y);
     }
     next_y
 }

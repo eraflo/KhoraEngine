@@ -26,6 +26,7 @@ use crate::substrate::run_data_systems;
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::Activation;
 use khora_core::lane::OutputDeck;
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, Role, SystemContext, Tick, TickPhase, World};
 
@@ -52,15 +53,13 @@ struct ProbeRun {
 static RUNS: Mutex<Vec<ProbeRun>> = Mutex::new(Vec::new());
 
 fn note(probe: &'static str, world: &World, ctx: SystemContext) {
-    RUNS.lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .push(ProbeRun {
-            world: world.instance_id(),
-            probe,
-            resumed: ctx.resumed,
-            since: ctx.since,
-            tick: world.current_tick(),
-        });
+    RUNS.lock_recovered().push(ProbeRun {
+        world: world.instance_id(),
+        probe,
+        resumed: ctx.resumed,
+        since: ctx.since,
+        tick: world.current_tick(),
+    });
 }
 
 fn serving(world: &mut World, _: &Runtime, _: &mut OutputDeck, ctx: SystemContext) {
@@ -119,8 +118,7 @@ fn run_phase(world: &mut World, runtime: &Runtime) {
 
 /// Every run of `probe` on `world`, in run order.
 fn runs_of(probe: &str, world: &World) -> Vec<ProbeRun> {
-    RUNS.lock()
-        .unwrap_or_else(|e| e.into_inner())
+    RUNS.lock_recovered()
         .iter()
         .filter(|run| run.world == world.instance_id() && run.probe == probe)
         .copied()

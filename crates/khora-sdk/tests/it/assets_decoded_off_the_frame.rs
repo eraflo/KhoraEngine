@@ -23,6 +23,7 @@
 //! The decode spans frames, so these tests wait a bounded number of frames
 //! for it, never assume the frame that asks.
 
+use khora_core::sync::LockExt;
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -105,18 +106,11 @@ impl DecodeLog {
 
     /// Holds the next decode the decoder makes.
     fn hold_the_next(&self) {
-        *self
-            .hold
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) =
-            Some(self.calls.load(Ordering::SeqCst));
+        *self.hold.lock_recovered() = Some(self.calls.load(Ordering::SeqCst));
     }
 
     fn threads(&self) -> Vec<ThreadId> {
-        self.threads
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
+        self.threads.lock_recovered().clone()
     }
 
     fn release(&self) {
@@ -148,15 +142,10 @@ impl AssetDecoder<Mesh> for WatchedMeshes {
     ) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
         self.log
             .threads
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .lock_recovered()
             .push(std::thread::current().id());
         let call = self.log.calls.fetch_add(1, Ordering::SeqCst);
-        let held = *self
-            .log
-            .hold
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let held = *self.log.hold.lock_recovered();
         if Some(call) == held {
             self.log.entered.store(true, Ordering::SeqCst);
             let deadline = Instant::now() + HOLD;

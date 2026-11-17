@@ -37,7 +37,7 @@ pub struct ShaderVariantKey(Vec<(&'static str, ShaderDefScalar)>);
 
 impl ShaderVariantKey {
     /// Returns the empty variant (no specialization defs).
-    pub fn empty() -> Self {
+    pub const fn empty() -> Self {
         Self(Vec::new())
     }
 

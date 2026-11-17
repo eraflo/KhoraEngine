@@ -24,6 +24,7 @@ use std::time::{Duration, Instant};
 use khora_core::asset::IndexTicket;
 use khora_core::problems::{Problem, ProblemSeverity, ProblemSource, Problems};
 use khora_core::scene::LoadTicket;
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_io::asset::IndexHub;
 use khora_io::scene_loads::SceneLoadHub;
@@ -73,14 +74,8 @@ impl Readiness {
         }
     }
 
-    fn waited(&self) -> std::sync::MutexGuard<'_, Waited> {
-        self.waited
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
     fn wait_for(&self, ticket: ReadinessTicket) {
-        let mut waited = self.waited();
+        let mut waited = self.waited.lock_recovered();
         if !waited.tickets.contains(&ticket) {
             waited.tickets.push(ticket);
         }
@@ -114,7 +109,7 @@ impl Readiness {
     ///
     /// A ticket whose hub the runtime lacks counts as landed: nothing will land it.
     fn in_flight(&self, runtime: &Runtime) -> (usize, Vec<ReadinessTicket>) {
-        let tickets = self.waited().tickets.clone();
+        let tickets = self.waited.lock_recovered().tickets.clone();
         let indexes = runtime.resources.get::<Arc<IndexHub>>();
         let scenes = runtime.resources.get::<Arc<SceneLoadHub>>();
         let compiles = runtime.resources.get::<Arc<CompileHub>>();
@@ -152,7 +147,7 @@ impl Readiness {
         let held = self.holds.load(Ordering::Acquire) > 0;
         let (waited, late) = self.in_flight(runtime);
         let (started, timeout) = {
-            let mut waited = self.waited();
+            let mut waited = self.waited.lock_recovered();
             (*waited.started.get_or_insert(now), waited.timeout)
         };
         if late.is_empty() && !held {
@@ -169,7 +164,7 @@ impl Readiness {
 
     /// Sets how long the startup waits, counted from the first poll.
     pub fn set_timeout(&self, timeout: Duration) {
-        self.waited().timeout = timeout;
+        self.waited.lock_recovered().timeout = timeout;
     }
 }
 
@@ -211,16 +206,11 @@ fn late_problem(ticket: &ReadinessTicket) -> Problem {
         ReadinessTicket::Compile(ticket) => ("script compile", ticket.0),
     };
     Problem {
-        severity: ProblemSeverity::Warning,
-        module: None,
-        line: 0,
-        column: 0,
-        message: format!("the {kind} {number} had not landed when the startup gave up waiting"),
         note: Some("it may still land; the tool runs without waiting for it".to_owned()),
-        entity: None,
-        behavior: None,
-        component: None,
-        field: None,
+        ..Problem::new(
+            ProblemSeverity::Warning,
+            format!("the {kind} {number} had not landed when the startup gave up waiting"),
+        )
     }
 }
 

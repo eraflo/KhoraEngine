@@ -21,6 +21,7 @@
 
 use crate::substrate::{data_system_last_seen, run_data_systems};
 use khora_core::lane::OutputDeck;
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::ecs::{
     ComponentKey, DataSystemRegistration, SystemContext, Tick, TickPhase, World,
@@ -39,11 +40,8 @@ const SECOND: &str = "data_system_clock_second";
 const PHASE: TickPhase = TickPhase::PreSimulation;
 
 fn record(world: &World, name: &'static str) {
-    RUNS.lock().unwrap_or_else(|e| e.into_inner()).push((
-        world.instance_id(),
-        name,
-        world.current_tick(),
-    ));
+    RUNS.lock_recovered()
+        .push((world.instance_id(), name, world.current_tick()));
 }
 
 fn first(world: &mut World, _: &Runtime, _: &mut OutputDeck, _: SystemContext) {
@@ -79,8 +77,7 @@ inventory::submit! {
 
 /// The ticks `name` ran at on `world`, in run order.
 fn ticks_of(world: &World, name: &str) -> Vec<Tick> {
-    RUNS.lock()
-        .unwrap_or_else(|e| e.into_inner())
+    RUNS.lock_recovered()
         .iter()
         .filter(|(id, system, _)| *id == world.instance_id() && *system == name)
         .map(|(_, _, tick)| *tick)

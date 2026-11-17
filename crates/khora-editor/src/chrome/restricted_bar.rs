@@ -18,7 +18,7 @@
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::{
-    EditorPanel, EditorState, FontFamilyHint, Icon, TextAlign, UiBuilder, UiTheme,
+    EditorPanel, EditorRequest, EditorState, FontFamilyHint, Icon, TextAlign, UiBuilder, UiTheme,
 };
 use khora_tool_ui::widgets::paint::{icon, text, with_alpha};
 use khora_tool_ui::widgets::{button, Button, ButtonKind};
@@ -94,7 +94,7 @@ impl EditorPanel for RestrictedBarPanel {
         let said = refusal.as_deref().unwrap_or(DESCRIPTION);
         text(ui, [x, y], said, size, t.text_dim);
 
-        // The bar only asks: the app turns `confirm_trust` into
+        // The bar only asks: the app turns `EditorRequest::ConfirmTrust` into
         // `EditorState::trust_confirm`, filled from the project's folder.
         let label = "Trust this project\u{2026}";
         let w = ui.measure_text(label, size, FontFamilyHint::Proportional)[0] + 28.0;
@@ -108,7 +108,7 @@ impl EditorPanel for RestrictedBarPanel {
         );
         if hit.clicked {
             if let Ok(mut state) = self.state.lock() {
-                state.pending_menu_action = Some("confirm_trust".to_owned());
+                state.push_request(EditorRequest::ConfirmTrust);
             }
         }
     }

@@ -21,6 +21,7 @@ use std::sync::Arc;
 use khora_core::lane::OutputDeck;
 use khora_core::problems::{Problem, ProblemSeverity, ProblemSource, Problems};
 use khora_core::renderer::traits::{GraphicsDevice, PipelineSystem};
+use khora_core::sync::LockExt;
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
 
@@ -31,26 +32,46 @@ use crate::asset::{AssetChangeEvent, AssetChangeKind, AssetWatch};
 /// A runtime resource, held as `Arc<OverlaysSeen>`.
 #[derive(Default)]
 pub struct OverlaysSeen {
-    /// The watched roots and the trust last applied for; `None` before the
-    /// first run. A leaf lock: held only to compare and replace.
-    seen: std::sync::Mutex<Option<Vec<WatchedRoot>>>,
+    /// A leaf lock: held only to compare and replace.
+    seen: std::sync::Mutex<Seen>,
+}
+
+/// The roots last applied for, and the generations they were read at.
+#[derive(Default)]
+struct Seen {
+    /// The watched roots and the trust last applied for; `None` before the first run.
+    roots: Option<Vec<WatchedRoot>>,
+    /// The watch's and the trust state's generations when `roots` were read.
+    generations: Option<Generations>,
 }
 
 /// A watched root and the trust it is read at.
-type WatchedRoot = (std::path::PathBuf, crate::trust::ProjectTrust);
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WatchedRoot {
+    /// The root, as the watch names it.
+    root: std::path::PathBuf,
+    /// The trust its files are read at.
+    trust: crate::trust::ProjectTrust,
+}
+
+/// The watch's generation and the trust state's: while both hold, the roots and their trust do.
+type Generations = (u64, u64);
 
 impl OverlaysSeen {
-    /// Records `roots`, each with its trust, and returns whether they differ from the last.
-    fn moved(&self, roots: Vec<WatchedRoot>) -> bool {
-        let mut seen = self
-            .seen
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+    /// Returns whether the roots were last read at `generations`: they are as they were.
+    fn settled_at(&self, generations: Generations) -> bool {
+        self.seen.lock_recovered().generations == Some(generations)
+    }
+
+    /// Records `roots`, read at `generations`, and returns whether they differ from the last.
+    fn moved(&self, roots: Vec<WatchedRoot>, generations: Generations) -> bool {
+        let mut seen = self.seen.lock_recovered();
+        seen.generations = Some(generations);
         let now = Some(roots);
-        if *seen == now {
+        if seen.roots == now {
             return false;
         }
-        *seen = now;
+        seen.roots = now;
         true
     }
 }
@@ -108,34 +129,26 @@ fn changed_files(event: &AssetChangeEvent) -> Vec<(std::path::PathBuf, String)> 
     if event.kind != AssetChangeKind::Rescan {
         return vec![(root, event.rel_path.clone())];
     }
-    walkdir::WalkDir::new(&root)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_file())
-        .filter_map(|entry| {
-            let rel = entry.path().strip_prefix(&root).ok()?;
-            Some((root.clone(), khora_core::asset::asset_key(rel)))
-        })
+    crate::fs::files_under(&root)
+        .iter()
+        .map(|rel| (root.clone(), khora_core::asset::asset_key(rel)))
         .collect()
 }
 
 /// Returns the warning listed for the overlay at `file`, left unused by a restricted project.
 fn ignored(file: &std::path::Path) -> Problem {
     Problem {
-        severity: ProblemSeverity::Warning,
-        module: Some(file.display().to_string()),
-        line: 0,
-        column: 0,
-        message: "Shader overlay ignored".to_owned(),
         note: Some(
             "A restricted project's shaders are not used. Trust the project to use them."
                 .to_owned(),
         ),
-        entity: None,
-        behavior: None,
-        component: None,
-        field: None,
+        ..Problem::of_file(
+            ProblemSeverity::Warning,
+            file.display().to_string(),
+            0,
+            0,
+            "Shader overlay ignored",
+        )
     }
 }
 
@@ -156,17 +169,11 @@ fn list_ignored(runtime: &Runtime, file: &std::path::Path) {
 /// Returns every overlay under `root`, as the absolute root and the path under it.
 fn overlays_under(root: &std::path::Path) -> Vec<(std::path::PathBuf, String)> {
     let root = crate::asset::root_path::absolute(root);
-    walkdir::WalkDir::new(&root)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_file())
-        .filter_map(|entry| {
-            let rel = entry.path().strip_prefix(&root).ok()?;
-            let rel = khora_core::asset::asset_key(rel);
-            logical_name_for_shader_path(&rel)?;
-            Some((root.clone(), rel))
-        })
+    crate::fs::files_under(&root)
+        .iter()
+        .map(|rel| khora_core::asset::asset_key(rel))
+        .filter(|rel| logical_name_for_shader_path(rel).is_some())
+        .map(|rel| (root.clone(), rel))
         .collect()
 }
 
@@ -182,8 +189,12 @@ fn apply_afresh(
 ) {
     pipeline_system.clear_overlays();
     let mut listed = Vec::new();
-    for (watched, trust) in roots {
-        let restricted = *trust == crate::trust::ProjectTrust::Restricted;
+    for WatchedRoot {
+        root: watched,
+        trust,
+    } in roots
+    {
+        let restricted = trust.is_restricted();
         for (root, rel_path) in overlays_under(watched) {
             let Some(logical) = logical_name_for_shader_path(&rel_path) else {
                 continue;
@@ -216,30 +227,32 @@ fn shader_hot_reload_system(
     let Some(device) = runtime.backends.get::<Arc<dyn GraphicsDevice>>() else {
         return;
     };
+    // The roots and their trust are read again only when one may have moved.
+    let generations = (
+        watch.generation(),
+        crate::trust::ProjectTrustState::generation_of(runtime),
+    );
+    let seen = runtime.resources.get::<Arc<OverlaysSeen>>();
+    let events = watch.poll_for("shader_hot_reload");
+    if events.is_empty() && seen.is_none_or(|seen| seen.settled_at(generations)) {
+        return;
+    }
     // A root outside the project open, such as the previous one still
     // watched, is read restricted.
     let roots: Vec<WatchedRoot> = (watch.roots().into_iter())
         .map(|root| {
             let trust = crate::trust::ProjectTrustState::of_path(runtime, &root);
-            (root, trust)
+            WatchedRoot { root, trust }
         })
         .collect();
     // A project opened, closed, trusted or restricted: its overlays are
     // applied afresh, those on disk included — not only the ones saved since.
-    let moved = runtime
-        .resources
-        .get::<Arc<OverlaysSeen>>()
-        .is_some_and(|seen| seen.moved(roots.clone()));
-    let events = watch.poll_for("shader_hot_reload");
+    let moved = seen.is_some_and(|seen| seen.moved(roots.clone(), generations));
     if events.is_empty() && !moved {
         return;
     }
 
-    let refusals = runtime
-        .resources
-        .get::<Arc<crate::trust::Refusals>>()
-        .cloned()
-        .unwrap_or_else(|| Arc::new(crate::trust::Refusals::new(None, None)));
+    let refusals = crate::trust::Refusals::of(runtime);
     // An overlay deleted gives its module back, so the overlays are applied
     // afresh: a shader or a folder (no extension) removed, or a rescan, which
     // may have dropped a removal.
@@ -264,8 +277,7 @@ fn shader_hot_reload_system(
             continue; // Not a shader file.
         };
         // A restricted project's shaders never replace the engine's.
-        let restricted = crate::trust::ProjectTrustState::of_path(runtime, &root)
-            == crate::trust::ProjectTrust::Restricted;
+        let restricted = crate::trust::ProjectTrustState::of_path(runtime, &root).is_restricted();
         if restricted {
             log::debug!(
                 "shader hot-reload: {rel_path} is not used for `{logical}`: the project is restricted"

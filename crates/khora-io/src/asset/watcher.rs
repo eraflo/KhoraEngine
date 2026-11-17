@@ -20,6 +20,7 @@
 use anyhow::{Context, Result};
 use khora_core::asset::asset_key;
 use khora_core::event::{Channel, Supersedes, WhenFull};
+use khora_core::sync::LockExt;
 use notify::{recommended_watcher, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -140,16 +141,6 @@ pub struct AssetWatcher {
     budget: Arc<Mutex<EventBudget>>,
 }
 
-/// A file as one write left it: when it was last modified, and its length.
-/// Two events seeing the same stamp saw the same write.
-type Stamp = (std::time::SystemTime, u64);
-
-/// `path`'s stamp, when the file can be read.
-fn stamp_of(path: &Path) -> Option<Stamp> {
-    let metadata = std::fs::metadata(path).ok()?;
-    Some((metadata.modified().ok()?, metadata.len()))
-}
-
 /// How many changes are kept for readers that have not caught up.
 ///
 /// A backstop against a subscriber that stops reading, not a tuning knob: a
@@ -189,7 +180,7 @@ impl AssetWatcher {
         // One save fires several `Modified` in a row, the file unchanged between
         // them: remembering the previous event and its file stamp collapses the
         // burst. Another save, however soon, leaves another stamp.
-        let mut last: Option<(AssetChangeEvent, Option<Stamp>)> = None;
+        let mut last: Option<(AssetChangeEvent, Option<crate::fs::FileStamp>)> = None;
 
         let mut watcher = recommended_watcher(move |res: notify::Result<notify::Event>| {
             let event = match res {
@@ -208,7 +199,7 @@ impl AssetWatcher {
                 ) else {
                     continue;
                 };
-                let stamp = stamp_of(path);
+                let stamp = crate::fs::FileStamp::of(path);
                 let echo = last
                     .as_ref()
                     .filter(|(_, before)| stamp.is_some() && *before == stamp)
@@ -217,10 +208,7 @@ impl AssetWatcher {
                     continue;
                 }
                 last = Some((change.clone(), stamp));
-                let admitted = match budget_for_handler.lock() {
-                    Ok(mut budget) => budget.admit(Instant::now()),
-                    Err(poisoned) => poisoned.into_inner().admit(Instant::now()),
-                };
+                let admitted = budget_for_handler.lock_recovered().admit(Instant::now());
                 if admitted {
                     sink.send(change);
                 }
@@ -252,10 +240,7 @@ impl AssetWatcher {
     /// reader never takes another's changes. A new name starts at the oldest
     /// retained change, so a system registered a frame late still hears it.
     pub fn poll_for(&self, subscriber: &'static str) -> Vec<AssetChangeEvent> {
-        let rescan = match self.budget.lock() {
-            Ok(mut budget) => budget.take_rescan(Instant::now()),
-            Err(poisoned) => poisoned.into_inner().take_rescan(Instant::now()),
-        };
+        let rescan = self.budget.lock_recovered().take_rescan(Instant::now());
         if rescan {
             log::warn!(
                 "Too many changes at once under {}: everything under it is read again",

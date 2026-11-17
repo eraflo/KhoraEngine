@@ -40,6 +40,7 @@ use khora_core::renderer::api::resource::{
 use khora_core::renderer::api::shader::ShaderVariantKey;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
+use khora_core::sync::RwLockExt;
 use khora_core::Runtime;
 
 use crate::ecs::{HandleComponent, MaterialRef, SystemContext, Without, World};
@@ -106,16 +107,12 @@ impl ProjectionRegistry {
                 &HandleComponent<Box<dyn Material>>,
                 Without<HandleComponent<GpuMaterial>>,
             )>();
-            let textures = cpu_textures.read().unwrap_or_else(|e| e.into_inner());
+            let textures = cpu_textures.read_recovered();
             for (entity_id, material_handle, _) in query {
                 let uuid = material_handle.uuid;
                 let material: &dyn Material = &**material_handle.handle;
 
-                if !material_cache
-                    .read()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .contains(&uuid)
-                {
+                if !material_cache.read_recovered().contains(&uuid) {
                     // Defer until every referenced texture has been decoded.
                     if !material_textures_ready(material, &textures) {
                         continue;
@@ -128,16 +125,11 @@ impl ProjectionRegistry {
                         continue;
                     };
                     material_cache
-                        .write()
-                        .unwrap_or_else(|e| e.into_inner())
+                        .write_recovered()
                         .insert(uuid, AssetHandle::new(gpu_material));
                 }
 
-                if let Some(handle) = material_cache
-                    .read()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .get(&uuid)
-                {
+                if let Some(handle) = material_cache.read_recovered().get(&uuid) {
                     pending.insert(
                         entity_id,
                         HandleComponent {

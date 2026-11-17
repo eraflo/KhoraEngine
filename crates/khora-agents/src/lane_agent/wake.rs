@@ -29,6 +29,7 @@ use khora_core::lane::guard::Reason;
 use khora_core::renderer::api::frame::FrameContext;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
+use khora_core::sync::LockExt;
 use khora_core::EngineContext;
 
 use super::layer::{gpu_with, LaneLayer};
@@ -64,9 +65,7 @@ impl LaneAgent {
 
     /// Returns the agent's place, locked.
     pub(super) fn locked_place(&self) -> MutexGuard<'_, Place> {
-        self.place
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.place.lock_recovered()
     }
 
     /// Returns the row running: the one installed at `place`, else the one chosen.
@@ -337,9 +336,7 @@ impl LaneAgent {
     /// what they chose.
     pub(super) fn whole_frame(&mut self, context: &mut EngineContext<'_>) -> Option<Report> {
         let place = Arc::clone(&self.place);
-        let mut place = place
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut place = place.lock_recovered();
         let why = place.take_wakes();
         if !why.is_empty() {
             self.wake(&why, &mut place, context);

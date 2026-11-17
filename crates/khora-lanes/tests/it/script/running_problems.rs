@@ -377,18 +377,13 @@ fn the_running_report_leaves_compile_problems_alone() {
         ProblemSource::Compile {
             module: "other.erg".to_owned(),
         },
-        vec![Problem {
-            severity: ProblemSeverity::Error,
-            module: Some("other.erg".to_owned()),
-            line: 2,
-            column: 16,
-            message: "expected `float`, found `bool`".to_owned(),
-            note: None,
-            entity: None,
-            behavior: None,
-            component: None,
-            field: None,
-        }],
+        vec![Problem::of_file(
+            ProblemSeverity::Error,
+            "other.erg",
+            2,
+            16,
+            "expected `float`, found `bool`",
+        )],
     );
 
     let reported = engine.report(&mut stage);

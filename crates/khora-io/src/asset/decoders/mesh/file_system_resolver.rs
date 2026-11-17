@@ -16,7 +16,6 @@
 
 use std::error::Error;
 use std::path::Path;
-use std::sync::Arc;
 
 use super::resource_resolver::GltfResourceResolver;
 use crate::trust::{FileGuard, Refusals, Trust};
@@ -37,7 +36,7 @@ impl FileSystemResolver {
         Self::guarded(FileGuard::new(
             base_path.as_ref(),
             Trust::Project,
-            Arc::new(Refusals::new(None, None)),
+            Refusals::detached(),
         ))
     }
 

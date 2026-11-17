@@ -22,7 +22,7 @@ use khora_script::native::Host;
 use super::arrival::{arrive, Arriving};
 use super::departure::farewell_departed;
 use super::hooks::{despawns_itself, say_goodbye, TurnStart};
-use super::mail::{keep, sit_out};
+use super::mail::Mailbox;
 use super::persistence;
 use super::report::ScriptRunReport;
 use super::runtime::ScriptRuntime;
@@ -146,6 +146,12 @@ pub fn run_behaviors(
                 None
             };
             let events = held.as_ref().unwrap_or(events);
+            let mail = Mailbox {
+                events,
+                entity: instance.entity,
+                behavior: &program.behavior,
+                several,
+            };
             // Held on the instance until its first turn: the flow hands an
             // arrival over once, and a frame with no fuel or program for it must
             // not lose it. One the lane forgot while the flow did not is what
@@ -181,7 +187,7 @@ pub fn run_behaviors(
                     view.fixed_delta_seconds,
                 ),
             ) {
-                sit_out(events, instance, program, several, runtime, &mut report);
+                mail.sit_out(instance, program, runtime, &mut report);
                 continue;
             }
 
@@ -192,7 +198,7 @@ pub fn run_behaviors(
             if runtime.is_waiting(&program.module) {
                 report.deferred += 1;
                 super::rate::note_sat_out(runtime, instance, program, view.fixed_steps);
-                sit_out(events, instance, program, several, runtime, &mut report);
+                mail.sit_out(instance, program, runtime, &mut report);
                 continue;
             }
 
@@ -238,7 +244,7 @@ pub fn run_behaviors(
                 // and so do the fixed steps it now waits for.
                 super::rate::note_sat_out(runtime, instance, program, view.fixed_steps);
                 // The turn never happened, so nothing addressed to it was seen.
-                sit_out(events, instance, program, several, runtime, &mut report);
+                mail.sit_out(instance, program, runtime, &mut report);
                 continue;
             }
 
@@ -484,15 +490,7 @@ pub fn run_behaviors(
                 Outcome::Deferred { spent, delivered } => {
                     report.deferred += 1;
                     report.spent += spent;
-                    keep(
-                        events,
-                        instance.entity,
-                        delivered,
-                        several,
-                        &program.behavior,
-                        runtime,
-                        &mut report,
-                    );
+                    mail.keep(delivered, runtime, &mut report);
                 }
                 // Part-way through a body, which carries on next turn. On an
                 // `await` it counts as completed: the script does what it says.
@@ -511,15 +509,7 @@ pub fn run_behaviors(
                     report.spent += spent;
                     // A busy behavior is not finished: what it has not been told yet
                     // waits for the turn that will listen.
-                    keep(
-                        events,
-                        instance.entity,
-                        delivered,
-                        several,
-                        &program.behavior,
-                        runtime,
-                        &mut report,
-                    );
+                    mail.keep(delivered, runtime, &mut report);
                 }
                 Outcome::Faulted { spent, reason } => {
                     log::error!(

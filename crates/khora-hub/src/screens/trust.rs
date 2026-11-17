@@ -55,23 +55,23 @@ pub(super) fn show_trust_prompt(app: &mut HubApp, ui: &mut dyn UiBuilder) {
                 DialogChoice {
                     label: "Cancel",
                     kind: ButtonKind::Ghost,
+                    answer: None,
                 },
                 DialogChoice {
                     label: "Open restricted",
                     kind: ButtonKind::Ghost,
+                    answer: Some(ProjectTrust::Restricted),
                 },
                 DialogChoice {
                     label: "Trust and open",
                     kind: ButtonKind::Primary,
+                    answer: Some(ProjectTrust::Trusted),
                 },
             ],
         },
     );
-    match chosen {
-        Some(0) => app.answer_trust(None),
-        Some(1) => app.answer_trust(Some(ProjectTrust::Restricted)),
-        Some(2) => app.answer_trust(Some(ProjectTrust::Trusted)),
-        _ => {}
+    if let Some(answer) = chosen {
+        app.answer_trust(answer);
     }
 }
 
@@ -102,19 +102,22 @@ pub(super) fn show_trust_confirm(app: &mut HubApp, ui: &mut dyn UiBuilder) {
                 DialogChoice {
                     label: "Keep restricted",
                     kind: ButtonKind::Ghost,
+                    answer: false,
                 },
                 DialogChoice {
                     label: "Trust",
                     kind: ButtonKind::Primary,
+                    answer: true,
                 },
             ],
         },
     );
-    let Some(choice) = chosen else { return };
+    let Some(trust) = chosen else { return };
     app.home.trust_confirm = None;
-    if choice == 1 {
+    if trust {
         app.trust_store
             .decide(std::path::Path::new(&proj.path), ProjectTrust::Trusted);
+        app.home.cards.forget();
         app.banner = Some(crate::state::Banner::info(format!(
             "'{}' is trusted: its scripts, shaders and Build Game run.",
             proj.name
