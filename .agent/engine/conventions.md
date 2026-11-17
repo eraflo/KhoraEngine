@@ -37,7 +37,7 @@ Before reporting, run both and leave them clean:
 | Element | Convention | Example |
 |---|---|---|
 | Crates | `khora-{name}` (kebab-case) | `khora-core`, `khora-lanes` |
-| Modules | `snake_case` | `spatial_mixing`, `service_registry` |
+| Modules | `snake_case` | `spatial_mixing`, `frame_graph` |
 | Types & traits | `PascalCase` | `LaneBus`, `WgpuDevice` |
 | Functions & methods | `snake_case` | `begin_frame`, `with_capacity` |
 | Constants | `SCREAMING_SNAKE_CASE` | `MAX_LIGHTS`, `DEFAULT_BUDGET` |
@@ -60,20 +60,23 @@ Before reporting, run both and leave them clean:
 ## 3 — File layout
 
 - One primary type per file (`mat4.rs` → `Mat4`).
-- Unit tests in `#[cfg(test)] mod tests` at the bottom of each module file.
-- Integration tests in `crates/{name}/tests/`; benchmarks in `crates/{name}/benches/`.
+- Unit tests in one inline `#[cfg(test)] mod tests`, last in the file, or in a sibling `tests.rs`; a folder `mod.rs` holds no inline tests.
+- Integration tests are modules of the crate's one `tests/it/` binary (RULES §2b); a family's go in its folder there (`khora-lanes/tests/it/<family>/`, `khora-agents/tests/it/families/<family>/`).
 - Backend implementations grouped per backend folder under `khora-infra/src/`: `graphics/wgpu/`, `physics/rapier/`, `audio/cpal/`, `ui/taffy/`.
 - Shaders under `crates/khora-infra/src/graphics/shader/shaders/` — `pipelines/` (entry points) and `lib/` (reusable modules). One pass per pipeline file; no `.wgsl` at the shaders root.
 - **Invariant `DataSystem`s**: one file per system in `crates/khora-data/src/ecs/systems/`. Discovered via `inventory::submit!{ DataSystemRegistration { … } }`. Zero wiring elsewhere. The function is `fn(&mut World, &Runtime, &mut OutputDeck, SystemContext)`; `ctx.since` is the tick of its previous run, read with `Changed<T>`, and the components it watches go in `observes`. `role` (no default) is `Role::Upkeep` (a data invariant, every frame) or `Role::Serves(family)` (skipped while that family is off, `khora_data::ecs::Role`); `ctx.resumed` tells its first run on a world, and its first run after a skip. A `Flow` declares the same as `const ROLE`, and its `select` gets `FlowContext { resumed }`. The boot refuses a `Serves` naming no registered family (`check_roles`).
 - **Domain `Flow`s**: one file per flow in `crates/khora-data/src/flow/`. Register with `register_flow!(MyFlow)`. The Scheduler's Substrate Pass runs them automatically.
-- **Asset decoders**: one file per decoder in `crates/khora-io/src/asset/decoders/`. Registered with the `AssetService`; the `…Lane` legacy suffix is dropped.
+- **Asset decoders**: one file per decoder in `crates/khora-io/src/asset/decoders/`, registered with `inventory::submit!{ DecoderRegistration { … } }`.
+- **Residencies**: one file per residency in `crates/khora-data/src/residency/`, registered with `register_residency!`.
 
 ### 3.1 — Adding a new domain
+
+The steps, with the files and checks: the [`add-a-family`](./skills/add-a-family/SKILL.md) skill. The bricks: RULES §3.
 
 1. **`Flow`** in `khora-data/src/flow/<domain>.rs` — implement `Flow` (read-only `select → project`), define a typed `View`, register with `register_flow!`. A Flow never mutates the World; per-frame maintenance goes in a `DataSystem`.
 2. **`Lane`s and their `LaneFamily`** in `khora-lanes/src/<family>/` (`family.rs`, its lanes, an input type shared by several lanes in a file of its own) — each lane implements `khora_core::lane::Lane` (`levels`, `prepare`, `cost`, `record`, `shutdown`); it reads typed inputs (`#[derive(LaneInputs)]`: `#[bus]` the `View`, `#[deck]`, `#[resource]`, `#[locked]`, …) and writes the family's typed outputs (`#[derive(LaneOutputs)]`: `#[pass]`, `#[deck]`, `#[staged]`). Never call `world.query*`.
 3. **One registration** in `khora-lanes/src/<family>/registration.rs` — `inventory::submit! { RegisteredAgent(register_agent! { family, phase, importance, after, fixed_step, [default_level,] lanes }) }`. No agent type: the family's agent is the one `LaneAgent`, built from the registration; the scheduler runs its installed layer every frame and wakes it only for an event. Test the family without the scheduler through `khora_agents::lane_agent::run_frame`.
-4. The engine drains the relevant typed slot of the `OutputDeck` at the I/O boundary for side-effects (GPU submit, audio flush…).
+4. A `#[pass]` output goes to a pass slot ordered by `register_pass!`, submitted by the SDK; a `#[deck]` output is read by a later phase or drained by a `Maintenance` DataSystem; an asset's copy on a device is a residency, never lane state.
 
 ## 4 — Components
 
@@ -113,7 +116,7 @@ pub struct Light {
 
 ## 6 — Errors
 
-- Each subsystem owns its error enum: `LaneError`, `AssetError`, `PhysicsError`, …
+- Each subsystem owns its error enum: `LaneError`, `RenderError`, `SerializationServiceError`, …
 - Errors derive `thiserror::Error`; variants carry context (paths, IDs, expected state).
 - `?` for propagation; `map_err` only to add context. Errors originate at boundaries (file I/O, GPU, FFI); internal calls trust their callers.
 

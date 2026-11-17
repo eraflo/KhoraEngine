@@ -43,29 +43,30 @@ them, the `test-breaker` subagent tries to break it. The implementer never edits
 ## Global engine map (coarse — no details)
 
 **Khora Engine** — experimental Rust game engine. **Symbiotic Adaptive Architecture (SAA)**: subsystems
-are intelligent agents that negotiate resource budgets every frame via the **GORNA** protocol.
+are **families** of lanes, each run by one `LaneAgent` that negotiates with the DCC through the **GORNA**
+protocol (an envelope per epoch) and installs the lane and level that fit as a layer the scheduler runs.
 **CLAD** layering names the command path of a frame:
 
 ```
 Control ──► Agent ──► Lane ──► Data        (the per-frame descent)
-       budget   selects   reads bus / writes deck
+   envelope  chooses a row  reads bus / writes deck
 ```
 
-**16 workspace members** (14 `khora-*` + `sandbox` + `xtask`), plus `khora-macros`, a path
-crate that is not a member. One line each. The last column
+**17 workspace members** (14 `khora-*`, `sandbox`, `xtask` and the generated `workspace-hack`),
+plus `khora-macros`, a path crate that is not a member. One line each. The last column
 points to the on-demand [`reference/`](./reference/) doc for that crate's domain:
 
 | Crate | One-line role | reference/ |
 |---|---|---|
-| `khora-core` | Traits, math, GORNA types, contracts. Depends on nothing. | math |
+| `khora-core` | Traits and contracts: the lane contract (`Lane`, `LaneFamily`, typed I/O, bus, deck), `Agent` + `register_agent!`, places and layers, GORNA protocol types, `Residency`, backend traits, math. Depends on nothing. | math |
 | `khora-macros` | Proc macros: `#[derive(Component)]`, the lane derives (`LaneInputs`/`LaneOutputs`), `#[ergon_fn]` (path crate, not a member). | ecs-data |
-| `khora-data` | CRPECS ECS, component storage, SoA/AGDF layout, Flows, scene persistence (records, snapshot, prefabs, game saves). | ecs-data |
-| `khora-control` | DCC, GORNA arbitration, cost model, frame governor, Substrate Pass. | control-gorna |
+| `khora-data` | CRPECS ECS, component storage, SoA/AGDF layout, Flows, DataSystems, residencies, pass slots, scene persistence (records, snapshot, prefabs, game saves). | ecs-data |
+| `khora-control` | DCC, GORNA rounds and the arbiter, cost book, frame governor, the scheduler (lending, layers, waves), Substrate Pass. | control-gorna |
 | `khora-script` | **Ergon** — the gameplay language: lexer, parser, bytecode, VM, hot-reload. Suspends at named safepoints (statement start, loop head, function entry, after a call returns) so the DCC can bound a frame; overdraft past the budget is bounded by `Program::max_overdraft`. Runs only while the scripting family (`khora_core::script::SCRIPT`) is on; the editor switches it off while editing. Depends on core + macros only, so it is testable without booting an engine. | scripting |
-| `khora-lanes` | Hot-path Lanes: render / physics / audio / ui / script. | per-domain |
-| `khora-agents` | Strategist Agents: Render/Shadow/Overlay/Skybox/Physics/Ui/Audio/Script. Each holds strategy state and nothing else. | per-domain |
+| `khora-lanes` | The families, one folder each (`family.rs`, its lanes, `registration.rs`): render, shadows, skybox, overlay (grid / wireframe / gizmo), ui, physics, audio, script, loading. | per-domain |
+| `khora-agents` | `LaneAgent`, the only `Agent`, and the boot that builds one per registered family. | control-gorna |
 | `khora-infra` | Concrete backends, one subfolder each: `graphics/wgpu`, `physics/rapier`, `physics/khora` (in-house, incomplete), `audio/cpal`, `ui/taffy`, `platform/winit`. Also owns the `.wgsl` files and their composition. | per-domain |
-| `khora-io` | Asset service, VFS, serialization, pack/file loaders. | api-ux |
+| `khora-io` | Asset service, decoders, VFS, serialization, signed packs, the trust boundary (`trust/`). | api-ux |
 | `khora-telemetry` | Metrics, monitors, telemetry events. | control-gorna |
 | `khora-sdk` | The **only** public API for game devs (façade). | api-ux |
 | `khora-tool-ui` | First-party **tool** design system: brand palette + shared widgets. Not an engine crate — the SDK does *not* depend on it, so games never inherit Khora's brand. Used by `khora-editor` + `hub`. | editor-ui-ux |
@@ -89,7 +90,7 @@ That is all you keep resident. For anything deeper, research.
 4. During Research, **dispatch the read-only research subagents** (`knowledge-locator`, `codebase-locator`,
    `codebase-analyzer`, `codebase-pattern-finder`) and load the matching [`reference/`](./reference/) doc
    for domain hard rules. `security-auditor` reviews safety before any push.
-5. For a recurring task (add a lane, add a component, build+test…), run the matching skill in [`skills/`](./skills/).
+5. For a recurring task (add a lane, a family, a component, build+test…), run the matching skill in [`skills/`](./skills/).
 6. Use the **codegraph** MCP server to locate symbols *before* grepping (see [`architecture.md`](./architecture.md)).
 7. For any design / UI-UX decision, use **`/impeccable`**.
 8. Record durable findings in [`knowledge/`](./knowledge/MEMORY.md); never commit secrets ([`security-privacy.md`](./security-privacy.md)).

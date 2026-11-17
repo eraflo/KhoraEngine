@@ -63,7 +63,7 @@ transform gizmos, dock layout, theme, and the egui/Taffy plumbing.
   `WireframeView`) in the runtime's `Arc<HostViews>`; the scheduler publishes them on every frame's bus
   and the `grid`, `wireframe` and `gizmo` families (`GridLane`, `WireframeLane`, `GizmoLane`, each run by
   the one `LaneAgent`) render them. The backend owns no pipeline.
-- UI layout through the `LayoutSystem` trait — never call Taffy directly from agents.
+- UI layout through the `LayoutSystem` trait — never call Taffy outside `khora-infra`.
 - Reach egui only through `khora_sdk::tool_ui` / `editor_ui` — never depend on `egui`/`eframe` directly.
 - The engine has no mode; Play/Stop are the editor's. `start_editing` (in `setup`) switches SCRIPT, PHYSICS
   and AUDIO off; `process_transport` (`commands/transport.rs`, in `before_frame`) switches them on at Play

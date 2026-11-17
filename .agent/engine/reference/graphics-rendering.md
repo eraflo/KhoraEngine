@@ -12,16 +12,19 @@ HDR/tone mapping, post-processing, GPU occupancy and synchronization (no Vulkan 
 - Render lanes: `crates/khora-lanes/src/render/` (`SimpleUnlitLane`, `LitForwardLane`, `ForwardPlusLane`;
   `RenderFamily`, agent `renderer`); shadows `shadows/` (`ShadowsLane`, family `shadows`); overlays
   `overlay/{grid,wireframe,gizmo}/` (`GridLane`, `WireframeLane`, `GizmoLane`, one family each); `skybox/`, `ui/`.
-  Registrations in `crates/khora-agents/src/<domain>_agent/agent.rs`; every family's agent is the one `LaneAgent`.
-- Shaders: `crates/khora-infra/src/graphics/shader/shaders/` — `pipelines/` (entry points), `lib/` (`std`/`lighting`/`shadow`), `standalone/` (`text`/`egui`, raw strings). `graphics/wgpu/pipeline_system/mod.rs` (the `PipelineSystem` backend) composes them via `naga_oil #import`.
+  Each family folder holds its `registration.rs`; every family's agent is the one `LaneAgent`, and the
+  chosen lane runs as the family's layer.
+- GPU copies of assets are residencies (`crates/khora-data/src/residency/`: meshes, materials, UI images),
+  read by a lane through its `#[resource]` inputs (`AssetStore`), never built by the lane; pass order is `register_pass!` (`crates/khora-data/src/render/frame_graph.rs`).
+- Shaders: `crates/khora-infra/src/graphics/shader/shaders/` — `pipelines/` (entry points), `lib/` (`std`/`lighting`/`shadow`), `standalone/egui.wgsl` (the one raw string). `graphics/wgpu/pipeline_system/mod.rs` (the `PipelineSystem` backend) composes them via `naga_oil #import`.
 - Backend: `crates/khora-infra/src/graphics/wgpu/` (`WgpuRenderSystem`, `WgpuDevice`).
 - Render API traits: `crates/khora-core/src/renderer/`.
 
 ## Hard rules
-- Every render technique is a `Lane` selected via GORNA. The backend owns **no** render pipeline.
+- Every render technique is a `Lane` of a family, chosen via GORNA. The backend owns **no** render pipeline. A lane builds its pipelines per `TargetKey` (the target's colour and depth formats) in `prepare`, never from the surface format.
 - **Exactly 4 bind groups** (Frame/Object/Material/Lighting). New lighting features add bindings to group 3, never a 5th group. Shadow bindings fixed at group-3 indices 1/2/3.
 - WGSL only, as `.wgsl` files under `khora-infra/src/graphics/shader/shaders/`, composed by the `PipelineSystem` backend — never inline shader strings, never runtime FS reads.
-- **A test that builds or drives a GPU device holds `exclusive_gpu()`** (`khora-infra/src/graphics/wgpu/tests/gpu.rs`, and `tests/it/gpu_test.rs` for the integration binary) for as long as its device lives. Several devices driven at once from several threads crash the Khronos Vulkan validation layer (SDK 1.3.283: access violations in `SetDebugUtilsObjectNameEXT` and resource creation); validation and object labels stay on, the concurrency within each test is untouched. Never turn validation off to dodge it.
+- **A GPU test takes its adapter from `test_adapter()` and holds `exclusive_gpu()`** (`khora-infra/src/graphics/wgpu/tests/gpu.rs`, and `tests/it/gpu_test.rs` for the integration binary) for as long as its device lives; across processes the nextest group `gpu` (`.config/nextest.toml`, 2 at a time) does the same. Several devices driven at once crash the Vulkan validation layer; validation and object labels stay on. Never turn validation off to dodge it.
 - Which lights exist for a frame is decided once, by `khora_data::render::shining_lights`: RenderFlow, ShadowFlow and the IBL sun read it, so light index `i` means the same light everywhere. A light whose own `check` holds an Error, or whose world values are not finite, is not in it (it lights nothing, casts nothing; its problem is listed, its values kept) — never filter lights again in a lane.
 - No `smoothstep` with edges an author can make equal (WGSL leaves `low >= high` undefined): write the fade out with a hard step for an empty span (`attenuation.wgsl`).
 - GPU resources via typed IDs (`TextureId`, `BufferId`, `PipelineId`) — never raw wgpu handles in public APIs. No `unwrap()` on GPU paths.

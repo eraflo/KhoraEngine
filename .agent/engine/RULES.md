@@ -10,7 +10,7 @@ and [`security-privacy.md`](./security-privacy.md).
 
 ## 1 — Must always
 
-- Validate every change with `cargo gate` (fmt, clippy, tests, doc tests — what CI runs) before committing; iterate with `cargo t -p <crate> [filter]`. See `skills/build-and-test` for where the build time goes.
+- Validate every change with `cargo gate` (format, feature unification, clippy, `cargo doc`, tests, doc tests — what CI runs) before committing; iterate with `cargo t -p <crate> [filter]`. See `skills/build-and-test` for where the build time goes.
 - Use the engine's own math types `khora_core::math::{Vec3, Mat4, Quaternion, LinearRgba, …}` — never raw `glam`.
 - Naming: `snake_case` (Rust), `PascalCase` (types), `kebab-case` (crate names). See [`conventions.md`](./conventions.md).
 - Read [`conventions.md`](./conventions.md) *Before you write* before writing. The conventions are checked by `cargo xtask lint-file` (the hook runs it after every write) and by the lints and the `cargo doc` step of `cargo gate`; an agent runs `lint-file` on the files it touched and `cargo doc` before reporting.
@@ -23,7 +23,7 @@ and [`security-privacy.md`](./security-privacy.md).
 ## 2 — Build & test
 
 - Compile with zero warnings at the configured lint level; clippy clean (part of `cargo gate`).
-- All workspace tests must pass before declaring work complete (~2520 today; treat the live count as truth).
+- All workspace tests must pass before declaring work complete (~7600 today; treat the live count as truth).
 - No Vulkan validation errors when running `cargo run -p sandbox`; confirm the frame loop is clean for GPU work.
 
 ## 2b — Build cost (read before adding a dependency, a feature or a target)
@@ -68,23 +68,40 @@ Measurements and levers: `docs/research/2026-11-06_build-time-and-target-size.md
   | floor | `khora-core`, `khora-macros` | nothing |
   | on the floor | `khora-data`, `khora-control`, `khora-script`, `khora-telemetry`, `khora-infra`, `khora-tool-ui` | core (+ `macros` for data/script, + `data` for control) |
   | middle | `khora-io`, `khora-lanes` | core, data, script, telemetry / core, macros (the lane derives), data, script |
-  | strategists | `khora-agents` | core, data, lanes, script (`khora-infra` only as a dev-dependency, for tests) |
+  | strategists | `khora-agents` | core, data, lanes, script (control, io, infra, telemetry as dev-dependencies, for tests) |
   | façade | `khora-sdk` | agents, control, core, data, infra, io, lanes, telemetry |
-  | apps | `khora-editor`, `khora-hub`, `khora-runtime` | sdk (+ `tool-ui` for editor and hub) |
+  | apps | `khora-editor`, `khora-hub`, `khora-runtime`, `sandbox` | sdk (+ `tool-ui` for editor and hub) |
 
   The two easy to get backwards: **`khora-agents` never depends on `khora-infra`**
   (agents reach backends through core traits in the `Runtime`), and
   **`khora-infra` depends on `khora-core` only** — it is a floor
-  tenant, not a top layer. Never introduce a cycle; `cargo tree` is the arbiter.
+  tenant, not a top layer. Never introduce a cycle. `xtask/tests/crate_graph.rs` (`CLAD_TIERS`,
+  `every_crate_stays_in_its_clad_tier`) enforces the table; a new crate is placed here and there first.
+- **Every piece of engine work has one brick**, registered as the table says — never wired by hand in engine code:
+
+  | The piece… | Brick | Registered by |
+  |---|---|---|
+  | reads the World to build per-frame data | **Flow** → a View on the `LaneBus` (`khora-data/src/flow/`) | `register_flow!` |
+  | writes the World | **DataSystem** (`khora-data/src/ecs/systems/`) | `inventory::submit!{ DataSystemRegistration { … } }` |
+  | makes an asset usable on a device, across frames | **Residency** (trait `khora-core/src/residency/`, residencies `khora-data/src/residency/`) | `register_residency!` |
+  | talks to a device or a library | **Backend** behind a `khora-core` trait (`khora-infra`) | the app's bootstrap closure, else the SDK's default (`khora-sdk/src/engine/defaults.rs`) |
+  | lasts, without quality levels | **Service** (`AssetService`, `SerializationService`, …) | the SDK's boot (`khora-sdk/src/engine/runtime_entries.rs`); an app's own in `EngineApp::provide` |
+  | is the per-frame work of one behaviour | **Lane** (`khora-lanes/src/<family>/`) | listed in its family's `register_agent!` |
+  | defines the outputs its behaviours share | **Family** (`LaneFamily`, `<family>/family.rs`) | one `register_agent!` in `<family>/registration.rs` |
+  | orders GPU work | **Pass slot** (`PassSlot`) | `register_pass!` (`khora-data/src/render/frame_graph.rs`) |
+  | carries a CPU result to a later phase | **Deck slot** | a `#[deck]` output of a family |
+  | decodes an asset file | **Decoder** (`AssetDecoder<A>`, `khora-io/src/asset/decoders/`) | `inventory::submit!{ DecoderRegistration { … } }` |
+
+  An agent is never where glue goes: there is no per-domain agent code.
 - Abstract traits live in `khora-core`. Concrete backends live in per-backend subfolders under `khora-infra` (`graphics/wgpu/`, `physics/rapier/`, `audio/cpal/`, `ui/taffy/`, …).
 - Change a `khora-core` trait only when you also update every downstream implementation.
 - Keep GPU resources behind abstract IDs (`TextureId`, `BufferId`, `PipelineId`). Never expose raw wgpu handles in public APIs.
-- **Lanes MUST consume Views from the `LaneBus`** (`khora-core/src/lane/plumbing/bus.rs`), not query the World directly. The domain `Flow` (`khora-data/src/flow/`) is the only legitimate producer of those Views.
+- **Lanes MUST consume Views from the `LaneBus`** (`khora-core/src/lane/plumbing/bus.rs`), never the World. Flows (`khora-data/src/flow/`) and the host's `HostViews` (`khora-core/src/lane/plumbing/host_views.rs`: Views set by the app, such as the editor's grid and gizmos) are the only producers of those Views.
 - **Adapt the HOW, never the WHAT.** Automatic adaptation (DCC / GORNA / `Flow` / AGDF) changes only *representation* — strategy, quality, memory layout. It MUST NEVER change *game semantics* (which components an entity has, simulation-observable behavior).
 - **Structural mutations are forbidden inside Lanes.** Representation-only layout changes (AGDF, e.g. SoA↔AoSoA) belong to the data layer's self-maintenance; Flows are **read-only projectors**. Semantic structural change (attach/detach gameplay components) is developer-authored — opt-in policy, `DataSystem` invariants, or explicit editor/script actions.
 - **The DCC decides how much; the agent decides how.** Per epoch the DCC lends each agent an **envelope** (time per device, memory) — never a row, a developer's pin aside; the agent chooses the row whose price fits, and reports after every run. The DCC's thread never touches an agent: allocations are lent at a frame start by the scheduler.
-- **Agents stay strategists.** A family's lane runs as a **layer** installed at the family's **place** (its phase and pass); the scheduler applies it every frame without the agent, and wakes the agent only for an event (`Wake`). The agent then prepares a new layer beside the installed one, swapped in at a frame start at the same place, or reinstates one kept. No per-frame state, no owning a Flow, no buffering outputs. The descent is `Control → Agent → Lane → Data`.
-- **Engine-tick wiring is data-driven** — to add an invariant register a `DataSystemRegistration`; to add a Flow use `register_flow!`; to add an asset decoder register an `AssetDecoderRegistration`. Never wire a system manually in engine code.
+- **Agents stay strategists.** A family's lane runs as a **layer** installed at the family's **place** (its phase and pass, `khora-core/src/agent/layer/`); the scheduler runs it every frame without the agent, and wakes the agent only for an event (`Wake`). The agent then prepares a new layer beside the installed one, swapped in at a frame start at the same place, or reinstates one kept. No per-frame state, no owning a Flow, no buffering outputs. The descent is `Control → Agent → Lane → Data`.
+- **The arbiter plans, the shield checks.** Each GORNA round, proposers (`Greedy`, the Q-RAM pass; `Exact`, a bounded branch-and-bound) plan the rows, the `Shield` refuses a plan that breaks a frame constraint or a policy, and the best plan kept is the `Decision` (`khora-control/src/gorna/arbiter/`). A new proposer goes behind the shield, never around it.
 
 ## 4 — Code quality
 
@@ -96,16 +113,17 @@ Measurements and levers: `docs/research/2026-11-06_build-time-and-target-size.md
 
 ## 5 — Concurrency
 
-- Never use `std::thread::spawn` directly. Concurrency goes through the DCC agent system. The DCC schedules; each family's place runs its layer (a `Lane`), the scheduler running it; agents only choose. **Exceptions:** (1) the DCC's own cold-path tick thread (`DccService::start` in `khora-control/src/dcc_service/decision_loop.rs`) — it *is* the concurrency authority this rule routes everything else through, spawned once at startup; (2) the scheduler's **persistent worker pool** (`WorkerPool` in `khora-control/src/worker_pool.rs`), spawned once in `ExecutionScheduler::from_registry` and joined on `Drop`, which runs every member of a concurrent wave as a `'static` job (reaching its inputs through `Arc<LaneBus>`/`Arc<Runtime>`; a wave of one runs inline on the calling thread). No agent reaches the `World`, so it never crosses a thread boundary and no `unsafe`/lifetime-transmute is needed. The pool threads are scheduler-owned and never escape its lifetime. Test code may also spawn threads for isolation. A tool's startup has no exception: the engine boots first, and the tool files its heavy work (project index, scene, script compile) with the engine's families by ticket, its loading film waiting on them through the SDK's `Readiness`.
-- **A backend a concurrent wave can reach never deadlocks, by construction.** Lanes prepare and record in concurrent waves, so the device, the pipeline system, an atlas — every runtime backend or resource a lane reaches — is called from several threads at once. Its locks are **leaves** (held only to look up, insert or remove, never across a call out), or sit above leaves in one declared order that only descends (the `PipelineSystem` holds its lock across device calls; the device's single `Registry` lock is the leaf below it). Nothing calls back up while holding a lock. A new backend states its order in its trait's docs (`GraphicsDevice`, `PipelineSystem` in `khora-core`), and a concurrency test on the real implementation guards it (`khora-infra` `device/concurrency_tests.rs`).
-- An agent declares **one** thing to the scheduler: `Agent::contention()` — the `OutputDeck` slots it writes, and the `Runtime` resources, services and backends it **reads** or **locks**. No agent reaches the `World` (its lanes read Views, write the deck), so there is no world access to declare. Two agents share a concurrent wave only if their contentions are disjoint; reads do not conflict with reads.
-- Never reach `context.runtime.{resources,services,backends}` from an agent or a lane. Go through `EngineContext::resource` (reading) or `::locked` (taking a lock) — a lane through its typed inputs — which refuse what the contention did not declare. Declaring more than you touch is not harmless: it silently serialises a wave that could have run concurrently, and no test reddens.
+- Never use `std::thread::spawn` directly (clippy's `disallowed-methods`, `clippy.toml`; each exception carries an `#[expect]` with its reason). Concurrency goes through the DCC agent system. The DCC schedules; each family's place runs its layer (a `Lane`), the scheduler running it; agents only choose. **Exceptions:** (1) the DCC's own cold-path tick thread (`DccService::start` in `khora-control/src/dcc_service/decision_loop.rs`) — it *is* the concurrency authority this rule routes everything else through, spawned once at startup; (2) the scheduler's two **persistent pools** (`WorkerPool` in `khora-control/src/worker_pool.rs`), both built once in `ExecutionScheduler::from_registry` and joined on `Drop`: the waves' pool runs every member of a concurrent wave as a `'static` job (reaching its inputs through `Arc<LaneBus>`/`Arc<Runtime>`; a wave of one runs inline on the calling thread), and the background pool (`scheduler/background.rs`) runs `ExecutionPhase::BACKGROUND` layers and layer preparations off the frame. No agent reaches the `World`, so it never crosses a thread boundary and no `unsafe`/lifetime-transmute is needed. The pool threads are scheduler-owned and never escape its lifetime. Test code may also spawn threads for isolation. The hub runs no engine: each of its network calls (download, sign-in, releases) runs on a thread of its own. A tool's startup has no exception: the engine boots first, and the tool files its heavy work (project index, scene, script compile) with the engine's families by ticket, its loading film waiting on them through the SDK's `Readiness`.
+- **A backend a concurrent wave can reach never deadlocks, by construction.** Lanes prepare and record in concurrent waves, so the device, the pipeline system, an atlas — every runtime backend or resource a lane reaches — is called from several threads at once. Its locks are **leaves** (held only to look up, insert or remove, never across a call out), or sit above leaves in one declared order that only descends (the `PipelineSystem` holds its lock across device calls; the device's single `Registry` lock is the leaf below it). Nothing calls back up while holding a lock. A new backend states its order in its trait's docs (`GraphicsDevice`, `PipelineSystem` in `khora-core`), and a concurrency test on the real implementation guards it (`khora-infra/src/graphics/wgpu/device/tests/concurrency.rs`).
+- **No hand-written access or contention.** A family's `Contention` (the deck slots it writes and reads, the runtime entries it reads or locks) is derived by `LaneAgent` from its lanes' typed I/O — the `#[derive(LaneInputs)]` / `#[derive(LaneOutputs)]` declarations — never written by hand. There is no world access to declare: no agent or lane reaches the `World`. Two agents share a concurrent wave only if their contentions are disjoint; reads do not conflict with reads.
+- A lane reaches the runtime only through its typed inputs; an agent's `wake` only through `EngineContext::resource` / `::locked`, which refuse what the contention did not declare. `EngineContext`'s runtime is private (xtask `engine_context_runtime_field_is_private`). Declare only the inputs a lane reads: an extra one silently serialises a wave that could have run concurrently, and no test reddens.
 
 ## 6 — Subsystem boundaries
 
-- Physics through the `PhysicsProvider` trait + physics lane. Never call Rapier directly from agents.
-- Audio through the `AudioDevice` trait + spatial mixing lane. Never call CPAL directly.
-- UI layout through the `LayoutSystem` trait. Never call Taffy directly from agents.
+- Physics through the `PhysicsProvider` trait + the physics lane. Never call Rapier outside `khora-infra`.
+- Audio through the `AudioDevice` trait + the spatial mixing lane. Never call CPAL outside `khora-infra`.
+- UI layout through the `LayoutSystem` trait. Never call Taffy outside `khora-infra`.
+- **Every project file is read through the trust boundary** (`khora-io/src/trust/`): the `FileGuard` checks the path, the size cap of the file's kind at its `Trust`, and the content, and reports a refusal to the run's `Refusals` (quarantine). A restricted project (`ProjectTrust::Restricted`) is read under the strict caps and runs nothing (no script, no shader overlay, no Build Game). Never read a project file around the guard. A shipped pack is signed (`khora-io/src/asset/signing.rs`) and a stamped runtime refuses an unsealed one (`khora-sdk/src/game_seal.rs`). Detail: `docs/src/concepts/trust.md`.
 - Reference loaded assets via `AssetHandle<T>` / `HandleComponent<T>`. Never store raw asset data inline.
 - Save and load scenes as **records** through `SerializationService` (`khora-io/src/serialization.rs`): components by registered name, fields by name, entities by `PersistentId`, page-shaped. The `SerializationGoal` picks the encoding; it never changes what is saved. Never save raw page memory; never write a payload migration. Detail: [`reference/ecs-data.md`](./reference/ecs-data.md) §Persistence.
   - `FastestLoad` is the exception that proves it: a positional **snapshot** (`KH_SNAPSHOT_V1`) bound to every Rust component's schema fingerprint, refused whole on any mismatch. It is a same-build cache (the editor's Play/Stop restore) — **never a project's only copy**. A script-declared component is snapshotted with its fields and restored onto the live declaration by name (a hot reload during Play may have relaid it out).
@@ -128,7 +146,6 @@ Measurements and levers: `docs/research/2026-11-06_build-time-and-target-size.md
   - Older scene formats are refused (`SceneFileReadError::OldFormat`); there is no v1 reader to extend.
 - Never inline WGSL source as a Rust `const`/`static`. Shaders are `.wgsl` files under `crates/khora-infra/src/graphics/shader/shaders/` (`pipelines/` entry points, `lib/` reusable modules), embedded with `include_str!` and composed by the `PipelineSystem` backend (`khora-infra/src/graphics/wgpu/pipeline_system/mod.rs`) using `naga_oil` `#import`. Lanes resolve a pipeline **by name** (`khora::pipelines::grid`), never by handing over source.
   - **One exception, and it is the only one:** `EGUI_WGSL` in `khora-infra/src/graphics/shader/mod.rs` (its `.wgsl` file sits in the shaders tree with the others, under `standalone/`). Its consumer, the egui overlay, takes a raw string rather than a pipeline handle. No new `_WGSL` constant should appear — UI text is drawn by the UI lane through `khora::pipelines::ui_text` like any other pipeline.
-  - There is **no `ShaderRegistry` type** — earlier revisions of this file named one. The composition point is the `PipelineSystem` backend.
 
 ## 7 — Components & ECS
 
@@ -149,10 +166,10 @@ Measurements and levers: `docs/research/2026-11-06_build-time-and-target-size.md
 
 ## 8 — Must never
 
-- Write a new agent type. A new subsystem is a **family**: its lanes and one `register_agent!` registration (phase, importance, lanes, default level); its agent is the one `LaneAgent`, built by `lane_agent`. An agent implements **only** `Agent` — no `start/stop`, builders, or accessors; private free functions in the module file are fine. (No hand-written agent is left: rendering and scripting are families too.)
-- Give an agent more than one family, or any job other than choosing its row, answering GORNA, and installing its layers. An agent has no `execute`: the scheduler runs its family's place, and wakes the agent only for an event. `LaneAgent` is the only implementor outside tests (the xtask check `only_lane_agent_implements_agent`).
+- Write an agent. **A domain writes a family, lanes and a registry line; `LaneAgent` is the only `Agent`.** The family is a `LaneFamily` (`khora-lanes/src/<family>/family.rs`), its lanes implement `Lane`, and its registry line is one `inventory::submit!{ RegisteredAgent(register_agent!{ … }) }` in `<family>/registration.rs`. Boot builds one `LaneAgent` per registration (`khora-agents/src/lane_agent/`); the xtask check `only_lane_agent_implements_agent` refuses any other `impl Agent` outside tests.
+- Give a family more than one agent, or an agent any job other than answering GORNA, choosing its row and installing its layers. An agent has no `execute`: the scheduler runs its family's place, and wakes the agent only for an event.
 - Offer one `StrategyId` twice in a family — boot refuses it, and a family's rows, pins and layers are named by it.
-- Use an `Agent` for a subsystem that doesn't need GORNA negotiation — use a direct service (`AssetService`, `SerializationService`, `EcsMaintenance`).
+- Make a family of a subsystem that doesn't need GORNA negotiation — use a direct service (`AssetService`, `SerializationService`, `EcsMaintenance`).
 - Bypass the `Lane` abstraction for hot-path work.
 - Add concrete backend logic to `khora-core`.
 - Commit code with Vulkan validation errors or wgpu warnings.
@@ -162,7 +179,7 @@ Measurements and levers: `docs/research/2026-11-06_build-time-and-target-size.md
 
 - Only modify files inside the `KhoraEngine` workspace.
 - **Never edit generated AI wrappers** — `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `.github/copilot-instructions.md`, `.claude/`, `.cursor/`, `.gemini/`. They are regenerated from `.agent/engine/` by the installer. Edit the canonical source here, not the copies.
-- Don't touch `target/`, `Cargo.lock` (unless intentionally bumping deps), `.codegraph/`, `.gitagent/`, or vendored code.
+- Don't touch `target/`, `Cargo.lock` (unless intentionally bumping deps), `.codegraph/`, or vendored code.
 - Don't modify `.github/workflows/` without asking.
 
 ## 10 — Permission model

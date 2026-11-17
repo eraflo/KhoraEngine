@@ -71,7 +71,7 @@ skills:
   - { path: skills/implement-plan/SKILL.md,    when: RPI phase 3 — execute a plan, compact per phase }
   - { path: skills/build-and-test/SKILL.md,   when: validate a change }
   - { path: skills/add-a-lane/SKILL.md,       when: add a Lane }
-  - { path: skills/add-an-agent/SKILL.md,     when: add an Agent }
+  - { path: skills/add-a-family/SKILL.md,     when: add a family (a negotiating subsystem) }
   - { path: skills/add-a-component/SKILL.md,  when: add/register an ECS component }
   - { path: skills/add-a-shader/SKILL.md,     when: add a WGSL shader + pipeline }
   - { path: skills/run-the-engine/SKILL.md,   when: launch editor or sandbox }

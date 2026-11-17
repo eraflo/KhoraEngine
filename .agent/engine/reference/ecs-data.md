@@ -18,6 +18,9 @@ snapshot, atomic loads, game saves and prefab links.
   `schema`/`schema_complete`, snapshot fns, inspector `to_json`/`from_json`) in
   `crates/khora-data/src/scene/component_registration.rs`.
 - Flows / DataSystems: `crates/khora-data/src/flow/`, `crates/khora-data/src/ecs/systems/`.
+- Residencies: the trait in `crates/khora-core/src/residency/mod.rs` (`Residency`, `Resident<R>`,
+  `DeviceClass`); `register_residency!` and one file per residency in `crates/khora-data/src/residency/`
+  (`MeshOnGpu` as `gpu_mesh_sync`, `ImageOnGpu` into the UI atlas, `gpu_material_sync`).
 - Derive macro: `crates/khora-macros/src/component/` (`mod.rs` the derive, one file per part it builds).
 - Persistence: `crates/khora-data/src/scene/` — `record/` (`Record`, `LoadReport` in `report.rs`),
   `scene_record.rs` (`SceneRecord`, `PageRecord`, `InstanceRecord`), `capture.rs`, `apply.rs`
@@ -34,6 +37,8 @@ snapshot, atomic loads, game saves and prefab links.
   via telemetry — it never changes which components an entity has.
 - **Flows are read-only projectors** (`select → project`); they never mutate the World. World mutation goes
   through `DataSystem` invariants registered via `inventory` — never wired by hand.
+- **An asset's copy on a device is a residency**: a DataSystem at `PreExtract`, after the asset reload and
+  the resolver, that makes, keeps (per source copy) and releases it. A lane reads the store, never uploads.
 - The `Ucb1` bandit is deterministic (no RNG) for reproducibility.
 - **Queries:** `World::query(&self)` requires `ReadOnlyWorldQuery` (an `unsafe` marker; a new query term that
   only reads must implement it, one that writes must not). Writing goes through `query_mut`, which panics on a

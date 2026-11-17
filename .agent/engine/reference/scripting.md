@@ -1,7 +1,7 @@
 # Scripting (Ergon) — reference
 
 Domain knowledge for **Ergon**, Khora's gameplay language. Consulted during Research (dispatch the
-`codebase-*` subagents to apply it to concrete files). Follow [`../RULES.md`](../RULES.md) §8.
+`codebase-*` subagents to apply it to concrete files). Follow [`../RULES.md`](../RULES.md) §7b and §8.
 
 ## Scope
 The language and its VM: lexing, parsing, AST, bytecode, the interpreter, the persistent field arena,
@@ -34,12 +34,12 @@ switches it off while editing.
 - Component mirrors: `crates/khora-io/src/script/mirror.rs` — turns each `ComponentShape`
   (`khora-data/src/scene/shape.rs`, emitted by `#[derive(Component)]`) into Ergon declarations, served
   at `engine/components.erg` by a `PreludeLoader` stacked over the `DiskLoader`.
-- Lane: `crates/khora-lanes/src/script/` — `mod.rs` (the `Lane`), `frame.rs` (the loop),
+- Lane: `crates/khora-lanes/src/script/` — `lane.rs` (the `Lane` and its inputs), `levels.rs`, `frame.rs` (the loop),
   `turn.rs` (one behavior's turn), `hooks.rs`, `runtime.rs` (`ScriptRuntime`), `reload.rs`,
   `report.rs`, `persistence.rs`.
 - Lane resume / saves: `script/resumption.rs` (load and hot reload share the VM tiers),
   `persistence.rs` (snapshot ↔ instance), `frame.rs` (arrivals, `OnLoad`, `OnResumeFailed` owed).
-- Agent: `crates/khora-lanes/src/script/registration.rs`.
+- Family and registration: `crates/khora-lanes/src/script/family.rs`, `registration.rs` (run by the one `LaneAgent`).
 - Lifecycle hooks table: `crates/khora-script/src/lifecycle.rs` (`Update`, `OnSpawn`, `OnDespawn`,
   `OnLoad`, `OnResumeFailed(string member)`, reserved `FixedUpdate`).
 - Control flow: `bytecode/flow.rs` — `LoopContext` (`break`/`continue` from anywhere in a loop),
@@ -113,9 +113,10 @@ switches it off while editing.
   is the view's `delta_seconds` (0 counts every rate-limited behaviour as due); an instance of the view
   the runtime has not met yet is priced at `UNKNOWN_TURN`. `done` = completed / (completed + deferred),
   `stalled` when a behaviour faulted, the message names the critical behaviours deferred. Applying reloads, draining
-  channels, delivering events and keeping counters all live in the lane (`RULES.md` §8).
-- **`ScriptRuntime` lives in `Runtime::services`** as `Arc<Mutex<ScriptRuntime>>`, like the physics
-  provider. The agent locks it for the duration of `execute` and declares it in `contention()`.
+  channels, delivering events and keeping counters all live in the lane; the agent only chooses its row.
+- **`ScriptRuntime` lives in `Runtime::services`** as `Arc<Mutex<ScriptRuntime>>` (installed by
+  `khora-sdk/src/engine/runtime_entries.rs`), like the physics provider. The lane's `#[locked]` input holds
+  it for the record; the family's contention is derived from that input.
 - **An event is never delivered in the frame it was raised.** Handling one where it was raised opens a
   cascade with no bound, and a budget that cannot bound the work is not a budget. Script-to-script mail
   waits on `ScriptRuntime`; engine-raised events arrive through `Channel<ScriptEvent>`.
@@ -332,7 +333,7 @@ switches it off while editing.
   only the component's **latest** batch with exactly those fields). `send_rows` emits each batch as
   `WorldCommand::WriteColumn` before a later `WriteComponent`/`RemoveComponent` of that component in the
   run and at the end of **every** run (`Machine::run_counting`) — no batch outlives a run, none is frozen.
-  `host.swept` → `ScriptRunReport.swept_rows`; the agent prices `2 µs × instances + PER_ROW (200 ns) × rows`.
+  `host.swept` → `ScriptRunReport.swept_rows`; the lane's `cost` (`levels.rs` `price`) adds `PER_ROW` (200 ns) per row swept last frame.
 - **Watchdog.** Constants in `khora-lanes/src/script/watchdog.rs` (re-exported by `script`),
   report entry `report.rs::Slow`. `Pending.running` = game seconds a pending body *ran* without finishing:
   the frame it starts and is cut (`park.rs` `kept` + `park`) and every frame it is advanced and cut add `dt`;

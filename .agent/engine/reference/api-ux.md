@@ -9,7 +9,9 @@ The `khora-sdk` surface that game developers touch: `EngineApp`, `GameWorld` (in
 private.
 
 ## Key files
-- SDK: `crates/khora-sdk/src/` (`lib.rs`, `engine/`, `game_world.rs`, `vessel.rs`, `traits.rs`, `window_provider.rs`, `run_default.rs`).
+- SDK: `crates/khora-sdk/src/` (`lib.rs`, `engine/`, `game_world.rs`, `vessel.rs`, `traits.rs`, `window_provider.rs`, `run_default/`, `scripts.rs`).
+- A shipped game's assets: `game_assets.rs` (`open_game_assets`) and `game_seal.rs` — every start checks
+  the pack's seal before anything (`EngineBootstrap::begin_with`); a stamped binary refuses loose assets.
 - I/O surface: `khora-io` (asset/serialization).
 
 ## Persistence surface

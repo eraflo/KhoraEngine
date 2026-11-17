@@ -18,8 +18,10 @@ ECS↔physics synchronization.
 - Components / flow: `crates/khora-data/src/ecs/components/physics/`, `crates/khora-data/src/flow/physics.rs`.
 
 ## Hard rules
-- Route physics through `PhysicsProvider` + the physics lane. **Never** call Rapier directly from agents.
-- The `physics` family's agent is the one `LaneAgent` — no per-frame state, no new agent type. The physics
+- Route physics through `PhysicsProvider` + the physics lane, which locks the provider (`#[locked]`) and
+  steps it, reading no View: `physics_provider_sync` (`PreExtract`) feeds the provider, `physics_world_writeback`
+  (`Maintenance`) writes the deck's `PhysicsStepResult` back. **Never** call Rapier outside `khora-infra`.
+- The `physics` family (`Exact`, one level) is run by the one `LaneAgent` — no per-frame state, no agent code. The physics
   step is the game's `physics.step` (`PhysicsSettings`), held at the family's place (`Place::fixed_step`);
   it is never a GORNA lever, since the simulation's result depends on it.
 - Distance-based detach/reattach of `RigidBody` is **semantic** (changes the simulation) → it is an opt-in,
@@ -28,7 +30,7 @@ ECS↔physics synchronization.
 
 ## Who writes a pose
 
-`ComponentProvenance` decides, and three components split what one used to hold:
+`ComponentProvenance` decides, across three components:
 
 - `Transform` (`Authored`) — what a human, a tool or game code declared. Serialized.
 - `SimulatedTransform` (`Runtime`) — the **world** pose the provider reports. Never serialized, never
@@ -39,9 +41,8 @@ ECS↔physics synchronization.
 A collider attached to a body is described **in its body's frame**: `ColliderDesc.position/rotation`
 is the offset from `parent_body` (zero for a collider on the body's own entity), the world pose only
 for a collider with no body. The Rapier backend writes it with `set_position_wrt_parent`, never
-`set_position`, which would overwrite the world pose the solver derives from the body. Sending a world
-pose for an attached collider put each shape at twice its distance from the origin, and a stack of
-boxes blew apart. Rotations are read with `AffineTransform::rotation()`, which strips scale;
+`set_position`, which would overwrite the world pose the solver derives from the body (a world pose
+for an attached collider puts the shape at twice its distance from the origin). Rotations are read with `AffineTransform::rotation()`, which strips scale;
 `Quaternion::from_rotation_matrix` wants an orthonormal basis. A simulated entity keeps its authored
 scale: `transform_propagation` sizes the simulated pose as the hierarchy would.
 
@@ -86,8 +87,8 @@ a character sticks.
   in-house physics engine will not need it.
 
 Moving something is **declared**, not inferred: whoever moves an entity adds the `Teleported` marker,
-and the sync consumes and removes it. The old 1 cm / 1.62° heuristic could not work — drift, a parent
-frame, a sub-step overshoot and a real teleport all produce "the two values differ".
+and the sync consumes and removes it. No threshold on the difference can infer it: drift, a parent
+frame, a sub-step overshoot and a real teleport all make the two values differ.
 
 ## Skills
 - [`add-a-lane`](../skills/add-a-lane/SKILL.md) — add a physics lane / strategy.

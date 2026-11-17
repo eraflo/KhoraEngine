@@ -15,7 +15,10 @@ Spatial 3D audio mixing, the RT-thread mix bus boundary, device/stream lifecycle
 - Decoding: `crates/khora-io/src/asset/decoders/audio/` (`SymphoniaDecoder`); data `SoundData`.
 
 ## Hard rules
-- Route audio through `AudioDevice` + the spatial mixing lane. **Never** call CPAL directly from agents.
+- Route audio through `AudioDevice` + the spatial mixing lane. **Never** call CPAL outside `khora-infra`.
+- The lane reads `#[bus] AudioView` (the `AudioFlow`) and `#[resource] Arc<dyn AudioMixBus>`, and writes the
+  family's `#[deck] AudioPlaybackWriteback`, which the `audio_playback_writeback` DataSystem
+  (`Maintenance`) writes back to the sources.
 - The **mix bus is the sole synchronization boundary** between audio lanes (main thread) and the hardware
   callback (RT thread). Do not block, allocate, or panic on the RT path.
 - The `audio` family's agent is the one `LaneAgent`, choosing the voice level that fits its envelope — no

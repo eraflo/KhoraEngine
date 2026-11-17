@@ -9,7 +9,8 @@ Components live in `crates/khora-data/src/ecs/components/`. The `#[derive(Compon
 `SerializableX` mirror, `From` conversions, and `inventory` self-registration.
 
 ## Steps
-1. Define the struct in the right `components/<domain>/` file:
+1. Define the struct in its own file under `components/` (a domain folder such as `components/physics/`
+   when there is one), one primary type per file:
    ```rust
    #[derive(Component)]
    #[component(domain = Render)]            // semantic domain; provenance defaults to Authored
@@ -27,14 +28,16 @@ Components live in `crates/khora-data/src/ecs/components/`. The `#[derive(Compon
    reads it back on load; no Rust component does it today).
 3. Field attributes: `#[component(skip)]` for GPU handles / runtime caches. Do **not** reach for
    `#[component(no_serializable)]`: it removes the `ComponentRegistration` outright — the component is then
-   never saved, never inspected, never found by name (`AudioListener` and `ActiveEvents` were silently
-   dropped from saved scenes this way).
+   never saved, never inspected, never found by name.
 4. The derive self-registers via `inventory` — there is no registration list to edit. Only generics
    (`HandleComponent<T>`) and hand-written impls stay explicit in `World::new`.
 5. **Snapshots:** `FastestLoad` needs the mirror's serde format traced in full (`schema_complete()`); a
    field type the tracer cannot follow makes the component unguarded and the save falls back to compact.
    Check with a snapshot round-trip (see `khora-data/tests/snapshot_unguarded.rs`).
-6. Add `#[cfg(test)]` round-trip tests through `SerializationService` (record and snapshot).
+6. Add `#[cfg(test)]` round-trip tests through `SerializationService` (record and snapshot); scene
+   round trips go in `khora-data/tests/scene_records/`.
+7. A value the engine cannot use (a near plane at 0) is declared with `#[component(check = Type::check)]`,
+   never refused or rewritten (RULES §7).
 
 ## Changing a shipped component later
 - **Rename** the type or a field: keep the old name in `#[component(formerly = "Old")]` (repeatable; on a
@@ -50,4 +53,4 @@ Components live in `crates/khora-data/src/ecs/components/`. The `#[derive(Compon
   `HandleComponent<T>` / `MeshRef` / `MaterialRef`.
 
 ## Verify
-`cargo gate`. For storage/layout details, consult [`../../reference/ecs-data.md`](../../reference/ecs-data.md).
+`cargo xtask lint-file <every .rs touched>`; `cargo t -p khora-data`; then `cargo gate`. For storage/layout details, consult [`../../reference/ecs-data.md`](../../reference/ecs-data.md).

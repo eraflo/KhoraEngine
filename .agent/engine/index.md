@@ -52,15 +52,15 @@ during Research and Implement. Replaces the former per-domain "expert" agents.
 | Reference | Domain |
 |---|---|
 | [`graphics-rendering`](./reference/graphics-rendering.md) | wgpu, WGSL, render pipelines, PBR, shadows, bind-group budget. |
-| [`physics`](./reference/physics.md) | Rapier3D, rigid bodies, colliders, CCD, physics lanes/flow. |
-| [`audio`](./reference/audio.md) | CPAL devices, spatial mixing lanes, audio flow. |
+| [`physics`](./reference/physics.md) | Rapier3D, rigid bodies, colliders, CCD, the physics family/flow. |
+| [`audio`](./reference/audio.md) | CPAL devices, the audio family (spatial mixing), audio flow. |
 | [`math`](./reference/math.md) | `khora_core::math`, explicit SIMD, numerical correctness. |
-| [`ecs-data`](./reference/ecs-data.md) | CRPECS, storage, queries, SoA/AGDF layout, component registration — and **persistence**: scene records, `PersistentId`, encodings/snapshot, atomic load + `LoadReport`, game saves, prefab links. |
-| [`scripting`](./reference/scripting.md) | Ergon — the language, VM, fuel/safepoints, resume tiers, hot-reload, script lane + agent, script state in saves. |
-| [`control-gorna`](./reference/control-gorna.md) | DCC, GORNA negotiation/replay, cost model, frame governor, adaptation modes. |
+| [`ecs-data`](./reference/ecs-data.md) | CRPECS, storage, queries, SoA/AGDF layout, component registration, residencies — and **persistence**: scene records, `PersistentId`, encodings/snapshot, atomic load + `LoadReport`, game saves, prefab links. |
+| [`scripting`](./reference/scripting.md) | Ergon — the language, VM, fuel/safepoints, resume tiers, hot-reload, the script family, script state in saves. |
+| [`control-gorna`](./reference/control-gorna.md) | DCC, GORNA protocol/replay, the arbiter, cost book, frame governor, the scheduler (layers, waves), adaptation modes. |
 | [`editor-ui-ux`](./reference/editor-ui-ux.md) | khora-editor panels, inspector (prefab overrides), gizmos, dock, scene I/O — design via `/impeccable`. |
-| [`api-ux`](./reference/api-ux.md) | khora-sdk public ergonomics, builder/type-state, game save/load surface. |
-| [`documentation`](./reference/documentation.md) | mdBook, rustdoc, diagrams. |
+| [`api-ux`](./reference/api-ux.md) | khora-sdk public ergonomics, builder/type-state, game save/load surface, shipped-game seal. |
+| [`documentation`](./reference/documentation.md) | The docs site (Astro Starlight over `docs/src`), mdBook, rustdoc, diagrams. |
 | [`deprecation`](./reference/deprecation.md) | API modernization, dead-code removal. |
 
 ## Task skills — [`skills/`](./skills/)
@@ -72,7 +72,7 @@ during Research and Implement. Replaces the former per-domain "expert" agents.
 | [`implement-plan`](./skills/implement-plan/SKILL.md) | RPI phase 3 — per phase: tests first, implement, break, fix, compact. |
 | [`build-and-test`](./skills/build-and-test/SKILL.md) | Validate a change (`cargo t` while iterating, `cargo gate` before a commit). |
 | [`add-a-lane`](./skills/add-a-lane/SKILL.md) | Add a hot-path `Lane`. |
-| [`add-an-agent`](./skills/add-an-agent/SKILL.md) | Add a strategist `Agent`. |
+| [`add-a-family`](./skills/add-a-family/SKILL.md) | Add a negotiating subsystem: a family, its lanes, its registry line. |
 | [`add-a-component`](./skills/add-a-component/SKILL.md) | Define + register an ECS component. |
 | [`add-a-shader`](./skills/add-a-shader/SKILL.md) | Add a `.wgsl` shader + pipeline within the 4-group budget. |
 | [`run-the-engine`](./skills/run-the-engine/SKILL.md) | Launch the editor or sandbox. |

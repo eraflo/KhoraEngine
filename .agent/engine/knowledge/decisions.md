@@ -8,8 +8,7 @@ Durable decisions and their rationale. Append when a new structural decision lan
 
 2. **Lane is the universal pipeline** — every hot-path execution (render, physics, audio, script, UI)
    goes through a `khora_core::lane::Lane`, which records at one of its levels (`Lane::record`). Agents
-   choose lanes but never do pipeline work themselves. *(Superseded wording: it first named
-   `Lane::execute()`, and asset/ECS lanes, which became services; the old lane API went in 3k, 2026-11.)*
+   choose lanes but never do pipeline work themselves.
 
 3. **Typed data-flow via LaneBus / OutputDeck** — lanes read typed Views from the `LaneBus` and write
    typed outputs into the `OutputDeck`. No global mutable state; `Flow::adapt` was removed (Flows are
@@ -27,7 +26,7 @@ Durable decisions and their rationale. Append when a new structural decision lan
    script, loading). Non-negotiating work uses direct services (`AssetService`, `SerializationService`,
    `EcsMaintenance`).
 
-7. **SDK is a façade** — the Scheduler, `BudgetChannel`, and `EnginePlugin` are internal; game code
+7. **SDK is a façade** — the Scheduler, the DCC and `BudgetChannel` are internal; game code
    only sees the `khora-sdk` public surface.
 
 8. **Substrate Pass owns tick ordering** — the Scheduler runs DataSystem invariants and Flow
@@ -54,12 +53,10 @@ Durable decisions and their rationale. Append when a new structural decision lan
     breaks no reference, with no remap. The read side is engine infrastructure (`IndexBuilder`,
     `PackBuilder`, runtime all resolve through it ⇒ dev/release parity); the editor (`ProjectVfs`) is the sole
     writer. The file sits outside `assets/`, so it is never scanned, watched, or packed.
-- **Type-keyed maps stay separate (2026-09-27).** `AnyMap` (frame blackboard, `Arc` values), `LaneBus`
-    (Views, `Box`), `OutputDeck` (lane outputs, `Box`), `LaneContext` (per-execution, not `Send`) and
-    `TypedRegistry` (runtime resources/services/backends) are each a `HashMap<TypeId, …>`. They differ in
-    ownership (`Arc` vs `Box`) and thread bounds, and `LaneContext` is on the per-frame hot path; a shared
-    generic would save ~20 lines each and touch every lane. Revisit only if a sixth appears.
-    *(2026-11: `LaneContext` is gone (3k1) — lanes take typed inputs and outputs — so four maps remain.)*
+- **Type-keyed maps stay separate.** `AnyMap` (frame blackboard, `Arc` values), `LaneBus` (Views, `Box`),
+    `OutputDeck` (lane outputs, `Box`) and `TypedRegistry` (runtime resources/services/backends) are each a
+    `HashMap<TypeId, …>`. They differ in ownership (`Arc` vs `Box`) and thread bounds; a shared generic would
+    save little and touch every lane. Revisit only if a fifth appears.
 
 ## Persistence redesign (2026-10)
 
@@ -115,12 +112,22 @@ Durable decisions and their rationale. Append when a new structural decision lan
 
 ## Agents/lanes contract (2026-11)
 
-22. **One kind of agent, one protocol** (3k, commits `f5b3658c`…`80df266f`) — a subsystem is a family:
-    typed `Lane`s, a `LaneFamily`, one `register_agent!` registration; its agent is always `LaneAgent`, the
-    only `Agent` implementor outside tests (xtask `only_lane_agent_implements_agent`). The `Agent` trait is
-    `offer` → `apply` → `report` (GORNA), `place` (required), `wake`, `execution_timing`, `contention`; no
-    `execute` — the scheduler runs each family's installed layer and wakes the agent only for an event. No
-    agent reaches the `World`, so waves split on `Contention` alone. The app installs runtime entries in
-    `EngineApp::provide` and registers no agent (`AgentProvider` removed). Rationale: one code path for every
-    subsystem, nothing a hand-written agent could do that a family cannot, and contention the only thing to
-    declare. A fixed-step family's step lives at its place (`Place::fixed_step`).
+22. **One kind of agent, one protocol** — a domain writes a family, lanes and a registry line; `LaneAgent`
+    is the only `Agent` (xtask `only_lane_agent_implements_agent`). The `Agent` trait is `offer` → `apply`
+    → `report` (GORNA), `place`, `wake`, `execution_timing`, `contention`; no `execute`. Contention is
+    derived from the lanes' typed I/O, and no agent reaches the `World`, so waves split on it alone. The app
+    installs runtime entries in `EngineApp::provide` and registers no agent. Rationale: one code path for
+    every subsystem, nothing a hand-written agent could do that a family cannot, nothing to declare by hand.
+
+23. **Lanes are layers; the DCC lends envelopes, never rows** — the chosen lane and level run as a layer at
+    the family's place every frame without the agent; the agent is woken only for an event and prepares the
+    next layer beside the installed one, swapped at a frame start. Rationale: a quiet frame costs no agent
+    call, a switch never hitches, and the DCC decides how much while the agent decides how.
+
+24. **The arbiter: proposers behind a shield** — a round's plans come from proposers (the Q-RAM greedy pass,
+    a bounded exact search), each checked by the `Shield`; the best kept plan is the decision. Rationale: a
+    planner can be added or learnt later without being trusted to keep the frame's constraints.
+
+25. **The trust boundary is in the engine** — every project file is read through one guard at the project's
+    trust; a restricted project runs nothing; shipped packs are signed and checked at every start.
+    Rationale: the check holds wherever a file is read (editor, hub, runtime), not only in CI.
