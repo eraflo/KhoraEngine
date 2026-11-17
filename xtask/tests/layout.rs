@@ -680,6 +680,77 @@ fn docs_pages_are_kebab_case() {
     );
 }
 
+/// Every Markdown page under `docs/src` is linked once from `SUMMARY.md`,
+/// and every page `SUMMARY.md` links exists. `SUMMARY.md` is the one
+/// navigation of the book and of the site (`docs_site_nav_is_the_summary`):
+/// a page it leaves out is rendered by neither. Keyed by the page.
+#[test]
+fn docs_pages_are_in_the_summary() {
+    let root = repo_root();
+    let book = root.join("docs/src");
+    let summary = book.join("SUMMARY.md");
+    let mut listed: BTreeMap<PathBuf, usize> = BTreeMap::new();
+    let mut violations = Violations::new();
+    for (line, target) in markdown_links(&read_text(&summary)) {
+        let page = normalize(&book.join(target.split('#').next().unwrap_or_default()));
+        if !page.is_file() {
+            add(
+                &mut violations,
+                rel(&root, &page),
+                format!("SUMMARY.md:{line} links a page that does not exist"),
+            );
+        }
+        *listed.entry(page).or_default() += 1;
+    }
+    for page in walk_files(&book) {
+        if !has_extension(&page, "md") || page == summary {
+            continue;
+        }
+        match listed.get(&normalize(&page)) {
+            None => add(
+                &mut violations,
+                rel(&root, &page),
+                "not linked from SUMMARY.md".to_owned(),
+            ),
+            Some(&count) if count > 1 => add(
+                &mut violations,
+                rel(&root, &page),
+                format!("linked {count} times from SUMMARY.md"),
+            ),
+            Some(_) => {}
+        }
+    }
+    ratchet(
+        "docs_pages_are_in_the_summary",
+        "docs pages missing from SUMMARY.md, or listed there twice or in vain",
+        &violations,
+    );
+}
+
+/// The docs site builds its sidebar from `docs/src/SUMMARY.md`, and from
+/// nothing else: its config parses the file and hands the result to
+/// Starlight's `sidebar`, and its content loader reads the pages from
+/// `docs/src`, so `docs_pages_are_in_the_summary` covers the site's nav too.
+#[test]
+fn docs_site_nav_is_the_summary() {
+    let root = repo_root();
+    let config = read_text(&root.join("docs/site/astro.config.mjs"));
+    let content = read_text(&root.join("docs/site/src/content.config.mjs"));
+    let mut problems = Vec::new();
+    if !config.contains("'../src/SUMMARY.md'") {
+        problems.push("astro.config.mjs does not read ../src/SUMMARY.md");
+    }
+    if config.matches("sidebar:").count() != 1
+        || !config.contains("sidebar: sidebarFromSummary(SUMMARY)")
+    {
+        problems.push("astro.config.mjs has a sidebar not built by sidebarFromSummary(SUMMARY)");
+    }
+    if !content.contains("bookLoader(") || !content.contains("'../../src/'") {
+        problems.push("content.config.mjs does not load the pages from docs/src with bookLoader");
+    }
+    assert!(problems.is_empty(), "docs site nav: {}", problems.join("; "));
+}
+
 /// No Rust file repeats its folder's name: `<dir>/<dir>_*.rs` and
 /// `<dir>/<dir>.rs` are out (`ui/taffy/taffy_layout.rs`, which holds
 /// `TaffyLayoutSystem`), since the folder already says it. Scans every folder

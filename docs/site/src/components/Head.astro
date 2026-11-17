@@ -1,0 +1,11 @@
+---
+// Starlight's head, plus the script that turns a `<figure class="kp-steps">`
+// into a step-through figure: the book's own `docs/theme/steps.js`, shared
+// with mdBook, bundled as it is.
+import Default from '@astrojs/starlight/components/Head.astro';
+---
+
+<Default><slot /></Default>
+<script>
+	import '../../../theme/steps.js';
+</script>

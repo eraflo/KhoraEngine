@@ -1,0 +1,24 @@
+{
+  "name": "khora-docs-site",
+  "description": "The Khora documentation site: Astro Starlight over the book in docs/src.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.23.4"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "api": "node scripts/mount-api.mjs",
+    "astro": "astro",
+    "test": "node --test \"src/**/*.test.mjs\""
+  },
+  "dependencies": {
+    "@astrojs/starlight": "0.42.9",
+    "@fontsource-variable/archivo": "5.3.0",
+    "@fontsource/ibm-plex-mono": "5.3.0",
+    "astro": "7.4.7",
+    "starlight-links-validator": "0.27.0"
+  }
+}

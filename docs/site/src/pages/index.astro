@@ -1,0 +1,35 @@
+---
+// The site's front door until the landing page takes this place: the sign,
+// the tagline, and the ways into the docs and the API.
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+<StarlightPage
+	frontmatter={{
+		title: 'Khora Engine',
+		description: 'Every frame, negotiated. Khora is a free, open-source game engine in Rust.',
+		template: 'splash',
+		tableOfContents: false,
+		pagefind: false,
+		editUrl: false,
+	}}
+>
+	<div class="kp-index">
+		<img class="kp-index-sign" src={`${base}/logos/khora-sign.svg`} alt="" width="72" height="72" />
+		<p class="kp-index-tagline">Every frame, <em>negotiated.</em></p>
+		<div class="kp-index-limit" aria-hidden="true"></div>
+		<p class="kp-index-lede">
+			Khora is a free, open-source game engine in Rust. Every part of it knows several ways to do its
+			job and what each one costs; sixty times a second they settle how to share the frame, so your game
+			keeps its pace on any machine.
+		</p>
+		<p class="kp-hero-actions">
+			<a class="kp-btn kp-btn-primary" href={`${base}/home/`}>Read the docs</a>
+			<a class="kp-btn" href={`${base}/tutorials/start-from-zero/`}>Start from zero</a>
+			<a class="kp-btn" href={`${base}/concepts/saa/`}>How it works</a>
+			<a class="kp-btn" href={`${base}/api/`}>API reference</a>
+		</p>
+	</div>
+</StarlightPage>

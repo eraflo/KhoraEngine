@@ -32,6 +32,7 @@ pub const RATCHETED_CHECKS: &[&str] = &[
     "one_spelling_of_util",
     "no_generic_module_file_names",
     "docs_pages_are_kebab_case",
+    "docs_pages_are_in_the_summary",
     "no_stuttering_file_names",
     "retired_file_names",
     "constants_come_before_the_code",

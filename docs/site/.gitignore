@@ -1,0 +1,7 @@
+# Installed by `npm ci`.
+node_modules/
+# The built site, and Astro's caches and generated types.
+dist/
+.astro/
+# Copied from `docs/src` (its non-Markdown files) on every build: never edit here.
+public/

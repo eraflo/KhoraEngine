@@ -4,14 +4,41 @@ Domain knowledge for Khora documentation. Consulted during Research (dispatch th
 to apply it to concrete files).
 
 ## Scope
-mdBook narrative (`docs/src/`), rustdoc, Mermaid diagrams, and keeping the AI docs (`.agent/`) and the
-human docs aligned with the code.
+The book (`docs/src/`) and the two builds that read it — the docs site (`docs/site/`, Astro Starlight)
+and mdBook, kept until the site reaches parity — rustdoc, Mermaid diagrams, and keeping the AI docs
+(`.agent/`) and the human docs aligned with the code.
 
 ## Key files
+- The pages: `docs/src/**/*.md`, mdBook pages (no frontmatter, `# Title` on line 1, figures by
+  `{{#include}}`). `docs/src/SUMMARY.md` is the one navigation: mdBook reads it, the site builds its
+  sidebar from it, and every page must be listed there once (xtask `docs_pages_are_in_the_summary`,
+  `docs_site_nav_is_the_summary`).
+- Docs site, `docs/site/` (Node is confined to it; no JS framework; fonts self-hosted by `@fontsource`):
+  - `astro.config.mjs` — Starlight config: sidebar parsed from SUMMARY.md, theme, figure CSS/JS, the
+    links validator (`starlight-links-validator`, fails the build on a broken internal link or anchor).
+  - `src/book/` — reads the book where it is, in memory, writing nothing back: `loader.mjs` (the
+    `docs` collection), `page.mjs` (expands `{{#include}}`, takes the `# Title` as the page title,
+    rewrites `x.md`/`x.html` links to routes and other `docs/src` files to their URL, drops
+    `rust,ignore`-style fence attributes), `summary.mjs` (SUMMARY.md → sidebar), `assets.mjs` (copies
+    the non-Markdown files of `docs/src` into the generated `public/`), `site.mjs` (site URL and base).
+  - `src/styles/khora.css` — the Khora theme over Starlight (navy and silver; gold only for the frame's
+    limit). The figures use `docs/theme/figures.css` and `docs/theme/steps.js`, shared with mdBook.
+  - `src/pages/index.astro` — the site's index (the landing page goes there).
+  - `scripts/mount-api.mjs` — copies `target/doc` to `dist/api/` with an index of the crates.
 - mdBook: `docs/src/*.md` (chapters), `docs/src/SUMMARY.md`, theme `docs/theme/custom.css` (book),
   `figures.css` + `steps.js` (figures and step-throughs), `home.css` (landing page); Mermaid through
   `docs/mermaid-init.js` (CI's `mermaid.min.js`, else a pinned CDN build).
-- Build: `mdbook build docs/` / `mdbook serve docs/ --open`.
+- Build the site (Node ≥ 22.23.4), from `docs/site/`:
+  - `npm ci` — install exactly the lockfile (never `npm install` to build; add a dependency only pinned
+    exactly, after `npm audit` and a `security-auditor` review);
+  - `npm run dev` — serve with live reload (a change under `docs/src` reloads the book);
+  - `npm run build` — build `dist/`, validate every internal link, index the search;
+  - `npm test` — the tests of `src/book/` (Node's test runner);
+  - rustdoc at `/api`: `cargo doc --workspace --no-deps` at the root, then `npm run build && npm run api`;
+  - `npm run preview` — serve `dist/` (with `/api`) at `http://localhost:4321/KhoraEngine/`;
+  - Astro reports usage to its makers unless told not to: set `ASTRO_TELEMETRY_DISABLED=1` (CI does), or
+    run `npx astro telemetry disable` once.
+- Build mdBook: `mdbook build docs/` / `mdbook serve docs/ --open`.
 - Landing page: sources in `docs/landing/` (`page.html` with `{root}`/`{img}`, `landing.css`, `landing.js`,
   rendered frames under `images/<scene>/`). `cargo xtask landing docs/book` writes it as the site's
   `index.html` after `mdbook build`; the book's own first page stays `home.html`. `docs.yml` runs both.
@@ -48,7 +75,7 @@ human docs aligned with the code.
   never the generated wrappers (`CLAUDE.md`, `.cursor/`, …).
 
 ## Skills
-- [`build-and-test`](../skills/build-and-test/SKILL.md) — `cargo test --doc` for doc examples + mdBook build.
+- [`build-and-test`](../skills/build-and-test/SKILL.md) — `cargo test --doc` for doc examples; the site and mdBook builds above.
 - **`/impeccable`** — for the docs **visual language** (`docs/src/design/`): `audit` / `critique` / `polish`.
 
-Verify mdBook builds and `cargo test --doc` passes.
+Verify the site builds (`npm run build`, links valid), mdBook builds, and `cargo test --doc` passes.

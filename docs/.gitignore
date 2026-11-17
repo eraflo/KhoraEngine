@@ -1,1 +1,2 @@
-book
+# mdBook output (`mdbook build docs`).
+/book/

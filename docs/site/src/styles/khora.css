@@ -1,0 +1,717 @@
+/* ============================================================
+   Khora — the documentation site's theme, over Starlight's.
+
+   The book's identity (docs/theme/custom.css, docs/src/design/editor.md):
+   navy surfaces, silver structure, Archivo for words, IBM Plex Mono for
+   code. Gold has one meaning on the whole site: the frame's limit — the
+   16.7 ms line, the budget a figure follows. Nothing else is gold: not a
+   link, not the selection, not a highlight.
+
+   The fonts are self-hosted: the @fontsource packages ship them, and the
+   build copies them beside the pages. No font is fetched from a third party.
+   ============================================================ */
+
+/* ---------- Tokens: OKLCH, navy spectrum ----------
+   The same tokens as the book and the figures (`var(--k-*, #hex)`). */
+:root {
+    /* Surfaces: a deliberate blue-black, never pure black. */
+    --k-bg-0: oklch(0.16 0.022 265);
+    --k-bg-1: oklch(0.20 0.025 265);
+    --k-bg-2: oklch(0.235 0.028 265);
+    --k-bg-3: oklch(0.27 0.032 265);
+
+    /* Lines */
+    --k-line: oklch(0.36 0.02 265);
+    --k-line-soft: oklch(1 0 0 / 0.06);
+
+    /* Foreground: cool silver, hue 250 */
+    --k-fg-0: oklch(0.96 0.005 250);
+    --k-fg-1: oklch(0.82 0.01 250);
+    --k-fg-2: oklch(0.65 0.012 250);
+    --k-fg-3: oklch(0.50 0.015 250);
+
+    /* Brand: silver at hue 240 */
+    --k-silver: oklch(0.84 0.04 240);
+    --k-silver-dim: oklch(0.68 0.045 240);
+    --k-silver-soft: oklch(0.84 0.04 240 / 0.08);
+    --k-silver-line: oklch(0.84 0.04 240 / 0.20);
+
+    /* Signals. Gold is the frame's limit, and only that. */
+    --k-gold: oklch(0.80 0.12 82);
+    --k-green: oklch(0.78 0.13 150);
+    --k-amber: oklch(0.78 0.14 70);
+    --k-red: oklch(0.68 0.18 25);
+
+    /* Type: the logo's family. Titles a little wider; the name wider still. */
+    --k-font-sans: 'Archivo Variable', 'Archivo', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --k-font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, ui-monospace, monospace;
+    --k-font-display: var(--k-font-sans);
+    --k-display-stretch: 112%;
+
+    /* Motion: fast first frame, 150 ms default, no bounce. */
+    --k-ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* ---------- Starlight's variables, from the tokens ----------
+   The site is always dark (`ThemeProvider.astro`), so only the dark set is
+   mapped. */
+:root,
+::backdrop {
+    --sl-color-white: var(--k-fg-0);
+    --sl-color-gray-1: var(--k-fg-0);
+    --sl-color-gray-2: var(--k-fg-1);
+    --sl-color-gray-3: var(--k-fg-2);
+    --sl-color-gray-4: var(--k-fg-3);
+    --sl-color-gray-5: var(--k-line);
+    --sl-color-gray-6: var(--k-bg-1);
+    --sl-color-black: var(--k-bg-0);
+
+    --sl-color-accent-low: oklch(0.30 0.04 240);
+    --sl-color-accent: var(--k-silver-dim);
+    --sl-color-accent-high: var(--k-silver);
+
+    --sl-color-text: var(--k-fg-1);
+    --sl-color-text-accent: var(--k-silver);
+    --sl-color-text-invert: var(--k-bg-0);
+    --sl-color-bg: var(--k-bg-0);
+    --sl-color-bg-nav: var(--k-bg-0);
+    --sl-color-bg-sidebar: var(--k-bg-1);
+    --sl-color-bg-inline-code: var(--k-bg-2);
+    --sl-color-bg-accent: var(--k-silver);
+    --sl-color-hairline-light: var(--k-line);
+    --sl-color-hairline: var(--k-line-soft);
+    --sl-color-hairline-shade: var(--k-bg-0);
+    --sl-color-backdrop-overlay: oklch(0.16 0.022 265 / 0.72);
+
+    --sl-font: var(--k-font-sans);
+    --sl-font-mono: var(--k-font-mono);
+    --sl-content-width: 50rem;
+}
+
+body {
+    font-size: 15px;
+    line-height: 1.65;
+    letter-spacing: -0.005em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+    background: var(--k-silver-line);
+    color: var(--k-fg-0);
+}
+
+/* ---------- Header: the sign and the KHORA wordmark ---------- */
+.site-title {
+    gap: 0.75rem;
+}
+
+.site-title img {
+    height: 1.75rem;
+    width: auto;
+}
+
+.site-title span {
+    font-family: var(--k-font-sans);
+    font-stretch: 125%;
+    font-weight: 300;
+    font-size: 1.05rem;
+    letter-spacing: 0.5em;
+    text-transform: uppercase;
+    color: var(--k-fg-0);
+}
+
+/* ---------- Sidebar ----------
+   A part's title is a mono mini-cap; the page you are on is silver. */
+nav.sidebar .top-level > li > details > summary .group-label > .large {
+    font-family: var(--k-font-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--k-fg-3);
+}
+
+nav.sidebar a {
+    color: var(--k-fg-2);
+    font-size: 13.5px;
+}
+
+nav.sidebar a:hover {
+    color: var(--k-fg-0);
+}
+
+nav.sidebar a[aria-current='page'],
+nav.sidebar a[aria-current='page']:hover {
+    color: var(--k-silver);
+    background: var(--k-silver-soft);
+    font-weight: 500;
+    box-shadow: inset 2px 0 0 var(--k-silver);
+}
+
+/* ---------- The page title ---------- */
+h1#_top {
+    font-family: var(--k-font-display);
+    font-stretch: var(--k-display-stretch);
+    font-size: 2.6em;
+    line-height: 1.05;
+    letter-spacing: -0.025em;
+    font-weight: 400;
+    color: var(--k-fg-0);
+}
+
+/* The home page draws its own hero title. */
+main:has(.kp-home) h1#_top {
+    display: none;
+}
+
+/* ---------- The content ---------- */
+.sl-markdown-content {
+    color: var(--k-fg-1);
+}
+
+/* The plain opening of a page: the idea in everyday words, before any term. */
+.sl-markdown-content .kp-lede {
+    font-size: 1.2em;
+    line-height: 1.6;
+    color: var(--k-fg-0);
+    max-width: 62ch;
+    text-wrap: pretty;
+}
+
+.sl-markdown-content .kp-lede em {
+    color: var(--k-silver);
+}
+
+.sl-markdown-content :is(h2, h3, h4) {
+    color: var(--k-fg-0);
+}
+
+.sl-markdown-content h2 {
+    font-family: var(--k-font-display);
+    font-stretch: var(--k-display-stretch);
+    font-weight: 400;
+    font-size: 2em;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    margin-top: 2.6em;
+}
+
+.sl-markdown-content h2 em {
+    font-weight: 300;
+    color: var(--k-silver-dim);
+}
+
+.sl-markdown-content h3 {
+    font-size: 1.13em;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin-top: 2.2em;
+}
+
+.sl-markdown-content h4 {
+    font-family: var(--k-font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--k-silver);
+}
+
+.sl-markdown-content p {
+    max-width: 68ch;
+}
+
+.sl-markdown-content :is(strong, em) {
+    color: var(--k-fg-0);
+}
+
+/* Links: silver, underlined by a faint rule. */
+.sl-markdown-content a {
+    color: var(--k-silver);
+    text-decoration: none;
+    border-bottom: 1px solid var(--k-silver-line);
+    transition: border-bottom-color 150ms var(--k-ease), color 150ms var(--k-ease);
+}
+
+.sl-markdown-content a:hover {
+    color: var(--k-fg-0);
+    border-bottom-color: var(--k-silver);
+}
+
+/* Inline code is silver, not body colour. */
+.sl-markdown-content :not(pre) > code {
+    font-size: 0.88em;
+    color: var(--k-silver);
+    background: var(--k-bg-2);
+    padding: 1px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--k-line-soft);
+}
+
+/* Lists: a short silver-dim bar instead of a bullet, a hairline per item. */
+.sl-markdown-content ul:not(.kp-door-list) {
+    padding-left: 0;
+    list-style: none;
+}
+
+.sl-markdown-content ul:not(.kp-door-list) > li {
+    position: relative;
+    padding: 4px 0 4px 22px;
+    border-bottom: 1px solid oklch(1 0 0 / 0.04);
+}
+
+.sl-markdown-content ul:not(.kp-door-list) > li:last-child {
+    border-bottom: none;
+}
+
+.sl-markdown-content ul:not(.kp-door-list) > li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 1.05em;
+    width: 8px;
+    height: 1px;
+    background: var(--k-silver-dim);
+}
+
+.sl-markdown-content ul ul > li {
+    border-bottom: none;
+}
+
+.sl-markdown-content ol li::marker {
+    color: var(--k-silver-dim);
+    font-family: var(--k-font-mono);
+    font-size: 0.92em;
+}
+
+/* Tables: quiet and dense; the header is a mono mini-cap. */
+.sl-markdown-content table {
+    border-collapse: separate;
+    border-spacing: 0;
+    border: 1px solid var(--k-line-soft);
+    border-radius: 8px;
+    font-size: 0.94em;
+}
+
+.sl-markdown-content th {
+    background: var(--k-bg-2);
+    color: var(--k-fg-2);
+    font-family: var(--k-font-mono);
+    font-weight: 500;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.sl-markdown-content :is(th, td) {
+    border: none;
+    border-bottom: 1px solid var(--k-line-soft);
+    padding: 10px 16px;
+    vertical-align: top;
+}
+
+.sl-markdown-content tr:last-child td {
+    border-bottom: none;
+}
+
+/* Pull quotes: a silver bar, a faint tint, italic Archivo. */
+.sl-markdown-content blockquote {
+    border-left: 2px solid var(--k-silver);
+    background: linear-gradient(90deg, oklch(0.84 0.04 240 / 0.04), transparent);
+    padding: 18px 22px 18px 26px;
+    border-radius: 0 6px 6px 0;
+    font-family: var(--k-font-display);
+    font-stretch: var(--k-display-stretch);
+    font-size: 1.15em;
+    line-height: 1.45;
+    font-weight: 300;
+    font-style: italic;
+    color: var(--k-fg-0);
+}
+
+.sl-markdown-content blockquote :is(strong, code) {
+    font-style: normal;
+}
+
+.sl-markdown-content hr {
+    border: none;
+    height: 1px;
+    background: var(--k-line-soft);
+    margin: 3em 0;
+}
+
+.sl-markdown-content kbd {
+    font-family: var(--k-font-mono);
+    font-size: 0.82em;
+    background: var(--k-bg-3);
+    border: 1px solid var(--k-line);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    padding: 1px 6px;
+}
+
+/* ---------- Figures: inline SVG ----------
+   Drawn at a fixed width; on a narrow screen they keep a readable text size
+   and scroll sideways. */
+.kp-figure-frame {
+    overflow-x: auto;
+    margin: 1.5rem 0;
+    border-radius: 8px;
+}
+
+.kp-figure-frame .kp-figure {
+    min-width: 680px;
+    max-width: none;
+    margin: 0;
+}
+
+/* Starlight spaces every block of the content; a figure's inner parts are
+   spaced by the figure itself. */
+.sl-markdown-content .kp-steps > *,
+.sl-markdown-content .kp-steps-bar > *,
+.sl-markdown-content .kp-steps-nav > * {
+    margin-top: 0;
+}
+
+/* ---------- The logo, shown in the brand pages ---------- */
+.kp-brand-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 28px;
+    margin: 1.4rem 0 1.8rem;
+    padding: 24px;
+    border-radius: 10px;
+    background: var(--k-bg-0);
+    border: 1px solid var(--k-line-soft);
+}
+
+.kp-brand-row > * {
+    margin-top: 0 !important;
+}
+
+.kp-brand-row img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+.kp-brand-light {
+    display: block;
+    padding: 10px;
+    border-radius: 8px;
+    background: #f3f5f8;
+}
+
+.kp-lockup-beside {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+}
+
+.kp-lockup-below {
+    display: grid;
+    justify-items: center;
+    gap: 12px;
+}
+
+.kp-lockup-word {
+    font-family: var(--k-font-sans);
+    font-stretch: 125%;
+    font-weight: 300;
+    font-size: 26px;
+    line-height: 1;
+    letter-spacing: 0.5em;
+    margin-right: -0.5em;
+    color: var(--k-fg-0);
+}
+
+.kp-lockup-sub {
+    margin-top: 8px;
+    font-family: var(--k-font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.32em;
+    margin-right: -0.32em;
+    color: var(--k-fg-3);
+}
+
+.kp-lockup-below .kp-lockup-sub {
+    margin-top: 0;
+    letter-spacing: 0.5em;
+    margin-right: -0.5em;
+}
+
+/* The lockup as the brand page specifies it (design/editor.md): a picture of
+   the logo, not the site's own chrome, so its rule keeps the logo's gold. */
+.kp-lockup-rule {
+    width: 28px;
+    height: 1px;
+    background: var(--k-gold);
+}
+
+/* ---------- The book's home page (home.md) ---------- */
+.kp-home > * + * {
+    margin-top: 0;
+}
+
+.kp-hero {
+    max-width: 760px;
+    margin: 0 0 36px;
+}
+
+.sl-markdown-content .kp-hero-title {
+    font-family: var(--k-font-display);
+    font-stretch: var(--k-display-stretch);
+    font-size: clamp(2.6rem, 6vw, 4.4rem);
+    font-weight: 400;
+    line-height: 1.02;
+    letter-spacing: -0.03em;
+    color: var(--k-fg-0);
+    margin: 0 0 22px;
+    text-wrap: balance;
+}
+
+.sl-markdown-content .kp-hero-title em {
+    font-weight: 300;
+    color: var(--k-silver);
+}
+
+.kp-hero-lede {
+    font-size: 1.22em;
+    line-height: 1.6;
+    max-width: 60ch;
+    margin: 0 0 26px;
+    text-wrap: pretty;
+}
+
+.kp-hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.kp-hero-actions > * {
+    margin-top: 0 !important;
+}
+
+.sl-markdown-content a.kp-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 1px solid var(--k-silver-dim);
+    color: var(--k-fg-0);
+    font-weight: 500;
+    font-size: 15px;
+    transition: background 150ms var(--k-ease), border-color 150ms var(--k-ease), color 150ms var(--k-ease);
+}
+
+.sl-markdown-content a.kp-btn:hover {
+    border-color: var(--k-silver);
+    background: var(--k-silver-soft);
+}
+
+.sl-markdown-content a.kp-btn-primary {
+    background: var(--k-silver);
+    border-color: var(--k-silver);
+    color: var(--k-bg-0);
+}
+
+.sl-markdown-content a.kp-btn-primary:hover {
+    background: var(--k-fg-0);
+    border-color: var(--k-fg-0);
+    color: var(--k-bg-0);
+}
+
+.kp-hero-figure,
+.kp-doors,
+.kp-ideas,
+.kp-hurry {
+    margin: 0 0 72px !important;
+}
+
+.sl-markdown-content .kp-home h2 {
+    margin: 0 0 18px;
+}
+
+.kp-door-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--k-line-soft);
+}
+
+.kp-door-list li {
+    margin: 0 !important;
+    border-bottom: 1px solid var(--k-line-soft);
+}
+
+.sl-markdown-content .kp-door-list a {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr) 24px;
+    align-items: center;
+    gap: 8px 32px;
+    padding: 22px 8px;
+    color: var(--k-fg-1);
+    border-bottom: none;
+    transition: background 150ms var(--k-ease);
+}
+
+.sl-markdown-content .kp-door-list a:hover {
+    background: var(--k-silver-soft);
+}
+
+.kp-door-who {
+    font-family: var(--k-font-display);
+    font-stretch: var(--k-display-stretch);
+    font-style: italic;
+    font-size: 1.45em;
+    line-height: 1.2;
+    color: var(--k-fg-0);
+}
+
+.kp-door-what {
+    color: var(--k-fg-2);
+    font-size: 0.98em;
+    line-height: 1.55;
+}
+
+.kp-door-arrow {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: var(--k-silver-dim);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: transform 200ms var(--k-ease), stroke 150ms var(--k-ease);
+}
+
+.kp-door-list a:hover .kp-door-arrow {
+    stroke: var(--k-silver);
+    transform: translateX(4px);
+}
+
+.kp-ideas {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0 40px;
+}
+
+.kp-ideas h2 {
+    grid-column: 1 / -1;
+}
+
+.kp-idea {
+    margin-top: 0 !important;
+    padding-top: 18px;
+    border-top: 1px solid var(--k-line);
+}
+
+.sl-markdown-content .kp-idea h3 {
+    font-family: var(--k-font-display);
+    font-stretch: var(--k-display-stretch);
+    font-weight: 400;
+    font-size: 1.35em;
+    line-height: 1.2;
+    margin: 0 0 10px;
+}
+
+.kp-idea p {
+    color: var(--k-fg-2);
+    margin: 0 0 12px;
+}
+
+.kp-hurry {
+    max-width: 640px;
+}
+
+.kp-hurry p {
+    color: var(--k-fg-2);
+}
+
+/* ---------- The site's index ---------- */
+.kp-index {
+    display: grid;
+    justify-items: start;
+    gap: 1.25rem;
+    padding: 4rem 0 6rem;
+}
+
+.kp-index > * {
+    margin: 0 !important;
+}
+
+.kp-index-sign {
+    width: 72px;
+    height: 72px;
+}
+
+.kp-index-tagline {
+    font-family: var(--k-font-display);
+    font-stretch: var(--k-display-stretch);
+    font-size: clamp(2.6rem, 7vw, 4.6rem);
+    font-weight: 400;
+    line-height: 1.02;
+    letter-spacing: -0.03em;
+    color: var(--k-fg-0);
+    text-wrap: balance;
+}
+
+.kp-index-tagline em {
+    font-weight: 300;
+    color: var(--k-silver);
+}
+
+/* The one gold line: the frame's limit. */
+.kp-index-limit {
+    width: 96px;
+    height: 1px;
+    background: var(--k-gold);
+}
+
+.kp-index-lede {
+    font-size: 1.2em;
+    max-width: 58ch;
+    color: var(--k-fg-1);
+}
+
+@media (max-width: 860px) {
+    .kp-ideas {
+        grid-template-columns: 1fr;
+        gap: 28px;
+    }
+    .sl-markdown-content .kp-door-list a {
+        grid-template-columns: minmax(0, 1fr) 24px;
+    }
+    .kp-door-who,
+    .kp-door-what {
+        grid-column: 1;
+    }
+    .kp-door-arrow {
+        grid-row: 1 / 3;
+        grid-column: 2;
+    }
+}
+
+@media (max-width: 768px) {
+    h1#_top {
+        font-size: 2em;
+    }
+    .sl-markdown-content h2 {
+        font-size: 1.6em;
+    }
+    .sl-markdown-content blockquote {
+        font-size: 1.05em;
+        padding: 14px 18px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .kp-door-arrow,
+    .sl-markdown-content a,
+    .sl-markdown-content .kp-door-list a {
+        transition: none;
+    }
+}

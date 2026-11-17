@@ -135,7 +135,7 @@ pub struct Light {
 
 ## 9 — Documentation
 
-- mdBook source in `docs/src/*.md` (`mdbook build docs/`). Custom Ayu-dark theme in `docs/theme/custom.css`.
+- Book pages in `docs/src/*.md`, navigation in `docs/src/SUMMARY.md` (every page listed once). Two builds read them: the docs site (`docs/site/`, Astro Starlight: `npm ci && npm run build`) and mdBook (`mdbook build docs/`, theme `docs/theme/custom.css`) until the site reaches parity. Detail: `reference/documentation.md`.
 - Document in existing files in place — **no separate ADR section/files** for this project.
 - Public APIs require rustdoc; `# Examples` blocks compile via `cargo test --doc`. Use intra-doc links (`[Type]`).
 - Keep mdBook chapters in sync with the code: change a public API → update the chapter in the same change.

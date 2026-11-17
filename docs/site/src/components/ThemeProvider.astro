@@ -1,0 +1,9 @@
+---
+// The site has one theme, Khora's navy: the page is always dark, whatever
+// the reader's system prefers. Inlined so the first paint is already dark.
+---
+
+<script is:inline>
+	document.documentElement.dataset.theme = 'dark';
+	window.StarlightThemeProvider = { updatePickers() {} };
+</script>
