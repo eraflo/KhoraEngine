@@ -29,20 +29,12 @@ export function landingFrames({ dir, base }) {
                 found = framesSource({ url: process.env.KHORA_FRAMES_URL, dir, base });
                 logger.info(found.why);
                 updateConfig({
-                    vite: { define: { 'import.meta.env.KHORA_FRAMES_BASE': JSON.stringify(found.base ?? '') } },
-                });
-            },
-            'astro:server:setup': ({ server }) => {
-                if (found.from !== 'local') return;
-                const prefix = `${base}/${SERVED_PATH}`;
-                server.middlewares.use((request, response, next) => {
-                    const path = (request.url ?? '').split('?')[0];
-                    if (!path.startsWith(prefix)) return next();
-                    const name = decodeURIComponent(path.slice(prefix.length));
-                    const file = join(dir, name);
-                    if (!isFrameEntry(name) || !existsSync(file)) return next();
-                    response.setHeader('Content-Type', name.endsWith('.json') ? 'application/json' : 'image/avif');
-                    response.end(readFileSync(file));
+                    vite: {
+                        define: { 'import.meta.env.KHORA_FRAMES_BASE': JSON.stringify(found.base ?? '') },
+                        // A Vite plugin's middleware runs before Astro's, which
+                        // answers 404 for any path that is not a page.
+                        plugins: found.from === 'local' ? [serveFrames(dir, base)] : [],
+                    },
                 });
             },
             'astro:build:done': ({ dir: out, logger }) => {
@@ -50,6 +42,33 @@ export function landingFrames({ dir, base }) {
                 cpSync(dir, join(fileURLToPath(out), SERVED_PATH), { recursive: true });
                 logger.info(`copied the frames into ${SERVED_PATH}`);
             },
+        },
+    };
+}
+
+/**
+ * Returns the Vite plugin that serves the frames in `dir` at `<base>/landing/frames/` in dev.
+ *
+ * @param {string} dir The absolute path of the local frames folder.
+ * @param {string} base The site's base path, without a trailing `/`.
+ * @returns {import('vite').Plugin}
+ */
+function serveFrames(dir, base) {
+    // The dev server may have taken the base off the URL already.
+    const prefixes = [`${base}/${SERVED_PATH}`, `/${SERVED_PATH}`];
+    return {
+        name: 'khora-landing-frames-dev',
+        configureServer(server) {
+            server.middlewares.use((request, response, next) => {
+                const path = (request.url ?? '').split('?')[0];
+                const prefix = prefixes.find((p) => path.startsWith(p));
+                if (!prefix) return next();
+                const name = decodeURIComponent(path.slice(prefix.length));
+                const file = join(dir, name);
+                if (!isFrameEntry(name) || !existsSync(file)) return next();
+                response.setHeader('Content-Type', name.endsWith('.json') ? 'application/json' : 'image/avif');
+                response.end(readFileSync(file));
+            });
         },
     };
 }
