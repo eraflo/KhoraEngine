@@ -417,7 +417,7 @@ fn assigning_a_material_part_from_its_menu_assigns_the_part() {
         clicks: Vec::new(),
         choose: Some("Assign to selected"),
     });
-    crate::commands::process_pending_assign_material(Some(&project.vfs), &mut world, &state);
+    crate::commands::assign_queued_materials(Some(&project.vfs), &mut world, &state);
 
     let part = project.sub(SHIP, "material_default");
     match world.get_component::<MaterialRef>(target) {

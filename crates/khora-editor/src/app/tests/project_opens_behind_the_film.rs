@@ -795,3 +795,29 @@ fn a_project_that_does_not_open_shows_no_version() {
         "the editor runs with no project, yet shows its version"
     );
 }
+
+/// **A project opened while playing opens in editing.**
+///
+/// Play ends with the project it played: the scene it would restore at Stop
+/// is the former project's, so it goes, and the new project is edited.
+#[test]
+fn a_project_opened_while_playing_opens_in_editing() {
+    let project = Project::with("opened-while-playing", &[]);
+    let mut opening = Opening::new();
+    {
+        let mut state = opening.state();
+        state.play_mode = khora_sdk::PlayMode::Playing;
+        state.scene_snapshot = Some(b"the former project's scene".to_vec());
+    }
+
+    opening.start(project.root());
+    opening.engine.frame();
+    assert!(opening.land().is_some(), "the project lands");
+
+    let state = opening.state();
+    assert_eq!(state.play_mode, khora_sdk::PlayMode::Editing);
+    assert!(
+        state.scene_snapshot.is_none(),
+        "the former project's scene would be restored at Stop"
+    );
+}

@@ -15,6 +15,7 @@
 use super::allocations::one_phase;
 use super::{hosted, Family};
 use crate::agent_registry::AgentRegistry;
+use crate::scheduler::execution::FrameRun;
 use crate::scheduler::*;
 use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
 use khora_core::agent::gorna::AgentId;

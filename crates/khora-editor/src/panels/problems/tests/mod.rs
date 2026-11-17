@@ -26,10 +26,7 @@ use std::path::Path;
 use khora_sdk::khora_core::ecs::entity::EntityId;
 use khora_sdk::khora_core::problems::{Problem, ProblemSeverity};
 
-use super::view::{
-    grouped, module_file, module_of_asset, row_action, tab_title, tile_badge, ProblemAction,
-    TileBadge,
-};
+use super::view::{grouped, module_file, module_of_asset, row_action, tab_title, ProblemAction};
 
 fn problem(
     severity: ProblemSeverity,
@@ -266,38 +263,6 @@ fn the_tab_title_counts_errors_and_warnings() {
     assert!(title.starts_with("Problems"), "{title}");
     assert!(title.contains('2') && title.contains('1'), "{title}");
     assert_ne!(title, tab_title(&two_warnings));
-}
-
-// ─── The tile badge ─────────────────────────────────────────────────────────
-
-/// **A module with nothing wrong wears no badge.**
-#[test]
-fn a_clean_module_wears_no_badge() {
-    assert_eq!(tile_badge((0, 0)), None);
-}
-
-/// **An error beats a warning**: a module with both wears its errors.
-#[test]
-fn an_error_badge_beats_warnings() {
-    assert_eq!(
-        tile_badge((1, 3)),
-        Some(TileBadge {
-            severity: ProblemSeverity::Error,
-            count: 1,
-        })
-    );
-}
-
-/// A module with only warnings wears them.
-#[test]
-fn a_module_with_only_warnings_wears_a_warning_badge() {
-    assert_eq!(
-        tile_badge((0, 2)),
-        Some(TileBadge {
-            severity: ProblemSeverity::Warning,
-            count: 2,
-        })
-    );
 }
 
 /// **A tile finds its module from its asset path**: the path under the

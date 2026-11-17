@@ -202,6 +202,7 @@ fn a_row_never_run_plans_at_its_agents_mean_correction() {
         Correction {
             factor: 1.0,
             spread: 0.0,
+            runs: 0,
         },
         "the default book, before any run"
     );
@@ -481,6 +482,96 @@ fn the_book_corrects_every_row_it_is_offered() {
             "{agent}'s {row:?} in {corrections:?}"
         );
     }
+}
+
+/// **An own row's correction counts its runs.**
+///
+/// - `ash`'s floor run 180 times counts 180; its `Balanced`, run 10 times
+///   then left while the floor ran, counts its own 10 though its factor is
+///   relaxed toward the floor's;
+/// - a row seeded from a profile learnt over 50 runs counts 50 before any
+///   run here, and 51 after one;
+/// - the corrections of an offer count the same.
+#[test]
+fn an_own_rows_correction_counts_its_runs() {
+    let mut book = book();
+    let mut state = SEED;
+    run(&mut book, ASH, LowPower, 2.0, 0.0, 60, &mut state);
+    run(&mut book, ASH, Balanced, 300.0, 0.0, 10, &mut state);
+    run(&mut book, ASH, LowPower, 2.0, 0.0, 120, &mut state);
+
+    assert_eq!(book.correction(ASH, LowPower).runs, 180);
+    let balanced = book.correction(ASH, Balanced);
+    assert!(
+        balanced.factor < 290.0,
+        "relaxed toward the floor: {balanced:?}"
+    );
+    assert_eq!(balanced.runs, 10, "its own runs: {balanced:?}");
+
+    let offers = [offer(
+        "ash",
+        vec![row(LowPower, 1_000, 0.4), row(Balanced, 3_000, 0.7)],
+        LowPower,
+    )];
+    let runs: Vec<_> = (book.corrections(&offers).iter())
+        .map(|(_, row, correction)| (*row, correction.runs))
+        .collect();
+    assert_eq!(runs, vec![(LowPower, 180), (Balanced, 10)]);
+
+    let mut seeded = self::book();
+    seeded.seed(
+        &[khora_core::agent::gorna::ProfileRow {
+            agent: "ash".to_owned(),
+            row: Balanced,
+            factor: 3.0,
+            spread: 0.3,
+            runs: 50,
+        }],
+        &[ASH],
+    );
+    assert_eq!(
+        seeded.correction(ASH, Balanced).runs,
+        50,
+        "the profile's runs count"
+    );
+    steady_run(&mut seeded, ASH, Balanced, 1.0);
+    assert_eq!(seeded.correction(ASH, Balanced).runs, 51, "and one here");
+}
+
+/// **A borrowed correction, and the default one, count no run.**
+///
+/// `ash`'s floor is run 60 times: its `HighPerformance`, never run, borrows
+/// the floor's factor but counts 0 runs, and `elm`, of which nothing was
+/// learnt, is planned at its quotes with 0 runs. The corrections of their
+/// offers count the same.
+#[test]
+fn a_borrowed_or_default_correction_counts_no_run() {
+    let mut book = book();
+    let mut state = SEED;
+    run(&mut book, ASH, LowPower, 2.0, 0.0, 60, &mut state);
+
+    let borrowed = book.correction(ASH, HighPerformance);
+    assert!(
+        (borrowed.factor - 2.0).abs() < 1e-3,
+        "the floor's factor: {borrowed:?}"
+    );
+    assert_eq!(borrowed.runs, 0, "never run itself: {borrowed:?}");
+    let unknown = book.correction(ELM, LowPower);
+    assert_eq!(unknown, Correction::default());
+    assert_eq!(unknown.runs, 0);
+
+    let offers = [
+        offer("ash", vec![row(HighPerformance, 3_000, 1.0)], LowPower),
+        offer("elm", vec![row(LowPower, 500, 0.5)], LowPower),
+    ];
+    let corrections = book.corrections(&offers);
+    assert_eq!(corrections.len(), 2, "{corrections:?}");
+    assert!(
+        corrections
+            .iter()
+            .all(|(_, _, correction)| correction.runs == 0),
+        "{corrections:?}"
+    );
 }
 
 // ── What a round makes of it ──────────────────────────────────────
@@ -814,6 +905,7 @@ fn the_row_planned_fits_the_envelope_lent_for_it_when_it_fills_the_frame() {
     let learned = Correction {
         factor: 1.25,
         spread: 0.0,
+        runs: 60,
     };
     let corrections = vec![(ASH, LowPower, learned), (ASH, HighPerformance, learned)];
     let offer = Offer {
@@ -858,9 +950,9 @@ fn the_row_planned_fits_the_envelope_lent_for_it_when_it_fills_the_frame() {
         decision.why
     );
 
-    crate::gorna::lending::lend_in_quotes(
+    crate::gorna::in_quotes::lend_in_quotes(
         &mut decision.allocation,
-        &crate::gorna::lending::Lending {
+        &crate::gorna::in_quotes::Lending {
             quoted: &[offer],
             bids: &bids,
             planned: &decision.rows,

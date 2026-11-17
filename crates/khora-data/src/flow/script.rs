@@ -25,7 +25,7 @@ use khora_core::script::{ScriptReads, ScriptSnapshot, ScriptValue};
 use khora_core::Runtime;
 
 use super::behaviors::{Companions, Pairs};
-use crate::ecs::{SemanticDomain, World};
+use crate::ecs::{ComponentKey, SemanticDomain, World};
 use crate::flow::{Flow, FlowContext, Selection};
 use crate::register_flow;
 
@@ -180,9 +180,11 @@ pub struct ScriptFlow {
     companions: Companions,
     /// Every pair a component attaches this frame, in the scope or not.
     everywhere: Pairs,
-    /// Last frame's `attached` and `with_state`, emptied and filled again, so
-    /// a frame allocates no set.
+    /// Last frame's `attached`, emptied and filled again, so a frame
+    /// allocates no set.
     spare_attached: Pairs,
+    /// Last frame's `with_state`, emptied and filled again, so a frame
+    /// allocates no set.
     spare_with_state: Pairs,
 }
 
@@ -304,10 +306,7 @@ impl Flow for ScriptFlow {
 register_flow!(ScriptFlow);
 
 /// Returns the instances `left` by entity and behavior name, in entity order.
-fn named(
-    world: &World,
-    left: Vec<(EntityId, crate::ecs::ComponentKey)>,
-) -> Vec<(EntityId, String)> {
+fn named(world: &World, left: Vec<(EntityId, ComponentKey)>) -> Vec<(EntityId, String)> {
     let components = world.components();
     let mut named: Vec<(EntityId, String)> = left
         .into_iter()

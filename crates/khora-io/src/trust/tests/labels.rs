@@ -75,3 +75,22 @@ fn a_wrong_type_is_refused_by_the_type_check_at_any_layer() {
         );
     }
 }
+
+/// The label the asset browser shows: the hash's first and last four hex
+/// digits, or the words for a stamp.
+#[test]
+fn a_key_is_labelled_by_the_ends_of_its_hash_or_as_size_and_date() {
+    let mut hash = [0u8; 32];
+    for (i, byte) in hash.iter_mut().enumerate() {
+        *byte = i as u8;
+    }
+    assert_eq!(
+        QuarantineKey::Content(hash).short_label(),
+        "blake3 0001\u{2026}1e1f"
+    );
+    let stamp = QuarantineKey::Stamp {
+        len: 1,
+        modified: std::time::SystemTime::UNIX_EPOCH,
+    };
+    assert_eq!(stamp.short_label(), "size and date");
+}

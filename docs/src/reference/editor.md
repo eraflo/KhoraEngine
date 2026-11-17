@@ -114,10 +114,13 @@ Stop is not a load of a game save: the next Play is a fresh start again, with `O
 | Input | Editor input (gizmos, selection) | Game input (player controls) | Game input |
 | ECS | Mutable — user edits directly | Snapshot taken — original world preserved | as Playing |
 
-> **Two things cross from the editor into the engine, both set every frame in
-> `before_frame`** (`khora-editor/src/commands/transport.rs`): the clock's
-> **scale** and the **families off**. `PlayMode` itself — buttons, panel
-> visibility — stays in the editor.
+> **Two things cross from the editor into the engine, both set when the play
+> mode changes** (`process_transport` in `khora-editor/src/commands/transport.rs`,
+> run in `before_frame`): the clock's **scale** and the **families off**.
+> Whatever changed the play mode — the transport, New Scene, a project opened
+> while playing — they follow it; a family scoped in between, as a sound
+> preview does, keeps its scope. `PlayMode` itself — buttons, panel visibility —
+> stays in the editor.
 >
 > The scale makes the editor one caller among several: at `0.0` the fixed-step
 > accumulator never fills, so no body integrates and no script timer counts
@@ -145,7 +148,7 @@ The editor uses `SerializationService` for all scene operations. As of v0.4 it g
 | **Open project** | `ProjectVfs::open` recursively scans `<project>/assets/`, builds the in-memory UUID index, registers all decoders, arms a filesystem watcher. The asset browser reads off the resulting VFS. |
 | **New scene** | Editor creates an empty world, ready for editing |
 | **Save scene** | Encoded with `SerializationGoal::EditorInterchange` (compact, records by name), prefab instances written as [links](#prefabs), and written via `AssetWriter` so the new file enters the VFS index immediately |
-| **Save scene as** | Same, with a new path. Out-of-project paths fall back to raw `std::fs` and log a warning. |
+| **Save scene as** | Same, with a new path. Out-of-project paths are written whole or not at all (`fs::write_atomic`) and log a warning. |
 | **Load scene** | Double-click a `.kscene` in the asset browser, or File → Open. Project-internal paths route through `AssetService::load_raw` (UUID-keyed); prefab links expand from the project's prefabs. A file that cannot be loaded leaves the open scene as it was. |
 | **Play / Stop** | World snapshot + restore via `SerializationService` with `FastestLoad` — a schema-bound snapshot, in memory. |
 
@@ -452,11 +455,11 @@ The editor is an application built on the SDK — it implements `EngineApp` and
 | `crates/khora-editor/src/gizmo/`, `picking.rs` | Gizmo geometry, drag math and dispatch; viewport picking |
 | `crates/khora-editor/src/project_vfs.rs` | The live asset index — VFS, watcher and identity registry |
 | `crates/khora-editor/src/project_scripts/` | Mounting the open project's scripts, and unmounting them |
-| `crates/khora-editor/src/panels/problems/` | The Problems tab; `view.rs` is its pure view model and the `.erg` tile badge |
+| `crates/khora-editor/src/panels/problems/` | The Problems tab; `view.rs` is its pure view model, and re-exports the `.erg` tile badge of `widgets/tile_badge.rs` |
 | `crates/khora-editor/src/ops/declared.rs` | Declared components as the Inspector reads and writes them — cards, edits, the add menu, prefab rows |
 | `crates/khora-editor/src/widgets/inspector/declared/` | The declared cards and their typed field widgets |
 
-`EditorState` — selection, mode, pending operations — is **not** in the editor
+`EditorState` — selection, mode, the queued `EditorRequest`s — is **not** in the editor
 crate. It lives in `crates/khora-core/src/ui/editor/state.rs`, with the other
 editor contracts (`EditorShell`, `EditorPanel`, `UiBuilder`), because the render
 lanes and the egui backend need the same vocabulary and neither may depend on the

@@ -261,7 +261,7 @@ fn asset_file_op_variants(x: &khora_core::ui::editor::AssetFileOp) {
 fn menu_action_variants(x: &khora_core::ui::editor::MenuAction) {
     use khora_core::ui::editor::MenuAction as M;
     match x {
-        M::NewScene | M::Open | M::Save | M::SaveAs | M::Quit => {}
+        M::NewScene | M::Open | M::OpenProject | M::Save | M::SaveAs | M::Quit => {}
         M::Delete | M::SpawnEmpty | M::BuildGame | M::Documentation | M::About => {}
     }
 }
@@ -314,8 +314,8 @@ fn editor_state_fields(x: &khora_core::ui::editor::state::EditorState) {
         &x.project_folder,
         &x.project_name,
         &x.project_engine_version,
-        &x.pending_browse_project_folder,
         &x.play_mode,
+        &x.followed_play_mode,
         &x.scene_snapshot,
         &x.current_scene_path,
         &x.addable_components,

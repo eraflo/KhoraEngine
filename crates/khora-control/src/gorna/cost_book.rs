@@ -199,11 +199,12 @@ impl CostBook {
     }
 
     /// Returns the correction of `agent`'s `row`: its factor (measured ≈
-    /// factor × quoted) and its spread.
+    /// factor × quoted), its spread, and the runs it was learnt from.
     ///
     /// A row never run takes the mean of the agent's learned rows, so an
     /// upgrade not yet tried is not held back for ever by what is unknown of
     /// it. An agent of which nothing was learned is planned at its quotes.
+    /// Either counts 0 runs; a seeded row counts the runs of its profile.
     pub fn correction(&self, agent: AgentId, row: StrategyId) -> Correction {
         if let Some((_, _, learnt)) = (self.rows.iter()).find(|(a, r, _)| *a == agent && *r == row)
         {
@@ -220,6 +221,8 @@ impl CostBook {
         Correction {
             factor: learnt.iter().map(|c| c.factor).sum::<f64>() / count,
             spread: learnt.iter().map(|c| c.spread).sum::<f64>() / count,
+            // Borrowed: nothing of this row itself was measured.
+            runs: 0,
         }
     }
 
@@ -252,10 +255,11 @@ impl CostBook {
         Correction {
             factor: weight * own.factor + (1.0 - weight) * mean_factor,
             spread: weight * own.spread + (1.0 - weight) * mean_spread,
+            runs: own.runs,
         }
     }
 
-    /// Returns a row's factor and spread.
+    /// Returns a row's factor, spread and runs (at most `u32::MAX`).
     ///
     /// The spread is its recent runs' spread around the factor, and the
     /// prior's, weighed down by every run it ever had.
@@ -269,6 +273,7 @@ impl CostBook {
         Correction {
             factor: learnt.factor,
             spread: (variance + prior * prior / (1.0 + learnt.seen)).sqrt(),
+            runs: learnt.seen.min(f64::from(u32::MAX)) as u32,
         }
     }
 
@@ -285,7 +290,7 @@ impl CostBook {
                     row: *row,
                     factor: own.factor,
                     spread: own.spread,
-                    runs: learnt.seen.min(f64::from(u32::MAX)) as u32,
+                    runs: own.runs,
                 }
             })
             .collect()

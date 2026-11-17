@@ -187,6 +187,8 @@ pub enum SecurityReason {
         /// What the panic said.
         message: String,
     },
+    /// A pack entry whose bytes are not those its signed manifest records.
+    Tampered,
 }
 
 /// A file the engine refused to read.
@@ -245,6 +247,9 @@ impl std::fmt::Display for SecurityReason {
             SecurityReason::DecoderPanic { message } => {
                 write!(f, "made its decoder fail: {message}")
             }
+            SecurityReason::Tampered => {
+                write!(f, "is not what the build signed: the pack was changed")
+            }
         }
     }
 }
@@ -285,6 +290,9 @@ impl SecurityReason {
             SecurityReason::DecoderPanic { .. } => {
                 "The file is damaged or made to break its decoder. Replace it, and it is \
                  read again."
+            }
+            SecurityReason::Tampered => {
+                "Build the game again: a pack changed after its build is never read."
             }
         }
     }

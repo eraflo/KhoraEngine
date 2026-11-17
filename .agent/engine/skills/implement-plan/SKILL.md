@@ -9,14 +9,16 @@ The **Implement** phase of [`../../workflow-rpi.md`](../../workflow-rpi.md). Goa
 `docs/plans/descriptive-name.md` into working code, phase by phase, without letting the context balloon.
 
 ## Steps (loop per phase)
-1. **Read the current phase** from the plan file — only that phase, not the whole history.
+1. **Read the current phase** from the plan file — only that phase, not the whole history — and
+   [`conventions.md`](../../conventions.md) *Before you write*.
 2. **Tests first.** Dispatch the [`test-writer`](../../agents/test-writer.md) subagent with the plan path
    and the phase. It writes the phase's tests (plus `todo!()` signature stubs so they compile) and reports
    each failure it observed. Check every row of the phase's *Tests* has its test before going on.
-3. **Implement** exactly what the phase specifies, until those tests pass. Match surrounding idioms,
-   naming, and comment density. Honor Khora's hard rules (`RULES.md`, relevant `reference/*.md`):
-   `khora_core::math`, `log::*` not `println!`, no `unwrap()` on GPU/IO, no `std::thread::spawn`, shaders
-   as `.wgsl` composed by the `PipelineSystem` backend.
+3. **Implement** exactly what the phase specifies, until those tests pass, each new type in the file the
+   plan names. Match surrounding idioms, naming, and comment density. Honor Khora's hard rules
+   (`RULES.md`, relevant `reference/*.md`): `khora_core::math`, `log::*` not `println!`, no `unwrap()` on
+   GPU/IO, no `std::thread::spawn`, shaders as `.wgsl` composed by the `PipelineSystem` backend.
+   Then run `cargo xtask lint-file` on every file touched and `cargo doc` (*Before you write*), clean.
 4. **Try to break it.** Dispatch the [`test-breaker`](../../agents/test-breaker.md) subagent with the plan
    path and the diff. It returns failing tests for real defects and missing cases.
 5. **Fix** until the breaker's tests pass. If the fixes were substantial, dispatch the breaker once more
@@ -42,6 +44,8 @@ The **Implement** phase of [`../../workflow-rpi.md`](../../workflow-rpi.md). Goa
   say why, and have it corrected (by that subagent or the human); record the change in the plan's Status.
   Tests for private helpers you add yourself are yours to write.
 - Trivial single-file changes that skip the RPI loop still get a test that fails before the change.
+- **Every subagent brief** says to read *Before you write* first; a brief to a subagent that writes code
+  names the file and folder of each new type and module.
 - Comments follow [`conventions.md`](../../conventions.md) §9b: a one-sentence summary, the contract not the
   implementation, `//` says why in four lines at most, never a plan label ("phase 2", "D1"), history or step
   numbering; a longer explanation goes to the book.

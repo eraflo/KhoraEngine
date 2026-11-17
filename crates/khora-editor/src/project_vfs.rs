@@ -129,7 +129,7 @@ impl ProjectVfs {
             assets_root.display()
         );
 
-        Ok(Self {
+        let mut opened = Self {
             root,
             watched_as: khora_sdk::fs::RootName::of(&assets_root),
             assets_root,
@@ -143,7 +143,11 @@ impl ProjectVfs {
             awaiting: None,
             next: None,
             held: Vec::new(),
-        })
+        };
+        // The index just built may hold derived UUIDs (a file made at a renamed
+        // path): they are frozen as at a reindex.
+        opened.freeze_derived_ids();
+        Ok(opened)
     }
 
     /// Opens the project at `root` over `service`, the engine's shared asset service.
@@ -173,7 +177,7 @@ impl ProjectVfs {
         watch
             .watch(&assets_root)
             .context("Failed to watch the project's assets (filesystem hot reload)")?;
-        Ok(Self {
+        let mut opened = Self {
             root,
             watched_as: khora_sdk::fs::RootName::of(&assets_root),
             assets_root,
@@ -187,7 +191,10 @@ impl ProjectVfs {
             awaiting: None,
             next: None,
             held: Vec::new(),
-        })
+        };
+        // What was indexed while the editor was closed is frozen as at a reindex.
+        opened.freeze_derived_ids();
+        Ok(opened)
     }
 
     /// The project's asset service, locked for the length of a statement.
@@ -238,13 +245,15 @@ impl ProjectVfs {
     /// Re-walks `<root>/assets/` and swaps the VFS index, on the frame.
     ///
     /// What [`Self::reindex`] does without an engine, and what the setup-time
-    /// scene load does.
+    /// scene load does. Freezes the derived UUIDs it now lists, saving the
+    /// registry if any.
     pub fn rebuild_index(&mut self) -> Result<()> {
         let bytes = IndexBuilder::new(&self.assets_root)
             .with_registry(&self.registry)
             .build_index_bytes()
             .context("Failed to rebuild project asset index")?;
         self.assets().reindex(&bytes)?;
+        self.freeze_derived_ids();
         if let Some(catalog) = &self.prefab_catalog {
             catalog.replace(khora_sdk::prefab_catalog(&self.assets()));
         }
@@ -255,11 +264,31 @@ impl ProjectVfs {
     /// Takes in a reindex that landed in the engine's asset service.
     ///
     /// Refills the prefab catalog from the new index and moves the project's generation.
+    /// Freezes the derived UUIDs it now lists, saving the registry if any.
     pub fn index_landed(&mut self) {
+        self.freeze_derived_ids();
         if let Some(catalog) = &self.prefab_catalog {
             catalog.replace(khora_sdk::prefab_catalog(&self.assets()));
         }
         self.moved_on();
+    }
+
+    /// Freezes the UUID of each file indexed whose default another path holds, and saves the registry.
+    ///
+    /// Such a UUID is derived (`AssetIdRegistry::resolve`): frozen, it stays
+    /// the file's once the path holding the default is gone.
+    fn freeze_derived_ids(&mut self) {
+        let paths: Vec<String> = (self.assets().index().iter_all())
+            .map(|metadata| khora_sdk::khora_core::asset::asset_key(&metadata.source_path))
+            .collect();
+        if self
+            .registry
+            .freeze_derived(paths.iter().map(String::as_str))
+        {
+            if let Err(e) = self.registry.save() {
+                log::error!("Failed to persist asset registry after indexing: {e}");
+            }
+        }
     }
 
     /// Files this project's reindexes with `hub`, the engine's index hub, from now on.
@@ -833,6 +862,79 @@ mod tests {
                 .iter()
                 .any(|entry| entry.source_path == "scripts/ai/Player.erg"),
             "the index does not list the new file: {listed:?}"
+        );
+        Ok(())
+    }
+
+    /// **A file made at a renamed asset's old path is an asset of its own.**
+    ///
+    /// The rename gave the old path's default UUID to the new path; the new
+    /// file gets another, which the editor freezes, so it stays that file's
+    /// once the renamed asset is gone.
+    #[test]
+    fn a_file_made_at_a_renamed_assets_old_path_gets_a_frozen_uuid_of_its_own() -> Result<()> {
+        let project = TempProject::new("old-path")?;
+        let mut pvfs = project.open()?;
+        pvfs.create_asset("textures/a.png", b"first")?;
+        pvfs.rename_asset("textures/a.png", "textures/b.png")?;
+
+        pvfs.create_asset("textures/a.png", b"second")?;
+
+        let listed = crate::hot_reload::collect_asset_entries(&pvfs);
+        let uuid_of = |path: &str| {
+            listed
+                .iter()
+                .find(|entry| entry.source_path == path)
+                .map(|entry| entry.uuid)
+        };
+        let (new, moved) = (uuid_of("textures/a.png"), uuid_of("textures/b.png"));
+        assert!(
+            new.is_some() && moved.is_some(),
+            "both are listed: {listed:?}"
+        );
+        assert_ne!(new, moved, "two assets, two UUIDs");
+        let saved = AssetIdRegistry::load(&project.0);
+        assert_eq!(Some(saved.resolve("textures/a.png")), new);
+        assert_eq!(saved.len(), 2, "the new file's UUID is frozen");
+        Ok(())
+    }
+
+    /// **A project opened freezes the derived UUIDs of the index it opened with.**
+    ///
+    /// `textures/a.png` was renamed to `textures/b.png` and a file made again
+    /// at `textures/a.png` while the editor was closed: the index the project
+    /// opens over gives it a derived UUID, which the opened project freezes,
+    /// so it stays that file's once `textures/b.png` is gone.
+    #[test]
+    fn a_project_opened_freezes_the_derived_uuids_of_its_index() -> Result<()> {
+        let project = TempProject::new("open-freezes-derived")?;
+        let textures = project.0.join("assets").join("textures");
+        std::fs::create_dir_all(&textures)?;
+        std::fs::write(textures.join("a.png"), b"second")?;
+        std::fs::write(textures.join("b.png"), b"first")?;
+        let mut registry = AssetIdRegistry::load(&project.0);
+        registry.rename("textures/a.png", "textures/b.png");
+        registry.save()?;
+        let derived = registry.resolve("textures/a.png");
+        let opened = AssetService::open_loose_files(
+            &project.0,
+            &AssetIdRegistry::load(&project.0),
+            Arc::new(MetricsRegistry::new()),
+        )?;
+        let shared = Arc::new(Mutex::new(opened));
+
+        let _pvfs = ProjectVfs::over_service(
+            project.0.clone(),
+            Arc::clone(&shared),
+            Arc::new(AssetWatch::default()),
+        )?;
+
+        let saved = AssetIdRegistry::load(&project.0);
+        assert_eq!(saved.resolve("textures/a.png"), derived);
+        assert_eq!(
+            saved.len(),
+            2,
+            "the derived UUID of `textures/a.png` is not frozen at the open"
         );
         Ok(())
     }

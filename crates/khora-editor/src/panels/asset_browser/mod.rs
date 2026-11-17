@@ -150,7 +150,7 @@ impl AssetBrowserPanel {
     }
 
     /// Asks before a deletion, then queues it for
-    /// `commands::process_pending_asset_file_ops`.
+    /// `commands::run_queued_asset_file_ops`.
     ///
     /// Deleting is the one action here the editor cannot undo: the file leaves
     /// the project. A folder's wording says it takes everything under it.

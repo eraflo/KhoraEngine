@@ -21,170 +21,34 @@
 //! }
 //! ```
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
+use crate::game_assets::{check_pack_seal, open_game_assets_with};
 use crate::runtime_config::RuntimeConfig;
 use crate::winit_adapters::WinitWindowProvider;
 use crate::{
-    run_winit, AssetService, AudioDevice, AudioMixBus, AudioStream, CpalAudioDevice, DefaultMixBus,
-    EngineApp, GameWorld, InputEvent, LayoutSystem, MetricsRegistry, PackLoader, PhaseProvider,
-    PhysicsProvider, PipelineSystem, RapierPhysicsWorld, RenderSystem, Runtime, StreamInfo,
-    TaffyLayoutSystem, WgpuPipelineSystem, WgpuRenderSystem, WindowConfig,
+    run_winit, AudioDevice, AudioMixBus, AudioStream, CpalAudioDevice, DefaultMixBus, EngineApp,
+    GameWorld, InputEvent, LayoutSystem, PhaseProvider, PhysicsProvider, PipelineSystem,
+    RapierPhysicsWorld, RenderSystem, Runtime, StreamInfo, TaffyLayoutSystem, WgpuPipelineSystem,
+    WgpuRenderSystem, WindowConfig,
 };
 use khora_io::asset::pack_key::stamped_pack_key;
-use khora_io::asset::signing::{PackKey, PackSealError, SignedManifest};
-use khora_io::asset::PackManifest;
+use khora_io::asset::signing::PackKey;
 
 mod opening;
-use opening::{is_packed, GameOpening, GAME_DIR};
+use opening::{GameOpening, GAME_DIR};
 
 /// The `runtime.json` [`run_default`] read, for the app's functions that take no `self`.
 static RUNTIME_CONFIG: OnceLock<RuntimeConfig> = OnceLock::new();
 
-/// Builds the [`AssetService`] the game starts with: a pack's, or an empty one for loose `assets/`.
-///
-/// Loose assets are indexed off the frame once the engine runs, unverified. A
-/// pack opens only if its seal verifies with `pack_key` ([`read_manifest`]);
-/// each load is then hashed against the manifest. See the book:
-/// concepts/trust.md, "Signed packs".
-fn build_asset_service(
-    exe_dir: &Path,
-    metrics: Arc<MetricsRegistry>,
-    refusals: Option<Arc<khora_io::trust::Refusals>>,
-    pack_key: Option<PackKey>,
-) -> Result<AssetService> {
-    let pack = exe_dir.join("data.pack");
-    let idx = exe_dir.join("index.bin");
-    let assets = exe_dir.join("assets");
-
-    let (svc, mode_label) = if is_packed(exe_dir) {
-        let bytes = read_index(&idx)?;
-        let pack_file = std::fs::File::open(&pack)
-            .with_context(|| format!("Failed to open {}", pack.display()))?;
-        let loader = PackLoader::new(pack_file)
-            .context("Pack header validation failed — refusing to start")?;
-        let manifest = read_manifest(exe_dir, &bytes, pack_key)?;
-        let counted = loader.header().asset_count;
-        let mut svc = AssetService::new(&bytes, Box::new(loader), metrics, Some(manifest))?;
-        // A pack and an index from two builds do not go together.
-        let indexed = svc.index().entries_read();
-        if counted as usize != indexed {
-            return Err(anyhow!(
-                "{} counts {counted} entries but {} holds {indexed}: the pair does not \
-                 come from one build",
-                pack.display(),
-                idx.display()
-            ));
-        }
-        if let Some(refusals) = refusals {
-            svc.set_refusals(refusals);
-        }
-        // A glTF's buffers and images are read inside the pack.
-        svc.register_packed_decoders();
-        (svc, "PackLoader")
-    } else if assets.is_dir() {
-        refuse_loose_when_stamped(exe_dir, pack_key)?;
-        // Indexed off the frame once the engine runs, with the identity
-        // registry the editor writes: an asset renamed in the editor keeps
-        // the UUID its scenes reference.
-        (AssetService::empty(), "FileLoader, indexed off the frame")
-    } else {
-        return Err(anyhow!(
-            "khora-sdk run_default cannot start: no `data.pack`+`index.bin` and no \
-             `assets/` next to the binary at {}",
-            exe_dir.display()
-        ));
-    };
-
-    log::info!(
-        "khora-sdk run_default: using {} ({} assets indexed)",
-        mode_label,
-        svc.index().asset_count()
-    );
-
-    Ok(svc)
-}
-
-/// Returns the pack's `manifest.bin`, verified with `pack_key` over the index bytes `index_bytes`.
-///
-/// A missing, malformed or unsigned manifest, another key, another index, or
-/// no key at all is a [`PackSealError`], logged, which refuses the pack.
-fn read_manifest(
-    exe_dir: &Path,
-    index_bytes: &[u8],
-    pack_key: Option<PackKey>,
-) -> Result<PackManifest> {
-    let seal = (|| {
-        let key = pack_key.ok_or(PackSealError::Unstamped)?;
-        SignedManifest::read(&exe_dir.join("manifest.bin"))?.verify(&key, index_bytes)
-    })();
-    match seal {
-        Ok(manifest) => {
-            log::info!(
-                "khora-sdk run_default: the pack's seal verifies ({} entries)",
-                manifest.len()
-            );
-            Ok(manifest)
-        }
-        Err(error) => {
-            log::error!("khora-sdk run_default: the pack is refused: {error}");
-            Err(anyhow::Error::new(error)
-                .context(format!("the pack beside {} is refused", exe_dir.display())))
-        }
-    }
-}
-
-/// Refuses loose files to a stamped runtime: a built game runs only from its pack.
-///
-/// A pack missing a part, or `assets/` in its place, is refused. An unstamped
-/// runtime (a dev run) runs loose files.
-fn refuse_loose_when_stamped(exe_dir: &Path, pack_key: Option<PackKey>) -> Result<()> {
-    if pack_key.is_none() {
-        return Ok(());
-    }
-    log::error!(
-        "khora-sdk run_default: this built game finds no complete pack beside it at {}",
-        exe_dir.display()
-    );
-    Err(anyhow!(
-        "a built game runs from its pack: `data.pack` and `index.bin` are not both beside {} — \
-         build the game again",
-        exe_dir.display()
-    ))
-}
-
-/// Refuses the pack beside `exe_dir` before anything starts when its seal
-/// does not verify with `pack_key`; a loose game has nothing to verify.
-fn check_pack_seal(exe_dir: &Path, pack_key: Option<PackKey>) -> Result<()> {
-    if !is_packed(exe_dir) {
-        return refuse_loose_when_stamped(exe_dir, pack_key);
-    }
-    let bytes = read_index(&exe_dir.join("index.bin"))?;
-    read_manifest(exe_dir, &bytes, pack_key).map(|_| ())
-}
-
-/// Returns the bytes of the pack index at `idx`, read whole: one past its limit is refused.
-fn read_index(idx: &Path) -> Result<Vec<u8>> {
-    let cap = khora_io::asset::MAX_INDEX_BYTES as u64;
-    khora_io::fs::read_bounded(idx, cap).map_err(|error| match error {
-        khora_io::fs::BoundedReadError::TooLarge { size, .. } => anyhow!(
-            "{} is {size} bytes, over the {cap} an index may hold",
-            idx.display()
-        ),
-        khora_io::fs::BoundedReadError::Io(error) => {
-            anyhow::Error::new(error).context(format!("Failed to read {}", idx.display()))
-        }
-    })
-}
-
 /// The [`EngineApp`] of [`run_default`]: it opens the game beside the binary, then idles.
 ///
 /// The scene `runtime.json` names is opened off the frame, and so are loose
-/// assets and their scripts; a packed game's index is read before the boot,
-/// and it mounts no script. Gameplay lives in the scene's scripts.
-struct DefaultRuntimeApp {
+/// assets and the game's scripts; a packed game's index is read before the
+/// boot. Gameplay lives in the scene's scripts.
+pub(crate) struct DefaultRuntimeApp {
     exe_dir: PathBuf,
     config: RuntimeConfig,
     opening: Option<GameOpening>,
@@ -195,7 +59,7 @@ impl DefaultRuntimeApp {
     /// Returns the app of the game beside `exe_dir`, run with `config`.
     ///
     /// [`EngineApp::new`] builds the running binary's.
-    fn at(exe_dir: PathBuf, config: RuntimeConfig) -> Self {
+    pub(crate) fn at(exe_dir: PathBuf, config: RuntimeConfig) -> Self {
         Self {
             exe_dir,
             config,
@@ -205,19 +69,13 @@ impl DefaultRuntimeApp {
     }
 }
 
-/// Installs in `runtime` the asset service of the game beside `exe_dir`.
+/// Installs in `runtime` what the game beside `exe_dir` runs with, its pack verified with `pack_key`.
 ///
-/// None is installed, the error logged, when there is neither a pack nor
-/// `assets/`, or the pack is refused.
-fn install_game_assets(runtime: &mut Runtime, exe_dir: &Path, pack_key: Option<PackKey>) {
-    let metrics = Arc::new(MetricsRegistry::new());
-    let refusals = runtime
-        .resources
-        .get::<Arc<khora_io::trust::Refusals>>()
-        .cloned();
-    match build_asset_service(exe_dir, metrics, refusals, pack_key) {
-        Ok(svc) => runtime.services.insert(Arc::new(Mutex::new(svc))),
-        Err(e) => log::error!("khora-sdk run_default: AssetService init failed: {:#}", e),
+/// No asset service is installed, the error logged, when there is neither a
+/// pack nor `assets/`, or the pack is refused.
+fn install_game(runtime: &mut Runtime, exe_dir: &Path, pack_key: Option<PackKey>) {
+    if let Err(e) = open_game_assets_with::<DefaultRuntimeApp>(runtime, exe_dir, pack_key) {
+        log::error!("khora-sdk run_default: the game's assets did not open: {e:#}");
     }
 }
 
@@ -328,7 +186,8 @@ pub fn run_default() -> Result<()> {
         exe_dir.display(),
         cfg.preset.as_deref().unwrap_or("unset"),
     );
-    // A pack that is not sealed by this runtime's key never starts.
+    // A pack that is not sealed by this runtime's key never starts: refused
+    // here as an error, before a window opens, as the boot would refuse it.
     check_pack_seal(&exe_dir, stamped_pack_key())?;
 
     let physics_settings = cfg.physics;
@@ -381,30 +240,12 @@ pub fn run_default() -> Result<()> {
             Err(e) => log::error!("audio open failed: {}", e),
         }
 
-        // A packed game runs on a player's machine: its profile and its
-        // quarantine are filed in the player's data folder, and it may ship
-        // a profile beside it.
-        if opening::is_packed(&exe_dir) {
-            runtime
-                .resources
-                .insert(khora_io::profiles::ProfilePlace::Player);
-            runtime
-                .resources
-                .insert(crate::engine::profiles::ShippedProfileDir(exe_dir.clone()));
-        }
-        // The run's refusals before the asset service: its readers report
-        // to them from the first.
-        crate::engine::refusals::install(
-            runtime,
-            &DefaultRuntimeApp::game_identity(),
-            DefaultRuntimeApp::keeps_user_files(),
-        );
         // A pack's index is read now, loose files indexed once the engine
         // runs; the scene and scripts are filed in `setup`.
-        install_game_assets(runtime, &exe_dir, stamped_pack_key());
+        install_game(runtime, &exe_dir, stamped_pack_key());
     })?;
     Ok(())
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

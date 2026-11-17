@@ -80,7 +80,7 @@ pub struct AssetMetadata {
 
     /// The asset's type, which selects its decoder.
     ///
-    /// Written under its former field name, as the plain string it always was.
+    /// Serialized under the key `asset_type_name`, as its plain name.
     #[serde(rename = "asset_type_name")]
     pub asset_type: AssetType,
 
@@ -123,8 +123,7 @@ mod tests {
         }
     }
 
-    /// **The default source is the variant keyed `"default"`**, as every index
-    /// and pack has keyed it.
+    /// **The default source is the variant keyed `"default"`.**
     #[test]
     fn the_default_source_is_the_variant_keyed_default() {
         let file = AssetSource::Path(PathBuf::from("a.png"));

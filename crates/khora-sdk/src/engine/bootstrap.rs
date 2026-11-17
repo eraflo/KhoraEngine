@@ -28,6 +28,7 @@ use std::time::Duration;
 use super::phase_order::phase_order;
 use super::scheduler_boot::{build_scheduler, refuse_stranded_agents, register_lane_agents};
 use super::EngineCore;
+use crate::game_seal::GameSeal;
 use crate::traits::EngineApp;
 use crate::{GameWorld, InputEvent};
 
@@ -61,14 +62,40 @@ pub struct EngineBootstrap<A: EngineApp> {
 impl<A: EngineApp> EngineBootstrap<A> {
     /// Starts the bootstrap of `app` over `runtime`: the DCC, telemetry and the
     /// engine's own runtime entries, everything `app.setup` may read.
+    ///
+    /// It first checks the game's pack, as every start of a game does. See the
+    /// book: concepts/trust.md, "Signed packs".
+    ///
+    /// # Panics
+    ///
+    /// When the pack beside the running binary does not verify with the key
+    /// stamped into it, when a pack sits beside a binary with no key, when a
+    /// stamped binary finds no complete pack, or when a stamped binary cannot
+    /// find its own folder.
     pub fn begin(app: A, runtime: Runtime) -> Self {
-        Self::begin_with(app, runtime, khora_core::platform::input_channel())
+        Self::begin_with(
+            app,
+            runtime,
+            khora_core::platform::input_channel(),
+            &GameSeal::of_this_binary(),
+        )
     }
 
-    fn begin_with(app: A, mut runtime: Runtime, input_events: Channel<InputEvent>) -> Self {
+    /// Starts the bootstrap as [`begin`](Self::begin) does, the game's pack checked against `seal`.
+    pub(crate) fn begin_with(
+        app: A,
+        mut runtime: Runtime,
+        input_events: Channel<InputEvent>,
+        seal: &GameSeal,
+    ) -> Self {
+        seal.enforce();
+        // Before scripting is installed: its compiler reads through them.
+        super::refusals::install(&mut runtime, &A::game_identity(), A::keeps_user_files());
         let (dcc, dcc_rx, telemetry, game_world) = populate(&mut runtime, &input_events);
         identify(&mut runtime, A::game_identity());
-        super::refusals::install(&mut runtime, &A::game_identity(), A::keeps_user_files());
+        super::refusals::read_index_through(&runtime);
+        // What the game's closure opened, filed now that the hubs exist.
+        crate::game_assets::file_opened_game(&mut runtime);
         let phase_order = phase_order(&app.custom_phases(), &app.removed_phases());
         Self {
             app,
@@ -182,10 +209,15 @@ impl<A: EngineApp> EngineCore<A> {
     ///
     /// # Panics
     ///
-    /// Panics when the engine cannot boot, as
+    /// Panics when the engine cannot boot, as [`EngineBootstrap::begin`],
     /// [`EngineBootstrap::register`] and [`EngineBootstrap::finish`] say.
     pub fn bootstrap(&mut self, app: A, runtime: Runtime) {
-        let mut stages = EngineBootstrap::begin_with(app, runtime, self.input_events.clone());
+        self.bootstrap_sealed(app, runtime, &GameSeal::of_this_binary());
+    }
+
+    /// Boots the engine as [`bootstrap`](Self::bootstrap) does, the game's pack checked against `seal`.
+    pub(crate) fn bootstrap_sealed(&mut self, app: A, runtime: Runtime, seal: &GameSeal) {
+        let mut stages = EngineBootstrap::begin_with(app, runtime, self.input_events.clone(), seal);
         stages.setup();
         stages.register();
         stages.finish(self);
@@ -313,4 +345,37 @@ fn land_boot_work(runtime: &mut Runtime, game_world: &mut GameWorld) {
         reserve.land_from_host();
     }
     khora_io::script::declarations::register_pending(game_world.inner_world_mut(), runtime);
+}
+
+#[cfg(test)]
+mod tests {
+    use khora_core::Runtime;
+    use khora_io::asset::signing::PackSigner;
+
+    use super::EngineBootstrap;
+    use crate::game_seal::GameSeal;
+    use crate::run_default::tests::{opening, GameDir, SEALED};
+    use crate::run_default::DefaultRuntimeApp;
+
+    /// **A staged start refuses a pack signed by another key.**
+    ///
+    /// A game that never calls `run_default` starts through the engine's
+    /// bootstrap: its first stage verifies the pack beside the binary with the
+    /// key the binary carries, and refuses to start on another's.
+    #[test]
+    #[should_panic(expected = "signature does not verify")]
+    fn a_staged_start_refuses_a_pack_signed_by_another_key() {
+        let game = GameDir::new("staged-other-key");
+        let exe_dir = game.packed(SEALED);
+        let other = PackSigner::load_or_create(&game.path().join("other-signing"))
+            .expect("another signing key")
+            .public_key();
+
+        let _ = EngineBootstrap::begin_with(
+            DefaultRuntimeApp::at(exe_dir.clone(), opening("scenes/missing.kscene")),
+            Runtime::new(),
+            khora_core::platform::input_channel(),
+            &GameSeal::new(&exe_dir, Some(other)),
+        );
+    }
 }

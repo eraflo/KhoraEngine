@@ -282,6 +282,21 @@ fn a_downloaded_file_is_read_as_imported() {
     assert_eq!(plain.len() as u64, size);
 }
 
+/// A guard resolves its root once, but a root made after the guard is read
+/// once it exists.
+#[test]
+fn a_guard_made_before_its_root_exists_reads_once_it_is_made() {
+    let dir = TempDir::new().expect("a temp dir");
+    let root = dir.path().join("assets");
+    let guard = FileGuard::new(&root, Trust::Project, Refusals::detached());
+    assert!(matches!(guard.read("a.txt"), Err(ReadError::Io(_))));
+
+    fs::create_dir_all(&root).expect("the root is made");
+    fs::write(root.join("a.txt"), b"made").expect("the file is made");
+    assert_eq!(guard.read("a.txt").expect("it reads now"), b"made");
+    assert_eq!(guard.read("a.txt").expect("and again"), b"made");
+}
+
 /// **A file's kind comes from its extension**, as the index maps them, in
 /// any case; a glTF's `.bin` buffer is glTF; anything else is `Other`.
 #[test]
@@ -309,6 +324,31 @@ fn a_file_kind_comes_from_its_extension() {
         ("a.kmat", FileKind::Text),
         ("a.xyz", FileKind::Other),
         ("no_extension", FileKind::Other),
+    ] {
+        assert_eq!(FileKind::of_path(Path::new(path)), kind, "{path}");
+    }
+}
+
+/// **A file's kind follows the asset type its extension names**, the index's
+/// extension table the only one read: an `.fbx` is capped as a mesh, a
+/// `.ktx2` the texture decoder cannot read is not a texture.
+#[test]
+fn a_file_kind_follows_the_type_its_extension_names() {
+    for (path, kind) in [
+        ("a.fbx", FileKind::Gltf),
+        ("a.hlsl", FileKind::Text),
+        ("a.glsl", FileKind::Text),
+        ("a.scene", FileKind::Text),
+        ("a.mat", FileKind::Text),
+        ("a.kscript", FileKind::Text),
+        ("a.kprefab", FileKind::Text),
+        ("a.gif", FileKind::Texture),
+        ("a.exr", FileKind::Texture),
+        ("a.ktx2", FileKind::Other),
+        ("a.ron", FileKind::Other),
+        ("a.json", FileKind::Other),
+        ("a.toml", FileKind::Other),
+        ("a.txt", FileKind::Other),
     ] {
         assert_eq!(FileKind::of_path(Path::new(path)), kind, "{path}");
     }

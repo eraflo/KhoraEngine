@@ -47,3 +47,45 @@ impl<T: ?Sized> RwLockExt<T> for RwLock<T> {
         self.write().unwrap_or_else(PoisonError::into_inner)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::panic::{self, AssertUnwindSafe};
+    use std::sync::RwLock;
+
+    use super::RwLockExt;
+
+    /// Panics while writing `lock` after storing `value`, leaving it poisoned.
+    fn poison_rw_lock(lock: &RwLock<u32>, value: u32) {
+        let outcome = panic::catch_unwind(AssertUnwindSafe(|| {
+            let mut guard = lock.write().expect("not yet poisoned");
+            *guard = value;
+            panic!("a writer panics");
+        }));
+        assert!(outcome.is_err());
+        assert!(lock.is_poisoned());
+    }
+
+    #[test]
+    fn read_recovered_reads_the_value_a_panicking_writer_left() {
+        let lock = RwLock::new(1);
+        poison_rw_lock(&lock, 7);
+        assert_eq!(*lock.read_recovered(), 7);
+    }
+
+    #[test]
+    fn write_recovered_writes_through_the_poison() {
+        let lock = RwLock::new(1);
+        poison_rw_lock(&lock, 7);
+        *lock.write_recovered() = 9;
+        assert_eq!(*lock.read_recovered(), 9);
+    }
+
+    #[test]
+    fn rw_lock_recovered_reads_and_writes_a_healthy_lock() {
+        let lock = RwLock::new(3);
+        *lock.write_recovered() += 1;
+        assert_eq!(*lock.read_recovered(), 4);
+        assert!(!lock.is_poisoned());
+    }
+}

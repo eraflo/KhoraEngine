@@ -19,6 +19,8 @@
 //! bounded number of frames for it, never assuming the frame that lands it.
 
 use super::*;
+use crate::game_assets::build_asset_service;
+use crate::game_seal::GameSeal;
 use crate::khora_core::asset::{AssetUUID, IndexTicket};
 use crate::khora_core::ecs::entity::EntityId;
 use crate::khora_core::renderer::api::gpu_scene::Mesh;
@@ -27,11 +29,14 @@ use crate::khora_core::script::ScriptValue;
 use crate::prelude::ecs::{Name, Transform};
 use crate::prelude::math::Vec3;
 use crate::scripts::{CompileHub, CompileTicket};
+use crate::{AssetService, MetricsRegistry};
 use crate::{
     EngineCore, IndexHub, Readiness, ReadinessProgress, ReadinessState, SceneLoadHub,
     SerializationGoal, SerializationService,
 };
+use anyhow::anyhow;
 use khora_io::asset::signing::{PackKey, PackSealError, PackSigner};
+use khora_io::asset::PackManifest;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -78,10 +83,10 @@ const TICKETS: u64 = 16;
 const TRIANGLE: &[u8] = b"v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
 
 /// The scene the runtime opens when `runtime.json` names none.
-const DEFAULT_SCENE: &str = "scenes/default.kscene";
+pub(crate) const DEFAULT_SCENE: &str = "scenes/default.kscene";
 
 /// A behaviour counting the frames it ran in `older`.
-const COUNTER: &str = "behavior Counter {
+pub(crate) const COUNTER: &str = "behavior Counter {
     int older = 0;
     void Update(float dt) { older += 1; }
 }";
@@ -135,10 +140,10 @@ fn decodable_types(svc: &mut AssetService) -> Result<Vec<String>> {
 
 /// A folder of its own under the system's temporary folder, standing for the
 /// directory of the runtime binary — removed when dropped.
-struct GameDir(PathBuf);
+pub(crate) struct GameDir(PathBuf);
 
 impl GameDir {
-    fn new(tag: &str) -> Self {
+    pub(crate) fn new(tag: &str) -> Self {
         let root = std::env::temp_dir().join(format!(
             "khora-sdk-run-default-{tag}-{}-{}",
             std::process::id(),
@@ -150,12 +155,12 @@ impl GameDir {
         GameDir(root)
     }
 
-    fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.0
     }
 
     /// Writes `bytes` at `rel` under `<dir>/assets/`.
-    fn asset(&self, rel: &str, bytes: &[u8]) {
+    pub(crate) fn asset(&self, rel: &str, bytes: &[u8]) {
         let path = self.0.join("assets").join(rel);
         std::fs::create_dir_all(path.parent().expect("an asset has a folder"))
             .expect("the asset's folder");
@@ -165,7 +170,7 @@ impl GameDir {
     /// Packs `<dir>/project/assets/` into `<dir>/exe/`, signed by [`Self::signer`].
     ///
     /// Returns that binary directory, with nothing loose beside the pack.
-    fn packed(&self, files: &[(&str, &[u8])]) -> PathBuf {
+    pub(crate) fn packed(&self, files: &[(&str, &[u8])]) -> PathBuf {
         let assets = self.project_assets(files);
         let exe_dir = self.0.join("exe");
         let signer = self.signer();
@@ -177,7 +182,7 @@ impl GameDir {
     }
 
     /// As [`Self::packed`], with no signer: the pack has no `manifest.bin`.
-    fn packed_unsigned(&self, files: &[(&str, &[u8])]) -> PathBuf {
+    pub(crate) fn packed_unsigned(&self, files: &[(&str, &[u8])]) -> PathBuf {
         let assets = self.project_assets(files);
         let exe_dir = self.0.join("exe");
         crate::PackBuilder::new(&assets, &exe_dir)
@@ -207,7 +212,7 @@ impl GameDir {
 
     /// The public key of [`Self::signer`]: what the runtime of this game is
     /// stamped with.
-    fn pack_key(&self) -> PackKey {
+    pub(crate) fn pack_key(&self) -> PackKey {
         self.signer().public_key()
     }
 }
@@ -252,7 +257,7 @@ impl Drop for GameDir {
 ///
 /// One per test process (each test runs in its own), removed with the test's
 /// game folders: never the profiles of whoever runs the tests.
-fn profiles_scratch() -> PathBuf {
+pub(crate) fn profiles_scratch() -> PathBuf {
     std::env::temp_dir().join(format!(
         "khora-sdk-run-default-profiles-{}",
         std::process::id()
@@ -269,7 +274,7 @@ fn user_folders_scratch() -> PathBuf {
 }
 
 /// The config of a runtime started without `runtime.json`, opening `scene`.
-fn opening(scene: &str) -> RuntimeConfig {
+pub(crate) fn opening(scene: &str) -> RuntimeConfig {
     RuntimeConfig {
         default_scene: scene.to_owned(),
         ..RuntimeConfig::defaults()
@@ -278,7 +283,8 @@ fn opening(scene: &str) -> RuntimeConfig {
 
 /// Boots the engine the runtime binary in `exe_dir` boots, running `app`.
 ///
-/// Its assets are installed as `first` installs them, a pack verified with the
+/// Its runtime is filled in the order a window's start fills it, its game
+/// installed as `run_default`'s closure installs it, a pack verified with the
 /// key its build stamped ([`pack_key_of`]). Its machine profile is filed in
 /// [`profiles_scratch`], its quarantine under [`user_folders_scratch`].
 fn engine_with<A: EngineApp>(exe_dir: &Path, app: A) -> EngineCore<A> {
@@ -288,10 +294,13 @@ fn engine_with<A: EngineApp>(exe_dir: &Path, app: A) -> EngineCore<A> {
     std::env::set_var("HOME", user.join("home"));
     std::env::set_var("APPDATA", user.join("data"));
     std::env::set_var("XDG_DATA_HOME", user.join("data"));
-    let mut runtime = Runtime::new();
-    install_game_assets(&mut runtime, exe_dir, pack_key_of(exe_dir));
+    // In the order a window's start runs them: the engine's runtime, then
+    // what `run_default`'s closure installs, then the boot.
+    let key = pack_key_of(exe_dir);
+    let mut runtime = crate::winit_adapters::engine_runtime();
+    install_game(&mut runtime, exe_dir, key);
     let mut engine = EngineCore::<A>::new();
-    engine.bootstrap(app, runtime);
+    engine.bootstrap_sealed(app, runtime, &GameSeal::new(exe_dir, key));
     engine
 }
 
@@ -311,7 +320,7 @@ fn frame<A: EngineApp>(engine: &mut EngineCore<A>) {
 }
 
 /// Frames until `done`, at most [`MAX_FRAMES`]; panics naming `what`.
-fn frames_until<A: EngineApp>(
+pub(crate) fn frames_until<A: EngineApp>(
     engine: &mut EngineCore<A>,
     what: &str,
     mut done: impl FnMut(&mut EngineCore<A>) -> bool,
@@ -338,7 +347,7 @@ fn resource<A: EngineApp, T: Clone + Send + Sync + 'static>(
 }
 
 /// The asset service the engine serves.
-fn served<A: EngineApp>(engine: &EngineCore<A>) -> Arc<Mutex<AssetService>> {
+pub(crate) fn served<A: EngineApp>(engine: &EngineCore<A>) -> Arc<Mutex<AssetService>> {
     engine
         .runtime()
         .services
@@ -441,7 +450,7 @@ fn int<A: EngineApp>(
 }
 
 /// The bytes of a scene holding one authored entity per name.
-fn scene_bytes(entities: &[&str]) -> Vec<u8> {
+pub(crate) fn scene_bytes(entities: &[&str]) -> Vec<u8> {
     let mut world = GameWorld::new();
     for (i, name) in entities.iter().enumerate() {
         let entity = world.spawn((
@@ -684,7 +693,7 @@ fn a_packed_runtime_registers_every_decoder() -> Result<()> {
 // ---------------------------------------------------------------------------
 
 /// The scene and the texture of the packs the seal tests build.
-const SEALED: &[(&str, &[u8])] = &[
+pub(crate) const SEALED: &[(&str, &[u8])] = &[
     ("scenes/sealed.kscene", b"sealed scene bytes"),
     ("textures/sealed.png", b"sealed texture bytes"),
 ];
@@ -947,6 +956,89 @@ fn a_sealed_game_compiles_no_script_left_beside_its_pack() {
     assert!(
         !declared,
         "a script beside the sealed pack declared its behaviour"
+    );
+}
+
+/// **A packed game runs its scripts**, compiled from its pack.
+///
+/// The pack holds `scripts/counter.erg` and a default scene running it; the
+/// project is gone from the disk. Once `setup` returned, the compile of the
+/// pack's modules is in flight, recorded as mounted under the pack; frames
+/// later the counter runs.
+#[test]
+fn a_packed_game_runs_its_scripts() {
+    let game = GameDir::new("packed-scripts");
+    let assets = game.project_assets(&[("scripts/counter.erg", COUNTER.as_bytes())]);
+    let scene = scene_with_a_counter(&assets.join("scripts"));
+    let exe_dir = game.packed(&[(DEFAULT_SCENE, scene.as_slice())]);
+    std::fs::remove_dir_all(game.path().join("project")).expect("the project is taken away");
+
+    let mut engine = runtime_engine(&exe_dir, opening(DEFAULT_SCENE));
+    let hubs = Hubs::of(engine.runtime());
+    let mounted: Arc<crate::scripts::MountedScripts> = resource(&engine, "the mounted scripts");
+
+    assert!(
+        hubs.compiling(),
+        "setup returned with no compile of the pack's scripts in flight"
+    );
+    assert_eq!(
+        mounted.modules_of(&exe_dir.join("data.pack")),
+        std::collections::BTreeSet::from(["counter.erg".to_owned()]),
+        "the pack's modules are not recorded as mounted under the pack"
+    );
+    let mut watchman = None;
+    frames_until(&mut engine, "the packed counter did not run", |engine| {
+        if watchman.is_none() {
+            watchman = named(engine, WATCHMAN);
+        }
+        watchman.is_some_and(|entity| {
+            int(engine, entity, "Counter", "older").is_some_and(|count| count >= 1)
+        })
+    });
+}
+
+/// **A refused pack entry is in the run's refusals and its problems.**
+///
+/// A packed game whose `textures/lies.png` holds no image: once the engine
+/// booted as the runtime boots it, its load is refused, quarantined in the
+/// run's own refusals and shown with the run's problems.
+#[test]
+fn a_refused_pack_entry_is_in_the_runs_refusals_and_problems() {
+    use crate::khora_core::problems::{ProblemSource, Problems};
+    use crate::khora_core::renderer::api::resource::CpuTexture;
+    use khora_core::sync::LockExt;
+    use khora_io::trust::Refusals;
+
+    let game = GameDir::new("packed-refusal");
+    let exe_dir = game.packed(&[("textures/lies.png", b"no image at all".as_slice())]);
+
+    let engine = runtime_engine(&exe_dir, opening("scenes/missing.kscene"));
+    let refusals: Arc<Refusals> = resource(&engine, "the run's refusals");
+    let problems: Arc<Problems> = resource(&engine, "the run's problems");
+    let loaded = served(&engine)
+        .lock_recovered()
+        .load::<CpuTexture>(&AssetUUID::new_v5("textures/lies.png"))
+        .map(|_| ());
+
+    assert!(loaded.is_err(), "bytes that are no image loaded");
+    assert!(
+        refusals
+            .quarantined()
+            .iter()
+            .any(|refusal| refusal.path.ends_with("lies.png")),
+        "the refusal is not in the run's refusals: {:?}",
+        refusals.quarantined()
+    );
+    assert!(
+        problems
+            .of_source(&ProblemSource::Security)
+            .iter()
+            .any(|problem| problem
+                .module
+                .as_deref()
+                .is_some_and(|m| m.ends_with("lies.png"))),
+        "the refusal is not among the run's problems: {:?}",
+        problems.all()
     );
 }
 

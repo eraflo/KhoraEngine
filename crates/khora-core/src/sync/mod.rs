@@ -19,6 +19,3 @@ mod rw_lock_ext;
 
 pub use lock_ext::LockExt;
 pub use rw_lock_ext::RwLockExt;
-
-#[cfg(test)]
-mod tests;

@@ -103,18 +103,6 @@ impl ProjectTrustState {
         }
     }
 
-    fn read<T>(&self, f: impl FnOnce(&Held) -> T) -> T {
-        f(&self.held.read_recovered())
-    }
-
-    fn write(&self, f: impl FnOnce(&mut Held)) {
-        f(&mut self.held.write_recovered());
-        (self.generation).store(
-            GENERATIONS.fetch_add(1, Ordering::Relaxed),
-            Ordering::Release,
-        );
-    }
-
     /// Returns the trust of the project `runtime` serves.
     ///
     /// `Trusted` when the runtime holds no state: a game, the sandbox, a test.
@@ -146,5 +134,17 @@ impl ProjectTrustState {
             .resources
             .get::<Arc<ProjectTrustState>>()
             .map_or(ProjectTrust::Trusted, |state| state.trust_of(path))
+    }
+
+    fn read<T>(&self, f: impl FnOnce(&Held) -> T) -> T {
+        f(&self.held.read_recovered())
+    }
+
+    fn write(&self, f: impl FnOnce(&mut Held)) {
+        f(&mut self.held.write_recovered());
+        (self.generation).store(
+            GENERATIONS.fetch_add(1, Ordering::Relaxed),
+            Ordering::Release,
+        );
     }
 }

@@ -12,8 +12,8 @@ transform gizmos, dock layout, theme, and the egui/Taffy plumbing.
   (`workbench.rs` dock host, `scene_tree/`, `asset_browser/`, `viewport/`, `control_plane/`, console,
   command palette), `chrome/` (title bar, spine, status bar — all branding), `widgets/` (editor-only
   widgets; `widgets/inspector/` = cards, tabs, field `walker.rs`, `instance_band.rs`, add-component),
-  `ops/` (pure ECS ops: hierarchy, inspect, spawn, scene tree, `prefab_overrides/`), `commands/` (drain
-  `EditorState` pending actions: scene, prefab, material, asset ops), `scene_io/` (project-relative save/
+  `ops/` (pure ECS ops: hierarchy, inspect, spawn, scene tree, `prefab_overrides/`), `commands/` (take the
+  `EditorRequest`s queued on `EditorState::requests`: menu, scene, prefab, material, asset file ops), `scene_io/` (project-relative save/
   load, Play snapshot/restore), `gizmo/`, `project_vfs.rs`, `hot_reload.rs`.
 - Editor UI types: `crates/khora-core/src/ui/editor/` (gizmos, viewport, panels, theme).
 - UI lanes / layout: `crates/khora-lanes/src/ui/`, `crates/khora-infra/src/ui/{taffy,egui}/`.
@@ -38,7 +38,7 @@ transform gizmos, dock layout, theme, and the egui/Taffy plumbing.
 ## Scripts (Ergon) in the editor
 - Mount: `project_scripts/` (`follow_open_project`, each frame) — `khora_sdk::scripts::mount`/`unmount` of
   `<project>/assets`. Problems tab: `panels/problems/` (`view.rs` = pure view model: `grouped`, `tab_title`,
-  `tile_badge`); `.erg` tile badge in `widgets/tile.rs`; reads `khora_core::problems::Problems` (`generation()` to skip
+  re-exports `tile_badge`); `.erg` tile badge in `widgets/tile.rs` + `widgets/tile_badge.rs`; reads `khora_core::problems::Problems` (`generation()` to skip
   unchanged frames).
 - Declared components (no Rust type, no JSON): `ops/declared.rs` — `declared_cards` (from
   `ComponentKey::Declared` vtables + `World::declared_row`; `#state` only while playing; state and system

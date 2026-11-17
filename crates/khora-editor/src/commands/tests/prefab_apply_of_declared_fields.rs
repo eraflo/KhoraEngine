@@ -157,7 +157,7 @@ fn posts(project: &Project, count: usize) -> (GameWorld, ComponentKey, Vec<Entit
                 prefab: post,
                 parent: None,
             });
-        process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
+        spawn_queued_prefabs(Some(&project.vfs), &mut world, &state);
     }
     let roots: Vec<EntityId> = world
         .iter_entities()
@@ -215,7 +215,7 @@ fn apply_and_rebase(
     (state.lock().expect("the editor state"))
         .push_request(EditorRequest::ApplyToPrefab { entity, scope });
 
-    process_pending_prefab_apply(Some(&project.vfs), world, &state);
+    apply_queued_instances(Some(&project.vfs), world, &state);
 
     let mut state = state.lock().expect("the editor state");
     crate::ops::apply_edits(world, &mut state);

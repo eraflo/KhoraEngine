@@ -146,6 +146,7 @@ fn a_recorded_epoch() -> EpochRecord {
             Correction {
                 factor: 1.5,
                 spread: 0.25,
+                runs: 24,
             },
         )],
         memory: PerDevice::default(),

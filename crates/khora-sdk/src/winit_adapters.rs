@@ -125,18 +125,8 @@ impl<W: WindowProvider, A: EngineApp> ApplicationHandler for WinitAppRunner<W, A
         let window = W::create(event_loop as &dyn Any, &window_config);
 
         // Windowing-tier entries go in first: the bootstrap closure may read them.
-        let mut runtime = khora_core::Runtime::new();
-
-        // Scripting's resources, before the application's closure: an app
-        // mounts its scripts there.
-        crate::scripts::install(&mut runtime);
-
-        runtime.resources.insert(PRIMARY_VIEWPORT);
-
-        // One FrameContext for the engine's life: its blackboard is reused across frames.
-        let fctx = Arc::new(FrameContext::new());
-        runtime.resources.insert(Arc::clone(&fctx));
-        self.frame_context = Some(fctx);
+        let mut runtime = engine_runtime();
+        self.frame_context = runtime.resources.get::<Arc<FrameContext>>().cloned();
 
         // The raw window goes in the resources, so the app's hooks can hand
         // `Arc<winit::window::Window>` to an overlay each frame.
@@ -233,6 +223,21 @@ impl<W: WindowProvider, A: EngineApp> Drop for WinitAppRunner<W, A> {
     fn drop(&mut self) {
         self.engine.shutdown();
     }
+}
+
+/// Returns the runtime a window's start hands the application's closure, before any backend.
+///
+/// It holds what a script mount needs, the primary viewport and the engine's
+/// one [`FrameContext`].
+pub(crate) fn engine_runtime() -> khora_core::Runtime {
+    let mut runtime = khora_core::Runtime::new();
+    // What a mount needs, before the application's closure: an app mounts
+    // its scripts there. The compiler comes at boot, after the run's refusals.
+    crate::scripts::install_for_mounts(&mut runtime);
+    runtime.resources.insert(PRIMARY_VIEWPORT);
+    // One FrameContext for the engine's life: its blackboard is reused across frames.
+    runtime.resources.insert(Arc::new(FrameContext::new()));
+    runtime
 }
 
 /// Builds the application, runs `first` over `runtime`, then bootstraps `engine` with both.
@@ -376,5 +381,74 @@ mod tests {
             "the engine boots with the runtime `first` filled"
         );
         engine.shutdown();
+    }
+
+    /// An app doing nothing of its own.
+    struct Plain;
+
+    impl PhaseProvider for Plain {}
+    impl EngineApp for Plain {
+        fn window_config() -> WindowConfig {
+            WindowConfig::default()
+        }
+        fn new() -> Self {
+            Plain
+        }
+        fn setup(&mut self, _world: &mut GameWorld, _runtime: &Runtime) {}
+        fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
+    }
+
+    /// **The engine's script compiler reads through the run's refusals, at its project's trust.**
+    ///
+    /// The runtime is made as a window's start makes it; the application's
+    /// closure opens its project restricted and mounts a script one byte over a
+    /// restricted project's cap. The compile at boot refuses it to the run's
+    /// refusals, which the boot installs after the closure.
+    #[test]
+    fn the_engines_compiler_reads_through_the_runs_refusals_at_its_trust() {
+        use khora_io::trust::{
+            FileKind, Limits, ProjectTrust, ProjectTrustState, Refusals, SecurityReason, Trust,
+        };
+
+        let assets = std::env::temp_dir().join(format!(
+            "khora-sdk-compiler-refusals-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&assets);
+        let cap = Limits::of(FileKind::Text, Trust::Restricted).max_bytes;
+        let mut huge = b"fn void Main() { }\n//".to_vec();
+        huge.resize(cap as usize + 1, b'a');
+        std::fs::create_dir_all(assets.join("scripts")).expect("the script folder");
+        std::fs::write(assets.join("scripts").join("huge.erg"), &huge).expect("the script");
+        let mut engine = EngineCore::<Plain>::new();
+
+        start_engine(&mut engine, super::engine_runtime(), |runtime| {
+            runtime
+                .resources
+                .insert(std::sync::Arc::new(ProjectTrustState::new(
+                    ProjectTrust::Restricted,
+                )));
+            crate::scripts::mount(runtime, &assets);
+        });
+        let refusals = engine
+            .runtime()
+            .resources
+            .get::<std::sync::Arc<Refusals>>()
+            .cloned()
+            .expect("the boot installs the run's refusals");
+        let refused: Vec<SecurityReason> = refusals
+            .quarantined()
+            .into_iter()
+            .filter(|refusal| refusal.path.ends_with("huge.erg"))
+            .map(|refusal| refusal.reason)
+            .collect();
+        engine.shutdown();
+        let _ = std::fs::remove_dir_all(&assets);
+
+        assert_eq!(
+            refused,
+            vec![SecurityReason::TooLarge { size: cap + 1, cap }],
+            "the compile at boot read the script past the run's refusals or its trust"
+        );
     }
 }

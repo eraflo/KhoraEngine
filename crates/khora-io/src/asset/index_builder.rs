@@ -48,18 +48,6 @@ pub struct IndexBuilder<'a> {
     guard: Option<&'a crate::trust::FileGuard>,
 }
 
-/// A file the scan found, before it is sorted and read.
-struct Scanned {
-    /// Its forward-slash path under the root: its key and sort order.
-    key: String,
-    /// Its path under the root.
-    rel: PathBuf,
-    /// Its absolute path, read when its type has an extractor or a lister.
-    abs: PathBuf,
-    /// Its type, by its extension.
-    asset_type: AssetType,
-}
-
 impl<'a> IndexBuilder<'a> {
     /// Returns a builder over `assets_root`, a project's `assets/` directory.
     ///
@@ -166,6 +154,18 @@ impl<'a> IndexBuilder<'a> {
     }
 }
 
+/// A file the scan found, before it is sorted and read.
+struct Scanned {
+    /// Its forward-slash path under the root: its key and sort order.
+    key: String,
+    /// Its path under the root.
+    rel: PathBuf,
+    /// Its absolute path, read when its type has an extractor or a lister.
+    abs: PathBuf,
+    /// Its type, by its extension.
+    asset_type: AssetType,
+}
+
 /// Reads the file at `rel_path` (`abs_path`) through `guard` if any, else as it is.
 fn read_bytes(
     guard: Option<&crate::trust::FileGuard>,
@@ -235,21 +235,9 @@ fn push_sub_assets(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::asset::{asset_type_for_extension, AssetIndex};
+    use crate::asset::AssetIndex;
     use std::fs;
     use tempfile::tempdir;
-
-    #[test]
-    fn ext_canonical_mapping() {
-        assert_eq!(asset_type_for_extension("png"), "texture");
-        assert_eq!(asset_type_for_extension("PNG"), "texture");
-        assert_eq!(asset_type_for_extension("gltf"), "mesh");
-        assert_eq!(asset_type_for_extension("kscene"), "scene");
-        assert_eq!(asset_type_for_extension("kscript"), "script");
-        // An unknown extension is a type of its own, so the file is still indexed.
-        assert_eq!(asset_type_for_extension("xyz"), "xyz");
-        assert_eq!(asset_type_for_extension("MD"), "md");
-    }
 
     #[test]
     fn index_builder_honours_frozen_registry_uuid() {

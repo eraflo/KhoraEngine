@@ -33,7 +33,8 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// What the runs of one frame share: the runtime, the families off, the bus and the deck.
+/// What the runs of one frame share: the runtime, the families off, each agent's
+/// outcome, the bus and the deck.
 pub(super) struct FrameRun<'a> {
     /// The runtime every agent's context reaches.
     pub(super) runtime: &'a Arc<Runtime>,
@@ -67,7 +68,7 @@ impl ExecutionScheduler {
         self.execute_agents(&agents, run);
     }
 
-    /// Runs the phase's agents wave by wave, in [`sort_agents`](super::sort_agents) order.
+    /// Runs the phase's agents wave by wave, in [`sort_agents`](super::roster::sort_agents) order.
     ///
     /// Waves run in order, so Hard dependencies hold. A wave of one runs inline into the
     /// frame's deck; a larger wave's members run on the worker pool into private deck

@@ -2801,6 +2801,7 @@ fn module_renderer_paths_still_resolve() {
     );
     let _ = model_uniforms_fields
         as fn(&khora_core::renderer::api::gpu_scene::model_uniforms::ModelUniforms);
+    let _ = khora_core::renderer::api::gpu_scene::model_uniforms::ModelUniforms::from_model;
     is_debug::<khora_core::renderer::api::gpu_scene::model_uniforms::ModelUniforms>();
     is_clone::<khora_core::renderer::api::gpu_scene::model_uniforms::ModelUniforms>();
     is_copy::<khora_core::renderer::api::gpu_scene::model_uniforms::ModelUniforms>();

@@ -23,20 +23,16 @@ use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
 use khora_core::agent::dependency::DependencyKind;
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::{AgentDependency, ExecutionPhase};
-use khora_core::graph::topological_sort;
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::telemetry::TelemetryEvent;
 use khora_core::Runtime;
-use known::{Known, KnownAgents, MetAgent};
+use known::{Known, KnownAgents};
 use lending::Ledger;
 use roster::Roster;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use waves::{build_wave_metas, partition_waves};
-
-#[cfg(test)]
-use execution::FrameRun;
 
 mod background;
 mod clocks;
@@ -278,73 +274,6 @@ impl ExecutionScheduler {
     /// Sets the phase execution order.
     pub fn set_phase_order(&mut self, order: &[ExecutionPhase]) {
         self.phase_order = order.to_vec();
-    }
-}
-
-/// Orders a phase's agents by their Hard dependencies, then by importance and priority.
-///
-/// On a dependency cycle, logs an error and keeps the importance and priority order.
-///
-/// `agents` and the result are indices into `met`.
-fn sort_agents(met: &[MetAgent], mut agents: Vec<usize>) -> Vec<usize> {
-    agents.sort_by(|&a, &b| {
-        let (a, b) = (&met[a].1.timing, &met[b].1.timing);
-        let imp_ord = a.importance.cmp(&b.importance);
-        if imp_ord != std::cmp::Ordering::Equal {
-            return imp_ord;
-        }
-        b.priority
-            .partial_cmp(&a.priority)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    // Build (id -> index) map after the importance sort so the topo result
-    // can be reassembled cheaply.
-    let id_to_index: std::collections::HashMap<AgentId, usize> = agents
-        .iter()
-        .enumerate()
-        .map(|(idx, &agent)| (met[agent].1.id, idx))
-        .collect();
-
-    // In the importance + priority order: the topological sort keeps its
-    // input order among agents no dependency orders.
-    let mut nodes: Vec<(usize, AgentId)> = id_to_index.iter().map(|(id, i)| (*i, *id)).collect();
-    nodes.sort_unstable_by_key(|(index, _)| *index);
-    let nodes: Vec<AgentId> = nodes.into_iter().map(|(_, id)| id).collect();
-
-    // Build hard-dep edges (parent = dep target, child = dependent agent)
-    // — the dep target must run first.
-    let mut edges: Vec<(AgentId, AgentId)> = Vec::new();
-    for &agent in &agents {
-        let agent_id = met[agent].1.id;
-        for dep in &met[agent].1.timing.dependencies {
-            if matches!(dep.kind, DependencyKind::Hard) && id_to_index.contains_key(&dep.target) {
-                edges.push((dep.target, agent_id));
-            }
-        }
-    }
-
-    match topological_sort(nodes, edges) {
-        Ok(order) => {
-            // Reassemble agents in topo order. Equal-priority nodes inherit
-            // the importance+priority ordering already applied above.
-            let mut taken: Vec<Option<usize>> = agents.into_iter().map(Some).collect();
-            order
-                .into_iter()
-                .filter_map(|id| {
-                    id_to_index
-                        .get(&id)
-                        .copied()
-                        .and_then(|idx| taken[idx].take())
-                })
-                .collect()
-        }
-        Err(_) => {
-            log::error!(
-                "Scheduler: cycle detected in Hard agent dependencies — falling back to importance/priority order"
-            );
-            agents
-        }
     }
 }
 

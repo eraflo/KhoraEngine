@@ -24,14 +24,22 @@ pub struct Correction {
     pub factor: f64,
     /// How far the runs spread around `factor`, in the same unit.
     pub spread: f64,
+    /// How many runs of the row itself it was learnt from; 0 if never measured.
+    ///
+    /// At 0, `factor` and `spread` are borrowed from the agent's other rows, or
+    /// the default. A round plans with those two alone; a journal written
+    /// without `runs` reads 0.
+    #[serde(default)]
+    pub runs: u32,
 }
 
 impl Default for Correction {
-    /// A row's quote as it is: a factor of 1, no spread.
+    /// A row's quote as it is: a factor of 1, no spread, no run.
     fn default() -> Self {
         Self {
             factor: 1.0,
             spread: 0.0,
+            runs: 0,
         }
     }
 }

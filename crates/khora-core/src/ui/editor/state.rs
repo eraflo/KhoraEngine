@@ -199,12 +199,12 @@ pub struct EditorState {
     ///
     /// `0.1.0` for a project whose file has none.
     pub project_version: Option<String>,
-    /// Whether the asset browser should open a folder picker next frame.
-    pub pending_browse_project_folder: bool,
 
     // ── Play Mode ──────────────────────────────────────
     /// Current play mode (Editing / Playing / Paused).
     pub play_mode: PlayMode,
+    /// The play mode the engine's families and clock were last set for; `None` before the first.
+    pub followed_play_mode: Option<PlayMode>,
     /// The active camera that renders nothing while playing, and what is wrong with it.
     ///
     /// The viewport says so over the image. `None` when the game's camera
@@ -507,8 +507,8 @@ pub struct QuarantinedAsset {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{EditorRequest, MenuAction, SpawnShape, Transport};
     use super::EditorState;
+    use crate::ui::editor::{EditorRequest, MenuAction, SpawnShape, Transport};
 
     fn menu(request: EditorRequest) -> Result<MenuAction, EditorRequest> {
         match request {

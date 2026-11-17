@@ -34,13 +34,14 @@ use crate::ops::prefab_overrides::{json_overrides, rebound, reverted};
 use crate::project_vfs::{ProjectPrefabs, ProjectVfs};
 use crate::scene_io;
 
-/// Drains the pending prefab saves, writing the entity's subtree as a `.kprefab`.
+/// Takes the queued [`EditorRequest::SaveAsPrefabAt`] and [`EditorRequest::SaveAsPrefab`]s,
+/// writing each entity's subtree as a `.kprefab`.
 ///
 /// [`EditorRequest::SaveAsPrefabAt`], from a drop on an asset folder,
 /// carries its path under `<project>/assets/` and writes at once;
 /// [`EditorRequest::SaveAsPrefab`], from the scene tree's "Save as
 /// Prefab…", asks for the file first.
-pub fn process_pending_save_as_prefab(
+pub fn save_queued_prefabs(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
@@ -197,7 +198,7 @@ fn write_prefab_through_vfs(pvfs: &mut ProjectVfs, rel_fwd: &str, bytes: &[u8]) 
 ///
 /// The id is a `.kprefab`, a glTF scene or another sub-asset prefab, read
 /// through the project's VFS; given a parent, the new root is placed under it.
-pub fn process_pending_prefab_spawn(
+pub fn spawn_queued_prefabs(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
@@ -250,7 +251,7 @@ fn spawn_prefab(
 /// The prefab's file is rewritten through the project's VFS and reindexed;
 /// the other instances in this world follow at once. See the book:
 /// concepts/prefabs.md, "Seeing and editing overrides".
-pub fn process_pending_prefab_apply(
+pub fn apply_queued_instances(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,

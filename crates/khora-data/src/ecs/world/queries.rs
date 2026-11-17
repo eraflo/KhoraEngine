@@ -14,8 +14,9 @@
 
 //! Building queries: planning, page matching, the domain bitset.
 
-use khora_core::sync::RwLockExt;
 use std::{any::TypeId, collections::HashSet};
+
+use khora_core::sync::RwLockExt;
 
 use super::World;
 use crate::ecs::{

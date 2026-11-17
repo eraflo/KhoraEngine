@@ -19,19 +19,14 @@ use khora_core::sync::LockExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use crate::game_assets::OpenedGame;
 use crate::khora_core::asset::AssetUUID;
 use crate::khora_core::scene::LoadTicket;
 use crate::{
-    AssetReader, AssetService, GameWorld, IndexHub, IndexKind, IndexTicket, Readiness,
-    ReadinessHold, Runtime, SceneLoadHub,
+    AssetReader, AssetService, GameWorld, IndexHub, IndexTicket, Readiness, ReadinessHold, Runtime,
+    SceneLoadHub,
 };
 use khora_data::scene::loading::{LoadKind, SceneFetch, SceneSource};
-
-/// Whether the game beside `exe_dir` is packed: `data.pack` and its
-/// precomputed `index.bin` sit beside the binary.
-pub(super) fn is_packed(exe_dir: &Path) -> bool {
-    exe_dir.join("data.pack").is_file() && exe_dir.join("index.bin").is_file()
-}
 
 /// The game being opened: what was filed, until it lands.
 pub(super) struct GameOpening {
@@ -49,11 +44,11 @@ pub(super) struct GameOpening {
 }
 
 impl GameOpening {
-    /// Starts opening the game beside `exe_dir`: its scene or index filed, a loose game's scripts mounted.
+    /// Starts opening the game the boot filed: its scene filed, or its index awaited.
     ///
-    /// A packed game's default `scene` is filed at once; loose `assets/` are
-    /// indexed first. Returns `None`, logged, when the engine holds no asset
-    /// service or no scene hub.
+    /// A packed game's scene is filed at once; loose `assets/` are indexed
+    /// first. Returns `None`, logged, when the engine holds no asset service
+    /// or no scene hub.
     pub(super) fn start(
         exe_dir: &Path,
         scene: String,
@@ -80,34 +75,22 @@ impl GameOpening {
             load: None,
         };
 
-        // Its scripts, read from the disk whatever the index holds — a loose
-        // game's only: a packed game is sealed, and a file left beside its
-        // pack is not the game's. A scene carries the declarations it holds,
-        // so it may land first.
-        let compile: Option<crate::scripts::CompileTicket> = if is_packed(exe_dir) {
-            None
-        } else {
-            crate::scripts::mount(runtime, &exe_dir.join("assets"))
-        };
-        if let (Some(ticket), Some(readiness)) = (compile, &opening.readiness) {
-            readiness.wait_for_compile(ticket);
-        }
-
-        if is_packed(exe_dir) || !exe_dir.join("assets").is_dir() {
-            opening.file_scene(world);
-        } else if let Some(indexes) = &opening.indexes {
-            let ticket = indexes.file(exe_dir.to_path_buf(), IndexKind::Open);
-            if let Some(readiness) = &opening.readiness {
-                readiness.wait_for_index(ticket);
+        // What `open_game_assets` opened was filed at boot: the index of loose
+        // files, the scripts of either. A scene carries the declarations it
+        // holds, so it may land before them.
+        match runtime.resources.get::<OpenedGame>() {
+            Some(opened) if opened.pack_modules.is_some() => opening.file_scene(world),
+            Some(OpenedGame {
+                index: Some(ticket),
+                ..
+            }) => opening.index = Some(*ticket),
+            _ => {
+                log::error!(
+                    "khora-sdk run_default: the assets beside {} were not filed to open",
+                    exe_dir.display()
+                );
+                opening.hold = None;
             }
-            log::info!(
-                "khora-sdk run_default: indexing {} off the frame",
-                exe_dir.join("assets").display()
-            );
-            opening.index = Some(ticket);
-        } else {
-            log::error!("khora-sdk run_default: the engine holds no index hub");
-            opening.hold = None;
         }
         Some(opening)
     }

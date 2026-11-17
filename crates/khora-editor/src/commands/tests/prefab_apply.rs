@@ -151,7 +151,7 @@ fn spawn_turrets(project: &Project, world: &mut GameWorld, count: usize) -> Vec<
                 prefab: turret,
                 parent: None,
             });
-        process_pending_prefab_spawn(Some(&project.vfs), world, &state);
+        spawn_queued_prefabs(Some(&project.vfs), world, &state);
     }
     let instances: Vec<Instance> = world
         .iter_entities()
@@ -179,7 +179,7 @@ fn apply_to_prefab(
     (state.lock().expect("the editor state"))
         .push_request(EditorRequest::ApplyToPrefab { entity, scope });
 
-    process_pending_prefab_apply(Some(&project.vfs), world, &state);
+    apply_queued_instances(Some(&project.vfs), world, &state);
 
     assert!(
         state.lock().expect("the editor state").requests.is_empty(),
@@ -403,7 +403,7 @@ fn apply_and_rebase(
     (state.lock().expect("the editor state"))
         .push_request(EditorRequest::ApplyToPrefab { entity, scope });
 
-    process_pending_prefab_apply(Some(&project.vfs), world, &state);
+    apply_queued_instances(Some(&project.vfs), world, &state);
 
     let mut state = state.lock().expect("the editor state");
     crate::ops::apply_edits(world, &mut state);
@@ -535,7 +535,7 @@ fn a_nested_live_instance_takes_an_applied_component() {
             prefab: turret,
             parent: Some(tower),
         });
-    process_pending_prefab_spawn(Some(&project.vfs), &mut made, &state);
+    spawn_queued_prefabs(Some(&project.vfs), &mut made, &state);
     state
         .lock()
         .expect("the editor state")
@@ -543,7 +543,7 @@ fn a_nested_live_instance_takes_an_applied_component() {
             entity: tower,
             path: "prefabs/tower.kprefab".to_owned(),
         });
-    process_pending_save_as_prefab(Some(&project.vfs), &made, &state);
+    save_queued_prefabs(Some(&project.vfs), &made, &state);
 
     let mut world = GameWorld::new();
     let turret = spawn_turrets(&project, &mut world, 1).remove(0);
@@ -559,7 +559,7 @@ fn a_nested_live_instance_takes_an_applied_component() {
             prefab: tower_prefab,
             parent: None,
         });
-    process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
+    spawn_queued_prefabs(Some(&project.vfs), &mut world, &state);
     let nested = world
         .iter_entities()
         .find(|e| {

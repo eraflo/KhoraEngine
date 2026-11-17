@@ -54,7 +54,7 @@ pub fn spawn_mesh_asset(
     entity
 }
 
-/// Spawns what the queued [`EditorRequest::Spawn`]s ask, oldest first, and selects each.
+/// Spawns what the queued [`EditorRequest::Spawn`]s ask, oldest first; the last one spawned is selected.
 pub fn process_spawns(world: &mut GameWorld, state: &mut EditorState) {
     let shapes = state.take_requests(|request| match request {
         EditorRequest::Spawn(shape) => Ok(shape),

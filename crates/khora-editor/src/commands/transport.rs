@@ -43,7 +43,8 @@ pub fn start_editing(runtime: &Runtime) {
 ///
 /// Play snapshots the scene and is refused while a restore is under way; Stop
 /// files the scene's restore with the runtime's scene loads. Whatever moved the
-/// transport, the families and the clock follow where it stands, every frame.
+/// transport, the families and the clock follow where it stands once it has
+/// moved: a family scoped meanwhile, as a sound preview does, keeps its scope.
 /// See the book: reference/editor.md, "04 — Play mode".
 pub fn process_transport(
     world: &mut GameWorld,
@@ -108,7 +109,16 @@ pub fn process_transport(
         }
         ops::sync_scene_cameras_for_mode(world, play_mode(editor_state));
     }
-    follow(runtime, play_mode(editor_state));
+    // A new scene or a project opened while playing moves the play mode too:
+    // it is followed here, whatever moved it.
+    let mode = play_mode(editor_state);
+    let followed = editor_state
+        .lock()
+        .ok()
+        .and_then(|mut state| state.followed_play_mode.replace(mode));
+    if followed != Some(mode) {
+        follow(runtime, mode);
+    }
 }
 
 /// Why Play is refused in a restricted project.

@@ -61,8 +61,8 @@ fn relative_to_strips_a_root_spelled_otherwise_once_both_resolve() {
     );
 }
 
-/// The copies disagreed on a root that resolves and a path that does not:
-/// the path, as given, is under the resolved root.
+/// A path that does not resolve, under a root that does, is under the resolved
+/// root as given.
 #[test]
 fn relative_to_keeps_a_gone_file_under_the_resolved_root() {
     let dir = tempfile::tempdir().unwrap();
@@ -76,8 +76,8 @@ fn relative_to_keeps_a_gone_file_under_the_resolved_root() {
     );
 }
 
-/// The copies disagreed on a root that does not resolve: it is compared as
-/// given, against the path as given and resolved.
+/// A root that does not resolve is compared as given, against the path as
+/// given and resolved.
 #[test]
 fn relative_to_compares_a_root_that_does_not_resolve_as_given() {
     let dir = tempfile::tempdir().unwrap();
@@ -130,7 +130,7 @@ fn relative_to_keeps_a_gone_file_named_plainly_under_a_root_spelled_otherwise() 
     );
 }
 
-/// A save over a file its user made read-only is refused, as a write in place was.
+/// A save over a read-only file is refused and leaves it as it was.
 #[test]
 fn a_save_over_a_read_only_file_is_refused_and_leaves_it() {
     let dir = tempfile::tempdir().unwrap();

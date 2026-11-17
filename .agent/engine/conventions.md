@@ -7,6 +7,31 @@ Code style and project conventions. Pairs with [`RULES.md`](./RULES.md).
 
 ---
 
+## Before you write
+
+Read this before writing any code, test or doc, and decide where things go first. Detail in §3, §9b.
+
+1. Name the file and folder of every new type and module before writing: one primary type per file, beside its siblings, never in a generic util file.
+2. Look for the shared record, widget or helper before making one (`codegraph_explore`); reuse it.
+3. Keep dependencies pointing down: a shared widget never imports a panel, a generic module never a domain one.
+4. Rename what you change the meaning of (fn, field, file); check a new name is not taken elsewhere (two `lending.rs`, two `Mailbox`).
+5. Order each file: licence header, `//!` doc, imports, constants, primary type, its impls, private helpers, tests.
+6. Never put an item between a type and its `impl`s; public functions before private ones; test helpers before the tests.
+7. Put each `use` in its group: `std`, then external and `khora_*` crates, then `crate::` / `super::`.
+8. Write a doc as the contract: a one-sentence summary (a function's starts with a verb, about 15 words), never the mechanism.
+9. Never tell history in a comment or doc ("now", "used to", "always was", "the copies disagreed"): state what holds.
+10. List every error and panic in `# Errors` / `# Panics`, and every side effect (a file written, play ended) in the doc.
+11. Reread the docs of what you changed: no parameter that is gone, no "entity" where an asset is served too.
+12. Keep one home per fact: name the `LABEL` const, never repeat its string; a design goes to the book.
+13. Give every new public fn a unit test (`#[cfg(test)]`, RULES §1), not only an integration test.
+14. Put a test in the test file of the module it pins, named by the behaviour it pins.
+15. Add every new public `khora_core` item to the public-paths guard (`crates/khora-core/tests/public_paths/`).
+16. Update the book (`docs/src/`) in the same change when a name or behaviour it describes changes.
+
+Before reporting, run both and leave them clean:
+- `cargo xtask lint-file <every .rs file touched>`;
+- `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items`.
+
 ## 1 — Naming
 
 | Element | Convention | Example |

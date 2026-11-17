@@ -112,7 +112,7 @@ pub struct AssetTile<'a> {
     /// Whether it is selected.
     pub selected: bool,
     /// The problems its file has, if any.
-    pub badge: Option<crate::panels::problems::view::TileBadge>,
+    pub badge: Option<super::tile_badge::TileBadge>,
     /// Whether its file is quarantined.
     pub quarantined: bool,
 }

@@ -359,6 +359,7 @@ fn ash_corrected(factor: f64) -> Vec<(AgentId, StrategyId, Correction)> {
     let correction = Correction {
         factor,
         spread: 0.1,
+        runs: 30,
     };
     vec![
         (AgentId::new("ash"), LowPower, correction),
@@ -840,7 +841,11 @@ fn corrected_journal(factor: f64, spread: f64, caution: f64) -> DecisionTrace {
         )],
         vec![(ash, Important)],
     );
-    let correction = Correction { factor, spread };
+    let correction = Correction {
+        factor,
+        spread,
+        runs: 30,
+    };
     record.corrections = vec![
         (ash, LowPower, correction),
         (ash, HighPerformance, correction),

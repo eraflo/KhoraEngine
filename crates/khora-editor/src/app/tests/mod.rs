@@ -33,7 +33,7 @@ mod prefab_view {
     use khora_sdk::{GameWorld, MetricsRegistry};
 
     use super::super::{attach_prefab_view, PrefabView};
-    use crate::commands::process_pending_prefab_spawn;
+    use crate::commands::spawn_queued_prefabs;
     use crate::project_vfs::ProjectVfs;
 
     /// A project on disk holding a turret prefab — a root and a barrel —
@@ -123,7 +123,7 @@ mod prefab_view {
                 prefab: turret,
                 parent: None,
             });
-        process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
+        spawn_queued_prefabs(Some(&project.vfs), &mut world, &state);
         let root = world
             .iter_entities()
             .find(|e| world.get_component::<PrefabInstance>(*e).is_some())
@@ -172,7 +172,7 @@ mod prefab_view {
                 prefab: turret,
                 parent: None,
             });
-        process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
+        spawn_queued_prefabs(Some(&project.vfs), &mut world, &state);
         let root = world
             .iter_entities()
             .find(|e| world.get_component::<PrefabInstance>(*e).is_some())

@@ -14,12 +14,13 @@
 
 //! What the editor's panels ask of the editor app, queued on its state.
 
-use super::{PrefabApplyScope, SpawnShape};
+use super::{AssetFileOp, MenuAction, PrefabApplyScope, SpawnShape, Transport, TrustAnswer};
 use crate::asset::AssetUUID;
 use crate::ecs::entity::EntityId;
 use crate::problems::Problem;
 
-/// A request a panel queues on `EditorState::requests` for the app to carry out.
+/// A request a panel queues on [`EditorState::requests`](super::EditorState::requests)
+/// for the app to carry out.
 ///
 /// Each kind has one consumer, which takes its own kinds and leaves the
 /// others queued, in order.
@@ -154,97 +155,4 @@ pub enum EditorRequest {
     },
     /// A file operation on the project's assets.
     AssetFile(AssetFileOp),
-}
-
-/// A file operation the asset browser asks for, on paths under the project's `assets/`.
-///
-/// Every path is forward-slash and relative to `assets/`. Each goes through
-/// the project's identity registry, so references survive renames and moves.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum AssetFileOp {
-    /// Creates an empty folder.
-    CreateFolder {
-        /// The folder's path.
-        path: String,
-    },
-    /// Creates an Ergon script, never over an existing file, then reveals it.
-    CreateScript {
-        /// The script's path.
-        path: String,
-        /// Its source.
-        source: String,
-    },
-    /// Renames an asset, which keeps its identity.
-    Rename {
-        /// Its current path.
-        from: String,
-        /// Its new path.
-        to: String,
-    },
-    /// Moves an asset into a folder, which keeps its identity.
-    Move {
-        /// The asset's path.
-        path: String,
-        /// The folder's path, `""` for the root.
-        into: String,
-    },
-    /// Sends an asset to the system's recycle bin.
-    Trash {
-        /// The asset's path.
-        path: String,
-    },
-    /// Copies an asset next to itself.
-    Duplicate {
-        /// The asset's path.
-        path: String,
-    },
-}
-
-/// A command of the editor's menus, command palette or shortcuts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MenuAction {
-    /// Starts an empty scene.
-    NewScene,
-    /// Opens a scene file picked through a dialog.
-    Open,
-    /// Saves the scene to its file, or through a dialog when it has none.
-    Save,
-    /// Saves the scene to a file picked through a dialog.
-    SaveAs,
-    /// Quits the editor.
-    Quit,
-    /// Despawns the selection.
-    Delete,
-    /// Spawns an empty entity.
-    SpawnEmpty,
-    /// Builds the project as a game.
-    BuildGame,
-    /// Opens the documentation in the browser.
-    Documentation,
-    /// Logs the engine's version.
-    About,
-}
-
-/// A command of the play transport.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Transport {
-    /// Starts or resumes playing.
-    Play,
-    /// Pauses playing.
-    Pause,
-    /// Stops playing and restores the scene as Play found it.
-    Stop,
-}
-
-/// The user's answer about trusting a project.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum TrustAnswer {
-    /// Trusts the project waiting for an answer, and opens it.
-    TrustOpen,
-    /// Opens the project waiting for an answer restricted.
-    RestrictOpen,
-    /// Opens nothing of the project waiting for an answer.
-    CancelOpen,
-    /// Trusts the project open.
-    TrustProject,
 }

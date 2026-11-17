@@ -76,7 +76,7 @@ pub struct SceneLoadHub {
     requests: Channel<SceneLoadRequest>,
     next: AtomicU64,
     target: Mutex<Option<Arc<Target>>>,
-    // Two sets, whole after every write: read through the poison.
+    // Whole after every write: read through the poison.
     tickets: Mutex<Tickets>,
 }
 

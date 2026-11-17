@@ -124,7 +124,7 @@ fn spawning_a_prefab_links_the_instance() {
             parent: None,
         });
 
-    process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
+    spawn_queued_prefabs(Some(&project.vfs), &mut world, &state);
 
     let roots = instance_roots(&world);
     assert_eq!(roots.len(), 1, "one instance root: {roots:?}");
@@ -176,7 +176,7 @@ fn saving_a_subtree_as_a_prefab_keeps_its_instances_linked() {
             path: TOWER.to_owned(),
         });
 
-    process_pending_save_as_prefab(Some(&project.vfs), &world, &state);
+    save_queued_prefabs(Some(&project.vfs), &world, &state);
 
     let bytes = std::fs::read(
         project
@@ -207,7 +207,7 @@ fn saving_a_subtree_as_a_prefab_keeps_its_instances_linked() {
             prefab: project.uuid(TOWER),
             parent: None,
         });
-    process_pending_prefab_spawn(Some(&project.vfs), &mut spawned, &state);
+    spawn_queued_prefabs(Some(&project.vfs), &mut spawned, &state);
     let mut links: Vec<AssetUUID> = instance_roots(&spawned)
         .into_iter()
         .map(|(_, prefab)| prefab)
@@ -238,7 +238,7 @@ fn saving_an_instance_over_its_own_prefab_keeps_the_prefab_whole() {
             prefab: project.uuid(TURRET),
             parent: None,
         });
-    process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
+    spawn_queued_prefabs(Some(&project.vfs), &mut world, &state);
     let (root, _) = instance_roots(&world)[0];
 
     state
@@ -248,7 +248,7 @@ fn saving_an_instance_over_its_own_prefab_keeps_the_prefab_whole() {
             entity: root,
             path: TURRET.to_owned(),
         });
-    process_pending_save_as_prefab(Some(&project.vfs), &world, &state);
+    save_queued_prefabs(Some(&project.vfs), &world, &state);
 
     let mut spawned = GameWorld::new();
     state
@@ -258,7 +258,7 @@ fn saving_an_instance_over_its_own_prefab_keeps_the_prefab_whole() {
             prefab: project.uuid(TURRET),
             parent: None,
         });
-    process_pending_prefab_spawn(Some(&project.vfs), &mut spawned, &state);
+    spawn_queued_prefabs(Some(&project.vfs), &mut spawned, &state);
     assert_eq!(
         spawned.iter_entities().count(),
         2,
@@ -284,7 +284,7 @@ fn saving_an_instance_over_its_prefab_under_another_case_keeps_the_prefab_whole(
             prefab: project.uuid(TURRET),
             parent: None,
         });
-    process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
+    spawn_queued_prefabs(Some(&project.vfs), &mut world, &state);
     let (root, _) = instance_roots(&world)[0];
 
     state
@@ -294,7 +294,7 @@ fn saving_an_instance_over_its_prefab_under_another_case_keeps_the_prefab_whole(
             entity: root,
             path: "prefabs/Turret.kprefab".to_owned(),
         });
-    process_pending_save_as_prefab(Some(&project.vfs), &world, &state);
+    save_queued_prefabs(Some(&project.vfs), &world, &state);
 
     let mut spawned = GameWorld::new();
     state
@@ -304,7 +304,7 @@ fn saving_an_instance_over_its_prefab_under_another_case_keeps_the_prefab_whole(
             prefab: project.uuid(TURRET),
             parent: None,
         });
-    process_pending_prefab_spawn(Some(&project.vfs), &mut spawned, &state);
+    spawn_queued_prefabs(Some(&project.vfs), &mut spawned, &state);
     assert_eq!(
         spawned.iter_entities().count(),
         2,

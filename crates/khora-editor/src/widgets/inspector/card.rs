@@ -47,6 +47,22 @@ pub enum CardAction {
     Apply,
 }
 
+/// What a component card's header shows and offers.
+pub struct CardHead<'a> {
+    /// The entity holding the component.
+    pub entity: EntityId,
+    /// The component's name, the card's title.
+    pub title: &'a str,
+    /// The glyph before the title.
+    pub icon: Icon,
+    /// The right-aligned tag; empty for none.
+    pub category: &'a str,
+    /// Whether the header offers to remove the component.
+    pub removable: bool,
+    /// How the component stands against the entity's prefab, if it is an instance's.
+    pub prefab: Option<CardPrefab>,
+}
+
 impl CardPrefab {
     fn differs(&self) -> bool {
         self.added || self.overrides > 0
@@ -64,59 +80,6 @@ impl CardPrefab {
             None
         }
     }
-}
-
-/// Paints a header row action, a glyph tinted on hover; returns whether it was
-/// clicked.
-fn header_action(
-    ui: &mut dyn UiBuilder,
-    id: &str,
-    rect: [f32; 4],
-    glyph: Icon,
-    accent: [f32; 4],
-    theme: &UiTheme,
-) -> bool {
-    let hit = ui.interact_rect(id, rect);
-    if hit.hovered {
-        widgets::fill(ui, rect, tint(accent, 0.14), theme.radius_sm);
-    }
-    icon_centered(
-        ui,
-        rect,
-        glyph,
-        12.0,
-        if hit.hovered {
-            accent
-        } else {
-            theme.text_muted
-        },
-    );
-    hit.clicked
-}
-
-/// Returns the tag shown on a component's card: the domain tag it is registered under.
-///
-/// A component with no domain gets no tag rather than a wrong one.
-pub fn category_for(domain: Option<u8>) -> &'static str {
-    domain_label(domain).unwrap_or("")
-}
-
-/// What a component card's header shows and offers.
-pub struct CardHead<'a> {
-    /// The entity holding the component.
-    pub entity: EntityId,
-    /// The component's name, the card's title.
-    pub title: &'a str,
-    /// The glyph before the title.
-    pub icon: Icon,
-    /// The right-aligned tag; empty for none.
-    pub category: &'a str,
-    /// Whether the component is on; must be `None` until components can be turned off.
-    pub enabled: Option<bool>,
-    /// Whether the header offers to remove the component.
-    pub removable: bool,
-    /// How the component stands against the entity's prefab, if it is an instance's.
-    pub prefab: Option<CardPrefab>,
 }
 
 /// Renders one component as a collapsible group in `column`, `body` drawing its content;
@@ -137,7 +100,6 @@ pub fn render_card(
         title,
         icon,
         category,
-        enabled,
         removable,
         prefab,
     } = head;
@@ -239,14 +201,6 @@ pub fn render_card(
                 action = Some(CardAction::Revert);
             }
         }
-
-        // Turning a component off means nothing until every query of it
-        // honours the flag, a data-layer feature: no caller may pass `Some`.
-        debug_assert!(
-            enabled.is_none(),
-            "component enable/disable is not implemented; \
-             see the component-activation work before passing Some(_)"
-        );
     }
 
     if head.clicked {
@@ -270,6 +224,41 @@ pub fn render_card(
     );
     ui.spacing(6.0);
     action
+}
+
+/// Returns the tag shown on a component's card: the domain tag it is registered under.
+///
+/// A component with no domain gets no tag rather than a wrong one.
+pub fn category_for(domain: Option<u8>) -> &'static str {
+    domain_label(domain).unwrap_or("")
+}
+
+/// Paints a header row action, a glyph tinted on hover; returns whether it was
+/// clicked.
+fn header_action(
+    ui: &mut dyn UiBuilder,
+    id: &str,
+    rect: [f32; 4],
+    glyph: Icon,
+    accent: [f32; 4],
+    theme: &UiTheme,
+) -> bool {
+    let hit = ui.interact_rect(id, rect);
+    if hit.hovered {
+        widgets::fill(ui, rect, tint(accent, 0.14), theme.radius_sm);
+    }
+    icon_centered(
+        ui,
+        rect,
+        glyph,
+        12.0,
+        if hit.hovered {
+            accent
+        } else {
+            theme.text_muted
+        },
+    );
+    hit.clicked
 }
 
 #[cfg(test)]

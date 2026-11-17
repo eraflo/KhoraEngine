@@ -377,3 +377,65 @@ fn a_project_turned_restricted_during_play_runs_no_script() {
         play_mode(&state)
     );
 }
+
+/// **A family scoped while editing stays scoped until the transport moves.**
+///
+/// The families follow the play mode when it changes, not every frame: a
+/// sound previewed while editing keeps its scope. Play takes the families
+/// back.
+#[test]
+fn a_family_scoped_while_editing_stays_scoped_until_play() {
+    let engine = engine();
+    let (mut world, state) = editing(&engine);
+    process_transport(&mut world, &state, &engine.runtime);
+    engine
+        .activation
+        .scope(khora_sdk::khora_core::audio::AUDIO, "Preview")
+        .expect("audio is a family");
+
+    process_transport(&mut world, &state, &engine.runtime);
+    process_transport(&mut world, &state, &engine.runtime);
+    engine.activation.settle();
+    assert_eq!(
+        engine.activation.state(khora_sdk::khora_core::audio::AUDIO),
+        khora_sdk::khora_core::agent::activation::State::Scoped("Preview"),
+        "the preview's scope is kept"
+    );
+
+    ask(&state, EditorRequest::Transport(Transport::Play));
+    process_transport(&mut world, &state, &engine.runtime);
+    engine.activation.settle();
+    assert_eq!(
+        engine.activation.state(khora_sdk::khora_core::audio::AUDIO),
+        khora_sdk::khora_core::agent::activation::State::On,
+        "Play takes the family back"
+    );
+}
+
+/// **A new scene made while playing switches the play families off.**
+///
+/// New Scene puts the editor back to editing outside the transport: the next
+/// transport pass follows it, the families off and the clock at 1.
+#[test]
+fn a_new_scene_made_while_playing_switches_the_play_families_off() {
+    let engine = engine();
+    let (mut world, state) = editing(&engine);
+    ask(&state, EditorRequest::Transport(Transport::Play));
+    process_transport(&mut world, &state, &engine.runtime);
+    assert!(engine.off_at_the_boundary().is_empty(), "playing");
+
+    ask(&state, EditorRequest::Menu(MenuAction::NewScene));
+    let history = Arc::new(Mutex::new(crate::commands::CommandHistory::default()));
+    super::super::process_menu_actions(
+        &mut None,
+        &state,
+        &history,
+        &mut world,
+        khora_sdk::trust::ProjectTrust::Trusted,
+    );
+    process_transport(&mut world, &state, &engine.runtime);
+
+    assert_eq!(play_mode(&state), PlayMode::Editing);
+    assert_eq!(engine.off_at_the_boundary(), play_families());
+    assert_eq!(engine.scale(), 1.0);
+}

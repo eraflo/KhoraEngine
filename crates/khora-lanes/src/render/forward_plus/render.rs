@@ -262,7 +262,7 @@ impl PlusGpu {
                 lent,
                 spec: render_pipeline_spec,
                 plain,
-                label: "Forward+",
+                label: super::lane_gpu::LABEL,
             },
             model_ring,
         )?;

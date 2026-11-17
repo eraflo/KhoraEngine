@@ -50,14 +50,6 @@ impl Default for AssetWatch {
     }
 }
 
-/// One root, and the watcher reporting its changes.
-struct Watched {
-    /// As named, what [`AssetWatch::roots`] lists; resolved, what two names
-    /// of one tree are compared by.
-    root: RootName,
-    watcher: AssetWatcher,
-}
-
 impl AssetWatch {
     /// Watches `root`, recursively; a root already watched is left as it is.
     ///
@@ -103,14 +95,6 @@ impl AssetWatch {
         }
     }
 
-    /// Gives the watch a generation no watch had.
-    fn moved(&self) {
-        (self.generation).store(
-            GENERATIONS.fetch_add(1, Ordering::Relaxed),
-            Ordering::Release,
-        );
-    }
-
     /// Returns a number that moves each time a root is watched or unwatched.
     ///
     /// A reader compares it to know the roots are the ones it last saw; no
@@ -147,5 +131,59 @@ impl AssetWatch {
             .iter()
             .map(|watched| watched.root.named.clone())
             .collect()
+    }
+
+    /// Gives the watch a generation no watch had.
+    fn moved(&self) {
+        (self.generation).store(
+            GENERATIONS.fetch_add(1, Ordering::Relaxed),
+            Ordering::Release,
+        );
+    }
+}
+
+/// One root, and the watcher reporting its changes.
+struct Watched {
+    /// As named, what [`AssetWatch::roots`] lists; resolved, what two names
+    /// of one tree are compared by.
+    root: RootName,
+    watcher: AssetWatcher,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **A watch's generation moves each time a root is watched or unwatched**,
+    /// and is never another watch's.
+    #[test]
+    fn the_generation_moves_with_the_roots_and_is_no_other_watchs() {
+        let dir = tempfile::tempdir().unwrap();
+        let watch = AssetWatch::default();
+        let other = AssetWatch::default();
+        let start = watch.generation();
+        assert_ne!(start, other.generation(), "two watches, one generation");
+
+        watch.watch(dir.path()).unwrap();
+        let watched = watch.generation();
+        assert_ne!(watched, start, "a root watched moves it");
+        watch.watch(dir.path()).unwrap();
+        assert_eq!(
+            watch.generation(),
+            watched,
+            "a root already watched leaves it"
+        );
+        watch.unwatch(&dir.path().join("never-watched"));
+        assert_eq!(
+            watch.generation(),
+            watched,
+            "a root never watched leaves it"
+        );
+
+        watch.unwatch(dir.path());
+        let unwatched = watch.generation();
+        assert_ne!(unwatched, watched, "a root unwatched moves it");
+        assert_ne!(unwatched, start, "a number it had is never given again");
+        assert_ne!(unwatched, other.generation(), "two watches, one generation");
     }
 }

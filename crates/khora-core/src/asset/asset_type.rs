@@ -23,8 +23,8 @@ use super::AssetKind;
 /// The type of an asset in the index: what decodes it and how tools show it.
 ///
 /// It is written as its [name](Self::as_str) (`"texture"`, `"audio"`, …), so an
-/// index, a pack or a scene reads it as the plain string it always was. A name
-/// the engine does not know is kept, unchanged, as [`AssetType::Other`].
+/// index, a pack or a scene holds it as a plain string. A name the engine
+/// does not know is kept, unchanged, as [`AssetType::Other`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AssetType {
     /// A mesh or model file, `"mesh"`.
@@ -97,7 +97,7 @@ impl AssetType {
             .find(|kind| AssetType::from(*kind) == *self)
     }
 
-    /// The name of a known type; `None` for [`AssetType::Other`].
+    /// Returns the name of a known type; `None` for [`AssetType::Other`].
     fn known_name(&self) -> Option<&'static str> {
         Some(match self {
             Self::Mesh => "mesh",
@@ -175,7 +175,7 @@ impl<'de> Deserialize<'de> for AssetType {
 mod tests {
     use super::*;
 
-    /// **Each known type is written as the index has always named it.**
+    /// **Each known type is written as the index names it.**
     #[test]
     fn each_known_type_is_written_as_the_index_names_it() {
         let named: Vec<&str> = AssetType::KNOWN.iter().map(AssetType::as_str).collect();

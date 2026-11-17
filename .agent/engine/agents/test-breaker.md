@@ -32,7 +32,8 @@ Report only what you can demonstrate.
 - Errors: every `Result` path the diff adds — is it reachable, and does it surface?
 
 ## Method
-1. Read the plan, then the diff. List the promises the diff makes.
+1. Read [`conventions.md`](../conventions.md) *Before you write*, the plan, then the diff. List the
+   promises the diff makes.
 2. For each attack that applies, write the test that would expose it and **run it**. Run tests only
    through `cargo t -p <crate> [filter]`, scoped to the crates you touched (see
    [`build-and-test`](../skills/build-and-test/SKILL.md)).
@@ -42,8 +43,9 @@ Report only what you can demonstrate.
 5. **Name what is tested, never who tested it.** A test file, module, function or comment says the
    behaviour it pins (`lifecycle_restore.rs`, `a_cut_on_spawn_finishes_across_a_save`) — never
    `breaker`, `attack`, `round 2`: that is how the test was found, not what it guards, and it means
-   nothing once the change has landed. Put a test beside the ones on the same subject when a file
-   for it exists.
+   nothing once the change has landed. Put a test beside what it pins, in the test file of that
+   module, with its helpers above the tests.
+6. Finish with `cargo xtask lint-file` on every test file you touched, clean.
 
 ## Output
 - **Findings** — a table: severity (defect / missing coverage) · what breaks · the test (`path:line`) ·

@@ -21,19 +21,10 @@ use std::path::{Path, PathBuf};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use super::{make_parent, read_bounded_to_string, write_atomic, FileStamp};
+use super::{make_parent, read_bounded_to_string, write_atomic, FileStamp, Keyed};
 
 /// The largest store read: a store is a few entries.
 const MAX_STORE_BYTES: u64 = 4 << 20;
-
-/// An entry of a [`RonStore`]: what it is held by.
-pub trait Keyed {
-    /// What tells two entries apart: a store holds one entry per key.
-    type Key: Ord + Clone;
-
-    /// Returns what this entry is held by.
-    fn key(&self) -> Self::Key;
-}
 
 /// A list of entries in one RON file, which several programs may share.
 ///

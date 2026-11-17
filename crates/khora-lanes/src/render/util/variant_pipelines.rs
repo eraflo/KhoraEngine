@@ -58,7 +58,7 @@ impl Surface<'static> {
 }
 
 impl Surface<'_> {
-    /// The surface's three switches, as an index into [`ByFlags`].
+    /// Returns the surface's three switches as an index into [`ByFlags`].
     fn flags(&self) -> usize {
         usize::from(self.double_sided)
             | usize::from(self.mirrored) << 1

@@ -824,6 +824,7 @@ fn a_correction_is_planned_caution_spreads_above_its_factor() {
     let learned = Correction {
         factor: 2.0,
         spread: 0.5,
+        runs: 40,
     };
 
     assert!(
@@ -836,7 +837,8 @@ fn a_correction_is_planned_caution_spreads_above_its_factor() {
         Correction::default(),
         Correction {
             factor: 1.0,
-            spread: 0.0
+            spread: 0.0,
+            runs: 0,
         }
     );
     assert_eq!(Correction::default().planned(1.645), 1.0);
@@ -844,8 +846,9 @@ fn a_correction_is_planned_caution_spreads_above_its_factor() {
 }
 
 /// The corrections a round of `ALPHA` and `BETA` read: `ALPHA`'s `Balanced`
-/// learned a little above 4/3 (a factor that is no short decimal), its
-/// `Custom(3)` never run, `BETA`'s `Balanced` at 2 with a wide spread.
+/// learned a little above 4/3 (a factor that is no short decimal) over 40
+/// runs, its `Custom(3)` never run, `BETA`'s `Balanced` at 2 with a wide
+/// spread over 7 runs.
 fn some_corrections() -> Vec<(AgentId, StrategyId, Correction)> {
     vec![
         (
@@ -854,6 +857,7 @@ fn some_corrections() -> Vec<(AgentId, StrategyId, Correction)> {
             Correction {
                 factor: 4.0 / 3.0 + 1e-9,
                 spread: 0.1_f64.sqrt(),
+                runs: 40,
             },
         ),
         (
@@ -862,6 +866,7 @@ fn some_corrections() -> Vec<(AgentId, StrategyId, Correction)> {
             Correction {
                 factor: 1.0,
                 spread: 0.5,
+                runs: 0,
             },
         ),
         (
@@ -870,9 +875,72 @@ fn some_corrections() -> Vec<(AgentId, StrategyId, Correction)> {
             Correction {
                 factor: 2.0,
                 spread: 0.75,
+                runs: 7,
             },
         ),
     ]
+}
+
+/// **The journal keeps how many runs each correction was learnt from.** A
+/// row learnt over 40 runs reads back 40, one over 7 reads back 7, and a row
+/// never run reads back 0.
+#[test]
+fn the_journal_keeps_each_corrections_runs() {
+    let mut trace = journal(1);
+    trace.epochs[0].corrections = some_corrections();
+
+    let written = serde_json::to_string(&trace).expect("a journal serialises");
+    let read: DecisionTrace = serde_json::from_str(&written).expect("a journal reads back");
+
+    let runs: Vec<u32> = (read.epochs[0].corrections.iter())
+        .map(|(_, _, correction)| correction.runs)
+        .collect();
+    assert_eq!(runs, vec![40, 0, 7], "written as {written}");
+}
+
+/// **A journal written before corrections counted their runs reads 0 runs.**
+/// Its corrections carry a factor and a spread only: each reads back with
+/// them as written and 0 runs, so nothing in it reads as measured.
+#[test]
+fn an_older_journal_reads_its_corrections_as_never_run() {
+    let mut trace = journal(2);
+    for epoch in &mut trace.epochs {
+        epoch.corrections = some_corrections();
+    }
+    let written = serde_json::to_string(&trace).expect("a journal serialises");
+    let mut older: serde_json::Value = serde_json::from_str(&written).expect("a journal is JSON");
+    let mut removed = 0;
+    for epoch in older["epochs"].as_array_mut().expect("the epochs") {
+        let corrections = epoch["corrections"]
+            .as_array_mut()
+            .unwrap_or_else(|| panic!("the corrections are written: {written}"));
+        for entry in corrections {
+            let correction = entry
+                .as_array_mut()
+                .and_then(|entry| entry.last_mut())
+                .and_then(|correction| correction.as_object_mut())
+                .unwrap_or_else(|| panic!("a correction is an object: {written}"));
+            correction
+                .remove("runs")
+                .unwrap_or_else(|| panic!("the runs are written: {written}"));
+            removed += 1;
+        }
+    }
+    assert_eq!(removed, 6, "every correction of both epochs");
+
+    let read = serde_json::from_value::<DecisionTrace>(older).expect("an older journal reads");
+
+    for (read, written) in read.epochs.iter().zip(&trace.epochs) {
+        assert_eq!(read.corrections.len(), written.corrections.len());
+        for ((agent, row, read), (named, id, recorded)) in
+            (read.corrections.iter()).zip(&written.corrections)
+        {
+            assert_eq!((agent, row), (named, id));
+            assert_eq!(read.factor.to_bits(), recorded.factor.to_bits());
+            assert_eq!(read.spread.to_bits(), recorded.spread.to_bits());
+            assert_eq!(read.runs, 0, "{agent}'s {row:?} reads no run");
+        }
+    }
 }
 
 /// **The journal keeps each row's correction.** The epoch whose round read

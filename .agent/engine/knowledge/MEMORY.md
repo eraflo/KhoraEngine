@@ -317,8 +317,8 @@ ressource runtime (`EditorViewportOverride`) et replie son empreinte dans la clÃ
   unprojected ground-plane drop point via `UiBuilder::pointer_position` + `EditorCamera::screen_to_ray`, prefab
   instantiates, scene loads, texture/material assigns to the selected entity).
 - File ops routed through new `ProjectVfs::{create_folder,rename_asset,move_asset,delete_to_trash,duplicate_asset}`
-  + drained by `commands::process_pending_asset_file_ops` / `process_pending_spawn_mesh_asset` /
-  `process_pending_assign_texture`. New deps: `trash`, `walkdir` (editor).
+  + drained by `commands::run_queued_asset_file_ops` / `spawn_queued_meshes` /
+  `assign_queued_drops`. New deps: `trash`, `walkdir` (editor).
 
 ## Latest work (2026-06-11) â€” Adaptive loop closure
 - **PID recovery loop closed** (`khora-control/src/service.rs`): the DCC remembers the

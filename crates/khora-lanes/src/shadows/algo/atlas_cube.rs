@@ -17,7 +17,7 @@
 
 use std::borrow::Cow;
 
-use khora_core::math::{Extent3D, Mat4};
+use khora_core::math::{Extent3D, Mat4, Vec3};
 use khora_core::renderer::api::resource::{
     ImageAspect, TextureDescriptor, TextureDimension, TextureId, TextureUsage,
     TextureViewDescriptor, TextureViewDimension, TextureViewId,
@@ -101,7 +101,7 @@ impl AtlasCube {
         &self,
         recorder: &mut PassRecorder<'_>,
         cube_layer: u32,
-        light_pos: khora_core::math::Vec3,
+        light_pos: Vec3,
         face_view_projs: &[Mat4; 6],
     ) {
         for (face_idx, face_vp) in face_view_projs.iter().enumerate() {

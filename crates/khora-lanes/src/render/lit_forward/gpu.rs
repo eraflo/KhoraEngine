@@ -20,7 +20,8 @@ use crate::render::neutral::NeutralBindings;
 use crate::render::util::dynamic_uniform_ring_buffer::{
     DEFAULT_MAX_ELEMENTS, MIN_UNIFORM_ALIGNMENT,
 };
-use crate::render::util::kept_bind_groups::{KeptBindGroups, LightingKey};
+use crate::render::util::kept_bind_groups::KeptBindGroups;
+use crate::render::util::lit_draws::LightingKey;
 use crate::render::util::target_state::{
     scene_color_targets, scene_depth_state, scene_multisample,
 };

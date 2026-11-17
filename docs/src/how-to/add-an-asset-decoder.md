@@ -55,8 +55,13 @@ Place the file next to the built-in decoders in
 matching the existing entries (e.g. `texture`, `shader`, `font`). Registration fires
 at startup — no manual wiring.
 
-> The `type_name` must match what `asset_type_for_extension` returns for
-> your file extensions, or the loader will not route bytes to your decoder.
+> A file's index entry holds its type as an `AssetType`
+> (`AssetMetadata.asset_type`), but decoders are registered and looked up by
+> name: the `type_name` must be `asset_type_for_extension(ext).as_str()` for
+> your file extensions, or the loader will not route bytes to your decoder. An
+> extension the engine does not know is a type of its own, named by the
+> extension lower-cased (`.heightmap` → `AssetType::Other("heightmap")`), so a
+> new format's `type_name` is its extension.
 >
 > Slots where multiple backends compete (`audio`, `mesh`) deliberately stay registered
 > explicitly at the call site instead of through `inventory` — follow the pattern in

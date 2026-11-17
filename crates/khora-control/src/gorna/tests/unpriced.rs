@@ -234,3 +234,83 @@ fn a_late_agent_with_no_priced_row_is_lent_no_zero_time_floor_in_a_safety_round(
         "the late agent with no priced row is lent {lent:?}, a floor of no time: {allocation:?}"
     );
 }
+
+/// **An agent planned down to a row of no time leaves the envelope it held.**
+///
+/// `light` offers its floor at 0 µs and `HighPerformance` at 3 ms. A 16 ms
+/// round lends it room for `HighPerformance`; a 1 ms round plans its floor.
+/// Lent both at frame starts, as the scheduler lends them, it must not still
+/// hold an envelope `HighPerformance` fits: the round planned no time for it.
+#[test]
+fn an_agent_planned_down_to_a_row_of_no_time_leaves_the_envelope_it_held() {
+    let rows = vec![row(LowPower, 0, 0.4), row(HighPerformance, 3_000, 1.0)];
+    let light = || bid(offer("light", rows.clone(), LowPower), Important);
+    let loose = decide(&round(Trigger::Refresh, 16_000, &[light()]));
+    let tight = decide(&round(Trigger::Refresh, 1_000, &[light()]));
+    let mut agent = Bidder::new("light", rows.clone(), LowPower);
+
+    assert!(loose.lend_to(&mut agent), "the 16 ms round names `light`");
+    assert!(
+        fits(&cpu_cost(3_000), &agent.last_lent().envelope),
+        "the 16 ms round lends room for `HighPerformance`: {loose:?}"
+    );
+    tight.lend_to(&mut agent);
+
+    assert!(
+        !fits(&cpu_cost(3_000), &agent.last_lent().envelope),
+        "the 1 ms round planned the floor, yet `light` still holds {:?}: {tight:?}",
+        agent.last_lent().envelope
+    );
+}
+
+/// **The memory a round knows bounds an agent whose rows take no time.**
+///
+/// `pool`'s rows differ only in what they hold on the graphics processor:
+/// 100 MiB at its floor, 400 MiB at `HighPerformance`, both at 0 µs. With
+/// 200 MiB known, the allocation lends it an envelope its 400 MiB row does not
+/// fit.
+#[test]
+fn the_memory_a_round_knows_bounds_an_agent_whose_rows_take_no_time() {
+    let pool = offer(
+        "pool",
+        vec![
+            row_holding(LowPower, 0, 100 * MIB, 0.4),
+            row_holding(HighPerformance, 0, 400 * MIB, 1.0),
+        ],
+        LowPower,
+    );
+    let bids = [bid(priced_offer(), Important), bid(pool, Important)];
+    let mut bounded = round(Trigger::Refresh, 16_000, &bids);
+    bounded.memory.gpu = Some(200 * MIB);
+
+    let allocation = decide(&bounded);
+
+    let lent = (allocation.envelopes.iter())
+        .find(|(agent, _)| *agent == AgentId::new("pool"))
+        .map(|(_, envelope)| *envelope);
+    assert!(
+        lent.is_some_and(|envelope| envelope.memory.gpu < 400 * MIB),
+        "`pool` is lent {lent:?}: nothing holds it under the 200 MiB known: {allocation:?}"
+    );
+}
+
+/// **An agent planned at a row of no time is lent the frame.**
+///
+/// `light` prices its only row at 0 µs: less than the measure's grain, not
+/// free. Lent no time, a budgeted lane of its would have nothing to spend; it
+/// is lent the frame's 16 ms on each device instead, held under any row it
+/// was not planned.
+#[test]
+fn an_agent_planned_at_a_row_of_no_time_is_lent_the_frame() {
+    let free = offer("light", vec![row(LowPower, 0, 0.4)], LowPower);
+    let bids = [bid(priced_offer(), Important), bid(free, Important)];
+
+    let allocation = decide(&round(Trigger::Refresh, 16_000, &bids));
+
+    let lent = lent_to(&allocation, "light");
+    assert_eq!(
+        lent.time.cpu,
+        ms(16),
+        "`light` is lent {lent:?}: {allocation:?}"
+    );
+}

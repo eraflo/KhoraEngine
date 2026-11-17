@@ -112,7 +112,7 @@ fn a_saved_material_is_assigned_once_its_index_lands() {
             name: "Steel".to_owned(),
         });
 
-    process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
+    save_queued_materials(Some(&project.vfs), &mut world, &state);
 
     let steel = project.uuid(STEEL);
     assert!(project.path(STEEL).exists(), "the material is written");
@@ -276,7 +276,7 @@ fn a_script_created_is_revealed_once_indexed() {
             source: "behavior Player { }".to_owned(),
         }));
 
-    process_pending_asset_file_ops(Some(&project.vfs), &state);
+    run_queued_asset_file_ops(Some(&project.vfs), &state);
 
     assert!(project.path(PLAYER).exists(), "the script is written");
     assert!(
@@ -324,7 +324,7 @@ fn a_renamed_asset_keeps_its_uuid_once_reindexed() {
             to: BOX.to_owned(),
         }));
 
-    process_pending_asset_file_ops(Some(&project.vfs), &state);
+    run_queued_asset_file_ops(Some(&project.vfs), &state);
 
     assert!(project.path(BOX).exists(), "the file is moved");
     assert_eq!(
@@ -386,7 +386,7 @@ fn a_saved_prefab_joins_the_catalog_once_indexed() {
             path: TURRET.to_owned(),
         });
 
-    process_pending_save_as_prefab(Some(&project.vfs), &world, &state);
+    save_queued_prefabs(Some(&project.vfs), &world, &state);
 
     let prefab = project.uuid(TURRET);
     assert!(project.path(TURRET).exists(), "the prefab is written");
@@ -555,7 +555,7 @@ fn a_material_landing_after_the_scene_was_replaced_touches_no_new_entity() {
             entity: crate_entity,
             name: "Steel".to_owned(),
         });
-    process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
+    save_queued_materials(Some(&project.vfs), &mut world, &state);
     assert!(
         !engine.indexes(&project.uuid(STEEL)),
         "the premise: the assignment waits for the reindex"
@@ -750,7 +750,7 @@ fn the_material_saved_last_is_the_one_the_entity_wears() {
                 entity,
                 name: name.to_owned(),
             });
-        process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
+        save_queued_materials(Some(&project.vfs), &mut world, &state);
     }
     assert!(
         project.path(STEEL).exists() && project.path(IRON).exists(),
@@ -800,7 +800,7 @@ fn an_inline_material_changed_since_the_save_is_kept_at_the_landing() {
             entity,
             name: "Steel".to_owned(),
         });
-    process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
+    save_queued_materials(Some(&project.vfs), &mut world, &state);
 
     // The texture is dropped on the entity before the reindex lands.
     let rust = project.uuid(RUST);
@@ -811,7 +811,7 @@ fn an_inline_material_changed_since_the_save_is_kept_at_the_landing() {
             asset: rust,
             entity,
         });
-    process_pending_assign_texture(Some(&project.vfs), &mut world, &state);
+    assign_queued_drops(Some(&project.vfs), &mut world, &state);
     assert!(
         matches!(
             world.get_component::<MaterialRef>(entity),
@@ -861,7 +861,7 @@ fn a_material_saved_just_before_play_is_worn_after_stop() {
             entity,
             name: "Steel".to_owned(),
         });
-    process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
+    save_queued_materials(Some(&project.vfs), &mut world, &state);
 
     apply_play(&mut world, &state);
     settle(&engine, &project, &state, &mut world);
@@ -996,7 +996,7 @@ fn a_material_landing_spares_the_same_entity_of_a_scene_opened_since() {
             entity: crate_entity,
             name: "Steel".to_owned(),
         });
-    process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
+    save_queued_materials(Some(&project.vfs), &mut world, &state);
     assert!(
         !engine.indexes(&project.uuid(STEEL)),
         "the premise: the assignment waits for the reindex"
@@ -1045,7 +1045,7 @@ fn the_material_saved_last_is_worn_across_a_stop() {
             entity,
             name: "Steel".to_owned(),
         });
-    process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
+    save_queued_materials(Some(&project.vfs), &mut world, &state);
 
     apply_play(&mut world, &state);
     super::stop_and_land(&mut world, &state);
@@ -1064,7 +1064,7 @@ fn the_material_saved_last_is_worn_across_a_stop() {
             entity: restored,
             name: "Iron".to_owned(),
         });
-    process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
+    save_queued_materials(Some(&project.vfs), &mut world, &state);
     settle(&engine, &project, &state, &mut world);
 
     assert_eq!(
@@ -1108,7 +1108,7 @@ fn a_material_saved_while_editing_is_worn_after_a_save_during_play() {
             entity,
             name: "Steel".to_owned(),
         });
-    process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
+    save_queued_materials(Some(&project.vfs), &mut world, &state);
 
     apply_play(&mut world, &state);
     world.add_component(
@@ -1125,7 +1125,7 @@ fn a_material_saved_while_editing_is_worn_after_a_save_during_play() {
             entity,
             name: "Iron".to_owned(),
         });
-    process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
+    save_queued_materials(Some(&project.vfs), &mut world, &state);
     settle(&engine, &project, &state, &mut world);
     super::stop_and_land(&mut world, &state);
     let actions = land_reindex(&project.vfs, &state);
@@ -1176,7 +1176,7 @@ fn a_textured_material_saved_just_before_play_is_worn_after_stop() {
             entity,
             name: "Steel".to_owned(),
         });
-    process_pending_save_as_material(Some(&project.vfs), &mut world, &state);
+    save_queued_materials(Some(&project.vfs), &mut world, &state);
 
     apply_play(&mut world, &state);
     settle(&engine, &project, &state, &mut world);

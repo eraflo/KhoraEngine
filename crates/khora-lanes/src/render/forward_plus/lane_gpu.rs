@@ -17,7 +17,8 @@
 use super::gpu::render_pipeline_spec;
 use super::ForwardPlusGpuResources;
 use crate::render::neutral::NeutralBindings;
-use crate::render::util::kept_bind_groups::{KeptBindGroups, LightingKey};
+use crate::render::util::kept_bind_groups::KeptBindGroups;
+use crate::render::util::lit_draws::LightingKey;
 use crate::render::util::variant_pipelines::{Surface, VariantPipelines};
 use khora_core::lane::io::TargetKey;
 use khora_core::renderer::error::RenderError;
@@ -25,7 +26,7 @@ use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
 
 /// The label the lane's resources are named by.
-const LABEL: &str = "Forward+";
+pub(super) const LABEL: &str = "Forward+";
 
 /// Forward+'s buffers, its neutral bindings, the pipelines it drew with on
 /// the current target and the group-3 bind group over them.

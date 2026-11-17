@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The editor's composite widgets, used by its panels: free functions over a
-//! `&mut dyn UiBuilder` that paint at absolute screen coordinates.
+//! The editor's composite widgets, used by its panels, and what they paint
+//! with (`Painter`, `Column`).
 
 pub mod asset_kind;
 pub mod brand;
@@ -23,6 +23,7 @@ pub mod inspector;
 mod painter;
 pub mod panel_header;
 pub mod tile;
+pub mod tile_badge;
 
 pub use column::Column;
 pub use painter::Painter;

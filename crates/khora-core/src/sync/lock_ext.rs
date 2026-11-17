@@ -35,3 +35,45 @@ impl<T: ?Sized> LockExt<T> for Mutex<T> {
         self.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::panic::{self, AssertUnwindSafe};
+    use std::sync::Mutex;
+
+    use super::LockExt;
+
+    /// Panics while holding `mutex` after writing `value`, leaving it poisoned.
+    fn poison_mutex(mutex: &Mutex<u32>, value: u32) {
+        let outcome = panic::catch_unwind(AssertUnwindSafe(|| {
+            let mut guard = mutex.lock().expect("not yet poisoned");
+            *guard = value;
+            panic!("a holder panics");
+        }));
+        assert!(outcome.is_err());
+        assert!(mutex.is_poisoned());
+    }
+
+    #[test]
+    fn lock_recovered_reads_the_value_a_panicking_holder_left() {
+        let mutex = Mutex::new(1);
+        poison_mutex(&mutex, 7);
+        assert_eq!(*mutex.lock_recovered(), 7);
+    }
+
+    #[test]
+    fn lock_recovered_writes_through_the_poison() {
+        let mutex = Mutex::new(1);
+        poison_mutex(&mutex, 7);
+        *mutex.lock_recovered() = 9;
+        assert_eq!(*mutex.lock_recovered(), 9);
+    }
+
+    #[test]
+    fn lock_recovered_locks_a_healthy_mutex() {
+        let mutex = Mutex::new(3);
+        *mutex.lock_recovered() += 1;
+        assert_eq!(*mutex.lock_recovered(), 4);
+        assert!(!mutex.is_poisoned());
+    }
+}

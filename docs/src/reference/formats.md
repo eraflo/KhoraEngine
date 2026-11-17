@@ -279,7 +279,7 @@ future additions to `AssetMetadata` keep older files readable. Each
 | Field | Meaning |
 |---|---|
 | `uuid` | `AssetUUID` — the asset's stable identity: `AssetUUID::new_v5(forward_slash_rel_path)` by default, or the frozen value the [identity registry](#asset-identity-registry) holds for that path. |
-| `asset_type_name` | Canonical type tag (`"texture"`, `"mesh"`, `"material"`, `"script"`, …). |
+| `asset_type` | `AssetType` — the asset's type, encoded as its name (`"texture"`, `"mesh"`, `"material"`, `"script"`, …); an unknown extension is a type of its own, named by it. |
 | `dependencies` | `Vec<AssetUUID>` — assets this one references (deduplicated, sorted). |
 | `variants` | `HashMap<String, AssetSource>` — the `"default"` variant points into `data.pack` as `Packed { offset, size, uncompressed_size, compression }`; a sub-asset keeps its `Sub` variant, extracted from its container. |
 | `tags` | `Vec<String>`. |
@@ -312,6 +312,12 @@ are unaffected. The first time an asset is renamed or moved in the editor, its
 regardless of any future path change. A rename therefore rewrites nothing: scenes,
 prefabs, and `.kmat` files on disk and the open scene all keep resolving through the
 unchanged UUID.
+
+**Derived UUIDs.** The default of a renamed asset's old path stays the renamed
+asset's. A new file made at that path gets a UUID of its own instead, derived from
+its path, a NUL and a count: no file name holds a NUL, so a derived UUID is never
+another path's default. The editor freezes it (`AssetIdRegistry::freeze_derived`),
+so the file keeps it once the renamed asset is gone.
 
 **Format.** RON, one `(uuid, path)` entry per asset, **sorted by UUID**. Because the
 UUID is immutable, adding, renaming, or deleting an asset each touch a single line,

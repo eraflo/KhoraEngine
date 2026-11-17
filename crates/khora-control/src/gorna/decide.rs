@@ -23,7 +23,7 @@ use super::arbiter::Arbiter;
 pub(crate) use super::admission::{admit, breach, critical_paths, floors, slack_ms, Admission};
 pub(crate) use super::plan::{weight, Plan};
 pub use super::round::{Bid, Round};
-pub(crate) use super::share::{allocation, hold_to_plan, hold_to_quotes, lever};
+pub(crate) use super::share::{allocation, hold_to_plan, lever};
 pub(crate) use super::units::{busiest, fits_envelope, micros};
 
 /// Returns the allocation for `round`, as the default arbiter decides it.

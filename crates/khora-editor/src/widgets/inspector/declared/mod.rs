@@ -201,7 +201,6 @@ pub fn render_declared_cards(
                 title: &card.name,
                 icon,
                 category: kind_tag(card.kind),
-                enabled: None,
                 removable: !card.read_only,
                 prefab: card_prefab.filter(|_| !card.read_only),
             },

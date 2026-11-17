@@ -59,7 +59,7 @@ impl SpawnShape {
 mod tests {
     use super::SpawnShape;
 
-    /// The labels are the names the menus showed and the spawned entities took.
+    /// The labels are the names the menus show and the spawned entities take.
     #[test]
     fn each_shape_is_labelled_as_its_menu_entry() {
         let labels: Vec<_> = SpawnShape::ALL.iter().map(|s| s.label()).collect();

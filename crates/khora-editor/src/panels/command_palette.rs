@@ -88,6 +88,12 @@ const CREATE_ACTIONS: &[Command] = &[
 
 const NAVIGATE_ACTIONS: &[Command] = &[
     Command {
+        label: "Open Project…",
+        description: "Open another project's folder",
+        action: EditorRequest::Menu(MenuAction::OpenProject),
+        icon: Icon::Folder,
+    },
+    Command {
         label: "Open Scene…",
         description: "Open a .kscene file",
         action: EditorRequest::Menu(MenuAction::Open),
@@ -499,5 +505,17 @@ impl EditorPanel for CommandPalettePanel {
             self.query.clear();
             self.active = 0;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_palette_offers_to_open_a_project() {
+        assert!(NAVIGATE_ACTIONS
+            .iter()
+            .any(|command| command.action == EditorRequest::Menu(MenuAction::OpenProject)));
     }
 }

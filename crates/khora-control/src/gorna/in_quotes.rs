@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Lending a round's allocation in each agent's quoted units, held to its
-//! plan at the costs the agents quoted.
+//! A round's allocation converted into each agent's quoted units, held to
+//! its plan at the costs the agents quoted.
 
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
@@ -23,7 +23,8 @@ use khora_core::agent::gorna::protocol::{Allocation, Envelope, Offer, Trigger};
 use khora_core::agent::gorna::{AgentId, Correction, StrategyId};
 
 use super::cost_book::planned_factor;
-use super::decide::{hold_to_quotes, Bid};
+use super::decide::{lever, Bid};
+use super::share::hold;
 
 /// What a round's allocation is lent from: the agents' quotes, the round's bids and its plan.
 pub(crate) struct Lending<'a> {
@@ -45,11 +46,17 @@ pub(crate) struct Lending<'a> {
 
 /// A [`Lending`]'s entries by agent, each the first one naming it.
 pub(crate) struct ByAgent<'a> {
+    /// Each agent's offer, as it quoted it.
     pub(crate) quoted: HashMap<AgentId, &'a Offer>,
+    /// Each agent's bid, corrected.
     pub(crate) bids: HashMap<AgentId, &'a Bid>,
+    /// The row the round planned for each agent.
     pub(crate) planned: HashMap<AgentId, StrategyId>,
+    /// The agents that keep the envelope they hold.
     pub(crate) kept: HashSet<AgentId>,
+    /// What each kept agent holds, in its quoted units.
     pub(crate) held: HashMap<AgentId, &'a Envelope>,
+    /// Each (agent, row)'s correction, as the round planned with it.
     pub(crate) corrections: HashMap<(AgentId, StrategyId), &'a Correction>,
 }
 
@@ -70,19 +77,10 @@ impl<'a> Lending<'a> {
     }
 }
 
-/// Collects `entries` by key, keeping the first value of each key.
-fn first_of<K: Eq + Hash, V>(entries: impl Iterator<Item = (K, V)>) -> HashMap<K, V> {
-    let mut by_key = HashMap::new();
-    for (key, value) in entries {
-        by_key.entry(key).or_insert(value);
-    }
-    by_key
-}
-
 /// Converts `allocation`, decided in measured time, into each agent's quoted
 /// units, held to the plan at the costs the agents quoted.
 ///
-/// An agent `lending` keeps keeps the host time it holds; in a `Safety`
+/// An agent in `lending.kept` keeps the host time it holds; in a `Safety`
 /// round, an agent that offered rows is lent its floor; any other is lent its
 /// planned row, which fits unless a cap or a ceiling bounded it.
 pub(crate) fn lend_in_quotes(allocation: &mut Allocation, lending: &Lending<'_>) {
@@ -126,4 +124,59 @@ pub(crate) fn lend_in_quotes(allocation: &mut Allocation, lending: &Lending<'_>)
         envelope.time.cpu = Duration::from_secs_f64(lent);
     }
     hold_to_quotes(allocation, lending, &by);
+}
+
+/// Holds `allocation`, lent in quoted units, to the rows `lending` planned,
+/// at the costs the agents quoted; `by` is `lending` by agent.
+///
+/// An agent chooses its row by its own quotes. The agents in `lending.kept`
+/// keep their envelope. `allocation.lever` is cleared when no agent has a
+/// lever as it sees its envelope by its quotes; it is never raised.
+fn hold_to_quotes(allocation: &mut Allocation, lending: &Lending<'_>, by: &ByAgent<'_>) {
+    let mut envelope_of: HashMap<AgentId, usize> = HashMap::new();
+    for (at, (agent, _)) in allocation.envelopes.iter().enumerate() {
+        envelope_of.entry(*agent).or_insert(at);
+    }
+    for (agent, row) in lending.planned {
+        if by.kept.contains(agent) {
+            continue;
+        }
+        let Some(offer) = by.quoted.get(agent) else {
+            continue;
+        };
+        let Some(quoted_row) = offer.rows.iter().find(|candidate| candidate.id == *row) else {
+            continue;
+        };
+        if let Some(&at) = envelope_of.get(agent) {
+            // The planned row still fits, as the agent quotes it.
+            hold(
+                &mut allocation.envelopes[at].1,
+                &offer.rows,
+                quoted_row,
+                &quoted_row.cost,
+            );
+        }
+    }
+    // Whether a lower target can take something back, as the agents see
+    // their envelopes: by their quotes.
+    let as_quoted: Vec<Bid> = (lending.bids.iter())
+        .map(|bid| {
+            let mut bid = bid.clone();
+            if let Some(offer) = by.quoted.get(&bid.offer.agent) {
+                bid.offer = (*offer).clone();
+            }
+            bid
+        })
+        .collect();
+    let refs: Vec<&Bid> = as_quoted.iter().collect();
+    allocation.lever = allocation.lever && lever(&refs, &allocation.envelopes);
+}
+
+/// Collects `entries` by key, keeping the first value of each key.
+fn first_of<K: Eq + Hash, V>(entries: impl Iterator<Item = (K, V)>) -> HashMap<K, V> {
+    let mut by_key = HashMap::new();
+    for (key, value) in entries {
+        by_key.entry(key).or_insert(value);
+    }
+    by_key
 }

@@ -17,9 +17,10 @@
 use super::FileStamp;
 
 /// Why [`read_bounded`](super::read_bounded) returned no bytes.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum BoundedReadError {
     /// The file is larger than the cap.
+    #[error("{size} bytes, over the {cap}-byte cap")]
     TooLarge {
         /// Its size, in bytes: as its metadata gave it, or as much as was read.
         size: u64,
@@ -29,33 +30,14 @@ pub enum BoundedReadError {
         stamp: Option<FileStamp>,
     },
     /// The file could not be opened or read.
-    Io(std::io::Error),
+    #[error("{0}")]
+    Io(#[source] std::io::Error),
 }
 
 impl BoundedReadError {
     /// Returns whether the file was missing.
     pub fn is_not_found(&self) -> bool {
         matches!(self, BoundedReadError::Io(error) if error.kind() == std::io::ErrorKind::NotFound)
-    }
-}
-
-impl std::fmt::Display for BoundedReadError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            BoundedReadError::TooLarge { size, cap, .. } => {
-                write!(f, "{size} bytes, over the {cap} read")
-            }
-            BoundedReadError::Io(error) => write!(f, "{error}"),
-        }
-    }
-}
-
-impl std::error::Error for BoundedReadError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            BoundedReadError::Io(error) => Some(error),
-            BoundedReadError::TooLarge { .. } => None,
-        }
     }
 }
 
@@ -95,6 +77,6 @@ mod tests {
         }
         .into();
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
-        assert_eq!(error.to_string(), "10 bytes, over the 4 read");
+        assert_eq!(error.to_string(), "10 bytes, over the 4-byte cap");
     }
 }

@@ -89,6 +89,16 @@ without `run_winit` (uncommon). `run_default` is the zero-config entry the
 prebuilt `khora-runtime` binary uses — it auto-detects a `data.pack` and loads
 the default scene.
 
+Every boot checks the pack beside the binary against the key stamped into it,
+and refuses to start on a pack that does not verify (see
+[Trust: signed packs](../concepts/trust.md#signed-packs)). A bootstrap closure
+that opens the game's assets itself calls `open_game_assets::<MyGame>(runtime,
+&exe_dir)`: the pack with every check, or loose `assets/` when the binary carries
+no key. It installs the run's refusals first, so its readers report to them.
+The boot then files what it opened, as it does for `run_default`: the pack's
+scripts to compile, or the loose files to index and their scripts to compile,
+the startup waiting on each through `Readiness`.
+
 ## `Runtime` — the injection bundle
 
 `Runtime` (re-exported from `khora-core`) is the engine-wide injection point.
@@ -277,7 +287,8 @@ alone. The major groups:
 | Monitors | `MemoryMonitor` |
 | Backends + traits | `WgpuRenderSystem`, `RenderSystem`, `PipelineSystem`, `RapierPhysicsWorld`, `PhysicsProvider`, `CpalAudioDevice`, `AudioDevice`, `TaffyLayoutSystem`, `LayoutSystem` |
 | Scene I/O | `SerializationService`, `SerializationServiceError`, `SceneFile`, `SerializationGoal`, `LoadReport`, `ComponentRegistration`, `serialize_subtree`, `instantiate_subtree` |
-| Assets | `AssetService`, `AssetIo`, `FileLoader`, `PackLoader`, `PackBuilder`, `IndexBuilder`, `AssetWatcher`, `AssetSource` |
+| Assets | `open_game_assets`, `AssetService`, `AssetIo`, `FileLoader`, `PackLoader`, `PackBuilder`, `IndexBuilder`, `AssetWatcher`, `AssetSource` |
+| Files | the `fs` module: atomic writes, bounded reads, paths under a root |
 | Rendering | `Mesh`, the `renderer` sub-module |
 | Editor UI | the `editor_ui` and `tool_ui` modules (used by the editor and hub) |
 

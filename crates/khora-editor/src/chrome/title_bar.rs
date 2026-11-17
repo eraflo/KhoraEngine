@@ -114,6 +114,10 @@ impl EditorPanel for TitleBarPanel {
                         dispatch(MenuAction::Open);
                         m.close_menu();
                     }
+                    if m.button("Open Project…") {
+                        dispatch(MenuAction::OpenProject);
+                        m.close_menu();
+                    }
                     m.separator();
                     if m.button("Save") {
                         dispatch(MenuAction::Save);

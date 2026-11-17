@@ -13,13 +13,17 @@
 // limitations under the License.
 
 //! The draws a lit lane records a frame: each mesh's model pushed, its
-//! pipeline found, the opaque ones apart from the blended.
+//! pipeline found, the opaque ones apart from the blended; and the key of its
+//! lighting bind group.
 
 use khora_core::lane::io::TargetKey;
 use khora_core::math::Vec3;
 use khora_core::renderer::api::command::DrawCommand;
 use khora_core::renderer::api::gpu_scene::{GpuMesh, ModelUniforms};
+use khora_core::renderer::api::ibl::IblGpuBindings;
 use khora_core::renderer::api::pipeline::{PipelineSpec, RenderPipelineId};
+use khora_core::renderer::api::resource::BufferId;
+use khora_core::renderer::api::shadow::ShadowGpuBindings;
 use khora_core::renderer::error::RenderError;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
@@ -139,3 +143,7 @@ pub(crate) fn collect_lit_draws(
         .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
     Ok(draws)
 }
+
+/// What a lit lane's group-3 bind group binds that can change: one buffer of
+/// the lane's, the shadow atlases and the environment.
+pub(crate) type LightingKey = (BufferId, ShadowGpuBindings, IblGpuBindings);

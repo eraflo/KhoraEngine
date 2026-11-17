@@ -560,3 +560,41 @@ fn a_decision_the_store_cannot_write_is_kept_for_the_run() {
         "the store answers the decision taken in this run"
     );
 }
+
+#[test]
+fn a_restricted_project_is_restricted_and_a_runtime_without_state_is_not() {
+    assert!(ProjectTrust::Restricted.is_restricted());
+    assert!(!ProjectTrust::Trusted.is_restricted());
+
+    let mut runtime = Runtime::new();
+    assert!(!ProjectTrustState::is_restricted(&runtime));
+    assert_eq!(ProjectTrustState::generation_of(&runtime), 0);
+    runtime
+        .resources
+        .insert(Arc::new(ProjectTrustState::new(ProjectTrust::Restricted)));
+    assert!(ProjectTrustState::is_restricted(&runtime));
+}
+
+/// The generation moves on every set, the same trust set again included, so
+/// a reader comparing it never misses one.
+#[test]
+fn the_trust_states_generation_moves_on_every_set() {
+    let state = ProjectTrustState::new(ProjectTrust::Trusted);
+    let start = state.generation();
+    state.set(ProjectTrust::Trusted);
+    let after_set = state.generation();
+    assert_ne!(after_set, start);
+    state.set_for(Path::new("not-on-disk/project"), ProjectTrust::Restricted);
+    assert_ne!(state.generation(), after_set);
+    assert_eq!(state.get(), ProjectTrust::Restricted);
+}
+
+/// Two states never share a generation: a reader keyed on it sees a state
+/// put in place of another.
+#[test]
+fn two_trust_states_never_share_a_generation() {
+    let first = ProjectTrustState::new(ProjectTrust::Trusted);
+    let second = ProjectTrustState::new(ProjectTrust::Restricted);
+    assert_ne!(first.generation(), second.generation());
+    assert_ne!(first.generation(), 0);
+}

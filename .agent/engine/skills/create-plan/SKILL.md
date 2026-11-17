@@ -22,7 +22,9 @@ lines of diff.
 Write `docs/plans/descriptive-name.md` containing:
 - **Context** — why this change; the problem and intended outcome (link the research artifact).
 - **Phases** — ordered; for each: the exact files to edit, the specific edits, new symbols/signatures,
-  a **Tests** table (test name · what it asserts — the `test-writer` subagent's input, written before any
+  the **file and folder of every new type and module** (decided with [`conventions.md`](../../conventions.md)
+  *Before you write*: one primary type per file, beside its siblings, a shared record reused), the
+  **book pages** (`docs/src/…`) the phase updates, a **Tests** table (test name · what it asserts — the `test-writer` subagent's input, written before any
   code), and the **verification** for that phase (`cargo t -p <crate> [filter]` / `cargo gate` / a
   sandbox run for GPU work).
 - **Out of scope** — what this change deliberately does not do.

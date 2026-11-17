@@ -95,7 +95,7 @@ fn a_queued_script_is_written_listed_and_revealed() {
     let project = project("written", &[]);
     let state = asking_for_the_player(&project);
 
-    process_pending_asset_file_ops(Some(&project.vfs), &state);
+    run_queued_asset_file_ops(Some(&project.vfs), &state);
 
     assert_eq!(
         std::fs::read(project.player()).ok().as_deref(),
@@ -121,7 +121,7 @@ fn a_queued_script_never_writes_over_a_file_and_reveals_nothing() {
     let project = project("existing", &[(PLAYER, b"what the author wrote")]);
     let state = asking_for_the_player(&project);
 
-    process_pending_asset_file_ops(Some(&project.vfs), &state);
+    run_queued_asset_file_ops(Some(&project.vfs), &state);
 
     assert_eq!(
         std::fs::read(project.player()).ok().as_deref(),
@@ -138,7 +138,7 @@ fn a_queued_script_with_no_project_open_writes_nothing() {
     let project = project("closed", &[]);
     let state = asking_for_the_player(&project);
 
-    process_pending_asset_file_ops(None, &state);
+    run_queued_asset_file_ops(None, &state);
 
     assert!(!project.player().exists(), "a script was written");
     let state = state.lock().expect("state");
@@ -160,7 +160,7 @@ fn two_scripts_asked_in_one_frame_are_both_written_and_revealed() {
             source: "behavior Enemy { }".to_owned(),
         }));
 
-    process_pending_asset_file_ops(Some(&project.vfs), &state);
+    run_queued_asset_file_ops(Some(&project.vfs), &state);
 
     assert!(project.player().exists(), "the first script is written");
     assert!(
@@ -198,7 +198,7 @@ fn file_operations_asked_in_one_frame_run_in_the_order_asked() {
         }));
     }
 
-    process_pending_asset_file_ops(Some(&project.vfs), &state);
+    run_queued_asset_file_ops(Some(&project.vfs), &state);
 
     let assets = project.root.join("assets");
     assert_eq!(

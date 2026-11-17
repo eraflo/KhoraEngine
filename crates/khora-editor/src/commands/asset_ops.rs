@@ -45,7 +45,7 @@ fn refresh_asset_cache(pvfs_arc: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mut
 /// They run in the order asked. Each goes through [`ProjectVfs`], which keeps
 /// the identity registry, so references survive renames and moves. A script
 /// written is then revealed.
-pub fn process_pending_asset_file_ops(
+pub fn run_queued_asset_file_ops(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     editor_state: &Arc<Mutex<EditorState>>,
 ) {
@@ -134,7 +134,7 @@ fn run_file_op(pvfs: &mut ProjectVfs, op: AssetFileOp) -> Option<String> {
 ///
 /// Asked by dragging a mesh tile onto the viewport or a hierarchy row; the
 /// mesh loads on the next tick. The last one spawned is selected.
-pub fn process_pending_spawn_mesh_asset(
+pub fn spawn_queued_meshes(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
@@ -203,7 +203,7 @@ fn indexed_asset(
 ///
 /// A `.kmat` becomes a `MaterialRef::Asset`; an image becomes the
 /// `base_color_texture` of a fresh inline standard material.
-pub fn process_pending_assign_texture(
+pub fn assign_queued_drops(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,

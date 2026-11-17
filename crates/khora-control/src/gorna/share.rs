@@ -15,7 +15,6 @@
 //! The share: the allocation that lends a round's plans, each envelope its
 //! planned cost plus 80 % of the slack, held to the row planned for it.
 
-use std::collections::HashMap;
 use std::time::Duration;
 
 use khora_core::agent::gorna::protocol::{Allocation, CostBasis, Envelope, OfferRow};
@@ -23,7 +22,6 @@ use khora_core::agent::gorna::{AdaptationMode, AgentId};
 use khora_core::lane::cost::{Cost, Device};
 
 use super::admission::{critical_paths, held, late};
-use super::lending::{ByAgent, Lending};
 use super::plan::{within, Plan};
 use super::round::{Bid, Round};
 use super::units::{busiest, fits_envelope, micros, micros_of_ms};
@@ -121,52 +119,6 @@ pub(crate) fn hold_to_plan(envelopes: &mut [(AgentId, Envelope)], bids: &[&Bid],
     }
 }
 
-/// Holds `allocation`, lent in quoted units, to the rows `planned` at the
-/// costs the agents quoted in `quoted`.
-///
-/// An agent chooses its row by its own quotes. The agents of `kept` keep
-/// their envelope. `lever` is cleared when no agent has a lever as it sees
-/// its envelope, `bids` giving each one's policies; it is never raised.
-pub(crate) fn hold_to_quotes(allocation: &mut Allocation, lending: &Lending<'_>, by: &ByAgent<'_>) {
-    let mut envelope_of: HashMap<AgentId, usize> = HashMap::new();
-    for (at, (agent, _)) in allocation.envelopes.iter().enumerate() {
-        envelope_of.entry(*agent).or_insert(at);
-    }
-    for (agent, row) in lending.planned {
-        if by.kept.contains(agent) {
-            continue;
-        }
-        let Some(offer) = by.quoted.get(agent) else {
-            continue;
-        };
-        let Some(quoted_row) = offer.rows.iter().find(|candidate| candidate.id == *row) else {
-            continue;
-        };
-        if let Some(&at) = envelope_of.get(agent) {
-            // The planned row still fits, as the agent quotes it.
-            hold(
-                &mut allocation.envelopes[at].1,
-                &offer.rows,
-                quoted_row,
-                &quoted_row.cost,
-            );
-        }
-    }
-    // Whether a lower target can take something back, as the agents see
-    // their envelopes: by their quotes.
-    let as_quoted: Vec<Bid> = (lending.bids.iter())
-        .map(|bid| {
-            let mut bid = bid.clone();
-            if let Some(offer) = by.quoted.get(&bid.offer.agent) {
-                bid.offer = (*offer).clone();
-            }
-            bid
-        })
-        .collect();
-    let refs: Vec<&Bid> = as_quoted.iter().collect();
-    allocation.lever = allocation.lever && lever(&refs, &allocation.envelopes);
-}
-
 /// Returns whether a lower target can take something back from any agent of `bids`
 /// under `envelopes`.
 pub(crate) fn lever(bids: &[&Bid], envelopes: &[(AgentId, Envelope)]) -> bool {
@@ -183,7 +135,7 @@ pub(crate) fn lever(bids: &[&Bid], envelopes: &[(AgentId, Envelope)]) -> bool {
 /// A row is cut just under on the device where it costs most above `least`
 /// (by at least 1 µs), else in memory. A row that costs no more than `least`
 /// anywhere cannot be held off.
-fn hold(envelope: &mut Envelope, rows: &[OfferRow], planned: &OfferRow, least: &Cost) {
+pub(super) fn hold(envelope: &mut Envelope, rows: &[OfferRow], planned: &OfferRow, least: &Cost) {
     let step = Duration::from_micros(1);
     for better in rows.iter().filter(|row| row.quality > planned.quality) {
         if !fits_envelope(&better.cost, envelope) {
@@ -244,12 +196,22 @@ fn share(round: &Round<'_>, bids: &[&Bid], plans: &[Plan]) -> Vec<(AgentId, Enve
         .zip(plans)
         .map(|(bid, plan)| {
             let (time, memory, _) = plan.asks(&bid.offer.rows);
+            // A priced row at no time costs less than the measure's grain, not
+            // nothing: its agent is lent the frame, held under any row it was
+            // not planned, so a budgeted lane of its has time to spend.
+            let unmeasured = plan.fixed.is_none()
+                && priced(bid)
+                && Device::ALL.iter().all(|device| device.get(&time) == 0);
             let mut envelope = Envelope::default();
             for device in Device::ALL {
                 let asked = device.get(&time);
                 let path = device.get(&paths);
                 let extra = eighty_percent_share(target.saturating_sub(path), asked, path);
-                let mut lent = asked.saturating_add(extra);
+                let mut lent = if unmeasured {
+                    target
+                } else {
+                    asked.saturating_add(extra)
+                };
                 if let Some(cap) = bid.hints.cap_ms.map(micros_of_ms) {
                     lent = lent.min(cap.max(micros(device.get(&plan.floor.time))));
                 }

@@ -22,7 +22,7 @@ use khora_script::native::Host;
 use super::arrival::{arrive, Arriving};
 use super::departure::farewell_departed;
 use super::hooks::{despawns_itself, say_goodbye, TurnStart};
-use super::mail::Mailbox;
+use super::mail::InstanceMail;
 use super::persistence;
 use super::report::ScriptRunReport;
 use super::runtime::ScriptRuntime;
@@ -146,7 +146,7 @@ pub fn run_behaviors(
                 None
             };
             let events = held.as_ref().unwrap_or(events);
-            let mail = Mailbox {
+            let mail = InstanceMail {
                 events,
                 entity: instance.entity,
                 behavior: &program.behavior,

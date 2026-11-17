@@ -19,11 +19,11 @@
 //! when the engine [`settle`](Activation::settle)s it, so a whole frame — its
 //! DataSystems, its Flows, its agents and the DCC — sees one state.
 
-use crate::sync::RwLockExt;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::RwLock;
 
 use super::gorna::AgentId;
+use crate::sync::RwLockExt;
 
 /// What a family does, for the frame in force.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

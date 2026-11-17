@@ -368,6 +368,9 @@ fn paint_refusal(
 
 /// Paints what the DCC learnt of each of the agent's rows: its measured time
 /// over its quote, the spread, and what a switch to it is charged.
+///
+/// A row never measured reads `—` for its `×k` and `±σ` (its switch charge
+/// stays); an agent none of whose rows was measured reads [`NO_ROW_MEASURED`].
 fn paint_learnt(
     ui: &mut dyn UiBuilder,
     card: Card,
@@ -387,7 +390,7 @@ fn paint_learnt(
     let rows: Vec<_> = (view.corrections.iter())
         .filter(|(named, _, _)| *named == agent.id)
         .collect();
-    if rows.is_empty() {
+    if rows.iter().all(|(_, _, correction)| correction.runs == 0) {
         return card.sentence(ui, cy, NO_ROW_MEASURED, 10.5, theme.text_muted);
     }
 
@@ -433,9 +436,22 @@ fn paint_learnt(
                 .find(|(named, switched, _)| *named == agent.id && switched == row)
                 .map_or_else(|| "—".to_owned(), |(_, _, charge)| millis(*charge))
         };
+        // A correction of no run of its own is borrowed or the default: no
+        // number of it was measured, so none is shown.
+        let (factor, spread) = if correction.runs == 0 {
+            (
+                ("—".to_owned(), theme.text_muted),
+                ("—".to_owned(), theme.text_muted),
+            )
+        } else {
+            (
+                (format!("{:.2}", correction.factor), theme.text),
+                (format!("{:.2}", correction.spread), theme.text_dim),
+            )
+        };
         let cells = [
-            (format!("{:.2}", correction.factor), theme.text),
-            (format!("{:.2}", correction.spread), theme.text_dim),
+            factor,
+            spread,
             (
                 charge,
                 if runs {

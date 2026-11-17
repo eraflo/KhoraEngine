@@ -25,6 +25,8 @@ use khora_data::ecs::{DataSystemRegistration, SystemContext, TickPhase, World};
 use khora_data::scene::PrefabCatalog;
 use khora_telemetry::MetricsRegistry;
 
+use crate::asset::pack_key::stamped_pack_key;
+use crate::asset::signing::PackKey;
 use crate::asset::{AssetService, FileLoader, IndexHub, IndexOutcome};
 use crate::serialization::prefab_catalog;
 use crate::trust::{FileGuard, ProjectTrustState, Refusals};
@@ -46,7 +48,7 @@ pub fn take_in_indexes(runtime: &Runtime) {
         if !hub.is_pending(ticket) {
             continue;
         }
-        let outcome = take_in(runtime, indexed);
+        let outcome = take_in(runtime, indexed, stamped_pack_key());
         match &outcome {
             Ok(()) => follow_prefabs(runtime),
             Err(why) => log::warn!("project index {}: {why}", ticket.0),
@@ -68,7 +70,10 @@ fn follow_prefabs(runtime: &Runtime) {
 }
 
 /// Builds or reindexes the runtime's asset service from `indexed`.
-fn take_in(runtime: &Runtime, indexed: IndexedAssets) -> IndexOutcome {
+///
+/// A binary `stamped` with a pack key is a built game, which runs from its
+/// pack only: it opens no loose project.
+fn take_in(runtime: &Runtime, indexed: IndexedAssets, stamped: Option<PackKey>) -> IndexOutcome {
     let bytes = indexed.index?;
     let service = runtime
         .services
@@ -89,6 +94,12 @@ fn take_in(runtime: &Runtime, indexed: IndexedAssets) -> IndexOutcome {
                 .map_err(|error| format!("{error:#}"))
         }
         IndexKind::Open => {
+            if stamped.is_some() {
+                return Err(format!(
+                    "a built game runs from its pack: the loose assets of {} are not opened",
+                    indexed.project_root.display()
+                ));
+            }
             let assets_root = indexed.project_root.join("assets");
             let refusals = Refusals::of(runtime);
             let trust = ProjectTrustState::of(runtime).trust();
@@ -141,5 +152,69 @@ inventory::submit! {
         runs_after: &["asset_intake"],
         observes: &[],
         role: khora_data::ecs::Role::Upkeep,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::asset::IndexBuilder;
+    use khora_core::asset::IndexTicket;
+    use std::path::Path;
+
+    /// A runtime serving an empty asset service, as a game's does before its open lands.
+    fn runtime() -> Runtime {
+        let mut runtime = Runtime::default();
+        runtime
+            .services
+            .insert(Arc::new(Mutex::new(AssetService::empty())));
+        runtime
+    }
+
+    /// The `Open` of the project at `project_root`, its `assets/` indexed.
+    fn opened(project_root: &Path) -> IndexedAssets {
+        let assets = project_root.join("assets");
+        std::fs::create_dir_all(assets.join("scenes")).expect("the project's assets");
+        std::fs::write(assets.join("scenes/a.kscene"), b"loose scene").expect("a loose file");
+        IndexedAssets {
+            ticket: IndexTicket(1),
+            kind: IndexKind::Open,
+            project_root: project_root.to_path_buf(),
+            index: IndexBuilder::new(&assets)
+                .build_index_bytes()
+                .map_err(|e| format!("{e:#}")),
+        }
+    }
+
+    fn served_root(runtime: &Runtime) -> Option<std::path::PathBuf> {
+        let service = runtime
+            .services
+            .get::<Arc<Mutex<AssetService>>>()
+            .expect("a service");
+        let root = service
+            .lock_recovered()
+            .project_root()
+            .map(Path::to_path_buf);
+        root
+    }
+
+    /// **A binary stamped with a pack key opens no loose assets.**
+    ///
+    /// A built game runs from its pack: the open of a loose project is refused
+    /// and the service serves what it served. The same open, in a binary that
+    /// carries no key, is taken in.
+    #[test]
+    fn a_stamped_binary_opens_no_loose_assets() {
+        let project = tempfile::tempdir().expect("a temporary folder");
+        let stamped = runtime();
+        let unstamped = runtime();
+
+        let refused = take_in(&stamped, opened(project.path()), Some(PackKey([7; 32])));
+        let taken = take_in(&unstamped, opened(project.path()), None);
+
+        assert!(refused.is_err(), "a stamped binary opened loose assets");
+        assert_eq!(served_root(&stamped), None, "the stamped service changed");
+        assert_eq!(taken, Ok(()), "an unstamped binary opens its loose assets");
+        assert_eq!(served_root(&unstamped).as_deref(), Some(project.path()));
     }
 }

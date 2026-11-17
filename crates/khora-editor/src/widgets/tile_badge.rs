@@ -41,3 +41,38 @@ pub(crate) fn tile_badge(counts: (usize, usize)) -> Option<TileBadge> {
         }),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **A module with nothing wrong wears no badge.**
+    #[test]
+    fn a_clean_module_wears_no_badge() {
+        assert_eq!(tile_badge((0, 0)), None);
+    }
+
+    /// **An error beats a warning**: a module with both wears its errors.
+    #[test]
+    fn an_error_badge_beats_warnings() {
+        assert_eq!(
+            tile_badge((1, 3)),
+            Some(TileBadge {
+                severity: ProblemSeverity::Error,
+                count: 1,
+            })
+        );
+    }
+
+    /// A module with only warnings wears them.
+    #[test]
+    fn a_module_with_only_warnings_wears_a_warning_badge() {
+        assert_eq!(
+            tile_badge((0, 2)),
+            Some(TileBadge {
+                severity: ProblemSeverity::Warning,
+                count: 2,
+            })
+        );
+    }
+}

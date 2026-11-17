@@ -229,7 +229,6 @@ fn render_component_card(
             title: &title,
             icon,
             category: category_for(cj.domain),
-            enabled: None,
             // `is_author_facing` already filtered.
             removable: true,
             prefab: card_prefab,

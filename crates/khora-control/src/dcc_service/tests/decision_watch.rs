@@ -126,6 +126,7 @@ fn a_recorded_epoch(epoch: u64, renderer_us: u64) -> EpochRecord {
         Correction {
             factor: 1.5,
             spread: 0.25,
+            runs: 24,
         },
     )];
     recorded.planning = Planning {

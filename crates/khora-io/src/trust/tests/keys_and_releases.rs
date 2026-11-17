@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The quarantine's keys and labels, the refusals a runtime gives, a hand-over
-//! chain, the strict releases, and the trust state's generation, pinned.
+//! Refusals and the quarantine: the keys a file is held by, and what lifts them.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -57,25 +56,6 @@ fn a_content_key_is_the_blake3_hash_of_the_bytes() {
     );
 }
 
-/// The label the asset browser shows: the hash's first and last four hex
-/// digits, or the words for a stamp.
-#[test]
-fn a_key_is_labelled_by_the_ends_of_its_hash_or_as_size_and_date() {
-    let mut hash = [0u8; 32];
-    for (i, byte) in hash.iter_mut().enumerate() {
-        *byte = i as u8;
-    }
-    assert_eq!(
-        QuarantineKey::Content(hash).short_label(),
-        "blake3 0001\u{2026}1e1f"
-    );
-    let stamp = QuarantineKey::Stamp {
-        len: 1,
-        modified: std::time::SystemTime::UNIX_EPOCH,
-    };
-    assert_eq!(stamp.short_label(), "size and date");
-}
-
 #[test]
 fn a_file_stamp_becomes_a_stamp_key() {
     let modified = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(7);
@@ -97,6 +77,7 @@ fn only_a_size_or_a_limit_is_a_refusal_trust_lifts() {
         SecurityReason::Escape,
         wrong_type(),
         SecurityReason::Quarantined,
+        SecurityReason::Tampered,
         SecurityReason::DecoderPanic {
             message: "boom".to_owned(),
         },
@@ -230,59 +211,6 @@ fn a_strict_release_lifts_every_strict_refusal_at_its_trust() {
     assert_eq!(kept, vec![at("b.png"), at("c.png")]);
 }
 
-/// A guard resolves its root once, but a root made after the guard is read
-/// once it exists.
-#[test]
-fn a_guard_made_before_its_root_exists_reads_once_it_is_made() {
-    let dir = TempDir::new().expect("a temp dir");
-    let root = dir.path().join("assets");
-    let guard = FileGuard::new(&root, Trust::Project, Refusals::detached());
-    assert!(matches!(guard.read("a.txt"), Err(ReadError::Io(_))));
-
-    fs::create_dir_all(&root).expect("the root is made");
-    fs::write(root.join("a.txt"), b"made").expect("the file is made");
-    assert_eq!(guard.read("a.txt").expect("it reads now"), b"made");
-    assert_eq!(guard.read("a.txt").expect("and again"), b"made");
-}
-
-#[test]
-fn a_restricted_project_is_restricted_and_a_runtime_without_state_is_not() {
-    assert!(ProjectTrust::Restricted.is_restricted());
-    assert!(!ProjectTrust::Trusted.is_restricted());
-
-    let mut runtime = Runtime::new();
-    assert!(!ProjectTrustState::is_restricted(&runtime));
-    assert_eq!(ProjectTrustState::generation_of(&runtime), 0);
-    runtime
-        .resources
-        .insert(Arc::new(ProjectTrustState::new(ProjectTrust::Restricted)));
-    assert!(ProjectTrustState::is_restricted(&runtime));
-}
-
-/// The generation moves on every set, the same trust set again included, so
-/// a reader comparing it never misses one.
-#[test]
-fn the_trust_states_generation_moves_on_every_set() {
-    let state = ProjectTrustState::new(ProjectTrust::Trusted);
-    let start = state.generation();
-    state.set(ProjectTrust::Trusted);
-    let after_set = state.generation();
-    assert_ne!(after_set, start);
-    state.set_for(Path::new("not-on-disk/project"), ProjectTrust::Restricted);
-    assert_ne!(state.generation(), after_set);
-    assert_eq!(state.get(), ProjectTrust::Restricted);
-}
-
-/// Two states never share a generation: a reader keyed on it sees a state
-/// put in place of another.
-#[test]
-fn two_trust_states_never_share_a_generation() {
-    let first = ProjectTrustState::new(ProjectTrust::Trusted);
-    let second = ProjectTrustState::new(ProjectTrust::Restricted);
-    assert_ne!(first.generation(), second.generation());
-    assert_ne!(first.generation(), 0);
-}
-
 #[test]
 fn every_remedy_reads_as_plain_sentences() {
     let reasons = [
@@ -297,6 +225,7 @@ fn every_remedy_reads_as_plain_sentences() {
         SecurityReason::DecoderPanic {
             message: "boom".to_owned(),
         },
+        SecurityReason::Tampered,
     ];
     for reason in reasons {
         let remedy = reason.remedy();

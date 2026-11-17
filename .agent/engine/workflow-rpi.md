@@ -32,7 +32,9 @@ Research ──► Plan ──► Implement ──► compact back into the plan
    1. **Tests first** — the [`test-writer`](./agents/test-writer.md) subagent writes the phase's tests from
       the plan alone, in a fresh context, and shows each one failing for the right reason.
    2. **Implement** — the main agent, until those tests pass. It **never edits or deletes** them; a test
-      it believes wrong is raised with the human, not rewritten.
+      it believes wrong is raised with the human, not rewritten. Every writer, agent or subagent, reads
+      [`conventions.md`](./conventions.md) *Before you write* first, and runs `cargo xtask lint-file` on
+      the files it touched and `cargo doc` before reporting.
    3. **Try to break it** — the [`test-breaker`](./agents/test-breaker.md) subagent reads the plan and the
       diff in a fresh context and writes a failing test for each real defect or missing case.
    4. **Fix** — the main agent, until the breaker's tests pass. At most two breaker rounds; what remains

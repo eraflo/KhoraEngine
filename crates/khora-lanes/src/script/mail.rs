@@ -16,13 +16,14 @@
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::EventQueue;
+use khora_data::flow::{ScriptInstance, ScriptProgram};
 
 use super::report::ScriptRunReport;
 use super::runtime::ScriptRuntime;
 
 /// One instance's mail for its turn: what it is sent, and where what it misses goes.
-pub(super) struct Mailbox<'a> {
-    /// What the instance is sent this turn.
+pub(super) struct InstanceMail<'a> {
+    /// The frame's events; the instance's are those of `entity`.
     pub events: &'a EventQueue,
     /// The entity it runs on.
     pub entity: EntityId,
@@ -32,7 +33,7 @@ pub(super) struct Mailbox<'a> {
     pub several: bool,
 }
 
-impl Mailbox<'_> {
+impl InstanceMail<'_> {
     /// Puts back what the instance was never told: its events past the first `delivered`.
     ///
     /// Into the frame's mail for an entity running one behavior; held for this
@@ -60,8 +61,8 @@ impl Mailbox<'_> {
     /// and what it was sent waits for the turn that will listen.
     pub(super) fn sit_out(
         &self,
-        instance: &khora_data::flow::ScriptInstance,
-        program: &khora_data::flow::ScriptProgram,
+        instance: &ScriptInstance,
+        program: &ScriptProgram,
         runtime: &mut ScriptRuntime,
         report: &mut ScriptRunReport,
     ) {

@@ -18,6 +18,7 @@
 //! live in `khora-infra`.
 
 mod addable_component;
+mod asset_file_op;
 pub mod declared;
 mod font_family_hint;
 pub mod gizmo;
@@ -26,6 +27,7 @@ pub mod icons;
 mod inline_edit_event;
 mod inspected;
 pub mod interaction;
+mod menu_action;
 pub mod overlay;
 pub mod panel;
 mod panel_location;
@@ -37,18 +39,22 @@ pub mod shell;
 mod spawn_shape;
 pub mod state;
 mod text_align;
+mod transport;
+mod trust_answer;
 pub mod ui_builder;
 pub mod viewport_texture;
 
+pub use asset_file_op::AssetFileOp;
 pub use declared::{
     AddableComponent, ComponentOrigin, DeclaredCard, DeclaredCardKind, DeclaredFieldView,
 };
 pub use gizmo::GizmoLineInstance;
 pub use gradient::{GradientStop, LinearGradient, RadialGradient};
 pub use icons::Icon;
+pub use menu_action::MenuAction;
 pub use overlay::{EditorOverlay, OverlayError, OverlayScreenDescriptor};
 pub use panel::{EditorPanel, PanelLocation};
-pub use request::{AssetFileOp, EditorRequest, MenuAction, Transport, TrustAnswer};
+pub use request::EditorRequest;
 pub use shell::EditorShell;
 pub use spawn_shape::SpawnShape;
 pub use state::{
@@ -56,5 +62,7 @@ pub use state::{
     InspectedEntity, InspectedPrefab, LogEntry, LogLevel, PlayMode, PrefabApplyScope, PropertyEdit,
     QuarantinedAsset, SceneNode, StatusBarData, TrustSummary,
 };
+pub use transport::Transport;
+pub use trust_answer::TrustAnswer;
 pub use ui_builder::{FontFamilyHint, InlineEditEvent, Interaction, TextAlign, UiBuilder};
 pub use viewport_texture::ViewportTextureHandle;

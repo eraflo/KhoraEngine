@@ -13,6 +13,7 @@ and [`security-privacy.md`](./security-privacy.md).
 - Validate every change with `cargo gate` (fmt, clippy, tests, doc tests — what CI runs) before committing; iterate with `cargo t -p <crate> [filter]`. See `skills/build-and-test` for where the build time goes.
 - Use the engine's own math types `khora_core::math::{Vec3, Mat4, Quaternion, LinearRgba, …}` — never raw `glam`.
 - Naming: `snake_case` (Rust), `PascalCase` (types), `kebab-case` (crate names). See [`conventions.md`](./conventions.md).
+- Read [`conventions.md`](./conventions.md) *Before you write* before writing. The conventions are checked by `cargo xtask lint-file` (the hook runs it after every write) and by the lints and the `cargo doc` step of `cargo gate`; an agent runs `lint-file` on the files it touched and `cargo doc` before reporting.
 - Add `#[cfg(test)]` unit tests for any new public function.
 - Add a `// SAFETY:` comment on every `unsafe` block explaining why the invariant holds.
 - Log via `log::{info,warn,error,debug,trace}` — never `println!` / `eprintln!`. **Sole exception:** the engine's own log sink (`EditorLogCapture::log` in `khora-editor/src/log_capture.rs`) writes to stderr with `eprintln!` because a `log::Log` implementation calling `log::*` would recurse infinitely.

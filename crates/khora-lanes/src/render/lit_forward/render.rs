@@ -126,7 +126,7 @@ impl LitGpu {
                 lent,
                 spec: pipeline_spec,
                 plain,
-                label: "LitForward",
+                label: super::gpu::LABEL,
             },
             &mut self.model_ring,
         )?;

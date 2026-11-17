@@ -23,6 +23,7 @@ use khora_tool_ui::widgets::with_alpha;
 
 use super::{AssetBrowserPanel, SIDEBAR_ROW_H, TREE_INDENT};
 use crate::drag_payload::unpack_asset_drag;
+use crate::widgets::{Column, Painter};
 
 /// A folder-tree menu or drop action, collected during the `&self` tree walk
 /// and applied after it.
@@ -39,16 +40,6 @@ enum FolderAction {
     StartRename { path: String, name: String },
     /// Move the asset at `flat` index `idx` into this folder.
     Move { idx: usize, dest: String },
-}
-
-/// Where the folder tree is painted: its column and theme.
-struct TreeColumn<'a> {
-    /// The column's left edge.
-    x: f32,
-    /// Its width.
-    width: f32,
-    /// The theme its rows are painted in.
-    theme: &'a UiTheme,
 }
 
 /// What a walk of the folder tree gathers, applied once the walk is over.
@@ -149,11 +140,7 @@ impl AssetBrowserPanel {
         theme: &UiTheme,
     ) -> f32 {
         let root = self.build_folder_tree();
-        let column = TreeColumn {
-            x: origin_x,
-            width: sidebar_w,
-            theme,
-        };
+        let column = Column::new(origin_x, sidebar_w);
         let mut walk = TreeWalk {
             y: origin_y,
             current: self.current_folder.clone(),
@@ -161,7 +148,16 @@ impl AssetBrowserPanel {
             actions: Vec::new(),
             rename_rect: None,
         };
-        self.render_folder_node(ui, &root, 0, &column, &mut walk);
+        self.render_folder_node(
+            &mut Painter {
+                ui: &mut *ui,
+                theme,
+            },
+            &root,
+            0,
+            column,
+            &mut walk,
+        );
         let TreeWalk {
             y,
             current,
@@ -250,13 +246,13 @@ impl AssetBrowserPanel {
     /// Paints `node`'s row at `depth`, then its children's if it is open.
     fn render_folder_node(
         &self,
-        ui: &mut dyn UiBuilder,
+        p: &mut Painter<'_>,
         node: &FolderNode,
         depth: u32,
-        column: &TreeColumn<'_>,
+        column: Column,
         walk: &mut TreeWalk,
     ) {
-        let theme = column.theme;
+        let (ui, theme) = (&mut *p.ui, p.theme);
         let TreeWalk {
             y,
             current,
@@ -265,7 +261,7 @@ impl AssetBrowserPanel {
             rename_rect,
         } = &mut *walk;
         let row_x = column.x + 4.0;
-        let row_w = column.width - 8.0;
+        let row_w = column.w - 8.0;
         let label = if node.name.is_empty() {
             "assets"
         } else {
@@ -418,7 +414,7 @@ impl AssetBrowserPanel {
         *y += SIDEBAR_ROW_H + 1.0;
         if expanded {
             for child in node.children.values() {
-                self.render_folder_node(ui, child, depth + 1, column, walk);
+                self.render_folder_node(p, child, depth + 1, column, walk);
             }
         }
     }

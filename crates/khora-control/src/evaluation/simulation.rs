@@ -30,7 +30,7 @@ use crate::cost_model::ComplexityClass;
 use crate::dcc_service::FRAME_TIME_MIN_SAMPLES;
 use crate::gorna::arbiter::Arbiter;
 use crate::gorna::cost_book::{correct_bid, CostBook, CostBookConfig};
-use crate::gorna::lending::{lend_in_quotes, Lending};
+use crate::gorna::in_quotes::{lend_in_quotes, Lending};
 use crate::gorna::planning::{Planner, PlanningConfig};
 use crate::gorna::{Bid, Round};
 use crate::governor::{FrameGovernor, GovernorConfig};

@@ -24,7 +24,7 @@ use khora_core::lane::cost::PerLink;
 
 use super::Arbiters;
 use crate::gorna::cost_book::correct_bid;
-use crate::gorna::lending::{lend_in_quotes, Lending};
+use crate::gorna::in_quotes::{lend_in_quotes, Lending};
 use crate::gorna::{Bid, Round};
 
 /// Decides `trace` again through `arbiters`, each epoch's round rebuilt from

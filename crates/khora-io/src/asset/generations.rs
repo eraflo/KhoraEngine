@@ -27,9 +27,11 @@ use khora_core::sync::LockExt;
 /// every asset. A decode is installed only while none of the files it read
 /// changed after the value it was filed at. Shared with the leases of the
 /// decodes in flight; its lock is a leaf.
-// Whole after every write: read through the poison.
 #[derive(Debug, Default)]
-pub(crate) struct Generations(Mutex<State>);
+pub(crate) struct Generations(
+    // Whole after every write: read through the poison.
+    Mutex<State>,
+);
 
 #[derive(Debug, Default)]
 struct State {

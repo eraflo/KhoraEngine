@@ -15,19 +15,19 @@ use khora_tool_ui::widgets::with_alpha;
 
 use crate::widgets::Painter;
 
-/// What the Inspector's header says of the inspected entity.
+/// What the Inspector's header shows of what is inspected: an entity or an asset.
 pub struct InspectorHeader<'a> {
     /// The glyph on the tile.
     pub icon: Icon,
-    /// The entity's name.
+    /// Its name.
     pub name: &'a str,
-    /// The tag of what the entity is, such as `Camera`.
+    /// The tag of what it is (`Camera`, `PNG`).
     pub type_tag: &'a str,
     /// The status pill's word.
     pub status_label: &'a str,
     /// The status pill's colour.
     pub status_color: [f32; 4],
-    /// The entity's id, shown after the pill, if any.
+    /// Its id, shown after the pill, if it has one.
     pub id_label: Option<&'a str>,
 }
 

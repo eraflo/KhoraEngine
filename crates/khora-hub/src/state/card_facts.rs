@@ -18,19 +18,12 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use khora_sdk::trust::{ProjectTrust, TrustStore};
+use khora_sdk::trust::TrustStore;
+
+use super::CardFact;
 
 /// How long the facts read are kept: the editor, another program, may change them meanwhile.
 const KEPT_FOR: Duration = Duration::from_secs(1);
-
-/// What a project card shows of its folder.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CardFact {
-    /// What the user decided of the project; `None` when nothing was.
-    pub trust: Option<ProjectTrust>,
-    /// Whether the project holds a `Cargo.toml`: native Rust code.
-    pub native_code: bool,
-}
 
 /// The facts of the cards painted, by project path: each read at most once a second.
 ///
@@ -44,7 +37,8 @@ pub struct CardFacts {
 }
 
 impl CardFacts {
-    /// Returns the facts of the project at `path`, read through `store` unless kept.
+    /// Returns the facts of the project at `path`: its trust read through `store` and its
+    /// folder from disk, unless kept.
     pub fn of(&mut self, path: &str, store: &TrustStore) -> CardFact {
         let now = Instant::now();
         if self
@@ -73,6 +67,7 @@ impl CardFacts {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use khora_sdk::trust::ProjectTrust;
     use std::path::PathBuf;
 
     /// A project folder under the temp folder, removed when dropped.

@@ -180,13 +180,61 @@ impl AssetReader {
             };
             self.check_packed(uuid, declared)?;
         }
-        let bytes = self.io.load_bytes(source)?;
+        let bytes = match self.io.load_bytes(source) {
+            Ok(bytes) => bytes,
+            // Its place and sizes are signed with the index: a sealed entry
+            // that no longer loads was changed after the build.
+            Err(error)
+                if self.manifest.is_some() && matches!(source, AssetSource::Packed { .. }) =>
+            {
+                let stored = self.stored_bytes(source);
+                let content = stored.as_deref().map_or(Content::Unread, Content::Bytes);
+                return Err(self.refuse_tampered(uuid, content, error));
+            }
+            Err(error) => return Err(error),
+        };
         if let Some(manifest) = &self.manifest {
-            manifest
-                .verify(uuid, &bytes)
-                .context("Asset integrity check failed")?;
+            if let Err(error) = manifest.verify(uuid, &bytes) {
+                return Err(self.refuse_tampered(uuid, Content::Bytes(&bytes), error));
+            }
         }
         Ok(bytes)
+    }
+
+    /// Returns the bytes the pack entry at `source` stores, as written: not decompressed.
+    ///
+    /// What a refused entry is quarantined by; `None` when they cannot be read.
+    fn stored_bytes(&self, source: &AssetSource) -> Option<Vec<u8>> {
+        let AssetSource::Packed { offset, size, .. } = source else {
+            return None;
+        };
+        let stored = AssetSource::Packed {
+            offset: *offset,
+            size: *size,
+            uncompressed_size: *size,
+            compression: CompressionKind::None,
+        };
+        self.io.load_bytes(&stored).ok()
+    }
+
+    /// Refuses the pack entry `uuid` as tampered, quarantined by `content`; returns
+    /// `error` with that context.
+    fn refuse_tampered(
+        &self,
+        uuid: &AssetUUID,
+        content: Content<'_>,
+        error: anyhow::Error,
+    ) -> anyhow::Error {
+        let error = match self.index.get_metadata(uuid) {
+            Some(metadata) => error.context(self.refuse(
+                metadata,
+                content,
+                TrustLayer::Pack,
+                SecurityReason::Tampered,
+            )),
+            None => error,
+        };
+        error.context("Asset integrity check failed")
     }
 
     /// Decodes a file's own `bytes` with the decoder of its index type, as `type_id`.
@@ -322,13 +370,17 @@ impl AssetReader {
         let Some(metadata) = self.index.get_metadata(uuid) else {
             return Ok(());
         };
-        let cap = match self
+        let limit = self.limits_of(metadata).max_bytes;
+        // A signed entry is refused over its type's limit before it is read,
+        // quarantined by the hash the manifest names for it.
+        let (cap, content) = match self
             .manifest
             .as_ref()
             .and_then(|manifest| manifest.get(uuid))
         {
-            Some(entry) => entry.size,
-            None => self.limits_of(metadata).max_bytes,
+            Some(entry) if declared > entry.size => (entry.size, Content::Unread),
+            Some(entry) => (limit, Content::Hashed(entry.blake3)),
+            None => (limit, Content::Unread),
         };
         if declared <= cap {
             return Ok(());
@@ -338,7 +390,7 @@ impl AssetReader {
             cap,
         };
         // Nothing is read for it: the declared size is what is refused.
-        Err(self.refuse(metadata, Content::Unread, TrustLayer::Pack, reason))
+        Err(self.refuse(metadata, content, TrustLayer::Pack, reason))
     }
 
     /// Refuses `bytes` over their type's byte limit, before they are decoded.
@@ -420,9 +472,12 @@ impl AssetReader {
                         .and_then(|source| self.io.load_bytes(source).ok());
                     reread.as_deref()
                 }
-                Content::Unread => None,
+                Content::Unread | Content::Hashed(_) => None,
             };
-            let key = bytes.map(QuarantineKey::of_content);
+            let key = match content {
+                Content::Hashed(hash) => Some(QuarantineKey::Content(hash)),
+                _ => bytes.map(QuarantineKey::of_content),
+            };
             refusals.refuse(refusal, key);
         }
         error
@@ -448,4 +503,6 @@ enum Content<'a> {
     Reread,
     /// Nothing: a pack entry refused for the size it declares, never read.
     Unread,
+    /// The BLAKE3 hash the signed manifest names for its bytes, never read.
+    Hashed([u8; 32]),
 }

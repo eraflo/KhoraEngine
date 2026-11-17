@@ -134,13 +134,13 @@ impl super::EditorApp {
     ///
     /// The one the hub shares, `~/.khora/trust.ron`; an editor that opens no
     /// project never reads it.
-    pub(super) fn trust_store(&mut self) -> std::sync::Arc<khora_sdk::trust::TrustStore> {
+    pub(super) fn trust_store(&mut self) -> Arc<khora_sdk::trust::TrustStore> {
         let store = self.trust_store.get_or_insert_with(|| {
-            std::sync::Arc::new(khora_sdk::trust::TrustStore::new(
+            Arc::new(khora_sdk::trust::TrustStore::new(
                 khora_sdk::user_dirs::trust_path(&khora_sdk::user_dirs::process_env),
             ))
         });
-        std::sync::Arc::clone(store)
+        Arc::clone(store)
     }
 
     /// Opens the project at `root` at what its user decided of it.
@@ -286,9 +286,9 @@ pub(crate) fn grant_trust(
 /// Lands the project `opening` names once its `Open` landed; `None`, `opening` kept, in flight.
 ///
 /// `opening` is emptied either way. On `Ok`, returns the project's VFS over
-/// `shared_assets`, the browser filled and the default scene opened by ticket
-/// (the runtime's `Readiness` waits on it), or created when there is none;
-/// `hold` is kept for the scripts. On `Err`, reports to the runtime's
+/// `shared_assets`, the browser filled, a play under way ended (its snapshot
+/// dropped) and the default scene opened by ticket (the runtime's `Readiness`
+/// waits on it), or created when there is none; `hold` is kept for the scripts. On `Err`, reports to the runtime's
 /// `Problems` (`ProblemSource::Load`), empties `hold` and clears the project's
 /// folder, name, version and branch.
 pub(crate) fn land_opened_project(
@@ -360,6 +360,10 @@ pub(crate) fn land_opened_project(
         state.asset_entries = entries;
         state.asset_dirs = dirs;
         state.asset_epoch = state.asset_epoch.wrapping_add(1);
+        // Play ends with the project it played: the scene Stop would restore
+        // is the former project's.
+        state.play_mode = khora_sdk::PlayMode::Editing;
+        state.scene_snapshot = None;
     }
 
     // The default scene, opened by ticket, or created when there is none.

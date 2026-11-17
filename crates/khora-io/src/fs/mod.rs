@@ -21,12 +21,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 mod bounded_read_error;
 mod file_stamp;
+mod keyed;
 mod ron_store;
 mod root_name;
 
 pub use bounded_read_error::BoundedReadError;
 pub use file_stamp::FileStamp;
-pub use ron_store::{Keyed, RonStore};
+pub use keyed::Keyed;
+pub use ron_store::RonStore;
 pub use root_name::RootName;
 
 /// A number for each temporary file this process makes: two writes at once
@@ -40,63 +42,11 @@ pub fn real_path(path: &Path) -> PathBuf {
 
 /// Returns `path` relative to `root`, as given or once resolved; `None` outside it.
 ///
-/// Tried in turn: both as given, `path` as given under the resolved root, both
-/// resolved. A path or root that does not resolve is compared as given, so a
-/// file gone from disk is still under the root it was named under. A path as
-/// given has its `..` applied to its names, so it never climbs out unseen.
+/// A path is under the root when it is under it as named or as resolved; a
+/// file gone from disk is still under the root it was named under. A `..` in
+/// a path as named is applied to its names, so it never climbs out unseen.
 pub fn relative_to(path: &Path, root: &Path) -> Option<PathBuf> {
     relative_to_resolved(path, root, &real_path(root))
-}
-
-/// Returns `path` relative to the root named `root` and resolved to `real_root`.
-///
-/// See [`relative_to`].
-fn relative_to_resolved(path: &Path, root: &Path, real_root: &Path) -> Option<PathBuf> {
-    if let Some(rel) = named_under(path, root) {
-        return Some(rel);
-    }
-    if let Some(rel) = named_under(path, real_root) {
-        return Some(rel);
-    }
-    // A resolved path on Windows is verbatim (`\\?\C:\…`); a path as given never is.
-    if let Some(rel) = plain(real_root).and_then(|plain_root| named_under(path, &plain_root)) {
-        return Some(rel);
-    }
-    named_under(&real_path(path), real_root)
-}
-
-/// Returns `path` relative to `root` by their names alone, `..` applied; `None` outside it.
-fn named_under(path: &Path, root: &Path) -> Option<PathBuf> {
-    let rest = path.strip_prefix(root).ok()?;
-    let mut rel = PathBuf::new();
-    for component in rest.components() {
-        match component {
-            Component::Normal(name) => rel.push(name),
-            Component::CurDir => {}
-            // Climbing above the root leaves it.
-            Component::ParentDir => {
-                if !rel.pop() {
-                    return None;
-                }
-            }
-            Component::RootDir | Component::Prefix(_) => return None,
-        }
-    }
-    Some(rel)
-}
-
-/// Returns a verbatim disk path (`\\?\C:\…`) as a plain one (`C:\…`); `None` for any other.
-fn plain(path: &Path) -> Option<PathBuf> {
-    let mut components = path.components();
-    let Some(Component::Prefix(prefix)) = components.next() else {
-        return None;
-    };
-    let Prefix::VerbatimDisk(letter) = prefix.kind() else {
-        return None;
-    };
-    let mut plain = PathBuf::from(format!("{}:\\", char::from(letter)));
-    plain.extend(components.filter(|c| !matches!(c, Component::RootDir)));
-    Some(plain)
 }
 
 /// Returns whether `path` is `root` or lies under it, as [`relative_to`] decides.
@@ -110,23 +60,25 @@ pub fn is_under(path: &Path, root: &Path) -> bool {
 ///
 /// # Errors
 ///
-/// When the folder, the temporary file or the rename cannot be made.
+/// [`std::io::ErrorKind::PermissionDenied`] when the file at `path` is
+/// read-only; otherwise when the folder, the temporary file, the sync or the
+/// rename fail.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     write_atomic_with(path, |file| file.write_all(bytes))
 }
 
 /// Writes the file at `path` whole through `write`: an error leaves the previous file as it was.
 ///
-/// `write` fills a temporary file beside the file, named uniquely for this
-/// process and this write; it is synced, then renamed over the file. A file
-/// already there keeps its name and place: `path` spelled in another case, or
-/// a link, replaces the file it names. On any error the temporary file is
-/// removed. Makes the file's folder.
+/// The file is written whole or not at all. A file already there keeps its
+/// name and place: `path` spelled in another case, or a link, replaces the
+/// file it names. Makes the file's folder. A scratch `.tmp` file may appear
+/// beside it while it is written.
 ///
 /// # Errors
 ///
-/// What `write` returns, and when the folder, the temporary file, the sync or
-/// the rename fail.
+/// What `write` returns; [`std::io::ErrorKind::PermissionDenied`] when the
+/// file at `path` is read-only; otherwise when the folder, the temporary file,
+/// the sync or the rename fail.
 pub fn write_atomic_with(
     path: &Path,
     write: impl FnOnce(&mut std::fs::File) -> std::io::Result<()>,
@@ -256,6 +208,57 @@ pub fn files_under(root: &Path) -> Vec<PathBuf> {
         .collect();
     found.sort();
     found
+}
+
+/// Returns `path` relative to the root named `root` and resolved to `real_root`.
+///
+/// See [`relative_to`].
+fn relative_to_resolved(path: &Path, root: &Path, real_root: &Path) -> Option<PathBuf> {
+    if let Some(rel) = named_under(path, root) {
+        return Some(rel);
+    }
+    if let Some(rel) = named_under(path, real_root) {
+        return Some(rel);
+    }
+    // A resolved path on Windows is verbatim (`\\?\C:\…`); a path as given never is.
+    if let Some(rel) = plain(real_root).and_then(|plain_root| named_under(path, &plain_root)) {
+        return Some(rel);
+    }
+    named_under(&real_path(path), real_root)
+}
+
+/// Returns `path` relative to `root` by their names alone, `..` applied; `None` outside it.
+fn named_under(path: &Path, root: &Path) -> Option<PathBuf> {
+    let rest = path.strip_prefix(root).ok()?;
+    let mut rel = PathBuf::new();
+    for component in rest.components() {
+        match component {
+            Component::Normal(name) => rel.push(name),
+            Component::CurDir => {}
+            // Climbing above the root leaves it.
+            Component::ParentDir => {
+                if !rel.pop() {
+                    return None;
+                }
+            }
+            Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+    Some(rel)
+}
+
+/// Returns a verbatim disk path (`\\?\C:\…`) as a plain one (`C:\…`); `None` for any other.
+fn plain(path: &Path) -> Option<PathBuf> {
+    let mut components = path.components();
+    let Some(Component::Prefix(prefix)) = components.next() else {
+        return None;
+    };
+    let Prefix::VerbatimDisk(letter) = prefix.kind() else {
+        return None;
+    };
+    let mut plain = PathBuf::from(format!("{}:\\", char::from(letter)));
+    plain.extend(components.filter(|c| !matches!(c, Component::RootDir)));
+    Some(plain)
 }
 
 /// Who may read a file [`write_new_as`] makes.

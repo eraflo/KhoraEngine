@@ -45,6 +45,7 @@ mod image_residency;
 mod index_files_written_before_asset_types;
 mod machine_profiles;
 mod pack_limits;
+mod pack_scripts;
 mod prefab_assets;
 mod prefab_scenes;
 mod prefabs_read_off_the_frame;

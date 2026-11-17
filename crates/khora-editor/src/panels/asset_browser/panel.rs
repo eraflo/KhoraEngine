@@ -412,8 +412,7 @@ impl EditorPanel for AssetBrowserPanel {
                 name: &asset.name,
                 kind: asset.tile,
                 selected,
-                badge: counts_of(&asset.rel_path)
-                    .and_then(crate::panels::problems::view::tile_badge),
+                badge: counts_of(&asset.rel_path).and_then(crate::widgets::tile_badge::tile_badge),
                 quarantined: asset.container.is_none() && quarantined.contains(&asset.rel_path),
             };
             let interaction = paint_asset_tile(ui, tile, &theme);

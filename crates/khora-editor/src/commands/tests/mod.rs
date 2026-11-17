@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Play and Stop through the editor's own commands.
+//! The editor's commands, run on a world and a project on disk.
 
 mod asset_file_ops;
 mod gltf_assets;

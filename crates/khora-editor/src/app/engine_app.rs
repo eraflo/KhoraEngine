@@ -235,42 +235,14 @@ impl EngineApp for EditorApp {
             self.picked_project = Some(picked);
         }
 
-        commands::process_pending_save_as_prefab(
-            self.project_vfs.as_ref(),
-            world,
-            &self.editor_state,
-        );
-        commands::process_pending_prefab_spawn(
-            self.project_vfs.as_ref(),
-            world,
-            &self.editor_state,
-        );
-        commands::process_pending_prefab_apply(
-            self.project_vfs.as_ref(),
-            world,
-            &self.editor_state,
-        );
-        commands::process_pending_save_as_material(
-            self.project_vfs.as_ref(),
-            world,
-            &self.editor_state,
-        );
-        commands::process_pending_assign_material(
-            self.project_vfs.as_ref(),
-            world,
-            &self.editor_state,
-        );
-        commands::process_pending_asset_file_ops(self.project_vfs.as_ref(), &self.editor_state);
-        commands::process_pending_spawn_mesh_asset(
-            self.project_vfs.as_ref(),
-            world,
-            &self.editor_state,
-        );
-        commands::process_pending_assign_texture(
-            self.project_vfs.as_ref(),
-            world,
-            &self.editor_state,
-        );
+        commands::save_queued_prefabs(self.project_vfs.as_ref(), world, &self.editor_state);
+        commands::spawn_queued_prefabs(self.project_vfs.as_ref(), world, &self.editor_state);
+        commands::apply_queued_instances(self.project_vfs.as_ref(), world, &self.editor_state);
+        commands::save_queued_materials(self.project_vfs.as_ref(), world, &self.editor_state);
+        commands::assign_queued_materials(self.project_vfs.as_ref(), world, &self.editor_state);
+        commands::run_queued_asset_file_ops(self.project_vfs.as_ref(), &self.editor_state);
+        commands::spawn_queued_meshes(self.project_vfs.as_ref(), world, &self.editor_state);
+        commands::assign_queued_drops(self.project_vfs.as_ref(), world, &self.editor_state);
 
         if let Ok(mut state) = self.editor_state.lock() {
             ops::apply_edits(world, &mut state);

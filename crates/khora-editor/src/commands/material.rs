@@ -27,7 +27,7 @@ use crate::project_vfs::{AfterIndex, ProjectVfs};
 /// Writes `assets/materials/<name>.kmat` in the decoder's RON shape, then has
 /// the entity reference the saved asset (`MaterialRef::Asset`) once the index
 /// holds it. With no project open, logs a warning and does nothing.
-pub fn process_pending_save_as_material(
+pub fn save_queued_materials(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
@@ -174,7 +174,7 @@ pub fn apply_after_index(world: &mut GameWorld, actions: Vec<AfterIndex>) {
 ///
 /// Two asked in one frame are both applied, in order: the last one asked is
 /// what the selection references.
-pub fn process_pending_assign_material(
+pub fn assign_queued_materials(
     _project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,

@@ -57,11 +57,24 @@ pub use khora_io::script::mounted::MountedScripts;
 
 /// Puts what scripting needs into `runtime`, each resource only where it is absent.
 ///
-/// The engine runs it for every application, before the application's
-/// bootstrap, which may then mount, and again at boot. An empty queue costs
-/// nothing; a missing one would leave scripting wired in name only. It also
-/// installs the engine's [`Problems`] list, which other sources report to.
+/// The engine runs it at boot, once the run's refusals and trust are in, so
+/// the compiler it installs reads through them. An empty queue costs nothing;
+/// a missing one would leave scripting wired in name only. It also installs
+/// the engine's [`Problems`] list, which other sources report to.
 pub fn install(runtime: &mut Runtime) {
+    install_for_mounts(runtime);
+    // The `loading` family's compiler, reporting to what is installed.
+    if runtime.resources.get::<Arc<dyn ScriptCompiler>>().is_none() {
+        let compiler: Arc<dyn ScriptCompiler> = Arc::new(ProjectCompiler::from_runtime(runtime));
+        runtime.resources.insert(compiler);
+    }
+}
+
+/// Puts what a mount needs into `runtime`, as [`install`] does, but no compiler.
+///
+/// A window's start runs it before the application's closure, which may
+/// mount there; the compiler comes at boot, after the run's refusals.
+pub(crate) fn install_for_mounts(runtime: &mut Runtime) {
     let resources = &mut runtime.resources;
     if resources.get::<Arc<AssetWatch>>().is_none() {
         resources.insert(Arc::new(AssetWatch::default()));
@@ -112,11 +125,6 @@ pub fn install(runtime: &mut Runtime) {
     }
     if resources.get::<Arc<MountedScripts>>().is_none() {
         resources.insert(Arc::new(MountedScripts::default()));
-    }
-    // The `loading` family's compiler, reporting to what is installed above.
-    if resources.get::<Arc<dyn ScriptCompiler>>().is_none() {
-        let compiler: Arc<dyn ScriptCompiler> = Arc::new(ProjectCompiler::from_runtime(runtime));
-        runtime.resources.insert(compiler);
     }
 }
 
@@ -189,6 +197,40 @@ pub fn mount(runtime: &Runtime, assets_root: &Path) -> Option<CompileTicket> {
     log::info!(
         "scripts: {} filed to be compiled (ticket {})",
         script_dir.display(),
+        ticket.0
+    );
+    Some(ticket)
+}
+
+/// Mounts the scripts a game's pack holds, filed under `root`, and returns the ticket of their compile.
+///
+/// The pack never changes: nothing is watched, and no file outside it is
+/// listed. The `loading` family compiles them through the compiler
+/// `open_game_assets` installed for the pack. `None` when the pack holds no
+/// module, or scripting is not installed.
+pub(crate) fn mount_pack(
+    runtime: &Runtime,
+    root: &Path,
+    modules: std::collections::BTreeSet<String>,
+) -> Option<CompileTicket> {
+    if modules.is_empty() {
+        return None;
+    }
+    let Some(hub) = runtime.resources.get::<Arc<CompileHub>>() else {
+        log::error!(
+            "scripts: the engine holds no compile hub — `scripts::install` was not run, so {} cannot load",
+            root.display()
+        );
+        return None;
+    };
+    // Recorded before the compile, which compiles only a mounted root.
+    if let Some(mounted) = runtime.resources.get::<Arc<MountedScripts>>() {
+        mounted.record(root, modules.iter().cloned());
+    }
+    let ticket = hub.file(root.to_path_buf(), modules);
+    log::info!(
+        "scripts: the modules of {} filed to be compiled (ticket {})",
+        root.display(),
         ticket.0
     );
     Some(ticket)

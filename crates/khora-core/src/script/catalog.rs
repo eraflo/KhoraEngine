@@ -19,10 +19,10 @@
 //! scripts read is asked of the script flow through the
 //! [`ScriptReads`](super::ScriptReads) demand, not here.
 
-use crate::sync::RwLockExt;
 use std::sync::RwLock;
 
 use super::ComponentName;
+use crate::sync::RwLockExt;
 
 /// What the loaded scripts declare: written by the declaration registry,
 /// read by the tools.

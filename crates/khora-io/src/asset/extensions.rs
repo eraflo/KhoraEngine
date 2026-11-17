@@ -35,7 +35,7 @@ const EXTENSIONS: &[(AssetType, &[&str])] = &[
     (AssetType::Font, &["ttf", "otf"]),
     (AssetType::Scene, &["kscene", "scene"]),
     (AssetType::Material, &["kmat", "mat"]),
-    // `kscript` predates Ergon; a project that used it still indexes.
+    // `kscript` is also read as a script, so a project that names its modules so still indexes.
     (
         AssetType::Script,
         &[khora_script::modules::EXTENSION, "kscript"],
@@ -102,8 +102,8 @@ mod tests {
         );
     }
 
-    /// **Every image the texture decoder reads is a texture in the index**,
-    /// as the file kind always held them; a `.ktx2`, which it cannot read, is not.
+    /// **Every image the texture decoder reads is a texture**; a `.ktx2`, which
+    /// it cannot read, is not.
     #[test]
     fn every_image_the_decoder_reads_is_a_texture() {
         for ext in ["gif", "webp", "tif", "tiff", "dds", "exr"] {
@@ -116,27 +116,9 @@ mod tests {
     }
 
     /// **A file's kind follows its asset type**, the index's extension table
-    /// the only one read: an `.fbx` is capped as a mesh.
+    /// the only one read.
     #[test]
     fn a_file_kind_follows_its_asset_type() {
-        for (path, kind) in [
-            ("a.fbx", FileKind::Gltf),
-            ("a.hlsl", FileKind::Text),
-            ("a.glsl", FileKind::Text),
-            ("a.scene", FileKind::Text),
-            ("a.mat", FileKind::Text),
-            ("a.kscript", FileKind::Text),
-            ("a.kprefab", FileKind::Text),
-            ("a.gif", FileKind::Texture),
-            ("a.exr", FileKind::Texture),
-            ("a.ktx2", FileKind::Other),
-            ("a.ron", FileKind::Other),
-            ("a.json", FileKind::Other),
-            ("a.toml", FileKind::Other),
-            ("a.txt", FileKind::Other),
-        ] {
-            assert_eq!(FileKind::of_path(Path::new(path)), kind, "{path}");
-        }
         for (known, extensions) in EXTENSIONS {
             for ext in *extensions {
                 let path = format!("a.{ext}");

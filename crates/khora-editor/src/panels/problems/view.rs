@@ -20,8 +20,6 @@ use std::path::{Path, PathBuf};
 use khora_sdk::khora_core::ecs::entity::EntityId;
 use khora_sdk::khora_core::problems::{Problem, ProblemSeverity};
 
-pub(crate) use super::tile_badge::{tile_badge, TileBadge};
-
 /// One module's problems, or one component's for the scene's data, as the
 /// tab lists them.
 #[derive(Debug, Clone, PartialEq, Eq)]

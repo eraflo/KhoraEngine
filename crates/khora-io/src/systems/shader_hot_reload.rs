@@ -36,6 +36,25 @@ pub struct OverlaysSeen {
     seen: std::sync::Mutex<Seen>,
 }
 
+impl OverlaysSeen {
+    /// Returns whether the roots were last read at `generations`: they are as they were.
+    fn settled_at(&self, generations: Generations) -> bool {
+        self.seen.lock_recovered().generations == Some(generations)
+    }
+
+    /// Records `roots`, read at `generations`, and returns whether they differ from the last.
+    fn moved(&self, roots: Vec<WatchedRoot>, generations: Generations) -> bool {
+        let mut seen = self.seen.lock_recovered();
+        seen.generations = Some(generations);
+        let now = Some(roots);
+        if seen.roots == now {
+            return false;
+        }
+        seen.roots = now;
+        true
+    }
+}
+
 /// The roots last applied for, and the generations they were read at.
 #[derive(Default)]
 struct Seen {
@@ -56,25 +75,6 @@ struct WatchedRoot {
 
 /// The watch's generation and the trust state's: while both hold, the roots and their trust do.
 type Generations = (u64, u64);
-
-impl OverlaysSeen {
-    /// Returns whether the roots were last read at `generations`: they are as they were.
-    fn settled_at(&self, generations: Generations) -> bool {
-        self.seen.lock_recovered().generations == Some(generations)
-    }
-
-    /// Records `roots`, read at `generations`, and returns whether they differ from the last.
-    fn moved(&self, roots: Vec<WatchedRoot>, generations: Generations) -> bool {
-        let mut seen = self.seen.lock_recovered();
-        seen.generations = Some(generations);
-        let now = Some(roots);
-        if seen.roots == now {
-            return false;
-        }
-        seen.roots = now;
-        true
-    }
-}
 
 /// Root segment every composable shader module path carries.
 const LOGICAL_ROOT: &str = "khora";

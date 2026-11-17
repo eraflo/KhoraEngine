@@ -237,6 +237,7 @@ fn decision() -> DecisionView {
                 Correction {
                     factor: 0.91,
                     spread: 0.04,
+                    runs: 48,
                 },
             ),
             (
@@ -245,6 +246,7 @@ fn decision() -> DecisionView {
                 Correction {
                     factor: 9.99,
                     spread: 8.88,
+                    runs: 30,
                 },
             ),
             (
@@ -253,6 +255,7 @@ fn decision() -> DecisionView {
                 Correction {
                     factor: 2.47,
                     spread: 0.19,
+                    runs: 120,
                 },
             ),
             (
@@ -261,6 +264,7 @@ fn decision() -> DecisionView {
                 Correction {
                     factor: 1.12,
                     spread: 0.33,
+                    runs: 6,
                 },
             ),
             (
@@ -269,6 +273,7 @@ fn decision() -> DecisionView {
                 Correction {
                     factor: 3.05,
                     spread: 0.52,
+                    runs: 15,
                 },
             ),
         ],
@@ -1035,6 +1040,86 @@ fn the_learnt_card_says_when_no_row_was_measured() {
         theme().text_muted,
         "the unmeasured line is muted"
     );
+}
+
+/// **A row never measured shows `—`, not a number.** The probe's
+/// `Custom(7)` has a correction of 0 runs (borrowed from its other rows): its
+/// line in the learnt card still names it and its switch charge, but its `×k`
+/// and `±σ` read `—` in muted text, and its 3.05 and 0.52 are nowhere.
+#[test]
+fn a_row_never_measured_shows_a_dash_for_its_correction() {
+    let mut view = decision();
+    for (agent, row, correction) in &mut view.corrections {
+        if *agent == probe() && *row == StrategyId::Custom(7) {
+            correction.runs = 0;
+        }
+    }
+    let ui = shown(StrategyId::Balanced, view);
+    let texts = inspector_texts(ui.calls(), WIDE);
+    let theme = theme();
+    let all = listing(&texts);
+
+    let card = the(&texts, "What the DCC learnt")
+        .unwrap_or_else(|| panic!("the learnt card: {all:#?}"))
+        .index;
+    let line = on_line_of(&texts, |t| t.text == "Custom(7)" && t.index > card);
+    assert!(
+        line.iter().any(|t| t.text == "2.20 ms"),
+        "its switch charge stays: {line:#?}"
+    );
+    let dashes: Vec<_> = line.iter().filter(|t| t.text == "—").collect();
+    assert_eq!(dashes.len(), 2, "`—` for ×k and ±σ: {line:#?}");
+    for dash in dashes {
+        assert_eq!(dash.color, theme.text_muted, "the `—` is muted: {dash:?}");
+    }
+    for never in ["3.05", "0.52"] {
+        assert!(
+            !texts.iter().any(|t| t.text.contains(never)),
+            "{never} was never measured: {all:#?}"
+        );
+    }
+    let measured = containing(&texts, "0.91").unwrap_or_else(|| panic!("LowPower: {all:#?}"));
+    assert_eq!(
+        measured.color, theme.text,
+        "a measured row keeps its number"
+    );
+}
+
+/// **An agent whose every correction counts no run says no row was
+/// measured.** The probe's four rows are corrected with 0 runs each, while
+/// another agent's row was measured: the learnt card says `No row measured
+/// yet.` in muted text, and lists no row, no column and no number.
+#[test]
+fn the_learnt_card_says_no_row_measured_when_no_correction_counts_a_run() {
+    let mut view = decision();
+    for (agent, _, correction) in &mut view.corrections {
+        if *agent == probe() {
+            correction.runs = 0;
+        }
+    }
+    let ui = shown(StrategyId::Balanced, view);
+    let texts = inspector_texts(ui.calls(), WIDE);
+    let all = listing(&texts);
+
+    let line = sentence(&texts, "No row measured yet.")
+        .unwrap_or_else(|| panic!("the unmeasured line: {all:#?}"));
+    assert_eq!(
+        line.color,
+        theme().text_muted,
+        "the unmeasured line is muted"
+    );
+    for absent in ["×k", "±σ", "running"] {
+        assert!(
+            the(&texts, absent).is_none(),
+            "`{absent}` with no row measured: {all:#?}"
+        );
+    }
+    for number in ["0.91", "2.47", "1.12", "3.05"] {
+        assert!(
+            !texts.iter().any(|t| t.text.contains(number)),
+            "{number} with no row measured: {all:#?}"
+        );
+    }
 }
 
 /// **Every trigger, decider and constraint is named in words.** Each

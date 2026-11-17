@@ -16,7 +16,6 @@
 //! data, grouped by module or component, each row leading to its file or its
 //! entity. Drawn as the Console is, the severity an icon as well as a colour.
 
-mod tile_badge;
 pub(crate) mod view;
 
 use std::path::Path;

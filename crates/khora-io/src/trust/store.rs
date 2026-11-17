@@ -89,14 +89,6 @@ impl Keyed for Entry {
     }
 }
 
-/// The decisions a store's entries hold, by project.
-fn decisions(entries: BTreeMap<PathBuf, Entry>) -> HashMap<PathBuf, ProjectTrust> {
-    entries
-        .into_iter()
-        .map(|(project, entry)| (project, entry.decision))
-        .collect()
-}
-
 impl TrustStore {
     /// Creates a store over the file `store`, read when it exists; in memory only without one.
     pub fn new(store: Option<PathBuf>) -> Self {
@@ -166,4 +158,12 @@ impl TrustStore {
         }
         held.read = decisions(merged);
     }
+}
+
+/// The decisions a store's entries hold, by project.
+fn decisions(entries: BTreeMap<PathBuf, Entry>) -> HashMap<PathBuf, ProjectTrust> {
+    entries
+        .into_iter()
+        .map(|(project, entry)| (project, entry.decision))
+        .collect()
 }

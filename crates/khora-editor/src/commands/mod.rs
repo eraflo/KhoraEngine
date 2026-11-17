@@ -32,16 +32,16 @@ mod prefab;
 mod scene;
 mod transport;
 
-pub use asset_ops::process_pending_asset_file_ops;
-pub use asset_ops::process_pending_assign_texture;
-pub use asset_ops::process_pending_spawn_mesh_asset;
+pub use asset_ops::assign_queued_drops;
+pub use asset_ops::run_queued_asset_file_ops;
+pub use asset_ops::spawn_queued_meshes;
 pub use history::CommandHistory;
 pub use material::apply_after_index;
-pub use material::process_pending_assign_material;
-pub use material::process_pending_save_as_material;
-pub use prefab::process_pending_prefab_apply;
-pub use prefab::process_pending_prefab_spawn;
-pub use prefab::process_pending_save_as_prefab;
+pub use material::assign_queued_materials;
+pub use material::save_queued_materials;
+pub use prefab::apply_queued_instances;
+pub use prefab::save_queued_prefabs;
+pub use prefab::spawn_queued_prefabs;
 pub use scene::build_game_refused;
 pub use scene::pick_project_folder;
 pub use scene::run_build_game;
@@ -62,18 +62,6 @@ pub fn process_menu_actions(
     world: &mut GameWorld,
     trust: khora_sdk::trust::ProjectTrust,
 ) -> Option<std::path::PathBuf> {
-    let wants_browse = editor_state
-        .lock()
-        .ok()
-        .map(|mut s| std::mem::replace(&mut s.pending_browse_project_folder, false))
-        .unwrap_or(false);
-
-    let picked = if wants_browse {
-        pick_project_folder()
-    } else {
-        None
-    };
-
     // The transport is processed before the frame (`process_transport`): an
     // action of its asked since stays queued for the next frame's.
     let actions = editor_state
@@ -86,8 +74,9 @@ pub fn process_menu_actions(
         })
         .unwrap_or_default();
 
+    let mut picked = None;
     for action in actions {
-        run_menu_action(
+        let asked = run_menu_action(
             action,
             project_vfs,
             editor_state,
@@ -95,11 +84,12 @@ pub fn process_menu_actions(
             world,
             trust,
         );
+        picked = asked.or(picked);
     }
     picked
 }
 
-/// Carries out one menu `action`.
+/// Carries out one menu `action`; returns the project folder it picked, if any.
 fn run_menu_action(
     action: MenuAction,
     project_vfs: &mut Option<Arc<Mutex<ProjectVfs>>>,
@@ -107,8 +97,9 @@ fn run_menu_action(
     command_history: &Arc<Mutex<CommandHistory>>,
     world: &mut GameWorld,
     trust: khora_sdk::trust::ProjectTrust,
-) {
+) -> Option<std::path::PathBuf> {
     match action {
+        MenuAction::OpenProject => return pick_project_folder(),
         MenuAction::NewScene => {
             apply_new_scene(world, editor_state);
             forget_history(command_history);
@@ -144,6 +135,7 @@ fn run_menu_action(
             log::info!("Khora Engine v0.1.0-dev - experimental game engine");
         }
     }
+    None
 }
 
 /// Empties the undo history after the world was replaced.

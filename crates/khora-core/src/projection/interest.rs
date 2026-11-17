@@ -14,12 +14,12 @@
 
 //! The items each owner wants projected, and their union.
 
-use crate::sync::RwLockExt;
 use std::collections::{BTreeMap, BTreeSet};
 use std::marker::PhantomData;
 use std::sync::RwLock;
 
 use super::Demand;
+use crate::sync::RwLockExt;
 
 /// What each owner wants a projection to hold, behind one leaf lock.
 ///

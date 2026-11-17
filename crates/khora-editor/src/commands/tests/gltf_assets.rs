@@ -116,7 +116,7 @@ fn spawning_a_gltf_scene_places_its_nodes_each_in_its_own_material() {
             parent: None,
         });
 
-    process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
+    spawn_queued_prefabs(Some(&project.vfs), &mut world, &state);
 
     let roots: Vec<(EntityId, AssetUUID)> = world
         .iter_entities()
@@ -186,7 +186,7 @@ fn a_gltf_scene_dropped_on_a_row_hangs_under_it() {
             parent: Some(row),
         });
 
-    process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
+    spawn_queued_prefabs(Some(&project.vfs), &mut world, &state);
 
     let ship = named(&world, "Ship");
     assert_eq!(
@@ -215,7 +215,7 @@ fn spawning_a_mesh_part_names_it_after_its_file_and_label() {
             parent: None,
         });
 
-    process_pending_spawn_mesh_asset(Some(&project.vfs), &mut world, &state);
+    spawn_queued_meshes(Some(&project.vfs), &mut world, &state);
 
     let spawned = named(&world, "ship mesh1/prim0");
     assert_eq!(
@@ -251,7 +251,7 @@ fn spawning_a_mesh_file_names_it_after_its_file() {
             parent: Some(row),
         });
 
-    process_pending_spawn_mesh_asset(Some(&project.vfs), &mut world, &state);
+    spawn_queued_meshes(Some(&project.vfs), &mut world, &state);
 
     let spawned = named(&world, "crate");
     assert_eq!(
@@ -284,7 +284,7 @@ fn assigning_a_gltf_material_references_it() {
             entity,
         });
 
-    process_pending_assign_texture(Some(&project.vfs), &mut world, &state);
+    assign_queued_drops(Some(&project.vfs), &mut world, &state);
 
     match world.get_component::<MaterialRef>(entity) {
         Some(MaterialRef::Asset(uuid)) => assert_eq!(*uuid, material),
@@ -309,7 +309,7 @@ fn assigning_a_material_file_references_it() {
             entity,
         });
 
-    process_pending_assign_texture(Some(&project.vfs), &mut world, &state);
+    assign_queued_drops(Some(&project.vfs), &mut world, &state);
 
     match world.get_component::<MaterialRef>(entity) {
         Some(MaterialRef::Asset(uuid)) => assert_eq!(*uuid, material),
@@ -348,7 +348,7 @@ fn assigning_a_gltf_texture_gives_an_inline_material_on_it() {
             entity,
         });
 
-    process_pending_assign_texture(Some(&project.vfs), &mut world, &state);
+    assign_queued_drops(Some(&project.vfs), &mut world, &state);
 
     assert_eq!(inline_base_color_texture(&world, entity), Some(texture));
 }
@@ -370,7 +370,7 @@ fn assigning_an_image_file_gives_an_inline_material_on_it() {
             entity,
         });
 
-    process_pending_assign_texture(Some(&project.vfs), &mut world, &state);
+    assign_queued_drops(Some(&project.vfs), &mut world, &state);
 
     assert_eq!(inline_base_color_texture(&world, entity), Some(texture));
 }
@@ -387,7 +387,7 @@ fn spawn_ship(project: &GltfProject, world: &mut GameWorld) {
             prefab: project.sub(SHIP, "scene"),
             parent: None,
         });
-    process_pending_prefab_spawn(Some(&project.vfs), world, &state);
+    spawn_queued_prefabs(Some(&project.vfs), world, &state);
 }
 
 /// The material asset `entity` of `world` wears, by identity.
@@ -424,7 +424,7 @@ fn applying_to_a_gltf_scene_never_writes_over_the_gltf_file() {
         },
     });
 
-    process_pending_prefab_apply(Some(&project.vfs), &world, &state);
+    apply_queued_instances(Some(&project.vfs), &world, &state);
 
     let on_disk = std::fs::read(project.path(SHIP)).expect("the glTF is still there");
     assert!(

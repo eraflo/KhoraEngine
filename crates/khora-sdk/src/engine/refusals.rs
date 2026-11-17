@@ -25,7 +25,7 @@ use khora_io::trust::{ProjectTrust, ProjectTrustState, Refusals};
 use khora_io::user_dirs::quarantine_path;
 
 /// Puts the run's [`Refusals`] in `runtime`'s resources, reporting to its
-/// [`Problems`], and has the project index read through them.
+/// [`Problems`], and the trust of the project it serves.
 ///
 /// Refusals already installed are kept: a launcher installs them before its
 /// asset service, whose readers report to them from the first. The quarantine
@@ -43,8 +43,13 @@ pub(crate) fn install(runtime: &mut Runtime, game: &GameIdentity, keeps_user_fil
     if runtime.resources.get::<Arc<Refusals>>().is_none() {
         install_refusals(runtime, game, keeps_user_files);
     }
-    // The project index reads the project's files through the run's
-    // refusals, at the trust of the project open.
+}
+
+/// Has the project index of `runtime` read the project's files through the
+/// run's refusals, at the trust of the project open.
+///
+/// Call once the refusals, the trust state and the index hub are installed.
+pub(crate) fn read_index_through(runtime: &Runtime) {
     let refusals = runtime.resources.get::<Arc<Refusals>>().cloned();
     let trust = runtime.resources.get::<Arc<ProjectTrustState>>().cloned();
     let hub = runtime.resources.get::<Arc<khora_io::asset::IndexHub>>();

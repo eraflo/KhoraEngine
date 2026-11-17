@@ -187,6 +187,7 @@ mod tests {
                 Correction {
                     factor: 1.25,
                     spread: 0.125,
+                    runs: 16,
                 },
             )],
             memory: PerDevice {

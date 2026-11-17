@@ -89,7 +89,7 @@ the file comes out of it.
 <li><strong>Refused for its bytes.</strong> The file is kept under the hash of its content. It stays refused while it holds those bytes, across runs.</li>
 <li><strong>Edited.</strong> The file now holds other bytes. It reads again, and its entry is set aside — no longer shown, but kept.</li>
 <li><strong>The old bytes come back.</strong> An undo, a sync, a copy over it: the refused content is back, and the file is refused again.</li>
-<li><strong>Refused unread.</strong> A file too large to read has no hash: it is kept under its size and date, and released as soon as it can be read — trimmed, or its project trusted.</li>
+<li><strong>Refused unread.</strong> A file too large to read has no hash: it is kept under its size and date, and released as soon as it can be read — trimmed, or its project trusted. A signed pack entry over its limit is the exception: it is kept under the hash its manifest names for it.</li>
 </ol>
 </figure>
 
@@ -128,11 +128,24 @@ your key, and your public key is stamped into the game's binary. At launch the
 game checks the signature, then the pack's index against the manifest, and every
 asset it loads against its hash. A pack whose index or manifest changed after
 it was built is refused, and the game does not start; an asset whose bytes
-changed fails its own load.
+changed, compressed or not, is refused, reported with the run's other problems,
+and fails its own load.
+
+A packed game's scripts are compiled from its pack, each read with the same
+checks and limits as any asset: a script whose bytes changed is refused and
+never runs, and a script left on the disk beside the pack is not the game's.
+
+Every start of a game checks its pack, whether its `main` calls `run_default`
+or boots the engine through `run_winit`: a pack that does not verify, or a pack
+beside a binary with no key, stops the start. A game that opens its own assets
+calls `open_game_assets`, which runs the same checks; the engine then compiles
+the pack's scripts, or indexes loose files and compiles theirs, as it does for
+`run_default`.
 
 Your key lives in `.khora/signing/pack.key` in your home folder, never in a
 project, and is never replaced once made. A game built without a stamped key
-reads loose files, unverified: that is a development build.
+reads loose files, unverified: that is a development build. A binary that
+carries a key never opens loose files.
 
 **The limit:** a pack is sealed against changes, not against someone who
 rebuilds or re-stamps the game's binary. Signing proves the assets are the ones

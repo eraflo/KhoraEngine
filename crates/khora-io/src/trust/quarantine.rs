@@ -140,23 +140,6 @@ impl Keyed for Entry {
 /// The most refusals kept that quarantine nothing: past it, the oldest go.
 const MAX_REPORTED: usize = 256;
 
-/// The refusals a call acts on: these, or the last these were handed over to.
-enum Current<'a> {
-    Here(&'a Refusals),
-    HandedOver(Arc<Refusals>),
-}
-
-impl std::ops::Deref for Current<'_> {
-    type Target = Refusals;
-
-    fn deref(&self) -> &Refusals {
-        match self {
-            Current::Here(refusals) => refusals,
-            Current::HandedOver(refusals) => refusals,
-        }
-    }
-}
-
 impl std::fmt::Debug for Refusals {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Refusals")
@@ -463,6 +446,23 @@ impl Refusals {
                 "Quarantine: could not write {}: {error}",
                 store.path().display()
             );
+        }
+    }
+}
+
+/// The refusals a call acts on: these, or the last these were handed over to.
+enum Current<'a> {
+    Here(&'a Refusals),
+    HandedOver(Arc<Refusals>),
+}
+
+impl std::ops::Deref for Current<'_> {
+    type Target = Refusals;
+
+    fn deref(&self) -> &Refusals {
+        match self {
+            Current::Here(refusals) => refusals,
+            Current::HandedOver(refusals) => refusals,
         }
     }
 }

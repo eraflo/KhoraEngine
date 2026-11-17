@@ -370,7 +370,7 @@ fn planning_api(x: &khora_core::agent::gorna::Planning) {
 }
 
 fn correction_fields(x: &khora_core::agent::gorna::Correction) {
-    let _ = (&x.factor, &x.spread);
+    let _ = (&x.factor, &x.spread, &x.runs);
     let _: f64 = x.planned(0.0);
 }
 
@@ -2991,6 +2991,13 @@ fn module_script_paths_still_resolve() {
     is_clone::<khora_core::script::writeback::BehaviorWriteback>();
     is_default::<khora_core::script::writeback::BehaviorWriteback>();
     is_partial_eq::<khora_core::script::writeback::BehaviorWriteback>();
+}
+
+#[test]
+fn module_sync_paths_still_resolve() {
+    let _ = <std::sync::Mutex<u32> as khora_core::sync::LockExt<u32>>::lock_recovered;
+    let _ = <std::sync::RwLock<u32> as khora_core::sync::RwLockExt<u32>>::read_recovered;
+    let _ = <std::sync::RwLock<u32> as khora_core::sync::RwLockExt<u32>>::write_recovered;
 }
 
 #[test]

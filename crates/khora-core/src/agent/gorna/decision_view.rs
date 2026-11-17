@@ -15,12 +15,12 @@
 //! The DCC's last decision, as a tool reads it, and the handle it is
 //! published through.
 
-use crate::sync::RwLockExt;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use super::protocol::{Envelope, Epoch, Trigger, Why};
 use super::{AgentId, Correction, Planning, StrategyId};
+use crate::sync::RwLockExt;
 
 /// The DCC's last decision, as a tool reads it: what was lent to whom, and why.
 #[derive(Debug, Clone, PartialEq)]

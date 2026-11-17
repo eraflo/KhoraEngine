@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! An asset index or pack index written while an entry's type was a plain
-//! string reads the same, and is written back byte for byte.
+//! An entry's type is encoded as its name: an asset or pack index whose types
+//! are written as strings reads, and is written back byte for byte.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -22,7 +22,7 @@ use khora_core::asset::{AssetMetadata, AssetSource, AssetType, AssetUUID, Compre
 use khora_io::asset::AssetIndex;
 use serde::Serialize;
 
-/// An index entry as it was written, its type a `String`.
+/// An index entry with its type written as a `String`.
 #[derive(Serialize)]
 struct WrittenEntry {
     uuid: AssetUUID,
@@ -77,11 +77,12 @@ fn encode<T: Serialize>(value: &T) -> Vec<u8> {
 }
 
 /// **An index written with string types reads each type by its name**, an
-/// unknown one kept as it was.
+/// unknown one kept as named.
 #[test]
 fn an_index_written_with_string_types_reads_each_type_by_its_name() {
     for packed in [false, true] {
-        let index = AssetIndex::new(&encode(&written(packed))).expect("an older index reads");
+        let index =
+            AssetIndex::new(&encode(&written(packed))).expect("an index of type names reads");
         assert_eq!(index.asset_count(), TYPES.len());
         for (path, type_name) in TYPES {
             let entry = index
@@ -113,7 +114,7 @@ fn an_index_read_and_written_again_is_the_same_bytes() {
         let bytes = encode(&before);
         let (read, _): (Vec<AssetMetadata>, _) =
             bincode::serde::decode_from_slice(&bytes, bincode::config::standard())
-                .expect("an older index reads");
+                .expect("an index of type names reads");
         assert_eq!(encode(&read), bytes, "packed: {packed}");
     }
 }
