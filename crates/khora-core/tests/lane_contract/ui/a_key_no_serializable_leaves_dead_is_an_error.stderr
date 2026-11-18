@@ -1,0 +1,5 @@
+error: `no_serializable` registers no component, so `check` is never run
+ --> tests/lane_contract/ui/a_key_no_serializable_leaves_dead_is_an_error.rs:4:30
+  |
+4 | #[component(no_serializable, check = Mass::check)]
+  |                              ^^^^^

@@ -253,3 +253,54 @@ fn loading_a_sub_whose_container_is_not_indexed_errors() {
     assert!(svc.load::<TestMesh>(&orphan).is_err());
     assert_eq!(opens.load(Ordering::SeqCst), 0);
 }
+
+/// **A change to a file read beside a container reaches it, a change to a renamed file does not.**
+///
+/// `textures/skin.png`, renamed `textures/fresh.png`, keeps its UUID there;
+/// the file now at its old path, the one the hero reads beside it, has a UUID
+/// of its own. Each file is matched by the UUID the index gives it.
+#[test]
+fn an_external_change_invalidates_the_containers_reading_the_changed_file() {
+    let project = tempdir().unwrap();
+    let mut registry = crate::asset::AssetIdRegistry::load(project.path());
+    registry.rename(SKIN_KEY, "textures/fresh.png");
+    let renamed = registry.resolve("textures/fresh.png");
+    let beside = registry.resolve(SKIN_KEY);
+    assert_eq!(renamed, AssetUUID::new_v5(SKIN_KEY));
+    let mut metadata: Vec<AssetMetadata> =
+        bincode::serde::decode_from_slice(&container_index_bytes(), bincode::config::standard())
+            .unwrap()
+            .0;
+    metadata.push(file_entry(renamed, "textures/fresh.png"));
+    metadata.push(file_entry(beside, SKIN_KEY));
+    let mut svc = AssetService::new(
+        &index_of(metadata),
+        Box::new(MockIo {
+            files: container_files(HERO_BYTES),
+        }),
+        Arc::new(MetricsRegistry::new()),
+        None,
+    )
+    .unwrap();
+    svc.register_container(
+        CONTAINER_TYPE,
+        ReadingBesideContainer(CountingContainer {
+            opens: Arc::new(AtomicUsize::new(0)),
+        }),
+    );
+    svc.load::<TestMesh>(&hero_body()).unwrap();
+
+    svc.invalidate(&renamed);
+    let changed = svc.take_changes();
+    assert!(
+        !changed.contains(&hero()),
+        "the renamed file is not the one the hero reads: {changed:?}"
+    );
+
+    svc.invalidate(&beside);
+    let changed = svc.take_changes();
+    assert!(
+        changed.contains(&hero()),
+        "the file the hero reads beside it changed: {changed:?}"
+    );
+}

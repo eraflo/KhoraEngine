@@ -135,20 +135,20 @@ impl GameOpening {
 
     /// Files the default scene to be loaded off the frame, read through the asset service.
     ///
-    /// Files nothing, logged, when the service holds no such scene. Either way,
-    /// the startup then waits on nothing more of this opening.
+    /// The scene is the file the index lists at its path, under the UUID the
+    /// index gives it: a renamed scene's frozen one. Files nothing, logged, when
+    /// the service holds no such scene. Either way, the startup then waits on
+    /// nothing more of this opening.
     fn file_scene(&mut self, world: &mut GameWorld) {
-        let uuid = AssetUUID::new_v5(&self.scene);
-        let reader = {
+        let found = {
             let service = self.assets.lock_recovered();
             service
                 .index()
-                .get_metadata(&uuid)
-                .is_some()
-                .then(|| service.reader())
+                .uuid_at(&crate::khora_core::asset::asset_key(Path::new(&self.scene)))
+                .map(|uuid| (uuid, service.reader()))
         };
-        match reader {
-            Some(reader) => {
+        match found {
+            Some((uuid, reader)) => {
                 // Its prefab instances come from the shipped prefabs.
                 let prefabs = Arc::new(khora_io::serialization::AssetPrefabs::new(Arc::clone(
                     &self.assets,

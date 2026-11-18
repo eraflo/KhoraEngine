@@ -185,9 +185,19 @@ pub(super) struct RecordingPipelines {
     overlays: Mutex<Vec<(String, String)>>,
     held: Mutex<std::collections::BTreeMap<String, String>>,
     clears: std::sync::atomic::AtomicUsize,
+    /// The modules it composes; `None` composes every name.
+    composed: Option<std::collections::BTreeSet<String>>,
 }
 
 impl RecordingPipelines {
+    /// Returns a recording pipeline system that composes `modules` only.
+    pub(super) fn composing(modules: &[&str]) -> Self {
+        RecordingPipelines {
+            composed: Some(modules.iter().map(|module| (*module).to_owned()).collect()),
+            ..RecordingPipelines::default()
+        }
+    }
+
     /// Every overlay handed to it, in order, cleared or not.
     pub(super) fn overlays(&self) -> Vec<(String, String)> {
         self.overlays.lock().expect("the overlay lock").clone()
@@ -235,6 +245,11 @@ impl PipelineSystem for RecordingPipelines {
         _spec: &ComputePipelineSpec,
     ) -> Result<ComputePipelineId, RenderError> {
         unreachable!("the shader pump builds no pipeline")
+    }
+    fn composes(&self, logical_path: &str) -> bool {
+        self.composed
+            .as_ref()
+            .is_none_or(|composed| composed.contains(logical_path))
     }
     fn set_overlay_source(&self, logical_path: &str, source: String) {
         self.overlays

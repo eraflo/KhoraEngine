@@ -98,6 +98,7 @@ impl<A: EngineApp> EngineCore<A> {
         // The frame starts here, in every driver: from now until
         // `close_frame`, what is not a wait for the display is the frame's.
         self.frame_clock.open();
+        self.gpu_frames.opened();
         if let Some(telemetry) = self.telemetry.as_mut() {
             let _ = telemetry.tick();
         }
@@ -107,19 +108,22 @@ impl<A: EngineApp> EngineCore<A> {
     }
 
     /// Closes the frame's clock and reports to the DCC how long the frame kept
-    /// the host busy.
+    /// the host and the GPU busy.
     ///
     /// The last stage. The waits for the display are excluded; nothing is
-    /// reported when the clock was not open.
+    /// reported when the clock was not open. A frame timed on the GPU is
+    /// reported once its GPU time is read back, a few frames later, so its
+    /// report carries its own; without timestamps, it is reported at once,
+    /// the GPU unmeasured, never zero. Each report names the epoch the frame
+    /// ran under.
     pub fn close_frame(&mut self) {
         let Some(busy) = self.frame_clock.close() else {
             return;
         };
-        let Some(dcc) = &self.dcc else {
-            return;
-        };
-        // The GPU is not timed yet: its busy time stays unmeasured, never
-        // zero. Best-effort, like the agents' reports.
+        let epoch = (self.scheduler.as_ref())
+            .and_then(|scheduler| scheduler.budget_channel().latest())
+            .map(|allocation| allocation.epoch)
+            .unwrap_or_default();
         let report = FrameReport {
             busy: PerDevice {
                 cpu: Some(busy),
@@ -127,9 +131,16 @@ impl<A: EngineApp> EngineCore<A> {
                 npu: None,
                 other: None,
             },
+            epoch,
         };
-        let _ = dcc
-            .event_sender()
-            .try_send(TelemetryEvent::FrameReport(report));
+        let ready = self.gpu_frames.close(report);
+        let Some(dcc) = &self.dcc else {
+            return;
+        };
+        // Best-effort, like the agents' reports.
+        let sender = dcc.event_sender();
+        for report in ready {
+            let _ = sender.try_send(TelemetryEvent::FrameReport(report));
+        }
     }
 }

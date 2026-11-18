@@ -592,9 +592,16 @@ mod tests {
             self.service.lock().unwrap().reindex(&bytes).unwrap();
         }
 
-        /// What the editor's hot reload does when the file `uuid` names changed.
+        /// Invalidates the asset `uuid`, a file the index lists.
         fn invalidate(&self, uuid: &AssetUUID) {
             self.service.lock().unwrap().invalidate(uuid);
+        }
+
+        /// What the editor's hot reload does when the file at `rel` changed:
+        /// invalidates it through the project's identity registry.
+        fn invalidate_file(&self, rel: &str) {
+            let registry = AssetIdRegistry::load(&self.root);
+            (self.service.lock().unwrap()).invalidate_through(rel, &|path| registry.resolve(path));
         }
 
         fn load_count(&self) -> usize {
@@ -1411,7 +1418,7 @@ mod tests {
         // What the editor's hot reload does on a created file: invalidate
         // it, then list the assets folder again.
         project.write(image, &png(3, 2));
-        project.invalidate(&AssetUUID::new_v5(image));
+        project.invalidate_file(image);
         reindex(&project);
         project.tick(&mut world);
 

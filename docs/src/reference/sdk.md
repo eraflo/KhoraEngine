@@ -104,7 +104,9 @@ underlying engine type, and `EngineBootstrap` boots it in stages (`begin`,
 the seal before any window opens (an error rather than a panic), wires the
 default backends (wgpu, Rapier, Taffy, CPAL and its mix bus), opens the game's
 assets, and loads the scene `runtime.json` names, else `scenes/default.kscene`
-(`DEFAULT_SCENE_REL_PATH`).
+(`DEFAULT_SCENE_REL_PATH`). The scene is the file the opened index lists at
+that path, under the UUID the index gives it (`AssetIndex::uuid_at`): a renamed
+scene keeps its frozen UUID, loose or packed.
 
 ### The seal at every start
 

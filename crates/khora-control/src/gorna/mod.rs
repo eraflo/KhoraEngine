@@ -352,7 +352,6 @@ impl GornaArbitrator {
             let request = OfferRequest {
                 epoch,
                 target,
-                pressure: 0.0,
                 reply_by: Instant::now() + self.lock_timeout,
             };
             let offer = agent.offer(&request);

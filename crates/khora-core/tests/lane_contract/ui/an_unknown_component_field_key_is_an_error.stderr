@@ -1,0 +1,5 @@
+error: unknown `#[component]` key `skp` on a field: its keys are `skip`, `formerly`
+ --> tests/lane_contract/ui/an_unknown_component_field_key_is_an_error.rs:7:17
+  |
+7 |     #[component(skp)]
+  |                 ^^^

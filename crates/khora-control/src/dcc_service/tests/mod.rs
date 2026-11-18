@@ -25,6 +25,7 @@
 mod decision_watch;
 mod epochs;
 mod frame_governor;
+mod gpu_load;
 mod hardware_monitor;
 mod learnt_costs;
 mod protocol;
@@ -714,6 +715,7 @@ fn frame_report(cpu_ms: f64, gpu_ms: Option<f64>) -> FrameReport {
             npu: None,
             other: None,
         },
+        ..Default::default()
     }
 }
 
@@ -1024,6 +1026,7 @@ fn unmeasured_frame() -> TelemetryEvent {
             npu: None,
             other: None,
         },
+        ..Default::default()
     })
 }
 

@@ -10,10 +10,11 @@ The **Implement** phase of [`../../workflow-rpi.md`](../../workflow-rpi.md). Tur
 
 ## Steps (loop per phase)
 1. **Read the current phase** from the plan file — only that phase.
-2. **Implement** exactly what it specifies. Match surrounding idioms. Honor the SDK-only rules: public
-   `khora_sdk` surface only, math via `prelude::math`, `log::*` not `println!`, no `unwrap()` on IO,
-   cache handles in `setup`, `sync_global_transform` after moving entities, no secrets in the build.
-3. **Verify** with the phase's check: `cargo build`, then `cargo run` — window opens, behavior correct.
+2. **Implement** exactly what it specifies. Match surrounding idioms. Honor the rules: gameplay in Ergon,
+   Rust on `khora_sdk` (a family aside), math via `prelude::math`, `log::*` not `println!`, no `unwrap()`
+   on IO, handles cached in `setup`, resources in `provide`, no secrets in the build.
+3. **Verify** with the phase's check: Play in the editor, or `cargo build` then `cargo run` — behavior
+   correct, Problems empty.
 4. **Compact** — update the plan's **Status** checklist in place: mark the phase done, record any
    deviation and why. Drop the phase's working detail and move on.
 

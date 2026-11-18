@@ -322,6 +322,7 @@ fn module_asset_paths_still_resolve() {
     let _ = khora_io::asset::AssetService::load::<khora_data::assets::SoundData>;
     let _ = khora_io::asset::AssetService::load_raw;
     let _ = khora_io::asset::AssetService::invalidate;
+    let _ = khora_io::asset::AssetService::invalidate_through;
     let _ = khora_io::asset::AssetService::reindex;
     let _ = khora_io::asset::AssetService::load_count;
     let _ = khora_io::asset::AssetService::cached_type_count;
@@ -808,6 +809,7 @@ fn module_asset_index_paths_still_resolve() {
     let _ = type_name::<khora_io::asset::AssetIndex>();
     let _ = khora_io::asset::AssetIndex::new;
     let _ = khora_io::asset::AssetIndex::get_metadata;
+    let _ = khora_io::asset::AssetIndex::uuid_at;
     let _ = khora_io::asset::AssetIndex::iter_all;
     let _ = khora_io::asset::AssetIndex::asset_count;
     is_debug::<khora_io::asset::AssetIndex>();

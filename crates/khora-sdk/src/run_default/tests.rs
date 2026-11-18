@@ -1390,6 +1390,32 @@ fn the_runtime_opens_its_default_scene_by_ticket_from_a_pack() {
     });
 }
 
+/// **A runtime opens its renamed default scene, loose or packed.**
+///
+/// The scene at the default path holds the UUID the registry froze for it:
+/// the runtime finds it by its path under that UUID.
+#[test]
+fn a_runtime_opens_its_renamed_default_scene() {
+    let game = GameDir::new("scene-renamed");
+    let scene = scene_bytes(&["Hero", "Door"]);
+    game.asset(DEFAULT_SCENE, &scene);
+    for project in [game.path().to_path_buf(), game.path().join("project")] {
+        let mut registry = crate::AssetIdRegistry::load(&project);
+        registry.rename("scenes/original.kscene", DEFAULT_SCENE);
+        registry.save().expect("the registry saves");
+    }
+    let exe_dir = game.packed(&[(DEFAULT_SCENE, scene.as_slice())]);
+
+    for (kind, dir) in [("loose", game.path()), ("packed", exe_dir.as_path())] {
+        let mut engine = runtime_engine(dir, opening(DEFAULT_SCENE));
+        frames_until(
+            &mut engine,
+            &format!("the {kind} renamed default scene did not land"),
+            |engine| names(engine) == ["Door", "Hero"],
+        );
+    }
+}
+
 /// **A runtime without its default scene starts empty, loose or packed.**
 ///
 /// Nothing is filed for the scene, the startup waits on nothing but the

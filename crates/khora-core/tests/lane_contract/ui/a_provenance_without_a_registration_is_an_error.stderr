@@ -1,0 +1,5 @@
+error: `no_serializable` registers no component, so `provenance` is never read: no scene asks whether to save it
+ --> tests/lane_contract/ui/a_provenance_without_a_registration_is_an_error.rs:4:30
+  |
+4 | #[component(no_serializable, provenance = Bogus)]
+  |                              ^^^^^^^^^^

@@ -578,3 +578,425 @@ fn a_stall_on_a_replayed_epoch_still_being_lent_is_not_dropped() {
 
     assert_eq!(tracker.due(0), Some(Trigger::AgentStalled));
 }
+
+// ─── A developer's policy ─────────────────────────────────────────────────
+
+/// A DCC whose epochs may follow one another every tick and that never
+/// refreshes, holding a renderer offering a 2 ms floor and a 4 ms upgrade.
+fn upgradable() -> (DccService, Receiver<TelemetryEvent>) {
+    let (dcc, rx) = recording(DccConfig {
+        refresh_every_ticks: 0,
+        ..quick()
+    });
+    let (agent, _ear) = Speaker::with_upgrade(
+        "renderer",
+        Duration::from_millis(2),
+        Duration::from_millis(4),
+    );
+    dcc.register_agent(agent, 1.0);
+    (dcc, rx)
+}
+
+/// The renderer's host time in `epoch`'s envelope.
+fn renderer_time(epoch: &Allocation) -> Option<Duration> {
+    (epoch.envelopes.iter())
+        .find(|(id, _)| *id == AgentId::new("renderer"))
+        .map(|(_, envelope)| envelope.time.cpu)
+}
+
+/// **A mode set on an agent changes its allocation, with no other trigger.**
+///
+/// Nothing else moves: no frame, no heat, no refresh. Pinning the renderer to
+/// its floor opens a `PolicyChanged` epoch within a few ticks, which lends the
+/// pin.
+#[test]
+fn a_mode_set_on_an_agent_opens_an_epoch_that_lends_it() {
+    let (mut dcc, rx) = upgradable();
+    dcc.start(rx);
+    assert!(wait_for(3, || opened_by(&dcc, Trigger::Initial)));
+
+    dcc.set_adaptation_mode(
+        AgentId::new("renderer"),
+        AdaptationMode::Manual(StrategyId::LowPower),
+    );
+    let opened = wait_for(3, || opened_by(&dcc, Trigger::PolicyChanged));
+    let recorded = epochs(&dcc);
+    dcc.stop();
+
+    assert!(opened, "the mode opened its epoch: {recorded:?}");
+    let changed = (recorded.iter())
+        .find(|epoch| epoch.trigger == Trigger::PolicyChanged)
+        .expect("the PolicyChanged epoch");
+    assert_eq!(
+        changed.pins,
+        vec![(AgentId::new("renderer"), StrategyId::LowPower)],
+        "the pin is lent"
+    );
+}
+
+/// **A hint set on an agent changes its allocation, with no other trigger.**
+///
+/// The first epoch lends the renderer its 4 ms upgrade; a cap of 3 ms opens a
+/// `PolicyChanged` epoch whose envelope stays under it.
+#[test]
+fn a_hint_set_on_an_agent_opens_an_epoch_that_lends_it() {
+    let (mut dcc, rx) = upgradable();
+    dcc.start(rx);
+    assert!(wait_for(3, || opened_by(&dcc, Trigger::Initial)));
+    let first = renderer_time(&epochs(&dcc)[0]).expect("the renderer's envelope");
+
+    dcc.set_hint(EngineHint::Cap {
+        agent: AgentId::new("renderer"),
+        max_ms: 3.0,
+    });
+    let opened = wait_for(3, || opened_by(&dcc, Trigger::PolicyChanged));
+    let recorded = epochs(&dcc);
+    dcc.stop();
+
+    assert!(opened, "the hint opened its epoch: {recorded:?}");
+    assert!(first >= Duration::from_millis(4), "uncapped: {first:?}");
+    let capped = (recorded.iter())
+        .find(|epoch| epoch.trigger == Trigger::PolicyChanged)
+        .and_then(renderer_time)
+        .expect("the renderer's envelope");
+    assert!(capped <= Duration::from_millis(3), "capped: {capped:?}");
+}
+
+/// **Clearing an agent's hints opens an epoch.** Taking the cap back is a
+/// change of policy too.
+#[test]
+fn clearing_an_agents_hints_opens_an_epoch() {
+    let (mut dcc, rx) = upgradable();
+    dcc.set_hint(EngineHint::Cap {
+        agent: AgentId::new("renderer"),
+        max_ms: 3.0,
+    });
+    dcc.start(rx);
+    assert!(wait_for(3, || opened_by(&dcc, Trigger::Initial)));
+
+    dcc.clear_agent_hints(AgentId::new("renderer"));
+    let opened = wait_for(3, || opened_by(&dcc, Trigger::PolicyChanged));
+    let recorded = epochs(&dcc);
+    dcc.stop();
+
+    assert!(opened, "{recorded:?}");
+}
+
+/// **The same policy set again opens no epoch.** The round reads the
+/// developer's rules; rules it already read change nothing.
+#[test]
+fn the_same_policy_set_again_opens_no_epoch() {
+    let (mut dcc, rx) = upgradable();
+    dcc.start(rx);
+    assert!(wait_for(3, || opened_by(&dcc, Trigger::Initial)));
+    let pin = AdaptationMode::Manual(StrategyId::LowPower);
+
+    dcc.set_adaptation_mode(AgentId::new("renderer"), pin);
+    assert!(wait_for(3, || opened_by(&dcc, Trigger::PolicyChanged)));
+    dcc.set_adaptation_mode(AgentId::new("renderer"), pin);
+    thread::sleep(Duration::from_millis(300));
+    let recorded = epochs(&dcc);
+    dcc.stop();
+
+    let changed = (recorded.iter())
+        .filter(|epoch| epoch.trigger == Trigger::PolicyChanged)
+        .count();
+    assert_eq!(changed, 1, "{recorded:?}");
+}
+
+/// **A policy change waits for the epoch's minimum.**
+///
+/// Under a minimum of 30 ticks (300 ms at 100 Hz), a mode set right after
+/// the first epoch opens no epoch within 12 ticks; it opens its epoch once the
+/// minimum has passed. Only `Safety` preempts the minimum.
+#[test]
+fn a_policy_change_waits_for_the_epochs_minimum() {
+    let (mut dcc, rx) = recording(DccConfig {
+        min_epoch_ticks: 30,
+        refresh_every_ticks: 0,
+        ..Default::default()
+    });
+    let (agent, _ear) = Speaker::with_ear("renderer", Duration::from_millis(2));
+    dcc.register_agent(agent, 1.0);
+    dcc.start(rx);
+    assert!(wait_for(3, || opened_by(&dcc, Trigger::Initial)));
+
+    dcc.set_adaptation_mode(AgentId::new("renderer"), AdaptationMode::Stable);
+    thread::sleep(Duration::from_millis(120));
+    let too_soon = epochs(&dcc);
+    let later = wait_for(5, || opened_by(&dcc, Trigger::PolicyChanged));
+    dcc.stop();
+
+    assert_eq!(
+        too_soon.len(),
+        1,
+        "no second epoch within 12 ticks: {too_soon:?}"
+    );
+    assert!(later, "the change opens its epoch after the minimum");
+}
+
+/// **Setting the mode an agent already runs opens no epoch.**
+///
+/// No mode was set for the renderer, so it runs `Learning`, the default:
+/// setting `Learning` sets the rule already in force, and a round would read
+/// the same rules as the last one.
+#[test]
+fn setting_the_default_mode_opens_no_epoch() {
+    let (mut dcc, rx) = upgradable();
+    dcc.start(rx);
+    assert!(wait_for(3, || opened_by(&dcc, Trigger::Initial)));
+
+    dcc.set_adaptation_mode(AgentId::new("renderer"), AdaptationMode::Learning);
+    thread::sleep(Duration::from_millis(300));
+    let recorded = epochs(&dcc);
+    dcc.stop();
+
+    assert!(
+        (recorded.iter()).all(|epoch| epoch.trigger != Trigger::PolicyChanged),
+        "the rule already in force: {recorded:?}"
+    );
+}
+
+/// **A hint set and cleared before its epoch opens opens none.**
+///
+/// Under a minimum of 30 ticks (300 ms at 100 Hz), a cap is set on the
+/// renderer, seen for a few ticks, then cleared: by the time an epoch could
+/// open, the rules are those the last round read, and none opens.
+#[test]
+fn a_hint_set_and_cleared_before_its_epoch_opens_none() {
+    let (mut dcc, rx) = recording(DccConfig {
+        min_epoch_ticks: 30,
+        refresh_every_ticks: 0,
+        ..Default::default()
+    });
+    let (agent, _ear) = Speaker::with_ear("renderer", Duration::from_millis(2));
+    dcc.register_agent(agent, 1.0);
+    dcc.start(rx);
+    assert!(wait_for(3, || opened_by(&dcc, Trigger::Initial)));
+
+    dcc.set_hint(EngineHint::Cap {
+        agent: AgentId::new("renderer"),
+        max_ms: 3.0,
+    });
+    thread::sleep(Duration::from_millis(50));
+    dcc.clear_agent_hints(AgentId::new("renderer"));
+    thread::sleep(Duration::from_millis(600));
+    let recorded = epochs(&dcc);
+    dcc.stop();
+
+    assert!(
+        (recorded.iter()).all(|epoch| epoch.trigger != Trigger::PolicyChanged),
+        "the rules are back to those the last round read: {recorded:?}"
+    );
+}
+
+// ─── The periodic refresh ─────────────────────────────────────────────────
+
+/// **A quiet engine opens a `Refresh` epoch once the period has passed.**
+///
+/// Nothing opens a round after the first: after 20 ticks with none, the DCC
+/// opens one as `Refresh`, so what it learnt reaches the plan.
+#[test]
+fn a_quiet_engine_refreshes_after_the_period() {
+    let (mut dcc, rx, _ear) = one_speaker(DccConfig {
+        refresh_every_ticks: 20,
+        ..quick()
+    });
+    dcc.start(rx);
+    assert!(wait_for(3, || opened_by(&dcc, Trigger::Initial)));
+
+    let refreshed = wait_for(3, || opened_by(&dcc, Trigger::Refresh));
+    let recorded = records(&dcc);
+    dcc.stop();
+
+    assert!(refreshed, "{:?}", triggers(&recorded));
+    let initial = &recorded[0];
+    let refresh = (recorded.iter())
+        .find(|record| record.allocation.trigger == Trigger::Refresh)
+        .expect("the Refresh epoch");
+    assert!(
+        refresh.at - initial.at >= Duration::from_millis(180),
+        "not before 20 ticks: {:?} after the first",
+        refresh.at - initial.at
+    );
+}
+
+/// **A round opened by another trigger restarts the period.**
+///
+/// With a period of 50 ticks (500 ms at 100 Hz), a family switched off 300 ms
+/// after the first epoch opens its own; the refresh comes 50 ticks after
+/// that one, not 50 after the first.
+#[test]
+fn a_round_opened_by_another_trigger_restarts_the_period() {
+    let (mut dcc, rx, _renderer, _audio) = two_speakers(DccConfig {
+        refresh_every_ticks: 50,
+        ..quick()
+    });
+    let tx = dcc.event_sender();
+    dcc.start(rx);
+    assert!(wait_for(3, || opened_by(&dcc, Trigger::Initial)));
+
+    thread::sleep(Duration::from_millis(300));
+    tx.send(switched_off(&["audio"])).expect("the DCC listens");
+    let refreshed = wait_for(5, || opened_by(&dcc, Trigger::Refresh));
+    let recorded = records(&dcc);
+    dcc.stop();
+
+    assert!(refreshed, "{:?}", triggers(&recorded));
+    let at = |trigger| {
+        (recorded.iter())
+            .find(|record| record.allocation.trigger == trigger)
+            .map(|record| record.at)
+            .expect("the epoch")
+    };
+    let since_switch = at(Trigger::Refresh).saturating_sub(at(Trigger::AgentsChanged));
+    assert!(
+        at(Trigger::Refresh) > at(Trigger::AgentsChanged)
+            && since_switch >= Duration::from_millis(450),
+        "the refresh counts from the last round: {since_switch:?} after it, {:?}",
+        triggers(&recorded)
+    );
+}
+
+/// **An allocation not yet lent holds the refresh.**
+///
+/// The round that published it stays open until a frame start lends it: with
+/// no frame running, no `Refresh` opens, however long the engine stays quiet.
+/// Once frames run, it does.
+#[test]
+fn an_allocation_not_yet_lent_holds_the_refresh() {
+    let mut host = Host::new(DccConfig {
+        tick_rate: 100,
+        refresh_every_ticks: 10,
+        ..quick()
+    });
+    let (agent, _ear) = Speaker::with_ear("renderer", Duration::from_millis(2));
+    host.dcc.register_agent(agent, 1.0);
+    host.start();
+    assert!(wait_for(3, || opened_by(&host.dcc, Trigger::Initial)));
+
+    thread::sleep(Duration::from_millis(300));
+    let unlent = epochs(&host.dcc);
+    let refreshed = host.frames_until(3, |dcc| opened_by(dcc, Trigger::Refresh));
+    host.dcc.stop();
+
+    assert!(
+        unlent.iter().all(|epoch| epoch.trigger != Trigger::Refresh),
+        "no frame start lent the first epoch: {unlent:?}"
+    );
+    assert!(refreshed, "frames lend it, and the refresh follows");
+}
+
+/// **A withdrawn trigger leaves the one raised behind it.**
+///
+/// A policy change waits; agents report overruns meanwhile. The change is put
+/// back, its trigger withdrawn: the overruns still open their epoch.
+#[test]
+fn a_withdrawn_trigger_leaves_the_one_raised_behind_it() {
+    use super::super::epochs::Epochs;
+
+    let (renderer, _ear) = Speaker::with_ear("renderer", Duration::from_millis(2));
+    let agents = [renderer];
+    let mut tracker = Epochs::default();
+    tracker.observe(&agents);
+    tracker.opened(&agents);
+    tracker.raise(Trigger::PolicyChanged);
+    tracker.raise(Trigger::Overruns);
+
+    tracker.withdraw(Trigger::PolicyChanged);
+
+    assert_eq!(tracker.due(0), Some(Trigger::Overruns));
+}
+
+/// **A withdrawn trigger with none behind it leaves nothing waiting.**
+#[test]
+fn a_withdrawn_trigger_alone_leaves_nothing_waiting() {
+    use super::super::epochs::Epochs;
+
+    let (renderer, _ear) = Speaker::with_ear("renderer", Duration::from_millis(2));
+    let agents = [renderer];
+    let mut tracker = Epochs::default();
+    tracker.observe(&agents);
+    tracker.opened(&agents);
+    tracker.raise(Trigger::PolicyChanged);
+    tracker.raise(Trigger::PolicyChanged);
+
+    tracker.withdraw(Trigger::PolicyChanged);
+
+    assert_eq!(tracker.due(0), None);
+}
+
+/// **No refresh while a trigger waits.** A trigger raised during the epoch
+/// waits for its minimum and opens the next epoch under its own name; the
+/// period passing meanwhile does not rename it.
+#[test]
+fn no_refresh_while_a_trigger_waits() {
+    use super::super::epochs::Epochs;
+
+    let (renderer, _ear) = Speaker::with_ear("renderer", Duration::from_millis(2));
+    let agents = [renderer];
+    let mut tracker = Epochs::default();
+    tracker.observe(&agents);
+    tracker.opened(&agents);
+    tracker.report(
+        &Report {
+            stalled: true,
+            health: 0.2,
+            ..renderer_report()
+        },
+        3,
+    );
+    for _ in 0..10 {
+        tracker.observe(&agents);
+        tracker.refresh(5);
+    }
+
+    assert_eq!(tracker.due(3), Some(Trigger::AgentStalled));
+}
+
+/// **A refresh period of zero never refreshes.**
+#[test]
+fn a_refresh_period_of_zero_never_refreshes() {
+    use super::super::epochs::Epochs;
+
+    let (renderer, _ear) = Speaker::with_ear("renderer", Duration::from_millis(2));
+    let agents = [renderer];
+    let mut tracker = Epochs::default();
+    tracker.observe(&agents);
+    tracker.opened(&agents);
+    for _ in 0..1_000 {
+        tracker.observe(&agents);
+        tracker.refresh(0);
+    }
+
+    assert_eq!(tracker.due(0), None);
+}
+
+/// **A quiet epoch refreshes once its period has passed, not before.**
+#[test]
+fn a_quiet_epoch_refreshes_once_its_period_has_passed() {
+    use super::super::epochs::Epochs;
+
+    let (renderer, _ear) = Speaker::with_ear("renderer", Duration::from_millis(2));
+    let agents = [renderer];
+    let mut tracker = Epochs::default();
+    tracker.observe(&agents);
+    tracker.opened(&agents);
+    for _ in 0..4 {
+        tracker.observe(&agents);
+        tracker.refresh(5);
+    }
+    let before = tracker.due(0);
+    tracker.observe(&agents);
+    tracker.refresh(5);
+
+    assert_eq!(before, None, "4 ticks of 5");
+    assert_eq!(tracker.due(0), Some(Trigger::Refresh));
+}
+
+/// The trigger of each journaled epoch, in order.
+fn triggers(recorded: &[EpochRecord]) -> Vec<Trigger> {
+    (recorded.iter())
+        .map(|record| record.allocation.trigger)
+        .collect()
+}

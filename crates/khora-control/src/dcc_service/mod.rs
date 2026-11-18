@@ -124,8 +124,9 @@ impl DccService {
 
     /// Sets the [`AdaptationMode`] for an agent, from any thread.
     ///
-    /// Takes effect on the next arbitration tick. See the book:
-    /// concepts/gorna.md, "`AdaptationMode` — the developer-control surface".
+    /// A mode other than the one the last round read opens a round
+    /// (`Trigger::PolicyChanged`) once the epoch has lasted its minimum. See the
+    /// book: concepts/gorna.md, "`AdaptationMode` — the developer-control surface".
     pub fn set_adaptation_mode(&self, agent_id: AgentId, mode: AdaptationMode) {
         if let Ok(mut modes) = self.adaptation_modes.write() {
             modes.insert(agent_id, mode);
@@ -143,8 +144,9 @@ impl DccService {
 
     /// Applies a developer [`EngineHint`] biasing GORNA arbitration, from any thread.
     ///
-    /// Takes effect on the next arbitration tick. Hints accumulate per agent,
-    /// the latest of each kind winning, until
+    /// A hint that changes what the last round read opens a round
+    /// (`Trigger::PolicyChanged`) once the epoch has lasted its minimum. Hints
+    /// accumulate per agent, the latest of each kind winning, until
     /// [`clear_agent_hints`](Self::clear_agent_hints); a `Manual` pin and the
     /// `Safety` allocation still win. A NaN value or a non-finite weight is
     /// refused and logged: it would make every round's shares meaningless.
@@ -162,7 +164,7 @@ impl DccService {
         }
     }
 
-    /// Clears all developer hints for an agent, from the next arbitration tick.
+    /// Clears all developer hints for an agent; a round opens (`Trigger::PolicyChanged`) if it had any.
     pub fn clear_agent_hints(&self, agent_id: AgentId) {
         if let Ok(mut hints) = self.hints.write() {
             hints.remove(&agent_id);

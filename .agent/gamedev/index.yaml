@@ -1,14 +1,14 @@
 # Machine-readable index for the gamedev profile (building games with the SDK).
 profile: gamedev
-description: AI documentation for developing games WITH the Khora Engine (khora-sdk only).
+description: AI documentation for developing games WITH the Khora Engine (Ergon gameplay, khora-sdk Rust).
 
 docs:
   - { path: SOUL.md,            load: always,    tags: [identity, orchestrator, sdk-map, routing] }
   - { path: RULES.md,           load: always,    tags: [rules, constraints, sdk-only, boundaries] }
   - { path: index.md,           load: always,    tags: [index, navigation] }
   - { path: workflow-rpi.md,    load: always,    tags: [workflow, rpi, research, plan, implement, context-engineering] }
-  - { path: sdk-guide.md,       load: on_demand, tags: [sdk, api, vessel, engineapp, input, scene] }
-  - { path: conventions.md,     load: on_demand, tags: [style, game-structure, patterns] }
+  - { path: sdk-guide.md,       load: on_demand, tags: [sdk, api, engineapp, bootstrap, assets, seal, vessel, input, activation, saves] }
+  - { path: conventions.md,     load: on_demand, tags: [style, project-layout, scripts, native-code, patterns] }
   - { path: security-privacy.md, load: on_demand, tags: [security, privacy, secrets, builds] }
 
 knowledge:
@@ -26,18 +26,21 @@ agents:
 
 # Domain reference — on-demand knowledge (scope, key API, rules) per domain.
 reference:
-  - { path: reference/gameplay.md,     load: on_demand, tags: [entities, vessel, engineapp, input, components] }
-  - { path: reference/scene-design.md, load: on_demand, tags: [scene, lighting, materials, ui, impeccable] }
+  - { path: reference/ergon.md,        load: on_demand, tags: [ergon, scripting, behavior, component, system, event, query] }
+  - { path: reference/gameplay.md,     load: on_demand, tags: [entities, input, physics, activation, engineapp] }
+  - { path: reference/scene-design.md, load: on_demand, tags: [scene, editor, lighting, materials, prefabs, ui, impeccable] }
 
 skills:
   - { path: skills/research-codebase/SKILL.md, when: RPI phase 1 — understand a problem → docs/research/ }
   - { path: skills/create-plan/SKILL.md,       when: RPI phase 2 — write a phase-by-phase plan → docs/plans/ }
   - { path: skills/implement-plan/SKILL.md,    when: RPI phase 3 — execute a plan, compact per phase }
-  - { path: skills/start-a-game/SKILL.md,   when: scaffold a new game on the SDK }
-  - { path: skills/spawn-entity/SKILL.md,   when: spawn entities via Vessel }
-  - { path: skills/setup-input/SKILL.md,    when: bind input actions }
-  - { path: skills/load-scene/SKILL.md,     when: load/serialize a scene }
-  - { path: skills/pack-and-ship/SKILL.md,  when: build + pack + ship a game }
+  - { path: skills/start-a-game/SKILL.md,   when: create the project; add native code when needed }
+  - { path: skills/write-a-script/SKILL.md, when: gameplay in Ergon — behavior, component, system, event }
+  - { path: skills/spawn-entity/SKILL.md,   when: spawn entities from a script or via Vessel }
+  - { path: skills/setup-input/SKILL.md,    when: bind input actions scripts and Rust read }
+  - { path: skills/load-scene/SKILL.md,     when: load/save a scene; save and load the game }
+  - { path: skills/add-a-family/SKILL.md,   when: a game's own subsystem — a family of lanes }
+  - { path: skills/pack-and-ship/SKILL.md,  when: Build Game — signed pack, stamped binary }
 
 hooks:
   - { path: hooks/doc-change.md,  event: on AI-doc change → reinstall wrappers }

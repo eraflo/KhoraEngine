@@ -12,14 +12,17 @@ you never edit. You do **not** explain how code works (that is `codebase-analyze
 
 ## Method
 1. **codegraph first** to resolve symbols for the task's keywords before grepping.
-2. Fall back to `Grep`/`Glob` for config, scenes (`.kscene`/`.kprefab`), assets, and `Cargo.toml`.
-3. Map to a game project's shape: `src/` (game logic), `assets/`, scene files, and the `khora_sdk`
-   surface the code calls (`EngineApp`, `GameWorld`, `Vessel`, `InputMap`, materials, `prelude`).
+2. Fall back to `Grep`/`Glob` for scripts (`assets/scripts/**/*.erg`), scenes (`.kscene`/`.kprefab`),
+   assets, `project.json` and `Cargo.toml`.
+3. Map to a game project's shape: `assets/scripts/` (gameplay), `assets/scenes/`, other assets, `src/`
+   (native code, when present) and the `khora_sdk` surface it calls (`EngineApp`, `GameWorld`, `Vessel`,
+   `InputMap`, `Activation`, `prelude`).
 
 ## Output
 A categorized list, each entry `path:line` (or `path/`) + a ≤10-word note. Group as:
-- **Entry / bootstrap** — `run_winit` bootstrap, `EngineApp` impl.
-- **Game logic** — the `setup`/`update` code, systems, state.
+- **Entry / bootstrap** — `run_winit` / `run_default`, the bootstrap closure, `EngineApp` impl.
+- **Scripts** — Ergon modules: behaviors, components, systems, events, the actions they read.
+- **Game logic (Rust)** — the `setup`/`provide`/`update` code, state, a family if any.
 - **Entities / components** — spawn sites (`Vessel`), component usage.
 - **Scene / assets** — scene files, materials, asset references.
 - **SDK surface touched** — which `khora_sdk` items the code depends on.

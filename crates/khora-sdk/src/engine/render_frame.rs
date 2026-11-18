@@ -161,9 +161,27 @@ impl<A: EngineApp> EngineCore<A> {
         }
 
         if presents {
-            if let (Some(graph), Some(device)) = (&frame_graph, &device) {
-                submit_frame_graph(graph, device.as_ref());
-            }
+            // The renderer times the submission on the GPU when it can.
+            let mut submit = || {
+                if let (Some(graph), Some(device)) = (&frame_graph, &device) {
+                    submit_frame_graph(graph, device.as_ref());
+                }
+            };
+            let timed = match self.render_system() {
+                Some(render_system) => match render_system.lock() {
+                    Ok(mut render_system) => render_system.time_on_gpu(&mut submit),
+                    Err(_) => {
+                        log::error!("submit_passes: RenderSystem mutex poisoned, frame untimed");
+                        submit();
+                        false
+                    }
+                },
+                None => {
+                    submit();
+                    false
+                }
+            };
+            self.gpu_frames.submitted(timed);
         } else if let Some(graph) = &frame_graph {
             graph.lock().expect("FrameGraph mutex poisoned").clear();
         }
@@ -174,20 +192,17 @@ impl<A: EngineApp> EngineCore<A> {
         if !presents {
             return;
         }
-        let render_system = self
-            .runtime
-            .backends
-            .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()
-            .map(|arc| (*arc).clone());
-        if let Some(rs) = &render_system {
+        if let Some(rs) = &self.render_system() {
             if let Ok(mut guard) = rs.lock() {
                 // Presenting may block on the display too.
-                if let Err(e) = self.frame_clock.wait(|| guard.end_frame()) {
-                    if e.is_fatal() {
+                match self.frame_clock.wait(|| guard.end_frame()) {
+                    // The frame's number, and what the GPU's timestamps
+                    // read back: the reports carry it, each its own frame's.
+                    Ok(stats) => self.gpu_frames.presented(&stats),
+                    Err(e) if e.is_fatal() => {
                         log::error!("EngineCore: end_frame fatal error: {}", e);
-                    } else {
-                        log::debug!("EngineCore: end_frame skipped this frame: {}", e);
                     }
+                    Err(e) => log::debug!("EngineCore: end_frame skipped this frame: {}", e),
                 }
             }
         }
@@ -205,6 +220,14 @@ impl<A: EngineApp> EngineCore<A> {
     pub fn end_render_frame(&mut self, presents: bool) {
         self.submit_passes(presents);
         self.present_frame(presents);
+    }
+
+    /// Returns the renderer among the runtime's backends, if one is registered.
+    fn render_system(&self) -> Option<Arc<Mutex<Box<dyn RenderSystem>>>> {
+        self.runtime
+            .backends
+            .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()
+            .map(|arc| (*arc).clone())
     }
 }
 

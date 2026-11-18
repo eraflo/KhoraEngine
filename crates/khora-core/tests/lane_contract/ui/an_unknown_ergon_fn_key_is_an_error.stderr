@@ -1,0 +1,5 @@
+error: unknown `#[ergon_fn]` key `nmae`: its keys are `name`, `cost`
+ --> tests/lane_contract/ui/an_unknown_ergon_fn_key_is_an_error.rs:3:12
+  |
+3 | #[ergon_fn(nmae = "Distance")]
+  |            ^^^^

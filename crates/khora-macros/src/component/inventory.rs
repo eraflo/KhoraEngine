@@ -40,21 +40,21 @@ pub(super) fn domain_registration(name: &syn::Ident, domain: Option<&syn::Ident>
 /// Returns the `ComponentRegistration` of `name`, saved through its mirror `serializable_name`.
 ///
 /// It carries `field_schema`, the schema traced once into the static
-/// `schema_cell`, and the declared `check`.
+/// `schema_cell`, and the check `attrs` declare.
 pub(super) fn component_registration(
     name: &syn::Ident,
     serializable_name: &syn::Ident,
     attrs: &ComponentAttrs,
     field_schema: &impl ToTokens,
     schema_cell: &syn::Ident,
-    check_path: Option<&syn::Path>,
 ) -> impl ToTokens {
     let provenance_ident = &attrs.provenance;
     let formerly = &attrs.formerly;
     let resumable = attrs.resumable;
     let script_default = crate::script_fields::script_default(name);
 
-    let (stage_check, registration_check) = crate::component_check::check_tokens(name, check_path);
+    let (stage_check, registration_check) =
+        crate::component_check::check_tokens(name, attrs.check.as_ref());
     quote! {
         // Auto-register this component for saves AND for the editor's
         // generic inspector — both through serde on the same Serializable

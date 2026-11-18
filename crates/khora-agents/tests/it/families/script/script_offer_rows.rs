@@ -70,7 +70,6 @@ fn request() -> OfferRequest {
     OfferRequest {
         epoch: Epoch(1),
         target: TARGET,
-        pressure: 0.0,
         reply_by: Instant::now() + Duration::from_secs(1),
     }
 }

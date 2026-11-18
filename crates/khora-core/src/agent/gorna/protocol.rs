@@ -48,13 +48,13 @@ pub enum Trigger {
     FrameGovernor,
     /// An agent was registered or unregistered.
     AgentsChanged,
-    /// A developer policy changed.
+    /// The developer's modes or hints differ from those the last round read.
     PolicyChanged,
     /// An agent is stalled and unhealthy.
     AgentStalled,
     /// Agents reported over budget several frames in a row.
     Overruns,
-    /// The periodic refresh.
+    /// No round opened for the refresh period, or a replayed journal ran out.
     Refresh,
     /// The emergency: every envelope is its agent's floor.
     Safety,

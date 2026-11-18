@@ -15,7 +15,7 @@
 //! The asset index: every asset's metadata by UUID, the table of the VFS.
 
 use bincode;
-use khora_core::asset::{AssetMetadata, AssetUUID};
+use khora_core::asset::{asset_key, AssetMetadata, AssetSource, AssetUUID};
 use std::collections::HashMap;
 
 /// The most bytes an index may hold, and its decode may allocate.
@@ -27,6 +27,8 @@ pub const MAX_INDEX_BYTES: usize = 256 << 20;
 #[derive(Debug)]
 pub struct AssetIndex {
     index: HashMap<AssetUUID, AssetMetadata>,
+    /// Each file's UUID by its forward-slash path; no part is listed.
+    by_path: HashMap<String, AssetUUID>,
     /// How many entries the file held, two sharing a UUID counted twice.
     entries_read: usize,
 }
@@ -57,8 +59,15 @@ impl AssetIndex {
             }
         }
 
+        // Only the entries kept: a file hidden by another of its UUID is at no path.
+        let by_path = (index.values())
+            .filter(|meta| !matches!(meta.default_source(), Some(AssetSource::Sub { .. })))
+            .map(|meta| (asset_key(&meta.source_path), meta.uuid))
+            .collect();
+
         Ok(Self {
             index,
+            by_path,
             entries_read,
         })
     }
@@ -67,6 +76,7 @@ impl AssetIndex {
     pub(crate) fn empty() -> Self {
         Self {
             index: HashMap::new(),
+            by_path: HashMap::new(),
             entries_read: 0,
         }
     }
@@ -74,6 +84,15 @@ impl AssetIndex {
     /// Returns the metadata of the asset `uuid`, if indexed.
     pub fn get_metadata(&self, uuid: &AssetUUID) -> Option<&AssetMetadata> {
         self.index.get(uuid)
+    }
+
+    /// Returns the UUID of the file indexed at the forward-slash path `rel_fwd`, if any.
+    ///
+    /// The file's own entry, never one of its parts, which share its path. A
+    /// renamed file is found under its frozen UUID, in a loose index and in a
+    /// pack's; a file hidden by another entry of its UUID is at no path.
+    pub fn uuid_at(&self, rel_fwd: &str) -> Option<AssetUUID> {
+        self.by_path.get(rel_fwd).copied()
     }
 
     /// Returns an iterator over the metadata of every indexed asset.
@@ -96,7 +115,6 @@ impl AssetIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khora_core::asset::AssetSource;
     use std::path::PathBuf;
 
     /// One index entry, its source path `source_path`.
@@ -148,6 +166,38 @@ mod tests {
         assert_eq!(index.asset_count(), 1);
     }
 
+    /// **A file is found by its path under the UUID it is indexed under.**
+    ///
+    /// A renamed file under its frozen UUID, never a part sharing its path; a
+    /// path no file holds under none.
+    #[test]
+    fn a_file_is_found_by_its_path_under_the_uuid_it_is_indexed_under() {
+        let frozen = AssetUUID::new_v5("models/old_hero.glb");
+        let mut file = entry("models/hero.glb");
+        file.uuid = frozen;
+        let part = AssetMetadata {
+            uuid: AssetUUID::sub_asset(frozen, "mesh0"),
+            source_path: PathBuf::from("models/hero.glb"),
+            asset_type: khora_core::asset::AssetType::Mesh,
+            dependencies: Vec::new(),
+            variants: HashMap::from([(
+                AssetMetadata::DEFAULT_VARIANT.to_owned(),
+                AssetSource::Sub {
+                    container: frozen,
+                    label: "mesh0".to_owned(),
+                },
+            )]),
+            tags: Vec::new(),
+        };
+
+        for entries in [[file.clone(), part.clone()], [part, file]] {
+            let index = AssetIndex::new(&encoded(&entries)).expect("reads");
+
+            assert_eq!(index.uuid_at("models/hero.glb"), Some(frozen));
+            assert_eq!(index.uuid_at("models/old_hero.glb"), None);
+        }
+    }
+
     /// **Two entries sharing a UUID are both counted as read, one indexed.**
     ///
     /// The later entry hides the earlier: `asset_count` is 1, `entries_read`
@@ -163,5 +213,26 @@ mod tests {
             .get_metadata(&AssetUUID::new_v5("a.wgsl"))
             .expect("the UUID is indexed");
         assert_eq!(kept.source_path, PathBuf::from("new.wgsl"));
+    }
+
+    /// **A file hidden by another sharing its UUID is found at no path.**
+    ///
+    /// The UUID found at a path is one whose entry is the file at that path:
+    /// the hidden file's UUID names the other file, so a lookup by its path
+    /// would read the other file's bytes.
+    #[test]
+    fn a_file_hidden_by_another_sharing_its_uuid_is_found_at_no_path() {
+        let index =
+            AssetIndex::new(&encoded(&[entry("old.wgsl"), entry("new.wgsl")])).expect("reads");
+
+        assert_eq!(index.uuid_at("new.wgsl"), Some(AssetUUID::new_v5("a.wgsl")));
+        let found = index
+            .uuid_at("old.wgsl")
+            .and_then(|uuid| index.get_metadata(&uuid))
+            .map(|metadata| metadata.source_path.clone());
+        assert_eq!(
+            found, None,
+            "old.wgsl is hidden, yet a lookup reads {found:?}"
+        );
     }
 }

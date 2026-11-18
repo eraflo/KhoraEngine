@@ -16,7 +16,8 @@
 //!
 //! A trigger raised during an epoch waits until the epoch has lasted its
 //! minimum number of ticks, then opens the next one; it is never dropped, not
-//! even by a replay. `Safety` never waits. The first epoch is `Initial`.
+//! even by a replay. `Safety` never waits. The first epoch is `Initial`. With
+//! nothing waiting, a `Refresh` opens once a period passed with no epoch.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
@@ -30,6 +31,9 @@ use khora_core::agent::Agent;
 pub(super) struct Epochs {
     /// The trigger waiting to open the next epoch.
     pending: Option<Trigger>,
+    /// The first other trigger raised while `pending` waits: it opens the
+    /// epoch if `pending` is withdrawn.
+    behind: Option<Trigger>,
     /// Ticks since the last epoch opened.
     ticks_since: u32,
     /// Whether an epoch was opened (or replayed) yet.
@@ -51,6 +55,11 @@ impl Epochs {
     /// Raises `trigger`: the first raised waits for the epoch's minimum,
     /// `Safety` replaces whatever waits.
     pub(super) fn raise(&mut self, trigger: Trigger) {
+        if let Some(waiting) = self.pending {
+            if waiting != trigger && self.behind.is_none() {
+                self.behind = Some(trigger);
+            }
+        }
         self.pending = match self.pending {
             Some(Trigger::Safety) => Some(Trigger::Safety),
             Some(waiting) if trigger != Trigger::Safety => Some(waiting),
@@ -58,11 +67,27 @@ impl Epochs {
         };
     }
 
+    /// Withdraws `trigger` if it is the one waiting: the trigger raised behind
+    /// it, if any, waits in its place.
+    pub(super) fn withdraw(&mut self, trigger: Trigger) {
+        if self.pending == Some(trigger) {
+            self.pending = self.behind.take();
+        }
+    }
+
     /// Passes one tick: notices agents that came or went (`AgentsChanged`).
     pub(super) fn observe(&mut self, agents: &[Arc<Mutex<dyn Agent>>]) {
         self.ticks_since = self.ticks_since.saturating_add(1);
         if self.opened_any && !same_agents(agents, &self.agents) {
             self.raise(Trigger::AgentsChanged);
+        }
+    }
+
+    /// Raises `Refresh` once `every` ticks have passed with no epoch opened and
+    /// no trigger waiting; an `every` of 0 never does.
+    pub(super) fn refresh(&mut self, every: u32) {
+        if every > 0 && self.opened_any && self.pending.is_none() && self.ticks_since >= every {
+            self.pending = Some(Trigger::Refresh);
         }
     }
 
@@ -112,6 +137,7 @@ impl Epochs {
     pub(super) fn opened(&mut self, agents: &[Arc<Mutex<dyn Agent>>]) {
         self.replayed(agents);
         self.pending = None;
+        self.behind = None;
         self.overruns.clear();
         self.answered = std::mem::take(&mut self.unanswered);
     }

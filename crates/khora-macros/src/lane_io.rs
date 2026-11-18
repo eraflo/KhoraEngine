@@ -84,6 +84,12 @@ struct Annotated<'a> {
 }
 
 /// Reads the one attribute among `allowed` a field carries, and its argument.
+///
+/// # Errors
+///
+/// A field with no name, with no attribute among `allowed` or with two; an
+/// attribute written `#[name = …]`; an argument other than `validate`, or
+/// `validate` on an attribute not in `validating`, given twice or with a value.
 fn annotate<'a>(
     field: &'a Field,
     allowed: &[&str],
@@ -133,13 +139,21 @@ fn annotate<'a>(
     }
     if let syn::Meta::List(list) = &attribute.meta {
         list.parse_nested_meta(|meta| {
-            let argument = meta
-                .path
-                .get_ident()
-                .map(Ident::to_string)
-                .unwrap_or_default();
+            // A path is named whole, so `a::b` is not reported as ``.
+            let argument = (meta.path.segments.iter())
+                .map(|segment| segment.ident.to_string())
+                .collect::<Vec<_>>()
+                .join("::");
             if validating.contains(&name.as_str()) {
                 if argument == "validate" {
+                    if validate {
+                        return Err(meta.error("`validate` is given twice: keep one"));
+                    }
+                    if !meta.input.is_empty() && !meta.input.peek(syn::Token![,]) {
+                        return Err(
+                            meta.error(format!("`validate` takes no value: `#[{name}(validate)]`"))
+                        );
+                    }
                     validate = true;
                     return Ok(());
                 }
@@ -331,4 +345,73 @@ fn lane_outputs(input: &DeriveInput) -> syn::Result<impl ToTokens> {
             }
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use syn::parse::Parser;
+
+    use super::{annotate, INPUT_SOURCES};
+
+    /// Returns the named field `source` spells.
+    fn field(source: &str) -> syn::Field {
+        syn::Field::parse_named
+            .parse_str(source)
+            .expect("a named field")
+    }
+
+    /// Returns the message of the error annotating the input field `source` gives.
+    fn error_of(source: &str) -> String {
+        annotate(&field(source), INPUT_SOURCES, &["bus", "deck"])
+            .err()
+            .expect("the field is refused")
+            .to_string()
+    }
+
+    #[test]
+    fn validate_is_read() {
+        let field = field("#[bus(validate)] positions: &'f Positions");
+        let annotated =
+            annotate(&field, INPUT_SOURCES, &["bus", "deck"]).expect("a known argument");
+        assert_eq!(annotated.attribute, "bus");
+        assert!(annotated.validate);
+    }
+
+    #[test]
+    fn an_unknown_argument_written_as_a_path_is_named_whole() {
+        let message = error_of("#[bus(a::b)] positions: &'f Positions");
+        assert!(message.contains("`a::b`"), "{message}");
+    }
+
+    #[test]
+    fn an_unknown_argument_names_the_known_one() {
+        assert_eq!(
+            error_of("#[bus(valdate)] positions: &'f Positions"),
+            "unknown `#[bus]` argument `valdate`: the only one is `validate`"
+        );
+    }
+
+    #[test]
+    fn validate_given_twice_is_an_error() {
+        assert_eq!(
+            error_of("#[deck(validate, validate)] slot: Option<&'f Slot>"),
+            "`validate` is given twice: keep one"
+        );
+    }
+
+    #[test]
+    fn validate_with_a_value_is_an_error() {
+        assert_eq!(
+            error_of("#[bus(validate = true)] positions: &'f Positions"),
+            "`validate` takes no value: `#[bus(validate)]`"
+        );
+    }
+
+    #[test]
+    fn an_argument_on_a_source_without_one_is_an_error() {
+        assert_eq!(
+            error_of("#[resource(validate)] settings: &'f Settings"),
+            "`#[resource]` takes no argument"
+        );
+    }
 }

@@ -424,8 +424,8 @@ pub struct StatusBarData {
     pub vram_mb: f32,
     /// CPU load (0.0–1.0) as reported by `HardwareReport`.
     pub cpu_load: f32,
-    /// GPU load (0.0–1.0) as reported by `HardwareReport`.
-    pub gpu_load: f32,
+    /// GPU load (0.0–1.0) as the DCC reads it; `None` while nothing measured it.
+    pub gpu_load: Option<f32>,
 }
 
 impl Default for StatusBarData {
@@ -439,7 +439,7 @@ impl Default for StatusBarData {
             triangles: 0,
             vram_mb: 0.0,
             cpu_load: 0.0,
-            gpu_load: 0.0,
+            gpu_load: None,
         }
     }
 }

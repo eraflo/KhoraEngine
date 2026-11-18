@@ -969,6 +969,7 @@ fn host_frame(ms: u64) -> TelemetryEvent {
             cpu: Some(Duration::from_millis(ms)),
             ..PerDevice::default()
         },
+        ..Default::default()
     })
 }
 

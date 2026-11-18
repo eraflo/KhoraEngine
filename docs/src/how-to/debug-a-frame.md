@@ -20,7 +20,7 @@ the engine live:
 
 | Region | What it shows |
 |---|---|
-| **Summary bar** (top) | The DCC at a glance: the budget multiplier (`budget×`), the families switched off, the frame budget and the frame time over the last frames, the processor's and graphics card's load, video memory, heap |
+| **Summary bar** (top) | The DCC at a glance: the budget multiplier (`budget×`), the families switched off, the frame budget and the frame time over the last frames, the processor's and graphics card's load ("—" while nothing measured the card), video memory, heap |
 | **Agents** (left) | Every registered agent, grouped by importance, with the row it runs and its health |
 | **Schedule** | The agents by execution phase. A schedule, not a timeline: per-phase timing is not measured |
 | **Inspector** (right) | The selected agent: its timing and status, its health and message, and its **Decision** card |

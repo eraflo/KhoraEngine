@@ -1,0 +1,5 @@
+error: `cost` is given twice: keep one
+ --> tests/lane_contract/ui/an_ergon_fn_key_given_twice_is_an_error.rs:3:22
+  |
+3 | #[ergon_fn(cost = 4, cost = 8)]
+  |                      ^^^^

@@ -414,7 +414,8 @@ impl ProjectVfs {
 
     /// Resolves a forward-slash relative path to its UUID through the identity registry.
     ///
-    /// A renamed asset keeps its frozen identity; any other gets the `new_v5` default.
+    /// A renamed asset keeps its frozen identity; any other gets its `new_v5`
+    /// default, or a derived UUID when another path holds that default.
     /// Use it whenever an asset the user could have renamed is looked up by path.
     pub fn resolve_uuid(&self, rel_path_fwd_slash: &str) -> AssetUUID {
         self.registry.resolve(rel_path_fwd_slash)

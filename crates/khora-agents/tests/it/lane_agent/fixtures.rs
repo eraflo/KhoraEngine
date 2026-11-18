@@ -752,7 +752,6 @@ pub fn offer_request(epoch: u64) -> OfferRequest {
     OfferRequest {
         epoch: Epoch(epoch),
         target: Duration::from_micros(16_667),
-        pressure: 0.0,
         reply_by: Instant::now() + Duration::from_secs(1),
     }
 }

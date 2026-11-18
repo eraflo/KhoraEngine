@@ -123,14 +123,17 @@ without touching them.
 | **Stutter** | its variance | above 4 ms²: a round opens |
 | **Trend** | its slope | rising faster than 2 ms a window: a round opens before it stutters |
 | **CPU load** | the processor's load | above 95 %: a round opens, and a pressure |
-| **GPU load** | the graphics card's load | above 90 %: a round opens; above 95 %: a pressure too |
+| **GPU load** | the frames' GPU time over the setpoint | above 90 %: a round opens; above 95 %: a pressure too |
 | **Memory** | memory used against its budget | above 85 %: a round opens; above 95 %: a pressure too |
 | **Allocation churn** | how much the memory used varies (its coefficient of variation) | above 0.15: an alert only, never a change |
 | **Death spiral** | the pressures above | three or more at once: the `Safety` allocation, every agent at its floor |
 
 Two of them wait on a reading: the memory heuristic is inert until a RAM budget is set
-(`DccConfig::memory_budget_bytes`), and no shipped monitor reports the graphics card's
-load yet, so the GPU heuristic reads 0 (see [Telemetry](./telemetry.md)).
+(`DccConfig::memory_budget_bytes`), and the GPU heuristic reads the graphics card's
+time from the frames' timestamps (see [Telemetry](./telemetry.md#the-graphics-card)).
+Without a GPU-timed frame among the last 10 (a backend without timestamp queries, a
+window that presents nothing) the load is a hardware monitor's, or unknown, not 0:
+on an unknown load the heuristic raises nothing, and counts no pressure.
 
 A setpoint the heuristics relax is a ceiling on the frame rate a round plans for; the
 [frame governor](./arbiter.md#the-cost-model-and-the-frame-governor) then sets how
@@ -159,8 +162,11 @@ A developer **hint** (`EngineHint`, `DccService::set_hint`) adds a weight
 (`Prioritize`: the agent counts more or less in the share) or a cap (`Cap`: a ceiling
 on its envelope's time, never below its floor).
 
-A mode or a hint is read by the next round, whatever opens it: setting one does not
-open a round by itself. The `Safety` allocation gives every agent its floor in any
+Setting a mode or a hint, or clearing an agent's hints, opens a round
+(`PolicyChanged`) once the epoch has lasted its 3 ticks. The rules compared are the
+ones each agent runs, a default included: setting the rule already in force — the
+default mode on an agent given none — opens none, and neither does a change put
+back before its round opens. The `Safety` allocation gives every agent its floor in any
 mode — safety overrides developer control. Recording and replaying the DCC's decisions
 is a capability of the DCC service, not a mode: see
 [the arbiter's journal](./arbiter.md#the-journal-and-why).
@@ -178,11 +184,17 @@ arbiter's guarantees are in their own pages.*
 
 **The emergency.** Let *p* count the pressures raised in a tick (critical or
 throttling heat, critical battery, frames averaging over 25 ms, a processor over 95 %, a
-graphics card over 95 %, memory over 95 %). The tick is a death spiral when *p* ≥ 3.
+graphics card whose known load is over 95 %, memory over 95 %). The GPU's load is
+*g* = min(1, *t̄*<sub>gpu</sub> / *S*), *t̄*<sub>gpu</sub> the frames' mean GPU time,
+while one of the last 10 frames was timed on the GPU; otherwise a monitor's
+reading, or undefined, and then no pressure. The tick is a death spiral when *p* ≥ 3.
 
 **When a round opens.** Let *k*<sub>0</sub> be the tick the last epoch opened. A
 pending trigger opens epoch *e* + 1 at tick *k* when *k* − *k*<sub>0</sub> ≥ 3, or at
-once when it is `Safety`; the first epoch opens at the first tick with an agent.
+once when it is `Safety`; the first epoch opens at the first tick with an agent. With
+nothing pending, no allocation waiting to be lent and no replay, `Refresh` becomes
+pending at the first tick with *k* − *k*<sub>0</sub> ≥ *R* (*R* = 100,
+`DccConfig::refresh_every_ticks`; 0 never).
 
 **The target a round shares.** *T* = *S* · *ρ* · min(*m*, *c*), where *ρ* ∈ [0.5, 1]
 is the cost model's forecast ratio (1 when it forecasts no breach), *m* ∈ [0.3, 1]

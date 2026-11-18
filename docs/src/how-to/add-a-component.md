@@ -40,10 +40,22 @@ pub struct WindAffected {
 The struct needs `Default`: the registration creates a default value for the
 inspector's *Add Component* and for a load.
 
-> The derive ignores a `#[component(…)]` key it does not know, without an error.
-> Spell them as below: type level `domain`, `provenance`, `formerly`,
-> `resumable`, `no_serializable`, `layout`, `check`; field level `skip`,
-> `formerly`.
+> The derive checks every `#[component(…)]` key and fails the build on the key
+> when it is wrong. The type takes `domain`, `provenance`, `formerly`,
+> `resumable`, `no_serializable`, `layout`, `check`; a field takes `skip` and
+> `formerly`. A key it does not know, a key at the wrong level, a key given
+> twice (a `formerly` naming the same old name twice), a flag given a value, or a
+> value of the wrong kind is a compile error that names the keys it takes. So is
+> a key that `no_serializable` leaves with nothing to act on: `check`,
+> `provenance`, `resumable` and `formerly` (on the type or a field) all work
+> through the registration it removes.
+>
+> ```text
+> error: unknown `#[component]` key `domian` on the type: its keys are `domain`, …
+>   |
+> 4 | #[component(domian = Physics)]
+>   |             ^^^^^^
+> ```
 
 ## Step 2 — Mark fields that must not be saved
 
@@ -177,7 +189,8 @@ Put the file next to the other components in
 entries. The registration is collected at startup; there is nothing else to wire.
 
 A compute-heavy component whose named fields are all `f32` can opt into a
-field-split column with `#[component(layout = "soa")]`; it is then read by value,
+field-split column with `#[component(layout = "soa")]` (`"aos"`, the default, is
+the only other value); it is then read by value,
 through the `Soa<T>` query term. See [AGDF](../concepts/agdf.md#layer-2--the-field-soa-substrate-and-why-it-is-the-lever)
 before choosing it.
 

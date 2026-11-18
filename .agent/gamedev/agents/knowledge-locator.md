@@ -15,7 +15,7 @@ analyze code (that is `codebase-analyzer`).
 - `docs/plans/` — implementation plans, including deferred/followup TODO docs.
 - `.agent/gamedev/knowledge/MEMORY.md` — notes about *your* game (state, decisions, open work).
 - `.agent/gamedev/knowledge/context.md` — SDK surface + commands.
-- `.agent/gamedev/reference/` — domain reference (gameplay, scene-design) and
+- `.agent/gamedev/reference/` — domain reference (ergon, gameplay, scene-design) and
   [`../sdk-guide.md`](../sdk-guide.md) for concrete API usage.
 
 ## Output

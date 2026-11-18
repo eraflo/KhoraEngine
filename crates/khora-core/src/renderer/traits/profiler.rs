@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use super::command_recorder::CommandEncoder;
+use crate::renderer::api::device::GpuFrameTime;
 use std::any::Any;
 
 /// A trait for GPU performance profilers that use timestamp queries.
@@ -56,13 +57,19 @@ pub trait GpuProfiler: Any + Send + Sync {
 
     /// Returns the smoothed duration of the main rendering pass in milliseconds.
     ///
-    /// This value is typically averaged over several frames to provide a stable reading.
-    fn last_main_pass_ms(&self) -> f32;
+    /// Averaged over several frames for a stable reading; `None` before the
+    /// first frame was read back.
+    fn last_main_pass_ms(&self) -> Option<f32>;
 
     /// Returns the smoothed total duration of the frame on the GPU in milliseconds.
     ///
-    /// This value is typically averaged over several frames to provide a stable reading.
-    fn last_frame_total_ms(&self) -> f32;
+    /// Averaged over several frames for a stable reading; `None` before the
+    /// first frame was read back.
+    fn last_frame_total_ms(&self) -> Option<f32>;
+
+    /// Returns the raw GPU time of the latest frame read back, and which
+    /// frame it was; `None` before the first.
+    fn last_frame(&self) -> Option<GpuFrameTime>;
 
     /// Returns a reference to `self` as a `&dyn Any` trait object.
     fn as_any(&self) -> &dyn Any;

@@ -1,0 +1,5 @@
+error: unknown `#[component]` key `domian` on the type: its keys are `domain`, `provenance`, `check`, `layout`, `formerly`, `resumable`, `no_serializable`
+ --> tests/lane_contract/ui/an_unknown_component_key_is_an_error.rs:4:13
+  |
+4 | #[component(domian = Physics)]
+  |             ^^^^^^

@@ -570,6 +570,49 @@ fn a_released_file_is_read_again() {
     );
 }
 
+/// **A renamed file released is read again under its frozen UUID.**
+///
+/// The UUID the project's identity registry gives its path: the registry of
+/// the project open, or the one saved while the project is still opening.
+#[test]
+fn a_released_renamed_file_is_read_again_under_its_frozen_uuid() {
+    let folder = Folder::new("release-renamed");
+    let root = cave_demo(&folder);
+    let huge = folder.write("cave-demo/assets/textures/huge.png", b"png");
+    let mut registry = khora_sdk::AssetIdRegistry::load(&root);
+    registry.rename("textures/old_huge.png", "textures/huge.png");
+    registry.save().expect("the registry saves");
+    let frozen = registry.resolve("textures/huge.png");
+
+    for (when, open) in [("open", true), ("opening", false)] {
+        let mut editor = Editor::new(ProjectTrust::Restricted);
+        if open {
+            let vfs = crate::project_vfs::ProjectVfs::open(
+                root.clone(),
+                Arc::new(khora_sdk::MetricsRegistry::new()),
+            )
+            .expect("the project opens");
+            editor.app.project_vfs = Some(Arc::new(Mutex::new(vfs)));
+        }
+        editor.open(&root);
+        editor
+            .refusals
+            .refuse(too_large(huge.clone(), Trust::Restricted), Some(stamp()));
+        let _ = announced(&editor);
+        editor.state().push_request(EditorRequest::ReleaseAsset {
+            path: "textures/huge.png".to_owned(),
+        });
+
+        editor.frame();
+
+        let announced = announced(&editor);
+        assert!(
+            announced.contains(&frozen),
+            "{when}: the released asset is invalidated under its frozen UUID: {announced:?}"
+        );
+    }
+}
+
 /// **A release reaches only a file of the project open.**
 ///
 /// A path climbing out of its assets with `..` names nothing of the project,

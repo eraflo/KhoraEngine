@@ -1,0 +1,5 @@
+error: `validate` is given twice: keep one
+ --> tests/lane_contract/ui/an_argument_given_twice_is_an_error.rs:7:21
+  |
+7 |     #[bus(validate, validate)]
+  |                     ^^^^^^^^

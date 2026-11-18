@@ -16,7 +16,7 @@
 //!
 //! See the book: concepts/gorna.md, "The heuristics".
 
-use crate::dcc_context::DccContext;
+use crate::dcc_context::{DccContext, HardwareState};
 use crate::metrics::MetricStore;
 use khora_core::platform::{BatteryLevel, ThermalStatus};
 use khora_core::telemetry::MetricId;
@@ -25,6 +25,12 @@ mod report;
 
 pub use report::AnalysisReport;
 
+/// The frame time aimed for by default (ms): 60 frames a second.
+const BASELINE_SETPOINT_MS: f32 = 16.66;
+/// The frame time aimed for under throttling heat or a low battery (ms).
+const RELAXED_SETPOINT_MS: f32 = 33.33;
+/// The frame time aimed for under critical heat or battery (ms).
+const CRITICAL_SETPOINT_MS: f32 = 50.0;
 /// Threshold (ms) above which frame time is considered problematic.
 const FRAME_TIME_WARN_THRESHOLD_MS: f32 = 18.0;
 /// Threshold (ms) above which frame time is critically high.
@@ -54,9 +60,8 @@ pub struct HeuristicEngine;
 impl HeuristicEngine {
     /// Runs every heuristic on the context and the metrics, and reports what they conclude.
     pub fn analyze(&self, context: &DccContext, store: &MetricStore) -> AnalysisReport {
-        // ── Target latency (60 FPS baseline) ──────────────────────────
         let mut report = AnalysisReport {
-            suggested_latency_ms: 16.66,
+            suggested_latency_ms: setpoint_ms(&context.hardware),
             ..AnalysisReport::default()
         };
 
@@ -73,13 +78,43 @@ impl HeuristicEngine {
     }
 }
 
+/// Returns the frame time the heuristics aim for, in ms: 60 frames a second,
+/// relaxed by heat or a low battery.
+///
+/// See the book: concepts/gorna.md, "The heuristics".
+pub fn setpoint_ms(hardware: &HardwareState) -> f32 {
+    let heat = match hardware.thermal {
+        ThermalStatus::Critical => CRITICAL_SETPOINT_MS,
+        ThermalStatus::Throttling => RELAXED_SETPOINT_MS,
+        ThermalStatus::Warm | ThermalStatus::Cool => BASELINE_SETPOINT_MS,
+    };
+    let battery = match hardware.battery {
+        BatteryLevel::Critical => CRITICAL_SETPOINT_MS,
+        BatteryLevel::Low => RELAXED_SETPOINT_MS,
+        BatteryLevel::High | BatteryLevel::Mains => BASELINE_SETPOINT_MS,
+    };
+    heat.max(battery)
+}
+
+/// Returns the GPU's load: the frames' mean GPU time over [`setpoint_ms`], at most 1.
+///
+/// `None` while no frame was timed on the GPU (a backend without timestamp
+/// queries): unknown, never 0. See the book: concepts/telemetry.md, "The
+/// graphics card".
+pub fn gpu_load(store: &MetricStore, hardware: &HardwareState) -> Option<f32> {
+    let gpu_ms = MetricId::new("frame", "gpu_ms");
+    if store.get_sample_count(&gpu_ms) == 0 {
+        return None;
+    }
+    Some((store.get_average(&gpu_ms) / setpoint_ms(hardware)).clamp(0.0, 1.0))
+}
+
 /// Reports the thermal state; returns the pressure sources it counted.
 fn analyze_thermal(context: &DccContext, report: &mut AnalysisReport) -> u32 {
     match context.hardware.thermal {
         ThermalStatus::Critical => {
             log::warn!("Heuristic: CRITICAL thermal state — emergency budget reduction.");
             report.needs_negotiation = true;
-            report.suggested_latency_ms = f32::max(report.suggested_latency_ms, 50.0); // ~20 FPS cap
             report
                 .alerts
                 .push("Thermal: CRITICAL — emergency load reduction.".into());
@@ -88,7 +123,6 @@ fn analyze_thermal(context: &DccContext, report: &mut AnalysisReport) -> u32 {
         ThermalStatus::Throttling => {
             log::warn!("Heuristic: Device is throttling. Recommending load reduction.");
             report.needs_negotiation = true;
-            report.suggested_latency_ms = f32::max(report.suggested_latency_ms, 33.33); // 30 FPS cap
             report
                 .alerts
                 .push("Thermal: Throttling — capping to 30 FPS.".into());
@@ -108,7 +142,6 @@ fn analyze_battery(context: &DccContext, report: &mut AnalysisReport) -> u32 {
         BatteryLevel::Critical => {
             log::warn!("Heuristic: Battery CRITICAL — mandatory power saving.");
             report.needs_negotiation = true;
-            report.suggested_latency_ms = f32::max(report.suggested_latency_ms, 50.0); // ~20 FPS
             report
                 .alerts
                 .push("Battery: CRITICAL — mandatory power saving.".into());
@@ -117,7 +150,6 @@ fn analyze_battery(context: &DccContext, report: &mut AnalysisReport) -> u32 {
         BatteryLevel::Low => {
             log::info!("Heuristic: Battery low — reducing target to 30 FPS.");
             report.needs_negotiation = true;
-            report.suggested_latency_ms = f32::max(report.suggested_latency_ms, 33.33);
             report
                 .alerts
                 .push("Battery: Low — capping to 30 FPS.".into());
@@ -211,27 +243,26 @@ fn analyze_cpu(context: &DccContext, report: &mut AnalysisReport) -> u32 {
 }
 
 /// Reports the GPU load; returns the pressure sources it counted.
+///
+/// An unknown load raises nothing and counts no pressure.
 fn analyze_gpu(context: &DccContext, report: &mut AnalysisReport) -> u32 {
-    if context.hardware.gpu_load > GPU_LOAD_CRITICAL {
-        log::warn!(
-            "Heuristic: GPU load critical ({:.2}). Triggering negotiation.",
-            context.hardware.gpu_load
-        );
+    let Some(load) = context.hardware.gpu_load else {
+        return 0;
+    };
+    if load > GPU_LOAD_CRITICAL {
+        log::warn!("Heuristic: GPU load critical ({load:.2}). Triggering negotiation.");
         report.needs_negotiation = true;
         report.alerts.push(format!(
             "GPU: Load {:.0}% exceeds critical threshold.",
-            context.hardware.gpu_load * 100.0
+            load * 100.0
         ));
         1
-    } else if context.hardware.gpu_load > GPU_LOAD_WARN {
-        log::debug!(
-            "Heuristic: GPU load elevated ({:.2}).",
-            context.hardware.gpu_load
-        );
+    } else if load > GPU_LOAD_WARN {
+        log::debug!("Heuristic: GPU load elevated ({load:.2}).");
         report.needs_negotiation = true;
         report.alerts.push(format!(
             "GPU: Load {:.0}% above warning threshold.",
-            context.hardware.gpu_load * 100.0
+            load * 100.0
         ));
         0
     } else {

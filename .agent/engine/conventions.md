@@ -100,9 +100,11 @@ pub struct Light {
 | `provenance = X` | type | `Authored` (default) / `ToolAuthored` → saved in scenes; `Derived` / `Runtime` → never in a scene, not copied on duplicate. |
 | `resumable` | type | A `Runtime` component a **game save** keeps so play resumes (a behavior's `Guard#state`). |
 | `formerly = "Old"` | type or field | Old name a save may hold; repeatable. On a field it becomes a serde alias; on a type the load reports `Renamed`. |
-| `layout = "soa"` | type | Field-split SoA column (all-`f32` structs only). |
+| `check = path` | type | A `fn(&Self) -> Vec<FieldProblem>` naming the values the engine cannot use (RULES §7). |
+| `layout = "soa"` | type | Field-split SoA column (all-`f32` structs only); `"aos"` is the default. |
 | `no_serializable` | type | **Removes the `ComponentRegistration`** — never saved, inspected, or reachable by name. Not a synonym for runtime state; prefer a provenance. |
 
+- A key the table does not list at that place, a key given twice, a value of the wrong kind, or `check`/`provenance`/`resumable`/`formerly` beside `no_serializable` (which registers nothing for them to act through) is a compile error on the key.
 - The derive self-registers via `inventory`. Only generics and hand-written impls stay explicit in `World::new`.
 - Removing a component type: declare it retired (`inventory::submit!{ RetiredComponent { name: "Old" } }`), or every save naming it fails to load.
 

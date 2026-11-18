@@ -215,7 +215,7 @@ impl RenderSystem for WgpuRenderSystem {
                     );
                 }
                 profiler.resolve_and_copy(command_encoder.as_mut());
-                profiler.copy_to_staging(command_encoder.as_mut(), self.frame_count);
+                profiler.copy_to_staging(command_encoder.as_mut(), self.frame_count + 1);
             }
         }
 
@@ -235,7 +235,7 @@ impl RenderSystem for WgpuRenderSystem {
 
         if settings.enable_gpu_timestamps {
             if let Some(p) = self.gpu_profiler.as_mut() {
-                p.schedule_map_after_submit(self.frame_count);
+                p.schedule_map_after_submit(self.frame_count + 1);
             }
         }
 
@@ -245,6 +245,7 @@ impl RenderSystem for WgpuRenderSystem {
         if let Some(p) = self.gpu_profiler.as_ref() {
             self.last_frame_stats.gpu_main_pass_time_ms = p.last_main_pass_ms();
             self.last_frame_stats.gpu_frame_total_time_ms = p.last_frame_total_ms();
+            self.last_frame_stats.gpu_frame = p.last_frame();
         }
         let full_frame_ms = full_frame_timer.elapsed_ms().unwrap_or(0);
         self.last_frame_stats.frame_number = self.frame_count;
@@ -369,8 +370,61 @@ impl RenderSystem for WgpuRenderSystem {
 
         self.frame_count += 1;
         self.last_frame_stats.frame_number = self.frame_count;
+        if let Some(p) = self.gpu_profiler.as_ref() {
+            self.last_frame_stats.gpu_main_pass_time_ms = p.last_main_pass_ms();
+            self.last_frame_stats.gpu_frame_total_time_ms = p.last_frame_total_ms();
+            self.last_frame_stats.gpu_frame = p.last_frame();
+        }
 
         Ok(self.last_frame_stats.clone())
+    }
+
+    /// Submits a timestamp pass before `submit`'s work and one after it;
+    /// returns whether it timed the frame.
+    ///
+    /// The four timestamps are copied out for a read-back two frames later.
+    /// Without a profiler (no `TIMESTAMP_QUERY`) or a device, runs `submit`
+    /// untimed. See the book: concepts/telemetry.md, "The graphics card".
+    fn time_on_gpu(&mut self, submit: &mut dyn FnMut()) -> bool {
+        let (Some(device), Some(profiler)) = (self.wgpu_device.clone(), self.gpu_profiler.as_mut())
+        else {
+            submit();
+            return false;
+        };
+        // The number `end_frame` gives this frame: its reading is named by it.
+        let frame = self.frame_count + 1;
+        let mut opening = device.create_command_encoder(Some("Khora GPU Timing: open"));
+        {
+            let _pass = opening.begin_profiler_compute_pass(
+                Some("Khora GPU Timing: frame start"),
+                profiler.as_ref(),
+                0,
+            );
+        }
+        if let Some(buffer) = opening.finish() {
+            device.submit_command_buffer(buffer);
+        }
+
+        submit();
+
+        let mut closing = device.create_command_encoder(Some("Khora GPU Timing: close"));
+        {
+            let _pass = closing.begin_profiler_compute_pass(
+                Some("Khora GPU Timing: frame end"),
+                profiler.as_ref(),
+                1,
+            );
+        }
+        profiler.resolve_and_copy(closing.as_mut());
+        profiler.copy_to_staging(closing.as_mut(), frame);
+        match closing.finish() {
+            Some(buffer) => {
+                device.submit_command_buffer(buffer);
+                profiler.schedule_map_after_submit(frame);
+                true
+            }
+            None => false,
+        }
     }
 
     fn render_overlay(

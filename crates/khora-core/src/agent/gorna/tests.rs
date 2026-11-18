@@ -1183,6 +1183,7 @@ fn frame(cpu: Option<u64>, gpu: Option<u64>, npu: Option<u64>, other: Option<u64
             npu: npu.map(Duration::from_millis),
             other: other.map(Duration::from_millis),
         },
+        ..Default::default()
     }
 }
 
@@ -1462,4 +1463,29 @@ fn an_allocation_lends_only_the_agents_it_names() {
         "pinned but unpriced: no envelope"
     );
     assert_eq!(stranger.lent, None, "keeps what it holds");
+}
+
+// ─── An offer request ───────────────────────────────────────────────────────
+
+/// **An offer request carries the epoch, the target and the deadline, and
+/// nothing else.** The heuristics' pressure reaches a round through its target:
+/// no agent reads a pressure of its own, so the request has none.
+#[test]
+fn an_offer_request_carries_the_epoch_the_target_and_the_deadline() {
+    let reply_by = std::time::Instant::now();
+    let request = super::protocol::OfferRequest {
+        epoch: Epoch(3),
+        target: Duration::from_micros(16_667),
+        reply_by,
+    };
+
+    let super::protocol::OfferRequest {
+        epoch,
+        target,
+        reply_by: deadline,
+    } = request;
+
+    assert_eq!(epoch, Epoch(3));
+    assert_eq!(target, Duration::from_micros(16_667));
+    assert_eq!(deadline, reply_by);
 }

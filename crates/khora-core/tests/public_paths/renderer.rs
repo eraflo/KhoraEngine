@@ -379,6 +379,10 @@ fn shader_source_data_variants(
     }
 }
 
+fn gpu_frame_time_fields(x: &khora_core::renderer::api::device::GpuFrameTime) {
+    let _ = (&x.frame, &x.time);
+}
+
 fn render_stats_fields(x: &khora_core::renderer::api::device::stats::RenderStats) {
     let _ = (
         &x.frame_number,
@@ -386,6 +390,7 @@ fn render_stats_fields(x: &khora_core::renderer::api::device::stats::RenderStats
         &x.cpu_render_submission_time_ms,
         &x.gpu_main_pass_time_ms,
         &x.gpu_frame_total_time_ms,
+        &x.gpu_frame,
         &x.draw_calls,
         &x.triangles_rendered,
         &x.vram_usage_estimate_mb,
@@ -1299,6 +1304,7 @@ mod trait_items {
         let _ = <T as khora_core::renderer::RenderSystem>::graphics_device;
         let _ = <T as khora_core::renderer::RenderSystem>::begin_frame;
         let _ = <T as khora_core::renderer::RenderSystem>::end_frame;
+        let _ = <T as khora_core::renderer::RenderSystem>::time_on_gpu;
         let _ = <T as khora_core::renderer::RenderSystem>::render_overlay;
         let _ = <T as khora_core::renderer::RenderSystem>::shutdown;
         let _ = <T as khora_core::renderer::RenderSystem>::as_any;
@@ -1337,6 +1343,7 @@ mod trait_items {
         let _ = <T as khora_core::renderer::traits::GpuProfiler>::schedule_map_after_submit;
         let _ = <T as khora_core::renderer::traits::GpuProfiler>::last_main_pass_ms;
         let _ = <T as khora_core::renderer::traits::GpuProfiler>::last_frame_total_ms;
+        let _ = <T as khora_core::renderer::traits::GpuProfiler>::last_frame;
         let _ = <T as khora_core::renderer::traits::GpuProfiler>::as_any;
         let _ = <T as khora_core::renderer::traits::GpuProfiler>::as_any_mut;
     }
@@ -1791,6 +1798,11 @@ fn module_renderer_paths_still_resolve() {
     is_clone::<khora_core::renderer::api::shader::module::ShaderSourceData<'static>>();
     let _ = type_name::<khora_core::renderer::api::device::stats::RenderStats>();
     let _ = type_name::<khora_core::renderer::api::device::RenderStats>();
+    let _ = type_name::<khora_core::renderer::api::device::GpuFrameTime>();
+    let _ = gpu_frame_time_fields as fn(&khora_core::renderer::api::device::GpuFrameTime);
+    is_debug::<khora_core::renderer::api::device::GpuFrameTime>();
+    is_copy::<khora_core::renderer::api::device::GpuFrameTime>();
+    is_default::<khora_core::renderer::api::device::GpuFrameTime>();
     same_type(
         PhantomData::<khora_core::renderer::api::device::RenderStats>,
         PhantomData::<khora_core::renderer::api::device::stats::RenderStats>,

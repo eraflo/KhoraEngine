@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 use khora_sdk::editor_ui::EditorRequest;
 use khora_sdk::editor_ui::{EditorShell, PanelLocation, QuarantinedAsset, TrustSummary};
 use khora_sdk::fs;
-use khora_sdk::khora_core::asset::asset_key;
+use khora_sdk::khora_core::asset::{asset_key, AssetUUID};
 use khora_sdk::trust::{ProjectTrustState, QuarantineKey, Refusals, SecurityRefusal, Trust};
 use khora_sdk::Runtime;
 
@@ -85,12 +85,12 @@ impl super::EditorApp {
         let root = project.as_deref().map(PathBuf::from);
         let assets = root.as_ref().map(|root| root.join("assets"));
 
-        if let (Some(assets), Some(refusals)) = (&assets, &refusals) {
+        if let (Some(root), Some(assets), Some(refusals)) = (&root, &assets, &refusals) {
             for rel in releases {
                 match under_assets(&rel) {
                     Some(rel_path) => {
                         refusals.release(&assets.join(&rel_path));
-                        self.read_again(runtime, &rel_path);
+                        self.read_again(runtime, root, &rel_path);
                         log::info!("'{rel}' is released from the quarantine: it is read again");
                     }
                     None => {
@@ -129,16 +129,26 @@ impl super::EditorApp {
 
     /// Forgets what the asset services remember of the file at `rel_path`, a
     /// load the quarantine failed, so its next load reads it.
-    fn read_again(&self, runtime: &Runtime, rel_path: &Path) {
-        let uuid = khora_sdk::khora_core::asset::AssetUUID::new_v5(
-            &khora_sdk::khora_core::asset::asset_key(rel_path),
-        );
+    ///
+    /// The file's asset is the UUID the identity registry of the project at
+    /// `root` gives its path, a renamed file's frozen one.
+    fn read_again(&self, runtime: &Runtime, root: &Path, rel_path: &Path) {
+        let opened = self.project_vfs.as_ref().and_then(|pvfs| pvfs.lock().ok());
+        let uuid_of: Box<dyn Fn(&str) -> AssetUUID + '_> = match opened {
+            Some(pvfs) => Box::new(move |path| pvfs.resolve_uuid(path)),
+            // The project not open yet: its registry as saved.
+            None => {
+                let saved = khora_sdk::AssetIdRegistry::load(root);
+                Box::new(move |path| saved.resolve(path))
+            }
+        };
+        let key = asset_key(rel_path);
         let engine = (runtime.services)
             .get::<Arc<Mutex<khora_sdk::AssetService>>>()
             .cloned();
         for service in engine.iter().chain([&self.shared_assets]) {
             if let Ok(mut service) = service.lock() {
-                service.invalidate(&uuid);
+                service.invalidate_through(&key, &*uuid_of);
             }
         }
     }

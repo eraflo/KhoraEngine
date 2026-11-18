@@ -51,7 +51,7 @@ questions:
   from the agents' reports, and its
   [frame governor](./arbiter.md#the-cost-model-and-the-frame-governor) regulates on
   the frames'. A device a report did not measure is *unmeasured*, never zero: the
-  graphics card stays unmeasured until the frame graph is timed.
+  graphics card is unmeasured on a backend without timestamp queries.
 - **The situation the work runs in** comes from **telemetry**: memory, video memory,
   heat, battery, the processor's load, the data layer's access patterns. No agent
   reports these — they are facts about the machine and the data, not costs of work —
@@ -106,8 +106,30 @@ reading the sensors takes milliseconds — far more the first time — and the t
 service runs inside the frame, where those milliseconds would show as a hitch every
 second. The editor reads the loads from the DCC's context.
 
-The graphics card's load has a place in the DCC's context and a heuristic of its own,
-but no shipped monitor reports it: it reads 0.
+## The graphics card
+
+The graphics card is timed by the frame, not by a monitor. The renderer
+(`RenderSystem::time_on_gpu`) submits a timestamp query before the frame's passes
+and one after them; their difference is the frame's GPU time, read back about two
+frames later (`RenderStats::gpu_frame`, named by the frame it measured). A frame
+timed so waits for its own reading before it is reported: its report carries its
+own GPU time, raw (`FrameReport.busy.gpu`), so a stall is one frame long there and
+the governor leaves it out as a hitch. A reading that has not come four frames on
+leaves the frame unmeasured. The smoothed times in `RenderStats` are for display
+only.
+
+The frame's critical path therefore counts the GPU, and the DCC reads the graphics
+card's load from the frames: their mean GPU time over the setpoint, at most 1
+(`analysis::gpu_load`). The frames are the measure. A hardware monitor's reading
+(`HardwareReport.gpu_load`) stands in only while no frame is timed on the GPU — a
+backend without timestamps.
+
+The load ages with the frames: once 10 frames in a row arrive without a GPU time
+(a window that presents nothing, a backend without `TIMESTAMP_QUERY`), the frames
+say nothing of the GPU any more. The load is then the monitor's, or unknown
+(`None`) — never 0, which would read as an idle card, and never the last frames'
+reading, which would press forever. The GPU heuristic raises nothing on an
+unknown load, and the editor shows it as "—".
 
 ## Video memory
 
@@ -129,11 +151,10 @@ would hold more is refused.
 
 ## Honest gaps
 
-- **No GPU time yet.** The frame graph is not timed on the graphics card, so the
-  reports carry the host's time only, and a GPU-bound frame hides in the wait for the
-  swapchain image (issue #292). The wgpu backend has a timestamp profiler of its own —
-  the main pass and the whole frame — but no report carries it.
-- **No GPU load.** As above: the heuristic has nothing to read.
+- **No GPU time per lane.** The frame's passes are timed on the graphics card as a
+  whole, not one by one, so the agents' reports carry the host's time only, and the
+  cost book corrects that alone (issue #292). What the editor's overlay draws after
+  the frame's passes is not in the frame's GPU time.
 - **No trace records.** The pipeline could feed an external tracing tool, but none is
   wired up.
 - **No export.** Histograms collect, but no export format or retention policy is
@@ -156,6 +177,10 @@ would hold more is refused.
 - **The frame's critical path.** For a frame report with busy times
   *t*<sub>d</sub> on the measured devices, *C* = max<sub>d measured</sub>
   *t*<sub>d</sub>; a frame with no device measured has none.
+- **The GPU's load.** With *t̄*<sub>gpu</sub> the mean of the GPU times the store
+  keeps and *S* the setpoint, *g* = min(1, *t̄*<sub>gpu</sub> / *S*) while one of
+  the last 10 frames was timed on the GPU; otherwise *g* is the last load a
+  hardware monitor reported, and undefined without one.
 
 ## Next steps
 

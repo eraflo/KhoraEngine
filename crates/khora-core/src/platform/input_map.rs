@@ -81,8 +81,8 @@ pub enum InputBinding {
 
 /// The action / binding map, one per engine.
 ///
-/// It is registered as a service in the `ServiceRegistry` and updated once per
-/// frame from the input queue.
+/// The engine installs it as a runtime resource (`Arc<Mutex<InputMap>>`) and
+/// updates it once per frame from the input queue.
 #[derive(Debug, Default)]
 pub struct InputMap {
     /// `action → list of bindings` (multiple bindings → action fires when ANY of them fires).

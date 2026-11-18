@@ -50,8 +50,9 @@ use khora_core::renderer::error::ResourceError;
 use khora_core::renderer::traits::{CommandEncoder, GraphicsDevice, PipelineSystem};
 use khora_infra::graphics::WgpuPipelineSystem;
 
-/// The probe's logical name: the one the shader hot-reload watcher gives its
-/// file, so an edit to it overlays the same module.
+/// The probe's logical name: the pipeline it is overlaid as and built under.
+/// No module the pipeline system registers, so the shader hot reload never
+/// hands its file over.
 const PROBE: &str = "khora::tests::spot_attenuation_probe";
 const PROBE_WGSL: &str =
     include_str!("../../src/graphics/shader/shaders/tests/spot_attenuation_probe.wgsl");

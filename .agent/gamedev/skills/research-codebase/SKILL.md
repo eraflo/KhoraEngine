@@ -14,7 +14,7 @@ of *how things work today* — not a solution. Push noisy searching into subagen
 2. **Locate.** Dispatch `codebase-locator` to map *where* the relevant game files / SDK calls live.
 3. **Analyze + find precedent, in parallel.** Dispatch `codebase-analyzer` (how it works, `file:line`)
    and `codebase-pattern-finder` (an example to mirror — often the `sandbox`). Consult the matching
-   `reference/*.md` (`gameplay`, `scene-design`) and [`../../sdk-guide.md`](../../sdk-guide.md).
+   `reference/*.md` (`ergon`, `gameplay`, `scene-design`) and [`../../sdk-guide.md`](../../sdk-guide.md).
 4. **Distill.** Synthesize the subagent reports — never paste them raw — into one artifact.
 
 ## Output artifact
@@ -24,6 +24,7 @@ Write `docs/research/AAAA-MM-JJ_topic.md` (today's date, kebab topic):
 
 ## Rules
 - Read-only. Writes **only** the research artifact — no source edits.
-- Every non-obvious claim carries a `file:line`. SDK-only — never reference internal `khora-*` crates.
+- Every non-obvious claim carries a `file:line`. Name SDK items by their `khora_sdk` path, not an
+  internal crate's.
 - **Human review gate**: surface the artifact before planning. Plan next via
   [`../create-plan/SKILL.md`](../create-plan/SKILL.md).

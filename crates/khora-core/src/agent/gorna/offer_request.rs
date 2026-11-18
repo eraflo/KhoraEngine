@@ -23,10 +23,9 @@ use super::protocol::Epoch;
 pub struct OfferRequest {
     /// The epoch the offer is for.
     pub epoch: Epoch,
-    /// The frame's target time.
+    /// The frame's target time: the heuristics' pressure reaches the agent
+    /// through it, tightened by heat, the battery, a forecast or the governor.
     pub target: Duration,
-    /// How hard the machine is pressed, from `0.0` (not at all) to `1.0`.
-    pub pressure: f32,
     /// An offer made after this keeps the agent's envelope.
     pub reply_by: Instant,
 }

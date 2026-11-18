@@ -453,6 +453,53 @@ mod tests {
         assert!(out.index_bin.exists());
     }
 
+    /// **The index build and the pack build agree on a script's dependencies**:
+    /// both name the UUID the pack indexes a renamed module under.
+    #[test]
+    fn a_packed_script_depends_on_the_uuid_its_renamed_module_is_packed_under() {
+        let proj = tempdir().unwrap();
+        let dest = tempdir().unwrap();
+        let assets = proj.path().join("assets");
+        fs::create_dir_all(assets.join("scripts")).unwrap();
+        fs::write(
+            assets.join("scripts").join("damage.erg"),
+            b"fn void Hit() { }",
+        )
+        .unwrap();
+        fs::write(
+            assets.join("scripts").join("guard.erg"),
+            br#"import "damage.erg"; fn void Main() { }"#,
+        )
+        .unwrap();
+        let mut registry = AssetIdRegistry::load(proj.path());
+        registry.rename("scripts/hurt.erg", "scripts/damage.erg");
+        registry.save().unwrap();
+
+        let out = PackBuilder::new(&assets, dest.path()).build().unwrap();
+        let packed = AssetIndex::new(&std::fs::read(&out.index_bin).unwrap()).unwrap();
+        let developed = IndexBuilder::new(&assets)
+            .with_registry(&AssetIdRegistry::load(proj.path()))
+            .build_metadata()
+            .unwrap();
+
+        let in_pack = |key: &str| {
+            packed
+                .iter_all()
+                .find(|m| khora_core::asset::asset_key(&m.source_path) == key)
+                .unwrap_or_else(|| panic!("{key} is packed"))
+                .clone()
+        };
+        let module = in_pack("scripts/damage.erg").uuid;
+        let guard = in_pack("scripts/guard.erg");
+        assert_eq!(module, AssetUUID::new_v5("scripts/hurt.erg"));
+        assert_eq!(guard.dependencies, vec![module]);
+        let developed_guard = developed
+            .iter()
+            .find(|m| m.uuid == guard.uuid)
+            .expect("the index lists the script under the pack's UUID");
+        assert_eq!(developed_guard.dependencies, guard.dependencies);
+    }
+
     // ── Sub-assets ──────────────────────────────────────────────────────────
 
     use crate::asset::{AssetContainer, SubAssetEntry, SubAssetListerRegistration};

@@ -227,13 +227,11 @@ epoch, so they never invalidate a cached View.
 
 Being explicit about the gaps:
 
-- **No GPU time in the frame report.** The frame graph is not timed on the graphics card, so the DCC
-  sees the host's time only; a GPU-bound frame hides in the wait for the swapchain image. The
-  renderer's timestamp profiler times the main pass and the frame total, not individual passes or
-  materials, and does not reach the DCC.
+- **GPU time for the frame, not per pass.** The renderer's timestamps time the frame's passes as a
+  whole and the frame report carries it; individual passes and materials are not timed. A backend
+  without timestamp queries reports no GPU time, and the GPU's load stays unknown.
 - **No GPU time per lane.** The cost book corrects host time only; each row's GPU time stays as its
   lane quotes it.
-- **No graphics-card load.** No shipped monitor reports it, so the GPU-load heuristic reads 0.
 - **No memory pressure by default.** It needs a RAM budget (`DccConfig::memory_budget_bytes`), which
   the default configuration leaves unset.
 - **No CPU tracing spans.** There is no span timeline (Tracy, `tracing`) wired up; the telemetry

@@ -52,6 +52,9 @@ use proc_macro::TokenStream;
 /// A leading `&mut NativeContext<'_>` parameter is passed through rather than
 /// taken from the script, which is how a function reaches the command buffer
 /// and the frame arena.
+///
+/// A key other than `name` and `cost`, a key given twice, or a value of the
+/// wrong kind is a compile error on that key.
 #[proc_macro_attribute]
 pub fn ergon_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
     ergon_fn::ergon_fn(attr, item)
@@ -78,6 +81,11 @@ pub fn ergon_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// Use `#[component(skip)]` on fields that should not be serialized
 /// (e.g., GPU handles). Those fields are filled with `Default::default()`
 /// when deserializing back.
+///
+/// The type's `#[component(...)]` takes `domain`, `provenance`, `check`,
+/// `layout`, `formerly`, `resumable` and `no_serializable`; a field's takes
+/// `skip` and `formerly`. Any other key, a key given twice, a flag with a
+/// value or a value of the wrong kind is a compile error on that key.
 #[proc_macro_derive(Component, attributes(component))]
 pub fn derive_component(input: TokenStream) -> TokenStream {
     component::derive_component(input)
@@ -91,7 +99,8 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
 /// (`&'f T`, read without locking), `#[locked]` (`Locked<'f, T>`), `#[take]`
 /// (`Vec<T>`, the family's `Take` mailbox drained), `#[budget]` (`Budget`) or
 /// `#[scope]`. `#[bus(validate)]` and `#[deck(validate)]` run the
-/// value's `Validate` check.
+/// value's `Validate` check; any other argument, `validate` given twice or
+/// given a value, is a compile error on it.
 ///
 /// ```ignore
 /// #[derive(LaneInputs)]

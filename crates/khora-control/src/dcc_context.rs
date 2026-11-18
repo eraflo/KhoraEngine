@@ -29,8 +29,12 @@ pub struct HardwareState {
     pub battery: BatteryLevel,
     /// Overall CPU load (0.0 to 1.0).
     pub cpu_load: f32,
-    /// Overall GPU load (0.0 to 1.0).
-    pub gpu_load: f32,
+    /// The GPU's load, from 0.0 to 1.0; `None` while nothing measured it.
+    ///
+    /// The frames' measured GPU time over the frame time aimed for
+    /// ([`gpu_load`](crate::analysis::gpu_load)), or what a hardware monitor
+    /// reported last; never 0 for unknown.
+    pub gpu_load: Option<f32>,
     /// Available VRAM in bytes (if known).
     pub available_vram: Option<u64>,
     /// Total VRAM in bytes (if known).

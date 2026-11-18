@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What the contract refuses to compile, with the message it gives. Each case
-//! is a file under `ui/`; its `.stderr` beside it is the expected error.
+//! What the contract and the engine's derives refuse to compile, with the
+//! message they give. Each case is a file under `ui/`; its `.stderr` beside it
+//! is the expected error.
 
 /// A lane reaches the world only through the Views a Flow published:
 /// `InputSource` has no `World`, by field or by method.
@@ -52,6 +53,68 @@ fn a_field_without_a_source_is_an_error() {
 fn lanes_of_one_agent_share_outputs() {
     trybuild::TestCases::new()
         .compile_fail("tests/lane_contract/ui/lanes_of_one_agent_share_outputs.rs");
+}
+
+/// An argument given twice is an error on the second, never read once.
+#[test]
+fn an_argument_given_twice_is_an_error() {
+    trybuild::TestCases::new()
+        .compile_fail("tests/lane_contract/ui/an_argument_given_twice_is_an_error.rs");
+}
+
+/// A `#[component(...)]` key the derive does not know on the type is an error
+/// on that key, naming the type's keys — never dropped.
+#[test]
+fn an_unknown_component_key_is_an_error() {
+    trybuild::TestCases::new()
+        .compile_fail("tests/lane_contract/ui/an_unknown_component_key_is_an_error.rs");
+}
+
+/// A `#[component(...)]` key the derive does not know on a field is an error
+/// on that key, naming a field's keys.
+#[test]
+fn an_unknown_component_field_key_is_an_error() {
+    trybuild::TestCases::new()
+        .compile_fail("tests/lane_contract/ui/an_unknown_component_field_key_is_an_error.rs");
+}
+
+/// A `#[component(...)]` key given twice, even across two attributes, is an
+/// error on the second: neither value silently wins.
+#[test]
+fn a_component_key_given_twice_is_an_error() {
+    trybuild::TestCases::new()
+        .compile_fail("tests/lane_contract/ui/a_component_key_given_twice_is_an_error.rs");
+}
+
+/// A key that only acts through the registration `no_serializable` removes is
+/// an error on that key, saying why it would do nothing.
+#[test]
+fn a_key_no_serializable_leaves_dead_is_an_error() {
+    trybuild::TestCases::new()
+        .compile_fail("tests/lane_contract/ui/a_key_no_serializable_leaves_dead_is_an_error.rs");
+}
+
+/// `provenance` beside `no_serializable` is refused, even a variant that does
+/// not exist: with no registration it would never be read, nor checked.
+#[test]
+fn a_provenance_without_a_registration_is_an_error() {
+    trybuild::TestCases::new()
+        .compile_fail("tests/lane_contract/ui/a_provenance_without_a_registration_is_an_error.rs");
+}
+
+/// An `#[ergon_fn(...)]` key the macro does not know is an error on that key,
+/// naming its keys.
+#[test]
+fn an_unknown_ergon_fn_key_is_an_error() {
+    trybuild::TestCases::new()
+        .compile_fail("tests/lane_contract/ui/an_unknown_ergon_fn_key_is_an_error.rs");
+}
+
+/// An `#[ergon_fn(...)]` key given twice is an error on the second.
+#[test]
+fn an_ergon_fn_key_given_twice_is_an_error() {
+    trybuild::TestCases::new()
+        .compile_fail("tests/lane_contract/ui/an_ergon_fn_key_given_twice_is_an_error.rs");
 }
 
 // ─── What the derives and `register_agent!` must accept ─────────────────────

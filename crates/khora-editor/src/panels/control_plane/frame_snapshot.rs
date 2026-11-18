@@ -28,8 +28,8 @@ pub(super) struct FrameSnapshot {
     pub heap_mb: f32,
     /// CPU load, `0.0..=1.0`.
     pub cpu_load: f32,
-    /// GPU load, `0.0..=1.0`.
-    pub gpu_load: f32,
+    /// GPU load, `0.0..=1.0`; `None` while nothing measured it.
+    pub gpu_load: Option<f32>,
     /// Video memory in use, in MB; 0 when not known.
     pub vram_mb: f32,
 }
@@ -73,7 +73,7 @@ mod tests {
             frame_time_ms: 16.0,
             memory_used_mb: 512.0,
             cpu_load: 0.1,
-            gpu_load: 0.2,
+            gpu_load: Some(0.2),
             vram_mb: 300.0,
             ..StatusBarData::default()
         }
@@ -89,7 +89,7 @@ mod tests {
                 frame_time_ms: 16.0,
                 heap_mb: 512.0,
                 cpu_load: 0.1,
-                gpu_load: 0.2,
+                gpu_load: Some(0.2),
                 vram_mb: 300.0,
             }
         );
@@ -100,7 +100,7 @@ mod tests {
     fn the_dcc_hardware_wins_for_load_and_video_memory() {
         let mut dcc = DccContext::default();
         dcc.hardware.cpu_load = 0.7;
-        dcc.hardware.gpu_load = 0.8;
+        dcc.hardware.gpu_load = Some(0.8);
         dcc.hardware.total_vram = Some(4 * 1024 * 1024 * 1024);
         dcc.hardware.available_vram = Some(3 * 1024 * 1024 * 1024);
 
@@ -110,7 +110,7 @@ mod tests {
             (snap.fps, snap.frame_time_ms, snap.heap_mb),
             (60.0, 16.0, 512.0)
         );
-        assert_eq!((snap.cpu_load, snap.gpu_load), (0.7, 0.8));
+        assert_eq!((snap.cpu_load, snap.gpu_load), (0.7, Some(0.8)));
         assert_eq!(snap.vram_mb, 1024.0);
     }
 
@@ -125,6 +125,22 @@ mod tests {
             FrameSnapshot::read(Some(&status()), Some(&dcc)).vram_mb,
             300.0
         );
+    }
+
+    /// **A GPU load the DCC does not know reads unknown, not 0.**
+    ///
+    /// The DCC is the authority on the GPU's load: when it knows none (no
+    /// frame timed on the GPU, no monitor), the snapshot says so, whatever an
+    /// older status said.
+    #[test]
+    fn a_gpu_load_the_dcc_does_not_know_reads_unknown() {
+        let dcc = DccContext::default();
+
+        assert_eq!(
+            FrameSnapshot::read(Some(&status()), Some(&dcc)).gpu_load,
+            None
+        );
+        assert_eq!(FrameSnapshot::read(None, None).gpu_load, None);
     }
 
     /// Nothing to read reads zeros.

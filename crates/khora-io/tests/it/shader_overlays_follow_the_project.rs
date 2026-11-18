@@ -91,7 +91,11 @@ impl Project {
         let folder = dir.path().join("assets").join("shaders");
         std::fs::create_dir_all(&folder).expect("the shader folder");
         for (name, source) in shaders {
-            std::fs::write(folder.join(name), source).expect("the shader is written");
+            let file = folder.join(name);
+            if let Some(parent) = file.parent() {
+                std::fs::create_dir_all(parent).expect("the shader's folder");
+            }
+            std::fs::write(file, source).expect("the shader is written");
         }
         Project { dir }
     }
@@ -127,6 +131,12 @@ struct Tool {
 
 impl Tool {
     fn opening(project: &Project, trust: ProjectTrust) -> Self {
+        Tool::opening_with(project, trust, RecordingPipelines::default())
+    }
+
+    /// Opens `project` at `trust`, as [`Tool::opening`] does, with `pipelines`
+    /// as the pipeline system.
+    fn opening_with(project: &Project, trust: ProjectTrust, pipelines: RecordingPipelines) -> Self {
         let watch = Arc::new(AssetWatch::default());
         watch.watch(&project.assets()).expect("watches the assets");
         let mut runtime = Runtime::default();
@@ -136,7 +146,7 @@ impl Tool {
         let trust = Arc::new(ProjectTrustState::new(trust));
         runtime.resources.insert(Arc::clone(&trust));
         runtime.resources.insert(Arc::new(OverlaysSeen::default()));
-        let pipelines = Arc::new(RecordingPipelines::default());
+        let pipelines = Arc::new(pipelines);
         let as_system: Arc<dyn PipelineSystem> = pipelines.clone();
         runtime.resources.insert(as_system);
         let device: Arc<dyn GraphicsDevice> = Arc::new(UnusedDevice);
@@ -477,5 +487,34 @@ fn an_overlay_deleted_in_a_flood_of_changes_gives_its_module_back() {
         !tool.held().contains_key(&module),
         "an overlay deleted in a flood no longer replaces its module: {:?}",
         tool.held()
+    );
+}
+
+/// **The pump hands over only the modules the pipeline system composes.** A
+/// trusted project holds a lib the system composes and a test probe it does
+/// not, under `shaders/tests/`. Once the pump has run, the lib's overlay is
+/// held; the probe was never handed over, neither on disk at the open nor
+/// saved after.
+#[test]
+fn the_pump_hands_over_only_the_modules_the_pipeline_system_composes() {
+    let lib = "lib/std/camera.wgsl";
+    let probe = "tests/spot_attenuation_probe.wgsl";
+    let project = Project::with(&[(lib, "// camera"), (probe, "// probe, on disk at open")]);
+    let tool = Tool::opening_with(
+        &project,
+        ProjectTrust::Trusted,
+        RecordingPipelines::composing(&["khora::std::camera"]),
+    );
+    let lib_module = module_of(lib);
+    let probe_module = module_of(probe);
+    pump_until(&tool.runtime, || tool.held().contains_key(&lib_module));
+
+    std::fs::write(project.shader(probe), "// probe, saved").expect("the probe is saved");
+    tool.saved_and_applied(&project.shader(lib), &lib_module, "// camera, saved");
+
+    assert!(
+        !(tool.pipelines.overlays().iter()).any(|(module, _)| *module == probe_module),
+        "the probe is never handed over: {:?}",
+        tool.pipelines.overlays()
     );
 }

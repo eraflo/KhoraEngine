@@ -302,7 +302,7 @@ impl EditorApp {
                         if let Some(hw) = monitor.get_hardware_report() {
                             state.status.cpu_load = hw.cpu_load;
                             if let Some(g) = hw.gpu_load {
-                                state.status.gpu_load = g;
+                                state.status.gpu_load = Some(g);
                             }
                         }
                     }
@@ -317,6 +317,7 @@ impl EditorApp {
         if let Some(context) = &self.dcc_context {
             if let Ok(context) = context.read() {
                 state.status.cpu_load = context.hardware.cpu_load;
+                // The DCC is the authority: an unknown load reads unknown.
                 state.status.gpu_load = context.hardware.gpu_load;
             }
         }

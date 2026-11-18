@@ -426,3 +426,63 @@ fn the_dcc_plans_its_rounds_on_the_frames_its_governor_keeps() {
         first.planning
     );
 }
+
+/// Sends `count` frames of `frame_ms` that ran under `epoch`, 5 ms apart.
+fn frames_under(
+    tx: &crossbeam_channel::Sender<TelemetryEvent>,
+    count: usize,
+    frame_ms: f64,
+    epoch: Epoch,
+) {
+    for _ in 0..count {
+        tx.send(TelemetryEvent::FrameReport(FrameReport {
+            epoch,
+            ..frame_report(frame_ms, None)
+        }))
+        .expect("the DCC listens");
+        thread::sleep(Duration::from_millis(5));
+    }
+}
+
+/// **Frames of an epoch before the lend are left out of the governor.**
+///
+/// Frames of 15.5 ms pull the multiplier down a step, and the epoch that lends
+/// it opens. Long frames that still ran under the epoch before it — reported
+/// late, as a GPU reading is — measure nothing of the step: the multiplier
+/// holds. The same frames under the epoch that lent the step pull it down
+/// again.
+#[test]
+fn frames_of_an_epoch_before_the_lend_are_left_out_of_the_governor() {
+    let (mut dcc, rx) = recording(DccConfig::default());
+    let (agent, _ear) = Speaker::with_upgrade(
+        "renderer",
+        Duration::from_millis(2),
+        Duration::from_millis(8),
+    );
+    dcc.register_agent(agent, 1.0);
+    let tx = dcc.event_sender();
+    dcc.start(rx);
+    assert!(wait_for(2, || !epochs(&dcc).is_empty()), "the first epoch");
+
+    frames(&tx, 2 * FRAME_TIME_MIN_SAMPLES, 15.5);
+    assert!(wait_for(3, || opened_by(&dcc, Trigger::FrameGovernor)));
+    let lent = (epochs(&dcc).iter())
+        .find(|epoch| epoch.trigger == Trigger::FrameGovernor)
+        .map(|epoch| epoch.epoch)
+        .expect("the epoch that lent the step");
+    let stepped = dcc.get_context().global_budget_multiplier;
+
+    frames_under(&tx, 80, 18.0, Epoch(lent.0 - 1));
+    thread::sleep(Duration::from_millis(100));
+    let held = dcc.get_context().global_budget_multiplier;
+    frames_under(&tx, 80, 18.0, lent);
+    let lowered = wait_for(3, || dcc.get_context().global_budget_multiplier < held);
+    dcc.stop();
+
+    assert!(stepped < 1.0, "the first step: {stepped}");
+    assert!(
+        (held - stepped).abs() < 1e-4,
+        "frames before the lend moved the multiplier from {stepped} to {held}"
+    );
+    assert!(lowered, "the same frames under the lend move it");
+}

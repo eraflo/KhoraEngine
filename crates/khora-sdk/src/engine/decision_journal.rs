@@ -289,6 +289,7 @@ mod tests {
                         cpu: Some(Duration::from_millis(ms)),
                         ..PerDevice::default()
                     },
+                    ..Default::default()
                 },
             ));
             std::thread::sleep(Duration::from_millis(5));

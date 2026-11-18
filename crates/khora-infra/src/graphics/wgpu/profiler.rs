@@ -14,6 +14,8 @@
 
 use crate::graphics::wgpu::command::WgpuCommandEncoder;
 use crate::graphics::wgpu::device::WgpuDevice;
+use crate::graphics::wgpu::gpu_readings::GpuReadings;
+use khora_core::renderer::api::device::GpuFrameTime;
 use khora_core::renderer::traits::{CommandEncoder, GpuProfiler};
 use std::any::Any;
 use std::sync::{
@@ -23,9 +25,10 @@ use std::sync::{
 
 /// GPU timings of the frame and its main pass, from timestamp queries, smoothed.
 ///
-/// Four queries: frame start (0), main-pass begin (1), main-pass end (2), frame
-/// end (3); the main pass lasts 2 − 1, the frame 3 − 0. Frame N's timestamps
-/// are read at the start of frame N + 2.
+/// Four queries, written by two timestamp passes around the frame's work: the
+/// opening pass (0, 1) and the closing pass (2, 3). The work between them lasts
+/// 2 − 1, the frame 3 − 0. Frame N's timestamps are read at the start of frame
+/// N + 2.
 #[derive(Debug)]
 pub struct WgpuTimestampProfiler {
     query_set: wgpu::QuerySet,
@@ -33,13 +36,10 @@ pub struct WgpuTimestampProfiler {
     staging_buffers: [wgpu::Buffer; 3],
     staging_ready: [Arc<AtomicBool>; 3],
     staging_pending: [bool; 3],
-    period_ns: f32,
-    raw_main_pass_ms: f32,
-    raw_frame_total_ms: f32,
-    smooth_main_pass_ms: f32,
-    smooth_frame_total_ms: f32,
-    ema_alpha: f32,
-    last_raw: Option<[u64; 4]>,
+    /// The frame each staging buffer's timestamps were written by.
+    staging_frame: [u64; 3],
+    /// What was read back: the latest frame raw, and smoothed times.
+    readings: GpuReadings,
 }
 
 impl WgpuTimestampProfiler {
@@ -87,19 +87,15 @@ impl WgpuTimestampProfiler {
             staging_buffers,
             staging_ready,
             staging_pending: [false; 3],
-            period_ns: 1.0, // Default value, must be updated via `set_timestamp_period`
-            raw_main_pass_ms: 0.0,
-            raw_frame_total_ms: 0.0,
-            smooth_main_pass_ms: 0.0,
-            smooth_frame_total_ms: 0.0,
-            ema_alpha: 0.2,
-            last_raw: None,
+            staging_frame: [0; 3],
+            // The period must be set with `set_timestamp_period`.
+            readings: GpuReadings::new(0.2),
         })
     }
 
     /// Sets the queue's timestamp period, in nanoseconds per tick.
     pub fn set_timestamp_period(&mut self, period_ns: f32) {
-        self.period_ns = period_ns;
+        self.readings.set_period(period_ns);
         log::info!("GPU Timestamp Profiler period set to {:.3} ns.", period_ns);
     }
 
@@ -152,27 +148,7 @@ impl GpuProfiler for WgpuTimestampProfiler {
                 self.staging_buffers[i].unmap();
                 self.staging_pending[i] = false;
 
-                self.last_raw = Some(timestamps);
-                let [frame_start, main_begin, main_end, frame_end] = timestamps;
-
-                if main_end > main_begin && frame_end > frame_start {
-                    self.raw_main_pass_ms =
-                        ((main_end - main_begin) as f32 * self.period_ns) / 1_000_000.0;
-                    self.raw_frame_total_ms =
-                        ((frame_end - frame_start) as f32 * self.period_ns) / 1_000_000.0;
-
-                    let a = self.ema_alpha;
-                    self.smooth_main_pass_ms = if self.smooth_main_pass_ms == 0.0 {
-                        self.raw_main_pass_ms
-                    } else {
-                        a * self.raw_main_pass_ms + (1.0 - a) * self.smooth_main_pass_ms
-                    };
-                    self.smooth_frame_total_ms = if self.smooth_frame_total_ms == 0.0 {
-                        self.raw_frame_total_ms
-                    } else {
-                        a * self.raw_frame_total_ms + (1.0 - a) * self.smooth_frame_total_ms
-                    };
-                }
+                self.readings.record(self.staging_frame[i], timestamps);
             }
         }
     }
@@ -225,6 +201,8 @@ impl GpuProfiler for WgpuTimestampProfiler {
         if self.staging_pending[staging_idx] {
             return;
         }
+        // Its timestamps were written two frames ago.
+        self.staging_frame[staging_idx] = frame_index - 2;
 
         let slice = self.staging_buffers[staging_idx].slice(..);
         let flag = self.staging_ready[staging_idx].clone();
@@ -239,12 +217,16 @@ impl GpuProfiler for WgpuTimestampProfiler {
         self.staging_pending[staging_idx] = true;
     }
 
-    fn last_main_pass_ms(&self) -> f32 {
-        self.smooth_main_pass_ms
+    fn last_main_pass_ms(&self) -> Option<f32> {
+        self.readings.smooth_main_ms()
     }
 
-    fn last_frame_total_ms(&self) -> f32 {
-        self.smooth_frame_total_ms
+    fn last_frame_total_ms(&self) -> Option<f32> {
+        self.readings.smooth_total_ms()
+    }
+
+    fn last_frame(&self) -> Option<GpuFrameTime> {
+        self.readings.last()
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -305,8 +287,9 @@ mod tests {
         let period = queue.get_timestamp_period();
         profiler.set_timestamp_period(period);
 
-        // Assert initial state using the public GpuProfiler trait methods.
-        assert_eq!(profiler.last_main_pass_ms(), 0.0);
-        assert_eq!(profiler.last_frame_total_ms(), 0.0);
+        // Nothing read back yet: unknown, not 0.
+        assert_eq!(profiler.last_main_pass_ms(), None);
+        assert_eq!(profiler.last_frame_total_ms(), None);
+        assert_eq!(profiler.last_frame(), None);
     }
 }

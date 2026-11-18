@@ -85,6 +85,11 @@ machine that warms up or a scene that changes. Rules it keeps:
   the DCC planned. A busy agent's kept envelope is corrected by the row it last said
   it runs.
 
+What the book learns reaches the plan at the next round. When nothing else opens one,
+the periodic refresh does (`Trigger::Refresh`, after `DccConfig::refresh_every_ticks`
+with no round, 5 s at 20 Hz): a quiet engine still plans with what it learnt, and a
+row's cost that drifted is planned at its new price.
+
 The editor's [Control Plane](../reference/editor.md#10--the-control-plane) shows, for
 the selected agent, each row's factor (×k), spread (±σ) and switch charge.
 
@@ -319,7 +324,9 @@ multiplier*.
 The governor is a **ratio law**, the shape engines ship for dynamic resolution, not a
 PID: the loop moves by whole rows, a frame or two late, on measurements with long
 hitches, and those three things defeat a textbook PID. Its estimate is a low-pass over
-0.25 s of frame time, weighted by each frame's length. Around it (`GovernorConfig`):
+0.25 s of frame time, weighted by each frame's length. A frame's time is its critical
+path: the longest of the times it kept each device busy, the graphics card's included
+when the renderer times it. Around it (`GovernorConfig`):
 
 - **a band** 15 % deep under the target, where it holds, and **a memory**: after
   lowering, it does not raise past the multiplier that ran over, less 0.06, for 5
@@ -327,7 +334,9 @@ hitches, and those three things defeat a textbook PID. Its estimate is a low-pas
 - **fast down, slow up:** a lowering takes at most 30 % at once, a raise a quarter of
   the way, and no change smaller than 0.02 is made;
 - **decisions only on frames measured after the last change was lent** — 3 frames and
-  0.25 s — or at once after 3 frames in a row over the setpoint;
+  0.25 s — or at once after 3 frames in a row over the setpoint. A frame names the
+  epoch it ran under, and one run before the epoch that lent the change is left
+  out, however late its report comes (a GPU reading comes about two frames late);
 - **hitches left out:** a frame over twice the setpoint after one within it;
 - **no lever, no lowering:** when every agent already runs its floor, lowering would
   give nothing back, so it stops.

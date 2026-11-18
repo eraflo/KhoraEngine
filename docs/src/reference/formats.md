@@ -317,7 +317,10 @@ unchanged UUID.
 asset's. A new file made at that path gets a UUID of its own instead, derived from
 its path, a NUL and a count: no file name holds a NUL, so a derived UUID is never
 another path's default. The editor freezes it (`AssetIdRegistry::freeze_derived`),
-so the file keeps it once the renamed asset is gone.
+so the file keeps it once the renamed asset is gone. A dependency naming a path —
+a script's import — resolves through the registry too, so it names the frozen
+UUID of a renamed asset and the derived UUID of a new file at an old path, as the
+index does (see [Assets — dependency tracking](../concepts/assets.md#dependency-tracking)).
 
 **Format.** RON, one `(uuid, path)` entry per asset, **sorted by UUID**. Because the
 UUID is immutable, adding, renaming, or deleting an asset each touch a single line,

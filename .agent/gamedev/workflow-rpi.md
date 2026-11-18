@@ -26,13 +26,14 @@ Research ──► Plan ──► Implement ──► (verify) ──► compact
 2. **Plan** — [`skills/create-plan`](./skills/create-plan/SKILL.md). Turn research into a phase-by-phase
    plan. Output → `docs/plans/descriptive-name.md`. **Human reviews the plan.**
 3. **Implement** — [`skills/implement-plan`](./skills/implement-plan/SKILL.md). Execute one phase, verify
-   (`cargo build` + `cargo run`), then **compact status back into the plan file**, and repeat.
+   (Play in the editor, or `cargo build` + `cargo run`), then **compact status back into the plan file**,
+   and repeat.
 
 ## Context discipline
 
 - **Subagents are for context control, not role-play.** They run noisy searches in a separate window and
   return a distilled `file:line` summary. They never edit — the main agent implements.
-- **Domain knowledge lives in [`reference/`](./reference/)** (`gameplay`, `scene-design`) plus
+- **Domain knowledge lives in [`reference/`](./reference/)** (`ergon`, `gameplay`, `scene-design`) plus
   [`sdk-guide.md`](./sdk-guide.md), loaded on demand.
 - **Compact deliberately.** When a phase is verified, distill its outcome into the plan's Status section
   and drop the working detail.
@@ -45,5 +46,5 @@ Research ──► Plan ──► Implement ──► (verify) ──► compact
 
 ## When to skip
 
-Trivial, mechanical, single-file edits don't need the full loop — just do them and verify with
-`cargo run`. Everything larger goes through RPI.
+Trivial, mechanical, single-file edits don't need the full loop — just do them and verify with Play
+(or `cargo run`). Everything larger goes through RPI.

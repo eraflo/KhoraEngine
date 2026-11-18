@@ -19,12 +19,14 @@ pub mod adapter;
 mod adapter_identity;
 pub mod backend;
 mod backend_selection_result;
+mod gpu_frame_time;
 pub mod gpu_hook;
 pub mod settings;
 pub mod stats;
 
 pub use self::adapter::*;
 pub use self::backend::*;
+pub use self::gpu_frame_time::GpuFrameTime;
 pub use self::gpu_hook::*;
 pub use self::settings::*;
 pub use self::stats::*;

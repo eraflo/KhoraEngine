@@ -82,12 +82,13 @@ fn reading(monitor: &Arc<FakeHardware>) -> DccService {
     dcc
 }
 
-/// The context's hardware as a [`Reading`], and its GPU load.
+/// The context's hardware as a [`Reading`], and its GPU load (NaN while
+/// unknown, so it equals no load).
 fn hardware(dcc: &DccService) -> (Reading, f32) {
     let hardware = dcc.get_context().hardware;
     (
         (hardware.thermal, hardware.battery, hardware.cpu_load),
-        hardware.gpu_load,
+        hardware.gpu_load.unwrap_or(f32::NAN),
     )
 }
 

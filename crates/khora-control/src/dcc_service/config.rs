@@ -46,6 +46,13 @@ pub struct DccConfig {
     /// The fewest ticks an epoch lasts before another trigger opens the next
     /// one; a trigger raised sooner waits for it. `Safety` never waits.
     pub min_epoch_ticks: u32,
+    /// The ticks with no round after which the DCC opens one as
+    /// `Trigger::Refresh`; `0` never refreshes.
+    ///
+    /// A refresh brings what the cost book learnt, and the costs' drift, to
+    /// the plan when nothing else opens a round. No refresh opens while a trigger waits, while the last allocation waits
+    /// for a frame start to lend it, or while a replay runs.
+    pub refresh_every_ticks: u32,
     /// How many over-budget reports in a row from one agent raise
     /// `Trigger::Overruns`.
     pub overruns_in_a_row: u32,
@@ -66,6 +73,8 @@ impl Default for DccConfig {
             vram_budget_bytes: None,
             frame_governor: GovernorConfig::default(),
             min_epoch_ticks: 3,
+            // 5 s at 20 Hz.
+            refresh_every_ticks: 100,
             overruns_in_a_row: 3,
             planning: PlanningConfig::default(),
             cost_book: CostBookConfig::default(),

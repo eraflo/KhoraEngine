@@ -362,10 +362,11 @@ Host-only in v1 (Rust cross-compilation is fragile without per-target toolchains
 ├── <project_name>{.exe}     # renamed khora-runtime OR compiled user binary
 ├── data.pack
 ├── index.bin
+├── manifest.bin             # the pack's signed manifest
 └── runtime.json
 ```
 
-Run the binary directly — both `khora-runtime` and any project compiled via `khora_sdk::run_default()` auto-detect PackLoader (when `data.pack` + `index.bin` are siblings) or FileLoader (when a loose `assets/` directory is a sibling instead, used by engine contributors who want to skip packing during iteration).
+Run the binary directly. It opens the pack beside it (`data.pack` + `index.bin` + `manifest.bin`) once its seal checks against the key stamped in the binary (see [Trust: signed packs](../concepts/trust.md#signed-packs)). A stamped binary refuses loose files; an unstamped one, such as `cargo run` while iterating, reads a loose `assets/` folder beside it instead.
 
 ### Why two strategies
 

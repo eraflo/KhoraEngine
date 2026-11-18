@@ -15,6 +15,7 @@
 use super::dependencies::{
     parse_imports, pipeline_depends_on, resolve_lib_source, resolve_pipeline_source,
 };
+use super::rebuild::inject_float_defs;
 use super::*;
 use khora_core::renderer::api::shader::ShaderDefScalar;
 use naga::valid::{Capabilities, ValidationFlags, Validator};
@@ -204,17 +205,20 @@ fn overlay_lib_recomposes_and_dependent_pipeline_still_composes() {
     let overlaid = format!("{original}\n// hot-reload overlay marker\n");
 
     sys.set_overlay_source("khora::std::camera", overlaid.clone());
+    {
+        let inner = sys.inner.lock().unwrap();
+        assert!(inner.dirty.contains("khora::std::camera"));
+        assert_eq!(
+            resolve_lib_source(&inner, "khora::std::camera").as_deref(),
+            Some(overlaid.as_str())
+        );
+    }
 
+    // Re-register the overlaid lib (no pipeline is cached, so no device is
+    // used) and confirm a dependent pipeline composes against the new module.
+    sys.recompose_dirty(&NoDevice)
+        .expect("the overlaid lib recomposes");
     let mut inner = sys.inner.lock().unwrap();
-    assert!(inner.dirty.contains("khora::std::camera"));
-    assert_eq!(
-        resolve_lib_source(&inner, "khora::std::camera").as_deref(),
-        Some(overlaid.as_str())
-    );
-
-    // Re-register the overlaid lib (device-free) and confirm a dependent
-    // pipeline composes against the new module.
-    readd_lib_module(&mut inner, "khora::std::camera").expect("re-add overlaid lib");
     let defs = inner.base_defs.clone();
     let lit = resolve_pipeline_source(&inner, "khora::pipelines::lit_forward").expect("lit source");
     let patched = inject_float_defs(&lit);
@@ -230,15 +234,23 @@ fn overlay_lib_recomposes_and_dependent_pipeline_still_composes() {
         .expect("lit_forward composes against the overlaid camera lib");
 }
 
-/// Re-registers every dirty lib module with the composer and forgets the
-/// dirty set — the device-free half of `recompose_dirty`.
-fn recompose_dirty_libs(inner: &mut Inner) {
-    let dirty: Vec<String> = inner.dirty.drain().collect();
-    for path in dirty {
-        if !inner.pipelines.contains_key(path.as_str()) {
-            readd_lib_module(inner, &path)
-                .unwrap_or_else(|e| panic!("re-add the dirty lib `{path}`: {e}"));
-        }
+/// Returns the embedded source of the built-in lib `path`.
+fn lib_source(path: &str) -> String {
+    LIB_MODULES
+        .iter()
+        .find(|(p, _)| *p == path)
+        .map(|(_, s)| (*s).to_owned())
+        .unwrap_or_else(|| panic!("`{path}` is a built-in lib"))
+}
+
+/// Asserts that the composer holds every built-in lib module.
+fn assert_every_lib_composed(sys: &WgpuPipelineSystem, context: &str) {
+    let inner = sys.inner.lock().unwrap();
+    for (lib, _) in LIB_MODULES {
+        assert!(
+            inner.composer.contains_module(lib),
+            "{context}: the built-in `{lib}` is in the composer"
+        );
     }
 }
 
@@ -279,9 +291,10 @@ fn clear_overlays_restores_the_engines_module() {
         .to_owned();
 
     sys.set_overlay_source("khora::std::camera", overlay.clone());
+    sys.recompose_dirty(&NoDevice)
+        .expect("the overlay recomposes");
     {
         let mut inner = sys.inner.lock().unwrap();
-        recompose_dirty_libs(&mut inner);
         assert_eq!(
             resolve_lib_source(&inner, "khora::std::camera").as_deref(),
             Some(overlay.as_str()),
@@ -295,19 +308,23 @@ fn clear_overlays_restores_the_engines_module() {
 
     sys.clear_overlays();
 
+    {
+        let inner = sys.inner.lock().unwrap();
+        assert_eq!(
+            resolve_lib_source(&inner, "khora::std::camera").as_deref(),
+            Some(original.as_str()),
+            "the camera lib's source is the engine's again"
+        );
+        assert!(
+            inner.rebuilt || inner.dirty.contains("khora::std::camera"),
+            "the cleared module is recomposed at the next recompose_dirty: rebuilt {}, dirty {:?}",
+            inner.rebuilt,
+            inner.dirty
+        );
+    }
+    sys.recompose_dirty(&NoDevice)
+        .expect("the cleared overlays recompose");
     let mut inner = sys.inner.lock().unwrap();
-    assert_eq!(
-        resolve_lib_source(&inner, "khora::std::camera").as_deref(),
-        Some(original.as_str()),
-        "the camera lib's source is the engine's again"
-    );
-    assert!(
-        inner.rebuilt || inner.dirty.contains("khora::std::camera"),
-        "the cleared module is recomposed at the next recompose_dirty: rebuilt {}, dirty {:?}",
-        inner.rebuilt,
-        inner.dirty
-    );
-    recompose_dirty_libs(&mut inner);
     compose_lit_forward(&mut inner)
         .expect("lit_forward composes from the engine's camera lib again");
 }
@@ -355,12 +372,13 @@ fn clear_overlays_restores_a_module_whose_last_overlay_failed_to_compose() {
     );
 }
 
-/// Clearing the overlays removes a module only a project brought.
+/// An overlay of a module the system does not register adds no lib.
 ///
-/// Once cleared and recomposed, the composer holds nothing of the project's
-/// `khora::project::extra`, so no later pipeline can import it.
+/// The project's `khora::project::extra` declares an import path but is no
+/// lib the engine registers: once recomposed, the composer does not hold it,
+/// so no pipeline can import it.
 #[test]
-fn clear_overlays_removes_a_module_only_a_project_brought() {
+fn an_overlay_of_an_unregistered_module_adds_no_lib() {
     let sys = WgpuPipelineSystem::new().expect("system init");
     sys.set_overlay_source(
         "khora::project::extra",
@@ -369,19 +387,7 @@ fn clear_overlays_removes_a_module_only_a_project_brought() {
             .to_owned(),
     );
     sys.recompose_dirty(&NoDevice)
-        .expect("the project's module recomposes");
-    assert!(
-        sys.inner
-            .lock()
-            .unwrap()
-            .composer
-            .contains_module("khora::project::extra"),
-        "the premise: the composer holds the project's module"
-    );
-
-    sys.clear_overlays();
-    sys.recompose_dirty(&NoDevice)
-        .expect("the cleared overlays recompose");
+        .expect("an unregistered overlay recomposes nothing");
 
     assert!(
         !sys.inner
@@ -389,90 +395,178 @@ fn clear_overlays_removes_a_module_only_a_project_brought() {
             .unwrap()
             .composer
             .contains_module("khora::project::extra"),
-        "the module only the project brought is gone once its overlays are cleared"
+        "the composer holds no lib the system does not register"
     );
+    assert_every_lib_composed(&sys, "after the unregistered overlay");
 }
 
-/// Clearing the overlays restores a built-in module a project file of another
-/// name overrode.
+/// An overlay declaring another module's import path is refused.
 ///
-/// The project's `khora::evil` declares `#define_import_path khora::std::camera`
-/// without the `camera` binding; cleared and recomposed, the camera lib is the
-/// engine's again and `lit_forward` composes.
+/// The overlay of `khora::std::model` declares `khora::std::camera` without
+/// the `camera` binding; recomposed, both libs are composed from the engine's
+/// sources and `lit_forward` composes.
 #[test]
-fn clear_overlays_restores_a_builtin_module_a_file_of_another_name_replaced() {
+fn an_overlay_declaring_another_modules_import_path_is_refused() {
     let sys = WgpuPipelineSystem::new().expect("system init");
     sys.set_overlay_source(
-        "khora::evil",
+        "khora::std::model",
         "#define_import_path khora::std::camera\n\n\
          fn khora_overlay_marker() -> f32 { return 1.0; }\n"
             .to_owned(),
     );
     sys.recompose_dirty(&NoDevice)
-        .expect("the project's file recomposes");
+        .expect("a refused overlay is logged, not returned");
+
+    assert_every_lib_composed(&sys, "after the refused overlay");
+    let mut inner = sys.inner.lock().unwrap();
     assert!(
-        compose_lit_forward(&mut sys.inner.lock().unwrap()).is_err(),
-        "the premise: the project's file replaced the camera lib"
+        !inner.overlays.contains_key("khora::std::model"),
+        "the refused overlay is dropped"
     );
-
-    sys.clear_overlays();
-    sys.recompose_dirty(&NoDevice)
-        .expect("the cleared overlays recompose");
-
-    compose_lit_forward(&mut sys.inner.lock().unwrap())
-        .expect("lit_forward composes from the engine's camera lib once the overlays are cleared");
+    compose_lit_forward(&mut inner)
+        .expect("lit_forward composes from the engine's camera and model libs");
 }
 
 /// Clearing the overlays keeps every built-in module a project overlaid.
 ///
-/// The project overlays `structs` with a version importing a lib of its own,
-/// then `uniforms`, which imports `structs`. Cleared and recomposed, both come
-/// from the engine's source whatever the hash order (run twenty times).
+/// The project overlays `structs`, then `uniforms`, which imports `structs`.
+/// Cleared and recomposed, every lib is in the composer whatever the hash
+/// order (run twenty times).
 #[test]
 fn clear_overlays_keeps_every_builtin_module_a_project_overlaid() {
-    let source = |path: &str| {
-        LIB_MODULES
-            .iter()
-            .find(|(p, _)| *p == path)
-            .map(|(_, s)| (*s).to_owned())
-            .unwrap_or_else(|| panic!("`{path}` is a built-in lib"))
-    };
     for run in 0..20 {
         let sys = WgpuPipelineSystem::new().expect("system init");
-        sys.set_overlay_source(
-            "khora::project::extra",
-            "#define_import_path khora::project::extra\n\n\
-             fn project_extra() -> f32 { return 3.0; }\n"
-                .to_owned(),
-        );
-        sys.recompose_dirty(&NoDevice)
-            .expect("the project's lib recomposes");
-        let structs = source("khora::lighting::structs").replacen(
-            "#define_import_path khora::lighting::structs",
-            "#define_import_path khora::lighting::structs\n#import khora::project::extra",
-            1,
-        );
-        sys.set_overlay_source("khora::lighting::structs", structs);
-        sys.recompose_dirty(&NoDevice)
-            .expect("the overlaid structs recompose");
-        sys.set_overlay_source(
-            "khora::lighting::uniforms",
-            format!("{}\n// overlay\n", source("khora::lighting::uniforms")),
-        );
-        sys.recompose_dirty(&NoDevice)
-            .expect("the overlaid uniforms recompose");
+        for lib in ["khora::lighting::structs", "khora::lighting::uniforms"] {
+            sys.set_overlay_source(lib, format!("{}\n// overlay\n", lib_source(lib)));
+            sys.recompose_dirty(&NoDevice)
+                .unwrap_or_else(|e| panic!("run {run}: the overlaid `{lib}` recomposes: {e}"));
+        }
 
         sys.clear_overlays();
         sys.recompose_dirty(&NoDevice)
             .expect("the cleared overlays recompose");
 
-        let inner = sys.inner.lock().unwrap();
-        for lib in ["khora::lighting::structs", "khora::lighting::uniforms"] {
-            assert!(
-                inner.composer.contains_module(lib),
-                "run {run}: the built-in `{lib}` is in the composer after the clear"
-            );
+        assert_every_lib_composed(&sys, &format!("run {run}, after the clear"));
+    }
+}
+
+/// A recomposed lib leaves the libs importing it composed.
+///
+/// `khora::shadow::bindings` is imported by `sample_2d` and `sample_cube`;
+/// overlaid with its own source and recomposed, both stay in the composer and
+/// `lit_forward`, which imports `sample_cube`, composes.
+#[test]
+fn a_recomposed_lib_leaves_the_libs_importing_it_composed() {
+    let sys = WgpuPipelineSystem::new().expect("system init");
+    sys.set_overlay_source(
+        "khora::shadow::bindings",
+        format!("{}\n// overlay\n", lib_source("khora::shadow::bindings")),
+    );
+    sys.recompose_dirty(&NoDevice)
+        .expect("the overlaid bindings recompose");
+
+    assert_every_lib_composed(&sys, "after the bindings recomposed");
+    compose_lit_forward(&mut sys.inner.lock().unwrap())
+        .expect("lit_forward composes once the bindings it imports through sample_cube recompose");
+}
+
+/// A lib whose overlay fails to compose leaves every module composed.
+///
+/// In one pass, `structs` is overlaid with a source declaring no import path
+/// and `bindings` with its own source. The broken overlay is dropped, the
+/// composer keeps every lib, and `lit_forward` composes.
+#[test]
+fn a_lib_whose_overlay_fails_to_compose_leaves_every_module_composed() {
+    for run in 0..20 {
+        let sys = WgpuPipelineSystem::new().expect("system init");
+        sys.set_overlay_source(
+            "khora::lighting::structs",
+            "fn khora_overlay_marker() -> f32 { return 2.0; }\n".to_owned(),
+        );
+        sys.set_overlay_source(
+            "khora::shadow::bindings",
+            format!("{}\n// overlay\n", lib_source("khora::shadow::bindings")),
+        );
+        sys.recompose_dirty(&NoDevice)
+            .expect("a lib that fails to compose is logged, not returned");
+
+        assert_every_lib_composed(&sys, &format!("run {run}"));
+        let mut inner = sys.inner.lock().unwrap();
+        assert!(
+            !inner.overlays.contains_key("khora::lighting::structs"),
+            "run {run}: the broken overlay is dropped"
+        );
+        compose_lit_forward(&mut inner)
+            .unwrap_or_else(|e| panic!("run {run}: lit_forward composes: {e}"));
+    }
+}
+
+/// One hot-reload pass over the engine's own shader tree leaves `lit_forward`
+/// composable.
+///
+/// A tool watching the engine's shader folder overlays, at its first pass,
+/// every module with its own source, the test probe included. Recomposed,
+/// every lib is in the composer and `lit_forward` composes, whatever the hash
+/// order (run twenty times).
+#[test]
+fn a_pass_overlaying_the_whole_shader_tree_leaves_lit_forward_composable() {
+    let probe = include_str!("../../shader/shaders/tests/spot_attenuation_probe.wgsl");
+    for run in 0..20 {
+        let sys = WgpuPipelineSystem::new().expect("system init");
+        for (name, source) in LIB_MODULES.iter().chain(PIPELINE_MODULES) {
+            sys.set_overlay_source(name, (*source).to_owned());
         }
+        sys.set_overlay_source("khora::tests::spot_attenuation_probe", probe.to_owned());
+        sys.recompose_dirty(&NoDevice)
+            .unwrap_or_else(|e| panic!("run {run}: the pass recomposes: {e}"));
+
+        assert_every_lib_composed(&sys, &format!("run {run}"));
+        compose_lit_forward(&mut sys.inner.lock().unwrap())
+            .unwrap_or_else(|e| panic!("run {run}: lit_forward composes: {e}"));
+    }
+}
+
+/// The libs compose whatever their order: each is added after the libs it imports.
+///
+/// Listed in the reverse of the engine's order, every lib importing another
+/// comes first, and every lib is still in the composer.
+#[test]
+fn compose_libs_adds_each_lib_after_its_imports_whatever_their_order() {
+    let base_defs = WgpuPipelineSystem::new()
+        .expect("system init")
+        .inner
+        .lock()
+        .unwrap()
+        .base_defs
+        .clone();
+    let reversed: Vec<(&str, &str)> = LIB_MODULES.iter().rev().copied().collect();
+
+    let composer = libs::compose_libs(&reversed, &base_defs).expect("the libs compose");
+
+    for (lib, _) in LIB_MODULES {
+        assert!(
+            composer.contains_module(lib),
+            "the built-in `{lib}` is in the composer"
+        );
+    }
+}
+
+/// The system composes the libs and pipelines it registers, and nothing else.
+///
+/// The test probe, the egui shader and a project's own module are no modules
+/// it composes.
+#[test]
+fn composes_its_registered_modules_only() {
+    let sys = WgpuPipelineSystem::new().expect("system init");
+    for (name, _) in LIB_MODULES.iter().chain(PIPELINE_MODULES) {
+        assert!(sys.composes(name), "`{name}` is a registered module");
+    }
+    for name in [
+        "khora::tests::spot_attenuation_probe",
+        "khora::standalone::egui",
+        "khora::project::extra",
+    ] {
+        assert!(!sys.composes(name), "`{name}` is no registered module");
     }
 }
 
@@ -647,7 +741,7 @@ impl GraphicsDevice for NoDevice {
 /// Every watched pipeline file is a registered pipeline, or lives elsewhere.
 ///
 /// The watcher names a file of `pipelines/` `khora::pipelines::<stem>`, and
-/// `recompose_dirty` takes one the table does not know for a lib module.
+/// the hot reload hands over only a module the table registers.
 #[test]
 fn every_watched_pipeline_file_is_a_registered_pipeline() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

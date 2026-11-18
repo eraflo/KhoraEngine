@@ -15,7 +15,8 @@ Guardrails for building and shipping a game. Enforced at commit time by the
 
 ## B — Never embed or commit secrets
 **Never** put a secret in game source, configs, assets, or a shipped build:
-- API keys, tokens, passwords, private keys, signing certificates.
+- API keys, tokens, passwords, private keys, signing certificates — the pack signing key
+  (`~/.khora/signing/pack.key`) included: it stays in the home folder, never in a project.
 - Backend/server credentials, third-party service keys, analytics tokens.
 - Personal data or local machine paths (`C:\Users\<name>\…`), internal URLs.
 
@@ -27,6 +28,13 @@ Rules of thumb:
 - If a secret was ever committed, **rotate it** — deleting it from a later commit does not un-leak it.
 - The `secret-scan` pre-commit hook is the backstop, not a substitute for care.
 
-## C — When you spot a problem
+## C — Trust
+- A project someone else made opens **restricted**: readable and editable, but its scripts do not play,
+  Build Game is refused and its shader overlays are ignored. Trusting it is the user's decision, in the
+  hub or the editor — never made for them.
+- A shipped game verifies its signed pack at every start; a refused start is a finding to report, never
+  a check to work around.
+
+## D — When you spot a problem
 Stop and surface it with the file path and a one-line risk. Flag real issues rather than silently
 working around them.

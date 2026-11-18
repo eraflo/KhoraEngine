@@ -372,9 +372,10 @@ mod tests {
             b: f32,
         }
 
-        /// `layout` written after `provenance = ...`.
+        /// `layout` written after `provenance = ...`; registered, since
+        /// `provenance` acts only through the registration.
         #[derive(Debug, Clone, Copy, PartialEq, Default, Component)]
-        #[component(no_serializable, provenance = Runtime, layout = "soa")]
+        #[component(provenance = Runtime, layout = "soa")]
         struct ProvenanceFirstSoa {
             a: f32,
             b: f32,
@@ -621,7 +622,7 @@ mod tests {
 
     /// `layout` is read wherever it sits among the `#[component(...)]` keys, hiding none.
     ///
-    /// An explicit non-`"soa"` value keeps the AoS column.
+    /// An explicit `"aos"` keeps the AoS column.
     mod layout_attribute_shapes {
         use std::any::TypeId;
 
@@ -655,9 +656,9 @@ mod tests {
             b: f32,
         }
 
-        /// `layout` last, after a flag and two value keys.
+        /// `layout` last, after a flag and a value key.
         #[derive(Debug, Clone, Copy, PartialEq, Default, Component)]
-        #[component(no_serializable, domain = Physics, provenance = Runtime, layout = "soa")]
+        #[component(no_serializable, domain = Physics, layout = "soa")]
         struct LayoutLastAfterFlag {
             a: f32,
             b: f32,
@@ -667,14 +668,6 @@ mod tests {
         #[derive(Debug, Clone, Copy, PartialEq, Default, Component)]
         #[component(no_serializable, domain = Physics, layout = "aos")]
         struct LayoutAos {
-            a: f32,
-            b: f32,
-        }
-
-        /// A value that only differs from `"soa"` by case.
-        #[derive(Debug, Clone, Copy, PartialEq, Default, Component)]
-        #[component(no_serializable, domain = Physics, layout = "SOA")]
-        struct LayoutWrongCase {
             a: f32,
             b: f32,
         }
@@ -721,7 +714,7 @@ mod tests {
         }
 
         #[test]
-        fn layout_last_after_flag_and_value_keys_is_honoured() {
+        fn layout_last_after_a_flag_and_a_value_key_is_honoured() {
             assert!(!stored_as_aos::<LayoutLastAfterFlag>());
             assert!(
                 registration_of::<LayoutLastAfterFlag>().is_none(),
@@ -734,9 +727,8 @@ mod tests {
         }
 
         #[test]
-        fn non_soa_layout_values_keep_the_aos_column() {
+        fn the_aos_layout_keeps_the_aos_column() {
             assert!(stored_as_aos::<LayoutAos>());
-            assert!(stored_as_aos::<LayoutWrongCase>());
         }
     }
 

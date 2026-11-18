@@ -21,6 +21,9 @@ use super::{ControlPlanePanel, FrameSnapshot, Painter, FRAME_TARGET_MS};
 use khora_tool_ui::widgets::paint;
 use khora_tool_ui::widgets::with_alpha;
 
+/// What the summary bar shows for a value nobody measured.
+pub(super) const UNKNOWN: &str = "—";
+
 impl ControlPlanePanel {
     /// Paints the summary bar over `rect`: the DCC's state, `snap`, and the frame time's trend.
     pub(super) fn paint_summary_bar(
@@ -55,7 +58,7 @@ impl ControlPlanePanel {
         );
         let mode_str: String = dcc
             .map(|c| families_off_label(&c.inactive))
-            .unwrap_or_else(|| "—".to_owned());
+            .unwrap_or_else(|| UNKNOWN.to_owned());
         let mult = dcc.map(|c| c.global_budget_multiplier).unwrap_or(1.0);
         // Two short lines, so the text does not run into the stats.
         let sub_line1 = format!("khora-control · {} · budget×{:.2}", mode_str, mult,);
@@ -102,7 +105,9 @@ impl ControlPlanePanel {
             theme.success
         };
         let cpu_pct = (snap.cpu_load * 100.0).clamp(0.0, 100.0);
-        let gpu_pct = (snap.gpu_load * 100.0).clamp(0.0, 100.0);
+        let gpu_pct = snap
+            .gpu_load
+            .map_or(0.0, |load| (load * 100.0).clamp(0.0, 100.0));
         let stats: [(&str, String, f32, [f32; 4]); 5] = [
             (
                 "FRAME BUDGET",
@@ -122,8 +127,8 @@ impl ControlPlanePanel {
             ),
             (
                 "GPU",
-                format!("{:.0}%", gpu_pct),
-                snap.gpu_load.clamp(0.0, 1.0),
+                load_value(snap.gpu_load),
+                snap.gpu_load.map_or(0.0, |load| load.clamp(0.0, 1.0)),
                 if gpu_pct > 70.0 {
                     theme.warning
                 } else {
@@ -135,7 +140,7 @@ impl ControlPlanePanel {
                 if snap.vram_mb > 0.0 {
                     format!("{:.1} GB", snap.vram_mb / 1024.0)
                 } else {
-                    "—".to_owned()
+                    UNKNOWN.to_owned()
                 },
                 if snap.vram_mb > 0.0 {
                     (snap.vram_mb / 12_288.0).clamp(0.0, 1.0)
@@ -161,11 +166,17 @@ impl ControlPlanePanel {
                 FontFamilyHint::Proportional,
                 TextAlign::Left,
             );
+            // A value nobody measured is muted.
+            let value_color = if value == UNKNOWN {
+                theme.text_muted
+            } else {
+                theme.text
+            };
             ui.paint_text_styled(
                 [cx, y + 32.0],
                 value,
                 12.5,
-                theme.text,
+                value_color,
                 FontFamilyHint::Monospace,
                 TextAlign::Left,
             );
@@ -191,6 +202,15 @@ impl ControlPlanePanel {
     }
 }
 
+/// Returns what the summary bar says of a load: a percentage, or [`UNKNOWN`]
+/// while nothing measured it.
+pub(super) fn load_value(load: Option<f32>) -> String {
+    load.map_or_else(
+        || UNKNOWN.to_owned(),
+        |load| format!("{:.0}%", (load * 100.0).clamp(0.0, 100.0)),
+    )
+}
+
 /// Returns what the summary bar says of the families off: each by name, or
 /// that none is.
 pub(super) fn families_off_label(
@@ -209,7 +229,16 @@ mod tests {
 
     use khora_sdk::AgentId;
 
-    use super::families_off_label;
+    use super::{families_off_label, load_value, UNKNOWN};
+
+    /// **An unknown GPU load shows as a dash, not 0 %.**
+    #[test]
+    fn an_unknown_load_shows_as_a_dash() {
+        assert_eq!(load_value(None), UNKNOWN);
+        assert_eq!(load_value(Some(0.0)), "0%", "a measured idle card");
+        assert_eq!(load_value(Some(0.42)), "42%");
+        assert_eq!(load_value(Some(1.7)), "100%", "a load is at most full");
+    }
 
     /// **The Control Plane shows the families off**, each by name.
     #[test]

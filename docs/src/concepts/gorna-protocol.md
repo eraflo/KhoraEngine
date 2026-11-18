@@ -61,7 +61,7 @@ menu, priced — so nothing is bid twice. The types live in
 
 | Message | From → to | Carries | When |
 |---|---|---|---|
-| `OfferRequest` | DCC → agent | `epoch`; `target`, the frame's target time; `pressure`; `reply_by`, the deadline | when an epoch opens |
+| `OfferRequest` | DCC → agent | `epoch`; `target`, the frame's target time; `reply_by`, the deadline | when an epoch opens |
 | `Offer` | agent → DCC | `rows`: each `OfferRow` with its `id`, its `cost` per device, its `quality` from 0 to 1, its `confidence` (`Measured`, `Quoted`, `Assumed`); the `floor`; the `current` row; its `health` | in reply, at once |
 | `Allocation` | DCC → every agent | `epoch`; `trigger`; one `Envelope` per agent; `pins` and `allowed` rows, the developer's rules; `late`, the agents that keep their envelope; `lever`, whether a lower target can still take something back; `price`, the cutoff of the upgrades, for information | published at once, lent at the next frame start |
 | `Report` | agent → DCC | the `row` it ran; `measured`, its time per device; `done`, the share of its work done; `health`; `over_budget`; `stalled`; `workload`, the host time its level quoted; `switch`, what preparing its layer took; a `message` | after every run |
@@ -71,11 +71,16 @@ row that ran, `Quoted` for a row its lane priced on this frame's inputs without
 running it, `Assumed` for a row not priced at all — its memory alone, no time. The
 DCC plans no `Assumed` row.
 
-The DCC sends a `pressure` of 0: the heuristics' pressure reaches a round through
-its target instead. The host also sends one message of its own after every frame,
-the `FrameReport`: how long the frame kept each device busy, the waits for the
-display left out. The [frame governor](./arbiter.md#the-cost-model-and-the-frame-governor)
-reads it.
+A request carries no pressure of its own: the heuristics' pressure reaches the
+agent through the target, which heat, the battery, a forecast and the governor
+tighten. The host also sends one message of its own after every frame, the
+`FrameReport`: how long the frame kept each device busy, the waits for the display
+left out — the processor by the frame's clock, the graphics card by its timestamps
+when the backend has them, unmeasured (never 0) when it has none — and the epoch
+the frame ran under. A frame timed on the GPU is reported once its own GPU time is
+read back, a few frames late. The
+[frame governor](./arbiter.md#the-cost-model-and-the-frame-governor) reads it, and
+the GPU-load [heuristic](./gorna.md#the-heuristics) reads its GPU time.
 
 ## Epochs and triggers
 
@@ -90,15 +95,22 @@ An epoch opens on a **trigger** (`Trigger`). Each one names who raises it:
 | `AgentsChanged` | an agent came or went: a family switched on or off (`TelemetryEvent::ActivationChanged`), an agent registered or dropped |
 | `AgentStalled` | an agent reports it is stalled, with a health under 0.5 |
 | `Overruns` | one agent reports over budget 3 runs in a row (`DccConfig::overruns_in_a_row`) |
-| `Refresh` | a replayed journal ran out: a live round opens for the engine as it is now |
+| `Refresh` | no round opened for `DccConfig::refresh_every_ticks` (100 ticks, 5 s at 20 Hz), so what the cost book learnt and the costs' drift reach the plan; or a replayed journal ran out: a live round opens for the engine as it is now |
 | `Safety` | the emergency: see below |
-| `PolicyChanged` | named by the protocol; the DCC raises it nowhere. A policy set with `set_adaptation_mode` or `set_hint` is read by the next round, whatever opens it |
+| `PolicyChanged` | the developer's rules differ from those the last round read: a mode set with `set_adaptation_mode`, a hint set with `set_hint` or cleared with `clear_agent_hints`. The rules compared are those each agent runs, a default included: the rule already in force set again opens nothing, and a change put back before its round opens is withdrawn |
 
 **An epoch lasts at least 3 ticks** (`DccConfig::min_epoch_ticks`, 150 ms at
 20 Hz), so the engine does not flap from one round to the next. The first trigger
 raised waits for that minimum and a later one does not replace it; it is never
 dropped, not even by a replay. `Safety` replaces whatever waits, and opens its
 epoch on the tick it is raised.
+
+A policy change waits like any other trigger: only `Safety` cuts an epoch short
+(I9), so a developer's change lands within 3 ticks, and a round already waiting
+under another trigger reads it. A refresh opens only when nothing else would: no
+trigger waits, no allocation still waits on the budget channel for a frame start
+to lend it — its round is still open — and no replay runs. Any round restarts
+its period.
 
 A round becomes `Safety` whatever its trigger when the heuristics detect a **death
 spiral** (three or more pressures at once), when two or more agents report they
@@ -109,7 +121,7 @@ are stalled, or when even the floors do not fit the frame.
 | Question | Who | How |
 |---|---|---|
 | How much time and memory? | DCC | one envelope per agent per epoch |
-| When to decide again? | DCC | the triggers above, and the shortest epoch |
+| When to decide again? | DCC | the triggers above, the shortest epoch, and the refresh period |
 | An emergency? | DCC | a `Safety` allocation: every envelope is its agent's floor |
 | What does a row cost? | the agent's lanes | a quote, worked out on the frame's inputs |
 | How far is a quote from the truth? | DCC | the [cost book](./arbiter.md#the-cost-book) learns it, and plans with it |
@@ -344,7 +356,8 @@ what is between.
 - *A quiet frame costs the agent nothing:* it is called only for a wake.
 
 **The cost of the protocol.** One round trip per epoch, and at most one epoch per
-3 ticks outside `Safety`. The choice costs O(|menu|) per agent, and only when the
+3 ticks outside `Safety`; while frames run, at least one per refresh period *R*
+(100 ticks). The choice costs O(|menu|) per agent, and only when the
 agent is woken: a quiet frame adds no agent call. What the arbiter costs is in
 [its own formalisation](./arbiter.md#formalisation).
 

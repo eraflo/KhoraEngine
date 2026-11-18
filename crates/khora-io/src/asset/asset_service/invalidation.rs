@@ -18,6 +18,7 @@
 use std::any::TypeId;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use khora_core::asset::{Asset, AssetHandle, AssetUUID};
 use khora_core::event::Channel;
@@ -29,35 +30,60 @@ use crate::asset::change::{AssetChanged, CHANGE_BACKLOG};
 impl AssetService {
     /// Drops the cached copies of `uuid`; returns whether any storage held one.
     ///
-    /// Its sub-assets and the containers reading its file are dropped with it.
-    /// Handles already out keep the old value. Each is announced on
+    /// Its sub-assets and the containers reading its file are dropped with it,
+    /// each path a container reads matched by the UUID the index gives it: a
+    /// file the index does not list reaches no container, which
+    /// [`invalidate_through`](Self::invalidate_through) resolves. Handles already
+    /// out keep the old value. Each is announced on
     /// [`changes`](Self::changes) even when nothing was cached: after a failed
     /// reload, the engine still holds the last good copy.
     pub fn invalidate(&mut self, uuid: &AssetUUID) -> bool {
+        let index = Arc::clone(&self.reader.index);
+        self.invalidate_changed(*uuid, None, &|path| index.uuid_at(path))
+    }
+
+    /// Drops the cached copies of the changed file at `rel_fwd`; returns whether any were held.
+    ///
+    /// As [`invalidate`](Self::invalidate), its UUID and each path a container
+    /// reads resolved by `uuid_of`, the project's identity registry the index
+    /// is built through: a file made since the last reindex reaches the
+    /// containers reading it.
+    pub fn invalidate_through(
+        &mut self,
+        rel_fwd: &str,
+        uuid_of: &dyn Fn(&str) -> AssetUUID,
+    ) -> bool {
+        self.invalidate_changed(uuid_of(rel_fwd), Some(rel_fwd), &|path| Some(uuid_of(path)))
+    }
+
+    /// Invalidates `uuid`, at `rel_fwd` when the index does not list it, and
+    /// every container reading a path `uuid_of` gives one of the files dropped.
+    fn invalidate_changed(
+        &mut self,
+        uuid: AssetUUID,
+        rel_fwd: Option<&str>,
+        uuid_of: &dyn Fn(&str) -> Option<AssetUUID>,
+    ) -> bool {
         self.failed.clear();
         let mut any = false;
-        let mut pending = vec![*uuid];
+        let mut pending = vec![uuid];
         let mut seen = HashSet::new();
         while let Some(file) = pending.pop() {
             if !seen.insert(file) {
                 continue;
             }
             any |= self.invalidate_file(&file);
-            // A file the index does not list yet (created since the last
-            // reindex) is known only by its uuid, the one its path gives.
-            let key = self
-                .reader
-                .index
-                .get_metadata(&file)
-                .map(|metadata| khora_core::asset::asset_key(&metadata.source_path));
+            let key = (self.reader.index.get_metadata(&file))
+                .map(|metadata| khora_core::asset::asset_key(&metadata.source_path))
+                .or_else(|| rel_fwd.filter(|_| file == uuid).map(str::to_owned));
             // A decode in flight names the files it read beside its own by
             // key: the key moves with the file, under the uuid it gives.
             if let Some(key) = &key {
                 self.generations.bump(&AssetUUID::new_v5(key));
             }
-            let names_file = |external: &String| {
-                key.as_ref() == Some(external) || AssetUUID::new_v5(external) == file
-            };
+            // A path names the file when it resolves to the file's uuid: a
+            // renamed file's old path, now another file's, never does.
+            let names_file = |external: &String| uuid_of(external) == Some(file);
             pending.extend(
                 self.external_files
                     .iter()

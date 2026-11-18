@@ -170,8 +170,8 @@ extension at all gets the generic `blob` tag.
    | No `Cargo.toml` (data-only) | Runtime stamp | The pre-built `khora-runtime` for the target is copied and renamed. |
    | `Cargo.toml` present | Cargo build | `cargo build --release` runs; the produced binary replaces the runtime stamp. |
 
-   Either way, `data.pack` + `index.bin` + `runtime.json` are emitted alongside
-   the binary, and the runtime auto-detects them at startup. The runtime-stamp
+   Either way, `data.pack` + `index.bin` + `manifest.bin` + `runtime.json` are
+   emitted alongside the binary, which checks the pack's seal at startup. The runtime-stamp
    path is trivially cross-platform (a file copy from the hub's engine cache); the
    cargo path is host-only in v1.
 

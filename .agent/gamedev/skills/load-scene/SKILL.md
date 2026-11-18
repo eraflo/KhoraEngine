@@ -1,56 +1,59 @@
 ---
 name: load-scene
-description: Loads, saves, or serializes a scene or a game save in a Khora game via the SDK. Use when persisting world state, loading levels, saving/loading player progress, or working with prefabs.
+description: Loads or saves a scene, or a player's game save, from a Khora game's Rust through the SDK. Use when persisting player progress, loading a level from code, or working with scenes that link prefabs.
 ---
 
 # Load / save a scene, save the game
 
-Two different documents, both `SceneFile`s:
-- a **scene** (`.kscene`) — what was authored, loaded with `SerializationService`;
-- a **game save** — only how play changed the world, taken **against a base scene**
-  (`GameWorld::save_game` / `load_game`).
+Two documents, both `SceneFile`s:
+- a **scene** (`.kscene`, magic `KHORASCN`) — the whole world as authored, read and written by
+  `SerializationService`. The editor writes them; a shipped game loads the scene `runtime.json` names.
+- a **game save** (magic `KHORASAV`) — only how play changed the world, taken **against a base scene**
+  (`GameWorld::save_game` / `load_game` / `file_load_game`).
 
 ## Concepts
-- `SerializationGoal` picks the **encoding**, never what is saved: `HumanReadableDebug` /
+- `SerializationGoal` picks the **encoding**, never the content: `HumanReadableDebug` /
   `LongTermStability` → JSON text, `EditorInterchange` / `SmallestFileSize` → compact binary,
-  `PortableBinary` → MessagePack, `FastestLoad` → a snapshot bound to this exact build (a cache — never
-  the only copy you keep; a game save asking for it is written compact).
-- Loads are **atomic**: on error the world is left exactly as it was. On success you get a `LoadReport`
-  listing what was adapted (defaulted / dropped / renamed fields, retired components…). Log or show it.
-- Prefabs: an instance stays linked to its `.kprefab` (a compact scene file); loading needs a prefab
-  source. The engine sets one on your `GameWorld` at boot when an `AssetService` is present.
-- The **editor** (`cargo run -p khora-editor` in the engine repo) authors scenes and prefabs.
+  `PortableBinary` → MessagePack, `FastestLoad` → a snapshot only this build reads (a cache, never the
+  only copy; a game save asking for it is written compact).
+- Every load is **atomic**: an error leaves the world exactly as it was; success returns a `LoadReport`
+  whose `entries` say what was adapted (defaulted, dropped, renamed, retired…). Log them.
+- **While frames run, file the load**: `world.file_load_game(&save, &level)` returns a `LoadTicket`; the
+  load is prepared off the frame and lands at a frame boundary; `world.take_load_outcome(ticket)`
+  returns it once landed. The synchronous `load_game`, `load_world` and `replace_world` are for `setup`.
+- **Prefabs**: a scene from the editor holds prefab instances as links. The world the engine hands to
+  `setup` has a prefab source when an `AssetService` was opened before boot (`open_game_assets`); a
+  `SerializationService` you build needs `SerializationService::with_prefabs(source)` — `new()` refuses
+  a scene that links one.
 
 ## Steps
-1. **Load a level** (startup, transition) — bytes from your packed assets, then:
+1. **Save the game** against the level it started from — [`../../sdk-guide.md`](../../sdk-guide.md) §10 has
+   `save`, `file_load` and `landed`:
+   `world.save_game(level_id, &level, SerializationGoal::SmallestFileSize)?` then
+   `khora_sdk::fs::write_atomic(path, &save.to_bytes())?`. The game picks the folder; the engine names none.
+2. **Load the game**: read the save with `fs::read_bounded`, find its level with
+   `SerializationService::new().save_base(&save)?`, read that level, then `file_load_game` during play
+   (or `load_game` in `setup`). The save merges onto the level **as it is now**.
+3. **Write a scene** from code: `SerializationService::new().save_world(world.inner_world(), goal)?`.
+4. **Load a scene** in `setup`:
    ```rust
-   let file = SceneFile::from_bytes(&bytes).map_err(|e| anyhow::anyhow!("{e:?}"))?;
-   let report = SerializationService::new().load_world(&file, world.inner_world_mut())?;
-   for entry in &report.entries { log::warn!("{entry}"); }
+   use khora_sdk::{SceneFile, SerializationService};
+
+   let scene = SceneFile::from_bytes(&bytes).map_err(|e| anyhow::anyhow!("{e:?}"))?;
+   let report = SerializationService::new().replace_world(&scene, world.inner_world_mut())?;
+   for entry in &report.entries {
+       log::warn!("{entry}");
+   }
    ```
-   `replace_world` instead of `load_world` to swap the whole world. A level holding prefab instances
-   needs `SerializationService::with_prefabs(source)` — without a source its load fails.
-2. **Save the game** against the level it started from:
-   ```rust
-   let save: SceneFile = world.save_game(level_id, &level_file, SerializationGoal::SmallestFileSize)?;
-   std::fs::write(path, save.to_bytes())?;
-   ```
-3. **Load the game**: read the save and its base level, then `world.load_game(&save, &level_file)?`.
-   The save is merged onto the level *as it is now* — a level fix you ship later reaches existing saves
-   wherever play left the value alone.
-4. **Spawn a prefab** at runtime: `khora_sdk::khora_data::scene::instantiate_prefab(world.inner_world_mut(),
-   prefab_id, prefabs)` (linked instance), or `khora_sdk::instantiate_subtree(world.inner_world_mut(),
-   &bytes, prefabs)`. Both take `prefabs: &dyn PrefabSource` and return the new root `EntityId`.
-   `PrefabSource` (`khora_sdk::khora_data::scene`) has one method, `prefab(id) -> Result<SceneRecord, String>`;
-   the engine's asset-backed source is not re-exported, so implement it over your asset loading (or pass
-   `NoPrefabs` to `instantiate_subtree` when the bytes hold no linked instance).
+5. **Spawn a prefab at runtime**: from a script, `Spawn(prefab, …, at: p)` (preferred); from Rust,
+   `khora_sdk::khora_data::scene::instantiate_prefab(world.inner_world_mut(), prefab_id, &source)` or
+   `khora_sdk::instantiate_subtree(world.inner_world_mut(), &bytes, &source)`, each taking a
+   `&dyn PrefabSource` (`khora_sdk::khora_data::scene::{PrefabSource, NoPrefabs}`).
 
 ## Rules
-- Treat scene/save bytes as untrusted input — handle every `Result`, never `unwrap()`.
-- Keep the base level a save was taken against; a save alone cannot be loaded.
-- Reference assets by handle; don't inline raw data.
-- Scripts run only while the scripting family is on (every family is on in a game by default); `OnLoad` fires once per
-  instance restored from a save.
+- Save and scene bytes are untrusted input: bounded reads, every `Result` handled, no `unwrap()`.
+- Keep the base level a save names; a save alone cannot be loaded.
+- Scripts run `OnLoad` once per instance a game save restored, before anything else.
+- Reference assets by handle; never inline raw data.
 
-For shipping packed scenes, see [`../pack-and-ship/SKILL.md`](../pack-and-ship/SKILL.md). Verify by loading
-the scene and confirming entities appear, then save → load and compare.
+Verify: load, see the entities; then save → load and compare.

@@ -127,6 +127,20 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
     /// Fails when the frame cannot be presented.
     fn end_frame(&mut self) -> Result<RenderStats, RenderError>;
 
+    /// Runs `submit`, the frame's submission of its passes, timed on the GPU
+    /// when the backend can; returns whether it was timed.
+    ///
+    /// Called once per presented frame, between [`begin_frame`](Self::begin_frame)
+    /// and [`end_frame`](Self::end_frame). A backend with timestamp queries
+    /// submits one before and one after `submit`'s work; their difference is the
+    /// frame's GPU time, read back a few frames later into
+    /// [`RenderStats::gpu_frame`] under the `frame_number` this frame's
+    /// `end_frame` returns. The default runs `submit` untimed and returns `false`.
+    fn time_on_gpu(&mut self, submit: &mut dyn FnMut()) -> bool {
+        submit();
+        false
+    }
+
     /// Renders an editor overlay on top of the current frame.
     ///
     /// Called between the frame graph submission and [`end_frame`](Self::end_frame).

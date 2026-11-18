@@ -14,31 +14,10 @@
 
 //! `#[component(check = path::to::fn)]` — a component's own check, a
 //! `fn(&Self) -> Vec<FieldProblem>` naming the fields whose values the engine
-//! cannot use.
+//! cannot use. The key itself is read with the type's other keys
+//! (`crate::component::attrs`).
 
 use quote::{quote, ToTokens};
-
-/// Returns the declared check's path, if any.
-///
-/// Read in a pass of its own whose errors are kept: a check that silently
-/// vanished would leave its values unchecked.
-pub(crate) fn check_path(input: &syn::DeriveInput) -> syn::Result<Option<syn::Path>> {
-    let mut check = None;
-    for attr in &input.attrs {
-        if !attr.path().is_ident("component") {
-            continue;
-        }
-        attr.parse_nested_meta(|meta| {
-            if meta.path.is_ident("check") {
-                check = Some(meta.value()?.parse::<syn::Path>()?);
-            } else if meta.input.peek(syn::Token![=]) {
-                let _ = meta.value()?.parse::<syn::Expr>()?;
-            }
-            Ok(())
-        })?;
-    }
-    Ok(check)
-}
 
 /// Returns what the declared check adds to the registration of `name`: its stage step and its hook.
 ///

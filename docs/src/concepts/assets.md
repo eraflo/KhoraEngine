@@ -131,6 +131,18 @@ Two types are extracted:
 - a **script** (`.erg`) records the modules it `import`s. An import is written
   from the project's script folder, whatever folder the importing file sits in,
   so `import "combat/damage.erg"` means `scripts/combat/damage.erg` everywhere.
+  The import is read in normal form, as the compiler reads it
+  (`./combat/damage.erg` is `combat/damage.erg`); one the compiler refuses, such
+  as a path leaving the script folder, is no dependency, nor is a module the
+  engine serves from memory (`engine/components.erg`, `engine/events.erg`).
+
+A dependency named by a path, like an import, is given the uuid the index gives
+the file at that path: the builder hands the extractor the resolution it uses for
+its own entries, through the identity registry. A script importing a renamed
+module therefore depends on the module's frozen uuid, and one importing a new
+file at a renamed asset's old path depends on that file's derived uuid — the
+same in development and in a pack. A material's textures need no resolving: the
+material stores their uuids.
 
 The list is deduplicated and sorted, so the index is the same bytes from run to
 run. The other types return an empty list — scenes, prefabs and meshes among
@@ -156,6 +168,15 @@ changes and requests a fresh copy of every changed asset an entity holds:
   until it changes again;
 - an asset gone from the index is dropped from every entity that held it.
 
+A container that read a file beside its own — a glTF and its `.bin` — is
+invalidated with that file. It names the file by path, and the path is matched
+by the uuid it resolves to, so a change to a renamed asset never reaches a
+container reading the new file at its old path. A file the editor saw change,
+or released from the [quarantine](./trust.md), resolves through the identity
+registry (`AssetService::invalidate_through`): one made since the last reindex
+reaches the containers reading it. An asset invalidated by uuid alone resolves
+through the index (`AssetIndex::uuid_at`).
+
 ## What stays in memory
 
 The service keeps every asset it decoded until that asset changes: dropping the
@@ -171,13 +192,17 @@ live entity references are released by the eviction service, a few each frame
 *v5(N, b)* for the version-5 UUID of the bytes *b* in the namespace *N*. An
 indexed file's uuid is
 
-> *uuid(p)* = *R(key(p))* if the registry holds *key(p)*, else *v5(N_asset, key(p))*,
+> *uuid(p)* = *R(key(p))* if the registry holds *key(p)*, else the first of
+> *v5(N_asset, key(p))*, *v5(N_asset, key(p) ‖ NUL ‖ 1)*, *v5(N_asset, key(p) ‖ NUL ‖ 2)*, …
+> that *R* gives no other key (the default, or a derived uuid),
 
 and a part labelled *ℓ* of a container *c* has *v5(N_sub, bytes(c) ‖ ℓ)*. The two
 namespaces are distinct constants, so a part's uuid never equals a path's.
 *uuid* depends only on *key(p)* and *R*, never on the scan's order or the system
 it runs on; the index sorts its entries by key, so the index of one folder and
-one registry is the same on every run.
+one registry is the same on every run. A dependency on the path *q* is
+*uuid(q)*, by the same function: for every indexed file *q*, an asset that names
+*q* depends on exactly the uuid *q* is indexed under.
 
 **The request contract.** For one uuid and one type, `request` files at most one
 decode while one is pending. Between two asset changes it answers `Failed` for a

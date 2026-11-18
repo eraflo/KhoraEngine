@@ -93,6 +93,15 @@ pub trait PipelineSystem: Send + Sync {
         spec: &ComputePipelineSpec,
     ) -> Result<ComputePipelineId, RenderError>;
 
+    /// Returns whether this system composes the module `logical_path` names: a
+    /// lib or a pipeline it registers.
+    ///
+    /// The hot reload hands over overlays of these modules only. The default
+    /// composes every name.
+    fn composes(&self, _logical_path: &str) -> bool {
+        true
+    }
+
     /// Overrides a logical shader source with new text for hot reload.
     ///
     /// Marks it and its dependent pipelines for the next

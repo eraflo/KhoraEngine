@@ -1651,6 +1651,7 @@ fn module_modules_paths_still_resolve() {
     );
     let _: &str = khora_script::modules::path::EXTENSION;
     let _: &str = khora_script::modules::EXTENSION;
+    let _: [&str; 2] = khora_script::ENGINE_MODULES;
     assert_eq!(
         khora_script::modules::EXTENSION,
         khora_script::modules::path::EXTENSION

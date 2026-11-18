@@ -18,6 +18,7 @@
 mod attrs;
 mod fields;
 mod inventory;
+mod keys;
 mod mirror;
 mod schema;
 mod soa;
@@ -52,20 +53,24 @@ pub(crate) fn derive_component(input: TokenStream) -> TokenStream {
         }
     };
 
-    let split = FieldSplit::of(fields);
-    let script_methods = script_methods(fields, &split.included);
+    // A wrong key on the type and one on a field are both reported.
     let attrs = ComponentAttrs::of(&input);
+    let no_serializable = attrs.as_ref().is_ok_and(|attrs| attrs.no_serializable);
+    let (attrs, split) = match (attrs, FieldSplit::of(fields, no_serializable)) {
+        (Ok(attrs), Ok(split)) => (attrs, split),
+        (Err(mut error), Err(fields)) => {
+            error.combine(fields);
+            return TokenStream::from(error.to_compile_error());
+        }
+        (Err(error), _) | (_, Err(error)) => return TokenStream::from(error.to_compile_error()),
+    };
+    let script_methods = script_methods(fields, &split.included);
 
     let (component_impl, soa_layout_impl) =
         match soa::component_impls(&input, fields, &script_methods, attrs.layout_soa) {
             Ok(impls) => impls,
             Err(error) => return TokenStream::from(error.into_token_stream()),
         };
-
-    let check_path = match crate::component_check::check_path(&input) {
-        Ok(check) => check,
-        Err(error) => return TokenStream::from(error.to_compile_error()),
-    };
 
     let domain_registration = inventory::domain_registration(name, attrs.domain.as_ref());
 
@@ -87,7 +92,6 @@ pub(crate) fn derive_component(input: TokenStream) -> TokenStream {
         &attrs,
         &field_schema,
         &schema_cell,
-        check_path.as_ref(),
     );
     let expanded = quote! {
         #component_impl

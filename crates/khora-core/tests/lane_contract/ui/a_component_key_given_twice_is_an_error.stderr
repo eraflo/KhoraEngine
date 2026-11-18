@@ -1,0 +1,5 @@
+error: `domain` is given twice: keep one
+ --> tests/lane_contract/ui/a_component_key_given_twice_is_an_error.rs:5:13
+  |
+5 | #[component(domain = Render)]
+  |             ^^^^^^

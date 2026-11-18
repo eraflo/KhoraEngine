@@ -30,15 +30,23 @@ pub fn type_has_dependency_extractor(asset_type: &str) -> bool {
 
 /// Returns the direct asset dependencies encoded in `bytes`, by the `asset_type` name.
 ///
+/// A dependency the bytes name by path is the UUID `uuid_of` gives that path, a
+/// forward-slash path under `assets/`: pass the resolution the index gives its
+/// own files, so a dependency names the UUID its target is indexed under.
 /// Deduplicated and sorted, so the index stays byte-deterministic. A type with no
 /// extractor, or bytes that do not decode, give an empty list (the latter logged
 /// at `warn`): one corrupt asset never aborts the index build.
-pub fn extract_dependencies(asset_type: &str, path: &str, bytes: &[u8]) -> Vec<AssetUUID> {
+pub fn extract_dependencies(
+    asset_type: &str,
+    path: &str,
+    bytes: &[u8],
+    uuid_of: &dyn Fn(&str) -> AssetUUID,
+) -> Vec<AssetUUID> {
     let mut deps = match asset_type {
         "material" => material_dependencies(bytes),
         // Only a module, a file under the script folder, has imports: the path
         // says whether this file is one.
-        "script" => script_dependencies(path, bytes),
+        "script" => script_dependencies(path, bytes, uuid_of),
         // Scenes, prefabs and meshes reference other assets; not extracted yet.
         "scene" => Vec::new(),
         "prefab" => Vec::new(),
@@ -52,12 +60,16 @@ pub fn extract_dependencies(asset_type: &str, path: &str, bytes: &[u8]) -> Vec<A
     deps
 }
 
-/// Collects the module UUIDs a `.erg` script imports.
+/// Collects the UUIDs, by `uuid_of`, of the modules a `.erg` script imports.
 ///
 /// They are the script's dependencies in the asset index. Script hot reload
 /// reads imports from the files instead, an `.erg` edited in place being never
 /// reindexed. Bytes that are not UTF-8 contribute nothing: the decoder reports them.
-fn script_dependencies(path: &str, bytes: &[u8]) -> Vec<AssetUUID> {
+fn script_dependencies(
+    path: &str,
+    bytes: &[u8],
+    uuid_of: &dyn Fn(&str) -> AssetUUID,
+) -> Vec<AssetUUID> {
     let Ok(source) = std::str::from_utf8(bytes) else {
         log::warn!("asset index: script '{path}' is not valid UTF-8");
         return Vec::new();
@@ -73,7 +85,11 @@ fn script_dependencies(path: &str, bytes: &[u8]) -> Vec<AssetUUID> {
     let root = crate::script::layout::SCRIPT_DIR;
     khora_script::modules::imports_of(source)
         .into_iter()
-        .map(|import| AssetUUID::new_v5(&format!("{root}/{import}")))
+        // In normal form, as the compiler reads it; one it refuses names no
+        // module, and one the engine serves from memory names no file.
+        .filter_map(|import| khora_script::modules::normalise(&import).ok())
+        .filter(|import| !khora_script::ENGINE_MODULES.contains(&import.as_str()))
+        .map(|import| uuid_of(&format!("{root}/{import}")))
         .collect()
 }
 
@@ -104,6 +120,11 @@ mod tests {
             .into_bytes()
     }
 
+    /// Extracts with every path on its `new_v5` default, as an index with no registry.
+    fn extract(asset_type: &str, path: &str, bytes: &[u8]) -> Vec<AssetUUID> {
+        extract_dependencies(asset_type, path, bytes, &AssetUUID::new_v5)
+    }
+
     #[test]
     fn material_with_two_textures_yields_both_sorted_deduped() {
         let base = AssetUUID::new_v5("textures/base.png");
@@ -116,8 +137,7 @@ mod tests {
             ..Default::default()
         };
 
-        let deps =
-            extract_dependencies("material", "materials/m.kmat", &material_to_kmat(&material));
+        let deps = extract("material", "materials/m.kmat", &material_to_kmat(&material));
 
         let mut expected = vec![base, normal];
         expected.sort();
@@ -138,8 +158,7 @@ mod tests {
             ..Default::default()
         };
 
-        let deps =
-            extract_dependencies("material", "materials/m.kmat", &material_to_kmat(&material));
+        let deps = extract("material", "materials/m.kmat", &material_to_kmat(&material));
 
         let mut expected = vec![occlusion, specular, specular_color];
         expected.sort();
@@ -165,8 +184,7 @@ mod tests {
             ..Default::default()
         };
 
-        let deps =
-            extract_dependencies("material", "materials/m.kmat", &material_to_kmat(&material));
+        let deps = extract("material", "materials/m.kmat", &material_to_kmat(&material));
 
         let mut expected = slots;
         expected.sort();
@@ -176,8 +194,7 @@ mod tests {
     #[test]
     fn material_without_textures_yields_empty() {
         let material = StandardMaterial::default();
-        let deps =
-            extract_dependencies("material", "materials/m.kmat", &material_to_kmat(&material));
+        let deps = extract("material", "materials/m.kmat", &material_to_kmat(&material));
         assert!(
             deps.is_empty(),
             "an untextured material has no dependencies"
@@ -186,20 +203,27 @@ mod tests {
 
     #[test]
     fn corrupt_material_yields_empty_without_panic() {
-        let deps = extract_dependencies("material", "a/b.dat", b"this is not a valid kmat");
+        let deps = extract("material", "a/b.dat", b"this is not a valid kmat");
         assert!(deps.is_empty(), "a corrupt material contributes no deps");
     }
 
     #[test]
     fn unhandled_type_yields_empty() {
         // Textures, scenes, etc. are not parsed for outbound references.
-        assert!(extract_dependencies("texture", "a/b.dat", b"\x89PNG\r\n").is_empty());
-        assert!(extract_dependencies("scene", "a/b.dat", b"(entities: [])").is_empty());
-        assert!(extract_dependencies("mesh", "a/b.dat", b"glTF binary").is_empty());
+        assert!(extract("texture", "a/b.dat", b"\x89PNG\r\n").is_empty());
+        assert!(extract("scene", "a/b.dat", b"(entities: [])").is_empty());
+        assert!(extract("mesh", "a/b.dat", b"glTF binary").is_empty());
     }
 
     mod script_tests {
         use super::super::*;
+        use super::extract;
+        use crate::asset::id_registry::AssetIdRegistry;
+
+        /// Extracts with every path resolved through `registry`, as the index does.
+        fn extract_through(registry: &AssetIdRegistry, path: &str, bytes: &[u8]) -> Vec<AssetUUID> {
+            extract_dependencies("script", path, bytes, &|rel| registry.resolve(rel))
+        }
 
         #[test]
         fn a_script_is_a_type_with_an_extractor() {
@@ -212,7 +236,7 @@ mod tests {
         fn an_import_becomes_the_uuid_of_the_file_it_names() {
             let source = br#"import "combat/damage.erg";
                              fn void Main() { }"#;
-            let deps = extract_dependencies("script", "scripts/ai/guard.erg", source);
+            let deps = extract("script", "scripts/ai/guard.erg", source);
 
             assert_eq!(deps, vec![AssetUUID::new_v5("scripts/combat/damage.erg")]);
         }
@@ -223,11 +247,73 @@ mod tests {
         fn an_import_is_relative_to_the_root_not_to_the_importing_file() {
             let source = br#"import "shared.erg"; fn void Main() { }"#;
 
-            let shallow = extract_dependencies("script", "scripts/a.erg", source);
-            let deep = extract_dependencies("script", "scripts/very/deep/b.erg", source);
+            let shallow = extract("script", "scripts/a.erg", source);
+            let deep = extract("script", "scripts/very/deep/b.erg", source);
 
             assert_eq!(shallow, deep, "the same import names the same module");
             assert_eq!(shallow, vec![AssetUUID::new_v5("scripts/shared.erg")]);
+        }
+
+        /// **An import names its module in normal form**, as the compiler reads
+        /// it: `./combat/damage.erg` and `combat\damage.erg` are `combat/damage.erg`.
+        #[test]
+        fn an_import_spelled_another_way_depends_on_the_module_it_names() {
+            let source = br#"import "./combat/damage.erg";
+                             import "combat\\damage.erg";
+                             fn void Main() { }"#;
+            let deps = extract("script", "scripts/ai/guard.erg", source);
+
+            assert_eq!(deps, vec![AssetUUID::new_v5("scripts/combat/damage.erg")]);
+        }
+
+        /// **An import the compiler refuses names no module**, so it is no dependency.
+        #[test]
+        fn an_import_that_names_no_module_is_no_dependency() {
+            let source = br#"import "../outside.erg"; fn void Main() { }"#;
+            let deps = extract("script", "scripts/main.erg", source);
+
+            assert!(deps.is_empty(), "{deps:?}");
+        }
+
+        /// **An import the engine serves from memory names no file**, so it is no
+        /// dependency: the compiler never reads `scripts/engine/components.erg`.
+        #[test]
+        fn an_import_the_engine_serves_is_no_dependency() {
+            let source = br#"import "engine/components.erg"; fn void Main() { }"#;
+            let deps = extract("script", "scripts/main.erg", source);
+
+            assert!(deps.is_empty(), "{deps:?}");
+        }
+
+        /// **An import of a renamed module depends on the module's frozen UUID**,
+        /// the one the module is indexed under, not its new path's default.
+        #[test]
+        fn an_import_of_a_renamed_module_depends_on_its_frozen_uuid() {
+            let dir = tempfile::tempdir().expect("a project folder");
+            let mut registry = AssetIdRegistry::load(dir.path());
+            registry.rename("scripts/combat/hurt.erg", "scripts/combat/damage.erg");
+            let source = br#"import "combat/damage.erg"; fn void Main() { }"#;
+
+            let deps = extract_through(&registry, "scripts/ai/guard.erg", source);
+
+            assert_eq!(deps, vec![AssetUUID::new_v5("scripts/combat/hurt.erg")]);
+            assert_eq!(deps, vec![registry.resolve("scripts/combat/damage.erg")]);
+        }
+
+        /// **An import of a module at a path whose default another path holds**
+        /// depends on the module's derived UUID, never on the renamed one's.
+        #[test]
+        fn an_import_of_a_module_at_a_held_default_depends_on_its_derived_uuid() {
+            let dir = tempfile::tempdir().expect("a project folder");
+            let mut registry = AssetIdRegistry::load(dir.path());
+            registry.rename("scripts/shared.erg", "scripts/common.erg");
+            let source = br#"import "shared.erg"; fn void Main() { }"#;
+
+            let deps = extract_through(&registry, "scripts/main.erg", source);
+
+            let derived = registry.resolve("scripts/shared.erg");
+            assert_ne!(derived, AssetUUID::new_v5("scripts/shared.erg"));
+            assert_eq!(deps, vec![derived]);
         }
 
         /// **A file at the top of the assets is no script**: it is never compiled,
@@ -235,7 +321,7 @@ mod tests {
         #[test]
         fn an_erg_at_the_top_level_has_no_edges() {
             let source = br#"import "helper.erg"; fn void Main() { }"#;
-            let deps = extract_dependencies("script", "guard.erg", source);
+            let deps = extract("script", "guard.erg", source);
 
             assert!(deps.is_empty(), "{deps:?}");
         }
@@ -251,7 +337,7 @@ mod tests {
                 "scriptsextra/x.erg",
                 "props/scripts/x.erg",
             ] {
-                let deps = extract_dependencies("script", path, source);
+                let deps = extract("script", path, source);
                 assert!(deps.is_empty(), "{path}: {deps:?}");
             }
         }
@@ -261,14 +347,14 @@ mod tests {
         #[test]
         fn a_file_in_place_with_a_capital_extension_has_no_edges() {
             let source = br#"import "combat/damage.erg"; fn void Main() { }"#;
-            let deps = extract_dependencies("script", "scripts/ai/Guard.ERG", source);
+            let deps = extract("script", "scripts/ai/Guard.ERG", source);
 
             assert!(deps.is_empty(), "{deps:?}");
         }
 
         #[test]
         fn a_script_with_no_imports_has_no_dependencies() {
-            let deps = extract_dependencies("script", "scripts/leaf.erg", b"fn void Main() { }");
+            let deps = extract("script", "scripts/leaf.erg", b"fn void Main() { }");
             assert!(deps.is_empty());
         }
 
@@ -280,7 +366,7 @@ mod tests {
                              import "a.erg";
                              import "b.erg";
                              fn void Main() { }"#;
-            let deps = extract_dependencies("script", "scripts/main.erg", source);
+            let deps = extract("script", "scripts/main.erg", source);
 
             assert_eq!(deps.len(), 2);
             let mut sorted = deps.clone();
@@ -292,7 +378,7 @@ mod tests {
         /// twice for one mistake helps nobody.
         #[test]
         fn bytes_that_are_not_text_contribute_nothing() {
-            let deps = extract_dependencies("script", "scripts/broken.erg", &[0xff, 0xfe]);
+            let deps = extract("script", "scripts/broken.erg", &[0xff, 0xfe]);
             assert!(deps.is_empty());
         }
     }

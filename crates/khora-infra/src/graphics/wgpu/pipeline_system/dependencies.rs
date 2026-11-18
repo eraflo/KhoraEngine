@@ -17,50 +17,18 @@
 use std::collections::HashSet;
 
 use khora_core::renderer::api::pipeline::{ComputePipelineKey, PipelineKey};
-use khora_core::renderer::error::RenderError;
 
-use super::rebuild::inject_float_defs;
-use super::{backend_err, compose_err, Inner, LIB_MODULES};
-use naga_oil::compose::{ComposableModuleDescriptor, ShaderLanguage};
-
-/// Registers a dirty lib module again, from its overlay or embedded source.
-///
-/// A watched file outside the lib table that declares no `#define_import_path`
-/// is a whole shader (`standalone/`), not a lib module: it is skipped, not failed.
-pub(super) fn readd_lib_module(inner: &mut Inner, path: &str) -> Result<(), RenderError> {
-    let source = resolve_lib_source(inner, path)
-        .ok_or_else(|| backend_err(&format!("lib module `{path}` has no source")))?;
-    let known_lib = LIB_MODULES.iter().any(|(p, _)| *p == path);
-    if !known_lib && !source.contains("#define_import_path") {
-        log::debug!("shader hot-reload: `{path}` is not a lib module, nothing to recompose");
-        return Ok(());
-    }
-    let patched = inject_float_defs(&source);
-    let defs = inner.base_defs.clone();
-    inner
-        .composer
-        .add_composable_module(ComposableModuleDescriptor {
-            source: &patched,
-            file_path: path,
-            language: ShaderLanguage::Wgsl,
-            shader_defs: defs,
-            ..Default::default()
-        })
-        .map_err(|e| compose_err(path, e))?;
-    Ok(())
-}
+use super::{Inner, LIB_MODULES};
 
 /// Returns the current source for a lib import path, or `None` for an unknown one.
 ///
-/// The overlay comes first, then the embedded `include_str!` source.
+/// The overlay comes first, then the source the composer holds the lib from.
 pub(super) fn resolve_lib_source(inner: &Inner, path: &str) -> Option<String> {
-    if let Some(src) = inner.overlays.get(path) {
-        return Some(src.clone());
-    }
-    LIB_MODULES
-        .iter()
-        .find(|(p, _)| *p == path)
-        .map(|(_, s)| (*s).to_string())
+    inner
+        .overlays
+        .get(path)
+        .or_else(|| inner.composed_libs.get(path))
+        .cloned()
 }
 
 /// Returns the current source for a pipeline module name: overlay first, then

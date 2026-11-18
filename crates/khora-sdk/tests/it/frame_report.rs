@@ -29,7 +29,7 @@ use khora_sdk::khora_core::lane::cost::{Cost, PerDevice};
 use khora_sdk::khora_core::math::Extent2D;
 use khora_sdk::khora_core::platform::window::KhoraWindow;
 use khora_sdk::khora_core::renderer::api::device::{
-    GraphicsAdapterInfo, RenderSettings, RenderStats,
+    GpuFrameTime, GraphicsAdapterInfo, RenderSettings, RenderStats,
 };
 use khora_sdk::khora_core::renderer::api::gpu_scene::RenderObject;
 use khora_sdk::khora_core::renderer::api::resource::{TextureFormat, TextureViewId, ViewInfo};
@@ -506,5 +506,203 @@ fn a_slow_agents_work_is_in_the_frames_the_dcc_reads() {
         summary.mean >= SLOW_AGENT,
         "frames whose agent works {SLOW_AGENT:?} last at least that long, read {:?}",
         summary.mean
+    );
+}
+
+/// A renderer that times each frame `n` on the GPU at `gpu_ms(n)` milliseconds,
+/// or cannot time it (`None`), reading each time back two frames late as a
+/// timestamp query does; it counts the submissions it timed.
+#[derive(Debug)]
+struct TimedGpu {
+    stats: RenderStats,
+    gpu_ms: fn(u64) -> Option<f32>,
+    timed: Arc<AtomicUsize>,
+}
+
+impl TimedGpu {
+    /// A renderer timing frame `n` at `gpu_ms(n)`, sharing its count of timed
+    /// submissions.
+    fn shared(
+        gpu_ms: fn(u64) -> Option<f32>,
+        timed: &Arc<AtomicUsize>,
+    ) -> Arc<Mutex<Box<dyn khora_sdk::RenderSystem>>> {
+        Arc::new(Mutex::new(Box::new(TimedGpu {
+            stats: RenderStats::default(),
+            gpu_ms,
+            timed: Arc::clone(timed),
+        })))
+    }
+}
+
+impl khora_sdk::RenderSystem for TimedGpu {
+    fn init(
+        &mut self,
+        _window: &dyn KhoraWindow,
+    ) -> Result<Vec<Arc<dyn ResourceMonitor>>, RenderError> {
+        Ok(Vec::new())
+    }
+    fn resize(&mut self, _width: u32, _height: u32) {}
+    fn prepare_frame(&mut self, _view_info: &ViewInfo) {}
+    fn render(
+        &mut self,
+        _renderables: &[RenderObject],
+        _view_info: &ViewInfo,
+        _settings: &RenderSettings,
+    ) -> Result<RenderStats, RenderError> {
+        Ok(self.stats.clone())
+    }
+    fn get_last_frame_stats(&self) -> &RenderStats {
+        &self.stats
+    }
+    fn supports_feature(&self, _feature_name: &str) -> bool {
+        false
+    }
+    fn get_adapter_info(&self) -> Option<GraphicsAdapterInfo> {
+        None
+    }
+    fn graphics_device(&self) -> Arc<dyn GraphicsDevice> {
+        unimplemented!("the engine reaches the device through the backends")
+    }
+    fn begin_frame(&mut self) -> Result<FrameTargets, RenderError> {
+        Ok(FrameTargets {
+            color: TextureViewId(1),
+            depth: None,
+            size: Extent2D {
+                width: 800,
+                height: 600,
+            },
+            color_format: TextureFormat::Rgba8UnormSrgb,
+            depth_format: None,
+        })
+    }
+    fn time_on_gpu(&mut self, submit: &mut dyn FnMut()) -> bool {
+        submit();
+        let timed = (self.gpu_ms)(self.stats.frame_number + 1).is_some();
+        if timed {
+            self.timed.fetch_add(1, Ordering::SeqCst);
+        }
+        timed
+    }
+    fn end_frame(&mut self) -> Result<RenderStats, RenderError> {
+        self.stats.frame_number += 1;
+        let read = self.stats.frame_number.checked_sub(2).filter(|n| *n > 0);
+        if let Some((frame, ms)) = read.and_then(|n| (self.gpu_ms)(n).map(|ms| (n, ms))) {
+            self.stats.gpu_frame = Some(GpuFrameTime {
+                frame,
+                time: Duration::from_secs_f64(f64::from(ms) / 1_000.0),
+            });
+        }
+        Ok(self.stats.clone())
+    }
+    fn shutdown(&mut self) {}
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+/// The GPU load the DCC reads, from the live context it shares.
+fn gpu_load<A: EngineApp>(engine: &EngineCore<A>) -> Option<f32> {
+    engine
+        .runtime()
+        .resources
+        .get::<Arc<RwLock<DccContext>>>()
+        .expect("the bootstrap shares the DCC's context")
+        .read()
+        .expect("the context lock")
+        .hardware
+        .gpu_load
+}
+
+/// **A frame's GPU time reaches the DCC as the GPU's load.**
+///
+/// A renderer timing each frame at 16 ms on the GPU, under a fast
+/// application: the frames report it, and the DCC reads the GPU loaded about
+/// 16 / 16.66. The engine submitted the frames' passes inside the renderer's
+/// GPU timing.
+#[test]
+fn a_frames_gpu_time_reaches_the_dcc_as_the_gpus_load() {
+    let timed = Arc::new(AtomicUsize::new(0));
+    let mut runtime = Runtime::new();
+    runtime
+        .backends
+        .insert(TimedGpu::shared(|_| Some(16.0), &timed));
+    let mut engine = booted(Workload::new(), runtime);
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut read = None;
+    while Instant::now() < deadline && read.is_none() {
+        engine.tick();
+        read = gpu_load(&engine);
+    }
+    engine.shutdown();
+
+    let load = read.expect("the frames' GPU time reaches the DCC");
+    assert!((load - 16.0 / 16.66).abs() < 0.05, "{load}");
+    assert!(
+        timed.load(Ordering::SeqCst) > 0,
+        "the passes are submitted inside the GPU timing"
+    );
+}
+
+/// **A renderer that cannot time the GPU leaves its load unknown, not idle.**
+///
+/// Thirty frames, many DCC ticks: the GPU's load stays `None`.
+#[test]
+fn a_renderer_without_gpu_timestamps_leaves_the_gpus_load_unknown() {
+    let timed = Arc::new(AtomicUsize::new(0));
+    let mut runtime = Runtime::new();
+    runtime.backends.insert(TimedGpu::shared(|_| None, &timed));
+    let mut engine = booted(Workload::new(), runtime);
+
+    for _ in 0..30 {
+        engine.tick();
+    }
+    std::thread::sleep(Duration::from_millis(200));
+    let read = gpu_load(&engine);
+    engine.shutdown();
+
+    assert_eq!(read, None, "unknown, not 0");
+}
+
+/// **One frame stalling the GPU is left out of the governor.**
+///
+/// A renderer times its frames at 13 ms on the GPU, inside the band under the
+/// governor's 15 ms target, except frame 40, which keeps it 120 ms. Each
+/// report carries its own frame's GPU time, raw: the stall is one frame long,
+/// a hitch the governor leaves out, and the multiplier holds at 1.0.
+#[test]
+fn one_frame_stalling_the_gpu_is_left_out_of_the_governor() {
+    let timed = Arc::new(AtomicUsize::new(0));
+    let mut runtime = Runtime::new();
+    runtime.backends.insert(TimedGpu::shared(
+        |frame| Some(if frame == 40 { 120.0 } else { 13.0 }),
+        &timed,
+    ));
+    let mut engine = booted(Workload::new(), runtime);
+
+    let mut lowest = multiplier(&engine);
+    for _ in 0..120 {
+        engine.tick();
+        std::thread::sleep(Duration::from_millis(2));
+        lowest = lowest.min(multiplier(&engine));
+    }
+    let settle = Instant::now() + Duration::from_millis(300);
+    while Instant::now() < settle {
+        std::thread::sleep(Duration::from_millis(10));
+        lowest = lowest.min(multiplier(&engine));
+    }
+    let load = gpu_load(&engine);
+    engine.shutdown();
+
+    assert!(
+        load.is_some_and(|load| load > 0.5),
+        "the frames reached the DCC timed on the GPU: {load:?}"
+    );
+    assert!(
+        lowest >= 1.0,
+        "one GPU stall lowered the multiplier to {lowest}"
     );
 }

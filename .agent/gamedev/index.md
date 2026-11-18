@@ -14,8 +14,8 @@ Entry point for AI agents building a **game with the Khora Engine**. Load what t
 | [`SOUL.md`](./SOUL.md) | always | Orchestrator identity, values, SDK map, routing. |
 | [`RULES.md`](./RULES.md) | always | SDK-only rules, boundaries, permission model. |
 | [`workflow-rpi.md`](./workflow-rpi.md) | always | The Research → Plan → Implement loop + context discipline. |
-| [`sdk-guide.md`](./sdk-guide.md) | on demand | Concrete API: `EngineApp`, `Vessel`, input, scene, backends. |
-| [`conventions.md`](./conventions.md) | on demand | Game project structure and patterns. |
+| [`sdk-guide.md`](./sdk-guide.md) | on demand | The Rust side: `EngineApp`, bootstrap, assets, seal, `GameWorld`, input, `Activation`, saves. |
+| [`conventions.md`](./conventions.md) | on demand | Project layout, scripts and native code, patterns. |
 | [`security-privacy.md`](./security-privacy.md) | on demand | No dangerous code, no secrets in builds. |
 
 ## Knowledge
@@ -45,8 +45,9 @@ On-demand knowledge per domain. Load the one the task touches; consult it during
 
 | Reference | Domain |
 |---|---|
-| [`gameplay`](./reference/gameplay.md) | Entities via `Vessel`, the `EngineApp` loop, input, components. |
-| [`scene-design`](./reference/scene-design.md) | Scene setup, spawning, lighting, game UI — design via `/impeccable`. |
+| [`ergon`](./reference/ergon.md) | Ergon — behaviors, components, systems, events, queries, input actions. |
+| [`gameplay`](./reference/gameplay.md) | Gameplay across Ergon and Rust: entities, input, physics, which families run. |
+| [`scene-design`](./reference/scene-design.md) | Scenes in the editor, lighting, materials, prefabs, game UI — design via `/impeccable`. |
 
 ## Skills — [`skills/`](./skills/)
 
@@ -55,16 +56,19 @@ On-demand knowledge per domain. Load the one the task touches; consult it during
 | [`research-codebase`](./skills/research-codebase/SKILL.md) | RPI phase 1 — understand a problem → `docs/research/`. |
 | [`create-plan`](./skills/create-plan/SKILL.md) | RPI phase 2 — write a phase-by-phase plan → `docs/plans/`. |
 | [`implement-plan`](./skills/implement-plan/SKILL.md) | RPI phase 3 — execute a plan, compact status per phase. |
-| [`start-a-game`](./skills/start-a-game/SKILL.md) | Scaffold a new game on the SDK. |
-| [`spawn-entity`](./skills/spawn-entity/SKILL.md) | Spawn entities via `Vessel`. |
-| [`setup-input`](./skills/setup-input/SKILL.md) | Bind input actions with `InputMap`. |
-| [`load-scene`](./skills/load-scene/SKILL.md) | Load / serialize a scene. |
-| [`pack-and-ship`](./skills/pack-and-ship/SKILL.md) | Build, pack assets, ship a runtime. |
+| [`start-a-game`](./skills/start-a-game/SKILL.md) | Create the project; add native code when needed. |
+| [`write-a-script`](./skills/write-a-script/SKILL.md) | Gameplay in Ergon: a behavior, a component, a system, an event. |
+| [`spawn-entity`](./skills/spawn-entity/SKILL.md) | Spawn entities from a script, or from Rust via `Vessel`. |
+| [`setup-input`](./skills/setup-input/SKILL.md) | Bind input actions with `InputMap`; read them in scripts. |
+| [`load-scene`](./skills/load-scene/SKILL.md) | Load / save a scene; save and load the game. |
+| [`add-a-family`](./skills/add-a-family/SKILL.md) | A game's own subsystem: a family of lanes and one `register_agent!`. |
+| [`pack-and-ship`](./skills/pack-and-ship/SKILL.md) | Build Game: signed pack, stamped binary; what refuses a start. |
 
 ## Reference
 
-The **`sandbox`** example (`examples/sandbox/src/` in the engine repo) is the canonical game using
-only the SDK — read it when in doubt.
+The engine repo's **`sandbox`** (`examples/sandbox/`) is a native game on the SDK with one Ergon
+behavior (`assets/scripts/hover.erg`). The engine book (`docs/src/`) holds the full SDK surface
+(`reference/sdk.md`), the language (`reference/ergon.md`) and the tutorials — read them when in doubt.
 
 ---
 

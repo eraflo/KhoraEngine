@@ -34,6 +34,7 @@ mod defaults;
 mod families;
 mod frame;
 mod frame_clock;
+mod gpu_frames;
 mod phase_order;
 pub(crate) mod profiles;
 pub(crate) mod readiness;
@@ -75,6 +76,8 @@ pub struct EngineCore<A: EngineApp> {
     /// How long the frame in progress has kept the host busy, reported to
     /// the DCC when the frame closes.
     frame_clock: frame_clock::FrameClock,
+    /// The GPU-timed frames whose reports wait for their GPU time.
+    gpu_frames: gpu_frames::GpuFrames,
     /// Whether the startup is over — what it waited on landed, or it gave
     /// up — and the app was told.
     startup_over: bool,
@@ -100,6 +103,7 @@ impl<A: EngineApp> EngineCore<A> {
             passes: Vec::new(),
             lane_agents: Vec::new(),
             frame_clock: frame_clock::FrameClock::default(),
+            gpu_frames: gpu_frames::GpuFrames::default(),
             startup_over: false,
             journal: None,
             profiles: None,

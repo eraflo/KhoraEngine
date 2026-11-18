@@ -102,6 +102,11 @@ pub const ENGINE_COMPONENTS_MODULE: &str = "engine/components.erg";
 /// import: a script handles what the engine raises without declaring it.
 pub const ENGINE_EVENTS_MODULE: &str = "engine/events.erg";
 
+/// The modules the engine serves from memory, never read from a file.
+///
+/// An import of one names no file of the project: no asset depends on it.
+pub const ENGINE_MODULES: [&str; 2] = [ENGINE_COMPONENTS_MODULE, ENGINE_EVENTS_MODULE];
+
 /// Returns the source of [`ENGINE_EVENTS_MODULE`]: one `event` per event the
 /// engine raises ([`ENGINE_EVENTS`](khora_core::script::ENGINE_EVENTS)).
 pub(crate) fn engine_events_source() -> String {

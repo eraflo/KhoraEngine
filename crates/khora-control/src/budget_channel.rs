@@ -107,6 +107,11 @@ impl BudgetChannel {
             .retain(|(_, in_turn)| !in_turn);
     }
 
+    /// Returns whether a publication waits for a frame start to take it.
+    pub(crate) fn waiting(&self) -> bool {
+        !self.inner.waiting.lock_recovered().queue.is_empty()
+    }
+
     /// Puts the oldest publication waiting in force; called at a frame start.
     ///
     /// With nothing new, the one in force stays.
@@ -152,6 +157,18 @@ mod tests {
             lever: false,
             late: Vec::new(),
         }
+    }
+
+    /// **A publication waits until a frame start takes it.**
+    #[test]
+    fn a_publication_waits_until_a_frame_start_takes_it() {
+        let channel = BudgetChannel::default();
+        assert!(!channel.waiting(), "nothing published");
+
+        channel.publish(allocation(1));
+        assert!(channel.waiting(), "published, not yet taken");
+        channel.sync();
+        assert!(!channel.waiting(), "taken at the frame start");
     }
 
     /// **The hot side sees the latest allocation as of its last sync.**

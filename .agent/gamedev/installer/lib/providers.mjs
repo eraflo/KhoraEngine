@@ -24,13 +24,13 @@ function essentials(profile) {
     return {
       title: 'Khora Engine — Game Developer (SDK) profile',
       identity:
-        'You are building a GAME with the Khora Engine. You use ONLY the public `khora-sdk` API; ' +
-        'engine internals (khora-control, khora-agents, khora-lanes, …) are off-limits.',
+        'You are building a GAME with the Khora Engine. Gameplay is Ergon (`assets/scripts/**/*.erg`); ' +
+        'Rust uses ONLY the public `khora-sdk` API. Engine internals are off-limits.',
       rules: [
-        'Use only the `khora-sdk` public surface (`prelude`, `EngineApp`, `GameWorld`, `Vessel`, `run_winit`).',
-        'Never reach into `khora-*` internal crates — if the SDK does not expose it, ask, do not work around it.',
+        'Write gameplay in Ergon; declare the game\'s components there, never with `#[derive(Component)]`.',
+        'Rust uses only `khora-sdk` (`prelude`, `EngineApp` + `PhaseProvider`, `GameWorld`, `run_winit`); a new subsystem (a family) is the one case for `khora-core`, `khora-macros`, `khora-agents`.',
         'Math via `khora_sdk::prelude::math` — never raw `glam`. Log via `log::*`, never `println!`.',
-        'Never embed secrets/keys in a game build or commit them to git.',
+        'Never embed secrets/keys in a game build or commit them; never trust a project for the user.',
         'For any UI / design decision, use `/impeccable`.',
       ],
     };
@@ -43,7 +43,7 @@ function essentials(profile) {
     rules: [
       'Math via `khora_core::math` — never raw `glam`. Log via `log::*`, never `println!`.',
       'Never `unwrap()` on fallible GPU/IO. Never `std::thread::spawn` — concurrency goes through the DCC.',
-      'Never bypass the `Lane` abstraction for hot-path work; agents implement only `Agent` + `Default`.',
+      'Never bypass the `Lane` abstraction for hot-path work; a new subsystem is a family (`register_agent!`), whose `LaneAgent` runs its lanes as layers.',
       'Shaders are `.wgsl` files composed by the `PipelineSystem` backend — never inline WGSL strings.',
       'Never push to git or create PRs without explicit permission. Never commit secrets.',
     ],
@@ -209,7 +209,8 @@ export function generateCopilot(ctx, generated) {
     'control-gorna': 'crates/khora-control/**',
     'editor-ui-ux': 'crates/khora-editor/**',
     'api-ux': 'crates/khora-sdk/**',
-    'gameplay': 'src/**,examples/**',
+    'ergon': 'assets/scripts/**',
+    'gameplay': 'src/**,assets/scripts/**,examples/**',
     'scene-design': 'src/**,assets/**',
   };
   const instrDir = path.join(root, '.github', 'instructions');

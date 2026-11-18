@@ -19,7 +19,7 @@ use super::epochs::Epochs;
 use super::forecast::forecast_frame_ms;
 use super::{connected, DccConfig, DccService, FRAME_TIME_MIN_SAMPLES, MULTIPLIER_EPSILON};
 use crate::agent_registry::AgentRegistry;
-use crate::analysis::{AnalysisReport, HeuristicEngine};
+use crate::analysis::{gpu_load, AnalysisReport, HeuristicEngine};
 use crate::budget_channel::BudgetChannel;
 use crate::cost_model::CostModel;
 use crate::dcc_context::{safety_ceiling, DccContext};
@@ -27,7 +27,7 @@ use crate::gorna::GornaArbitrator;
 use crate::governor::FrameGovernor;
 use crate::metrics::MetricStore;
 use crossbeam_channel::Receiver;
-use khora_core::agent::gorna::protocol::{Allocation, Envelope, Report, Trigger};
+use khora_core::agent::gorna::protocol::{Allocation, Envelope, Epoch, Report, Trigger};
 use khora_core::agent::gorna::{
     AdaptationMode, AgentHints, AgentId, DecisionTrace, DecisionWatch, EpochRecord, FrameSummary,
     ProfileRow,
@@ -121,6 +121,18 @@ pub(super) struct DecisionLoop {
     pub(super) started: Instant,
     /// When the next epoch opens, and what waits to open it.
     pub(super) epochs: Epochs,
+    /// The developer's effective modes the last round read (the defaults
+    /// left out); others raise `PolicyChanged`.
+    modes_read: HashMap<AgentId, AdaptationMode>,
+    /// The developer's effective hints the last round read (the defaults
+    /// left out); others raise `PolicyChanged`.
+    hints_read: HashMap<AgentId, AgentHints>,
+    /// Frames in a row whose report carried no GPU time: from
+    /// [`FRAME_TIME_MIN_SAMPLES`] on, the frames say nothing of the GPU.
+    pub(super) frames_untimed_on_gpu: usize,
+    /// The GPU load a hardware monitor last reported, read only while no frame
+    /// is timed on the GPU.
+    pub(super) monitor_gpu_load: Option<f32>,
     /// Per-agent empirical cost models (`c·f(n)`), each read at the workload
     /// its own agent last reported.
     pub(super) cost_models: HashMap<AgentId, CostModel>,
@@ -138,6 +150,9 @@ pub(super) struct DecisionLoop {
     /// Whether the governor's last change still waits for an epoch to lend
     /// it: it does not decide again on frames that never saw it.
     change_unlent: bool,
+    /// The epoch that lent the governor's last change: the governor reads
+    /// only frames run under it or after it, or naming no epoch.
+    pub(super) governed_from: Epoch,
     /// Multiplier in effect when budgets were last issued; one moved since
     /// opens an epoch.
     last_issued_multiplier: Option<f32>,
@@ -196,6 +211,10 @@ impl DecisionLoop {
             arbitrator,
             started: Instant::now(),
             epochs: Epochs::default(),
+            modes_read: HashMap::new(),
+            hints_read: HashMap::new(),
+            frames_untimed_on_gpu: 0,
+            monitor_gpu_load: None,
             cost_models: HashMap::new(),
             workloads: HashMap::new(),
             reports: HashMap::new(),
@@ -203,6 +222,7 @@ impl DecisionLoop {
             layout_advisor: LayoutAdvisor::default(),
             governor,
             change_unlent: false,
+            governed_from: Epoch::default(),
             last_issued_multiplier: None,
             published_on: None,
             hardware_read: None,
@@ -268,6 +288,9 @@ impl DecisionLoop {
             registry.iter_active(&ctx_copy.inactive).cloned().collect()
         };
         self.epochs.observe(&agents);
+        if self.policies_changed() {
+            self.epochs.raise(Trigger::PolicyChanged);
+        }
         // With no agent to lend it to, a change has nothing to wait
         // for.
         if agents.is_empty() && self.change_unlent {
@@ -285,11 +308,24 @@ impl DecisionLoop {
             .and_then(|r| r.as_ref().and_then(|(t, c)| t.epochs.get(*c).cloned()));
         if let Some(record) = replayed {
             self.replay(record, &agents, multiplier);
-        } else if let Some(trigger) = (self.epochs)
-            .due(self.config.min_epoch_ticks)
-            .filter(|_| !agents.is_empty())
-        {
-            self.open_epoch(trigger, &agents, &ctx_copy, &report, multiplier);
+        } else {
+            // A round stays open until a frame start lends its allocation:
+            // none refreshes before.
+            let lending = connected(&self.shared.budget_channel).is_some_and(|c| c.waiting());
+            if !agents.is_empty() && !lending {
+                self.epochs.refresh(self.config.refresh_every_ticks);
+            }
+            let min_ticks = self.config.min_epoch_ticks;
+            let mut due = self.epochs.due(min_ticks).filter(|_| !agents.is_empty());
+            // A policy put back before its round: the round would read the
+            // rules the last one read.
+            if due == Some(Trigger::PolicyChanged) && !self.policies_changed() {
+                self.epochs.withdraw(Trigger::PolicyChanged);
+                due = self.epochs.due(min_ticks).filter(|_| !agents.is_empty());
+            }
+            if let Some(trigger) = due {
+                self.open_epoch(trigger, &agents, &ctx_copy, &report, multiplier);
+            }
         }
 
         // What the book has learnt, for the host to keep across runs.
@@ -336,6 +372,12 @@ impl DecisionLoop {
         ctx.hardware.current_ram_bytes = (mem_bytes > 0.0).then_some(mem_bytes as u64);
         ctx.hardware.memory_budget_bytes = self.config.memory_budget_bytes;
         ctx.refresh_memory_pressure();
+        // The frames' GPU time is the GPU's load while the renderer times
+        // them; a monitor's reading stands in only while it does not.
+        let frames_load = (self.frames_untimed_on_gpu < FRAME_TIME_MIN_SAMPLES)
+            .then(|| gpu_load(&self.store, &ctx.hardware))
+            .flatten();
+        ctx.hardware.gpu_load = frames_load.or(self.monitor_gpu_load);
         let report = self.heuristic_engine.analyze(&ctx, &self.store);
         (report, ctx.clone())
     }
@@ -511,6 +553,7 @@ impl DecisionLoop {
         if self.change_unlent {
             self.change_unlent = false;
             self.governor.lent();
+            self.governed_from = allocation.epoch;
         }
         let ran = std::mem::take(&mut self.epoch_frames);
         if let Some(since) = recording_since(&self.shared.decision_recording) {
@@ -527,6 +570,20 @@ impl DecisionLoop {
         if let Some(channel) = connected(&self.shared.budget_channel) {
             channel.publish(allocation);
         }
+        self.modes_read = effective(&policies);
+        self.hints_read = effective(&tick_hints);
+    }
+
+    /// Returns whether the developer's effective modes or hints differ from
+    /// those the last round read.
+    ///
+    /// An agent given no mode runs the default one, and one given no hint the
+    /// default hints: setting either to its default changes nothing. See the
+    /// book: concepts/gorna-protocol.md, "Epochs and triggers".
+    fn policies_changed(&self) -> bool {
+        let modes = effective(&self.shared.adaptation_modes.read_recovered());
+        let hints = effective(&self.shared.hints.read_recovered());
+        modes != self.modes_read || hints != self.hints_read
     }
 
     /// Appends the round just run to the recorded trace.
@@ -624,4 +681,13 @@ fn by_agent<T: Clone>(map: &HashMap<AgentId, T>) -> Vec<(AgentId, T)> {
         map.iter().map(|(id, value)| (*id, value.clone())).collect();
     entries.sort_by_key(|(id, _)| *id);
     entries
+}
+
+/// Returns the entries of `rules` other than the default: the rules each agent
+/// runs, an agent left out running the default.
+fn effective<T: Copy + Default + PartialEq>(rules: &HashMap<AgentId, T>) -> HashMap<AgentId, T> {
+    (rules.iter())
+        .filter(|(_, rule)| **rule != T::default())
+        .map(|(id, rule)| (*id, *rule))
+        .collect()
 }

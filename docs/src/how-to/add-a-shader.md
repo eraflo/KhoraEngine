@@ -90,7 +90,11 @@ result with `naga`, and compiles each variant the first time it is asked for, th
 caches it. During development, the shader hot reload can overlay a module with a
 project's `.wgsl` file (`PipelineSystem::set_overlay_source`) — only in a
 [trusted](../concepts/trust.md) project; a restricted project's shaders never
-replace the engine's.
+replace the engine's. It overlays only a module the backend registers
+(`PipelineSystem::composes`): a file of no lib nor pipeline in the tables, such as
+a test probe under `shaders/tests/`, is never handed over. A lib overlay must
+declare the lib's own `#define_import_path`; one that does not compose is dropped,
+and every other module stays composed.
 
 ## Step 3 — Respect the four-bind-group budget
 

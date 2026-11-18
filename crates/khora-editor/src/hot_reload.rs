@@ -86,7 +86,9 @@ pub fn pump(pvfs_mutex: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mutex<Editor
         // re-exported glTF with another node count, or one whole again after
         // a broken save): its parts are listed again.
         needs_reindex |= pvfs.assets().may_hold_sub_assets(&uuid);
-        let dropped = pvfs.assets().invalidate(&uuid);
+        let dropped = pvfs
+            .assets()
+            .invalidate_through(rel, &|path| pvfs.resolve_uuid(path));
         log::info!(
             "Hot reload: Modified '{}' (cache dropped: {})",
             rel,

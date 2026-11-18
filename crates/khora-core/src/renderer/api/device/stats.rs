@@ -14,6 +14,8 @@
 
 //! Performance statistics for the rendering system.
 
+use super::GpuFrameTime;
+
 /// A collection of performance statistics for a single rendered frame.
 #[derive(Debug, Clone)]
 pub struct RenderStats {
@@ -23,10 +25,21 @@ pub struct RenderStats {
     pub cpu_preparation_time_ms: f32,
     /// The CPU time spent submitting encoded command buffers to the GPU.
     pub cpu_render_submission_time_ms: f32,
-    /// The GPU execution time of the main render pass, as measured by timestamp queries.
-    pub gpu_main_pass_time_ms: f32,
-    /// The total GPU execution time for the entire frame, as measured by timestamp queries.
-    pub gpu_frame_total_time_ms: f32,
+    /// The GPU execution time of the frame's passes, from timestamp queries,
+    /// smoothed over a few frames for display.
+    ///
+    /// `None` when the backend has no timestamp queries, or before its first reading.
+    pub gpu_main_pass_time_ms: Option<f32>,
+    /// The GPU execution time of the whole frame, from timestamp queries,
+    /// smoothed over a few frames for display.
+    ///
+    /// `None` when the backend has no timestamp queries, or before its first reading.
+    pub gpu_frame_total_time_ms: Option<f32>,
+    /// The raw GPU time of the latest frame read back, and which frame it was.
+    ///
+    /// `None` when the backend has no timestamp queries, or before its first
+    /// reading. Unsmoothed: what the frame's report to the DCC carries.
+    pub gpu_frame: Option<GpuFrameTime>,
     /// The number of draw calls encoded for the frame.
     pub draw_calls: u32,
     /// The total number of triangles submitted for the frame.
@@ -41,8 +54,9 @@ impl Default for RenderStats {
             frame_number: 0,
             cpu_preparation_time_ms: 0.0,
             cpu_render_submission_time_ms: 0.0,
-            gpu_main_pass_time_ms: 0.0,
-            gpu_frame_total_time_ms: 0.0,
+            gpu_main_pass_time_ms: None,
+            gpu_frame_total_time_ms: None,
+            gpu_frame: None,
             draw_calls: 0,
             triangles_rendered: 0,
             vram_usage_estimate_mb: 0.0,

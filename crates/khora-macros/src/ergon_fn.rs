@@ -31,6 +31,9 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{parse_macro_input, FnArg, ItemFn, Pat, ReturnType, Type};
 
+/// The keys `#[ergon_fn(...)]` takes.
+const KEYS: &[&str] = &["name", "cost"];
+
 /// What the attribute was given.
 struct Options {
     /// The name scripts call it by.
@@ -60,20 +63,60 @@ fn parse_options(attr: TokenStream) -> syn::Result<Options> {
     if attr.is_empty() {
         return Ok(options);
     }
-
-    let parser = syn::meta::parser(|meta| {
-        if meta.path.is_ident("name") {
-            options.name = Some(meta.value()?.parse::<syn::LitStr>()?.value());
-            Ok(())
-        } else if meta.path.is_ident("cost") {
-            options.cost = Some(meta.value()?.parse::<syn::LitInt>()?.base10_parse()?);
-            Ok(())
-        } else {
-            Err(meta.error("expected `name = \"…\"` or `cost = …`"))
-        }
-    });
-    syn::parse::Parser::parse(parser, attr)?;
+    syn::parse::Parser::parse(options_parser(&mut options), attr)?;
     Ok(options)
+}
+
+/// Returns the parser filling `options` from the attribute's keys.
+///
+/// Its errors: a key other than `name` and `cost`, a key given twice, a
+/// missing value or one of another kind, each spanned on the key or value.
+fn options_parser(options: &mut Options) -> impl syn::parse::Parser<Output = ()> + '_ {
+    syn::meta::parser(move |meta| {
+        let key = meta
+            .path
+            .get_ident()
+            .map(ToString::to_string)
+            .unwrap_or_default();
+        let (message, given) = match key.as_str() {
+            "name" => (
+                "`name` takes a string: `name = \"Distance\"`",
+                options.name.is_some(),
+            ),
+            "cost" => (
+                "`cost` takes an integer: `cost = 4`",
+                options.cost.is_some(),
+            ),
+            _ => {
+                let listed = KEYS
+                    .iter()
+                    .map(|key| format!("`{key}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let shown = quote::ToTokens::to_token_stream(&meta.path)
+                    .to_string()
+                    .replace(' ', "");
+                return Err(meta.error(format!(
+                    "unknown `#[ergon_fn]` key `{shown}`: its keys are {listed}"
+                )));
+            }
+        };
+        if given {
+            return Err(meta.error(format!("`{key}` is given twice: keep one")));
+        }
+        if !meta.input.peek(syn::Token![=]) {
+            return Err(meta.error(message));
+        }
+        let value = meta.value()?;
+        let wrong = |error: syn::Error| syn::Error::new(error.span(), message);
+        if key == "name" {
+            options.name = Some(value.parse::<syn::LitStr>().map_err(wrong)?.value());
+        } else {
+            let cost = value.parse::<syn::LitInt>().map_err(wrong)?;
+            options.cost = Some(cost.base10_parse()?);
+        }
+        Ok(())
+    })
 }
 
 fn expand(function: &ItemFn, options: &Options) -> syn::Result<TokenStream> {
@@ -278,7 +321,7 @@ fn pascal_case(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::pascal_case;
+    use super::{options_parser, pascal_case, Options};
 
     #[test]
     fn a_snake_case_name_becomes_pascal_case() {
@@ -290,5 +333,59 @@ mod tests {
     #[test]
     fn an_already_capitalised_name_is_left_alone() {
         assert_eq!(pascal_case("Lerp"), "Lerp");
+    }
+
+    /// Returns the options `source` gives, or the message of its error.
+    fn options_of(source: &str) -> Result<Options, String> {
+        let mut options = Options {
+            name: None,
+            cost: None,
+        };
+        syn::parse::Parser::parse_str(options_parser(&mut options), source)
+            .map_err(|error| error.to_string())?;
+        Ok(options)
+    }
+
+    #[test]
+    fn name_and_cost_are_read() {
+        let options = options_of("name = \"Distance\", cost = 4").expect("known keys");
+        assert_eq!(options.name.as_deref(), Some("Distance"));
+        assert_eq!(options.cost, Some(4));
+    }
+
+    #[test]
+    fn an_unknown_key_names_the_keys() {
+        assert_eq!(
+            options_of("nmae = \"Distance\"").err().expect("refused"),
+            "unknown `#[ergon_fn]` key `nmae`: its keys are `name`, `cost`"
+        );
+    }
+
+    #[test]
+    fn a_key_given_twice_is_an_error() {
+        assert_eq!(
+            options_of("cost = 4, cost = 8").err().expect("refused"),
+            "`cost` is given twice: keep one"
+        );
+    }
+
+    #[test]
+    fn a_key_without_its_value_is_an_error() {
+        assert_eq!(
+            options_of("name").err().expect("refused"),
+            "`name` takes a string: `name = \"Distance\"`"
+        );
+    }
+
+    #[test]
+    fn a_value_of_another_kind_is_an_error() {
+        assert_eq!(
+            options_of("cost = \"4\"").err().expect("refused"),
+            "`cost` takes an integer: `cost = 4`"
+        );
+        assert_eq!(
+            options_of("name = Distance").err().expect("refused"),
+            "`name` takes a string: `name = \"Distance\"`"
+        );
     }
 }

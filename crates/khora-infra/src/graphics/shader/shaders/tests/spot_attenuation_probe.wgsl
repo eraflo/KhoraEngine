@@ -3,8 +3,8 @@
 // value back. It is composed through the `PipelineSystem` like a pipeline, so
 // the function it runs is the one every lit pipeline imports.
 //
-// It has no `#define_import_path`, so a hot reload of this file recomposes
-// nothing.
+// It is no module the pipeline system registers, so the shader hot reload
+// never hands this file over.
 
 #import khora::lighting::attenuation::calculate_spot_attenuation
 

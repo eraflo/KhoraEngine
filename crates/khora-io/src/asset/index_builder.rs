@@ -63,7 +63,9 @@ impl<'a> IndexBuilder<'a> {
 
     /// Resolves each asset's UUID through `registry`, frozen or `new_v5` default.
     ///
-    /// The same registry in development and in the pack builder gives the same UUIDs.
+    /// A dependency named by path resolves through it too, so it names the UUID
+    /// its target is indexed under. The same registry in development and in the
+    /// pack builder gives the same UUIDs.
     pub fn with_registry(mut self, registry: &'a AssetIdRegistry) -> Self {
         self.registry = Some(registry);
         self
@@ -111,15 +113,16 @@ impl<'a> IndexBuilder<'a> {
 
         let mut metadata = Vec::with_capacity(scanned.len());
         for file in scanned {
-            let uuid = match self.registry {
-                Some(reg) => reg.resolve(&file.key),
-                None => AssetUUID::new_v5(&file.key),
-            };
+            let uuid = self.uuid_of(&file.key);
             // Only a type with an extractor is read: a texture or a sound never
             // is, so the scan stays one stat per file.
             let dependencies = if type_has_dependency_extractor(file.asset_type.as_str()) {
                 match read_bytes(self.guard, &file.rel, &file.abs) {
-                    Ok(bytes) => extract_dependencies(file.asset_type.as_str(), &file.key, &bytes),
+                    Ok(bytes) => {
+                        extract_dependencies(file.asset_type.as_str(), &file.key, &bytes, &|rel| {
+                            self.uuid_of(rel)
+                        })
+                    }
                     Err(e) => {
                         log::warn!(
                             "asset index: failed to read '{}' for dependency extraction: {e}",
@@ -160,6 +163,17 @@ impl<'a> IndexBuilder<'a> {
         bincode::serde::encode_to_vec(&metadata, cfg)
             .map_err(|e| anyhow!("Failed to encode asset index: {}", e))
             .context("IndexBuilder::build_index_bytes")
+    }
+
+    /// Returns the UUID of the file at the forward-slash path `rel_fwd` under the root.
+    ///
+    /// Through the registry when there is one, else the path's `new_v5` default.
+    /// A file's own entry and every dependency naming it by path take it here.
+    fn uuid_of(&self, rel_fwd: &str) -> AssetUUID {
+        match self.registry {
+            Some(registry) => registry.resolve(rel_fwd),
+            None => AssetUUID::new_v5(rel_fwd),
+        }
     }
 }
 
@@ -275,6 +289,45 @@ mod tests {
             "IndexBuilder must resolve the frozen registry UUID, not new_v5(path)"
         );
         assert_ne!(md2[0].uuid, default_uuid);
+    }
+
+    /// **A script's dependency is the UUID the index gives the module it imports**,
+    /// the frozen one of a renamed module.
+    #[test]
+    fn a_script_depends_on_the_uuid_its_renamed_module_is_indexed_under() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("scripts").join("ai")).unwrap();
+        fs::write(
+            root.join("scripts").join("damage.erg"),
+            b"fn void Hit() { }",
+        )
+        .unwrap();
+        fs::write(
+            root.join("scripts").join("ai").join("guard.erg"),
+            br#"import "damage.erg"; fn void Main() { }"#,
+        )
+        .unwrap();
+        let mut reg = AssetIdRegistry::load(root);
+        reg.rename("scripts/hurt.erg", "scripts/damage.erg");
+
+        let metadata = IndexBuilder::new(root)
+            .with_registry(&reg)
+            .build_metadata()
+            .unwrap();
+
+        let by_key = |key: &str| {
+            metadata
+                .iter()
+                .find(|m| asset_key(&m.source_path) == key)
+                .unwrap_or_else(|| panic!("{key} is indexed: {metadata:#?}"))
+        };
+        let module = by_key("scripts/damage.erg");
+        assert_eq!(module.uuid, AssetUUID::new_v5("scripts/hurt.erg"));
+        assert_eq!(
+            by_key("scripts/ai/guard.erg").dependencies,
+            vec![module.uuid]
+        );
     }
 
     #[test]

@@ -17,6 +17,9 @@ Safety and privacy reviewer for games built on `khora-sdk`. Authority doc:
 - **Untrusted input**: save files, downloaded content, and network data are validated (size/range/format)
   before use; no `unwrap()` on them.
 - **Dangerous behavior**: no unsolicited file deletion, no hidden network exfiltration, nothing malicious.
+- **Signing key**: `~/.khora/signing/pack.key` (or any `*.key`) never inside the project or the diff.
+- **Trust**: never mark a project trusted on the user's behalf; a restricted project's scripts and
+  native code are untrusted until the user decides.
 
 ## Output
 A short findings list — file:line, severity, one-line risk, fix or "rotate this secret". Run before any

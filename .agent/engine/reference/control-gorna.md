@@ -39,6 +39,19 @@ governor, adaptation modes, and the scheduler that lends envelopes and runs each
 - **Adaptation modes** are envelope shapes: `Learning` (free), `Manual(row)` (a pin), `Stable` (keeps its
   envelope while it fits), `Bounded(min, max)` (allowed rows); a `Cap` hint is a ceiling.
 - **Only agents bid**; the Data layer (AGDF) self-optimises and is only observed.
+- **When a round opens** (`dcc_service/epochs.rs`): the first trigger raised waits for
+  `min_epoch_ticks`; only `Safety` preempts it. `PolicyChanged` is raised when the developer's
+  effective modes or hints (defaults left out) differ from those the last round read; one put back
+  before its round opens is withdrawn (`Epochs::withdraw`), the trigger raised behind it kept.
+  `Refresh` opens after `DccConfig::refresh_every_ticks` (100, 5 s at 20 Hz; 0 never) with no
+  round, nothing waiting, no allocation waiting to be lent and no replay, and when a replay ends.
+- **The GPU's load** is `FrameReport.busy.gpu` (the renderer's timestamps around the frame's
+  passes, `RenderSystem::time_on_gpu`; raw, the SDK holding each timed frame's report until its own
+  reading, `RenderStats::gpu_frame`) over the setpoint (`analysis::gpu_load`). After 10 frames in a
+  row with no GPU time it is a monitor's `HardwareReport.gpu_load`, or `None` — never 0.
+- **A `FrameReport` names its epoch**; the governor reads only frames of the epoch that lent its
+  last change or later (or naming none), so a late GPU reading never counts after a lend.
+- An `OfferRequest` carries no pressure: the heuristics reach the agent through its `target`.
 
 ## Hard rules
 - The DCC lends envelopes and observes; it never chooses an agent's row (a developer pin aside) nor a data layout.

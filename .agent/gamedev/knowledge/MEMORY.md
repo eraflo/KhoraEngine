@@ -12,11 +12,21 @@ placeholders with your project's real state.)
 - <one line per core gameplay/aesthetic pillar>
 
 ## Entities & scenes
-- <key entities you spawn, scene files, prefabs>
+- <key entities, scene files, prefabs>
+
+## Scripts
+- <Ergon modules, the behaviors/components/systems/events they declare, the actions they read>
+
+## Native code
+- <none, or what the EngineApp does: input bindings, saves, backends, families>
+
+## Trust & build
+- <trusted?, last Build Game target and whether it ran>
+
 
 ## Open tasks
 - <next things to build>
 
 ## Notes
-- Reference game: `examples/sandbox/src/` (`game.rs`, `player.rs`, `assets.rs`).
+- Reference game: `examples/sandbox/` (`src/game.rs`, `src/player.rs`, `assets/scripts/hover.erg`).
 - For UI/design decisions use `/impeccable`. Never bake secrets into a build.

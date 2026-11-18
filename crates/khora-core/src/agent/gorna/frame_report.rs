@@ -16,15 +16,25 @@
 
 use std::time::Duration;
 
+use super::protocol::Epoch;
 use crate::lane::cost::PerDevice;
 
 /// What one frame cost the engine: the time it kept each device busy, waits
-/// for the display excluded. Sent to the DCC once per frame, after the frame.
+/// for the display excluded.
+///
+/// Sent to the DCC once per frame, after the frame, or once its GPU time is
+/// read back.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct FrameReport {
     /// The time the frame kept each device busy; `None` for a device the
     /// frame did not measure (never zero for "unknown").
     pub busy: PerDevice<Option<Duration>>,
+    /// The epoch whose allocation the frame ran under; `Epoch(0)` when the
+    /// host does not say.
+    ///
+    /// The frame governor reads a frame only if it ran under the allocation
+    /// that lent its last change, or names no epoch.
+    pub epoch: Epoch,
 }
 
 impl FrameReport {

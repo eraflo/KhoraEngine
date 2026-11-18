@@ -19,7 +19,7 @@ use super::decision_loop::{recording_since, DecisionLoop};
 use super::COST_MODEL_CAPACITY;
 use crate::cost_model::CostModel;
 use crossbeam_channel::Receiver;
-use khora_core::agent::gorna::protocol::{FrameReport, Report, Trigger};
+use khora_core::agent::gorna::protocol::{Epoch, FrameReport, Report, Trigger};
 use khora_core::sync::RwLockExt;
 use khora_core::telemetry::monitoring::{MonitoredResourceType, ResourceUsageReport};
 use khora_core::telemetry::{MetricId, TelemetryEvent};
@@ -69,15 +69,18 @@ impl DecisionLoop {
                 ctx.hardware.thermal = report.thermal;
                 ctx.hardware.battery = report.battery;
                 ctx.hardware.cpu_load = report.cpu_load;
-                ctx.hardware.gpu_load = report.gpu_load.unwrap_or(0.0);
-                // A hardware report carries no VRAM figure: the
-                // one the DCC knows stays.
+                // A report carries no VRAM figure, and one without a
+                // GPU load says nothing of it: what is known stays. The
+                // analysis reads it only while no frame is GPU-timed.
+                if let Some(load) = report.gpu_load {
+                    self.monitor_gpu_load = Some(load);
+                }
 
                 log::debug!(
                     "DCC Hardware: Thermal={:?}, CPU={:.2}, GPU={:?}",
                     ctx.hardware.thermal,
                     ctx.hardware.cpu_load,
-                    ctx.hardware.gpu_load
+                    report.gpu_load
                 );
             }
             TelemetryEvent::ActivationChanged(inactive) => {
@@ -186,6 +189,10 @@ impl DecisionLoop {
         journal: Option<Instant>,
     ) {
         let busy = &frame.busy;
+        self.frames_untimed_on_gpu = match busy.gpu {
+            Some(_) => 0,
+            None => self.frames_untimed_on_gpu.saturating_add(1),
+        };
         for (device, time) in [
             ("cpu_ms", busy.cpu),
             ("gpu_ms", busy.gpu),
@@ -200,7 +207,11 @@ impl DecisionLoop {
         if let Some(critical) = frame.critical() {
             let ms = critical.as_secs_f32() * 1_000.0;
             self.store.push(MetricId::new("frame", "critical_ms"), ms);
-            frames.push(critical);
+            // A frame run before the allocation that lent the governor's
+            // last change measures nothing of it.
+            if frame.epoch == Epoch::default() || frame.epoch >= self.governed_from {
+                frames.push(critical);
+            }
             if journal.is_some() {
                 self.epoch_frames.push(critical);
             }

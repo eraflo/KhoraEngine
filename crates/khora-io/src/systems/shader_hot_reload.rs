@@ -13,7 +13,8 @@
 // limitations under the License.
 
 //! The `.wgsl` hot-reload pump: a project's changed shaders handed to the
-//! [`PipelineSystem`] as overlays, never a restricted project's.
+//! [`PipelineSystem`] as overlays of the modules it composes, never a
+//! restricted project's.
 
 use khora_data::ecs::SystemContext;
 use std::sync::Arc;
@@ -179,7 +180,8 @@ fn overlays_under(root: &std::path::Path) -> Vec<(std::path::PathBuf, String)> {
 
 /// Applies the overlays of the watched `roots` afresh, each root at its trust.
 ///
-/// A trusted root's overlays replace their modules; a restricted root's are
+/// Only a file of a module `pipeline_system` composes is an overlay. A
+/// trusted root's overlays replace their modules; a restricted root's are
 /// listed under [`ProblemSource::Restricted`], replacing the list.
 fn apply_afresh(
     runtime: &Runtime,
@@ -199,6 +201,9 @@ fn apply_afresh(
             let Some(logical) = logical_name_for_shader_path(&rel_path) else {
                 continue;
             };
+            if !pipeline_system.composes(&logical) {
+                continue; // A shader the system does not compose, a test probe say.
+            }
             if restricted {
                 listed.push(ignored(&root.join(&rel_path)));
             } else if let Some(source) = overlay_source(&root, &rel_path, refusals) {
@@ -276,6 +281,10 @@ fn shader_hot_reload_system(
         let Some(logical) = logical_name_for_shader_path(&rel_path) else {
             continue; // Not a shader file.
         };
+        if !pipeline_system.composes(&logical) {
+            log::debug!("shader hot-reload: {rel_path} is no module the pipeline system composes");
+            continue;
+        }
         // A restricted project's shaders never replace the engine's.
         let restricted = crate::trust::ProjectTrustState::of_path(runtime, &root).is_restricted();
         if restricted {

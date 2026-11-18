@@ -34,14 +34,15 @@ use khora_core::renderer::api::shader::ShaderVariantKey;
 use khora_core::renderer::error::{RenderError, ResourceError};
 use khora_core::renderer::traits::{GraphicsDevice, PipelineSystem};
 
-use dependencies::{affected_compute_pipelines, affected_render_pipelines, readd_lib_module};
-use naga_oil::compose::{ComposableModuleDescriptor, Composer, ShaderDefValue, ShaderLanguage};
+use dependencies::{affected_compute_pipelines, affected_render_pipelines};
+use libs::{compose_libs, engine_lib_sources, recompose_lib};
+use naga_oil::compose::{Composer, ShaderDefValue};
 use rebuild::{
-    inject_float_defs, layout_label, make_module, rebuild_compute_pipeline,
-    rebuild_render_pipeline, resolve_layout,
+    layout_label, make_module, rebuild_compute_pipeline, rebuild_render_pipeline, resolve_layout,
 };
 
 mod dependencies;
+mod libs;
 mod rebuild;
 
 /// (logical import path, source) for each composable lib module.
@@ -167,6 +168,8 @@ const PIPELINE_MODULES: &[(&str, &str)] = &[
 /// Mutable interior state behind the system's `Mutex`.
 struct Inner {
     composer: Composer,
+    /// The source the composer holds each registered lib from, by import path.
+    composed_libs: HashMap<&'static str, String>,
     pipelines: HashMap<&'static str, &'static str>,
     base_defs: HashMap<String, ShaderDefValue>,
     layouts: HashMap<LayoutCacheKey, BindGroupLayoutId>,
@@ -191,23 +194,14 @@ struct Inner {
     rebuilt: bool,
 }
 
-/// Builds a composer holding the engine's lib modules, added in their order — each
-/// after the ones it imports — with `base_defs`.
+/// Builds a composer holding the engine's lib modules from their own sources, with `base_defs`.
 fn engine_composer(base_defs: &HashMap<String, ShaderDefValue>) -> Result<Composer, RenderError> {
-    let mut composer = Composer::default();
-    for (path, source) in LIB_MODULES {
-        let patched = inject_float_defs(source);
-        composer
-            .add_composable_module(ComposableModuleDescriptor {
-                source: &patched,
-                file_path: path,
-                language: ShaderLanguage::Wgsl,
-                shader_defs: base_defs.clone(),
-                ..Default::default()
-            })
-            .map_err(|e| compose_err(path, e))?;
-    }
-    Ok(composer)
+    compose_libs(LIB_MODULES, base_defs)
+}
+
+/// Returns whether `logical_path` is a lib or a pipeline the engine registers.
+fn is_registered(logical_path: &str) -> bool {
+    (LIB_MODULES.iter().chain(PIPELINE_MODULES)).any(|(path, _)| *path == logical_path)
 }
 
 /// The wgpu/`naga_oil` [`PipelineSystem`] backend, put in `runtime.backends`
@@ -250,6 +244,7 @@ impl WgpuPipelineSystem {
         Ok(Self {
             inner: Mutex::new(Inner {
                 composer,
+                composed_libs: engine_lib_sources(),
                 pipelines: PIPELINE_MODULES.iter().copied().collect(),
                 base_defs,
                 layouts: HashMap::new(),
@@ -399,6 +394,10 @@ impl PipelineSystem for WgpuPipelineSystem {
         Ok(id)
     }
 
+    fn composes(&self, logical_path: &str) -> bool {
+        is_registered(logical_path)
+    }
+
     fn set_overlay_source(&self, logical_path: &str, source: String) {
         let mut inner = match lock(&self.inner) {
             Ok(g) => g,
@@ -426,13 +425,12 @@ impl PipelineSystem for WgpuPipelineSystem {
         if overlaid.is_empty() {
             return;
         }
-        // An overlay may have replaced a module under another name than its
-        // path, or brought modules of its own that the engine's import: the
-        // composer is built afresh from the engine's sources, in their
-        // order, rather than patched module by module.
+        // The composer is built afresh from the engine's sources rather than
+        // patched module by module.
         match engine_composer(&inner.base_defs) {
             Ok(composer) => {
                 inner.composer = composer;
+                inner.composed_libs = engine_lib_sources();
                 inner.rebuilt = true;
                 for path in &overlaid {
                     inner.dirty.remove(path);
@@ -456,20 +454,22 @@ impl PipelineSystem for WgpuPipelineSystem {
         let dirty: Vec<String> = inner.dirty.drain().collect();
         let rebuilt = std::mem::take(&mut inner.rebuilt);
 
-        // A dirty path that is no pipeline name is a lib module: register it
-        // again so composition picks up its new source.
-        for path in &dirty {
-            if !inner.pipelines.contains_key(path.as_str()) {
-                if let Err(e) = readd_lib_module(&mut inner, path) {
-                    log::error!(
-                        "shader hot-reload: failed to recompose lib `{path}`, \
-                         keeping previous module: {e}"
-                    );
-                    // Drop the bad overlay so the next edit can recover and we
-                    // don't keep re-failing on every recompose.
-                    inner.overlays.remove(path);
-                    continue;
-                }
+        // Each dirty lib recomposes in the engine's lib order, all or nothing:
+        // one that fails leaves every other lib composed. A dirty name that is
+        // no registered lib adds nothing to the composer: a pipeline overlay
+        // is composed by its name when the pipeline is built.
+        for (path, _) in LIB_MODULES {
+            if !dirty.iter().any(|name| name == path) {
+                continue;
+            }
+            if let Err(e) = recompose_lib(&mut inner, path) {
+                log::error!(
+                    "shader hot-reload: failed to recompose lib `{path}`, \
+                     keeping previous module: {e}"
+                );
+                // The bad overlay is dropped, so the next edit can recover
+                // and no recompose fails on it again.
+                inner.overlays.remove(*path);
             }
         }
 
