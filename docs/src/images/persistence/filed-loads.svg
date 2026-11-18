@@ -1,0 +1,117 @@
+<svg id="fig-persistence-filed-loads" class="kp-figure" viewBox="0 0 760 390" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-pers-filed-title kp-pers-filed-desc">
+  <title id="kp-pers-filed-title">Scene loads filed while frames run: prepared off the frame, landed in the order they were filed</title>
+  <desc id="kp-pers-filed-desc">Three loads are filed as tickets 1, 2 and 3 and wait for the loading family. Ticket 2 is prepared first but does not land, because ticket 1, filed before it, is not ready. Once ticket 1 is prepared, the next frame boundary commits 1 then 2. Ticket 3 was prepared before a script reload changed a component; its lease fails and it goes back to the loading family ahead of later loads, with the same ids, to be prepared again. Had it been cancelled, it would land nothing and file no outcome.</desc>
+  <style>
+    #fig-persistence-filed-loads { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-persistence-filed-loads .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-persistence-filed-loads .kp-station-box { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-persistence-filed-loads .kp-card { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-persistence-filed-loads .kp-flow { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; fill: none; }
+    #fig-persistence-filed-loads .kp-arrowhead { fill: var(--k-silver-dim, #809db2); }
+    #fig-persistence-filed-loads .kp-ticket { fill: var(--k-bg-2, #181e2b); stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
+    #fig-persistence-filed-loads .kp-ticket-hot { fill: var(--k-bg-2, #181e2b); stroke: var(--k-gold, #e4b65c); stroke-width: 1.75; }
+    #fig-persistence-filed-loads .kp-cross { stroke: var(--k-gold, #e4b65c); stroke-width: 2; fill: none; }
+    #fig-persistence-filed-loads .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 16px; }
+    #fig-persistence-filed-loads .kp-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 17px; }
+    #fig-persistence-filed-loads .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-persistence-filed-loads .kp-strong { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+    #fig-persistence-filed-loads .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+    #fig-persistence-filed-loads .kp-num { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-persistence-filed-loads .kp-mono { fill: var(--k-fg-1, #c9ced3); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-persistence-filed-loads .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+  </style>
+  <defs>
+    <marker id="kp-pers-filed-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path class="kp-arrowhead" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+  <rect class="kp-bg" x="0" y="0" width="760" height="390" rx="8"/>
+  <!-- Three stations -->
+  <rect class="kp-station-box" x="30" y="24" width="210" height="176" rx="6"/>
+  <rect class="kp-station-box" x="275" y="24" width="210" height="176" rx="6"/>
+  <rect class="kp-station-box" x="520" y="24" width="210" height="176" rx="6"/>
+  <text class="kp-station" x="44" y="50">Waiting</text>
+  <text class="kp-station" x="289" y="50">Prepared</text>
+  <text class="kp-station" x="534" y="50">Landed</text>
+  <text class="kp-note" x="44" y="68">filed, for the loading family</text>
+  <text class="kp-note" x="289" y="68">off the frame, not placed</text>
+  <text class="kp-note" x="534" y="68">committed by scene_intake</text>
+  <path class="kp-flow" d="M240,112 L273,112" marker-end="url(#kp-pers-filed-arrow)"/>
+  <path class="kp-flow" d="M485,112 L518,112" marker-end="url(#kp-pers-filed-arrow)"/>
+  <!-- Ticket 1 -->
+  <g data-on="1 2">
+    <rect class="kp-ticket" x="50" y="84" width="54" height="26" rx="4"/>
+    <text class="kp-num" x="62" y="101">#1</text>
+  </g>
+  <g data-on="3 4 5">
+    <rect class="kp-ticket" x="540" y="84" width="54" height="26" rx="4"/>
+    <text class="kp-num" x="552" y="101">#1</text>
+  </g>
+  <!-- Ticket 2 -->
+  <g data-on="1">
+    <rect class="kp-ticket" x="50" y="120" width="54" height="26" rx="4"/>
+    <text class="kp-num" x="62" y="137">#2</text>
+  </g>
+  <g data-on="2">
+    <rect class="kp-ticket-hot" x="295" y="120" width="54" height="26" rx="4"/>
+    <text class="kp-num" x="307" y="137">#2</text>
+    <text class="kp-note" x="359" y="137">waits for #1</text>
+  </g>
+  <g data-on="3 4 5">
+    <rect class="kp-ticket" x="540" y="120" width="54" height="26" rx="4"/>
+    <text class="kp-num" x="552" y="137">#2</text>
+  </g>
+  <!-- Ticket 3 -->
+  <g data-on="1 2 3">
+    <rect class="kp-ticket" x="50" y="156" width="54" height="26" rx="4"/>
+    <text class="kp-num" x="62" y="173">#3</text>
+  </g>
+  <g data-on="4">
+    <rect class="kp-ticket-hot" x="50" y="156" width="54" height="26" rx="4"/>
+    <text class="kp-num" x="62" y="173">#3</text>
+    <text class="kp-gold" x="114" y="173">again, first</text>
+    <path class="kp-flow" d="M330,182 L330,190 L78,190 L78,184" marker-end="url(#kp-pers-filed-arrow)"/>
+    <rect class="kp-ticket" x="295" y="156" width="54" height="26" rx="4"/>
+    <text class="kp-num" x="307" y="173">#3</text>
+    <text class="kp-note" x="359" y="173">lease failed</text>
+  </g>
+  <g data-on="5">
+    <rect class="kp-ticket" x="295" y="156" width="54" height="26" rx="4"/>
+    <text class="kp-num" x="307" y="173">#3</text>
+    <path class="kp-cross" d="M291,152 L353,186 M353,152 L291,186"/>
+    <text class="kp-note" x="359" y="173">cancelled</text>
+  </g>
+  <!-- The explanation card -->
+  <rect class="kp-card" x="30" y="220" width="700" height="150" rx="8"/>
+  <g data-on="1">
+    <text class="kp-title" x="50" y="252">Filed</text>
+    <text class="kp-label" x="50" y="282">Three loads are filed while the game plays: tickets 1, 2 and 3. Each holds the ids it will</text>
+    <text class="kp-label" x="50" y="302">use and reads the world's components as they are now. Nothing of them is in the world yet.</text>
+    <text class="kp-strong" x="50" y="338">Filing costs the frame almost nothing; the work is done elsewhere.</text>
+  </g>
+  <g data-on="2">
+    <text class="kp-title" x="50" y="252">Prepared out of turn</text>
+    <text class="kp-label" x="50" y="282">The loading family prepares ticket 2 first: a smaller file. It is ready, but it does not</text>
+    <text class="kp-label" x="50" y="302">land: ticket 1 was filed before it and is not prepared yet.</text>
+    <text class="kp-strong" x="50" y="338">Loads land in the order they were filed, whatever order they are prepared in.</text>
+  </g>
+  <g data-on="3">
+    <text class="kp-title" x="50" y="252">In turn</text>
+    <text class="kp-label" x="50" y="282">Ticket 1 is prepared. At the next frame boundary, scene_intake commits the leading run of</text>
+    <text class="kp-label" x="50" y="302">prepared loads, 1 then 2, and stops at 3, which is not ready. Each outcome is filed.</text>
+    <text class="kp-strong" x="50" y="338">take_outcome(1) and take_outcome(2) now return their reports.</text>
+  </g>
+  <g data-on="4">
+    <text class="kp-title" x="50" y="252">Prepared against old components</text>
+    <text class="kp-label" x="50" y="282">A script reload changed a component after ticket 3 was prepared: its lease fails. It goes</text>
+    <text class="kp-label" x="50" y="302">back to the loading family ahead of every load filed since, with the same ids, and is</text>
+    <text class="kp-label" x="50" y="322">prepared again against the components as they are now.</text>
+    <text class="kp-gold" x="50" y="352">A load never lands read against components the world no longer has.</text>
+  </g>
+  <g data-on="5">
+    <text class="kp-title" x="50" y="252">Cancelled</text>
+    <text class="kp-label" x="50" y="282">Had ticket 3 been cancelled instead, it would be dropped and its ids given back. It lands</text>
+    <text class="kp-label" x="50" y="302">nothing and files no outcome: take_outcome(3) answers nothing, ever.</text>
+    <text class="kp-strong" x="50" y="338">The loads filed after it go on.</text>
+  </g>
+</svg>

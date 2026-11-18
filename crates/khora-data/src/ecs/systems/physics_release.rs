@@ -79,11 +79,9 @@ fn handed_back(world: &World, entity: EntityId) -> Option<Transform> {
 
 /// Returns the inverse of a parent's world matrix, whatever its size.
 ///
-/// A general inverse refuses any matrix whose determinant is under a fixed
-/// bound, and a parent at a centimetre scale — what a model exported in
-/// centimetres gets — is far under it: the release would fail and the entity
-/// jump back to its authored pose. Dividing the scale out first leaves a
-/// matrix of unit axes to invert, and the scale is undone exactly.
+/// Dividing the scale out first leaves a matrix of unit axes to invert, and
+/// the scale is undone exactly, so a parent at any scale (a model exported in
+/// centimetres) releases its child where it is.
 fn inverse_of(parent: Mat4) -> Option<Mat4> {
     let affine = AffineTransform::from(parent);
     let scale = affine.scale();

@@ -34,7 +34,10 @@ this page is the hot path. The cold path is the subject of
 Before the first frame, the engine boots through the SDK entry point. It builds
 the window hidden, constructs your app, and runs your bootstrap closure. In that
 closure the app installs what it needs from the engine: the renderer, the
-pipeline system, physics, layout, audio. Then the engine registers its services
+pipeline system, physics, layout, audio. What it leaves out, the boot fills with the
+engine's own: Rapier for physics, Parley and swash for text, a 48 kHz mix bus for
+sound (see [what the engine installs](../reference/sdk.md#what-the-engine-installs-when-the-app-brings-none)).
+Then the engine registers its services
 and the DCC, calls `setup` once so you can spawn initial entities, then `provide`
 so you can install runtime entries, and builds one agent per registered family.
 The first frame is painted, then the window is shown. Nothing in `setup` runs
@@ -158,7 +161,13 @@ its `PhaseProvider`: they run after `OUTPUT` and before `FINALIZE`, in the order
 declares them. Within a phase, each family's installed **layer** runs at its place:
 
 - **In order.** The phase's families are sorted so each runs after the ones its
-  registration names in `after` (the sky and the overlays after the renderer).
+  registration names in `after` (the sky and the overlays after the renderer);
+  where `after` says nothing, the more important run first (`Critical`,
+  `Important`, then `Optional`).
+- **Only after what they follow.** A family runs only if every family it names in
+  `after` has completed its run earlier in the same frame. If one is off, was
+  skipped, failed, or has not run yet (it sits in a later phase), the family is
+  skipped for the frame too, and so, in turn, are the families after it.
 - **In waves.** Consecutive families whose contentions do not overlap, and that do
   not depend on each other, run side by side: a wave of one on the scheduler's
   thread, a larger one on the scheduler's worker pool. See
@@ -168,7 +177,8 @@ declares them. Within a phase, each family's installed **layer** runs at its pla
   phases run once more for every other family.
 - **Optional work gives way.** A family registered `Optional` (the grid, the
   wireframe, the gizmos) is skipped for the frame when, by its turn, the
-  scheduler's frame has already run for more than 16 ms.
+  scheduler's frame has already run for more than 16 ms. `Critical` and
+  `Important` work is never skipped for time.
 
 No agent is called in this loop. Before the first phase, the **event pass** has
 woken each agent whose place gathered a wake — a new envelope, a price that stopped
@@ -200,9 +210,20 @@ A family registered in the `BACKGROUND` phase (the `loading` family) is in no ph
 order. It runs when its mailbox (a `#[take]` input) holds a request: one run at a
 time, possibly over several frames. Nothing waits for it. Its lanes may read only `#[take]`, `#[resource]` and
 `#[budget]` inputs, and hand on only `#[staged]` outputs: boot refuses anything of a
-single frame. What it staged lands at the `Boundary` of the first frame after the
-run ends. GORNA lends it an envelope like any family, but its time is not on the
-frame's critical path.
+single frame. For the run, its layer is **checked out** of its place: the place is
+never held across frames, and while the layer is out the place runs nothing and
+swaps in nothing. The run comes home at the first frame start after it ends: the
+layer goes back to its place, its report to the DCC, and what it staged lands at
+that frame's `Boundary`. GORNA lends it an envelope like any family, but its time
+is not on the frame's critical path.
+
+A run may outlive what its work was for: a project closed while its scripts
+compiled, an asset unloaded while it decoded. So a staged output can hold to a
+**lease** (`Lease`), a condition it depends on — the project still open, the asset
+still loaded. When the run comes home, the outputs whose lease no longer holds are
+abandoned instead of landing. What the app itself staged since the last frame
+start (a mount, an unmount) lands after the runs that came home, so the app's
+action has the last word over a run it overtook.
 
 The same pool prepares the layers agents switch to, one per family at a time, while
 the installed layer keeps running. A prepared layer is taken in at the next frame
@@ -272,6 +293,33 @@ Under sustained overload — below 12 frames a second — the game runs in slow 
 rather than freezing in an ever-deepening catch-up. A brief slowdown is
 recoverable; a spiral of death is not. The cap counts ticks, so it is the same
 83 ms whatever step physics runs at.
+
+**Several fixed families.** Physics is the only family the engine ships at a fixed
+step, but a game may register more. Each one keeps a **sub-clock** of its own, fed
+the same time the ticks advanced and cut at its own step, so two of them may be
+owed a different number of steps in one frame. They then run in **rounds**, as many
+as the most steps any of them is owed: in each round, every fixed family still owed
+a step runs once, phase by phase. A fixed family owed no step this frame counts as
+done, so a family that runs `after` it still runs.
+
+<figure class="kp-steps">
+<div class="kp-figure-frame">
+
+{{#include ../images/frame/rounds.svg}}
+
+</div>
+<ol class="kp-steps-text">
+<li><strong>One tick.</strong> The frame advanced one tick, 16.7 ms. Each fixed family's sub-clock gets exactly that: here a game's <code>steering</code> family at 1/30 s, and physics at 1/120 s, which runs <code>after</code> it.</li>
+<li><strong>Cut at each step.</strong> Physics holds two steps of 8.3 ms. Steering's 16.7 ms is not one step of 33.3 ms: nothing is owed, and the time is carried.</li>
+<li><strong>Owed nothing, counted done.</strong> Two rounds, as many as physics is owed. Steering does not run, but counts as done, so physics, after it, runs in both rounds.</li>
+<li><strong>The next tick.</strong> Steering's clock now holds 33.3 ms: one step. Physics again holds two.</li>
+<li><strong>Round by round.</strong> Round 0 runs steering, then physics; round 1 runs physics alone. Then the phases run once for every other family.</li>
+</ol>
+</figure>
+
+A family switched off keeps no sub-clock: switched on again, it is owed nothing for
+the time it sat out. The step is read from the place each frame, so a step changed
+there takes effect the next frame.
 
 ### The simulation clock
 
@@ -349,6 +397,26 @@ For contributors: the frame driver is `khora-sdk/src/engine/` (`frame.rs`,
 `app_update.rs`, `render_frame.rs`) and `khora-sdk/src/winit_adapters.rs`; the
 scheduler's frame is `khora-control/src/scheduler/frame.rs`, its clocks
 `clocks.rs`, `sim_steps.rs` and `sub_steps.rs`, the background `background.rs`.
+
+**The orders.** A phase's families are sorted by their `after` names, then by
+importance (`roster.rs`). A phase's data systems are sorted by their `runs_after`
+names, ties broken by `(order_hint, name)` (`substrate/data_system_runner.rs`). Both
+sorts are topological and keep their base order among what no edge orders. A cycle
+is not refused at boot: the scheduler logs an error and runs the base order —
+importance for the families, `(order_hint, name)` for the data systems.
+
+**The pools.** Two pools of threads, each built once with the scheduler. The waves'
+pool has the cores less two (the main thread's and the DCC's), between 1 and 16
+threads. The background pool, apart so that a long run never queues in front of a
+wave, has a quarter of the cores, between 1 and 8.
+
+**Leases are checked on the host's thread.** The reserve (`Reserve`,
+`khora-core/src/lane/plumbing/`) checks a staged output's `Lease` when it receives
+the output: at a frame start, on the thread that runs it, the same thread as the
+app's actions. A lease therefore cannot race the action that breaks it: an action
+taken before the check is seen by it, one taken after comes behind it. The
+reserve's own lock is not held during the
+check, so a lease's condition may take a lock of its own, as a leaf.
 
 The arithmetic, as the scheduler runs it:
 

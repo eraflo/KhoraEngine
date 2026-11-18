@@ -136,6 +136,14 @@ lends each agent an envelope, the Agent chooses a row (a lane at a level), the
 Lane reads projected Views and writes results back to Data. CLAD is *the how*; [SAA](#saa--symbiotic-adaptive-architecture)
 is *the why*. See [CLAD](../concepts/clad.md).
 
+### Component shape
+
+What a component looks like to code that cannot read Rust (`ComponentShape`,
+published by its registration): its fields by name with their Rust types, the
+skipped ones left out — an empty list is a marker — or `Opaque` for one that is
+not a list of fields, such as an enum. Scripts read the engine's components
+through it. See [Data and the ECS](../concepts/ecs.md#registration).
+
 ### ComponentProvenance
 
 Who has the right to **write** a component — as opposed to `SemanticDomain`,
@@ -404,6 +412,15 @@ default (`GovernorConfig::headroom`). Frames that fit under the target let it
 raise the multiplier, so agents are lent richer rows; frames over it lower the
 multiplier. See [The arbiter](../concepts/arbiter.md#the-cost-model-and-the-frame-governor).
 
+### Hot reload
+
+An asset file saved while the engine runs is read again and replaces the old
+copy under the same identity, without stopping anything; the last good copy
+keeps serving until the new one decodes, and for good if it never does. Scripts
+are compiled again instead, and a shader module is replaced by a
+[shader overlay](#shader-overlay). See
+[Assets — when an asset changes](../concepts/assets.md#when-an-asset-changes).
+
 ### Interpolation (Ergon)
 
 `$"hp: {h.current}"` — a `string` whose holes are shown by their type: `2.0`,
@@ -466,6 +483,17 @@ three epochs (`KEEP_EPOCHS`), then released. The place turns each run into the
 agent's `Report`. See
 [Agents and Lanes](../concepts/agents-and-lanes.md#lanes-are-layers).
 
+### Lease
+
+A condition a background run's staged output depends on (`Lease`): the project
+still open, the asset still loaded. When the run comes home, an output whose
+lease no longer holds is abandoned instead of landing; a scene load whose
+lease fails — the world's components changed since it was prepared — is
+prepared again. See
+[The frame — the background](../concepts/the-frame.md#the-background),
+[Serialization — loading while frames run](../concepts/serialization.md#loading-while-frames-run)
+and [Reserve](#reserve).
+
 ### Level
 
 One set of parameters a lane can run with (`khora_core::lane::level::Level`): its
@@ -494,7 +522,9 @@ the reader: `inventory::submit! { Mailbox::of::<T>(family, reader, between) }`
 `Reader::Cursor(name)` and `between` is `BetweenSessions::Drop` or `Hold`. At each
 frame boundary, a family off for the coming frame has its `Drop` mailboxes
 emptied, counted by `Channel::discarded()` apart from overflow. Scripting drops
-`ScriptEvent` and collisions, and holds `ScriptReload`. See
+`ScriptEvent` and collisions; the loading family holds its requests
+(`CompileRequest`, `SceneLoadRequest`, `IndexRequest`, `DecodeRequest`). A
+recompiled module is no mail: it waits in the reserve until scripting is on. See
 [Activation](#activation).
 
 ### Named argument (Ergon)
@@ -612,7 +642,17 @@ An entity id a script's turn takes before the entity exists: `Spawn` returns it
 at once, so the turn can keep it and queue writes on it. The world's
 `EntityReserver` hands ids out without a lock; Maintenance commits each one a
 spawn accepted and releases the rest, every frame — an index reused gets a new
-generation. See [Scripting](../concepts/scripting/writing.md#an-entity-named-before-it-exists).
+generation. See [Scripting](../concepts/scripting/writing.md#an-entity-named-before-it-exists)
+and [Reserved id / nowhere entity](#reserved-id--nowhere-entity).
+
+### Reserved id / nowhere entity
+
+An entity id taken before the entity exists — by a script's `Spawn`, or by a
+scene load prepared off the frame — not alive, seen by no query, and never
+handed to anyone else until it is spawned or given back. The **nowhere** entity
+is one id each world reserves when it is made and never spends: a saved
+reference a load cannot bind points there, so it never comes to name a later
+entity. See [Data and the ECS](../concepts/ecs.md#the-storage-model).
 
 ### Reserve
 
@@ -741,6 +781,13 @@ schemas differ — a cache of a stable save, never its only copy. The goal chang
 how a scene is encoded, never what it holds. See
 [Serialization](../concepts/serialization.md) and [File formats](./formats.md).
 
+### Shader overlay
+
+A project's own `.wgsl` file under `assets/shaders/` whose path names one of
+the engine's shader modules, which it replaces. It is code the graphics card
+runs, so it applies only in a trusted project; a restricted one ignores it with
+a warning. See [Trust — shader overlays](../concepts/trust.md#shader-overlays).
+
 ### Shield
 
 What every proposal for an epoch must pass before the [arbiter](#arbiter) keeps
@@ -769,6 +816,14 @@ priced row (`OfferRow`, named by its `StrategyId`) in its `Offer`, chooses the r
 that fits the envelope it is lent through `apply`, and names the row it ran in its
 `Report`. See [GORNA](../concepts/gorna.md)
 and [Agents and Lanes](../concepts/agents-and-lanes.md).
+
+### Sub-asset
+
+One part of a file that holds several, used as an asset of its own — a glTF
+file's meshes, materials, textures and scenes. It is named by a label inside the
+file (`mesh0/prim1`, `material2`) and gets an identity of its own from the
+file's and the label (`AssetUUID::sub_asset`). See
+[Assets — glTF files](../concepts/assets.md#gltf-files).
 
 ### Substrate Pass
 

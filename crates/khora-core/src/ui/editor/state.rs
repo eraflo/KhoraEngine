@@ -265,14 +265,18 @@ pub struct EditorState {
     pub command_palette_open: bool,
     /// Inspector card expand/collapse state, keyed by stable card id.
     ///
-    /// The id is typically `"<entity_index>::<title>"`, so cards of two
-    /// entities never share a state.
+    /// The editor's inspector keys a card `"<entity_index>.<generation>::<title>"`,
+    /// so cards of two entities never share a state, nor a recycled slot its
+    /// former entity's.
     pub inspector_card_open: std::collections::HashMap<String, bool>,
     /// Current git branch name, read from the project folder's `.git/HEAD`.
     ///
     /// `None` if the project is not a git repository or the file is unreadable.
     pub current_git_branch: Option<String>,
-    /// Entities the user hid with the scene tree's eye icon, kept by the UI only.
+    /// Entities the scene tree dims, kept by the UI only.
+    ///
+    /// Nothing in the editor fills it yet: there is no control to hide an
+    /// entity, and picking, the gizmos and rendering ignore it.
     pub hidden_entities: HashSet<EntityId>,
 
     // ── Asset explorer ─────────────────────────────────

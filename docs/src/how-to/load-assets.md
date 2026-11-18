@@ -58,6 +58,25 @@ and the mesh residency uploads it to the GPU before anything draws (see
 [Residency](../concepts/residency.md)). Until then the entity simply draws nothing:
 no frame waits for the disk.
 
+A glTF file's uuid draws its whole default scene as one mesh. To draw one of its
+primitives alone, name the part by its label inside the file (a material part
+goes in `MaterialRef::Asset` the same way):
+
+```rust
+use khora_sdk::khora_data::ecs::MeshRef;
+use khora_sdk::prelude::AssetUUID;
+
+let ship_file = AssetUUID::new_v5("models/ship.gltf");
+let hull = AssetUUID::sub_asset(ship_file, "mesh0/prim0"); // mesh 0, primitive 0
+let hull_entity = khora_sdk::Vessel::new(world)
+    .with_component(MeshRef::Asset(hull))
+    .build();
+```
+
+The labels (`scene`, `mesh{m}/prim{p}`, `material{i}`, `texture{i}`, …) are listed
+in [Assets — glTF files](../concepts/assets.md#gltf-files). To place a glTF's
+scene as a tree of entities, place it as a prefab from the editor.
+
 ## Reference a texture on a material
 
 A material names its textures by uuid. Set `base_color_texture` (or

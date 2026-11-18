@@ -143,11 +143,27 @@ The shell sits in a narrow band of blue-black, never pure black. Pure black crea
 Text and icons sit in a warm, slightly desaturated silver. Cooler grays read as clinical; warmer grays as cheap. We split the difference and bias warm.
 
 ### Accents — three signals only
-- **Gold** `oklch(0.78 0.13 75)` — selection, active mode, focus, brand
-- **Green** `oklch(0.65 0.18 145)` — healthy telemetry, success
-- **Amber** `oklch(0.75 0.16 65)` — warning, GORNA suggestion ready
+Three accents, one job each — the theme's `accent_a`, `accent_b` and
+`accent_c` slots, filled from `pal` in `khora-tool-ui/src/brand.rs`:
+
+- **Violet** `#ad9bf6` (`accent_a`, the default `ACCENT`) — custom and extension agents; in use today for the folder a dragged asset would drop into, and the Transform phase in the Control Plane
+- **Cyan** `#73ccea` (`accent_b`) — information and links: the console's info rows, the CPU meter, the Observe phase
+- **Gold** `#e7be68` (`accent_c`) — **selection and the active state only**: the active mode on the Spine, the selected row of the command palette and the hierarchy, the row the Control Plane runs
+
+Green, amber and red are not accents but the **status** colours (`success`,
+`warning`, `error`): healthy telemetry, a warning, an error.
 
 > **Color is a load-bearing element.** Gold means *now*. Silver means *noticed*. Everything else is structure.
+
+### In code
+Each token is converted once from its OKLCH value to a constant in
+`khora-tool-ui/src/brand.rs` (`pal`, the dark palette; the light one beside
+it), the conversion recorded in `design-reference/TOKENS.md`. The constants
+are **sRGB** floats in `0..1` — the byte divided by 255, not linear light, even
+though their type is named `LinearRgba`. The egui backend hands them over
+unconverted, each channel times 255 into a `Color32`. A widget never reads
+`pal`: it reads the semantic slots of the `UiTheme` it is given (below), so a
+tool re-themes by passing another theme.
 
 ---
 
@@ -159,6 +175,32 @@ One family for words, one for code — the logo's own. No more.
 - **Archivo** — The logo's family, and every word on screen: UI, labels, body. A grotesque with a width axis, so one family covers the quiet text and the wide title.
 - **Archivo, wider** — Display: hero titles and section titles, light weight, at 112% width. The name KHORA is the same family at its widest, 125%.
 - **IBM Plex Mono** — Code, telemetry, paths, numbers; and `ΧΩΡΑ` under the name.
+
+### Fallbacks
+Every face is embedded in the tool (`khora-tool-ui/src/fonts.rs`), so it looks
+the same on any machine; all are SIL OFL 1.1. Each family lists its faces in
+order, and a glyph missing from one is looked for in the next:
+
+| Family | Faces, in order |
+|---|---|
+| Proportional | Archivo Regular, Medium, SemiBold |
+| Monospace | IBM Plex Mono Regular, Medium; then Noto Sans Mono's Greek, which Plex lacks |
+| Display | Archivo at 112 % width, light; then the proportional faces |
+| Wordmark | Archivo at 125 % width, light; then display, then proportional |
+| Icons | Lucide; then the proportional faces |
+
+Archivo is a variable font, but egui reads no variation axes, so the widths and
+weights are shipped as fixed instances. After the brand's faces come egui's own
+built-in fonts, the last resort. A named family always ends in a face that
+exists, so an icon missing from Lucide shows as an empty box rather than
+stopping the tool. There is no CJK face: Chinese, Japanese or Korean text shows
+as empty boxes.
+
+Fonts installed in a pass take effect at the next one, so a tool's first frame
+installs them (`on_start`) and draws nothing: a widget asking at once for the
+icons or display family would find none. That blank frame, like the window
+behind every panel, is the theme's panel colour (`panel_fill`), never the
+backend's own dark default, so a tool opens on its own colour.
 
 ### The scale
 | Role | Sample | Spec |
@@ -202,10 +244,10 @@ The editor talks back. How it talks matters. We aim for **plainspoken with techn
 Most engine editors waste 220 px on a left sidebar that simply switches workspaces. Khora replaces that with a 48 px **Spine** — a vertical mode rail welded to the left edge — and gives the saved real estate back to the work.
 
 ### Anatomy
-- **Title bar** — 44 px. Brand pill (logo + project), centered window controls, account.
+- **Title bar** — 44 px. Brand pill (logo + project), the File, Edit, Build and Help menus, the search pill that opens the command palette. The window's own controls are the system's; there is no account.
 - **Spine** — 48 px wide, full height. Mode icon buttons (Scene, Control Plane today); active mode lit gold.
-- **Workbench** — everything to the right of the Spine. Layout determined by current Mode.
-- **Status bar** — 28 px. Engine state, FPS, build status, GORNA pulse.
+- **Workbench** — everything to the right of the Spine: a dock, one layout per Mode. Each Mode opens on its default; a tab dragged onto another group joins it, onto one of its edges splits it.
+- **Status bar** — 26 px. A health dot, the git branch, CPU, heap and video memory, a scene load in flight; on the right the frame rate and time, the project and engine version. Designed, not built: a build status and a GORNA pulse.
 
 ### Modes
 
@@ -258,9 +300,34 @@ There is no separate "Prefab" tab: the overrides are shown where the values are.
 The 3D scene. Floating gizmo overlay top-left (move/rotate/scale). Coordinate readout bottom-right in mono. View modes (wireframe, lit, normals) as a floating segmented pill, top-right.
 
 ### Bottom dock (180 px, retractable)
-Tabbed: **Assets** (grid of project files) · **Console** (filtered log) · **Problems** (the project's script problems) · **GORNA** (engine suggestions). Drag the divider up to expand; collapses to 28 px tab strip.
+Tabbed: **Assets** (grid of project files) · **Console** (filtered log) · **Problems** (the project's script problems). In the code it is one tab group of the dock, under the viewport, about 28% of the centre column; drag the divider to resize it, never below 120 px. Designed, not built: a **GORNA** tab (engine suggestions), and collapsing the group to its 26 px tab strip.
 
 **Problems** is drawn as the Console is — the same filter pills, the same row grid, the same two severity tints — and the severity is always a glyph as well as a colour. Rows are grouped under their module's path; each reads `line:col  message` in mono, the note dim beneath. The tab title carries the counts (`Problems · 2 errors · 1 warning`); with nothing wrong it is just **Problems**, and the body is a calm empty state rather than a green tick. An `.erg` tile in Assets wears the same glyph and count as a small pill on its thumbnail's corner — errors win over warnings.
+
+### Shared widgets
+Every panel is built from one vocabulary, `khora-tool-ui`'s widgets, shared by
+the editor and the hub so both look the same. A widget is a **free function**
+of a `&mut dyn UiBuilder`, the `&UiTheme` to paint with, the rect to paint
+into and its data. It keeps four promises:
+
+- its colours come from the theme's semantic slots, never from the brand
+  palette directly — a theme swap re-colours every widget;
+- it paints through `UiBuilder` primitives only, never egui, so it is
+  independent of the UI backend;
+- it holds no state: the caller owns what persists (a scroll offset is a
+  `ScrollState` the caller keeps);
+- it paints into the rect it is given, in screen space, never choosing its own
+  size; a label or an error line takes a position instead.
+
+An interactive widget returns an `Interaction` (hovered, clicked, pressed…); a
+widget that only shows something returns nothing; a frame around a field
+returns the rect left inside it. A new widget is composed from existing
+primitives — `UiBuilder` grows only for a genuinely new primitive — and is
+tested with `RecordingUiBuilder`, asserting on the theme slots it used and what
+it painted, never on pixel positions. The families are buttons, chips,
+containers, dialogs, disclosure, the dock, feedback, fields, indicators,
+loading, the mark, navigation, scrolling, and paint helpers
+(`khora-tool-ui/src/widgets/`).
 
 ---
 
@@ -269,11 +336,11 @@ Tabbed: **Assets** (grid of project files) · **Console** (filtered log) · **Pr
 The viewport is the most important rectangle in the editor. Everything else exists to serve it.
 
 ### Empty state
-A subtle 5% watermark of the sign, centered. Above it, a single line of microcopy: *"Drag assets here, or press ⌘N for a new entity."* Nothing else.
+A subtle 5% watermark of the sign, centered — drawn behind every scene, empty or not. Designed, not built: above it, a single line of microcopy, *"Drag assets here, or press Ctrl+N for a new entity."* Nothing else. No key makes an entity yet: *New Empty Entity* is in the command palette.
 
 ### Active state
 - **Grid** — 1m primary lines at 10% opacity; 0.1m secondary at 4%. Origin marked with thin gold cross.
-- **Gizmo** — Three-axis (X red, Y green, Z blue) with a unified center sphere for screen-space drag. Always above the grid, below selection outlines.
+- **Gizmo** — Three-axis (X red, Y green, Z blue): one arrow, ring or arm per axis, each handle dragging along or around its own axis. There is no centre handle: a free, screen-space drag is designed but not built. Always above the grid, below selection outlines.
 - **Selection outline** — 2 px gold inner stroke, 1 px void outer stroke (so it reads on any background).
 - **Coordinate HUD** — Bottom-right, mono, 4 decimals: `x: 12.3450  y: 0.0000  z: -4.2010`
 
@@ -287,21 +354,22 @@ Drag any numeric field horizontally to scrub. No arrows. No spinners. The cursor
 
 ## 08 — Command palette
 
-Press `⌘K`. The editor's most important keyboard shortcut.
+Press `Ctrl+K` — `Ctrl` on every system, macOS included — or click the search pill in the title bar. The editor's most important keyboard shortcut; pressed again, it closes the palette.
 
 ### Layout
-A centered modal, ~640 px wide, 60% viewport height max. Top: search field with the sign as its leading glyph. Below: results in a flat ranked list, OR a **quadrant view** if the query is empty.
+A centered modal, up to 640 px wide and 480 px tall, its top at 14% of the window. Top: the query field with the sign as its leading glyph and an `esc` chip. Below: the commands in four sections — **Quick Actions** (save, play, pause, stop), **Create**, **Navigate**, **View** — every command listed when the query is empty, and only those whose name or description holds the query when it is not. A footer names the keys and the engine version.
 
-### Quadrant view (empty query)
-Four boxes, equal weight: **Recent** · **Suggested** (from GORNA) · **Modes** · **Tools**. Each shows three to five items. Hover lights the box gold; arrow keys move between quadrants then between items.
+### Quadrant view — designed, not built
+For an empty query: four boxes, equal weight: **Recent** · **Suggested** (from GORNA) · **Modes** · **Tools**. Each shows three to five items. Hover lights the box gold; arrow keys move between quadrants then between items. The palette has no recent list and no GORNA suggestions yet; an empty query shows the four sections above.
 
 ### Result item
-- Action-type glyph — 12 px, fg-3
-- Label — Archivo 14
-- Path or category — IBM Plex Mono 11, fg-3
-- Shortcut — right-aligned, mono 11, kbd-styled
+- Action-type glyph — 14 px; gold on the selected row, dim silver on the others
+- Label — Archivo 13
+- Description — right-aligned, Archivo 11, muted
 
-The currently-selected result has a gold left bar (3 px) and bg-3 background. Enter activates; Esc closes.
+Designed, not built: a shortcut column, right-aligned, mono 11, kbd-styled.
+
+The selected result has a gold left bar and the active surface behind it. The up and down arrows move the selection, wrapping at the ends, and hovering a row selects it. Enter or a click runs it and closes the palette; Esc, or a click outside the modal, closes it.
 
 ---
 
@@ -348,7 +416,24 @@ How the editor moves.
 Hover is information, not decoration. Hover any meter for breakdown; hover any timeline band for a tooltip; hover any pill for its full label. Hover delay: 200 ms (long enough to ignore mouse-overs, short enough to feel instant when intended).
 
 ### Keyboard
-Every action has a keyboard path. The command palette is the master key. Mode switching is `⌘1` through `⌘6`. Selection moves with arrow keys in any tree or list. Esc always retreats one level (close modal → deselect → exit mode).
+Every action has a keyboard path. The command palette (`Ctrl+K`) is the master key.
+
+What the editor binds today — `Ctrl` on every system, macOS included:
+
+| Keys | Action |
+|---|---|
+| `Ctrl+K` | Open or close the command palette |
+| `Ctrl+1` / `Ctrl+2` | Scene / Control Plane — one per Mode that ships |
+| `Q` `W` `E` `R` | Hand, Move, Rotate, Scale (not while `Ctrl` is held) |
+| `Delete` | Delete the selection |
+| `Ctrl+S` | Save the scene |
+| `Esc` | Close the palette if it is open, else clear the selection |
+
+A key a text field takes never reaches these shortcuts.
+
+Designed, not built: a mode switch for each further Mode (up to `Ctrl+6`); the
+arrow keys moving the selection in any tree or list (today they move it only in
+the command palette); and Esc retreating one more level, out of a mode.
 
 ---
 
@@ -358,13 +443,13 @@ Choices we made, and what we said no to.
 
 ### We said yes to
 - **A 48 px Spine instead of a 220 px sidebar.** Saves real estate; mode-switching is a one-tap operation, not a navigation tree.
-- **Mode-first layouts.** Opinionated defaults beat infinite customization for 95% of users.
+- **Mode-first layouts.** Each Mode opens on a default chosen with care; most users never change it.
+- **A dock under the defaults.** A tab drags onto another group, or onto one of its edges to split it: a user who needs another arrangement is never stuck with ours.
 - **OKLCH color throughout.** Better perceptual uniformity, future-proof, browsers ship it.
 - **The logo's type everywhere.** Archivo and IBM Plex Mono in the editor, the hub, the docs and the site: the name and the interface speak in one voice, and a wider Archivo gives titles their weight without a second family.
 - **The Control Plane as a Mode.** Engine internals are not a popup or a tab — they're a workspace.
 
 ### We said no to
-- **Free-form panel docking.** Powerful but exhausting. We pick layouts users won't want to change.
 - **A ribbon toolbar.** Wastes vertical space; teaches users nothing about keyboard paths.
 - **Skeuomorphic 3D widgets.** No beveled gizmos, no glossy buttons. Flat, calibrated, instrumental.
 - **A welcome screen with templates.** Templates live in the command palette. The first thing you see is a viewport.

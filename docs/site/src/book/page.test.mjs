@@ -1,4 +1,4 @@
-// Tests of `page.mjs`: an mdBook page prepared for the site.
+// Tests of `page.mjs`: a book page, in mdBook's format, prepared for the site.
 // Run with `npm test` (Node's own test runner, no dependency).
 
 import assert from 'node:assert/strict';

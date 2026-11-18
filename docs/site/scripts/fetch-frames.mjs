@@ -3,6 +3,8 @@
 //
 //   npm run frames                       (the release `FRAMES.release` names)
 //   npm run frames -- --from <file|url>  (an archive elsewhere: a local file, or a mirror)
+//   npm run frames -- --if-released      (CI: a release not published yet is
+//                                         no error; the site builds with its posters)
 //
 // The archive is checked against `FRAMES.release.sha256` before a byte of it
 // is unpacked; every entry must be the manifest or a frame `isFrameEntry`
@@ -22,8 +24,11 @@ class Refused extends Error {}
 
 const framesDir = fileURLToPath(new URL('../frames/', import.meta.url));
 
-const { values } = parseArgs({ options: { from: { type: 'string', default: RELEASE_URL } } });
+const { values } = parseArgs({
+    options: { from: { type: 'string', default: RELEASE_URL }, 'if-released': { type: 'boolean', default: false } },
+});
 const from = values.from;
+const ifReleased = values['if-released'];
 
 try {
     await main();
@@ -36,6 +41,7 @@ try {
 
 async function main() {
     const archive = /^https:\/\//.test(from) ? await download(from) : readFileSync(from);
+    if (archive === null) return;
     const sha256 = createHash('sha256').update(archive).digest('hex');
     if (sha256 !== FRAMES.release.sha256) {
         fail(`${from} has SHA-256 ${sha256}; the site expects ${FRAMES.release.sha256}`);
@@ -65,6 +71,7 @@ async function main() {
     console.log(`fetch-frames: ${frames} frames (v${FRAMES.version}) unpacked into ${framesDir}`);
 }
 
+/** The archive at `url`; null when it is not published and `--if-released` was given. */
 async function download(url) {
     console.log(`fetch-frames: downloading ${url}`);
     let response;
@@ -72,6 +79,12 @@ async function download(url) {
         response = await fetch(url, { redirect: 'follow' });
     } catch (error) {
         fail(`could not reach ${url}: ${error.message}`);
+    }
+    // Only a missing archive is forgiven: one that is there but wrong, or a
+    // host that cannot be reached, still fails.
+    if (response.status === 404 && ifReleased) {
+        console.warn(`fetch-frames: ${url} is not published yet; the landing keeps its posters`);
+        return null;
     }
     if (!response.ok) {
         fail(`${url} answered ${response.status}: is the release published? (see .agent/engine/reference/documentation.md)`);

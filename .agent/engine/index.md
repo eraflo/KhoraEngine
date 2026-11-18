@@ -60,7 +60,7 @@ during Research and Implement. Replaces the former per-domain "expert" agents.
 | [`control-gorna`](./reference/control-gorna.md) | DCC, GORNA protocol/replay, the arbiter, cost book, frame governor, the scheduler (layers, waves), adaptation modes. |
 | [`editor-ui-ux`](./reference/editor-ui-ux.md) | khora-editor panels, inspector (prefab overrides), gizmos, dock, scene I/O — design via `/impeccable`. |
 | [`api-ux`](./reference/api-ux.md) | khora-sdk public ergonomics, builder/type-state, game save/load surface, shipped-game seal. |
-| [`documentation`](./reference/documentation.md) | The docs site (Astro Starlight over `docs/src`), mdBook, rustdoc, diagrams. |
+| [`documentation`](./reference/documentation.md) | The docs site (Astro Starlight over `docs/src`), its workflow, rustdoc, figures. |
 | [`deprecation`](./reference/deprecation.md) | API modernization, dead-code removal. |
 
 ## Task skills — [`skills/`](./skills/)
@@ -84,7 +84,7 @@ during Research and Implement. Replaces the former per-domain "expert" agents.
 | Path | Purpose |
 |---|---|
 | [`../README.md`](../README.md) | Profiles overview + installer commands. |
-| [`../../docs/src/`](../../docs/src/) | Full mdBook documentation (human narrative). |
+| [`../../docs/src/`](../../docs/src/) | The book (human narrative), built by the docs site in `docs/site/`. |
 | codegraph MCP | Symbol/edge graph — query before grepping (see [`architecture.md`](./architecture.md)). |
 
 ---

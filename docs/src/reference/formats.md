@@ -73,8 +73,8 @@ to an entity the save does not hold is cut. A component name nothing registers i
 reported. A component the engine derives or keeps while running is skipped and
 reported too, and rebuilt: a save never holds one, and a recorded copy could only
 disagree with what it comes from. Text encodings write a float JSON has no number
-for — an infinity, a NaN — as `{"$float": "inf"}`. Every encoding refuses a value
-nested deeper than 128 levels. Loading is atomic: the record is validated and
+for as a marker (see [Text and MessagePack values](#text-and-messagepack-values)).
+Every encoding refuses a value nested deeper than 128 levels. Loading is atomic: the record is validated and
 staged before the world changes, so a refused file leaves the world as it was.
 
 ### Encodings and goals
@@ -101,6 +101,32 @@ encoding mapping is made in `SerializationService::save_world`:
 | `EditorInterchange` | Compact (`KH_COMPACT_V2`) |
 | `FastestLoad` | Snapshot (`KH_SNAPSHOT_V1`) |
 | `PortableBinary` | MessagePack (`KH_MSGPACK_V2`) |
+
+### Text and MessagePack values
+
+The text and MessagePack encodings write each value as a tree a reader can walk
+without knowing its type. Most of it is the value's own serde form: a struct is a
+map of its fields by name, a unit struct `{}`, a unit enum variant its bare name,
+any other variant `{"Variant": payload}`. Three kinds of value carry a
+**marker**, a map of exactly one entry whose key starts with `$` (a map of more
+entries is plain data):
+
+| Value | Written | Read back from |
+|---|---|---|
+| an entity reference | `{"$entity": 1234567}`, the persistent id's 64 bits | an unsigned or non-negative integer |
+| an entity outside the record | `{"$entity": null}` | null, or a unit |
+| an asset reference | `{"$asset": "6f1c…-uuid"}` | the uuid's text |
+| a float JSON has no number for | `{"$float": "inf"}`, `"-inf"`, `"nan"` | text only: MessagePack writes the float itself |
+
+**Decimal width.** A number written as decimal text — any float in the text
+encoding — is the value its digits spell, whatever width wrote it. Read into an
+`f32` field, it is parsed as an `f32`: `0.1` is the `f32` nearest 0.1, not the
+`f64` 0.1 narrowed. It is refused only when no `f32` holds it, and its reading is
+not reported. A binary float is its bits: an `f64` read into an `f32` must be
+exact, and an integer read from a float must be whole, finite and below 2⁶⁴;
+those reads are reported `Widened`. The compact encoding keeps a text decimal as
+such (its own tag, the `f64` after it), so a text file converted to compact
+reads the same.
 
 ### Snapshot layout
 
@@ -146,6 +172,51 @@ width, `0`/`1` for a `bool` or an option's presence, a variant index then its
 payload, a map's entries sorted by their bytes (so the same world always writes the
 same snapshot). Entity references are still written as persistent ids and asset
 references as UUIDs, so a snapshot keeps identities exactly as a record does.
+
+The positional form, field by field:
+
+| Value | Bytes |
+|---|---|
+| `bool`, an option's presence | one byte, `0` or `1`, then the value when present |
+| `u8` | the byte itself |
+| other integers | a LEB128 varint; signed ones zig-zagged first |
+| `f32`, `f64` | their bits, little-endian |
+| a string, bytes | a varint length, then the bytes |
+| an entity reference | `0` for an entity outside the record, else `1` and the persistent id as 8 bytes LE |
+| a sequence, a map | a varint count, then the elements; a map's entries sorted by their key's bytes |
+
+A count may exceed the bytes left by at most 256 elements, written or read, so a
+forged count cannot make the reader allocate past the file. A sequence whose
+length is not known when it is written is refused. Nesting stops at 128 levels on
+write as on read. A value must use its bytes exactly: one byte left over refuses
+it. In the table, a declared component's domain is one byte, its index, and a
+field's Ergon type is empty when it is not known.
+
+### Schema text
+
+A fingerprint is the FNV-1a 64-bit hash of a **schema text**, written with no
+spaces:
+
+| Type | Text |
+|---|---|
+| primitives | `bool`, `i8` … `u64`, `f32`, `f64`, `char`, `string`, `bytes`, `unit` |
+| option, sequence, map, tuple | `option<T>`, `seq<T>`, `map<K,V>`, `tuple(T,U)` |
+| structs | `struct Name`, `struct Name(T,U)`, `struct Name{a:T,b:U}` |
+| enums | `enum Name{A,B(T),C(T,U),D{x:T}}` |
+| a type met again inside itself | its name alone |
+| a type or a variant's payload the trace could not reach | `?` |
+
+A trace that did not reach every value ends its text with `!incomplete`: its
+component cannot be guarded, as above.
+
+A declared field's Ergon type is written as its **signature**: `bool`, `int`,
+`float`, `Duration`, `Angle`, `string`, `Entity`; an asset kind (`Prefab`,
+`Sound`, `Material`, `Mesh`, `Texture`, `Scene`); an engine type (`Vec2`, `Vec3`,
+`Vec4`, `Quat`, `Color`); a struct as `Name{field:T,…}`; each followed by any
+number of `?` (optional) and `[]` (array) suffixes — `Mesh?[]` is an array of
+optional meshes. Records, compact declarations and snapshot tables all carry this
+text. A field's **kind**, its storage, is another name beside it: `Bool`, `Int`,
+`Float`, `Vec2`, `Vec3`, `Vec4`, `Quat`, `Color`, `Entity` or `Value`.
 
 On 10 000 entities (a transform and a name each), a snapshot loads in about
 9 ms where the compact record takes about 79 ms

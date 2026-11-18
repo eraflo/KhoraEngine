@@ -107,7 +107,7 @@ pub fn progress_row(ui: &mut dyn UiBuilder, theme: &UiTheme, rect: Rect, label: 
     meter_bar(ui, theme, bar, ratio, theme.primary);
 }
 
-/// Draws a bar sparkline over a series — the agent cost history.
+/// Draws a bar sparkline over a series, such as the Control Plane's recent frame times.
 ///
 /// Values are normalized against the series maximum, so the shape reads even
 /// when the absolute scale shifts. An empty or all-zero series paints just the

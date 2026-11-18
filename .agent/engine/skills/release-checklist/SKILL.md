@@ -12,7 +12,7 @@ Run in order; stop and fix on the first failure.
 3. **Security & secrets** — invoke the [`security-auditor`](../../agents/security-auditor.md) agent: no new
    `unsafe` without `// SAFETY:`, no secrets/keys/`.env`/personal paths in the diff, dependencies justified.
    The `secret-scan` pre-commit hook is the automated backstop.
-4. **Docs in sync** — public-API changes have matching rustdoc + mdBook chapter updates (in place, no ADR file).
+4. **Docs in sync** — public-API changes have matching rustdoc + book page updates (in place, no ADR file); a change under `docs/` passes `npm test && npm run build` in `docs/site/`.
 5. **Summary** — list files changed, tests affected, and anything skipped. Report honestly.
 
 ## Hard gate

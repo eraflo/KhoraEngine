@@ -13,7 +13,10 @@ the script lane touches no `World`, it can share a wave with any family whose
 declarations do not collide with its own. The rule and the performance
 are the same fact.
 
-The commands apply in the order they were queued. Many rows of one component —
+The commands apply in the order they were queued, never merged; one that fails
+— its target gone, its component missing — is logged and skipped, and the rest
+still apply ([Writing components](../../reference/ergon.md#writing-components)).
+Many rows of one component —
 a system sweeping ten thousand healths — travel as **one** command, a column
 write: the component and its fields are resolved once, the rows are written page
 by page in memory order, and a row whose entity is gone is skipped and counted

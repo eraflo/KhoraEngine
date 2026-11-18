@@ -87,15 +87,30 @@ Use `cargo hub-dev` rather than typing the chain by hand — without
 `khora-runtime` present, the editor's "Build Game" step fails with
 "khora-runtime binary not found".
 
+A hub you build cannot sign in to GitHub. Sign-in uses GitHub's device flow
+(scope `repo`, so the hub can create private repositories), and needs the hub's
+OAuth client id, embedded at build time from `KHORA_HUB_GITHUB_CLIENT_ID`. Only
+the release pipeline holds it, and the source has no fallback: a build without
+it, debug or `--release`, fails at sign-in with a message pointing to the
+official release binaries. The token is kept in `~/.khora/credentials.json`
+(owner-only on Unix), checked at startup, and deleted when GitHub refuses it or
+on disconnect.
+
 ## 5. Serve the documentation
 
-This book is built with [`mdBook`](https://rust-lang.github.io/mdBook/). Install
-it once, then serve with live reload from the repo root:
+This book is built into a website by [Astro Starlight](https://starlight.astro.build/),
+in `docs/site/`. With [Node.js](https://nodejs.org/) 22.23.4 or newer, serve it
+with live reload (a page you edit under `docs/src` reloads):
 
 ```bash
-cargo install mdbook
-mdbook serve docs --open
+cd docs/site
+npm ci
+npm run dev
 ```
+
+`npm test && npm run build` checks it the way CI does, every internal link
+included. The site is published from `main` at
+<https://eraflo.github.io/KhoraEngine/>.
 
 ## Tooling you'll use
 

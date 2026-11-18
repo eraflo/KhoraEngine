@@ -294,8 +294,11 @@ impl Parser {
         })
     }
 
-    /// Members of a `behavior` or a `state`. Never bails: a broken member is
-    /// skipped so the ones after it are still parsed and checked.
+    /// Returns the members of a `behavior`, a `system` or a `state`, never bailing.
+    ///
+    /// A broken member is skipped so the ones after it are still parsed and
+    /// their syntax errors reported too. A module with a parse error is not
+    /// type-checked.
     pub(super) fn parse_members(&mut self) -> Vec<BehaviorMember> {
         let mut members = Vec::new();
         while !self.check(&TokenKind::RBrace) && !self.at_end() {

@@ -84,11 +84,42 @@ handles — files what it lacks and resolves the entity on a later frame, so no
 frame waits for the disk. A failed decode is logged once, as a warning, and the
 entity waits for the file to change; there is no fallback asset.
 
+**A reference and its handle are matched by uuid.** What an entity holds once
+resolved is a `HandleComponent<T>`: the handle, and the uuid it was resolved
+from. Each frame the resolver compares that uuid with the one the reference
+names, and skips the entity when they are equal. Every reference has a uuid:
+
+- `MeshRef::Asset(uuid)` and `MaterialRef::Asset(uuid)` name the asset's own;
+- a procedural mesh (`MeshRef::Procedural`) has one derived from its kind and
+  its parameters, and an inline material (`MaterialRef::Inline`) one derived
+  from its fields. Two equal primitives, or two equal materials, share one
+  copy. These uuids are never saved: they are computed again on load and on
+  every edit.
+
+So changing a reference — another mesh, a material's colour edited in the
+inspector — changes its uuid, and the next resolver run resolves it again. The
+new handle replaces the old one in place, and the entity's GPU tag is removed so
+its [residency](./residency.md) uploads the new copy. Until an asset reference's
+new copy is decoded, the old handle stays, and the entity keeps showing the old
+asset. Removing the reference itself does not remove the handle.
+
 Loading is a **service**, and decoding is a **family**. The service has nothing
 to choose: an asset is in its cache or it is not. The decoding work, though, is
 done by the `loading` family's lane, which runs under the budget like every other
 family (see [Agents and Lanes](./agents-and-lanes.md)), so a burst of decodes
 competes for the frame instead of stealing it.
+
+The `loading` family loads more than assets: project indexes, scene loads and
+script compiles go through it too. Its two lanes differ in how much one run
+takes (the levels are listed in
+[Families and levels](./families-and-levels.md#the-families-the-engine-ships)):
+
+- **rush** loads everything filed, in one run, whatever it costs;
+- **paced** loads what the time it is lent covers, and always at least one unit
+  — one project index, one scene load, one script root, one asset decode: the
+  project indexes first, then the scenes, the script roots and the assets, each
+  kind in the order it was filed. The rest waits for the next run. Lent no
+  budget, it takes everything, as rush does.
 
 The decoder set grows by registration: a new format is a decoder registered
 under a type name, not a change to the chain (see
@@ -115,6 +146,95 @@ Above the I/O, nothing knows which mode is in use: the same index type, the same
 reader, the same decoders, the same handles. Because the uuids come from the
 same paths and the same registry, a handle made in development names the same
 asset in the shipped game.
+
+## Textures: a layout, not a colour
+
+The same picture can be two things: a photo of wood, whose values are colours
+for the eye, or a normal map, whose values are directions. The first is stored
+in **sRGB** — a colour space that spends more of its values on dark shades —
+and must be converted to linear values before lighting; the second is already
+linear, and converting it would bend every normal.
+
+So the texture decoder says only how the pixels are laid out, never what they
+mean:
+
+- an 8-bit image (PNG, JPEG, …) decodes to `Rgba8Unorm`;
+- a floating-point image (Radiance `.hdr`, OpenEXR) keeps its high dynamic range
+  and decodes to `Rgba16Float` — half floats, which every graphics backend can
+  filter, where 32-bit float filtering is optional.
+
+What the values mean is decided by the slot that reads the texture
+(`TextureColorSpace`, when the material is uploaded): base colour, emissive and
+specular colour are sRGB; metallic-roughness, normal, occlusion and specular
+strength are linear. Only an 8-bit layout has both variants, so only it switches
+(`TextureFormat::with_color_space`); a float texture is linear whatever the slot
+asks. One PNG can be an sRGB albedo in one material and a linear mask in
+another.
+
+## glTF files
+
+A glTF file (`.gltf`, `.glb`) is a whole small scene: nodes placed in a tree,
+meshes, materials, images. The engine reads it two ways.
+
+**As one mesh.** Its own uuid decodes to one `Mesh`: every primitive its default
+scene shows (else its first scene; a file with no scene shows each mesh once),
+placed by its nodes, merged into one vertex and index list. That is what
+`MeshRef::Asset` of the file draws.
+
+**As its parts.** Each piece is also an asset of its own, a **sub-asset**, named
+by a **label** inside the file and given the uuid
+`AssetUUID::sub_asset(file's uuid, label)`. The parts are listed from the file's
+JSON alone, when the index is built, without reading a buffer or an image:
+
+| Label | Asset |
+|---|---|
+| `scene` | the default scene (else the first) — a prefab |
+| `scene{i}` | scene *i* — a prefab |
+| `mesh{m}/prim{p}` | primitive *p* of mesh *m*, in the mesh's own space |
+| `material{i}` | material *i*, as a `StandardMaterial` |
+| `material_default` | glTF's default material, for primitives without one — listed only when one uses it |
+| `texture{i}` | the image of texture *i* |
+
+Labels follow the file's order, like the glTF indices they come from. A file is
+opened once and kept, shared by every part extracted from it, until it changes.
+
+**A scene is a prefab.** Placed in a level, a glTF scene is a
+[prefab instance](./prefabs.md): one entity per node, each showing its
+primitives' mesh and material parts, the level keeping the link and the
+designer's overrides. An override is kept against the member it was made on, so
+a member's identity must survive a re-export. It comes from the node's **path of
+names** from the scene's root — `Body[0]/Wheel[1]` — not from its index: an
+exporter reorders nodes freely, while renaming one is the author's act.
+
+- A segment is the node's name, with `\`, `/`, `[`, `]` and `#` escaped, and its
+  ordinal among the earlier siblings of that name: `Wheel[0]`, then `Wheel[1]`,
+  so adding a second `Wheel` leaves the first one's key alone.
+- An unnamed node is `#i`, its place among its siblings.
+- A mesh's primitives past the first are child entities, `#prim{p}`; no escaped
+  name starts with `#`.
+- A member's key is derived from its parent's key and its own segment, so a
+  deep tree costs its size, not its size times its depth.
+
+An override whose node was renamed no longer finds its member: the load reports
+it as `RemovedFromScene`, rather than handing it to another node.
+
+**The files beside it.** A glTF's buffers and images are embedded (in a `.glb`'s
+binary chunk), written into a base64 `data:` URI, or stored in files beside it.
+A file is named by a URI relative to the glTF's own folder, so an export
+(`ship.gltf` beside `ship.bin`) works wherever it sits under `assets/`. A URI is
+percent-decoded first; one that is absolute, names a scheme other than `data:`,
+or climbs past the assets root with `..` is refused. The file is then read
+through the [guard](./trust.md#the-guard), at the project's trust; in a shipped
+game it is read from the pack.
+
+**What a glTF may ask for.** A glTF is untrusted input: a few bytes of JSON can
+describe gigabytes. Before anything is imported, every accessor and image is
+checked — its type fits the attribute naming it, its bytes lie inside its buffer,
+its sparse indices increase — and the node tree must be disjoint trees: a node
+reached twice fails the decode. One decoded mesh holds at most 2²⁴ vertices in
+a trusted project (2²² restricted), a mesh placed under many nodes counting
+once per placement; an accessor with no buffer behind it describes at most a
+sixteenth of that.
 
 ## Dependency tracking
 
@@ -155,27 +275,94 @@ textures and sounds are never opened.
 
 ## When an asset changes
 
-The editor watches the project's files. When one changes, it invalidates the
-asset in the service (`AssetService::invalidate`), which drops the cached copy and
-announces the change; handles already out keep the old value. The
-**`asset_reload`** DataSystem, at the start of `PreExtract`, takes the announced
-changes and requests a fresh copy of every changed asset an entity holds:
+Save a texture in your paint program while the game runs in the editor, and the
+wall wearing it changes on screen a moment later. Nothing else stops: the wall
+keeps its old picture until the new one is ready, and keeps it for good if the
+new file turns out to be broken. This is **hot reload**.
 
-- until the new copy lands, the last good copy keeps serving;
-- once it lands, it replaces the old one under the same uuid, and the GPU copy
-  made from the old one is retired (see [Residency](./residency.md));
-- a file that no longer decodes — caught mid-write — keeps the last good copy
-  until it changes again;
-- an asset gone from the index is dropped from every entity that held it.
+<figure class="kp-steps">
+<div class="kp-figure-frame">
 
-A container that read a file beside its own — a glTF and its `.bin` — is
-invalidated with that file. It names the file by path, and the path is matched
-by the uuid it resolves to, so a change to a renamed asset never reaches a
-container reading the new file at its old path. A file the editor saw change,
-or released from the [quarantine](./trust.md), resolves through the identity
-registry (`AssetService::invalidate_through`): one made since the last reindex
-reaches the containers reading it. An asset invalidated by uuid alone resolves
-through the index (`AssetIndex::uuid_at`).
+{{#include ../images/data/hot-reload.svg}}
+
+</div>
+<ol class="kp-steps-text">
+<li><strong>A file is saved.</strong> The watcher hears the change and passes it on, if the folder's budget of changes for this second is not spent.</li>
+<li><strong>Invalidated.</strong> The asset service drops its cached copy of the file, of every part it served, and of every container that read the file beside its own, and announces each on its change stream.</li>
+<li><strong>Asked for again.</strong> At <code>PreExtract</code>, <code>asset_reload</code> takes the announced changes and requests a fresh copy of each one an entity holds. The decode runs off the frame; meanwhile the last good copy keeps serving.</li>
+<li><strong>The new copy lands.</strong> It replaces the old one under the same uuid, the entities holding it are given the new handle, and the GPU copy made from the old one is retired.</li>
+<li><strong>Or it does not decode.</strong> The file was caught half-written: the last good copy stays, and is kept until the file changes again.</li>
+</ol>
+</figure>
+
+**Hearing the change.** While a project is open in the editor, its `assets/`
+folder is watched (`AssetWatcher`). One save often fires several identical
+events in a row; they collapse into one. A modified file is invalidated; a file
+created or removed — a rename is both — makes the project indexed again, and so
+does a change to a file that holds parts (a glTF may have gained or lost some).
+
+A folder lets through at most **512 change events a second**. A flood past that
+— a branch switch, a project-wide reformat — drops the events it cannot carry,
+and once it has been quiet for a second, one **rescan** stands for all of them:
+every indexed file is invalidated and the folder is indexed again. The engine's
+script and shader pumps read the same watch, and recompile or reapply
+everything of a rescanned folder (below).
+
+**Invalidating.** `AssetService::invalidate` drops the cached copy and
+**announces** the change; handles already out keep the old value. Invalidation
+spreads:
+
+- to every part the file served (a glTF's meshes, materials, textures), even
+  one a new index no longer lists, since the engine may still hold its copy;
+- to every container that read the file beside its own — a glTF and its `.bin`
+  — and from there to that container's parts, and so on.
+
+A container names the files it read by path, and a path is matched by the uuid
+it resolves to, so a change to a renamed asset never reaches a container reading
+the new file at its old path. A file the editor saw change, or released from the
+[quarantine](./trust.md), resolves through the identity registry
+(`AssetService::invalidate_through`): one made since the last reindex reaches
+the containers reading it. An asset invalidated by uuid alone resolves through
+the index (`AssetIndex::uuid_at`). A decode already running for a changed file
+is of its old bytes: its result is never installed.
+
+Announcements wait on a **change stream** of 4 096 entries. One past that pushes
+out the oldest, and the announcements lost cannot be told apart: the next reload
+then treats every asset the service ever served as changed, with a warning.
+Reloading too much costs time; missing a change would leave a stale copy on
+screen.
+
+**Reloading.** The **`asset_reload`** DataSystem, early in `PreExtract`, takes
+the announced changes and requests a fresh copy of every changed texture,
+material, mesh and font an entity holds. One decode per asset, however many
+entities hold it:
+
+- until the new copy lands, the **last good copy** keeps serving — and a
+  reference resolved meanwhile is served it too, so a new entity shows what the
+  others show; an asset still decoding is looked at again on the next frame;
+- once it lands, it replaces the old one under the same uuid, the entities get
+  the new handle, and the GPU copy made from the old one is retired (see
+  [Residency](./residency.md#eviction)); a material naming a changed texture is
+  uploaded again; a changed font lays its texts out anew;
+- a file that no longer decodes — caught mid-write — keeps the last good copy,
+  in the service too, until it changes again;
+- an asset gone from the index, or a part its container no longer holds, is
+  dropped from every entity that held it;
+- a changed asset no entity holds keeps no copy: the resolver decodes it afresh
+  when a reference names it again.
+
+When a project is replaced by another, every asset the old one served is
+announced, and none of its copies is ever kept as a last good copy of the new
+project's asset.
+
+**Scripts and shaders** are not reloaded as assets. A changed `.erg` under
+`assets/scripts/` is compiled again off the frame, together with **every module
+that imports it**, directly or through others: editing a module changes what its
+importers compile to. The importers are found by reading the files' `import`
+lines, never from the asset index — an `.erg` edited in place is not indexed
+again, so the index would miss an `import` just added. A save that does not
+compile replaces nothing. A changed `.wgsl` that names a module the engine's
+shaders compose is a [shader overlay](./trust.md#shader-overlays).
 
 ## What stays in memory
 
@@ -208,6 +395,21 @@ one registry is the same on every run. A dependency on the path *q* is
 decode while one is pending. Between two asset changes it answers `Failed` for a
 uuid whose last decode failed, so a system resolving every frame does not retry a
 broken file every frame; any change clears it.
+
+**The watcher's budget.** Each watched folder holds a token bucket of capacity
+*b* = 512, refilled at *b* tokens a second; an event passes when it takes a
+token. Over any window of *s* seconds, at most *b* (1 + *s*) events pass. A
+dropped event sets a mark; the first poll at least one second after the last
+drop sends one `Rescan` and clears the mark. So a flood of any size costs at
+most *b* (1 + *s*) events and one rescan, and no change is lost: a dropped event
+is always followed by a rescan, which invalidates every indexed file.
+
+**No change missed.** Write *C* for the change stream (capacity 4 096, oldest
+dropped first) and *L* for its lost flag. Every invalidation sends its uuid on
+*C*, and sets *L* when the send pushed one out. `take_changes` returns the
+drained stream, and, when *L* was set, every uuid the service ever served. So
+the set returned always contains every asset invalidated since the last call
+that the engine may hold a copy of.
 
 **What a check guarantees.** A decoder receives only bytes that passed the
 reader: within the size cap of their type at the project's trust, recognised by

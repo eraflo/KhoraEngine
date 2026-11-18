@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The command palette: the Cmd+K modal that runs editor actions.
+//! The command palette: the Ctrl+K modal that runs editor actions.
 
 use std::sync::{Arc, Mutex};
 

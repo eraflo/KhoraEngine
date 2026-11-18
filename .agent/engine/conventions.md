@@ -140,10 +140,10 @@ pub struct Light {
 
 ## 9 — Documentation
 
-- Book pages in `docs/src/*.md`, navigation in `docs/src/SUMMARY.md` (every page listed once). Two builds read them: the docs site (`docs/site/`, Astro Starlight: `npm ci && npm run build`) and mdBook (`mdbook build docs/`, theme `docs/theme/custom.css`) until the site reaches parity. Detail: `reference/documentation.md`.
+- Book pages in `docs/src/*.md`, navigation in `docs/src/SUMMARY.md` (every page listed once). The docs site builds them (`docs/site/`, Astro Starlight: `npm ci && npm test && npm run build`); CI deploys it from `main` (`.github/workflows/docs.yml`). Detail: `reference/documentation.md`.
 - Document in existing files in place — **no separate ADR section/files** for this project.
 - Public APIs require rustdoc; `# Examples` blocks compile via `cargo test --doc`. Use intra-doc links (`[Type]`).
-- Keep mdBook chapters in sync with the code: change a public API → update the chapter in the same change.
+- Keep the book's pages in sync with the code: change a public API → update the page in the same change.
 - For any **design / UI-UX** task (editor visuals, docs visual language, game UI), use **`/impeccable`**.
 
 ## 9b — Comments

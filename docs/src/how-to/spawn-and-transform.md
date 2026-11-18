@@ -43,7 +43,7 @@ let block  = spawn_cube_at(world, Vec3::new(2.0, 0.5, -4.0), 1.0).build();
 ## Spawn from a component bundle
 
 When you want full control over which components an entity starts with, spawn a tuple
-directly. Pair every `Transform` with a `GlobalTransform` so the renderer sees the pose.
+directly.
 
 ```rust
 use khora_sdk::prelude::ecs::{GlobalTransform, Transform};
@@ -53,6 +53,13 @@ let entity = world.spawn((
     GlobalTransform::default(),
 ));
 ```
+
+`GlobalTransform` is the world pose the renderer, audio and physics read. An entity
+spawned with a `Transform` alone gets one from the engine after your `update`
+(`ensure_global_transform`, first in `PostSimulation`), seeded from its local pose, so it
+is drawn from the same frame — an entity loaded from a scene too, since a scene never
+holds one. Giving it yourself, as above, lets code that runs earlier in the frame read
+it.
 
 ## Read and update a Transform
 
@@ -102,6 +109,27 @@ let barrel = spawn_cube_at(world, Vec3::new(0.0, 1.2, 0.5), 0.2).build();
 world.set_parent(barrel, Some(turret)); // attach
 world.set_parent(barrel, None);         // detach back to a root
 ```
+
+## Read a direction or a rotation from a scaled pose
+
+A world pose can be scaled, even unevenly or mirrored, so its matrix is not a rotation.
+`GlobalTransform` (an `AffineTransform`) reads both apart:
+
+- `rotation()` is the turn alone, whatever the scale. A mirror is put on the first axis,
+  and an axis scaled to zero is rebuilt from the two others.
+- `transform_direction(local)` is the unit world direction `local` points along. Under an
+  uneven scale it leans with the scaled axes, as the drawn geometry does: a diagonal arrow
+  on a body squashed along X points where the drawn arrow points. (A surface normal is
+  not such a direction: it needs the inverse transpose.)
+
+```rust
+if let Some(global) = world.get_component::<GlobalTransform>(entity) {
+    let facing = global.0.transform_direction(Vec3::new(0.0, 0.0, -1.0));
+    let turn = global.0.rotation();
+}
+```
+
+The cases they handle, and why, are in [Transform maths](../reference/math.md).
 
 ## Expected result
 

@@ -131,3 +131,11 @@ Durable decisions and their rationale. Append when a new structural decision lan
 25. **The trust boundary is in the engine** — every project file is read through one guard at the project's
     trust; a restricted project runs nothing; shipped packs are signed and checked at every start.
     Rationale: the check holds wherever a file is read (editor, hub, runtime), not only in CI.
+
+## Ergon (2026-11)
+
+26. **Ergon's final goal: gameplay without Rust** — Ergon is to give game makers the best UX/DX for game
+    development with all of Rust's guarantees (memory safety, lean resources, speed), so they never write
+    Rust. Rust stays the engine's language. What a game needs and only Rust offers today becomes reachable
+    from Ergon or project data (input bindings #294, project shaders #293). Rationale: Rust's guarantees
+    are what a game needs; its syntax and ceremony are not what a game maker wants. (Owner, 2026-11-18.)

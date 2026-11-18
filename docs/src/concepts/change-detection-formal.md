@@ -34,6 +34,7 @@ Each operation preserves them:
 | write row `r` at `t` (`Mut`, `set_component`, `write_column`, `RowMut`) | `τ(c,r) ← t` if the array exists, else `φ ← max(φ, t)`; `σ ← max(σ, t)` | `last(c,r) = t` is covered by `τ` or `φ`, and by `σ` |
 | push a row (spawn, attach, migration) | its tick is the carried `max(τ, φ)` of the source, or `t` for a new value; `σ` rises to it | the same, for the new row |
 | move a row (migration, swap-remove, compaction) | carries `max(τ, φ)`; `ω` moves | the moved row's bound travels with it; no value changed |
+| reuse a drained page's slot | the new page starts at `ω_old + 1` | no row is carried; `(slot, ω)` never names two states of one slot |
 | materialise (first write to a watched column without row ticks) | `τ ← 0` for every row | `φ` still covers every existing row (I2 with `τ = 0`) |
 | free (`free_quiet_row_ticks`) | drop `τ`; `φ ← max(φ, σ) = σ` | by I1, every `last ≤ σ = φ` |
 | end a run | `t ← t + 1` | I0: the run's observer now has `s_o = t − 1 < t` |

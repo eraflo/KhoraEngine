@@ -105,10 +105,9 @@ pub trait PhysicsProvider: Send + Sync {
 
     /// Takes the collision events accumulated since the last call.
     ///
-    /// **Destructive, and across steps, not "during the last step"** as this
-    /// said before — the backend's buffer is not cleared by stepping, so what
-    /// comes back is everything since the previous call and the caller is the
-    /// only one who will ever see it. A second caller gets nothing.
+    /// Destructive, and across steps: stepping does not clear the backend's
+    /// buffer, so what comes back is everything since the previous call, and
+    /// the caller is the only one to see it. A second caller gets nothing.
     fn take_collision_events(&self) -> Vec<CollisionEvent>;
 
     /// Returns the entity a collider belongs to, if the ECS created it.

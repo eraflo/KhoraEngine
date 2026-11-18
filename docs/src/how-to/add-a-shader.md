@@ -65,6 +65,22 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 ```
 
+Read the engine's limits by name, never as numbers of your own. The backend composes
+every module with a few **shader defs**, `naga_oil` `#define`s whose values live once,
+in Rust, in `ShaderDefs` (`khora_core::renderer::api::shader`):
+
+| Def | Value |
+|---|---|
+| `MAX_DIRECTIONAL_LIGHTS` | 4 |
+| `MAX_POINT_LIGHTS` | 16 |
+| `MAX_SPOT_LIGHTS` | 8 |
+| `MAX_LIGHTS_PER_TILE` | 128 |
+
+A WGSL module writes `#{MAX_POINT_LIGHTS}` and never declares its own copy, so Rust
+and WGSL cannot disagree on a limit. A pipeline's **variant** (`ShaderVariantKey`) adds
+its own defs on top — boolean flags for `#ifdef`, or integers; never a float, which a
+`#define` cannot hold.
+
 ## Step 2 — Register the module with the backend
 
 Add the file to its table in
@@ -94,7 +110,12 @@ replace the engine's. It overlays only a module the backend registers
 (`PipelineSystem::composes`): a file of no lib nor pipeline in the tables, such as
 a test probe under `shaders/tests/`, is never handed over. A lib overlay must
 declare the lib's own `#define_import_path`; one that does not compose is dropped,
-and every other module stays composed.
+and every other module stays composed. In the frame's `PreExtract` phase every cached
+pipeline that uses an overlaid module is rebuilt under the same key: the cache then
+hands out the new pipeline and the old one is destroyed, so a lane that asks for its
+pipeline each frame draws with the new one. A rebuild that fails keeps the last working
+pipeline. Clearing the overlays rebuilds the composer from the engine's own sources and
+every cached pipeline with it.
 
 ## Step 3 — Respect the four-bind-group budget
 
@@ -115,7 +136,12 @@ role:
 | 3 | `Lighting` | the lighting uniforms at binding 0; the shadow atlas, its sampler and the cube atlas at 1, 2 and 3; image-based lighting from 4 |
 
 A new lighting feature adds bindings to **group 3**, at a free index, never a
-fifth group: four is a hard limit on many devices. A mesh pipeline binds
+fifth group: four is a hard limit on many devices. The shadow part (1 to 3) is the
+same in every lit pipeline; the image-based lighting block (four bindings) sits at a
+base the lane picks — 4 in lit forward, 8 in Forward+, whose own group 3 holds its
+light lists at 0 and 4 to 7 (see
+[Rendering — Group 3 of the lit lanes](../concepts/rendering.md#group-3-of-the-lit-lanes)).
+The layout entries, the bind group and the WGSL must use the same base. A mesh pipeline binds
 `Mesh::vertex_buffer_layout()`. Compute pipelines own their layout and are exempt.
 A pipeline that does not draw meshes (the sky, the grid, the interface) may give
 inline layouts of its own (`LayoutSpec::Inline`, cached by a unique label), still

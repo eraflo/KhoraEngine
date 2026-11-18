@@ -20,6 +20,21 @@ use khora_tool_ui::widgets::{
 
 const CONTENT_W: f32 = 620.0;
 
+/// How the GitHub token is kept, under the connected account's name.
+///
+/// On Unix the credentials file is written owner-only (`0600`); Windows has no
+/// such mode, and the file is guarded only by the access rights of the user's
+/// profile folder it sits in.
+#[cfg(unix)]
+const TOKEN_STORAGE: &str = "device-flow token · stored 0600";
+/// How the GitHub token is kept, under the connected account's name.
+///
+/// On Unix the credentials file is written owner-only (`0600`); Windows has no
+/// such mode, and the file is guarded only by the access rights of the user's
+/// profile folder it sits in.
+#[cfg(not(unix))]
+const TOKEN_STORAGE: &str = "device-flow token · in your user folder";
+
 /// Renders the settings screen.
 pub(crate) fn show_settings(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     let t = crate::ui::theme();
@@ -103,7 +118,7 @@ fn github_card(app: &mut HubApp, ui: &mut dyn UiBuilder, t: &UiTheme, rect: [f32
             mono(
                 ui,
                 [body[0] + 45.0, body[1] + 22.0],
-                "device-flow token · stored 0600",
+                TOKEN_STORAGE,
                 t.font_size_caption,
                 t.text_muted,
             );

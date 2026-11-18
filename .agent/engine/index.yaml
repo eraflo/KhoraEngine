@@ -61,7 +61,7 @@ reference:
   - { path: reference/control-gorna.md,      load: on_demand, tags: [dcc, gorna, cost-model, pid, budgets] }
   - { path: reference/editor-ui-ux.md,       load: on_demand, tags: [editor, panels, gizmos, dock, impeccable] }
   - { path: reference/api-ux.md,             load: on_demand, tags: [sdk, ergonomics, builder, facade] }
-  - { path: reference/documentation.md,      load: on_demand, tags: [mdbook, rustdoc, diagrams] }
+  - { path: reference/documentation.md,      load: on_demand, tags: [docs-site, rustdoc, diagrams] }
   - { path: reference/deprecation.md,        load: on_demand, tags: [modernization, dead-code, cleanup] }
 
 # Task skills — run when the recurring task matches.

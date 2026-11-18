@@ -16,15 +16,16 @@
 //!
 //! All slots are *semantic*: `primary`, `accent_a`, `success`, etc. The theme
 //! contains no brand-specific naming — apps configure the concrete values.
-//! Color slots are `[r, g, b, a]` **sRGB** components in `0.0..=1.0` (see the
-//! note on the color pipeline in `crate::ui::brand`); the concrete UI
-//! backend feeds them to its native format.
+//! Color slots are `[r, g, b, a]` **sRGB** components in `0.0..=1.0`; the
+//! concrete UI backend feeds them to its native format.
 //!
 //! The same struct is used by both the editor (`khora-editor`) and the hub
-//! (`hub`). Both install the one canonical `crate::ui::brand::khora_dark`
-//! producer, so there is a single source of truth and the two apps cannot
-//! drift. [`Default`] stays a neutral fallback for anything that wants a theme
-//! without pulling in the brand.
+//! (`khora-hub`). Their values come from one module, `khora_tool_ui::brand`
+//! (which also explains the color pipeline): the editor installs its
+//! `khora_dark` theme, the hub its `khora_light` one, which takes the dark
+//! theme's sizes and type, so the two apps cannot drift. [`Default`] stays a
+//! neutral fallback for anything that wants a theme without pulling in the
+//! brand.
 
 pub use super::color_scheme::ColorScheme;
 

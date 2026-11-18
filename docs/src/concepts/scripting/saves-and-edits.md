@@ -59,6 +59,28 @@ part-way through, a fault. A scene never does.
 Hot-reload replaces a module's program while the game runs. Two things must
 survive it: what each instance *is*, and what each instance is *doing*.
 
+### What a save recompiles
+
+A **script** is a file whose name ends exactly in `.erg`, inside the folder
+named exactly `scripts` of the project's assets; its module name is its path
+from there. Where it is decides, not what it holds: an Ergon file anywhere
+else, or spelt `.ERG`, is never compiled, and says so in Problems.
+
+Saving one recompiles its module **and every module that imports it, through
+any chain of imports**: change `combat/damage.erg`, and `guard.erg`, which
+imports `combat/ai.erg`, which imports it, is compiled again too. The imports
+are read from the files as they are on disk. A folder moved in brings its
+modules; a module deleted leaves; a burst of changes too large to follow
+recompiles the whole folder.
+
+Compiling never happens on the frame. The `script_hot_reload` DataSystem
+notices the change — while scripting is off too, so the editor recompiles while
+you edit — and files a **compile request** for the folder: one request per
+scripts folder, a newer one replacing a waiting one it covers, at most 1,024
+waiting. The `loading` family compiles off the frame, and the new program waits
+in the reserve until a frame of play installs it (below). Two saves before
+that land as one reload.
+
 The new program lands at the start of a frame of play, before the world is
 projected for the scripts. The `script_intake` data system installs it, once
 the script flow's demand covers every component it reads. The compiler
@@ -70,6 +92,12 @@ its project closed. Its program leaves with it — nothing keeps running code
 whose file is gone — and every instance of it stops, says so in Problems, and
 keeps its fields. When the module comes back, by a move or an undo, its
 instances carry those fields across as for any edit.
+
+The script lane also logs a warning when instances name a module with no
+compiled program — gone, never compiled, or no longer holding their behavior —
+with how many instances and how many modules are loaded, and asks whether the project's scripts are mounted
+(`khora_sdk::scripts::mount`). It warns again whenever that count changes, and
+says when every instance has its program again.
 
 ### Fields, by name
 
@@ -94,7 +122,16 @@ as it was; a range bounds what the inspector edits, never what a script writes,
 so a guard whose script pushes its health past the range keeps that health.
 
 What the guard is *doing* crosses the same way: the state it is in by name, that
-state's data by slot name, each countdown by its schedule's identity. A chasing
+state's data by slot name, each countdown by its schedule's identity — its
+kind, its interval and the state it belongs to, numbered when two are the same
+(`Chase.__every(1)`, then `Chase.__every(1)#1`). Adding a field, or a schedule
+of another kind or interval, renames none of them, so a countdown never lands
+on a schedule that took its place. A save keys its timers the same way. While
+running, a timer body under way names its schedule by its place in the
+program, which means something only in that program. A reload or a load takes
+back a body left in older code; should one still be found there, it is
+abandoned with a warning and re-arms nothing, since that place may name
+another schedule now. A chasing
 guard is still chasing after the edit, with what is left of its timers; a state
 or schedule the edit removed is dropped, a new one starts fresh, and a datum new
 to the current state starts at its own declared default.

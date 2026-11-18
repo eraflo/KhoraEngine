@@ -69,6 +69,7 @@
 - [SDK overview](./reference/sdk.md)
 - [Ergon language](./reference/ergon.md)
 - [Crate map](./reference/crates.md)
+- [Transform maths](./reference/math.md)
 - [File formats](./reference/formats.md)
 - [Project structure](./reference/project-structure.md)
 - [Editor](./reference/editor.md)

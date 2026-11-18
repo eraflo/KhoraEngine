@@ -1,12 +1,13 @@
-// Turns one book page, written for mdBook, into the Markdown the site renders.
+// Turns one book page, written in mdBook's format, into the Markdown the site renders.
 //
-// The pages stay mdBook pages in `docs/src`: no frontmatter, a `# Title` on
+// The pages keep mdBook's format in `docs/src` (the book was first built
+// with mdBook, retired since): no frontmatter, a `# Title` on
 // their first line, figures inlined with `{{#include}}`, links to `x.md`
 // (Markdown) or `x.html` (raw HTML). This module reads them as they are, in
 // memory, so neither the pages nor the paths that code comments and the
 // xtask checks cite ever change:
 //
-// - `{{#include path}}` is replaced by the file's text, as mdBook does;
+// - `{{#include path}}` is replaced by the file's text, as mdBook did;
 // - the first `# Title` becomes the page's title (Starlight draws it) and
 //   leaves the body; a page without one takes its SUMMARY.md label;
 // - a relative link to a page becomes the page's route under the site base;
@@ -16,7 +17,7 @@
 //   the language the highlighter knows.
 //
 // Fenced code and inline code spans are left as written, except for
-// `{{#include}}`, which mdBook also expands everywhere.
+// `{{#include}}`, which mdBook also expanded everywhere.
 
 import { readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, posix, relative } from 'node:path';

@@ -64,6 +64,16 @@ jobs:
         # `-D warnings` turns Clippy warnings into errors.
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+      - name: Build the docs (warnings as errors)
+        # The rustdoc lints of `[workspace.lints.rustdoc]`, which clippy does
+        # not run: a broken or private intra-doc link, a bare URL, a stray
+        # HTML tag. The same command as `cargo gate`'s doc step
+        # (xtask/src/commands/ci.rs, `doc`). It runs after clippy in this job
+        # to reuse the dependencies clippy has just checked.
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --document-private-items --all-features --locked
+
   build_and_test_ubuntu:
     name: Build & Test (Ubuntu)
     runs-on: ubuntu-latest

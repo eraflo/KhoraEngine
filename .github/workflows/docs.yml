@@ -1,66 +1,131 @@
-name: Deploy Documentation
+name: Docs
+
+# The documentation site (`docs/site/`, Astro Starlight over the book in
+# `docs/src`) with the rustdoc mounted under `/api`.
+#
+# - A push to `main`, or a run by hand on `main`: build, then deploy to
+#   GitHub Pages.
+# - A pull request, a push to `dev`, or a run by hand on another branch:
+#   build and test only, nothing deployed.
+#
+# The build is the one `.agent/engine/reference/documentation.md` describes:
+# `npm ci`, the site's tests, the landing's frames, rustdoc, `npm run build`
+# (which fails on a broken internal link) and `npm run api`.
+
 on:
   push:
-    branches:
-      - main
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
   workflow_dispatch:
 
+# Least privilege: the build reads the repository; only the deploy job may
+# write to Pages.
 permissions:
   contents: read
-  pages: write
-  id-token: write
+
+# A newer push replaces a pending build of the same ref; a deploy already
+# running on `main` is never cancelled halfway.
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  # Astro reports usage to its makers unless told not to.
+  ASTRO_TELEMETRY_DISABLED: "1"
 
 jobs:
-  deploy-docs:
-    name: Build and Deploy Documentation
+  build:
+    name: Build the site
     runs-on: ubuntu-latest
     steps:
-      # --- 1. SETUP ---
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
+      - name: Checkout code
+        # Pinned to the v7.0.1 commit SHA.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Install system dependencies
+        # rustdoc checks every dependency first, and some build scripts
+        # look for these system libraries.
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev pkg-config
-      
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-      
-      - name: Install mdBook
-        run: |
-          cargo install mdbook --locked
-          cargo install mdbook-mermaid --locked
-      
-      - name: Setup mdBook-Mermaid
-        run: mdbook-mermaid install docs
-      
-      # --- 2. BUILD (IN ISOLATION) ---
-      - name: Build rustdoc API reference
-        run: cargo doc --workspace --no-deps --all-features --target-dir build/rustdoc
-      
-      - name: Build mdBook
-        run: mdbook build docs -d build/book
+          sudo apt-get install -y libasound2-dev pkg-config libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev
 
-      # The landing page takes the site's index.html; the book's first page
-      # stays home.html, where the landing's links lead.
-      - name: Write the landing page
-        run: cargo xtask landing build/book
-      
-      # --- 3. ASSEMBLE ---
-      - name: Assemble final site
-        run: |
-          mv build/book site
-          mkdir -p site/api
-          cp -r build/rustdoc/doc/* site/api/
-          cat .github/workflows/templates/api_index.html > site/api/index.html
-      
-      # --- 4. DEPLOY ---
-      - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Install Rust toolchain
+        # Pinned to a commit SHA; the toolchain comes from `toolchain:`.
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
         with:
-          path: ./site
-      
+          toolchain: stable
+
+      - name: Cache Cargo dependencies
+        # Pinned to the v2.9.3 commit SHA.
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: "docs"
+
+      - name: Install Node
+        # The version `engines` asks for in docs/site/package.json; `.npmrc`
+        # refuses an older one.
+        # Pinned to the v7.1.0 commit SHA.
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: docs/site/package.json
+          cache: npm
+          cache-dependency-path: docs/site/package-lock.json
+
+      - name: Install the site's dependencies
+        # Exactly the lockfile; no package runs a script at install
+        # (`ignore-scripts=true` in `.npmrc`, said again here).
+        working-directory: docs/site
+        run: npm ci --ignore-scripts
+
+      - name: Test the site
+        working-directory: docs/site
+        run: npm test
+
+      - name: Fetch the landing's frames
+        # The frames are an asset of the release `landing-frames-v<N>`
+        # (`src/landing/frames.mjs`). Until that release is published, the
+        # landing builds with its posters: `--if-released` lets a missing
+        # release (HTTP 404) through, and only that. An archive whose SHA-256
+        # or entries are wrong, or a host that cannot be reached, still fails.
+        working-directory: docs/site
+        run: npm run frames -- --if-released
+
+      - name: Build the rustdoc
+        run: cargo doc --workspace --no-deps --locked
+
+      - name: Build the site
+        # Fails on a broken internal link or anchor (starlight-links-validator).
+        working-directory: docs/site
+        run: npm run build
+
+      - name: Mount the rustdoc under /api
+        working-directory: docs/site
+        run: npm run api
+
+      - name: Upload the Pages artifact
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        # Pinned to the v5.0.0 commit SHA.
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: docs/site/dist
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        # Pinned to the v5.0.1 commit SHA.
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

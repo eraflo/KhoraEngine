@@ -83,9 +83,10 @@ const DEFAULT_SUN_DIRECTION: Vec3 = Vec3::new(0.35, 0.78, 0.52);
 /// How many ticks the bake waits for a selected environment asset to finish
 /// loading before falling back to the procedural sky.
 ///
-/// The lit lanes skip rendering entirely until the IBL bindings exist, so
-/// waiting forever on an asset that never arrives (a mistyped UUID, a missing
-/// file) would leave the screen black. This bounds the wait and logs loudly.
+/// Until a bake lands the lit lanes light with neutral bindings, so waiting
+/// forever on an asset that never arrives (a mistyped UUID, a missing file)
+/// would leave the scene without its sky light. This bounds the wait and logs
+/// loudly.
 const MAX_ENV_WAIT_TICKS: u32 = 120;
 
 /// What an IBL bake was made from: the environment the scene selected and the

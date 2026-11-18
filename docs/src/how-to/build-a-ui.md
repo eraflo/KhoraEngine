@@ -62,9 +62,11 @@ let panel = world.spawn((
 `Font::BUILT_IN`, is the engine's built-in face (Inter) and needs no asset. Any other
 font is a font asset (a `.ttf` or `.otf` file) named by its UUID: it is loaded when the
 text first appears, and the text is drawn once it has loaded. A font that fails to load
-is reported in the log, and the text is not drawn in another face. The text is shaped
-again only when it changes, and each of its glyphs is rasterised once, then drawn from
-the glyph atlas. Spawn the text as a child node and parent it under the panel:
+is reported in the log, and the text is not drawn in another face. From a font
+collection (`.ttc`), only the first face is used. The text is shaped again only when it
+changes, and each of its glyphs is rasterised once, then drawn from the glyph atlas on
+whole pixels, so it stays sharp; its `size` counts in quarters of a pixel. Spawn the text
+as a child node and parent it under the panel:
 
 ```rust
 use khora_sdk::khora_data::ui::{UiNode, UiText};
@@ -104,8 +106,8 @@ world.set_parent(icon, Some(panel));
 
 ## Update UI each frame
 
-For dynamic UI (a HUD counter, a health bar), mutate the components in `update` — the
-layout re-runs when components change:
+For dynamic UI (a HUD counter, a health bar), mutate the components in `update` —
+`UiFlow` projects them again on the next frame, and a changed text is shaped again:
 
 ```rust
 use khora_sdk::khora_data::ui::UiText;

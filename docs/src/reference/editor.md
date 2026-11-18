@@ -38,33 +38,40 @@ The visual language — colors, typography, panels, voice — is documented in [
 
 ## 02 — Workspace anatomy
 
+The window has three fixed strips — the title bar, the spine and the status
+bar — around one **dock** that holds every working panel. The Scene mode's
+dock opens arranged like this:
+
 ```
 +--------------------------------------------------------------+
-| Title bar — brand, project name, window controls            |
-+----+----------------------------------------------+----------+
-|    |                                              |          |
-| Sp |               Viewport                       | Inspect  |
-| in |                                              | -or      |
-| e  |                                              |          |
-|    |                                              |          |
-+----+----------------------------------------------+----------+
-| Bottom dock: Assets · Console · Problems · GORNA stream     |
-+--------------------------------------------------------------+
-| Status bar — engine state, FPS, build status                |
+| Title bar — brand, project name, menus, search               |
++----+---------+----------------------------------+------------+
+|    |         |                                  |            |
+| Sp | Hierar- |            Viewport              | Inspector  |
+| in | chy     |                                  |            |
+| e  |         +----------------------------------+            |
+|    |         | Assets · Console · Problems      |            |
++----+---------+----------------------------------+------------+
+| Status bar — health, branch, cpu, memory, fps, project       |
 +--------------------------------------------------------------+
 ```
 
 | Region | Purpose |
 |---|---|
-| **Title bar** | Brand, project name, window controls |
-| **Spine** | Mode rail (Scene, Control Plane) |
-| **Hierarchy** | Tree of entities, left of the viewport |
+| **Title bar** | Fixed. Brand pill with the project name, the File, Edit, Build and Help menus, the search pill that opens the command palette. The window's own buttons are the system's |
+| **Spine** | Fixed. Mode rail (Scene, Control Plane) |
+| **Hierarchy** | Tree of entities — by default left of the viewport, the full height of the dock |
 | **Viewport** | The 3D scene with floating gizmos |
-| **Inspector** | Components of the selected entity, right of the viewport |
-| **Bottom dock** | Assets browser, console, script problems, GORNA stream |
-| **Status bar** | Engine state, FPS, build status, GORNA pulse |
+| **Inspector** | Components of the selected entity — by default right of the viewport, the full height of the dock |
+| **Assets · Console · Problems** | Three tabs of one group, under the viewport by default, Assets open |
+| **Status bar** | Fixed. A health dot, the git branch, CPU, heap and video memory, a scene load in flight; on the right the frame rate and time, the project and engine version, and a *restricted* chip when the project is |
 
-Full anatomy and pixel-level layout in [Editor design system](../design/editor.md).
+Everything inside the dock can be moved (see [Modes](#03--modes)); the
+picture is only where it starts. The Control Plane mode's dock holds its one
+workspace, full size. In a restricted project, a restricted bar sits under the
+title bar ([Restricted projects](#11--restricted-projects)).
+
+The visual language of these regions is in [Editor design system](../design/editor.md).
 
 ## 03 — Modes
 
@@ -75,7 +82,14 @@ Two workspaces ship today, switched from the Spine:
 | **Scene** | 3D editing (default) |
 | **Control Plane** | Engine telemetry and GORNA stream |
 
-Each mode has its own panel layout. We commit to opinionated defaults — Unity and Unreal let you arrange panels freely, and most users keep the defaults forever. We pick the layouts users won't want to change. Further authoring workspaces (2D canvas, node graph, animation, shader graph) will be added as they are built.
+Each mode has its own panel layout, held in a **dock**: drag a panel's tab onto
+the middle of another group to join it as a tab, or onto one of its edges to
+split it there. A splitter between two groups drags to resize them, never below
+120 points a side. The layouts the editor starts with are only its defaults,
+and a changed layout lasts the session: it is not saved, and there is no reset
+yet. We still put the care into the defaults — most users keep them — and pick
+layouts users won't want to change. Further authoring workspaces (2D canvas,
+node graph, animation, shader graph) will be added as they are built.
 
 ## 04 — Play mode
 
@@ -170,6 +184,14 @@ The Assets panel in the bottom dock is a real file explorer over `<project>/asse
 Empty folders are shown, so **New Folder** produces a usable target immediately. **Delete goes to the OS recycle bin** (via the `trash` crate), so a mistaken delete is reversible from the system trash rather than lost.
 
 **Drag & drop.** Drag a tile onto a folder in the tree to **move** it (the move is mediated by the editor, so the identity registry freezes the UUID and references survive). Drag a tile into the **3D viewport** to instantiate it: a mesh spawns an entity at the drop point, a prefab places a linked instance, a scene loads, and a texture or material assigns to the selected entity.
+
+A drag remembers which version of the asset list it started from — the **asset
+epoch**, moved whenever the list changes: a project opened, a file added,
+renamed, moved or deleted, a change seen on disk. If the list
+changed during the drag, the drop does nothing (logged at debug level) rather
+than land a different asset that now sits where the dragged one was. The stamp
+keeps 8 bits of the epoch, so it would mistake a list changed 256 times during
+one drag for the one it started from.
 
 ### Prefabs
 
@@ -326,7 +348,55 @@ The viewport has floating gizmos for the selected entity:
 - **Rotate** — three rings, one per axis.
 - **Scale** — three axis arms with end cubes.
 
+Pick the tool from the pill at the viewport's top left — Hand (select only),
+Move, Rotate, Scale — or with `Q`, `W`, `E`, `R` (not while `Ctrl` is held).
+The Hand draws no gizmo.
+
+**How the handles behave.**
+
+- Move and Rotate follow the **world's** axes; Scale follows the **object's own**
+  axes, those of the first selected entity. With several selected, the gizmo
+  stands at the average of their positions and moves them all.
+- The gizmo keeps **one size on screen** however far the camera is: about a third
+  of the viewport's half-height. A handle is grabbed within 14 % of that size of
+  its arm or ring, and a handle under the cursor wins over the object behind it.
+- A drag is measured **from where it started**, not added up frame by frame, so
+  it never drifts: moving back to the start puts the entity back. A rotation
+  counts whole turns past half a turn; a scale never goes below 1 % of where it
+  started. A drag ends when the button is released, the tool changes or the
+  window loses focus. Each entity dragged is marked `Teleported`, so physics
+  takes the new place as given ([Physics](../concepts/physics.md)).
+- A **child** is moved in its **parent's** frame: the drag's world-space change is
+  written into the child's `Transform`, which is relative to its parent. Under a
+  rotated or scaled parent, a child moves along the parent's axes, not the
+  world's.
+
+**Picking.** A left click in the viewport selects what is under the cursor —
+on the click only, never on hover. A ray goes from the camera through the
+cursor and meets each entity's **box**: a mesh's box from its vertices, and for
+anything without a mesh (a light, a camera, a sound, an empty) a small cube,
+0.35 units from its origin each way. The nearest box hit wins; a box the camera
+stands inside cannot be picked. `Ctrl`+click adds or removes the entity from the
+selection; a click on empty space clears it, unless `Ctrl` is held. Picking and
+the gizmos work while playing too.
+
+**The camera.** While editing, with the cursor in the viewport: drag with the
+middle or the right button to orbit around the point the camera looks at;
+`Shift` + middle-drag to pan; the wheel to zoom, from 0.5 to 500 units away.
+There is no fly mode and no key to frame the selection yet. While playing, the
+scene's own camera renders and the editor's does not move.
+
+**No undo yet.** The Edit menu holds Delete only, and `Ctrl+Z` / `Ctrl+Y` are
+left unbound: the editor has a command history (`CommandHistory`), but nothing
+records an edit into it, so nothing could be undone
+([#69](https://github.com/eraflo/KhoraEngine/issues/69)).
+
 Selection is tracked in `EditorState.selection` (a set — multi-select is supported), with `EditorState.inspected` naming the one the Inspector shows. Clicking an entity in the hierarchy or the viewport sets it; `Esc` clears it. Selected entities get a 2 px gold inner-stroke outline (1 px dark outer stroke), visible against any background.
+
+`EditorState.hidden_entities` dims the rows it names in the scene tree, but
+nothing fills it: the editor has no way to hide an entity yet (no eye icon, no
+model of an entity switched off), and picking, the gizmos and rendering ignore
+it.
 
 Numeric fields in the Inspector are draggable scrubbers — drag horizontally to change a value, modifier keys for precision. No spinner buttons.
 
@@ -378,7 +448,7 @@ The second Spine mode is the **Control Plane** — a workspace dedicated to the 
 
 | Region | Purpose |
 |---|---|
-| **Summary bar** (top) | The DCC at a glance: frame rate, frame budget, heap, and the frame time over the last frames |
+| **Summary bar** (top) | The DCC at a glance: the families switched off, the budget multiplier, the agent count and the frame rate in two lines; then five cells — frame budget, CPU, GPU, video memory, heap. The frame budget cell draws the frame time over the last 48 frames as a sparkline, the only cell with a history: the others are instantaneous, drawn as bars. A sample is taken only while the Control Plane is shown, so the line has gaps for the time spent in another mode |
 | **Agents** | Every registered agent, grouped by importance (Critical, Important, Optional), with its running row and health |
 | **Schedule** | The agents by execution phase. A schedule, not a timeline: per-phase timing is not measured yet, and a custom phase is not shown |
 | **Inspector** | The selected agent: its timing and status, and the last GORNA decision for it — the envelope lent, the row planned and the row running, what opened the round and what bound the frame, who decided |
@@ -464,9 +534,46 @@ The editor is an application built on the SDK — it implements `EngineApp` and
 crate. It lives in `crates/khora-core/src/ui/editor/state.rs`, with the other
 editor contracts (`EditorShell`, `EditorPanel`, `UiBuilder`), because the render
 lanes and the egui backend need the same vocabulary and neither may depend on the
-editor. The dock tree lives in `khora-tool-ui`; the gizmo interaction and the
-command history live in the editor crate. The engine's design keeps that vocabulary backend-agnostic; the editor is
+editor. The gizmo interaction and the command history live in the editor crate.
+The engine's design keeps that vocabulary backend-agnostic; the editor is
 one consumer of it.
+
+**The dock is a panel.** The dock tree and its widgets (tab strips, splitters,
+the drop overlay, the drag ghost) live in `khora-tool-ui`, the branded design
+system. The shell that hosts panels, `EguiEditorShell`, lives in `khora-infra`,
+which depends on `khora-core` alone and must never depend on `khora-tool-ui`.
+So the dock is not part of the shell: it is one ordinary `EditorPanel`, the
+`WorkbenchPanel` (`panels/workbench.rs`), registered at the centre. It holds one
+`DockTree` per mode and the working panels by id, paints the dock widgets
+through `UiBuilder`, and runs each group's active panel inside
+`UiBuilder::region_at`. The shell only ever sees `Box<dyn EditorPanel>`.
+
+**Widget ids and keyboard focus.** The egui backend keeps focus and text-edit
+state by widget id, so ids must stay the same from frame to frame:
+
+- `UiBuilder::interact_rect(salt, …)` derives its id from the salt **under its
+  parent**; `region_at(salt, …)` names its region by the salt, never by its
+  rect, so a field keeps its focus while a splitter moves. A salt must be stable
+  across frames and unique within its parent.
+- Each workbench panel's region is salted by its panel id, each tab strip by
+  its group (`wb-g{n}`). What repeats per entity carries the entity: an
+  Inspector card's controls are salted `card-hdr-{index}.{generation}::{title}`
+  and the like, a scene-tree row's chevron `st-chev-{index}`; asset tiles by
+  their place in the list (`tile-{i}`).
+- The inline rename field's id is global (`khora_inline_edit` with its salt),
+  not under its parent: one field is edited at a time.
+
+A panel's own shortcut reads `UiBuilder::key_pressed`, which answers `false`
+while a text field has keyboard focus, so a single-key binding never eats what
+the user types; `keyboard_captured` says whether one has. `raw_key_pressed`
+ignores focus and is for the widget that owns the field — the command palette
+moving its selection while its query is typed. `focus_last_item` gives a field
+focus: call it on the frame the field appears, never every frame, or the user
+can never leave it. The editor's global shortcuts (`Q W E R`, `Delete`,
+`Ctrl+K`, `Ctrl+S`, `Ctrl+1`/`2`, `Esc`) arrive as engine input events; a key
+egui used is dropped before it becomes one. Pointer events inside the viewport
+always reach the engine, whatever egui says; while the loading cover is up,
+every event goes to egui alone.
 
 To add a panel: write its render function under `panels/`, register it in the
 workbench, and route any mutation through `ops/` so the action layer stays the
@@ -474,7 +581,8 @@ single place the world changes.
 
 To add a gizmo type: extend the interaction model in
 `crates/khora-editor/src/gizmo/interact.rs` and its geometry in `gizmo/selection.rs`, draw it from the engine-side
-`GizmoLane`, and convert drags into `Transform` mutations through `ops/`.
+`GizmoLane`; a drag's result is written onto the dragged entities by
+`gizmo::apply_delta` (`gizmo/frame.rs`).
 
 The editor depends on `khora-sdk` and `khora-tool-ui`, and nothing else from the workspace — there is no SDK bypass. Earlier revisions of this page described one; the manifest never had it.
 
@@ -482,12 +590,12 @@ The editor depends on `khora-sdk` and `khora-tool-ui`, and nothing else from the
 
 ### We said yes to
 - **Editor as a separate binary.** The editor is a different application from a shipping game — different lifecycle, different active agents, different input.
-- **Mode-first layouts.** Opinionated defaults beat infinite customization for 95% of users.
+- **Mode-first layouts.** Each mode opens on a default chosen with care; most users never change it.
+- **A dock under the defaults.** A tab drags onto another group, or onto one of its edges to split it, so a user who needs another arrangement is never stuck with ours.
 - **Play mode through scene snapshot.** Press Play, run the game; press Stop, you are back where you were. No state pollution.
 - **The editor is an ordinary SDK application.** It depends on `khora-sdk` plus the first-party `khora-tool-ui` design system, which the SDK deliberately does not re-export so a game never compiles the engine vendor's brand.
 
 ### We said no to
-- **Free-form panel docking.** Powerful but exhausting. We pick layouts users won't want to change.
 - **Telemetry charts in the main UI.** Telemetry belongs in the Control Plane mode. Scene mode shows the scene.
 - **Editor chrome during play mode.** Play mode is a near-shipping preview. Chrome reappears on stop.
 

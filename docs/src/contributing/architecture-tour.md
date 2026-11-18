@@ -84,6 +84,44 @@ Three facts make the codebase legible once you start reading it:
   every symbol and edge. Use it to jump straight to a definition, find callers, or
   see what a change would impact, instead of text-searching the tree.
 
+## Backends a concurrent wave reaches
+
+Lanes prepare and record in concurrent waves, so a backend a lane reaches — the
+graphics device, the pipeline system, an atlas, a text backend — is called from
+several threads at once. None of them may deadlock, and none does **by
+construction**: every lock is either a **leaf**, held only to look an entry up,
+insert or remove it and never across a call out, or sits above leaves in one order
+that only descends. Nothing calls back up while it holds a lock.
+
+| Backend | Its lock | Held across |
+|---|---|---|
+| `WgpuDevice` | one `Registry` (the id tables) and one surface record, both leaves | nothing: wgpu's device and queue are thread-safe |
+| `WgpuPipelineSystem` | one lock over the composer and the caches | calls to the device, below it |
+| `GlyphAtlas` | one lock over the atlases and the slots | calls to the device that upload into or replace its own textures, never the rasteriser |
+| `TextShaper`, `GlyphRasterizer` (Parley, swash) | one leaf each, around their fonts and contexts | nothing |
+| `DefaultMixBus` | one leaf around the sample queue | nothing |
+
+So the order is *pipeline system or glyph atlas → device*, and nothing else nests.
+A new backend states its order in its trait's docs (as `GraphicsDevice` and
+`PipelineSystem` do, in `khora-core`), and a concurrency test on the real
+implementation guards it: `khora-infra/src/graphics/wgpu/device/tests/concurrency.rs`
+drives creation, writes, destruction, pipelines and submissions from many threads
+under a watchdog.
+
+Two more rules of the wgpu backend a change runs into:
+
+- **Every flag set that crosses into wgpu is bridged row by row**
+  (`khora-infra/src/graphics/wgpu/flag_bridge.rs`): `BufferUsage`, `TextureUsage`,
+  `ShaderStageFlags` and `ColorWrites` map flag by flag through `bridge_flags!`, and
+  its test `every_declared_flag_is_bridged` fails on a Khora flag no row maps. A new
+  flag gets its row in the same change.
+- **GPU tests take the GPU one at a time.** A test that makes a device holds
+  `exclusive_gpu()` while its device lives, and asks for an adapter on the platform's
+  own backend only (Vulkan; Metal on macOS; a software adapter, then WARP, without
+  one). Several devices driven at once crash the Vulkan validation layer, and an
+  instance on every backend loads drivers no test uses; one device per process holds,
+  as in the engine, however many threads drive it.
+
 ---
 
 Got the map? Now learn the rules every change must follow:

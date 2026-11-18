@@ -103,13 +103,16 @@ pub struct TimerLayout {
 /// A behavior's field slots, in the order the compiler assigned them.
 ///
 /// ```text
-/// [0 .. fields.len())      the behavior's own fields — always readable
-/// [fields.len()]           which state it is in
-/// [fields.len() + 1 ..)    the current state's data
+/// [0 .. fields.len())                    the behavior's own fields — always readable
+/// [state_slot()]                         which state it is in — only with states
+/// [state_data_slot() .. + widest state)  the current state's data
+/// [timer_slot(0) .. slot_count())        one countdown per `every`/`after`
 /// ```
 ///
-/// Every state's data occupies the **same** region: a state's data exists only
-/// while the behavior is in it. See the book: reference/ergon.md, "States".
+/// Every state's data occupies the **same** region, as wide as the widest
+/// state: a state's data exists only while the behavior is in it. The timers'
+/// countdowns follow it, in declaration order. See the book:
+/// reference/ergon.md, "States".
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct BehaviorLayout {
     /// The behavior's name.

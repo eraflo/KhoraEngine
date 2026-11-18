@@ -8,19 +8,15 @@ KhoraEngine is currently in its early stages of development. We are primarily fo
 
 Before contributing, please ensure you have the required tooling installed.
 
-### Documentation (`mdBook`)
+### Documentation (the docs site)
 
-Our narrative documentation is built using `mdBook`. To preview your documentation changes locally, you will need to install it:
+Our narrative documentation, the book in `docs/src`, is built into a website by Astro Starlight in `docs/site/`. To preview your documentation changes locally, you need Node.js 22.23.4 or newer:
 
 ```bash
-# Install mdBook via cargo
-cargo install mdbook
-```
-
-Once installed, you can serve the book locally from the project root:
-```bash
-# This command builds the book, starts a local web server, and opens it in your browser.
-mdbook serve docs --open
+cd docs/site
+npm ci          # installs exactly the lockfile
+npm run dev     # serves the site with live reload
+npm test && npm run build   # what CI checks, every internal link included
 ```
 
 ## Dev workflow shortcuts
@@ -71,7 +67,7 @@ Direct code contributions are welcome, but given the architectural nature of the
 ### Pull Request Process
 
 1.  Ensure any new code adheres to our coding standards by running `cargo xtask all`.
-2.  Update the documentation (`mdBook` for concepts, `rustdoc` comments for API) with any relevant changes.
+2.  Update the documentation (the book in `docs/src` for concepts, `rustdoc` comments for API) with any relevant changes.
 3.  Open a pull request and link it to the relevant issue.
 
 ## Code of Conduct

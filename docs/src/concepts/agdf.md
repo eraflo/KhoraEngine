@@ -65,7 +65,13 @@ the data layer travels as telemetry, sent from the frame with a non-blocking
   microseconds, that its lane's level quoted on that frame's inputs. The DCC reads
   the run's time as the largest of its devices' times;
 - every 60 frames, an **access snapshot** per component (`ComponentAccess`):
-  `type_name`, `size_bytes`, `query_count`, `rows_scanned`.
+  `type_name`, `size_bytes`, `query_count`, `rows_scanned`. The registry keeps
+  two counters per component, raised once per query, never per row: each
+  `query` or `query_mut` adds one to `query_count` and the rows of the pages it
+  matched — not the rows it yielded — to `rows_scanned`, for every component it
+  names. That is two atomic additions a component a query. The counters are
+  never reset: a snapshot holds the world's totals so far. It is sent at the
+  end of a frame and dropped when the telemetry channel is full.
 
 Three consumers ride that tunnel:
 
@@ -119,14 +125,24 @@ epochs guarantee "unchanged", a raise means only "possibly changed". And a Flow
 that can name all of its inputs returns a `cache_key` folding the World's
 `instance_id`, the epochs of the domains it reads and a bit-level hash of any
 runtime value it reads that has no epoch (the editor's camera, the target's
-aspect). The runner adds the family's scope itself. On a key match it republishes
-the kept View; `Flow::cache_key` returns `None` by default, and such a Flow
-projects every frame.
+aspect). The runner adds the family's scope itself: when the family is scoped,
+the marker and every entity holding it, by index and generation, are folded in —
+a marker may live in any domain, so no epoch is sure to move when an entity
+gains or loses it. On a key match it republishes the kept View; `Flow::cache_key`
+returns `None` by default, and such a Flow projects every frame. The kept View
+lives beside the Flow's one instance, one per Flow type, not one per world: the
+world's `instance_id` in the key is what keeps two worlds apart.
 
 Which Flows cache is an audit of their inputs. `AudioFlow`, `RenderFlow` and
 `ShadowFlow` cache. The others project every frame: `PhysicsFlow` (the simulation
 writes every frame), `UiFlow` (the target's size is not in its View), `CameraFlow`,
-`ScriptFlow`, `PrefabCatalogFlow` and `ReservationFlow`.
+`ScriptFlow`, `PrefabCatalogFlow` and `ReservationFlow`. `ScriptFlow` is the read
+half of the bridge between scripts and the world (`script_commands` is the write
+half): everything a behavior may read of the world this frame is in its View —
+the time, the input, each instance's fields and place, the columns scripts read
+— and a component it does not project, no script reaches. What else a script
+learns comes as mail (a collision, an event) or from the ids and prefabs the
+`ReservationFlow` and `PrefabCatalogFlow` publish.
 
 ### Layer 2 — the field-SoA substrate, and why it is the lever
 

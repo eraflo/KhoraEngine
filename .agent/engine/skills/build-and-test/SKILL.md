@@ -11,7 +11,8 @@ description: Validates an engine change by compiling and running the workspace t
 |---|---|
 | **After writing a file** — the per-file convention checks, no compile, under a second | `cargo xtask lint-file <files…>` (prints `path:line: check: message`; exit 1 on a finding) |
 | **While iterating** — the tests you are working on | `cargo t -p <crate> [filter]` (nextest, `--all-features`) |
-| **When the change is done** — what CI checks, stops at the first failure | `cargo gate` (fmt → clippy → nextest → doc tests) |
+| **When the change is done** — what CI checks, stops at the first failure | `cargo gate` (fmt → feature unification → clippy → docs → nextest → doc tests) |
+| A change to the book (`docs/src`) or the site (`docs/site`) | in `docs/site/`: `npm ci`, then `npm test && npm run build` (links validated) |
 | Run an app | `cargo run -p sandbox` / `-p khora-editor` / `-p khora-hub` |
 
 Scope a targeted run to the crate you changed. After a change, a run relinks the test binaries of every

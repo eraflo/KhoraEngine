@@ -8,6 +8,14 @@ The language and its VM: lexing, parsing, AST, bytecode, the interpreter, the pe
 hot-reload, native functions, and the bridge between script values and engine types. Also the lane and
 agent that run it inside a frame budget.
 
+## The goal
+
+Ergon is to be the language a game maker writes, with **the best UX/DX for game development** and **all
+of Rust's guarantees**: memory safety, lean use of resources, speed. Game makers then never write Rust,
+whose syntax does not suit gameplay; Rust stays the engine's language. Weigh every Ergon design by both
+halves, and make reachable from Ergon (or project data) what a game needs and only Rust offers today:
+input bindings (#294), project shaders (#293).
+
 ## Why it exists
 
 The DCC must be able to say *"you have 0.4 ms, hand back control"*. Every other subsystem already
@@ -74,9 +82,14 @@ switches it off while editing.
   announce, `MountedScripts`), staging `ScriptReload` and `ScriptDeclarations` in the `Reserve`. At the
   boundary, `script_components` (`TickPhase::Boundary`, Upkeep) registers the declarations — while the
   scripts are off too — and the intake (`Serves(SCRIPT)`) installs the reloads, which wait in the reserve
-  while SCRIPT is off. `scripts::mount` compiles synchronously (`compile_all`) and `unmount` withdraws;
-  both stage from the host (`Reserve::stage_from_host`), landing at the next frame start after the ended
-  background runs. A compile for a root unmounted since (`MountedScripts::is_closed`) withdraws instead,
+  while SCRIPT is off. `scripts::mount` compiles nothing itself: it watches the root, records its modules
+  in `MountedScripts` and files a `CompileRequest` carrying a `CompileTicket` through the `CompileHub`
+  (`khora-io/src/script/compile_hub.rs`); the `loading` family compiles it off the frame, and the outcome
+  lands under the ticket at a boundary (`scripts::outcome`). Mounts filed before the boot are compiled at
+  once by `compile_filed_now`, so `setup` finds what they declare. `unmount` withdraws: its pending tickets
+  land `Err("unmounted")`, its queued requests are dropped, and the withdrawal is staged from the host
+  (`Reserve::stage_from_host`), landing at the next frame start after the ended background runs, so it has
+  the last word over a run it overtook. A compile for a root unmounted since (`MountedScripts::is_closed`) withdraws instead,
   and a mounted root's result is staged under a `Lease` on the root staying mounted (`compile_leased`): one
   unmounted while the run is out has it abandoned when the reserve takes it in.
 - Conformance suite: `crates/khora-script/tests/it/conformance.rs` (`SHIPPED` / `PENDING` rows); resume
@@ -284,7 +297,7 @@ switches it off while editing.
   `SourceLoader::engine_components` (every registration name + `formerly`, from `PreludeLoader`) is refused at
   its span; duplicate fields, `Map` fields and non-finite literals too. `Program.declared:
   Vec<DeclaredComponent{name, module, domain, fields: {name, ty: ErgonType, default}}>` (sorted). The compile
-  path (`ProjectCompiler::compile_all` at a mount, the `loading` family on a save) stages one
+  path (the `loading` family, for a mount's ticket or a save; `compile_filed_now` before the boot) stages one
   `ScriptDeclarations` per declaring module in the `Reserve`; the `script_components` DataSystem
   (`TickPhase::Boundary`, `Role::Upkeep`, **whether scripting is on or off**) runs `khora_io::script::declarations::apply_declarations`: register, relayout (a type change
   the storage kind hides is reset via `relayout_resetting`), `move_component_domain`, orphan (never delete),

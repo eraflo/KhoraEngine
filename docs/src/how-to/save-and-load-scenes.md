@@ -121,6 +121,39 @@ restored part-way through what they were doing, and run `OnLoad` before anything
 else. Like every load, `load_game` either succeeds or leaves the world exactly as
 it was.
 
+### While frames run
+
+`load_game` reads, checks and places everything on the frame it is called in, so
+the game stops for as long as that takes. A running game files the load instead,
+and keeps playing while it is prepared:
+
+```rust,ignore
+// When the player picks a slot: file it, and keep the ticket.
+self.restoring = Some(world.file_load_game(&save, &level_file));
+
+// On each later frame:
+if let Some(ticket) = self.restoring {
+    match world.take_load_outcome(ticket) {
+        None => {} // still being prepared, or not landed yet
+        Some(Ok(report)) => {
+            self.restoring = None;
+            for entry in &report.entries { log::info!("restore: {entry}") }
+        }
+        Some(Err(e)) => {
+            self.restoring = None;
+            log::error!("failed to restore the game: {e}");
+        }
+    }
+}
+```
+
+The load is prepared off the frame by the `loading` family and lands at a later
+frame's boundary, atomically, like any load. Loads land in the order they were
+filed. A tool loading a scene beside or instead of the world files it with the
+`SceneLoadHub` itself (`file`, `take_outcome`, `cancel`); a cancelled load lands
+nothing and has no outcome, so stop asking for it. See
+[Serialization — loading while frames run](../concepts/serialization.md#loading-while-frames-run).
+
 There is no file convention for saves — `save_game` hands you a `SceneFile`
 whose header reads `KHORASAV`, and where it goes is the game's decision. A save
 never uses the snapshot encoding: asked for `FastestLoad`, it is written

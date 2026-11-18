@@ -1,7 +1,7 @@
 // The content loader for the book: every page of `docs/src`, where it is.
 //
 // Astro's `glob()` loader cannot change a page before rendering it, and the
-// pages are mdBook pages (see `page.mjs`). This loader lists them, prepares
+// pages keep the mdBook format the book was written in (see `page.mjs`). This loader lists them, prepares
 // each in memory and renders it with the site's Markdown processor
 // (`renderMarkdown`, the public loader API), so whichever processor Astro
 // runs, the page is read the same way. Nothing is written back to
@@ -76,7 +76,7 @@ async function syncBook(context, srcDir, base) {
 
     for (const path of listPages(srcDir)) {
         if (!listed.has(path)) {
-            context.logger.warn(`${path} is not in SUMMARY.md: the site, like mdBook, leaves it out`);
+            context.logger.warn(`${path} is not in SUMMARY.md: the site leaves it out`);
             continue;
         }
         const file = join(srcDir, path);

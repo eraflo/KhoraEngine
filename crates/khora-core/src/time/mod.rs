@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! The per-frame [`Time`] resource, the engine's single clock: the frame's
-//! wall-clock delta, the fixed tick and the render-interpolation factor.
+//! simulated delta, the fixed tick and the render-interpolation factor.
 //!
 //! See the book: concepts/the-frame.md, "Fixed-timestep simulation and render interpolation".
 
@@ -31,10 +31,12 @@ pub const MAX_SIM_STEPS: u32 = 5;
 /// Per-frame timing state shared between the simulation and the render path.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Time {
-    /// Wall-clock seconds since the previous frame: the delta for variable-rate logic.
+    /// Simulated seconds since the previous frame: the delta for variable-rate logic.
     ///
-    /// Clamped after a long stall (a debugger break, an asset hitch) to avoid
-    /// a spiral of death.
+    /// The wall-clock time between the two frame starts, clamped after a long
+    /// stall (a debugger break, an asset hitch) to avoid a spiral of death, then
+    /// multiplied by the [`scale`](Self::scale): `0.0` while the simulation is
+    /// stopped. The first frame advances one fixed tick.
     pub delta_seconds: f32,
     /// The game's fixed tick in seconds, what a `FixedUpdate` is given; 1/60 by default.
     ///

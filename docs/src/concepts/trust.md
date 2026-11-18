@@ -32,6 +32,28 @@ editor; you can change it later from either.
 Games and the sandbox have no such question: they read their own files, which
 are trusted.
 
+### Shader overlays
+
+A project can replace one of the engine's shader modules with its own: a
+`.wgsl` file under `assets/shaders/` whose path names a module the engine
+composes is an **overlay** of it. `shaders/lib/std/camera.wgsl` replaces
+`khora::std::camera`, `shaders/pipelines/lit_forward.wgsl` replaces
+`khora::pipelines::lit_forward` (the `lib/` folder is left out of the name). Any
+other `.wgsl` is not an overlay and is ignored.
+
+An overlay is code the graphics card runs, so it follows the project's trust:
+
+- in a trusted project, it is read through the guard and replaces its module;
+  saving it recompiles the pipelines that use it, and deleting it gives the
+  engine's module back;
+- in a restricted project, it is never used, and each one is listed as a
+  *Shader overlay ignored* warning.
+
+When the project's trust changes — trusted, restricted, or another project
+opened — every overlay is applied afresh, those already on disk included, not
+only the ones saved since: trusting a project brings its shaders in at once, and
+restricting it gives the engine's back.
+
 ## The guard
 
 Every file a project holds is read through one **guard**, at the project's
@@ -66,8 +88,11 @@ trust it is read at:
 
 Beyond the file's size, each decoder has limits of its own — the bytes it may
 decode to, how many elements it may hold, an image's largest side (16 384 pixels
-trusted, 8 192 restricted). A decoder that panics is caught: the file is refused,
-the engine goes on.
+trusted, 8 192 restricted), a glTF mesh's vertices (2²⁴ trusted, 2²² restricted).
+A glTF's buffers and images are files too: each is read through the guard, and a
+URI that is absolute, names a scheme other than `data:`, or climbs out of the
+assets folder is refused (see [Assets — glTF files](./assets.md#gltf-files)). A
+decoder that panics is caught: the file is refused, the engine goes on.
 
 A file you downloaded carries the mark your system puts on downloads (on
 Windows, its `Zone.Identifier`). In a trusted project, such a file is read as

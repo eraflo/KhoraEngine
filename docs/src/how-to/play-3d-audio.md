@@ -77,17 +77,33 @@ listener**: the mixing lane leaves the pan centred. To stop a sound, despawn its
 `volume` to `0.0`. Playback is tied to entity lifetime — there is no global "playing
 sounds" registry.
 
+## Keep a sound heard when many play
+
+The mixer mixes a limited number of **voices** — 8, 32 or 128, whichever its envelope
+affords. When more sources play, the most audible keep a voice and the rest go silent for
+a while, their playback still advancing, so each one is heard again from where it would
+have been. Raise `priority` (0–255, 128 by default) on a sound that must never drop out,
+such as a voice line or the music: a higher priority wins over any loudness.
+
+```rust
+let mut line = AudioSource::new(dialogue);
+line.priority = 220; // kept over every louder effect of a lower priority
+```
+
 ## What the spatial mixer does
 
 Each frame the `SpatialMixingLane` reads the audio view (listener pose + a snapshot of
-every source), computes distance attenuation and stereo pan, and mixes into the buffer the
-CPAL callback drains. The mix runs at frame rate; the callback runs at the device sample
-rate, decoupled through the mix bus. See [Audio](../concepts/audio.md) for the model.
+every source), ranks the sources, and mixes the most audible into the buffer the CPAL
+callback drains. A source's gain is its `volume` divided by `1 + d²`, `d` being its
+distance to the listener: it grows quieter with distance and is never cut off. The mix
+runs at frame rate; the callback runs at the device sample rate, decoupled through the
+mix bus. See [Audio](../concepts/audio.md) for the model.
 
 ## Expected result
 
-The footstep grows louder as the listener approaches and pans left/right as it moves past;
-a 2D music source plays at constant volume regardless of position.
+The footstep grows louder as the listener approaches and pans left/right as it moves past.
+Every source is placed: a sound meant to be heard the same everywhere, such as music, is
+kept near the listener (a child of the listener's entity, at its origin).
 
 ## Related
 

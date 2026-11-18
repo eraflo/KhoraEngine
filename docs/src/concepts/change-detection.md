@@ -147,6 +147,14 @@ skipped while that family is switched off. A skipped system keeps its tick, so i
 next run sees what changed while it was away, and `ctx.resumed` tells that run it
 resumes — as it tells the system's first run on a world.
 
+A family can also be **scoped** rather than off: it runs only on the entities
+holding a marker component (`Activation::scope(family, marker)`). A system
+serving it then runs, and `ctx.scope` names the marker; the runner filters
+nothing, so a system serving a family that may be scoped keeps to the marker's
+holders itself (`world.holders(marker)`). A Flow's default `select` does it for
+it (see [How-to: add a flow](../how-to/add-a-flow.md)). A change of scope is not
+a skip: `ctx.resumed` does not tell it.
+
 ## Forgetting quietly
 
 Row ticks cost eight bytes per row. A column that has been quiet for a while —

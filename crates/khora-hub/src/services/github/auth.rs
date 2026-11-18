@@ -194,7 +194,7 @@ fn http_client() -> Result<reqwest::blocking::Client> {
 
 /// Returns the build-time Client ID, or an error pointing to the official release binaries.
 fn require_client_id() -> Result<&'static str> {
-    KHORA_HUB_CLIENT_ID.ok_or_else(|| {
+    client_id_of(KHORA_HUB_CLIENT_ID).ok_or_else(|| {
         anyhow::anyhow!(
             "This Khora Hub build was compiled without a GitHub OAuth Client ID, \
              so GitHub login is disabled. Use an official release binary from \
@@ -202,6 +202,14 @@ fn require_client_id() -> Result<&'static str> {
              release builds embed the project's OAuth credentials."
         )
     })
+}
+
+/// Returns the Client ID `embedded` names, or `None` when it is empty or blank.
+///
+/// CI passes an unset secret as an empty string, which `option_env!` reads as
+/// `Some("")`: a build without the secret has no Client ID either.
+fn client_id_of(embedded: Option<&'static str>) -> Option<&'static str> {
+    embedded.filter(|id| !id.trim().is_empty())
 }
 
 fn request_device_code() -> Result<DeviceCode> {
@@ -266,5 +274,18 @@ fn poll_token(device: &DeviceCode) -> Result<String> {
             Some(other) => anyhow::bail!("OAuth error: {other}"),
             None => anyhow::bail!("Unexpected empty response from token endpoint"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::client_id_of;
+
+    #[test]
+    fn an_empty_or_blank_client_id_is_no_client_id() {
+        assert_eq!(client_id_of(None), None);
+        assert_eq!(client_id_of(Some("")), None);
+        assert_eq!(client_id_of(Some("   ")), None);
+        assert_eq!(client_id_of(Some("Iv1.abc")), Some("Iv1.abc"));
     }
 }

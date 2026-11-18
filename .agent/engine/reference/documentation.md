@@ -4,42 +4,56 @@ Domain knowledge for Khora documentation. Consulted during Research (dispatch th
 to apply it to concrete files).
 
 ## Scope
-The book (`docs/src/`) and the two builds that read it — the docs site (`docs/site/`, Astro Starlight)
-and mdBook, kept until the site reaches parity — rustdoc, Mermaid diagrams, and keeping the AI docs
-(`.agent/`) and the human docs aligned with the code.
+The book (`docs/src/`) and the docs site that builds it (`docs/site/`, Astro Starlight; mdBook is
+retired), rustdoc, the docs workflow (`.github/workflows/docs.yml`), SVG figures, and keeping the AI
+docs (`.agent/`) and the human docs aligned with the code.
 
 ## Key files
-- The pages: `docs/src/**/*.md`, mdBook pages (no frontmatter, `# Title` on line 1, figures by
-  `{{#include}}`). `docs/src/SUMMARY.md` is the one navigation: mdBook reads it, the site builds its
-  sidebar from it, and every page must be listed there once (xtask `docs_pages_are_in_the_summary`,
-  `docs_site_nav_is_the_summary`).
+- The pages: `docs/src/**/*.md`, in mdBook's format (no frontmatter, `# Title` on line 1, figures by
+  `{{#include}}`, links to `x.md` or `x.html`). `docs/src/SUMMARY.md` is the one navigation: the site
+  builds its sidebar from it, and every page must be listed there once (xtask
+  `docs_pages_are_in_the_summary`, `docs_site_nav_is_the_summary`).
 - Docs site, `docs/site/` (Node is confined to it; no JS framework; fonts self-hosted by `@fontsource`):
   - `astro.config.mjs` — Starlight config: sidebar parsed from SUMMARY.md, theme, figure CSS/JS, the
-    links validator (`starlight-links-validator`, fails the build on a broken internal link or anchor).
+    links validator (`starlight-links-validator`, fails the build on a broken internal link or anchor),
+    the edit link (a page's `filePath` is `../src/x.md`, so "Edit page" opens `docs/src/x.md`).
   - `src/book/` — reads the book where it is, in memory, writing nothing back: `loader.mjs` (the
     `docs` collection), `page.mjs` (expands `{{#include}}`, takes the `# Title` as the page title,
     rewrites `x.md`/`x.html` links to routes and other `docs/src` files to their URL, drops
     `rust,ignore`-style fence attributes), `summary.mjs` (SUMMARY.md → sidebar), `assets.mjs` (copies
-    the non-Markdown files of `docs/src` into the generated `public/`), `site.mjs` (site URL and base).
+    the non-Markdown files of `docs/src` into the generated `public/`), `site.mjs` (site URL and base),
+    `redirects.mjs` (below).
   - `src/styles/khora.css` — the Khora theme over Starlight (navy and silver; gold only for the frame's
-    limit). The figures use `docs/theme/figures.css` and `docs/theme/steps.js`, shared with mdBook.
+    limit). A page with figures narrows the contents panel from 72rem so its column holds a 680 px
+    figure at 1280 px; a desktop column of 560–680 px draws the figure to its width; a phone keeps
+    680 px and scrolls the figure sideways.
+  - `src/styles/figures.css` (figure frames, the step-through bar) and `src/scripts/steps.js` (the
+    step-through script, imported by `src/components/Head.astro`).
+  - Old URLs: mdBook served a page `x.md` at `x.html`. `src/book/redirects.mjs` writes, after the build,
+    a redirect page at every such path (keeping the `#anchor`), computed from SUMMARY.md, plus mdBook's
+    own two (`BOOK_REDIRECTS`: a page's former name, a section's former page); a page `x/index.md` is served at its old
+    path already. `redirects.test.mjs` pins that every page has its old URL redirected.
   - `src/pages/index.astro` — the site's index: the landing page (see Landing page below).
   - `scripts/mount-api.mjs` — copies `target/doc` to `dist/api/` with an index of the crates.
-- mdBook: `docs/src/*.md` (chapters), `docs/src/SUMMARY.md`, theme `docs/theme/custom.css` (book),
-  `figures.css` + `steps.js` (figures and step-throughs), `home.css` (the book's home page, `home.md`); Mermaid through
-  `docs/mermaid-init.js` (CI's `mermaid.min.js`, else a pinned CDN build).
 - Build the site (Node ≥ 22.23.4), from `docs/site/`:
   - `npm ci` — install exactly the lockfile (never `npm install` to build; add a dependency only pinned
     exactly, after `npm audit` and a `security-auditor` review);
   - `npm run dev` — serve with live reload (a change under `docs/src` reloads the book);
   - `npm run build` — build `dist/`, validate every internal link, index the search;
   - `npm test` — the tests of `src/book/` and `src/landing/` (Node's test runner);
-  - `npm run frames` — fetch the landing's frames (below) into `frames/`; without them the build shows posters;
+  - `npm run frames` — fetch the landing's frames (below) into `frames/`; without them the build shows
+    posters. `-- --if-released` (CI) lets a release not published yet (404) through, nothing else;
   - rustdoc at `/api`: `cargo doc --workspace --no-deps` at the root, then `npm run build && npm run api`;
   - `npm run preview` — serve `dist/` (with `/api`) at `http://localhost:4321/KhoraEngine/`;
   - Astro reports usage to its makers unless told not to: set `ASTRO_TELEMETRY_DISABLED=1` (CI does), or
     run `npx astro telemetry disable` once.
-- Build mdBook: `mdbook build docs/` / `mdbook serve docs/ --open`.
+- CI (`.github/workflows/docs.yml`): on a pull request and a push to `dev`, build and test the site
+  (`npm ci --ignore-scripts`, `npm test`, `npm run frames -- --if-released`, `cargo doc --workspace
+  --no-deps`, `npm run build`, `npm run api`); on a push to `main` (or by hand on `main`), the same,
+  then deploy `docs/site/dist` to GitHub Pages (`actions/upload-pages-artifact`,
+  `actions/deploy-pages`). `rust.yml` runs `cargo doc … --document-private-items` with
+  `RUSTDOCFLAGS=-D warnings`, as `cargo gate` does. The repository's Pages source must be "GitHub
+  Actions".
 - Landing page — the site's index, one tagline: "Every frame, negotiated.":
   - `src/pages/index.astro` (a Starlight splash page whose `hero` only hides the page title:
     `src/components/Hero.astro` draws nothing), `src/styles/landing.css`, `src/landing/film.js`
@@ -65,7 +79,7 @@ and mdBook, kept until the site reaches parity — rustdoc, Mermaid diagrams, an
 ## Rules
 - **Document in existing files in place — no separate ADR section or ADR files** (project convention).
 - Public APIs require rustdoc; `# Examples` compile via `cargo test --doc`. Use intra-doc links (`[Type]`).
-- Change a public API → update the matching mdBook chapter in the same change.
+- Change a public API → update the matching book page in the same change.
 - **Every reader can enter every concept** (owner, 2026-10-19). A page opens with the idea in everyday
   words — a `<p class="kp-lede">`, no jargon, no label above it — then goes down to how it works, what it
   guarantees, its limit, its sources. Decide concept by concept who arrives there knowing what: someone
@@ -86,7 +100,7 @@ and mdBook, kept until the site reaches parity — rustdoc, Mermaid diagrams, an
 - **Step-through figures:** a mechanism that unfolds over time gets an animation the reader steps
   through — `<figure class="kp-steps">` holding the figure and an `<ol class="kp-steps-text">`, one plain
   caption per step. SVG parts declare the steps they show at (`data-on="1 3"`) and their transform from a
-  step on (`data-tf="2:translate(40px, 0)|4:none"`). `docs/theme/steps.js` adds Back / Next, numbered
+  step on (`data-tf="2:translate(40px, 0)|4:none"`). `docs/site/src/scripts/steps.js` adds Back / Next, numbered
   dots and the arrow keys; `data-autoplay="4000"` plays it once on screen, with Pause, never under
   reduced motion. Explain with a concrete picture first and name the technical term after. Examples:
   `docs/src/images/scripting/flipbook.svg`, `docs/src/images/home/negotiated-frame.svg`.
@@ -96,7 +110,7 @@ and mdBook, kept until the site reaches parity — rustdoc, Mermaid diagrams, an
   never the generated wrappers (`CLAUDE.md`, `.cursor/`, …).
 
 ## Skills
-- [`build-and-test`](../skills/build-and-test/SKILL.md) — `cargo test --doc` for doc examples; the site and mdBook builds above.
+- [`build-and-test`](../skills/build-and-test/SKILL.md) — `cargo test --doc` for doc examples; the site build above.
 - **`/impeccable`** — for the docs **visual language** (`docs/src/design/`): `audit` / `critique` / `polish`.
 
-Verify the site builds (`npm run build`, links valid), mdBook builds, and `cargo test --doc` passes.
+Verify the site's tests pass and it builds (`npm test`, `npm run build`, links valid), and `cargo test --doc` passes.

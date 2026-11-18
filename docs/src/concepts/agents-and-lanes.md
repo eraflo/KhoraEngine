@@ -93,6 +93,14 @@ the agent, and the **terms** of the run: the epoch, the envelope, the time lent 
 a lane that reads a budget, the fixed step. Its logic is written once, in
 `khora-core`; the scheduler and the tests run the same code.
 
+New terms reach the installed layer at its next run, even while another layer is
+on its way in. They come in two parts. The **agent's part** — the epoch, the
+envelope, the budget, the fixed step, whether the row runs over budget, when the
+agent last quoted, the frame's target — applies to the installed layer at once, so
+its reports answer the epoch just lent. The **row's part** — the quote the row's
+drift is measured from — belongs to one row, so a new row's quote applies only from
+that row's swap.
+
 A frame goes like this:
 
 1. **Lending.** At the frame start, the allocation in force is lent to the agents
@@ -173,6 +181,39 @@ A family's outputs go to one of three places, by the attribute on the field:
 | `#[deck]` | a deck slot, an owned value | a later phase's `#[deck]` input, or a Maintenance `DataSystem` |
 | `#[staged]` | the reserve, for a run off the frame | the `Boundary` systems of the first frame after the run ends |
 
+## Events and requests: the channels
+
+The bus and the deck last one frame. What happens at one moment and is read at
+another — a key pressed, two bodies touching, a file saved, a request to load an
+asset — goes into a **channel**, a numbered queue that someone fills and others
+read later, like a ticket roll at a counter.
+
+There is one `Channel<T>` per kind of event, each its own runtime entry, never one
+shared bus: a reader declares only the events it reads, and contends with no one
+else. Each reader keeps its own place in the queue, a **cursor**, so reading
+changes nothing in the channel: many readers read at once, and a lane that reads
+events declares a read, not a lock. A reader with nowhere to keep a cursor, such as
+a data system, reads under a name (`read_for("name")`). A `#[take]` field is
+different: it **drains** the channel — its family's mailbox of requests — so the
+requests are the lane's alone, and it counts as a lock.
+
+A channel is always **bounded**, and there is no default size: whoever makes one
+chooses what a full channel does.
+
+| When full | For | Channels |
+|---|---|---|
+| `DropOldest`: the oldest item leaves | streams where the recent matters more than the complete | input (2 048), collisions (4 096), script events (4 096), asset changes (4 096) |
+| `Reject`: the new item is refused | requests a consumer must answer in order | asset requests (4 096), the project index (64), scene loads (64), script compiles (1 024) |
+
+Nothing is lost silently. What a full channel lost is counted by `dropped`; what a
+reader skipped or threw away on purpose, by `discarded`. A reader left behind by a
+drop resumes at the oldest item still held: it loses history, never its place. An
+item type may declare that a newer item **supersedes** an earlier one still queued
+(`Supersedes`): two saves of one file between frames are one reload, while two
+collisions stay two. And when a lane's inputs are refused after its `#[take]` has
+drained its requests, they are given back to the front of their channel
+(`Restore`): the lane never saw them, so the next run does.
+
 ## What an agent declares
 
 Two families can run side by side only if they do not touch the same thing. What
@@ -222,7 +263,10 @@ the earlier wave wrote.
 The declaration is enforced. An agent or a lane reaches a runtime entry through
 `EngineContext::resource` (to read) or `EngineContext::locked` (to lock), and
 both refuse, with an error naming the agent and the type, what the contention
-does not name. A lane cannot even ask: its inputs are fetched for it.
+does not name. A lane cannot even ask: its inputs are fetched for it. The deck
+slots a run writes are checked in debug builds: each one the contention does not
+name is logged as an error and listed by
+`ExecutionScheduler::undeclared_deck_writes`. A release build does not check.
 
 **Declaring more than you touch is not harmless.** A lane that reads an entry it
 never uses still keeps another family out of its wave. Nothing turns red; the
@@ -272,6 +316,23 @@ For contributors: the contract is in `khora-core/src/lane/` (`contract/` for
 the bus, the deck and the reserve), the `Agent` trait and the `Place` in
 `khora-core/src/agent/`, the `LaneAgent` in `khora-agents/src/lane_agent/`, and
 the waves in `khora-control/src/scheduler/waves.rs` and `execution.rs`.
+
+**Two locks, one order.** An agent and its place each sit behind a mutex. Whatever
+holds both — the DCC asking for an offer, the scheduler lending an allocation, the
+event pass waking the agent — takes the agent's lock first, then the place's. A
+layer's run, a swap and a run off the frame take the place's alone. With one order
+and no lock taken the other way, no two threads can each hold one lock and wait for
+the other.
+
+**Lock waits share one deadline.** A lane's `#[locked]` inputs are taken when its
+inputs are fetched (`InputSource::lock`, `khora-core/src/lane/contract/io/`). Every
+lock of one fetch shares one deadline, started at its first wait: the lane's
+budget, or `LOCK_WAIT` (2 ms) without a positive one, at most `MAX_LOCK_WAIT`
+(250 ms). A lock still held elsewhere at the deadline — or held by the same fetch —
+is refused as `LockTimedOut` rather than blocking a worker thread: the run records
+nothing that frame, and its agent is woken (`InputRefused`) once, not on every
+frame the refusal lasts. A quote does not wait at all: a lock
+held elsewhere refuses it at once.
 
 **Notation.** For a family *f* with its installed layer, write *W(f)* for the
 deck slots it writes, *R(f)* for the slots it reads, *Rd(f)* for the runtime

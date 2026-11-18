@@ -314,8 +314,8 @@ fn are_hard_dependencies_completed(
 ) -> bool {
     for dep in dependencies {
         if matches!(dep.kind, DependencyKind::Hard) {
-            // A dependency's condition is not evaluated here: a conditional Hard
-            // dependency counts as active.
+            // A target off, skipped, failed or not yet run this frame holds the
+            // dependent back, and its own dependents after it.
             match completion_map.outcome(dep.target) {
                 Some(CompletionOutcome::Completed) => {}
                 Some(CompletionOutcome::Skipped | CompletionOutcome::Failed) | None => {

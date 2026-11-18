@@ -180,7 +180,7 @@ khora_script::inventory::submit! {
 | `family` | the `LaneFamily`; every lane listed must name it as its `Family`, or the line does not compile |
 | `phase` | where the family's place runs: `INIT`, `OBSERVE`, `TRANSFORM`, `MUTATE`, `OUTPUT`, `FINALIZE`, a game's own phase, or `BACKGROUND` (off the frame) |
 | `importance` | `Critical`, `Important` or `Optional`; it weighs the family in GORNA, and only `Optional` work is skipped when the frame runs late |
-| `after` | the families it runs after within its phase, by `AgentId` |
+| `after` | the families it runs after within its phase, by `AgentId`; on a frame where one of them did not complete its run, the family is skipped too ([The frame](./the-frame.md#phases-and-waves)) |
 | `fixed_step` | `None` to run once a frame, `Some(step)` to run at a fixed step |
 | `default_level` | optional: the `StrategyId` the family starts on; else its menu's first row |
 | `lanes` | its lanes, each built with `Default` |

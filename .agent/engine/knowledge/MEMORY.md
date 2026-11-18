@@ -38,8 +38,8 @@ Deep history lives in git and `docs/plans/`.
   its frames as a release asset (`npm run frames`). Detail: `reference/documentation.md`.
 
 ## Open
-- The owner's to-do from 8b: create the `landing-frames-v1` release; `.github/workflows/docs.yml` still
-  runs the removed `cargo xtask landing` (8f).
+- The owner's to-do from 8b/8f: create the `landing-frames-v1` release (until then the site builds with
+  its posters); set the repository's Pages source to "GitHub Actions" before the first deploy from `main`.
 - The UI atlas never frees a replaced image's space (bump allocator).
 - `hidden_entities` is never filled: per-component activation is an ECS feature still to design (every
   Flow must honour the flag, or it is decorative).

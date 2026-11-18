@@ -1,6 +1,8 @@
 # Ergon reference
 
-The Ergon language as it compiles and runs: every construct, with an example,
+Ergon is the language game makers write their gameplay in; Rust stays the engine's
+([Why Ergon](../concepts/scripting/index.md#why-ergon)). This page is the
+language as it compiles and runs: every construct, with an example,
 and a line on what parses but does not run yet. For how a
 script runs inside a frame — turns, safepoints, saves, edits — see
 [Scripting](../concepts/scripting/index.md).
@@ -34,7 +36,7 @@ behavior Guard {
 
 | Item | Status | Notes |
 |---|---|---|
-| `import "path.erg";` | runs | anywhere among the items, by convention first; paths relative to `assets/scripts/`, the one folder scripts live in; a cycle is refused with its chain. Every imported module joins **one flat namespace**; `as Alias` parses and is unused |
+| `import "path.erg";` | runs | anywhere among the items, by convention first; paths relative to `assets/scripts/`, the one folder scripts live in, written with `/` (a `\` is read as one); a path that is absolute, holds a `..` anywhere or does not end in `.erg` is refused; a cycle is refused with its chain; a module imported from several places is read once. Every imported module joins **one flat namespace**; `as Alias` parses and is unused |
 | `fn <type> Name(params) { … }` | runs | free functions; called before their declaration and recursively; `this` is refused in them; a name an engine function already has is refused |
 | `behavior Name { … }` | runs | a component of the same name, its fields the behavior's, with a state companion `Name#state`; attached by adding the component (`GameWorld::add_declared_component`). Names are global: two modules declaring one is refused |
 | `system Name { … }` | runs | a behavior with no subject, run once a frame on an entity of its own; see [Systems](#systems). Its name is global like a behavior's |
@@ -186,7 +188,7 @@ Editing an attribute applies at the next hot reload and never touches a row.
 | async method | `async void Attack() { await 0.5s; … }` | runs |
 | event handler | `on Damaged(int amount) { … }`, `on Lost => become Patrol;` | runs — parentheses optional without parameters |
 | schedule | `every 0.5s { … }` | runs — first fires one full interval in |
-| one-shot | `after 10s { … }`, `after 10s => become Patrol;` | runs — fires once |
+| one-shot | `after 10s { … }`, `after 10s => become Patrol;` | runs — fires once; a state's `after` is armed again each time its state is entered, a behavior's never |
 
 A member calls a sibling by its bare name. Inside a state, that state's own
 methods come first, then the behavior's, then free functions; outside every
@@ -205,7 +207,7 @@ these parameters:
 | `void Update(float dt)` | every turn, last, with the time since its last turn — the frame's delta, or more when a rate or the fuel kept it out of some frames |
 | `void OnSpawn()` | once per entity, ever — a save remembers it ran; a hot reload does not rerun it |
 | `void OnLoad()` | after a game save restored the instance, before anything else; never on a scene load or Stop |
-| `void OnDespawn()` | when the despawn is decided — by `this.Despawn()`, or noticed a frame later |
+| `void OnDespawn()` | when the despawn is decided — by `this.Despawn()`, in the same turn with the fuel it has left; any other despawn, or the behavior's component removed, is noticed the next frame, before any turn. See [Despawn](#despawn) |
 | `void OnResumeFailed(string member)` | an edit left nothing of a body part-way through; `member` is e.g. `"OnSpawn"`, `"Chase.Attack"`, `"__every(0.5)"` |
 | `void FixedUpdate(float dt)` | once per fixed simulation step the frame took, `dt` the step — before events and `Update`; never `async`, and refused if it reaches an `async` member |
 
@@ -263,12 +265,17 @@ behavior Guard {
   `become` or at the start — writes its defaults and re-arms its schedules.
 - A state's member wins over the behavior's member of the same name — for the
   engine's calls and for a call written inside the state; the behavior's is the
-  fallback in every state. A state's defaults are its own code: they read the
-  behavior's fields, the state's parameters and its fields declared above, and
-  call its methods — wherever the `become` that enters it is written, never
-  seeing that member's locals or the data of the state it is written in.
+  fallback in every state. A state's field defaults are **constants**, like a
+  behavior's: they are data, written whenever the state is entered. A value
+  computed at the switch is passed as a parameter:
+  `become Chase(prey, prey.Position());`.
 - `become Name;` / `become Name(args);` switches state and **does not end the
   member**: the statements after it still run.
+- `become` writes in one order: it reads its arguments first, while the state
+  it leaves is still readable (`become Chase(foe)` may pass the old state's
+  `foe`); then writes the new state's defaults and arms its timers at their
+  full interval; then writes the arguments; and writes which state the
+  behavior is in **last**, so a state is never half-entered.
 
 ## Statements
 
@@ -512,6 +519,31 @@ behavior Turret {
   writes, spawns, removals and events — and the ids it reserved go back unspent.
 - `Set`, `Add`, `Remove`, `Get`, `Has`, `Spawn` and `SetMaterial` are reserved: no
   function or method may take one of these names.
+- Commands on one entity are never merged: they apply in the order queued. One
+  that fails at the frame's end — a `Set` on an entity without the component, a
+  despawned target — is logged and skipped, and the rest still apply; a command
+  naming an entity whose spawn was refused is skipped. `Translate` adds to the
+  position the entity has when it applies, so two nudges compose; `SetPosition`
+  and the other absolute writes are last-wins, reported in debug builds
+  ([Changing the world](../concepts/scripting/writing.md#a-script-never-writes-the-world)).
+
+### Despawn
+
+`e.Despawn()` removes `e` with its children, at the frame's end; a target
+already gone is logged and skipped. `OnDespawn` is the behavior's goodbye:
+
+- a behavior despawning its own entity says it in the same turn, with the fuel
+  its turn has left, while the entity is still in the view;
+- any other despawn, or the behavior's component removed, is noticed the next
+  frame, before any turn, by entity, then module, then behavior name. Its
+  entity has left the view: `Position()` faults there, and a behavior only
+  detached from an entity still in the world reads where it is;
+- a goodbye is said once, by an instance that spawned and is not disabled. With
+  no fuel left for it, it is skipped and the instance dropped all the same;
+- an `OnDespawn` cut short by fuel or waiting on an `await` is never resumed,
+  and one that faults leaves nothing;
+- an instance that left the script family's scope, or whose entity left while
+  scripts were off, is forgotten without a goodbye.
 
 ## Reading components
 
@@ -607,7 +639,7 @@ module's.
 |---|---|
 | `[Critical]` | served first: a turn for each of its instances due this frame, at what a turn of it costs, before the others share the rest — and what nobody else takes. A budget too short goes to the critical behaviors alone; it is never exceeded |
 | `[Budget(d)]` | one positive duration: the most it spends a frame; what it does not take goes to the others |
-| `[Rate(f)]` | one positive frequency: at most `f` turns a second. Its instances spread over the period, each a turn once a period; a frame it skips keeps its mail and is not a deferral. Refused with a `FixedUpdate` |
+| `[Rate(f)]` | one positive frequency: at most `f` turns a second. Its instances spread over the period, each a turn once a period: an instance's first turn waits a share of the period its entity's index sets (a hash, in 1/1024ths; index 0 at once), so they do not all fall on one frame, and one behind by several periods still takes one turn a frame; a frame it skips keeps its mail and is not a deferral. Refused with a `FixedUpdate` |
 
 Each at most once. **No time is lost** to a frame an instance does not run — for
 its rate or for fuel: its next turn is handed all the time since its last, its
@@ -779,6 +811,40 @@ without `?` and every `with`, and none of the `without`.
 | `Health h` … `without Health` | `Health` is both named and excluded | no row could match; with `Health?`, its binding would always be `null` |
 | only `?` bindings and `without` | a query needs a component every row holds | bind one without `?`, or name one after `with` |
 | `with`/`without` naming a struct or an unknown name | `X` is not a component | — |
+
+## Costs and limits
+
+Fuel is counted in instructions. Most cost 1; a few pay for what they handle:
+
+| Instruction | Fuel |
+|---|---|
+| a safepoint | 0 — it marks a place, it does no work |
+| building or writing `n` values: an array or struct literal, a component patch, a `Get`, a query's `Has`, a sweep's row write, an interpolation, a `Spawn` | `1 + n` |
+| `become` | `1 +` the fields it writes |
+| `Raise` | 4 |
+| an engine function | the cost it declares (1 for every engine function today) |
+| **sized** — known only while running: copying a text, array or struct, reading or writing a field that holds one, `RemoveAt` | `1 +` the values it touches (each element, recursively); `RemoveAt` `1 +` the elements it shifts |
+| starting a sweep | `1 +` the rows it scans |
+
+A sized operation is also a place to stop: it does not start when the fuel
+left cannot pay for it, unless it is the first thing the run does, so every
+run moves forward. See [Stopping is ordinary](../concepts/scripting/turns.md#stopping-is-ordinary).
+
+| Limit | Value | Past it |
+|---|---|---|
+| registers per function — its parameters, locals and the temporaries of its expressions at their peak | 256 | the function does not compile: "needs more than 256 registers — split it into smaller functions" |
+| call depth | 64 calls | the turn faults (`StackOverflow`) |
+| frame memory: the texts, arrays and structs built during one frame, every script together | 65,536 objects (counted, not bytes) | the turn faults (`ArenaFull`) |
+
+## Compile errors
+
+A syntax error does not stop the parser. It records the error and skips ahead
+to a place it can start again from: at the top of a file, the next `behavior`,
+`system`, `struct`, `component`, `fn` or `import`; inside a body, past the next
+`;`, or at the `}` that closes it. So one save lists every syntax error of the
+file. Types are checked only once the module and everything it imports parse:
+a type error behind a syntax error shows once the syntax error is fixed. Every error reaches the editor's
+Problems tab ([Editor — Scripts](./editor.md#07--scripts)).
 
 ## Not yet
 

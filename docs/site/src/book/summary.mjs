@@ -1,8 +1,8 @@
 // The book's table of contents, read from `docs/src/SUMMARY.md`.
 //
-// SUMMARY.md is the one source of the navigation: mdBook reads it, and the
-// site builds its sidebar from it here, at build time. Its grammar is
-// mdBook's, the subset the book uses:
+// SUMMARY.md is the one source of the navigation: the site builds its sidebar
+// from it here, at build time. Its grammar is mdBook's (the book's first
+// build, retired since), the subset the book uses:
 //
 //   # Summary                  the book's title line, first
 //   [Home](./home.md)          a chapter before the first part
@@ -87,7 +87,7 @@ export function summaryPaths(tree) {
  * Builds Starlight's `sidebar` from the parsed tree.
  *
  * A part becomes an open group; a chapter with children becomes a folded
- * group that opens on its own page first, as mdBook folds them.
+ * group that opens on its own page first, as mdBook folded them.
  *
  * @param {ReturnType<typeof parseSummary>} tree
  * @returns {object[]} Starlight sidebar items, linked by page id.

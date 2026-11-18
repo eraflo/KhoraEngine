@@ -1,5 +1,7 @@
 # UI
 
+<p class="kp-lede">The score in a corner, a health bar, a menu: a game's interface is drawn flat over the world, in the pixels of the screen. In Khora each panel, label and picture of that interface is an object of the game like any other, and the engine draws them over the scene every frame.</p>
+
 In-engine UI as ECS entities, laid out behind a single trait and rasterized through
 the same GPU device as everything else. This page explains *why* UI is retained-mode
 ECS with a swappable layout engine, and how it plugs into the frame. It is an
@@ -64,9 +66,31 @@ the renderer already produced.
 > the shape the engine intends, not a path a frame currently takes.
 
 Notably, there is no separate "UI renderer" — the UI render lane shares the one GPU
-device with everything else, reached through the same typed-ID abstraction. Text
-rendering uses a glyph cache and atlas that live in the backend because they depend
-on that device.
+device with everything else, reached through the same typed-ID abstraction.
+
+## Text
+
+Text goes through three steps, each behind a trait so a backend can be swapped:
+
+- a **shaper** (`TextShaper`; Parley by default) turns a string into glyphs placed
+  on lines, once per change of the text (`ui_text_layout`);
+- a **rasteriser** (`GlyphRasterizer`; swash by default) draws each glyph into a
+  small image, once;
+- `glyphs_on_gpu` places those images in the **glyph atlas** on the GPU, and the UI
+  lane draws each glyph as a quad sampling its rectangle.
+
+A font file is read by one rule both backends share: its **first face**. A font
+collection (`.ttc`) holds several faces; the shaper would otherwise pick the one
+nearest the weight it asks for while the rasteriser drew the first, and the text
+would be laid out in one face and drawn in another.
+
+**Glyphs land on whole pixels.** A glyph image is keyed by its font, its glyph, its
+size rounded to a quarter of a pixel, and where its pen falls within a pixel,
+rounded to one of four quarter-pixel bins. The image of a bin already holds that
+fraction, so the lane draws it from a whole pixel: the text's origin and each
+line's baseline are rounded, and each texel of the image lands on one pixel of the
+screen. Text stays sharp wherever it is placed, and the same glyph at pens a whole
+number of pixels apart shares one image.
 
 ## Editor UI versus game UI
 

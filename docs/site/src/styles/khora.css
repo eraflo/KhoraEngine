@@ -1,7 +1,7 @@
 /* ============================================================
    Khora — the documentation site's theme, over Starlight's.
 
-   The book's identity (docs/theme/custom.css, docs/src/design/editor.md):
+   The book's identity (docs/src/design/editor.md):
    navy surfaces, silver structure, Archivo for words, IBM Plex Mono for
    code. Gold has one meaning on the whole site: the frame's limit — the
    16.7 ms line, the budget a figure follows. Nothing else is gold: not a
@@ -12,7 +12,7 @@
    ============================================================ */
 
 /* ---------- Tokens: OKLCH, navy spectrum ----------
-   The same tokens as the book and the figures (`var(--k-*, #hex)`). */
+   The tokens the figures read (`var(--k-*, #hex)`). */
 :root {
     /* Surfaces: a deliberate blue-black, never pure black. */
     --k-bg-0: oklch(0.16 0.022 265);
@@ -368,6 +368,42 @@ main:has(.kp-home) h1#_top {
     margin: 0;
 }
 
+/* A desktop column a little narrower than a figure (a window between the
+   two sidebars' breakpoint and ~1260 px) draws it to the column's width,
+   its text at 82 % or more, rather than scrolling it. A phone's column
+   keeps the readable size and the scroll. */
+.kp-figure-frame {
+    container-type: inline-size;
+}
+
+@container (min-width: 560px) {
+    .kp-figure-frame .kp-figure {
+        min-width: 0;
+    }
+}
+
+/* A page with figures gives its column the width a figure is drawn at:
+   from Starlight's two-sidebar breakpoint (72rem), the contents panel on
+   the right narrows to 13rem until the window is wide enough to give it
+   its full width, so at 1280 px the column holds 680 px. The two widths
+   follow Starlight's own (`TwoColumnContent.astro`), the sidebar width
+   swapped for 13rem on the right. */
+@media (min-width: 72rem) {
+    [data-has-toc]:has(.kp-figure-frame) .right-sidebar-container {
+        width: max(
+            13rem,
+            calc(var(--sl-sidebar-width) + (100% - var(--sl-content-width) - var(--sl-sidebar-width)) / 2)
+        );
+    }
+
+    [data-has-sidebar][data-has-toc]:has(.kp-figure-frame) .main-pane {
+        width: min(
+            calc(100% - 13rem),
+            calc(var(--sl-content-width) + (100% - var(--sl-content-width) - var(--sl-sidebar-width)) / 2)
+        );
+    }
+}
+
 /* Starlight spaces every block of the content; a figure's inner parts are
    spaced by the figure itself. */
 .sl-markdown-content .kp-steps > *,
@@ -537,6 +573,19 @@ main:has(.kp-home) h1#_top {
     margin: 0 0 18px;
 }
 
+/* The home page's headings are Markdown, so the contents panel lists them.
+   Starlight wraps each with its anchor link and sizes the wrapper as the
+   heading, and the heading inside it is inline (its margins do nothing);
+   here the wrapper takes the size and spacing this page gives the heading. */
+.sl-markdown-content .kp-home .sl-heading-wrapper {
+    font-size: 1em;
+    margin: 0 0 18px;
+}
+
+.sl-markdown-content .kp-idea .sl-heading-wrapper {
+    margin: 0 0 10px;
+}
+
 .kp-door-list {
     list-style: none;
     margin: 0;
@@ -601,7 +650,10 @@ main:has(.kp-home) h1#_top {
     gap: 0 40px;
 }
 
-.kp-ideas h2 {
+/* The section's title spans the row; Starlight wraps a Markdown heading
+   with its anchor link, so the wrapper is the grid's item. */
+.kp-ideas > .sl-heading-wrapper,
+.kp-ideas > h2 {
     grid-column: 1 / -1;
 }
 

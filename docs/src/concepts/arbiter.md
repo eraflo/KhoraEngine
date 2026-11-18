@@ -108,9 +108,19 @@ spread and runs.
   `%APPDATA%`, `~/Library/Application Support` or `$XDG_DATA_HOME`
   (`~/.local/share`). The `<machine>` key is 16 hex digits hashed from the graphics
   adapter, the CPU's model and cores, and the system (`MachineIdentity::key`).
-- **Whose.** Only a profile learnt by this engine version, running this game, is used;
-  any other is logged and left. A player's first boot, with nothing learnt yet, reads
-  the profile the game shipped beside its `runtime.json` (`profile.ron`), if any.
+- **The key.** The hash is FNV-1a 64 over a fixed encoding of those fields, never
+  Rust's `DefaultHasher`, so the same machine has the same key on every run and with
+  every build of the engine. The adapter's fields include its driver and driver
+  version, and the system's its version and build: a driver or system update gives
+  the machine another key, so what was learnt is no longer found and learning starts
+  again. The profile filed under the old key stays on disk, unused.
+- **Whose.** Only a profile learnt by this engine version, running this game, on this
+  machine (its key), is used; any other is logged and left. A player's boot with
+  nothing learnt on this machine — the first one, or the first after an update —
+  reads the profile the game shipped beside its `runtime.json` (`profile.ron`), if
+  any. That one is checked for the engine version and the game only, not the
+  machine: it was learnt on another one, and seeds the player's until
+  the player's own runs take over.
 - **How much it weighs.** A seeded row counts as many prior runs as it was learnt
   from, at most 20, so this machine's own runs take over within a second.
 - **Who keeps them.** Only an app that keeps user files; `KHORA_PROFILES` names a
@@ -352,7 +362,10 @@ upgrade again.
 The **cost model** forecasts. For each agent the DCC fits a `CostModel`,
 *c* · *f*(*n*) over *f* ∈ {1, *n*, *n* log *n*, *n*²}, on its reports: *n* is the
 run's quoted host time, the time its own measured run took. Read at each agent's
-latest workload and summed over the waves, it forecasts the frame. A forecast over
+latest workload and summed over the waves, it forecasts the frame: each wave counts
+for its slowest member, an agent the published waves do not name counts as a wave of
+its own, an agent at the background counts for nothing, and one that reported no
+workload yet is left out. A forecast over
 the setpoint tightens the target the round shares — by at most half — and opens an
 epoch (`ForecastBreach`). It tightens the share, never the governor's setpoint, so one
 overrun is not cut twice.

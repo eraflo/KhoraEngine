@@ -34,8 +34,15 @@ fn setup(&mut self, world: &mut GameWorld, runtime: &Runtime) {
 }
 ```
 
-`InputBinding` is `Key(KeyCode)` or `Mouse(MouseButton)`. The engine drains the input
-queue into the map once per frame, before your `update` runs.
+`InputBinding` is `Key(KeyCode)` or `Mouse(MouseButton)`. The engine folds the frame's
+input into the map once per frame, before your `update` runs (the `input_map_update`
+system, first in `PreSimulation`).
+
+The map and the `inputs` slice handed to `update` read the same stream, the runtime's
+`Channel<InputEvent>`. Neither takes the events from it: each reads under a cursor of
+its own, so both see every event, whichever runs first. The stream keeps the last 2048
+events (`INPUT_BACKLOG`) for a reader that has stopped reading — a minimised window, a
+system that ran once — and drops the oldest past that.
 
 ## Read actions in `update`
 
@@ -57,6 +64,13 @@ if let Some(map_arc) = &self.input_map {
 
 `is_pressed` is true every frame the action is held; `just_pressed` / `just_released` are
 true only on the transition frame and clear on the next update.
+
+**Losing focus lets go of everything.** When the window stops receiving input (an
+alt-tab), the OS never reports the release of a key held then. The platform sends
+`InputEvent::FocusLost` instead, and the map releases every held action, reporting each
+as `just_released` that frame: a character sprinting when the player tabbed away stops,
+and does not sprint on when the window comes back. Code that derives its own state from
+the raw `inputs` must do the same on `FocusLost`.
 
 ## Use the real frame delta
 

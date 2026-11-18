@@ -1,0 +1,133 @@
+<svg id="fig-data-hot-reload" class="kp-figure" viewBox="0 0 760 390" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-data-hot-reload-title kp-data-hot-reload-desc">
+  <title id="kp-data-hot-reload-title">Hot reload: a saved file reaches the entities holding it, or leaves them their last good copy</title>
+  <desc id="kp-data-hot-reload-desc">A texture file is saved. The watcher passes the change on within its budget. The asset service drops its cached copy, the parts it served and the containers reading it, and announces each. At PreExtract, asset_reload requests a fresh copy of each changed asset an entity holds; it is decoded off the frame while the entity keeps showing its last good copy. When the new copy lands it replaces the old one under the same uuid and the old GPU copy is retired. When the new bytes do not decode, the last good copy stays until the file changes again.</desc>
+  <style>
+    #fig-data-hot-reload { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-data-hot-reload .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-data-hot-reload .kp-station-box { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-data-hot-reload .kp-card { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-data-hot-reload .kp-slot { fill: var(--k-bg-2, #181e2b); stroke: var(--k-line, #383d48); stroke-width: 1; stroke-dasharray: 3 3; }
+    #fig-data-hot-reload .kp-flow { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; fill: none; }
+    #fig-data-hot-reload .kp-arrowhead { fill: var(--k-silver-dim, #809db2); }
+    #fig-data-hot-reload .kp-token { fill: var(--k-gold, #e4b65c); }
+    #fig-data-hot-reload .kp-old { fill: var(--k-silver-dim, #809db2); }
+    #fig-data-hot-reload .kp-ring { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.75; }
+    #fig-data-hot-reload .kp-cross { stroke: var(--k-gold, #e4b65c); stroke-width: 2; fill: none; }
+    #fig-data-hot-reload .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 16px; }
+    #fig-data-hot-reload .kp-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 17px; }
+    #fig-data-hot-reload .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-data-hot-reload .kp-strong { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+    #fig-data-hot-reload .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+    #fig-data-hot-reload .kp-mono { fill: var(--k-fg-1, #c9ced3); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-data-hot-reload .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+  </style>
+  <defs>
+    <marker id="kp-data-hot-reload-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path class="kp-arrowhead" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+  <rect class="kp-bg" x="0" y="0" width="760" height="390" rx="8"/>
+  <!-- The four stations -->
+  <rect class="kp-station-box" x="30" y="30" width="160" height="120" rx="6"/>
+  <rect class="kp-station-box" x="215" y="30" width="160" height="120" rx="6"/>
+  <rect class="kp-station-box" x="400" y="30" width="160" height="120" rx="6"/>
+  <rect class="kp-station-box" x="585" y="30" width="145" height="120" rx="6"/>
+  <text class="kp-station" x="44" y="56">The file</text>
+  <text class="kp-station" x="229" y="56">The asset service</text>
+  <text class="kp-station" x="414" y="56">The reload</text>
+  <text class="kp-station" x="599" y="56">The entities</text>
+  <text class="kp-mono" x="44" y="76">textures/wall.png</text>
+  <text class="kp-mono" x="229" y="76">its cache</text>
+  <text class="kp-mono" x="414" y="76">asset_reload</text>
+  <text class="kp-mono" x="599" y="76">HandleComponent</text>
+  <text class="kp-note" x="44" y="94">watched, 512 events/s</text>
+  <text class="kp-note" x="229" y="94">announces each change</text>
+  <text class="kp-note" x="414" y="94">PreExtract, each frame</text>
+  <text class="kp-note" x="599" y="94">what the frame shows</text>
+  <path class="kp-flow" d="M190,90 L213,90" marker-end="url(#kp-data-hot-reload-arrow)"/>
+  <path class="kp-flow" d="M375,90 L398,90" marker-end="url(#kp-data-hot-reload-arrow)"/>
+  <path class="kp-flow" d="M560,90 L583,90" marker-end="url(#kp-data-hot-reload-arrow)"/>
+  <!-- Slots -->
+  <rect class="kp-slot" x="44" y="108" width="132" height="30" rx="4"/>
+  <rect class="kp-slot" x="229" y="108" width="132" height="30" rx="4"/>
+  <rect class="kp-slot" x="414" y="108" width="132" height="30" rx="4"/>
+  <rect class="kp-slot" x="599" y="108" width="117" height="30" rx="4"/>
+  <!-- The file's new bytes -->
+  <g data-on="1 2 3 4 5">
+    <rect class="kp-token" x="52" y="114" width="18" height="18" rx="3"/>
+    <text class="kp-gold" x="78" y="128">saved</text>
+  </g>
+  <g data-on="1">
+    <rect class="kp-ring" x="39" y="103" width="142" height="40" rx="6"/>
+  </g>
+  <!-- The cached copy in the service -->
+  <g data-on="1">
+    <rect class="kp-old" x="237" y="114" width="18" height="18" rx="3"/>
+    <text class="kp-label" x="263" y="128">copy 1</text>
+  </g>
+  <g data-on="2">
+    <rect class="kp-old" x="237" y="114" width="18" height="18" rx="3"/>
+    <text class="kp-label" x="263" y="128">copy 1</text>
+    <path class="kp-cross" d="M233,111 L259,135 M259,111 L233,135"/>
+    <text class="kp-note" x="229" y="168">dropped · parts and containers too</text>
+  </g>
+  <!-- The request, in flight -->
+  <g data-on="3">
+    <text class="kp-label" x="422" y="128">decoding…</text>
+    <text class="kp-note" x="414" y="168">off the frame</text>
+  </g>
+  <!-- The new copy travels to the entities -->
+  <g data-on="4" data-tf="4:translate(370px, 0)">
+    <rect class="kp-token" x="237" y="166" width="18" height="18" rx="3"/>
+    <text class="kp-gold" x="263" y="180">copy 2</text>
+  </g>
+  <g data-on="5">
+    <rect class="kp-token" x="422" y="114" width="18" height="18" rx="3"/>
+    <text class="kp-gold" x="448" y="128">copy 2</text>
+    <path class="kp-cross" d="M418,111 L444,135 M444,111 L418,135"/>
+    <text class="kp-note" x="414" y="168">does not decode</text>
+  </g>
+  <!-- What the entities show -->
+  <g data-on="1 2 3 5">
+    <rect class="kp-old" x="607" y="114" width="18" height="18" rx="3"/>
+    <text class="kp-label" x="633" y="128">copy 1</text>
+  </g>
+  <g data-on="3 5">
+    <rect class="kp-ring" x="594" y="103" width="127" height="40" rx="6"/>
+  </g>
+  <g data-on="4">
+    <text class="kp-note" x="599" y="200">copy 1's GPU copy retired</text>
+  </g>
+  <!-- The explanation card -->
+  <rect class="kp-card" x="30" y="220" width="700" height="150" rx="8"/>
+  <g data-on="1">
+    <text class="kp-title" x="50" y="252">A file is saved</text>
+    <text class="kp-label" x="50" y="282">The watcher hears it. The repeats one save fires collapse into one change, which passes</text>
+    <text class="kp-label" x="50" y="302">if the folder has not spent its 512 events of this second; past that, one rescan follows.</text>
+    <text class="kp-strong" x="50" y="338">The wall still shows copy 1.</text>
+  </g>
+  <g data-on="2">
+    <text class="kp-title" x="50" y="252">Invalidated</text>
+    <text class="kp-label" x="50" y="282">The service drops its cached copy, the parts the file served and the containers that read</text>
+    <text class="kp-label" x="50" y="302">it, and announces each on its change stream. Handles already out keep the old value.</text>
+    <text class="kp-strong" x="50" y="338">Dropping the cache changes nothing on screen.</text>
+  </g>
+  <g data-on="3">
+    <text class="kp-title" x="50" y="252">Asked for again</text>
+    <text class="kp-label" x="50" y="282">asset_reload takes the announced changes and requests the wall's texture once, decoded</text>
+    <text class="kp-label" x="50" y="302">off the frame. Until it lands, copy 1 is the last good copy, and serves every reader.</text>
+    <text class="kp-strong" x="50" y="338">No frame waits for the decode.</text>
+  </g>
+  <g data-on="4">
+    <text class="kp-title" x="50" y="252">The new copy lands</text>
+    <text class="kp-label" x="50" y="282">Copy 2 replaces copy 1 under the same uuid; every entity holding it gets the new handle.</text>
+    <text class="kp-label" x="50" y="302">The GPU copy made from copy 1 is retired, freed after this frame's render.</text>
+    <text class="kp-gold" x="50" y="338">The wall shows the new picture.</text>
+  </g>
+  <g data-on="5">
+    <text class="kp-title" x="50" y="252">Or it does not decode</text>
+    <text class="kp-label" x="50" y="282">The file was caught half-written. Copy 1 stays, in the service too, and is kept until the</text>
+    <text class="kp-label" x="50" y="302">file changes again. The failure is logged.</text>
+    <text class="kp-gold" x="50" y="338">A broken save costs the new picture, never the old one.</text>
+  </g>
+</svg>

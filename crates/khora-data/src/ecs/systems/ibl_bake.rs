@@ -71,8 +71,9 @@ fn bake_decision(baker: &IblBaker, source: &IblSource) -> Decision {
     let selected_but_loading = source.environment.is_some() && source.texture.is_none();
     if selected_but_loading && baker.wait_for_environment() {
         // Retry next tick rather than baking a procedural sky the scene did
-        // not ask for. Bounded: before the first bake the lit lanes render
-        // nothing, so an asset that never arrives must not stall them forever.
+        // not ask for. Bounded: until a bake lands the lit lanes light with
+        // neutral bindings, so an asset that never arrives must not hold the
+        // scene's sky light back forever.
         return Decision::Wait;
     }
     Decision::Bake

@@ -66,8 +66,8 @@ const GENERIC_MODULE_NAMES: &[&str] = &["registry", "context", "service", "helpe
 /// collection, named for what it collects.
 const GENERIC_FOLDER_NAMES: &[&str] = &["registry", "context", "service", "helpers"];
 
-/// Markdown file names under `docs/src` exempt from kebab-case: mdBook
-/// requires `SUMMARY.md` by that name.
+/// Markdown file names under `docs/src` exempt from kebab-case: the docs
+/// site reads its navigation from `SUMMARY.md` by that name.
 const DOCS_NAME_EXEMPT: &[&str] = &["SUMMARY.md"];
 
 /// Paths a rename has retired, with the reason. None may exist again.
@@ -652,7 +652,7 @@ fn no_generic_module_file_names() {
 
 /// Every Markdown page under `docs/src` has a kebab-case file name: lowercase
 /// ASCII letters and digits, words joined by `-`, never `_`. `SUMMARY.md` is
-/// exempt (mdBook requires it). Keyed by the page.
+/// exempt (the site's navigation, read by that name). Keyed by the page.
 #[test]
 fn docs_pages_are_kebab_case() {
     let root = repo_root();
@@ -682,8 +682,9 @@ fn docs_pages_are_kebab_case() {
 
 /// Every Markdown page under `docs/src` is linked once from `SUMMARY.md`,
 /// and every page `SUMMARY.md` links exists. `SUMMARY.md` is the one
-/// navigation of the book and of the site (`docs_site_nav_is_the_summary`):
-/// a page it leaves out is rendered by neither. Keyed by the page.
+/// navigation of the docs site (`docs_site_nav_is_the_summary`): a page it
+/// leaves out is not rendered, and its old URL is not redirected. Keyed by
+/// the page.
 #[test]
 fn docs_pages_are_in_the_summary() {
     let root = repo_root();
@@ -1073,9 +1074,9 @@ fn ratchet(check: &str, what: &str, violations: &Violations) {
 // ---------------------------------------------------------------------------
 
 /// Whether `resolved`, a link from `source` that names no file, is a page the
-/// book renders: inside `docs/src`, mdBook writes `x.md` as `x.html`, and a
-/// link in raw HTML (a landing block, a card) must name the `.html` it will
-/// be, since mdBook rewrites only Markdown links.
+/// book renders: inside `docs/src`, a page `x.md` may be linked as `x.html`,
+/// the name mdBook gave it; the docs site rewrites both to the page's route
+/// (`docs/site/src/book/page.mjs`), in Markdown links and in raw HTML.
 fn renders_to(root: &Path, source: &Path, resolved: &Path) -> bool {
     let book = root.join("docs").join("src");
     source.starts_with(&book)

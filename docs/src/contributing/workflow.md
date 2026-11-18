@@ -20,8 +20,8 @@ to [GitHub Discussions](https://github.com/eraflo/KhoraEngine/discussions).
   1. Run **`cargo gate`** locally (format + clippy + tests + doc tests) so
      your change is already green against the gates below.
   2. Update the docs alongside the code — this book for concepts/narrative,
-     rustdoc comments for API surface. A public-API change updates its mdBook
-     chapter in the same PR.
+     rustdoc comments for API surface. A public-API change updates its book
+     page in the same PR.
 
 A `secret-scan` pre-commit hook (installed by the AI tooling) blocks commits that
 contain secrets. Commit messages follow imperative mood with an optional
@@ -39,6 +39,7 @@ Pass` job aggregates them):
 | **Format** | `cargo fmt --all -- --check` | Must report no changes. |
 | **Feature unification** | `cargo hakari generate --diff` and `cargo hakari manage-deps --dry-run` | The `workspace-hack` must match the dependencies; run both without the flag and commit what changes. |
 | **Lint** | `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Warnings are errors. |
+| **Docs** | `cargo doc --workspace --no-deps --document-private-items --all-features --locked` with `RUSTDOCFLAGS=-D warnings` | The rustdoc lints clippy does not run: a broken or private intra-doc link, a bare URL, a stray HTML tag. Same as `cargo gate`'s doc step. |
 | **Test — Linux** | `cargo nextest run --workspace --all-features --locked`, then the same with `--bench '*'` | Runs on `ubuntu-latest`. Cargo's default targets leave out a target marked `test = false`; `--all-targets` would build it anyway. |
 | **Test — Windows** | same | Runs on `windows-latest`. |
 | **Test — macOS** | same | Runs on `macos-latest`. |
@@ -48,6 +49,11 @@ Pass` job aggregates them):
 
 A **coverage** job also runs but is **report-only** — it produces an `lcov.info`
 artifact, has no threshold, and never blocks the merge.
+
+The **Docs** workflow builds the documentation site (`docs/site/`) on every pull
+request and every push to `dev` or `main`: the site's tests (`npm test`), the
+rustdoc, and the site, which fails on a broken internal link. A push to `main`
+then publishes it to <https://eraflo.github.io/KhoraEngine/>.
 
 ### Notes on specific gates
 

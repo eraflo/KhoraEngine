@@ -61,6 +61,31 @@ only the first time something asks. `World::persistent_id` and
 `World::entity_with_id` translate between the two. How a scene is written down by
 these ids is the subject of [Serialization](./serialization.md).
 
+**Reserved ids.** An entity's id can be taken before the entity exists, by code
+that does not hold the `World`: a script spawning an entity names it at once, so
+its later commands in the same turn can use it; a scene load prepared on another
+thread holds one id per entity it will add. A **reserved** id is not alive — no
+query, `get` or spawn sees it — and is never the id of a live entity or of
+another reservation. It becomes an entity only when its owner spawns it there
+(`World::spawn_at`), or goes back unused:
+
+- a script's reservations (`World::reserver()`) are settled each frame: the ids
+  its commands spawned live, the others are released at the frame's end, keeping
+  a few (at least 16) ready for the next frame;
+- a load's reservations are held in a `ReservationHold`
+  (`World::hold_reservations()`), across frames, until the load commits;
+  dropping the hold gives back every id not committed.
+
+An id given back that never lived is handed out again as it is; a slot freed by
+a despawn comes back with its generation moved on, so an old id never names its
+new owner.
+
+One reserved id is special: the **nowhere** entity, reserved once when the world
+is made, never alive and never spent (`World::nowhere_entity()`). A saved
+reference to an entity a load does not hold is bound to it, so it can never come
+to name an entity spawned later (see
+[Serialization](./serialization.md#pages-persistent-ids-provenance)).
+
 **Components** are plain data tagged with `#[derive(Component)]`. The derive
 generates the component's serialisable mirror and its `From` conversions, and
 registers the type through `inventory`, so `World::new` finds it with no list to
@@ -121,6 +146,14 @@ naming a component twice; `World::try_spawn` returns the error instead
 anything is allocated. An unregistered component, stored, would sit where no query
 or `get` could reach it. It is a programming error, the same every time the code
 runs, so it is refused at once rather than left to be found later.
+
+A registration also publishes the component's **shape** (`ComponentShape`): its
+fields by name, each with its Rust type as written, `#[component(skip)]` fields
+left out; an empty list is a marker component. The few hand-written
+registrations whose fields are not plain data (`MeshRef`, `MaterialRef`) say
+`Opaque`. Scripts read the engine's components through it: the
+`engine/components.erg` module a script imports is generated from the shapes, so
+a misspelt field is refused when the script compiles.
 
 ### Pages
 
@@ -193,7 +226,12 @@ The `World` keeps, per domain, the set of entities that have components in it.
 A query's plan takes the domains of its terms: a query within one domain walks
 that domain's pages only, so a render extraction never touches UI pages. A query
 spanning several domains is **transversal**: it is driven by the densest of them
-(most entities per page) and looks the others up per entity.
+(most entities per page) and looks the others up per entity. The driver walks its
+domain's pages; for each row, it checks that the entity is in every other domain
+the query names and that the row is still the entity's live row in the driver's
+domain, then reads each term from the entity's own location. A query's plan is
+made once per set of component types and kept until a component is registered or
+changes domain: the driver is not chosen again as the world fills.
 
 Domains are also the coarsest unit of *change tracking*. The `World` keeps a
 **change epoch** per domain: the tick of the latest write to one of its values, or
@@ -216,6 +254,43 @@ The first consumer of the epochs is the [Flows](./agdf.md#flow-view-caching--per
 a Flow that can name all of its inputs folds their domains' epochs into a cache
 key, and on an unchanged frame republishes its previous View instead of projecting
 it again.
+
+## The hierarchy
+
+Entities form a tree: a wheel under a car, a sword under a hand. The tree is
+stored twice, once on each side of every link, so both questions are cheap —
+"who is my parent?" and "who are my children?":
+
+| Component | On | Holds | Provenance |
+|---|---|---|---|
+| `Parent` | the child | its parent | `ToolAuthored`: saved |
+| `Children` | the parent | its children, in order | `Derived`: never saved, built from the `Parent`s |
+
+Two copies can disagree, so one function writes both: `World::set_parent(child,
+parent)`. It takes the child out of its former parent's `Children`, then sets its
+`Parent` and appends it to the new parent's `Children` (`None` makes it a root).
+It refuses — returns `false`, touching nothing — a missing entity, an entity as
+its own parent, and a parent that is already beneath the child: the tree never
+holds a cycle. Writing `Parent` by name goes through it, and `Children` cannot be
+written by name at all; a script asking for a cycle is refused with an error
+(`WouldCycle`). A load reads the tree from the saved `Parent`s, refuses a file
+whose `Parent`s form a cycle, and builds each `Children` in the saved order.
+
+**Removing a branch.** `World::despawn` removes one entity and touches no other:
+its children keep a `Parent` naming it, and its parent's `Children` still lists
+it — dead ids, which fail every lookup. To remove an entity with everything
+beneath it, call `World::despawn_subtree(root)`: it collects the whole branch
+first, takes the root out of its parent's `Children`, then despawns each entity,
+and returns how many went. A script's `Despawn` removes the subtree.
+
+**Where things are in the world.** `Transform` is where an entity stands
+relative to its parent; `GlobalTransform`, where it stands in the world, is
+derived from the chain of `Transform`s each frame by `transform_propagation`.
+Being derived, it is never saved, so a loaded entity arrives without one. The
+`ensure_global_transform` DataSystem gives one to every entity holding a
+`Transform` and lacking it, early in `PostSimulation`, seeded from the entity's
+own `Transform` rather than the origin — so an entity does not slide in from the
+origin on its first frame.
 
 ## Queries and SoA versus AoSoA
 
@@ -245,6 +320,17 @@ A query skips the orphan rows a migration left behind, so it never yields an
 entity twice. Spawning is held to the same rule as adding: `world.spawn` panics on
 an unregistered component, `world.try_spawn` returns the refusal.
 
+**Writing a column at once.** A script that sets the same fields on many
+entities in one turn hands the frame one batch, not one command per entity.
+`World::write_column(component, slots, rows)` writes the given field slots of
+each listed entity: it sorts the rows by page and row, so the write sweeps
+memory in order, and writes each run of one page in one call. Of two rows for
+one entity, the later wins. Each row written is stamped, as a guard's write is;
+nothing moves, so no page's order changes. It returns what it did
+(`ColumnWriteReport`): the rows `written`, the `missing` ones — an entity gone,
+or without the component — and the `refused` ones, whose width or a field's
+value did not fit; a refused row is skipped whole.
+
 Underneath, a default column is a `Vec<T>`: **SoA** (structure of arrays) *across
 entities*, but **AoS** (array of structures) *within* a component — whole structs
 back to back. That is the right default and what every mainstream archetype ECS
@@ -263,7 +349,11 @@ job: a runtime resource the `ecs_maintenance` DataSystem ticks in the
 compacts up to 10 dirty pages — pages a migration left an orphan in — and the rest
 wait for the next frame, queries skipping their orphans meanwhile. The same system
 frees the row ticks no observer needs any more. A drained page's slot is reused
-rather than growing the page list.
+rather than growing the page list; a page's slot is never removed, since entity
+locations name pages by slot. A reused slot carries its predecessor's
+[order version](./change-detection.md#stickers-on-the-rows) on, one step
+further, so a reader remembering "slot 4, order 7" never finds that pair again
+on a page holding other entities.
 
 Maintenance is deliberately *not* an [agent](./agents-and-lanes.md). An agent
 exists to choose between levels of work under a budget; maintenance has nothing to
@@ -289,6 +379,33 @@ despawn fails its lookups for as long as the generation does not wrap.
 live rows only, so each matching entity appears exactly once. Compaction removes
 exactly the orphans of a dirty page, by swap-remove, and raises the epoch of every
 domain of that page's signature when it removed one.
+
+- Liveness is checked in every domain, with the generation: a row of a page
+  shared by several domains that is still live for one of them is kept, and a
+  row whose owner died or whose index was recycled is an orphan.
+- A swap-remove moves the page's last row into the hole. Compaction then
+  repoints every location of the moved row's entity that named the last row —
+  matched by row, not by entity, since an entity that left a page and came back
+  has both an orphan and a live row there under one id.
+- A moved row whose owner is dead has no location to repoint; it is an orphan
+  still, removed by a later step.
+- A despawn removes a row shared by several domains once, not once per domain.
+
+**Transversal plans.** A query over domains *D₁ … Dₖ* (*k* ≥ 2) is driven by the
+domain of greatest density *nₑ / nₚ* (entities over pages), compared by
+cross-multiplying. A page holding several domains, made by a spawn spanning
+them, is counted in the page total of one domain only, its first. The
+iteration applies no page filter for the other domains: a driver page may be a
+shared page whose other columns are stale, so each row is checked against the
+entity's domain set and its live row, then read through its live locations.
+
+**Checked under Miri.** Two suites pin what the type system cannot: a write
+through `query_mut` never goes through a pointer derived from a read-only one
+(`khora-data/src/ecs/tests/query_mut_writes.rs`), and items of one query held at once never
+alias (`query_mut_aliasing.rs` beside it). They run under Miri, the Rust
+interpreter that detects undefined behaviour, by hand:
+`cargo +nightly miri test -p khora-data --lib query_mut`. `cargo gate` does not
+run them.
 
 **Costs.** Adding a component to an entity copies one row of one domain: O(*c*),
 *c* the number of components of that domain the entity holds, independent of the

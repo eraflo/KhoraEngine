@@ -10,6 +10,34 @@ picture, then has you write and run a first script in the editor. The pages
 after it go deeper, one idea each, down to how the engine runs thousands of
 scripts inside a frame.
 
+## Why Ergon
+
+The engine itself is written in Rust, a language built for programs that must
+be fast and must never misuse memory. Rust is a good tool for building an
+engine. It is a heavy one for saying "the guard walks to the coin". Ergon is
+meant to be the language game makers write their games in: written the way a
+game is thought, while keeping what Rust gives the engine — memory safety, a
+lean use of the machine, speed. Game makers write Ergon; Rust stays the
+engine's language.
+
+What that means today:
+
+- **Memory-safe.** A script reaches only its own values and what the engine
+  hands it; a mistake (an index out of range, a `null` prefab) stops that turn
+  and undoes it, never the game.
+- **Bounded.** A script runs on **fuel**, a count of instructions the frame can
+  afford, and stops only at clean places in its code, its **safepoints** — so
+  scripts never make a frame late ([Turns and time](./turns.md)).
+- **Hot-reloadable.** An edit lands while the game runs; every instance keeps
+  its fields and what it was doing ([Saves and live edits](./saves-and-edits.md)).
+- **Typed.** Every value has a type the compiler checks, events and their
+  payloads included, before the game runs.
+
+Two things still need Rust, and are on the way to Ergon: binding input actions
+to keys and buttons
+([#294](https://github.com/eraflo/KhoraEngine/issues/294)), and a project's own
+shaders ([#293](https://github.com/eraflo/KhoraEngine/issues/293)).
+
 ## The picture: a flip-book
 
 A game is a flip-book. About sixty times a second the engine draws a new page —

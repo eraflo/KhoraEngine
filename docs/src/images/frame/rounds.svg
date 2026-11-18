@@ -1,0 +1,108 @@
+<svg id="fig-frame-rounds" class="kp-figure" viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-frame-rounds-title kp-frame-rounds-desc">
+  <title id="kp-frame-rounds-title">Two fixed families, their sub-clocks and their rounds</title>
+  <desc id="kp-frame-rounds-desc">Two frames that each advance one game tick of 16.7 milliseconds. A game's steering family runs at a step of 33.3 milliseconds and physics at a step of 8.3 milliseconds; physics runs after steering. In the first frame, physics is owed two steps and steering none: its 16.7 milliseconds are carried. Steering counts as done, so physics runs in both rounds. In the second frame, steering's clock holds 33.3 milliseconds and is owed one step; physics is owed two. Round 0 runs steering then physics, round 1 physics alone; then the phases run once for every other family.</desc>
+  <style>
+    #fig-frame-rounds { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-frame-rounds .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-frame-rounds .kp-axis { stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-frame-rounds .kp-clock { fill: var(--k-bg-2, #181e2b); stroke: var(--k-silver-dim, #809db2); stroke-width: 1; }
+    #fig-frame-rounds .kp-step { fill: var(--k-bg-3, #1f2636); stroke: var(--k-silver, #b4cfe2); stroke-width: 1.2; }
+    #fig-frame-rounds .kp-carry { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.8; stroke-dasharray: 5 3; }
+    #fig-frame-rounds .kp-done { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.2; stroke-dasharray: 3 3; }
+    #fig-frame-rounds .kp-once { fill: var(--k-bg-2, #181e2b); stroke: var(--k-silver-dim, #809db2); stroke-width: 1; }
+    #fig-frame-rounds .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; font-weight: 500; }
+    #fig-frame-rounds .kp-station { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 12px; }
+    #fig-frame-rounds .kp-name { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+    #fig-frame-rounds .kp-num { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10px; }
+    #fig-frame-rounds .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+    #fig-frame-rounds .kp-how { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="330" rx="10"/>
+  <!-- frame headers and columns -->
+  <text class="kp-head" x="40" y="30">frame 1 · one tick, 16.7 ms</text>
+  <text class="kp-num" x="40" y="54">sub-clock</text>
+  <text class="kp-num" x="160" y="54">round 0</text>
+  <text class="kp-num" x="225" y="54">round 1</text>
+  <line class="kp-axis" x1="300" y1="20" x2="300" y2="214"/>
+  <g data-on="4 5">
+    <text class="kp-head" x="320" y="30">frame 2 · one tick more</text>
+    <text class="kp-num" x="320" y="54">sub-clock</text>
+    <text class="kp-num" x="440" y="54">round 0</text>
+    <text class="kp-num" x="505" y="54">round 1</text>
+  </g>
+  <!-- row labels -->
+  <text class="kp-station" x="600" y="81">steering · 1/30 s</text>
+  <text class="kp-station" x="600" y="131">physics · 1/120 s</text>
+  <text class="kp-num" x="600" y="148">after steering</text>
+  <!-- frame 1, step 1: the clocks fed -->
+  <g data-on="1">
+    <rect class="kp-clock" x="40" y="64" width="50" height="26" rx="3"/>
+    <text class="kp-name" x="46" y="81">16.7</text>
+    <rect class="kp-clock" x="40" y="114" width="50" height="26" rx="3"/>
+    <text class="kp-name" x="46" y="131">16.7</text>
+  </g>
+  <!-- frame 1, step 2 on: each clock cut at its step -->
+  <g data-on="2 3 4 5">
+    <rect class="kp-carry" x="40" y="64" width="50" height="26" rx="3"/>
+    <text class="kp-gold" x="46" y="81">16.7</text>
+    <text class="kp-gold" x="96" y="81">carried</text>
+    <rect class="kp-step" x="40" y="114" width="25" height="26" rx="3"/>
+    <rect class="kp-step" x="65" y="114" width="25" height="26" rx="3"/>
+    <text class="kp-name" x="43" y="131">8.3</text>
+    <text class="kp-name" x="68" y="131">8.3</text>
+  </g>
+  <!-- frame 1, step 3 on: two rounds -->
+  <g data-on="3 4 5">
+    <rect class="kp-done" x="160" y="64" width="55" height="26" rx="3"/>
+    <text class="kp-gold" x="168" y="81">done</text>
+    <rect class="kp-done" x="225" y="64" width="55" height="26" rx="3"/>
+    <text class="kp-gold" x="233" y="81">done</text>
+    <rect class="kp-step" x="160" y="114" width="55" height="26" rx="3"/>
+    <text class="kp-name" x="168" y="131">step</text>
+    <rect class="kp-step" x="225" y="114" width="55" height="26" rx="3"/>
+    <text class="kp-name" x="233" y="131">step</text>
+    <rect class="kp-once" x="40" y="168" width="240" height="26" rx="3"/>
+    <text class="kp-name" x="48" y="185">then every other family, once</text>
+  </g>
+  <!-- frame 2, step 4 on: the clocks -->
+  <g data-on="4 5">
+    <rect class="kp-step" x="320" y="64" width="100" height="26" rx="3"/>
+    <text class="kp-name" x="328" y="81">33.3 · 1 step</text>
+    <rect class="kp-step" x="320" y="114" width="25" height="26" rx="3"/>
+    <rect class="kp-step" x="345" y="114" width="25" height="26" rx="3"/>
+    <text class="kp-name" x="323" y="131">8.3</text>
+    <text class="kp-name" x="348" y="131">8.3</text>
+  </g>
+  <!-- frame 2, step 5: the rounds -->
+  <g data-on="5">
+    <rect class="kp-step" x="440" y="64" width="55" height="26" rx="3"/>
+    <text class="kp-name" x="448" y="81">step</text>
+    <rect class="kp-step" x="440" y="114" width="55" height="26" rx="3"/>
+    <text class="kp-name" x="448" y="131">step</text>
+    <rect class="kp-step" x="505" y="114" width="55" height="26" rx="3"/>
+    <text class="kp-name" x="513" y="131">step</text>
+    <rect class="kp-once" x="320" y="168" width="240" height="26" rx="3"/>
+    <text class="kp-name" x="328" y="185">then every other family, once</text>
+  </g>
+  <!-- captions -->
+  <g data-on="1">
+    <text class="kp-how" x="20" y="262">The frame advanced one tick, 16.7 ms. Each family at a fixed step gets exactly that,</text>
+    <text class="kp-how" x="20" y="280">in a sub-clock of its own: steering at 1/30 s, physics at 1/120 s, after steering.</text>
+  </g>
+  <g data-on="2">
+    <text class="kp-how" x="20" y="262">Each clock is cut at its own step. Physics holds two steps of 8.3 ms; steering's</text>
+    <text class="kp-how" x="20" y="280">16.7 ms is not one step of 33.3 ms, so it is owed nothing and carries the time.</text>
+  </g>
+  <g data-on="3">
+    <text class="kp-how" x="20" y="262">Two rounds, as many as the most steps owed. Steering does not run but counts as</text>
+    <text class="kp-how" x="20" y="280">done, so physics, which runs after it, runs in both. Then the phases run once.</text>
+  </g>
+  <g data-on="4">
+    <text class="kp-how" x="20" y="262">One tick more. Steering's clock now holds the 16.7 ms it carried and 16.7 more:</text>
+    <text class="kp-how" x="20" y="280">one whole step of 33.3 ms. Physics again holds two steps.</text>
+  </g>
+  <g data-on="5">
+    <text class="kp-how" x="20" y="262">Round 0 runs steering, then physics after it; round 1 runs physics alone, steering</text>
+    <text class="kp-how" x="20" y="280">being done for the frame. Then the phases run once for every other family.</text>
+  </g>
+</svg>

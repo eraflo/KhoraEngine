@@ -1,13 +1,15 @@
 // The Khora documentation site: Astro Starlight over the book in `docs/src`.
 //
-// The pages, their figures and SUMMARY.md stay in `docs/src`, where mdBook,
-// the book citations in code comments and the xtask checks find them. This
-// config only says how the site reads them:
+// The pages, their figures and SUMMARY.md stay in `docs/src`, where the book
+// citations in code comments and the xtask checks find them. This config
+// only says how the site reads them:
 //
 // - the `docs` collection is the book (`src/content.config.mjs`, `src/book/`);
 // - the sidebar is SUMMARY.md, parsed on every build;
-// - the step-through figures run the book's own `docs/theme/steps.js`, and
-//   its `figures.css` frames them;
+// - every page's old mdBook URL (`x.html`) is a redirect to its route
+//   (`src/book/redirects.mjs`), written into the build;
+// - the step-through figures run `src/scripts/steps.js`, and
+//   `src/styles/figures.css` frames them;
 // - `src/styles/khora.css` is the Khora theme over Starlight's;
 // - the index is the landing page (`src/pages/index.astro`), whose film is
 //   served from `frames/` when it was fetched there (`src/landing/`).
@@ -20,6 +22,7 @@ import starlight from '@astrojs/starlight';
 import starlightLinksValidator from 'starlight-links-validator';
 
 import { bookAssets } from './src/book/assets.mjs';
+import { bookRedirects } from './src/book/redirects.mjs';
 import { landingFrames } from './src/landing/integration.mjs';
 import { BASE, SITE } from './src/book/site.mjs';
 import { parseSummary, sidebarFromSummary } from './src/book/summary.mjs';
@@ -40,6 +43,8 @@ export default defineConfig({
             logo: { src: '../src/logos/khora-sign.svg', alt: 'Khora' },
             favicon: '/logos/khora-icon.svg',
             social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/eraflo/KhoraEngine' }],
+            // A page's `filePath` is relative to the site (`../src/home.md`), so
+            // against this base its edit link opens `docs/src/home.md`.
             editLink: { baseUrl: 'https://github.com/eraflo/KhoraEngine/edit/main/docs/site/' },
             sidebar: sidebarFromSummary(SUMMARY),
             // Starlight's Markdown transforms (heading ids and anchors, asides)
@@ -53,7 +58,7 @@ export default defineConfig({
                 '@fontsource/ibm-plex-mono/500.css',
                 '@fontsource/ibm-plex-mono/600.css',
                 './src/styles/khora.css',
-                '../theme/figures.css',
+                './src/styles/figures.css',
             ],
             components: {
                 Head: './src/components/Head.astro',
@@ -78,9 +83,11 @@ export default defineConfig({
             },
             plugins: [starlightLinksValidator()],
         }),
+        // After Starlight, so the search index never lists a redirect.
+        bookRedirects({ summary: SUMMARY, base: BASE }),
     ],
     vite: {
-        // The book, its logos and its figure script live beside the site.
+        // The book and its logos live beside the site, in `docs/src`.
         server: { fs: { allow: ['..'] } },
     },
 });

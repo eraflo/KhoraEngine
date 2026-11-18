@@ -181,6 +181,14 @@ A check **never rewrites nor refuses** a value. A load keeps it and reports it a
 the component must then do nothing with a bad value, never panic on it.
 `Camera::check` and `Light::check` are examples.
 
+While the engine runs, `component_checks` runs at the end of every frame
+(`Maintenance`, after the scripts' commands landed) and calls every check on
+every entity holding a checked component: it watches no change, so a check
+must be cheap. What it finds replaces the `Data` list in `Problems`: a value set
+right again leaves the list at the next frame. A problem is logged once when it
+appears and once when it is fixed, not every frame; a field going from one bad
+value to another stays one problem.
+
 ## Step 6 — Place the file and re-export it
 
 Put the file next to the other components in

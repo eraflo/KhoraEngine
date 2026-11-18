@@ -62,7 +62,7 @@ Requires Rust **1.91+** and a GPU supporting Vulkan, Metal, or DX12.
 
 ## Documentation
 
-The documentation is an mdBook that routes you by what you came to do — build a
+The documentation is a book that routes you by what you came to do — build a
 game, understand the engine, or contribute. **Start at the
 [Home page](./docs/src/home.md)** and pick your path.
 
@@ -74,10 +74,12 @@ game, understand the engine, or contribute. **Start at the
 | [API reference (rustdoc)](https://eraflo.github.io/KhoraEngine/api/) | Look up the exact public API |
 | [Roadmap](./docs/src/roadmap.md) | See what is committed and what is planned |
 
-Read it locally with live reload:
+Read it locally with live reload (Node.js 22.23.4 or newer):
 
 ```bash
-mdbook serve docs/ --open
+cd docs/site
+npm ci
+npm run dev
 ```
 
 The published book and API reference live at

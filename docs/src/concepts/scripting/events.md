@@ -44,6 +44,25 @@ dropped and reported, the receiver left running. Each program finds its
 handlers in a table it builds once from its declarations; the entity's state
 picks among them as it is delivered.
 
+The engine's queue holds 4,096 events (`ENGINE_EVENT_BACKLOG`); full, it drops
+the oldest, and the drop is counted.
+
+### Mail a turn did not reach
+
+An event is heard during its receiver's turn. A turn that runs out of fuel
+after three of its five events, or a behavior that sits the frame out — no
+fuel, its `[Rate]` not due — keeps what it was **not** told, and hears it at
+its next turn, before anything newer. Only what it was not told: the first
+three are not delivered again, since a `Damaged` heard twice is as wrong as one
+never heard.
+
+An entity can run several behaviors, all sent the same mail. If one of them
+had to stop, its missed events are kept for **that behavior alone**, so the
+others, which heard them, do not hear them twice; an entity running one
+behavior puts them back in the frame's mail. Either way nothing is lost, and
+nothing caps what waits: mail kept for a behavior goes only when the behavior
+leaves its entity, or when a fault disables it.
+
 ---
 
 *Next: [Saves and live edits](./saves-and-edits.md). Back to [Scripting](./index.md).*

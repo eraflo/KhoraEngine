@@ -126,6 +126,15 @@ phase for a reason:
   `MaterialRef`, a UI font or image) into handles, so a residency sees this
   frame's references.
 
+The copies they read are already there. A decode filed off the frame lands at
+the frame's very first phase, `Boundary`, where `asset_intake` takes the decoded
+assets into the service and the asset store, before the simulation and well
+before `PreExtract`. Inside `PreExtract`, the systems run in the order their `runs_after` lists
+give, ties broken by their `order_hint` and then their name: `asset_reload`
+(hint −6), then `asset_resolver` (−5), then the residencies (0), with
+`gpu_material_sync` after `gpu_mesh_sync`. A `runs_after` naming a system of
+another phase is ignored: phases already order those.
+
 A residency needs its device: without a `GraphicsDevice` in the runtime (a
 headless run), each of the three returns at once and makes nothing.
 

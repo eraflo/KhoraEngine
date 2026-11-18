@@ -117,10 +117,14 @@ a safepoint and finishes its turn next frame, from where it stopped.
 Who is deferred is fair, and what the author declared bends it:
 
 - each behavior that can spend has an **equal share** of the frame's fuel, in its
-  fixed order — what one does not spend passes on; a behavior that overdraws at a
-  safepoint repays it from its next shares; each starts from a **cursor**, the
-  first of its instances the last frame had no fuel for, so none is left out
-  every frame; a turn is not started on less than half of what one costs;
+  fixed order — what one does not spend passes on; the few units that do not
+  divide evenly go one each to the behaviors from a starting point that moves
+  one behavior on every frame, so no behavior always gets the remainder; a
+  behavior that overdraws at a safepoint repays it from its next shares and
+  runs nothing while it owes; each starts from a **cursor**, the first of its
+  instances the last frame had no fuel for — or, that entity gone, the next one
+  after it — so none is left out every frame; a turn is not started on less
+  than half of what one costs;
 - `[Critical]` claims first, `[Budget(d)]` caps, `[Rate(f)]` thins out turns
   ([Scheduling](../../reference/ergon.md#scheduling));
 - **no time is lost**: a turn is handed all the time since the instance's last,
@@ -133,6 +137,43 @@ This is why the script lane reports the share of behaviors that got their turn
 a simple success flag: an agent claiming perfect health while half
 its behaviors were deferred would tell the DCC nothing was wrong at exactly the
 moment something was.
+
+## Timers count game time
+
+`every 2s` and `after 10s` count **seconds of game time**, not frames. Each
+timer is a countdown. At the start of a turn the time the turn is handed is
+taken off every countdown, at no fuel cost. That time is the game's: the
+frame's real time, at most 0.25 s, times the time scale, and zero while paused
+— so a paused game fires no timer, and a slow-motion game fires them slower.
+
+Then the timers that reached zero fire, in the order they are written, **each
+at most once a turn**:
+
+<figure class="kp-steps">
+<div class="kp-figure-frame">
+
+{{#include ../../images/scripting/timers.svg}}
+
+</div>
+<ol class="kp-steps-text">
+<li><strong>Armed.</strong> <code>every 0.5s</code> starts a countdown: due half a second of game time from now.</li>
+<li><strong>Not yet.</strong> A turn 0.3 s in takes 0.3 s off: 0.2 s to go. Nothing fires.</li>
+<li><strong>Due, and a little past.</strong> The next turn comes 0.3 s later: the countdown is 0.1 s past zero. The timer fires once, and the 0.1 s it overshot is carried, so the next is due at 1.0 s, not 1.1 s — the rhythm holds.</li>
+<li><strong>Far behind.</strong> The guard sat out until 1.6 s (no fuel, say). Its turn is handed the whole second: the timer fires once, is still due, fires once more on the next turn, and is next due at 2.0 s. Never twice in one turn; no fire lost.</li>
+</ol>
+</figure>
+
+- an `every` is armed again at its interval less what it overshot, so
+  `every 0.5s` keeps its rhythm on frames that run long; a timer far behind
+  fires once a turn until it has caught up;
+- an `after` is spent: it fires once, and only entering its state again arms
+  it anew;
+- a body cut short by fuel keeps its timer due until it finishes, and only one
+  timer body a turn may be part-way through: the other due timers wait, still
+  due, for the next turn;
+- a state's timers count only while the behavior is in that state; on leaving
+  they stop where they were, and `become` arms them again at their full
+  interval on the way back in.
 
 ## A fixed clock
 
@@ -162,7 +203,10 @@ they are skipped while the family is off, as the agent is.
 Play does not resume anything: every scripted entity arrives fresh and runs
 `OnSpawn`. Stop puts the scene back as it was. Mail sent to scripts while they
 are off — a `ScriptEvent`, a collision — is dropped at the frame boundary, so
-it never reaches the next Play. A shipped game keeps scripting on unless it
+it never reaches the next Play: the script family's mailboxes are declared
+`BetweenSessions::Drop`. The loading family's compile requests are `Hold`, so a
+script saved while editing is still compiled
+([Mailbox](../../reference/glossary.md#mailbox)). A shipped game keeps scripting on unless it
 switches it off through the `Activation`.
 
 Not running is not absent. The editor mounts the open project's scripts when it

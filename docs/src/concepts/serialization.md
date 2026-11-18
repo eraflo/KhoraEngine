@@ -181,10 +181,41 @@ uses the same split: the new scene is staged before the old one is removed.
 `Prepared::commit(world, identity)` returns no error. `Identity::Keep` keeps each
 saved identity unless another entity holds it; `Identity::Fresh` gives every
 entity a new authored one. `Prepared::abandon` gives the
-reserved ids back. A commit can still add nothing: a load prepared for another
-world reports `NotLoaded`, and a load prepared before the world's components
-changed is prepared again against them first — reporting `NotLoaded` if that
-fails.
+reserved ids back. A commit can still add nothing, for one of two reasons, each a
+`NotLoaded` entry: the load was prepared for another world (its ids were held
+from another world's reserver), or it was prepared off the frame, the world's
+components changed since, and preparing it again against them fails. A load
+prepared off the frame (below) remembers where it came from, so its commit
+prepares it again when the components moved; one prepared on the frame with
+`prepare` is committed as it was prepared — commit it before changing the
+world's components.
+
+**The ids a load holds.** Prepare reserves one entity id per saved entity, held in
+a `ReservationHold` until the commit (see
+[Data and the ECS — reserved ids](./ecs.md#the-storage-model)). It takes the
+slots despawns freed first, then new ones. A load abandoned, failed or cancelled
+drops its hold, and its ids go back as they were: they never lived, so the next
+reservation or spawn takes them as they are. A committed id is never handed out
+again; a slot freed later by a despawn comes back with its generation moved on.
+
+### What a composed load reports
+
+A load can be several reads in one: a scene's prefab links expanded, then a game
+save merged over it. Each read reports, and the reports are joined so that each
+entry says something about what finally loads, once:
+
+- an entry about an entity, or an entity's component, that the final record does
+  not hold is left out — a prefab's member the instance deleted, a component the
+  save removed;
+- a `Retired` entry stays if its entity loads, and `RemovedFromScene` always
+  stays: it is about what does not load;
+- an entry naming no entity stays;
+- an exact duplicate is kept once.
+
+`DeadReference` and `Unusable` are reported by the final prepare only, where the
+value lands, not by the reads before it. A field's path is the path inside the
+value (`translation.x`, `lights[2]`); an entity inside a prefab instance is named
+by its instance id.
 
 ### Loading while frames run
 
@@ -209,6 +240,43 @@ A tool or a game that loads a scene while frames run **files** it with the
 - loads land in the order they were filed, and `take_outcome(ticket)` returns
   the report or the error; `cancel(ticket)` makes a load land nothing;
 - at most 64 loads wait to be prepared; one filed past that fails at once.
+
+<figure class="kp-steps">
+<div class="kp-figure-frame">
+
+{{#include ../images/persistence/filed-loads.svg}}
+
+</div>
+<ol class="kp-steps-text">
+<li><strong>Filed.</strong> Three loads are filed: tickets 1, 2 and 3. Each takes a hold for its ids and the world's catalogue as it is now, and waits for the <code>loading</code> family.</li>
+<li><strong>Prepared out of turn.</strong> Ticket 2 is prepared first. It does not land: ticket 1, filed before it, is not ready, and loads land in the order they were filed.</li>
+<li><strong>In turn.</strong> Ticket 1 is prepared. At the next frame boundary, <code>scene_intake</code> commits 1, then 2: the leading run of prepared loads.</li>
+<li><strong>Prepared against old components.</strong> A script reload changed a component before ticket 3 landed. Its lease fails: it is given back to the <code>loading</code> family, ahead of loads filed since, with the same ids, and prepared again.</li>
+<li><strong>Cancelled.</strong> Had ticket 3 been cancelled instead, it would land nothing, its ids would go back, and its outcome would never be filed.</li>
+</ol>
+</figure>
+
+What holds while frames run:
+
+- **Order.** Each boundary commits the leading run of prepared loads, in ticket
+  order, and stops at the first load not prepared yet. After each landed load
+  the world's catalogue is published again, for the loads prepared after it.
+- **The lease.** A prepared load is good only while the world's components are
+  the ones it was prepared against: a **lease** on the catalogue's generation.
+  It is checked when the prepared load is handed to the frame, and again at the
+  boundary. A load whose lease failed is given back to the `loading` family with
+  its hold — its ids — ahead of every load filed since, past the 64 bound, and the
+  turn stops there: the loads after it wait for it.
+- **Cancelling.** A prepared load cancelled is dropped at once, its ids given back;
+  one not prepared yet is dropped when it arrives. A cancelled load files no
+  outcome: `take_outcome` answers `None` for it.
+- **Failures stay with their load.** A prepare that fails, or panics, is that
+  load's error; the loads after it go on. A load filed before any world was
+  published to load into fails with that reason. A load refused because 64
+  already wait lands its error at once.
+- **Replace.** A `Replace` or a `Game` load empties the world only when it is for
+  that world; one prepared for another world reports `NotLoaded` and leaves the
+  world as it is.
 
 The synchronous `load_world`, `replace_world` and `load_game` are for setup, tests
 and scratch worlds; a running tool never loads a scene on the frame.
@@ -304,6 +372,40 @@ when the load commits; a world declaring it differently reads the file's fields
 onto its own by name, and the load report says what it adapted. A name neither
 registered, described, nor retired still fails the whole load.
 
+An asset reference looks the same whatever it names: a uuid. So a value
+saved in a field declared `Mesh` and read into a field now declared `Sound`
+cannot be caught by its shape, only by the declared types, and it is: two asset
+kinds that differ, anywhere inside an optional, an array or a struct, are a
+clash. The value is dropped, reported `Dropped`, and the field keeps its
+default. This is checked when a record is read into a world, when a prefab is
+expanded into the record linking it (its cells read as the linking record
+declares them), and when values are staged, for every load, snapshots and game
+saves included.
+
+## When a script's declaration changes
+
+A script's components are not fixed when the game is built: the author edits
+the declaration and saves, and the rows already stored — in the running world,
+in the editor's scene — must follow. They do, at the next frame boundary,
+without a load:
+
+| The author… | The stored rows |
+|---|---|
+| declares a new component | it is registered, in its domain; a behavior's state companion and a system's component as `Runtime` and resumable, any other as `Authored` |
+| adds, renames or retypes a field | every row is rebuilt by field name (`World::relayout`): a field keeps its value while its name and kind stay; `int` to `float` is converted when the float holds the value exactly (every `int` up to 2²⁴); any other new or retyped field — a struct of another shape, an asset of another kind — takes its default; a field gone is dropped, with a warning |
+| changes the component's domain | every row moves to the new domain's pages, values and change ticks intact |
+| deletes the declaration | the component stays registered, with its data, **orphaned**: never deleted, listed as a warning in `Problems` (not when its module was unmounted) |
+| declares an orphan again | it is **adopted**, and its rows relaid out to the new declaration |
+
+A rebuilt row is stamped as written, so every observer of the component sees it
+change. A component declared twice, by two modules, is refused the second time
+and the first is kept, listed as an error; when the first module stops declaring
+it, a module that was refused it inherits it, before it would be orphaned. A
+name a Rust component holds can never be declared. A file read later holds the
+fields it was saved with, and is read onto the declaration as it is now, as
+above. The language side of the same table is in
+[Ergon — writing components](../reference/ergon.md).
+
 ## Play-mode snapshots
 
 Pressing Play snapshots the world: a `save_world` into memory under `FastestLoad`,
@@ -334,8 +436,10 @@ never alive, invisible to every query and never handed to a spawn — and its va
 are staged outside the pages. A failure in prepare drops the hold, which returns
 the ids, so *W* is unchanged. Commit has no failing step once the load is current
 for the world: every check that could fail ran in prepare, against the same
-components (the catalogue's generation proves it; otherwise the load is prepared
-again, and a failure there adds nothing and reports `NotLoaded`). It brings every
+components. For a load prepared off the frame the catalogue's generation proves
+it; otherwise the load is prepared again, and a failure there adds nothing and
+reports `NotLoaded`. A load prepared on the frame is current when it is committed
+before the world's components change, which is the caller's part. It brings every
 reserved id to life and places every staged row. ∎
 
 **Identity.** Under `Identity::Keep`, the saved id *p* of an entity is kept iff no

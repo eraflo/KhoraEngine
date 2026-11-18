@@ -135,6 +135,47 @@ capture the full message, and trace it to the pass that recorded the offending c
 **Fix.** Verify a camera, a light, and at least one entity with resolved mesh + material handles are
 present in the world. See [Rendering](../concepts/rendering.md).
 
+### The image lags a moment behind a window being resized
+
+**Cause.** Expected. While a window edge or a dock splitter is dragged, the swapchain is
+reallocated only once the size settles: when it was asked for unchanged three more frames,
+after ten frames pending, or at once when nothing was resized in the last 120 ms.
+
+**Fix.** None needed.
+
+### Some lights light nothing
+
+**Cause.** The lit forward lane shades with at most 4 directional, 16 point and 8 spot
+lights; the ones further down the scene's list are dropped. Forward+ lifts that to 1024
+lights, 128 per screen tile, on a GPU with compute shaders and storage buffers.
+
+**Fix.** Merge or remove lights, or tighten their `range`. See
+[Materials and lighting](./materials-and-lighting.md#know-how-many-lights-count).
+
+### Far objects cast no shadow from the sun
+
+**Cause.** A directional light's shadow covers the first 60 world units of the camera's
+view (`SHADOW_CASCADE_DISTANCE`, one cascade).
+
+**Fix.** None in a scene; it is a quality constant of the shadow flow.
+
+### `ibl_bake: environment texture … did not load in time; baking the procedural sky instead`
+
+**Cause.** The `EnvironmentMap` names a texture that was not in the asset store after
+120 frames — a mistyped UUID, a missing file, a decode failure.
+
+**Fix.** Check the UUID and the file. Once the texture loads (a hot reload, a fixed
+path), the next frame bakes from it.
+
+### A custom shader sees back faces on a mirrored object
+
+**Cause.** A transform with a negative determinant culls front faces instead of back
+ones, so the faces seen from outside are drawn; on those faces `front_facing` is
+`false`.
+
+**Fix.** Flip the test in the shader when the draw is mirrored, or do not rely on
+`front_facing` for single-sided materials.
+
 ---
 
 ## Physics
@@ -192,6 +233,29 @@ integrator and corrupts transforms.
 **Fix.** Validate masses and collider extents at spawn, clamp applied forces, and prefer a finer
 fixed step for stiff constraints. See [Physics](../concepts/physics.md).
 
+### Changing a body's velocity in the inspector or in code does nothing
+
+**Cause.** `RigidBody::initial_velocity` is an initial condition: it is applied once, when the
+body is added to the provider, and never synced again — or it would undo what gravity added
+every frame. There is no call to set a running body's velocity yet.
+
+**Fix.** Give the velocity before the body is first simulated, or move the body with a
+declared move (`SetPosition`, which adds `Teleported`).
+
+### A trigger does not report the floor it lies on
+
+**Cause.** A sensor collider sees dynamic and kinematic bodies, never fixed ones, so a trigger
+placed on the level does not report the level when it spawns.
+
+**Fix.** None needed. To detect static geometry, use a raycast.
+
+### Physics runs on every entity although the family is scoped
+
+**Cause.** A scope (`Activation::scope`) limits a family to the entities holding a marker. The
+physics provider steps every body it was given, so a scoped physics family runs plainly on.
+
+**Fix.** Switch physics off, or remove the `RigidBody` of what must stand still.
+
 ---
 
 ## Audio
@@ -222,6 +286,15 @@ on the active camera or the player.
 
 **Fix.** Confirm a working default output device, a playing source with non-zero gain, and the audio
 family switched on. See [Audio](../concepts/audio.md).
+
+### Some sounds go silent when many play, and come back later
+
+**Cause.** The mixer mixes 8, 32 or 128 voices, whichever level its envelope affords; the
+most audible sources (highest `priority`, then loudest at the listener) are mixed, the rest
+are virtual — silent, their playback still advancing.
+
+**Fix.** Raise the `priority` of the sounds that must not drop out. See
+[Play 3D audio](./play-3d-audio.md#keep-a-sound-heard-when-many-play).
 
 ### A corrupt or unsupported audio file does not crash the engine
 

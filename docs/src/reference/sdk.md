@@ -62,6 +62,10 @@ registers an agent: a new subsystem is a **family** — its lanes, a `LaneFamily
 and one `register_agent!` registration — and every family's agent is the engine's
 one `LaneAgent`. See [Add a subsystem (a family)](../how-to/add-a-family.md).
 
+The boot refuses, with a panic naming the agent, an agent an app registered with
+the DCC itself (through the runtime, before the families) when it takes a family's
+id — that family would never run — or when it runs in a phase the app removed.
+
 ### `PhaseProvider` — custom execution phases
 
 ```rust
@@ -93,6 +97,24 @@ the window closes. The bootstrap closure receives:
 - `&mut Runtime` — register your renderer and any custom backends/services here.
 - `&dyn Any` — the winit `ActiveEventLoop` (downcast it if needed; `khora_sdk::winit`
   is re-exported for that).
+
+### What the engine installs when the app brings none
+
+The boot reads what the bootstrap closure put in the runtime, then fills each gap
+with the engine's own, before `setup`:
+
+| Missing | The engine installs |
+|---|---|
+| a physics provider (`dyn PhysicsProvider`) | Rapier (`RapierPhysicsWorld`) |
+| physics settings (`PhysicsSettings`) | the defaults: a step of 1/60 s |
+| a text shaper (`dyn TextShaper`) | Parley (`ParleyShaper`), on the built-in font |
+| a glyph rasteriser (`dyn GlyphRasterizer`) | swash (`SwashRasterizer`) |
+| an audio mix bus (`dyn AudioMixBus`) | a `DefaultMixBus`: 2 channels at 48 kHz, holding at most 8 192 frames |
+
+An app that opens an audio device installs the mix bus it hands that device. The
+audio family mixes into the engine's own bus every frame, but no device drains it:
+the game is silent. No renderer, pipeline system, layout or audio device is
+installed for an app that brings none; `run_default` wires its own (above).
 
 `WinitWindowProvider` is the default `WindowProvider`. `EngineCore` is the
 underlying engine type, and `EngineBootstrap` boots it in stages (`begin`,
@@ -249,6 +271,25 @@ and fails with `SerializationServiceError` rather than leave a half-loaded world
 The `SerializationGoal` chooses the encoding, never the contents; see
 [Serialization](../concepts/serialization.md).
 
+## Scripts — `scripts::mount`
+
+Only the app knows where a project's scripts are, so it points the engine at them.
+`khora_sdk::scripts` takes the runtime shared and may be called at any frame:
+
+| Function | What it does |
+|---|---|
+| `mount(runtime, assets_root) -> Option<CompileTicket>` | Watches `assets_root` and files its `scripts/` folder (`SCRIPT_DIR`) to be compiled off the frame. Each `.erg` outside that folder is reported to the `Problems`, never compiled. `None` when there is nothing to compile: no such directory, no script folder, or scripting not installed. |
+| `outcome(runtime, ticket) -> Option<CompileTicketOutcome>` | Takes the outcome of a mount: how many modules compiled, or why not. `None` while it is in flight, and once taken. |
+| `unmount(runtime, assets_root)` | Stops watching the root; none of its scripts runs again. Their programs, queued or installed, are withdrawn, a compile still waiting for the root lands as withdrawn, and the components they declared are orphaned, kept with their data as for a deleted file. A module that another root still mounted brings in by the same name stays. |
+
+A mount's compile lands at a later frame's boundary, and an app waiting for it
+does so through `Readiness`. A mount filed in the bootstrap closure, before the
+boot, is compiled by the boot, before `setup`. The editor mounts the open project
+and unmounts it when another opens or it closes. A packed game's scripts are filed
+from its pack by the boot (see [`open_game_assets`](#open_game_assets--the-games-assets)),
+nothing watched. See [Scripting](../concepts/scripting/index.md) and
+[The frame](../concepts/the-frame.md#startup-once).
+
 ## `Vessel` and the spawn helpers
 
 `Vessel` is a builder over a freshly spawned entity. Every `Vessel` starts with a
@@ -328,6 +369,15 @@ Play. That is the editor's choice, made from `PlayMode` (`Editing` / `Playing` /
 `Paused`), its own UI-state enum re-exported from `khora_core::ui::editor`, which
 the engine never reads. See
 [The frame](../concepts/the-frame.md#the-simulation-clock).
+
+## Environment variables
+
+Read once, at boot, by every app on the SDK. An empty value counts as unset.
+
+| Variable | Effect |
+|---|---|
+| `KHORA_RECORD_DECISIONS=<file>` | The DCC records every GORNA decision from the first, and the journal is written to `<file>` as JSON at shutdown; a write that fails is logged. Replay it or decide it again: [Debug a frame](../how-to/debug-a-frame.md#4--record-and-replay-a-decision). |
+| `KHORA_PROFILES=<folder>` | Files the learnt cost profiles under `<folder>` instead of the user's folders, and keeps them even for an app that keeps no user files ([Learnt across runs](../concepts/arbiter.md#learnt-across-runs)). |
 
 ## SDK re-exports
 

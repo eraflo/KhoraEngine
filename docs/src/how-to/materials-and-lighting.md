@@ -51,6 +51,12 @@ resolver and GPU projection turn it into a runtime material. To reference a pack
 To texture the albedo, set `base_color_texture: Some(uuid)` — covered in
 [Load and reference assets](./load-assets.md).
 
+You never say how a texture's values are to be read: the slot decides. A texture in a
+colour slot (base colour, emissive, specular colour) is read as sRGB, the way image
+files store colour; one in a data slot (normal, metallic-roughness, occlusion, specular
+strength) is read as it is. The same PNG can serve as both. An HDR or float texture is
+always read as linear.
+
 ## Add a directional light (the sun)
 
 `Light::directional()` makes a sun-like light. Its direction comes from the entity's
@@ -104,6 +110,38 @@ world.spawn((
 
 `Light::spot()` works the same way, exposing `inner_cone_angle` / `outer_cone_angle`
 through `LightType::Spot`.
+
+## Know how many lights count
+
+The lit forward lane shades with at most **4 directional, 16 point and 8 spot lights**;
+the ones past those counts, further down the scene's list, light nothing. The Forward+
+lane, which the engine picks on a capable GPU with room in its budget, takes up to 1024
+lights, at most 128 reaching any 16 × 16-pixel tile of the screen. For a scene with
+many small lights, keep each light's `range` tight: a light whose range covers fewer
+tiles costs less and crowds fewer of them.
+
+A directional light's shadow covers the first 60 units in front of the camera; a
+caster further away casts none.
+
+## Light from the sky
+
+Every lit scene also gets light from its surroundings (image-based lighting). With
+nothing set, the engine bakes a procedural sky whose sun stands where your first
+directional light points from, at the time of the bake. To light the scene with a
+picture of a real place, give the runtime an `EnvironmentMap` naming an
+equirectangular texture, preferably an `.hdr` file, in your app's `provide`:
+
+```rust
+use khora_sdk::EnvironmentMap;
+
+fn provide(&self, runtime: &mut Runtime) {
+    runtime.resources.insert(EnvironmentMap::from_asset(self.sky));
+}
+```
+
+The bake runs again when you select another texture or the file changes. A texture that
+has not loaded after 120 frames is replaced by the procedural sky, with a warning naming
+it.
 
 ## Expected result
 

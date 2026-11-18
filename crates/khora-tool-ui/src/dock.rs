@@ -30,8 +30,8 @@ pub const SPLITTER_THICKNESS: f32 = 6.0;
 
 /// Smallest size a tab group may be squeezed to, in points.
 ///
-/// Ratios clamp so a drag never collapses a panel to nothing: a hidden panel
-/// comes back only through a layout reset.
+/// Ratios clamp so a drag never collapses a panel to nothing: nothing brings a
+/// hidden panel back, since the layout has no reset.
 pub const MIN_PANE: f32 = 120.0;
 
 /// Fraction of the shorter side taken by each edge drop band.
