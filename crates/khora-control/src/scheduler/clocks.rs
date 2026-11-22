@@ -82,10 +82,7 @@ impl ExecutionScheduler {
     /// whose family is off keeps no clock: it owes nothing for the time it sat out.
     fn declared_fixed_steps(&self) -> Vec<(AgentId, f32)> {
         (self.roster.met().iter())
-            .filter_map(|(_, known)| {
-                let step = known.fixed_step()?.as_secs_f32();
-                (step > 0.0).then_some((known.id, step))
-            })
+            .filter_map(|(_, known)| Some((known.id, known.fixed_step()?.as_secs_f32())))
             .collect()
     }
 

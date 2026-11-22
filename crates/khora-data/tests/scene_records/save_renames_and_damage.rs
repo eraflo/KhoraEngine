@@ -37,7 +37,7 @@ fn twin(dst: &World, id: PersistentId) -> EntityId {
 
 fn load(base: &SceneRecord, save: &SaveRecord) -> World {
     let mut dst = World::new();
-    let prepared = prepare_game(&mut dst, &compose(base, save))
+    let prepared = prepare_game(&mut dst, compose(base, save))
         .unwrap_or_else(|e| panic!("the game did not load: {e}"));
     prepared.commit(&mut dst, Identity::Keep);
     dst
@@ -159,7 +159,7 @@ fn a_patch_older_than_a_field_rename_applies() {
     let edited = capture_world(&editor).expect("captures");
 
     let mut dst = World::new();
-    let prepared = prepare_game(&mut dst, &compose(&edited, &save))
+    let prepared = prepare_game(&mut dst, compose(&edited, &save))
         .unwrap_or_else(|e| panic!("a save older than a field rename did not load: {e}"));
     prepared.commit(&mut dst, Identity::Keep);
     assert_eq!(
@@ -227,7 +227,7 @@ fn a_hostile_order_listing_an_entity_twice_never_makes_two() {
     save.order.push(id(&world, entity));
 
     let mut dst = World::new();
-    if let Ok(prepared) = prepare_game(&mut dst, &compose(&base, &save)) {
+    if let Ok(prepared) = prepare_game(&mut dst, compose(&base, &save)) {
         prepared.commit(&mut dst, Identity::Keep);
         assert_eq!(dst.iter_entities().count(), 2, "an entity was doubled");
     }
@@ -263,7 +263,7 @@ fn a_damaged_base_is_an_error_for_a_save_and_a_load() {
 
     assert!(capture_save(&world, AssetUUID::new(), &ragged).is_err());
     let mut dst = World::new();
-    if let Ok(prepared) = prepare_game(&mut dst, &compose(&ragged, &save)) {
+    if let Ok(prepared) = prepare_game(&mut dst, compose(&ragged, &save)) {
         prepared.commit(&mut dst, Identity::Keep);
         panic!(
             "a game loaded over a damaged scene; B's name is {:?}",
@@ -294,7 +294,7 @@ fn a_patch_for_a_component_the_author_removed_since_does_not_sink_the_load() {
     let edited = capture_world(&editor).expect("captures");
 
     let mut dst = World::new();
-    let prepared = prepare_game(&mut dst, &compose(&edited, &save))
+    let prepared = prepare_game(&mut dst, compose(&edited, &save))
         .unwrap_or_else(|e| panic!("an authored removal made the save unloadable: {e}"));
     prepared.commit(&mut dst, Identity::Keep);
     let back = twin(&dst, a_id);

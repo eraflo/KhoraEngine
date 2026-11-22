@@ -47,7 +47,7 @@ fn id(world: &World, entity: EntityId) -> PersistentId {
 
 fn load(base: &SceneRecord, save: &SaveRecord) -> World {
     let mut dst = World::new();
-    let prepared = prepare_game(&mut dst, &compose(base, save))
+    let prepared = prepare_game(&mut dst, compose(base, save))
         .unwrap_or_else(|e| panic!("the game did not load: {e}"));
     prepared.commit(&mut dst, Identity::Keep);
     dst
@@ -161,7 +161,7 @@ fn a_patch_for_an_entity_the_scene_lost_is_not_loaded_as_a_whole_value() {
     without_entities(&mut edited, &[a_id]);
 
     let mut dst = World::new();
-    match prepare_game(&mut dst, &compose(&edited, &save)) {
+    match prepare_game(&mut dst, compose(&edited, &save)) {
         Ok(prepared) => {
             let report = prepared.commit(&mut dst, Identity::Keep).report;
             if let Some(entity) = dst.entity_with_id(a_id) {

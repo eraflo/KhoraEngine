@@ -131,6 +131,7 @@ mod every_pub_mod {
     use khora_io::asset::texture as _;
     use khora_io::script as _;
     use khora_io::script::compile as _;
+    use khora_io::script::declared_relayout as _;
     use khora_io::script::hot_reload as _;
     use khora_io::script::layout as _;
     use khora_io::script::mirror as _;
@@ -157,6 +158,10 @@ fn asset_change_kind_variants(x: &khora_io::asset::AssetChangeKind) {
         khora_io::asset::AssetChangeKind::Removed => {}
         khora_io::asset::AssetChangeKind::Rescan => {}
     }
+}
+
+fn declared_relayout_fields(x: &khora_io::script::declared_relayout::DeclaredRelayout) {
+    let _ = (&x.module, &x.report);
 }
 
 fn decoder_registration_fields(x: &khora_io::asset::DecoderRegistration) {
@@ -759,6 +764,17 @@ fn module_script_mounted_paths_still_resolve() {
     let _ = khora_io::script::mounted::MountedScripts::forget_module;
     let _ = khora_io::script::mounted::MountedScripts::modules_of;
     let _ = khora_io::script::mounted::MountedScripts::others;
+}
+
+#[test]
+fn module_script_declared_relayout_paths_still_resolve() {
+    use khora_io::script::declared_relayout::DeclaredRelayout;
+    let _ = type_name::<DeclaredRelayout>();
+    let _ = declared_relayout_fields as fn(&DeclaredRelayout);
+    is_debug::<DeclaredRelayout>();
+    is_clone::<DeclaredRelayout>();
+    let _: fn(&DeclaredRelayout) -> Vec<khora_core::problems::Problem> = DeclaredRelayout::problems;
+    let _: fn(&DeclaredRelayout) = DeclaredRelayout::log;
 }
 
 #[test]

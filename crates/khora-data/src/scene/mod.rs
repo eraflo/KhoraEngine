@@ -22,7 +22,7 @@ pub mod material_registration;
 pub mod shape;
 
 pub mod apply;
-mod asset_kinds;
+pub(crate) mod asset_kinds;
 pub mod capture;
 mod commit;
 pub mod declared;
@@ -33,6 +33,7 @@ pub mod inspector_json;
 mod kept;
 pub mod load_catalog;
 pub mod loading;
+mod page_plan;
 pub mod positional;
 pub mod prefab;
 pub mod record;

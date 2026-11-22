@@ -351,7 +351,7 @@ fn an_abandoned_load_leaves_the_count_as_it_was() {
     let gone = world.spawn(Transform::identity());
     assert!(world.despawn(gone));
 
-    let prepared = prepare(&mut world, &record).expect("the record is read");
+    let prepared = prepare(&mut world, record.clone()).expect("the record is read");
     assert_eq!(
         world.entity_count(),
         1,

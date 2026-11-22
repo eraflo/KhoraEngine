@@ -14,8 +14,9 @@
 
 //! Agent registry for automatic registration and ordered iteration.
 
+use khora_core::agent::dependency::DependencyKind;
 use khora_core::agent::gorna::AgentId;
-use khora_core::agent::Agent;
+use khora_core::agent::{Agent, ExecutionTiming};
 use khora_core::sync::LockExt;
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
@@ -25,6 +26,11 @@ struct AgentEntry {
     agent: Arc<Mutex<dyn Agent>>,
     /// The agent's name, read once: it never changes.
     id: AgentId,
+    /// Its timing, read once: the scheduler orders it by this one, so the order
+    /// it runs in is the order checked for cycles here.
+    timing: ExecutionTiming,
+    /// The agents it runs after: the Hard dependencies of `timing`.
+    after: Vec<AgentId>,
     priority: f32,
 }
 
@@ -73,8 +79,19 @@ impl AgentRegistry {
     /// Higher priority values mean the agent is updated first. Whether it
     /// runs in a frame is its family's state in force
     /// ([`Activation`](khora_core::agent::Activation)), not the registry's.
+    ///
+    /// Refuses, and logs as an error, an agent under a name the registry holds,
+    /// and one whose Hard dependencies close a cycle with the agents held: the
+    /// agents held stay.
     pub fn register(&mut self, agent: Arc<Mutex<dyn Agent>>, priority: f32) {
-        let id = agent.lock_recovered().id();
+        let (id, timing) = {
+            let agent = agent.lock_recovered();
+            (agent.id(), agent.execution_timing())
+        };
+        let after: Vec<AgentId> = (timing.dependencies.iter())
+            .filter(|dependency| matches!(dependency.kind, DependencyKind::Hard))
+            .map(|dependency| dependency.target)
+            .collect();
         // One agent per id: the frame's completion map, the phase ordering,
         // GORNA's budgets and the fixed agents' clocks are all keyed by it, so
         // a second agent under a taken id could never be scheduled as itself.
@@ -83,6 +100,16 @@ impl AgentRegistry {
         if taken {
             log::error!(
                 "AgentRegistry: refused a second agent registered as {:?}; the first stays",
+                id
+            );
+            return;
+        }
+        // Each agent of a cycle would wait on the next, so none could run.
+        // Boot refuses a cycle among the families (`BootError::AfterCycle`);
+        // this holds for any agent registered, so a phase's order always exists.
+        if self.reaches(&after, id) {
+            log::error!(
+                "AgentRegistry: refused {:?}, whose Hard dependencies close a cycle; the agents held stay",
                 id
             );
             return;
@@ -96,6 +123,8 @@ impl AgentRegistry {
         self.entries.push(AgentEntry {
             agent,
             id,
+            timing,
+            after,
             priority,
         });
         self.generation += 1;
@@ -140,6 +169,18 @@ impl AgentRegistry {
             .map(|e| &e.agent)
     }
 
+    /// Returns the agents whose family is not in `inactive`, each with the timing
+    /// read when it registered, in priority order (highest first).
+    pub(crate) fn iter_active_with_timing<'a>(
+        &'a self,
+        inactive: &'a BTreeSet<AgentId>,
+    ) -> impl Iterator<Item = (&'a Arc<Mutex<dyn Agent>>, &'a ExecutionTiming)> + 'a {
+        self.entries
+            .iter()
+            .filter(move |e| !inactive.contains(&e.id))
+            .map(|e| (&e.agent, &e.timing))
+    }
+
     /// Returns the agents whose family is not in `inactive`, each with its id, in
     /// priority order (highest first).
     pub fn iter_active_with_ids<'a>(
@@ -166,6 +207,25 @@ impl AgentRegistry {
             .find(|entry| entry.id == id)
             .map(|entry| entry.agent.clone())
     }
+
+    /// Returns whether `goal` is among `from` or the agents they run after,
+    /// through the agents held.
+    fn reaches(&self, from: &[AgentId], goal: AgentId) -> bool {
+        let mut seen: BTreeSet<AgentId> = BTreeSet::new();
+        let mut stack: Vec<AgentId> = from.to_vec();
+        while let Some(id) = stack.pop() {
+            if id == goal {
+                return true;
+            }
+            if !seen.insert(id) {
+                continue;
+            }
+            if let Some(entry) = self.entries.iter().find(|entry| entry.id == id) {
+                stack.extend(entry.after.iter().copied());
+            }
+        }
+        false
+    }
 }
 
 impl Default for AgentRegistry {
@@ -181,19 +241,26 @@ mod tests {
         CostBasis, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
     };
     use khora_core::agent::gorna::StrategyId;
-    use khora_core::agent::Place;
+    use khora_core::agent::{AgentDependency, DependencyKind, ExecutionTiming, Place};
     use khora_core::lane::cost::{Cost, PerDevice};
 
-    /// An agent that stands for its name and nothing else.
+    /// An agent that stands for its name and the agents it runs after.
     struct Recording {
         id: AgentId,
+        after: Vec<AgentId>,
         place: Arc<Mutex<Place>>,
     }
 
     impl Recording {
         fn named(id: AgentId) -> Arc<Mutex<dyn Agent>> {
+            Self::after(id, &[])
+        }
+
+        /// The agent `id`, with a Hard dependency on each of `targets`.
+        fn after(id: AgentId, targets: &[AgentId]) -> Arc<Mutex<dyn Agent>> {
             Arc::new(Mutex::new(Recording {
                 id,
+                after: targets.to_vec(),
                 place: Arc::new(Mutex::new(Place::new(id))),
             }))
         }
@@ -243,6 +310,17 @@ mod tests {
         }
         fn place(&self) -> Arc<Mutex<Place>> {
             Arc::clone(&self.place)
+        }
+        fn execution_timing(&self) -> ExecutionTiming {
+            ExecutionTiming {
+                dependencies: (self.after.iter())
+                    .map(|&target| AgentDependency {
+                        target,
+                        kind: DependencyKind::Hard,
+                    })
+                    .collect(),
+                ..ExecutionTiming::default()
+            }
         }
     }
 
@@ -390,5 +468,47 @@ mod tests {
             1,
             "the poisoned `narrator` keeps its name: the second `narrator` is refused"
         );
+    }
+
+    /// **The registry refuses an agent that closes a cycle of Hard dependencies.**
+    ///
+    /// Each agent of a cycle waits on the next, so none could run, and no phase
+    /// order holds them. `narrator` after a `chorus` not registered yet is kept;
+    /// a `chorus` after `narrator` would close the cycle, and a `bard` after
+    /// itself is one: both are refused. A `lute` after `narrator` is kept.
+    #[test]
+    fn the_registry_refuses_an_agent_closing_a_cycle_of_hard_dependencies() {
+        let (narrator, chorus) = (AgentId::new("narrator"), AgentId::new("chorus"));
+        let (bard, lute) = (AgentId::new("bard"), AgentId::new("lute"));
+        let mut registry = AgentRegistry::new();
+
+        registry.register(Recording::after(narrator, &[chorus]), 1.0);
+        registry.register(Recording::after(chorus, &[narrator]), 1.0);
+        registry.register(Recording::after(bard, &[bard]), 1.0);
+        registry.register(Recording::after(lute, &[narrator]), 1.0);
+
+        let mut names: Vec<&str> = registry.all_ids().iter().map(|id| id.name()).collect();
+        names.sort_unstable();
+        assert_eq!(names, ["lute", "narrator"]);
+    }
+
+    /// **The registry refuses an agent that closes a cycle of three.**
+    ///
+    /// `narrator` runs after `chorus`, not registered yet, and `bard` after
+    /// `narrator`; `chorus` after `bard` closes the cycle through agents it does
+    /// not name: refused.
+    #[test]
+    fn the_registry_refuses_an_agent_closing_a_cycle_through_agents_it_does_not_name() {
+        let (narrator, chorus) = (AgentId::new("narrator"), AgentId::new("chorus"));
+        let bard = AgentId::new("bard");
+        let mut registry = AgentRegistry::new();
+
+        registry.register(Recording::after(narrator, &[chorus]), 1.0);
+        registry.register(Recording::after(bard, &[narrator]), 1.0);
+        registry.register(Recording::after(chorus, &[bard]), 1.0);
+
+        let mut names: Vec<&str> = registry.all_ids().iter().map(|id| id.name()).collect();
+        names.sort_unstable();
+        assert_eq!(names, ["bard", "narrator"]);
     }
 }

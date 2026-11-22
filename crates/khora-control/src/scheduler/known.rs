@@ -39,11 +39,10 @@ pub(super) struct Known {
 impl Known {
     /// Returns the step the agent's family runs at, read from its place; `None` for a
     /// family that runs every frame.
+    ///
+    /// Never zero: a place refuses a step of zero.
     pub(super) fn fixed_step(&self) -> Option<Duration> {
-        self.place
-            .lock_recovered()
-            .fixed_step()
-            .filter(|step| !step.is_zero())
+        self.place.lock_recovered().fixed_step()
     }
 
     /// Returns what the agent competes for this frame: its installed layer's declaration.
@@ -70,8 +69,14 @@ pub(super) struct KnownAgents {
 impl KnownAgents {
     /// Returns what the scheduler knows of `agent`, meeting it under its lock the first time.
     ///
+    /// `timing` is the one the registry read when the agent registered: the agent is
+    /// ordered by the dependencies the registry checked, never by a second reading.
     /// `None` while a panic poisoned the agent before it was ever met.
-    pub(super) fn of(&self, agent: &Arc<Mutex<dyn Agent>>) -> Option<Known> {
+    pub(super) fn of(
+        &self,
+        agent: &Arc<Mutex<dyn Agent>>,
+        timing: &ExecutionTiming,
+    ) -> Option<Known> {
         let key = address_of(agent);
         if let Some((_, known)) = self.met.lock_recovered().get(&key) {
             return Some(known.clone());
@@ -81,7 +86,7 @@ impl KnownAgents {
             Known {
                 id: agent.id(),
                 place: agent.place(),
-                timing: agent.execution_timing(),
+                timing: timing.clone(),
             }
         };
         let mut met = self.met.lock_recovered();

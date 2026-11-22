@@ -321,7 +321,7 @@ fn an_inline_material_of_every_type_round_trips_through_a_snapshot() {
         .collect();
     let file = write_snapshot(&src).expect("written");
     let mut dst = World::new();
-    let applied = prepare_snapshot(&mut dst, &file)
+    let applied = prepare_snapshot(&mut dst, file.clone())
         .unwrap_or_else(|e| panic!("refused: {e}"))
         .commit(&mut dst, Identity::Keep);
     for (entity, (_, twin)) in entities.iter().zip(&applied.entities) {
@@ -413,7 +413,7 @@ fn one_component_through_two_table_entries_is_refused() {
     }
     let mut dst = World::new();
     let before = dst.iter_entities().count();
-    let refused = prepare_snapshot(&mut dst, &file_with(payload))
+    let refused = prepare_snapshot(&mut dst, file_with(payload))
         .err()
         .expect("refused");
     assert!(refused.message.contains("Name"), "{}", refused.message);
@@ -739,7 +739,7 @@ fn a_pending_sequence_with_every_register_kind_survives_every_save_encoding() {
             }
         };
         let mut dst = World::new();
-        match prepare_game(&mut dst, &compose(&base, &back)) {
+        match prepare_game(&mut dst, compose(&base, &back)) {
             Ok(prepared) => {
                 prepared.commit(&mut dst, Identity::Keep);
             }

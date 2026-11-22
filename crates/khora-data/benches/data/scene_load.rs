@@ -24,6 +24,7 @@ use khora_data::scene::{
     capture_world, prepare, read_scene_file, write_scene_file, CompactEncoding, Identity,
 };
 use std::hint::black_box;
+use std::sync::Arc;
 
 /// 10 000 entities, each a transform and a name — the shape most of a scene
 /// is made of.
@@ -43,7 +44,7 @@ fn bench_scene_load(c: &mut Criterion) {
     let world = scene();
     let compact = write_scene_file(&capture_world(&world).expect("captures"), &CompactEncoding)
         .expect("encodes");
-    let snapshot = write_snapshot(&world).expect("writes");
+    let snapshot = Arc::new(write_snapshot(&world).expect("writes"));
 
     let mut group = c.benchmark_group("Scene load, 10k entities");
     group.sample_size(20);
@@ -51,14 +52,15 @@ fn bench_scene_load(c: &mut Criterion) {
         b.iter(|| {
             let mut target = World::new();
             let record = read_scene_file(black_box(&compact)).expect("decodes");
-            let prepared = prepare(&mut target, &record).expect("prepares");
+            let prepared = prepare(&mut target, record).expect("prepares");
             black_box(prepared.commit(&mut target, Identity::Keep));
         });
     });
     group.bench_function("snapshot", |b| {
         b.iter(|| {
             let mut target = World::new();
-            let prepared = prepare_snapshot(&mut target, black_box(&snapshot)).expect("prepares");
+            let prepared =
+                prepare_snapshot(&mut target, black_box(Arc::clone(&snapshot))).expect("prepares");
             black_box(prepared.commit(&mut target, Identity::Keep));
         });
     });

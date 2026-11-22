@@ -38,6 +38,8 @@ use khora_data::AssetStore;
 use super::fixtures::{
     agent_of, gizmo_registration, grid_registration, overlay_registrations, wireframe_registration,
 };
+use crate::families::render::fixtures::{headless_render_runtime, render_registration};
+use crate::families::shadows::fixtures::shadows_registration;
 use crate::protocol::request;
 
 // ─── The registrations ──────────────────────────────────────────────────────
@@ -46,8 +48,8 @@ use crate::protocol::request;
 /// the grid, the wireframe and the gizmos all draw every frame they have
 /// work: so they are three families — `grid`, `wireframe`, `gizmo` — of
 /// three agents, each with one lane of its own, presentation, rendering.
-/// Checked together, the three are accepted, and the engine builds three
-/// agents from them.
+/// Checked together with the renderer they run after, the three are
+/// accepted, and the engine builds three agents from them.
 #[test]
 fn each_overlay_is_its_own_family() {
     let registrations = overlay_registrations();
@@ -75,11 +77,18 @@ fn each_overlay_is_its_own_family() {
         "three families"
     );
 
-    let mut runtime = Runtime::new();
-    runtime.resources.insert(AssetStore::new());
-    let checked = check_registrations(&registrations, &runtime, &DeviceCaps::default());
+    // With the renderer they run after, and the shadows it reads.
+    let runtime = headless_render_runtime();
+    let booted = [
+        shadows_registration(),
+        render_registration(),
+        registrations[0],
+        registrations[1],
+        registrations[2],
+    ];
+    let checked = check_registrations(&booted, &runtime, &DeviceCaps::default());
     assert_eq!(checked, Ok(()), "the three boot together");
-    let agents = match lane_agents(&registrations, &runtime, &DeviceCaps::default()) {
+    let agents = match lane_agents(&booted, &runtime, &DeviceCaps::default()) {
         Ok(agents) => agents,
         Err(refusal) => panic!("the overlay families boot: {refusal}"),
     };
@@ -87,6 +96,8 @@ fn each_overlay_is_its_own_family() {
     assert_eq!(
         ids,
         [
+            AgentId::new("shadows"),
+            AgentId::new("renderer"),
             AgentId::new("grid"),
             AgentId::new("wireframe"),
             AgentId::new("gizmo")
@@ -256,16 +267,37 @@ fn the_gizmo_lane_declares_what_it_reads_and_writes() {
 
 // ─── Boot ───────────────────────────────────────────────────────────────────
 
-/// **The grid and gizmo families boot on an empty runtime**: they read only
-/// the bus and the frame, which boot does not ask for.
+/// **The grid and gizmo families boot on the renderer's runtime**: they read
+/// only the bus and the frame, which boot does not ask for, so the entries the
+/// renderer they run after reads are all the runtime holds.
 #[test]
-fn the_grid_and_gizmo_families_boot_on_an_empty_runtime() {
+fn the_grid_and_gizmo_families_boot_on_the_renderers_runtime() {
     for registration in [grid_registration(), gizmo_registration()] {
         assert_eq!(
-            check_registrations(&[registration], &Runtime::new(), &DeviceCaps::default()),
+            check_registrations(
+                &[shadows_registration(), render_registration(), registration],
+                &headless_render_runtime(),
+                &DeviceCaps::default()
+            ),
             Ok(()),
             "{}",
             registration.family_name
+        );
+    }
+}
+
+/// **Boot refuses an overlay family without the renderer**, naming the family
+/// and the renderer: it runs after the renderer's run, which would never come,
+/// so the overlay would be skipped on every frame.
+#[test]
+fn boot_refuses_an_overlay_family_without_the_renderer() {
+    for registration in [grid_registration(), gizmo_registration()] {
+        assert_eq!(
+            check_registrations(&[registration], &Runtime::new(), &DeviceCaps::default()),
+            Err(BootError::AfterUnknownFamily {
+                family: registration.family_name,
+                target: AgentId::new("renderer"),
+            })
         );
     }
 }

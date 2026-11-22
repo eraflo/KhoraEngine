@@ -385,7 +385,7 @@ fn an_instance_made_in_play_survives_a_game_save() {
     let saved = capture_save(&world, AssetUUID::new(), &base)
         .unwrap_or_else(|e| panic!("the game saves: {e}"));
     let mut loaded = World::new();
-    prepare_game(&mut loaded, &compose(&base, &saved))
+    prepare_game(&mut loaded, compose(&base, &saved))
         .unwrap_or_else(|e| panic!("the game loads: {e}"))
         .commit(&mut loaded, Identity::Keep);
 

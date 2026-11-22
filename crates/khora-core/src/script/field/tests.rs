@@ -459,6 +459,57 @@ fn an_int_is_widened_where_a_float_is_declared_at_any_depth() {
     );
 }
 
+/// **A float names an `int` exactly only where no rounding happens**: up to
+/// 2^24, and -2^63; never 2^24 + 1, nor `i64::MAX`, which rounds to 2^63.
+#[test]
+fn an_exact_float_is_found_only_for_an_int_a_float_names_exactly() {
+    assert_eq!(ErgonType::exact_float(16_777_216), Some(16_777_216.0));
+    assert_eq!(ErgonType::exact_float(-3), Some(-3.0));
+    assert_eq!(ErgonType::exact_float(i64::MIN), Some(i64::MIN as f32));
+    assert_eq!(ErgonType::exact_float(16_777_217), None);
+    assert_eq!(ErgonType::exact_float(i64::MAX), None);
+}
+
+/// **Widening says whether every `int` it converted is exact**, at any
+/// depth; an inexact one is still its nearest float.
+#[test]
+fn widening_tells_an_int_converted_inexactly_at_any_depth() {
+    let int = ScriptValue::Int;
+    let float = ScriptValue::Float;
+    let inexact = 16_777_217;
+    let optional = ErgonType::Optional(Box::new(ErgonType::Float));
+    let array = ErgonType::Array(Box::new(ErgonType::Duration));
+    let loot = ErgonType::Struct {
+        name: "Loot".to_owned(),
+        fields: Some(vec![("n".to_owned(), ErgonType::Angle)]),
+    };
+
+    assert_eq!(optional.widened_and_exact(int(3)), (float(3.0), true));
+    assert_eq!(
+        optional.widened_and_exact(int(inexact)),
+        (float(inexact as f32), false)
+    );
+    assert_eq!(
+        array.widened_and_exact(ScriptValue::Array(vec![int(1), int(inexact)])),
+        (
+            ScriptValue::Array(vec![float(1.0), float(inexact as f32)]),
+            false
+        )
+    );
+    assert_eq!(
+        loot.widened_and_exact(ScriptValue::Struct(vec![("n".to_owned(), int(inexact))])),
+        (
+            ScriptValue::Struct(vec![("n".to_owned(), float(inexact as f32))]),
+            false
+        )
+    );
+    assert_eq!(
+        ErgonType::Int.widened_and_exact(int(inexact)),
+        (int(inexact), true),
+        "an int field converts nothing"
+    );
+}
+
 // ─── Asset references ───────────────────────────────────────────────────────
 
 /// Each asset kind with the spelling Ergon writes its type with.

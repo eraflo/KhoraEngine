@@ -432,7 +432,7 @@ fn a_snapshot_prepared_on_a_worker_lands_as_the_synchronous_restore_does() {
         write_scene_file(&capture_world(&src).expect("captures"), &CompactEncoding)
             .expect("writes");
     let mut synchronous = World::new();
-    let expected = prepare_snapshot(&mut synchronous, &not_a_snapshot)
+    let expected = prepare_snapshot(&mut synchronous, not_a_snapshot.clone())
         .err()
         .expect("a record is no snapshot");
     let world = occupied_world();
@@ -494,7 +494,7 @@ fn a_game_prepared_on_a_worker_lands_as_the_synchronous_game_load_does() {
     let record = compose(&base, &save);
 
     let mut synchronous = World::new();
-    let expected = prepare_game(&mut synchronous, &record)
+    let expected = prepare_game(&mut synchronous, record.clone())
         .expect("the game prepares")
         .commit(&mut synchronous, Identity::Keep);
 
@@ -503,7 +503,7 @@ fn a_game_prepared_on_a_worker_lands_as_the_synchronous_game_load_does() {
     let hold = world.hold_reservations();
     let prepared = std::thread::scope(|scope| {
         scope
-            .spawn(|| prepare_game_with(&catalog, hold, &record))
+            .spawn(|| prepare_game_with(&catalog, hold, record.clone()))
             .join()
             .expect("the worker panicked")
     })
@@ -524,7 +524,7 @@ fn a_game_prepared_on_a_worker_lands_as_the_synchronous_game_load_does() {
     let hold = world.hold_reservations();
     let refused = std::thread::scope(|scope| {
         scope
-            .spawn(|| prepare_game_with(&catalog, hold, &damaged))
+            .spawn(|| prepare_game_with(&catalog, hold, damaged.clone()))
             .join()
             .expect("the worker panicked")
     });
@@ -631,7 +631,7 @@ fn a_stale_game_is_prepared_again_as_a_game() {
     let record = compose(&base, &save);
 
     let mut synchronous = World::new();
-    let expected = prepare_game(&mut synchronous, &record)
+    let expected = prepare_game(&mut synchronous, record.clone())
         .expect("the game prepares")
         .commit(&mut synchronous, Identity::Keep);
 
@@ -640,7 +640,7 @@ fn a_stale_game_is_prepared_again_as_a_game() {
     let hold = world.hold_reservations();
     let stale = std::thread::scope(|scope| {
         scope
-            .spawn(|| prepare_game_with(&catalog, hold, &record))
+            .spawn(|| prepare_game_with(&catalog, hold, record.clone()))
             .join()
             .expect("the worker panicked")
     })

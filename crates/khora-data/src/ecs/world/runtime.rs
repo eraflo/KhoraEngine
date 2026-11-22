@@ -23,8 +23,10 @@ use khora_core::script::ScriptValue;
 use khora_core::sync::{LockExt, RwLockExt};
 
 use super::component_access::AddComponentError;
+use super::lost_value::LostValue;
+use super::relayout_report::RelayoutReport;
 use super::World;
-use crate::ecs::packed::{retyped, FieldError, PackedColumn, PackedColumns, PackedLayout};
+use crate::ecs::packed::{FieldError, PackedColumn, PackedColumns, PackedLayout};
 use crate::ecs::{
     AnyVec, Component, ComponentKey, ComponentProvenance, ComponentRegistry, SemanticDomain, Tick,
 };
@@ -43,15 +45,6 @@ pub struct RuntimeComponentDecl {
     pub resumable: bool,
     /// Its fields.
     pub layout: PackedLayout,
-}
-
-/// What a [`World::relayout`] did to the rows it rebuilt.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct RelayoutReport {
-    /// Fields the old layout had and the new one does not: their values are gone.
-    pub dropped: Vec<String>,
-    /// Fields that are new, or changed kind: every row holds their default.
-    pub defaulted: Vec<String>,
 }
 
 /// Why a component could not be registered, or relaid out.
@@ -270,9 +263,16 @@ impl World {
 
     /// Gives a declared component new fields, rebuilding every row by field name.
     ///
-    /// A field keeps its value where its name and kind are unchanged, or an
-    /// `int` became a `float`; it takes its default where it is new, changed
-    /// kind, or changed Ergon type (`string?` to `int?`).
+    /// Each value is read into the field of its name as a scene load reads it
+    /// ([`PackedLayout::fit`]), so a load and a live edit agree on every value:
+    /// kept where its new type holds it, an `int` become a `float` where the
+    /// float holds it exactly, and an `int` inside an optional, an array or a
+    /// struct as the float its new type widens it to. A value the new field
+    /// refuses, and every row of a new field, take the field's default.
+    ///
+    /// Returns every value a live row did not keep, by entity: a row a
+    /// migration left behind, or one its entity holds no more in the
+    /// component's domain, is no one's, and reported by no one.
     ///
     /// # Errors
     ///
@@ -293,48 +293,73 @@ impl World {
                 name: vtable.name.to_string(),
             });
         };
-        let report = RelayoutReport {
+        let mut report = RelayoutReport {
+            component: vtable.name.to_string(),
             dropped: old
                 .fields()
                 .iter()
                 .filter(|field| layout.slot_of(&field.name).is_none())
                 .map(|field| field.name.clone())
                 .collect(),
-            defaulted: layout
-                .fields()
-                .iter()
-                .enumerate()
-                .filter(|(at, field)| {
-                    old.slot_of(&field.name).is_none_or(|slot| {
-                        !old.fields()[slot].kind.widens(field.kind)
-                            || retyped(old.ty(slot), layout.ty(*at))
-                    })
-                })
-                .map(|(_, field)| field.name.clone())
-                .collect(),
+            defaulted: Vec::new(),
+            lost: Vec::new(),
         };
-        if !report.dropped.is_empty() {
-            log::warn!(
-                "`{}` lost the fields {:?}: their values are gone",
-                vtable.name,
-                report.dropped
-            );
-        }
         let mut layout = layout;
         layout.kept_for(vtable.provenance);
         let layout = Arc::new(layout);
         let mut relaid = Vec::new();
+        let mut losses = Vec::new();
         for (page_id, page) in self.storage.pages.iter_mut().enumerate() {
             let Some(column) = page.columns.get_mut(&key) else {
                 continue;
             };
             if let Some(packed) = packed(column.as_ref()) {
-                *column = Box::new(packed.relaid(&layout));
+                let (rebuilt, lost) = packed.relaid(&layout);
+                *column = Box::new(rebuilt);
+                losses.extend(lost.into_iter().map(|loss| (page_id as u32, loss)));
                 if page.row_count() > 0 {
                     relaid.push(page_id as u32);
                 }
             }
         }
+        let live_rows = relaid
+            .iter()
+            .map(|&page_id| {
+                let page = &self.storage.pages[page_id as usize];
+                (0..page.row_count())
+                    .filter(|&row| self.holds_row(page.entities[row], key, page_id, row))
+                    .count()
+            })
+            .sum::<usize>();
+        for (page_id, loss) in losses {
+            let entity = self.storage.pages[page_id as usize].entities[loss.row];
+            if self.holds_row(entity, key, page_id, loss.row) {
+                report.lost.push(LostValue {
+                    entity,
+                    field: loss.field,
+                    was: loss.was,
+                    now: loss.now,
+                    cause: loss.cause,
+                });
+            }
+        }
+        // A field every live row holds the default of: a new one, or one
+        // whose new type kept no live row's value.
+        report.defaulted = layout
+            .fields()
+            .iter()
+            .filter(|field| {
+                old.slot_of(&field.name).is_none()
+                    || (live_rows > 0
+                        && report
+                            .lost
+                            .iter()
+                            .filter(|lost| lost.field == field.name)
+                            .count()
+                            == live_rows)
+            })
+            .map(|field| field.name.clone())
+            .collect();
         // Every row was rebuilt: every row is written.
         for page_id in relaid {
             self.stamp_column(page_id, key);
@@ -368,6 +393,9 @@ impl World {
 
     /// Gives declared component `key` a new provenance and resumability, relaying out its rows.
     ///
+    /// Returns what the relayout did: a component a scene keeps holds only
+    /// finite numbers, so a row of one the engine kept loses any other.
+    ///
     /// # Errors
     ///
     /// [`RegisterError::Unknown`] if no declared component has `key`.
@@ -376,7 +404,7 @@ impl World {
         key: ComponentKey,
         provenance: ComponentProvenance,
         resumable: bool,
-    ) -> Result<(), RegisterError> {
+    ) -> Result<RelayoutReport, RegisterError> {
         let Some(layout) = self
             .storage
             .registry
@@ -389,7 +417,7 @@ impl World {
         self.storage
             .registry
             .set_provenance(key, provenance, resumable);
-        self.relayout(key, layout).map(|_| ())
+        self.relayout(key, layout)
     }
 
     /// Moves a declared component to `domain`, each row to its entity's page there, values intact.
@@ -574,5 +602,14 @@ impl World {
             }
         }
         removed
+    }
+
+    /// Returns whether `entity` holds component `key` at row `row` of page `page_id`.
+    ///
+    /// Read in the component's own domain: a row its entity keeps for another
+    /// domain's components holds this one for no one.
+    fn holds_row(&self, entity: EntityId, key: ComponentKey, page_id: u32, row: usize) -> bool {
+        self.row_location(entity, key)
+            .is_some_and(|(_, at)| at.page_id == page_id && at.row_index as usize == row)
     }
 }

@@ -16,6 +16,7 @@
 //! the guards a fetch runs, the boot checks over every agent registration, and
 //! the compile errors the derives and `register_agent!` give.
 
+mod after;
 mod background;
 mod background_outputs;
 mod bakery;

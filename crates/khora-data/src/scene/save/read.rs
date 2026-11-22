@@ -40,7 +40,7 @@ pub(super) fn as_read(
         pages: record.pages.clone(),
         declared: record.declared.clone(),
     };
-    let report = prepare_kept(&mut world, &whole, kept)?
+    let report = prepare_in_place(&mut world, &whole, kept)?
         .commit(&mut world, Identity::Keep)
         .report;
     let captured = match kept {

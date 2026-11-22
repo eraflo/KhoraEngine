@@ -39,9 +39,11 @@ mod component_access;
 mod domain_stats;
 mod hierarchy;
 mod identity;
+mod lost_value;
 mod migration;
 mod projection;
 mod queries;
+mod relayout_report;
 mod reservations;
 mod rows;
 mod runtime;
@@ -53,9 +55,11 @@ pub use component_access::RemoveComponentError;
 pub use domain_stats::DomainStats;
 pub use hierarchy::HierarchyWrite;
 pub(crate) use hierarchy::LoadedHierarchy;
+pub use lost_value::{LossCause, LostValue};
 pub use projection::BehaviorComponent;
+pub use relayout_report::RelayoutReport;
 pub use rows::{RowMut, RowRef};
-pub use runtime::{RegisterError, RelayoutReport, RowError, RuntimeComponentDecl};
+pub use runtime::{RegisterError, RowError, RuntimeComponentDecl};
 pub use spawn_error::SpawnError;
 
 /// Source of process-unique [`World::instance_id`] values.

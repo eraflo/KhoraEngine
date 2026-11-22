@@ -24,11 +24,12 @@ use khora_core::ecs::PersistentId;
 use khora_core::scene::SceneFile;
 use khora_core::script::{ErgonType, ScriptValue};
 
-use super::apply::{failure, prepare_pages, to_register, LoadFailure, Loaded, PagePlan, Prepared};
+use super::apply::{failure, prepare_pages, to_register, LoadFailure, Loaded, Prepared};
 use super::capture::{capture_pages, scene_entities, SaveError, Saved};
 use super::component_registration::{ComponentRegistration, Kept};
 use super::declared::{kind_name, kind_named, nowhere, plan_fields, DeclaredLoad};
 use super::file::{check_format, encoding_of, scene_file};
+use super::page_plan::PagePlan;
 use super::positional::{from_positional, to_positional, write_varint};
 use super::record::{LoadReport, RecordError};
 use crate::ecs::{ComponentKey, PackedField, SemanticDomain, World};
@@ -181,12 +182,18 @@ pub fn write_snapshot(world: &World) -> Result<SceneFile, SaveError> {
 /// format version, a component whose fingerprint is not this build's, a declared
 /// entry named like a Rust component or listed twice, or pages that do not fit
 /// together: the snapshot is refused whole.
-pub fn prepare_snapshot(world: &mut World, file: &SceneFile) -> Result<Prepared, LoadFailure> {
-    let snapshot = parse(file)?;
+pub fn prepare_snapshot(
+    world: &mut World,
+    file: impl Into<std::sync::Arc<SceneFile>>,
+) -> Result<Prepared, LoadFailure> {
+    let file = file.into();
+    let snapshot = parse(&file)?;
     // As many ids made ready as the snapshot holds entities, so restores in
     // a row reuse the slots each one freed.
     let (catalog, hold) = super::apply::readings(world, snapshot.entities.len());
-    prepare_parsed(&catalog, hold, snapshot)
+    let mut prepared = prepare_parsed(&catalog, hold, snapshot)?;
+    prepared.set_source(super::apply::Source::Snapshot(file));
+    Ok(prepared)
 }
 
 /// Does [`prepare_snapshot`] without the world: it reads the catalog and reserves through `hold`.
@@ -197,8 +204,9 @@ pub fn prepare_snapshot(world: &mut World, file: &SceneFile) -> Result<Prepared,
 pub fn prepare_snapshot_with(
     world: &crate::scene::LoadCatalog,
     hold: khora_core::ecs::ReservationHold,
-    file: std::sync::Arc<SceneFile>,
+    file: impl Into<std::sync::Arc<SceneFile>>,
 ) -> Result<Prepared, LoadFailure> {
+    let file = file.into();
     let mut prepared = prepare_parsed(world, hold, parse(&file)?)?;
     prepared.set_source(super::apply::Source::Snapshot(file));
     Ok(prepared)

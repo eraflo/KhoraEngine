@@ -17,7 +17,8 @@
 //! Several places find a problem and none of them can see the others. For
 //! scripts: the compile path (a module that does not compile, or compiles
 //! with warnings), the registration of what modules declare (a name two
-//! modules declare, a declaration deleted), the script lane (an instance that
+//! modules declare, a declaration deleted), the relayout of a module's
+//! components (a stored value their new fields cannot keep), the script lane (an instance that
 //! faulted, a body that runs too long), and the scan of an assets root for
 //! `.erg` files that sit outside its `scripts/` folder and so are never
 //! compiled. For the scene's data: the components' own checks (a camera whose
@@ -47,6 +48,12 @@ pub enum ProblemSource {
     },
     /// The registration of what the modules declare.
     Registration,
+    /// The last relayout of the components one module declares: each value a
+    /// stored row could not keep when their fields changed.
+    Relayout {
+        /// The module declaring them, by its path under the script root.
+        module: String,
+    },
     /// The instances running.
     Running,
     /// The scan of an assets root for `.erg` files outside its `scripts/`

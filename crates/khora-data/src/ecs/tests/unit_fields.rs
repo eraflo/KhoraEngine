@@ -200,3 +200,51 @@ fn same_as_compares_the_fields_and_their_types() {
     assert!(!layout.same_as(&timed));
     assert!(!layout.same_as(&renamed));
 }
+
+/// **A script's write rounds an `int` a float cannot hold exactly, at any
+/// depth**, where a file's value is refused: 2^24 + 1 written into a
+/// `Duration`, a `float?`, a `float[]` or a struct's `float` is kept as its
+/// nearest float, 2^24.
+#[test]
+fn admit_rounds_an_int_a_float_cannot_hold_exactly_at_any_depth() {
+    let inexact = ScriptValue::Int(16_777_217);
+    let rounded = ScriptValue::Float(16_777_216.0);
+    let loot = |ty| ErgonType::Struct {
+        name: "Loot".to_owned(),
+        fields: Some(vec![("n".to_owned(), ty)]),
+    };
+    let layout = typed(&[
+        ("wait", ErgonType::Duration, ScriptValue::Float(0.0)),
+        (
+            "spare",
+            ErgonType::Optional(Box::new(ErgonType::Float)),
+            ScriptValue::Null,
+        ),
+        (
+            "clips",
+            ErgonType::Array(Box::new(ErgonType::Float)),
+            ScriptValue::Array(Vec::new()),
+        ),
+        ("loot", loot(ErgonType::Float), ScriptValue::Null),
+    ]);
+    let in_loot = |value| ScriptValue::Struct(vec![("n".to_owned(), value)]);
+
+    let written = [
+        (inexact.clone(), rounded.clone()),
+        (inexact.clone(), rounded.clone()),
+        (
+            ScriptValue::Array(vec![inexact.clone()]),
+            ScriptValue::Array(vec![rounded.clone()]),
+        ),
+        (in_loot(inexact), in_loot(rounded)),
+    ];
+
+    for (slot, (value, kept)) in written.into_iter().enumerate() {
+        assert_eq!(layout.admit(slot, &value), Some(kept), "slot {slot}");
+        assert_eq!(
+            layout.fit(slot, &value),
+            None,
+            "slot {slot}: a file's is refused"
+        );
+    }
+}

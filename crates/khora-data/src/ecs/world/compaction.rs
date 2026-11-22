@@ -24,7 +24,7 @@ impl World {
     ///
     /// Domain-agnostic: a row of a mixed page is dead only when no domain
     /// points at it. A dead or recycled entity references nothing.
-    fn entity_references_row(&self, entity: EntityId, page_id: u32, row: usize) -> bool {
+    pub(super) fn entity_references_row(&self, entity: EntityId, page_id: u32, row: usize) -> bool {
         let Some((slot_id, metadata_opt)) = self.entities.get(entity.index as usize) else {
             return false;
         };

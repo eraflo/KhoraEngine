@@ -311,12 +311,12 @@ fn only_a_committed_load_registers_its_declarations() {
     let record = capture_world(&src.world).expect("captures");
     let mut world = open_world();
 
-    let prepared = prepare(&mut world, &record).expect("the record is read");
+    let prepared = prepare(&mut world, record.clone()).expect("the record is read");
     assert_untouched(&world, "prepared, not committed");
     prepared.abandon(&mut world);
     assert_untouched(&world, "abandoned");
 
-    prepare(&mut world, &record)
+    prepare(&mut world, record.clone())
         .expect("the record is read again")
         .commit(&mut world, Identity::Keep);
     assert_eq!(
@@ -462,8 +462,8 @@ fn a_load_committed_after_another_registered_its_component_keeps_its_fields() {
         ]),
     );
     let mut world = World::new();
-    let one = prepare(&mut world, &first).expect("the first file is read");
-    let two = prepare(&mut world, &second).expect("the second file is read");
+    let one = prepare(&mut world, first.clone()).expect("the first file is read");
+    let two = prepare(&mut world, second.clone()).expect("the second file is read");
     one.commit(&mut world, Identity::Fresh);
     let applied = two.commit(&mut world, Identity::Fresh);
     let (_, entity) = applied.entities[0];
@@ -641,6 +641,79 @@ fn an_int_too_wide_for_a_float_field_is_reported_dropped() {
     );
 }
 
+/// An `int` saved inside an optional or an array, read into a `float?` or a
+/// `float[]` field, is refused where a float cannot hold it exactly
+/// (2^24 + 1): the whole value is dropped, the field keeps its default, and
+/// the report says so for that entity, as for a bare `int` too wide for a
+/// `float` field.
+#[test]
+fn a_nested_int_too_wide_for_a_float_is_reported() {
+    use khora_core::script::ErgonType;
+    let inexact = 16_777_217;
+    let optional = |ty: ErgonType| ErgonType::Optional(Box::new(ty));
+    let array = |ty: ErgonType| ErgonType::Array(Box::new(ty));
+    let mut src = World::new();
+    declare_typed_ammo(
+        &mut src,
+        &[
+            ("spare", optional(ErgonType::Int)),
+            ("clips", array(ErgonType::Int)),
+        ],
+    );
+    let entity = src.spawn(Transform::identity());
+    super::declared_components::attach(
+        &mut src,
+        entity,
+        "Ammo",
+        ScriptValue::Struct(vec![
+            ("spare".into(), ScriptValue::Int(inexact)),
+            (
+                "clips".into(),
+                ScriptValue::Array(vec![ScriptValue::Int(2), ScriptValue::Int(inexact)]),
+            ),
+        ]),
+    );
+    src.mark_authored(entity).expect("authored");
+    let record = capture_world(&src).expect("captures");
+
+    let mut dst = World::new();
+    declare_typed_ammo(
+        &mut dst,
+        &[
+            ("spare", optional(ErgonType::Float)),
+            ("clips", array(ErgonType::Float)),
+        ],
+    );
+    let applied = apply(&mut dst, &record, Identity::Keep).expect("the scene loads");
+    let (id, entity) = applied.entities[0];
+
+    assert_eq!(
+        field_of(&dst, entity, "Ammo", "spare"),
+        Some(ScriptValue::Null),
+        "the field keeps its default"
+    );
+    assert_eq!(
+        field_of(&dst, entity, "Ammo", "clips"),
+        Some(ScriptValue::Array(Vec::new())),
+        "the field keeps its default"
+    );
+    for path in ["spare", "clips"] {
+        let entries: Vec<_> = applied
+            .report
+            .entries
+            .iter()
+            .filter(|entry| entry.entity == Some(id) && entry.path == path)
+            .map(|entry| entry.kind.clone())
+            .collect();
+        assert_eq!(
+            entries,
+            vec![ReportKind::Dropped],
+            "`{path}`: the report says the value was dropped: {:?}",
+            applied.report
+        );
+    }
+}
+
 /// `Ammo`, typed, declared with each `(name, type)` of `fields`, every
 /// default `null` or empty.
 fn declare_typed_ammo(world: &mut World, fields: &[(&str, khora_core::script::ErgonType)]) {
@@ -745,4 +818,162 @@ fn an_int_inside_an_optional_an_array_or_a_struct_widens_onto_a_float_declaratio
         "each int converts exactly: {lost:?}; report {:?}",
         applied.report
     );
+}
+
+/// The `int` boundaries of an `f32`: ±2^24 and ±2^53 with their neighbours
+/// past them, and both ends of `i64`.
+const INT_BOUNDARIES: [i64; 12] = [
+    i64::MIN,
+    -(1 << 53) - 1,
+    -(1 << 53),
+    -(1 << 24) - 1,
+    -(1 << 24),
+    -1,
+    0,
+    1 << 24,
+    (1 << 24) + 1,
+    1 << 53,
+    (1 << 53) + 1,
+    i64::MAX,
+];
+
+/// A layout declaring each `(name, type)` of `fields`: a `float` field
+/// defaults to `0.5`, an array to empty, anything else to `null`.
+fn layout_declaring(
+    fields: &[(&str, khora_core::script::ErgonType)],
+) -> khora_data::ecs::PackedLayout {
+    use khora_core::script::ErgonType;
+    use khora_data::ecs::{PackedField, PackedLayout};
+    let default = |ty: &ErgonType| match ty {
+        ErgonType::Float => ScriptValue::Float(0.5),
+        ErgonType::Int => ScriptValue::Int(1),
+        ErgonType::Array(_) => ScriptValue::Array(Vec::new()),
+        _ => ScriptValue::Null,
+    };
+    PackedLayout::typed(
+        fields
+            .iter()
+            .map(|(name, ty)| PackedField {
+                name: (*name).to_owned(),
+                kind: FieldKind::of(ty),
+                default: default(ty),
+            })
+            .collect(),
+        fields.iter().map(|(_, ty)| ty.clone()).collect(),
+    )
+    .expect("a valid layout")
+}
+
+/// **A load and a relayout keep the same value of every shape**: each `int`
+/// boundary of an `f32`, bare, in an optional, in an array of optionals and in
+/// a struct, and an asset field become another kind, saved under one
+/// declaration and read under another, by a scene load and by a relayout of
+/// the world it was saved from: each field holds the same value after both,
+/// and what the load reports dropped is what the relayout reports lost.
+#[test]
+fn a_load_and_a_relayout_keep_the_same_value_of_every_shape() {
+    use khora_core::asset::{AssetKind, AssetUUID};
+    use khora_core::script::ErgonType;
+    use khora_data::ecs::{ComponentProvenance, RuntimeComponentDecl};
+    let optional = |ty: ErgonType| ErgonType::Optional(Box::new(ty));
+    let array = |ty: ErgonType| ErgonType::Array(Box::new(ty));
+    let loot = |ty: ErgonType| ErgonType::Struct {
+        name: "Loot".to_owned(),
+        fields: Some(vec![("n".to_owned(), ty)]),
+    };
+    let declared = |int: ErgonType, kind: AssetKind| {
+        vec![
+            ("top", int.clone()),
+            ("spare", optional(int.clone())),
+            ("clips", array(optional(int.clone()))),
+            ("loot", optional(loot(int))),
+            ("icon", optional(ErgonType::Asset(kind))),
+        ]
+    };
+    let saved = declared(ErgonType::Int, AssetKind::Mesh);
+    let read = declared(ErgonType::Float, AssetKind::Texture);
+    let names: Vec<&str> = saved.iter().map(|(name, _)| *name).collect();
+    let register = |world: &mut World, fields: &[(&str, ErgonType)]| {
+        world
+            .register_runtime_component(RuntimeComponentDecl {
+                name: "Ammo".to_owned(),
+                domain: SemanticDomain::Script,
+                provenance: ComponentProvenance::Authored,
+                resumable: false,
+                layout: layout_declaring(fields),
+            })
+            .expect("`Ammo` registers")
+    };
+    let mut src = World::new();
+    let ammo = register(&mut src, &saved);
+    let mut held = Vec::new();
+    for (at, &int) in INT_BOUNDARIES.iter().enumerate() {
+        let entity = src.spawn(Transform::identity());
+        let icon = match at % 2 {
+            0 => ScriptValue::Asset(AssetUUID::new_v5(&format!("assets/icon{at}"))),
+            _ => ScriptValue::Null,
+        };
+        super::declared_components::attach(
+            &mut src,
+            entity,
+            "Ammo",
+            ScriptValue::Struct(vec![
+                ("top".into(), ScriptValue::Int(int)),
+                ("spare".into(), ScriptValue::Int(int)),
+                (
+                    "clips".into(),
+                    ScriptValue::Array(vec![ScriptValue::Null, ScriptValue::Int(int)]),
+                ),
+                (
+                    "loot".into(),
+                    ScriptValue::Struct(vec![("n".into(), ScriptValue::Int(int))]),
+                ),
+                ("icon".into(), icon),
+            ]),
+        );
+        src.mark_authored(entity).expect("authored");
+        held.push((entity, src.persistent_id(entity).expect("an identity")));
+    }
+    let record = capture_world(&src).expect("captures");
+    let mut dst = World::new();
+    register(&mut dst, &read);
+
+    let applied = apply(&mut dst, &record, Identity::Keep).expect("the scene loads");
+    let relaid = src
+        .relayout(ammo, layout_declaring(&read))
+        .expect("`Ammo` is relaid out");
+
+    let mut disagree = Vec::new();
+    for ((entity, id), int) in held.iter().zip(INT_BOUNDARIES) {
+        let loaded = dst.entity_with_id(*id).expect("loaded");
+        let exact = ErgonType::exact_float(int).map(ScriptValue::Float);
+        let top = field_of(&dst, loaded, "Ammo", "top");
+        if top != Some(exact.clone().unwrap_or(ScriptValue::Float(0.5))) {
+            disagree.push(format!("`top` of {int}: {top:?}, exactly {exact:?}"));
+        }
+        for name in &names {
+            let by_load = field_of(&dst, loaded, "Ammo", name);
+            let by_relayout = field_of(&src, *entity, "Ammo", name);
+            if by_load != by_relayout {
+                disagree.push(format!(
+                    "`{name}` of {id:?}: load {by_load:?}, relayout {by_relayout:?}"
+                ));
+            }
+            let dropped = applied.report.entries.iter().any(|entry| {
+                entry.entity == Some(*id)
+                    && entry.path == *name
+                    && entry.kind == ReportKind::Dropped
+            });
+            let lost = relaid
+                .lost
+                .iter()
+                .any(|lost| lost.entity == *entity && lost.field == *name);
+            if dropped != lost {
+                disagree.push(format!(
+                    "`{name}` of {id:?}: load dropped it {dropped}, relayout lost it {lost}"
+                ));
+            }
+        }
+    }
+    assert!(disagree.is_empty(), "{disagree:#?}");
 }

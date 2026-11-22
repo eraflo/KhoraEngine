@@ -29,13 +29,12 @@ use super::component_registration::{
 };
 use super::declared::{plan, DeclaredLoad};
 use super::load_catalog::LoadCatalog;
+use super::page_plan::{check_plans, PagePlan};
 use super::record::{LoadReport, RecordError, ReferenceReader, ReportEntry, ReportKind};
 use super::resolver::Resolver;
 use super::retired::is_retired;
 use super::scene_record::SceneRecord;
-use crate::ecs::{
-    ComponentKey, LoadedHierarchy, Parent, RuntimeComponentDecl, SemanticDomain, World,
-};
+use crate::ecs::{ComponentKey, LoadedHierarchy, Parent, RuntimeComponentDecl, World};
 
 /// Which identities the entities brought in take.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,7 +83,7 @@ pub fn apply(
     record: &SceneRecord,
     identity: Identity,
 ) -> Result<Applied, LoadFailure> {
-    Ok(prepare(world, record)?.commit(world, identity))
+    Ok(prepare_in_place(world, record, Kept::Scene)?.commit(world, identity))
 }
 
 /// A record read and checked, its entities reserved, nothing added yet.
@@ -115,9 +114,12 @@ pub struct Prepared {
     pub(super) hold: ReservationHold,
     /// The generation of the catalogue the load was prepared against.
     pub(super) generation: u64,
-    /// What a load prepared off the frame was read from; `None` for one prepared on it.
+    /// What the load was read from, to prepare it again should the world's
+    /// components change before it commits.
     ///
-    /// Kept to prepare the load again should the world's components change before it commits.
+    /// `None` only for a load committed under the same borrow of the world it
+    /// was prepared with ([`apply`], a prefab instance), which nothing can
+    /// change in between.
     pub(super) source: Option<Source>,
 }
 
@@ -146,7 +148,7 @@ impl Prepared {
     }
 }
 
-/// What a load prepared off the frame was read from.
+/// What a load was read from, shared rather than copied.
 #[derive(Clone)]
 pub(super) enum Source {
     /// A record, kept as it keeps its components.
@@ -242,8 +244,11 @@ pub(super) fn to_register<'n>(
 /// is unknown, a file declaration is refused (named like a Rust component,
 /// declared twice, or unreadable), the pages do not fit together, a value cannot
 /// be read, or the hierarchy has a cycle. The failure carries the report so far.
-pub fn prepare(world: &mut World, record: &SceneRecord) -> Result<Prepared, LoadFailure> {
-    prepare_kept(world, record, Kept::Scene)
+pub fn prepare(
+    world: &mut World,
+    record: impl Into<Arc<SceneRecord>>,
+) -> Result<Prepared, LoadFailure> {
+    prepare_shared(world, record.into(), Kept::Scene)
 }
 
 /// Returns what a load reads of `world`, and a hold for the `wanted` ids it reserves.
@@ -268,17 +273,16 @@ pub(super) fn readings(world: &mut World, wanted: usize) -> (Arc<LoadCatalog>, R
 pub fn prepare_with(
     catalog: &LoadCatalog,
     hold: ReservationHold,
-    record: Arc<SceneRecord>,
+    record: impl Into<Arc<SceneRecord>>,
 ) -> Result<Prepared, LoadFailure> {
-    let mut prepared = prepare_given(catalog, hold, &record, Kept::Scene, None)?;
-    prepared.source = Some(Source::Record(record, Kept::Scene));
-    Ok(prepared)
+    prepare_kept_with(catalog, hold, record.into(), Kept::Scene)
 }
 
 /// Prepares a load as [`prepare`] does, landing the entity known as `given.0` at `given.1`.
 ///
 /// `given.1` is an id reserved before the load, which the load neither reserves nor gives
-/// back.
+/// back. Like [`prepare_in_place`], it keeps no source: it is committed before the borrow
+/// of `world` ends.
 pub(crate) fn prepare_at(
     world: &mut World,
     record: &SceneRecord,
@@ -290,26 +294,39 @@ pub(crate) fn prepare_at(
 
 /// Prepares a load as [`prepare`] does, keeping only the components `kept` keeps.
 ///
-/// Any other component the record holds is skipped and reported.
-pub(super) fn prepare_kept(
+/// Any other component the record holds is skipped and reported. The load
+/// shares `record`, to be prepared again from it should the world's
+/// components change before it commits.
+pub(super) fn prepare_shared(
+    world: &mut World,
+    record: Arc<SceneRecord>,
+    kept: Kept,
+) -> Result<Prepared, LoadFailure> {
+    let (catalog, hold) = readings(world, record.entities.len());
+    prepare_kept_with(&catalog, hold, record, kept)
+}
+
+/// Prepares a load as [`prepare_shared`] does, without the world.
+pub(super) fn prepare_kept_with(
+    catalog: &LoadCatalog,
+    hold: ReservationHold,
+    record: Arc<SceneRecord>,
+    kept: Kept,
+) -> Result<Prepared, LoadFailure> {
+    let mut prepared = prepare_given(catalog, hold, &record, kept, None)?;
+    prepared.set_source(Source::Record(record, kept));
+    Ok(prepared)
+}
+
+/// Prepares a load as [`prepare_shared`] does, keeping no source: for a load
+/// committed before the borrow of `world` ends, which nothing can make stale.
+pub(super) fn prepare_in_place(
     world: &mut World,
     record: &SceneRecord,
     kept: Kept,
 ) -> Result<Prepared, LoadFailure> {
     let (catalog, hold) = readings(world, record.entities.len());
     prepare_given(&catalog, hold, record, kept, None)
-}
-
-/// Prepares a load as [`prepare_kept`] does, without the world.
-pub(super) fn prepare_kept_with(
-    catalog: &LoadCatalog,
-    hold: ReservationHold,
-    record: &SceneRecord,
-    kept: Kept,
-) -> Result<Prepared, LoadFailure> {
-    let mut prepared = prepare_given(catalog, hold, record, kept, None)?;
-    prepared.source = Some(Source::Record(Arc::new(record.clone()), kept));
-    Ok(prepared)
 }
 
 fn prepare_given(
@@ -462,14 +479,6 @@ fn prepare_given(
     Ok(prepared)
 }
 
-/// One page of a load, its names resolved.
-///
-/// Its rows' identities and, per kept column, its position in the file and how it is read.
-pub(super) struct PagePlan<'r> {
-    pub(super) rows: &'r [PersistentId],
-    pub(super) columns: Vec<(usize, Loaded)>,
-}
-
 /// Prepares a load whose names are resolved, whatever its values are held as.
 ///
 /// `stage` reads one value, given its component, page, file column and row.
@@ -605,78 +614,6 @@ pub(super) fn prepare_pages(
         generation: world.generation(),
         source: None,
     })
-}
-
-/// Checks that a load's pages fit together; returns why they don't.
-///
-/// Every entity is listed once, a page holds only listed entities, once each,
-/// a component appears once per page, and an entity has one page per domain.
-fn check_plans(
-    world: &LoadCatalog,
-    entities: &[PersistentId],
-    plans: &[PagePlan<'_>],
-) -> Result<(), String> {
-    let mut known = HashSet::new();
-    for id in entities {
-        if !known.insert(*id) {
-            return Err(format!("entity {:#x} is recorded twice", id.to_bits()));
-        }
-    }
-
-    let mut domains_of: HashMap<PersistentId, Vec<SemanticDomain>> = HashMap::new();
-    for plan in plans {
-        let mut page_domains: Vec<SemanticDomain> = Vec::new();
-        for (index, (_, loaded)) in plan.columns.iter().enumerate() {
-            // Where the file kept it: what decides whether its pages fit
-            // together.
-            let domain = match loaded {
-                Loaded::Rust(reg) => world.domain_of(ComponentKey::Rust(reg.type_id)),
-                Loaded::Declared(load) => Some(load.file_domain),
-            };
-            let Some(domain) = domain else {
-                return Err(format!(
-                    "component `{}` is not registered in this world",
-                    loaded.name()
-                ));
-            };
-            if plan.columns[..index]
-                .iter()
-                .any(|(_, known)| known.key() == loaded.key())
-            {
-                return Err(format!(
-                    "component `{}` appears twice in one page",
-                    loaded.name()
-                ));
-            }
-            if !page_domains.contains(&domain) {
-                page_domains.push(domain);
-            }
-        }
-        let mut in_page = HashSet::new();
-        for id in plan.rows {
-            if !known.contains(id) {
-                return Err(format!(
-                    "a page holds entity {:#x}, which the record does not list",
-                    id.to_bits()
-                ));
-            }
-            if !in_page.insert(*id) {
-                return Err(format!(
-                    "entity {:#x} has two rows in one page",
-                    id.to_bits()
-                ));
-            }
-            let taken = domains_of.entry(*id).or_default();
-            if page_domains.iter().any(|domain| taken.contains(domain)) {
-                return Err(format!(
-                    "entity {:#x} is in two pages of the same domain",
-                    id.to_bits()
-                ));
-            }
-            taken.extend(page_domains.iter().copied());
-        }
-    }
-    Ok(())
 }
 
 pub(super) fn failure(message: String, report: LoadReport) -> LoadFailure {

@@ -21,9 +21,11 @@ use khora_core::math::Vec3;
 use khora_core::script::ScriptValue;
 
 use super::runtime_components::{declare, field, layout, patch, read, write};
-use super::{Position, Velocity};
+use super::{Position, RenderId, Velocity};
 use crate::ecs::query::Without;
-use crate::ecs::{Component, ComponentKey, FieldKind, RowError, SemanticDomain, Transform, World};
+use crate::ecs::{
+    Component, ComponentKey, FieldKind, LossCause, RowError, SemanticDomain, Transform, World,
+};
 
 fn str_value(text: &str) -> ScriptValue {
     ScriptValue::Str(text.to_owned())
@@ -529,4 +531,140 @@ fn a_refused_runtime_add_changes_nothing() {
         "nothing changed"
     );
     assert_eq!(world.get::<Transform>(entity), Some(&Transform::identity()));
+}
+
+/// **A relayout reports the values of live rows only**: a row a migration left
+/// behind belongs to no entity, and its value is nobody's loss.
+#[test]
+fn a_relayout_reports_no_value_of_a_row_left_behind() {
+    let (mut world, badge, _, crowd) = crowd();
+    world
+        .add_component(crowd[0], Spin(0.0))
+        .expect("Spin attaches");
+
+    let report = world
+        .relayout(
+            badge,
+            layout(vec![field("label", FieldKind::Value, str_value(""))]),
+        )
+        .expect("Badge is relaid out");
+
+    let mut reported: Vec<(EntityId, ScriptValue)> = report
+        .lost_in("n", LossCause::FieldDropped)
+        .map(|lost| (lost.entity, lost.was.clone()))
+        .collect();
+    reported.sort_by_key(|(entity, _)| entity.index);
+    let mut live: Vec<(EntityId, ScriptValue)> = crowd
+        .iter()
+        .enumerate()
+        .map(|(i, entity)| (*entity, ScriptValue::Int(i as i64)))
+        .collect();
+    live.sort_by_key(|(entity, _)| entity.index);
+    assert_eq!(
+        reported, live,
+        "each live row once, the row left behind never"
+    );
+}
+
+/// **A relayout reports no value of a component its entity dropped**: the
+/// entity leaves the domain of a declared component sharing its row with
+/// another domain's, so the row stays live, but the declared value is no one's.
+#[test]
+fn a_relayout_reports_no_value_of_a_component_dropped_from_a_shared_row() {
+    let mut world = World::new();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<RenderId>(SemanticDomain::Render);
+    let mark = declare(
+        &mut world,
+        "Mark",
+        SemanticDomain::Spatial,
+        vec![field("n", FieldKind::Int, ScriptValue::Int(0))],
+    );
+    let entity = world.spawn((Position(1), RenderId(10)));
+    world
+        .add_runtime_component(entity, mark, &patch(&[("n", ScriptValue::Int(5))]))
+        .expect("Mark attaches");
+    world
+        .remove_component_domain::<Position>(entity)
+        .expect("the entity leaves the Spatial domain");
+    assert_eq!(read(&world, entity, mark, "n"), None, "Mark is gone");
+
+    let report = world
+        .relayout(
+            mark,
+            layout(vec![field("m", FieldKind::Int, ScriptValue::Int(0))]),
+        )
+        .expect("Mark is relaid out");
+
+    assert!(report.lost_nothing(), "{report:?}");
+}
+
+/// The relayout of `Badge` that turns its `n` into a `float`.
+fn badge_with_a_float_n() -> crate::ecs::PackedLayout {
+    layout(vec![
+        field("label", FieldKind::Value, str_value("")),
+        field("n", FieldKind::Float, ScriptValue::Float(0.5)),
+    ])
+}
+
+/// **A field is defaulted where every live row lost its value, whatever a row
+/// left behind held**: a migration leaves `crowd[0]`'s exact `0` behind, then
+/// every live row is given 2^24 + 1, which no `float` holds. Relaid out to a
+/// `float`, every live row loses it, so `n` is defaulted; the row left behind,
+/// which would have kept its value, counts for no one.
+#[test]
+fn a_field_every_live_row_lost_is_defaulted_whatever_a_row_left_behind_held() {
+    let (mut world, badge, _, crowd) = crowd();
+    world
+        .add_component(crowd[0], Spin(0.0))
+        .expect("Spin attaches");
+    for &entity in &crowd {
+        write(&mut world, entity, badge, "n", ScriptValue::Int(16_777_217))
+            .expect("an int fits `n`");
+    }
+
+    let report = world
+        .relayout(badge, badge_with_a_float_n())
+        .expect("Badge is relaid out");
+
+    assert_eq!(report.lost_in("n", LossCause::Inexact).count(), crowd.len());
+    assert_eq!(report.defaulted, vec!["n".to_owned()], "{report:?}");
+}
+
+/// **A relayout after a domain move reports each entity's value once**: `Mark`
+/// moves from `Spatial` to `Render` on an entity whose row both domains share,
+/// leaving its old row behind in the page it lands in again; relaid out
+/// without `n`, the entity loses its value once.
+#[test]
+fn a_relayout_after_a_domain_move_reports_each_value_once() {
+    let mut world = World::new();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<RenderId>(SemanticDomain::Render);
+    let mark = declare(
+        &mut world,
+        "Mark",
+        SemanticDomain::Spatial,
+        vec![field("n", FieldKind::Int, ScriptValue::Int(0))],
+    );
+    let entity = world.spawn((Position(1), RenderId(10)));
+    world
+        .add_runtime_component(entity, mark, &patch(&[("n", ScriptValue::Int(5))]))
+        .expect("Mark attaches");
+    world
+        .move_component_domain(mark, SemanticDomain::Render)
+        .expect("Mark moves");
+    assert_eq!(read(&world, entity, mark, "n"), Some(ScriptValue::Int(5)));
+
+    let report = world
+        .relayout(
+            mark,
+            layout(vec![field("m", FieldKind::Int, ScriptValue::Int(0))]),
+        )
+        .expect("Mark is relaid out");
+
+    let lost: Vec<(EntityId, ScriptValue)> = report
+        .lost_in("n", LossCause::FieldDropped)
+        .map(|lost| (lost.entity, lost.was.clone()))
+        .collect();
+    assert_eq!(lost, vec![(entity, ScriptValue::Int(5))], "{report:?}");
 }

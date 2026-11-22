@@ -19,7 +19,7 @@ use std::any::TypeId;
 use std::time::Duration;
 
 use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::registration::{check_registrations, AgentRegistration};
+use khora_core::agent::registration::{check_registrations, AgentRegistration, BootError};
 use khora_core::agent::{AgentImportance, ExecutionPhase};
 use khora_core::gpu::{DeviceCaps, GpuSetup};
 use khora_core::lane::cost::Cost;
@@ -137,6 +137,23 @@ fn boot_refuses_a_lane_reading_the_fixed_step_of_a_family_without_one() {
     assert!(
         checked.is_err(),
         "a family with no fixed step whose lane reads `FixedStep` boots, and is refused every frame"
+    );
+}
+
+/// **A fixed step of zero is refused at boot.** A run at it advances no
+/// simulated time and no sub-clock is ever owed one: boot refuses it, naming
+/// the family.
+#[test]
+fn boot_refuses_a_fixed_step_of_zero() {
+    let tick = tick_registration(Some(Duration::ZERO));
+
+    let checked = check_registrations(&[&tick], &Runtime::new(), &DeviceCaps::default());
+
+    assert_eq!(checked, Err(BootError::ZeroFixedStep { family: "tick" }));
+    let message = checked.err().map(|e| e.to_string()).unwrap_or_default();
+    assert!(
+        message.contains("`tick`") && message.contains("longer than zero"),
+        "{message}"
     );
 }
 

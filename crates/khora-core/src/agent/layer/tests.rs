@@ -976,6 +976,52 @@ fn a_step_set_while_a_layer_is_staged_reaches_both_layers_leaving_their_rows_ter
     );
 }
 
+/// **A place never holds a step of zero.** A fixed step is longer than zero:
+/// a zero set as the step, or carried by terms set while a layer is staged,
+/// is refused, and the installed and the staged layers both keep the 7 ms
+/// step the place held.
+#[test]
+fn a_place_refuses_a_step_of_zero_and_keeps_the_step_it_holds() {
+    let log = Log::default();
+    let (old_seen, new_seen) = (Seen::default(), Seen::default());
+    let at = Instant::now();
+    let held = Some(Duration::from_millis(7));
+    let mut place = installed(
+        Sheet::new("old", StrategyId::HighPerformance, &log)
+            .seeing(&old_seen)
+            .boxed(),
+    );
+    place.set_fixed_step(held);
+
+    place.set_fixed_step(Some(Duration::ZERO));
+    assert_eq!(place.fixed_step(), held, "a zero step set is refused");
+
+    place.stage(
+        Sheet::new("new", StrategyId::LowPower, &log)
+            .seeing(&new_seen)
+            .boxed(),
+        Duration::ZERO,
+    );
+    place.set_terms(Terms {
+        fixed_step: Some(Duration::ZERO),
+        ..lent(2, at)
+    });
+    assert_eq!(
+        place.fixed_step(),
+        held,
+        "a zero step in the terms is refused"
+    );
+    let _ = run(&mut place);
+    let _ = frame(&mut place);
+
+    let (old, new) = (seen_since(&old_seen), seen_since(&new_seen));
+    assert!(!old.is_empty() && !new.is_empty(), "{old:?} {new:?}");
+    assert!(
+        old.iter().chain(&new).all(|terms| terms.fixed_step == held),
+        "both layers run at the step held: {old:?} {new:?}"
+    );
+}
+
 /// **A layer staged twice before a swap keeps the first one ready.** The
 /// second stage replaces the first, which is kept rather than lost; the frame
 /// start swaps the second in, and keeps the installed one too — each with

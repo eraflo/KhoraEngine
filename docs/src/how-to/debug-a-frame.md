@@ -185,14 +185,12 @@ lane, was skipped. Check, in order:
    is skipped on a frame whose scheduler has already run for more than 16 ms when
    its turn comes. Lighten the frame, or register it `Important`.
 3. **Did what it follows run?** A family runs only if every family named in its
-   registration's `after` completed earlier in the same frame. One off, skipped,
-   failed, or in a later phase skips it too — and the families after it. `after`
-   names are not checked at boot: a name in another phase, or of no family,
-   skips it on every frame.
-4. **A cycle?** `Scheduler: cycle detected in Hard agent dependencies` at `error`
-   means two families name each other in `after`, directly or not: the phase then
-   runs in importance order.
-5. **A panic?** `agent … panicked; its work for this frame is dropped` at `error`:
+   registration's `after` completed earlier in the same frame. One off, skipped or
+   failed skips it too — and the families after it. A name that could never have
+   run first (no family, the family itself, a later phase, a once-per-frame family
+   named by a fixed-step one, a family at the background) or a cycle of names does
+   not reach a frame: boot refuses it with a `BootError` naming both families.
+4. **A panic?** `agent … panicked; its work for this frame is dropped` at `error`:
    its run failed, its deck writes were dropped, and its agent falls back to a
    cheaper row.
 

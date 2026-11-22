@@ -19,8 +19,8 @@ use std::sync::Arc;
 
 use khora_core::script::{FieldValueError, ScriptValue};
 
-use super::{decode, encode, FieldError, FieldKind, PackedLayout, Place};
-use crate::ecs::{AnyVec, ColumnOps, ColumnSnapshot, FieldWriteError};
+use super::{decode, encode, FieldError, PackedLayout, Place};
+use crate::ecs::{AnyVec, ColumnOps, ColumnSnapshot, FieldWriteError, LossCause};
 
 /// The rows of one run-time component in one page: the inline parts packed
 /// back to back, `stride` bytes each, and the out-of-line values beside them.
@@ -126,37 +126,65 @@ impl PackedColumn {
         self.rows += 1;
     }
 
-    /// Returns the column rebuilt under `layout`, each field matched by name.
+    /// Returns the column rebuilt under `layout`, each field matched by name,
+    /// with every value a row did not keep.
     ///
-    /// A field keeps its values where its kind is unchanged or
-    /// [widens](FieldKind::widens), and takes its new default otherwise, or
-    /// when its Ergon type changed: a `string?` that became an `int?` holds no `int`.
-    pub(crate) fn relaid(&self, layout: &Arc<PackedLayout>) -> PackedColumn {
+    /// Each value is read into its new field as a scene load reads it
+    /// ([`PackedLayout::fit_from`]); one the field refuses takes the field's
+    /// default, and is lost for the reason the field gives. A row loses
+    /// nothing where its value is its new one.
+    pub(crate) fn relaid(&self, layout: &Arc<PackedLayout>) -> (PackedColumn, Vec<RowLoss>) {
         let mut column = PackedColumn::new(layout.clone());
-        let kept: Vec<Option<(usize, FieldKind)>> = layout
+        // Each new field's slot in the old layout.
+        let sources: Vec<Option<usize>> = layout
             .fields()
             .iter()
-            .enumerate()
-            .map(|(slot, field)| {
-                let old = self.layout.slot_of(&field.name)?;
-                let from = self.layout.fields()[old].kind;
-                let changed = retyped(self.layout.ty(old), layout.ty(slot));
-                (from.widens(field.kind) && !changed).then_some((old, from))
-            })
+            .map(|field| self.layout.slot_of(&field.name))
             .collect();
+        let dropped: Vec<usize> = (0..self.layout.fields().len())
+            .filter(|old| layout.slot_of(&self.layout.fields()[*old].name).is_none())
+            .collect();
+        let mut losses = Vec::new();
         for row in 0..self.rows {
             column.push_defaults();
-            for (slot, old) in kept.iter().enumerate() {
-                let to = layout.fields()[slot].kind;
-                if let Some(value) = old
-                    .and_then(|(old, from)| from.widened(to, &self.get(row, old)?))
-                    .and_then(|value| layout.admit(slot, &value))
-                {
-                    column.store(row, slot, value);
+            for (slot, source) in sources.iter().enumerate() {
+                let Some(old) = *source else {
+                    continue;
+                };
+                let Some(was) = self.get(row, old) else {
+                    continue;
+                };
+                let cause = match layout.fit_from(slot, &was, self.layout.ty(old)) {
+                    Ok((value, _)) => {
+                        column.store(row, slot, value);
+                        continue;
+                    }
+                    Err(cause) => cause,
+                };
+                let now = column.get(row, slot);
+                if now.as_ref() != Some(&was) {
+                    losses.push(RowLoss {
+                        row,
+                        field: layout.fields()[slot].name.clone(),
+                        was,
+                        now,
+                        cause,
+                    });
+                }
+            }
+            for &old in &dropped {
+                if let Some(was) = self.get(row, old) {
+                    losses.push(RowLoss {
+                        row,
+                        field: self.layout.fields()[old].name.clone(),
+                        was,
+                        now: None,
+                        cause: LossCause::FieldDropped,
+                    });
                 }
             }
         }
-        column
+        (column, losses)
     }
 }
 
@@ -206,6 +234,21 @@ impl ColumnSnapshot for PackedColumn {
                 .collect(),
         )
     }
+}
+
+/// One value a row of a [`PackedColumn`] did not keep through [`PackedColumn::relaid`].
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct RowLoss {
+    /// The row, in the column's page.
+    pub(crate) row: usize,
+    /// The field, by name.
+    pub(crate) field: String,
+    /// The value the row held.
+    pub(crate) was: ScriptValue,
+    /// What the row holds in its place, `None` when the field is gone.
+    pub(crate) now: Option<ScriptValue>,
+    /// Why it was not kept.
+    pub(crate) cause: LossCause,
 }
 
 /// The column operations of a declared component: its columns are [`PackedColumn`]s of
@@ -293,41 +336,5 @@ impl ColumnOps for PackedColumns {
             .downcast_ref::<PackedColumn>()
             .expect("a declared component's column is packed");
         Box::new(column.clone())
-    }
-}
-
-/// Returns whether a field's Ergon type changed from `from` to `to` in a way that voids its values.
-///
-/// `int` to `float`, and between `float`, `Duration` and `Angle` (floats in a
-/// unit), keep them. A type not known on both sides is left to the kind.
-pub(crate) fn retyped(
-    from: Option<&khora_core::script::ErgonType>,
-    to: Option<&khora_core::script::ErgonType>,
-) -> bool {
-    use khora_core::script::ErgonType;
-    match (from.map(stored), to.map(stored)) {
-        (Some(ErgonType::Int), Some(ErgonType::Float)) => false,
-        (Some(from), Some(to)) => from != to,
-        _ => false,
-    }
-}
-
-/// Returns `ty` as its values are stored: a unit's floats as floats.
-fn stored(ty: &khora_core::script::ErgonType) -> khora_core::script::ErgonType {
-    use khora_core::script::ErgonType;
-    match ty {
-        ErgonType::Duration | ErgonType::Angle => ErgonType::Float,
-        ErgonType::Optional(inner) => ErgonType::Optional(Box::new(stored(inner))),
-        ErgonType::Array(element) => ErgonType::Array(Box::new(stored(element))),
-        ErgonType::Struct { name, fields } => ErgonType::Struct {
-            name: name.clone(),
-            fields: fields.as_ref().map(|fields| {
-                fields
-                    .iter()
-                    .map(|(field, ty)| (field.clone(), stored(ty)))
-                    .collect()
-            }),
-        },
-        other => other.clone(),
     }
 }

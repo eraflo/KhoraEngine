@@ -198,7 +198,9 @@ impl SerializationService {
         prefabs: &dyn PrefabSource,
     ) -> Result<(Prepared, Vec<ReportEntry>), SerializationServiceError> {
         if encoding_of(file) == SNAPSHOT_ENCODING_ID {
-            return prepare_snapshot(world, file)
+            // The load keeps its file to be prepared again; the bytes are
+            // copied once, a small part of reading them.
+            return prepare_snapshot(world, Arc::new(file.clone()))
                 .map(|prepared| (prepared, Vec::new()))
                 .map_err(SerializationServiceError::LoadFailed);
         }
@@ -206,7 +208,7 @@ impl SerializationService {
         let (record, mut left_out) = read_into(&world.load_catalog(), record);
         let (record, expansion) = Self::expanded(record, prefabs)?;
         left_out.extend(expansion);
-        prepare(world, &record)
+        prepare(world, record)
             .map(|prepared| (prepared, left_out))
             .map_err(SerializationServiceError::LoadFailed)
     }
@@ -236,7 +238,7 @@ impl SerializationService {
         let (record, mut left_out) = read_into(catalog, record);
         let (record, expansion) = Self::expanded(record, prefabs)?;
         left_out.extend(expansion);
-        prepare_with(catalog, hold, Arc::new(record))
+        prepare_with(catalog, hold, record)
             .map(|prepared| (prepared, left_out))
             .map_err(SerializationServiceError::LoadFailed)
     }
@@ -265,7 +267,7 @@ impl SerializationService {
         let (record, merging) =
             compose_reporting(&base, &save).map_err(SerializationServiceError::LoadFailed)?;
         let left_out = about_what_loads(&record, expanding.into_iter().chain(merging));
-        prepare_game_with(catalog, hold, &record)
+        prepare_game_with(catalog, hold, record)
             .map(|prepared| (prepared, left_out))
             .map_err(SerializationServiceError::LoadFailed)
     }
@@ -404,7 +406,7 @@ impl SerializationService {
         // one place adapted once, and only what the game loads.
         let left_out = about_what_loads(&record, expanding.into_iter().chain(merging));
         let prepared =
-            prepare_game(world, &record).map_err(SerializationServiceError::LoadFailed)?;
+            prepare_game(world, record).map_err(SerializationServiceError::LoadFailed)?;
         let mut report = Self::replace_with(prepared, world);
         report.entries.extend(left_out);
         Ok(report)

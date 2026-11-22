@@ -151,7 +151,7 @@ fn a_snapshot_holding_an_unguarded_component_is_not_loaded() {
     let mut dst = World::new();
     dst.spawn(Name::new("already here"));
     let before = dst.iter_entities().count();
-    let refused = prepare_snapshot(&mut dst, &file)
+    let refused = prepare_snapshot(&mut dst, file.clone())
         .err()
         .expect("an unguarded component is refused");
     assert!(refused.message.contains("Versioned"), "{}", refused.message);

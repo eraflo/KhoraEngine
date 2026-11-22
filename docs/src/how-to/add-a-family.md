@@ -137,7 +137,7 @@ The fields, in the order the macro takes them:
 | `family` | The `LaneFamily` type. Every lane listed must name it as its `Lane::Family`, or the line does not compile. |
 | `phase` | The phase the family's place runs in: `INIT`, `OBSERVE`, `TRANSFORM` (per-frame logic and simulation), `MUTATE`, `OUTPUT` (rendering), `FINALIZE`, a game's own phase, or `BACKGROUND` for work that spans frames. |
 | `importance` | `Critical`, `Important` or `Optional`. It weighs the family in GORNA; only `Optional` work is skipped when the frame runs late. Priority comes from the importance, never from the name. |
-| `after` | The families this one runs after within its phase, by `AgentId`. |
+| `after` | The families this one runs after, by `AgentId`: of its phase or an earlier one (a once-per-frame family may also name a fixed-step one of any phase). Boot refuses a name that could never have run first, and a cycle ([The frame](../concepts/the-frame.md#phases-and-waves)). |
 | `fixed_step` | `None` to run every frame, or `Some(step)` to run at a fixed step. The step is held by the family's place; for physics the engine replaces the default with the game's `physics.step` at boot. |
 | `default_level` | Optional, after `fixed_step`: the `StrategyId` the family starts on. Without it the family starts on its menu's first row. |
 | `lanes` | The family's lanes. Each is built with `Default`. |

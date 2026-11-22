@@ -226,7 +226,13 @@ impl Place {
     /// While a layer is staged or being prepared, the terms are that layer's
     /// from its swap; the installed layer takes their agent's part at once
     /// and keeps its own row's part until then.
-    pub fn set_terms(&mut self, terms: Terms) {
+    ///
+    /// A fixed step of zero in `terms` is refused, as by
+    /// [`set_fixed_step`](Self::set_fixed_step): the step held is kept.
+    pub fn set_terms(&mut self, mut terms: Terms) {
+        if self.refuses_step(terms.fixed_step) {
+            terms.fixed_step = self.terms.fixed_step;
+        }
         if self.staged.is_some() || self.pending_row().is_some() {
             self.terms = self.terms.lending(&terms);
             self.staged_terms = Some(terms);
@@ -241,11 +247,31 @@ impl Place {
     }
 
     /// Sets the step of the installed layer and of one on its way in.
+    ///
+    /// A fixed step is longer than zero: a step of zero is refused, logged as a
+    /// warning, and the step held is kept. `None` runs the family every frame.
     pub fn set_fixed_step(&mut self, step: Option<Duration>) {
+        if self.refuses_step(step) {
+            return;
+        }
         self.terms.fixed_step = step;
         if let Some(staged) = self.staged_terms.as_mut() {
             staged.fixed_step = step;
         }
+    }
+
+    /// Returns whether `step` is a fixed step of zero, which no place holds, and
+    /// logs the refusal.
+    fn refuses_step(&self, step: Option<Duration>) -> bool {
+        let zero = step.is_some_and(|step| step.is_zero());
+        if zero {
+            log::warn!(
+                "the place of {} refused a fixed step of zero; it keeps {:?}",
+                self.agent,
+                self.terms.fixed_step
+            );
+        }
+        zero
     }
 
     /// Returns what the last run gave back: its report and the costs it found.

@@ -180,8 +180,8 @@ khora_script::inventory::submit! {
 | `family` | the `LaneFamily`; every lane listed must name it as its `Family`, or the line does not compile |
 | `phase` | where the family's place runs: `INIT`, `OBSERVE`, `TRANSFORM`, `MUTATE`, `OUTPUT`, `FINALIZE`, a game's own phase, or `BACKGROUND` (off the frame) |
 | `importance` | `Critical`, `Important` or `Optional`; it weighs the family in GORNA, and only `Optional` work is skipped when the frame runs late |
-| `after` | the families it runs after within its phase, by `AgentId`; on a frame where one of them did not complete its run, the family is skipped too ([The frame](./the-frame.md#phases-and-waves)) |
-| `fixed_step` | `None` to run once a frame, `Some(step)` to run at a fixed step |
+| `after` | the families it runs after, by `AgentId`: of its phase or an earlier one, or, for a once-per-frame family, a fixed-step one of any phase; on a frame where one of them did not complete its run, the family is skipped too ([The frame](./the-frame.md#phases-and-waves)) |
+| `fixed_step` | `None` to run once a frame, `Some(step)` to run at a fixed step, longer than zero ([The frame](./the-frame.md#fixed-timestep-simulation-and-render-interpolation)) |
 | `default_level` | optional: the `StrategyId` the family starts on; else its menu's first row |
 | `lanes` | its lanes, each built with `Default` |
 
@@ -194,7 +194,11 @@ registrations name one family or one agent; a family offers no level, or one
 `StrategyId` twice; no lane runs on the device; an `Exact` family has a level that
 changes the result; a lane reads a runtime entry the runtime does not hold, or a
 deck slot no earlier phase writes; the default level is not on the menu; a
-`BACKGROUND` lane reads anything of a single frame.
+`BACKGROUND` lane reads anything of a single frame; the fixed step is zero; an
+`after` names a family that could never have run first — one not registered, the
+family itself, one of a later phase, a once-per-frame family named by a fixed-step
+one, one at the background — or is written on a family at the background; families
+name one another in `after` in a cycle.
 
 ## Pins and allowed rows
 

@@ -98,7 +98,7 @@ fn id(world: &World, entity: EntityId) -> PersistentId {
 /// `base` and `save` composed and brought into a fresh world.
 fn load(base: &SceneRecord, save: &SaveRecord) -> World {
     let mut dst = World::new();
-    let prepared = prepare_game(&mut dst, &compose(base, save))
+    let prepared = prepare_game(&mut dst, compose(base, save))
         .unwrap_or_else(|e| panic!("the game did not load: {e}"));
     prepared.commit(&mut dst, Identity::Keep);
     dst
@@ -485,7 +485,7 @@ fn a_game_load_is_atomic() {
         let resident_id = dst.mark_authored(resident).expect("authored");
         let before = components_of(&dst, resident);
 
-        match prepare_game(&mut dst, &compose(&base, &bad)) {
+        match prepare_game(&mut dst, compose(&base, &bad)) {
             Ok(prepared) => {
                 prepared.abandon(&mut dst);
                 panic!("{what}: the load was not refused");

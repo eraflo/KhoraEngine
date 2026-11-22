@@ -15,7 +15,9 @@
 //! Traits for autonomous engine subsystems (Agents).
 
 pub mod activation;
+mod after_checks;
 mod background_checks;
+mod boot_error;
 pub mod completion;
 pub mod contention;
 pub mod dependency;

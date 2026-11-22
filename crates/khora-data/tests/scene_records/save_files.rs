@@ -111,7 +111,7 @@ fn every_encoding_round_trips_a_save_record() {
         }
 
         let mut dst = World::new();
-        let prepared = prepare_game(&mut dst, &compose(&base, &back))
+        let prepared = prepare_game(&mut dst, compose(&base, &back))
             .unwrap_or_else(|e| panic!("{name}: the game does not load: {e}"));
         let applied = prepared.commit(&mut dst, Identity::Keep);
         assert!(

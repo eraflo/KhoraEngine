@@ -34,6 +34,8 @@ use khora_data::render::{RenderWorld, SkyboxPassSlot};
 use khora_data::IblBaker;
 
 use super::fixtures::{skybox_agent, skybox_registration};
+use crate::families::render::fixtures::{headless_render_runtime, render_registration};
+use crate::families::shadows::fixtures::shadows_registration;
 use crate::protocol::request;
 
 // ─── The registration ───────────────────────────────────────────────────────
@@ -136,25 +138,54 @@ fn the_skybox_lane_declares_what_it_reads_and_writes() {
 
 // ─── Boot ───────────────────────────────────────────────────────────────────
 
-/// **The skybox family boots** on a runtime holding the IBL bake: the check
-/// accepts it, and one `Skybox` agent is built from it. The `FrameContext` it
-/// reads its target from is not there at boot — the driver inserts it once a
-/// frame begins — and boot does not ask for it.
+/// **The skybox family boots with the renderer it runs after**, on a runtime
+/// holding the IBL bake: the check accepts it, and one `Skybox` agent is built
+/// from it. The `FrameContext` it reads its target from is not there at boot —
+/// the driver inserts it once a frame begins — and boot does not ask for it.
 #[test]
 fn the_skybox_family_boots_with_the_ibl_baker_and_no_frame_context() {
-    let mut runtime = Runtime::new();
-    runtime.resources.insert(IblBaker::new());
-    let registration = skybox_registration();
+    let runtime = headless_render_runtime();
+    assert!(runtime.holds(TypeId::of::<IblBaker>()));
+    assert!(!runtime.holds(TypeId::of::<FrameContext>()));
+    let registrations = [
+        shadows_registration(),
+        render_registration(),
+        skybox_registration(),
+    ];
 
-    let checked = check_registrations(&[registration], &runtime, &DeviceCaps::default());
+    let checked = check_registrations(&registrations, &runtime, &DeviceCaps::default());
     assert_eq!(checked, Ok(()), "the check accepts the skybox family");
 
-    let agents = match lane_agents(&[registration], &runtime, &DeviceCaps::default()) {
+    let agents = match lane_agents(&registrations, &runtime, &DeviceCaps::default()) {
         Ok(agents) => agents,
         Err(refusal) => panic!("the skybox family boots: {refusal}"),
     };
     let ids: Vec<AgentId> = agents.iter().map(|agent| agent.id()).collect();
-    assert_eq!(ids, vec![AgentId::new("skybox")]);
+    assert_eq!(
+        ids,
+        vec![
+            AgentId::new("shadows"),
+            AgentId::new("renderer"),
+            AgentId::new("skybox")
+        ]
+    );
+}
+
+/// **Boot refuses the skybox family without the renderer**, naming the family
+/// and the renderer: it runs after the renderer's run, which would never come,
+/// so the sky would be skipped on every frame.
+#[test]
+fn boot_refuses_the_skybox_family_without_the_renderer() {
+    let mut runtime = Runtime::new();
+    runtime.resources.insert(IblBaker::new());
+
+    assert_eq!(
+        check_registrations(&[skybox_registration()], &runtime, &DeviceCaps::default()),
+        Err(BootError::AfterUnknownFamily {
+            family: "skybox",
+            target: AgentId::new("renderer"),
+        })
+    );
 }
 
 /// Boot refuses the skybox family on a runtime without the IBL bake, naming

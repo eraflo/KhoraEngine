@@ -17,10 +17,11 @@
 //! See the book: concepts/serialization.md, "Atomic loading".
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use khora_core::ecs::entity::EntityId;
 
-use super::apply::{prepare_kept, Applied, Identity, LoadFailure, Prepared, Source};
+use super::apply::{prepare_shared, Applied, Identity, LoadFailure, Prepared, Source};
 use super::record::{LoadReport, ReportEntry, ReportKind};
 use crate::ecs::World;
 
@@ -49,6 +50,10 @@ impl Prepared {
 
     /// Adds everything the load read, giving the entities `identity`'s identities.
     ///
+    /// A load whose world's components changed since it was prepared is
+    /// prepared again from what it was read from, as it was first prepared
+    /// (a scene, a game or a snapshot), and lands as a load prepared now would.
+    ///
     /// Never fails: a load prepared for another world, or one that fails when
     /// prepared again against changed components, adds nothing and reports
     /// `NotLoaded`.
@@ -62,22 +67,25 @@ impl Prepared {
             );
             return not_loaded(self.report, reason);
         }
-        // Prepared off the frame against components the world has changed
-        // since: prepared again against the world as it is now, so it lands
-        // as a load prepared now would.
+        // Prepared against components the world has changed since: prepared
+        // again against the world as it is now, so it lands as a load
+        // prepared now would.
         if self.generation != world.components().generation() {
-            if let Some(source) = self.source.clone() {
-                drop(self);
-                return match source.prepare_now(world) {
-                    Ok(prepared) => prepared.commit(world, identity),
-                    Err(failure) => {
-                        log::error!(
-                            "a load prepared before its components changed fails now: {failure}"
-                        );
-                        not_loaded(failure.report, failure.message)
-                    }
-                };
-            }
+            let Some(source) = self.source.clone() else {
+                log::error!("a load kept no source and its components changed; nothing is added");
+                let reason = "its components changed since it was prepared".to_owned();
+                return not_loaded(self.report, reason);
+            };
+            drop(self);
+            return match source.prepare_now(world) {
+                Ok(prepared) => prepared.commit(world, identity),
+                Err(failure) => {
+                    log::error!(
+                        "a load prepared before its components changed fails now: {failure}"
+                    );
+                    not_loaded(failure.report, failure.message)
+                }
+            };
         }
         // What the file describes and the world did not have: registered
         // first, so the pages holding it can be built.
@@ -172,8 +180,8 @@ impl Source {
     /// Prepares the load again from its source, against `world` as it is now.
     fn prepare_now(&self, world: &mut World) -> Result<Prepared, LoadFailure> {
         match self {
-            Self::Record(record, kept) => prepare_kept(world, record, *kept),
-            Self::Snapshot(file) => super::snapshot::prepare_snapshot(world, file),
+            Self::Record(record, kept) => prepare_shared(world, Arc::clone(record), *kept),
+            Self::Snapshot(file) => super::snapshot::prepare_snapshot(world, Arc::clone(file)),
         }
     }
 }
@@ -201,7 +209,10 @@ mod tests {
         ComponentProvenance, FieldKind, PackedField, PackedLayout, RuntimeComponentDecl,
         SemanticDomain, Transform, World,
     };
-    use crate::scene::{capture_world, prepare, SceneRecord};
+    use crate::scene::apply::prepare_in_place;
+    use crate::scene::component_registration::Kept;
+    use crate::scene::record::ReportKind;
+    use crate::scene::{capture_world, prepare, Identity, SceneRecord};
 
     /// A record of one authored entity holding a `Transform`.
     fn one_entity() -> SceneRecord {
@@ -211,25 +222,9 @@ mod tests {
         capture_world(&src).expect("captures")
     }
 
-    #[test]
-    fn a_load_is_for_the_world_it_was_prepared_in_only() {
-        let record = one_entity();
-        let mut world = World::new();
-        let other = World::new();
-        let prepared = prepare(&mut world, &record).expect("prepares");
-
-        assert!(prepared.is_for(&world));
-        assert!(!prepared.is_for(&other));
-        prepared.abandon(&mut world);
-    }
-
-    #[test]
-    fn a_load_stops_being_current_once_its_world_registers_a_component() {
-        let record = one_entity();
-        let mut world = World::new();
-        let prepared = prepare(&mut world, &record).expect("prepares");
-        assert!(prepared.is_current(&world));
-
+    /// Registers `Charge`, a declared component no record holds: the world's
+    /// components change.
+    fn register_charge(world: &mut World) {
         world
             .register_runtime_component(RuntimeComponentDecl {
                 name: "Charge".to_owned(),
@@ -244,8 +239,60 @@ mod tests {
                 .expect("a valid layout"),
             })
             .expect("`Charge` registers");
+    }
+
+    #[test]
+    fn a_load_is_for_the_world_it_was_prepared_in_only() {
+        let record = one_entity();
+        let mut world = World::new();
+        let other = World::new();
+        let prepared = prepare(&mut world, record.clone()).expect("prepares");
+
+        assert!(prepared.is_for(&world));
+        assert!(!prepared.is_for(&other));
+        prepared.abandon(&mut world);
+    }
+
+    #[test]
+    fn a_load_stops_being_current_once_its_world_registers_a_component() {
+        let record = one_entity();
+        let mut world = World::new();
+        let prepared = prepare(&mut world, record).expect("prepares");
+        assert!(prepared.is_current(&world));
+
+        register_charge(&mut world);
 
         assert!(!prepared.is_current(&world));
         prepared.abandon(&mut world);
+    }
+
+    #[test]
+    fn a_prepared_load_is_prepared_again_when_its_components_changed() {
+        let mut world = World::new();
+        let prepared = prepare(&mut world, one_entity()).expect("prepares");
+        register_charge(&mut world);
+
+        let applied = prepared.commit(&mut world, Identity::Keep);
+
+        assert_eq!(applied.entities.len(), 1);
+        assert!(applied.report.entries.is_empty());
+        assert_eq!(world.iter_entities().count(), 1);
+    }
+
+    #[test]
+    fn a_stale_load_with_nothing_to_prepare_again_from_adds_nothing() {
+        let record = one_entity();
+        let mut world = World::new();
+        let prepared = prepare_in_place(&mut world, &record, Kept::Scene).expect("prepares");
+        register_charge(&mut world);
+
+        let applied = prepared.commit(&mut world, Identity::Keep);
+
+        assert!(applied.entities.is_empty());
+        assert!(matches!(
+            applied.report.entries.last().map(|entry| &entry.kind),
+            Some(ReportKind::NotLoaded { .. })
+        ));
+        assert_eq!(world.iter_entities().count(), 0);
     }
 }

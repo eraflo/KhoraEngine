@@ -20,8 +20,8 @@
 //! | The author… | What happens |
 //! |---|---|
 //! | declares a new component | registered, in its domain |
-//! | adds, renames, retypes a field | [`World::relayout`]: kept by name, `int` → `float` converted, the rest defaulted |
-//! | changes `[Domain]` | [`World::move_component_domain`]: every row moves, values intact |
+//! | adds, renames, retypes a field | [`World::relayout`]: kept by name where the new type holds the value as a scene load reads it, the rest defaulted; every value lost logged and listed in `Problems` |
+//! | changes `[Domain]` | [`World::move_component_domain`]: every row moves, values intact, logged |
 //! | deletes the declaration | the component stays, with its data, **orphaned** — never silently deleted |
 //! | declares an orphan again | adopted, relaid out to the new declaration |
 //!
@@ -38,10 +38,12 @@ use khora_core::Runtime;
 use khora_data::ecs::ScriptRole;
 use khora_data::ecs::{
     ComponentProvenance, DataSystemRegistration, FieldKind, PackedField, PackedLayout,
-    RuntimeComponentDecl, TickPhase, World,
+    RelayoutReport, RuntimeComponentDecl, TickPhase, World,
 };
 use khora_script::modules::behaviors::STATE_SUFFIX;
 use khora_script::vm::{DeclaredComponent, DeclaredKind};
+
+use crate::script::declared_relayout::DeclaredRelayout;
 
 /// The components one module declares, as it last compiled.
 pub use khora_script::toolchain::ScriptDeclarations;
@@ -139,8 +141,8 @@ impl DeclaredComponents {
     }
 }
 
-/// What one [`apply_declarations`] did, each list sorted by name.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// What one [`apply_declarations`] did, each list of names sorted.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct DeclarationReport {
     /// Registered for the first time.
     pub registered: Vec<String>,
@@ -156,6 +158,9 @@ pub struct DeclarationReport {
     /// Declared by a module while another declares them: kept as the first
     /// module declares them.
     pub refused: Vec<String>,
+    /// Every relayout of stored rows, with each value a row lost, in the
+    /// order they ran.
+    pub relayouts: Vec<DeclaredRelayout>,
 }
 
 /// Registers, relays out, moves and orphans what `batch` declares, in `world`.
@@ -361,7 +366,7 @@ fn apply_one(
     module: &str,
     report: &mut DeclarationReport,
 ) {
-    apply_layout(world, state, component, report);
+    apply_layout(world, state, component, module, report);
     if let Some(key) = world.components().key_named(&component.name) {
         let role = match &component.kind {
             DeclaredKind::Component => None,
@@ -393,11 +398,14 @@ fn apply_one(
     }
 }
 
-/// Brings one component's registration in line with its declaration.
+/// Brings one component's registration in line with its declaration, as `module` declares it.
+///
+/// Logs each relayout and domain change, and keeps each relayout in `report`.
 fn apply_layout(
     world: &mut World,
     state: &DeclaredComponents,
     component: &DeclaredComponent,
+    module: &str,
     report: &mut DeclarationReport,
 ) {
     let name = &component.name;
@@ -446,8 +454,9 @@ fn apply_layout(
     // A name that changed kind — a behavior become a system — is kept as its
     // new kind is.
     if vtable.provenance != provenance || vtable.resumable != engine_kept {
-        if let Err(error) = world.set_provenance(key, provenance, engine_kept) {
-            log::error!("`{name}` cannot change what keeps it: {error}");
+        match world.set_provenance(key, provenance, engine_kept) {
+            Ok(relaid) => keep_relayout(report, module, relaid),
+            Err(error) => log::error!("`{name}` cannot change what keeps it: {error}"),
         }
     }
     let Some(vtable) = world.components().vtable(key) else {
@@ -459,16 +468,35 @@ fn apply_layout(
     let (domain, changed) = (vtable.domain, !current.same_as(&layout));
     if changed {
         match world.relayout(key, layout) {
-            Ok(_) => report.relaid.push(name.clone()),
+            Ok(relaid) => {
+                report.relaid.push(name.clone());
+                keep_relayout(report, module, relaid);
+            }
             Err(error) => log::error!("`{name}` cannot take its new fields: {error}"),
         }
     }
     if domain != component.domain {
         match world.move_component_domain(key, component.domain) {
-            Ok(()) => report.moved.push(name.clone()),
+            Ok(()) => {
+                log::info!(
+                    "`{name}` moved from {domain:?} to {:?}, every value intact",
+                    component.domain
+                );
+                report.moved.push(name.clone());
+            }
             Err(error) => log::error!("`{name}` cannot move to {:?}: {error}", component.domain),
         }
     }
+}
+
+/// Logs what relaying out a component of `module` did, and keeps it in `report`.
+fn keep_relayout(report: &mut DeclarationReport, module: &str, relaid: RelayoutReport) {
+    let relayout = DeclaredRelayout {
+        module: module.to_owned(),
+        report: relaid,
+    };
+    relayout.log();
+    report.relayouts.push(relayout);
 }
 
 /// Returns the packed layout `component` declares, each field of its Ergon type.
@@ -497,6 +525,12 @@ fn layout_of(component: &DeclaredComponent) -> Result<PackedLayout, khora_data::
 /// The runtime's `Arc<Mutex<DeclaredComponents>>` is the registration's
 /// memory. Takes what the reserve holds; an empty report when the runtime
 /// holds no reserve, no state, or nothing is staged.
+///
+/// Reports to the runtime's `Problems`, when it holds them, what the
+/// registration refuses or orphans (`ProblemSource::Registration`), and for
+/// each module whose components were relaid out, every value its rows lost
+/// (`ProblemSource::Relayout`): once per relayout, standing until the
+/// module's next one, and only while the module declares the component.
 pub fn register_pending(world: &mut World, runtime: &Runtime) -> DeclarationReport {
     let Some(reserve) = runtime.look_up::<khora_core::lane::Reserve>() else {
         return DeclarationReport::default();
@@ -519,6 +553,7 @@ pub fn register_pending(world: &mut World, runtime: &Runtime) -> DeclarationRepo
             khora_core::problems::ProblemSource::Registration,
             state.standing_problems(),
         );
+        report_relayouts(problems, &state, &batch, &report.relayouts);
     }
     // The tools that cannot see the registry read what it lists here.
     if let Some(catalog) = runtime
@@ -534,6 +569,52 @@ pub fn register_pending(world: &mut World, runtime: &Runtime) -> DeclarationRepo
         );
     }
     report
+}
+
+/// Reports each module's relayout warnings: only about components the module still declares.
+///
+/// A module that relaid out in this batch reports what that relayout lost,
+/// replacing what an earlier one reported. Any other module of the batch, or
+/// declaring a component it inherited, keeps its warnings about what it still
+/// declares: a module deleted or unmounted keeps none, and one that gave a
+/// component to another keeps none about it.
+fn report_relayouts(
+    problems: &khora_core::problems::Problems,
+    state: &DeclaredComponents,
+    batch: &[ScriptDeclarations],
+    relayouts: &[DeclaredRelayout],
+) {
+    use khora_core::problems::{Problem, ProblemSource};
+    let mut relaid: BTreeMap<&str, Vec<Problem>> = BTreeMap::new();
+    for relayout in relayouts {
+        relaid
+            .entry(relayout.module.as_str())
+            .or_default()
+            .extend(relayout.problems());
+    }
+    let modules: BTreeSet<&str> = batch
+        .iter()
+        .map(|declarations| declarations.module.as_str())
+        .chain(relaid.keys().copied())
+        .collect();
+    for module in modules {
+        let source = ProblemSource::Relayout {
+            module: module.to_owned(),
+        };
+        let standing = relaid
+            .remove(module)
+            .unwrap_or_else(|| problems.of_source(&source));
+        let declared = standing
+            .into_iter()
+            .filter(|problem| {
+                problem
+                    .component
+                    .as_deref()
+                    .is_some_and(|component| state.owner_of(component) == Some(module))
+            })
+            .collect();
+        problems.report(source, declared);
+    }
 }
 
 fn script_components_system(

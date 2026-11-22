@@ -49,7 +49,7 @@ pub fn encoding_of(file: &SceneFile) -> String {
 
 /// Brings the snapshot `file` into `world` under its saved identities.
 pub fn load_snapshot(world: &mut World, file: &SceneFile) -> Result<Applied, LoadFailure> {
-    let prepared = prepare_snapshot(world, file)?;
+    let prepared = prepare_snapshot(world, file.clone())?;
     Ok(prepared.commit(world, Identity::Keep))
 }
 
@@ -352,7 +352,7 @@ fn restoring_a_snapshot_repeatedly_reuses_the_freed_slots() {
     let file = snapshot_of(&world);
     let mut highest = 0;
     for round in 0..20 {
-        let prepared = prepare_snapshot(&mut world, &file)
+        let prepared = prepare_snapshot(&mut world, file.clone())
             .unwrap_or_else(|e| panic!("round {round}: the snapshot prepares: {e}"));
         let old: Vec<EntityId> = world.iter_entities().collect();
         for entity in old {

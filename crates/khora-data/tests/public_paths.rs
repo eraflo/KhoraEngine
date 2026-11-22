@@ -443,7 +443,11 @@ fn behavior_component_fields(x: &khora_data::ecs::BehaviorComponent<'_>) {
 }
 
 fn relayout_report_fields(x: &khora_data::ecs::RelayoutReport) {
-    let _ = (&x.dropped, &x.defaulted);
+    let _ = (&x.component, &x.dropped, &x.defaulted, &x.lost);
+}
+
+fn lost_value_fields(x: &khora_data::ecs::LostValue) {
+    let _ = (&x.entity, &x.field, &x.was, &x.now, &x.cause);
 }
 
 fn register_error_variants(x: &khora_data::ecs::RegisterError) {
@@ -1483,6 +1487,25 @@ fn module_ecs_paths_still_resolve() {
     let _ = relayout_report_fields as fn(&khora_data::ecs::RelayoutReport);
     is_debug::<khora_data::ecs::RelayoutReport>();
     is_partial_eq::<khora_data::ecs::RelayoutReport>();
+    is_clone::<khora_data::ecs::RelayoutReport>();
+    let _: fn(&khora_data::ecs::RelayoutReport) -> bool =
+        khora_data::ecs::RelayoutReport::lost_nothing;
+    let _ = khora_data::ecs::RelayoutReport::lost_in;
+    let _ = type_name::<khora_data::ecs::LostValue>();
+    let _ = lost_value_fields as fn(&khora_data::ecs::LostValue);
+    is_debug::<khora_data::ecs::LostValue>();
+    is_clone::<khora_data::ecs::LostValue>();
+    is_partial_eq::<khora_data::ecs::LostValue>();
+    let _ = type_name::<khora_data::ecs::LossCause>();
+    is_debug::<khora_data::ecs::LossCause>();
+    is_eq::<khora_data::ecs::LossCause>();
+    let _: fn(khora_data::ecs::LossCause) -> &'static str = khora_data::ecs::LossCause::reason;
+    let _ = [
+        khora_data::ecs::LossCause::FieldDropped,
+        khora_data::ecs::LossCause::Retyped,
+        khora_data::ecs::LossCause::Inexact,
+        khora_data::ecs::LossCause::Refused,
+    ];
     let _ = type_name::<khora_data::ecs::RegisterError>();
     let _ = register_error_variants as fn(&khora_data::ecs::RegisterError);
     is_debug::<khora_data::ecs::RegisterError>();
@@ -2288,7 +2311,11 @@ fn module_scene_save_paths_still_resolve() {
     let _ = khora_data::scene::capture_save;
     let _ = khora_data::scene::compose;
     let _ = khora_data::scene::promote;
-    let _ = khora_data::scene::prepare_game;
+    let _: fn(
+        &mut khora_data::ecs::World,
+        std::sync::Arc<khora_data::scene::SceneRecord>,
+    ) -> Result<khora_data::scene::Prepared, khora_data::scene::LoadFailure> =
+        khora_data::scene::prepare_game;
     let _ = khora_data::scene::write_save_file;
     let _ = khora_data::scene::read_save_file;
     let _ = scene_file_read_error_save_variants as fn(&khora_data::scene::SceneFileReadError);

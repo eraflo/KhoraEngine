@@ -109,11 +109,14 @@ Fields are carried across a recompile and matched **by name**. A slot means
 nothing across a rebuild: inserting one field at the top shifts every slot after
 it, and a positional carry-over would silently move one guard's health into
 another's ammo. A field that was renamed keeps no value, and the engine says so
-in a warning rather than letting the author find out from whatever the guard
-does next. A field the edit retyped keeps its value only if the new type can
-hold it: `int? best` holding `null`, edited to `int best = 4`, starts at `4` —
-never at a value no author could write. A load into edited code follows the same
-rule.
+rather than letting the author find out from whatever the guard does next. A
+field the edit retyped keeps its value only if the new type can hold it: `int?
+best` holding `null`, edited to `int best = 4`, starts at `4` — never at a value
+no author could write; an `int` become a `float` keeps every value the float
+holds exactly, and one past 2²⁴ starts at the field's default. A load into
+edited code follows the same rule. Each value a guard lost is a warning in the
+Problems panel, under the module, naming the field, the guard and the value it
+held — once, at the edit.
 
 How the inspector shows a field — its `[Range]`, `[Tooltip]`, `[Header]` — is
 not the field: it is the editor's, read by nothing a script runs. An edit that

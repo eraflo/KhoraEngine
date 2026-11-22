@@ -202,7 +202,7 @@ impl World {
     }
 
     /// Returns the vtable of `key` and `entity`'s live row in its domain.
-    fn row_location(
+    pub(super) fn row_location(
         &self,
         entity: EntityId,
         key: ComponentKey,

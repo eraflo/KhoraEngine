@@ -214,7 +214,7 @@ fn a_resident_identified_between_prepare_and_commit_keeps_its_id() {
 
     let mut dst = World::new();
     let resident = dst.spawn((Transform::identity(), Name::new("Resident")));
-    let prepared = prepare(&mut dst, &record).expect("prepares");
+    let prepared = prepare(&mut dst, record.clone()).expect("prepares");
     let resident_id = dst.persistent_id(resident).unwrap();
     assert_eq!(resident_id, PersistentId::created(0));
     let applied = prepared.commit(&mut dst, Identity::Keep);

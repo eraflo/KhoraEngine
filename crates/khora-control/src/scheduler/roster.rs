@@ -20,7 +20,7 @@ use super::AgentSelection;
 use crate::agent_registry::AgentRegistry;
 use khora_core::agent::dependency::DependencyKind;
 use khora_core::agent::gorna::AgentId;
-use khora_core::agent::{Agent, ExecutionPhase};
+use khora_core::agent::{Agent, ExecutionPhase, ExecutionTiming};
 use khora_core::graph::topological_sort;
 use khora_core::sync::LockExt;
 use std::borrow::Cow;
@@ -55,7 +55,7 @@ impl Roster {
         known: &KnownAgents,
         inactive: &BTreeSet<AgentId>,
     ) {
-        let agents: Vec<Arc<Mutex<dyn Agent>>> = {
+        let agents: Vec<(Arc<Mutex<dyn Agent>>, ExecutionTiming)> = {
             let registry = registry.lock_recovered();
             let generation = registry.generation();
             let current = (self.built_for.as_ref())
@@ -64,12 +64,14 @@ impl Roster {
                 return;
             }
             self.built_for = Some((generation, inactive.clone()));
-            registry.iter_active(inactive).cloned().collect()
+            (registry.iter_active_with_timing(inactive))
+                .map(|(agent, timing)| (agent.clone(), timing.clone()))
+                .collect()
         };
         let active = agents.len();
         let met: Vec<MetAgent> = (agents.into_iter())
-            .filter_map(|agent| {
-                let known = known.of(&agent)?;
+            .filter_map(|(agent, timing)| {
+                let known = known.of(&agent, &timing)?;
                 Some((agent, known))
             })
             .collect();
@@ -180,8 +182,6 @@ struct PhaseOrder {
 
 /// Orders a phase's agents by their Hard dependencies, then by importance and priority.
 ///
-/// On a dependency cycle, logs an error and keeps the importance and priority order.
-///
 /// `agents` and the result are indices into `met`.
 fn sort_agents(met: &[MetAgent], mut agents: Vec<usize>) -> Vec<usize> {
     agents.sort_by(|&a, &b| {
@@ -221,26 +221,22 @@ fn sort_agents(met: &[MetAgent], mut agents: Vec<usize>) -> Vec<usize> {
         }
     }
 
-    match topological_sort(nodes, edges) {
-        Ok(order) => {
-            // Reassemble agents in topo order. Equal-priority nodes inherit
-            // the importance+priority ordering already applied above.
-            let mut taken: Vec<Option<usize>> = agents.into_iter().map(Some).collect();
-            order
-                .into_iter()
-                .filter_map(|id| {
-                    id_to_index
-                        .get(&id)
-                        .copied()
-                        .and_then(|idx| taken[idx].take())
-                })
-                .collect()
-        }
-        Err(_) => {
-            log::error!(
-                "Scheduler: cycle detected in Hard agent dependencies — falling back to importance/priority order"
-            );
-            agents
-        }
-    }
+    // The registry refuses an agent that closes a cycle of Hard dependencies,
+    // and a phase's edges come from the timings it read when it checked them:
+    // the sort always succeeds.
+    let order = topological_sort(nodes, edges).unwrap_or_else(|_| {
+        unreachable!("the agent registry refuses a cycle of Hard dependencies")
+    });
+    // Reassemble agents in topo order. Equal-priority nodes inherit
+    // the importance+priority ordering already applied above.
+    let mut taken: Vec<Option<usize>> = agents.into_iter().map(Some).collect();
+    order
+        .into_iter()
+        .filter_map(|id| {
+            id_to_index
+                .get(&id)
+                .copied()
+                .and_then(|idx| taken[idx].take())
+        })
+        .collect()
 }

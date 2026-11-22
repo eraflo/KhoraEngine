@@ -434,10 +434,11 @@ pub fn lane_agent(registration: &'static AgentRegistration, caps: &DeviceCaps) -
 ///
 /// A game's setting decides it (the physics step). The place holds it, the
 /// one source the scheduler and the agent read. A family that runs every
-/// frame is left as it is.
+/// frame is left as it is, and a step of zero is refused by the place, which
+/// keeps its step and logs a warning.
 pub fn set_fixed_step(agent: &mut LaneAgent, step: Duration) {
     let mut place = agent.locked_place();
-    if place.fixed_step().is_some() && !step.is_zero() {
+    if place.fixed_step().is_some() {
         place.set_fixed_step(Some(step));
     }
 }

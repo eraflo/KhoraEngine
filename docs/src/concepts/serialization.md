@@ -183,12 +183,19 @@ saved identity unless another entity holds it; `Identity::Fresh` gives every
 entity a new authored one. `Prepared::abandon` gives the
 reserved ids back. A commit can still add nothing, for one of two reasons, each a
 `NotLoaded` entry: the load was prepared for another world (its ids were held
-from another world's reserver), or it was prepared off the frame, the world's
-components changed since, and preparing it again against them fails. A load
-prepared off the frame (below) remembers where it came from, so its commit
-prepares it again when the components moved; one prepared on the frame with
-`prepare` is committed as it was prepared — commit it before changing the
-world's components.
+from another world's reserver), or the world's components changed since it was
+prepared and preparing it again against them fails.
+
+**A load keeps what it was read from.** Every prepared load shares its source —
+the record, or the snapshot file — behind an `Arc`, never a copy: `prepare`,
+`prepare_game` and `prepare_snapshot` take it by value or already shared, as
+their off-the-frame forms do (below). When the world's components changed between
+prepare and commit, the commit prepares the load again from that source, the way
+it was first prepared — a scene, a game or a snapshot — and it lands as a load
+prepared at that moment would. Where it was prepared, with the world or off the
+frame, makes no difference. `apply` and a prefab instance prepare and commit
+under one borrow of the world: nothing can change the components in between, so
+they keep no source.
 
 **The ids a load holds.** Prepare reserves one entity id per saved entity, held in
 a `ReservationHold` until the commit (see
@@ -222,11 +229,12 @@ by its instance id.
 A prepare needs no `World`. It reads a **`LoadCatalog`** — what a load needs to
 know of the world's components, taken with `World::load_catalog()` — and holds its
 ids through a **`ReservationHold`** (`World::hold_reservations()`), so it can run
-on another thread while frames go on: `prepare_with(&catalog, hold, record)`, and
-`prepare_snapshot_with` for a snapshot. The catalogue has a **generation** that
-moves when a component is registered, declared, relaid out, moved, or given
-another provenance; a commit compares it with the world's to know whether to
-prepare again.
+on another thread while frames go on: `prepare_with(&catalog, hold, record)`,
+`prepare_game_with` for a game and `prepare_snapshot_with` for a snapshot. The
+catalogue has a **generation** that moves when a component is registered,
+declared, relaid out, moved, or given another provenance; a commit compares the
+load's with the world's to know whether to prepare it again, as it does for every
+load.
 
 A tool or a game that loads a scene while frames run **files** it with the
 **`SceneLoadHub`** (`khora-io/src/scene_loads.rs`):
@@ -392,13 +400,26 @@ without a load:
 | The author… | The stored rows |
 |---|---|
 | declares a new component | it is registered, in its domain; a behavior's state companion and a system's component as `Runtime` and resumable, any other as `Authored` |
-| adds, renames or retypes a field | every row is rebuilt by field name (`World::relayout`): a field keeps its value while its name and kind stay; `int` to `float` is converted when the float holds the value exactly (every `int` up to 2²⁴); any other new or retyped field — a struct of another shape, an asset of another kind — takes its default; a field gone is dropped, with a warning |
+| adds, renames or retypes a field | every row is rebuilt by field name (`World::relayout`), each value read into its new field as a load reads it (`PackedLayout::fit`), so a live edit and a load agree on every value: a value its new type holds is kept; `int` to `float` is converted when the float holds the value exactly (every `int` up to 2²⁴), and an `int` past that takes the field's default, as a load drops it; an `int` inside an optional, an array or a struct becomes the float its new type holds there, and a nested `int` a float cannot hold exactly makes the field keep its default, reported inexact; a value the new type refuses — text in a field become an `int?`, a struct of another shape, an asset of another kind — takes the field's default, as does every row of a new field; a field gone is dropped. Every value a row did not keep is reported (see below) |
 | changes the component's domain | every row moves to the new domain's pages, values and change ticks intact |
 | deletes the declaration | the component stays registered, with its data, **orphaned**: never deleted, listed as a warning in `Problems` (not when its module was unmounted) |
 | declares an orphan again | it is **adopted**, and its rows relaid out to the new declaration |
 
 A rebuilt row is stamped as written, so every observer of the component sees it
-change. A component declared twice, by two modules, is refused the second time
+change. Nothing a relayout loses is silent: its `RelayoutReport` lists, for every
+live row, each value it did not keep — the entity, the field, the value it held,
+what the row holds now and why (`LossCause`: the field dropped, a value its new
+type refuses, an `int` a `float` cannot hold exactly, a number the component
+does not keep). A row is live for the component when its entity holds the
+component there, in the component's own domain. The registration logs it and
+lists it in `Problems` under the declaring module (`ProblemSource::Relayout`),
+one warning per field and cause naming the entities and their values: reported
+once, at the relayout, and standing until that module's next relayout, and only
+while the module declares the component — a module deleted or unmounted takes
+its warnings with it, and a component another module declares now leaves none
+behind. A relayout that keeps every value, an exact `int` to
+`float` among them, reports nothing. A domain change moves values intact and is
+logged. A component declared twice, by two modules, is refused the second time
 and the first is kept, listed as an error; when the first module stops declaring
 it, a module that was refused it inherits it, before it would be orphaned. A
 name a Rust component holds can never be declared. A file read later holds the
@@ -436,11 +457,16 @@ never alive, invisible to every query and never handed to a spawn — and its va
 are staged outside the pages. A failure in prepare drops the hold, which returns
 the ids, so *W* is unchanged. Commit has no failing step once the load is current
 for the world: every check that could fail ran in prepare, against the same
-components. For a load prepared off the frame the catalogue's generation proves
-it; otherwise the load is prepared again, and a failure there adds nothing and
-reports `NotLoaded`. A load prepared on the frame is current when it is committed
-before the world's components change, which is the caller's part. It brings every
-reserved id to life and places every staged row. ∎
+components. The catalogue's generation tells whether it is: a load prepared
+against generation *g* is current iff the world's is still *g*. A load that is not
+is prepared again from the source it keeps — every load does, wherever it was
+prepared — against the world as it is, so the commit that follows is of a current
+load; a failure there adds nothing and reports `NotLoaded`. The loads that keep
+no source, `apply`'s and a prefab instance's, are prepared and committed under one
+exclusive borrow of the world: nothing runs in between to move *g*, so they are
+current by construction (were one not, its commit would add nothing rather than
+land stale values). A current load's commit brings every reserved id to life and places
+every staged row. ∎
 
 **Identity.** Under `Identity::Keep`, the saved id *p* of an entity is kept iff no
 entity of *W* holds *p* before the commit; the others take a fresh id of their

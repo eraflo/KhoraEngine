@@ -171,8 +171,8 @@ fn entries_for<'r>(
 /// that final load reported.
 fn load(record: &SceneRecord) -> (World, Vec<ReportEntry>) {
     let mut dst = World::new();
-    let prepared =
-        prepare_game(&mut dst, record).unwrap_or_else(|e| panic!("the game did not load: {e}"));
+    let prepared = prepare_game(&mut dst, record.clone())
+        .unwrap_or_else(|e| panic!("the game did not load: {e}"));
     let applied = prepared.commit(&mut dst, Identity::Keep);
     (dst, applied.report.entries)
 }

@@ -322,7 +322,7 @@ fn a_stale_load_that_fails_now_reports_the_failure() {
     .expect("prepares while `Position` is the file's");
     world.register_component::<Position>(SemanticDomain::Spatial);
 
-    let now = crate::scene::prepare(&mut world, &record)
+    let now = crate::scene::prepare(&mut world, record.clone())
         .err()
         .expect("a load prepared now fails: `Position` is a Rust component's name");
     let applied = stale.commit(&mut world, crate::scene::Identity::Keep);

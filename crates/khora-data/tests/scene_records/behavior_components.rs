@@ -162,7 +162,7 @@ fn declared_names(record: &SceneRecord) -> Vec<&str> {
 /// `base` and `save` composed, brought into a world that declares nothing.
 fn load(base: &SceneRecord, save: &SaveRecord) -> World {
     let mut dst = World::new();
-    let prepared = prepare_game(&mut dst, &compose(base, save))
+    let prepared = prepare_game(&mut dst, compose(base, save))
         .unwrap_or_else(|e| panic!("the game did not load: {e}"));
     prepared.commit(&mut dst, Identity::Keep);
     dst

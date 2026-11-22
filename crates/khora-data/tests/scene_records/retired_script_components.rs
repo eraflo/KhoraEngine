@@ -190,8 +190,8 @@ fn a_game_save_holding_a_script_state_loads_without_it_and_reports_it() {
     let (composed, composing) =
         compose_reporting(&base, &save).unwrap_or_else(|e| panic!("an old save composes: {e}"));
     let mut dst = World::new();
-    let prepared =
-        prepare_game(&mut dst, &composed).unwrap_or_else(|e| panic!("an old save loads: {e}"));
+    let prepared = prepare_game(&mut dst, composed.clone())
+        .unwrap_or_else(|e| panic!("an old save loads: {e}"));
     let applied = prepared.commit(&mut dst, Identity::Keep);
 
     let entity = dst.entity_with_id(guard_id).expect("the guard loaded");
@@ -424,7 +424,7 @@ fn a_game_save_whose_created_entity_holds_only_a_script_still_loads_it() {
         let (composed, composing) = compose_reporting(&base, &back)
             .unwrap_or_else(|e| panic!("{encoding_name}: an old save composes: {e}"));
         let mut dst = World::new();
-        let prepared = prepare_game(&mut dst, &composed)
+        let prepared = prepare_game(&mut dst, composed.clone())
             .unwrap_or_else(|e| panic!("{encoding_name}: an old save loads: {e}"));
         let applied = prepared.commit(&mut dst, Identity::Keep);
         let report: Vec<ReportEntry> = composing
@@ -488,7 +488,7 @@ fn a_game_save_removing_a_script_and_its_state_loads() {
         compose_reporting(&base, &save).unwrap_or_else(|e| panic!("the save composes: {e}"));
     let mut dst = World::new();
     let prepared =
-        prepare_game(&mut dst, &composed).unwrap_or_else(|e| panic!("the save loads: {e}"));
+        prepare_game(&mut dst, composed.clone()).unwrap_or_else(|e| panic!("the save loads: {e}"));
     let applied = prepared.commit(&mut dst, Identity::Keep);
     let report: Vec<ReportEntry> = composing
         .into_iter()

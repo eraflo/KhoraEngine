@@ -134,9 +134,12 @@ fn a_record_that_still_links_to_prefabs_is_refused_by_prepare() {
     };
 
     let (mut world, bystander) = bystander_world();
-    assert!(prepare(&mut world, &record).is_err(), "prepare");
+    assert!(prepare(&mut world, record.clone()).is_err(), "prepare");
     assert_untouched(&world, bystander);
-    assert!(prepare_game(&mut world, &record).is_err(), "prepare_game");
+    assert!(
+        prepare_game(&mut world, record.clone()).is_err(),
+        "prepare_game"
+    );
     assert_untouched(&world, bystander);
     assert!(apply(&mut world, &record, Identity::Keep).is_err(), "apply");
     assert_untouched(&world, bystander);

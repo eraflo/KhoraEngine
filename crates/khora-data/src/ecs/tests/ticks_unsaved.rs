@@ -123,7 +123,7 @@ fn a_snapshot_load_restores_no_tick() {
     let file = write_snapshot(&source).expect("the world is snapshotted");
 
     let mut world = loader();
-    prepare_snapshot(&mut world, &file)
+    prepare_snapshot(&mut world, file.clone())
         .expect("the snapshot is read")
         .commit(&mut world, Identity::Keep);
     let (row, summary) = loaded_ticks(&world);

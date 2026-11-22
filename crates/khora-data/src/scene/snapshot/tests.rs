@@ -180,7 +180,8 @@ fn a_snapshot_is_parsed_once_per_prepare() {
 
     let mut world = World::new();
     let read = payloads_read_by(|| {
-        let prepared = super::prepare_snapshot(&mut world, &file).expect("the snapshot prepares");
+        let prepared =
+            super::prepare_snapshot(&mut world, file.clone()).expect("the snapshot prepares");
         prepared.abandon(&mut world);
     });
     assert_eq!(

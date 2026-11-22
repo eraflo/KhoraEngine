@@ -166,8 +166,17 @@ declares them. Within a phase, each family's installed **layer** runs at its pla
   `Important`, then `Optional`).
 - **Only after what they follow.** A family runs only if every family it names in
   `after` has completed its run earlier in the same frame. If one is off, was
-  skipped, failed, or has not run yet (it sits in a later phase), the family is
-  skipped for the frame too, and so, in turn, are the families after it.
+  skipped or failed, the family is skipped for the frame too, and so, in turn, are
+  the families after it.
+- **Checked at boot.** A family may name in `after` a family of its own phase or of
+  an earlier one, in the order the scheduler runs, a game's own phases included.
+  The fixed-step rounds run before the other families, so a once-per-frame family
+  may also name a fixed-step family of any phase; a fixed-step family may name
+  only fixed-step ones. Boot refuses, with a `BootError` naming the family and the
+  one it names, anything that could never have run first: a family not registered,
+  the family itself, one of a later phase, a once-per-frame family named by a
+  fixed-step one, one at the background, an `after` on a family at the background
+  (nothing orders a run off the frame), and families naming one another in a cycle.
 - **In waves.** Consecutive families whose contentions do not overlap, and that do
   not depend on each other, run side by side: a wave of one on the scheduler's
   thread, a larger one on the scheduler's worker pool. See
@@ -321,6 +330,22 @@ A family switched off keeps no sub-clock: switched on again, it is owed nothing 
 the time it sat out. The step is read from the place each frame, so a step changed
 there takes effect the next frame.
 
+**A step is longer than zero.** A run at a step of zero would advance no time, and
+no sub-clock is ever owed one. Boot refuses a registration with `fixed_step:
+Some(Duration::ZERO)` (`BootError::ZeroFixedStep`, naming the family), and a place
+refuses a zero step set at run time, directly or in the terms an agent lends: it
+keeps the step it holds and logs a warning. `None` is how a family runs every
+frame.
+
+**A short step costs runs, not time.** The 5-tick cap bounds the game time a frame
+advances, never a fixed family's steps: its sub-clock gets exactly the ticked time,
+however many steps that holds, so the family never falls behind the game's clock.
+A tiny step only multiplies the runs — up to 83 ms / step a frame. If those runs
+take longer than the frame's real time, the cap drops real time and the game runs
+in slow motion, the family still in step with it. The physics step has a floor
+for that reason (`PhysicsSettings::MIN_STEP`, 0.5 ms); a game's own family is
+given none.
+
 ### The simulation clock
 
 The time that reaches the accumulator is the real one **times `Time::scale`**. At
@@ -401,9 +426,13 @@ scheduler's frame is `khora-control/src/scheduler/frame.rs`, its clocks
 **The orders.** A phase's families are sorted by their `after` names, then by
 importance (`roster.rs`). A phase's data systems are sorted by their `runs_after`
 names, ties broken by `(order_hint, name)` (`substrate/data_system_runner.rs`). Both
-sorts are topological and keep their base order among what no edge orders. A cycle
-is not refused at boot: the scheduler logs an error and runs the base order —
-importance for the families, `(order_hint, name)` for the data systems.
+sorts are topological and keep their base order among what no edge orders. Among
+the families a cycle never reaches the sort: boot refuses one
+(`BootError::AfterCycle`, `khora-core/src/agent/after_checks.rs`), and the agent
+registry refuses any agent whose Hard dependencies would close one
+(`agent_registry.rs`), so every phase has an order. Among the data systems a cycle
+is not refused at boot: the scheduler logs an error and runs the base order,
+`(order_hint, name)`.
 
 **The pools.** Two pools of threads, each built once with the scheduler. The waves'
 pool has the cores less two (the main thread's and the DCC's), between 1 and 16

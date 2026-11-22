@@ -22,6 +22,7 @@
 use std::any::TypeId;
 use std::time::Duration;
 
+pub use super::boot_error::BootError;
 use super::execution_phase::ExecutionPhase;
 use super::gorna::{AgentId, StrategyId};
 use super::timing::AgentImportance;
@@ -50,7 +51,10 @@ pub struct AgentRegistration {
     pub phase: ExecutionPhase,
     /// How much the agent's work matters under budget pressure.
     pub importance: AgentImportance,
-    /// The agents it runs after within its phase.
+    /// The agents it runs after, each completed earlier in the frame.
+    ///
+    /// Of its phase or an earlier one, or, for a once-per-frame family,
+    /// fixed-step ones of any phase. Boot refuses any other, and a cycle.
     pub after: &'static [AgentId],
     /// The fixed step it runs at, if it does not run every frame.
     pub fixed_step: Option<Duration>,
@@ -64,308 +68,6 @@ pub struct AgentRegistration {
     /// [`Erased`](crate::lane::erased::Erased).
     pub lanes: &'static [fn() -> Box<dyn AnyLane>],
 }
-
-/// Why boot refused the registrations.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BootError {
-    /// Two registrations name the same family.
-    TwoAgentsForOneFamily {
-        /// The family.
-        family: &'static str,
-    },
-    /// Two families negotiate as the same agent, so they would share its
-    /// budget, its cost model and its decisions.
-    TwoFamiliesForOneAgent {
-        /// The agent both name.
-        agent: AgentId,
-        /// The family registered first.
-        first: &'static str,
-        /// The family registered second.
-        second: &'static str,
-    },
-    /// The family's supported lanes offer no level, so it has no row to run.
-    NoLevel {
-        /// The family.
-        family: &'static str,
-    },
-    /// An `Exact` family offers a level whose impact is not `None`: a cheaper
-    /// level would change the simulation's result, not only its cost.
-    ResultChangingLevel {
-        /// The family.
-        family: &'static str,
-        /// The level, by name.
-        level: &'static str,
-    },
-    /// A lane declares two locks of one runtime entry, which one fetch could
-    /// never take both of.
-    SameLockTwice {
-        /// The family.
-        family: &'static str,
-        /// The lane, by type name.
-        lane: &'static str,
-        /// The second field declaring it.
-        field: &'static str,
-    },
-    /// A family's outputs name one deck slot twice, so every frame would
-    /// refuse the second write.
-    SlotWrittenTwice {
-        /// The family.
-        family: &'static str,
-        /// The lane, by type name.
-        lane: &'static str,
-        /// The second field writing it.
-        field: &'static str,
-    },
-    /// The family's phase is not in the order the scheduler runs, so its
-    /// agent would never execute.
-    PhaseNotRun {
-        /// The family.
-        family: &'static str,
-        /// Its phase.
-        phase: ExecutionPhase,
-    },
-    /// A lane reads the fixed step of a family that runs every frame, which
-    /// no agent gives it: it would be refused on every frame.
-    StepWithoutFixedStep {
-        /// The family.
-        family: &'static str,
-        /// The lane, by type name.
-        lane: &'static str,
-        /// The field reading the step.
-        field: &'static str,
-    },
-    /// No lane of the family runs on this device.
-    NoSupportedLane {
-        /// The family.
-        family: &'static str,
-    },
-    /// Two levels of one family share a strategy id.
-    DuplicateStrategyId {
-        /// The family.
-        family: &'static str,
-        /// The id offered twice.
-        id: StrategyId,
-    },
-    /// A lane declares a runtime entry the runtime does not hold.
-    UnknownResource {
-        /// The family.
-        family: &'static str,
-        /// The lane, by type name.
-        lane: &'static str,
-        /// The field declaring it.
-        field: &'static str,
-        /// The entry's type name.
-        resource: &'static str,
-    },
-    /// A lane reads a deck slot no agent of an earlier phase writes.
-    DeckReadWithoutEarlierWriter {
-        /// The family.
-        family: &'static str,
-        /// The lane, by type name.
-        lane: &'static str,
-        /// The field reading it.
-        field: &'static str,
-        /// The slot's type name.
-        slot: &'static str,
-    },
-    /// The registration names a default level no supported lane of the
-    /// family offers.
-    UnknownDefaultLevel {
-        /// The family.
-        family: &'static str,
-        /// The level it names.
-        level: StrategyId,
-    },
-    /// A lane of a [`ExecutionPhase::BACKGROUND`] family reads a source of one frame.
-    ///
-    /// A background run spans frames: it may read only `#[take]`,
-    /// `#[resource]` and `#[budget]`.
-    BackgroundInput {
-        /// The family.
-        family: &'static str,
-        /// The lane, by type name.
-        lane: &'static str,
-        /// The field reading it.
-        field: &'static str,
-        /// Where the field reads from.
-        source: SourceKind,
-    },
-    /// A lane of a [`ExecutionPhase::BACKGROUND`] family writes a slot of one frame.
-    ///
-    /// A background run spans frames: what it hands on is `#[staged]`, kept
-    /// in the reserve until a frame's boundary.
-    BackgroundOutput {
-        /// The family.
-        family: &'static str,
-        /// The lane, by type name.
-        lane: &'static str,
-        /// The field writing it.
-        field: &'static str,
-        /// Where the field writes.
-        sink: SinkKind,
-    },
-    /// A lane of a frame-phase family writes a `#[staged]` output.
-    ///
-    /// Staging is for runs off the frame; a frame's lane writes the frame's deck.
-    StagedInFrame {
-        /// The family.
-        family: &'static str,
-        /// The lane, by type name.
-        lane: &'static str,
-        /// The field staging it.
-        field: &'static str,
-    },
-    /// Two families take one channel.
-    ///
-    /// Two `Take` readers would split its requests by timing alone, one of
-    /// them off the frame where no wave orders it against the other.
-    ChannelTakenTwice {
-        /// The channel's type name.
-        channel: &'static str,
-        /// The family that takes it first, in registration order.
-        first: &'static str,
-        /// The other.
-        second: &'static str,
-    },
-    /// A `#[take]` field drains a channel no `Take` mailbox of the family declares.
-    ///
-    /// The [`Reader::Take`](crate::event::Reader::Take) mailbox is what says
-    /// the family is the channel's one reader.
-    TakeWithoutMailbox {
-        /// The family.
-        family: &'static str,
-        /// The lane, by type name.
-        lane: &'static str,
-        /// The field taking it.
-        field: &'static str,
-        /// The channel's type name.
-        channel: &'static str,
-    },
-}
-
-impl std::fmt::Display for BootError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::TwoAgentsForOneFamily { family } => {
-                write!(f, "the family `{family}` is registered twice")
-            }
-            Self::TwoFamiliesForOneAgent {
-                agent,
-                first,
-                second,
-            } => write!(
-                f,
-                "the families `{first}` and `{second}` both negotiate as {agent:?}"
-            ),
-            Self::NoLevel { family } => write!(f, "the family `{family}` offers no level"),
-            Self::ResultChangingLevel { family, level } => write!(
-                f,
-                "the family `{family}` is exact, yet its level `{level}` changes the result"
-            ),
-            Self::SameLockTwice {
-                family,
-                lane,
-                field,
-            } => write!(
-                f,
-                "`{lane}` of `{family}` locks one entry twice (again in `{field}`)"
-            ),
-            Self::SlotWrittenTwice {
-                family,
-                lane,
-                field,
-            } => write!(
-                f,
-                "`{lane}` of `{family}` writes one deck slot twice (again in `{field}`)"
-            ),
-            Self::PhaseNotRun { family, phase } => write!(
-                f,
-                "the family `{family}` runs in the phase {phase}, which the scheduler never runs"
-            ),
-            Self::StepWithoutFixedStep {
-                family,
-                lane,
-                field,
-            } => write!(
-                f,
-                "`{lane}` of `{family}` reads the fixed step in `{field}`, yet `{family}` runs every frame"
-            ),
-            Self::NoSupportedLane { family } => {
-                write!(f, "no lane of the family `{family}` runs on this device")
-            }
-            Self::DuplicateStrategyId { family, id } => {
-                write!(f, "the family `{family}` offers {id:?} twice")
-            }
-            Self::UnknownResource {
-                family,
-                lane,
-                field,
-                resource,
-            } => write!(
-                f,
-                "`{lane}` of `{family}` reads `{resource}` in `{field}`, which the runtime does not hold"
-            ),
-            Self::DeckReadWithoutEarlierWriter {
-                family,
-                lane,
-                field,
-                slot,
-            } => write!(
-                f,
-                "`{lane}` of `{family}` reads the slot `{slot}` in `{field}`, which no earlier phase writes"
-            ),
-            Self::UnknownDefaultLevel { family, level } => write!(
-                f,
-                "the family `{family}` starts on {level:?}, which none of its lanes offers"
-            ),
-            Self::BackgroundInput {
-                family,
-                lane,
-                field,
-                source,
-            } => write!(
-                f,
-                "`{lane}` of `{family}` runs in the background, yet reads `{field}` from {source:?}: a background lane reads only `#[take]`, `#[resource]` and `#[budget]`"
-            ),
-            Self::BackgroundOutput {
-                family,
-                lane,
-                field,
-                sink,
-            } => write!(
-                f,
-                "`{lane}` of `{family}` runs in the background, yet writes `{field}` to {sink:?}: a background lane hands on only `#[staged]` outputs"
-            ),
-            Self::StagedInFrame {
-                family,
-                lane,
-                field,
-            } => write!(
-                f,
-                "`{lane}` of `{family}` stages `{field}`, yet runs in a frame phase: only a lane at the background stages its outputs"
-            ),
-            Self::ChannelTakenTwice {
-                channel,
-                first,
-                second,
-            } => write!(
-                f,
-                "`{first}` and `{second}` both take `{channel}`: a channel has one taker"
-            ),
-            Self::TakeWithoutMailbox {
-                family,
-                lane,
-                field,
-                channel,
-            } => write!(
-                f,
-                "`{lane}` of `{family}` takes `{channel}` in `{field}`, which no `Take` mailbox of `{family}` declares"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for BootError {}
 
 /// One family's registration, as submitted to the engine's collection:
 /// `inventory::submit! { RegisteredAgent(register_agent! { … }) }`.
@@ -386,13 +88,16 @@ pub fn registered_agents() -> Vec<&'static AgentRegistration> {
 /// # Errors
 ///
 /// The first [`BootError`] found: a family or agent registered twice, a
-/// phase that never runs, no supported lane or level, a strategy id offered
-/// twice, an inexact level of an `Exact` family, a fixed step the family
-/// lacks, an entry locked or a slot written twice, a resource or resident
+/// phase that never runs, a fixed step of zero, no supported lane or level, a
+/// strategy id offered twice, an inexact level of an `Exact` family, a fixed
+/// step the family lacks, an entry locked or a slot written twice, a resource or resident
 /// the runtime lacks, a `#[deck]` read no earlier phase writes, a default
 /// level none of the family's lanes offers, a `#[take]` with no mailbox, a
-/// channel taken by two families, a `#[staged]` output in a frame phase, or a
-/// background lane reading or writing anything but what the background allows.
+/// channel taken by two families, a `#[staged]` output in a frame phase, a
+/// background lane reading or writing anything but what the background allows,
+/// or an `after` the scheduler could never honour: a family unknown, the family
+/// itself, one at the background, a once-per-frame family after which a
+/// fixed-step one runs, one of a later phase, or a cycle.
 pub fn check_registrations(
     registrations: &[&AgentRegistration],
     runtime: &Runtime,
@@ -403,8 +108,8 @@ pub fn check_registrations(
 
 /// Runs [`check_registrations`] for a scheduler running `phase_order`.
 ///
-/// A `#[deck]` read is checked against that order, a game's own phases
-/// included; a phase absent from it never runs, so writes nothing.
+/// A `#[deck]` read and an `after` are checked against that order, a game's
+/// own phases included; a phase absent from it never runs, so writes nothing.
 ///
 /// # Errors
 ///
@@ -465,6 +170,9 @@ pub fn check_registrations_in(
                 family,
                 phase: registration.phase,
             });
+        }
+        if registration.fixed_step.is_some_and(|step| step.is_zero()) {
+            return Err(BootError::ZeroFixedStep { family });
         }
         if lanes.is_empty() {
             return Err(BootError::NoSupportedLane { family });
@@ -562,7 +270,7 @@ pub fn check_registrations_in(
             }
         }
     }
-    Ok(())
+    super::after_checks::check_after(registrations, phase_order)
 }
 
 /// Returns whether a family that runs before `reader` writes the deck slot `slot`.

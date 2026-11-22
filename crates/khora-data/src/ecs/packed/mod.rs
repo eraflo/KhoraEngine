@@ -19,9 +19,11 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
 use khora_core::script::{ErgonType, ScriptValue};
 
+use crate::ecs::LossCause;
+use crate::scene::asset_kinds::{kinds_conflict, value_holds_asset};
+
 mod column;
 mod field_error;
-pub(crate) use column::retyped;
 pub use field_error::FieldError;
 
 pub(crate) use column::{PackedColumn, PackedColumns};
@@ -98,28 +100,6 @@ impl FieldKind {
             ErgonType::Engine("Quat") => Self::Quat,
             ErgonType::Engine("Color") => Self::Color,
             _ => Self::Value,
-        }
-    }
-
-    /// Returns whether a value of this kind may be kept when its field becomes of kind `to`.
-    ///
-    /// Same kind, or `int` to `float`, each value kept only where it
-    /// [converts losslessly](Self::widened).
-    pub(crate) fn widens(self, to: FieldKind) -> bool {
-        self == to || (self == Self::Int && to == Self::Float)
-    }
-
-    /// Returns `value`, of this kind, as a field of kind `to` keeps it.
-    ///
-    /// `None` for another kind, or an `int` a `float` would round (past 2^24).
-    pub(crate) fn widened(self, to: FieldKind, value: &ScriptValue) -> Option<ScriptValue> {
-        match (self, to, value) {
-            (Self::Int, Self::Float, ScriptValue::Int(v)) => {
-                let float = *v as f32;
-                (float as i64 == *v).then_some(ScriptValue::Float(float))
-            }
-            _ if self == to => Some(value.clone()),
-            _ => None,
         }
     }
 
@@ -292,25 +272,74 @@ impl PackedLayout {
     ///
     /// An `int` where the type holds a float, at any depth, is kept as that float.
     pub fn admit(&self, slot: usize, value: &ScriptValue) -> Option<ScriptValue> {
-        let accepted = self.accept(slot, value)?;
-        match self.ty(slot) {
-            Some(ty) if !ty.admits(&accepted) => None,
-            Some(ty) => Some(ty.widened(accepted)),
-            None => Some(accepted),
+        self.admitted(slot, value).ok().map(|(kept, _)| kept)
+    }
+
+    /// Returns `value` as field `slot` keeps it, and whether every `int` in it
+    /// kept its value exactly — or why the field refuses it.
+    ///
+    /// [`LossCause::Retyped`] where its kind or known type refuses the value,
+    /// [`LossCause::Refused`] where it is a number that is not finite and the
+    /// layout keeps authored data, [`LossCause::FieldDropped`] where there is no
+    /// field `slot`. An `int` where the type holds a float, at any depth, is
+    /// kept as that float ([`ErgonType::widened_and_exact`]).
+    pub(crate) fn admitted(
+        &self,
+        slot: usize,
+        value: &ScriptValue,
+    ) -> Result<(ScriptValue, bool), LossCause> {
+        let kind = self.fields.get(slot).ok_or(LossCause::FieldDropped)?.kind;
+        let stored = kind.stored(value).ok_or(LossCause::Retyped)?;
+        let (kept, exact) = match self.ty(slot) {
+            Some(ty) if !ty.admits(&stored) => return Err(LossCause::Retyped),
+            Some(ty) => ty.widened_and_exact(stored),
+            None => (stored, true),
+        };
+        if self.finite && !kept.is_finite() {
+            return Err(LossCause::Refused);
         }
+        Ok((kept, exact))
     }
 
     /// Returns a `value` read from a file as field `slot` holds it, and whether it was widened.
     ///
     /// Stricter than [`admit`](Self::admit): an `int` becomes a `float` only
-    /// where it converts exactly. Anything comparing with a load reads through it.
+    /// where it converts exactly, at any depth — a value holding one a float
+    /// rounds is refused whole. Anything comparing with a load reads through it.
     pub fn fit(&self, slot: usize, value: &ScriptValue) -> Option<(ScriptValue, bool)> {
-        let kind = self.fields.get(slot)?.kind;
-        match (kind, value) {
-            (FieldKind::Float, ScriptValue::Int(_)) => {
-                Some((FieldKind::Int.widened(kind, value)?, true))
+        self.fit_from(slot, value, None).ok()
+    }
+
+    /// Returns `value`, of a field typed `from`, as field `slot` holds it once
+    /// read, and whether it was widened — or why the field refuses it.
+    ///
+    /// `from` is the Ergon type the value was held under, where known. The rule
+    /// of a scene load and of a relayout alike: an asset reference the two
+    /// types give different kinds is [`LossCause::Retyped`]; a value holding an
+    /// `int` a `float` cannot hold exactly, at the top or inside an optional,
+    /// an array or a struct, is [`LossCause::Inexact`]; any other value is
+    /// kept as [`admitted`](Self::admitted) keeps it. Widened is told only of
+    /// a top-level `int` become a `float`.
+    pub(crate) fn fit_from(
+        &self,
+        slot: usize,
+        value: &ScriptValue,
+        from: Option<&ErgonType>,
+    ) -> Result<(ScriptValue, bool), LossCause> {
+        let field = self.fields.get(slot).ok_or(LossCause::FieldDropped)?;
+        if let (Some(from), Some(to)) = (from, self.ty(slot)) {
+            if kinds_conflict(from, to) && value_holds_asset(value) {
+                return Err(LossCause::Retyped);
             }
-            _ => Some((self.admit(slot, value)?, false)),
+        }
+        match (field.kind, value) {
+            (FieldKind::Float, ScriptValue::Int(int)) => ErgonType::exact_float(*int)
+                .map(|float| (ScriptValue::Float(float), true))
+                .ok_or(LossCause::Inexact),
+            _ => match self.admitted(slot, value)? {
+                (kept, true) => Ok((kept, false)),
+                (_, false) => Err(LossCause::Inexact),
+            },
         }
     }
 

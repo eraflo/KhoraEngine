@@ -96,7 +96,7 @@ fn save_through(save: &SaveRecord, name: &str, encoding: &dyn SceneEncoding) -> 
 
 fn load(base: &SceneRecord, save: &SaveRecord) -> World {
     let mut dst = World::new();
-    let prepared = prepare_game(&mut dst, &compose(base, save))
+    let prepared = prepare_game(&mut dst, compose(base, save))
         .unwrap_or_else(|e| panic!("the game did not load: {e}"));
     prepared.commit(&mut dst, Identity::Keep);
     dst

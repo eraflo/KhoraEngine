@@ -233,37 +233,73 @@ impl ErgonType {
     /// inside an optional, an array or a struct too) is that float. Anything
     /// else is kept.
     pub fn widened(&self, value: ScriptValue) -> ScriptValue {
+        self.widened_and_exact(value).0
+    }
+
+    /// Returns `value` as [`widened`](Self::widened) does, and whether every
+    /// `int` it converted is its float exactly.
+    ///
+    /// `false` as soon as one `int`, at any depth, has no `f32` naming it
+    /// ([`exact_float`](Self::exact_float)); that one is its nearest float.
+    pub fn widened_and_exact(&self, value: ScriptValue) -> (ScriptValue, bool) {
         match (self, value) {
             (Self::Float | Self::Duration | Self::Angle, ScriptValue::Int(v)) => {
-                ScriptValue::Float(v as f32)
+                match Self::exact_float(v) {
+                    Some(float) => (ScriptValue::Float(float), true),
+                    None => (ScriptValue::Float(v as f32), false),
+                }
             }
-            (Self::Optional(inner), value) if value != ScriptValue::Null => inner.widened(value),
-            (Self::Array(element), ScriptValue::Array(items)) => ScriptValue::Array(
-                items
+            (Self::Optional(inner), value) if value != ScriptValue::Null => {
+                inner.widened_and_exact(value)
+            }
+            (Self::Array(element), ScriptValue::Array(items)) => {
+                let mut exact = true;
+                let items = items
                     .into_iter()
-                    .map(|item| element.widened(item))
-                    .collect(),
-            ),
+                    .map(|item| {
+                        let (item, item_exact) = element.widened_and_exact(item);
+                        exact &= item_exact;
+                        item
+                    })
+                    .collect();
+                (ScriptValue::Array(items), exact)
+            }
             (
                 Self::Struct {
                     fields: Some(declared),
                     ..
                 },
                 ScriptValue::Struct(fields),
-            ) => ScriptValue::Struct(
-                fields
+            ) => {
+                let mut exact = true;
+                let fields = fields
                     .into_iter()
                     .map(|(name, value)| {
                         let value = match declared.iter().find(|(known, _)| *known == name) {
-                            Some((_, ty)) => ty.widened(value),
+                            Some((_, ty)) => {
+                                let (value, value_exact) = ty.widened_and_exact(value);
+                                exact &= value_exact;
+                                value
+                            }
                             None => value,
                         };
                         (name, value)
                     })
-                    .collect(),
-            ),
-            (_, value) => value,
+                    .collect();
+                (ScriptValue::Struct(fields), exact)
+            }
+            (_, value) => (value, true),
         }
+    }
+
+    /// Returns the `float` naming `int` exactly, `None` where a float rounds it.
+    ///
+    /// Compared in `i128`, which holds every float an `i64` rounds to:
+    /// `i64::MAX` rounds to 2⁶³, which no `i64` holds, so a cast back to `i64`
+    /// would saturate and call it exact.
+    pub fn exact_float(int: i64) -> Option<f32> {
+        let float = int as f32;
+        (float as i128 == i128::from(int)).then_some(float)
     }
 }
 

@@ -258,7 +258,7 @@ fn a_snapshot_with_declared_components_still_refuses_another_rust_schema() {
     let mut world = World::new();
     declare_both(&mut world);
     let kept = world.spawn(Transform::identity());
-    match prepare_snapshot(&mut world, &with_payload(&file, payload)) {
+    match prepare_snapshot(&mut world, with_payload(&file, payload)) {
         Ok(prepared) => {
             prepared.abandon(&mut world);
             panic!("a snapshot of another Transform schema was accepted");
@@ -290,7 +290,7 @@ fn a_damaged_snapshot_of_declared_components_never_panics() {
                 if declared {
                     declare_both(&mut world);
                 }
-                if let Ok(prepared) = prepare_snapshot(&mut world, &damaged) {
+                if let Ok(prepared) = prepare_snapshot(&mut world, damaged.clone()) {
                     prepared.commit(&mut world, Identity::Keep);
                 }
             }));

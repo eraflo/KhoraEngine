@@ -119,7 +119,7 @@ fn played() -> Played {
 /// nothing.
 fn load(base: &SceneRecord, save: &SaveRecord) -> World {
     let mut dst = World::new();
-    let prepared = prepare_game(&mut dst, &compose(base, save))
+    let prepared = prepare_game(&mut dst, compose(base, save))
         .unwrap_or_else(|e| panic!("the game did not load: {e}"));
     prepared.commit(&mut dst, Identity::Keep);
     dst
@@ -335,7 +335,7 @@ fn a_game_save_loads_against_its_scene_saved_again_under_a_new_declaration() {
     let base = capture_world(&resaved).expect("the scene captures");
 
     let mut dst = World::new();
-    let prepared = prepare_game(&mut dst, &compose(&base, &save)).unwrap_or_else(|e| {
+    let prepared = prepare_game(&mut dst, compose(&base, &save)).unwrap_or_else(|e| {
         panic!("a save against its scene saved under a new declaration does not load: {e}")
     });
     prepared.commit(&mut dst, Identity::Keep);

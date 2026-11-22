@@ -24,7 +24,6 @@ use serde::{Deserialize, Serialize};
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{ErgonType, ScriptValue};
 
-use super::asset_kinds::{kinds_conflict, value_holds_asset};
 use super::component_registration::{registration_named, Kept, PendingComponent, StagedComponent};
 use super::load_catalog::LoadCatalog;
 use super::record::{
@@ -371,11 +370,9 @@ pub(crate) struct DeclaredLoad {
     /// The file's fields, in its declaration's order: what a snapshot's
     /// positional row holds.
     file_fields: Vec<String>,
-    /// The fields the world gives another asset kind than the file does.
-    ///
-    /// A value holding an asset there keeps the field's default, as a hot
-    /// reload retyping the field would.
-    rekinded_fields: Vec<String>,
+    /// Per field of the file, in the same order, the Ergon type the file gives
+    /// it, where known: what each value is read from.
+    file_types: Vec<Option<ErgonType>>,
     /// The declaration to register when the world has none.
     pub(crate) register: Option<RuntimeComponentDecl>,
     /// Whether it is runtime state a game save keeps and a scene does not.
@@ -428,8 +425,10 @@ impl DeclaredLoad {
 
     /// Reads a row of `values` by field name onto the planned fields, with what it adapted.
     ///
-    /// A missing field takes its default, a value no field takes is dropped, and
-    /// an `int` for a `float` field is converted where it converts exactly.
+    /// A missing field takes its default, and a value no field takes is
+    /// dropped. Each other value is read as [`PackedLayout::fit_from`] reads
+    /// it from the file's type, the rule a relayout keeps too; one it refuses
+    /// is reported `Dropped` and the field keeps its default.
     fn staged(&self, values: Vec<(String, ScriptValue)>) -> StagedComponent {
         let mut report: Vec<ReportEntry> = Vec::new();
         let entry = |report: &mut Vec<ReportEntry>, path: &str, kind: ReportKind| {
@@ -446,18 +445,19 @@ impl DeclaredLoad {
                 entry(&mut report, &field, ReportKind::Dropped);
                 continue;
             };
-            if self.rekinded_fields.contains(&field) && value_holds_asset(&value) {
-                entry(&mut report, &field, ReportKind::Dropped);
-                continue;
-            }
-            match fit(&self.layout, slot, value) {
-                Some((value, widened)) => {
+            let from = self
+                .file_fields
+                .iter()
+                .position(|name| *name == field)
+                .and_then(|at| self.file_types.get(at)?.as_ref());
+            match self.layout.fit_from(slot, &value, from) {
+                Ok((value, widened)) => {
                     if widened {
                         entry(&mut report, &field, ReportKind::Widened);
                     }
                     kept.push((field, value));
                 }
-                None => entry(&mut report, &field, ReportKind::Dropped),
+                Err(_) => entry(&mut report, &field, ReportKind::Dropped),
             }
         }
         for field in self.layout.fields() {
@@ -545,18 +545,7 @@ pub(crate) fn plan_fields(
         )
     });
     let file_fields = fields.iter().map(|field| field.name.clone()).collect();
-    let rekinded_fields = match &live {
-        Some((_, layout, _)) => fields
-            .iter()
-            .zip(&types)
-            .filter(|(field, ty)| {
-                let live = layout.slot_of(&field.name).and_then(|slot| layout.ty(slot));
-                matches!((ty, live), (Some(file), Some(live)) if kinds_conflict(file, live))
-            })
-            .map(|(field, _)| field.name.clone())
-            .collect(),
-        None => Vec::new(),
-    };
+    let file_types = types.clone();
     let (domain, layout, register, resumable) = match live {
         Some((domain, layout, live_resumable)) => (domain, layout, None, live_resumable),
         None => {
@@ -587,7 +576,7 @@ pub(crate) fn plan_fields(
         domain,
         layout,
         file_fields,
-        rekinded_fields,
+        file_types,
         register,
         resumable,
     })
@@ -602,12 +591,6 @@ fn typed_layout(
         return PackedLayout::new(fields);
     }
     PackedLayout::typed(fields, types.into_iter().flatten().collect())
-}
-
-/// Returns `value` as field `slot` of `layout` holds it once read, and whether it
-/// was widened — [`PackedLayout::fit`].
-fn fit(layout: &PackedLayout, slot: usize, value: ScriptValue) -> Option<(ScriptValue, bool)> {
-    layout.fit(slot, &value)
 }
 
 /// A declared component's row, read: its values by field name, the rest its defaults.
@@ -632,7 +615,7 @@ impl PendingComponent for StagedDeclared {
             };
             // A field the world gave another kind since the load was read
             // keeps its default.
-            if let Some((value, _)) = fit(column.layout(), slot, value) {
+            if let Some((value, _)) = column.layout().fit(slot, &value) {
                 let _ = column.set(row, slot, &value);
             }
         }

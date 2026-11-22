@@ -112,7 +112,7 @@ fn assert_refused(file: &SceneFile, named: &str, case: &str) {
     let mut world = named_world("Open");
     let before = observed(&world);
     let count = world.iter_entities().count();
-    let failure = match prepare_snapshot(&mut world, file) {
+    let failure = match prepare_snapshot(&mut world, file.clone()) {
         Ok(prepared) => {
             prepared.abandon(&mut world);
             panic!("{case}: the snapshot was accepted");
@@ -238,7 +238,7 @@ fn a_snapshot_of_another_layout_version_is_refused() {
     payload[0] ^= 0xFF;
     let mut world = named_world("Open");
     let before = observed(&world);
-    assert!(prepare_snapshot(&mut world, &with_payload(&file, payload)).is_err());
+    assert!(prepare_snapshot(&mut world, with_payload(&file, payload)).is_err());
     assert_eq!(observed(&world), before);
 }
 
@@ -250,7 +250,7 @@ fn a_file_in_another_encoding_is_not_a_snapshot() {
     let compact = write_scene_file(&record, &CompactEncoding).expect("encodes");
     let mut world = named_world("Open");
     let before = observed(&world);
-    assert!(prepare_snapshot(&mut world, &compact).is_err());
+    assert!(prepare_snapshot(&mut world, compact.clone()).is_err());
     assert_eq!(observed(&world), before);
 }
 
@@ -267,20 +267,20 @@ fn a_damaged_snapshot_is_an_error_not_a_panic() {
     for end in 0..file.payload.len() {
         let cut = with_payload(&file, file.payload[..end].to_vec());
         assert!(
-            prepare_snapshot(&mut world, &cut).is_err(),
+            prepare_snapshot(&mut world, cut.clone()).is_err(),
             "a prefix of {end} bytes was accepted"
         );
     }
     for at in 0..file.payload.len() {
         let mut payload = file.payload.clone();
         payload[at] ^= 0xFF;
-        if let Ok(prepared) = prepare_snapshot(&mut world, &with_payload(&file, payload)) {
+        if let Ok(prepared) = prepare_snapshot(&mut world, with_payload(&file, payload)) {
             prepared.abandon(&mut world);
         }
     }
     for garbage in [vec![0xFF; 64], vec![0; 64], vec![1; 3], Vec::new()] {
         assert!(
-            prepare_snapshot(&mut world, &with_payload(&file, garbage.clone())).is_err(),
+            prepare_snapshot(&mut world, with_payload(&file, garbage.clone())).is_err(),
             "{garbage:?} was accepted"
         );
     }
