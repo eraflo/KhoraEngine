@@ -58,7 +58,7 @@ use khora_core::renderer::api::resource::{
 use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId, ShaderVariantKey};
 use khora_core::renderer::error::{RenderError, ResourceError};
 use khora_core::renderer::traits::{
-    CommandEncoder, ComputePass, GpuProfiler, PipelineSystem, RenderPass,
+    CommandEncoder, ComputePass, GpuProfiler, PipelineSystem, RenderPass, RenderPassError,
 };
 use khora_core::renderer::GraphicsDevice;
 use khora_core::sync::LockExt;
@@ -187,6 +187,9 @@ pub struct SkyLedger {
     unfinishable: bool,
     /// The labels of the bind groups it refuses to make.
     pub refused_bind_groups: Mutex<Vec<&'static str>>,
+    /// The views it holds no more: its encoders refuse a pass naming one, as
+    /// a backend refuses a destroyed view.
+    pub gone_views: Arc<Mutex<Vec<TextureViewId>>>,
 }
 
 impl SkyLedger {
@@ -333,6 +336,35 @@ struct LedgerEncoder {
     by_bake: bool,
     log: Arc<Mutex<Log>>,
     unfinishable: bool,
+    gone_views: Arc<Mutex<Vec<TextureViewId>>>,
+}
+
+impl LedgerEncoder {
+    /// The refusal of a pass naming a view the device holds no more, checked
+    /// in the backend's order: each colour view and its resolve target, then depth.
+    fn refusal(&self, desc: &RenderPassDescriptor<'_>) -> Option<RenderPassError> {
+        let gone = self.gone_views.lock_recovered();
+        for (index, attachment) in desc.color_attachments.iter().enumerate() {
+            if gone.contains(attachment.view) {
+                return Some(RenderPassError::UnknownColorView {
+                    index,
+                    view: *attachment.view,
+                });
+            }
+            if let Some(resolve) = attachment.resolve_target.filter(|view| gone.contains(view)) {
+                return Some(RenderPassError::UnknownResolveTarget {
+                    index,
+                    view: *resolve,
+                });
+            }
+        }
+        desc.depth_stencil_attachment
+            .as_ref()
+            .filter(|attachment| gone.contains(attachment.view))
+            .map(|attachment| RenderPassError::UnknownDepthView {
+                view: *attachment.view,
+            })
+    }
 }
 
 struct LedgerRenderPass {
@@ -377,7 +409,10 @@ impl CommandEncoder for LedgerEncoder {
     fn begin_render_pass<'enc>(
         &'enc mut self,
         desc: &RenderPassDescriptor<'enc>,
-    ) -> Box<dyn RenderPass<'enc> + 'enc> {
+    ) -> Result<Box<dyn RenderPass<'enc> + 'enc>, RenderPassError> {
+        if let Some(refusal) = self.refusal(desc) {
+            return Err(refusal);
+        }
         let colors = desc
             .color_attachments
             .iter()
@@ -399,7 +434,7 @@ impl CommandEncoder for LedgerEncoder {
                             .is_some_and(|ops| matches!(ops.load, LoadOp::Load)),
                     )
                 });
-        Box::new(LedgerRenderPass {
+        Ok(Box::new(LedgerRenderPass {
             pass: RecordedPass {
                 buffer: self.buffer,
                 by_bake: self.by_bake,
@@ -412,7 +447,7 @@ impl CommandEncoder for LedgerEncoder {
                 draws: Vec::new(),
             },
             log: Arc::clone(&self.log),
-        })
+        }))
     }
     fn begin_compute_pass<'enc>(
         &'enc mut self,
@@ -601,6 +636,7 @@ impl GraphicsDevice for SkyLedger {
             by_bake,
             log: Arc::clone(&self.log),
             unfinishable: self.unfinishable,
+            gone_views: Arc::clone(&self.gone_views),
         })
     }
     fn submit_command_buffer(&self, command_buffer: CommandBufferId) {

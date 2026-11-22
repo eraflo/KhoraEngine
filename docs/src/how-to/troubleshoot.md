@@ -112,6 +112,18 @@ OS — restart the application (and update the driver if it persists). Out-of-me
 VRAM/resource budget breach: reduce texture/buffer footprint or render at a lower resolution. Neither
 is a code panic to debug in a backtrace; read the fatal log line.
 
+### `render pass refused: … names an unknown view …` and a pass draws nothing
+
+**Cause.** A render pass named a texture view the device no longer holds: destroyed (a target
+released or rebuilt while a lane still held its id) or never made. The encoder checks every
+attachment before the pass begins and refuses the whole pass (`RenderPassError`), naming the colour
+attachment by index, its resolve target, or the depth attachment. The lane recording it fails that
+frame and draws nothing; the frame loop goes on (`RenderError::PassRefused` is not fatal).
+
+**Fix.** Find who destroyed the view the message names, or who handed out a stale id, and keep the
+view alive for as long as a pass may name it. The pass draws again on the first frame whose views all
+stand. See [Rendering](../concepts/rendering.md#device-loss-resilience).
+
 ### Vulkan validation errors in the console
 
 **Cause.** The engine targets a clean frame loop: running `cargo run -p sandbox` should produce

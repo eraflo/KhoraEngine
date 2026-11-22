@@ -173,7 +173,7 @@ impl Lane for TwoPassLane {
                 label: Some(label),
                 color_attachments: &[],
                 depth_stencil_attachment: None,
-            });
+            })?;
             pass.draw(0..3, 0..1);
         }
         out.first.descriptor_mut().push("first drawn");
@@ -305,7 +305,7 @@ impl Lane for TwoDrawsLane {
                 label: None,
                 color_attachments: &[],
                 depth_stencil_attachment: None,
-            });
+            })?;
             pass.draw(0..3, 0..1);
         }
         Ok(LaneReport {

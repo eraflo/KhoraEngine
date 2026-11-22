@@ -77,7 +77,7 @@ use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId, 
 use khora_core::renderer::api::util::AtlasRect;
 use khora_core::renderer::error::{RenderError, ResourceError};
 use khora_core::renderer::traits::{
-    CommandEncoder, ComputePass, GpuProfiler, PipelineSystem, RenderPass,
+    CommandEncoder, ComputePass, GpuProfiler, PipelineSystem, RenderPass, RenderPassError,
 };
 use khora_core::renderer::GraphicsDevice;
 use khora_core::sync::LockExt;
@@ -562,7 +562,7 @@ impl CommandEncoder for LedgerEncoder {
     fn begin_render_pass<'enc>(
         &'enc mut self,
         desc: &RenderPassDescriptor<'enc>,
-    ) -> Box<dyn RenderPass<'enc> + 'enc> {
+    ) -> Result<Box<dyn RenderPass<'enc> + 'enc>, RenderPassError> {
         let colors = desc
             .color_attachments
             .iter()
@@ -576,7 +576,7 @@ impl CommandEncoder for LedgerEncoder {
             .depth_stencil_attachment
             .as_ref()
             .map(|attachment| *attachment.view);
-        Box::new(LedgerRenderPass {
+        Ok(Box::new(LedgerRenderPass {
             pass: RecordedPass {
                 buffer: self.buffer,
                 colors,
@@ -592,7 +592,7 @@ impl CommandEncoder for LedgerEncoder {
             log: Arc::clone(&self.log),
             pipeline: None,
             groups: BTreeMap::new(),
-        })
+        }))
     }
     fn begin_compute_pass<'enc>(
         &'enc mut self,

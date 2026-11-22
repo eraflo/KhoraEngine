@@ -41,7 +41,7 @@ impl UnlitGpu {
         clear: LinearRgba,
     ) -> Result<(), RenderError> {
         let (Some(view), Some((_, pipeline))) = (render_world.views.first(), self.pipeline) else {
-            record_clear(encoder, target, clear, "Simple Unlit Clear-Only Pass");
+            record_clear(encoder, target, clear, "Simple Unlit Clear-Only Pass")?;
             return Ok(());
         };
 
@@ -104,7 +104,7 @@ impl UnlitGpu {
             color_attachments: &color,
             depth_stencil_attachment: Some(scene_depth(target, LoadOp::Clear(1.0))),
         };
-        let mut pass = encoder.begin_render_pass(&descriptor);
+        let mut pass = encoder.begin_render_pass(&descriptor)?;
         pass.set_bind_group(0, &camera_bind_group, &[]);
         pass.set_pipeline(&pipeline);
         // The unlit material is a dynamic-offset uniform, unlike the lit

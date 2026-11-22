@@ -16,6 +16,7 @@
 
 use crate::renderer::api::pipeline::RenderPipelineId;
 use crate::renderer::api::shader::ShaderModuleId;
+use crate::renderer::traits::RenderPassError;
 use std::fmt;
 
 /// An error related to the creation, loading, or compilation of a shader module.
@@ -234,6 +235,9 @@ pub enum RenderError {
     RenderingFailed(String),
     /// An error occurred while managing a GPU resource.
     ResourceError(ResourceError),
+    /// A render pass was refused: one of its attachments names a view the
+    /// device does not hold. The pass recorded nothing.
+    PassRefused(RenderPassError),
     /// The graphics device was lost (e.g., GPU driver crashed or was updated).
     /// This is a catastrophic error that typically requires reinitialization.
     DeviceLost,
@@ -279,6 +283,7 @@ impl fmt::Display for RenderError {
             RenderError::ResourceError(err) => {
                 write!(f, "Graphics resource operation failed: {err}")
             }
+            RenderError::PassRefused(err) => write!(f, "{err}"),
             RenderError::DeviceLost => write!(
                 f,
                 "The graphics device was lost and needs to be reinitialized."
@@ -297,6 +302,7 @@ impl std::error::Error for RenderError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             RenderError::ResourceError(err) => Some(err),
+            RenderError::PassRefused(err) => Some(err),
             _ => None,
         }
     }
@@ -305,6 +311,12 @@ impl std::error::Error for RenderError {
 impl From<ResourceError> for RenderError {
     fn from(err: ResourceError) -> Self {
         RenderError::ResourceError(err)
+    }
+}
+
+impl From<RenderPassError> for RenderError {
+    fn from(err: RenderPassError) -> Self {
+        RenderError::PassRefused(err)
     }
 }
 
@@ -375,6 +387,24 @@ mod tests {
         assert!(!RenderError::SurfaceAcquisitionFailed("Timeout".to_string()).is_fatal());
         assert!(!RenderError::RenderingFailed("pass".to_string()).is_fatal());
         assert!(!RenderError::Internal("misc".to_string()).is_fatal());
+    }
+
+    #[test]
+    fn a_refused_render_pass_is_a_render_error_that_is_not_fatal() {
+        let refusal = RenderPassError::UnknownColorView {
+            index: 0,
+            view: crate::renderer::api::resource::TextureViewId(9),
+        };
+
+        let err = RenderError::from(refusal);
+
+        assert!(matches!(err, RenderError::PassRefused(r) if r == refusal));
+        assert!(!err.is_fatal(), "the next frame may name views that stand");
+        assert_eq!(err.to_string(), refusal.to_string());
+        let source = err
+            .source()
+            .and_then(|source| source.downcast_ref::<RenderPassError>());
+        assert_eq!(source, Some(&refusal));
     }
 
     #[test]

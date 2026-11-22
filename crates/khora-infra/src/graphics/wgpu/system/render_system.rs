@@ -186,7 +186,7 @@ impl RenderSystem for WgpuRenderSystem {
                 depth_stencil_attachment: depth_attachment,
             };
 
-            let mut render_pass = command_encoder.begin_render_pass(&pass_descriptor);
+            let mut render_pass = command_encoder.begin_render_pass(&pass_descriptor)?;
 
             // Apply the same bind group and pipeline to all chunks to limit state changes
             if let Some(camera_bind_group) = &self.camera_bind_group {

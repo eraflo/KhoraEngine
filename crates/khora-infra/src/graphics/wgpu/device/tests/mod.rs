@@ -13,10 +13,11 @@
 // limitations under the License.
 
 //! The device's tests: its buffer descriptors, its capabilities, how it
-//! holds up when many threads call it at once, and the video memory the
-//! platform gives it.
+//! holds up when many threads call it at once, the render passes its encoders
+//! begin, and the video memory the platform gives it.
 
 mod buffer_descriptor;
 mod caps;
 mod concurrency;
+mod render_pass;
 mod vram;

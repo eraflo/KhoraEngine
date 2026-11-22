@@ -58,7 +58,7 @@ use khora_core::renderer::api::shadow::ShadowFrame;
 use khora_core::renderer::error::{RenderError, ResourceError};
 use khora_core::renderer::light::{DirectionalLight, LightType, PointLight};
 use khora_core::renderer::traits::{
-    CommandEncoder, ComputePass, GpuProfiler, PipelineSystem, RenderPass,
+    CommandEncoder, ComputePass, GpuProfiler, PipelineSystem, RenderPass, RenderPassError,
 };
 use khora_core::renderer::GraphicsDevice;
 use khora_core::sync::{LockExt, RwLockExt};
@@ -387,14 +387,14 @@ impl CommandEncoder for LedgerEncoder {
     fn begin_render_pass<'enc>(
         &'enc mut self,
         desc: &RenderPassDescriptor<'enc>,
-    ) -> Box<dyn RenderPass<'enc> + 'enc> {
+    ) -> Result<Box<dyn RenderPass<'enc> + 'enc>, RenderPassError> {
         let (depth, layer) = desc
             .depth_stencil_attachment
             .as_ref()
             .map_or((None, 0), |attachment| {
                 (Some(*attachment.view), attachment.base_array_layer)
             });
-        Box::new(LedgerRenderPass {
+        Ok(Box::new(LedgerRenderPass {
             pass: RecordedPass {
                 buffer: self.buffer,
                 depth,
@@ -403,7 +403,7 @@ impl CommandEncoder for LedgerEncoder {
                 models: Vec::new(),
             },
             log: Arc::clone(&self.log),
-        })
+        }))
     }
     fn begin_compute_pass<'enc>(
         &'enc mut self,

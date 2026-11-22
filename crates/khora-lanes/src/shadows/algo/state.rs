@@ -21,7 +21,7 @@ use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::api::resource::{CameraUniformData, SamplerId};
 use khora_core::renderer::api::shadow::{ShadowEntries, ShadowEntry, ShadowGpuBindings};
 use khora_core::renderer::error::RenderError;
-use khora_core::renderer::traits::PipelineSystem;
+use khora_core::renderer::traits::{PipelineSystem, RenderPassError};
 use khora_core::renderer::{traits::CommandEncoder, GraphicsDevice};
 use khora_data::assets::Assets;
 use khora_data::render::RenderWorld;
@@ -192,6 +192,11 @@ impl ShadowGpu {
     ///
     /// The 2D casters and the point casters are each taken up to the level's
     /// capacity; a caster beyond it casts no shadow this frame.
+    ///
+    /// # Errors
+    ///
+    /// The [`RenderPassError`] of the first depth pass the encoder refuses; the
+    /// passes after it are not recorded.
     #[allow(clippy::too_many_arguments)] // one parameter per render input; a config struct would obscure the call sites
     pub fn render(
         &mut self,
@@ -202,7 +207,7 @@ impl ShadowGpu {
         gpu_meshes: &Assets<GpuMesh>,
         entries: &mut ShadowEntries,
         label: &str,
-    ) {
+    ) -> Result<(), RenderPassError> {
         use khora_core::math::Mat4;
         use khora_data::flow::ShadowMatrices;
 
@@ -275,14 +280,15 @@ impl ShadowGpu {
 
         let passes = recorder.into_passes();
         if passes.is_empty() {
-            return;
+            return Ok(());
         }
         // Every pass draws the same casters through the same uploads, so the
         // models are pushed once a frame, not once per pass.
         let draws = pass::build_draw_cmds(device, render_world, gpu_meshes, &mut self.model_ring);
         for attachment in &passes {
-            pass::record_depth_pass(encoder, &self.pipeline, attachment, &draws);
+            pass::record_depth_pass(encoder, &self.pipeline, attachment, &draws)?;
         }
+        Ok(())
     }
 
     /// Gives every resource back to the device.

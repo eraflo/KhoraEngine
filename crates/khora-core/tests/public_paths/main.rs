@@ -63,6 +63,7 @@ fn is_eq<T: Eq>() {}
 fn is_error<T: std::error::Error>() {}
 fn is_extend_behavior_update<T: Extend<khora_core::script::writeback::BehaviorUpdate>>() {}
 fn is_extend_world_command<T: Extend<khora_core::script::command::WorldCommand>>() {}
+fn is_from_render_pass_error<T: From<khora_core::renderer::traits::RenderPassError>>() {}
 fn is_from_str<T: From<&'static str>>() {}
 fn is_from_string<T: From<String>>() {}
 fn is_hash<T: std::hash::Hash>() {}
@@ -2004,6 +2005,7 @@ fn module_lane_paths_still_resolve() {
     is_debug::<khora_core::lane::LaneError>();
     is_display::<khora_core::lane::LaneError>();
     is_error::<khora_core::lane::LaneError>();
+    is_from_render_pass_error::<khora_core::lane::LaneError>();
     let _ = type_name::<khora_core::lane::bus::LaneBus>();
     let _ = type_name::<khora_core::lane::LaneBus>();
     same_type(

@@ -18,8 +18,10 @@ use khora_core::renderer::api::command::{
 use khora_core::renderer::api::pipeline::ComputePipelineId;
 use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::api::resource::buffer as api_buf;
-use khora_core::renderer::api::resource::IndexFormat;
-use khora_core::renderer::traits::{CommandEncoder, ComputePass, GpuProfiler, RenderPass};
+use khora_core::renderer::api::resource::{IndexFormat, TextureId};
+use khora_core::renderer::traits::{
+    CommandEncoder, ComputePass, GpuProfiler, RenderPass, RenderPassError,
+};
 use std::any::Any;
 use std::ops::Range;
 
@@ -162,61 +164,100 @@ impl WgpuCommandEncoder {
     pub(crate) fn wgpu_encoder_mut(&mut self) -> Option<&mut wgpu::CommandEncoder> {
         self.encoder.as_mut()
     }
+
+    /// Returns the view a render pass draws into: `view`, remade as a 2D view of
+    /// `layer` (and of `mip` alone, when given) when its source texture stands.
+    ///
+    /// A pass draws into a 2D view, never a 2D array, and this holds for layer 0
+    /// too (the shadow atlas, a cube's faces).
+    fn pass_view(
+        &self,
+        source: Option<TextureId>,
+        view: &wgpu::TextureView,
+        label: &'static str,
+        layer: u32,
+        mip: Option<u32>,
+    ) -> wgpu::TextureView {
+        match source.and_then(|id| self.device.get_wgpu_texture(id)) {
+            Some(texture) => texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some(label),
+                base_array_layer: layer,
+                array_layer_count: Some(1),
+                base_mip_level: mip.unwrap_or(0),
+                mip_level_count: mip.map(|_| 1),
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                ..Default::default()
+            }),
+            None => view.clone(),
+        }
+    }
 }
 
 impl CommandEncoder for WgpuCommandEncoder {
     fn begin_render_pass<'encoder>(
         &'encoder mut self,
         descriptor: &RenderPassDescriptor<'encoder>,
-    ) -> Box<dyn RenderPass<'encoder> + 'encoder> {
-        // The views live here, outside the loop, because the pass descriptor borrows them.
-        let mut views: Vec<wgpu::TextureView> = Vec::new();
-        let mut resolve_targets: Vec<Option<wgpu::TextureView>> = Vec::new();
-
-        for att in descriptor.color_attachments.iter() {
-            if let Some(view_entry) = self.device.get_wgpu_texture_view_entry(*att.view) {
-                // For array textures, create a single-layer 2D view for the render pass.
-                // Render passes require a 2D view, not a 2DArray view.
-                if let Some(tex_id) = view_entry.source_texture_id {
-                    if let Some(tex) = self.device.get_wgpu_texture(tex_id) {
-                        let temp_view = tex.create_view(&wgpu::TextureViewDescriptor {
-                            label: Some("Temp Layer View (Color)"),
-                            base_array_layer: att.base_array_layer,
-                            array_layer_count: Some(1),
-                            base_mip_level: att.base_mip_level,
-                            mip_level_count: Some(1),
-                            dimension: Some(wgpu::TextureViewDimension::D2),
-                            ..Default::default()
-                        });
-                        views.push(temp_view);
-                    } else {
-                        views.push((*view_entry.wgpu_view).clone());
-                    }
-                } else {
-                    views.push((*view_entry.wgpu_view).clone());
-                }
-            } else {
-                continue;
-            }
-            if let Some(rt_id) = att.resolve_target {
-                resolve_targets.push(
+    ) -> Result<Box<dyn RenderPass<'encoder> + 'encoder>, RenderPassError> {
+        // Every view is resolved before the pass begins, so a pass is begun
+        // whole or refused. The views live here because the wgpu descriptor
+        // borrows them.
+        let attachments = descriptor.color_attachments;
+        let mut views: Vec<wgpu::TextureView> = Vec::with_capacity(attachments.len());
+        let mut resolve_targets: Vec<Option<wgpu::TextureView>> =
+            Vec::with_capacity(attachments.len());
+        for (index, att) in attachments.iter().enumerate() {
+            let entry = self.device.get_wgpu_texture_view_entry(*att.view).ok_or(
+                RenderPassError::UnknownColorView {
+                    index,
+                    view: *att.view,
+                },
+            )?;
+            views.push(self.pass_view(
+                entry.source_texture_id,
+                &entry.wgpu_view,
+                "Temp Layer View (Color)",
+                att.base_array_layer,
+                Some(att.base_mip_level),
+            ));
+            let resolve = match att.resolve_target {
+                Some(target) => Some(
                     self.device
-                        .get_wgpu_texture_view(rt_id)
-                        .map(|arc_view| (*arc_view).clone()),
-                );
-            } else {
-                resolve_targets.push(None);
-            }
+                        .get_wgpu_texture_view(target)
+                        .map(|view| (*view).clone())
+                        .ok_or(RenderPassError::UnknownResolveTarget {
+                            index,
+                            view: *target,
+                        })?,
+                ),
+                None => None,
+            };
+            resolve_targets.push(resolve);
         }
+        let depth_view = match &descriptor.depth_stencil_attachment {
+            Some(ds) => {
+                let entry = self
+                    .device
+                    .get_wgpu_texture_view_entry(*ds.view)
+                    .ok_or(RenderPassError::UnknownDepthView { view: *ds.view })?;
+                Some(self.pass_view(
+                    entry.source_texture_id,
+                    &entry.wgpu_view,
+                    "Temp Layer View (Depth)",
+                    ds.base_array_layer,
+                    None,
+                ))
+            }
+            None => None,
+        };
 
-        let color_attachments: Vec<Option<wgpu::RenderPassColorAttachment>> = descriptor
-            .color_attachments
+        let color_attachments: Vec<Option<wgpu::RenderPassColorAttachment>> = attachments
             .iter()
-            .enumerate()
-            .map(|(i, att)| {
+            .zip(&views)
+            .zip(&resolve_targets)
+            .map(|((att, view), resolve_target)| {
                 Some(wgpu::RenderPassColorAttachment {
-                    view: &views[i],
-                    resolve_target: resolve_targets[i].as_ref(),
+                    view,
+                    resolve_target: resolve_target.as_ref(),
                     ops: wgpu::Operations {
                         load: att.ops.load.clone().into_wgpu(),
                         store: att.ops.store.clone().into_wgpu(),
@@ -226,31 +267,11 @@ impl CommandEncoder for WgpuCommandEncoder {
             })
             .collect();
 
-        let depth_view: Option<wgpu::TextureView> =
-            descriptor.depth_stencil_attachment.as_ref().and_then(|ds| {
-                self.device
-                    .get_wgpu_texture_view_entry(*ds.view)
-                    .map(|view_entry| {
-                        // For array textures (e.g. shadow atlas), create a single-layer
-                        // 2D view for this specific layer. Render passes require 2D views,
-                        // not 2DArray views — this applies to ALL layers including layer 0.
-                        if let Some(tex_id) = view_entry.source_texture_id {
-                            if let Some(tex) = self.device.get_wgpu_texture(tex_id) {
-                                return tex.create_view(&wgpu::TextureViewDescriptor {
-                                    label: Some("Temp Layer View (Depth)"),
-                                    base_array_layer: ds.base_array_layer,
-                                    array_layer_count: Some(1),
-                                    dimension: Some(wgpu::TextureViewDimension::D2),
-                                    ..Default::default()
-                                });
-                            }
-                        }
-                        (*view_entry.wgpu_view).clone()
-                    })
-            });
-
-        let depth_stencil_attachment = match (&descriptor.depth_stencil_attachment, &depth_view) {
-            (Some(ds), Some(view)) => Some(wgpu::RenderPassDepthStencilAttachment {
+        let depth_stencil_attachment = descriptor
+            .depth_stencil_attachment
+            .as_ref()
+            .zip(depth_view.as_ref())
+            .map(|(ds, view)| wgpu::RenderPassDepthStencilAttachment {
                 view,
                 depth_ops: ds.depth_ops.as_ref().map(|ops| wgpu::Operations {
                     load: ops.load.clone().into_wgpu(),
@@ -260,9 +281,7 @@ impl CommandEncoder for WgpuCommandEncoder {
                     load: ops.load.clone().into_wgpu(),
                     store: ops.store.clone().into_wgpu(),
                 }),
-            }),
-            _ => None,
-        };
+            });
 
         let wgpu_descriptor = wgpu::RenderPassDescriptor {
             label: descriptor.label,
@@ -275,10 +294,10 @@ impl CommandEncoder for WgpuCommandEncoder {
 
         let pass = encoder_mut(&mut self.encoder).begin_render_pass(&wgpu_descriptor);
 
-        Box::new(WgpuRenderPass {
+        Ok(Box::new(WgpuRenderPass {
             pass,
             device: &self.device,
-        })
+        }))
     }
 
     fn begin_compute_pass<'encoder>(

@@ -23,7 +23,7 @@ use khora_core::renderer::api::gpu_scene::{GpuMesh, ModelUniforms};
 use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::api::resource::IndexFormat;
 use khora_core::renderer::api::resource::{BufferId, CameraUniformData, TextureViewId};
-use khora_core::renderer::traits::CommandEncoder;
+use khora_core::renderer::traits::{CommandEncoder, RenderPassError};
 use khora_core::renderer::GraphicsDevice;
 use khora_data::assets::Assets;
 use khora_data::render::RenderWorld;
@@ -120,12 +120,16 @@ impl<'a> PassRecorder<'a> {
 
 /// Records one depth-only render pass into `encoder`: clears its layer, then
 /// draws every caster of `draws`.
+///
+/// # Errors
+///
+/// The [`RenderPassError`] of a pass the encoder refuses; nothing is recorded.
 pub(crate) fn record_depth_pass(
     encoder: &mut dyn CommandEncoder,
     pipeline: &RenderPipelineId,
     pass_data: &AttachmentPass,
     draws: &[ShadowDrawCmd],
-) {
+) -> Result<(), RenderPassError> {
     let depth_attachment = RenderPassDepthStencilAttachment {
         view: &pass_data.target_view,
         depth_ops: Some(Operations {
@@ -140,7 +144,7 @@ pub(crate) fn record_depth_pass(
         label: Some("Shadow Pass"),
         color_attachments: &[],
         depth_stencil_attachment: Some(depth_attachment),
-    });
+    })?;
 
     pass.set_pipeline(pipeline);
     pass.set_bind_group(0, &pass_data.camera_bg, &[pass_data.camera_offset]);
@@ -151,6 +155,7 @@ pub(crate) fn record_depth_pass(
         pass.set_index_buffer(&cmd.index_buffer, 0, cmd.index_format);
         pass.draw_indexed(0..cmd.index_count, 0, 0..1);
     }
+    Ok(())
 }
 
 /// Builds the frame's caster draws, pushing each mesh's model uniforms into `model_ring`.

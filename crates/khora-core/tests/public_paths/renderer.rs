@@ -58,6 +58,7 @@ fn is_display<T: std::fmt::Display>() {}
 fn is_eq<T: Eq>() {}
 fn is_error<T: std::error::Error>() {}
 fn is_from_pipeline_error<T: From<khora_core::renderer::error::PipelineError>>() {}
+fn is_from_render_pass_error<T: From<khora_core::renderer::traits::RenderPassError>>() {}
 fn is_from_resource_error<T: From<khora_core::renderer::error::ResourceError>>() {}
 fn is_from_shader_error<T: From<khora_core::renderer::error::ShaderError>>() {}
 fn is_hash<T: std::hash::Hash>() {}
@@ -1132,6 +1133,7 @@ fn render_error_variants(x: &khora_core::renderer::error::RenderError) {
         khora_core::renderer::error::RenderError::SurfaceAcquisitionFailed(..) => {}
         khora_core::renderer::error::RenderError::RenderingFailed(..) => {}
         khora_core::renderer::error::RenderError::ResourceError(..) => {}
+        khora_core::renderer::error::RenderError::PassRefused(..) => {}
         khora_core::renderer::error::RenderError::DeviceLost => {}
         khora_core::renderer::error::RenderError::DeviceOutOfMemory(..) => {}
         khora_core::renderer::error::RenderError::Internal(..) => {}
@@ -1230,6 +1232,21 @@ fn spot_light_fields(x: &khora_core::renderer::light::SpotLight) {
         &x.shadow_bias,
         &x.shadow_normal_bias,
     );
+}
+
+fn render_pass_error_variants(x: &khora_core::renderer::traits::RenderPassError) {
+    match x {
+        khora_core::renderer::traits::RenderPassError::UnknownColorView { index, view } => {
+            let _ = (index, view);
+        }
+        khora_core::renderer::traits::RenderPassError::UnknownResolveTarget { index, view } => {
+            let _ = (index, view);
+        }
+        khora_core::renderer::traits::RenderPassError::UnknownDepthView { view } => {
+            let _ = view;
+        }
+        _ => {}
+    }
 }
 
 fn frame_targets_fields(x: &khora_core::renderer::traits::FrameTargets) {
@@ -3103,6 +3120,7 @@ fn module_renderer_paths_still_resolve() {
     is_display::<khora_core::renderer::error::RenderError>();
     is_error::<khora_core::renderer::error::RenderError>();
     is_from_resource_error::<khora_core::renderer::error::RenderError>();
+    is_from_render_pass_error::<khora_core::renderer::error::RenderError>();
     let _ = type_name::<khora_core::renderer::error::ResourceError>();
     let _ = type_name::<khora_core::renderer::ResourceError>();
     same_type(
@@ -3248,4 +3266,12 @@ fn module_renderer_paths_still_resolve() {
     // trait `khora_core::renderer::traits::GraphicsBackendSelector`: see `graphics_backend_selector_trait_items`
     // trait `khora_core::renderer::traits::PipelineSystem`: see `pipeline_system_trait_items`
     // trait `khora_core::renderer::traits::RenderPass`: see `render_pass_trait_items`
+    let _ = type_name::<khora_core::renderer::traits::RenderPassError>();
+    let _ = render_pass_error_variants as fn(&khora_core::renderer::traits::RenderPassError);
+    is_debug::<khora_core::renderer::traits::RenderPassError>();
+    is_display::<khora_core::renderer::traits::RenderPassError>();
+    is_error::<khora_core::renderer::traits::RenderPassError>();
+    is_clone::<khora_core::renderer::traits::RenderPassError>();
+    is_copy::<khora_core::renderer::traits::RenderPassError>();
+    is_eq::<khora_core::renderer::traits::RenderPassError>();
 }

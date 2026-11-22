@@ -38,7 +38,9 @@ use khora_core::renderer::api::resource::texture::{
 use khora_core::renderer::api::resource::{BufferDescriptor, BufferId, IndexFormat, TextureFormat};
 use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId};
 use khora_core::renderer::error::ResourceError;
-use khora_core::renderer::traits::{CommandEncoder, ComputePass, GpuProfiler, RenderPass};
+use khora_core::renderer::traits::{
+    CommandEncoder, ComputePass, GpuProfiler, RenderPass, RenderPassError,
+};
 use khora_core::renderer::{ForwardPlusTileConfig, GraphicsDevice, TileSize};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -211,8 +213,8 @@ impl CommandEncoder for RecordingEncoder {
     fn begin_render_pass<'enc>(
         &'enc mut self,
         _desc: &RenderPassDescriptor<'enc>,
-    ) -> Box<dyn RenderPass<'enc> + 'enc> {
-        Box::new(MockRenderPass)
+    ) -> Result<Box<dyn RenderPass<'enc> + 'enc>, RenderPassError> {
+        Ok(Box::new(MockRenderPass))
     }
 
     fn begin_compute_pass<'enc>(

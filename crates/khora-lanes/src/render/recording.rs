@@ -24,7 +24,7 @@ use khora_core::renderer::api::command::{
     RenderPassDepthStencilAttachment, RenderPassDescriptor, StoreOp,
 };
 use khora_core::renderer::api::pipeline::RenderPipelineId;
-use khora_core::renderer::traits::{CommandEncoder, RenderPass};
+use khora_core::renderer::traits::{CommandEncoder, RenderPass, RenderPassError};
 
 /// Returns the colour attachment of a scene pass into `target`, cleared or loaded.
 pub(crate) fn scene_color(
@@ -64,12 +64,16 @@ pub(crate) fn scene_depth(
 /// depth to the far plane.
 ///
 /// A frame with no camera still shows the clear colour.
+///
+/// # Errors
+///
+/// The [`RenderPassError`] of a pass the encoder refuses; nothing is cleared.
 pub(crate) fn record_clear(
     encoder: &mut dyn CommandEncoder,
     target: &SceneTarget,
     clear: LinearRgba,
     label: &'static str,
-) {
+) -> Result<(), RenderPassError> {
     let color = [scene_color(target, LoadOp::Clear(clear))];
     let descriptor = RenderPassDescriptor {
         label: Some(label),
@@ -77,7 +81,8 @@ pub(crate) fn record_clear(
         depth_stencil_attachment: Some(scene_depth(target, LoadOp::Clear(1.0))),
     };
     // Dropping the pass ends it: the clear is recorded without a draw.
-    let _ = encoder.begin_render_pass(&descriptor);
+    encoder.begin_render_pass(&descriptor)?;
+    Ok(())
 }
 
 /// Records a batch of draw commands into an open render pass.
@@ -112,15 +117,19 @@ pub(crate) fn record_draws<'a>(
 ///
 /// Records nothing when there is nothing to blend: the pass is still closed,
 /// empty, so its slot never carries a stale pass.
+///
+/// # Errors
+///
+/// The [`RenderPassError`] of a pass the encoder refuses; nothing is recorded.
 pub(crate) fn record_transparent_pass(
     encoder: &mut dyn CommandEncoder,
     transparent_draws: &[(f32, DrawCommand)],
     target: &SceneTarget,
     camera_bind_group: &BindGroupId,
     lighting_bind_group: &BindGroupId,
-) {
+) -> Result<(), RenderPassError> {
     if transparent_draws.is_empty() {
-        return;
+        return Ok(());
     }
     let color = [scene_color(target, LoadOp::Load)];
     let descriptor = RenderPassDescriptor {
@@ -128,8 +137,9 @@ pub(crate) fn record_transparent_pass(
         color_attachments: &color,
         depth_stencil_attachment: Some(scene_depth(target, LoadOp::Load)),
     };
-    let mut pass = encoder.begin_render_pass(&descriptor);
+    let mut pass = encoder.begin_render_pass(&descriptor)?;
     pass.set_bind_group(0, camera_bind_group, &[]);
     pass.set_bind_group(3, lighting_bind_group, &[]);
     record_draws(pass.as_mut(), transparent_draws.iter().map(|(_, cmd)| cmd));
+    Ok(())
 }

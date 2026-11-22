@@ -17,7 +17,7 @@ use crate::renderer::api::command::{
 };
 use crate::renderer::api::pipeline::{ComputePipelineId, RenderPipelineId};
 use crate::renderer::api::resource::{BufferId, IndexFormat};
-use crate::renderer::traits::GpuProfiler;
+use crate::renderer::traits::{GpuProfiler, RenderPassError};
 use std::any::Any;
 use std::ops::Range;
 
@@ -120,15 +120,24 @@ pub trait ComputePass<'pass> {
 /// The encoder is a stateful object; its lifetime (`'encoder`) is tied to the
 /// passes it creates.
 pub trait CommandEncoder {
-    /// Begins a new render pass, returning a mutable `RenderPass` object.
+    /// Begins a render pass over the descriptor's attachments, returning the pass to record into.
     ///
     /// The returned `RenderPass` object borrows the encoder mutably, so only one
     /// pass can be active at a time. When the `RenderPass` object is dropped,
     /// the pass is ended.
+    ///
+    /// Every attachment's view is checked before anything is recorded: the pass
+    /// is begun whole or not at all, never with an attachment left out.
+    ///
+    /// # Errors
+    ///
+    /// A [`RenderPassError`] naming the first attachment, in the order colour
+    /// views and their resolve targets then depth, whose view the device does
+    /// not hold (destroyed, or never made). Nothing is recorded.
     fn begin_render_pass<'encoder>(
         &'encoder mut self,
         descriptor: &RenderPassDescriptor<'encoder>,
-    ) -> Box<dyn RenderPass<'encoder> + 'encoder>;
+    ) -> Result<Box<dyn RenderPass<'encoder> + 'encoder>, RenderPassError>;
 
     /// Begins a new compute pass, returning a mutable `ComputePass` object.
     fn begin_compute_pass<'encoder>(

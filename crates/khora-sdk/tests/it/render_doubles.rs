@@ -43,7 +43,7 @@ use khora_sdk::khora_core::renderer::api::resource::{
 use khora_sdk::khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId};
 use khora_sdk::khora_core::renderer::error::{RenderError, ResourceError};
 use khora_sdk::khora_core::renderer::traits::{
-    CommandEncoder, ComputePass, FrameTargets, GpuProfiler, RenderPass,
+    CommandEncoder, ComputePass, FrameTargets, GpuProfiler, RenderPass, RenderPassError,
 };
 use khora_sdk::khora_core::renderer::GraphicsDevice;
 use khora_sdk::khora_core::telemetry::ResourceMonitor;
@@ -209,8 +209,8 @@ impl CommandEncoder for NothingRecorded {
     fn begin_render_pass<'enc>(
         &'enc mut self,
         _desc: &RenderPassDescriptor<'enc>,
-    ) -> Box<dyn RenderPass<'enc> + 'enc> {
-        Box::new(NothingRecorded)
+    ) -> Result<Box<dyn RenderPass<'enc> + 'enc>, RenderPassError> {
+        Ok(Box::new(NothingRecorded))
     }
     fn begin_compute_pass<'enc>(
         &'enc mut self,

@@ -32,7 +32,7 @@ use khora_core::renderer::api::ibl::IblGpuBindings;
 use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::api::resource::{BufferId, TextureViewId};
 use khora_core::renderer::error::{RenderError, ResourceError};
-use khora_core::renderer::traits::{CommandEncoder, PipelineSystem};
+use khora_core::renderer::traits::{CommandEncoder, PipelineSystem, RenderPassError};
 use khora_core::renderer::GraphicsDevice;
 use khora_data::render::RenderWorld;
 use khora_data::IblBaker;
@@ -185,7 +185,7 @@ impl Lane for SkyboxLane {
             pipeline,
             sky.sky_bind_group,
             env_bind_group,
-        );
+        )?;
         Ok(done)
     }
 
@@ -452,6 +452,10 @@ fn env_bind_group(
 ///
 /// The depth is loaded, not cleared, so the test rejects the pixels the
 /// geometry already owns.
+///
+/// # Errors
+///
+/// The [`RenderPassError`] of a pass the encoder refuses; nothing is recorded.
 fn draw_sky(
     encoder: &mut dyn CommandEncoder,
     color: TextureViewId,
@@ -459,7 +463,7 @@ fn draw_sky(
     pipeline: RenderPipelineId,
     sky_bind_group: BindGroupId,
     env_bind_group: BindGroupId,
-) {
+) -> Result<(), RenderPassError> {
     use khora_core::renderer::api::command::{
         LoadOp, Operations, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
         RenderPassDescriptor, StoreOp,
@@ -489,13 +493,14 @@ fn draw_sky(
         }),
     };
 
-    let mut pass = encoder.begin_render_pass(&pass_desc);
+    let mut pass = encoder.begin_render_pass(&pass_desc)?;
     pass.set_pipeline(&pipeline);
     pass.set_bind_group(0, &sky_bind_group, &[]);
     pass.set_bind_group(1, &env_bind_group, &[]);
     // Fullscreen triangle — the vertex shader derives positions from
     // `vertex_index` (no vertex buffer bound).
     pass.draw(0..3, 0..1);
+    Ok(())
 }
 
 #[cfg(test)]

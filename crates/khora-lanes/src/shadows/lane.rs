@@ -201,7 +201,7 @@ impl Lane for ShadowsLane {
             &meshes,
             &mut out.frame.entries,
             LABEL,
-        );
+        )?;
         out.frame.bindings = Some(gpu.bindings());
         Ok(LaneReport {
             done: 1.0,

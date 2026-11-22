@@ -106,11 +106,14 @@ impl Lane for DrawLane {
         out: &mut DrawOutputs<'_>,
     ) -> Result<LaneReport, LaneError> {
         {
-            let mut pass = out.pass.encoder().begin_render_pass(&RenderPassDescriptor {
-                label: Some("draw"),
-                color_attachments: &[],
-                depth_stencil_attachment: None,
-            });
+            let mut pass = out
+                .pass
+                .encoder()
+                .begin_render_pass(&RenderPassDescriptor {
+                    label: Some("draw"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: None,
+                })?;
             pass.draw(0..3, 0..1);
         }
         out.pass.descriptor_mut().push("amended");

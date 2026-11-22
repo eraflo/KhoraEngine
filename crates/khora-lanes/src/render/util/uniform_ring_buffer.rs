@@ -248,7 +248,9 @@ mod tests {
     use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId};
     use khora_core::renderer::api::util::ShaderStageFlags;
     use khora_core::renderer::error::ResourceError;
-    use khora_core::renderer::traits::{CommandEncoder, ComputePass, GraphicsDevice, RenderPass};
+    use khora_core::renderer::traits::{
+        CommandEncoder, ComputePass, GraphicsDevice, RenderPass, RenderPassError,
+    };
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// A mock graphics device that produces unique resource IDs for testing.
@@ -295,8 +297,8 @@ mod tests {
         fn begin_render_pass<'enc>(
             &'enc mut self,
             _desc: &RenderPassDescriptor<'enc>,
-        ) -> Box<dyn RenderPass<'enc> + 'enc> {
-            Box::new(MockRenderPass)
+        ) -> Result<Box<dyn RenderPass<'enc> + 'enc>, RenderPassError> {
+            Ok(Box::new(MockRenderPass))
         }
 
         fn begin_compute_pass<'enc>(

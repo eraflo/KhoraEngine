@@ -209,7 +209,9 @@ use khora_core::renderer::api::resource::{
 };
 use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId, ShaderVariantKey};
 use khora_core::renderer::error::{RenderError, ResourceError};
-use khora_core::renderer::traits::{CommandEncoder, ComputePass, GpuProfiler, RenderPass};
+use khora_core::renderer::traits::{
+    CommandEncoder, ComputePass, GpuProfiler, RenderPass, RenderPassError,
+};
 
 struct NoPass;
 
@@ -237,8 +239,8 @@ impl CommandEncoder for NoEncoder {
     fn begin_render_pass<'e>(
         &'e mut self,
         _d: &RenderPassDescriptor<'e>,
-    ) -> Box<dyn RenderPass<'e> + 'e> {
-        Box::new(NoPass)
+    ) -> Result<Box<dyn RenderPass<'e> + 'e>, RenderPassError> {
+        Ok(Box::new(NoPass))
     }
     fn begin_compute_pass<'e>(
         &'e mut self,

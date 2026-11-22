@@ -49,7 +49,7 @@ use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId, 
 use khora_core::renderer::error::{RenderError, ResourceError};
 use khora_core::renderer::light::{DirectionalLight, LightType};
 use khora_core::renderer::traits::{
-    CommandEncoder, ComputePass, GpuProfiler, PipelineSystem, RenderPass,
+    CommandEncoder, ComputePass, GpuProfiler, PipelineSystem, RenderPass, RenderPassError,
 };
 use khora_core::renderer::GraphicsDevice;
 use khora_core::sync::LockExt;
@@ -187,8 +187,8 @@ impl CommandEncoder for Finishing {
     fn begin_render_pass<'enc>(
         &'enc mut self,
         _desc: &RenderPassDescriptor<'enc>,
-    ) -> Box<dyn RenderPass<'enc> + 'enc> {
-        Box::new(Ignored)
+    ) -> Result<Box<dyn RenderPass<'enc> + 'enc>, RenderPassError> {
+        Ok(Box::new(Ignored))
     }
     fn begin_compute_pass<'enc>(
         &'enc mut self,

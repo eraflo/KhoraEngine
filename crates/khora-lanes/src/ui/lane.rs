@@ -37,7 +37,7 @@ use khora_core::renderer::api::resource::{
     BufferUsage, SamplerId, TextureFormat, TextureId, TextureViewId,
 };
 use khora_core::renderer::error::{RenderError, ResourceError};
-use khora_core::renderer::traits::{CommandEncoder, PipelineSystem};
+use khora_core::renderer::traits::{CommandEncoder, PipelineSystem, RenderPassError};
 use khora_core::renderer::GraphicsDevice;
 use khora_data::ui::{GlyphAtlas, UiImageAtlas, UiScene};
 use khora_macros::LaneInputs;
@@ -259,7 +259,7 @@ impl Lane for UiLane {
             inputs.target.color,
             &built.projection,
             [quads, glyphs],
-        );
+        )?;
         Ok(done)
     }
 
@@ -512,14 +512,18 @@ struct Draw<'b> {
 /// Records the UI pass over what the scene drew: each draw, in order.
 ///
 /// No depth. No draw at all records no pass.
+///
+/// # Errors
+///
+/// The [`RenderPassError`] of a pass the encoder refuses; nothing is recorded.
 fn draw_ui(
     encoder: &mut dyn CommandEncoder,
     color: TextureViewId,
     projection: &Block,
     draws: [Option<Draw<'_>>; 2],
-) {
+) -> Result<(), RenderPassError> {
     if draws.iter().all(Option::is_none) {
-        return;
+        return Ok(());
     }
     let color_attachment = RenderPassColorAttachment {
         view: &color,
@@ -537,7 +541,7 @@ fn draw_ui(
         color_attachments: &attachments,
         depth_stencil_attachment: None,
     };
-    let mut pass = encoder.begin_render_pass(&pass_desc);
+    let mut pass = encoder.begin_render_pass(&pass_desc)?;
     for draw in draws.iter().flatten() {
         pass.set_pipeline(&draw.pipeline);
         pass.set_bind_group(0, &projection.bind_group, &[]);
@@ -546,6 +550,7 @@ fn draw_ui(
         // Four vertices per instance: a quad drawn as a triangle strip.
         pass.draw(0..4, 0..draw.count);
     }
+    Ok(())
 }
 
 /// Returns the orthographic projection that maps UI pixel coordinates of `target`

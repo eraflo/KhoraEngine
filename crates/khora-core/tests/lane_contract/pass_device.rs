@@ -36,7 +36,9 @@ use khora_core::renderer::api::resource::{
 };
 use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId};
 use khora_core::renderer::error::ResourceError;
-use khora_core::renderer::traits::{CommandEncoder, ComputePass, GpuProfiler, RenderPass};
+use khora_core::renderer::traits::{
+    CommandEncoder, ComputePass, GpuProfiler, RenderPass, RenderPassError,
+};
 use khora_core::renderer::GraphicsDevice;
 use khora_core::sync::LockExt;
 
@@ -145,11 +147,11 @@ impl CommandEncoder for LedgerEncoder {
     fn begin_render_pass<'enc>(
         &'enc mut self,
         _desc: &RenderPassDescriptor<'enc>,
-    ) -> Box<dyn RenderPass<'enc> + 'enc> {
-        Box::new(LedgerPass {
+    ) -> Result<Box<dyn RenderPass<'enc> + 'enc>, RenderPassError> {
+        Ok(Box::new(LedgerPass {
             buffer: self.buffer,
             log: Arc::clone(&self.log),
-        })
+        }))
     }
     fn begin_compute_pass<'enc>(
         &'enc mut self,

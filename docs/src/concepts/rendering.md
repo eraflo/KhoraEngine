@@ -256,6 +256,14 @@ surface-acquire outcome and every device-health condition into an explicit actio
   in place, so they are observed through the backend's error callbacks as sticky
   flags. Before any submission the render system checks them and, if set, returns a
   **fatal but non-panicking** error so the host can tear down cleanly.
+- **A pass whose attachment is gone draws nothing, and says which.** Before a render
+  pass begins, the encoder checks every view the pass names: each colour view, its
+  resolve target, and the depth view. If the device no longer holds one (it was
+  destroyed, or never made), the whole pass is refused with a `RenderPassError`
+  naming that attachment; a pass is never begun with an attachment left out, which
+  would pair a view with the wrong attachment or drop the depth its pipeline expects.
+  The lane recording it fails that frame with the refusal as its error, as a lane
+  whose input is refused does, and the next frame draws again once the view stands.
 
 This is honest about its limits: full device recreation is not yet implemented.
 What is guaranteed is that the loop degrades to a clean fatal error rather than

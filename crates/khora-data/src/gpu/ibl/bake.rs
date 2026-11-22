@@ -36,7 +36,7 @@ use khora_core::renderer::api::command::{
 use khora_core::renderer::api::ibl::IblGpuBindings;
 use khora_core::renderer::api::resource::{BufferId, SamplerId, TextureViewId};
 use khora_core::renderer::error::RenderError;
-use khora_core::renderer::traits::PipelineSystem;
+use khora_core::renderer::traits::{PipelineSystem, RenderPassError};
 use khora_core::renderer::GraphicsDevice;
 
 /// Bakes the environment, irradiance and specular cubes, the BRDF table and
@@ -181,7 +181,7 @@ fn record_bake(
         &env.face_views,
         &env_bgs,
         "IBL Env Face",
-    );
+    )?;
     match sky_encoder.finish() {
         Some(cb) => device.submit_command_buffer(cb),
         None => log::error!("IBL: sky bake encoder finish returned None; skipping submit"),
@@ -194,7 +194,7 @@ fn record_bake(
         &irradiance.face_views,
         &irr_bgs,
         "IBL Irradiance Face",
-    );
+    )?;
     // Prefilter: one pass per (mip, face), each writing that mip's roughness.
     for mip in 0..PREFILTER_MIPS {
         for face in 0..6usize {
@@ -213,7 +213,7 @@ fn record_bake(
                 label: Some("IBL Prefilter Face"),
                 color_attachments: &attachments,
                 depth_stencil_attachment: None,
-            });
+            })?;
             pass.set_pipeline(&pre_pipeline);
             pass.set_bind_group(0, &pre_bgs[idx], &[]);
             pass.draw(0..3, 0..1);
@@ -235,7 +235,7 @@ fn record_bake(
             label: Some("IBL BRDF LUT"),
             color_attachments: &attachments,
             depth_stencil_attachment: None,
-        });
+        })?;
         pass.set_pipeline(&brdf_pipeline);
         pass.draw(0..3, 0..1);
     }
@@ -268,13 +268,18 @@ fn uniform_bg_entry<'a>(binding: u32, buffer: BufferId) -> BindGroupEntry<'a> {
 
 /// Records one fullscreen-triangle pass per cube face into `face_views`,
 /// clearing then drawing with `pipeline` + the matching per-face bind group.
+///
+/// # Errors
+///
+/// The [`RenderPassError`] of the first face pass the encoder refuses; the
+/// faces after it are not recorded.
 fn record_face_passes(
     encoder: &mut dyn khora_core::renderer::traits::CommandEncoder,
     pipeline: &khora_core::renderer::api::pipeline::RenderPipelineId,
     face_views: &[TextureViewId],
     bind_groups: &[khora_core::renderer::api::command::BindGroupId],
     label: &'static str,
-) {
+) -> Result<(), RenderPassError> {
     for face in 0..6usize {
         let attachments = [RenderPassColorAttachment {
             view: &face_views[face],
@@ -294,11 +299,12 @@ fn record_face_passes(
             label: Some(label),
             color_attachments: &attachments,
             depth_stencil_attachment: None,
-        });
+        })?;
         pass.set_pipeline(pipeline);
         pass.set_bind_group(0, &bind_groups[face], &[]);
         pass.draw(0..3, 0..1);
     }
+    Ok(())
 }
 
 /// Builds a bind group of (source texture @0, sampler @1, per-face basis uniform @2).

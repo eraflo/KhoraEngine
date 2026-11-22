@@ -58,7 +58,7 @@ impl LitGpu {
                 &target,
                 clear,
                 "LitForward Clear-Only Pass",
-            );
+            )?;
             return Ok(());
         };
 
@@ -139,7 +139,7 @@ impl LitGpu {
                 depth_stencil_attachment: Some(scene_depth(&target, LoadOp::Clear(1.0))),
             };
             let encoder = out.scene.encoder();
-            let mut pass = encoder.begin_render_pass(&descriptor);
+            let mut pass = encoder.begin_render_pass(&descriptor)?;
             pass.set_bind_group(0, &camera_bind_group, &[]);
             pass.set_bind_group(3, &lighting_bind_group, &[]);
             record_draws(pass.as_mut(), opaque.iter());
@@ -150,7 +150,7 @@ impl LitGpu {
             &target,
             &camera_bind_group,
             &lighting_bind_group,
-        );
+        )?;
         Ok(())
     }
 }

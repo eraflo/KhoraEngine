@@ -31,7 +31,7 @@ use khora_core::renderer::api::pipeline::{PipelineSpec, RenderPipelineId};
 use khora_core::renderer::api::resource::{
     BufferUsage, CameraUniformData, TextureFormat, TextureViewId,
 };
-use khora_core::renderer::traits::CommandEncoder;
+use khora_core::renderer::traits::{CommandEncoder, RenderPassError};
 use khora_core::renderer::GraphicsDevice;
 use khora_core::ui::editor::GizmoLineInstance;
 use khora_data::render::{GizmoView, RenderWorld};
@@ -191,7 +191,7 @@ impl Lane for GizmoLane {
             pipeline,
             built,
             lines.len() as u32,
-        );
+        )?;
         Ok(done)
     }
 
@@ -390,13 +390,17 @@ fn gizmo_pipeline_spec((color, samples): (TextureFormat, u32)) -> PipelineSpec {
 }
 
 /// Records the gizmo pass, keeping the frame's colour; no depth attachment.
+///
+/// # Errors
+///
+/// The [`RenderPassError`] of a pass the encoder refuses; nothing is recorded.
 fn draw_gizmos(
     encoder: &mut dyn CommandEncoder,
     color: TextureViewId,
     pipeline: RenderPipelineId,
     built: &GizmoGpu,
     lines: u32,
-) {
+) -> Result<(), RenderPassError> {
     let color_attachment = RenderPassColorAttachment {
         view: &color,
         resolve_target: None,
@@ -412,11 +416,12 @@ fn draw_gizmos(
         color_attachments: &[color_attachment],
         depth_stencil_attachment: None,
     };
-    let mut pass = encoder.begin_render_pass(&pass_desc);
+    let mut pass = encoder.begin_render_pass(&pass_desc)?;
     pass.set_pipeline(&pipeline);
     pass.set_bind_group(0, &built.camera.bind_group, &[]);
     pass.set_bind_group(1, &built.storage.bind_group, &[]);
     // Two vertices per line; the vertex shader derives endpoints from
     // `vertex_index` (no vertex buffer bound).
     pass.draw(0..lines * 2, 0..1);
+    Ok(())
 }

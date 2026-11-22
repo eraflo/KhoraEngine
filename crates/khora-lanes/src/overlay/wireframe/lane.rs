@@ -34,7 +34,7 @@ use khora_core::renderer::api::resource::{
     BufferId, BufferUsage, CameraUniformData, IndexFormat, TextureViewId,
 };
 use khora_core::renderer::error::RenderError;
-use khora_core::renderer::traits::{CommandEncoder, PipelineSystem};
+use khora_core::renderer::traits::{CommandEncoder, PipelineSystem, RenderPassError};
 use khora_core::renderer::GraphicsDevice;
 use khora_data::render::{RenderWorld, WireframeView};
 use khora_data::AssetStore;
@@ -235,7 +235,7 @@ impl Lane for WireframeLane {
             pipeline,
             built,
             &draws,
-        );
+        )?;
         Ok(done)
     }
 
@@ -474,6 +474,10 @@ fn wireframe_pipeline_spec(key: TargetKey) -> PipelineSpec {
 }
 
 /// Records the wireframe pass, keeping the scene's colour and depth.
+///
+/// # Errors
+///
+/// The [`RenderPassError`] of a pass the encoder refuses; nothing is recorded.
 fn draw_wireframe(
     encoder: &mut dyn CommandEncoder,
     color: TextureViewId,
@@ -481,7 +485,7 @@ fn draw_wireframe(
     pipeline: RenderPipelineId,
     built: &WireframeGpu,
     draws: &[Draw],
-) {
+) -> Result<(), RenderPassError> {
     let color_attachment = RenderPassColorAttachment {
         view: &color,
         resolve_target: None,
@@ -505,7 +509,7 @@ fn draw_wireframe(
             base_array_layer: 0,
         }),
     };
-    let mut pass = encoder.begin_render_pass(&pass_desc);
+    let mut pass = encoder.begin_render_pass(&pass_desc)?;
     pass.set_pipeline(&pipeline);
     pass.set_bind_group(0, &built.camera.bind_group, &[]);
     pass.set_bind_group(2, &built.material.bind_group, &[]);
@@ -515,6 +519,7 @@ fn draw_wireframe(
         pass.set_index_buffer(&draw.index, 0, draw.format);
         pass.draw_indexed(0..draw.count, 0, 0..1);
     }
+    Ok(())
 }
 
 #[cfg(test)]

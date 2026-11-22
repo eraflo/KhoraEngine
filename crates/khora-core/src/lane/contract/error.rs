@@ -16,6 +16,8 @@
 
 use std::fmt;
 
+use crate::renderer::traits::RenderPassError;
+
 /// Error type for lane operations.
 #[derive(Debug)]
 pub enum LaneError {
@@ -75,6 +77,14 @@ impl std::error::Error for LaneError {
     }
 }
 
+impl From<RenderPassError> for LaneError {
+    /// Fails the run with the refused pass as its source: the lane draws
+    /// nothing this frame and its report names the attachment.
+    fn from(error: RenderPassError) -> Self {
+        LaneError::ExecutionFailed(Box::new(error))
+    }
+}
+
 impl LaneError {
     /// Builds the error for something the lane needs and was not given: a backend the runtime does
     /// not hold.
@@ -83,5 +93,26 @@ impl LaneError {
             expected: type_name,
             received: "not found".into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::renderer::api::resource::TextureViewId;
+
+    #[test]
+    fn a_refused_render_pass_fails_the_run_with_the_refusal_as_its_source() {
+        let refusal = RenderPassError::UnknownDepthView {
+            view: TextureViewId(3),
+        };
+
+        let error = LaneError::from(refusal);
+
+        assert!(matches!(error, LaneError::ExecutionFailed(_)), "{error:?}");
+        let source = std::error::Error::source(&error)
+            .and_then(|source| source.downcast_ref::<RenderPassError>());
+        assert_eq!(source, Some(&refusal));
+        assert!(error.to_string().contains(&refusal.to_string()), "{error}");
     }
 }

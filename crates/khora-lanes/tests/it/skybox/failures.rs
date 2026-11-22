@@ -21,9 +21,12 @@ use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 
 use khora_core::lane::erased::RunOutcome;
+use khora_core::lane::LaneError;
 use khora_core::renderer::api::resource::TextureFormat;
+use khora_core::renderer::traits::RenderPassError;
+use khora_core::sync::LockExt;
 
-use super::fixtures::{target, Bound, GpuKind, Recorded, Sky};
+use super::fixtures::{target, Bound, GpuKind, Recorded, Sky, DEPTH_VIEW};
 
 /// Asserts the frame failed and committed no pass.
 fn assert_failed(recorded: &Recorded) {
@@ -49,6 +52,35 @@ fn assert_released_once(sky: &Sky) {
     let mut seen = HashSet::new();
     let twice: Vec<_> = destroyed.iter().filter(|e| !seen.insert(**e)).collect();
     assert!(twice.is_empty(), "destroyed twice: {twice:?}");
+}
+
+/// **A refused pass fails the frame, draws nothing and names the attachment.**
+/// The target's depth view is gone: the encoder refuses the pass, the run
+/// fails with the refusal as its source, and no pass is committed. Once the
+/// view stands again the next frame draws.
+#[test]
+fn a_refused_pass_fails_the_frame_naming_the_attachment() {
+    let mut sky = Sky::new();
+    let scene = sky.scene();
+    sky.device.gone_views.lock_recovered().push(DEPTH_VIEW);
+
+    let refused = sky.record(&scene);
+
+    assert_failed(&refused);
+    let RunOutcome::Failed(LaneError::ExecutionFailed(error)) = &refused.run.outcome else {
+        panic!("the run fails its execution: {:?}", refused.run.outcome);
+    };
+    assert_eq!(
+        error.downcast_ref::<RenderPassError>(),
+        Some(&RenderPassError::UnknownDepthView { view: DEPTH_VIEW })
+    );
+    assert!(sky.device.lane_passes().is_empty(), "nothing was drawn");
+
+    sky.device.gone_views.lock_recovered().clear();
+    sky.record(&scene).recorded();
+    assert_eq!(sky.device.lane_passes().len(), 1, "the next frame draws");
+    sky.shut_down();
+    assert_released_once(&sky);
 }
 
 /// **A refused uniform bind group gives its buffer back**, and the next

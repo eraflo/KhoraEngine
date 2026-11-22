@@ -310,7 +310,9 @@ mod tests {
     use khora_core::renderer::api::resource::{IndexFormat, TextureFormat};
     use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId};
     use khora_core::renderer::api::util::ShaderStageFlags;
-    use khora_core::renderer::traits::{CommandEncoder, ComputePass, GpuProfiler, RenderPass};
+    use khora_core::renderer::traits::{
+        CommandEncoder, ComputePass, GpuProfiler, RenderPass, RenderPassError,
+    };
     use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
@@ -384,8 +386,8 @@ mod tests {
         fn begin_render_pass<'enc>(
             &'enc mut self,
             _desc: &RenderPassDescriptor<'enc>,
-        ) -> Box<dyn RenderPass<'enc> + 'enc> {
-            Box::new(MockRenderPass)
+        ) -> Result<Box<dyn RenderPass<'enc> + 'enc>, RenderPassError> {
+            Ok(Box::new(MockRenderPass))
         }
 
         fn begin_compute_pass<'enc>(

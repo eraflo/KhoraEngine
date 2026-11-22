@@ -29,7 +29,7 @@ use khora_core::renderer::api::command::{
 };
 use khora_core::renderer::api::pipeline::{PipelineSpec, RenderPipelineId};
 use khora_core::renderer::api::resource::{CameraUniformData, TextureViewId};
-use khora_core::renderer::traits::CommandEncoder;
+use khora_core::renderer::traits::{CommandEncoder, RenderPassError};
 use khora_data::render::{GridView, RenderWorld};
 use khora_macros::LaneInputs;
 
@@ -184,7 +184,7 @@ impl Lane for GridLane {
             depth,
             pipeline,
             built,
-        );
+        )?;
         Ok(done)
     }
 
@@ -303,13 +303,17 @@ fn grid_pipeline_spec(key: TargetKey) -> PipelineSpec {
 }
 
 /// Records the grid pass, keeping the scene's colour and depth.
+///
+/// # Errors
+///
+/// The [`RenderPassError`] of a pass the encoder refuses; nothing is recorded.
 fn draw_grid(
     encoder: &mut dyn CommandEncoder,
     color: TextureViewId,
     depth: TextureViewId,
     pipeline: RenderPipelineId,
     built: &GridGpu,
-) {
+) -> Result<(), RenderPassError> {
     let color_attachment = RenderPassColorAttachment {
         view: &color,
         resolve_target: None,
@@ -333,10 +337,11 @@ fn draw_grid(
             base_array_layer: 0,
         }),
     };
-    let mut pass = encoder.begin_render_pass(&pass_desc);
+    let mut pass = encoder.begin_render_pass(&pass_desc)?;
     pass.set_pipeline(&pipeline);
     pass.set_bind_group(0, &built.camera.bind_group, &[]);
     // Fullscreen triangle pair — the vertex shader derives positions from
     // `vertex_index` (no vertex buffer bound).
     pass.draw(0..6, 0..1);
+    Ok(())
 }
