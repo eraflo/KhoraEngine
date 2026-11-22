@@ -40,9 +40,9 @@ target/
 /.claude/settings.json
 /.claude/settings.local.json
 /.claude/skills/add-a-component/SKILL.md
+/.claude/skills/add-a-family/SKILL.md
 /.claude/skills/add-a-lane/SKILL.md
 /.claude/skills/add-a-shader/SKILL.md
-/.claude/skills/add-an-agent/SKILL.md
 /.claude/skills/build-and-test/SKILL.md
 /.claude/skills/create-plan/SKILL.md
 /.claude/skills/debug-frame/SKILL.md
@@ -79,9 +79,9 @@ target/
 /.cursor/rules/reference/physics.mdc
 /.cursor/rules/reference/scripting.mdc
 /.cursor/rules/skills/add-a-component.mdc
+/.cursor/rules/skills/add-a-family.mdc
 /.cursor/rules/skills/add-a-lane.mdc
 /.cursor/rules/skills/add-a-shader.mdc
-/.cursor/rules/skills/add-an-agent.mdc
 /.cursor/rules/skills/build-and-test.mdc
 /.cursor/rules/skills/create-plan.mdc
 /.cursor/rules/skills/debug-frame.mdc
