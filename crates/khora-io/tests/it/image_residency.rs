@@ -22,6 +22,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use khora_core::asset::{AssetDecoding, AssetUUID};
+use khora_core::ecs::entity::EntityId;
 use khora_core::lane::{OutputDeck, Reserve, Staging};
 use khora_core::math::dimension::{Extent3D, Origin3D};
 use khora_core::math::Vec2;
@@ -51,19 +52,24 @@ use khora_telemetry::MetricsRegistry;
 /// The image the tests show, relative to the project's assets folder.
 const IMAGE: &str = "ui/badge.png";
 
-/// One texture upload: its size and its bytes.
+/// One texture upload: the texture, where in it, its size and its bytes.
 #[derive(Debug, Clone)]
 struct Upload {
+    texture: TextureId,
+    offset: Origin3D,
     size: Extent3D,
     bytes: Vec<u8>,
 }
 
 /// A device that creates whatever it is asked to and records every texture
-/// upload.
+/// made, upload and texture or view destroyed.
 #[derive(Debug, Default)]
 struct UploadLog {
     next_id: AtomicUsize,
     uploads: Mutex<Vec<Upload>>,
+    textures: Mutex<Vec<TextureId>>,
+    destroyed_textures: Mutex<Vec<TextureId>>,
+    destroyed_views: Mutex<Vec<TextureViewId>>,
 }
 
 impl UploadLog {
@@ -80,6 +86,31 @@ impl UploadLog {
             .filter(|upload| upload.size.width == width && upload.size.height == height)
             .cloned()
             .collect()
+    }
+
+    /// The last upload of a `width`×`height` image.
+    fn last_upload_of(&self, width: u32, height: u32) -> Upload {
+        self.uploads_of(width, height)
+            .pop()
+            .unwrap_or_else(|| panic!("no {width}×{height} image was uploaded"))
+    }
+
+    /// Every texture made, in order.
+    fn textures(&self) -> Vec<TextureId> {
+        self.textures.lock().expect("the texture log").clone()
+    }
+
+    /// Every texture destroyed, in order.
+    fn destroyed_textures(&self) -> Vec<TextureId> {
+        self.destroyed_textures
+            .lock()
+            .expect("the texture log")
+            .clone()
+    }
+
+    /// Every view destroyed, in order.
+    fn destroyed_views(&self) -> Vec<TextureViewId> {
+        self.destroyed_views.lock().expect("the view log").clone()
     }
 }
 
@@ -157,20 +188,28 @@ impl GraphicsDevice for UploadLog {
         Box::new(async { Ok(()) })
     }
     fn create_texture(&self, _d: &TextureDescriptor) -> Result<TextureId, ResourceError> {
-        Ok(TextureId(self.id()))
+        let texture = TextureId(self.id());
+        self.textures.lock().expect("the texture log").push(texture);
+        Ok(texture)
     }
-    fn destroy_texture(&self, _id: TextureId) -> Result<(), ResourceError> {
+    fn destroy_texture(&self, id: TextureId) -> Result<(), ResourceError> {
+        self.destroyed_textures
+            .lock()
+            .expect("the texture log")
+            .push(id);
         Ok(())
     }
     fn write_texture(
         &self,
-        _texture_id: TextureId,
+        texture_id: TextureId,
         data: &[u8],
         _bytes_per_row: Option<u32>,
-        _offset: Origin3D,
+        offset: Origin3D,
         size: Extent3D,
     ) -> Result<(), ResourceError> {
         self.uploads.lock().expect("the upload log").push(Upload {
+            texture: texture_id,
+            offset,
             size,
             bytes: data.to_vec(),
         });
@@ -183,7 +222,8 @@ impl GraphicsDevice for UploadLog {
     ) -> Result<TextureViewId, ResourceError> {
         Ok(TextureViewId(self.id()))
     }
-    fn destroy_texture_view(&self, _id: TextureViewId) -> Result<(), ResourceError> {
+    fn destroy_texture_view(&self, id: TextureViewId) -> Result<(), ResourceError> {
+        self.destroyed_views.lock().expect("the view log").push(id);
         Ok(())
     }
     fn create_sampler(&self, _d: &SamplerDescriptor) -> Result<SamplerId, ResourceError> {
@@ -568,4 +608,477 @@ fn a_replaced_image_moves_to_its_new_rect() {
         2,
         "the replaced copy is uploaded once, not every frame"
     );
+}
+
+/// The side of the atlas the rebuild tests fill: it holds four [`SIDE`]-pixel
+/// images, two on each of two rows.
+const SMALL_ATLAS: u32 = 64;
+
+/// The side of an image of the rebuild tests.
+const SIDE: u32 = 28;
+
+/// The `image_on_gpu` residency alone, over a [`SMALL_ATLAS`], with the
+/// images' copies put in the asset store by hand.
+struct Residency {
+    store: AssetStore,
+    device: Arc<UploadLog>,
+    atlas: Arc<UiImageAtlas>,
+    runtime: Runtime,
+    world: World,
+    shown: Vec<(AssetUUID, EntityId)>,
+}
+
+impl Residency {
+    fn new() -> Self {
+        let store = AssetStore::new();
+        let device = Arc::new(UploadLog::default());
+        let atlas = Arc::new(UiImageAtlas::with_size(SMALL_ATLAS));
+        let mut runtime = Runtime::default();
+        runtime.resources.insert(store.clone());
+        runtime.resources.insert(Arc::clone(&atlas));
+        runtime
+            .backends
+            .insert(Arc::clone(&device) as Arc<dyn GraphicsDevice>);
+        Self {
+            store,
+            device,
+            atlas,
+            runtime,
+            world: World::new(),
+            shown: Vec::new(),
+        }
+    }
+
+    /// Puts a new copy of the image `name` in the asset store, every pixel
+    /// byte `fill`; returns its uuid.
+    fn copy(&self, name: &str, fill: u8) -> AssetUUID {
+        self.copy_sized(name, SIDE, vec![fill; (SIDE * SIDE * 4) as usize])
+    }
+
+    /// Puts a new `side`-pixel copy of the image `name` in the asset store;
+    /// returns its uuid.
+    fn copy_sized(&self, name: &str, side: u32, pixels: Vec<u8>) -> AssetUUID {
+        let uuid = AssetUUID::new_v5(name);
+        self.store
+            .store::<CpuTexture>()
+            .write()
+            .expect("the texture store")
+            .insert(uuid, decoded(side, side, pixels));
+        uuid
+    }
+
+    /// Shows the image `name`, every pixel byte `fill`, on an entity of its
+    /// own; returns its uuid.
+    fn show(&mut self, name: &str, fill: u8) -> AssetUUID {
+        let uuid = self.copy(name, fill);
+        self.name(uuid);
+        uuid
+    }
+
+    /// Spawns an entity whose `UiImage` names `image`.
+    fn name(&mut self, image: AssetUUID) {
+        let entity = self.world.spawn((
+            UiTransform {
+                pos: Vec2::new(0.0, 0.0),
+                size: Vec2::new(32.0, 32.0),
+                z_index: 0,
+            },
+            UiImage { texture: image },
+        ));
+        self.shown.push((image, entity));
+    }
+
+    /// Stops showing `image`: its entity is despawned.
+    fn hide(&mut self, image: AssetUUID) {
+        let at = self
+            .shown
+            .iter()
+            .position(|(uuid, _)| *uuid == image)
+            .expect("the image is shown");
+        let (_, entity) = self.shown.remove(at);
+        assert!(self.world.despawn(entity), "the entity was alive");
+    }
+
+    /// One run of the residency.
+    fn frame(&mut self) {
+        let mut deck = OutputDeck::new();
+        (data_system("image_on_gpu").run)(
+            &mut self.world,
+            &self.runtime,
+            &mut deck,
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+                resumed: false,
+                scope: None,
+            },
+        );
+    }
+
+    /// The atlas's texture and view now.
+    fn atlas_texture(&self) -> (TextureId, TextureViewId) {
+        let guard = self.atlas.lock_atlas().expect("the atlas lock");
+        let atlas = guard.as_ref().expect("the atlas is made");
+        (atlas.texture(), atlas.view())
+    }
+
+    /// Asserts that `image` is drawn from a rect of the atlas's texture now,
+    /// where pixels all `fill` were uploaded.
+    fn assert_drawn(&self, image: AssetUUID, fill: u8, what: &str) {
+        let rect = self
+            .atlas
+            .get_rect(&image)
+            .unwrap_or_else(|| panic!("{what}: the image has a rect"));
+        let (texture, _) = self.atlas_texture();
+        let at = Origin3D {
+            x: (rect.min.x * SMALL_ATLAS as f32).round() as u32,
+            y: (rect.min.y * SMALL_ATLAS as f32).round() as u32,
+            z: 0,
+        };
+        let upload = self
+            .device
+            .uploads_of(SIDE, SIDE)
+            .into_iter()
+            .rev()
+            .find(|upload| upload.texture == texture && upload.offset == at)
+            .unwrap_or_else(|| panic!("{what}: nothing was uploaded at its rect"));
+        assert!(
+            upload.bytes.iter().all(|byte| *byte == fill),
+            "{what}: its rect holds the pixels {}, not {fill}",
+            upload.bytes[0]
+        );
+    }
+}
+
+/// **Replacing an image again and again never fills the atlas.** Each copy of
+/// a shown image is placed beside the last, and the rects of the copies it
+/// replaced are no use to anyone: the atlas is built again from the images in
+/// use when it runs out of room, so every new copy is drawn.
+#[test]
+fn replacing_an_image_again_and_again_never_fills_the_atlas() {
+    let mut residency = Residency::new();
+    let badge = residency.show("ui/badge.png", 0);
+    residency.frame();
+    residency.assert_drawn(badge, 0, "the first copy");
+
+    for fill in 1..=20 {
+        residency.copy("ui/badge.png", fill);
+        residency.frame();
+        residency.assert_drawn(badge, fill, &format!("copy {fill}"));
+    }
+}
+
+/// **An image the full atlas had no room for fits once a rebuild drops the
+/// images hidden.** The atlas holds four images, three of which are
+/// then hidden; a fifth, shown next, is placed in an atlas built again from
+/// the two images in use, and the hidden ones keep no rect.
+#[test]
+fn an_image_that_did_not_fit_fits_once_a_rebuild_drops_the_unused_ones() {
+    let mut residency = Residency::new();
+    let a = residency.show("ui/a.png", 1);
+    let b = residency.show("ui/b.png", 2);
+    let c = residency.show("ui/c.png", 3);
+    let d = residency.show("ui/d.png", 4);
+    residency.frame();
+    for (image, fill) in [(a, 1), (b, 2), (c, 3), (d, 4)] {
+        residency.assert_drawn(image, fill, "an image of the full atlas");
+    }
+
+    residency.hide(a);
+    residency.hide(b);
+    residency.hide(c);
+    let e = residency.show("ui/e.png", 5);
+    residency.frame();
+
+    residency.assert_drawn(e, 5, "the image the full atlas refused");
+    residency.assert_drawn(d, 4, "the image still shown");
+    for hidden in [a, b, c] {
+        assert!(
+            residency.atlas.get_rect(&hidden).is_none(),
+            "an image no longer shown keeps no rect in the rebuilt atlas"
+        );
+    }
+}
+
+/// **The images in use keep drawing, at their new rects, after a rebuild.**
+/// The rebuild uploads each image in use again, from its copy in the asset
+/// store, into a new texture; the old texture and its view are destroyed, and
+/// each rect points where its pixels now are.
+#[test]
+fn images_in_use_keep_drawing_at_their_new_rects_after_a_rebuild() {
+    let mut residency = Residency::new();
+    let a = residency.show("ui/a.png", 1);
+    let b = residency.show("ui/b.png", 2);
+    let c = residency.show("ui/c.png", 3);
+    let d = residency.show("ui/d.png", 4);
+    residency.frame();
+    let (old_texture, old_view) = residency.atlas_texture();
+
+    residency.hide(a);
+    let e = residency.show("ui/e.png", 5);
+    residency.frame();
+
+    assert_eq!(
+        residency.device.textures().len(),
+        2,
+        "the full atlas was built again"
+    );
+    let (texture, view) = residency.atlas_texture();
+    assert_ne!(texture, old_texture, "the rebuilt atlas is a new texture");
+    assert_ne!(view, old_view, "with a new view, which the UI lane binds");
+    assert_eq!(
+        residency.device.destroyed_textures(),
+        vec![old_texture],
+        "the old texture is destroyed"
+    );
+    assert_eq!(
+        residency.device.destroyed_views(),
+        vec![old_view],
+        "and its view"
+    );
+    let mut rects = Vec::new();
+    for (image, fill) in [(b, 2), (c, 3), (d, 4), (e, 5)] {
+        residency.assert_drawn(image, fill, "an image in use after the rebuild");
+        let rect = residency.atlas.get_rect(&image).expect("placed");
+        assert!(!rects.contains(&rect), "each image at a rect of its own");
+        rects.push(rect);
+    }
+    assert_eq!(
+        residency.device.last_upload_of(SIDE, SIDE).texture,
+        texture,
+        "nothing is uploaded into the old texture after it is destroyed"
+    );
+}
+
+/// **A full atlas is built again once a run, however many images it
+/// refuses**, and not again while every image in use stays: an image left out
+/// waits until one in use goes away, then is placed.
+#[test]
+fn a_full_atlas_is_rebuilt_once_a_run_however_many_images_it_refuses() {
+    let mut residency = Residency::new();
+    let a = residency.show("ui/a.png", 1);
+    residency.show("ui/b.png", 2);
+    residency.show("ui/c.png", 3);
+    residency.show("ui/d.png", 4);
+    residency.frame();
+    assert_eq!(residency.device.textures().len(), 1, "one atlas made");
+
+    let e = residency.show("ui/e.png", 5);
+    let f = residency.show("ui/f.png", 6);
+    let g = residency.show("ui/g.png", 7);
+    residency.frame();
+    assert_eq!(
+        residency.device.textures().len(),
+        2,
+        "three images refused in one run rebuild the atlas once"
+    );
+    for refused in [e, f, g] {
+        assert!(
+            residency.atlas.get_rect(&refused).is_none(),
+            "four images in use fill the rebuilt atlas: the new ones are left out"
+        );
+    }
+
+    for _ in 0..3 {
+        residency.frame();
+    }
+    assert_eq!(
+        residency.device.textures().len(),
+        2,
+        "no rebuild while every image in use stays"
+    );
+
+    residency.hide(a);
+    residency.frame();
+    assert_eq!(
+        residency.device.textures().len(),
+        3,
+        "an image in use going away rebuilds the atlas for those left out"
+    );
+    let placed: Vec<(AssetUUID, u8)> = [(e, 5), (f, 6), (g, 7)]
+        .into_iter()
+        .filter(|(image, _)| residency.atlas.get_rect(image).is_some())
+        .collect();
+    assert_eq!(
+        placed.len(),
+        1,
+        "the room of the image gone takes one of those left out"
+    );
+    residency.assert_drawn(
+        placed[0].0,
+        placed[0].1,
+        "an image left out, once there is room",
+    );
+}
+
+/// **A refused copy keeps its last good one drawn across a rebuild.** An image
+/// whose new copy is larger than the atlas keeps the copy it last had placed;
+/// the rebuild uploads that copy again, so the image is not lost.
+#[test]
+fn a_refused_copy_keeps_its_last_good_one_drawn_across_a_rebuild() {
+    let mut residency = Residency::new();
+    let badge = residency.show("ui/badge.png", 1);
+    let b = residency.show("ui/b.png", 2);
+    residency.show("ui/c.png", 3);
+    residency.show("ui/d.png", 4);
+    residency.frame();
+
+    residency.copy_sized("ui/badge.png", SMALL_ATLAS * 2, Vec::new());
+    residency.frame();
+    residency.assert_drawn(badge, 1, "the last good copy, before the rebuild");
+
+    residency.hide(b);
+    let e = residency.show("ui/e.png", 5);
+    residency.frame();
+    assert_eq!(
+        residency.device.textures().len(),
+        2,
+        "the atlas was rebuilt"
+    );
+    residency.assert_drawn(badge, 1, "the last good copy, after the rebuild");
+    residency.assert_drawn(e, 5, "the image that made the rebuild");
+}
+
+/// **An image larger than the atlas rebuilds nothing**: no rebuild could make
+/// room for it, so the images in use keep their rects in the same texture.
+#[test]
+fn an_image_larger_than_the_atlas_rebuilds_nothing() {
+    let mut residency = Residency::new();
+    let a = residency.show("ui/a.png", 1);
+    residency.show("ui/b.png", 2);
+    residency.show("ui/c.png", 3);
+    residency.show("ui/d.png", 4);
+    residency.frame();
+
+    let huge = residency.copy_sized("ui/huge.png", SMALL_ATLAS * 2, Vec::new());
+    residency.name(huge);
+    for _ in 0..3 {
+        residency.frame();
+    }
+    assert_eq!(residency.device.textures().len(), 1, "no rebuild");
+    assert!(
+        residency.atlas.get_rect(&huge).is_none(),
+        "the huge one is refused"
+    );
+    residency.assert_drawn(a, 1, "an image in use");
+}
+
+/// **A refused copy's last good one, left out by a rebuild, is placed once
+/// there is room.** The badge's new copy is larger than the atlas, so its last
+/// good copy is drawn; a rebuild with no room for that copy leaves it out, and
+/// once the image that filled the atlas goes away, the badge is drawn again.
+#[test]
+fn a_last_good_copy_left_out_by_a_rebuild_is_placed_once_there_is_room() {
+    let mut residency = Residency::new();
+    let filler = residency.show("ui/filler.png", 2);
+    let badge = residency.show("ui/badge.png", 1);
+    residency.frame();
+    residency.copy_sized("ui/badge.png", SMALL_ATLAS * 2, Vec::new());
+    residency.frame();
+    residency.assert_drawn(badge, 1, "the last good copy, before the rebuild");
+
+    // The filler's new copy takes the whole atlas: the rebuild has no room
+    // left for the badge's last good copy.
+    let whole = SMALL_ATLAS - 4;
+    residency.copy_sized(
+        "ui/filler.png",
+        whole,
+        vec![3; (whole * whole * 4) as usize],
+    );
+    residency.frame();
+    assert!(
+        residency.atlas.get_rect(&filler).is_some(),
+        "the filler's new copy is placed"
+    );
+
+    residency.hide(filler);
+    for _ in 0..3 {
+        residency.frame();
+    }
+    residency.assert_drawn(badge, 1, "the last good copy, once the filler is gone");
+}
+
+/// **An image whose new copy is still being decoded keeps its rect across a
+/// rebuild.** A hot reload drops the engine's copy until the new one is
+/// decoded; meanwhile the image is still shown, and the atlas drew its last
+/// copy. A rebuild in that window must place that copy again, not drop it.
+#[test]
+fn an_image_being_reloaded_keeps_its_rect_across_a_rebuild() {
+    let mut residency = Residency::new();
+    let a = residency.show("ui/a.png", 1);
+    let b = residency.show("ui/b.png", 2);
+    residency.show("ui/c.png", 3);
+    residency.show("ui/d.png", 4);
+    residency.frame();
+    residency.assert_drawn(a, 1, "before its file changes");
+
+    // Its file changed: the engine's copy is dropped until the new one lands.
+    residency
+        .store
+        .store::<CpuTexture>()
+        .write()
+        .expect("the texture store")
+        .remove(&a);
+    residency.hide(b);
+    let e = residency.show("ui/e.png", 5);
+    residency.frame();
+    assert_eq!(
+        residency.device.textures().len(),
+        2,
+        "the atlas was rebuilt"
+    );
+    residency.assert_drawn(e, 5, "the image that made the rebuild");
+    residency.assert_drawn(a, 1, "the image being reloaded, from its last copy");
+}
+
+/// **A reload while images are left out rebuilds nothing.** While a rebuilt
+/// atlas leaves an image out, a placed image and the image left out both lose
+/// their copy to a reload: each still draws its last good copy, so the images
+/// in use draw what they drew, and the atlas is not built again until a new
+/// copy lands.
+#[test]
+fn a_reload_while_images_are_left_out_rebuilds_nothing() {
+    let mut residency = Residency::new();
+    let a = residency.show("ui/a.png", 1);
+    residency.show("ui/b.png", 2);
+    residency.show("ui/c.png", 3);
+    residency.show("ui/d.png", 4);
+    residency.frame();
+    let e = residency.show("ui/e.png", 5);
+    residency.frame();
+    assert_eq!(
+        residency.device.textures().len(),
+        2,
+        "the atlas was rebuilt"
+    );
+    assert!(
+        residency.atlas.get_rect(&e).is_none(),
+        "the fifth is left out"
+    );
+
+    for reloading in [a, e] {
+        residency
+            .store
+            .store::<CpuTexture>()
+            .write()
+            .expect("the texture store")
+            .remove(&reloading);
+    }
+    for _ in 0..3 {
+        residency.frame();
+    }
+    assert_eq!(
+        residency.device.textures().len(),
+        2,
+        "a reload in flight changes no copy drawn: no rebuild"
+    );
+    residency.assert_drawn(a, 1, "the placed image, from its last good copy");
+
+    residency.copy("ui/a.png", 9);
+    residency.frame();
+    assert_eq!(
+        residency.device.textures().len(),
+        3,
+        "the new copy landing rebuilds the atlas for the image left out"
+    );
+    residency.assert_drawn(a, 9, "the placed image, from its new copy");
 }

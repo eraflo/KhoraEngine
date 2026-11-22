@@ -1,6 +1,6 @@
 <svg id="fig-residency-reach" class="kp-figure" viewBox="0 0 760 390" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-res-reach-title kp-res-reach-desc">
   <title id="kp-res-reach-title">One UI image, from its file to the GPU atlas, and again when its file changes</title>
-  <desc id="kp-res-reach-desc">An entity names an image by its uuid. The loading family decodes the file off the frame and the decoded copy lands in the asset store at a frame boundary. Before the agents run, the image_on_gpu residency makes it resident: it places the image in the GPU atlas and keeps the copy it was made from beside the rect. The UI lane reads the rect; later frames find the same copy and upload nothing. When the file changes, the reload puts a new copy in the store under the same uuid, and the residency places it again and releases the old rect. When the atlas refuses the image, the last good rect stays and the residency tries again on the next frame.</desc>
+  <desc id="kp-res-reach-desc">An entity names an image by its uuid. The loading family decodes the file off the frame and the decoded copy lands in the asset store at a frame boundary. Before the agents run, the image_on_gpu residency makes it resident: it places the image in the GPU atlas and keeps the copy it was made from beside the rect. The UI lane reads the rect; later frames find the same copy and upload nothing. When the file changes, the reload puts a new copy in the store under the same uuid, and the residency places it again and releases the old rect. When the atlas has no room, it is built again, once in that run, from the images in use; an image that still does not fit is logged once and waits until an image in use goes away.</desc>
   <style>
     #fig-residency-reach { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
     #fig-residency-reach .kp-bg { fill: var(--k-bg-0, #090d17); }
@@ -118,9 +118,9 @@
   </g>
   <g data-on="6">
     <text class="kp-title" x="50" y="232">Refused</text>
-    <text class="kp-label" x="50" y="262">The atlas has no room for the image. Make returns a ResidencyError; the store keeps</text>
-    <text class="kp-label" x="50" y="282">the last good rect, and the refusal is logged once, not every frame. The next frame</text>
-    <text class="kp-label" x="50" y="302">tries again; the warning comes back only after the image was placed once.</text>
+    <text class="kp-label" x="50" y="262">The atlas has no room for the image. It is built again, once in that run, from the</text>
+    <text class="kp-label" x="50" y="282">images in use, and the old rects are dropped. An image that still does not fit is</text>
+    <text class="kp-label" x="50" y="302">logged once, and waits until an image in use goes away to be tried again.</text>
     <text class="kp-gold" x="50" y="336">A refusal costs the new picture, never the frame.</text>
   </g>
 </svg>

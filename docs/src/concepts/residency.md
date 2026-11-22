@@ -87,7 +87,7 @@ is not a residency: a glyph is not an asset.
 <li><strong>Made resident.</strong> At <code>PreExtract</code>, <code>image_on_gpu</code> asks its store to ensure the image. Nothing is kept under its uuid, so the residency places it in the atlas; the store keeps the rect beside the copy it was made from.</li>
 <li><strong>Read, and kept.</strong> The UI lane samples the atlas at that rect. Later frames find the same copy and upload nothing.</li>
 <li><strong>The file changes.</strong> The reload puts a new copy in the asset store under the same uuid. The store sees another copy: it makes the image again and releases the old rect.</li>
-<li><strong>Refused.</strong> The atlas has no room. The last good rect stays, the refusal is logged once, and the next frame tries again.</li>
+<li><strong>Refused.</strong> The atlas has no room. It is built again, once in that run, from the images in use; an image that still does not fit is logged once and waits until an image in use goes away. The last good rect of an image too large for any atlas stays.</li>
 </ol>
 </figure>
 
@@ -180,6 +180,8 @@ for it).
 | `get(key)` | the resident kept under `key`, whatever copy it was made from |
 | `insert(key, resident)` | keeps a resident placed by hand, with no copy behind it: the next `ensure` makes it again from its source |
 | `evict(key, target)` | removes the resident and releases it |
+| `evict_all(target)` | removes every resident and releases each, for a target made again whole |
+| `source(key)` | the copy the resident under `key` was made from; none for one placed by hand |
 
 Hot reload is the store's job, not each residency's: a residency only says how to
 make and release. A lane reads a residency's store as an input of its own, a
@@ -197,7 +199,8 @@ caller decides what is kept.
 
 | What is refused | What happens |
 |---|---|
-| An image the atlas has no room for | The last good rect stays. The refusal is logged once, as a warning; it is logged again only after the image was placed once since. The next frame tries again. |
+| An image the atlas has no room for | The atlas is built again from the images in use, at most once a run (see below). An image the rebuilt atlas still has no room for is left out, logged once as a warning, and tried again once an image in use then goes away or is replaced. |
+| An image larger than an empty atlas | No rebuild could hold it, so none is made. Its last good copy is drawn instead, across rebuilds. The refusal is logged once; a new copy is tried on the next frame. |
 | A mesh's vertex buffer | The mesh is not cached and the entity stays untagged, logged as an error. The next frame tries again; once the device accepts, the mesh is uploaded and tagged. |
 | A mesh's index buffer | The same, and the vertex buffer already made for it is given back to the device first. |
 | The material sampler | No material is uploaded while the device refuses it, logged as an error. The sampler is made once, the first time the device accepts it, and shared by every material. |
@@ -226,8 +229,36 @@ A despawned entity whose page is not compacted yet keeps no asset alive: the que
 eviction uses skips orphan rows. Eviction removes only what nothing references,
 so it never changes what the game shows.
 
-The UI atlas frees nothing: it packs rects one after the other, so the space of a
-replaced image comes back only when the atlas is made again.
+### The UI atlas: rebuilt, never freed rect by rect
+
+The UI atlas packs rects one after the other and cannot free one: `release` of
+an `ImageOnGpu` gives nothing back, and the rect of a replaced or no longer shown
+image is left unused. That room comes back when the atlas runs out of it. The
+first image of a run that does not fit makes `image_on_gpu` build the atlas
+again, as the glyph atlas does.
+
+One rule says what the atlas draws. An image is **in use** when a live
+`UiImage` names it, whether or not the asset store holds a copy of it. For each
+image in use, the copy drawn is its current copy when that copy fits an empty
+atlas, and otherwise its **last good copy**: the one it was left out with, else
+the one its rect was made from. The last good copy also stands in while the
+store holds no copy, as while a reload decodes. An image with neither draws
+nothing. The rebuild:
+
+1. chooses the copy each image in use draws, before anything is evicted;
+2. makes a fresh texture, evicts every rect of the old atlas, and destroys the
+   old texture and its view. The UI lane sees the new view and binds it in place
+   of the old;
+3. uploads the chosen copies into the fresh texture, in the order the world
+   names the images, each at a new rect;
+4. leaves out the images it has no room for, each with the copy it tried: that
+   copy stays its last good copy, so a current copy too large for any atlas
+   never replaces it. They are logged once, and not tried again, nor the atlas
+   rebuilt, until an image drawn then goes away or draws another copy: only that
+   makes room. A new current copy that fits is tried at once.
+
+A run rebuilds the atlas at most once, however many images it refuses. An image
+larger than an empty atlas never causes a rebuild.
 
 ## Write a residency
 
@@ -274,6 +305,18 @@ nothing is released.
 plus at most *m* = 16 orphans. With no new orphan, a burst of *N* orphans is freed in
 ⌈*N / m*⌉ frames. A mesh shared by *E* entities costs one upload, not *E*: the
 cache is keyed by the asset's uuid.
+
+**Rebuilds of the UI atlas.** Let *U_t* be the set of pairs (uuid, copy drawn) of
+the images in use at run *t*, and *L_t* the images left out after it. Run *t* rebuilds the atlas at
+most once: the flag set by the first rebuild turns every later refusal of that
+run into a left-out image. With *L_{t−1}* ≠ ∅, run *t* rebuilds for it only when
+*U_{t−1}* ⊄ *U_t*, that is when an image in use went away or draws another copy, and
+otherwise only when a copy not left out finds no room. So with a fixed *U*, the
+atlas is rebuilt at most once in a row of runs, however long: after it, every
+image is placed or left out, and neither retries. The rect an image is drawn
+from always lies in the texture made by the last rebuild: a rebuild evicts every
+rect before it places any, and it chooses the copies before it evicts, so no
+last good copy is lost with the rects.
 
 **Why a retired copy is not freed at once.** The reload runs in `PreExtract`; the
 frame's render, later in the same frame, may have recorded commands that read

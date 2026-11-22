@@ -192,6 +192,26 @@ impl<R: Residency> Resident<R> {
         }
     }
 
+    /// Removes every resident and releases each on `target`, for a target
+    /// made again whole, such as an atlas rebuilt.
+    pub fn evict_all(&self, target: &mut R::Target<'_>) {
+        let removed = std::mem::take(&mut *self.entries.write_recovered());
+        for entry in removed.into_values() {
+            R::release(entry.resident, target);
+        }
+    }
+
+    /// Returns the source copy the resident under `key` was made from.
+    ///
+    /// `None` when nothing is kept under `key`, or the resident was placed by
+    /// hand.
+    pub fn source(&self, key: &ResidentKey) -> Option<AssetHandle<R::Source>> {
+        self.entries
+            .read_recovered()
+            .get(key)
+            .and_then(|entry| entry.source.clone())
+    }
+
     /// Returns the number of residents kept.
     pub fn len(&self) -> usize {
         self.entries.read_recovered().len()

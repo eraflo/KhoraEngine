@@ -125,3 +125,38 @@ fn evict_releases_the_resident() {
     assert!(store.is_empty());
     assert_eq!(counter.released, vec![4]);
 }
+
+#[test]
+fn evict_all_releases_every_resident() {
+    let store = Resident::<Doubled>::new();
+    let mut counter = Counter::default();
+    for (name, value) in [("one", 1), ("two", 2)] {
+        store
+            .ensure(
+                AssetUUID::new_v5(name),
+                &AssetHandle::new(Number(value)),
+                &mut &mut counter,
+            )
+            .expect("made");
+    }
+    store.insert(AssetUUID::new_v5("by hand"), 100);
+    store.evict_all(&mut &mut counter);
+    assert!(store.is_empty());
+    counter.released.sort_unstable();
+    assert_eq!(counter.released, vec![2, 4, 100]);
+}
+
+#[test]
+fn source_is_the_copy_the_resident_was_made_from() {
+    let store = Resident::<Doubled>::new();
+    let mut counter = Counter::default();
+    assert!(store.source(&key()).is_none(), "nothing kept");
+    let copy = AssetHandle::new(Number(3));
+    store.ensure(key(), &copy, &mut &mut counter).expect("made");
+    assert!(
+        store.source(&key()) == Some(copy),
+        "the copy it was made from"
+    );
+    store.insert(key(), 100);
+    assert!(store.source(&key()).is_none(), "placed by hand");
+}

@@ -14,13 +14,14 @@
 
 //! `ImageOnGpu`: every image a `UiImage` names, placed in the
 //! [`UiImageAtlas`] before the agents run, and placed
-//! again when its file changes.
+//! again when its file changes; a full atlas is built again from the images
+//! in use.
 
 use crate::ecs::SystemContext;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use khora_core::asset::AssetUUID;
+use khora_core::asset::{AssetHandle, AssetUUID};
 use khora_core::lane::OutputDeck;
 use khora_core::renderer::api::resource::CpuTexture;
 use khora_core::renderer::api::util::{AtlasRect, TextureAtlas};
@@ -31,6 +32,7 @@ use khora_core::Runtime;
 
 use crate::ecs::World;
 use crate::ui::components::UiImage;
+use crate::ui::image_atlas::{LeftOut, Placement};
 use crate::ui::UiImageAtlas;
 use crate::AssetStore;
 
@@ -64,8 +66,10 @@ impl Residency for ImageOnGpu {
             })
     }
 
-    /// The atlas packs rects one after the other and frees none: the space of
-    /// a replaced image comes back only when the atlas is made again.
+    /// Gives nothing back: the atlas frees no rect alone.
+    ///
+    /// A released rect stays unused until the atlas, out of room, is built
+    /// again from the images in use.
     fn release(_resident: AtlasRect, _target: &mut AtlasTarget<'_>) {}
 }
 
@@ -92,41 +96,124 @@ fn image_on_gpu_system(
     let Some(store) = runtime.resources.get::<AssetStore>() else {
         return;
     };
+    let device = device.as_ref();
+    // In use: named by a live `UiImage`, decoded or not. An image not decoded
+    // yet, or reloading, has no current copy.
     let mut seen = HashSet::new();
-    let wanted: Vec<AssetUUID> = world
-        .query::<&UiImage>()
-        .map(|image| image.texture)
-        .filter(|texture| seen.insert(*texture))
-        .collect();
-    if wanted.is_empty() || !atlas.ensure_atlas(device.as_ref()) {
+    let in_use: Vec<(AssetUUID, Option<AssetHandle<CpuTexture>>)> = {
+        let textures = store.store::<CpuTexture>();
+        let textures = textures.read_recovered();
+        world
+            .query::<&UiImage>()
+            .map(|image| image.texture)
+            .filter(|texture| seen.insert(*texture))
+            .map(|uuid| (uuid, textures.get(&uuid).cloned()))
+            .collect()
+    };
+    if in_use.is_empty() {
         return;
     }
-    let textures = store.store::<CpuTexture>();
-    let textures = textures.read_recovered();
-    let Some(mut guard) = atlas.lock_atlas() else {
+
+    let before = atlas.left_out();
+    let empty = HashMap::new();
+    let Some(drawables) = atlas.drawable(
+        device,
+        &in_use,
+        before.as_ref().map_or(&empty, |before| &before.images),
+    ) else {
         return;
     };
-    let Some(texture_atlas) = guard.as_mut() else {
-        return;
-    };
-    let mut target = AtlasTarget {
-        device: device.as_ref(),
-        atlas: texture_atlas,
-    };
-    for uuid in wanted {
-        // Not decoded yet: the resolver loads it, a later frame places it.
-        let Some(source) = textures.get(&uuid) else {
+    let copies = &drawables.copies;
+    for (uuid, copy) in &drawables.too_large {
+        if atlas.note_refusal(*uuid) {
+            log::warn!(
+                "{}: image {uuid}, {}×{}, is larger than the UI atlas: its last good copy, \
+                 if any, is drawn",
+                ImageOnGpu::NAME,
+                copy.size.width,
+                copy.size.height
+            );
+        }
+    }
+
+    // The images a rebuilt atlas left out are tried again once a copy drawn
+    // then is gone or replaced: only that makes room.
+    let mut rebuilt = false;
+    let mut left_out: HashMap<AssetUUID, AssetHandle<CpuTexture>> = HashMap::new();
+    if let Some(before) = before {
+        let now: HashMap<AssetUUID, &AssetHandle<CpuTexture>> = copies
+            .iter()
+            .map(|drawable| (drawable.id, &drawable.copy))
+            .collect();
+        if before
+            .in_use
+            .iter()
+            .any(|(uuid, copy)| now.get(uuid) != Some(&copy))
+        {
+            rebuilt = true;
+            let Some(out) = atlas.rebuild(device, copies) else {
+                return;
+            };
+            left_out.extend(out);
+        } else {
+            left_out = before.images;
+        }
+    }
+
+    // Each copy placed; a full atlas is built again from every copy drawn,
+    // once a run.
+    for drawable in copies {
+        if left_out.get(&drawable.id) == Some(&drawable.copy) {
             continue;
-        };
-        match atlas.residents().ensure(uuid, source, &mut target) {
-            Ok(_) => atlas.forget_refusal(&uuid),
-            Err(refusal) => {
-                if atlas.note_refusal(uuid) {
-                    log::warn!("{refusal}");
-                }
+        }
+        left_out.remove(&drawable.id);
+        match atlas.place(device, drawable.id, &drawable.copy) {
+            Placement::Placed => {}
+            Placement::NoAtlas => return,
+            Placement::Full if rebuilt => {
+                left_out.insert(drawable.id, drawable.copy.clone());
+            }
+            Placement::Full => {
+                rebuilt = true;
+                let Some(out) = atlas.rebuild(device, copies) else {
+                    return;
+                };
+                left_out.extend(out);
             }
         }
     }
+
+    // A refusal is logged once, and again only after its current copy was
+    // placed since.
+    for drawable in copies.iter().filter(|drawable| drawable.current) {
+        if !left_out.contains_key(&drawable.id) {
+            atlas.forget_refusal(&drawable.id);
+        }
+    }
+    for (uuid, copy) in &left_out {
+        if atlas.note_refusal(*uuid) {
+            log::warn!(
+                "{}: the UI atlas, built again from the images in use, has no room for \
+                 image {uuid} ({}×{}); it is placed once an image in use goes away",
+                ImageOnGpu::NAME,
+                copy.size.width,
+                copy.size.height
+            );
+        }
+    }
+    // What was left out is remembered with the copies drawn now.
+    let in_use = if left_out.is_empty() {
+        HashMap::new()
+    } else {
+        copies
+            .iter()
+            .map(|drawable| (drawable.id, drawable.copy.clone()))
+            .collect()
+    };
+    atlas.set_left_out(LeftOut {
+        images: left_out,
+        in_use,
+    });
 }
 
 crate::register_residency!(name = ImageOnGpu::NAME, run = image_on_gpu_system);

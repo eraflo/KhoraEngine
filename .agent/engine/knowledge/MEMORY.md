@@ -40,7 +40,6 @@ Deep history lives in git and `docs/plans/`.
 ## Open
 - The owner's to-do from 8b/8f: create the `landing-frames-v1` release (until then the site builds with
   its posters); set the repository's Pages source to "GitHub Actions" before the first deploy from `main`.
-- The UI atlas never frees a replaced image's space (bump allocator).
 - `hidden_entities` is never filled: per-component activation is an ECS feature still to design (every
   Flow must honour the flag, or it is decorative).
 - macOS: stamping a pack key breaks a binary's ad-hoc signature (re-sign after stamping).
