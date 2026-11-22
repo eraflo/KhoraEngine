@@ -92,12 +92,18 @@ jobs:
         run: cargo build --release -p khora-editor
 
       # The hub bakes its GitHub OAuth Client ID into the binary at compile
-      # time from KHORA_HUB_GITHUB_CLIENT_ID. The build fails (by design) if
-      # the secret is missing — never ship a release without it.
+      # time from KHORA_HUB_GITHUB_CLIENT_ID; without it the hub cannot sign
+      # in. A release is never built without it.
       - name: Build hub binary
+        shell: bash
         env:
           KHORA_HUB_GITHUB_CLIENT_ID: ${{ secrets.KHORA_HUB_GITHUB_CLIENT_ID }}
-        run: cargo build --release -p khora-hub
+        run: |
+          if [ -z "${KHORA_HUB_GITHUB_CLIENT_ID// /}" ]; then
+            echo "::error::the KHORA_HUB_GITHUB_CLIENT_ID secret is missing: a hub built without it cannot sign in"
+            exit 1
+          fi
+          cargo build --release -p khora-hub
 
       # khora-runtime is the generic player binary the editor's "Build Game"
       # feature stamps with each project's packed assets. It ships per
