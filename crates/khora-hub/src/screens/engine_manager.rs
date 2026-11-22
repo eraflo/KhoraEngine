@@ -27,7 +27,7 @@ pub(crate) fn show_engine_manager(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     if !app.engine_manager.has_fetched_once && app.engine_manager.fetch_rx.is_none() {
         app.engine_manager.fetching = true;
         app.engine_manager.has_fetched_once = true;
-        app.engine_manager.fetch_rx = Some(github::fetch_releases_async());
+        app.engine_manager.fetch_rx = Some(github::fetch_engine_versions_async());
     }
 
     let t = crate::ui::theme();
@@ -139,7 +139,7 @@ fn releases_card(app: &mut HubApp, ui: &mut dyn UiBuilder, t: &UiTheme, rect: [f
     {
         app.engine_manager.fetching = true;
         app.engine_manager.fetch_error = None;
-        app.engine_manager.fetch_rx = Some(github::fetch_releases_async());
+        app.engine_manager.fetch_rx = Some(github::fetch_engine_versions_async());
     }
 
     let mut y = body[1];
@@ -187,7 +187,7 @@ fn releases_card(app: &mut HubApp, ui: &mut dyn UiBuilder, t: &UiTheme, rect: [f
         {
             app.engine_manager.fetch_error = None;
             app.engine_manager.fetching = true;
-            app.engine_manager.fetch_rx = Some(github::fetch_releases_async());
+            app.engine_manager.fetch_rx = Some(github::fetch_engine_versions_async());
         }
 
         mono(
@@ -201,13 +201,12 @@ fn releases_card(app: &mut HubApp, ui: &mut dyn UiBuilder, t: &UiTheme, rect: [f
     }
 
     if app.engine_manager.releases.is_empty() {
-        text(
-            ui,
-            [body[0], y],
-            "No releases published yet.",
-            t.font_size_body,
-            t.text_muted,
-        );
+        let why = if github::builds_for_this_machine() {
+            "No engine version published yet."
+        } else {
+            "Khora publishes no engine build for this machine."
+        };
+        text(ui, [body[0], y], why, t.font_size_body, t.text_muted);
         return widgets::bottom(rect);
     }
 

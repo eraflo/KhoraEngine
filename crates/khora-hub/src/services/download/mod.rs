@@ -14,6 +14,13 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::sync::mpsc;
 
+/// The most a download may hold when its size is not known.
+const MAX_DOWNLOAD: u64 = 1024 * 1024 * 1024;
+
+/// The most one archive may unpack to: far past a release's editor and
+/// runtime, far under a disk.
+const MAX_UNPACKED: u64 = 4 * 1024 * 1024 * 1024;
+
 /// Messages sent from the download thread to the UI.
 pub enum DownloadMessage {
     /// Progress update: (`bytes_downloaded`, `total_bytes`).
@@ -137,11 +144,13 @@ pub(crate) fn start_download(
     rx
 }
 
-/// Downloads the file at `url` and extracts it (if zip) into `dest_dir`.
+/// Downloads the file at `url` and extracts it (a zip or a gzipped tar) into `dest_dir`.
 ///
 /// Returns the path of the binary `bin_base_name` (`.exe` added on Windows)
-/// found in the extraction. `total_size` and `progress_offset` place this
-/// archive's progress within the whole install's.
+/// found in the extraction. `archive_size` is the size the release states for
+/// the file (0 when unknown): a body larger than it, or than
+/// [`MAX_DOWNLOAD`] when unknown, is refused. `total_size` and
+/// `progress_offset` place this archive's progress within the whole install's.
 fn download_and_extract(
     url: &str,
     dest_dir: &std::path::Path,
@@ -152,7 +161,11 @@ fn download_and_extract(
     tx: &mpsc::Sender<DownloadMessage>,
 ) -> anyhow::Result<PathBuf> {
     use anyhow::Context;
-    let _ = archive_size; // reserved for future fine-grained throttling
+    let most = if archive_size > 0 {
+        archive_size
+    } else {
+        MAX_DOWNLOAD
+    };
 
     // Build HTTP client
     let client = reqwest::blocking::Client::builder()
@@ -183,6 +196,9 @@ fn download_and_extract(
             break;
         }
         bytes.extend_from_slice(&buf[..n]);
+        if bytes.len() as u64 > most {
+            anyhow::bail!("Download is larger than the {most} bytes the release states");
+        }
         let _ = tx.send(DownloadMessage::Progress(
             progress_offset + bytes.len() as u64,
             total_size,
@@ -195,9 +211,14 @@ fn download_and_extract(
 
     let is_zip =
         url.ends_with(".zip") || bytes.len() >= 4 && bytes[0..4] == [0x50, 0x4B, 0x03, 0x04];
+    let is_tar_gz = url.ends_with(".tar.gz")
+        || url.ends_with(".tgz")
+        || bytes.len() >= 2 && bytes[0..2] == [0x1F, 0x8B];
 
     if is_zip {
-        extract_zip(&bytes, dest_dir)?;
+        extract_zip(&bytes, dest_dir, MAX_UNPACKED)?;
+    } else if is_tar_gz {
+        extract_tar_gz(&bytes, dest_dir, MAX_UNPACKED)?;
     } else {
         // Save the raw file using a sensible default filename.
         let filename = url.rsplit('/').next().unwrap_or(bin_base_name);
@@ -226,19 +247,22 @@ fn download_and_extract(
         .with_context(|| format!("Could not find {} in {}", exe_name, dest_dir.display()))
 }
 
-/// Extracts a zip archive from bytes into `dest_dir`.
-fn extract_zip(data: &[u8], dest_dir: &std::path::Path) -> anyhow::Result<()> {
+/// Extracts a zip archive from bytes into `dest_dir`, refusing one that
+/// unpacks to more than `most` bytes.
+fn extract_zip(data: &[u8], dest_dir: &std::path::Path, most: u64) -> anyhow::Result<()> {
     use anyhow::Context;
-    use std::io::Cursor;
+    use std::io::{Cursor, Read};
 
     let reader = Cursor::new(data);
     let mut archive = zip::ZipArchive::new(reader).context("Failed to open zip archive")?;
+    let mut unpacked: u64 = 0;
 
     for i in 0..archive.len() {
         let mut file = archive.by_index(i).context("Failed to read zip entry")?;
 
-        // Prevent zip-slip: an entry whose path is absolute or climbs out of
-        // the archive (`..`) has no enclosed name, and is skipped.
+        // Prevent zip-slip: an entry that climbs out of the archive (`..`) has
+        // no enclosed name, and is skipped; a leading root is dropped, so an
+        // absolute path lands inside `dest_dir`.
         let Some(relative) = file.enclosed_name() else {
             log::warn!(
                 "Skipping suspicious zip entry: {}",
@@ -257,7 +281,12 @@ fn extract_zip(data: &[u8], dest_dir: &std::path::Path) -> anyhow::Result<()> {
             }
             let mut out_file = std::fs::File::create(&out_path)
                 .with_context(|| format!("Failed to create {}", out_path.display()))?;
-            std::io::copy(&mut file, &mut out_file)?;
+            let left = most - unpacked;
+            let copied = std::io::copy(&mut (&mut file).take(left + 1), &mut out_file)?;
+            if copied > left {
+                anyhow::bail!("Zip archive unpacks to more than {most} bytes");
+            }
+            unpacked += copied;
 
             // Preserve executable permissions on unix
             #[cfg(unix)]
@@ -265,9 +294,10 @@ fn extract_zip(data: &[u8], dest_dir: &std::path::Path) -> anyhow::Result<()> {
                 use std::os::unix::fs::PermissionsExt;
                 if let Some(mode) = file.unix_mode() {
                     let mut perms = std::fs::metadata(&out_path)?.permissions();
-                    // Only the read/write/execute bits: an archive never
-                    // grants setuid, setgid or sticky on extraction.
-                    perms.set_mode(mode & 0o777);
+                    // Only the owner's bits and others' read/execute: an
+                    // archive never grants setuid, setgid, sticky, nor a
+                    // write to anyone but the owner.
+                    perms.set_mode(mode & 0o755);
                     std::fs::set_permissions(&out_path, perms)?;
                 }
             }
@@ -275,6 +305,84 @@ fn extract_zip(data: &[u8], dest_dir: &std::path::Path) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Extracts a gzipped tar archive from bytes into `dest_dir`, refusing one
+/// that unpacks to more than `most` bytes.
+///
+/// The Linux and macOS releases ship as `.tar.gz`. Only regular files are
+/// unpacked, their folders made as they come: a link, a device or any other
+/// entry is skipped, so nothing in the archive can point outside `dest_dir`.
+/// An entry that climbs out (`..`) or holds a name Windows cannot keep
+/// (see [`portable_name`]) is skipped; a leading root is dropped, so an
+/// absolute path lands inside `dest_dir`. A file keeps the owner's bits and
+/// others' read/execute, never setuid, setgid, sticky nor a write by others.
+fn extract_tar_gz(data: &[u8], dest_dir: &std::path::Path, most: u64) -> anyhow::Result<()> {
+    use anyhow::Context;
+    use std::io::Read;
+
+    // `unpack_in` checks each entry against the folder's real path, so it must exist.
+    std::fs::create_dir_all(dest_dir)
+        .with_context(|| format!("Failed to create directory: {}", dest_dir.display()))?;
+    // Past `most`, the stream ends early and the archive reads as cut short.
+    let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(data).take(most));
+    archive.set_preserve_permissions(false);
+    archive.set_mask(0o022);
+    archive.set_overwrite(true);
+    for entry in archive.entries().context("Failed to open tar archive")? {
+        let mut entry = entry.context("Failed to read tar entry")?;
+        let path = entry
+            .path()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default();
+        let kind = entry.header().entry_type();
+        if kind.is_dir() {
+            continue;
+        }
+        if !kind.is_file() {
+            log::warn!("Skipping tar entry that is not a file: {path}");
+            continue;
+        }
+        let portable = entry
+            .path()
+            .map(|p| p.components().all(portable_name))
+            .unwrap_or(false);
+        if !portable {
+            log::warn!("Skipping tar entry with a name Windows cannot keep: {path}");
+            continue;
+        }
+        let unpacked = entry
+            .unpack_in(dest_dir)
+            .with_context(|| format!("Failed to extract {path}"))?;
+        if !unpacked {
+            log::warn!("Skipping suspicious tar entry: {path}");
+        }
+    }
+    Ok(())
+}
+
+/// Returns whether a path component is one every OS keeps as written.
+///
+/// Refused: a component holding `:` (a Windows stream or drive), ending in a
+/// dot or a space, or a Windows device name (`CON`, `PRN`, `AUX`, `NUL`,
+/// `COM1`-`COM9`, `LPT1`-`LPT9`, with any extension). Other kinds of
+/// component (`..`, a root) are left to `unpack_in`.
+fn portable_name(component: std::path::Component<'_>) -> bool {
+    let std::path::Component::Normal(name) = component else {
+        return true;
+    };
+    let Some(name) = name.to_str() else {
+        return false;
+    };
+    if name.contains(':') || name.ends_with('.') || name.ends_with(' ') {
+        return false;
+    }
+    let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
+    let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (stem.len() == 4
+            && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && matches!(stem.as_bytes()[3], b'1'..=b'9'));
+    !device
 }
 
 /// Searches a directory tree, recursively, for a file by name.
@@ -301,110 +409,4 @@ fn find_file_recursive(dir: &std::path::Path, filename: &str) -> Option<PathBuf>
 }
 
 #[cfg(test)]
-mod tests {
-    use super::extract_zip;
-    use std::io::Write;
-
-    /// A scratch directory that removes itself, so a failing assertion cannot
-    /// leave extracted files behind for the next run to trip over.
-    struct Scratch(std::path::PathBuf);
-
-    impl Scratch {
-        fn new(tag: &str) -> Self {
-            let path = std::env::temp_dir().join(format!("khora-hub-{tag}-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&path);
-            std::fs::create_dir_all(&path).expect("temp dir is writable");
-            Self(path)
-        }
-    }
-
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
-    /// Builds a deflate-compressed archive in memory, holding a nested file and
-    /// a path-traversal entry.
-    ///
-    /// Deflate specifically: it is what real release archives use, and a `zip`
-    /// upgrade that dropped the codec would still *compile* — this is the test
-    /// that would notice.
-    fn sample_archive() -> Vec<u8> {
-        let mut cursor = std::io::Cursor::new(Vec::new());
-        {
-            let mut writer = zip::ZipWriter::new(&mut cursor);
-            let options = zip::write::SimpleFileOptions::default()
-                .compression_method(zip::CompressionMethod::Deflated);
-            writer
-                .start_file("nested/hello.txt", options)
-                .expect("entry starts");
-            writer.write_all(b"khora").expect("entry is writable");
-            writer
-                .start_file("../escape.txt", options)
-                .expect("entry starts");
-            writer.write_all(b"nope").expect("entry is writable");
-            writer.finish().expect("archive finishes");
-        }
-        cursor.into_inner()
-    }
-
-    #[test]
-    fn extracts_a_nested_deflated_entry() {
-        let scratch = Scratch::new("extract");
-        extract_zip(&sample_archive(), &scratch.0).expect("archive extracts");
-
-        let extracted = scratch.0.join("nested").join("hello.txt");
-        assert!(extracted.is_file(), "missing {}", extracted.display());
-        assert_eq!(
-            std::fs::read_to_string(&extracted).expect("file is readable"),
-            "khora"
-        );
-    }
-
-    /// An entry pointing outside the destination is skipped rather than
-    /// followed — the whole archive still extracts, minus that entry.
-    #[test]
-    fn refuses_to_escape_the_destination() {
-        let scratch = Scratch::new("zipslip");
-        extract_zip(&sample_archive(), &scratch.0).expect("archive extracts");
-
-        let escaped = scratch
-            .0
-            .parent()
-            .expect("temp dir has a parent")
-            .join("escape.txt");
-        assert!(
-            !escaped.exists(),
-            "zip-slip wrote outside the destination: {}",
-            escaped.display()
-        );
-    }
-
-    /// An archive's executable bit survives extraction; its setuid, setgid
-    /// and sticky bits never do.
-    #[cfg(unix)]
-    #[test]
-    fn an_extracted_file_keeps_its_permissions_but_never_setuid() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let mut cursor = std::io::Cursor::new(Vec::new());
-        {
-            let mut writer = zip::ZipWriter::new(&mut cursor);
-            let options = zip::write::SimpleFileOptions::default().unix_permissions(0o4755);
-            writer
-                .start_file("bin/tool", options)
-                .expect("entry starts");
-            writer.write_all(b"#!/bin/sh\n").expect("entry is writable");
-            writer.finish().expect("archive finishes");
-        }
-        let scratch = Scratch::new("setuid");
-        extract_zip(&cursor.into_inner(), &scratch.0).expect("archive extracts");
-
-        let mode = std::fs::metadata(scratch.0.join("bin").join("tool"))
-            .expect("file was extracted")
-            .permissions()
-            .mode();
-        assert_eq!(mode & 0o7777, 0o755, "mode was {mode:o}");
-    }
-}
+mod tests;

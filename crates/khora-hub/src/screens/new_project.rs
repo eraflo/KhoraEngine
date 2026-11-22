@@ -31,7 +31,7 @@ const ROW: f32 = 32.0;
 /// Renders the new-project screen.
 pub(crate) fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     if !app.new_project.has_fetched_once && app.new_project.fetch_rx.is_none() {
-        app.new_project.fetch_rx = Some(github::fetch_releases_async());
+        app.new_project.fetch_rx = Some(github::fetch_engine_versions_async());
     }
 
     let t = crate::ui::theme();

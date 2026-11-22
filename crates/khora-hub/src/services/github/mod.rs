@@ -9,7 +9,7 @@
 //! GitHub integration — OAuth device-flow auth + Releases API client.
 //!
 //! Releases and repositories are re-exported flat: callers name
-//! `github::GithubRelease`, `github::fetch_releases_async`, … directly.
+//! `github::GithubRelease`, `github::fetch_engine_versions_async`, … directly.
 
 pub mod auth;
 mod authenticated_user;

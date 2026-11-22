@@ -29,8 +29,8 @@ one place.
 1. Open the [Khora releases page](https://github.com/eraflo/KhoraEngine/releases).
    *GitHub* is the website where Khora's code lives; a *release* is a version
    packaged for you to download.
-2. Under the newest release, open **Assets** and download the Hub for your
-   computer:
+2. Under the release marked **Latest**, open **Assets** and download the Hub
+   for your computer:
 
    | Your computer | The file to download |
    |---|---|
