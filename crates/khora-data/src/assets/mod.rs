@@ -14,11 +14,14 @@
 
 //! Asset types and the caches that hold their loaded handles.
 
+mod arrivals;
 mod audio;
+mod journal;
 pub(crate) mod procedural_mesh;
 mod storage;
 mod store;
 
+pub use arrivals::*;
 pub use audio::*;
 pub use storage::*;
 pub use store::AssetStore;

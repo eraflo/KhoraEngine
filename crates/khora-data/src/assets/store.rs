@@ -62,6 +62,8 @@ mod tests {
     use super::*;
     use khora_core::asset::AssetUUID;
 
+    use crate::assets::{Arrival, ArrivalKind, ArrivalsRead};
+
     #[derive(Debug, PartialEq)]
     struct Foo(u32);
     impl Asset for Foo {}
@@ -99,6 +101,33 @@ mod tests {
             .unwrap()
             .get(&foo_uuid)
             .is_none());
+    }
+
+    #[test]
+    fn arrivals_of_one_asset_kind_do_not_show_in_another() {
+        const READER: &str = "residency";
+        let store = AssetStore::new();
+        let foo = store.store::<Foo>();
+        let bar = store.store::<Bar>();
+        assert_eq!(foo.read().unwrap().arrivals(READER), ArrivalsRead::Resync);
+        assert_eq!(bar.read().unwrap().arrivals(READER), ArrivalsRead::Resync);
+
+        let uuid = AssetUUID::new();
+        foo.write()
+            .unwrap()
+            .insert(uuid, khora_core::asset::AssetHandle::new(Foo(1)));
+
+        assert_eq!(
+            bar.read().unwrap().arrivals(READER),
+            ArrivalsRead::Since(vec![])
+        );
+        assert_eq!(
+            foo.read().unwrap().arrivals(READER),
+            ArrivalsRead::Since(vec![Arrival {
+                uuid,
+                kind: ArrivalKind::Landed,
+            }])
+        );
     }
 
     #[test]

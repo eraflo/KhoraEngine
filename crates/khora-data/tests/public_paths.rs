@@ -996,6 +996,25 @@ fn module_assets_paths_still_resolve() {
     let _ = khora_data::assets::Assets::<khora_data::assets::SoundData>::is_empty;
     is_clone::<khora_data::assets::Assets<khora_data::assets::SoundData>>();
     is_default::<khora_data::assets::Assets<khora_data::assets::SoundData>>();
+    let _ = khora_data::assets::Assets::<khora_data::assets::SoundData>::with_arrivals_kept;
+    let _ = khora_data::assets::Assets::<khora_data::assets::SoundData>::arrivals;
+    let _: usize = khora_data::assets::ARRIVALS_KEPT;
+    let _ = type_name::<khora_data::assets::Arrival>();
+    is_copy::<khora_data::assets::Arrival>();
+    is_debug::<khora_data::assets::Arrival>();
+    is_eq::<khora_data::assets::Arrival>();
+    let _ = |a: khora_data::assets::Arrival| (a.uuid, a.kind);
+    let _ = [
+        khora_data::assets::ArrivalKind::Landed,
+        khora_data::assets::ArrivalKind::Replaced,
+        khora_data::assets::ArrivalKind::Gone,
+    ];
+    is_copy::<khora_data::assets::ArrivalKind>();
+    is_debug::<khora_data::assets::ArrivalKind>();
+    is_eq::<khora_data::assets::ArrivalKind>();
+    let _ = khora_data::assets::ArrivalsRead::Since(Vec::new());
+    let _ = khora_data::assets::ArrivalsRead::Resync;
+    is_debug::<khora_data::assets::ArrivalsRead>();
     let _ = type_name::<khora_data::assets::AssetStore>();
     let _ = type_name::<khora_data::AssetStore>();
     same_type(
