@@ -25,13 +25,14 @@ use khora_core::scene::SceneFile;
 use khora_core::script::{ErgonType, ScriptValue};
 
 use super::apply::{failure, prepare_pages, to_register, LoadFailure, Loaded, Prepared};
-use super::capture::{capture_pages, scene_entities, SaveError, Saved};
+use super::capture::{capture_pages, scene_entities, SaveError, Saved, SessionValues};
 use super::component_registration::{ComponentRegistration, Kept};
 use super::declared::{kind_name, kind_named, nowhere, plan_fields, DeclaredLoad};
 use super::file::{check_format, encoding_of, scene_file};
 use super::page_plan::PagePlan;
 use super::positional::{from_positional, to_positional, write_varint};
 use super::record::{LoadReport, RecordError};
+use super::session_only_read::SessionOnlyRead;
 use crate::ecs::{ComponentKey, PackedField, SemanticDomain, World};
 
 /// The id a scene header names the snapshot encoding by.
@@ -61,6 +62,9 @@ pub fn write_snapshot(world: &World) -> Result<SceneFile, SaveError> {
         &entities,
         None,
         Kept::Scene,
+        // Read back in the session that wrote it, where the asset store
+        // still holds what only the session has.
+        SessionValues::Kept,
         |saved, column, row, references| {
             let mut bytes = Vec::new();
             match saved {
@@ -276,6 +280,8 @@ fn prepare_parsed(
         None,
         plans,
         LoadReport::default(),
+        // The same-build cache: what only the session holds is still there.
+        SessionOnlyRead::Kept,
         |loaded, page, column, row, references| {
             let bytes = snapshot.pages[page].values[column][row];
             match loaded {

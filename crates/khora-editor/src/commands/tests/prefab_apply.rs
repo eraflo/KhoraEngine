@@ -181,8 +181,14 @@ fn apply_to_prefab(
 
     apply_queued_instances(Some(&project.vfs), world, &state);
 
+    // The apply leaves one request of its own: what it reports, as a save does.
     assert!(
-        state.lock().expect("the editor state").requests.is_empty(),
+        !state
+            .lock()
+            .expect("the editor state")
+            .requests
+            .iter()
+            .any(|request| matches!(request, EditorRequest::ApplyToPrefab { .. })),
         "the request is drained"
     );
 }

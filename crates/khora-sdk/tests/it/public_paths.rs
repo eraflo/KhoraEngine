@@ -503,6 +503,7 @@ fn module_crate_root_paths_still_resolve() {
     is_debug::<khora_sdk::ReadinessTicket>();
     // The source a startup reports its late tickets under.
     let _ = khora_sdk::khora_core::problems::ProblemSource::Startup;
+    let _ = khora_sdk::khora_core::problems::ProblemSource::Save;
     let _ = type_name::<khora_sdk::EngineHint>();
     same_type(
         PhantomData::<khora_sdk::EngineHint>,
@@ -590,6 +591,9 @@ fn module_crate_root_paths_still_resolve() {
     let _ = khora_sdk::GameWorld::despawn;
     let _ = khora_sdk::GameWorld::spawn_camera;
     let _ = khora_sdk::GameWorld::add_mesh;
+    let _ = khora_sdk::GameWorld::set_assets;
+    let _ = khora_sdk::GameWorld::assets;
+    let _ = khora_sdk::GameWorld::save_game_reporting;
     let _ = khora_sdk::GameWorld::add_component::<khora_sdk::prelude::ecs::Transform>;
     let _ = khora_sdk::GameWorld::add_declared_component;
     let _ = type_name::<khora_sdk::DeclaredComponentError>();

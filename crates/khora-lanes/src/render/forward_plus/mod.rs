@@ -25,10 +25,12 @@ use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::LaneError;
 use khora_core::lane::{Lane, LaneReport};
 use khora_core::renderer::api::gpu_scene::GpuMesh;
+use khora_core::renderer::api::material::GpuMaterial;
 use khora_core::renderer::ForwardPlusTileConfig;
 
 use super::family::{LitInputs, RenderFamily, RenderOutputs};
 use super::scene_load::SceneLoad;
+use super::util::lit_draws::LitAssets;
 
 mod gpu;
 mod gpu_resources;
@@ -142,7 +144,7 @@ impl Lane for ForwardPlusLane {
     ///
     /// Past the light buffer's capacity the frame is not the reference image.
     fn cost(&self, _level: usize, inputs: &LitInputs<'_>) -> Cost {
-        let load = SceneLoad::of(inputs.render_world, &inputs.target);
+        let load = SceneLoad::of(inputs.render_world, inputs.assets, &inputs.target);
         let lights = load.lights().min(gpu::LIGHT_BUFFER_CAPACITY);
         let tiles = f64::from(TileGrid::new(&self.tile_config, inputs.target.size).total());
         let culling = CULLING_GPU
@@ -179,7 +181,15 @@ impl Lane for ForwardPlusLane {
         let meshes = meshes.read().map_err(|_| LaneError::LockPoisoned {
             context: "the GPU meshes",
         })?;
-        plus.record(&self.tile_config, inputs, &meshes, out)
+        let materials = inputs.assets.store::<GpuMaterial>();
+        let materials = materials.read().map_err(|_| LaneError::LockPoisoned {
+            context: "the GPU materials",
+        })?;
+        let assets = LitAssets {
+            meshes: &meshes,
+            materials: &materials,
+        };
+        plus.record(&self.tile_config, inputs, assets, out)
             .map_err(|error| LaneError::ExecutionFailed(Box::new(error)))?;
         Ok(LaneReport {
             done: 1.0,

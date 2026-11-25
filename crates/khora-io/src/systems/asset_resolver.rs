@@ -21,6 +21,7 @@
 //! any edit, resolves again and drops the stale GPU projection.
 
 use khora_data::ecs::SystemContext;
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use khora_core::asset::{AssetHandle, AssetUUID, Material};
@@ -33,8 +34,8 @@ use khora_core::sync::RwLockExt;
 use khora_core::Runtime;
 use khora_data::assets::Assets;
 use khora_data::ecs::{
-    reconstruct_procedural_mesh, DataSystemRegistration, HandleComponent, MaterialRef, MeshRef,
-    TickPhase, World,
+    reconstruct_procedural_mesh, Changed, ComponentKey, DataSystemRegistration, HandleComponent,
+    MaterialRef, MeshRef, Tick, TickPhase, World,
 };
 use khora_data::AssetStore;
 
@@ -53,21 +54,25 @@ struct ResolvedMaterial {
 }
 
 /// One pending mesh resolution, as [`ResolvedMaterial`].
+///
+/// `in_store` when the handle is the store's own copy already (a mesh made in
+/// code): it is attached, not published again.
 struct ResolvedMesh {
     entity: EntityId,
     uuid: AssetUUID,
     handle: AssetHandle<Mesh>,
     had_stale_handle: bool,
+    in_store: bool,
 }
 
 fn asset_resolver_system(
     world: &mut World,
     runtime: &Runtime,
     _deck: &mut OutputDeck,
-    _ctx: SystemContext,
+    ctx: SystemContext,
 ) {
     resolve_materials(world, runtime);
-    resolve_meshes(world, runtime);
+    resolve_meshes(world, runtime, ctx.since);
     ui_asset_resolver::resolve_ui_fonts(world, runtime);
     ui_asset_resolver::resolve_ui_images(world, runtime);
 }
@@ -212,13 +217,20 @@ pub(super) fn load_textures(
     }
 }
 
-fn resolve_meshes(world: &mut World, runtime: &Runtime) {
+/// Resolves every `MeshRef` whose handle does not carry its uuid.
+///
+/// A mesh made in code is the store's own copy: attached as it is. One the
+/// store does not hold draws nothing, and is logged when its reference changed
+/// since `since`, so once per change.
+fn resolve_meshes(world: &mut World, runtime: &Runtime, since: Tick) {
     let asset_store = runtime.resources.get::<AssetStore>();
     let asset_service = runtime.services.get::<Arc<Mutex<AssetService>>>().cloned();
+    let store = asset_store.map(|s| s.store::<Mesh>());
 
     // Collected while the query borrows the world read-only. Steady state is
     // one uuid compare: no geometry is rebuilt.
     let mut pending: Vec<ResolvedMesh> = Vec::new();
+    let mut not_made: Vec<(EntityId, AssetUUID)> = Vec::new();
     {
         let query = world.query::<(EntityId, &MeshRef, Option<&HandleComponent<Mesh>>)>();
 
@@ -239,6 +251,7 @@ fn resolve_meshes(world: &mut World, runtime: &Runtime) {
                         uuid: expected,
                         handle: AssetHandle::new(mesh),
                         had_stale_handle,
+                        in_store: false,
                     });
                 }
                 MeshRef::Asset(uuid) => {
@@ -265,27 +278,46 @@ fn resolve_meshes(world: &mut World, runtime: &Runtime) {
                             uuid: *uuid,
                             handle,
                             had_stale_handle,
+                            in_store: false,
                         });
+                    }
+                }
+                MeshRef::Made(uuid) => {
+                    let made = store
+                        .as_ref()
+                        .and_then(|store| store.read_recovered().get(uuid).cloned());
+                    match made {
+                        Some(handle) => pending.push(ResolvedMesh {
+                            entity,
+                            uuid: *uuid,
+                            handle,
+                            had_stale_handle,
+                            in_store: true,
+                        }),
+                        None => not_made.push((entity, *uuid)),
                     }
                 }
             }
         }
     }
 
+    if !not_made.is_empty() {
+        report_meshes_not_made(world, &not_made, since);
+    }
     if pending.is_empty() {
         return;
     }
 
     // The GPU projection is dropped only when a stale handle existed.
-    let store = asset_store.map(|s| s.store::<Mesh>());
     for ResolvedMesh {
         entity,
         uuid,
         handle,
         had_stale_handle,
+        in_store,
     } in pending
     {
-        if let Some(store) = &store {
+        if let (Some(store), false) = (&store, in_store) {
             store.write_recovered().insert(uuid, handle.clone());
         }
         let component = HandleComponent { handle, uuid };
@@ -302,6 +334,24 @@ fn resolve_meshes(world: &mut World, runtime: &Runtime) {
     }
 }
 
+/// Logs each entity of `not_made` whose `MeshRef` changed since `since`: it
+/// names a mesh made in code the asset store does not hold, so it draws nothing.
+fn report_meshes_not_made(world: &World, not_made: &[(EntityId, AssetUUID)], since: Tick) {
+    let changed: HashSet<EntityId> = world
+        .query::<(EntityId, Changed<MeshRef>)>()
+        .since(since)
+        .map(|(entity, _)| entity)
+        .collect();
+    for (entity, uuid) in not_made {
+        if changed.contains(entity) {
+            log::warn!(
+                "asset_resolver: entity {entity:?} names a mesh made in code ({uuid:?}) \
+                 the asset store does not hold; it draws nothing"
+            );
+        }
+    }
+}
+
 inventory::submit! {
     DataSystemRegistration {
         name: "asset_resolver",
@@ -314,7 +364,9 @@ inventory::submit! {
         // A changed asset's copies are replaced before the authored refs are
         // compared against them.
         runs_after: &["asset_reload"],
-        observes: &[],
+        // A mesh made in code the store lacks is logged once per change of
+        // its reference.
+        observes: &[ComponentKey::of::<MeshRef>],
         role: khora_data::ecs::Role::Upkeep,
     }
 }
@@ -1562,7 +1614,7 @@ mod tests {
         /// The bytes of a font file; the font decoder keeps them as they are.
         // A TrueType file starts with these bytes: the font decoder reads only
         // what does.
-        const FONT_BYTES: &[u8] = b"   font file bytes";
+        const FONT_BYTES: &[u8] = b"\0\x01\0\0font file bytes";
 
         #[test]
         fn a_text_naming_a_font_asset_gets_its_handle_and_the_font_lands_in_the_store() {

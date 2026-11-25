@@ -66,6 +66,9 @@ pub enum ProblemSource {
     Data,
     /// What the last scene load reported.
     Load,
+    /// What the last save of a scene or a prefab left out of its file: each
+    /// value only the session holds, such as a mesh made in code.
+    Save,
     /// The engine's startup: the work it waited on that had not landed when
     /// its wait timed out.
     Startup,

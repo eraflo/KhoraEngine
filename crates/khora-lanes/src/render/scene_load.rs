@@ -18,8 +18,11 @@
 use std::time::Duration;
 
 use khora_core::lane::io::SceneTarget;
+use khora_core::renderer::api::gpu_scene::GpuMesh;
 use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
+use khora_core::sync::RwLockExt;
 use khora_data::render::RenderWorld;
+use khora_data::AssetStore;
 
 /// What recording a frame costs the host before any draw.
 const RECORD_CPU: Duration = Duration::from_micros(20);
@@ -52,24 +55,32 @@ pub(crate) struct SceneLoad {
 }
 
 impl SceneLoad {
-    /// Measures the work of drawing `world` into `target`.
-    pub fn of(world: &RenderWorld, target: &SceneTarget) -> Self {
-        let triangles = world
+    /// Measures the work of drawing `world` into `target`, each mesh counted
+    /// by the GPU copy `assets` holds under its uuid.
+    ///
+    /// A mesh with no resident GPU copy is not drawn, so it counts nothing.
+    pub fn of(world: &RenderWorld, assets: &AssetStore, target: &SceneTarget) -> Self {
+        let gpu_meshes = assets.store::<GpuMesh>();
+        let gpu_meshes = gpu_meshes.read_recovered();
+        let mut draws = 0u32;
+        let mut triangles = 0u64;
+        for gpu_mesh in world
             .meshes
             .iter()
-            .map(|mesh| {
-                let indices = u64::from(mesh.gpu_mesh.index_count);
-                match mesh.gpu_mesh.primitive_topology {
-                    PrimitiveTopology::TriangleList => indices / 3,
-                    PrimitiveTopology::TriangleStrip => indices.saturating_sub(2),
-                    PrimitiveTopology::LineList
-                    | PrimitiveTopology::LineStrip
-                    | PrimitiveTopology::PointList => 0,
-                }
-            })
-            .sum();
+            .filter_map(|mesh| gpu_meshes.get(&mesh.mesh))
+        {
+            draws += 1;
+            let indices = u64::from(gpu_mesh.index_count);
+            triangles += match gpu_mesh.primitive_topology {
+                PrimitiveTopology::TriangleList => indices / 3,
+                PrimitiveTopology::TriangleStrip => indices.saturating_sub(2),
+                PrimitiveTopology::LineList
+                | PrimitiveTopology::LineStrip
+                | PrimitiveTopology::PointList => 0,
+            };
+        }
         Self {
-            draws: world.meshes.len() as u32,
+            draws,
             triangles,
             suns: world.directional_light_count(),
             lamps: world.point_light_count(),

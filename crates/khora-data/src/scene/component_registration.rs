@@ -32,6 +32,10 @@ pub use super::staged_value::StagedValue;
 pub type ColumnToSnapshotFn =
     fn(&dyn AnyVec, usize, &mut Vec<u8>, &mut dyn ReferenceWriter) -> Result<(), RecordError>;
 
+/// Tells whether a column row holds a value only this session has: see
+/// [`ComponentRegistration::session_only`].
+pub type SessionOnlyFn = fn(&dyn AnyVec, usize) -> bool;
+
 /// Runs a component's own check over a world: see [`ComponentRegistration::check`].
 pub type CheckFn = fn(&World) -> Vec<(EntityId, crate::ecs::FieldProblem)>;
 
@@ -123,6 +127,15 @@ pub struct ComponentRegistration {
     /// Run over a world, it returns each field the engine cannot use, with its
     /// entity. It never rewrites a value.
     pub check: Option<CheckFn>,
+    /// Tells whether the value at a page row lives only in this session, `None`
+    /// when every value of the component is saved.
+    ///
+    /// Such a value names what no file holds (a mesh made in code, kept only
+    /// by the session's asset store): a scene or a game save leaves it out,
+    /// saving the entity without it, and reports it
+    /// [`ReportKind::NotSaved`](super::record::ReportKind::NotSaved). A
+    /// snapshot, read back in the same session, keeps it.
+    pub session_only: Option<SessionOnlyFn>,
 }
 
 inventory::collect!(ComponentRegistration);
@@ -132,6 +145,14 @@ impl ComponentRegistration {
     /// not one the engine derives or writes while running.
     pub fn is_saved(&self) -> bool {
         self.provenance.is_copied_on_duplicate()
+    }
+
+    /// Returns whether the value at `row` of `column` lives only in this session.
+    ///
+    /// A scene or a game save leaves such a value out; see
+    /// [`session_only`](Self::session_only).
+    pub fn is_session_only(&self, column: &dyn AnyVec, row: usize) -> bool {
+        self.session_only.is_some_and(|holds| holds(column, row))
     }
 
     /// Returns whether a game save keeps this component although a scene does not.
@@ -164,6 +185,15 @@ pub trait PendingComponent: Send {
     ///
     /// When the world cannot add the component to `entity`, with the world's reason.
     fn commit(self: Box<Self>, world: &mut World, entity: EntityId) -> Result<(), String>;
+
+    /// Returns whether `holds` says the value lives only in a session (see
+    /// [`ComponentRegistration::session_only`]).
+    ///
+    /// A value with no Rust type (a component a script declares) never does.
+    fn is_session_only(&self, holds: SessionOnlyFn) -> bool {
+        let _ = holds;
+        false
+    }
 }
 
 /// Returns the component `reg` describes on `entity`, written as a record.

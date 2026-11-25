@@ -18,8 +18,9 @@
 
 use std::time::Duration;
 
+use khora_core::asset::AssetUUID;
 use khora_core::lane::cost::Cost;
-use khora_core::math::Vec3;
+use khora_core::math::{Mat4, Vec3};
 
 use super::fixtures::{
     faces, view_proj, Scene, Shadows, ATLAS_LIGHTS, CUBE_LIGHTS, HIGH, LEVEL_MEMORY, LOW,
@@ -143,5 +144,31 @@ fn casters_beyond_the_atlases_cost_nothing_more() {
         times(&past_capacity),
         times(&at_capacity),
         "the lights past the atlases add nothing to any level's quote"
+    );
+}
+
+/// **A mesh with no resident GPU copy adds nothing to the quote**: the lane
+/// draws no depth for it, so a sun over one resident mesh and three waiting
+/// for their upload quotes what the sun over the resident mesh alone quotes.
+#[test]
+fn a_mesh_not_resident_adds_nothing_to_the_quote() {
+    let resident = Scene::new().with_sun(view_proj(1.0));
+    let mut waiting = Scene::new()
+        .with_sun(view_proj(1.0))
+        .with_mesh(Mat4::IDENTITY)
+        .with_mesh(Mat4::IDENTITY)
+        .with_mesh(Mat4::IDENTITY);
+    for mesh in waiting.render_world.meshes.iter_mut().skip(1) {
+        mesh.mesh = AssetUUID::new();
+    }
+
+    let alone = quoted(&mut Shadows::new(), HIGH, &resident);
+    let with_waiting = quoted(&mut Shadows::new(), HIGH, &waiting);
+
+    let times = |costs: &[Cost]| costs.iter().map(|cost| cost.time).collect::<Vec<_>>();
+    assert_eq!(
+        times(&with_waiting),
+        times(&alone),
+        "the meshes not resident add nothing to any level's quote"
     );
 }

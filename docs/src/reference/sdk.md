@@ -209,7 +209,7 @@ a scene load to be prepared off the frame and reads its outcome by ticket.
 | Queries | `query::<...>()`, `query_mut::<...>()` |
 | Transforms | `sync_global_transform`, `update_transform` |
 | Hierarchy | `set_parent` |
-| Assets | `add_mesh`, `add_material` |
+| Assets | `add_mesh` (a mesh made in code: published in the world's asset store, returned as a `MeshRef::Made` that saves leave out — see [what is not saved](../concepts/serialization.md)), `add_material`; `set_assets`, `assets` (the store; the engine sets its own on the world it runs) |
 | Game saves | `save_game`, `load_game`; `file_load_game` and `take_load_outcome` to load one off the frame |
 | Internal | `inner_world`, `inner_world_mut` (low-level; prefer the wrapped surface) |
 

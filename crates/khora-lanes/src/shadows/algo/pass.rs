@@ -170,7 +170,7 @@ pub(crate) fn build_draw_cmds(
 ) -> Vec<ShadowDrawCmd> {
     let mut draw_cmds = Vec::with_capacity(render_world.meshes.len());
     for mesh in &render_world.meshes {
-        let Some(gpu_mesh) = gpu_meshes.get(&mesh.cpu_mesh_uuid) else {
+        let Some(gpu_mesh) = gpu_meshes.get(&mesh.mesh) else {
             continue;
         };
         let Some(model_uniforms) = ModelUniforms::from_model(mesh.transform.to_matrix()) else {

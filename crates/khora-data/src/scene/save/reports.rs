@@ -27,7 +27,8 @@ use crate::scene::scene_record::SceneRecord;
 /// An adaptation in something a later step discarded (an entity the save
 /// destroyed, a component it removed, a member an instance deleted) is not news
 /// and is dropped. [`ReportKind::RemovedFromScene`] is always kept, and
-/// [`ReportKind::Retired`] wherever its entity loads.
+/// [`ReportKind::Retired`] wherever its entity loads, as is a whole component
+/// [`ReportKind::Dropped`] (a value only a session holds, read from a file).
 pub fn about_what_loads(
     record: &SceneRecord,
     entries: impl IntoIterator<Item = ReportEntry>,
@@ -45,7 +46,9 @@ pub fn about_what_loads(
             return true;
         };
         let entity_loads = listed.contains(&entity) || held.contains_key(&entity);
-        if entry.kind == ReportKind::Retired {
+        // A component skipped whole is in no record: it is reported wherever
+        // its entity loads.
+        if entry.kind == ReportKind::Retired || refused_whole(entry) {
             return entity_loads;
         }
         match &entry.component {
@@ -60,6 +63,11 @@ pub fn about_what_loads(
         .into_iter()
         .filter(|entry| loads(entry) && seen.insert(entry.clone()))
         .collect()
+}
+
+/// Returns whether `entry` says a whole component was refused: `Dropped`, at no path.
+fn refused_whole(entry: &ReportEntry) -> bool {
+    entry.kind == ReportKind::Dropped && entry.path.is_empty() && entry.component.is_some()
 }
 
 #[cfg(test)]

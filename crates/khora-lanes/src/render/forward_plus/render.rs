@@ -22,13 +22,12 @@ use crate::render::family::{LitInputs, RenderOutputs};
 use crate::render::recording::{
     record_clear, record_draws, record_transparent_pass, scene_color, scene_depth,
 };
-use crate::render::util::lit_draws::{collect_lit_draws, LitDraws, LitPipelines};
+use crate::render::util::lit_draws::{collect_lit_draws, LitAssets, LitDraws, LitPipelines};
 use khora_core::math::Mat4;
 use khora_core::renderer::api::command::{
     BindGroupDescriptor, BindGroupEntry, BindGroupId, ComputePassDescriptor, LoadOp,
     RenderPassDescriptor,
 };
-use khora_core::renderer::api::gpu_scene::GpuMesh;
 use khora_core::renderer::api::ibl::fill_ibl_bind_group_entries;
 use khora_core::renderer::api::resource::{BufferId, CameraUniformData};
 use khora_core::renderer::api::shadow::bindings::fill_shadow_bind_group_entries;
@@ -36,7 +35,6 @@ use khora_core::renderer::api::shadow::ShadowEntry;
 use khora_core::renderer::error::{RenderError, ResourceError};
 use khora_core::renderer::light::CullingUniformsData;
 use khora_core::renderer::{ForwardPlusTileConfig, GpuLight, GraphicsDevice};
-use khora_data::assets::Assets;
 
 /// The first group-3 binding of the image-based lighting, after the light
 /// buffers, the shadow atlases and the tile lists.
@@ -58,7 +56,7 @@ impl PlusGpu {
         &mut self,
         config: &ForwardPlusTileConfig,
         inputs: &LitInputs<'_>,
-        gpu_meshes: &Assets<GpuMesh>,
+        assets: LitAssets<'_>,
         out: &mut RenderOutputs<'_>,
     ) -> Result<(), RenderError> {
         let target = inputs.target;
@@ -101,7 +99,7 @@ impl PlusGpu {
         let plain = self.resources.render_pipeline;
         let LitDraws { opaque, blended } = collect_lit_draws(
             inputs.render_world,
-            gpu_meshes,
+            assets,
             view.position,
             device,
             LitPipelines {

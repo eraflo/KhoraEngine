@@ -26,6 +26,7 @@ use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::LaneError;
 use khora_core::lane::{Lane, LaneReport};
 use khora_core::renderer::api::gpu_scene::GpuMesh;
+use khora_core::sync::RwLockExt;
 use khora_data::flow::{ShadowMatrices, ShadowView};
 use khora_data::render::RenderWorld;
 use khora_data::AssetStore;
@@ -125,6 +126,8 @@ impl Lane for ShadowsLane {
 
     /// Prices the depth passes this frame's casters need at `level`, up to the
     /// level's capacity: each fills its share of texels and draws every mesh.
+    ///
+    /// A mesh with no resident GPU copy is not drawn, so it adds nothing.
     fn cost(&self, level: usize, inputs: &ShadowsInputs<'_>) -> Cost {
         let Some(tier) = TIERS.get(level) else {
             return Cost::default();
@@ -137,7 +140,17 @@ impl Lane for ShadowsLane {
             }
         }
         let passes = singles.min(tier.atlas_2d_max_lights) + cubes.min(tier.cube_max_lights) * 6;
-        let draws = passes * inputs.render_world.meshes.len() as u32;
+        let store = inputs.assets.store::<GpuMesh>();
+        let resident = {
+            let meshes = store.read_recovered();
+            inputs
+                .render_world
+                .meshes
+                .iter()
+                .filter(|mesh| meshes.contains(&mesh.mesh))
+                .count() as u32
+        };
+        let draws = passes * resident;
         let full = TIERS[TIERS.len() - 1].atlas_2d_resolution as f64;
         let share = (tier.atlas_2d_resolution as f64 / full).powi(2);
         Cost {

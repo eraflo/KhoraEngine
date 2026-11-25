@@ -29,8 +29,8 @@ use khora_data::scene::snapshot::{
     prepare_snapshot, prepare_snapshot_with, write_snapshot, SNAPSHOT_ENCODING_ID,
 };
 use khora_data::scene::{
-    about_what_loads, capture_save, capture_world, collapse, compose_reporting, encoding_of,
-    expand_reporting, prepare, prepare_game, prepare_with, read_into, read_save_file,
+    about_what_loads, capture_save_reporting, capture_world_reporting, collapse, compose_reporting,
+    encoding_of, expand_reporting, prepare, prepare_game, prepare_with, read_into, read_save_file,
     read_scene_file, write_save_file, write_scene_file, CompactEncoding, Identity, LoadCatalog,
     LoadFailure, MsgPackEncoding, NoPrefabs, PrefabSource, Prepared, SaveError, SceneEncoding,
     SceneFileReadError, SceneRecord, TextEncoding,
@@ -135,6 +135,23 @@ impl SerializationService {
         world: &World,
         goal: SerializationGoal,
     ) -> Result<SceneFile, SerializationServiceError> {
+        self.save_world_reporting(world, goal).map(|(file, _)| file)
+    }
+
+    /// Saves as [`save_world`](Self::save_world), and returns what the save left out.
+    ///
+    /// A component the save cannot write, such as a mesh made in code, is
+    /// reported [`ReportKind::NotSaved`](khora_data::scene::record::ReportKind::NotSaved)
+    /// on its entity; the entity is saved without it.
+    ///
+    /// # Errors
+    ///
+    /// As [`save_world`](Self::save_world).
+    pub fn save_world_reporting(
+        &self,
+        world: &World,
+        goal: SerializationGoal,
+    ) -> Result<(SceneFile, Vec<ReportEntry>), SerializationServiceError> {
         let prefabs = self
             .prefabs
             .as_deref()
@@ -153,18 +170,21 @@ impl SerializationService {
         goal: SerializationGoal,
         prefabs: &dyn PrefabSource,
     ) -> Result<SceneFile, SerializationServiceError> {
-        Self::save(world, goal, Some(prefabs))
+        Self::save(world, goal, Some(prefabs)).map(|(file, _)| file)
     }
 
+    /// Saves `world` for `goal`, linking to the prefabs `prefabs` reads, and
+    /// returns what the save left out.
     fn save(
         world: &World,
         goal: SerializationGoal,
         prefabs: Option<&dyn PrefabSource>,
-    ) -> Result<SceneFile, SerializationServiceError> {
+    ) -> Result<(SceneFile, Vec<ReportEntry>), SerializationServiceError> {
         let encoding = match Self::encoding_for(goal) {
             Some(encoding) => encoding,
             None => match write_snapshot(world) {
-                Ok(file) => return Ok(file),
+                // A snapshot keeps every value: it leaves nothing out.
+                Ok(file) => return Ok((file, Vec::new())),
                 // A component no fingerprint can guard is never snapshotted:
                 // the world is saved as a compact record instead — slower to
                 // load, read by any build.
@@ -177,7 +197,8 @@ impl SerializationService {
                 Err(error) => return Err(SerializationServiceError::SaveFailed(error)),
             },
         };
-        let mut record = capture_world(world).map_err(SerializationServiceError::SaveFailed)?;
+        let (mut record, left_out) =
+            capture_world_reporting(world).map_err(SerializationServiceError::SaveFailed)?;
         if let Some(prefabs) = prefabs {
             // A prefab that cannot be read cannot be linked to: the scene is
             // saved expanded rather than not at all, and links again once the
@@ -188,6 +209,7 @@ impl SerializationService {
             }
         }
         write_scene_file(&record, encoding)
+            .map(|file| (file, left_out))
             .map_err(|error| SerializationServiceError::SaveFailed(SaveError::Encoding(error.0)))
     }
 
@@ -374,13 +396,33 @@ impl SerializationService {
         base_file: &SceneFile,
         goal: SerializationGoal,
     ) -> Result<SceneFile, SerializationServiceError> {
+        self.save_game_reporting(world, base_id, base_file, goal)
+            .map(|(file, _)| file)
+    }
+
+    /// Saves as [`save_game`](Self::save_game), and returns what the save left out.
+    ///
+    /// A value only the session holds (a mesh made in code) is never written:
+    /// it is reported `NotSaved` on its entity.
+    ///
+    /// # Errors
+    ///
+    /// As [`save_game`](Self::save_game).
+    pub fn save_game_reporting(
+        &self,
+        world: &World,
+        base_id: AssetUUID,
+        base_file: &SceneFile,
+        goal: SerializationGoal,
+    ) -> Result<(SceneFile, Vec<ReportEntry>), SerializationServiceError> {
         let base = read_scene_file(base_file).map_err(SerializationServiceError::ReadFailed)?;
         // Against the scene as a world: its prefab instances expanded.
         let (base, _) = Self::expanded(base, self.prefabs())?;
-        let save =
-            capture_save(world, base_id, &base).map_err(SerializationServiceError::SaveFailed)?;
+        let (save, left_out) = capture_save_reporting(world, base_id, &base)
+            .map_err(SerializationServiceError::SaveFailed)?;
         let encoding = Self::encoding_for(goal).unwrap_or(&CompactEncoding);
         write_save_file(&save, encoding)
+            .map(|file| (file, left_out))
             .map_err(|error| SerializationServiceError::SaveFailed(SaveError::Encoding(error.0)))
     }
 
@@ -497,6 +539,70 @@ mod tests {
         let plain = service.save_world(&world, goal).expect("the world saves");
 
         assert_eq!(with.to_bytes(), plain.to_bytes());
+    }
+
+    /// A scene save reports a mesh made in code left out; a snapshot keeps it
+    /// and reports nothing.
+    #[test]
+    fn save_world_reporting_reports_what_a_scene_leaves_out_and_a_snapshot_keeps() {
+        let mut world = world_of(&["Hero"]);
+        let made = world.spawn((
+            Transform::identity(),
+            khora_data::ecs::MeshRef::Made(khora_core::asset::AssetUUID::new()),
+        ));
+        let id = world.mark_authored(made).expect("authored");
+        let service = SerializationService::new();
+
+        let (_, scene) = service
+            .save_world_reporting(&world, SerializationGoal::EditorInterchange)
+            .expect("the scene saves");
+        let (_, snapshot) = service
+            .save_world_reporting(&world, SerializationGoal::FastestLoad)
+            .expect("the snapshot saves");
+
+        assert!(
+            scene.iter().any(|entry| entry.entity == Some(id)
+                && entry.kind == khora_data::scene::record::ReportKind::NotSaved),
+            "the scene save does not report the mesh made in code: {scene:?}"
+        );
+        assert!(
+            snapshot.is_empty(),
+            "a snapshot left something out: {snapshot:?}"
+        );
+    }
+
+    /// A game save reports a mesh made in code it leaves out.
+    #[test]
+    fn save_game_reporting_reports_a_mesh_made_in_code_left_out() {
+        let mut world = world_of(&["Hero"]);
+        let service = SerializationService::new();
+        let base = service
+            .save_world(&world, SerializationGoal::EditorInterchange)
+            .expect("the scene saves");
+        let hero = world.iter_entities().next().expect("the hero");
+        world
+            .add_component(
+                hero,
+                khora_data::ecs::MeshRef::Made(khora_core::asset::AssetUUID::new()),
+            )
+            .expect("the hero takes a mesh");
+
+        let (_, left_out) = service
+            .save_game_reporting(
+                &world,
+                khora_core::asset::AssetUUID::new(),
+                &base,
+                SerializationGoal::EditorInterchange,
+            )
+            .expect("the game saves");
+
+        assert!(
+            left_out
+                .iter()
+                .any(|entry| entry.entity == world.persistent_id(hero)
+                    && entry.kind == khora_data::scene::record::ReportKind::NotSaved),
+            "the game save does not report the mesh made in code: {left_out:?}"
+        );
     }
 
     /// Loading with a prefab source adds the scene beside what the world holds.

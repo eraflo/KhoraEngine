@@ -370,3 +370,31 @@ fn restoring_a_snapshot_repeatedly_reuses_the_freed_slots() {
         "twenty restores of 32 entities reached index {highest}: each grew the store"
     );
 }
+
+/// A snapshot is read back in the session that wrote it, where the asset
+/// store still holds a mesh made in code: the entity keeps its reference to
+/// that mesh, under the same uuid.
+#[test]
+fn a_mesh_made_in_code_survives_a_snapshot_round_trip() {
+    let mut src = World::new();
+    let made = MeshRef::Made(AssetUUID::new());
+    let entity = src.spawn((Transform::identity(), made.clone()));
+    let id = src.mark_authored(entity).expect("authored");
+
+    let file = snapshot_of(&src);
+    let mut dst = World::new();
+    let applied =
+        load_snapshot(&mut dst, &file).unwrap_or_else(|e| panic!("the snapshot did not load: {e}"));
+
+    assert!(
+        applied.report.is_clean(),
+        "a snapshot adapted the mesh made in code: {:?}",
+        applied.report.entries
+    );
+    let restored = dst.entity_with_id(id).expect("the entity is restored");
+    assert_eq!(
+        dst.get::<MeshRef>(restored),
+        Some(&made),
+        "the restored entity lost its mesh made in code"
+    );
+}

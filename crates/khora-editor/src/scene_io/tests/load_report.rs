@@ -154,3 +154,29 @@ fn a_scene_that_does_not_load_returns_no_report() {
     );
     assert_eq!(world.iter_entities().count(), 1, "the world is untouched");
 }
+
+/// A save's report entries become problems on the entities they name, each
+/// with its component, one warning per entry.
+#[test]
+fn report_problems_puts_each_entry_on_its_entity() {
+    let mut world = GameWorld::new();
+    let entity = world.spawn((Transform::identity(), Name::new("Made")));
+    let id = world
+        .inner_world_mut()
+        .mark_authored(entity)
+        .expect("authored");
+    let entries = [khora_sdk::khora_data::scene::record::ReportEntry {
+        entity: Some(id),
+        component: Some("MeshRef".to_owned()),
+        path: String::new(),
+        kind: ReportKind::NotSaved,
+    }];
+
+    let problems = report_problems(world.inner_world(), &entries);
+
+    assert_eq!(problems.len(), 1, "one problem per entry: {problems:#?}");
+    assert_eq!(problems[0].entity, Some(entity));
+    assert_eq!(problems[0].component.as_deref(), Some("MeshRef"));
+    assert_eq!(problems[0].field, None, "a whole component names no field");
+    assert_eq!(problems[0].severity, ProblemSeverity::Warning);
+}

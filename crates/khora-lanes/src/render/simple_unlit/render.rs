@@ -16,7 +16,8 @@
 
 use super::gpu::UnlitGpu;
 use crate::render::recording::{record_clear, scene_color, scene_depth};
-use khora_core::lane::io::SceneTarget;
+use crate::render::UnlitInputs;
+use khora_core::asset::Material;
 use khora_core::math::LinearRgba;
 use khora_core::renderer::api::command::{DrawCommand, LoadOp, RenderPassDescriptor};
 use khora_core::renderer::api::gpu_scene::{GpuMesh, ModelUniforms};
@@ -26,20 +27,24 @@ use khora_core::renderer::error::RenderError;
 use khora_core::renderer::traits::CommandEncoder;
 use khora_core::renderer::GraphicsDevice;
 use khora_data::assets::Assets;
-use khora_data::render::RenderWorld;
 
 impl UnlitGpu {
-    /// Records the scene pass into `encoder`: a clear when the world has no
-    /// camera, else every mesh the store holds, in its base colour.
+    /// Records the scene pass into `encoder`: a clear without a camera, else
+    /// every mesh `gpu_meshes` holds, flat.
+    ///
+    /// A mesh is drawn in the base colour of the material `materials` holds
+    /// under its material uuid, white when there is none.
     pub(super) fn record(
         &mut self,
-        render_world: &RenderWorld,
+        inputs: &UnlitInputs<'_>,
         gpu_meshes: &Assets<GpuMesh>,
+        materials: &Assets<Box<dyn Material>>,
         device: &dyn GraphicsDevice,
         encoder: &mut dyn CommandEncoder,
-        target: &SceneTarget,
-        clear: LinearRgba,
     ) -> Result<(), RenderError> {
+        let render_world = inputs.render_world;
+        let target = &inputs.target;
+        let clear = inputs.clear_color.0;
         let (Some(view), Some((_, pipeline))) = (render_world.views.first(), self.pipeline) else {
             record_clear(encoder, target, clear, "Simple Unlit Clear-Only Pass")?;
             return Ok(());
@@ -59,7 +64,7 @@ impl UnlitGpu {
 
         let mut draws = Vec::with_capacity(render_world.meshes.len());
         for mesh in &render_world.meshes {
-            let Some(gpu_mesh) = gpu_meshes.get(&mesh.cpu_mesh_uuid) else {
+            let Some(gpu_mesh) = gpu_meshes.get(&mesh.mesh) else {
                 continue;
             };
             // A degenerate transform has no normal matrix: nothing to draw.
@@ -68,7 +73,7 @@ impl UnlitGpu {
             };
             let base_color = mesh
                 .material
-                .as_ref()
+                .and_then(|uuid| materials.get(&uuid))
                 .map_or(LinearRgba::WHITE, |material| material.base_color());
             let material_uniforms = MaterialUniforms {
                 base_color,

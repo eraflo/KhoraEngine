@@ -14,7 +14,7 @@
 
 //! A typed component read from a save, waiting to be added.
 
-use super::component_registration::PendingComponent;
+use super::component_registration::{PendingComponent, SessionOnlyFn};
 use crate::ecs::{AnyVec, World};
 use khora_core::ecs::entity::EntityId;
 
@@ -31,5 +31,12 @@ impl<T: crate::ecs::Component> PendingComponent for StagedValue<T> {
             .add_component(entity, self.0)
             .map(|_| ())
             .map_err(|error| format!("{error:?}"))
+    }
+
+    fn is_session_only(&self, holds: SessionOnlyFn) -> bool {
+        // Asked of a column, as a capture asks it: a one-row column of a copy.
+        let mut column = T::make_column();
+        self.0.clone().push_into_column(column.as_mut());
+        holds(column.as_ref(), 0)
     }
 }

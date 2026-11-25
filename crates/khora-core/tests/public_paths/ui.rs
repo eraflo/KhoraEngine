@@ -224,6 +224,7 @@ fn editor_request_variants(x: &khora_core::ui::editor::EditorRequest) {
         R::SaveAsPrefab { entity: _ } => {}
         R::SaveAsMaterial { entity: _, name: _ } => {}
         R::ReportLoadProblems { problems: _ } => {}
+        R::ReportSaveProblems { problems: _ } => {}
         R::OpenScene { path: _ } => {}
         R::SpawnPrefab {
             prefab: _,

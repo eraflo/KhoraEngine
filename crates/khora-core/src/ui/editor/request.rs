@@ -93,6 +93,13 @@ pub enum EditorRequest {
         /// The problems the load found.
         problems: Vec<Problem>,
     },
+    /// Reports what the last save of a scene or a prefab left out, as the `Save` problems.
+    ///
+    /// An empty list clears them (a save that left nothing out).
+    ReportSaveProblems {
+        /// The problems the save found.
+        problems: Vec<Problem>,
+    },
     /// Opens a scene file, prepared off the frame.
     OpenScene {
         /// The scene file's absolute path.

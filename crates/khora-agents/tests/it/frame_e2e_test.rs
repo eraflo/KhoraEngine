@@ -36,18 +36,14 @@
 
 use khora_core::lane::LaneBus;
 use khora_core::math::{Mat4, Quaternion, Vec3};
-use khora_core::renderer::api::gpu_scene::GpuMesh;
-use khora_core::renderer::api::pipeline::PrimitiveTopology;
-use khora_core::renderer::api::resource::BufferId;
-use khora_core::renderer::api::resource::IndexFormat;
 use khora_core::renderer::light::{DirectionalLight, LightType, PointLight};
 use khora_core::Runtime;
 
-use khora_data::ecs::{Camera, GlobalTransform, HandleComponent, Light, Parent, Transform, World};
+use khora_data::ecs::{Camera, GlobalTransform, Light, MeshRef, Parent, Transform, World};
 use khora_data::flow::{AudioView, ShadowMatrices, ShadowView};
 use khora_data::render::RenderWorld;
 
-use khora_core::asset::{AssetHandle, AssetUUID};
+use khora_core::asset::AssetUUID;
 use std::sync::Arc;
 
 // ─── helpers ────────────────────────────────────────────────────────────
@@ -60,28 +56,19 @@ fn bare_runtime() -> Arc<Runtime> {
     Arc::new(Runtime::new())
 }
 
-/// A dummy resolved `GpuMesh` handle, standing in for a mesh that was already
-/// uploaded — lets us populate `RenderWorld.meshes` without a real GPU device.
-fn gpu_mesh_handle() -> HandleComponent<GpuMesh> {
-    HandleComponent {
-        handle: AssetHandle::new(GpuMesh {
-            vertex_buffer: BufferId(0),
-            index_buffer: BufferId(0),
-            index_count: 0,
-            index_format: IndexFormat::Uint32,
-            primitive_topology: PrimitiveTopology::TriangleList,
-        }),
-        uuid: AssetUUID::new(),
-    }
+/// A reference to a mesh of its own: the render view names it by uuid, with
+/// no mesh loaded nor uploaded.
+fn mesh_ref() -> MeshRef {
+    MeshRef::Asset(AssetUUID::new())
 }
 
-/// Spawns a renderable mesh entity (transform + global transform + GPU mesh
-/// handle) at `position`. Returns its id.
+/// Spawns a renderable mesh entity (transform + global transform + mesh
+/// reference) at `position`. Returns its id.
 fn spawn_mesh(world: &mut World, position: Vec3) -> khora_core::ecs::entity::EntityId {
     world.spawn((
         Transform::from_translation(position),
         GlobalTransform::at_position(position),
-        gpu_mesh_handle(),
+        mesh_ref(),
     ))
 }
 
@@ -300,7 +287,7 @@ fn despawn_across_frames_reprojects() {
 
 /// Despawning the FIRST of two multi-domain mesh entities must leave the
 /// survivor fully projected. Each mesh spans Spatial (`Transform` +
-/// `GlobalTransform`) and Render (`HandleComponent<GpuMesh>`) within one page,
+/// `GlobalTransform`) and Render (`MeshRef`) within one page,
 /// so despawning the first row must `swap_remove` that physical row exactly
 /// once — the survivor's Render data must remain reachable.
 #[test]
@@ -450,7 +437,7 @@ fn transform_propagation_feeds_render_flow() {
         Transform::from_translation(Vec3::new(0.0, 2.0, 0.0)),
         GlobalTransform::identity(),
         Parent(parent),
-        gpu_mesh_handle(),
+        mesh_ref(),
     ));
 
     // Run the propagation DataSystem through the real substrate entry point.
@@ -497,7 +484,7 @@ fn render_flow_interpolates_when_previous_present() {
     let entity = world.spawn((
         Transform::from_translation(Vec3::new(10.0, 0.0, 0.0)),
         GlobalTransform::at_position(Vec3::new(10.0, 0.0, 0.0)),
-        gpu_mesh_handle(),
+        mesh_ref(),
     ));
     record_previous_pose(&runtime, entity, GlobalTransform::at_position(Vec3::ZERO).0);
 
@@ -527,7 +514,7 @@ fn render_flow_alpha_one_yields_current_transform() {
     let entity = world.spawn((
         Transform::from_translation(Vec3::new(4.0, 0.0, 0.0)),
         GlobalTransform::at_position(Vec3::new(4.0, 0.0, 0.0)),
-        gpu_mesh_handle(),
+        mesh_ref(),
     ));
     record_previous_pose(&runtime, entity, GlobalTransform::at_position(Vec3::ZERO).0);
 

@@ -248,6 +248,7 @@ fn mesh_ref_variants(x: &khora_data::ecs::MeshRef) {
     match x {
         khora_data::ecs::MeshRef::Procedural { .. } => {}
         khora_data::ecs::MeshRef::Asset(..) => {}
+        khora_data::ecs::MeshRef::Made(..) => {}
     }
 }
 
@@ -695,14 +696,7 @@ fn extracted_light_fields(x: &khora_data::render::ExtractedLight) {
 }
 
 fn extracted_mesh_fields(x: &khora_data::render::ExtractedMesh) {
-    let _ = (
-        &x.transform,
-        &x.cpu_mesh_uuid,
-        &x.gpu_mesh,
-        &x.material,
-        &x.gpu_material,
-        &x.mirrored,
-    );
+    let _ = (&x.transform, &x.mesh, &x.material, &x.mirrored);
 }
 
 fn extracted_view_fields(x: &khora_data::render::ExtractedView) {
@@ -732,7 +726,10 @@ fn component_registration_fields(
         &x.to_json,
         &x.from_json,
         &x.remove,
+        &x.session_only,
     );
+    let _ = khora_data::scene::ComponentRegistration::is_session_only;
+    let _: Option<khora_data::scene::SessionOnlyFn> = x.session_only;
 }
 
 fn component_shape_variants(x: &khora_data::scene::shape::ComponentShape) {

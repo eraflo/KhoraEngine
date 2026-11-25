@@ -33,7 +33,7 @@ pub struct UnlitInputs<'f> {
     /// The colour the target is cleared to.
     #[frame]
     pub clear_color: ClearColor,
-    /// The store holding the meshes on the GPU.
+    /// The store holding the meshes on the GPU and the materials, by uuid.
     #[resource]
     pub assets: &'f AssetStore,
 }

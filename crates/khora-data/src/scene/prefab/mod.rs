@@ -25,8 +25,8 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::PersistentId;
 use khora_core::scene::SceneFile;
 
-use super::apply::{apply, Identity, LoadFailure};
-use super::capture::{capture_subtree, SaveError};
+use super::apply::{apply, prepare_given, readings, Applied, Identity, LoadFailure};
+use super::capture::{capture_subtree_in_session, capture_subtree_reporting, SaveError};
 use super::declared::described;
 use super::encoding::CompactEncoding;
 use super::entity_refs::parent_in;
@@ -36,6 +36,7 @@ use super::save::{
     about_what_loads, components_of, compose_reporting, delta_between, owned, Pages, SaveRecord,
 };
 use super::scene_record::{InstanceRecord, SceneRecord};
+use super::session_only_read::SessionOnlyRead;
 use crate::ecs::{PrefabInstance, SerializablePrefabInstance, World};
 
 mod catalog;
@@ -48,7 +49,9 @@ mod sources;
 
 pub use catalog::PrefabCatalog;
 pub use library::PrefabLibrary;
-pub use overrides::{apply_to_prefab, instance_of, prefab_world, InstanceOf, PrefabApply};
+pub use overrides::{
+    apply_to_prefab, apply_to_prefab_reporting, instance_of, prefab_world, InstanceOf, PrefabApply,
+};
 use rekey::{members, moved_record, rekeyed};
 use siblings::{children_of, restore_sibling_order};
 use sources::{Except, ReadOnce};
@@ -459,11 +462,14 @@ pub fn collapse(
 ///
 /// Plain entities and instance roots take new authored ids; members take the
 /// ids derived from their instance's new root.
+/// Brings `record` into `world` under fresh ids, through `bring`, and returns
+/// its entities' new ids and what the load adapted.
 fn bring_fresh(
     world: &mut World,
     record: &SceneRecord,
     prefabs: &dyn PrefabSource,
-) -> Result<Vec<PersistentId>, LoadFailure> {
+    bring: fn(&mut World, &SceneRecord, Identity) -> Result<Applied, LoadFailure>,
+) -> Result<(Vec<PersistentId>, LoadReport), LoadFailure> {
     let prefabs = ReadOnce::new(prefabs);
     let mut map: HashMap<PersistentId, PersistentId> = record
         .entities
@@ -474,8 +480,8 @@ fn bring_fresh(
         .collect();
     let fresh = moved_record(record, &mut map, &prefabs, &mut Stack::new())?;
     let expanded = expand(&fresh, &prefabs)?;
-    apply(world, &expanded, Identity::Keep)?;
-    Ok(fresh.entities)
+    let applied = bring(world, &expanded, Identity::Keep)?;
+    Ok((fresh.entities, applied.report))
 }
 
 /// Brings `prefab` into `world` as a new linked instance and returns its root.
@@ -495,6 +501,27 @@ pub fn instantiate_prefab(
     world
         .entity_with_id(root)
         .ok_or_else(|| failed(format!("the prefab {prefab} brought no root")))
+}
+
+/// Brings `record`, a copy made within this session, into `world`, atomically.
+///
+/// A value only the session holds (a mesh made in code) is kept, as a snapshot
+/// keeps it: the record never left the session.
+fn apply_in_session(
+    world: &mut World,
+    record: &SceneRecord,
+    identity: Identity,
+) -> Result<Applied, LoadFailure> {
+    let (catalog, hold) = readings(world, record.entities.len());
+    let prepared = prepare_given(
+        &catalog,
+        hold,
+        record,
+        super::kept::Kept::Scene,
+        None,
+        SessionOnlyRead::Kept,
+    )?;
+    Ok(prepared.commit(world, identity))
 }
 
 /// Returns a record holding only an unchanged instance of `prefab` rooted at `root`.
@@ -566,10 +593,7 @@ pub fn serialize_subtree(
     root: EntityId,
     prefabs: &dyn PrefabSource,
 ) -> Result<Vec<u8>, SaveError> {
-    let record = collapse(&capture_subtree(world, root)?, prefabs)?;
-    write_scene_file(&record, &CompactEncoding)
-        .map(|file| file.to_bytes())
-        .map_err(|error| SaveError::Encoding(error.to_string()))
+    serialize_subtree_reporting(world, root, prefabs).map(|(bytes, _)| bytes)
 }
 
 /// Does [`serialize_subtree`] for the file of the prefab `written`.
@@ -585,7 +609,36 @@ pub fn serialize_prefab(
     written: AssetUUID,
     prefabs: &dyn PrefabSource,
 ) -> Result<Vec<u8>, SaveError> {
-    serialize_subtree(
+    serialize_prefab_reporting(world, root, written, prefabs).map(|(bytes, _)| bytes)
+}
+
+/// Does [`serialize_subtree`], and returns what the file left out.
+///
+/// # Errors
+/// As [`serialize_subtree`].
+pub fn serialize_subtree_reporting(
+    world: &World,
+    root: EntityId,
+    prefabs: &dyn PrefabSource,
+) -> Result<(Vec<u8>, Vec<ReportEntry>), SaveError> {
+    let (record, left_out) = capture_subtree_reporting(world, root)?;
+    let record = collapse(&record, prefabs)?;
+    write_scene_file(&record, &CompactEncoding)
+        .map(|file| (file.to_bytes(), left_out))
+        .map_err(|error| SaveError::Encoding(error.to_string()))
+}
+
+/// Does [`serialize_prefab`], and returns what the file left out.
+///
+/// # Errors
+/// As [`serialize_prefab`].
+pub fn serialize_prefab_reporting(
+    world: &World,
+    root: EntityId,
+    written: AssetUUID,
+    prefabs: &dyn PrefabSource,
+) -> Result<(Vec<u8>, Vec<ReportEntry>), SaveError> {
+    serialize_subtree_reporting(
         world,
         root,
         &Except {
@@ -593,6 +646,32 @@ pub fn serialize_prefab(
             written,
         },
     )
+}
+
+/// Copies `root` and everything under it within `world`, and returns the copy's root and its report.
+///
+/// The copy takes fresh ids, and a prefab instance inside it is copied as an
+/// instance of the same prefab, read from `prefabs`. It never leaves the
+/// session, so it keeps what only the session holds (a mesh made in code), as
+/// a snapshot does; [`serialize_subtree`], which writes a file, leaves it out.
+///
+/// # Errors
+/// The subtree cannot be captured or brought in; `world` is then left as it was.
+pub fn copy_subtree(
+    world: &mut World,
+    root: EntityId,
+    prefabs: &dyn PrefabSource,
+) -> Result<(EntityId, LoadReport), LoadFailure> {
+    let record =
+        capture_subtree_in_session(world, root).map_err(|error| failed(error.to_string()))?;
+    // A prefab instance inside is copied as an instance of the same prefab.
+    let record = collapse(&record, prefabs).map_err(|error| failed(error.to_string()))?;
+    let (ids, report) = bring_fresh(world, &record, prefabs, apply_in_session)?;
+    let copy = ids
+        .first()
+        .and_then(|root| world.entity_with_id(*root))
+        .ok_or_else(|| failed("the subtree holds no entity".to_owned()))?;
+    Ok((copy, report))
 }
 
 /// Brings a subtree written by [`serialize_subtree`] into `world` and returns its root.
@@ -610,7 +689,7 @@ pub fn instantiate_subtree(
 ) -> Result<EntityId, LoadFailure> {
     let file = SceneFile::from_bytes(bytes).map_err(|error| failed(format!("{error:?}")))?;
     let record = read_scene_file(&file).map_err(|error| failed(error.to_string()))?;
-    let ids = bring_fresh(world, &record, prefabs)?;
+    let (ids, _) = bring_fresh(world, &record, prefabs, apply)?;
     ids.first()
         .and_then(|root| world.entity_with_id(*root))
         .ok_or_else(|| failed("the prefab holds no entity".to_owned()))

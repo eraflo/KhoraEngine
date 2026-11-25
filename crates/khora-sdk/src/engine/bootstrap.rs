@@ -308,12 +308,17 @@ fn start_dcc_and_telemetry(runtime: &mut Runtime) -> (DccService, EventReceiver,
     (dcc, dcc_rx, telemetry)
 }
 
-/// Creates the game world, given the scene loads hub and the shipped
-/// prefabs where `runtime` holds them.
+/// Creates the game world, given the scene loads hub, the engine's asset
+/// store and the shipped prefabs where `runtime` holds them.
 fn create_game_world(runtime: &mut Runtime) -> GameWorld {
     // The prefabs are read from the app's asset service, so a game saved over
     // a level holding prefab instances compares against the level expanded.
     let mut game_world = GameWorld::new();
+    // A mesh made in code is published where the resolver and the GPU
+    // residency read it.
+    if let Some(assets) = runtime.resources.get::<khora_data::AssetStore>() {
+        game_world.set_assets(assets.clone());
+    }
     if let Some(loads) = runtime
         .resources
         .get::<Arc<khora_io::scene_loads::SceneLoadHub>>()

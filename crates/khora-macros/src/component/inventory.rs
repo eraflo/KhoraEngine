@@ -152,6 +152,7 @@ pub(super) fn component_registration(
                 script_type: <#name as crate::ecs::component::Component>::script_type,
                 script_default: #script_default,
                 check: #registration_check,
+                session_only: None,
             }
         }
     }

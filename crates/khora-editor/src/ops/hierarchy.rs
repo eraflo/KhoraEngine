@@ -15,7 +15,7 @@
 //! Reparenting, duplicating and deleting entities.
 
 use khora_sdk::editor_ui::*;
-use khora_sdk::khora_data::scene::PrefabSource;
+use khora_sdk::khora_data::scene::{copy_subtree, PrefabSource};
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::GameWorld;
 
@@ -42,35 +42,33 @@ pub fn process_reparents(world: &mut GameWorld, state: &mut EditorState) {
 
 /// Duplicates an entity and everything below it, as a sibling of the original.
 ///
-/// Goes through the subtree round-trip "Save as Prefab" uses: the copy carries
-/// every authored component, its references point inside the copy, and it
-/// gets new identities. A prefab instance in the subtree is copied as an
-/// instance of the same prefab, read from `prefabs`, with the same overrides.
+/// A copy within the session (`copy_subtree`): the copy carries every
+/// authored component, its references point inside the copy, and it gets new
+/// identities. What only the session holds, a mesh made in code, is kept. A
+/// prefab instance in the subtree is copied as an instance of the same prefab,
+/// read from `prefabs`, with the same overrides. What the copy adapted is
+/// logged as warnings.
 pub fn duplicate_entity(
     world: &mut GameWorld,
     entity: EntityId,
     state: &mut EditorState,
     prefabs: &dyn PrefabSource,
 ) {
-    let recipe = match khora_sdk::serialize_subtree(world.inner_world(), entity, prefabs) {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            log::error!("Duplicate failed: could not read {entity:?}: {e}");
-            return;
-        }
-    };
-
     let original_parent = world.get_component::<Parent>(entity).map(|p: &Parent| p.0);
     let copy_name = world
         .get_component::<Name>(entity)
         .map(|n: &Name| format!("{} (Copy)", n.as_str()))
         .unwrap_or_else(|| "Copy".to_owned());
 
-    let new_entity = match khora_sdk::instantiate_subtree(world.inner_world_mut(), &recipe, prefabs)
-    {
-        Ok(id) => id,
+    let new_entity = match copy_subtree(world.inner_world_mut(), entity, prefabs) {
+        Ok((copy, report)) => {
+            for entry in &report.entries {
+                log::warn!("duplicate of {entity:?}: {entry}");
+            }
+            copy
+        }
         Err(e) => {
-            log::error!("Duplicate failed: could not rebuild {entity:?}: {e}");
+            log::error!("Duplicate failed: could not copy {entity:?}: {e}");
             return;
         }
     };

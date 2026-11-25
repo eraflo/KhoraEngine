@@ -21,12 +21,14 @@ use khora_sdk::editor_ui::{PrefabApplyScope, PropertyEdit};
 use khora_sdk::khora_core::asset::AssetUUID;
 use khora_sdk::khora_core::script::ScriptValue;
 use khora_sdk::khora_data::ecs::{PrefabInstance, World};
+use khora_sdk::khora_data::scene::record::ReportEntry;
 use khora_sdk::khora_data::scene::{
-    apply_to_prefab, instance_of, instantiate_prefab, prefab_world, serialize_prefab,
-    write_scene_file, CompactEncoding, InstanceOf, NoPrefabs, PrefabApply, PrefabSource,
+    apply_to_prefab_reporting, instance_of, instantiate_prefab, prefab_world,
+    serialize_prefab_reporting, serialize_subtree_reporting, write_scene_file, CompactEncoding,
+    InstanceOf, NoPrefabs, PrefabApply, PrefabSource,
 };
 use khora_sdk::prelude::ecs::*;
-use khora_sdk::{serialize_subtree, EditorState, GameWorld};
+use khora_sdk::{EditorState, GameWorld};
 
 use crate::ops::declared::{authored_rows, conformed, field_of, field_overrides, rebound_fields};
 use crate::ops::prefab_overrides::{json_overrides, rebound, reverted};
@@ -57,7 +59,8 @@ pub fn save_queued_prefabs(
         })
         .unwrap_or_default();
     for (entity, rel_path) in at_paths {
-        save_prefab_to_project_path(project_vfs, world, entity, &rel_path);
+        let left_out = save_prefab_to_project_path(project_vfs, world, entity, &rel_path);
+        report_prefab_save(editor_state, world, left_out);
     }
 
     // Right-click path: file dialog.
@@ -71,24 +74,24 @@ pub fn save_queued_prefabs(
         })
         .unwrap_or_default();
     for entity in entities {
-        save_prefab_through_dialog(project_vfs, world, entity);
+        let left_out = save_prefab_through_dialog(project_vfs, world, entity);
+        report_prefab_save(editor_state, world, left_out);
     }
 }
 
 /// Saves `entity`'s subtree as a `.kprefab` at a file picked through a dialog.
+///
+/// Returns what the file left out; `None` when no prefab reached disk.
 fn save_prefab_through_dialog(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &GameWorld,
     entity: EntityId,
-) {
+) -> Option<Vec<ReportEntry>> {
     // The file first: the prefab it is decides what may be linked to.
-    let Some(path) = rfd::FileDialog::new()
+    let path = rfd::FileDialog::new()
         .add_filter("Khora Prefab", &["kprefab"])
         .set_file_name("prefab.kprefab")
-        .save_file()
-    else {
-        return;
-    };
+        .save_file()?;
     let path_str = path.to_string_lossy().to_string();
 
     if let Some(pvfs_arc) = project_vfs {
@@ -97,101 +100,132 @@ fn save_prefab_through_dialog(
                 .map(|rel| (pvfs.written_asset_id(&rel), rel)),
             Err(_) => {
                 log::error!("Project VFS mutex poisoned");
-                return;
+                return None;
             }
         };
         if let Some((written, rel_fwd)) = inside {
-            let saved = serialize_prefab(
+            let saved = serialize_prefab_reporting(
                 world.inner_world(),
                 entity,
                 written,
                 &ProjectPrefabs(pvfs_arc),
             );
-            let bytes = match saved {
-                Ok(b) => b,
+            let (bytes, left_out) = match saved {
+                Ok(saved) => saved,
                 Err(e) => {
                     log::error!("Failed to serialize prefab subtree: {:?}", e);
-                    return;
+                    return None;
                 }
             };
-            if let Ok(mut pvfs) = pvfs_arc.lock() {
-                write_prefab_through_vfs(&mut pvfs, &rel_fwd, &bytes);
-            }
-            return;
+            let mut pvfs = pvfs_arc.lock().ok()?;
+            return write_prefab_through_vfs(&mut pvfs, &rel_fwd, &bytes).then_some(left_out);
         }
     }
 
     // Outside the project: no prefab of it can be the file written.
     let written = match project_vfs {
-        Some(pvfs) => serialize_subtree(world.inner_world(), entity, &ProjectPrefabs(pvfs)),
-        None => serialize_subtree(world.inner_world(), entity, &NoPrefabs),
+        Some(pvfs) => {
+            serialize_subtree_reporting(world.inner_world(), entity, &ProjectPrefabs(pvfs))
+        }
+        None => serialize_subtree_reporting(world.inner_world(), entity, &NoPrefabs),
     };
-    let bytes = match written {
-        Ok(b) => b,
+    let (bytes, left_out) = match written {
+        Ok(written) => written,
         Err(e) => {
             log::error!("Failed to serialize prefab subtree: {:?}", e);
-            return;
+            return None;
         }
     };
 
     // Whole or not at all: a failed save leaves the previous file.
     match khora_sdk::fs::write_atomic(std::path::Path::new(&path_str), &bytes) {
-        Ok(()) => log::warn!(
-            "Prefab saved to '{}' ({} bytes) — outside project, not VFS-managed.",
-            path_str,
-            bytes.len()
-        ),
-        Err(e) => log::error!("Failed to write prefab '{}': {}", path_str, e),
+        Ok(()) => {
+            log::warn!(
+                "Prefab saved to '{}' ({} bytes) — outside project, not VFS-managed.",
+                path_str,
+                bytes.len()
+            );
+            Some(left_out)
+        }
+        Err(e) => {
+            log::error!("Failed to write prefab '{}': {}", path_str, e);
+            None
+        }
     }
 }
 
+/// Saves `entity`'s subtree as the `.kprefab` at `rel_path` under the project's `assets/`.
+///
+/// Returns what the file left out; `None` when no prefab reached disk.
 fn save_prefab_to_project_path(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &GameWorld,
     entity: EntityId,
     rel_path: &str,
-) {
+) -> Option<Vec<ReportEntry>> {
     let Some(pvfs_arc) = project_vfs else {
         log::warn!("Prefab drop ignored: no project is open");
-        return;
+        return None;
     };
     // The prefab this file is: an instance of it inside it is written whole.
     let written = match pvfs_arc.lock() {
         Ok(pvfs) => pvfs.written_asset_id(rel_path),
         Err(_) => {
             log::error!("Project VFS mutex poisoned");
-            return;
+            return None;
         }
     };
-    let saved = serialize_prefab(
+    let saved = serialize_prefab_reporting(
         world.inner_world(),
         entity,
         written,
         &ProjectPrefabs(pvfs_arc),
     );
-    let bytes = match saved {
-        Ok(b) => b,
+    let (bytes, left_out) = match saved {
+        Ok(saved) => saved,
         Err(e) => {
             log::error!("Failed to serialize prefab subtree: {:?}", e);
-            return;
+            return None;
         }
     };
     let Ok(mut pvfs) = pvfs_arc.lock() else {
         log::error!("Project VFS mutex poisoned");
-        return;
+        return None;
     };
-    write_prefab_through_vfs(&mut pvfs, rel_path, &bytes);
+    write_prefab_through_vfs(&mut pvfs, rel_path, &bytes).then_some(left_out)
 }
 
-fn write_prefab_through_vfs(pvfs: &mut ProjectVfs, rel_fwd: &str, bytes: &[u8]) {
+/// Writes the prefab `bytes` at `rel_fwd` through the project, then reindexes.
+///
+/// Returns whether the file was written.
+fn write_prefab_through_vfs(pvfs: &mut ProjectVfs, rel_fwd: &str, bytes: &[u8]) -> bool {
     if let Err(e) = pvfs.write_asset(std::path::Path::new(rel_fwd), bytes) {
         log::error!("Failed to write prefab '{}': {:#}", rel_fwd, e);
-        return;
+        return false;
     }
     if let Err(e) = pvfs.reindex() {
         log::warn!("Prefab saved but index rebuild failed: {:#}", e);
     }
     log::info!("Prefab saved to '{}' ({} bytes)", rel_fwd, bytes.len());
+    true
+}
+
+/// Asks to report what a prefab save left out, as the `Save` problems, and
+/// logs it; a prefab that did not reach disk reports nothing.
+fn report_prefab_save(
+    editor_state: &Arc<Mutex<EditorState>>,
+    world: &GameWorld,
+    left_out: Option<Vec<ReportEntry>>,
+) {
+    let Some(left_out) = left_out else {
+        return;
+    };
+    for entry in &left_out {
+        log::warn!("prefab save: {entry}");
+    }
+    if let Ok(mut state) = editor_state.lock() {
+        super::scene::report_save(&mut state, world, &left_out);
+    }
 }
 
 /// Takes the queued [`EditorRequest::SpawnPrefab`]s: spawns each prefab as a linked instance.
@@ -314,8 +348,8 @@ fn apply_one_to_prefab(
         },
         PrefabApplyScope::Instance => PrefabApply::Instance,
     };
-    let record = match apply_to_prefab(inner, &instance, &what, &prefabs) {
-        Ok(record) => record,
+    let (record, left_out) = match apply_to_prefab_reporting(inner, &instance, &what, &prefabs) {
+        Ok(applied) => applied,
         Err(e) => {
             log::error!("Failed to apply to the prefab: {e}");
             return;
@@ -352,9 +386,11 @@ fn apply_one_to_prefab(
         log::error!("Apply to prefab: the prefab's file is not in the project index");
         return;
     };
-    if let Ok(mut pvfs) = pvfs_arc.lock() {
-        write_prefab_through_vfs(&mut pvfs, &rel, &bytes);
-    }
+    let written = pvfs_arc
+        .lock()
+        .is_ok_and(|mut pvfs| write_prefab_through_vfs(&mut pvfs, &rel, &bytes));
+    // What the prefab could not take is the apply's report, as a save's.
+    report_prefab_save(editor_state, world, written.then_some(left_out));
 
     let edits = rebased_instances(inner, &before, &prefabs);
     if let Ok(mut state) = editor_state.lock() {

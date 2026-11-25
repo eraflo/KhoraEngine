@@ -28,7 +28,10 @@ pub enum ProceduralMeshKind {
     Plane,
 }
 
-/// An authored reference to a mesh: the only form a mesh is saved in.
+/// A reference to a mesh: the only form a mesh is saved in.
+///
+/// A mesh made in code ([`Made`](Self::Made)) is the exception: no file holds
+/// it, so a scene or a game save leaves its reference out.
 ///
 /// A resolver `DataSystem` (in `khora-io`) turns it into a `HandleComponent<Mesh>`,
 /// and again whenever its [`uuid`](Self::uuid) differs from the handle's.
@@ -47,6 +50,11 @@ pub enum MeshRef {
     },
     /// An imported mesh (glTF, OBJ) in the VFS, by its stable UUID.
     Asset(AssetUUID),
+    /// A mesh built in code, whose only copy is the asset store's entry under this UUID.
+    ///
+    /// A scene or a game save leaves it out and reports it not saved; a
+    /// snapshot, read back in the same session, keeps it.
+    Made(AssetUUID),
 }
 
 impl crate::ecs::Component for MeshRef {}
@@ -76,6 +84,7 @@ impl MeshRef {
         match self {
             Self::Procedural { uuid, .. } => *uuid,
             Self::Asset(uuid) => *uuid,
+            Self::Made(uuid) => *uuid,
         }
     }
 
@@ -90,11 +99,15 @@ impl From<SerializableMeshRef> for MeshRef {
         match on_disk {
             SerializableMeshRef::Procedural { kind, params } => Self::procedural(kind, params),
             SerializableMeshRef::Asset(uuid) => Self::Asset(uuid),
+            SerializableMeshRef::Made(uuid) => Self::Made(uuid),
         }
     }
 }
 
 /// The saved form of a [`MeshRef`]: a procedural UUID is left out, recomputed on load.
+///
+/// `Made` is written only by a snapshot and the inspector: a scene or a game
+/// save leaves a mesh made in code out (see [`is_made`]).
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename = "MeshRef")]
 enum SerializableMeshRef {
@@ -103,6 +116,7 @@ enum SerializableMeshRef {
         params: [f32; 4],
     },
     Asset(AssetUUID),
+    Made(AssetUUID),
 }
 
 impl From<&MeshRef> for SerializableMeshRef {
@@ -113,6 +127,7 @@ impl From<&MeshRef> for SerializableMeshRef {
                 params: *params,
             },
             MeshRef::Asset(uuid) => Self::Asset(*uuid),
+            MeshRef::Made(uuid) => Self::Made(*uuid),
         }
     }
 }
@@ -125,6 +140,15 @@ fn mesh_ref_to_record(
 ) -> Result<crate::scene::record::Record, crate::scene::record::RecordError> {
     let mesh_ref = <MeshRef as crate::ecs::Component>::clone_from_column(column, row);
     crate::scene::record::to_record(&SerializableMeshRef::from(&mesh_ref), references)
+}
+
+/// Returns whether a page row's `MeshRef` names a mesh made in code, which
+/// only the session's asset store holds.
+fn is_made(column: &dyn crate::ecs::AnyVec, row: usize) -> bool {
+    matches!(
+        <MeshRef as crate::ecs::Component>::clone_from_column(column, row),
+        MeshRef::Made(_)
+    )
 }
 
 /// Returns the schema of a mesh reference's positional form, traced once.
@@ -220,6 +244,7 @@ inventory::submit! {
         script_type: |_| None,
         script_default: || None,
         check: None,
+        session_only: Some(is_made),
     }
 }
 
@@ -279,5 +304,12 @@ mod tests {
 
         let restored = dst.get::<MeshRef>(new_entity).expect("mesh ref restored");
         assert_eq!(restored, &MeshRef::Asset(uuid));
+    }
+
+    /// A mesh made in code is named by the uuid the store holds it under.
+    #[test]
+    fn a_made_reference_names_its_uuid() {
+        let uuid = AssetUUID::new();
+        assert_eq!(MeshRef::Made(uuid).uuid(), uuid);
     }
 }

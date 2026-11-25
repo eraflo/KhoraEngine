@@ -22,6 +22,7 @@ mod play_edits_of_declared_fields;
 mod prefab;
 mod prefab_apply;
 mod prefab_apply_of_declared_fields;
+mod save_problems;
 mod scene_loads;
 mod transport;
 mod writes_index_off_the_frame;
@@ -60,6 +61,18 @@ fn take_load_problems(
     (state.lock().expect("the editor state"))
         .take_requests(|request| match request {
             EditorRequest::ReportLoadProblems { problems } => Ok(problems),
+            other => Err(other),
+        })
+        .pop()
+}
+
+/// Takes the save problems the editor's state asks to report, the last asked, as the app reports them.
+fn take_save_problems(
+    state: &Arc<Mutex<EditorState>>,
+) -> Option<Vec<khora_sdk::khora_core::problems::Problem>> {
+    (state.lock().expect("the editor state"))
+        .take_requests(|request| match request {
+            EditorRequest::ReportSaveProblems { problems } => Ok(problems),
             other => Err(other),
         })
         .pop()

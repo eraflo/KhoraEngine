@@ -16,6 +16,7 @@
 //! floor.
 
 use khora_core::agent::gorna::StrategyId;
+use khora_core::asset::Material;
 use khora_core::gpu::GpuSetup;
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::io::TargetKey;
@@ -96,7 +97,7 @@ impl Lane for SimpleUnlitLane {
     /// Prices each mesh on the host; its triangles and the target's pixels,
     /// filled flat, on the device.
     fn cost(&self, _level: usize, inputs: &UnlitInputs<'_>) -> Cost {
-        let load = SceneLoad::of(inputs.render_world, &inputs.target);
+        let load = SceneLoad::of(inputs.render_world, inputs.assets, &inputs.target);
         Cost {
             time: PerDevice {
                 cpu: load.host_time(),
@@ -121,16 +122,13 @@ impl Lane for SimpleUnlitLane {
         let meshes = meshes.read().map_err(|_| LaneError::LockPoisoned {
             context: "the GPU meshes",
         })?;
+        let materials = inputs.assets.store::<Box<dyn Material>>();
+        let materials = materials.read().map_err(|_| LaneError::LockPoisoned {
+            context: "the materials",
+        })?;
         let device = out.scene.device();
         unlit
-            .record(
-                inputs.render_world,
-                &meshes,
-                device,
-                out.scene.encoder(),
-                &inputs.target,
-                inputs.clear_color.0,
-            )
+            .record(inputs, &meshes, &materials, device, out.scene.encoder())
             .map_err(|error| LaneError::ExecutionFailed(Box::new(error)))?;
         Ok(LaneReport {
             done: 1.0,

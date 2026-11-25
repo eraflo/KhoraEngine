@@ -1034,28 +1034,26 @@ impl Scene {
             index_count,
         };
         let uuid = AssetUUID::new();
-        let gpu_mesh = AssetHandle::new(GpuMesh {
-            vertex_buffer: buffers.vertex,
-            index_buffer: buffers.index,
-            index_count,
-            index_format: IndexFormat::Uint32,
-            primitive_topology: PrimitiveTopology::TriangleList,
-        });
         if uploaded {
+            let gpu_mesh = AssetHandle::new(GpuMesh {
+                vertex_buffer: buffers.vertex,
+                index_buffer: buffers.index,
+                index_count,
+                index_format: IndexFormat::Uint32,
+                primitive_topology: PrimitiveTopology::TriangleList,
+            });
             self.runtime
                 .resources
                 .get::<AssetStore>()
                 .expect("the scene's runtime holds the asset store")
                 .store::<GpuMesh>()
                 .write_recovered()
-                .insert(uuid, gpu_mesh.clone());
+                .insert(uuid, gpu_mesh);
         }
         self.render_world.meshes.push(ExtractedMesh {
             transform: AffineTransform::from_translation(at),
-            cpu_mesh_uuid: uuid,
-            gpu_mesh,
+            mesh: uuid,
             material: None,
-            gpu_material: None,
             mirrored: false,
         });
         buffers

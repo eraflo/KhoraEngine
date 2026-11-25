@@ -311,3 +311,38 @@ fn saving_an_instance_over_its_prefab_under_another_case_keeps_the_prefab_whole(
         "the turret prefab no longer spawns its root and barrel"
     );
 }
+
+/// **A prefab saved with a mesh made in code reports what it left out**, as a
+/// save problem on the entity holding it: the file holds no such mesh.
+#[test]
+fn saving_a_prefab_holding_a_mesh_made_in_code_reports_it_as_a_save_problem() {
+    let (turret, _) = turret_prefab();
+    let project = project("prefab-save-problems", &turret);
+    let mut world = GameWorld::new();
+    let made = world.spawn((
+        Transform::identity(),
+        Name::new("Made"),
+        khora_sdk::khora_data::ecs::MeshRef::Made(AssetUUID::new()),
+    ));
+    world
+        .inner_world_mut()
+        .mark_authored(made)
+        .expect("authored");
+    let state = Arc::new(Mutex::new(EditorState::default()));
+    state
+        .lock()
+        .expect("the editor state")
+        .push_request(EditorRequest::SaveAsPrefabAt {
+            entity: made,
+            path: "prefabs/made.kprefab".to_owned(),
+        });
+
+    save_queued_prefabs(Some(&project.vfs), &world, &state);
+
+    let problems = super::take_save_problems(&state).expect("the save reports its problems");
+    assert!(
+        problems.iter().any(|problem| problem.entity == Some(made)
+            && problem.component.as_deref() == Some("MeshRef")),
+        "the prefab save does not report the mesh made in code: {problems:#?}"
+    );
+}

@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A save holding a component the engine rebuilds rather than reads.
+//! Components a scene does not keep: one the engine rebuilds rather than
+//! reads, and a mesh made in code, which only the session holds.
 
-use khora_data::ecs::{Name, Parent, Transform};
+use khora_core::asset::AssetUUID;
+use khora_data::ecs::{MeshRef, Name, Parent, Transform};
 use khora_data::scene::record::ReportKind;
 
 use super::*;
@@ -55,5 +57,35 @@ fn a_recorded_derived_component_is_skipped_reported_and_rebuilt() {
                 && entry.component.as_deref() == Some("Children")),
         "the skipped copy is reported: {:?}",
         applied.report
+    );
+}
+
+/// A mesh made in code lives only in the session's asset store, so a scene
+/// record leaves its reference out; the entity is still recorded, with its
+/// other components.
+#[test]
+fn a_mesh_made_in_code_is_left_out_of_a_scene_record() {
+    let mut src = World::new();
+    let entity = src.spawn((
+        Transform::identity(),
+        Name::new("Made"),
+        MeshRef::Made(AssetUUID::new()),
+    ));
+    let id = src.mark_authored(entity).expect("authored");
+
+    let record = capture_world(&src).expect("captures");
+
+    assert!(
+        record.entities.contains(&id),
+        "the entity holding a mesh made in code is not recorded"
+    );
+    assert!(
+        slot_of(&record, id, "Name").is_some(),
+        "the entity's other components are not recorded"
+    );
+    assert_eq!(
+        slot_of(&record, id, "MeshRef"),
+        None,
+        "the record holds the reference to a mesh made in code"
     );
 }

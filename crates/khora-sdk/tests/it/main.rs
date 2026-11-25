@@ -34,6 +34,7 @@ mod game_and_machine_identity;
 mod game_saves;
 mod host_monitors;
 mod lane_agents_at_boot;
+mod meshes_made_in_code;
 mod overlay_families;
 mod overlay_host_views;
 mod pass_order;

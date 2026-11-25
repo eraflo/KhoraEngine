@@ -122,7 +122,7 @@ impl Lane for WireframeLane {
                 .render_world
                 .meshes
                 .iter()
-                .filter(|mesh| meshes.get(&mesh.cpu_mesh_uuid).is_some())
+                .filter(|mesh| meshes.get(&mesh.mesh).is_some())
                 .count()
         }) as u32
             * u32::from(draws);
@@ -310,7 +310,7 @@ fn push_models(
 ) -> Result<Vec<Draw>, khora_core::renderer::error::ResourceError> {
     let mut draws = Vec::with_capacity(render_world.meshes.len());
     for extracted in &render_world.meshes {
-        let Some(gpu_mesh) = meshes.get(&extracted.cpu_mesh_uuid) else {
+        let Some(gpu_mesh) = meshes.get(&extracted.mesh) else {
             continue;
         };
         let model = extracted.transform.to_matrix();

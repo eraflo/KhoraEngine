@@ -15,33 +15,28 @@
 //! [`RenderWorld`], the View of the scene the render lanes draw from, and the
 //! extracted meshes, lights and views it holds.
 
-use khora_core::asset::{AssetHandle, AssetUUID, Material};
+use khora_core::asset::AssetUUID;
 use khora_core::math::affine_transform::AffineTransform;
 use khora_core::math::Vec3;
-use khora_core::renderer::api::gpu_scene::GpuMesh;
-use khora_core::renderer::api::material::GpuMaterial;
 use khora_core::renderer::light::LightType;
 
-/// Flat, GPU-friendly representation of a single mesh to render.
+/// Flat representation of a single mesh to render, naming its assets by uuid.
+///
+/// The lanes look the uuids up in the asset store: a uuid with no resident
+/// copy draws nothing that frame.
 #[derive(Clone)]
 pub struct ExtractedMesh {
     /// World-space transform derived from `GlobalTransform`.
     pub transform: AffineTransform,
-    /// UUID of the loaded CPU mesh — useful for debugging or mapping.
-    pub cpu_mesh_uuid: AssetUUID,
-    /// Handle to the uploaded GPU mesh data.
-    pub gpu_mesh: AssetHandle<GpuMesh>,
-    /// The CPU material, `None` for the default material.
+    /// The uuid the entity's `MeshRef` names: the key of its CPU and GPU
+    /// copies in the asset store.
+    pub mesh: AssetUUID,
+    /// The uuid the entity's `MaterialRef` names, `None` when it has none.
     ///
-    /// Read by lanes that pick their pipeline by material type
-    /// (`SimpleUnlitLane`); the lit lanes read
-    /// [`gpu_material`](Self::gpu_material).
-    pub material: Option<AssetHandle<Box<dyn Material>>>,
-    /// The GPU material (uniforms, textures, group-2 bind group).
-    ///
-    /// `None` until it is uploaded, or when the entity has no resolved
-    /// material; the lit lanes then draw a default material.
-    pub gpu_material: Option<AssetHandle<GpuMaterial>>,
+    /// The lit lanes draw a mesh only with the GPU material stored under this
+    /// uuid: a mesh naming no material, or one not resident, is not drawn by
+    /// them. `SimpleUnlitLane` reads the CPU material stored under it.
+    pub material: Option<AssetUUID>,
     /// Whether [`transform`](Self::transform) mirrors the mesh (a negative
     /// determinant).
     ///

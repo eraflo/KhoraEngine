@@ -95,6 +95,7 @@ impl EngineApp for EditorApp {
             viewport_override: khora_sdk::khora_data::render::EditorViewportOverride::new(),
             project_vfs: None,
             asset_watch: Arc::new(khora_sdk::AssetWatch::default()),
+            asset_store: khora_sdk::khora_data::AssetStore::new(),
             mounted_scripts: None,
             opening: None,
             startup_hold: None,
@@ -207,6 +208,7 @@ impl EngineApp for EditorApp {
             &mut self.input,
             inputs,
             world,
+            &self.asset_store,
             &self.editor_state,
             &self.camera,
         );

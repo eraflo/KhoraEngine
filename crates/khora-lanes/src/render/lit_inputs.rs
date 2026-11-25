@@ -37,7 +37,7 @@ pub struct LitInputs<'f> {
     /// The shadow atlases and entries, when the shadows family drew them.
     #[deck]
     pub shadows: Option<&'f ShadowFrame>,
-    /// The store holding the meshes on the GPU.
+    /// The store holding the meshes and the materials on the GPU, by uuid.
     #[resource]
     pub assets: &'f AssetStore,
     /// The image-based lighting bake.

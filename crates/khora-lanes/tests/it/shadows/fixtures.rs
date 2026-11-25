@@ -688,16 +688,14 @@ impl Scene {
         assets
             .store::<GpuMesh>()
             .write_recovered()
-            .insert(uuid, gpu_mesh.clone());
+            .insert(uuid, gpu_mesh);
         let mut runtime = Runtime::new();
         runtime.resources.insert(assets);
         let mut render_world = RenderWorld::new();
         render_world.meshes.push(ExtractedMesh {
             transform: AffineTransform::IDENTITY,
-            cpu_mesh_uuid: uuid,
-            gpu_mesh,
+            mesh: uuid,
             material: None,
-            gpu_material: None,
             mirrored: false,
         });
         Self {

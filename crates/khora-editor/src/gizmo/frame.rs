@@ -21,13 +21,13 @@ use super::selection::{
 };
 use khora_sdk::editor_ui::{EditorState, GizmoLineInstance};
 use khora_sdk::khora_core::math::{Mat4, Vec3};
-use khora_sdk::khora_core::renderer::api::gpu_scene::mesh::Mesh;
 use khora_sdk::khora_core::renderer::api::resource::ViewInfo;
 use khora_sdk::khora_core::renderer::light::LightType;
 use khora_sdk::khora_data::render::camera_view_matrix;
-use khora_sdk::prelude::ecs::{AudioSource, Camera, EntityId, GlobalTransform, Light, Transform};
+use khora_sdk::prelude::ecs::{
+    AudioSource, Camera, EntityId, GlobalTransform, Light, MeshRef, Transform,
+};
 use khora_sdk::GameWorld;
-use khora_sdk::HandleComponent;
 
 /// Everything a manipulator needs to know about the current selection.
 pub struct SelectionFrame {
@@ -128,10 +128,7 @@ pub fn collect_gizmo_lines(
             }
         } else if world.get_component::<AudioSource>(entity_id).is_some() {
             GizmoKind::Audio
-        } else if world
-            .get_component::<HandleComponent<Mesh>>(entity_id)
-            .is_some()
-        {
+        } else if world.get_component::<MeshRef>(entity_id).is_some() {
             GizmoKind::Mesh
         } else {
             GizmoKind::Empty

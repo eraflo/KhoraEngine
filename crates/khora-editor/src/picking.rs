@@ -19,8 +19,13 @@
 
 use khora_sdk::khora_core::math::{Aabb, Mat4, Ray, Vec3};
 use khora_sdk::khora_core::renderer::api::gpu_scene::mesh::Mesh;
-use khora_sdk::prelude::ecs::{AudioSource, Camera, EntityId, GlobalTransform, Light, Transform};
-use khora_sdk::{GameWorld, HandleComponent};
+use khora_sdk::khora_core::sync::RwLockExt;
+use khora_sdk::khora_data::assets::Assets;
+use khora_sdk::khora_data::AssetStore;
+use khora_sdk::prelude::ecs::{
+    AudioSource, Camera, EntityId, GlobalTransform, Light, MeshRef, Transform,
+};
+use khora_sdk::GameWorld;
 
 /// Half-extent of the clickable box given to entities that have no mesh.
 ///
@@ -29,17 +34,22 @@ use khora_sdk::{GameWorld, HandleComponent};
 const GIZMO_PICK_HALF_EXTENT: f32 = 0.35;
 
 /// Returns the nearest entity whose bounds the ray enters, if any.
-pub fn pick_entity(world: &GameWorld, ray: &Ray) -> Option<EntityId> {
+///
+/// An entity's bounds are those of the mesh its `MeshRef` names in `assets`,
+/// or a small box when it names none or that mesh is not loaded.
+pub fn pick_entity(world: &GameWorld, assets: &AssetStore, ray: &Ray) -> Option<EntityId> {
     // Reciprocal once, not per candidate — the slab test takes the inverse
     // direction so it can multiply rather than divide.
     let inv_dir = ray.inv_direction();
+    let meshes = assets.store::<Mesh>();
+    let meshes = meshes.read_recovered();
 
     let mut best: Option<(f32, EntityId)> = None;
     for entity in world.iter_entities() {
         let Some(world_matrix) = entity_matrix(world, entity) else {
             continue;
         };
-        let local = local_bounds(world, entity);
+        let local = local_bounds(world, &meshes, entity);
         let bounds = local.transform(&world_matrix);
         if !bounds.is_valid() {
             continue;
@@ -74,13 +84,14 @@ fn entity_matrix(world: &GameWorld, entity: EntityId) -> Option<Mat4> {
     )
 }
 
-/// Returns the local-space bounds for `entity`: the mesh's own extent when it
-/// has one, a small box otherwise.
-fn local_bounds(world: &GameWorld, entity: EntityId) -> Aabb {
-    if let Some(mesh) = world.get_component::<HandleComponent<Mesh>>(entity) {
-        if let Some(bounds) = Aabb::from_points(&mesh.handle.positions) {
-            return bounds;
-        }
+/// Returns the local-space bounds for `entity`: the extent of the mesh its
+/// `MeshRef` names in `meshes` when it is loaded, a small box otherwise.
+fn local_bounds(world: &GameWorld, meshes: &Assets<Mesh>, entity: EntityId) -> Aabb {
+    let mesh = world
+        .get_component::<MeshRef>(entity)
+        .and_then(|mesh_ref| meshes.get(&mesh_ref.uuid()));
+    if let Some(bounds) = mesh.and_then(|mesh| Aabb::from_points(&mesh.positions)) {
+        return bounds;
     }
     // Lights, cameras, audio sources and empties are drawn as gizmos; give them
     // a grabbable box so the viewport can select them at all. Empties get one
@@ -101,7 +112,11 @@ fn local_bounds(world: &GameWorld, entity: EntityId) -> Aabb {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khora_sdk::prelude::ecs::Name;
+    use khora_sdk::khora_core::asset::{AssetHandle, AssetUUID};
+    use khora_sdk::khora_core::renderer::api::pipeline::PrimitiveTopology;
+    use khora_sdk::khora_core::sync::RwLockExt;
+    use khora_sdk::khora_data::AssetStore;
+    use khora_sdk::prelude::ecs::{MeshRef, Name};
 
     fn ray_from(origin: Vec3, direction: Vec3) -> Ray {
         Ray::new(origin, direction)
@@ -127,6 +142,7 @@ mod tests {
         let entity = spawn_at(&mut world, Vec3::ZERO, "target");
         let hit = pick_entity(
             &world,
+            &AssetStore::new(),
             &ray_from(Vec3::new(0.0, 0.0, 5.0), Vec3::new(0.0, 0.0, -1.0)),
         );
         assert_eq!(hit, Some(entity));
@@ -140,6 +156,7 @@ mod tests {
         spawn_at(&mut world, Vec3::ZERO, "behind");
         let hit = pick_entity(
             &world,
+            &AssetStore::new(),
             &ray_from(Vec3::new(0.0, 0.0, 5.0), Vec3::new(0.0, 0.0, 1.0)),
         );
         assert_eq!(hit, None);
@@ -153,6 +170,7 @@ mod tests {
         spawn_at(&mut world, Vec3::ZERO, "target");
         let hit = pick_entity(
             &world,
+            &AssetStore::new(),
             &ray_from(Vec3::new(50.0, 50.0, 5.0), Vec3::new(0.0, 0.0, -1.0)),
         );
         assert_eq!(hit, None);
@@ -167,6 +185,7 @@ mod tests {
         let near = spawn_at(&mut world, Vec3::new(0.0, 0.0, 0.0), "near");
         let hit = pick_entity(
             &world,
+            &AssetStore::new(),
             &ray_from(Vec3::new(0.0, 0.0, 5.0), Vec3::new(0.0, 0.0, -1.0)),
         );
         assert_eq!(hit, Some(near), "expected the near entity, not {far:?}");
@@ -184,14 +203,87 @@ mod tests {
 
         let miss = pick_entity(
             &world,
+            &AssetStore::new(),
             &ray_from(Vec3::new(0.0, 0.0, 5.0), Vec3::new(0.0, 0.0, -1.0)),
         );
         assert_eq!(miss, None, "nothing sits at the origin any more");
 
         let hit = pick_entity(
             &world,
+            &AssetStore::new(),
             &ray_from(Vec3::new(3.0, 0.0, 5.0), Vec3::new(0.0, 0.0, -1.0)),
         );
         assert_eq!(hit, Some(entity));
+    }
+
+    /// Returns a mesh spanning `half_extent` on every axis around its origin.
+    fn mesh_of_half_extent(half_extent: f32) -> Mesh {
+        let positions = vec![Vec3::ONE * -half_extent, Vec3::ONE * half_extent];
+        let bounding_box = Aabb::from_points(&positions).expect("two points bound a box");
+        Mesh {
+            positions,
+            normals: None,
+            tex_coords: None,
+            tangents: None,
+            colors: None,
+            indices: None,
+            primitive_type: PrimitiveTopology::TriangleList,
+            bounding_box,
+        }
+    }
+
+    /// An entity is picked within the bounds of the mesh its reference names,
+    /// read from the asset store: the entity holds no loaded mesh of its own.
+    #[test]
+    fn picking_finds_an_entity_by_its_mesh_reference() {
+        let mut world = GameWorld::new();
+        let assets = AssetStore::new();
+        let mesh = MeshRef::Asset(AssetUUID::new());
+        assets
+            .store::<Mesh>()
+            .write_recovered()
+            .insert(mesh.uuid(), AssetHandle::new(mesh_of_half_extent(3.0)));
+        let entity = world.spawn((
+            Transform::from_translation(Vec3::ZERO),
+            GlobalTransform::new(Mat4::IDENTITY),
+            mesh,
+        ));
+
+        // Two units off the origin: inside the mesh's bounds, outside the
+        // small box of an entity with no mesh.
+        let hit = pick_entity(
+            &world,
+            &assets,
+            &ray_from(Vec3::new(2.0, 0.0, 5.0), Vec3::new(0.0, 0.0, -1.0)),
+        );
+
+        assert_eq!(hit, Some(entity), "the ray enters the mesh's bounds");
+    }
+
+    /// An entity whose mesh is not loaded yet is picked within the small box
+    /// of an entity with no mesh: clickable at its origin, not beyond.
+    #[test]
+    fn an_entity_whose_mesh_is_not_loaded_is_picked_by_the_small_box() {
+        let mut world = GameWorld::new();
+        let assets = AssetStore::new();
+        let entity = world.spawn((
+            Transform::from_translation(Vec3::ZERO),
+            GlobalTransform::new(Mat4::IDENTITY),
+            MeshRef::Asset(AssetUUID::new()),
+        ));
+
+        let at_origin = pick_entity(
+            &world,
+            &assets,
+            &ray_from(Vec3::new(0.0, 0.0, 5.0), Vec3::new(0.0, 0.0, -1.0)),
+        );
+        let off_origin = pick_entity(
+            &world,
+            &assets,
+            &ray_from(Vec3::new(2.0, 0.0, 5.0), Vec3::new(0.0, 0.0, -1.0)),
+        );
+
+        assert_eq!(at_origin, Some(entity), "the small box is clickable");
+        assert_eq!(off_origin, None, "nothing extends past the small box");
     }
 }

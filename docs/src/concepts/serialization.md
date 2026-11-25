@@ -76,10 +76,10 @@ and what happened (`ReportKind`):
 |---|---|
 | `Renamed { from }` | the save used an older name, listed in `formerly` |
 | `Defaulted` | the save predates the field; it took its default |
-| `Dropped` | the code no longer has the field, or it holds a value of another type; its value is gone |
+| `Dropped` | the code no longer has the field, or it holds a value of another type; its value is gone. On a whole component (no path): a value only a session holds, read from a file — the entity loads without it (see [What is not saved](#what-is-not-saved)) |
 | `Widened` | a number read at another width, without loss |
 | `Retired` | a component type declared retired; skipped |
-| `NotSaved` | a component the engine derives or keeps while running; skipped, rebuilt |
+| `NotSaved` | a component no save keeps: on a load, one the engine derives or keeps while running, skipped and rebuilt; on a save, a value only the session holds, left out (see [What is not saved](#what-is-not-saved)) |
 | `DeadReference` | a reference to an entity the file does not hold |
 | `RemovedFromScene` | a game save changed an entity its scene no longer has |
 | `Unusable { message }` | a value the component's check rejects; kept, and reported |
@@ -150,6 +150,37 @@ A component's **provenance** decides where it is written:
 Derived values and plain runtime state are rebuilt rather than stored; a
 resumable component is what a [game save](./saves.md#what-a-save-keeps-that-a-scene-never-does)
 needs to resume a game instead of restarting it.
+
+### What is not saved
+
+Provenance decides by component. One value of a saved component can still be
+out of reach of every file: a **mesh made in code** (`GameWorld::add_mesh`)
+lives only in the session's asset store, and its entity names it with
+`MeshRef::Made(uuid)`. Writing that uuid down would save a reference no load
+could resolve. Such a value is **session-only**: its registration says so, row
+by row (`ComponentRegistration::session_only`), so the save code knows no
+component by name.
+
+| Document | A session-only value |
+|---|---|
+| Scene (`save_world`; `save_world_reporting` returns the report) | left out: the entity is saved without it, reported `NotSaved` on that entity |
+| Game save (`save_game`; `save_game_reporting`) | left out, reported, as from a scene |
+| Prefab (`capture_subtree`, `serialize_prefab`, `serialize_subtree`; each has a `_reporting` form) | left out, reported, on the member holding it |
+| Snapshot (`FastestLoad`, Play/Stop) | kept: read back in the same session, where the store still holds the mesh |
+
+Every save that leaves a value out says so. Each reporting form returns the
+entries beside the file; the plain form returns the file alone, and
+`GameWorld::save_game` logs the entries it drops. The editor puts what its last
+save of a scene or a prefab left out in the Problems tab, under its own source
+(`ProblemSource::Save`), on the entity that holds it; a save that leaves
+nothing out clears the list.
+
+The other way, a file that holds a session-only value anyway (written by hand:
+no save writes one) is refused it. A scene or a game-save load drops that
+component from its entity, places the entity without it, and reports it
+`Dropped`; the entity's other components, and its page neighbours, load as
+written. A snapshot keeps it: it is the same-build cache of the session that
+wrote it.
 
 ## Atomic loading
 

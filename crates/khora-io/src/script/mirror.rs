@@ -786,6 +786,7 @@ mod tests {
             },
             script_default: || None,
             check: None,
+            session_only: None,
         };
 
         let mirrored = declaration(&registration);

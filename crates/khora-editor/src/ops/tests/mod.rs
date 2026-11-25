@@ -347,6 +347,35 @@ fn duplicate_entity_copies_authored_components() {
     assert!(tag.contains("enemy") && tag.contains("spawner"));
 }
 
+/// A duplicate is a copy within the session: it keeps a mesh made in code,
+/// whose only copy is the session's asset store, naming the same mesh.
+#[test]
+fn duplicate_entity_keeps_a_mesh_made_in_code() {
+    let mut world = GameWorld::new();
+    let mut state = EditorState::default();
+    let made = khora_sdk::khora_data::ecs::MeshRef::Made(AssetUUID::new());
+    let source = world.spawn((
+        Transform::identity(),
+        GlobalTransform::identity(),
+        Name::new("Made"),
+        made.clone(),
+    ));
+
+    duplicate_entity(&mut world, source, &mut state, &NoPrefabs);
+    let copy = *state
+        .selection
+        .iter()
+        .next()
+        .expect("the copy becomes the selection");
+
+    assert_ne!(copy, source, "duplicate must be a distinct entity");
+    assert_eq!(
+        world.get_component::<khora_sdk::khora_data::ecs::MeshRef>(copy),
+        Some(&made),
+        "the copy lost the mesh made in code"
+    );
+}
+
 /// Duplicating a parent must rebuild its subtree rather than copy the
 /// `Children` list verbatim: a cloned list would hold the *source's* entity
 /// ids, so the copy would claim the original's children and both would

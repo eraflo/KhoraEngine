@@ -19,18 +19,18 @@ use khora_core::asset::{AssetHandle, AssetUUID};
 use khora_core::math::affine_transform::AffineTransform;
 use khora_core::math::{Mat4, Vec3};
 use khora_core::renderer::api::command::BindGroupId;
+use khora_core::renderer::api::gpu_scene::GpuMesh;
+use khora_core::renderer::api::material::GpuMaterial;
 use khora_core::renderer::api::shader::ShaderVariantKey;
+use khora_core::sync::RwLockExt;
+use khora_data::AssetStore;
 
 use super::fixtures::{RecordedPass, Renderer, Scene, Surface, LIT_LANES};
 
 /// The material bind group of the scene's `index`-th mesh: what tells its
 /// draw apart in a pass.
 fn material_of(scene: &Scene, index: usize) -> BindGroupId {
-    scene.render_world.meshes[index]
-        .gpu_material
-        .as_ref()
-        .expect("the mesh has a material")
-        .bind_group
+    stored_material(scene, index).bind_group
 }
 
 /// The materials a pass bound, in the order it drew.
@@ -54,10 +54,15 @@ fn record(renderer: &mut Renderer, scene: &Scene) -> (Vec<RecordedPass>, Vec<Rec
 
 /// Gives the scene's `index`-th mesh's material the shader variant `variant`.
 fn set_variant(scene: &mut Scene, index: usize, variant: ShaderVariantKey) {
-    let mesh = &mut scene.render_world.meshes[index];
-    let mut material = (**mesh.gpu_material.as_ref().expect("a material")).clone();
+    let uuid = scene.render_world.meshes[index]
+        .material
+        .expect("the mesh names a material");
+    let mut material = stored_material(scene, index);
     material.variant = variant;
-    mesh.gpu_material = Some(AssetHandle::new(material));
+    store(scene)
+        .store::<GpuMaterial>()
+        .write_recovered()
+        .insert(uuid, AssetHandle::new(material));
 }
 
 /// **The blended meshes are drawn farthest from the camera first**, whatever
@@ -126,8 +131,8 @@ fn the_lit_lanes_leave_out_what_they_cannot_draw() {
             .with_mesh(Surface::OPAQUE, 4.0)
             .with_mesh(Surface::OPAQUE, 5.0);
         let kept = material_of(&scene, 3);
-        scene.render_world.meshes[0].cpu_mesh_uuid = AssetUUID::new();
-        scene.render_world.meshes[1].gpu_material = None;
+        scene.render_world.meshes[0].mesh = AssetUUID::new();
+        scene.render_world.meshes[1].material = None;
         scene.render_world.meshes[2].transform =
             AffineTransform(Mat4::from_scale(Vec3::new(1.0, 0.0, 1.0)));
 
@@ -178,6 +183,122 @@ fn the_lit_lanes_ask_one_pipeline_per_variant() {
             renderer.pipelines.lane_pipelines().len(),
             asked,
             "{which:?}: nothing asked again"
+        );
+    }
+}
+
+/// A bind group no fixture makes: what tells a material the test stored apart.
+const STORED_BIND_GROUP: BindGroupId = BindGroupId(77_000_001);
+
+/// The asset store the scene's lanes read their GPU meshes and materials from.
+fn store(scene: &Scene) -> AssetStore {
+    scene
+        .runtime
+        .resources
+        .get::<AssetStore>()
+        .expect("the scene's runtime holds its asset store")
+        .clone()
+}
+
+/// The GPU material stored under the material uuid of the scene's
+/// `index`-th mesh.
+fn stored_material(scene: &Scene, index: usize) -> GpuMaterial {
+    let uuid = scene.render_world.meshes[index]
+        .material
+        .expect("the mesh names a material");
+    let materials = store(scene).store::<GpuMaterial>();
+    let materials = materials.read_recovered();
+    let material = materials
+        .get(&uuid)
+        .expect("the mesh's material is resident");
+    (**material).clone()
+}
+
+/// **A mesh whose uuid names no resident GPU mesh draws nothing that
+/// frame**, without a panic; the other meshes still draw.
+#[test]
+fn a_mesh_not_yet_resident_is_skipped_by_the_lit_draws() {
+    for which in LIT_LANES {
+        let mut renderer = Renderer::new(which);
+        let scene = Scene::new()
+            .with_mesh(Surface::OPAQUE, 2.0)
+            .with_mesh(Surface::OPAQUE, 3.0);
+        let kept = stored_material(&scene, 1).bind_group;
+        let gone = scene.render_world.meshes[0].mesh;
+        store(&scene)
+            .store::<GpuMesh>()
+            .write_recovered()
+            .remove(&gone)
+            .expect("the scene uploaded the mesh");
+
+        let (passes, _) = record(&mut renderer, &scene);
+
+        assert_eq!(passes.len(), 1, "{which:?}: one scene pass");
+        assert_eq!(
+            drawn(&passes[0]),
+            [kept],
+            "{which:?}: only the resident mesh"
+        );
+    }
+}
+
+/// **A mesh draws with the GPU material stored under its material uuid**:
+/// its bind group and its blending are that material's.
+#[test]
+fn a_material_is_looked_up_by_uuid_in_the_lit_draws() {
+    for which in LIT_LANES {
+        let mut renderer = Renderer::new(which);
+        let mut scene = Scene::new()
+            .with_mesh(Surface::OPAQUE, 2.0)
+            .with_mesh(Surface::OPAQUE, 3.0);
+        let mut material = stored_material(&scene, 0);
+        material.bind_group = STORED_BIND_GROUP;
+        material.blend = true;
+        let uuid = AssetUUID::new();
+        store(&scene)
+            .store::<GpuMaterial>()
+            .write_recovered()
+            .insert(uuid, AssetHandle::new(material));
+        for mesh in &mut scene.render_world.meshes {
+            mesh.material = Some(uuid);
+        }
+
+        let (passes, transparent) = record(&mut renderer, &scene);
+
+        assert!(
+            drawn(&passes[0]).is_empty(),
+            "{which:?}: a blended material is not drawn in the scene pass"
+        );
+        assert_eq!(transparent.len(), 1, "{which:?}: one transparent pass");
+        assert_eq!(
+            drawn(&transparent[0]),
+            [STORED_BIND_GROUP, STORED_BIND_GROUP],
+            "{which:?}: both meshes draw the material stored under their uuid"
+        );
+    }
+}
+
+/// **A mesh with no resident GPU material is not drawn by the lit lanes**:
+/// neither one naming no material, nor one naming a material not uploaded.
+#[test]
+fn an_entity_without_a_resident_material_is_not_drawn_by_the_lit_draws() {
+    for which in LIT_LANES {
+        let mut renderer = Renderer::new(which);
+        let mut scene = Scene::new()
+            .with_mesh(Surface::OPAQUE, 2.0)
+            .with_mesh(Surface::OPAQUE, 3.0)
+            .with_mesh(Surface::OPAQUE, 4.0);
+        let kept = stored_material(&scene, 2).bind_group;
+        scene.render_world.meshes[0].material = None;
+        scene.render_world.meshes[1].material = Some(AssetUUID::new());
+
+        let (passes, _) = record(&mut renderer, &scene);
+
+        assert_eq!(passes.len(), 1, "{which:?}: one scene pass");
+        assert_eq!(
+            drawn(&passes[0]),
+            [kept],
+            "{which:?}: only the mesh whose material is resident"
         );
     }
 }

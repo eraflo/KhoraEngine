@@ -23,8 +23,8 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::PersistentId;
 
 use super::super::apply::{apply, Identity, LoadFailure};
-use super::super::capture::{capture_subtree, SaveError};
-use super::super::record::{EntityRef, Record, VariantPayload};
+use super::super::capture::{capture_subtree_reporting, SaveError};
+use super::super::record::{EntityRef, Record, ReportEntry, VariantPayload};
 use super::super::save::scene_as_read;
 use super::super::scene_record::SceneRecord;
 use super::rekey::{members, remap_value};
@@ -155,6 +155,26 @@ pub fn apply_to_prefab(
     what: &PrefabApply,
     prefabs: &dyn PrefabSource,
 ) -> Result<SceneRecord, SaveError> {
+    apply_to_prefab_reporting(world, instance, what, prefabs).map(|(record, _)| record)
+}
+
+/// Returns `instance`'s prefab as [`apply_to_prefab`] does, and what the apply left out.
+///
+/// A member's value only the session holds (a mesh made in code) cannot go
+/// into a prefab file: applying the whole instance keeps what the prefab held
+/// for that component, and reports it
+/// [`ReportKind::NotSaved`](super::super::record::ReportKind::NotSaved) on the
+/// member, by its live id.
+///
+/// # Errors
+/// As [`apply_to_prefab`]; also when a component or field applied alone holds
+/// a value only the session holds.
+pub fn apply_to_prefab_reporting(
+    world: &World,
+    instance: &InstanceOf,
+    what: &PrefabApply,
+    prefabs: &dyn PrefabSource,
+) -> Result<(SceneRecord, Vec<ReportEntry>), SaveError> {
     let unread = |failure: LoadFailure| SaveError::Prefab(failure.message);
     let prefabs = ReadOnce::new(prefabs);
     let root = world
@@ -185,10 +205,25 @@ pub fn apply_to_prefab(
             .collect();
     let in_prefab: HashSet<PersistentId> = local.entities.iter().copied().collect();
 
+    // A value only the session holds is known by what the capture left out:
+    // the member holds it, and no file can.
+    let (live, left_out) = capture_subtree_reporting(world, instance.root)?;
+    let session_only = |live: PersistentId, component: &str| {
+        left_out.iter().any(|entry| {
+            entry.entity == Some(live) && entry.component.as_deref() == Some(component)
+        })
+    };
+    let only_in_session = |component: &str| {
+        SaveError::Prefab(format!(
+            "the member's `{component}` lives only in this session (a value made in code): \
+             a prefab cannot hold it"
+        ))
+    };
+    let mut reported = Vec::new();
+
     // The live values, re-keyed into the prefab's ids. A reference to an
     // entity that is no member names none — decided on the live ids, since a
     // scene entity may share an id with one of the prefab's own.
-    let live = capture_subtree(world, instance.root)?;
     let members_live: HashSet<PersistentId> = to_local.keys().copied().collect();
     let mut live_rows = rows_of(&live);
     for components in live_rows.values_mut() {
@@ -231,6 +266,9 @@ pub fn apply_to_prefab(
             path,
         } => {
             let (live, local_id) = member_of(*entity)?;
+            if session_only(live, component) {
+                return Err(only_in_session(component));
+            }
             let value = live_component(&live_rows, live, component)?;
             hangs_inside(component, &value)?;
             let target = rows.entry(local_id).or_default();
@@ -241,6 +279,9 @@ pub fn apply_to_prefab(
         }
         PrefabApply::Component { entity, component } => {
             let (live, local_id) = member_of(*entity)?;
+            if session_only(live, component) {
+                return Err(only_in_session(component));
+            }
             let value = live_component(&live_rows, live, component)?;
             hangs_inside(component, &value)?;
             set_component(rows.entry(local_id).or_default(), component, value);
@@ -265,10 +306,16 @@ pub fn apply_to_prefab(
                     .iter()
                     .find(|(name, _)| name == "Transform")
                     .map(|(_, value)| value.clone());
+                // A value only the session holds is not the member's to
+                // write: the prefab keeps its own, and the apply says so.
+                for entry in left_out.iter().filter(|entry| entry.entity == Some(*live)) {
+                    reported.push(entry.clone());
+                }
                 target.retain(|(name, _)| {
                     applied.iter().any(|(kept, _)| kept == name)
                         || name == "Parent"
                         || (is_root && name == "Transform")
+                        || session_only(*live, name)
                 });
                 for (name, mut value) in applied {
                     if is_root && name == "Transform" {
@@ -291,13 +338,14 @@ pub fn apply_to_prefab(
     }
 
     let written = record_from(local.entities.clone(), rows, &[&local, &live]);
-    collapse(
+    let record = collapse(
         &written,
         &Except {
             source: &prefabs,
             written: instance.prefab,
         },
-    )
+    )?;
+    Ok((record, reported))
 }
 
 /// Returns whether `value` holds, anywhere in it, a reference to no entity.

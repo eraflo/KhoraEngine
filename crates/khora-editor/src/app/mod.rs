@@ -81,6 +81,9 @@ pub struct EditorApp {
     /// The engine's watch over asset trees, which the project's VFS reads its
     /// changes from beside the script and shader pumps.
     asset_watch: Arc<khora_sdk::AssetWatch>,
+    /// The engine's store of loaded assets, by uuid: where a viewport click
+    /// reads the bounds of the mesh an entity references.
+    asset_store: khora_sdk::khora_data::AssetStore,
     /// The assets root whose scripts are mounted: the open project's, once
     /// [`project_scripts::follow_open_project`](crate::project_scripts) caught up.
     mounted_scripts: Option<std::path::PathBuf>,
@@ -140,6 +143,13 @@ impl EditorApp {
             .cloned()
         {
             self.asset_watch = watch;
+        }
+        if let Some(store) = runtime
+            .resources
+            .get::<khora_sdk::khora_data::AssetStore>()
+            .cloned()
+        {
+            self.asset_store = store;
         }
         self.problems = runtime
             .resources
@@ -267,6 +277,13 @@ impl EditorApp {
             });
             for load in loads {
                 problems.report(khora_sdk::khora_core::problems::ProblemSource::Load, load);
+            }
+            let saves = state.take_requests(|request| match request {
+                EditorRequest::ReportSaveProblems { problems } => Ok(problems),
+                other => Err(other),
+            });
+            for save in saves {
+                problems.report(khora_sdk::khora_core::problems::ProblemSource::Save, save);
             }
             let generation = problems.generation();
             if generation != state.problems_generation {

@@ -22,6 +22,7 @@ use khora_sdk::khora_core::asset::asset_key;
 use khora_sdk::khora_core::problems::ProblemSource;
 use khora_sdk::khora_core::problems::{Problem, ProblemSeverity};
 use khora_sdk::khora_data::scene::loading::{SceneFetch, SceneSource};
+use khora_sdk::khora_data::scene::record::ReportEntry;
 use khora_sdk::khora_data::scene::{NoPrefabs, PrefabSource};
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::prelude::math::{LinearRgba, Vec3};
@@ -67,6 +68,8 @@ pub(crate) fn log_report(what: &str, report: &khora_sdk::khora_data::scene::reco
 ///
 /// Under the `EditorInterchange` goal; [`save_scene_in_project_with_goal`]
 /// picks another (`HumanReadableDebug` for JSON, `PortableBinary` for MessagePack).
+/// A value only the session holds (a mesh made in code) is left out of the
+/// file and logged as a warning.
 pub fn save_scene_in_project(pvfs: &mut ProjectVfs, world: &GameWorld, rel_path: &Path) -> bool {
     save_scene_in_project_with_goal(pvfs, world, rel_path, SerializationGoal::EditorInterchange)
 }
@@ -78,23 +81,36 @@ pub(crate) fn save_scene_in_project_with_goal(
     rel_path: &Path,
     goal: SerializationGoal,
 ) -> bool {
-    // Prefab instances are written as links to their prefabs.
-    let service = SerializationService::new();
-    // Read through the project's shared reader: no lock held while a prefab
-    // decodes, the files as they are now.
-    let prefabs = khora_sdk::ReaderPrefabs::new(pvfs.assets().reader());
-    let saved = service.save_world_with(world.inner_world(), goal, &prefabs);
-    let scene_file = match saved {
-        Ok(f) => f,
+    save_scene_in_project_reporting(pvfs, world, rel_path, goal).is_some()
+}
+
+/// Saves as [`save_scene_in_project_with_goal`] does, and returns what the
+/// save left out of the file; `None` when the scene did not reach disk.
+pub(crate) fn save_scene_in_project_reporting(
+    pvfs: &mut ProjectVfs,
+    world: &GameWorld,
+    rel_path: &Path,
+    goal: SerializationGoal,
+) -> Option<Vec<ReportEntry>> {
+    // Prefab instances are written as links to their prefabs, read through
+    // the project's shared reader: no lock held while a prefab decodes, the
+    // files as they are now.
+    let service = SerializationService::with_prefabs(std::sync::Arc::new(
+        khora_sdk::ReaderPrefabs::new(pvfs.assets().reader()),
+    ));
+    let saved = service.save_world_reporting(world.inner_world(), goal);
+    let (scene_file, left_out) = match saved {
+        Ok(saved) => saved,
         Err(e) => {
             log::error!("Failed to serialize scene: {:?}", e);
-            return false;
+            return None;
         }
     };
+    log_left_out(&rel_path.display().to_string(), &left_out);
     let bytes = scene_file.to_bytes();
     if let Err(e) = pvfs.write_asset(rel_path, &bytes) {
         log::error!("Failed to write scene to {:?}: {:#}", rel_path, e);
-        return false;
+        return None;
     }
     if let Err(e) = pvfs.reindex() {
         log::warn!("Scene saved but index rebuild failed: {:#}", e);
@@ -105,7 +121,7 @@ pub(crate) fn save_scene_in_project_with_goal(
         bytes.len(),
         goal,
     );
-    true
+    Some(left_out)
 }
 
 // Synchronous: for tests and scratch worlds; the editor opens a scene by ticket.
@@ -298,8 +314,18 @@ pub fn load_problems(
     world: &khora_sdk::khora_data::ecs::World,
     report: &khora_sdk::khora_data::scene::record::LoadReport,
 ) -> Vec<Problem> {
-    report
-        .entries
+    report_problems(world, &report.entries)
+}
+
+/// Returns report `entries`, a load's or a save's, as problems, one `Warning` per entry.
+///
+/// Each on the entity `world` holds under the entry's persistent id (none when
+/// it holds none), its component and path as the field, the entry as the message.
+pub fn report_problems(
+    world: &khora_sdk::khora_data::ecs::World,
+    entries: &[ReportEntry],
+) -> Vec<Problem> {
+    entries
         .iter()
         .map(|entry| Problem {
             entity: entry.entity.and_then(|id| world.entity_with_id(id)),
@@ -355,6 +381,8 @@ pub(crate) fn create_default_scene_in_project(
 // location outside the current project. Bypasses the VFS by design.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// The bool form, for tests: the editor saves through the reporting one.
+#[cfg(test)]
 /// Saves the world as a `.kscene` at an absolute path outside `<project>/assets/`.
 ///
 /// For a Save As outside the project; logs a warning, the write bypassing the VFS.
@@ -363,9 +391,23 @@ pub fn save_scene_to_path_with_goal(
     path: &str,
     goal: SerializationGoal,
 ) -> bool {
+    save_scene_to_path_reporting(world, path, goal).is_some()
+}
+
+/// Saves the world as a `.kscene` at an absolute path outside `<project>/assets/`,
+/// and returns what the save left out of the file.
+///
+/// For a Save As outside the project; logs a warning, the write bypassing the
+/// VFS. `None` when the scene did not reach disk.
+pub(crate) fn save_scene_to_path_reporting(
+    world: &GameWorld,
+    path: &str,
+    goal: SerializationGoal,
+) -> Option<Vec<ReportEntry>> {
     let service = SerializationService::new();
-    match service.save_world(world.inner_world(), goal) {
-        Ok(scene_file) => {
+    match service.save_world_reporting(world.inner_world(), goal) {
+        Ok((scene_file, left_out)) => {
+            log_left_out(path, &left_out);
             let bytes = scene_file.to_bytes();
             // Whole or not at all: a failed save leaves the previous file.
             match khora_sdk::fs::write_atomic(std::path::Path::new(path), &bytes) {
@@ -376,17 +418,17 @@ pub fn save_scene_to_path_with_goal(
                         bytes.len(),
                         goal,
                     );
-                    true
+                    Some(left_out)
                 }
                 Err(e) => {
                     log::error!("Failed to write scene file '{}': {}", path, e);
-                    false
+                    None
                 }
             }
         }
         Err(e) => {
             log::error!("Failed to serialize scene: {:?}", e);
-            false
+            None
         }
     }
 }
@@ -401,6 +443,14 @@ pub fn save_scene_to_path_with_goal(
 pub(crate) fn rel_inside_project(abs_path: &Path, assets_root: &Path) -> Option<String> {
     let rel = abs_path.strip_prefix(assets_root).ok()?;
     Some(asset_key(rel))
+}
+
+/// Says what a save left out of its file — a mesh made in code — so a file
+/// saved without it is never silent about it.
+fn log_left_out(what: &str, left_out: &[ReportEntry]) {
+    for entry in left_out {
+        log::warn!("{what}: {entry}");
+    }
 }
 
 #[cfg(test)]

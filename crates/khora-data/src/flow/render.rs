@@ -15,19 +15,16 @@
 //! `RenderFlow`: the World's meshes, lights and camera views, projected into
 //! the [`RenderWorld`] the render lanes draw from.
 
-use khora_core::asset::Material;
 use khora_core::math::Mat4;
 #[cfg(test)]
 use khora_core::math::Vec3;
-use khora_core::renderer::api::gpu_scene::GpuMesh;
-use khora_core::renderer::api::material::GpuMaterial;
 #[cfg(test)]
 use khora_core::renderer::light::LightType;
 use khora_core::Runtime;
 
 #[cfg(test)]
 use crate::ecs::Light;
-use crate::ecs::{Camera, GlobalTransform, HandleComponent, SemanticDomain, World};
+use crate::ecs::{Camera, GlobalTransform, MaterialRef, MeshRef, SemanticDomain, World};
 use crate::flow::{Flow, Selection};
 use crate::register_flow;
 use crate::render::{ExtractedLight, ExtractedMesh, ExtractedView, RenderWorld};
@@ -104,18 +101,8 @@ fn extract_meshes(
     alpha: f32,
     interpolation: Option<&TransformInterpolation>,
 ) {
-    let query = world.query::<(EntityId, &GlobalTransform, &HandleComponent<GpuMesh>)>();
-    for (entity_id, transform, gpu_mesh_handle) in query {
-        // Per-entity component lookup, NOT positional: entities with vs without
-        // a material live in different archetypes, so correlating two separate
-        // queries by enumerate-index would mismatch (and drop the GpuMaterial).
-        let material = world
-            .get::<HandleComponent<Box<dyn Material>>>(entity_id)
-            .map(|m| m.handle.clone());
-        let gpu_material = world
-            .get::<HandleComponent<GpuMaterial>>(entity_id)
-            .map(|h| h.handle.clone());
-
+    let query = world.query::<(EntityId, &GlobalTransform, &MeshRef, Option<&MaterialRef>)>();
+    for (entity_id, transform, mesh_ref, material_ref) in query {
         // Only the projected transform of a sim-moved entity is blended; its
         // `GlobalTransform` is untouched.
         let transform = match interpolation.and_then(|store| store.previous(entity_id)) {
@@ -130,10 +117,8 @@ fn extract_meshes(
 
         render_world.meshes.push(ExtractedMesh {
             transform,
-            cpu_mesh_uuid: gpu_mesh_handle.uuid,
-            gpu_mesh: gpu_mesh_handle.handle.clone(),
-            material,
-            gpu_material,
+            mesh: mesh_ref.uuid(),
+            material: material_ref.map(MaterialRef::uuid),
             mirrored,
         });
     }
@@ -186,11 +171,11 @@ fn extract_views(world: &World, render_world: &mut RenderWorld, aspect: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khora_core::asset::{AssetHandle, AssetUUID};
+    use khora_core::asset::AssetUUID;
     use khora_core::math::affine_transform::AffineTransform;
     use khora_core::math::{Mat3, Quaternion};
-    use khora_core::renderer::api::pipeline::PrimitiveTopology;
-    use khora_core::renderer::api::resource::{BufferId, IndexFormat};
+
+    use crate::ecs::{MaterialRef, MeshRef};
 
     /// Translation ∘ rotation ∘ scale, the order `Transform::to_mat4` composes.
     fn trs(translation: Vec3, rotation: Quaternion, scale: Vec3) -> AffineTransform {
@@ -205,22 +190,12 @@ mod tests {
         trs(Vec3::ZERO, Quaternion::IDENTITY, scale)
     }
 
-    /// Spawns a drawable entity at `pose`, with an already-uploaded mesh.
+    /// Spawns a drawable entity at `pose`, naming a mesh of its own.
     ///
     /// Returns the entity and the mesh uuid that identifies its extracted draw.
     fn spawn_drawable(world: &mut World, pose: AffineTransform) -> (EntityId, AssetUUID) {
         let uuid = AssetUUID::new();
-        let mesh = HandleComponent {
-            handle: AssetHandle::new(GpuMesh {
-                vertex_buffer: BufferId(0),
-                index_buffer: BufferId(0),
-                index_count: 0,
-                index_format: IndexFormat::Uint32,
-                primitive_topology: PrimitiveTopology::TriangleList,
-            }),
-            uuid,
-        };
-        let entity = world.spawn((GlobalTransform(pose), mesh));
+        let entity = world.spawn((GlobalTransform(pose), MeshRef::Asset(uuid)));
         (entity, uuid)
     }
 
@@ -229,7 +204,7 @@ mod tests {
         render_world
             .meshes
             .iter()
-            .find(|mesh| mesh.cpu_mesh_uuid == uuid)
+            .find(|mesh| mesh.mesh == uuid)
             .expect("every drawable entity is extracted")
     }
 
@@ -1010,5 +985,114 @@ mod tests {
             view.lights
         );
         assert_eq!(view.lights[0].position, Vec3::new(9.0, 0.0, 0.0));
+    }
+
+    /// Spawns an entity at the origin naming `mesh`, and `material` when given.
+    ///
+    /// It holds only its authored references: no asset is loaded or uploaded.
+    fn spawn_referencing(
+        world: &mut World,
+        mesh: MeshRef,
+        material: Option<MaterialRef>,
+    ) -> EntityId {
+        let entity = world.spawn((GlobalTransform::identity(), mesh));
+        if let Some(material) = material {
+            world
+                .add_component(entity, material)
+                .expect("a live entity takes a material reference");
+        }
+        entity
+    }
+
+    /// The render view the flow publishes for `world`, with no runtime state.
+    fn project(world: &World) -> RenderWorld {
+        RenderFlow.project(world, &Selection::new(), &Runtime::default())
+    }
+
+    /// An entity whose mesh reference is removed is not drawn on the next
+    /// extraction, and the flow's cache key moves so the stale view is not kept.
+    #[test]
+    fn an_entity_whose_mesh_reference_is_removed_is_not_extracted() {
+        let mut world = World::new();
+        let entity = spawn_referencing(
+            &mut world,
+            MeshRef::unit_cube(),
+            Some(MaterialRef::Asset(AssetUUID::new())),
+        );
+        assert_eq!(
+            project(&world).meshes.len(),
+            1,
+            "an entity naming a mesh is extracted"
+        );
+        // A frame boundary: an epoch moves only to a later tick than the key read.
+        world.end_run();
+        let runtime = Runtime::default();
+        let key_before = RenderFlow.cache_key(&world, &runtime);
+
+        world
+            .remove_component::<MeshRef>(entity)
+            .expect("the entity holds a mesh reference");
+
+        assert!(
+            project(&world).meshes.is_empty(),
+            "an entity naming no mesh is still extracted"
+        );
+        assert_ne!(
+            RenderFlow.cache_key(&world, &runtime),
+            key_before,
+            "the view of the entity with its mesh would be reused"
+        );
+    }
+
+    /// An entity whose material reference is removed is still drawn, with no
+    /// material in the view.
+    #[test]
+    fn an_entity_whose_material_reference_is_removed_has_no_material_in_the_view() {
+        let mut world = World::new();
+        let entity = spawn_referencing(
+            &mut world,
+            MeshRef::unit_cube(),
+            Some(MaterialRef::Asset(AssetUUID::new())),
+        );
+        let before = project(&world);
+        assert_eq!(
+            before.meshes.len(),
+            1,
+            "an entity naming a mesh is extracted"
+        );
+        assert!(
+            before.meshes[0].material.is_some(),
+            "an entity naming a material has one in the view"
+        );
+
+        world
+            .remove_component::<MaterialRef>(entity)
+            .expect("the entity holds a material reference");
+
+        let after = project(&world);
+        assert_eq!(after.meshes.len(), 1, "its mesh is still extracted");
+        assert!(
+            after.meshes[0].material.is_none(),
+            "an entity naming no material keeps one in the view"
+        );
+    }
+
+    /// The view names an entity's mesh and material by its references' uuids.
+    #[test]
+    fn the_view_carries_the_references_uuids() {
+        let mut world = World::new();
+        let mesh = MeshRef::Asset(AssetUUID::new());
+        let material = MaterialRef::Asset(AssetUUID::new());
+        spawn_referencing(&mut world, mesh.clone(), Some(material.clone()));
+
+        let view = project(&world);
+
+        assert_eq!(view.meshes.len(), 1, "an entity naming a mesh is extracted");
+        assert_eq!(view.meshes[0].mesh, mesh.uuid(), "the mesh's uuid");
+        assert_eq!(
+            view.meshes[0].material,
+            Some(material.uuid()),
+            "the material's uuid"
+        );
     }
 }

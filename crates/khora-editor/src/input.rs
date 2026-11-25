@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::{EditorRequest, MenuAction};
 use khora_sdk::khora_core::math::Ray;
+use khora_sdk::khora_data::AssetStore;
 use khora_sdk::prelude::ecs::EntityId;
 use khora_sdk::prelude::*;
 use khora_sdk::KeyCode;
@@ -82,11 +83,13 @@ fn cursor_ray(
 
 /// Drives the editor camera and the global shortcuts from the frame's input events.
 ///
-/// Takes the world for `Delete`.
+/// Takes the world for `Delete`, and the engine's asset store for the bounds
+/// of the mesh a click picks.
 pub(crate) fn process_events(
     state: &mut InputState,
     inputs: &[InputEvent],
     world: &mut khora_sdk::GameWorld,
+    assets: &AssetStore,
     editor_state: &Arc<Mutex<EditorState>>,
     camera: &Arc<Mutex<EditorCamera>>,
 ) {
@@ -116,7 +119,7 @@ pub(crate) fn process_events(
                         MouseButton::Middle => state.middle_down = true,
                         MouseButton::Right => state.right_down = true,
                         MouseButton::Left => {
-                            press_left(state, world, editor_state, camera, viewport_rect)
+                            press_left(state, world, assets, editor_state, camera, viewport_rect)
                         }
                         _ => {}
                     }
@@ -179,6 +182,7 @@ fn in_viewport(viewport: Option<[f32; 4]>, x: f32, y: f32) -> bool {
 fn press_left(
     state: &mut InputState,
     world: &mut khora_sdk::GameWorld,
+    assets: &AssetStore,
     editor_state: &Arc<Mutex<EditorState>>,
     camera: &Arc<Mutex<EditorCamera>>,
     viewport_rect: Option<[f32; 4]>,
@@ -211,7 +215,7 @@ fn press_left(
         state.gizmo_drag = Some(drag);
         state.gizmo_starts = starts;
     } else if let Ok(mut s) = editor_state.lock() {
-        match crate::picking::pick_entity(world, &ray) {
+        match crate::picking::pick_entity(world, assets, &ray) {
             // Ctrl extends the selection, the same modifier the hierarchy uses.
             Some(entity) if state.ctrl_held => s.toggle_select(entity),
             Some(entity) => s.select(entity),

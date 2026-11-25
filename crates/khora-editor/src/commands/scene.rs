@@ -17,6 +17,7 @@
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::EditorRequest;
+use khora_sdk::khora_data::scene::record::ReportEntry;
 use khora_sdk::{EditorState, GameWorld, SerializationGoal};
 
 use crate::project_vfs::ProjectVfs;
@@ -26,6 +27,8 @@ use crate::{build_game, scene_io};
 const BUILD_REFUSED: &str = "Build Game is off in restricted mode: building runs this project's \
                              code. Trust the project to build it.";
 
+// The bool forms, for tests: the editor saves through the reporting one.
+#[cfg(test)]
 /// Saves the scene, through the project VFS when the path lies under `<project>/assets/`.
 ///
 /// A Save-As elsewhere writes with `std::fs`. Saves under the
@@ -44,6 +47,7 @@ pub fn save_scene_dispatch(
     )
 }
 
+#[cfg(test)]
 /// Saves as [`save_scene_dispatch`] does, under an explicit serialization goal.
 ///
 /// `HumanReadableDebug` for a JSON scene, `PortableBinary` for MessagePack.
@@ -53,15 +57,28 @@ pub(crate) fn save_scene_dispatch_with_goal(
     path_str: &str,
     goal: SerializationGoal,
 ) -> bool {
+    save_scene_dispatch_reporting(project_vfs, world, path_str, goal).is_some()
+}
+
+/// Saves the scene under `goal`, through the project VFS when the path lies under
+/// `<project>/assets/`, and returns what the save left out of the file.
+///
+/// A Save-As elsewhere writes with `std::fs`. `None` when the scene did not
+/// reach disk; failures are logged.
+pub(crate) fn save_scene_dispatch_reporting(
+    project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
+    world: &GameWorld,
+    path_str: &str,
+    goal: SerializationGoal,
+) -> Option<Vec<ReportEntry>> {
     let abs = std::path::Path::new(path_str);
     if let Some(pvfs_arc) = project_vfs {
         if let Ok(mut pvfs) = pvfs_arc.lock() {
             let assets_root = pvfs.assets_root.clone();
             if let Some(rel_fwd) = scene_io::rel_inside_project(abs, &assets_root) {
-                // `save_scene_in_project_with_goal` logs its own failures; the
-                // flag is propagated so a caller can react to the outcome
-                // rather than assume success.
-                return scene_io::save_scene_in_project_with_goal(
+                // The save logs its own failures; the outcome is returned so a
+                // caller can react to it rather than assume success.
+                return scene_io::save_scene_in_project_reporting(
                     &mut pvfs,
                     world,
                     std::path::Path::new(&rel_fwd),
@@ -70,7 +87,15 @@ pub(crate) fn save_scene_dispatch_with_goal(
             }
         }
     }
-    scene_io::save_scene_to_path_with_goal(world, path_str, goal)
+    scene_io::save_scene_to_path_reporting(world, path_str, goal)
+}
+
+/// Asks to report what a save of a scene or a prefab left out, as the `Save` problems.
+///
+/// Replaces what the last save reported; a save that left nothing out clears it.
+pub(crate) fn report_save(state: &mut EditorState, world: &GameWorld, left_out: &[ReportEntry]) {
+    let problems = scene_io::report_problems(world.inner_world(), left_out);
+    state.push_request(EditorRequest::ReportSaveProblems { problems });
 }
 
 /// Opens the scene at `abs` off the frame, replacing the open one; returns the load's ticket.

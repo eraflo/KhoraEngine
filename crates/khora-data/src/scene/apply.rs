@@ -34,6 +34,7 @@ use super::record::{LoadReport, RecordError, ReferenceReader, ReportEntry, Repor
 use super::resolver::Resolver;
 use super::retired::is_retired;
 use super::scene_record::SceneRecord;
+use super::session_only_read::SessionOnlyRead;
 use crate::ecs::{ComponentKey, LoadedHierarchy, Parent, RuntimeComponentDecl, World};
 
 /// Which identities the entities brought in take.
@@ -289,7 +290,14 @@ pub(crate) fn prepare_at(
     given: (PersistentId, EntityId),
 ) -> Result<Prepared, LoadFailure> {
     let (catalog, hold) = readings(world, record.entities.len());
-    prepare_given(&catalog, hold, record, Kept::Scene, Some(given))
+    prepare_given(
+        &catalog,
+        hold,
+        record,
+        Kept::Scene,
+        Some(given),
+        SessionOnlyRead::Refused,
+    )
 }
 
 /// Prepares a load as [`prepare`] does, keeping only the components `kept` keeps.
@@ -313,7 +321,7 @@ pub(super) fn prepare_kept_with(
     record: Arc<SceneRecord>,
     kept: Kept,
 ) -> Result<Prepared, LoadFailure> {
-    let mut prepared = prepare_given(catalog, hold, &record, kept, None)?;
+    let mut prepared = prepare_given(catalog, hold, &record, kept, None, SessionOnlyRead::Refused)?;
     prepared.set_source(Source::Record(record, kept));
     Ok(prepared)
 }
@@ -326,15 +334,18 @@ pub(super) fn prepare_in_place(
     kept: Kept,
 ) -> Result<Prepared, LoadFailure> {
     let (catalog, hold) = readings(world, record.entities.len());
-    prepare_given(&catalog, hold, record, kept, None)
+    prepare_given(&catalog, hold, record, kept, None, SessionOnlyRead::Refused)
 }
 
-fn prepare_given(
+/// Prepares a load of `record`, the entity known as `given.0` landing at
+/// `given.1` when given, a value only a session holds read as `session_only` says.
+pub(super) fn prepare_given(
     world: &LoadCatalog,
     hold: ReservationHold,
     record: &SceneRecord,
     kept: Kept,
     given: Option<(PersistentId, EntityId)>,
+    session_only: SessionOnlyRead,
 ) -> Result<Prepared, LoadFailure> {
     let mut report = LoadReport::default();
 
@@ -457,6 +468,7 @@ fn prepare_given(
         given,
         plans,
         report,
+        session_only,
         |loaded, page, column, row, references| {
             let value = &record.pages[page].columns[column][row];
             match loaded {
@@ -482,7 +494,12 @@ fn prepare_given(
 /// Prepares a load whose names are resolved, whatever its values are held as.
 ///
 /// `stage` reads one value, given its component, page, file column and row.
-/// On any failure, nothing stays reserved.
+/// A value only a session holds is kept or refused as `session_only` says; a
+/// row refused one is placed without it. On any failure, nothing stays reserved.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a record load and a snapshot load differ in these inputs and in how they stage"
+)]
 pub(super) fn prepare_pages(
     world: &LoadCatalog,
     hold: ReservationHold,
@@ -490,6 +507,7 @@ pub(super) fn prepare_pages(
     given: Option<(PersistentId, EntityId)>,
     plans: Vec<PagePlan<'_>>,
     mut report: LoadReport,
+    session_only: SessionOnlyRead,
     mut stage: impl FnMut(
         &Loaded,
         usize,
@@ -540,12 +558,24 @@ pub(super) fn prepare_pages(
             .collect();
         signature.sort();
         let mut rows = Vec::with_capacity(plan.rows.len());
+        // The rows a refused value left with fewer components, by what they hold.
+        let mut narrowed: HashMap<Vec<ComponentKey>, Vec<(EntityId, StagedRow)>> = HashMap::new();
         for (row, id) in plan.rows.iter().enumerate() {
             let mut values = Vec::with_capacity(plan.columns.len());
+            let mut refused = false;
             for (column, loaded) in &plan.columns {
                 references.current = Some((*id, loaded.clone()));
                 references.bound = None;
                 match stage(loaded, page, *column, row, &mut references) {
+                    Ok(read) if session_only.refuses(loaded, &read) => {
+                        report.entries.push(ReportEntry {
+                            entity: Some(*id),
+                            component: Some(loaded.name().to_owned()),
+                            path: String::new(),
+                            kind: ReportKind::Dropped,
+                        });
+                        refused = true;
+                    }
                     Ok(read) => {
                         // A `Parent` names the entity it was read as: the
                         // one the resolver bound, if the load brings it.
@@ -577,9 +607,23 @@ pub(super) fn prepare_pages(
                     }
                 }
             }
-            rows.push((reserved[id], values));
+            if refused {
+                let mut keys: Vec<ComponentKey> = values.iter().map(|(key, _)| *key).collect();
+                keys.sort();
+                narrowed
+                    .entry(keys)
+                    .or_default()
+                    .push((reserved[id], values));
+            } else {
+                rows.push((reserved[id], values));
+            }
         }
         pages.push(PreparedPage { signature, rows });
+        pages.extend(
+            narrowed
+                .into_iter()
+                .map(|(signature, rows)| PreparedPage { signature, rows }),
+        );
     }
     report.entries.append(&mut references.entries);
 

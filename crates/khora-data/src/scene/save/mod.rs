@@ -25,10 +25,8 @@ use khora_core::ecs::PersistentId;
 use khora_core::scene::{SceneFile, SAVE_MAGIC_BYTES};
 use serde::{Deserialize, Serialize};
 
-use super::apply::{
-    prepare_in_place, prepare_kept_with, prepare_shared, Identity, LoadFailure, Prepared,
-};
-use super::capture::{capture_game, capture_world, SaveError};
+use super::apply::{prepare_kept_with, prepare_shared, Identity, LoadFailure, Prepared};
+use super::capture::{capture_game_reporting, SaveError};
 use super::component_registration::{registration_named, Kept};
 use super::declared::{declarations_of, described, register_all, DeclaredRecord};
 use super::encoding::{encoding_named, EncodingError, SceneEncoding};
@@ -168,13 +166,29 @@ pub fn capture_save(
     base_id: AssetUUID,
     base: &SceneRecord,
 ) -> Result<SaveRecord, SaveError> {
+    capture_save_reporting(world, base_id, base).map(|(save, _)| save)
+}
+
+/// Returns a game save as [`capture_save`] does, and what it left out.
+///
+/// A value only this session holds (a mesh made in code) is never saved: it is
+/// reported [`ReportKind::NotSaved`]
+/// on its entity.
+///
+/// # Errors
+/// As [`capture_save`].
+pub fn capture_save_reporting(
+    world: &World,
+    base_id: AssetUUID,
+    base: &SceneRecord,
+) -> Result<(SaveRecord, Vec<ReportEntry>), SaveError> {
     // Read as the running world declares its components: a component only
     // redeclared since the scene was saved is not a change the game made.
     // Nothing is loaded from it, so the reading's report is not needed.
     let (base, _) = scene_as_read(base, &declarations_of(world))
         .map_err(|failure| SaveError::Base(failure.message))?;
-    let now = capture_game(world)?;
-    Ok(differences(base_id, &base, &now))
+    let (now, left_out) = capture_game_reporting(world)?;
+    Ok((differences(base_id, &base, &now), left_out))
 }
 
 /// Returns how `now` differs from `base`, two records of the components a scene keeps.

@@ -16,8 +16,14 @@
 //! what the save says of each entity.
 
 use super::*;
+use crate::scene::apply::{prepare_given, readings};
+use crate::scene::capture::capture_keeping_session_values;
+use crate::scene::session_only_read::SessionOnlyRead;
 
 /// Returns `record` as this build reads it, and what the reading adapted.
+///
+/// A normalisation, never a change of content: a value only the session holds
+/// is kept, so comparing and composing see it as written.
 ///
 /// Components and fields come back by today's names, values at today's type.
 /// `entities` lists every entity the values may refer to, so a reference to one
@@ -40,13 +46,13 @@ pub(super) fn as_read(
         pages: record.pages.clone(),
         declared: record.declared.clone(),
     };
-    let report = prepare_in_place(&mut world, &whole, kept)?
+    // Read to be compared and composed, not loaded: a value only the session
+    // holds is kept on both ends, and refused only by the load that lands.
+    let (catalog, hold) = readings(&mut world, whole.entities.len());
+    let report = prepare_given(&catalog, hold, &whole, kept, None, SessionOnlyRead::Kept)?
         .commit(&mut world, Identity::Keep)
         .report;
-    let captured = match kept {
-        Kept::Scene => capture_world(&world),
-        Kept::Game => capture_game(&world),
-    };
+    let captured = capture_keeping_session_values(&world, kept);
     captured
         .map(|record| (record, report))
         .map_err(|error| LoadFailure {

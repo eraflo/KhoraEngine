@@ -179,3 +179,92 @@ fn a_game_world_saves_a_game_over_a_level_holding_a_prefab_instance() {
         Some(Vec3::new(4.0, 0.0, 0.0))
     );
 }
+
+/// The entity of `world` named `name`.
+fn entity_named(world: &GameWorld, name: &str) -> khora_sdk::prelude::ecs::EntityId {
+    world
+        .iter_entities()
+        .find(|entity| {
+            world
+                .get_component::<Name>(*entity)
+                .is_some_and(|n| n.as_str() == name)
+        })
+        .unwrap_or_else(|| panic!("no entity named {name}"))
+}
+
+/// **A game save says what it left out.** A mesh made in code given to an
+/// entity during play is not written, and the save reports it `NotSaved` on
+/// that entity.
+#[test]
+fn save_game_reporting_reports_a_mesh_made_in_code_left_out() {
+    use khora_sdk::khora_data::ecs::MeshRef;
+    use khora_sdk::khora_data::scene::record::ReportKind;
+
+    let (mut world, scene, id) = level();
+    let hero = entity_named(&world, "Hero");
+    world.add_component(hero, MeshRef::Made(AssetUUID::new()));
+
+    let (_, left_out) = world
+        .save_game_reporting(id, &scene, SerializationGoal::EditorInterchange)
+        .expect("the game saves");
+
+    let hero_id = world.inner_world().persistent_id(hero);
+    assert!(
+        left_out
+            .iter()
+            .any(|entry| entry.kind == ReportKind::NotSaved
+                && entry.entity == hero_id
+                && entry.component.as_deref() == Some("MeshRef")),
+        "the game save does not report the mesh made in code: {left_out:?}"
+    );
+}
+
+/// **A game save holding a mesh made in code is refused it.** Such a value
+/// names a mesh only its session had; a save edited to hold one loads without
+/// it, the load reporting it `Dropped`, and the entity keeps the rest.
+#[test]
+fn a_mesh_made_in_code_written_into_a_game_save_is_dropped_and_reported() {
+    use khora_sdk::khora_data::ecs::MeshRef;
+    use khora_sdk::khora_data::scene::record::{Record, ReportKind};
+    use khora_sdk::khora_data::scene::{read_save_file, write_save_file, CompactEncoding};
+
+    let (mut world, scene, id) = level();
+    let hero = entity_named(&world, "Hero");
+    world.add_component(hero, MeshRef::Asset(AssetUUID::new()));
+    let saved = world
+        .save_game(id, &scene, SerializationGoal::EditorInterchange)
+        .expect("the game saves");
+    let mut save = read_save_file(&saved).expect("the save reads back");
+    let mut forged = 0;
+    for page in &mut save.changes.pages {
+        let Some(column) = page.components.iter().position(|name| name == "MeshRef") else {
+            continue;
+        };
+        for value in &mut page.columns[column] {
+            if let Record::Variant { variant, .. } = value {
+                *variant = "Made".to_owned();
+                forged += 1;
+            }
+        }
+    }
+    assert_eq!(forged, 1, "the save holds the hero's mesh");
+    let forged = write_save_file(&save, &CompactEncoding).expect("the save is written");
+
+    let report = world.load_game(&forged, &scene).expect("the save loads");
+
+    let hero = entity_named(&world, "Hero");
+    assert_eq!(
+        world.get_component::<MeshRef>(hero),
+        None,
+        "the load kept a mesh made in code read from a save"
+    );
+    assert!(
+        report
+            .entries
+            .iter()
+            .any(|entry| entry.kind == ReportKind::Dropped
+                && entry.component.as_deref() == Some("MeshRef")),
+        "the load does not report the mesh it refused: {:?}",
+        report.entries
+    );
+}

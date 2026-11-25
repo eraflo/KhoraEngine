@@ -45,6 +45,8 @@ pub use prefab::spawn_queued_prefabs;
 pub use scene::build_game_refused;
 pub(crate) use scene::pick_project_folder;
 pub(crate) use scene::run_build_game;
+// The bool form, for tests: the editor saves through the reporting one.
+#[cfg(test)]
 pub use scene::save_scene_dispatch;
 pub use scene::{land_scene_loads, open_scene_dispatch};
 #[cfg(test)]
@@ -279,13 +281,13 @@ fn apply_save(
         .ok()
         .and_then(|s| s.current_scene_path.clone());
     if let Some(path) = path {
-        save_scene_dispatch(project_vfs, world, &path);
+        save_and_report(project_vfs, world, editor_state, &path);
     } else if let Some(path) = rfd::FileDialog::new()
         .add_filter("Khora Scene", &["kscene"])
         .save_file()
     {
         let path = path.to_string_lossy().to_string();
-        save_scene_dispatch(project_vfs, world, &path);
+        save_and_report(project_vfs, world, editor_state, &path);
         if let Ok(mut state) = editor_state.lock() {
             state.current_scene_path = Some(path);
         }
@@ -302,10 +304,29 @@ fn apply_save_as(
         .save_file()
     {
         let path = path.to_string_lossy().to_string();
-        save_scene_dispatch(project_vfs, world, &path);
+        save_and_report(project_vfs, world, editor_state, &path);
         if let Ok(mut state) = editor_state.lock() {
             state.current_scene_path = Some(path);
         }
+    }
+}
+
+/// Saves the scene at `path` and asks to report what the save left out, as
+/// the `Save` problems; a save that did not reach disk reports nothing.
+fn save_and_report(
+    project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
+    world: &GameWorld,
+    editor_state: &Arc<Mutex<EditorState>>,
+    path: &str,
+) {
+    let saved = scene::save_scene_dispatch_reporting(
+        project_vfs,
+        world,
+        path,
+        khora_sdk::SerializationGoal::EditorInterchange,
+    );
+    if let (Some(left_out), Ok(mut state)) = (saved, editor_state.lock()) {
+        scene::report_save(&mut state, world, &left_out);
     }
 }
 

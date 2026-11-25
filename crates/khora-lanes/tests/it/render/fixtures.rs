@@ -254,6 +254,8 @@ struct Log {
     dispatches: Vec<Dispatch>,
     /// Every buffer submitted, and whether a bake submitted it.
     submitted: Vec<(CommandBufferId, bool)>,
+    /// Every buffer write, as the buffer and the bytes written, in order.
+    written: Vec<(BufferId, Vec<u8>)>,
 }
 
 /// A device keeping a ledger of what it made, bound, destroyed and recorded.
@@ -383,6 +385,22 @@ impl RenderLedger {
             .iter()
             .filter(|(_, by_bake)| !by_bake)
             .map(|(buffer, _)| *buffer)
+            .collect()
+    }
+
+    /// The bytes written into the buffers whose label contains `label`, in
+    /// the order they were written.
+    pub fn written_into(&self, label: &str) -> Vec<Vec<u8>> {
+        let log = self.log.lock_recovered();
+        let labelled = |buffer: BufferId| {
+            log.made.iter().any(|made| {
+                made.kind == GpuKind::Buffer && made.id == buffer.0 && made.label.contains(label)
+            })
+        };
+        log.written
+            .iter()
+            .filter(|(buffer, _)| labelled(*buffer))
+            .map(|(_, data)| data.clone())
             .collect()
     }
 }
@@ -630,7 +648,8 @@ impl GraphicsDevice for RenderLedger {
     fn destroy_buffer(&self, id: BufferId) -> Result<(), ResourceError> {
         self.destroy(GpuKind::Buffer, id.0)
     }
-    fn write_buffer(&self, _id: BufferId, _offset: u64, _data: &[u8]) -> Result<(), ResourceError> {
+    fn write_buffer(&self, id: BufferId, _offset: u64, data: &[u8]) -> Result<(), ResourceError> {
+        self.log.lock_recovered().written.push((id, data.to_vec()));
         Ok(())
     }
     fn write_buffer_async<'a>(
@@ -965,6 +984,9 @@ impl Scene {
 
     /// The same scene with one more mesh on the GPU, its material drawing as
     /// `surface`, `k` units along the view axis.
+    ///
+    /// The GPU mesh and the GPU material are stored in the scene's asset
+    /// store, each under a uuid of its own the extracted mesh names.
     pub fn with_mesh(mut self, surface: Surface, k: f32) -> Self {
         let uuid = AssetUUID::new();
         let gpu_mesh = AssetHandle::new(GpuMesh {
@@ -977,7 +999,7 @@ impl Scene {
         self.assets
             .store::<GpuMesh>()
             .write_recovered()
-            .insert(uuid, gpu_mesh.clone());
+            .insert(uuid, gpu_mesh);
         let material = GpuMaterial {
             uniform_buffer: BufferId(self.id()),
             base_color_view: None,
@@ -1000,6 +1022,11 @@ impl Scene {
             double_sided: surface.double_sided,
             blend: surface.blend,
         };
+        let material_uuid = AssetUUID::new();
+        self.assets
+            .store::<GpuMaterial>()
+            .write_recovered()
+            .insert(material_uuid, AssetHandle::new(material));
         let scale = if surface.mirrored {
             Vec3::new(-1.0, 1.0, 1.0)
         } else {
@@ -1009,10 +1036,8 @@ impl Scene {
             transform: AffineTransform(
                 Mat4::from_translation(Vec3::new(0.0, 0.0, -k)) * Mat4::from_scale(scale),
             ),
-            cpu_mesh_uuid: uuid,
-            gpu_mesh,
-            material: None,
-            gpu_material: Some(AssetHandle::new(material)),
+            mesh: uuid,
+            material: Some(material_uuid),
             mirrored: surface.mirrored,
         });
         self

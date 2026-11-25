@@ -21,6 +21,7 @@ use khora_core::math::Vec3;
 use khora_core::renderer::api::command::DrawCommand;
 use khora_core::renderer::api::gpu_scene::{GpuMesh, ModelUniforms};
 use khora_core::renderer::api::ibl::IblGpuBindings;
+use khora_core::renderer::api::material::GpuMaterial;
 use khora_core::renderer::api::pipeline::{PipelineSpec, RenderPipelineId};
 use khora_core::renderer::api::resource::BufferId;
 use khora_core::renderer::api::shadow::ShadowGpuBindings;
@@ -43,6 +44,14 @@ pub(crate) struct LitDraws {
     pub blended: Vec<(f32, DrawCommand)>,
 }
 
+/// The GPU copies a lit lane draws from, each store read once for the frame.
+pub(crate) struct LitAssets<'a> {
+    /// The resident GPU meshes, by the uuid of the mesh they copy.
+    pub meshes: &'a Assets<GpuMesh>,
+    /// The resident GPU materials, by the uuid of the material they copy.
+    pub materials: &'a Assets<GpuMaterial>,
+}
+
 /// Where a lit lane finds the pipeline of each surface it draws.
 pub(crate) struct LitPipelines<'a> {
     /// The pipelines the lane kept on its target.
@@ -59,15 +68,17 @@ pub(crate) struct LitPipelines<'a> {
 
 /// Returns the frame's draws of every mesh with a GPU mesh and a GPU material.
 ///
-/// Each mesh's model uniforms are pushed into `model_ring`; a mesh whose
-/// transform does not invert is not drawn, nor one no pipeline is found for.
+/// Each mesh's model uniforms are pushed into `model_ring`. A mesh whose uuid
+/// names no resident GPU mesh is not drawn, nor one whose material uuid names
+/// no resident GPU material (or that names no material), nor one whose
+/// transform does not invert, nor one no pipeline is found for.
 ///
 /// # Errors
 ///
 /// Returns a [`RenderError`] if `model_ring` refuses a push.
 pub(crate) fn collect_lit_draws(
     world: &RenderWorld,
-    gpu_meshes: &Assets<GpuMesh>,
+    assets: LitAssets<'_>,
     eye: Vec3,
     device: &dyn GraphicsDevice,
     pipelines: LitPipelines<'_>,
@@ -85,12 +96,10 @@ pub(crate) fn collect_lit_draws(
         blended: Vec::new(),
     };
     for mesh in &world.meshes {
-        let Some(gpu_mesh) = gpu_meshes.get(&mesh.cpu_mesh_uuid) else {
+        let Some(gpu_mesh) = assets.meshes.get(&mesh.mesh) else {
             continue;
         };
-        // The material projection tags every rendered entity with a
-        // `GpuMaterial` before the render flow runs.
-        let Some(material) = &mesh.gpu_material else {
+        let Some(material) = mesh.material.and_then(|uuid| assets.materials.get(&uuid)) else {
             continue;
         };
         let surface = Surface {

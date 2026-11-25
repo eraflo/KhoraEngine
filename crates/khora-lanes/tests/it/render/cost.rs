@@ -17,6 +17,7 @@
 //! holds, and, for the forward lane, the impact of a frame past its light
 //! caps.
 
+use khora_core::asset::AssetUUID;
 use khora_core::lane::level::Impact;
 
 use super::fixtures::{sized, Renderer, Scene, Which, EVERY_LANE, LIT_LANES};
@@ -95,6 +96,33 @@ fn every_lane_costs_more_on_each_device_with_more_meshes() {
             "{which:?}: the device shades more ({:?} vs {:?})",
             twenty.time.gpu,
             one.time.gpu
+        );
+    }
+}
+
+/// **A mesh with no resident GPU copy adds nothing to a quote**: it is not
+/// drawn that frame, so nineteen meshes waiting for their upload cost what
+/// the one resident mesh beside them costs.
+#[test]
+fn every_lane_quotes_only_the_meshes_resident_on_the_gpu() {
+    for which in EVERY_LANE {
+        let renderer = Renderer::new(which);
+        let resident = Scene::new().with_meshes(1);
+        let mut waiting = Scene::new().with_meshes(20);
+        for mesh in waiting.render_world.meshes.iter_mut().skip(1) {
+            mesh.mesh = AssetUUID::new();
+        }
+
+        let one = renderer.cost_of(&resident);
+        let with_waiting = renderer.cost_of(&waiting);
+
+        assert_eq!(
+            with_waiting.time.cpu, one.time.cpu,
+            "{which:?}: the host records no draw for a mesh not resident"
+        );
+        assert_eq!(
+            with_waiting.time.gpu, one.time.gpu,
+            "{which:?}: the device shades no mesh not resident"
         );
     }
 }

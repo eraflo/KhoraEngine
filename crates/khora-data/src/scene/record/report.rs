@@ -65,6 +65,10 @@ impl std::fmt::Display for ReportEntry {
         let place = self.path.as_str();
         match &self.kind {
             ReportKind::Defaulted => write!(f, "`{place}` was not saved; it took its default")?,
+            // A whole component: its value names what only its session held.
+            ReportKind::Dropped if place.is_empty() => f.write_str(
+                "a value only the session that wrote it could hold was dropped, not loaded",
+            )?,
             ReportKind::Dropped => {
                 write!(f, "`{place}` is no longer a field; its value was dropped")?
             }
@@ -75,9 +79,7 @@ impl std::fmt::Display for ReportEntry {
                 write!(f, "`{place}` was read at another number type, without loss")?
             }
             ReportKind::Retired => f.write_str("a retired component was skipped")?,
-            ReportKind::NotSaved => {
-                f.write_str("a component the engine rebuilds was skipped, not read")?
-            }
+            ReportKind::NotSaved => f.write_str("a component no save keeps was left out")?,
             ReportKind::DeadReference => {
                 write!(f, "`{place}` named an entity the save does not hold")?
             }
@@ -105,7 +107,13 @@ impl std::fmt::Display for ReportEntry {
 pub enum ReportKind {
     /// The save predates this field; it took its default.
     Defaulted,
-    /// The code does not have this field; its value was dropped.
+    /// The value was dropped, not loaded.
+    ///
+    /// At a field (its path): the code does not have this field, or it holds
+    /// a value of another type. At a whole component (an empty path): the
+    /// value lives only in the session that wrote it (a mesh made in code,
+    /// see `ComponentRegistration::session_only`), so the file cannot hold it;
+    /// the entity loads without that component.
     Dropped,
     /// The save wrote this field, or variant, under an older name.
     Renamed {
@@ -117,8 +125,12 @@ pub enum ReportKind {
     Widened,
     /// The save holds a component type declared retired; it was skipped.
     Retired,
-    /// The save holds a component the engine derives or keeps while running;
-    /// it was skipped, and is rebuilt.
+    /// A component no save keeps was left out.
+    ///
+    /// On a load: the save holds a component the engine derives or keeps
+    /// while running; it was skipped, and is rebuilt. On a save: the value
+    /// lives only in this session (a mesh made in code); the entity was saved
+    /// without it.
     NotSaved,
     /// A reference named an entity the save does not hold.
     DeadReference,

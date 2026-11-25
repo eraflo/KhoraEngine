@@ -361,5 +361,6 @@ inventory::submit! {
         script_type: |_| None,
         script_default: || None,
         check: None,
+        session_only: None,
     }
 }

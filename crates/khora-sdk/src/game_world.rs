@@ -19,13 +19,15 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::scene::{SceneFile, SerializationGoal};
 use khora_core::script::ScriptValue;
+use khora_core::sync::RwLockExt;
 use khora_data::ecs::{
-    Camera, Component, ComponentBundle, ComponentKey, GlobalTransform, HandleComponent, Mut, Query,
+    Camera, Component, ComponentBundle, ComponentKey, GlobalTransform, MeshRef, Mut, Query,
     QueryMut, ReadOnlyWorldQuery, RowError, ScriptRole, Transform, World, WorldQuery,
 };
 use khora_data::scene::loading::{LoadKind, LoadTicket, SceneSource};
-use khora_data::scene::record::LoadReport;
+use khora_data::scene::record::{LoadReport, ReportEntry};
 use khora_data::scene::{NoPrefabs, PrefabSource};
+use khora_data::AssetStore;
 use khora_io::scene_loads::{LoadOutcome, SceneLoadHub};
 use khora_io::serialization::{SerializationService, SerializationServiceError};
 use std::collections::HashMap;
@@ -83,6 +85,9 @@ pub struct GameWorld {
     loaded_here: HashMap<LoadTicket, LoadOutcome>,
     /// The ticket the next of those is filed under.
     next_ticket: u64,
+    /// Where a mesh made in code is published: the engine's asset store on
+    /// the world it runs, a store of the world's own otherwise.
+    assets: AssetStore,
 }
 
 impl Default for GameWorld {
@@ -105,7 +110,21 @@ impl GameWorld {
             loads: None,
             loaded_here: HashMap::new(),
             next_ticket: 1,
+            assets: AssetStore::new(),
         }
+    }
+
+    /// Publishes this world's meshes made in code in `assets`, the engine's asset store.
+    ///
+    /// The engine sets its store on the world it runs, so what
+    /// [`add_mesh`](Self::add_mesh) publishes is resolved, made resident and drawn.
+    pub fn set_assets(&mut self, assets: AssetStore) {
+        self.assets = assets;
+    }
+
+    /// Returns the asset store this world's meshes made in code are published in.
+    pub fn assets(&self) -> &AssetStore {
+        &self.assets
     }
 
     /// Sets where the prefabs a scene links to are read from, for game saves.
@@ -175,25 +194,31 @@ impl GameWorld {
     // Asset Management
     // ─────────────────────────────────────────────────────────────────────
 
-    /// Returns a handle component holding `mesh` under a fresh asset id.
+    /// Publishes `mesh` in this world's asset store and returns the reference naming it.
     ///
-    /// Attach it to an entity to draw that entity with the mesh.
+    /// Attach the returned [`MeshRef::Made`] to an entity to draw that entity
+    /// with the mesh. The store ([`assets`](Self::assets)) holds its only copy:
+    /// a scene or a game save leaves the reference out, reported not saved; a
+    /// `FastestLoad` snapshot, read back in the same session, keeps it.
     ///
     /// # Examples
     ///
     /// ```rust,ignore
     /// // `mesh` is CPU-side geometry you have built or loaded.
-    /// let handle = world.add_mesh(mesh);
-    /// let entity = world.spawn((Transform::identity(), handle));
+    /// let mesh_ref = world.add_mesh(mesh);
+    /// let entity = world.spawn((Transform::identity(), mesh_ref));
     /// ```
     ///
     /// For the common case of built-in shapes, prefer the procedural helpers
     /// [`spawn_plane`](crate::spawn_plane), [`spawn_cube_at`](crate::spawn_cube_at),
     /// and [`spawn_sphere`](crate::spawn_sphere), which attach the mesh for you.
-    pub fn add_mesh(&mut self, mesh: Mesh) -> HandleComponent<Mesh> {
+    pub fn add_mesh(&mut self, mesh: Mesh) -> MeshRef {
         let uuid = AssetUUID::new();
-        let handle = AssetHandle::new(mesh);
-        HandleComponent { handle, uuid }
+        self.assets
+            .store::<Mesh>()
+            .write_recovered()
+            .insert(uuid, AssetHandle::new(mesh));
+        MeshRef::Made(uuid)
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -451,6 +476,8 @@ impl GameWorld {
     /// Saves how this world differs from the scene `base`, known as `base_id`.
     ///
     /// `goal` picks the encoding; a `FastestLoad` save is written compactly.
+    /// What the save left out (a mesh made in code) is logged as a warning;
+    /// [`save_game_reporting`](Self::save_game_reporting) returns it.
     /// See the book: concepts/saves.md, "What a save holds".
     ///
     /// # Errors
@@ -462,8 +489,31 @@ impl GameWorld {
         base: &SceneFile,
         goal: SerializationGoal,
     ) -> Result<SceneFile, SerializationServiceError> {
+        let (file, left_out) = self.save_game_reporting(base_id, base, goal)?;
+        // Not swallowed: a caller that does not ask what was left out still
+        // sees it in the log.
+        for entry in &left_out {
+            log::warn!("game save: {entry}");
+        }
+        Ok(file)
+    }
+
+    /// Saves as [`save_game`](Self::save_game), and returns what the save left out.
+    ///
+    /// Each value only the session holds (a mesh made in code) is reported
+    /// `NotSaved` on its entity, for the caller to surface.
+    ///
+    /// # Errors
+    ///
+    /// As [`save_game`](Self::save_game).
+    pub fn save_game_reporting(
+        &self,
+        base_id: AssetUUID,
+        base: &SceneFile,
+        goal: SerializationGoal,
+    ) -> Result<(SceneFile, Vec<ReportEntry>), SerializationServiceError> {
         self.serialization()
-            .save_game(&self.world, base_id, base, goal)
+            .save_game_reporting(&self.world, base_id, base, goal)
     }
 
     /// Replaces this world's contents with the game `save` holds, over the scene `base`.

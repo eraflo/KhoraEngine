@@ -23,10 +23,12 @@ use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::LaneError;
 use khora_core::lane::{Lane, LaneReport};
 use khora_core::renderer::api::gpu_scene::GpuMesh;
+use khora_core::renderer::api::material::GpuMaterial;
 use khora_core::renderer::light::{MAX_DIRECTIONAL_LIGHTS, MAX_POINT_LIGHTS, MAX_SPOT_LIGHTS};
 
 use super::family::{LitInputs, RenderFamily, RenderOutputs};
 use super::scene_load::SceneLoad;
+use super::util::lit_draws::LitAssets;
 
 mod gpu;
 mod render;
@@ -101,7 +103,7 @@ impl Lane for LitForwardLane {
     ///
     /// Past the light caps the frame is not the reference image.
     fn cost(&self, _level: usize, inputs: &LitInputs<'_>) -> Cost {
-        let load = SceneLoad::of(inputs.render_world, &inputs.target);
+        let load = SceneLoad::of(inputs.render_world, inputs.assets, &inputs.target);
         let shaded = load.suns.min(MAX_DIRECTIONAL_LIGHTS)
             + load.lamps.min(MAX_POINT_LIGHTS)
             + load.spots.min(MAX_SPOT_LIGHTS);
@@ -133,7 +135,15 @@ impl Lane for LitForwardLane {
         let meshes = meshes.read().map_err(|_| LaneError::LockPoisoned {
             context: "the GPU meshes",
         })?;
-        lit.record(inputs, &meshes, out)
+        let materials = inputs.assets.store::<GpuMaterial>();
+        let materials = materials.read().map_err(|_| LaneError::LockPoisoned {
+            context: "the GPU materials",
+        })?;
+        let assets = LitAssets {
+            meshes: &meshes,
+            materials: &materials,
+        };
+        lit.record(inputs, assets, out)
             .map_err(|error| LaneError::ExecutionFailed(Box::new(error)))?;
         Ok(LaneReport {
             done: 1.0,
