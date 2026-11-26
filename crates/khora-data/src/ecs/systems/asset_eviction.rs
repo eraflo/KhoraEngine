@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! GPU asset eviction: frees the GPU meshes and materials no live entity
-//! references any more.
+//! GPU asset eviction: frees the GPU meshes and materials no `MeshRef` or
+//! `MaterialRef` names any more, and those the residencies retired.
 //!
-//! The projection only ever inserts, so without this pass a despawn or an
-//! inline material edit would leak GPU memory.
+//! The residencies make a GPU copy of every copy that lands in the store, so
+//! without this pass a despawn or an inline material edit would leak GPU memory.
 
 use crate::ecs::SystemContext;
 use std::sync::{Arc, Mutex};

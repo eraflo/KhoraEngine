@@ -12,16 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What the GPU holds for the world's assets ([`ProjectionRegistry`]), its
-//! release once no entity uses them ([`AssetEviction`]), and the image-based
-//! lighting bakes ([`ibl`]).
+//! What the GPU holds for the asset store's meshes and materials
+//! ([`ProjectionRegistry`]), its release once no reference names them
+//! ([`AssetEviction`]), and the image-based lighting bakes ([`ibl`]).
 
 pub mod eviction;
 pub mod ibl;
+mod made_copies;
+mod material_waits;
 pub mod projection;
 
 pub use eviction::AssetEviction;
 pub use ibl::{EnvironmentMap, IblBaker, IblSource};
+pub(crate) use made_copies::MadeCopies;
+pub(crate) use material_waits::MaterialWaits;
 pub use projection::ProjectionRegistry;
 
 #[cfg(test)]

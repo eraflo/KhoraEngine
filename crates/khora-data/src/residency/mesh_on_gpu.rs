@@ -12,21 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `MeshOnGpu`: a CPU mesh as vertex and index buffers, kept in the
-//! `AssetStore`'s `Assets<GpuMesh>` the render lanes read. Its `DataSystem` runs
-//! [`ProjectionRegistry::sync_all`](crate::ProjectionRegistry::sync_all).
+//! `MeshOnGpu`: a CPU mesh as vertex and index buffers, kept under its uuid in
+//! the `AssetStore`'s `Assets<GpuMesh>` the render lanes read. Its `DataSystem`
+//! runs [`ProjectionRegistry::sync_meshes`].
 
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 
-use khora_core::asset::AssetHandle;
+use khora_core::asset::{AssetHandle, AssetUUID};
 use khora_core::lane::OutputDeck;
 use khora_core::renderer::api::gpu_scene::{GpuMesh, Mesh};
 use khora_core::renderer::api::resource::{BufferDescriptor, BufferUsage, IndexFormat};
 use khora_core::renderer::GraphicsDevice;
 use khora_core::residency::{DeviceClass, Residency, ResidencyError};
+use khora_core::sync::{LockExt, RwLockExt};
 use khora_core::Runtime;
 
-use crate::ecs::{SystemContext, World};
+use crate::assets::ArrivalsRead;
+use crate::ecs::{Changed, MeshRef, SystemContext, Tick, World};
+use crate::gpu::AssetEviction;
 use crate::ProjectionRegistry;
 
 /// A mesh, as GPU buffers.
@@ -117,11 +121,111 @@ impl Residency for MeshOnGpu {
     }
 }
 
+impl ProjectionRegistry {
+    /// Makes every mesh that arrived in the asset store resident under its uuid.
+    ///
+    /// A mesh that landed or was replaced is made (again) on the GPU, and one
+    /// gone from the store leaves it; a mesh a `MeshRef` changed since `since`
+    /// names, held in the store but not on the GPU, is made again. When the
+    /// arrivals were lost (a resync), the residency restores the truth: it
+    /// makes resident every mesh a `MeshRef` names that the store holds,
+    /// brings every resident one in line with the store, forgets what left
+    /// the store, and makes nothing else. A replaced or gone GPU copy is
+    /// handed to `eviction` to free after this frame's render (dropped unfreed
+    /// without one). A copy stored again unchanged is not made twice, and one
+    /// the device refuses is tried again on the next call. Attaches nothing to
+    /// any entity.
+    pub fn sync_meshes(
+        &self,
+        world: &World,
+        since: Tick,
+        device: &dyn GraphicsDevice,
+        eviction: Option<&Mutex<AssetEviction>>,
+    ) {
+        let cpu = self.store.store::<Mesh>();
+        let gpu = self.store.store::<GpuMesh>();
+        let mut made = self.meshes.lock_recovered();
+
+        // Every uuid whose CPU copy may differ from its GPU copy.
+        let mut arrived = made.take_refused();
+        let read = cpu.read_recovered().arrivals(MeshOnGpu::NAME);
+        match read {
+            ArrivalsRead::Since(arrivals) => {
+                arrived.extend(arrivals.iter().map(|arrival| arrival.uuid));
+            }
+            ArrivalsRead::Resync => {
+                let cpu = cpu.read_recovered();
+                arrived.extend(
+                    world
+                        .query::<&MeshRef>()
+                        .map(MeshRef::uuid)
+                        .filter(|uuid| cpu.contains(uuid)),
+                );
+                arrived.extend(gpu.read_recovered().keys());
+                let gone: Vec<AssetUUID> = made
+                    .every_known()
+                    .filter(|uuid| !cpu.contains(uuid))
+                    .collect();
+                arrived.extend(gone);
+            }
+        }
+        // A reference named again after its GPU copy was evicted.
+        let named: HashSet<AssetUUID> = world
+            .query::<(&MeshRef, Changed<MeshRef>)>()
+            .since(since)
+            .map(|(mesh, _)| mesh.uuid())
+            .filter(|uuid| !arrived.contains(uuid))
+            .collect();
+        for uuid in named {
+            if cpu.read_recovered().contains(&uuid) && !gpu.read_recovered().contains(&uuid) {
+                arrived.insert(uuid);
+            }
+        }
+
+        for uuid in arrived {
+            let source = cpu.read_recovered().get(&uuid).cloned();
+            let Some(source) = source else {
+                retire_mesh(&self.store, eviction, &uuid);
+                made.drop_uuid(&uuid);
+                continue;
+            };
+            if made.is_made_from(&uuid, &source) && gpu.read_recovered().contains(&uuid) {
+                continue;
+            }
+            match MeshOnGpu::make(&source, &mut &*device) {
+                Ok(resident) => {
+                    retire_mesh(&self.store, eviction, &uuid);
+                    gpu.write_recovered().insert(uuid, resident);
+                    made.made(uuid, source);
+                }
+                Err(refusal) => {
+                    log::error!("{refusal}");
+                    made.refuse(uuid);
+                }
+            }
+        }
+    }
+}
+
+/// Takes the GPU mesh of `uuid` out of the store, handed to `eviction` to free.
+fn retire_mesh(
+    store: &crate::AssetStore,
+    eviction: Option<&Mutex<AssetEviction>>,
+    uuid: &AssetUUID,
+) {
+    match eviction {
+        Some(eviction) => eviction.lock_recovered().retire_mesh(store, uuid),
+        None => {
+            store.store::<GpuMesh>().write_recovered().remove(uuid);
+        }
+    }
+}
+
 fn gpu_mesh_sync_system(
     world: &mut World,
     runtime: &Runtime,
     _deck: &mut OutputDeck,
-    _ctx: SystemContext,
+    ctx: SystemContext,
 ) {
     let Some(proj) = runtime.resources.get::<ProjectionRegistry>() else {
         return;
@@ -129,7 +233,15 @@ fn gpu_mesh_sync_system(
     let Some(device) = runtime.backends.get::<Arc<dyn GraphicsDevice>>() else {
         return;
     };
-    proj.sync_all(world, device.as_ref());
+    let eviction = runtime
+        .resources
+        .get::<Arc<Mutex<AssetEviction>>>()
+        .map(|eviction| &**eviction);
+    proj.sync_meshes(world, ctx.since, device.as_ref(), eviction);
 }
 
-crate::register_residency!(name = MeshOnGpu::NAME, run = gpu_mesh_sync_system);
+crate::register_residency!(
+    name = MeshOnGpu::NAME,
+    run = gpu_mesh_sync_system,
+    observes = [MeshRef],
+);

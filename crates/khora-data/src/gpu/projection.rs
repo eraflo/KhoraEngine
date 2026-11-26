@@ -12,27 +12,41 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! [`ProjectionRegistry`], the store of what the GPU holds for the world's
-//! meshes and materials, and the mesh upload the [`MeshOnGpu`] residency runs.
+//! [`ProjectionRegistry`], the store of what the GPU holds for the meshes and
+//! materials in the asset store, and what the mesh and material residencies
+//! remember between frames.
 
-use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
-use khora_core::ecs::entity::EntityId;
-use khora_core::renderer::api::gpu_scene::{GpuMesh, Mesh};
+use khora_core::asset::Material;
+use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::renderer::api::resource::SamplerId;
-use khora_core::renderer::GraphicsDevice;
-use khora_core::residency::Residency;
-use khora_core::sync::RwLockExt;
 
 use crate::assets::AssetStore;
-use crate::ecs::{HandleComponent, Without, World};
-use crate::residency::MeshOnGpu;
+use crate::gpu::{MadeCopies, MaterialWaits};
 
-/// What the GPU holds for the world's meshes and materials, shared by the
-/// mesh and material residencies, which run at `PreExtract` before any agent.
+/// What the GPU holds for the asset store's meshes and materials, shared by their residencies.
 ///
-/// A runtime resource, made once at boot.
+/// They run at `PreExtract`, before any agent. Each GPU copy is kept under its
+/// asset's uuid, never on an entity. A runtime resource, made once at boot.
+///
+/// Lock order, outermost first; every holder takes them only downward:
+/// 1. `meshes`, or `materials` then `material_waits`: held by
+///    [`sync_meshes`](Self::sync_meshes) / [`sync_materials`](Self::sync_materials)
+///    for the whole run, and by nothing else.
+/// 2. The `CpuTexture` store's read lock: held by `sync_materials` while it
+///    builds the materials that arrived, across the device calls of a build.
+///    Its other holders (the reload, the resolver, the intake, the UI image
+///    residency, the IBL bake) take no lock below it.
+/// 3. The eviction service's mutex: taken by the residencies to retire a
+///    copy, and by the `asset_eviction` system for its tick.
+/// 4. The `GpuMesh` / `GpuMaterial` store locks: written under the eviction's
+///    mutex by `retire_mesh` / `retire_material` and its tick, and by the
+///    residencies to insert a copy; read by the render lanes, which hold none
+///    of the locks above.
+///
+/// Every store's arrivals journal is a leaf below its own store lock. No
+/// `GpuMesh` / `GpuMaterial` lock is held across a device call.
 #[derive(Clone)]
 pub struct ProjectionRegistry {
     /// Unified store holding the `Assets<GpuMesh>` / `Assets<GpuMaterial>` /
@@ -41,6 +55,12 @@ pub struct ProjectionRegistry {
     /// The single filtering sampler every material's maps share, created
     /// lazily on the first material upload.
     pub(crate) sampler: Arc<OnceLock<SamplerId>>,
+    /// The mesh each GPU mesh was made from, and the meshes refused.
+    pub(crate) meshes: Arc<Mutex<MadeCopies<Mesh>>>,
+    /// The material each GPU material was made from, and the materials refused.
+    pub(crate) materials: Arc<Mutex<MadeCopies<Box<dyn Material>>>>,
+    /// The textures each material names, and the materials waiting for theirs.
+    pub(crate) material_waits: Arc<Mutex<MaterialWaits>>,
 }
 
 impl ProjectionRegistry {
@@ -49,62 +69,9 @@ impl ProjectionRegistry {
         Self {
             store,
             sampler: Arc::new(OnceLock::new()),
-        }
-    }
-
-    /// Uploads newly loaded meshes and gives each entity its
-    /// `HandleComponent<GpuMesh>`.
-    ///
-    /// Idempotent: a tagged entity is skipped, a mesh shared by several
-    /// entities is uploaded once, and a mesh the device refuses is tried again
-    /// on the next call.
-    pub fn sync_all(&self, world: &mut World, device: &dyn GraphicsDevice) {
-        let cache = self.store.store::<GpuMesh>();
-        // Collected first: the query borrows the world the tags are added to.
-        let mut pending: HashMap<EntityId, HandleComponent<GpuMesh>> = HashMap::new();
-
-        {
-            let query = world.query::<(
-                EntityId,
-                &HandleComponent<Mesh>,
-                Without<HandleComponent<GpuMesh>>,
-            )>();
-
-            for (entity_id, mesh_handle_comp, _) in query {
-                let uuid = mesh_handle_comp.uuid;
-
-                // Cache miss: upload to GPU for the first time. A mesh the
-                // device refuses stays untagged and is tried again next frame.
-                if !cache.read_recovered().contains(&uuid) {
-                    match MeshOnGpu::make(mesh_handle_comp, &mut &*device) {
-                        Ok(gpu_mesh) => {
-                            cache.write_recovered().insert(uuid, gpu_mesh);
-                        }
-                        Err(refusal) => {
-                            log::error!("{refusal}");
-                            continue;
-                        }
-                    }
-                }
-
-                if let Some(handle) = cache.read_recovered().get(&uuid) {
-                    pending.insert(
-                        entity_id,
-                        HandleComponent {
-                            handle: handle.clone(),
-                            uuid,
-                        },
-                    );
-                }
-            }
-        }
-
-        for (entity_id, component) in pending {
-            // The ECS query skips stale orphan rows, so an entity reaches this loop
-            // only when it genuinely lacks the handle — any failure is unexpected.
-            if let Err(e) = world.add_component(entity_id, component) {
-                log::warn!("projection: attaching GPU handle to {entity_id:?} failed: {e:?}");
-            }
+            meshes: Arc::new(Mutex::new(MadeCopies::default())),
+            materials: Arc::new(Mutex::new(MadeCopies::default())),
+            material_waits: Arc::new(Mutex::new(MaterialWaits::default())),
         }
     }
 }

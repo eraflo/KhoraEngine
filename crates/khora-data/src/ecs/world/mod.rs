@@ -19,8 +19,7 @@ use std::{any::TypeId, collections::HashSet};
 use khora_core::asset::font::Font;
 use khora_core::asset::Material;
 use khora_core::ecs::entity::EntityId;
-use khora_core::renderer::api::gpu_scene::{GpuMesh, Mesh};
-use khora_core::renderer::api::material::GpuMaterial;
+use khora_core::renderer::api::gpu_scene::Mesh;
 
 use crate::ecs::component_registry::ComponentRegistry;
 use crate::ecs::components::HandleComponent;
@@ -203,8 +202,6 @@ impl World {
         // derive: generics have no single `TypeId`, and `MaterialRef` has a
         // manual `Component` impl.
         world.register_component::<HandleComponent<Mesh>>(SemanticDomain::Render);
-        world.register_component::<HandleComponent<GpuMesh>>(SemanticDomain::Render);
-        world.register_component::<HandleComponent<GpuMaterial>>(SemanticDomain::Render);
         world.register_component::<HandleComponent<Box<dyn Material>>>(SemanticDomain::Render);
         world.register_component::<HandleComponent<Font>>(SemanticDomain::Ui);
         world.register_component::<MaterialRef>(SemanticDomain::Render);

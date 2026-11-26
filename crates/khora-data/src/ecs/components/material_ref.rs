@@ -23,7 +23,7 @@ use crate::scene::{
     material_from_json, material_from_record, material_to_json, material_to_record,
 };
 
-/// A resolved material and its `AssetUUID`, runtime only; the GPU projection reads it.
+/// A resolved material and its `AssetUUID`, runtime only.
 pub type MaterialHandle = HandleComponent<Box<dyn Material>>;
 
 /// An authored reference to a material: the only form a material is saved in.

@@ -60,6 +60,7 @@ struct Log {
     textures: Vec<CreatedTexture>,
     views: Vec<(TextureViewId, TextureId)>,
     bind_groups: Vec<Vec<BoundEntry>>,
+    destroyed_buffers: Vec<BufferId>,
     destroyed_textures: Vec<TextureId>,
     destroyed_views: Vec<TextureViewId>,
     samplers: Vec<SamplerId>,
@@ -89,6 +90,31 @@ impl RecordingDevice {
             .iter()
             .map(|(_, bytes)| bytes.clone())
             .collect()
+    }
+
+    /// The bytes the buffer `buffer` was created with, if it was created with data.
+    pub fn data_of(&self, buffer: BufferId) -> Option<Vec<u8>> {
+        self.log
+            .lock_recovered()
+            .buffers_with_data
+            .iter()
+            .find(|(id, _)| *id == buffer)
+            .map(|(_, bytes)| bytes.clone())
+    }
+
+    /// Returns how many buffers were created holding exactly `bytes`.
+    pub fn uploads_of(&self, bytes: &[u8]) -> usize {
+        self.log
+            .lock_recovered()
+            .buffers_with_data
+            .iter()
+            .filter(|(_, data)| data.as_slice() == bytes)
+            .count()
+    }
+
+    /// Every buffer destroyed, in order.
+    pub fn destroyed_buffers(&self) -> Vec<BufferId> {
+        self.log.lock_recovered().destroyed_buffers.clone()
     }
 
     /// Every texture created, in creation order.
@@ -208,7 +234,8 @@ impl GraphicsDevice for RecordingDevice {
         log.buffers_with_data.push((id, data.to_vec()));
         Ok(id)
     }
-    fn destroy_buffer(&self, _id: BufferId) -> Result<(), ResourceError> {
+    fn destroy_buffer(&self, id: BufferId) -> Result<(), ResourceError> {
+        self.log.lock_recovered().destroyed_buffers.push(id);
         Ok(())
     }
     fn write_buffer(&self, _id: BufferId, _offset: u64, _data: &[u8]) -> Result<(), ResourceError> {

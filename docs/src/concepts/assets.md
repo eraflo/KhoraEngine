@@ -98,8 +98,10 @@ names, and skips the entity when they are equal. Every reference has a uuid:
 
 So changing a reference — another mesh, a material's colour edited in the
 inspector — changes its uuid, and the next resolver run resolves it again. The
-new handle replaces the old one in place, and the entity's GPU tag is removed so
-its [residency](./residency.md) uploads the new copy. Until an asset reference's
+new handle replaces the old one in place, and the new copy lands in the asset
+store under the new uuid, where its [residency](./residency.md) makes its GPU
+copy. A copy the store already holds is not stored again: two entities naming
+one asset share one copy, on the CPU and on the GPU. Until an asset reference's
 new copy is decoded, the old handle stays, and the entity keeps showing the old
 asset. Removing the reference itself does not remove the handle.
 
@@ -290,7 +292,7 @@ new file turns out to be broken. This is **hot reload**.
 <li><strong>A file is saved.</strong> The watcher hears the change and passes it on, if the folder's budget of changes for this second is not spent.</li>
 <li><strong>Invalidated.</strong> The asset service drops its cached copy of the file, of every part it served, and of every container that read the file beside its own, and announces each on its change stream.</li>
 <li><strong>Asked for again.</strong> At <code>PreExtract</code>, <code>asset_reload</code> takes the announced changes and requests a fresh copy of each one an entity holds. The decode runs off the frame; meanwhile the last good copy keeps serving.</li>
-<li><strong>The new copy lands.</strong> It replaces the old one under the same uuid, the entities holding it are given the new handle, and the GPU copy made from the old one is retired.</li>
+<li><strong>The new copy lands.</strong> It replaces the old one under the same uuid and the entities holding it are given the new handle. The residency reads that arrival and makes the GPU copy again; the one made from the old copy is retired.</li>
 <li><strong>Or it does not decode.</strong> The file was caught half-written: the last good copy stays, and is kept until the file changes again.</li>
 </ol>
 </figure>
@@ -340,10 +342,12 @@ entities hold it:
 - until the new copy lands, the **last good copy** keeps serving — and a
   reference resolved meanwhile is served it too, so a new entity shows what the
   others show; an asset still decoding is looked at again on the next frame;
-- once it lands, it replaces the old one under the same uuid, the entities get
-  the new handle, and the GPU copy made from the old one is retired (see
-  [Residency](./residency.md#eviction)); a material naming a changed texture is
-  uploaded again; a changed font lays its texts out anew;
+- once it lands, it replaces the old one under the same uuid and the entities
+  get the new handle. The reload touches no GPU copy: the store records the
+  replacement as an arrival, and the residencies make the GPU copy again, and
+  every material naming a changed texture, and retire the old ones (see
+  [Residency](./residency.md#how-a-residency-is-fed)); a changed font lays its
+  texts out anew;
 - a file that no longer decodes — caught mid-write — keeps the last good copy,
   in the service too, until it changes again;
 - an asset gone from the index, or a part its container no longer holds, is

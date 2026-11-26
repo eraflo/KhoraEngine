@@ -13,12 +13,14 @@
 // limitations under the License.
 
 //! The asset resolver: each entity's authored references ([`MaterialRef`],
-//! [`MeshRef`], a UI font or image) turned into the handles the GPU projection reads.
+//! [`MeshRef`], a UI font or image) resolved into the asset store, under the
+//! uuid the residencies make their GPU copies by.
 //!
 //! The sole authority keeping a resolved handle in line with its reference:
 //! each reference carries an identity uuid (content-derived when inline, the
 //! asset's otherwise), compared every tick with the handle's. A mismatch, from
-//! any edit, resolves again and drops the stale GPU projection.
+//! any edit, resolves again. A copy the store already holds is not stored
+//! again, so the residencies make no GPU copy twice.
 
 use khora_data::ecs::SystemContext;
 use std::collections::HashSet;
@@ -27,8 +29,7 @@ use std::sync::{Arc, Mutex};
 use khora_core::asset::{AssetHandle, AssetUUID, Material};
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::OutputDeck;
-use khora_core::renderer::api::gpu_scene::{GpuMesh, Mesh};
-use khora_core::renderer::api::material::GpuMaterial;
+use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::renderer::api::resource::CpuTexture;
 use khora_core::sync::RwLockExt;
 use khora_core::Runtime;
@@ -42,21 +43,20 @@ use khora_data::AssetStore;
 use super::ui_asset_resolver;
 use crate::asset::{AssetService, Requested};
 
-/// One pending material resolution: the entity to tag and the handle to store under `uuid`.
+/// One pending material resolution: the entity to give the handle stored under `uuid`.
 ///
 /// `had_stale_handle` when the reference changed: the handle is then
-/// overwritten in place and the stale GPU projection dropped.
+/// overwritten in place. `in_store` when the handle is the store's own copy
+/// already: it is attached, not stored again.
 struct ResolvedMaterial {
     entity: EntityId,
     uuid: AssetUUID,
     handle: AssetHandle<Box<dyn Material>>,
     had_stale_handle: bool,
+    in_store: bool,
 }
 
 /// One pending mesh resolution, as [`ResolvedMaterial`].
-///
-/// `in_store` when the handle is the store's own copy already (a mesh made in
-/// code): it is attached, not published again.
 struct ResolvedMesh {
     entity: EntityId,
     uuid: AssetUUID,
@@ -80,6 +80,7 @@ fn asset_resolver_system(
 fn resolve_materials(world: &mut World, runtime: &Runtime) {
     let asset_store = runtime.resources.get::<AssetStore>();
     let asset_service = runtime.services.get::<Arc<Mutex<AssetService>>>().cloned();
+    let store = asset_store.map(|s| s.store::<Box<dyn Material>>());
 
     // Collected while the query borrows the world read-only. Steady state is
     // one uuid compare: nothing is cloned, loaded or hashed.
@@ -99,18 +100,21 @@ fn resolve_materials(world: &mut World, runtime: &Runtime) {
                 continue;
             }
             // A stale handle is present (the authored ref changed); the new
-            // handle must overwrite it in place and the GPU projection must be
-            // dropped so it re-projects under the new identity.
+            // handle must overwrite it in place.
             let had_stale_handle = current.is_some();
 
             match material_ref {
                 MaterialRef::Inline { material, .. } => {
-                    let handle = AssetHandle::new(material.clone_box());
+                    // The uuid is the content's: a copy held is this one.
+                    let held = held_copy(store.as_deref(), &expected);
+                    let in_store = held.is_some();
+                    let handle = held.unwrap_or_else(|| AssetHandle::new(material.clone_box()));
                     pending.push(ResolvedMaterial {
                         entity,
                         uuid: expected,
                         handle,
                         had_stale_handle,
+                        in_store,
                     });
                 }
                 MaterialRef::Asset(uuid) => {
@@ -133,11 +137,13 @@ fn resolve_materials(world: &mut World, runtime: &Runtime) {
                     // (logged when it landed) waits for its file to change;
                     // never a fallback.
                     if let Requested::Ready(handle) = requested {
+                        let in_store = held_copy(store.as_deref(), uuid).as_ref() == Some(&handle);
                         pending.push(ResolvedMaterial {
                             entity,
                             uuid: *uuid,
                             handle,
                             had_stale_handle,
+                            in_store,
                         });
                     }
                 }
@@ -149,33 +155,26 @@ fn resolve_materials(world: &mut World, runtime: &Runtime) {
         return;
     }
 
-    // The GPU projection is dropped only when a stale handle existed, so a
-    // still-valid projection is never disturbed.
-    let store = asset_store.map(|s| s.store::<Box<dyn Material>>());
     let textures = asset_store.map(|s| s.store::<CpuTexture>());
     for ResolvedMaterial {
         entity,
         uuid,
         handle,
         had_stale_handle,
+        in_store,
     } in pending
     {
-        // The GPU projection waits until every texture the material names is
+        // The material's GPU copy waits until every texture it names is
         // decoded: load them now, once per resolution of the material ref.
         if let (Some(textures), Some(service)) = (&textures, &asset_service) {
             load_textures(&**handle, entity, textures, service);
         }
-        if let Some(store) = &store {
+        if let (Some(store), false) = (&store, in_store) {
             store.write_recovered().insert(uuid, handle.clone());
         }
         let component = HandleComponent { handle, uuid };
         if had_stale_handle {
             world.set_component(entity, component);
-            if let Err(e) = world.remove_component::<HandleComponent<GpuMaterial>>(entity) {
-                log::trace!(
-                    "asset_resolver: dropping stale GpuMaterial handle on {entity:?} skipped: {e:?}"
-                );
-            }
         } else if let Err(e) = world.add_component(entity, component) {
             log::warn!("asset_resolver: attaching material handle on {entity:?} failed: {e:?}");
         }
@@ -245,13 +244,18 @@ fn resolve_meshes(world: &mut World, runtime: &Runtime, since: Tick) {
 
             match mesh_ref {
                 MeshRef::Procedural { kind, params, .. } => {
-                    let mesh = reconstruct_procedural_mesh(*kind, *params);
+                    // The uuid is the parameters': a copy held is this one.
+                    let held = held_copy(store.as_deref(), &expected);
+                    let in_store = held.is_some();
+                    let handle = held.unwrap_or_else(|| {
+                        AssetHandle::new(reconstruct_procedural_mesh(*kind, *params))
+                    });
                     pending.push(ResolvedMesh {
                         entity,
                         uuid: expected,
-                        handle: AssetHandle::new(mesh),
+                        handle,
                         had_stale_handle,
-                        in_store: false,
+                        in_store,
                     });
                 }
                 MeshRef::Asset(uuid) => {
@@ -273,12 +277,13 @@ fn resolve_meshes(world: &mut World, runtime: &Runtime, since: Tick) {
                     // that failed (logged when it landed) waits for its file
                     // to change; never a fallback to a default.
                     if let Requested::Ready(handle) = requested {
+                        let in_store = held_copy(store.as_deref(), uuid).as_ref() == Some(&handle);
                         pending.push(ResolvedMesh {
                             entity,
                             uuid: *uuid,
                             handle,
                             had_stale_handle,
-                            in_store: false,
+                            in_store,
                         });
                     }
                 }
@@ -308,7 +313,6 @@ fn resolve_meshes(world: &mut World, runtime: &Runtime, since: Tick) {
         return;
     }
 
-    // The GPU projection is dropped only when a stale handle existed.
     for ResolvedMesh {
         entity,
         uuid,
@@ -323,15 +327,18 @@ fn resolve_meshes(world: &mut World, runtime: &Runtime, since: Tick) {
         let component = HandleComponent { handle, uuid };
         if had_stale_handle {
             world.set_component(entity, component);
-            if let Err(e) = world.remove_component::<HandleComponent<GpuMesh>>(entity) {
-                log::trace!(
-                    "asset_resolver: dropping stale GpuMesh handle on {entity:?} skipped: {e:?}"
-                );
-            }
         } else if let Err(e) = world.add_component(entity, component) {
             log::warn!("asset_resolver: attaching mesh handle on {entity:?} failed: {e:?}");
         }
     }
+}
+
+/// Returns the copy `store` holds under `uuid`, if any.
+fn held_copy<A: khora_core::asset::Asset>(
+    store: Option<&std::sync::RwLock<Assets<A>>>,
+    uuid: &AssetUUID,
+) -> Option<AssetHandle<A>> {
+    store.and_then(|store| store.read_recovered().get(uuid).cloned())
 }
 
 /// Logs each entity of `not_made` whose `MeshRef` changed since `since`: it
@@ -357,9 +364,9 @@ inventory::submit! {
         name: "asset_resolver",
         phase: TickPhase::PreExtract,
         run: asset_resolver_system,
-        // Lower than `gpu_mesh_sync` (order_hint 0) and `gpu_material_sync`
-        // (order_hint 1) so resolution precedes both GPU projections within the
-        // same PreExtract phase.
+        // Lower than the residencies `gpu_mesh_sync` and `gpu_material_sync`
+        // (order_hint 0), which also run after it, so the copies are stored
+        // before they are made resident.
         order_hint: -5,
         // A changed asset's copies are replaced before the authored refs are
         // compared against them.
@@ -374,58 +381,38 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khora_core::asset::StandardMaterial;
+    use khora_core::asset::{Asset, StandardMaterial};
     use khora_core::math::LinearRgba;
-    use khora_core::renderer::api::command::BindGroupId;
-    use khora_core::renderer::api::pipeline::PrimitiveTopology;
-    use khora_core::renderer::api::resource::IndexFormat;
-    use khora_core::renderer::api::resource::{BufferId, SamplerId};
-    use khora_core::renderer::api::shader::ShaderVariantKey;
+    use khora_data::assets::{Arrival, ArrivalKind, ArrivalsRead};
 
-    /// A dummy resolved `GpuMaterial` handle for a given uuid.
-    ///
-    /// Stands in for a projection that already ran, so the reconciliation logic
-    /// can be tested without a real GPU device.
-    fn gpu_material_stub(uuid: AssetUUID) -> HandleComponent<GpuMaterial> {
-        HandleComponent {
-            handle: AssetHandle::new(GpuMaterial {
-                uniform_buffer: BufferId(0),
-                base_color_view: None,
-                metallic_roughness_view: None,
-                normal_view: None,
-                emissive_view: None,
-                occlusion_view: None,
-                base_color_texture: None,
-                metallic_roughness_texture: None,
-                normal_texture: None,
-                emissive_texture: None,
-                occlusion_texture: None,
-                specular_view: None,
-                specular_color_view: None,
-                specular_texture: None,
-                specular_color_texture: None,
-                sampler: SamplerId(0),
-                bind_group: BindGroupId(0),
-                variant: ShaderVariantKey::empty(),
-                double_sided: false,
-                blend: false,
-            }),
-            uuid,
+    /// The arrivals reader these tests read the store as.
+    const WATCHER: &str = "asset_resolver_tests";
+
+    /// Starts reading the arrivals of `Assets<A>`: [`arrived`] returns what lands after this call.
+    fn watch<A: Asset>(store: &AssetStore) {
+        let _ = store.store::<A>().read().unwrap().arrivals(WATCHER);
+    }
+
+    /// The arrivals of `Assets<A>` since the last [`watch`] or call.
+    fn arrived<A: Asset>(store: &AssetStore) -> Vec<Arrival> {
+        match store.store::<A>().read().unwrap().arrivals(WATCHER) {
+            ArrivalsRead::Since(arrivals) => arrivals,
+            ArrivalsRead::Resync => panic!("the store is watched first"),
         }
     }
 
-    /// A dummy resolved `GpuMesh` handle for a given uuid.
-    fn gpu_mesh_stub(uuid: AssetUUID) -> HandleComponent<GpuMesh> {
-        HandleComponent {
-            handle: AssetHandle::new(GpuMesh {
-                vertex_buffer: BufferId(0),
-                index_buffer: BufferId(0),
-                index_count: 0,
-                index_format: IndexFormat::Uint32,
-                primitive_topology: PrimitiveTopology::TriangleList,
-            }),
-            uuid,
-        }
+    /// Runs the resolver once.
+    fn resolve_once(world: &mut World, runtime: &Runtime) {
+        asset_resolver_system(
+            world,
+            runtime,
+            &mut OutputDeck::default(),
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+                resumed: false,
+                scope: None,
+            },
+        );
     }
 
     /// Runs frames of the resolver until what it asked for is decoded and taken in.
@@ -535,10 +522,10 @@ mod tests {
 
     /// A `MaterialRef` changed to another inline material resolves under its new uuid.
     ///
-    /// The stale `HandleComponent<GpuMaterial>` is dropped so the projection
-    /// rebuilds it.
+    /// The new copy lands in the store under that uuid: the arrival the
+    /// material residency makes its GPU copy on.
     #[test]
-    fn changing_inline_material_reconciles_handle_and_drops_gpu() {
+    fn changing_inline_material_stores_the_new_copy_under_its_uuid() {
         let mut world = World::new();
         let store = AssetStore::new();
         let mut runtime = Runtime::default();
@@ -549,27 +536,12 @@ mod tests {
             ..Default::default()
         };
         let entity = world.spawn(MaterialRef::inline(Box::new(mat_a)));
-
-        let mut deck = OutputDeck::default();
-        asset_resolver_system(
-            &mut world,
-            &runtime,
-            &mut deck,
-            khora_data::ecs::SystemContext {
-                since: khora_data::ecs::Tick(0),
-                resumed: false,
-                scope: None,
-            },
-        );
+        resolve_once(&mut world, &runtime);
         let uuid_a = world
             .get::<HandleComponent<Box<dyn Material>>>(entity)
             .expect("material A resolves")
             .uuid;
-
-        // Simulate the GPU projection having run for material A.
-        world
-            .add_component(entity, gpu_material_stub(uuid_a))
-            .unwrap();
+        watch::<Box<dyn Material>>(&store);
 
         // The developer/editor swaps in a different inline material.
         let mat_b = StandardMaterial {
@@ -581,17 +553,7 @@ mod tests {
             world.set_component(entity, MaterialRef::inline(Box::new(mat_b))),
             "replacing the MaterialRef must succeed"
         );
-
-        asset_resolver_system(
-            &mut world,
-            &runtime,
-            &mut deck,
-            khora_data::ecs::SystemContext {
-                since: khora_data::ecs::Tick(0),
-                resumed: false,
-                scope: None,
-            },
-        );
+        resolve_once(&mut world, &runtime);
 
         let uuid_b = world
             .get::<HandleComponent<Box<dyn Material>>>(entity)
@@ -601,54 +563,34 @@ mod tests {
             uuid_a, uuid_b,
             "different material content => different uuid"
         );
-        assert!(
-            world.get::<HandleComponent<GpuMaterial>>(entity).is_none(),
-            "the stale GpuMaterial handle must be removed so the projection rebuilds"
+        assert_eq!(
+            arrived::<Box<dyn Material>>(&store),
+            vec![Arrival {
+                uuid: uuid_b,
+                kind: ArrivalKind::Landed,
+            }],
+            "the new copy lands under its uuid, for the residency to make it resident"
         );
     }
 
-    /// Re-running the resolver with no ref change leaves the CPU handle and the
-    /// GPU stub untouched — steady state does no churn (just a UUID compare).
+    /// Re-running the resolver with no ref change stores nothing again: the
+    /// store records no arrival, so the residency keeps its GPU copy.
     #[test]
-    fn steady_state_material_resolution_does_not_remove_gpu() {
+    fn steady_state_material_resolution_stores_nothing_again() {
         let mut world = World::new();
         let store = AssetStore::new();
         let mut runtime = Runtime::default();
         runtime.resources.insert(store.clone());
 
         let entity = world.spawn(MaterialRef::inline(Box::new(StandardMaterial::default())));
-
-        let mut deck = OutputDeck::default();
-        asset_resolver_system(
-            &mut world,
-            &runtime,
-            &mut deck,
-            khora_data::ecs::SystemContext {
-                since: khora_data::ecs::Tick(0),
-                resumed: false,
-                scope: None,
-            },
-        );
+        resolve_once(&mut world, &runtime);
         let uuid = world
             .get::<HandleComponent<Box<dyn Material>>>(entity)
             .expect("resolves")
             .uuid;
+        watch::<Box<dyn Material>>(&store);
 
-        world
-            .add_component(entity, gpu_material_stub(uuid))
-            .unwrap();
-
-        // No ref change: the resolver must not touch either handle.
-        asset_resolver_system(
-            &mut world,
-            &runtime,
-            &mut deck,
-            khora_data::ecs::SystemContext {
-                since: khora_data::ecs::Tick(0),
-                resumed: false,
-                scope: None,
-            },
-        );
+        resolve_once(&mut world, &runtime);
 
         let after = world
             .get::<HandleComponent<Box<dyn Material>>>(entity)
@@ -656,17 +598,50 @@ mod tests {
             .uuid;
         assert_eq!(uuid, after, "steady state keeps the same CPU handle uuid");
         assert!(
-            world.get::<HandleComponent<GpuMaterial>>(entity).is_some(),
-            "steady state must not remove the still-valid GpuMaterial handle"
+            arrived::<Box<dyn Material>>(&store).is_empty(),
+            "steady state stores nothing again"
+        );
+    }
+
+    /// A second entity naming an inline material the store holds is given
+    /// that copy: nothing is stored again, so no GPU copy is made twice.
+    #[test]
+    fn an_entity_naming_a_stored_inline_material_shares_its_copy() {
+        let mut world = World::new();
+        let store = AssetStore::new();
+        let mut runtime = Runtime::default();
+        runtime.resources.insert(store.clone());
+        let material = || MaterialRef::inline(Box::new(StandardMaterial::default()));
+
+        let first = world.spawn(material());
+        resolve_once(&mut world, &runtime);
+        watch::<Box<dyn Material>>(&store);
+        let second = world.spawn(material());
+        resolve_once(&mut world, &runtime);
+
+        let handle_of = |entity| {
+            world
+                .get::<HandleComponent<Box<dyn Material>>>(entity)
+                .expect("resolves")
+                .handle
+                .clone()
+        };
+        assert!(
+            handle_of(first) == handle_of(second),
+            "both entities hold the store's one copy"
+        );
+        assert!(
+            arrived::<Box<dyn Material>>(&store).is_empty(),
+            "the copy held is not stored again"
         );
     }
 
     /// A `MeshRef` changed to other procedural params resolves under its new uuid.
     ///
-    /// The stale `HandleComponent<GpuMesh>` is dropped so the projection
-    /// rebuilds it.
+    /// The new copy lands in the store under that uuid: the arrival the mesh
+    /// residency makes its GPU copy on.
     #[test]
-    fn changing_procedural_mesh_reconciles_handle_and_drops_gpu() {
+    fn changing_procedural_mesh_stores_the_new_copy_under_its_uuid() {
         use khora_data::ecs::ProceduralMeshKind;
 
         let mut world = World::new();
@@ -678,24 +653,12 @@ mod tests {
             ProceduralMeshKind::Cube,
             [1.0, 0.0, 0.0, 0.0],
         ));
-
-        let mut deck = OutputDeck::default();
-        asset_resolver_system(
-            &mut world,
-            &runtime,
-            &mut deck,
-            khora_data::ecs::SystemContext {
-                since: khora_data::ecs::Tick(0),
-                resumed: false,
-                scope: None,
-            },
-        );
+        resolve_once(&mut world, &runtime);
         let uuid_a = world
             .get::<HandleComponent<Mesh>>(entity)
             .expect("mesh A resolves")
             .uuid;
-
-        world.add_component(entity, gpu_mesh_stub(uuid_a)).unwrap();
+        watch::<Mesh>(&store);
 
         // Resize the cube — different params => different content uuid.
         assert!(
@@ -705,26 +668,20 @@ mod tests {
             ),
             "replacing the MeshRef must succeed"
         );
-
-        asset_resolver_system(
-            &mut world,
-            &runtime,
-            &mut deck,
-            khora_data::ecs::SystemContext {
-                since: khora_data::ecs::Tick(0),
-                resumed: false,
-                scope: None,
-            },
-        );
+        resolve_once(&mut world, &runtime);
 
         let uuid_b = world
             .get::<HandleComponent<Mesh>>(entity)
             .expect("mesh B resolves")
             .uuid;
         assert_ne!(uuid_a, uuid_b, "different params => different uuid");
-        assert!(
-            world.get::<HandleComponent<GpuMesh>>(entity).is_none(),
-            "the stale GpuMesh handle must be removed so the projection rebuilds"
+        assert_eq!(
+            arrived::<Mesh>(&store),
+            vec![Arrival {
+                uuid: uuid_b,
+                kind: ArrivalKind::Landed,
+            }],
+            "the new copy lands under its uuid, for the residency to make it resident"
         );
     }
 

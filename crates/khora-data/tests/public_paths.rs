@@ -1857,7 +1857,7 @@ fn module_gpu_paths_still_resolve() {
         PhantomData::<khora_data::gpu::projection::ProjectionRegistry>,
     );
     let _ = khora_data::gpu::projection::ProjectionRegistry::new;
-    let _ = khora_data::gpu::projection::ProjectionRegistry::sync_all;
+    let _ = khora_data::gpu::projection::ProjectionRegistry::sync_meshes;
     let _ = khora_data::gpu::projection::ProjectionRegistry::sync_materials;
     is_clone::<khora_data::gpu::projection::ProjectionRegistry>();
 }

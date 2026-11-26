@@ -13,10 +13,11 @@
 // limitations under the License.
 
 //! The asset reload: every copy the engine took of a changed asset replaced
-//! under the same uuid, and its GPU projection retired to be built again.
+//! under the same uuid in the asset store.
 //!
 //! The new value is decoded off the frame; until it lands, the last good copy
-//! keeps serving. An asset the index says is gone is dropped at once.
+//! keeps serving. An asset the index says is gone is dropped at once. The
+//! store's arrivals tell the residencies, which make the GPU copies again.
 
 use khora_data::ecs::SystemContext;
 use std::collections::{HashMap, HashSet};
@@ -26,13 +27,12 @@ use khora_core::asset::font::Font;
 use khora_core::asset::{Asset, AssetHandle, AssetUUID, Material};
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::OutputDeck;
-use khora_core::renderer::api::gpu_scene::{GpuMesh, Mesh};
-use khora_core::renderer::api::material::GpuMaterial;
+use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::renderer::api::resource::CpuTexture;
 use khora_core::sync::RwLockExt;
 use khora_core::Runtime;
 use khora_data::ecs::{Component, DataSystemRegistration, HandleComponent, TickPhase, World};
-use khora_data::{AssetEviction, AssetStore};
+use khora_data::AssetStore;
 
 use std::cell::RefCell;
 
@@ -93,18 +93,13 @@ fn asset_reload_system(
         return;
     }
 
-    let mut reload = Reload {
+    let reload = Reload {
         service,
         store: runtime.resources.get::<AssetStore>(),
-        eviction: runtime
-            .resources
-            .get::<Arc<Mutex<AssetEviction>>>()
-            .map(|eviction| &**eviction),
-        retired: HashSet::new(),
         pending: RefCell::new(HashSet::new()),
     };
-    let refreshed = reload.textures(&changed);
-    let held_materials = reload.materials(world, &changed, &refreshed);
+    reload.textures(&changed);
+    let held_materials = reload.materials(world, &changed);
     let held_meshes = reload.meshes(world, &changed);
     let held_fonts = reload.fonts(world, &changed);
 
@@ -128,7 +123,6 @@ fn asset_reload_system(
         reload.forget::<Box<dyn Material>>(uuid);
         reload.forget::<Mesh>(uuid);
         reload.forget::<Font>(uuid);
-        reload.retire(uuid);
     }
 
     // What is still being decoded is looked at again on the next pass.
@@ -145,9 +139,6 @@ fn asset_reload_system(
 struct Reload<'a> {
     service: &'a Mutex<AssetService>,
     store: Option<&'a AssetStore>,
-    eviction: Option<&'a Mutex<AssetEviction>>,
-    /// The uuids whose GPU projection was already taken out this tick.
-    retired: HashSet<AssetUUID>,
     /// The changed assets whose new value is still being decoded.
     pending: RefCell<HashSet<AssetUUID>>,
 }
@@ -206,11 +197,10 @@ impl Reload<'_> {
 
     /// Replaces, in `Assets<CpuTexture>`, every changed texture it holds.
     ///
-    /// Returns the textures whose copy changed (replaced or dropped).
-    fn textures(&self, changed: &HashSet<AssetUUID>) -> HashSet<AssetUUID> {
-        let mut refreshed = HashSet::new();
+    /// The material residency makes the materials naming one again.
+    fn textures(&self, changed: &HashSet<AssetUUID>) {
         let Some(store) = self.store else {
-            return refreshed;
+            return;
         };
         let textures = store.store::<CpuTexture>();
         let held: Vec<(AssetUUID, AssetHandle<CpuTexture>)> = {
@@ -222,30 +212,20 @@ impl Reload<'_> {
         };
         for (uuid, last_good) in held {
             match self.reload::<CpuTexture>(&uuid, &last_good) {
-                Reloaded::Fresh(texture) => {
-                    textures.write_recovered().insert(uuid, texture);
-                    refreshed.insert(uuid);
-                }
+                Reloaded::Fresh(texture) => self.publish(uuid, &texture),
                 Reloaded::Gone => {
                     textures.write_recovered().remove(&uuid);
-                    refreshed.insert(uuid);
                 }
                 Reloaded::Kept | Reloaded::Pending => {}
             }
         }
-        refreshed
     }
 
     /// Brings every entity's resolved material up to date, and returns the changed ones held.
     ///
-    /// A changed material is replaced under its uuid; one naming a changed
-    /// texture is projected again.
-    fn materials(
-        &mut self,
-        world: &mut World,
-        changed: &HashSet<AssetUUID>,
-        refreshed: &HashSet<AssetUUID>,
-    ) -> HashSet<AssetUUID> {
+    /// A changed material is replaced under its uuid; the textures a material
+    /// naming a changed one names are loaded if missing.
+    fn materials(&self, world: &mut World, changed: &HashSet<AssetUUID>) -> HashSet<AssetUUID> {
         let mut affected = Vec::new();
         for (entity, resolved) in world.query::<(EntityId, &HandleComponent<Box<dyn Material>>)>() {
             let names_changed = resolved
@@ -271,7 +251,6 @@ impl Reload<'_> {
                     Reloaded::Fresh(material) => {
                         self.publish(uuid, &material);
                         self.load_material_textures(&**material, entity);
-                        self.retire(&uuid);
                         world.set_component(
                             entity,
                             HandleComponent {
@@ -279,30 +258,19 @@ impl Reload<'_> {
                                 uuid,
                             },
                         );
-                        drop_component::<HandleComponent<GpuMaterial>>(world, entity);
                         continue;
                     }
                     Reloaded::Gone => {
                         self.forget::<Box<dyn Material>>(&uuid);
-                        self.retire(&uuid);
                         drop_component::<HandleComponent<Box<dyn Material>>>(world, entity);
-                        drop_component::<HandleComponent<GpuMaterial>>(world, entity);
                         continue;
                     }
                     Reloaded::Kept | Reloaded::Pending => {}
                 }
             }
             // The material itself is unchanged: the textures it names are
-            // loaded if missing, and its projection rebuilt if one changed.
+            // loaded if missing.
             self.load_material_textures(&**current, entity);
-            let names_refreshed = current
-                .textures()
-                .iter()
-                .any(|texture| refreshed.contains(texture));
-            if names_refreshed {
-                self.retire(&uuid);
-                drop_component::<HandleComponent<GpuMaterial>>(world, entity);
-            }
         }
         held
     }
@@ -310,7 +278,7 @@ impl Reload<'_> {
     /// Replaces every entity's resolved mesh that changed, under its uuid.
     ///
     /// Returns the changed meshes some entity holds.
-    fn meshes(&mut self, world: &mut World, changed: &HashSet<AssetUUID>) -> HashSet<AssetUUID> {
+    fn meshes(&self, world: &mut World, changed: &HashSet<AssetUUID>) -> HashSet<AssetUUID> {
         let affected: Vec<(EntityId, AssetUUID, AssetHandle<Mesh>)> = world
             .query::<(EntityId, &HandleComponent<Mesh>)>()
             .filter(|(_, resolved)| changed.contains(&resolved.uuid))
@@ -328,15 +296,11 @@ impl Reload<'_> {
             match outcome {
                 Reloaded::Fresh(mesh) => {
                     self.publish(uuid, &mesh);
-                    self.retire(&uuid);
                     world.set_component(entity, HandleComponent { handle: mesh, uuid });
-                    drop_component::<HandleComponent<GpuMesh>>(world, entity);
                 }
                 Reloaded::Gone => {
                     self.forget::<Mesh>(&uuid);
-                    self.retire(&uuid);
                     drop_component::<HandleComponent<Mesh>>(world, entity);
-                    drop_component::<HandleComponent<GpuMesh>>(world, entity);
                 }
                 Reloaded::Kept | Reloaded::Pending => {}
             }
@@ -348,7 +312,7 @@ impl Reload<'_> {
     ///
     /// The handle written again tells the text systems to lay their texts out
     /// anew. Returns the changed fonts some entity holds.
-    fn fonts(&mut self, world: &mut World, changed: &HashSet<AssetUUID>) -> HashSet<AssetUUID> {
+    fn fonts(&self, world: &mut World, changed: &HashSet<AssetUUID>) -> HashSet<AssetUUID> {
         let affected: Vec<(EntityId, AssetUUID, AssetHandle<Font>)> = world
             .query::<(EntityId, &HandleComponent<Font>)>()
             .filter(|(_, resolved)| changed.contains(&resolved.uuid))
@@ -385,13 +349,14 @@ impl Reload<'_> {
         }
     }
 
-    /// Stores `handle` as the shared copy of `uuid`.
+    /// Stores `handle` as the shared copy of `uuid`, once however many entities hold it.
     fn publish<A: Asset>(&self, uuid: AssetUUID, handle: &AssetHandle<A>) {
         if let Some(store) = self.store {
-            store
-                .store::<A>()
-                .write_recovered()
-                .insert(uuid, handle.clone());
+            let copies = store.store::<A>();
+            let mut copies = copies.write_recovered();
+            if copies.get(&uuid) != Some(handle) {
+                copies.insert(uuid, handle.clone());
+            }
         }
     }
 
@@ -399,27 +364,6 @@ impl Reload<'_> {
     fn forget<A: Asset>(&self, uuid: &AssetUUID) {
         if let Some(store) = self.store {
             store.store::<A>().write_recovered().remove(uuid);
-        }
-    }
-
-    /// Takes the GPU projection of `uuid` out of the caches, once, to be built again.
-    ///
-    /// The eviction service frees the old one after this frame's render;
-    /// without one, the cache entries are dropped.
-    fn retire(&mut self, uuid: &AssetUUID) {
-        let Some(store) = self.store else {
-            return;
-        };
-        if !self.retired.insert(*uuid) {
-            return;
-        }
-        match self.eviction.map(|eviction| eviction.lock()) {
-            Some(Ok(mut eviction)) => eviction.retire(store, uuid),
-            Some(Err(_)) => log::error!("asset_reload: AssetEviction mutex poisoned."),
-            None => {
-                self.forget::<GpuMesh>(uuid);
-                self.forget::<GpuMaterial>(uuid);
-            }
         }
     }
 }
@@ -451,16 +395,13 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::{Arc, Mutex};
 
-    use khora_core::asset::{AssetHandle, AssetUUID, Material, StandardMaterial};
+    use khora_core::asset::{Asset, AssetHandle, AssetUUID, Material, StandardMaterial};
     use khora_core::ecs::entity::EntityId;
     use khora_core::lane::{OutputDeck, Reserve};
-    use khora_core::renderer::api::command::BindGroupId;
-    use khora_core::renderer::api::gpu_scene::{GpuMesh, Mesh};
-    use khora_core::renderer::api::material::GpuMaterial;
-    use khora_core::renderer::api::pipeline::PrimitiveTopology;
-    use khora_core::renderer::api::resource::{BufferId, CpuTexture, IndexFormat, SamplerId};
-    use khora_core::renderer::api::shader::ShaderVariantKey;
+    use khora_core::renderer::api::gpu_scene::Mesh;
+    use khora_core::renderer::api::resource::CpuTexture;
     use khora_core::Runtime;
+    use khora_data::assets::{ArrivalKind, ArrivalsRead};
     use khora_data::ecs::{DataSystemRegistration, HandleComponent, MaterialRef, MeshRef, World};
     use khora_data::AssetStore;
     use khora_telemetry::MetricsRegistry;
@@ -469,6 +410,9 @@ mod tests {
     use crate::asset::{AssetIdRegistry, AssetService, IndexBuilder};
 
     // ── Fixtures ────────────────────────────────────────────────────────────
+
+    /// The arrivals reader these tests read the store as.
+    const WATCHER: &str = "asset_reload_tests";
 
     /// The registered data system called `name`.
     fn data_system(name: &str) -> &'static DataSystemRegistration {
@@ -635,48 +579,23 @@ mod tests {
                 .cloned()
         }
 
-        fn gpu_material_cached(&self, uuid: &AssetUUID) -> bool {
-            self.store
-                .store::<GpuMaterial>()
-                .read()
-                .unwrap()
-                .contains(uuid)
+        /// Starts reading the arrivals of `Assets<A>`: [`Self::arrived`]
+        /// returns what lands after this call.
+        fn watch<A: Asset>(&self) {
+            let _ = self.store.store::<A>().read().unwrap().arrivals(WATCHER);
         }
 
-        fn gpu_mesh_cached(&self, uuid: &AssetUUID) -> bool {
-            self.store.store::<GpuMesh>().read().unwrap().contains(uuid)
-        }
-
-        /// Stands for the GPU projection having built `entity`'s material.
-        ///
-        /// The entity carries a `GpuMaterial` handle and the cache holds it
-        /// under the material's uuid.
-        fn project_material(&self, world: &mut World, entity: EntityId) -> AssetUUID {
-            let uuid = material_uuid(world, entity);
-            let stub = gpu_material_stub(uuid);
-            self.store
-                .store::<GpuMaterial>()
-                .write()
-                .unwrap()
-                .insert(uuid, stub.handle.clone());
-            world.add_component(entity, stub).unwrap();
-            uuid
-        }
-
-        /// Stands for the GPU projection having built `entity`'s mesh.
-        fn project_mesh(&self, world: &mut World, entity: EntityId) -> AssetUUID {
-            let uuid = world
-                .get::<HandleComponent<Mesh>>(entity)
-                .expect("the mesh resolved")
-                .uuid;
-            let stub = gpu_mesh_stub(uuid);
-            self.store
-                .store::<GpuMesh>()
-                .write()
-                .unwrap()
-                .insert(uuid, stub.handle.clone());
-            world.add_component(entity, stub).unwrap();
-            uuid
+        /// What happened, since the last [`Self::watch`] or call, to the
+        /// copy of `uuid` in `Assets<A>`: the arrivals the residencies act on.
+        fn arrived<A: Asset>(&self, uuid: &AssetUUID) -> Vec<ArrivalKind> {
+            match self.store.store::<A>().read().unwrap().arrivals(WATCHER) {
+                ArrivalsRead::Since(arrivals) => arrivals
+                    .into_iter()
+                    .filter(|arrival| arrival.uuid == *uuid)
+                    .map(|arrival| arrival.kind)
+                    .collect(),
+                ArrivalsRead::Resync => panic!("the store is watched first"),
+            }
         }
     }
 
@@ -704,47 +623,6 @@ mod tests {
             .downcast_ref::<StandardMaterial>()
             .expect("a StandardMaterial")
             .clone()
-    }
-
-    fn gpu_material_stub(uuid: AssetUUID) -> HandleComponent<GpuMaterial> {
-        HandleComponent {
-            handle: AssetHandle::new(GpuMaterial {
-                uniform_buffer: BufferId(0),
-                base_color_view: None,
-                metallic_roughness_view: None,
-                normal_view: None,
-                emissive_view: None,
-                occlusion_view: None,
-                base_color_texture: None,
-                metallic_roughness_texture: None,
-                normal_texture: None,
-                emissive_texture: None,
-                occlusion_texture: None,
-                specular_view: None,
-                specular_color_view: None,
-                specular_texture: None,
-                specular_color_texture: None,
-                sampler: SamplerId(0),
-                bind_group: BindGroupId(0),
-                variant: ShaderVariantKey::empty(),
-                double_sided: false,
-                blend: false,
-            }),
-            uuid,
-        }
-    }
-
-    fn gpu_mesh_stub(uuid: AssetUUID) -> HandleComponent<GpuMesh> {
-        HandleComponent {
-            handle: AssetHandle::new(GpuMesh {
-                vertex_buffer: BufferId(0),
-                index_buffer: BufferId(0),
-                index_count: 0,
-                index_format: IndexFormat::Uint32,
-                primitive_topology: PrimitiveTopology::TriangleList,
-            }),
-            uuid,
-        }
     }
 
     /// A real PNG of `width` x `height`, encoded in memory.
@@ -864,8 +742,10 @@ mod tests {
 
     // ── Steady state ────────────────────────────────────────────────────────
 
-    /// Once a change is applied, the following ticks find nothing to do: the
-    /// change is not applied again and the projection rebuilt since stays.
+    /// Once a change is applied, the following ticks find nothing to do.
+    ///
+    /// The change is not applied again and the copy stored since is not
+    /// replaced, so the GPU copy made from it stays.
     #[test]
     fn an_unchanged_project_does_no_work() {
         let kmat_path = "materials/plain.kmat";
@@ -884,7 +764,8 @@ mod tests {
             resolved + 1,
             "the change is applied: the material is decoded again"
         );
-        project.project_material(&mut world, entity);
+        assert_eq!(material_uuid(&world, entity), mat);
+        project.watch::<Box<dyn Material>>();
         let applied = project.load_count();
 
         project.tick(&mut world);
@@ -892,10 +773,9 @@ mod tests {
 
         assert_eq!(project.load_count(), applied, "no change, no decode");
         assert!(
-            world.get::<HandleComponent<GpuMaterial>>(entity).is_some(),
-            "the projection built after the change stays"
+            project.arrived::<Box<dyn Material>>(&mat).is_empty(),
+            "the copy stored after the change stays"
         );
-        assert!(project.gpu_material_cached(&mat));
     }
 
     // ── Textures ────────────────────────────────────────────────────────────
@@ -928,8 +808,12 @@ mod tests {
         );
     }
 
+    /// A repainted texture is replaced once, for every material naming it.
+    ///
+    /// That arrival is what the material residency makes each of them again
+    /// on; the materials themselves keep their copies and uuids.
     #[test]
-    fn a_repainted_texture_reprojects_every_material_naming_it() {
+    fn a_repainted_texture_is_replaced_for_every_material_naming_it() {
         let tex_path = "textures/shared.png";
         let tex = AssetUUID::new_v5(tex_path);
         let kmat_path = "materials/textured.kmat";
@@ -941,24 +825,27 @@ mod tests {
             ..Default::default()
         })));
         project.tick(&mut world);
-        let asset_material = project.project_material(&mut world, by_asset);
-        let inline_material = project.project_material(&mut world, inline);
+        let asset_material = material_uuid(&world, by_asset);
+        let inline_material = material_uuid(&world, inline);
+        project.watch::<CpuTexture>();
+        project.watch::<Box<dyn Material>>();
 
         project.write(tex_path, &png(5, 5));
         project.invalidate(&tex);
         project.tick(&mut world);
 
+        assert_eq!(
+            project.arrived::<CpuTexture>(&tex),
+            vec![ArrivalKind::Replaced],
+            "the texture is replaced once, for every material naming it"
+        );
         for (entity, material, what) in [
             (by_asset, asset_material, "the .kmat material"),
             (inline, inline_material, "the inline material"),
         ] {
             assert!(
-                world.get::<HandleComponent<GpuMaterial>>(entity).is_none(),
-                "{what} lost its GPU projection, built with the old image"
-            );
-            assert!(
-                !project.gpu_material_cached(&material),
-                "{what}'s stale GPU material left the cache"
+                project.arrived::<Box<dyn Material>>(&material).is_empty(),
+                "{what} itself did not change"
             );
             assert_eq!(
                 material_uuid(&world, entity),
@@ -970,8 +857,8 @@ mod tests {
 
     /// One texture fails to decode, a sibling repaints fine.
     ///
-    /// The broken one keeps its last good image and the material naming it
-    /// keeps its projection, while the sibling's material re-projects.
+    /// The broken one keeps its last good image, not replaced, so the material
+    /// naming it keeps its GPU copy, while the sibling is replaced.
     #[test]
     fn a_reload_that_fails_to_decode_keeps_the_last_good_value() {
         let broken_path = "textures/broken.png";
@@ -990,8 +877,7 @@ mod tests {
         })));
         project.tick(&mut world);
         let last_good = project.texture(&broken).expect("the first image loads");
-        project.project_material(&mut world, names_broken);
-        project.project_material(&mut world, names_fine);
+        project.watch::<CpuTexture>();
 
         project.write(broken_path, b"definitely not an image");
         project.write(fine_path, &png(5, 5));
@@ -1005,19 +891,23 @@ mod tests {
             (5, 5),
             "the sibling that decodes is refreshed"
         );
-        assert!(world
-            .get::<HandleComponent<GpuMaterial>>(names_fine)
-            .is_none());
+        assert_eq!(
+            project.arrived::<CpuTexture>(&fine),
+            vec![ArrivalKind::Replaced]
+        );
         assert!(
             project.texture(&broken) == Some(last_good),
             "the texture that fails to decode keeps its last good image"
         );
         assert!(
-            world
-                .get::<HandleComponent<GpuMaterial>>(names_broken)
-                .is_some(),
-            "the material naming it keeps its projection"
+            project.arrived::<CpuTexture>(&broken).is_empty(),
+            "it is not replaced: the material naming it keeps its GPU copy"
         );
+        for entity in [names_broken, names_fine] {
+            assert!(world
+                .get::<HandleComponent<Box<dyn Material>>>(entity)
+                .is_some());
+        }
     }
 
     // ── Materials ───────────────────────────────────────────────────────────
@@ -1031,7 +921,7 @@ mod tests {
         let entity = world.spawn(MaterialRef::Asset(mat));
         project.tick(&mut world);
         assert_eq!(standard_of(&world, entity).roughness, 0.5);
-        project.project_material(&mut world, entity);
+        project.watch::<Box<dyn Material>>();
 
         project.write(kmat_path, &kmat(0.9, None));
         project.invalidate(&mat);
@@ -1054,13 +944,10 @@ mod tests {
             0.9,
             "the store serves the edited material"
         );
-        assert!(
-            world.get::<HandleComponent<GpuMaterial>>(entity).is_none(),
-            "the stale projection is dropped"
-        );
-        assert!(
-            !project.gpu_material_cached(&mat),
-            "the GpuMaterial cache no longer holds the old one"
+        assert_eq!(
+            project.arrived::<Box<dyn Material>>(&mat),
+            vec![ArrivalKind::Replaced],
+            "replaced in the store: the residency makes its GPU copy again"
         );
     }
 
@@ -1114,8 +1001,10 @@ mod tests {
 
     // ── Meshes ──────────────────────────────────────────────────────────────
 
+    /// The modified mesh is replaced in the store, under the same uuid: the
+    /// arrival the mesh residency makes its GPU copy again on.
     #[test]
-    fn a_modified_mesh_reaches_its_entities_and_its_gpu_mesh_is_retired() {
+    fn a_modified_mesh_reaches_its_entities_and_is_replaced_in_the_store() {
         let obj_path = "meshes/shape.obj";
         let mesh = AssetUUID::new_v5(obj_path);
         let project = Project::new(&[(obj_path, TRIANGLE_OBJ.as_bytes().to_vec())]);
@@ -1131,7 +1020,7 @@ mod tests {
                 .len(),
             3
         );
-        project.project_mesh(&mut world, entity);
+        project.watch::<Mesh>();
 
         project.write(obj_path, QUAD_OBJ.as_bytes());
         project.invalidate(&mesh);
@@ -1151,13 +1040,10 @@ mod tests {
             6,
             "the store serves the modified mesh"
         );
-        assert!(
-            world.get::<HandleComponent<GpuMesh>>(entity).is_none(),
-            "the stale GPU mesh handle is dropped"
-        );
-        assert!(
-            !project.gpu_mesh_cached(&mesh),
-            "the GpuMesh cache no longer holds the old one"
+        assert_eq!(
+            project.arrived::<Mesh>(&mesh),
+            vec![ArrivalKind::Replaced],
+            "replaced once in the store: the residency makes its GPU copy again"
         );
     }
 
@@ -1169,7 +1055,7 @@ mod tests {
         let mut world = World::new();
         let entity = world.spawn(MeshRef::Asset(mesh));
         project.tick(&mut world);
-        project.project_mesh(&mut world, entity);
+        project.watch::<Mesh>();
 
         project.remove_and_reindex(obj_path);
         project.invalidate(&mesh);
@@ -1179,9 +1065,12 @@ mod tests {
             world.get::<HandleComponent<Mesh>>(entity).is_none(),
             "the entity no longer carries the deleted mesh"
         );
-        assert!(world.get::<HandleComponent<GpuMesh>>(entity).is_none());
         assert!(project.stored_mesh(&mesh).is_none(), "the store drops it");
-        assert!(!project.gpu_mesh_cached(&mesh));
+        assert_eq!(
+            project.arrived::<Mesh>(&mesh),
+            vec![ArrivalKind::Gone],
+            "gone from the store: the residency retires its GPU copy"
+        );
         assert!(
             world.get::<MeshRef>(entity).is_some(),
             "the authored reference is the author's, and stays"
@@ -1261,10 +1150,12 @@ mod tests {
         .unwrap()
     }
 
-    /// A glTF saved again with a repainted image: its texture part and the
-    /// material naming it are refreshed when the container is invalidated.
+    /// A glTF saved again with a repainted image replaces its texture part.
+    ///
+    /// Replaced in the store when the container is invalidated: the arrival
+    /// the material residency makes the material naming it again on.
     #[test]
-    fn a_reexported_gltf_refreshes_its_texture_part_and_reprojects_its_material() {
+    fn a_reexported_gltf_refreshes_its_texture_part_for_its_material() {
         let rel = "models/painted.gltf";
         let image = "models/painted.png";
         let project = Project::new(&[
@@ -1279,7 +1170,7 @@ mod tests {
         project.tick(&mut world);
         let before = project.texture(&texture0).expect("the texture part loads");
         assert_eq!((before.size.width, before.size.height), (3, 2));
-        project.project_material(&mut world, entity);
+        project.watch::<CpuTexture>();
 
         project.write(image, &png(5, 5));
         project.write(rel, &gltf_with_one_textured_material("painted.png"));
@@ -1295,11 +1186,12 @@ mod tests {
             (5, 5),
             "the texture part is the re-exported image"
         );
-        assert!(
-            world.get::<HandleComponent<GpuMaterial>>(entity).is_none(),
-            "the material built with the old image is projected again"
+        assert_eq!(
+            project.arrived::<CpuTexture>(&texture0),
+            vec![ArrivalKind::Replaced],
+            "the texture part the material names is replaced"
         );
-        assert!(!project.gpu_material_cached(&material));
+        assert_eq!(material_uuid(&world, entity), material);
     }
 
     /// A glTF's image is a file of its own: repainting it, and nothing else,
@@ -1323,7 +1215,7 @@ mod tests {
         project.tick(&mut world);
         let before = project.texture(&texture0).expect("the texture part loads");
         assert_eq!((before.size.width, before.size.height), (3, 2));
-        project.project_material(&mut world, entity);
+        project.watch::<CpuTexture>();
 
         project.write(image, &png(5, 5));
         project.invalidate(&AssetUUID::new_v5(image));
@@ -1337,10 +1229,12 @@ mod tests {
             (5, 5),
             "the glTF's texture part shows the repainted image"
         );
-        assert!(
-            world.get::<HandleComponent<GpuMaterial>>(entity).is_none(),
-            "the glTF material built with the old image is projected again"
+        assert_eq!(
+            project.arrived::<CpuTexture>(&texture0),
+            vec![ArrivalKind::Replaced],
+            "the texture part is replaced: the glTF material naming it is made again"
         );
+        assert_eq!(material_uuid(&world, entity), material);
     }
 
     /// An exporter caught mid-write leaves a glTF the index cannot read, so it
@@ -1361,8 +1255,7 @@ mod tests {
         let mut world = World::new();
         let entity = world.spawn((MeshRef::Asset(mesh), MaterialRef::Asset(material)));
         project.tick(&mut world);
-        project.project_mesh(&mut world, entity);
-        project.project_material(&mut world, entity);
+        project.watch::<Mesh>();
 
         // What the editor's hot reload does on a modified glTF: invalidate
         // it, then list its parts again since a glTF may hold some.
@@ -1382,8 +1275,8 @@ mod tests {
             "the entity keeps the last good material part"
         );
         assert!(
-            world.get::<HandleComponent<GpuMesh>>(entity).is_some(),
-            "the mesh projection built from the last good part stays"
+            project.arrived::<Mesh>(&mesh).is_empty(),
+            "the last good mesh part is not replaced: its GPU copy stays"
         );
     }
 
@@ -1554,45 +1447,6 @@ mod tests {
         );
     }
 
-    /// The engine's eviction service is present.
-    ///
-    /// The projection a change made stale is handed to it to free after the
-    /// render, not dropped from the cache and leaked.
-    #[test]
-    fn a_stale_projection_is_handed_to_the_eviction_to_free() {
-        use khora_data::AssetEviction;
-
-        let kmat_path = "materials/evicted.kmat";
-        let obj_path = "meshes/evicted.obj";
-        let mat = AssetUUID::new_v5(kmat_path);
-        let mesh = AssetUUID::new_v5(obj_path);
-        let mut project = Project::new(&[
-            (kmat_path, kmat(0.5, None)),
-            (obj_path, TRIANGLE_OBJ.as_bytes().to_vec()),
-        ]);
-        let eviction = Arc::new(Mutex::new(AssetEviction::new()));
-        project.runtime.resources.insert(eviction.clone());
-        let mut world = World::new();
-        let entity = world.spawn((MeshRef::Asset(mesh), MaterialRef::Asset(mat)));
-        project.tick(&mut world);
-        project.project_material(&mut world, entity);
-        project.project_mesh(&mut world, entity);
-
-        project.write(kmat_path, &kmat(0.9, None));
-        project.write(obj_path, QUAD_OBJ.as_bytes());
-        project.invalidate(&mat);
-        project.invalidate(&mesh);
-        project.tick(&mut world);
-
-        assert!(!project.gpu_material_cached(&mat));
-        assert!(!project.gpu_mesh_cached(&mesh));
-        assert_eq!(
-            eviction.lock().unwrap().retired_count(),
-            2,
-            "the stale GPU material and mesh wait for the eviction to free them"
-        );
-    }
-
     /// A `.kmat` saved broken keeps its last good value on the entities that
     /// hold it.
     ///
@@ -1665,7 +1519,7 @@ mod tests {
         let mut world = World::new();
         let entity = world.spawn(MeshRef::Asset(mesh));
         project.tick(&mut world);
-        project.project_mesh(&mut world, entity);
+        project.watch::<Mesh>();
 
         let other = tempfile::tempdir().unwrap();
         write_file(&other.path().join("assets"), obj_path, QUAD_OBJ.as_bytes());
@@ -1692,8 +1546,7 @@ mod tests {
             6,
             "the incoming project's mesh"
         );
-        assert!(world.get::<HandleComponent<GpuMesh>>(entity).is_none());
-        assert!(!project.gpu_mesh_cached(&mesh));
+        assert_eq!(project.arrived::<Mesh>(&mesh), vec![ArrivalKind::Replaced]);
     }
 
     /// Many files change between two ticks (a branch checkout, a bulk
@@ -1773,9 +1626,9 @@ mod tests {
 
     /// Until the new value lands, the engine shows the last good one.
     ///
-    /// The entity keeps its handle and its projection, the store its copy,
-    /// frame after frame; the change is filed once, however many frames it
-    /// waits.
+    /// The entity keeps its handle, the store its copy, not replaced, so the
+    /// GPU copy stays, frame after frame; the change is filed once, however
+    /// many frames it waits.
     #[test]
     fn the_last_good_value_serves_until_the_new_one_lands() {
         let obj_path = "meshes/waiting.obj";
@@ -1784,7 +1637,7 @@ mod tests {
         let mut world = World::new();
         let entity = world.spawn(MeshRef::Asset(mesh));
         project.tick(&mut world);
-        project.project_mesh(&mut world, entity);
+        project.watch::<Mesh>();
 
         project.write(obj_path, QUAD_OBJ.as_bytes());
         project.invalidate(&mesh);
@@ -1799,10 +1652,9 @@ mod tests {
                 "frame {frame}: the last good triangle"
             );
             assert!(
-                world.get::<HandleComponent<GpuMesh>>(entity).is_some(),
-                "frame {frame}: its projection stays"
+                project.arrived::<Mesh>(&mesh).is_empty(),
+                "frame {frame}: its copy is not replaced"
             );
-            assert!(project.gpu_mesh_cached(&mesh), "frame {frame}");
             assert_eq!(
                 project.stored_mesh(&mesh).map(|m| m.positions.len()),
                 Some(3),
@@ -1824,29 +1676,27 @@ mod tests {
         );
     }
 
-    /// On the frame the new values land, the entities are re-tagged under the same uuids, their
-    /// stale GPU handles dropped, and the stale projections handed to the eviction.
+    /// On the frame the new values land, the store's copies are replaced.
+    ///
+    /// The entities are given them under the same uuids; the arrivals are
+    /// what the residencies make the GPU copies again on.
     ///
     /// Not before.
     #[test]
-    fn on_landing_entities_are_retagged_and_stale_projections_evicted_the_same_frame() {
-        use khora_data::AssetEviction;
-
+    fn on_landing_the_copies_are_replaced_the_same_frame() {
         let kmat_path = "materials/landing.kmat";
         let obj_path = "meshes/landing.obj";
         let mat = AssetUUID::new_v5(kmat_path);
         let mesh = AssetUUID::new_v5(obj_path);
-        let mut project = Project::new(&[
+        let project = Project::new(&[
             (kmat_path, kmat(0.5, None)),
             (obj_path, TRIANGLE_OBJ.as_bytes().to_vec()),
         ]);
-        let eviction = Arc::new(Mutex::new(AssetEviction::new()));
-        project.runtime.resources.insert(eviction.clone());
         let mut world = World::new();
         let entity = world.spawn((MeshRef::Asset(mesh), MaterialRef::Asset(mat)));
         project.tick(&mut world);
-        project.project_material(&mut world, entity);
-        project.project_mesh(&mut world, entity);
+        project.watch::<Mesh>();
+        project.watch::<Box<dyn Material>>();
 
         project.write(kmat_path, &kmat(0.9, None));
         project.write(obj_path, QUAD_OBJ.as_bytes());
@@ -1854,15 +1704,11 @@ mod tests {
         project.invalidate(&mesh);
         project.frame(&mut world);
 
-        assert_eq!(
-            eviction.lock().unwrap().retired_count(),
-            0,
-            "nothing is retired before the new values land"
+        assert!(
+            project.arrived::<Box<dyn Material>>(&mat).is_empty(),
+            "nothing is replaced before the new values land"
         );
-        assert!(world.get::<HandleComponent<GpuMaterial>>(entity).is_some());
-        assert!(world.get::<HandleComponent<GpuMesh>>(entity).is_some());
-        assert!(project.gpu_material_cached(&mat));
-        assert!(project.gpu_mesh_cached(&mesh));
+        assert!(project.arrived::<Mesh>(&mesh).is_empty());
 
         assert_eq!(project.decode(), 2, "the material and the mesh are filed");
         project.frame(&mut world);
@@ -1873,30 +1719,25 @@ mod tests {
             .get::<HandleComponent<Mesh>>(entity)
             .expect("the entity keeps a mesh");
         assert_eq!((resolved.uuid, resolved.handle.positions.len()), (mesh, 6));
-        assert!(
-            world.get::<HandleComponent<GpuMaterial>>(entity).is_none(),
-            "the stale GPU material handle is dropped on the frame it lands"
-        );
-        assert!(
-            world.get::<HandleComponent<GpuMesh>>(entity).is_none(),
-            "the stale GPU mesh handle is dropped on the frame it lands"
-        );
-        assert!(!project.gpu_material_cached(&mat));
-        assert!(!project.gpu_mesh_cached(&mesh));
         assert_eq!(
-            eviction.lock().unwrap().retired_count(),
-            2,
-            "the stale GPU material and mesh wait for the eviction"
+            project.arrived::<Box<dyn Material>>(&mat),
+            vec![ArrivalKind::Replaced],
+            "the material is replaced on the frame it lands"
+        );
+        assert_eq!(
+            project.arrived::<Mesh>(&mesh),
+            vec![ArrivalKind::Replaced],
+            "the mesh is replaced on the frame it lands"
         );
     }
 
-    /// A repainted texture: the store and the materials naming it keep the old
-    /// image and their projections until the new image lands.
+    /// A repainted texture: the store keeps the old image, not replaced, until
+    /// the new image lands.
     ///
-    /// On that frame the store serves it and every material naming it
-    /// re-projects.
+    /// On that frame the store serves it, replaced: the arrival the material
+    /// residency makes every material naming it again on.
     #[test]
-    fn a_repainted_texture_reprojects_its_materials_the_frame_it_lands() {
+    fn a_repainted_texture_is_replaced_the_frame_it_lands() {
         let tex_path = "textures/landing.png";
         let tex = AssetUUID::new_v5(tex_path);
         let project = Project::new(&[(tex_path, png(2, 2))]);
@@ -1906,7 +1747,7 @@ mod tests {
             ..Default::default()
         })));
         project.tick(&mut world);
-        let material = project.project_material(&mut world, entity);
+        project.watch::<CpuTexture>();
 
         project.write(tex_path, &png(5, 5));
         project.invalidate(&tex);
@@ -1919,8 +1760,8 @@ mod tests {
             "the last good image until the new one lands"
         );
         assert!(
-            world.get::<HandleComponent<GpuMaterial>>(entity).is_some(),
-            "the material keeps its projection meanwhile"
+            project.arrived::<CpuTexture>(&tex).is_empty(),
+            "not replaced meanwhile: the material keeps its GPU copy"
         );
 
         assert_eq!(project.decode(), 1, "the texture is filed");
@@ -1928,18 +1769,21 @@ mod tests {
 
         let after = project.texture(&tex).expect("the store keeps the image");
         assert_eq!((after.size.width, after.size.height), (5, 5));
-        assert!(
-            world.get::<HandleComponent<GpuMaterial>>(entity).is_none(),
-            "the material built with the old image re-projects on the frame it lands"
+        assert_eq!(
+            project.arrived::<CpuTexture>(&tex),
+            vec![ArrivalKind::Replaced],
+            "replaced on the frame it lands"
         );
-        assert!(!project.gpu_material_cached(&material));
+        assert!(world
+            .get::<HandleComponent<Box<dyn Material>>>(entity)
+            .is_some());
     }
 
     /// A reload whose decode fails is learned when the failure lands from the
     /// `loading` family.
     ///
-    /// The entity keeps the last good value and its projection, and an entity
-    /// naming the asset afterwards sees that value.
+    /// The entity keeps the last good value, not replaced in the store, so its
+    /// GPU copy stays, and an entity naming the asset afterwards sees that value.
     #[test]
     fn a_reload_that_fails_off_the_frame_keeps_the_last_good_value() {
         let kmat_path = "materials/broken_later.kmat";
@@ -1948,7 +1792,7 @@ mod tests {
         let mut world = World::new();
         let first = world.spawn(MaterialRef::Asset(mat));
         project.tick(&mut world);
-        project.project_material(&mut world, first);
+        project.watch::<Box<dyn Material>>();
 
         project.write(kmat_path, b"definitely not a material");
         project.invalidate(&mat);
@@ -1966,10 +1810,9 @@ mod tests {
             "the entity keeps the last good value once the failure landed"
         );
         assert!(
-            world.get::<HandleComponent<GpuMaterial>>(first).is_some(),
-            "and its projection"
+            project.arrived::<Box<dyn Material>>(&mat).is_empty(),
+            "and the store its copy, so the GPU copy stays"
         );
-        assert!(project.gpu_material_cached(&mat));
 
         let later = world.spawn(MaterialRef::Asset(mat));
         project.tick(&mut world);
@@ -2131,7 +1974,7 @@ mod tests {
         let mut world = World::new();
         let entity = world.spawn(MeshRef::Asset(mesh));
         project.tick(&mut world);
-        project.project_mesh(&mut world, entity);
+        project.watch::<Mesh>();
 
         project.remove_and_reindex(obj_path);
         project.invalidate(&mesh);
@@ -2141,9 +1984,12 @@ mod tests {
             world.get::<HandleComponent<Mesh>>(entity).is_none(),
             "the entity no longer carries the deleted mesh"
         );
-        assert!(world.get::<HandleComponent<GpuMesh>>(entity).is_none());
         assert!(project.stored_mesh(&mesh).is_none(), "the store drops it");
-        assert!(!project.gpu_mesh_cached(&mesh));
+        assert_eq!(
+            project.arrived::<Mesh>(&mesh),
+            vec![ArrivalKind::Gone],
+            "gone on the frame it is seen: the residency retires its GPU copy"
+        );
     }
 
     /// Decodes only the filed requests `pick` chooses, leased, and hands
@@ -2183,10 +2029,11 @@ mod tests {
     /// A material whose own change is still decoding names a texture that
     /// changed too and landed first.
     ///
-    /// The material re-projects with the new image, and again once its own new
-    /// value lands.
+    /// The texture is replaced first, the arrival the material residency makes
+    /// the material again on with the new image; the material is replaced
+    /// once its own new value lands.
     #[test]
-    fn a_material_still_decoding_reprojects_when_a_texture_it_names_lands_first() {
+    fn a_material_still_decoding_is_remade_when_a_texture_it_names_lands_first() {
         let tex_path = "textures/first.png";
         let tex = AssetUUID::new_v5(tex_path);
         let kmat_path = "materials/second.kmat";
@@ -2195,7 +2042,8 @@ mod tests {
         let mut world = World::new();
         let entity = world.spawn(MaterialRef::Asset(mat));
         project.tick(&mut world);
-        project.project_material(&mut world, entity);
+        project.watch::<CpuTexture>();
+        project.watch::<Box<dyn Material>>();
 
         project.write(tex_path, &png(5, 5));
         project.write(kmat_path, &kmat(0.9, Some(tex)));
@@ -2212,18 +2060,20 @@ mod tests {
             0.5,
             "the old material"
         );
-        assert!(
-            world.get::<HandleComponent<GpuMaterial>>(entity).is_none(),
-            "re-projects with the new image"
+        assert_eq!(
+            project.arrived::<CpuTexture>(&tex),
+            vec![ArrivalKind::Replaced],
+            "the new image: the material is made again with it"
         );
-        project.project_material(&mut world, entity);
+        assert!(project.arrived::<Box<dyn Material>>(&mat).is_empty());
 
         assert_eq!(decode_only(&project, |uuid| *uuid == mat), 1);
         project.frame(&mut world);
         assert_eq!(standard_of(&world, entity).roughness, 0.9);
-        assert!(
-            world.get::<HandleComponent<GpuMaterial>>(entity).is_none(),
-            "re-projects with the new material"
+        assert_eq!(
+            project.arrived::<Box<dyn Material>>(&mat),
+            vec![ArrivalKind::Replaced],
+            "the new material: made again"
         );
         assert!(reloading(&project).is_empty(), "nothing left reloading");
     }
@@ -2238,7 +2088,6 @@ mod tests {
         let mut world = World::new();
         let entity = world.spawn(MeshRef::Asset(mesh));
         project.tick(&mut world);
-        project.project_mesh(&mut world, entity);
 
         project.write(obj_path, QUAD_OBJ.as_bytes());
         project.invalidate(&mesh);
@@ -2250,7 +2099,10 @@ mod tests {
             reloading(&project).is_empty(),
             "dropped once nothing holds it"
         );
-        assert!(!project.gpu_mesh_cached(&mesh));
+        assert!(
+            project.stored_mesh(&mesh).is_none(),
+            "the store keeps no copy nothing holds"
+        );
         assert_eq!(project.decode(), 1);
         project.frame(&mut world);
         assert!(reloading(&project).is_empty());
@@ -2386,7 +2238,6 @@ mod tests {
         let mut world = World::new();
         let entity = world.spawn(MeshRef::Asset(mesh));
         project.tick(&mut world);
-        project.project_mesh(&mut world, entity);
 
         project.write(obj_path, QUAD_OBJ.as_bytes());
         project.invalidate(&mesh);
@@ -2406,12 +2257,12 @@ mod tests {
             .map(|resolved| resolved.handle.positions.len())
     }
 
-    /// An entity served the last good copy mid-reload is re-tagged on the frame the value lands.
+    /// An entity served the last good copy mid-reload is given the new value on the frame it lands.
     ///
-    /// Its stale projection is dropped, like that of the entity that held the
-    /// asset before the change.
+    /// Like the entity that held the asset before the change; the store's
+    /// copy is replaced once for both.
     #[test]
-    fn a_sibling_served_the_last_good_copy_is_retagged_when_the_new_value_lands() {
+    fn a_sibling_served_the_last_good_copy_is_given_the_new_value_when_it_lands() {
         let obj_path = "meshes/retagged.obj";
         let mesh = AssetUUID::new_v5(obj_path);
         let project = Project::new(&[(obj_path, TRIANGLE_OBJ.as_bytes().to_vec())]);
@@ -2425,13 +2276,17 @@ mod tests {
         let second = world.spawn(MeshRef::Asset(mesh));
         project.frame(&mut world);
         assert_eq!(shown_vertices(&world, second), Some(3));
-        project.project_mesh(&mut world, second);
+        project.watch::<Mesh>();
 
         project.decode();
         project.frame(&mut world);
         assert_eq!(shown_vertices(&world, first), Some(6));
         assert_eq!(shown_vertices(&world, second), Some(6));
-        assert!(world.get::<HandleComponent<GpuMesh>>(second).is_none());
+        assert_eq!(
+            project.arrived::<Mesh>(&mesh),
+            vec![ArrivalKind::Replaced],
+            "one copy replaced for both entities"
+        );
     }
 
     /// The only holder of a changed mesh leaves while it decodes, and a new
@@ -2461,10 +2316,12 @@ mod tests {
         assert_eq!(shown_vertices(&world, second), Some(6));
     }
 
-    /// A material resolved while a texture it names is decoded again is
-    /// projected with the old image, and re-projected once the new one lands.
+    /// A material resolved while its texture is decoded again is served the old image.
+    ///
+    /// The texture is replaced once the new one lands: the arrival the
+    /// material residency makes the material again on.
     #[test]
-    fn a_material_resolved_mid_reload_of_its_texture_reprojects_when_the_image_lands() {
+    fn a_material_resolved_mid_reload_of_its_texture_is_remade_when_the_image_lands() {
         let tex_path = "textures/mid.png";
         let tex = AssetUUID::new_v5(tex_path);
         let project = Project::new(&[(tex_path, png(2, 2))]);
@@ -2483,15 +2340,19 @@ mod tests {
         project.frame(&mut world);
         let later = world.spawn(material());
         project.frame(&mut world);
-        project.project_material(&mut world, later);
+        assert!(world
+            .get::<HandleComponent<Box<dyn Material>>>(later)
+            .is_some());
+        project.watch::<CpuTexture>();
 
         project.decode();
         project.frame(&mut world);
         let image = project.texture(&tex).expect("the image");
         assert_eq!((image.size.width, image.size.height), (5, 5));
-        assert!(
-            world.get::<HandleComponent<GpuMaterial>>(later).is_none(),
-            "the material projected with the old image re-projects"
+        assert_eq!(
+            project.arrived::<CpuTexture>(&tex),
+            vec![ArrivalKind::Replaced],
+            "the image the material names is replaced: the material is made again"
         );
     }
 

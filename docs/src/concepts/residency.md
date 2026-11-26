@@ -60,15 +60,17 @@ Three live in `khora-data/src/residency/`, all on the GPU:
 - `image_on_gpu` places every image a `UiImage` names in the UI atlas, and is
   the one built entirely on the store described below.
 - `gpu_mesh_sync` implements the trait for the upload and keeps its residents in
-  the asset store, where the render lanes read them. Each entity whose mesh is
-  resident is tagged with a `HandleComponent<GpuMesh>`; a mesh shared by many
-  entities is uploaded once.
+  the asset store, under each mesh's uuid, where the render lanes look them up
+  by the uuid an entity's `MeshRef` names. A mesh shared by many entities is
+  uploaded once.
 - `gpu_material_sync` is registered as a residency but does not implement the
   trait: a material's upload needs the pipeline layout of its variant and every
   texture it names decoded first. It uploads the material's uniforms and
-  textures, builds its bind group against the layout the lit pipeline binds for
-  that variant, and tags the entity with a `HandleComponent<GpuMaterial>`. It
-  runs after the meshes.
+  textures and builds its bind group against the layout the lit pipeline binds
+  for that variant, kept under the material's uuid. It runs after the meshes.
+
+Neither attaches anything to an entity: a GPU copy belongs to its asset, not to
+the entities naming it.
 
 The glyphs of UI text are made resident by `glyphs_on_gpu`, a `DataSystem` that
 is not a residency: a glyph is not an asset.
@@ -109,22 +111,23 @@ registration:
 ```rust
 register_residency!(name = ImageOnGpu::NAME, run = image_on_gpu_system);
 register_residency!(
-    name = "gpu_material_sync",
+    name = GPU_MATERIAL_SYNC,
     run = gpu_material_sync_system,
     after = ["gpu_mesh_sync"],
+    observes = [MaterialRef],
 );
 ```
 
 It submits a `DataSystemRegistration` in `TickPhase::PreExtract`, with the role
 `Upkeep` (it runs whichever families are on), ordered after `asset_reload` and
-`asset_resolver` and after whatever `after` names. Those two run first in the
-phase for a reason:
+`asset_resolver` and after whatever `after` names, watching the components
+`observes` names. Those two run first in the phase for a reason:
 
 - `asset_reload` replaces the copies of every asset whose file changed, so a
   changed asset reaches the device the frame its new copy landed;
-- `asset_resolver` turns the references entities hold (`MeshRef`,
-  `MaterialRef`, a UI font or image) into handles, so a residency sees this
-  frame's references.
+- `asset_resolver` stores the copies the references entities hold (`MeshRef`,
+  `MaterialRef`, a UI font or image) name, so a residency sees this frame's
+  copies.
 
 The copies they read are already there. A decode filed off the frame lands at
 the frame's very first phase, `Boundary`, where `asset_intake` takes the decoded
@@ -140,7 +143,7 @@ headless run), each of the three returns at once and makes nothing.
 
 ## How a residency is fed
 
-A residency reads two things, and writes only its store and its tags.
+A residency reads two things, and writes only its store.
 
 **The assets.** Its sources are the CPU copies in the `AssetStore`, one per uuid.
 A copy is an `AssetHandle`, a shared pointer: two handles are the same copy only
@@ -148,18 +151,54 @@ if they point at the same value. The reload never edits a copy in place; it
 stores a new one under the same uuid. That is what lets a store tell "already
 made" from "changed".
 
-**The world's changes.** Which assets are wanted comes from the entities:
+**What arrived.** Every `Assets<T>` keeps a journal of the copies that arrive:
+each insert is an arrival `Landed` (a uuid it did not hold) or `Replaced`, each
+removal an arrival `Gone`. A reader names itself and reads, with
+`arrivals(reader)`, what arrived since its last read; a reader that is new, or
+fell behind the journal's 4 096 entries, reads `Resync` instead and looks at the
+whole store. Whoever writes a store tells its readers by writing it: the
+resolver, the intake of what was decoded, the reload.
 
-- `image_on_gpu` collects, each frame, the textures every `UiImage` names;
-- `gpu_mesh_sync` visits every entity holding a `HandleComponent<Mesh>` but no
-  `HandleComponent<GpuMesh>` yet;
-- `gpu_material_sync` visits every entity holding a resolved material but no
-  `HandleComponent<GpuMaterial>` yet.
+The mesh and material residencies work per asset, never per entity:
 
-So an entity that gains a mesh is uploaded at the next `PreExtract`, and an entity
-already tagged costs nothing. When a mesh or a material changes, the reload takes
-its GPU copy out of the store and removes the entity's tag: the next residency run
-sees an untagged entity and uploads the new copy.
+- a mesh or material that **landed or was replaced** is made, or made again,
+  on the GPU under its uuid; one stored again unchanged (the same handle) is not
+  made twice. The GPU copy it replaces is retired;
+- one **gone** from the store leaves the GPU: its GPU copy is retired, though
+  an entity may still name it;
+- on a **resync** the arrivals were lost, and the residency restores the
+  truth instead of replaying them: it makes resident every uuid a `MeshRef` or
+  `MaterialRef` names whose CPU copy is in the store (read by one query of the
+  references, on that rare path only), brings every resident GPU copy in line
+  with its CPU copy (made again if it changed, retired if it went), forgets
+  every uuid it remembers that left the store, and makes nothing else. A copy
+  the eviction freed because nothing names it stays freed;
+- a material whose textures are not all decoded **waits**. The residency keeps,
+  for each texture, the materials naming it, and for each resident material the
+  copies of the textures it was built from: a texture that arrives wakes those
+  materials and only those. A waiting one is made; a resident one is made again
+  if a texture it was built from differs from the store's copy, or is gone, so a repainted
+  image reaches every material naming it. A texture resync wakes the same way:
+  a material whose textures are the same copies is kept. A material whose GPU
+  copy is gone (freed by the eviction, or retired) lets go of those texture
+  copies, and keeps its links: named again, it is made again;
+- a build the device refuses half way gives back every texture, view and
+  buffer it made, and is tried again on the next run.
+
+**The references.** One case no arrival covers: a GPU copy evicted because no
+reference named it (see [Eviction](#eviction)), whose CPU copy stays in the
+store. The residencies observe `MeshRef` and `MaterialRef` and read
+`Changed<…>` since their last run: a reference added or changed whose uuid has
+a CPU copy but no GPU copy is made resident again, as for an undone delete or a
+respawn. The other references cost nothing; no frame scans them.
+
+`image_on_gpu` collects, each frame, the textures every `UiImage` names.
+
+So a mesh that lands is uploaded at the next `PreExtract`, once for every entity
+naming it, and a frame where nothing arrived and no reference changed costs a
+read of an empty journal. When a mesh or a material changes, the reload replaces
+its copy in the store; the next residency run reads that arrival and uploads the
+new copy, and the entities, which hold only the uuid, draw it.
 
 ## The store: made once per copy
 
@@ -201,14 +240,14 @@ caller decides what is kept.
 |---|---|
 | An image the atlas has no room for | The atlas is built again from the images in use, at most once a run (see below). An image the rebuilt atlas still has no room for is left out, logged once as a warning, and tried again once an image in use then goes away or is replaced. |
 | An image larger than an empty atlas | No rebuild could hold it, so none is made. Its last good copy is drawn instead, across rebuilds. The refusal is logged once; a new copy is tried on the next frame. |
-| A mesh's vertex buffer | The mesh is not cached and the entity stays untagged, logged as an error. The next frame tries again; once the device accepts, the mesh is uploaded and tagged. |
+| A mesh's vertex buffer | The mesh has no GPU copy, logged as an error. The next frame tries again; once the device accepts, the mesh is uploaded under its uuid. A replaced mesh refused keeps its last good GPU copy meanwhile. |
 | A mesh's index buffer | The same, and the vertex buffer already made for it is given back to the device first. |
-| The material sampler | No material is uploaded while the device refuses it, logged as an error. The sampler is made once, the first time the device accepts it, and shared by every material. |
-| A material texture or bind group | That material is not uploaded this run, after a logged error. The next run tries it again. |
+| The material sampler | No material is uploaded while the device refuses it, logged as an error; what arrived meanwhile is tried on the next run. The sampler is made once, the first time the device accepts it, and shared by every material. |
+| A material texture or bind group | That material is not uploaded this run, after a logged error, and every texture, view and buffer its build made is given back. The next run tries it again; a replaced material keeps its last good GPU copy meanwhile. |
 
 What is *missing* is not a refusal. A material whose textures are not decoded yet
 waits, with no warning, until they land. A mesh with no material reference is
-logged and skipped: there is no default material.
+not drawn by the lit lanes: there is no default material.
 
 ## Eviction
 
@@ -217,17 +256,20 @@ materials are released by the **`AssetEviction`** service
 (`khora-data/src/gpu/eviction.rs`), ticked by the `asset_eviction` DataSystem in
 `Maintenance`, at the end of the frame:
 
-- **Retired** residents — the GPU copies the reload took out because their
-  asset changed — are freed at its next tick, at the end of the frame, after the
-  render that may still read them.
-- **Orphans** — GPU meshes and materials no live entity's handle references —
-  are freed up to 16 a frame, materials first, so a burst of despawns spreads
-  its teardown over several frames. Retired residents do not count against the
-  16.
+- **Retired** residents — the GPU copies a residency took out because their
+  asset was replaced or went (`AssetEviction::retire_mesh`, `retire_material`)
+  — are freed at its next tick, at the end of the frame, after the render that
+  may still read them. None is leaked.
+- **Orphans** — GPU meshes and materials no live `MeshRef` or `MaterialRef`
+  names by its uuid (an asset's, a mesh made in code, an inline material's, a
+  procedural mesh's) — are freed up to 16 a frame, materials first, so a burst
+  of despawns spreads its teardown over several frames. Retired residents do
+  not count against the 16.
 
 A despawned entity whose page is not compacted yet keeps no asset alive: the query
 eviction uses skips orphan rows. Eviction removes only what nothing references,
-so it never changes what the game shows.
+so it never changes what the game shows; a reference naming the asset again
+makes it resident again (see [How a residency is fed](#how-a-residency-is-fed)).
 
 ### The UI atlas: rebuilt, never freed rect by rect
 
@@ -304,7 +346,10 @@ nothing is released.
 **Bounds.** A frame's eviction frees every resident retired since its last tick,
 plus at most *m* = 16 orphans. With no new orphan, a burst of *N* orphans is freed in
 ⌈*N / m*⌉ frames. A mesh shared by *E* entities costs one upload, not *E*: the
-cache is keyed by the asset's uuid.
+cache is keyed by the asset's uuid, and a run makes each uuid at most once,
+however many arrivals name it. A run's work is in the arrivals it reads, the
+references changed since its last run and the copies refused before: with none,
+it visits no entity and no asset.
 
 **Rebuilds of the UI atlas.** Let *U_t* be the set of pairs (uuid, copy drawn) of
 the images in use at run *t*, and *L_t* the images left out after it. Run *t* rebuilds the atlas at
@@ -318,7 +363,8 @@ from always lies in the texture made by the last rebuild: a rebuild evicts every
 rect before it places any, and it chooses the copies before it evicts, so no
 last good copy is lost with the rects.
 
-**Why a retired copy is not freed at once.** The reload runs in `PreExtract`; the
-frame's render, later in the same frame, may have recorded commands that read
-the old buffers. Freeing them at the frame's `Maintenance` tick, after that
-render, keeps every command's buffers alive for as long as it reads them.
+**Why a retired copy is not freed at once.** The residencies run in `PreExtract`,
+and a copy they retire may still be read by commands recorded before. Freeing it
+at the frame's `Maintenance` tick, after the frame's render, keeps every
+command's buffers alive for as long as it reads them; the render of the frame
+looks the uuid up and reads the new copy.

@@ -27,24 +27,35 @@ pub use mesh_on_gpu::MeshOnGpu;
 /// Registers a residency's `DataSystem`: at `PreExtract`, after the asset
 /// reload and the resolver, so it sees this frame's copies of the assets.
 ///
+/// `observes` names the components whose changes the residency reads with
+/// `Changed<T>` since its last run.
+///
 /// ```ignore
 /// register_residency!(name = ImageOnGpu::NAME, run = image_on_gpu_system);
-/// register_residency!(name = "gpu_material_sync", run = sync, after = ["gpu_mesh_sync"]);
+/// register_residency!(
+///     name = "gpu_material_sync",
+///     run = sync,
+///     after = ["gpu_mesh_sync"],
+///     observes = [MaterialRef],
+/// );
 /// ```
 #[macro_export]
 macro_rules! register_residency {
-    (name = $name:expr, run = $run:path $(,)?) => {
-        $crate::register_residency!(name = $name, run = $run, after = []);
-    };
-    (name = $name:expr, run = $run:path, after = [$($after:expr),* $(,)?] $(,)?) => {
+    (
+        name = $name:expr,
+        run = $run:path
+        $(, after = [$($after:expr),* $(,)?])?
+        $(, observes = [$($observed:ty),* $(,)?])?
+        $(,)?
+    ) => {
         inventory::submit! {
             $crate::ecs::DataSystemRegistration {
                 name: $name,
                 phase: $crate::ecs::TickPhase::PreExtract,
                 run: $run,
                 order_hint: 0,
-                runs_after: &["asset_reload", "asset_resolver" $(, $after)*],
-                observes: &[],
+                runs_after: &["asset_reload", "asset_resolver" $($(, $after)*)?],
+                observes: &[$($($crate::ecs::ComponentKey::of::<$observed>),*)?],
                 role: $crate::ecs::Role::Upkeep,
             }
         }

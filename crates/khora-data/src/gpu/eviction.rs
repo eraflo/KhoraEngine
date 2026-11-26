@@ -12,21 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! [`AssetEviction`]: releases the GPU meshes and materials no live entity references.
+//! [`AssetEviction`]: releases the GPU meshes and materials no reference names.
 //!
-//! It releases under a per-frame budget. The projection only ever inserts, and a
-//! cached entry's GPU resources are freed only by an explicit `destroy_*`.
+//! It releases under a per-frame budget. A GPU copy is kept while some
+//! `MeshRef` or `MaterialRef` names its uuid, and its resources are freed
+//! only by an explicit `destroy_*`.
 
 use std::collections::HashSet;
 
-use khora_core::asset::{AssetHandle, AssetUUID};
+use khora_core::asset::{Asset, AssetHandle, AssetUUID};
 use khora_core::renderer::api::gpu_scene::GpuMesh;
 use khora_core::renderer::api::material::GpuMaterial;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::sync::RwLockExt;
 
 use crate::assets::AssetStore;
-use crate::ecs::{HandleComponent, World};
+use crate::ecs::{MaterialRef, MeshRef, World};
 
 /// Default number of orphaned GPU assets released per frame, meshes and
 /// materials together.
@@ -38,16 +39,16 @@ const DEFAULT_MAX_PER_FRAME: usize = 16;
 /// [`EcsMaintenance`](crate::ecs::EcsMaintenance).
 ///
 /// Ticked in [`TickPhase::Maintenance`](crate::ecs::TickPhase::Maintenance),
-/// after the frame's render has read the caches; it removes only what no live
-/// entity references, so it never changes game semantics.
+/// after the frame's render has read the caches; it removes only what no
+/// reference names, so it never changes game semantics.
 pub struct AssetEviction {
     max_per_frame: usize,
     last_evicted_count: usize,
-    /// GPU meshes taken out of the cache while still referenced (their
-    /// asset changed), freed at the next tick.
+    /// GPU meshes taken out of the cache while still named (their asset
+    /// changed or went), freed at the next tick.
     retired_meshes: Vec<AssetHandle<GpuMesh>>,
-    /// GPU materials taken out of the cache while still referenced, freed
-    /// at the next tick.
+    /// GPU materials taken out of the cache while still named, freed at the
+    /// next tick.
     retired_materials: Vec<AssetHandle<GpuMaterial>>,
 }
 
@@ -72,8 +73,10 @@ impl AssetEviction {
         }
     }
 
-    /// Frees what [`retire`](Self::retire) queued, then up to `max_per_frame`
-    /// orphans.
+    /// Frees every retired copy, then up to `max_per_frame` orphans.
+    ///
+    /// The retired copies are those the mesh and material residencies took out
+    /// of the store because their asset was replaced or went.
     ///
     /// Materials come before meshes; orphans beyond the budget wait for the
     /// next frame. Retired entries are outside the budget: they are already
@@ -118,16 +121,21 @@ impl AssetEviction {
         }
     }
 
-    /// Takes the GPU projection of `uuid` out of the `GpuMesh` and
-    /// `GpuMaterial` caches and queues whatever was there for teardown.
+    /// Takes the GPU mesh of `uuid` out of the store and queues it for teardown.
     ///
-    /// The projection re-projects any entity left without its GPU handle;
-    /// the old resources are freed at the next [`tick`](Self::tick), after
-    /// the render that may still read them.
-    pub fn retire(&mut self, store: &AssetStore, uuid: &AssetUUID) {
+    /// Its resources are freed at the next [`tick`](Self::tick), after the
+    /// render that may still read them. A uuid with no GPU mesh queues nothing.
+    pub(crate) fn retire_mesh(&mut self, store: &AssetStore, uuid: &AssetUUID) {
         if let Some(mesh) = store.store::<GpuMesh>().write_recovered().remove(uuid) {
             self.retired_meshes.push(mesh);
         }
+    }
+
+    /// Takes the GPU material of `uuid` out of the store and queues it for teardown.
+    ///
+    /// Its resources are freed at the next [`tick`](Self::tick), after the
+    /// render that may still read them. A uuid with no GPU material queues nothing.
+    pub(crate) fn retire_material(&mut self, store: &AssetStore, uuid: &AssetUUID) {
         if let Some(material) = store.store::<GpuMaterial>().write_recovered().remove(uuid) {
             self.retired_materials.push(material);
         }
@@ -156,26 +164,38 @@ impl Default for AssetEviction {
     }
 }
 
-/// Returns the UUIDs a live entity's `HandleComponent<A>` references.
-///
-/// The query skips orphan rows, so a despawned entity not yet compacted keeps
-/// no UUID live.
-fn live_handles<A: khora_core::asset::Asset>(world: &World) -> HashSet<AssetUUID> {
-    let mut live = HashSet::new();
-    for (handle,) in world.query::<(&HandleComponent<A>,)>() {
-        live.insert(handle.uuid);
-    }
-    live
+/// A GPU copy kept while a reference component names its uuid.
+trait NamedByReference: Asset {
+    /// Returns the uuids the live entities' references name.
+    ///
+    /// The query skips orphan rows, so a despawned entity not yet compacted
+    /// names nothing.
+    fn named(world: &World) -> HashSet<AssetUUID>;
 }
 
-/// Removes up to `budget` entries of `A` no live entity references, and
-/// returns them for the caller to destroy.
-fn take_orphans<A: khora_core::asset::Asset>(
+impl NamedByReference for GpuMesh {
+    fn named(world: &World) -> HashSet<AssetUUID> {
+        world.query::<&MeshRef>().map(MeshRef::uuid).collect()
+    }
+}
+
+impl NamedByReference for GpuMaterial {
+    fn named(world: &World) -> HashSet<AssetUUID> {
+        world
+            .query::<&MaterialRef>()
+            .map(MaterialRef::uuid)
+            .collect()
+    }
+}
+
+/// Removes up to `budget` entries of `A` no reference names, and returns them
+/// for the caller to destroy.
+fn take_orphans<A: NamedByReference>(
     store: &AssetStore,
     world: &World,
     budget: usize,
 ) -> Vec<AssetHandle<A>> {
-    let live = live_handles::<A>(world);
+    let live = A::named(world);
     let cache = store.store::<A>();
 
     // Snapshot the orphaned keys under a read lock, then drop it before taking
@@ -327,20 +347,14 @@ mod tests {
         store.store::<GpuMesh>().read().unwrap().len()
     }
 
-    /// Spawns an entity tagged with `HandleComponent<GpuMaterial>` for `uuid`,
-    /// making `uuid` a live reference.
-    fn spawn_material_ref(world: &mut World, uuid: AssetUUID) {
-        world.spawn(HandleComponent {
-            handle: AssetHandle::new(material_stub()),
-            uuid,
-        });
+    /// Spawns an entity whose `MaterialRef` names `uuid`, making `uuid` live.
+    fn spawn_material_ref(world: &mut World, uuid: AssetUUID) -> khora_core::ecs::entity::EntityId {
+        world.spawn(MaterialRef::Asset(uuid))
     }
 
+    /// Spawns an entity whose `MeshRef` names `uuid`, making `uuid` live.
     fn spawn_mesh_ref(world: &mut World, uuid: AssetUUID) {
-        world.spawn(HandleComponent {
-            handle: AssetHandle::new(mesh_stub()),
-            uuid,
-        });
+        world.spawn(MeshRef::Asset(uuid));
     }
 
     #[test]
@@ -388,10 +402,7 @@ mod tests {
 
         // Spawn then despawn: the query skips the orphaned row, so the UUID is
         // out of use and becomes evictable.
-        let entity = world.spawn(HandleComponent {
-            handle: AssetHandle::new(material_stub()),
-            uuid,
-        });
+        let entity = spawn_material_ref(&mut world, uuid);
         assert_eq!(take_orphans::<GpuMaterial>(&store, &world, 16).len(), 0);
 
         world.despawn(entity);
@@ -672,44 +683,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn retiring_takes_the_projection_out_of_the_caches() {
-        let store = AssetStore::new();
-        let uuid = AssetUUID::new();
-        let other = AssetUUID::new();
-        cache_mesh(&store, uuid);
-        cache_material(&store, uuid);
-        cache_material(&store, other);
-        let mut eviction = AssetEviction::new();
-
-        eviction.retire(&store, &uuid);
-
-        assert!(!store.store::<GpuMesh>().read().unwrap().contains(&uuid));
-        assert!(!store.store::<GpuMaterial>().read().unwrap().contains(&uuid));
-        assert!(
-            store
-                .store::<GpuMaterial>()
-                .read()
-                .unwrap()
-                .contains(&other),
-            "another asset's projection stays cached"
-        );
-        assert_eq!(eviction.retired_count(), 2, "the mesh and the material");
-    }
-
-    #[test]
-    fn retiring_an_uncached_uuid_queues_nothing() {
-        let store = AssetStore::new();
-        let cached = AssetUUID::new();
-        cache_mesh(&store, cached);
-        let mut eviction = AssetEviction::new();
-
-        eviction.retire(&store, &AssetUUID::new());
-
-        assert_eq!(eviction.retired_count(), 0);
-        assert_eq!(mesh_count(&store), 1, "nothing else leaves the cache");
-    }
-
     /// The retired projection is freed even though entities still name its
     /// uuid: they wait for a fresh projection, not for the old resources.
     #[test]
@@ -732,7 +705,8 @@ mod tests {
         let mut eviction = AssetEviction::new();
         let device = DestroyRecorder::default();
 
-        eviction.retire(&store, &uuid);
+        eviction.retire_material(&store, &uuid);
+        eviction.retire_mesh(&store, &uuid);
         eviction.tick(&store, &world, &device);
 
         assert_eq!(
@@ -760,7 +734,7 @@ mod tests {
             );
         }
         for uuid in &uuids {
-            eviction.retire(&store, uuid);
+            eviction.retire_mesh(&store, uuid);
         }
         let device = DestroyRecorder::default();
 
@@ -773,5 +747,163 @@ mod tests {
         );
         assert_eq!(eviction.retired_count(), 0);
         assert_eq!(eviction.last_evicted_count(), 3);
+    }
+
+    #[test]
+    fn retiring_a_mesh_leaves_the_material_of_the_same_uuid() {
+        let store = AssetStore::new();
+        let uuid = AssetUUID::new();
+        cache_mesh(&store, uuid);
+        cache_material(&store, uuid);
+        let mut eviction = AssetEviction::new();
+
+        eviction.retire_mesh(&store, &uuid);
+        eviction.retire_mesh(&store, &AssetUUID::new());
+
+        assert_eq!(mesh_count(&store), 0, "the mesh leaves the store");
+        assert_eq!(material_count(&store), 1, "the material stays");
+        assert_eq!(eviction.retired_count(), 1);
+    }
+
+    #[test]
+    fn retiring_a_material_leaves_the_mesh_of_the_same_uuid() {
+        let store = AssetStore::new();
+        let uuid = AssetUUID::new();
+        cache_mesh(&store, uuid);
+        cache_material(&store, uuid);
+        let mut eviction = AssetEviction::new();
+
+        eviction.retire_material(&store, &uuid);
+        eviction.retire_material(&store, &uuid);
+
+        assert_eq!(material_count(&store), 0, "the material leaves the store");
+        assert_eq!(mesh_count(&store), 1, "the mesh stays");
+        assert_eq!(eviction.retired_count(), 1, "queued once");
+    }
+
+    // ── Liveness by reference ───────────────────────────────────────────────
+
+    use crate::ecs::{MaterialRef, MeshRef};
+
+    /// Returns whether the GPU store of `A` holds a copy under `uuid`.
+    fn resident<A: khora_core::asset::Asset>(store: &AssetStore, uuid: &AssetUUID) -> bool {
+        store.store::<A>().read().unwrap().contains(uuid)
+    }
+
+    /// **A GPU mesh no reference names is evicted.**
+    ///
+    /// Kept while an entity's `MeshRef` names its uuid; once that last
+    /// reference is removed, the next tick frees it.
+    #[test]
+    fn a_gpu_copy_no_reference_names_is_evicted() {
+        let store = AssetStore::new();
+        let mut world = World::new();
+        let uuid = AssetUUID::new();
+        store
+            .store::<GpuMesh>()
+            .write()
+            .unwrap()
+            .insert(uuid, AssetHandle::new(mesh_with_buffers(30, 31)));
+        let entity = world.spawn(MeshRef::Asset(uuid));
+        let device = DestroyRecorder::default();
+        let mut eviction = AssetEviction::new();
+
+        eviction.tick(&store, &world, &device);
+        assert!(
+            resident::<GpuMesh>(&store, &uuid),
+            "a GPU mesh a MeshRef names is kept"
+        );
+
+        world
+            .remove_component::<MeshRef>(entity)
+            .expect("the entity holds a MeshRef");
+        eviction.tick(&store, &world, &device);
+        assert!(
+            !resident::<GpuMesh>(&store, &uuid),
+            "no reference names it any more: it is evicted"
+        );
+        assert_eq!(
+            device.buffers(),
+            HashSet::from([BufferId(30), BufferId(31)]),
+            "its buffers are given back"
+        );
+    }
+
+    /// **A GPU material no reference names is evicted.**
+    #[test]
+    fn a_gpu_material_no_reference_names_is_evicted() {
+        let store = AssetStore::new();
+        let mut world = World::new();
+        let uuid = AssetUUID::new();
+        store
+            .store::<GpuMaterial>()
+            .write()
+            .unwrap()
+            .insert(uuid, AssetHandle::new(textured_material(40)));
+        let entity = world.spawn(MaterialRef::Asset(uuid));
+        let device = DestroyRecorder::default();
+        let mut eviction = AssetEviction::new();
+
+        eviction.tick(&store, &world, &device);
+        assert!(
+            resident::<GpuMaterial>(&store, &uuid),
+            "a GPU material a MaterialRef names is kept"
+        );
+
+        world.despawn(entity);
+        eviction.tick(&store, &world, &device);
+        assert!(
+            !resident::<GpuMaterial>(&store, &uuid),
+            "no reference names it any more: it is evicted"
+        );
+        assert_eq!(device.bind_groups(), vec![BindGroupId(41)]);
+    }
+
+    /// **A GPU mesh still named is kept.**
+    ///
+    /// One of the two entities naming it goes; the other still names it.
+    #[test]
+    fn a_gpu_copy_still_named_is_kept() {
+        let store = AssetStore::new();
+        let mut world = World::new();
+        let uuid = AssetUUID::new();
+        cache_mesh(&store, uuid);
+        let gone = world.spawn(MeshRef::Asset(uuid));
+        world.spawn(MeshRef::Asset(uuid));
+        world.despawn(gone);
+        let device = DestroyRecorder::default();
+
+        AssetEviction::new().tick(&store, &world, &device);
+
+        assert!(
+            resident::<GpuMesh>(&store, &uuid),
+            "the GPU mesh another entity still names is kept"
+        );
+        assert_eq!(device.buffer_destroys(), 0, "nothing is given back");
+    }
+
+    /// **A GPU material still named is kept.**
+    ///
+    /// Named by an inline `MaterialRef`, whose uuid is its content's.
+    #[test]
+    fn a_gpu_material_still_named_is_kept() {
+        let store = AssetStore::new();
+        let mut world = World::new();
+        let reference =
+            MaterialRef::inline(Box::new(khora_core::asset::StandardMaterial::default()));
+        let uuid = reference.uuid();
+        cache_material(&store, uuid);
+        let gone = world.spawn(reference.clone());
+        world.spawn(reference);
+        world.despawn(gone);
+        let device = DestroyRecorder::default();
+
+        AssetEviction::new().tick(&store, &world, &device);
+
+        assert!(
+            resident::<GpuMaterial>(&store, &uuid),
+            "the GPU material another entity still names is kept"
+        );
+        assert!(device.bind_groups().is_empty(), "nothing is given back");
     }
 }

@@ -385,20 +385,17 @@ mod tests {
 
     /// The flows keyed on the Spatial domain, run over a static scene.
     mod render_cache {
-        use khora_core::asset::{AssetHandle, AssetUUID};
+        use khora_core::asset::AssetUUID;
         use khora_core::ecs::entity::EntityId;
         use khora_core::lane::OutputDeck;
         use khora_core::math::Vec3;
-        use khora_core::renderer::api::gpu_scene::GpuMesh;
-        use khora_core::renderer::api::pipeline::PrimitiveTopology;
-        use khora_core::renderer::api::resource::{BufferId, IndexFormat};
         use khora_core::renderer::light::{DirectionalLight, LightType};
         use khora_core::Runtime;
 
         use super::super::transform_propagation_entry;
         use crate::ecs::{
-            AudioListener, AudioSource, Camera, GlobalTransform, HandleComponent, Light, Observer,
-            Parent, SystemContext, Transform, World,
+            AudioListener, AudioSource, Camera, GlobalTransform, Light, MeshRef, Observer, Parent,
+            SystemContext, Transform, World,
         };
         use crate::flow::{AudioFlow, Flow, RenderFlow, Selection, ShadowFlow};
 
@@ -419,16 +416,7 @@ mod tests {
                     GlobalTransform::identity(),
                 )
             };
-            let mesh = || HandleComponent {
-                handle: AssetHandle::new(GpuMesh {
-                    vertex_buffer: BufferId(0),
-                    index_buffer: BufferId(0),
-                    index_count: 0,
-                    index_format: IndexFormat::Uint32,
-                    primitive_topology: PrimitiveTopology::TriangleList,
-                }),
-                uuid: AssetUUID::new(),
-            };
+            let mesh = || MeshRef::Asset(AssetUUID::new());
 
             let (transform, global) = at(0.0, 2.0, 10.0);
             world.spawn((
@@ -540,7 +528,7 @@ mod tests {
         /// **Each real change invalidates the caches that read it, and only those.**
         ///
         /// Over the static scene: a light switched off (Render), a
-        /// mesh handle swapped by value (Render), a sound's volume (Audio),
+        /// mesh reference swapped by value (Render), a sound's volume (Audio),
         /// and a mesh despawned (Render and Spatial).
         #[test]
         fn each_real_change_invalidates_the_caches_that_read_it() {
@@ -574,13 +562,8 @@ mod tests {
             world.get_mut::<Light>(light).expect("the light").enabled = false;
             step(&mut world, "a light switched off", [true, true, false]);
 
-            let mut mesh = world
-                .get::<HandleComponent<GpuMesh>>(root)
-                .expect("a mesh")
-                .clone();
-            mesh.uuid = AssetUUID::new();
-            assert!(world.set_component(root, mesh));
-            step(&mut world, "a mesh handle swapped", [true, true, false]);
+            assert!(world.set_component(root, MeshRef::Asset(AssetUUID::new())));
+            step(&mut world, "a mesh reference swapped", [true, true, false]);
 
             let source = world
                 .query::<(EntityId, &AudioSource)>()
