@@ -51,9 +51,9 @@ let ship = khora_sdk::Vessel::new(world)
     .build();
 ```
 
-That is all the entity needs. Each frame, the engine's **asset resolver** asks the
-asset service for what an entity names and does not hold yet. The file is decoded
-off the frame by the `loading` family; on a later frame the entity gets its mesh,
+That is all the entity needs. When a reference is written, the engine's **asset
+resolver** asks the asset service for what it names. The file is decoded off the
+frame by the `loading` family; on a later frame its copy lands in the asset store,
 and the mesh residency uploads it to the GPU before anything draws (see
 [Residency](../concepts/residency.md)). Until then the entity simply draws nothing:
 no frame waits for the disk.

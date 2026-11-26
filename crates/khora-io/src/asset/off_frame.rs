@@ -16,6 +16,7 @@
 //! family, and taken in at a frame's boundary unless a file it read changed meanwhile.
 
 use std::any::{Any, TypeId};
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use khora_core::asset::{
@@ -138,10 +139,23 @@ impl AssetService {
         self.meanwhile.remove(&(*uuid, TypeId::of::<A>()));
     }
 
+    /// Takes the assets, by uuid and type, the asset resolver asked for and has not seen land.
+    pub(crate) fn take_resolving(&mut self) -> HashSet<(AssetUUID, TypeId)> {
+        std::mem::take(&mut self.resolving)
+    }
+
+    /// Keeps `wanted` among the assets the asset resolver asked for and has not seen land.
+    pub(crate) fn keep_resolving(&mut self, wanted: impl IntoIterator<Item = (AssetUUID, TypeId)>) {
+        self.resolving.extend(wanted);
+    }
+
     /// Takes over the decode request channel of `outgoing`, the service it replaces.
     ///
-    /// A service swapped into the engine's place so keeps reaching the `loading` family.
+    /// A service swapped into the engine's place so keeps reaching the `loading` family,
+    /// and the assets the resolver waits for are asked of it.
     pub fn adopt_decode_requests(&mut self, outgoing: &mut AssetService) {
+        let waited = outgoing.take_resolving();
+        self.keep_resolving(waited);
         std::mem::swap(&mut self.requests, &mut outgoing.requests);
         // The channel's stamps come of `outgoing`'s counter, so this service
         // counts on it; what was in flight read the other project, so none of

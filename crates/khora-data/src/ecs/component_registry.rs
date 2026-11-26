@@ -483,7 +483,7 @@ impl ComponentRegistry {
 
 /// Returns a type's name with every path stripped, generics included.
 ///
-/// `khora_data::ecs::HandleComponent<khora_core::asset::Mesh>` is `HandleComponent<Mesh>`.
+/// `alloc::vec::Vec<khora_core::math::Vec3>` is `Vec<Vec3>`.
 pub(crate) fn short_name(path: &str) -> String {
     let mut name = String::with_capacity(path.len());
     let mut token = String::new();

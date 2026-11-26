@@ -78,32 +78,8 @@ is cheap, and many entities sharing a mesh share one copy in memory.
   filed, away from the frame, and the `asset_intake` DataSystem takes the results
   in at the next frame boundary.
 
-The engine's own systems only request. The asset resolver — the `DataSystem` that
-turns what entities name (`MeshRef`, `MaterialRef`, a UI font or image) into
-handles — files what it lacks and resolves the entity on a later frame, so no
-frame waits for the disk. A failed decode is logged once, as a warning, and the
-entity waits for the file to change; there is no fallback asset.
-
-**A reference and its handle are matched by uuid.** What an entity holds once
-resolved is a `HandleComponent<T>`: the handle, and the uuid it was resolved
-from. Each frame the resolver compares that uuid with the one the reference
-names, and skips the entity when they are equal. Every reference has a uuid:
-
-- `MeshRef::Asset(uuid)` and `MaterialRef::Asset(uuid)` name the asset's own;
-- a procedural mesh (`MeshRef::Procedural`) has one derived from its kind and
-  its parameters, and an inline material (`MaterialRef::Inline`) one derived
-  from its fields. Two equal primitives, or two equal materials, share one
-  copy. These uuids are never saved: they are computed again on load and on
-  every edit.
-
-So changing a reference — another mesh, a material's colour edited in the
-inspector — changes its uuid, and the next resolver run resolves it again. The
-new handle replaces the old one in place, and the new copy lands in the asset
-store under the new uuid, where its [residency](./residency.md) makes its GPU
-copy. A copy the store already holds is not stored again: two entities naming
-one asset share one copy, on the CPU and on the GPU. Until an asset reference's
-new copy is decoded, the old handle stays, and the entity keeps showing the old
-asset. Removing the reference itself does not remove the handle.
+The engine's own systems only request: the asset resolver (below) files what it
+lacks and stores it on a later frame, so no frame waits for the disk.
 
 Loading is a **service**, and decoding is a **family**. The service has nothing
 to choose: an asset is in its cache or it is not. The decoding work, though, is
@@ -128,6 +104,63 @@ under a type name, not a change to the chain (see
 [How-to: add an asset decoder](../how-to/add-an-asset-decoder.md)). The same holds
 for the I/O: another source is another `AssetIo` behind the same index and
 decoders.
+
+## From reference to copy
+
+An entity holds one thing for each asset it uses: its **reference**, the
+component that names it (`MeshRef`, `MaterialRef`). The loaded copy lives in the
+**asset store** (`AssetStore`, one `Assets<T>` table per type) and the GPU copy
+in its [residency](./residency.md)'s table, both under the reference's uuid.
+Nothing else is attached to the entity: remove the reference and the entity
+names nothing, and draws nothing.
+
+Every reference has a uuid:
+
+- `MeshRef::Asset(uuid)` and `MaterialRef::Asset(uuid)` name the asset's own;
+- a procedural mesh (`MeshRef::Procedural`) has one derived from its kind and
+  its parameters, and an inline material (`MaterialRef::Inline`) one derived
+  from its fields. Two equal primitives, or two equal materials, share one
+  copy. These uuids are never saved: they are computed again on load and on
+  every edit;
+- a mesh built in code (`MeshRef::Made(uuid)`) names the store's entry it was
+  put in. No file holds it, so a scene leaves it out and reports it not saved.
+
+**The resolver.** The **`asset_resolver`** DataSystem, at `PreExtract`, reads
+only the references written since its last run (it observes `MeshRef` and
+`MaterialRef`, see [Change detection](./change-detection.md)): a frame where no
+reference changed costs it no row. For each one:
+
+- a procedural mesh is built, and an inline material copied, into the store
+  under its uuid, unless the store holds that copy already;
+- an asset is requested from the `AssetService`. One cached is stored now; one
+  being decoded lands in the store at a frame boundary, through the
+  `asset_intake`, with no reference read again;
+- a mesh made in code needs nothing; one the store does not hold draws nothing,
+  and is logged.
+
+So changing a reference — another mesh, a material's colour edited in the
+inspector — changes its uuid, and its new copy lands in the store under the new
+uuid, where its residency makes the GPU copy. A copy the store already holds is
+not stored again: two entities naming one asset share one copy, on the CPU and
+on the GPU.
+
+**What waits.** The resolver keeps the assets it asked for and has not seen
+land, by uuid and type, and asks for them again each frame until they do: one
+whose decode was turned down (a file changed under it) is filed again, one
+still decoding is not. A **failed decode** is logged once, as a warning, and is
+not filed again until a file of the project changes; then it is, with the
+reference unchanged. There is no fallback asset. An asset whose copy left the
+store because its file was deleted waits the same way, and comes back with its
+file.
+
+**Textures follow their material.** The resolver reads what arrives in the
+material store: a material that lands or is replaced — stored by the resolver,
+decoded, or reloaded — has the textures it names that the store lacks asked
+for, and followed the same way until they land.
+
+A UI text's font is resolved by the same system onto the entity, as a
+`HandleComponent<Font>` the text systems read; a UI image's texture goes to the
+store.
 
 ## Dev and packed are the same path
 
@@ -291,8 +324,8 @@ new file turns out to be broken. This is **hot reload**.
 <ol class="kp-steps-text">
 <li><strong>A file is saved.</strong> The watcher hears the change and passes it on, if the folder's budget of changes for this second is not spent.</li>
 <li><strong>Invalidated.</strong> The asset service drops its cached copy of the file, of every part it served, and of every container that read the file beside its own, and announces each on its change stream.</li>
-<li><strong>Asked for again.</strong> At <code>PreExtract</code>, <code>asset_reload</code> takes the announced changes and requests a fresh copy of each one an entity holds. The decode runs off the frame; meanwhile the last good copy keeps serving.</li>
-<li><strong>The new copy lands.</strong> It replaces the old one under the same uuid and the entities holding it are given the new handle. The residency reads that arrival and makes the GPU copy again; the one made from the old copy is retired.</li>
+<li><strong>Asked for again.</strong> At <code>PreExtract</code>, <code>asset_reload</code> takes the announced changes and requests a fresh copy of each one the asset store holds. The decode runs off the frame; meanwhile the last good copy keeps serving.</li>
+<li><strong>The new copy lands.</strong> It replaces the old one in the store under the same uuid, which every entity naming it reads. The residency reads that arrival and makes the GPU copy again; the one made from the old copy is retired.</li>
 <li><strong>Or it does not decode.</strong> The file was caught half-written: the last good copy stays, and is kept until the file changes again.</li>
 </ol>
 </figure>
@@ -336,14 +369,14 @@ screen.
 
 **Reloading.** The **`asset_reload`** DataSystem, early in `PreExtract`, takes
 the announced changes and requests a fresh copy of every changed texture,
-material, mesh and font an entity holds. One decode per asset, however many
-entities hold it:
+material and mesh the asset store holds, and every changed font a text holds. It
+visits no entity: one decode per asset, however many entities name it:
 
 - until the new copy lands, the **last good copy** keeps serving — and a
   reference resolved meanwhile is served it too, so a new entity shows what the
   others show; an asset still decoding is looked at again on the next frame;
-- once it lands, it replaces the old one under the same uuid and the entities
-  get the new handle. The reload touches no GPU copy: the store records the
+- once it lands, it replaces the old one in the store under the same uuid. The
+  reload touches no GPU copy: the store records the
   replacement as an arrival, and the residencies make the GPU copy again, and
   every material naming a changed texture, and retire the old ones (see
   [Residency](./residency.md#how-a-residency-is-fed)); a changed font lays its
@@ -351,9 +384,12 @@ entities hold it:
 - a file that no longer decodes — caught mid-write — keeps the last good copy,
   in the service too, until it changes again;
 - an asset gone from the index, or a part its container no longer holds, is
-  dropped from every entity that held it;
-- a changed asset no entity holds keeps no copy: the resolver decodes it afresh
-  when a reference names it again.
+  dropped from the store; the references naming it stay, and draw nothing
+  until it is back;
+- a changed asset the store does not hold has no copy to replace: the resolver
+  decodes it afresh when a reference names it again;
+- a stored material naming a changed texture the store lacks has that texture
+  asked for again.
 
 When a project is replaced by another, every asset the old one served is
 announced, and none of its copies is ever kept as a last good copy of the new

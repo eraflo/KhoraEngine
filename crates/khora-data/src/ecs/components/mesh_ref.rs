@@ -33,8 +33,8 @@ pub enum ProceduralMeshKind {
 /// A mesh made in code ([`Made`](Self::Made)) is the exception: no file holds
 /// it, so a scene or a game save leaves its reference out.
 ///
-/// A resolver `DataSystem` (in `khora-io`) turns it into a `HandleComponent<Mesh>`,
-/// and again whenever its [`uuid`](Self::uuid) differs from the handle's.
+/// The asset resolver (in `khora-io`) puts the mesh it names into the asset
+/// store under its [`uuid`](Self::uuid) when it is written; the entity holds nothing else.
 /// Build `Procedural` with [`MeshRef::procedural`], so its UUID matches its parameters.
 #[derive(Debug, Clone, PartialEq)]
 pub enum MeshRef {
@@ -62,7 +62,7 @@ impl crate::ecs::Component for MeshRef {}
 impl MeshRef {
     /// Returns a `Procedural` reference whose UUID is derived from `kind` and `params`.
     ///
-    /// Identical primitives share one UUID, hence one resolved handle and one
+    /// Identical primitives share one UUID, hence one copy in the asset store and one
     /// `GpuMesh`: it is the content hash the GPU projection keys on.
     pub fn procedural(kind: ProceduralMeshKind, params: [f32; 4]) -> Self {
         let mut key = Vec::with_capacity(1 + 16);

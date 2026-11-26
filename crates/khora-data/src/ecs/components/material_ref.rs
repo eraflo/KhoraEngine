@@ -17,19 +17,15 @@
 
 use khora_core::asset::{AssetUUID, Material, StandardMaterial};
 
-use crate::ecs::HandleComponent;
 use crate::scene::record::{Record, RecordError, ReferenceReader, ReferenceWriter, VariantPayload};
 use crate::scene::{
     material_from_json, material_from_record, material_to_json, material_to_record,
 };
 
-/// A resolved material and its `AssetUUID`, runtime only.
-pub type MaterialHandle = HandleComponent<Box<dyn Material>>;
-
 /// An authored reference to a material: the only form a material is saved in.
 ///
-/// A resolver `DataSystem` (in `khora-io`) turns it into a [`MaterialHandle`],
-/// and again whenever its [`uuid`](Self::uuid) differs from the handle's.
+/// The asset resolver (in `khora-io`) puts the material it names into the asset
+/// store under its [`uuid`](Self::uuid) when it is written; the entity holds nothing else.
 /// Build `Inline` with [`MaterialRef::inline`], so its UUID matches its content.
 pub enum MaterialRef {
     /// A material made in code or the editor, saved inside the scene.
@@ -46,7 +42,7 @@ pub enum MaterialRef {
 impl MaterialRef {
     /// Returns an `Inline` reference whose UUID is derived from the material's content.
     ///
-    /// Equal contents share one UUID, hence one resolved handle and one
+    /// Equal contents share one UUID, hence one copy in the asset store and one
     /// `GpuMaterial`. A material that cannot be serialized gets a random UUID
     /// (logged) and is shared with nothing.
     pub fn inline(material: Box<dyn Material>) -> Self {

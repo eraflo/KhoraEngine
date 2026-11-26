@@ -125,9 +125,9 @@ It submits a `DataSystemRegistration` in `TickPhase::PreExtract`, with the role
 
 - `asset_reload` replaces the copies of every asset whose file changed, so a
   changed asset reaches the device the frame its new copy landed;
-- `asset_resolver` stores the copies the references entities hold (`MeshRef`,
-  `MaterialRef`, a UI font or image) name, so a residency sees this frame's
-  copies.
+- `asset_resolver` stores the copies the references written since its last
+  run (`MeshRef`, `MaterialRef`, a UI font or image) name, so a residency sees
+  this frame's copies.
 
 The copies they read are already there. A decode filed off the frame lands at
 the frame's very first phase, `Boundary`, where `asset_intake` takes the decoded

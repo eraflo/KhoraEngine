@@ -23,7 +23,7 @@
 //! The decode spans frames, so these tests wait a bounded number of frames
 //! for it, never assume the frame that asks.
 
-use khora_core::sync::LockExt;
+use khora_core::sync::{LockExt, RwLockExt};
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -31,7 +31,8 @@ use std::sync::{Arc, Mutex};
 use std::thread::ThreadId;
 use std::time::{Duration, Instant};
 
-use khora_data::ecs::{HandleComponent, MeshRef};
+use khora_data::ecs::MeshRef;
+use khora_data::AssetStore;
 use khora_io::asset::{AssetDecoder, AssetIdRegistry, AssetService, MeshDispatcher};
 use khora_sdk::khora_core::agent::gorna::AgentId;
 use khora_sdk::khora_core::asset::AssetUUID;
@@ -257,13 +258,18 @@ fn spawn_mesh(engine: &mut EngineCore<Game>) -> EntityId {
         .spawn(MeshRef::Asset(mesh_uuid()))
 }
 
-/// How many vertices the mesh resolved onto `entity` holds, if one is.
-fn resolved_vertices(engine: &mut EngineCore<Game>, entity: EntityId) -> Option<usize> {
-    engine
+/// How many vertices the store's copy of the mesh `entity` names holds, if it holds one.
+fn resolved_vertices<A: EngineApp>(engine: &mut EngineCore<A>, entity: EntityId) -> Option<usize> {
+    let uuid = engine
         .game_world_mut()?
         .inner_world()
-        .get::<HandleComponent<Mesh>>(entity)
-        .map(|resolved| resolved.handle.positions.len())
+        .get::<MeshRef>(entity)?
+        .uuid();
+    let runtime = Arc::clone(engine.runtime());
+    let store = runtime.resources.get::<AssetStore>()?;
+    let meshes = store.store::<Mesh>();
+    let held = meshes.read_recovered();
+    held.get(&uuid).map(|mesh| mesh.positions.len())
 }
 
 // ─── The family ─────────────────────────────────────────────────────────────
@@ -472,12 +478,7 @@ fn a_mesh_asset_resolves_when_the_service_is_handed_over_at_registration() {
         engine.end_render_frame(presents);
         engine.run_maintenance();
         engine.close_frame();
-        let resolved = engine.game_world_mut().and_then(|world| {
-            world
-                .inner_world()
-                .get::<HandleComponent<Mesh>>(entity)
-                .map(|mesh| mesh.handle.positions.len())
-        });
+        let resolved = resolved_vertices(&mut engine, entity);
         if resolved.is_some() {
             assert_eq!(resolved, Some(3), "the triangle the file holds");
             return;

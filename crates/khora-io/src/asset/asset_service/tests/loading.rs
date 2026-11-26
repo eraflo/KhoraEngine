@@ -182,3 +182,34 @@ fn load_raw_verifies_against_manifest_and_rejects_corruption() {
         msg
     );
 }
+
+/// What the resolver waits for is kept between its runs, and goes with the
+/// requests to a service that takes over from this one.
+#[test]
+fn the_assets_the_resolver_waits_for_move_to_the_service_taking_over() {
+    let wanted = (
+        AssetUUID::new_v5("meshes/late.obj"),
+        std::any::TypeId::of::<u32>(),
+    );
+    let mut outgoing = AssetService::empty();
+    outgoing.keep_resolving([wanted]);
+    assert_eq!(
+        outgoing.take_resolving(),
+        std::collections::HashSet::from([wanted]),
+        "kept, then taken"
+    );
+    assert!(outgoing.take_resolving().is_empty(), "taken once");
+
+    outgoing.keep_resolving([wanted]);
+    let mut incoming = AssetService::empty();
+    incoming.adopt_decode_requests(&mut outgoing);
+    assert!(
+        outgoing.take_resolving().is_empty(),
+        "the service moving out waits for nothing"
+    );
+    assert_eq!(
+        incoming.take_resolving(),
+        std::collections::HashSet::from([wanted]),
+        "the service moving in is asked for it"
+    );
+}

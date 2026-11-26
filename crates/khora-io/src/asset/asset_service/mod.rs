@@ -96,6 +96,8 @@ pub struct AssetService {
     pub(super) generations: Arc<Generations>,
     /// The changed assets whose new value is being decoded, for `asset_reload`.
     reloading: HashSet<AssetUUID>,
+    /// The assets, by uuid and type, the asset resolver asked for and has not seen land.
+    pub(super) resolving: HashSet<(AssetUUID, TypeId)>,
     /// The last good copy of each asset being decoded again, by asset and type.
     ///
     /// Served to a reference resolved meanwhile; never cached, so the new value
@@ -158,6 +160,7 @@ impl AssetService {
             installers: HashMap::new(),
             generations: Arc::new(Generations::default()),
             reloading: HashSet::new(),
+            resolving: HashSet::new(),
             meanwhile: HashMap::new(),
             project_root: None,
         }

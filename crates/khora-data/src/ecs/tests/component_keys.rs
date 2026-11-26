@@ -19,16 +19,14 @@
 use std::any::{type_name, TypeId};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use khora_core::asset::Material;
 use khora_core::ecs::entity::EntityId;
-use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::script::ScriptValue;
 
 use super::runtime_components::{declare, field, patch, read};
 use super::{Position, Velocity};
 use crate::ecs::{
     Component, ComponentKey, ComponentPage, ComponentProvenance, FieldKind, GlobalTransform,
-    HandleComponent, Parent, RegisterError, RustIdentity, SemanticDomain, Transform, World,
+    MeshRef, Parent, RegisterError, RustIdentity, SemanticDomain, Transform, World,
 };
 use crate::scene::{registration_named, registration_of, ComponentRegistration};
 
@@ -44,6 +42,11 @@ mod b {
     pub struct Twin;
     impl crate::ecs::Component for Twin {}
 }
+
+/// A generic component: its short name carries its parameter's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Holder<T>(T);
+impl<T: Clone + Send + Sync + 'static> Component for Holder<T> {}
 
 /// A component nobody else registers, to try in two domains.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,23 +105,24 @@ fn location(
 fn a_component_has_one_short_name() {
     let mut world = World::new();
     world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<Holder<Position>>(SemanticDomain::Render);
+    world.register_component::<Holder<Box<Velocity>>>(SemanticDomain::Render);
 
     // A derived component: its short name is the derive's.
     assert_named::<Transform>(&world, "Transform", SemanticDomain::Spatial);
+    // A hand-written one the world registers itself.
+    assert_named::<MeshRef>(&world, "MeshRef", SemanticDomain::Render);
     // A generic one: every path segment stripped, its parameters' included.
-    assert_named::<HandleComponent<Mesh>>(&world, "HandleComponent<Mesh>", SemanticDomain::Render);
-    assert_named::<HandleComponent<Box<dyn Material>>>(
-        &world,
-        "HandleComponent<Box<dyn Material>>",
-        SemanticDomain::Render,
-    );
+    assert_named::<Holder<Position>>(&world, "Holder<Position>", SemanticDomain::Render);
+    assert_named::<Holder<Box<Velocity>>>(&world, "Holder<Box<Velocity>>", SemanticDomain::Render);
     // A hand-written one registered by the caller.
     assert_named::<Position>(&world, "Position", SemanticDomain::Spatial);
 }
 
 #[test]
 fn a_rust_component_takes_its_registered_provenance() {
-    let world = World::new();
+    let mut world = World::new();
+    world.register_component::<Position>(SemanticDomain::Spatial);
     let registry = world.components();
     let provenance = |key: ComponentKey| registry.vtable(key).expect("registered").provenance;
 
@@ -136,7 +140,7 @@ fn a_rust_component_takes_its_registered_provenance() {
     );
     // No `ComponentRegistration`: the default.
     assert_eq!(
-        provenance(ComponentKey::of::<HandleComponent<Mesh>>()),
+        provenance(ComponentKey::of::<Position>()),
         ComponentProvenance::Authored
     );
 }
@@ -459,7 +463,7 @@ fn access_snapshot_uses_short_names() {
     let snapshot = world.component_access_snapshot();
     let names: Vec<&str> = snapshot.iter().map(|(name, ..)| name.as_str()).collect();
     assert!(names.contains(&"Transform"), "{names:?}");
-    assert!(names.contains(&"HandleComponent<Mesh>"), "{names:?}");
+    assert!(names.contains(&"MeshRef"), "{names:?}");
     assert!(
         !names.iter().any(|name| name.contains("::")),
         "no entry is named by its path: {names:?}"

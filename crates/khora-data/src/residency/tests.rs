@@ -803,7 +803,7 @@ mod by_arrival {
     ///
     /// The GPU copies live in the store under their uuids only: the tag types
     /// are not registered, and a frame of both residencies, on an entity
-    /// holding everything the resolver gives it, attaches none.
+    /// holding only its references, attaches none.
     #[test]
     fn no_entity_carries_a_gpu_tag() {
         let gpu = Gpu::new();
@@ -822,18 +822,7 @@ mod by_arrival {
         let material: AssetHandle<Box<dyn Material>> =
             AssetHandle::new(Box::new(StandardMaterial::default()));
         gpu.frame(&mut world);
-        let entity = world.spawn((
-            MeshRef::Asset(mesh_uuid),
-            MaterialRef::Asset(material_uuid),
-            HandleComponent {
-                handle: mesh.clone(),
-                uuid: mesh_uuid,
-            },
-            HandleComponent {
-                handle: material.clone(),
-                uuid: material_uuid,
-            },
-        ));
+        let entity = world.spawn((MeshRef::Asset(mesh_uuid), MaterialRef::Asset(material_uuid)));
         gpu.store
             .store::<Mesh>()
             .write()

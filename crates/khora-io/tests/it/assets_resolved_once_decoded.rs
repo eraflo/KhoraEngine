@@ -58,6 +58,20 @@ fn loaded_synchronously<A: khora_core::asset::Asset + std::fmt::Debug>(
     format!("{:?}", *handle)
 }
 
+/// The copy of `uuid` the project's store holds as an `A`, if any.
+fn stored_copy<A: khora_core::asset::Asset>(
+    project: &Project,
+    uuid: &AssetUUID,
+) -> Option<khora_core::asset::AssetHandle<A>> {
+    project
+        .store
+        .store::<A>()
+        .read()
+        .expect("the store's lock")
+        .get(uuid)
+        .cloned()
+}
+
 /// A real PNG of `width` x `height`.
 fn png(width: u32, height: u32) -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -133,9 +147,9 @@ fn settle(
 
 /// **A mesh asset stays unresolved while it decodes, and resolves once it
 /// landed, to what a synchronous load gave.** The frame that asks leaves the
-/// entity without a mesh handle and files one request; frames that ask
-/// again while it is pending file nothing more. Once decoded and taken in,
-/// the entity holds the mesh under the asset's uuid, and the store holds it.
+/// store without the mesh and files one request; frames that ask again while
+/// it is pending file nothing more. Once decoded and taken in, the store holds
+/// the mesh under the asset's uuid, the one the entity's reference names.
 #[test]
 fn a_mesh_asset_resolves_once_its_decode_landed_and_not_before() {
     let project = Project::new(&[(MESH, TRIANGLE_OBJ)]);
@@ -146,7 +160,7 @@ fn a_mesh_asset_resolves_once_its_decode_landed_and_not_before() {
     for _ in 0..4 {
         project.frame(&mut world);
         assert!(
-            world.get::<HandleComponent<Mesh>>(entity).is_none(),
+            !project.stored::<Mesh>(&uuid),
             "no mesh before its decode landed"
         );
     }
@@ -157,16 +171,17 @@ fn a_mesh_asset_resolves_once_its_decode_landed_and_not_before() {
     project.land(staging);
     project.frame(&mut world);
 
-    let resolved = world
-        .get::<HandleComponent<Mesh>>(entity)
-        .expect("the mesh resolves once it landed");
-    assert_eq!(resolved.uuid, uuid);
     assert_eq!(
-        format!("{:?}", *resolved.handle),
+        world.get::<MeshRef>(entity).map(MeshRef::uuid),
+        Some(uuid),
+        "the entity names the asset"
+    );
+    let resolved = stored_copy::<Mesh>(&project, &uuid).expect("the mesh resolves once it landed");
+    assert_eq!(
+        format!("{:?}", *resolved),
         loaded_synchronously::<Mesh>(&project, uuid),
         "the mesh a synchronous load gave"
     );
-    assert!(project.stored::<Mesh>(&uuid), "the store holds the mesh");
 }
 
 /// **A pending mesh is asked for once, not once a frame**: ten frames
@@ -192,8 +207,8 @@ fn a_pending_mesh_is_requested_once_not_every_frame() {
 // ─── Materials and their textures ───────────────────────────────────────────
 
 /// **A material asset and the texture it names resolve once decoded off the
-/// frame**: the material handle reaches the entity, its texture reaches the
-/// store — what the GPU projection waits on — within a few rounds of the
+/// frame**: the material reaches the store under the uuid the entity names,
+/// its texture reaches the store — what the GPU projection waits on — within a few rounds of the
 /// `loading` family, and neither on the frame that asked.
 #[test]
 fn a_material_asset_and_its_texture_resolve_once_decoded_off_the_frame() {
@@ -211,25 +226,22 @@ fn a_material_asset_and_its_texture_resolve_once_decoded_off_the_frame() {
 
     project.frame(&mut world);
     assert!(
-        world
-            .get::<HandleComponent<Box<dyn Material>>>(entity)
-            .is_none(),
+        !project.stored::<Box<dyn Material>>(&material),
         "the frame that asks resolves nothing"
     );
 
-    let resolved = settle(&project, &mut world, 5, |world| {
-        world
-            .get::<HandleComponent<Box<dyn Material>>>(entity)
-            .is_some()
-            && project.stored::<CpuTexture>(&texture)
+    let resolved = settle(&project, &mut world, 5, |_| {
+        project.stored::<Box<dyn Material>>(&material) && project.stored::<CpuTexture>(&texture)
     });
 
     assert!(resolved, "the material and its texture resolve");
-    let held = world
-        .get::<HandleComponent<Box<dyn Material>>>(entity)
-        .expect("the material");
-    assert_eq!(held.uuid, material);
-    assert_eq!(held.handle.textures(), vec![texture]);
+    assert_eq!(
+        world.get::<MaterialRef>(entity).map(MaterialRef::uuid),
+        Some(material),
+        "the entity names the asset"
+    );
+    let held = stored_copy::<Box<dyn Material>>(&project, &material).expect("the material");
+    assert_eq!(held.textures(), vec![texture]);
     let stored = project
         .store
         .store::<CpuTexture>()

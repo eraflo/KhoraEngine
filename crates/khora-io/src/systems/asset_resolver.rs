@@ -12,58 +12,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The asset resolver: each entity's authored references ([`MaterialRef`],
-//! [`MeshRef`], a UI font or image) resolved into the asset store, under the
-//! uuid the residencies make their GPU copies by.
+//! The asset resolver: what the references ([`MeshRef`], [`MaterialRef`], a UI
+//! font or image) name, put into the asset store under the reference's uuid.
 //!
-//! The sole authority keeping a resolved handle in line with its reference:
-//! each reference carries an identity uuid (content-derived when inline, the
-//! asset's otherwise), compared every tick with the handle's. A mismatch, from
-//! any edit, resolves again. A copy the store already holds is not stored
-//! again, so the residencies make no GPU copy twice.
+//! See the book: concepts/assets.md, "From reference to copy".
 
-use khora_data::ecs::SystemContext;
+use std::any::TypeId;
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
-use khora_core::asset::{AssetHandle, AssetUUID, Material};
+use khora_core::asset::{Asset, AssetHandle, AssetUUID, Material};
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::OutputDeck;
 use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::renderer::api::resource::CpuTexture;
-use khora_core::sync::RwLockExt;
+use khora_core::sync::{LockExt, RwLockExt};
 use khora_core::Runtime;
-use khora_data::assets::Assets;
+use khora_data::assets::{ArrivalKind, ArrivalsRead, Assets};
 use khora_data::ecs::{
-    reconstruct_procedural_mesh, Changed, ComponentKey, DataSystemRegistration, HandleComponent,
-    MaterialRef, MeshRef, Tick, TickPhase, World,
+    reconstruct_procedural_mesh, Changed, ComponentKey, DataSystemRegistration, MaterialRef,
+    MeshRef, SystemContext, Tick, TickPhase, World,
 };
 use khora_data::AssetStore;
 
 use super::ui_asset_resolver;
 use crate::asset::{AssetService, Requested};
 
-/// One pending material resolution: the entity to give the handle stored under `uuid`.
-///
-/// `had_stale_handle` when the reference changed: the handle is then
-/// overwritten in place. `in_store` when the handle is the store's own copy
-/// already: it is attached, not stored again.
-struct ResolvedMaterial {
-    entity: EntityId,
-    uuid: AssetUUID,
-    handle: AssetHandle<Box<dyn Material>>,
-    had_stale_handle: bool,
-    in_store: bool,
-}
-
-/// One pending mesh resolution, as [`ResolvedMaterial`].
-struct ResolvedMesh {
-    entity: EntityId,
-    uuid: AssetUUID,
-    handle: AssetHandle<Mesh>,
-    had_stale_handle: bool,
-    in_store: bool,
-}
+/// The resolver's name: its `DataSystem`'s, and the reader it reads the
+/// material and mesh stores' arrivals as.
+const ASSET_RESOLVER: &str = "asset_resolver";
 
 fn asset_resolver_system(
     world: &mut World,
@@ -71,309 +48,303 @@ fn asset_resolver_system(
     _deck: &mut OutputDeck,
     ctx: SystemContext,
 ) {
-    resolve_materials(world, runtime);
-    resolve_meshes(world, runtime, ctx.since);
+    resolve_references(world, runtime, ctx.since);
     ui_asset_resolver::resolve_ui_fonts(world, runtime);
     ui_asset_resolver::resolve_ui_images(world, runtime);
 }
 
-fn resolve_materials(world: &mut World, runtime: &Runtime) {
-    let asset_store = runtime.resources.get::<AssetStore>();
-    let asset_service = runtime.services.get::<Arc<Mutex<AssetService>>>().cloned();
-    let store = asset_store.map(|s| s.store::<Box<dyn Material>>());
-
-    // Collected while the query borrows the world read-only. Steady state is
-    // one uuid compare: nothing is cloned, loaded or hashed.
-    let mut pending: Vec<ResolvedMaterial> = Vec::new();
-    {
-        let query = world.query::<(
-            EntityId,
-            &MaterialRef,
-            Option<&HandleComponent<Box<dyn Material>>>,
-        )>();
-
-        for (entity, material_ref, current) in query {
-            let expected = material_ref.uuid();
-            // Up to date: the resolved handle already carries the authored
-            // identity. Nothing to do.
-            if current.map(|h| h.uuid) == Some(expected) {
-                continue;
-            }
-            // A stale handle is present (the authored ref changed); the new
-            // handle must overwrite it in place.
-            let had_stale_handle = current.is_some();
-
-            match material_ref {
-                MaterialRef::Inline { material, .. } => {
-                    // The uuid is the content's: a copy held is this one.
-                    let held = held_copy(store.as_deref(), &expected);
-                    let in_store = held.is_some();
-                    let handle = held.unwrap_or_else(|| AssetHandle::new(material.clone_box()));
-                    pending.push(ResolvedMaterial {
-                        entity,
-                        uuid: expected,
-                        handle,
-                        had_stale_handle,
-                        in_store,
-                    });
-                }
-                MaterialRef::Asset(uuid) => {
-                    let Some(service) = &asset_service else {
-                        log::error!(
-                            "asset_resolver: AssetService missing; cannot resolve material \
-                             asset {uuid:?} on entity {entity:?}."
-                        );
-                        continue;
-                    };
-                    let requested = match service.lock() {
-                        Ok(mut svc) => svc.request::<Box<dyn Material>>(uuid),
-                        Err(_) => {
-                            log::error!("asset_resolver: AssetService mutex poisoned.");
-                            continue;
-                        }
-                    };
-                    // Decoded off the frame: the entity waits for it, and
-                    // resolves on a pass after it landed. One that failed
-                    // (logged when it landed) waits for its file to change;
-                    // never a fallback.
-                    if let Requested::Ready(handle) = requested {
-                        let in_store = held_copy(store.as_deref(), uuid).as_ref() == Some(&handle);
-                        pending.push(ResolvedMaterial {
-                            entity,
-                            uuid: *uuid,
-                            handle,
-                            had_stale_handle,
-                            in_store,
-                        });
-                    }
-                }
-            }
-        }
+/// Resolves the references changed since `since` and those whose decode landed since.
+///
+/// Returns how many `MeshRef` and `MaterialRef` rows it read, each counting
+/// one. The registered `asset_resolver` runs it every frame. Attaches nothing
+/// to any entity; does nothing without an asset store.
+fn resolve_references(world: &mut World, runtime: &Runtime, since: Tick) -> usize {
+    let Some(store) = runtime.resources.get::<AssetStore>() else {
+        return 0;
+    };
+    let service = runtime.services.get::<Arc<Mutex<AssetService>>>();
+    let mut resolver = Resolver {
+        store,
+        service: service.map(|service| &**service),
+        wanted: service.map_or_else(HashSet::new, |service| {
+            service.lock_recovered().take_resolving()
+        }),
+    };
+    resolver.ask_again();
+    let read = resolver.materials_changed(world, since) + resolver.meshes_changed(world, since);
+    resolver.follow_arrivals();
+    if let Some(service) = resolver.service {
+        service.lock_recovered().keep_resolving(resolver.wanted);
     }
-
-    if pending.is_empty() {
-        return;
-    }
-
-    let textures = asset_store.map(|s| s.store::<CpuTexture>());
-    for ResolvedMaterial {
-        entity,
-        uuid,
-        handle,
-        had_stale_handle,
-        in_store,
-    } in pending
-    {
-        // The material's GPU copy waits until every texture it names is
-        // decoded: load them now, once per resolution of the material ref.
-        if let (Some(textures), Some(service)) = (&textures, &asset_service) {
-            load_textures(&**handle, entity, textures, service);
-        }
-        if let (Some(store), false) = (&store, in_store) {
-            store.write_recovered().insert(uuid, handle.clone());
-        }
-        let component = HandleComponent { handle, uuid };
-        if had_stale_handle {
-            world.set_component(entity, component);
-        } else if let Err(e) = world.add_component(entity, component) {
-            log::warn!("asset_resolver: attaching material handle on {entity:?} failed: {e:?}");
-        }
-    }
+    read
 }
 
 /// Asks for every texture `material` names that `textures` does not hold yet.
 ///
-/// One cached is stored now, one being decoded is stored when it lands. A
-/// texture that failed waits for its file to change.
+/// One cached is stored now; returns the others, being decoded or failed,
+/// which land in the store when decoded. A texture that failed waits for a
+/// file to change.
 pub(super) fn load_textures(
     material: &dyn Material,
-    entity: EntityId,
-    textures: &std::sync::RwLock<Assets<CpuTexture>>,
-    service: &Mutex<AssetService>,
-) {
+    textures: &RwLock<Assets<CpuTexture>>,
+    service: &mut AssetService,
+) -> Vec<AssetUUID> {
+    let mut waiting = Vec::new();
     for uuid in material.textures() {
-        let held = textures.read_recovered().contains(&uuid);
-        if held {
+        if textures.read_recovered().contains(&uuid) {
             continue;
         }
-        let requested = match service.lock() {
-            Ok(mut svc) => svc.request::<CpuTexture>(&uuid),
-            Err(_) => {
-                log::error!("asset_resolver: AssetService mutex poisoned.");
-                return;
+        match service.request::<CpuTexture>(&uuid) {
+            Requested::Ready(texture) => textures.write_recovered().insert(uuid, texture),
+            Requested::Pending => waiting.push(uuid),
+            Requested::Failed => {
+                log::debug!(
+                    "asset_resolver: texture {uuid:?} failed to decode; it waits for a file to change"
+                );
+                waiting.push(uuid);
             }
-        };
-        match requested {
-            Requested::Ready(texture) => {
-                textures.write_recovered().insert(uuid, texture);
-            }
-            Requested::Pending => {}
-            Requested::Failed => log::debug!(
-                "asset_resolver: texture {uuid:?} of the material on entity {entity:?} \
-                 failed to decode; it waits for its file to change"
-            ),
         }
     }
+    waiting
 }
 
-/// Resolves every `MeshRef` whose handle does not carry its uuid.
-///
-/// A mesh made in code is the store's own copy: attached as it is. One the
-/// store does not hold draws nothing, and is logged when its reference changed
-/// since `since`, so once per change.
-fn resolve_meshes(world: &mut World, runtime: &Runtime, since: Tick) {
-    let asset_store = runtime.resources.get::<AssetStore>();
-    let asset_service = runtime.services.get::<Arc<Mutex<AssetService>>>().cloned();
-    let store = asset_store.map(|s| s.store::<Mesh>());
+/// One run of the resolver: the store it fills, the service it asks, and what
+/// it asked for that has not landed.
+struct Resolver<'a> {
+    store: &'a AssetStore,
+    service: Option<&'a Mutex<AssetService>>,
+    /// The assets, by uuid and type, asked for and not landed: being decoded,
+    /// or failed and waiting for a file to change.
+    wanted: HashSet<(AssetUUID, TypeId)>,
+}
 
-    // Collected while the query borrows the world read-only. Steady state is
-    // one uuid compare: no geometry is rebuilt.
-    let mut pending: Vec<ResolvedMesh> = Vec::new();
-    let mut not_made: Vec<(EntityId, AssetUUID)> = Vec::new();
-    {
-        let query = world.query::<(EntityId, &MeshRef, Option<&HandleComponent<Mesh>>)>();
-
-        for (entity, mesh_ref, current) in query {
-            let expected = mesh_ref.uuid();
-            // Up to date: the resolved handle already carries the authored
-            // identity. Nothing to do.
-            if current.map(|h| h.uuid) == Some(expected) {
+impl Resolver<'_> {
+    /// Asks the service again for every asset wanted, keeping those that have not landed.
+    ///
+    /// A failed one is not decoded again until a file changes; one whose file
+    /// left the project is not asked for until it is back.
+    fn ask_again(&mut self) {
+        let Some(service) = self.service else {
+            return;
+        };
+        if self.wanted.is_empty() {
+            return;
+        }
+        let mut svc = service.lock_recovered();
+        let wanted = std::mem::take(&mut self.wanted);
+        for (uuid, type_id) in wanted {
+            if svc.gone_from_index(&uuid) {
+                self.wanted.insert((uuid, type_id));
                 continue;
             }
-            let had_stale_handle = current.is_some();
-
-            match mesh_ref {
-                MeshRef::Procedural { kind, params, .. } => {
-                    // The uuid is the parameters': a copy held is this one.
-                    let held = held_copy(store.as_deref(), &expected);
-                    let in_store = held.is_some();
-                    let handle = held.unwrap_or_else(|| {
-                        AssetHandle::new(reconstruct_procedural_mesh(*kind, *params))
-                    });
-                    pending.push(ResolvedMesh {
-                        entity,
-                        uuid: expected,
-                        handle,
-                        had_stale_handle,
-                        in_store,
-                    });
-                }
-                MeshRef::Asset(uuid) => {
-                    let Some(service) = &asset_service else {
-                        log::error!(
-                            "asset_resolver: AssetService missing; cannot resolve mesh \
-                             asset {uuid:?} on entity {entity:?}."
-                        );
-                        continue;
-                    };
-                    let requested = match service.lock() {
-                        Ok(mut svc) => svc.request::<Mesh>(uuid),
-                        Err(_) => {
-                            log::error!("asset_resolver: AssetService mutex poisoned.");
-                            continue;
-                        }
-                    };
-                    // Decoded off the frame: the entity waits for it. One
-                    // that failed (logged when it landed) waits for its file
-                    // to change; never a fallback to a default.
-                    if let Requested::Ready(handle) = requested {
-                        let in_store = held_copy(store.as_deref(), uuid).as_ref() == Some(&handle);
-                        pending.push(ResolvedMesh {
-                            entity,
-                            uuid: *uuid,
-                            handle,
-                            had_stale_handle,
-                            in_store,
-                        });
-                    }
-                }
-                MeshRef::Made(uuid) => {
-                    let made = store
-                        .as_ref()
-                        .and_then(|store| store.read_recovered().get(uuid).cloned());
-                    match made {
-                        Some(handle) => pending.push(ResolvedMesh {
-                            entity,
-                            uuid: *uuid,
-                            handle,
-                            had_stale_handle,
-                            in_store: true,
-                        }),
-                        None => not_made.push((entity, *uuid)),
-                    }
-                }
+            if type_id == TypeId::of::<Mesh>() {
+                self.ask::<Mesh>(&mut svc, uuid);
+            } else if type_id == TypeId::of::<Box<dyn Material>>() {
+                self.ask::<Box<dyn Material>>(&mut svc, uuid);
+            } else if type_id == TypeId::of::<CpuTexture>() {
+                self.ask::<CpuTexture>(&mut svc, uuid);
             }
         }
     }
 
-    if !not_made.is_empty() {
-        report_meshes_not_made(world, &not_made, since);
-    }
-    if pending.is_empty() {
-        return;
-    }
-
-    for ResolvedMesh {
-        entity,
-        uuid,
-        handle,
-        had_stale_handle,
-        in_store,
-    } in pending
-    {
-        if let (Some(store), false) = (&store, in_store) {
-            store.write_recovered().insert(uuid, handle.clone());
-        }
-        let component = HandleComponent { handle, uuid };
-        if had_stale_handle {
-            world.set_component(entity, component);
-        } else if let Err(e) = world.add_component(entity, component) {
-            log::warn!("asset_resolver: attaching mesh handle on {entity:?} failed: {e:?}");
+    /// Asks `svc` for the `A` named `uuid`: stored if ready, else wanted.
+    fn ask<A: Asset>(&mut self, svc: &mut AssetService, uuid: AssetUUID) {
+        match svc.request::<A>(&uuid) {
+            Requested::Ready(handle) => publish(&self.store.store::<A>(), uuid, &handle),
+            Requested::Pending | Requested::Failed => {
+                self.wanted.insert((uuid, TypeId::of::<A>()));
+            }
         }
     }
-}
 
-/// Returns the copy `store` holds under `uuid`, if any.
-fn held_copy<A: khora_core::asset::Asset>(
-    store: Option<&std::sync::RwLock<Assets<A>>>,
-    uuid: &AssetUUID,
-) -> Option<AssetHandle<A>> {
-    store.and_then(|store| store.read_recovered().get(uuid).cloned())
-}
+    /// Resolves every `MaterialRef` changed since `since`; returns how many it read.
+    ///
+    /// An inline material is stored under its uuid unless the store holds it;
+    /// an asset is asked of the service.
+    fn materials_changed(&mut self, world: &World, since: Tick) -> usize {
+        let store = self.store.store::<Box<dyn Material>>();
+        let mut read = 0;
+        let mut inline: Vec<(AssetUUID, Box<dyn Material>)> = Vec::new();
+        let mut assets: Vec<(EntityId, AssetUUID)> = Vec::new();
+        {
+            let held = store.read_recovered();
+            let changed = world
+                .query::<(EntityId, &MaterialRef, Changed<MaterialRef>)>()
+                .since(since);
+            for (entity, material_ref, _) in changed {
+                read += 1;
+                match material_ref {
+                    MaterialRef::Inline { material, uuid } => {
+                        if !held.contains(uuid) {
+                            inline.push((*uuid, material.clone_box()));
+                        }
+                    }
+                    MaterialRef::Asset(uuid) => assets.push((entity, *uuid)),
+                }
+            }
+        }
+        for (uuid, material) in inline {
+            let mut held = store.write_recovered();
+            if !held.contains(&uuid) {
+                held.insert(uuid, AssetHandle::new(material));
+            }
+        }
+        self.ask_for_assets::<Box<dyn Material>>(&assets, "material");
+        read
+    }
 
-/// Logs each entity of `not_made` whose `MeshRef` changed since `since`: it
-/// names a mesh made in code the asset store does not hold, so it draws nothing.
-fn report_meshes_not_made(world: &World, not_made: &[(EntityId, AssetUUID)], since: Tick) {
-    let changed: HashSet<EntityId> = world
-        .query::<(EntityId, Changed<MeshRef>)>()
-        .since(since)
-        .map(|(entity, _)| entity)
-        .collect();
-    for (entity, uuid) in not_made {
-        if changed.contains(entity) {
-            log::warn!(
-                "asset_resolver: entity {entity:?} names a mesh made in code ({uuid:?}) \
-                 the asset store does not hold; it draws nothing"
+    /// Resolves every `MeshRef` changed since `since`; returns how many it read.
+    ///
+    /// A procedural mesh is built and stored under its uuid unless the store
+    /// holds it; an asset is asked of the service. A mesh made in code the
+    /// store does not hold draws nothing, and is logged.
+    fn meshes_changed(&mut self, world: &World, since: Tick) -> usize {
+        let store = self.store.store::<Mesh>();
+        let mut read = 0;
+        let mut procedural = Vec::new();
+        let mut assets: Vec<(EntityId, AssetUUID)> = Vec::new();
+        {
+            let held = store.read_recovered();
+            let changed = world
+                .query::<(EntityId, &MeshRef, Changed<MeshRef>)>()
+                .since(since);
+            for (entity, mesh_ref, _) in changed {
+                read += 1;
+                match mesh_ref {
+                    MeshRef::Procedural { kind, params, uuid } => {
+                        if !held.contains(uuid) {
+                            procedural.push((*uuid, *kind, *params));
+                        }
+                    }
+                    MeshRef::Asset(uuid) => assets.push((entity, *uuid)),
+                    MeshRef::Made(uuid) => {
+                        if !held.contains(uuid) {
+                            log::warn!(
+                                "asset_resolver: entity {entity:?} names a mesh made in code \
+                                 ({uuid:?}) the asset store does not hold; it draws nothing"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        for (uuid, kind, params) in procedural {
+            let mut held = store.write_recovered();
+            if !held.contains(&uuid) {
+                held.insert(
+                    uuid,
+                    AssetHandle::new(reconstruct_procedural_mesh(kind, params)),
+                );
+            }
+        }
+        self.ask_for_assets::<Mesh>(&assets, "mesh");
+        read
+    }
+
+    /// Asks the service for each asset of `assets`, named by the entity beside it.
+    fn ask_for_assets<A: Asset>(&mut self, assets: &[(EntityId, AssetUUID)], what: &str) {
+        if assets.is_empty() {
+            return;
+        }
+        let Some(service) = self.service else {
+            for (entity, uuid) in assets {
+                log::error!(
+                    "asset_resolver: AssetService missing; cannot resolve {what} asset \
+                     {uuid:?} on entity {entity:?}."
+                );
+            }
+            return;
+        };
+        let mut svc = service.lock_recovered();
+        for (_, uuid) in assets {
+            self.ask::<A>(&mut svc, *uuid);
+        }
+    }
+
+    /// Follows what arrived in the material and mesh stores since the last run.
+    ///
+    /// A material that landed or was replaced has its textures asked for; a
+    /// material or mesh gone from the store is wanted again, for when its file
+    /// is back. After lost arrivals, every stored material's textures are asked for.
+    fn follow_arrivals(&mut self) {
+        let materials = self.store.store::<Box<dyn Material>>();
+        let read = materials.read_recovered().arrivals(ASSET_RESOLVER);
+        let arrived: Vec<AssetHandle<Box<dyn Material>>> = {
+            let held = materials.read_recovered();
+            match read {
+                ArrivalsRead::Since(arrivals) => {
+                    let mut arrived = Vec::new();
+                    for arrival in arrivals {
+                        match arrival.kind {
+                            ArrivalKind::Landed | ArrivalKind::Replaced => {
+                                arrived.extend(held.get(&arrival.uuid).cloned());
+                            }
+                            ArrivalKind::Gone => {
+                                self.wanted
+                                    .insert((arrival.uuid, TypeId::of::<Box<dyn Material>>()));
+                            }
+                        }
+                    }
+                    arrived
+                }
+                ArrivalsRead::Resync => held
+                    .keys()
+                    .filter_map(|uuid| held.get(&uuid).cloned())
+                    .collect(),
+            }
+        };
+        let read = self
+            .store
+            .store::<Mesh>()
+            .read_recovered()
+            .arrivals(ASSET_RESOLVER);
+        if let ArrivalsRead::Since(arrivals) = read {
+            self.wanted.extend(
+                arrivals
+                    .iter()
+                    .filter(|arrival| arrival.kind == ArrivalKind::Gone)
+                    .map(|arrival| (arrival.uuid, TypeId::of::<Mesh>())),
+            );
+        }
+        let Some(service) = self.service else {
+            return;
+        };
+        if arrived.is_empty() {
+            return;
+        }
+        let textures = self.store.store::<CpuTexture>();
+        let mut svc = service.lock_recovered();
+        for material in arrived {
+            let waiting = load_textures(&**material, &textures, &mut svc);
+            self.wanted.extend(
+                waiting
+                    .into_iter()
+                    .map(|uuid| (uuid, TypeId::of::<CpuTexture>())),
             );
         }
     }
 }
 
+/// Stores `handle` as the copy of `uuid` in `store`, unless it is the one held.
+fn publish<A: Asset>(store: &RwLock<Assets<A>>, uuid: AssetUUID, handle: &AssetHandle<A>) {
+    let mut held = store.write_recovered();
+    if held.get(&uuid) != Some(handle) {
+        held.insert(uuid, handle.clone());
+    }
+}
+
 inventory::submit! {
     DataSystemRegistration {
-        name: "asset_resolver",
+        name: ASSET_RESOLVER,
         phase: TickPhase::PreExtract,
         run: asset_resolver_system,
         // Lower than the residencies `gpu_mesh_sync` and `gpu_material_sync`
         // (order_hint 0), which also run after it, so the copies are stored
         // before they are made resident.
         order_hint: -5,
-        // A changed asset's copies are replaced before the authored refs are
-        // compared against them.
+        // A changed asset's copies are replaced before the references are read.
         runs_after: &["asset_reload"],
-        // A mesh made in code the store lacks is logged once per change of
-        // its reference.
-        observes: &[ComponentKey::of::<MeshRef>],
+        observes: &[ComponentKey::of::<MeshRef>, ComponentKey::of::<MaterialRef>],
         role: khora_data::ecs::Role::Upkeep,
     }
 }
@@ -381,9 +352,10 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khora_core::asset::{Asset, StandardMaterial};
+    use khora_core::asset::StandardMaterial;
     use khora_core::math::LinearRgba;
     use khora_data::assets::{Arrival, ArrivalKind, ArrivalsRead};
+    use khora_data::ecs::{HandleComponent, Observer};
 
     /// The arrivals reader these tests read the store as.
     const WATCHER: &str = "asset_resolver_tests";
@@ -401,43 +373,82 @@ mod tests {
         }
     }
 
-    /// Runs the resolver once.
+    /// The copy `store` holds under `uuid`, if any.
+    fn stored<A: Asset>(store: &AssetStore, uuid: &AssetUUID) -> Option<AssetHandle<A>> {
+        store.store::<A>().read().unwrap().get(uuid).cloned()
+    }
+
+    /// The uuid `entity`'s `MaterialRef` names.
+    fn material_uuid(world: &World, entity: EntityId) -> AssetUUID {
+        world
+            .get::<MaterialRef>(entity)
+            .expect("the entity has a MaterialRef")
+            .uuid()
+    }
+
+    /// The uuid `entity`'s `MeshRef` names.
+    fn mesh_uuid(world: &World, entity: EntityId) -> AssetUUID {
+        world
+            .get::<MeshRef>(entity)
+            .expect("the entity has a MeshRef")
+            .uuid()
+    }
+
+    /// The `StandardMaterial` `store` holds under `uuid`.
+    fn stored_standard(store: &AssetStore, uuid: &AssetUUID) -> StandardMaterial {
+        let material = stored::<Box<dyn Material>>(store, uuid).expect("the material is stored");
+        let material: &dyn Material = &**material;
+        material
+            .as_any()
+            .downcast_ref::<StandardMaterial>()
+            .expect("a StandardMaterial")
+            .clone()
+    }
+
+    /// Runs the registered data system `name` once, as the scheduler's runner does.
+    ///
+    /// It is handed the tick of its last run; its writes carry this one.
+    fn run_system(world: &mut World, runtime: &Runtime, name: &'static str) {
+        let observer = Observer::DataSystem(name);
+        let ctx = SystemContext {
+            since: world.observer_last_seen(observer),
+            resumed: world.observer_resumes(observer),
+            scope: None,
+        };
+        let tick = world.begin_run();
+        let system = inventory::iter::<DataSystemRegistration>
+            .into_iter()
+            .find(|system| system.name == name)
+            .unwrap_or_else(|| panic!("`{name}` is registered"));
+        (system.run)(world, runtime, &mut OutputDeck::default(), ctx);
+        world.note_observer_run(observer, tick);
+        world.end_run();
+    }
+
+    /// Runs the resolver once, as the scheduler's runner does.
     fn resolve_once(world: &mut World, runtime: &Runtime) {
-        asset_resolver_system(
-            world,
-            runtime,
-            &mut OutputDeck::default(),
-            khora_data::ecs::SystemContext {
-                since: khora_data::ecs::Tick(0),
-                resumed: false,
-                scope: None,
-            },
-        );
+        run_system(world, runtime, ASSET_RESOLVER);
     }
 
     /// Runs frames of the resolver until what it asked for is decoded and taken in.
     fn resolve_settled(world: &mut World, runtime: &Runtime) {
         crate::systems::asset_intake::tests::settle(runtime, world, |world| {
-            asset_resolver_system(
-                world,
-                runtime,
-                &mut OutputDeck::default(),
-                khora_data::ecs::SystemContext {
-                    since: khora_data::ecs::Tick(0),
-                    resumed: false,
-                    scope: None,
-                },
-            );
+            resolve_once(world, runtime);
         });
     }
 
-    #[test]
-    fn resolves_inline_material_into_handle_and_store() {
-        let mut world = World::new();
-        let store = AssetStore::new();
-
+    /// A runtime holding `store`.
+    fn runtime_with(store: &AssetStore) -> Runtime {
         let mut runtime = Runtime::default();
         runtime.resources.insert(store.clone());
+        runtime
+    }
+
+    #[test]
+    fn resolves_inline_material_into_the_store_under_its_uuid() {
+        let mut world = World::new();
+        let store = AssetStore::new();
+        let runtime = runtime_with(&store);
 
         let distinctive = StandardMaterial {
             base_color: LinearRgba::new(0.2, 0.4, 0.6, 1.0),
@@ -447,77 +458,29 @@ mod tests {
         };
         let entity = world.spawn(MaterialRef::inline(Box::new(distinctive.clone())));
 
-        let mut deck = OutputDeck::default();
-        asset_resolver_system(
-            &mut world,
-            &runtime,
-            &mut deck,
-            khora_data::ecs::SystemContext {
-                since: khora_data::ecs::Tick(0),
-                resumed: false,
-                scope: None,
-            },
-        );
+        resolve_once(&mut world, &runtime);
 
-        let resolved = world
-            .get::<HandleComponent<Box<dyn Material>>>(entity)
-            .expect("inline material should resolve to a handle");
-        let material: &dyn Material = &**resolved.handle;
-        let standard = material
-            .as_any()
-            .downcast_ref::<StandardMaterial>()
-            .expect("resolved material should downcast to StandardMaterial");
+        let standard = stored_standard(&store, &material_uuid(&world, entity));
         assert_eq!(standard.base_color, distinctive.base_color);
         assert_eq!(standard.roughness, distinctive.roughness);
         assert_eq!(standard.metallic, distinctive.metallic);
-
-        // The shared store must also hold the resolved material under the same uuid.
-        let sub = store.store::<Box<dyn Material>>();
-        let guard = sub.read().unwrap();
-        assert!(
-            guard.get(&resolved.uuid).is_some(),
-            "resolved material should be inserted into the shared AssetStore"
-        );
     }
 
     #[test]
     fn inline_resolution_is_idempotent() {
         let mut world = World::new();
-        let runtime = Runtime::default();
+        let store = AssetStore::new();
+        let runtime = runtime_with(&store);
         let entity = world.spawn(MaterialRef::inline(Box::new(StandardMaterial::default())));
 
-        let mut deck = OutputDeck::default();
-        asset_resolver_system(
-            &mut world,
-            &runtime,
-            &mut deck,
-            khora_data::ecs::SystemContext {
-                since: khora_data::ecs::Tick(0),
-                resumed: false,
-                scope: None,
-            },
-        );
-        let first = world
-            .get::<HandleComponent<Box<dyn Material>>>(entity)
-            .expect("first pass resolves")
-            .uuid;
+        resolve_once(&mut world, &runtime);
+        let uuid = material_uuid(&world, entity);
+        let first = stored::<Box<dyn Material>>(&store, &uuid).expect("first pass resolves");
 
-        // A second pass finds the handle already present and changes nothing.
-        asset_resolver_system(
-            &mut world,
-            &runtime,
-            &mut deck,
-            khora_data::ecs::SystemContext {
-                since: khora_data::ecs::Tick(0),
-                resumed: false,
-                scope: None,
-            },
-        );
-        let second = world
-            .get::<HandleComponent<Box<dyn Material>>>(entity)
-            .expect("handle persists")
-            .uuid;
-        assert_eq!(first, second);
+        // A second pass finds the copy already stored and changes nothing.
+        resolve_once(&mut world, &runtime);
+        let second = stored::<Box<dyn Material>>(&store, &uuid).expect("the copy stays");
+        assert!(first == second, "the same copy is kept");
     }
 
     /// A `MaterialRef` changed to another inline material resolves under its new uuid.
@@ -528,8 +491,7 @@ mod tests {
     fn changing_inline_material_stores_the_new_copy_under_its_uuid() {
         let mut world = World::new();
         let store = AssetStore::new();
-        let mut runtime = Runtime::default();
-        runtime.resources.insert(store.clone());
+        let runtime = runtime_with(&store);
 
         let mat_a = StandardMaterial {
             base_color: LinearRgba::new(0.1, 0.2, 0.3, 1.0),
@@ -537,10 +499,11 @@ mod tests {
         };
         let entity = world.spawn(MaterialRef::inline(Box::new(mat_a)));
         resolve_once(&mut world, &runtime);
-        let uuid_a = world
-            .get::<HandleComponent<Box<dyn Material>>>(entity)
-            .expect("material A resolves")
-            .uuid;
+        let uuid_a = material_uuid(&world, entity);
+        assert!(
+            stored::<Box<dyn Material>>(&store, &uuid_a).is_some(),
+            "A resolves"
+        );
         watch::<Box<dyn Material>>(&store);
 
         // The developer/editor swaps in a different inline material.
@@ -555,10 +518,7 @@ mod tests {
         );
         resolve_once(&mut world, &runtime);
 
-        let uuid_b = world
-            .get::<HandleComponent<Box<dyn Material>>>(entity)
-            .expect("material B resolves")
-            .uuid;
+        let uuid_b = material_uuid(&world, entity);
         assert_ne!(
             uuid_a, uuid_b,
             "different material content => different uuid"
@@ -579,38 +539,36 @@ mod tests {
     fn steady_state_material_resolution_stores_nothing_again() {
         let mut world = World::new();
         let store = AssetStore::new();
-        let mut runtime = Runtime::default();
-        runtime.resources.insert(store.clone());
+        let runtime = runtime_with(&store);
 
         let entity = world.spawn(MaterialRef::inline(Box::new(StandardMaterial::default())));
         resolve_once(&mut world, &runtime);
-        let uuid = world
-            .get::<HandleComponent<Box<dyn Material>>>(entity)
-            .expect("resolves")
-            .uuid;
+        let uuid = material_uuid(&world, entity);
+        assert!(
+            stored::<Box<dyn Material>>(&store, &uuid).is_some(),
+            "resolves"
+        );
         watch::<Box<dyn Material>>(&store);
 
         resolve_once(&mut world, &runtime);
 
-        let after = world
-            .get::<HandleComponent<Box<dyn Material>>>(entity)
-            .expect("handle persists")
-            .uuid;
-        assert_eq!(uuid, after, "steady state keeps the same CPU handle uuid");
+        assert!(
+            stored::<Box<dyn Material>>(&store, &uuid).is_some(),
+            "steady state keeps the copy"
+        );
         assert!(
             arrived::<Box<dyn Material>>(&store).is_empty(),
             "steady state stores nothing again"
         );
     }
 
-    /// A second entity naming an inline material the store holds is given
-    /// that copy: nothing is stored again, so no GPU copy is made twice.
+    /// A second entity naming an inline material the store holds shares that
+    /// copy: nothing is stored again, so no GPU copy is made twice.
     #[test]
     fn an_entity_naming_a_stored_inline_material_shares_its_copy() {
         let mut world = World::new();
         let store = AssetStore::new();
-        let mut runtime = Runtime::default();
-        runtime.resources.insert(store.clone());
+        let runtime = runtime_with(&store);
         let material = || MaterialRef::inline(Box::new(StandardMaterial::default()));
 
         let first = world.spawn(material());
@@ -619,17 +577,12 @@ mod tests {
         let second = world.spawn(material());
         resolve_once(&mut world, &runtime);
 
-        let handle_of = |entity| {
-            world
-                .get::<HandleComponent<Box<dyn Material>>>(entity)
-                .expect("resolves")
-                .handle
-                .clone()
-        };
-        assert!(
-            handle_of(first) == handle_of(second),
-            "both entities hold the store's one copy"
+        assert_eq!(
+            material_uuid(&world, first),
+            material_uuid(&world, second),
+            "both entities name the store's one copy"
         );
+        assert_eq!(store.store::<Box<dyn Material>>().read().unwrap().len(), 1);
         assert!(
             arrived::<Box<dyn Material>>(&store).is_empty(),
             "the copy held is not stored again"
@@ -646,18 +599,15 @@ mod tests {
 
         let mut world = World::new();
         let store = AssetStore::new();
-        let mut runtime = Runtime::default();
-        runtime.resources.insert(store.clone());
+        let runtime = runtime_with(&store);
 
         let entity = world.spawn(MeshRef::procedural(
             ProceduralMeshKind::Cube,
             [1.0, 0.0, 0.0, 0.0],
         ));
         resolve_once(&mut world, &runtime);
-        let uuid_a = world
-            .get::<HandleComponent<Mesh>>(entity)
-            .expect("mesh A resolves")
-            .uuid;
+        let uuid_a = mesh_uuid(&world, entity);
+        assert!(stored::<Mesh>(&store, &uuid_a).is_some(), "mesh A resolves");
         watch::<Mesh>(&store);
 
         // Resize the cube — different params => different content uuid.
@@ -670,10 +620,7 @@ mod tests {
         );
         resolve_once(&mut world, &runtime);
 
-        let uuid_b = world
-            .get::<HandleComponent<Mesh>>(entity)
-            .expect("mesh B resolves")
-            .uuid;
+        let uuid_b = mesh_uuid(&world, entity);
         assert_ne!(uuid_a, uuid_b, "different params => different uuid");
         assert_eq!(
             arrived::<Mesh>(&store),
@@ -688,7 +635,6 @@ mod tests {
     #[test]
     fn resolves_asset_material_from_kmat_via_service() {
         use crate::asset::{FileLoader, IndexBuilder};
-        use khora_core::asset::StandardMaterial;
         use khora_telemetry::MetricsRegistry;
         use std::fs;
         use tempfile::tempdir;
@@ -736,85 +682,48 @@ mod tests {
         service.register_inventory_decoders();
 
         let store = AssetStore::new();
-        let mut runtime = Runtime::default();
-        runtime.resources.insert(store.clone());
+        let mut runtime = runtime_with(&store);
         runtime.resources.insert(khora_core::lane::Reserve::new());
         runtime
             .services
             .insert(Arc::new(Mutex::new(service)) as Arc<Mutex<AssetService>>);
 
         let mut world = World::new();
-        let entity = world.spawn(MaterialRef::Asset(uuid));
+        world.spawn(MaterialRef::Asset(uuid));
 
         // Decoded off the frame: resolved once its decode was taken in.
         resolve_settled(&mut world, &runtime);
 
-        let resolved = world
-            .get::<HandleComponent<Box<dyn Material>>>(entity)
-            .expect("asset material should resolve to a handle");
-        // The stable asset UUID is preserved on the resolved handle.
-        assert_eq!(resolved.uuid, uuid);
-
-        let material: &dyn Material = &**resolved.handle;
-        let standard = material
-            .as_any()
-            .downcast_ref::<StandardMaterial>()
-            .expect("resolved .kmat should decode to StandardMaterial");
+        // The store holds the decoded material under the asset's stable uuid,
+        // so the GPU projection (and a second referencing entity) see it.
+        let standard = stored_standard(&store, &uuid);
         assert_eq!(standard.metallic, 1.0);
         assert_eq!(standard.roughness, 0.18);
         assert_eq!(standard.base_color.r, 0.71);
-
-        // The shared store also holds the resolved material under the asset UUID,
-        // so the GPU projection (and a second referencing entity) see it.
-        let sub = store.store::<Box<dyn Material>>();
-        assert!(
-            sub.read().unwrap().get(&uuid).is_some(),
-            "resolved asset material should be published to the shared AssetStore"
-        );
     }
 
     #[test]
-    fn resolves_procedural_mesh_into_handle_with_cube_counts() {
+    fn resolves_procedural_mesh_into_the_store_with_cube_counts() {
         use khora_data::ecs::ProceduralMeshKind;
 
         let mut world = World::new();
         let store = AssetStore::new();
-        let mut runtime = Runtime::default();
-        runtime.resources.insert(store.clone());
+        let runtime = runtime_with(&store);
 
         let entity = world.spawn(MeshRef::procedural(
             ProceduralMeshKind::Cube,
             [2.0, 0.0, 0.0, 0.0],
         ));
 
-        let mut deck = OutputDeck::default();
-        asset_resolver_system(
-            &mut world,
-            &runtime,
-            &mut deck,
-            khora_data::ecs::SystemContext {
-                since: khora_data::ecs::Tick(0),
-                resumed: false,
-                scope: None,
-            },
-        );
+        resolve_once(&mut world, &runtime);
 
-        let resolved = world
-            .get::<HandleComponent<Mesh>>(entity)
-            .expect("procedural mesh should resolve to a handle");
-        let mesh: &Mesh = &resolved.handle;
+        let mesh = stored::<Mesh>(&store, &mesh_uuid(&world, entity))
+            .expect("the procedural mesh is stored under its content uuid");
         assert_eq!(mesh.positions.len(), 24, "cube has 24 vertices");
         assert_eq!(
             mesh.indices.as_ref().map_or(0, |i| i.len()),
             36,
             "cube has 36 indices"
-        );
-
-        // The shared store also holds the resolved mesh under the content uuid.
-        let sub = store.store::<Mesh>();
-        assert!(
-            sub.read().unwrap().get(&resolved.uuid).is_some(),
-            "resolved procedural mesh should be published to the shared AssetStore"
         );
     }
 
@@ -824,29 +733,24 @@ mod tests {
         use khora_data::ecs::ProceduralMeshKind;
 
         let mut world = World::new();
-        let runtime = Runtime::default();
+        let store = AssetStore::new();
+        let runtime = runtime_with(&store);
 
         let make = || MeshRef::procedural(ProceduralMeshKind::Sphere, [0.5, 16.0, 16.0, 0.0]);
         let a = world.spawn(make());
         let b = world.spawn(make());
 
-        let mut deck = OutputDeck::default();
-        asset_resolver_system(
-            &mut world,
-            &runtime,
-            &mut deck,
-            khora_data::ecs::SystemContext {
-                since: khora_data::ecs::Tick(0),
-                resumed: false,
-                scope: None,
-            },
-        );
+        resolve_once(&mut world, &runtime);
 
-        let ua = world.get::<HandleComponent<Mesh>>(a).unwrap().uuid;
-        let ub = world.get::<HandleComponent<Mesh>>(b).unwrap().uuid;
         assert_eq!(
-            ua, ub,
+            mesh_uuid(&world, a),
+            mesh_uuid(&world, b),
             "identical procedural meshes must share a content uuid"
+        );
+        assert_eq!(
+            store.store::<Mesh>().read().unwrap().len(),
+            1,
+            "one copy is stored for both"
         );
     }
 
@@ -883,32 +787,21 @@ mod tests {
         service.register_decoder::<Mesh>("mesh", MeshDispatcher::default());
 
         let store = AssetStore::new();
-        let mut runtime = Runtime::default();
-        runtime.resources.insert(store.clone());
+        let mut runtime = runtime_with(&store);
         runtime.resources.insert(khora_core::lane::Reserve::new());
         runtime
             .services
             .insert(Arc::new(Mutex::new(service)) as Arc<Mutex<AssetService>>);
 
         let mut world = World::new();
-        let entity = world.spawn(MeshRef::Asset(uuid));
+        world.spawn(MeshRef::Asset(uuid));
 
         // Decoded off the frame: resolved once its decode was taken in.
         resolve_settled(&mut world, &runtime);
 
-        let resolved = world
-            .get::<HandleComponent<Mesh>>(entity)
-            .expect("asset mesh should resolve to a handle");
-        // The stable asset UUID is preserved on the resolved handle.
-        assert_eq!(resolved.uuid, uuid);
-        let mesh: &Mesh = &resolved.handle;
+        let mesh =
+            stored::<Mesh>(&store, &uuid).expect("the asset mesh is stored under its stable uuid");
         assert_eq!(mesh.positions.len(), 3, "the triangle has 3 vertices");
-
-        let sub = store.store::<Mesh>();
-        assert!(
-            sub.read().unwrap().get(&uuid).is_some(),
-            "resolved asset mesh should be published to the shared AssetStore"
-        );
     }
 
     /// Material textures: the resolver loads every texture a resolved material
@@ -969,32 +862,9 @@ mod tests {
             /// refs are resolved — and the frames after it until what they
             /// asked for is decoded off the frame and taken in at a boundary.
             fn tick(&self, world: &mut World) {
-                let asset_reload = inventory::iter::<DataSystemRegistration>
-                    .into_iter()
-                    .find(|system| system.name == "asset_reload")
-                    .expect("`asset_reload` is registered");
                 crate::systems::asset_intake::tests::settle(&self.runtime, world, |world| {
-                    let mut deck = OutputDeck::default();
-                    (asset_reload.run)(
-                        world,
-                        &self.runtime,
-                        &mut deck,
-                        khora_data::ecs::SystemContext {
-                            since: khora_data::ecs::Tick(0),
-                            resumed: false,
-                            scope: None,
-                        },
-                    );
-                    asset_resolver_system(
-                        world,
-                        &self.runtime,
-                        &mut deck,
-                        khora_data::ecs::SystemContext {
-                            since: khora_data::ecs::Tick(0),
-                            resumed: false,
-                            scope: None,
-                        },
-                    );
+                    run_system(world, &self.runtime, "asset_reload");
+                    run_system(world, &self.runtime, ASSET_RESOLVER);
                 });
             }
 
@@ -1075,10 +945,9 @@ mod tests {
             project.tick(&mut world);
 
             assert!(
-                world
-                    .get::<HandleComponent<Box<dyn Material>>>(entity)
+                stored::<Box<dyn Material>>(&project.store, &material_uuid(&world, entity))
                     .is_some(),
-                "the material itself resolves"
+                "the material itself is in the store"
             );
             let texture = project
                 .texture(&tex)
@@ -1225,10 +1094,9 @@ mod tests {
             assert!(project.texture(&missing).is_none());
             assert!(project.texture(&corrupt).is_none());
             assert!(
-                world
-                    .get::<HandleComponent<Box<dyn Material>>>(entity)
+                stored::<Box<dyn Material>>(&project.store, &material_uuid(&world, entity))
                     .is_some(),
-                "a texture failure does not stop the material from resolving"
+                "a texture failure does not stop the material from being stored"
             );
         }
 
@@ -1305,10 +1173,10 @@ mod tests {
 
             project.tick(&mut world);
 
-            let resolved = world
-                .get::<HandleComponent<Box<dyn Material>>>(entity)
-                .expect("the material resolves");
-            let material: &dyn Material = &**resolved.handle;
+            let resolved =
+                stored::<Box<dyn Material>>(&project.store, &material_uuid(&world, entity))
+                    .expect("the material is in the store");
+            let material: &dyn Material = &**resolved;
             let listed = material.textures();
             assert_eq!(listed, vec![base, normal]);
             let cpu_textures = project.store.store::<CpuTexture>();
@@ -1382,11 +1250,11 @@ mod tests {
 
             project.tick(&mut world);
 
-            let resolved = world
-                .get::<HandleComponent<Box<dyn Material>>>(entity)
-                .expect("the glTF material sub-asset resolves");
+            assert_eq!(material_uuid(&world, entity), material);
+            let resolved = stored::<Box<dyn Material>>(&project.store, &material)
+                .expect("the glTF material sub-asset is in the store");
             assert_eq!(
-                resolved.handle.textures(),
+                resolved.textures(),
                 vec![texture0],
                 "the glTF material names its texture sub-asset"
             );
@@ -1680,6 +1548,649 @@ mod tests {
 
             assert_eq!(loads, 1, "the image is loaded once");
             assert_eq!(project.load_count(), loads, "steady state loads nothing");
+        }
+    }
+
+    /// The resolver reads the references that changed since its last run and
+    /// the decodes that landed since; it puts its copies in the asset store only.
+    mod watched_references {
+        use super::*;
+        use crate::asset::{FileLoader, IndexBuilder};
+        use khora_core::math::Vec3;
+        use khora_data::ecs::{Observer, ProceduralMeshKind, Transform};
+        use khora_telemetry::MetricsRegistry;
+        use std::fs;
+        use std::path::Path;
+        use tempfile::TempDir;
+
+        const RESOLVER: &str = "asset_resolver";
+
+        /// A project assets dir on disk, served by a real `AssetService` in a runtime.
+        ///
+        /// The service has the registered decoders; the runtime holds a shared
+        /// `AssetStore` and the reserve the `loading` family stages into.
+        struct Project {
+            dir: TempDir,
+            service: Arc<Mutex<AssetService>>,
+            store: AssetStore,
+            runtime: Runtime,
+        }
+
+        impl Project {
+            fn new(files: &[(&str, Vec<u8>)]) -> Self {
+                let dir = tempfile::tempdir().expect("a temporary project");
+                for (rel, bytes) in files {
+                    write_file(dir.path(), rel, bytes);
+                }
+                let index_bytes = IndexBuilder::new(dir.path())
+                    .build_index_bytes()
+                    .expect("the project indexes");
+                let mut service = AssetService::new(
+                    &index_bytes,
+                    Box::new(FileLoader::new(dir.path())),
+                    Arc::new(MetricsRegistry::new()),
+                    None,
+                )
+                .expect("an asset service over the project");
+                service.register_inventory_decoders();
+                let service = Arc::new(Mutex::new(service));
+                let store = AssetStore::new();
+                let mut runtime = Runtime::default();
+                runtime.resources.insert(store.clone());
+                runtime.resources.insert(khora_core::lane::Reserve::new());
+                runtime.services.insert(service.clone());
+                Self {
+                    dir,
+                    service,
+                    store,
+                    runtime,
+                }
+            }
+
+            /// Runs the registered data system `name` once, as the scheduler's runner does.
+            ///
+            /// It is handed the tick of its last run; its writes carry this one.
+            fn run_system(&self, world: &mut World, name: &'static str) {
+                let observer = Observer::DataSystem(name);
+                let ctx = khora_data::ecs::SystemContext {
+                    since: world.observer_last_seen(observer),
+                    resumed: world.observer_resumes(observer),
+                    scope: None,
+                };
+                let tick = world.begin_run();
+                let system = inventory::iter::<DataSystemRegistration>
+                    .into_iter()
+                    .find(|system| system.name == name)
+                    .unwrap_or_else(|| panic!("`{name}` is registered"));
+                (system.run)(world, &self.runtime, &mut OutputDeck::default(), ctx);
+                world.note_observer_run(observer, tick);
+                world.end_run();
+            }
+
+            /// One frame of the asset systems, whose resolver run reports the reference rows it read.
+            ///
+            /// The boundary's intake, then the registered reload and the
+            /// resolver. Nothing is decoded during it: what it files waits for
+            /// [`Self::decode`].
+            fn counted_frame(&self, world: &mut World) -> usize {
+                crate::systems::asset_intake::take_in_decoded(&self.runtime);
+                self.run_system(world, "asset_reload");
+                let observer = Observer::DataSystem(RESOLVER);
+                let since = world.observer_last_seen(observer);
+                let tick = world.begin_run();
+                let visited = resolve_references(world, &self.runtime, since);
+                world.note_observer_run(observer, tick);
+                world.end_run();
+                visited
+            }
+
+            /// Frames until nothing more is filed, each followed by the `loading` family's run.
+            fn settle(&self, world: &mut World) {
+                crate::systems::asset_intake::tests::settle(&self.runtime, world, |world| {
+                    self.run_system(world, "asset_reload");
+                    self.run_system(world, RESOLVER);
+                });
+            }
+
+            /// One run of the `loading` family between two frames; returns how
+            /// many decodes it took.
+            fn decode(&self) -> usize {
+                crate::systems::asset_intake::tests::decode_filed(&self.runtime)
+            }
+
+            fn write(&self, rel: &str, bytes: &[u8]) {
+                write_file(self.dir.path(), rel, bytes);
+            }
+
+            /// Announces the asset `uuid` changed, as the editor's hot reload does.
+            fn invalidate(&self, uuid: &AssetUUID) {
+                self.service
+                    .lock()
+                    .expect("the service's lock")
+                    .invalidate(uuid);
+            }
+
+            fn stored<A: Asset>(&self, uuid: &AssetUUID) -> Option<AssetHandle<A>> {
+                self.store
+                    .store::<A>()
+                    .read()
+                    .expect("the store's lock")
+                    .get(uuid)
+                    .cloned()
+            }
+
+            /// The roughness of the `StandardMaterial` the store holds under `uuid`.
+            fn stored_roughness(&self, uuid: &AssetUUID) -> Option<f32> {
+                self.stored::<Box<dyn Material>>(uuid).map(|material| {
+                    let material: &dyn Material = &**material;
+                    material
+                        .as_any()
+                        .downcast_ref::<StandardMaterial>()
+                        .expect("a StandardMaterial")
+                        .roughness
+                })
+            }
+        }
+
+        fn write_file(root: &Path, rel: &str, bytes: &[u8]) {
+            let path = root.join(rel);
+            fs::create_dir_all(path.parent().expect("a parent folder")).expect("the folders");
+            fs::write(path, bytes).expect("the file is written");
+        }
+
+        /// A real PNG of `width` x `height`, encoded in memory.
+        fn png(width: u32, height: u32) -> Vec<u8> {
+            let mut bytes = Vec::new();
+            let img = image::RgbaImage::from_pixel(width, height, image::Rgba([90, 60, 30, 255]));
+            image::DynamicImage::ImageRgba8(img)
+                .write_to(
+                    &mut std::io::Cursor::new(&mut bytes),
+                    image::ImageFormat::Png,
+                )
+                .expect("encode png");
+            bytes
+        }
+
+        /// The `.kmat` RON form of a `StandardMaterial` of `roughness`, whose
+        /// base-colour slot names `base_color_texture` when it is `Some`.
+        fn kmat(roughness: f32, base_color_texture: Option<AssetUUID>) -> Vec<u8> {
+            let texture = match base_color_texture {
+                Some(uuid) => {
+                    let tex = serde_json::to_value(uuid)
+                        .ok()
+                        .and_then(|v| v.as_str().map(str::to_owned))
+                        .expect("AssetUUID serializes to a string");
+                    format!("\"{tex}\"")
+                }
+                None => "()".to_owned(),
+            };
+            format!(
+                r#"{{
+                    "type_name": "StandardMaterial",
+                    "material": {{
+                        "base_color": {{ "r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0 }},
+                        "base_color_texture": {texture},
+                        "metallic": 0.0,
+                        "roughness": {roughness:?},
+                        "metallic_roughness_texture": (),
+                        "normal_map": (),
+                        "occlusion_map": (),
+                        "emissive": {{ "r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0 }},
+                        "emissive_texture": (),
+                        "alpha_mode": "Opaque",
+                        "alpha_cutoff": 0.5,
+                        "double_sided": false,
+                    }},
+                }}"#
+            )
+            .into_bytes()
+        }
+
+        fn cube(size: f32) -> MeshRef {
+            MeshRef::procedural(ProceduralMeshKind::Cube, [size, 0.0, 0.0, 0.0])
+        }
+
+        fn tinted(red: f32) -> MaterialRef {
+            MaterialRef::inline(Box::new(StandardMaterial {
+                base_color: LinearRgba::new(red, 0.5, 0.5, 1.0),
+                ..Default::default()
+            }))
+        }
+
+        /// The resolver watches both references, so a write to either is a change it reads.
+        #[test]
+        fn the_resolver_observes_mesh_and_material_references() {
+            let resolver = inventory::iter::<DataSystemRegistration>
+                .into_iter()
+                .find(|system| system.name == RESOLVER)
+                .expect("the resolver is registered");
+            let observed: Vec<ComponentKey> = resolver.observes.iter().map(|key| key()).collect();
+            for (key, name) in [
+                (ComponentKey::of::<MeshRef>(), "MeshRef"),
+                (ComponentKey::of::<MaterialRef>(), "MaterialRef"),
+            ] {
+                assert!(observed.contains(&key), "observes {name}: {observed:?}");
+            }
+        }
+
+        /// A `MeshRef` and a `MaterialRef` given other values are resolved on the next run.
+        ///
+        /// Their new copies are in the store, and only their two rows are read.
+        #[test]
+        fn a_changed_reference_is_resolved_on_the_next_run() {
+            let project = Project::new(&[]);
+            let mut world = World::new();
+            let entity = world.spawn((cube(1.0), tinted(0.1)));
+            project.counted_frame(&mut world);
+            project.counted_frame(&mut world);
+            watch::<Mesh>(&project.store);
+            watch::<Box<dyn Material>>(&project.store);
+
+            let (mesh, material) = (cube(4.0), tinted(0.9));
+            let (mesh_uuid, material_uuid) = (mesh.uuid(), material.uuid());
+            assert!(world.set_component(entity, mesh), "the MeshRef is replaced");
+            assert!(
+                world.set_component(entity, material),
+                "the MaterialRef is replaced"
+            );
+            let visited = project.counted_frame(&mut world);
+
+            assert_eq!(visited, 2, "the two changed references are read");
+            assert!(
+                project.stored::<Mesh>(&mesh_uuid).is_some(),
+                "the new mesh copy is in the store"
+            );
+            assert!(
+                project
+                    .stored::<Box<dyn Material>>(&material_uuid)
+                    .is_some(),
+                "the new material copy is in the store"
+            );
+            assert_eq!(
+                arrived::<Mesh>(&project.store),
+                vec![Arrival {
+                    uuid: mesh_uuid,
+                    kind: ArrivalKind::Landed,
+                }],
+                "the new mesh lands under its uuid"
+            );
+            assert_eq!(
+                arrived::<Box<dyn Material>>(&project.store),
+                vec![Arrival {
+                    uuid: material_uuid,
+                    kind: ArrivalKind::Landed,
+                }],
+                "the new material lands under its uuid"
+            );
+        }
+
+        /// Once every reference is resolved, the resolver reads no reference row.
+        ///
+        /// Not on a frame where nothing changed, nor on one where only another
+        /// component of the entities did.
+        #[test]
+        fn an_unchanged_reference_is_not_visited() {
+            let kmat_path = "materials/plain.kmat";
+            let project = Project::new(&[(kmat_path, kmat(0.5, None))]);
+            let mut world = World::new();
+            let asset_material = MaterialRef::Asset(AssetUUID::new_v5(kmat_path));
+            let entities: Vec<EntityId> = (0..6)
+                .map(|i| {
+                    let material = if i % 2 == 0 {
+                        tinted(i as f32 / 10.0)
+                    } else {
+                        asset_material.clone()
+                    };
+                    world.spawn((Transform::default(), cube(1.0 + i as f32), material))
+                })
+                .collect();
+            project.settle(&mut world);
+            project.counted_frame(&mut world);
+            watch::<Mesh>(&project.store);
+            watch::<Box<dyn Material>>(&project.store);
+
+            for frame in 0..3 {
+                assert_eq!(
+                    project.counted_frame(&mut world),
+                    0,
+                    "frame {frame}: no reference changed, none is read"
+                );
+            }
+            for (i, entity) in entities.iter().enumerate() {
+                let mut transform = world
+                    .get_mut::<Transform>(*entity)
+                    .expect("the entity has a Transform");
+                transform.translation = Vec3::new(i as f32, 0.0, 0.0);
+            }
+            assert_eq!(
+                project.counted_frame(&mut world),
+                0,
+                "a moved entity's references are not read"
+            );
+            assert!(
+                arrived::<Mesh>(&project.store).is_empty(),
+                "no mesh copy is stored again"
+            );
+            assert!(
+                arrived::<Box<dyn Material>>(&project.store).is_empty(),
+                "no material copy is stored again"
+            );
+        }
+
+        /// A material still decoding gets its copy into the store the frame its decode lands.
+        ///
+        /// The texture it names is asked for then, all without the reference
+        /// changing. The landed copy reaches the store through the boundary's
+        /// intake; the resolver still owes the material its textures.
+        #[test]
+        fn a_pending_decode_is_resolved_when_it_lands() {
+            let tex_path = "textures/late.png";
+            let kmat_path = "materials/late.kmat";
+            let tex = AssetUUID::new_v5(tex_path);
+            let mat = AssetUUID::new_v5(kmat_path);
+            let project = Project::new(&[(tex_path, png(3, 2)), (kmat_path, kmat(0.4, Some(tex)))]);
+            let mut world = World::new();
+            world.spawn((cube(1.0), MaterialRef::Asset(mat)));
+
+            assert_eq!(project.counted_frame(&mut world), 2, "the new references");
+            assert!(
+                project.stored::<Box<dyn Material>>(&mat).is_none(),
+                "the premise: the material is still decoding"
+            );
+            assert_eq!(project.decode(), 1, "the material is filed for decoding");
+
+            let visited = project.counted_frame(&mut world);
+            assert_eq!(
+                project.stored_roughness(&mat),
+                Some(0.4),
+                "the material is in the store the frame its decode lands"
+            );
+            assert_eq!(
+                visited, 0,
+                "the reference did not change: its row is not read"
+            );
+            assert_eq!(
+                project.decode(),
+                1,
+                "the texture the landed material names is asked for"
+            );
+
+            project.counted_frame(&mut world);
+            let texture = project
+                .stored::<CpuTexture>(&tex)
+                .expect("the material's texture is in the store once it lands");
+            assert_eq!((texture.size.width, texture.size.height), (3, 2));
+        }
+
+        /// A material whose decode failed is not decoded again on the next
+        /// frames; once its file changes it is, and its copy reaches the store.
+        #[test]
+        fn a_failed_decode_waits_for_its_file_to_change() {
+            let kmat_path = "materials/broken.kmat";
+            let mat = AssetUUID::new_v5(kmat_path);
+            let project = Project::new(&[(kmat_path, b"definitely not a material".to_vec())]);
+            let mut world = World::new();
+            world.spawn(MaterialRef::Asset(mat));
+
+            project.counted_frame(&mut world);
+            assert_eq!(project.decode(), 1, "the material is filed for decoding");
+            for frame in 0..4 {
+                project.counted_frame(&mut world);
+                assert_eq!(
+                    project.decode(),
+                    0,
+                    "frame {frame}: the failed material is not filed again"
+                );
+                assert!(project.stored::<Box<dyn Material>>(&mat).is_none());
+            }
+
+            project.write(kmat_path, &kmat(0.7, None));
+            project.invalidate(&mat);
+            project.counted_frame(&mut world);
+            assert_eq!(
+                project.decode(),
+                1,
+                "the changed file is decoded again, the reference unchanged"
+            );
+            project.counted_frame(&mut world);
+            assert_eq!(
+                project.stored_roughness(&mat),
+                Some(0.7),
+                "the fixed material is in the store"
+            );
+        }
+
+        /// No entity is given a CPU copy, and no component type exists to hold
+        /// one: the store holds every copy, also after a hot reload.
+        #[test]
+        fn no_entity_carries_a_cpu_handle() {
+            let kmat_path = "materials/plain.kmat";
+            let mat = AssetUUID::new_v5(kmat_path);
+            let project = Project::new(&[(kmat_path, kmat(0.5, None))]);
+            let mut world = World::new();
+            for name in [
+                "HandleComponent<Mesh>",
+                "HandleComponent<Box<dyn Material>>",
+            ] {
+                assert_eq!(
+                    world.components().key_named(name),
+                    None,
+                    "`{name}` is not a registered component"
+                );
+            }
+            let (inline, procedural) = (tinted(0.3), cube(2.0));
+            let (inline_uuid, procedural_uuid) = (inline.uuid(), procedural.uuid());
+            let entities = [
+                world.spawn((procedural, MaterialRef::Asset(mat))),
+                world.spawn((cube(3.0), inline)),
+            ];
+            project.settle(&mut world);
+
+            assert!(project.stored::<Mesh>(&procedural_uuid).is_some());
+            assert!(project.stored::<Box<dyn Material>>(&inline_uuid).is_some());
+            assert_eq!(project.stored_roughness(&mat), Some(0.5));
+            project.write(kmat_path, &kmat(0.8, None));
+            project.invalidate(&mat);
+            project.settle(&mut world);
+            assert_eq!(
+                project.stored_roughness(&mat),
+                Some(0.8),
+                "the reloaded material replaces its copy in the store"
+            );
+            for entity in entities {
+                assert!(
+                    world.get::<HandleComponent<Mesh>>(entity).is_none(),
+                    "{entity:?} carries no CPU mesh"
+                );
+                assert!(
+                    world
+                        .get::<HandleComponent<Box<dyn Material>>>(entity)
+                        .is_none(),
+                    "{entity:?} carries no CPU material"
+                );
+            }
+        }
+
+        /// A `MaterialRef` added to an entity the resolver already read is a
+        /// change: it is resolved on the next run, its row the only one read.
+        #[test]
+        fn a_reference_added_to_an_existing_entity_is_resolved() {
+            let project = Project::new(&[]);
+            let mut world = World::new();
+            let entity = world.spawn(cube(1.0));
+            project.counted_frame(&mut world);
+            assert_eq!(project.counted_frame(&mut world), 0, "the premise: settled");
+
+            let material = tinted(0.6);
+            let uuid = material.uuid();
+            world
+                .add_component(entity, material)
+                .expect("the MaterialRef is added");
+            let visited = project.counted_frame(&mut world);
+
+            assert_eq!(visited, 1, "the added reference is read");
+            assert!(
+                project.stored::<Box<dyn Material>>(&uuid).is_some(),
+                "the added material's copy is in the store"
+            );
+        }
+
+        /// What the resolver keeps for an asset once no reference names it.
+        mod references_removed {
+            use super::*;
+
+            /// The assets the resolver still waits for, taken from the service.
+            fn waited_for(project: &Project) -> HashSet<(AssetUUID, TypeId)> {
+                project
+                    .service
+                    .lock()
+                    .expect("the service's lock")
+                    .take_resolving()
+            }
+
+            /// An asset that failed, or that no file holds, is not waited for
+            /// once the last reference naming it is gone.
+            #[test]
+            #[ignore = "a known defect: the wanted set keeps assets no reference names; the generic resolver's liveness pruning (phase G2 of the plan) fixes it"]
+            fn an_asset_no_reference_names_is_not_waited_for() {
+                let broken_path = "materials/broken.kmat";
+                let broken = AssetUUID::new_v5(broken_path);
+                let missing = AssetUUID::new_v5("meshes/never_there.obj");
+                let project = Project::new(&[(broken_path, b"not a material".to_vec())]);
+                let mut world = World::new();
+                let entity = world.spawn((MeshRef::Asset(missing), MaterialRef::Asset(broken)));
+                project.counted_frame(&mut world);
+                project.decode();
+                project.counted_frame(&mut world);
+
+                world.despawn(entity);
+                project.counted_frame(&mut world);
+                project.counted_frame(&mut world);
+
+                assert_eq!(
+                    waited_for(&project),
+                    HashSet::new(),
+                    "nothing names the failed material nor the missing mesh"
+                );
+            }
+
+            /// A failed asset fixed on disk after its last reference left is not decoded.
+            #[test]
+            #[ignore = "a known defect: a failed asset no reference names is decoded again on any change; the event-driven wanted set (phase G2) fixes it"]
+            fn a_fixed_asset_no_reference_names_is_not_decoded() {
+                let kmat_path = "materials/broken.kmat";
+                let mat = AssetUUID::new_v5(kmat_path);
+                let project = Project::new(&[(kmat_path, b"not a material".to_vec())]);
+                let mut world = World::new();
+                let entity = world.spawn(MaterialRef::Asset(mat));
+                project.counted_frame(&mut world);
+                assert_eq!(project.decode(), 1, "the premise: filed once");
+                project.counted_frame(&mut world);
+                world.despawn(entity);
+                project.counted_frame(&mut world);
+
+                project.write(kmat_path, &kmat(0.7, None));
+                project.invalidate(&mat);
+                project.counted_frame(&mut world);
+
+                assert_eq!(project.decode(), 0, "no reference names the material");
+                project.counted_frame(&mut world);
+                assert!(
+                    project.stored::<Box<dyn Material>>(&mat).is_none(),
+                    "no copy is made of what nothing names"
+                );
+            }
+
+            /// An inline material edited again and again leaves only the copy its
+            /// reference names in the store.
+            #[test]
+            #[ignore = "a known defect: no CPU copy is ever freed; the liveness rule over CPU copies (phase G5) fixes it"]
+            fn an_edited_inline_material_leaves_no_copy_behind() {
+                let project = Project::new(&[]);
+                let mut world = World::new();
+                let entity = world.spawn(tinted(0.0));
+                project.counted_frame(&mut world);
+
+                for edit in 1..=50 {
+                    assert!(world.set_component(entity, tinted(edit as f32 / 100.0)));
+                    project.counted_frame(&mut world);
+                }
+
+                let held = project
+                    .store
+                    .store::<Box<dyn Material>>()
+                    .read()
+                    .expect("the store's lock")
+                    .len();
+                assert_eq!(held, 1, "only the material the reference names is held");
+            }
+        }
+
+        /// References resolved when the store's arrivals overflowed the resolver's reading.
+        mod arrivals_lost {
+            use super::*;
+
+            /// Lists the project's folder again into its service, as a file
+            /// appearing or leaving does.
+            fn reindex(project: &Project) {
+                let bytes = IndexBuilder::new(project.dir.path())
+                    .build_index_bytes()
+                    .expect("the project indexes");
+                project
+                    .service
+                    .lock()
+                    .expect("the service's lock")
+                    .reindex(&bytes)
+                    .expect("the index is replaced");
+            }
+
+            /// A mesh whose file left in a frame of more arrivals than the
+            /// journal keeps is asked for again once its file is back.
+            #[test]
+            #[ignore = "a known defect: a Gone lost in a resync is never wanted again; the resolver's resync recovery (phase G2) fixes it"]
+            fn a_mesh_gone_in_a_flood_of_arrivals_comes_back_with_its_file() {
+                let obj_path = "meshes/back.obj";
+                let mesh = AssetUUID::new_v5(obj_path);
+                let triangle = b"v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n".to_vec();
+                let project = Project::new(&[(obj_path, triangle.clone())]);
+                project
+                    .service
+                    .lock()
+                    .expect("the service's lock")
+                    .register_decoder::<Mesh>("mesh", crate::asset::MeshDispatcher::default());
+                let mut world = World::new();
+                world.spawn(MeshRef::Asset(mesh));
+                project.settle(&mut world);
+                assert!(project.stored::<Mesh>(&mesh).is_some(), "the premise");
+
+                // A large scene's decodes land at the boundary the file leaves on.
+                {
+                    let other = AssetHandle::new(reconstruct_procedural_mesh(
+                        ProceduralMeshKind::Cube,
+                        [1.0, 0.0, 0.0, 0.0],
+                    ));
+                    let meshes = project.store.store::<Mesh>();
+                    let mut meshes = meshes.write().expect("the store's lock");
+                    for _ in 0..khora_data::assets::ARRIVALS_KEPT {
+                        meshes.insert(AssetUUID::new(), other.clone());
+                    }
+                }
+                fs::remove_file(project.dir.path().join(obj_path)).expect("removed");
+                reindex(&project);
+                project.invalidate(&mesh);
+                project.counted_frame(&mut world);
+                assert!(project.stored::<Mesh>(&mesh).is_none(), "the premise: gone");
+
+                project.write(obj_path, &triangle);
+                reindex(&project);
+                project.invalidate(&mesh);
+                project.settle(&mut world);
+
+                assert!(
+                    project.stored::<Mesh>(&mesh).is_some(),
+                    "the mesh the entity names is back in the store"
+                );
+            }
         }
     }
 }

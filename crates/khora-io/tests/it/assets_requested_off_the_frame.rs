@@ -35,7 +35,7 @@ use khora_core::asset::{AssetDecoding, AssetUUID, DecodeRequest, Decoded};
 use khora_core::lane::{OutputDeck, Reserve, Staging};
 use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::Runtime;
-use khora_data::ecs::{DataSystemRegistration, Role, SystemContext, Tick, TickPhase, World};
+use khora_data::ecs::{DataSystemRegistration, Observer, Role, SystemContext, TickPhase, World};
 use khora_data::AssetStore;
 use khora_io::asset::{
     attach_decoding, install_decoding, AssetService, FileLoader, IndexBuilder, MeshDispatcher,
@@ -53,17 +53,20 @@ pub(crate) fn data_system(name: &str) -> &'static DataSystemRegistration {
         .unwrap_or_else(|| panic!("`{name}` is not registered"))
 }
 
-fn run_system(name: &str, world: &mut World, runtime: &Runtime) {
-    (data_system(name).run)(
-        world,
-        runtime,
-        &mut OutputDeck::new(),
-        SystemContext {
-            since: Tick(0),
-            resumed: false,
-            scope: None,
-        },
-    );
+/// Runs the registered data system `name` once, as the scheduler's runner does.
+///
+/// It is handed the tick of its last run; its writes carry this one.
+fn run_system(name: &'static str, world: &mut World, runtime: &Runtime) {
+    let observer = Observer::DataSystem(name);
+    let ctx = SystemContext {
+        since: world.observer_last_seen(observer),
+        resumed: world.observer_resumes(observer),
+        scope: None,
+    };
+    let tick = world.begin_run();
+    (data_system(name).run)(world, runtime, &mut OutputDeck::new(), ctx);
+    world.note_observer_run(observer, tick);
+    world.end_run();
 }
 
 /// A project's assets on disk, indexed and served by a real `AssetService`

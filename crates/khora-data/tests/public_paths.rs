@@ -1237,7 +1237,6 @@ fn module_ecs_paths_still_resolve() {
     is_component::<khora_data::ecs::Light>();
     is_debug::<khora_data::ecs::Light>();
     is_default::<khora_data::ecs::Light>();
-    let _ = type_name::<khora_data::ecs::MaterialHandle>();
     let _ = type_name::<khora_data::ecs::MaterialRef>();
     let _ = material_ref_variants as fn(&khora_data::ecs::MaterialRef);
     let _ = khora_data::ecs::MaterialRef::inline;
