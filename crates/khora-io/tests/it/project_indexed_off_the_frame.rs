@@ -51,9 +51,14 @@ const SETTLE_FRAMES: usize = 8;
 
 // ─── A lister that panics ───────────────────────────────────────────────────
 
-/// The extension of a file whose sub-asset lister panics, as a broken
-/// container reader may: indexing a project holding one runs it.
-const PANICKING_EXTENSION: &str = "khorapanics";
+khora_core::register_asset_kind!(
+    /// The kind of a file whose sub-asset lister panics, as a broken
+    /// container reader may: indexing a project holding one runs it.
+    const PANICKING = "khorapanics"
+);
+
+/// The extension of a [`PANICKING`] file, named like its kind.
+const PANICKING_EXTENSION: &str = PANICKING.name();
 
 fn panicking_lister(_bytes: &[u8]) -> anyhow::Result<Vec<SubAssetEntry>> {
     panic!("the sub-asset lister of a broken file panicked");
@@ -91,7 +96,11 @@ fn write_asset(root: &Path, rel: &str, bytes: &[u8]) {
 fn opened(root: &Path) -> AssetService {
     AssetService::open_loose_files(
         root,
-        &AssetIdRegistry::load(root),
+        &AssetIdRegistry::load_or_unread(&khora_io::trust::FileGuard::new(
+            root,
+            khora_io::trust::Trust::Project,
+            khora_io::trust::Refusals::detached(),
+        )),
         Arc::new(MetricsRegistry::new()),
     )
     .expect("an asset service over the project")
@@ -264,7 +273,11 @@ fn locked(service: &Arc<Mutex<AssetService>>) -> MutexGuard<'_, AssetService> {
 fn an_index_request_is_built_off_the_frame() {
     let dir = project(&[("textures/a.png", b"a"), ("textures/b.png", b"b")]);
     let frozen = uuid("textures/old_name.png");
-    let mut registry = AssetIdRegistry::load(dir.path());
+    let mut registry = AssetIdRegistry::load_or_unread(&khora_io::trust::FileGuard::new(
+        dir.path(),
+        khora_io::trust::Trust::Project,
+        khora_io::trust::Refusals::detached(),
+    ));
     registry.freeze("textures/b.png", frozen);
     registry.save().expect("the registry is saved");
     let engine = Engine::new();
@@ -891,6 +904,40 @@ fn an_index_hub_installed_after_the_runs_refusals_reads_through_them() {
     assert!(
         holds_the_oversized_material(&refusals),
         "the material is refused in the run's refusals: {:?}",
+        refusals.quarantined()
+    );
+}
+
+/// **A restricted project's identity registry is read under the strict cap.**
+/// The registry is a file of the project, at `<root>/.khora/`: an `Open` of a
+/// restricted project whose registry is one byte over the strict cap of a
+/// file of no asset refuses it to the run's refusals, as it refuses an asset.
+#[test]
+fn a_restricted_projects_identity_registry_is_read_under_the_strict_cap() {
+    use khora_io::asset::{REGISTRY_DIR, REGISTRY_FILE};
+    use khora_io::trust::{ProjectTrust, ProjectTrustState, Refusals, SecurityReason};
+
+    let dir = project(&[("textures/a.png", b"PNG")]);
+    let registry = dir.path().join(REGISTRY_DIR).join(REGISTRY_FILE);
+    std::fs::create_dir_all(registry.parent().expect("a folder")).expect("the registry's folder");
+    std::fs::File::create(&registry)
+        .and_then(|file| file.set_len(OVER_THE_STRICT_TEXT_CAP))
+        .expect("the oversized registry is made");
+    let engine = Engine::new();
+    let refusals = Arc::new(Refusals::new(None, None));
+    let trust = Arc::new(ProjectTrustState::new(ProjectTrust::Restricted));
+    engine
+        .hub()
+        .read_through(Arc::clone(&refusals), Arc::clone(&trust));
+
+    opened_off_the_frame(&engine, dir.path()).expect("the project indexes");
+
+    assert!(
+        refusals.quarantined().iter().any(|refusal| {
+            refusal.path.ends_with(REGISTRY_FILE)
+                && matches!(refusal.reason, SecurityReason::TooLarge { .. })
+        }),
+        "the registry is refused in the run's refusals: {:?}",
         refusals.quarantined()
     );
 }

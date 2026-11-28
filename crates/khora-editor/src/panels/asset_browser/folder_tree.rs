@@ -213,6 +213,8 @@ impl AssetBrowserPanel {
                     if let Some(old) = self.renaming_folder.clone() {
                         let new_name = self.folder_rename_buffer.trim().to_string();
                         if !new_name.is_empty() {
+                            // The name typed is new: the folder it is in is not.
+                            let checked = crate::project_vfs::check_new_name(&new_name);
                             let parent = old
                                 .rfind('/')
                                 .map(|p| old[..p].to_string())
@@ -222,7 +224,9 @@ impl AssetBrowserPanel {
                             } else {
                                 format!("{parent}/{new_name}")
                             };
-                            if new_rel != old {
+                            if let Err(refused) = checked {
+                                log::warn!("Asset browser: '{old}' is not renamed: {refused}");
+                            } else if new_rel != old {
                                 if let Ok(mut state) = self.state.lock() {
                                     state.push_request(EditorRequest::AssetFile(
                                         AssetFileOp::Rename {

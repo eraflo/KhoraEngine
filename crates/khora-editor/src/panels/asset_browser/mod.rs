@@ -20,13 +20,13 @@ pub mod handlers;
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
-use khora_sdk::khora_core::asset::{AssetType, AssetUUID};
+use khora_sdk::khora_core::asset::{kinds, AssetKind, AssetUUID};
 
 use crate::widgets::tile::AssetTileKind;
 use khora_tool_ui::widgets::with_alpha;
 
 use handlers::{handler_for, tile_kind_for, ActivationKind};
-use naming::{entity_display_name, sanitize_for_filename};
+use naming::entity_display_name;
 
 mod folder_tree;
 mod grid;
@@ -60,8 +60,8 @@ struct FlatAsset {
     folder: String,
     /// The tile it is drawn as.
     tile: AssetTileKind,
-    /// Its index type.
-    asset_type: AssetType,
+    /// Its kind.
+    kind: AssetKind,
     /// The asset's identity, as its index entry gives it.
     uuid: AssetUUID,
     /// The file this asset is a part of (a glTF's mesh, material…), if it
@@ -80,6 +80,9 @@ pub struct AssetBrowserPanel {
     asset_dirs: Vec<String>,
     /// The `EditorState::asset_epoch` `flat` was built at; a mismatch rescans.
     last_epoch: Option<u64>,
+    /// The `EditorState::project_folder` what the panel shows is of; another
+    /// one forgets it all.
+    shown_project: Option<String>,
     selected_filter: Option<AssetTileKind>,
     selected_index: Option<usize>,
     /// `flat` index of the tile currently being inline-renamed, if any.
@@ -131,6 +134,7 @@ impl AssetBrowserPanel {
             flat: Vec::new(),
             asset_dirs: Vec::new(),
             last_epoch: None,
+            shown_project: None,
             selected_filter: None,
             selected_index: None,
             renaming_index: None,
@@ -213,7 +217,7 @@ impl AssetBrowserPanel {
     }
 
     fn rescan_if_needed(&mut self) {
-        let (project_folder, epoch, entries, dirs) = match self.state.lock() {
+        let (project_folder, epoch, entries, dirs, inspected) = match self.state.lock() {
             Ok(s) => (
                 s.project_folder.clone(),
                 s.asset_epoch,
@@ -222,7 +226,7 @@ impl AssetBrowserPanel {
                     .map(|e| {
                         (
                             e.name.clone(),
-                            e.asset_type.clone(),
+                            e.kind,
                             e.source_path.clone(),
                             e.uuid,
                             e.container,
@@ -230,22 +234,31 @@ impl AssetBrowserPanel {
                     })
                     .collect::<Vec<_>>(),
                 s.asset_dirs.clone(),
+                s.inspected_asset_path.clone(),
             ),
             Err(_) => return,
         };
 
+        // Another project, or none: nothing shown names one of its files, a
+        // delete waiting for its answer included.
+        if project_folder != self.shown_project {
+            self.flat.clear();
+            self.parts_by_file.clear();
+            self.asset_dirs.clear();
+            self.last_epoch = None;
+            self.selected_index = None;
+            self.renaming_index = None;
+            self.rename_buffer.clear();
+            self.renaming_folder = None;
+            self.folder_rename_buffer.clear();
+            self.new_script = None;
+            self.current_folder = None;
+            self.expanded_folders.clear();
+            self.confirm_delete = None;
+            self.open_containers.clear();
+            self.shown_project.clone_from(&project_folder);
+        }
         if project_folder.is_none() {
-            if self.last_epoch.is_some() || !self.flat.is_empty() {
-                self.flat.clear();
-                self.parts_by_file.clear();
-                self.asset_dirs.clear();
-                self.last_epoch = None;
-                self.selected_index = None;
-                self.renaming_index = None;
-                self.renaming_folder = None;
-                self.new_script = None;
-                self.current_folder = None;
-            }
             return;
         }
 
@@ -266,7 +279,7 @@ impl AssetBrowserPanel {
 
         self.flat = entries
             .into_iter()
-            .map(|(name, asset_type, rel_path, uuid, container)| {
+            .map(|(name, kind, rel_path, uuid, container)| {
                 let folder = rel_path
                     .rfind('/')
                     .map(|p| rel_path[..p].to_string())
@@ -275,8 +288,8 @@ impl AssetBrowserPanel {
                     name,
                     rel_path,
                     folder,
-                    tile: tile_kind_for(&asset_type),
-                    asset_type,
+                    tile: tile_kind_for(kind),
+                    kind,
                     uuid,
                     container,
                 }
@@ -290,9 +303,30 @@ impl AssetBrowserPanel {
             }
         }
 
+        if let Some(path) = inspected {
+            self.select_inspected(&path);
+        }
+
         if self.current_folder.is_none() {
             self.current_folder = Some(String::new());
             self.expanded_folders.insert(String::new(), true);
+        }
+    }
+
+    /// Selects the tile of the asset inspected at `path` when the selected one is not: a rename or a move renamed it.
+    ///
+    /// A part of a file selected stays selected: it is inspected by its file's path.
+    fn select_inspected(&mut self, path: &str) {
+        let on_it = (self.selected_index)
+            .and_then(|i| self.flat.get(i))
+            .is_some_and(|asset| asset.rel_path == path);
+        if on_it {
+            return;
+        }
+        self.selected_index = (self.flat.iter())
+            .position(|asset| asset.container.is_none() && asset.rel_path == path);
+        if let Ok(mut state) = self.state.lock() {
+            state.selected_asset = self.selected_index;
         }
     }
 
@@ -326,12 +360,7 @@ impl AssetBrowserPanel {
             return;
         };
         let folder = self.flat[i].folder.clone();
-        self.expanded_folders.insert(String::new(), true);
-        let mut at = folder.as_str();
-        while !at.is_empty() {
-            self.expanded_folders.insert(at.to_owned(), true);
-            at = at.rfind('/').map_or("", |p| &at[..p]);
-        }
+        self.expand_to(&folder);
         self.current_folder = Some(folder);
         self.search_filter.clear();
         self.selected_filter = None;
@@ -340,6 +369,47 @@ impl AssetBrowserPanel {
         state.selected_asset = Some(i);
         state.clear_selection();
         state.inspected = None;
+    }
+
+    /// Opens the tree down to `folder`: the root, and every folder above it and itself.
+    fn expand_to(&mut self, folder: &str) {
+        self.expanded_folders.insert(String::new(), true);
+        let mut at = folder;
+        while !at.is_empty() {
+            self.expanded_folders.insert(at.to_owned(), true);
+            at = at.rfind('/').map_or("", |p| &at[..p]);
+        }
+    }
+
+    /// Follows what the file operations did to the keys since the last frame, oldest first.
+    ///
+    /// Takes `EditorState::key_changes`. The folder shown follows its folder, or
+    /// one above it, renamed or moved, the tree opened down to it; trashed, it
+    /// gives way to its nearest parent left. The folders open, the folder being
+    /// renamed and the entry a delete asks about follow too; one trashed is
+    /// forgotten.
+    fn follow_key_changes(&mut self) {
+        let changes = match self.state.lock() {
+            Ok(mut state) => std::mem::take(&mut state.key_changes),
+            Err(_) => return,
+        };
+        for change in &changes {
+            self.expanded_folders = std::mem::take(&mut self.expanded_folders)
+                .into_iter()
+                .filter_map(|(folder, open)| change.follow(&folder).map(|folder| (folder, open)))
+                .collect();
+            if let Some(shown) = self.current_folder.take() {
+                let followed = change.follow_folder(&shown);
+                if followed != shown {
+                    self.expand_to(&followed);
+                }
+                self.current_folder = Some(followed);
+            }
+            self.renaming_folder =
+                (self.renaming_folder.take()).and_then(|folder| change.follow(&folder));
+            self.confirm_delete = (self.confirm_delete.take())
+                .and_then(|(path, is_folder)| change.follow(&path).map(|path| (path, is_folder)));
+        }
     }
 
     /// Resolves a forward-slash path under `assets/` to an absolute OS path,
@@ -483,7 +553,7 @@ impl AssetBrowserPanel {
         if let Ok(mut state) = self.state.lock() {
             let name = entity_display_name(&state.scene_roots, entity)
                 .unwrap_or_else(|| format!("Entity_{}", entity.index));
-            let stem = sanitize_for_filename(&name);
+            let stem = crate::project_vfs::new_name_from(&name, "prefab");
             let rel_path = if folder.is_empty() {
                 format!("{stem}.kprefab")
             } else {
@@ -505,7 +575,7 @@ impl AssetBrowserPanel {
             );
             return;
         };
-        let activation = handler_for(&asset.asset_type)
+        let activation = handler_for(asset.kind)
             .map(|h| h.activate(abs_path.clone()))
             .unwrap_or(ActivationKind::OpenExternal { abs_path });
 
@@ -526,7 +596,7 @@ impl AssetBrowserPanel {
                 }
             }
             ActivationKind::OpenExternal { abs_path } => {
-                match if asset.asset_type == AssetType::Script {
+                match if asset.kind == kinds::SCRIPT {
                     crate::project_scripts::open_script(std::path::Path::new(&abs_path))
                 } else {
                     open::that(&abs_path)

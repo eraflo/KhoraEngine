@@ -18,12 +18,13 @@ use std::error::Error;
 use std::path::Path;
 
 use super::resource_resolver::GltfResourceResolver;
-use crate::trust::{FileGuard, Refusals, Trust};
+use crate::trust::{FileGuard, FileKind, Refusals, Trust};
 
 /// Resolves a glTF's external files under a base path, through a [`FileGuard`].
 ///
 /// A URI leaving the base (by `..`, as an absolute path or through a link) is
-/// refused, as is a file over its cap.
+/// refused, as is a file over its glTF's cap: an external file is read under
+/// its container's cap, never as an asset of its own.
 pub struct FileSystemResolver {
     guard: FileGuard,
 }
@@ -46,7 +47,7 @@ impl FileSystemResolver {
     }
 
     fn read(&self, what: &str, uri: &str) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
-        self.guard.read(uri).map_err(|error| {
+        self.guard.read_as(uri, FileKind::Gltf).map_err(|error| {
             format!(
                 "Failed to read external {what} '{uri}' under {}: {error}",
                 self.guard.root().display()

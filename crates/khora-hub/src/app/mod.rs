@@ -24,8 +24,8 @@ use crate::services::github;
 use crate::services::github::auth;
 use crate::services::project;
 use crate::state::{
-    AuthState, Banner, EngineChoice, EngineManagerState, HomeState, NewProjectState, Screen,
-    SettingsState,
+    AuthState, Banner, EngineChoice, EngineManagerState, HomeState, NewProjectState,
+    ProjectRefusal, Screen, SettingsState,
 };
 
 /// The hub's whole state: its config, the screen shown and each screen's state.
@@ -153,45 +153,20 @@ impl HubApp {
 
     /// Launches the editor on `proj` with its engine version, or the first engine.
     ///
-    /// The outcome is shown as a banner. A project the user never decided of
-    /// is not launched: it waits for their answer (`trust_prompt`).
+    /// The outcome is shown as a banner built for this launch alone: the
+    /// refusals still listed of the project, then what the launch said. A
+    /// project the user never decided of is not launched: it waits for their
+    /// answer (`trust_prompt`), its refusals shown alone.
     pub fn launch_project(&mut self, proj: &RecentProject) {
-        if self
-            .trust_store
-            .decision(std::path::Path::new(&proj.path))
-            .is_none()
-        {
-            self.trust_prompt = Some(proj.clone());
-            return;
-        }
-        let engines = self.available_engines();
-        let engine = engines
-            .iter()
-            .find(|e| e.version == proj.engine_version)
-            .or_else(|| engines.first());
+        let path = PathBuf::from(&proj.path);
+        let outcome = self.launch_outcome(proj, &path);
+        self.banner = Banner::of_launch(&path, self.home.refusals.of(&path), outcome);
+    }
 
-        match engine {
-            None => {
-                self.banner = Some(Banner::error(format!(
-                    "No engine available for version '{}'. Configure one in Engine Manager.",
-                    proj.engine_version
-                )));
-            }
-            Some(engine) => {
-                let path = PathBuf::from(&proj.path);
-                match project::launch_editor(&engine.editor_binary, &path) {
-                    Ok(()) => {
-                        self.config
-                            .push_recent(&proj.name, &path, &proj.engine_version);
-                        let _ = self.config.save();
-                        self.banner =
-                            Some(Banner::info(format!("Opened '{}' in editor.", proj.name)));
-                    }
-                    Err(e) => {
-                        self.banner = Some(Banner::error(format!("Failed to launch editor: {e}")));
-                    }
-                }
-            }
+    /// Dismisses the banner, and the refusals it shows.
+    pub(crate) fn dismiss_banner(&mut self) {
+        if let Some(project) = self.banner.take().and_then(|banner| banner.refusals_of) {
+            self.home.refusals.dismiss(&project);
         }
     }
 
@@ -226,39 +201,93 @@ impl HubApp {
         )));
     }
 
-    /// Opens the project at `path` and adds it to the recent projects.
+    /// Opens the project at `path` and adds it to the recent projects, saving the hub's config.
     ///
-    /// Its name and engine version come from `project.json`, or else from the
-    /// folder name and `dev`.
+    /// As [`Self::launch_existing_project`].
     pub(crate) fn open_existing_project(&mut self, path: PathBuf) {
-        let descriptor_path = path.join("project.json");
-        let (name, engine_version) = if descriptor_path.exists() {
-            let text = std::fs::read_to_string(&descriptor_path).unwrap_or_default();
-            let v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
-            (
-                v["name"].as_str().unwrap_or("Unknown").to_owned(),
-                v["engine_version"].as_str().unwrap_or("dev").to_owned(),
-            )
-        } else {
+        let proj = self.launch_existing_project(&path);
+        self.config
+            .push_recent(&proj.name, &path, &proj.engine_version);
+        let _ = self.config.save();
+    }
+
+    /// Launches the project at `path` and returns it as the recent projects list it.
+    ///
+    /// Its name and engine version come from `project.json`, read under the
+    /// strict caps, or else from the folder name and `dev`; a file refused or
+    /// unreadable is kept in the refusals listed of the project, shown until
+    /// dismissed, with what the launch then says.
+    fn launch_existing_project(&mut self, path: &std::path::Path) -> RecentProject {
+        let folder_name = || {
             let name = path
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| "Project".to_owned());
             (name, "dev".to_owned())
         };
+        let mut refusal = None;
+        let (name, engine_version) = match crate::services::project::read_project_json(path) {
+            Ok(Some(v)) => (
+                v["name"].as_str().unwrap_or("Unknown").to_owned(),
+                v["engine_version"].as_str().unwrap_or("dev").to_owned(),
+            ),
+            Ok(None) => folder_name(),
+            Err(error) => {
+                refusal = Some(format!("project.json is not read: {error}"));
+                folder_name()
+            }
+        };
 
         let proj = RecentProject {
-            name: name.clone(),
+            name,
             path: path.to_string_lossy().to_string(),
-            engine_version: engine_version.clone(),
+            engine_version,
             last_opened: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs(),
         };
+        if let Some(message) = refusal {
+            self.home.refusals.record(ProjectRefusal {
+                project: path.to_path_buf(),
+                name: proj.name.clone(),
+                message,
+            });
+        }
         self.launch_project(&proj);
-        self.config.push_recent(&name, &path, &engine_version);
-        let _ = self.config.save();
+        proj
+    }
+
+    /// Launches the editor on `proj`, at `path`, and returns what the launch says; `None` while it waits for a trust decision.
+    ///
+    /// A project the user never decided of is not launched: it is named for
+    /// the trust prompt. A launched project is added to the recent projects,
+    /// the hub's config saved.
+    fn launch_outcome(&mut self, proj: &RecentProject, path: &std::path::Path) -> Option<Banner> {
+        if self.trust_store.decision(path).is_none() {
+            self.trust_prompt = Some(proj.clone());
+            return None;
+        }
+        let engines = self.available_engines();
+        let engine = engines
+            .iter()
+            .find(|e| e.version == proj.engine_version)
+            .or_else(|| engines.first());
+        let Some(engine) = engine else {
+            return Some(Banner::error(format!(
+                "No engine available for version '{}'. Configure one in Engine Manager.",
+                proj.engine_version
+            )));
+        };
+        Some(match project::launch_editor(&engine.editor_binary, path) {
+            Ok(()) => {
+                self.config
+                    .push_recent(&proj.name, path, &proj.engine_version);
+                let _ = self.config.save();
+                Banner::info(format!("Opened '{}' in editor.", proj.name))
+            }
+            Err(e) => Banner::error(format!("Failed to launch editor: {e}")),
+        })
     }
 
     /// Starts the GitHub OAuth device flow, unless one is already running.

@@ -31,7 +31,9 @@ use khora_core::problems::{Problem, ProblemSource, Problems};
 use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::renderer::api::shader::CpuShaderSource;
 use khora_io::asset::signing::{PackSigner, SignedManifest};
-use khora_io::asset::{AssetService, PackBuilder, PackLoader, PackManifest, PackOutput};
+use khora_io::asset::{
+    AssetService, PackBuilder, PackLoader, PackManifest, PackOutput, PackedFile,
+};
 use khora_io::trust::{Refusals, SecurityReason, TrustLayer};
 use khora_telemetry::MetricsRegistry;
 
@@ -85,12 +87,23 @@ fn signed_manifest(out: &PackOutput) -> PackManifest {
         .expect("the manifest verifies")
 }
 
-/// The index of `out`, with the entry of `rel` changed by `forge`.
-fn forged_index(out: &PackOutput, rel: &str, forge: impl FnOnce(&mut AssetSource)) -> Vec<u8> {
-    let config = bincode::config::standard();
+/// Returns the index of `out` as written: its asset entries and its external-files table.
+fn written_index(out: &PackOutput) -> (Vec<AssetMetadata>, Vec<PackedFile>) {
     let bytes = std::fs::read(&out.index_bin).expect("index.bin reads");
-    let (mut entries, _): (Vec<AssetMetadata>, _) =
-        bincode::serde::decode_from_slice(&bytes, config).expect("index.bin decodes");
+    bincode::serde::decode_from_slice(&bytes, bincode::config::standard())
+        .expect("index.bin decodes")
+        .0
+}
+
+/// Returns `entries` and `external_files` encoded as an `index.bin`.
+fn index_bytes(entries: &[AssetMetadata], external_files: &[PackedFile]) -> Vec<u8> {
+    bincode::serde::encode_to_vec((entries, external_files), bincode::config::standard())
+        .expect("the index encodes")
+}
+
+/// Returns the index of `out`, with the asset entry of `rel` changed by `forge`.
+fn forged_index(out: &PackOutput, rel: &str, forge: impl FnOnce(&mut AssetSource)) -> Vec<u8> {
+    let (mut entries, external_files) = written_index(out);
     let uuid = AssetUUID::new_v5(rel);
     let entry = entries
         .iter_mut()
@@ -102,7 +115,23 @@ fn forged_index(out: &PackOutput, rel: &str, forge: impl FnOnce(&mut AssetSource
             .get_mut(AssetMetadata::DEFAULT_VARIANT)
             .expect("a packed entry has a default source"),
     );
-    bincode::serde::encode_to_vec(&entries, config).expect("the index encodes")
+    index_bytes(&entries, &external_files)
+}
+
+/// Returns the index of `out`, with the external file at `rel` claiming `size` uncompressed bytes.
+fn forged_external_file(out: &PackOutput, rel: &str, size: u64) -> Vec<u8> {
+    let (entries, mut external_files) = written_index(out);
+    let file = external_files
+        .iter_mut()
+        .find(|file| file.path == rel)
+        .unwrap_or_else(|| panic!("{rel} is in the external-files table"));
+    assert_eq!(
+        file.compression,
+        CompressionKind::Lz4,
+        "the forged file is compressed"
+    );
+    file.uncompressed_size = size;
+    index_bytes(&entries, &external_files)
 }
 
 /// A service over the pack `out` with the forged `index`, the inventory
@@ -368,10 +397,10 @@ fn many_triangles(triangles: usize) -> (Vec<u8>, Vec<u8>) {
 }
 
 /// **A packed glTF's buffer with a bomb ratio is refused before
-/// allocating**: the `.bin` a packed glTF reads, an LZ4 entry whose index
-/// claims a thousand bytes more than the manifest records for it, is
-/// refused `TooLarge` over the manifest's size, at the pack layer, and
-/// reported — as the same entry is when it is loaded on its own.
+/// allocating**: the `.bin` a packed glTF reads, an LZ4 row of the
+/// external-files table claiming a thousand bytes more than the manifest
+/// records for it, is refused `TooLarge` over the manifest's size, at the
+/// pack layer, and reported — as an asset entry is.
 #[test]
 fn a_packed_gltf_buffer_with_a_bomb_ratio_is_refused_before_allocating() {
     let (gltf, bin) = many_triangles(100);
@@ -382,7 +411,7 @@ fn a_packed_gltf_buffer_with_a_bomb_ratio_is_refused_before_allocating() {
     );
     let actual = bin.len() as u64;
     let claimed = actual + 1000;
-    let index = forged_index(&out, "models/many.bin", claiming(claimed));
+    let index = forged_external_file(&out, "models/many.bin", claimed);
     let loader = PackLoader::new(std::fs::File::open(&out.data_pack).expect("data.pack opens"))
         .expect("a valid pack header");
     let manifest = signed_manifest(&out);

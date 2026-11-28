@@ -14,7 +14,6 @@
 //! Pointing the engine at a project's scripts, whose place only the application
 //! knows: [`mount`] and [`unmount`] take the runtime shared, at any frame.
 
-use khora_io::systems::shader_hot_reload::OverlaysSeen;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -31,6 +30,11 @@ use khora_io::script::layout::script_dir;
 use khora_io::script::project_compiler::{
     CompileRequest, ProjectCompiler, Recompiled, ScriptCompiler, ScriptReload,
 };
+use khora_io::systems::shader_hot_reload::OverlaysSeen;
+
+pub use khora_io::script::compile_hub::{CompileHub, CompileTicket, CompileTicketOutcome};
+pub use khora_io::script::layout::{is_script_file, module_of, SCRIPT_DIR};
+pub use khora_io::script::mounted::MountedScripts;
 
 /// The module the engine serves its components as: a script imports it, and
 /// no project holds it as a file.
@@ -42,18 +46,9 @@ pub const ENGINE_MODULE: &str = khora_io::script::mirror::MIRROR_MODULE;
 /// asset kinds' (`Prefab`, `Sound`, …) and the events it raises (`Touched`, …),
 /// which every module has in scope. The match is exact, as Ergon names are.
 pub fn is_engine_name(name: &str) -> bool {
-    khora_io::script::mirror::engine_component_names()
-        .binary_search_by(|known| known.as_str().cmp(name))
-        .is_ok()
+    is_component_or_event_name(name)
         || khora_core::asset::AssetKind::from_ergon_name(name).is_some()
-        || khora_core::script::ENGINE_EVENTS
-            .iter()
-            .any(|event| event.name == name)
 }
-
-pub use khora_io::script::compile_hub::{CompileHub, CompileTicket, CompileTicketOutcome};
-pub use khora_io::script::layout::{is_script_file, module_of, SCRIPT_DIR};
-pub use khora_io::script::mounted::MountedScripts;
 
 /// Puts what scripting needs into `runtime`, each resource only where it is absent.
 ///
@@ -61,70 +56,22 @@ pub use khora_io::script::mounted::MountedScripts;
 /// the compiler it installs reads through them. An empty queue costs nothing;
 /// a missing one would leave scripting wired in name only. It also installs
 /// the engine's [`Problems`] list, which other sources report to.
+///
+/// # Panics
+///
+/// Panics if an asset kind's Ergon name is an engine component's or event's
+/// name: a script would read one as the other. Panics if an asset kind is
+/// named like an extension of another kind, or of files that are no asset
+/// ([`khora_io::asset::refuse_kinds_named_like_extensions`]).
 pub fn install(runtime: &mut Runtime) {
+    refuse_asset_types_named_like_engine_names(registered_asset_types());
+    // Here, not at the first file's lookup on an index worker.
+    khora_io::asset::refuse_kinds_named_like_extensions();
     install_for_mounts(runtime);
     // The `loading` family's compiler, reporting to what is installed.
     if runtime.resources.get::<Arc<dyn ScriptCompiler>>().is_none() {
         let compiler: Arc<dyn ScriptCompiler> = Arc::new(ProjectCompiler::from_runtime(runtime));
         runtime.resources.insert(compiler);
-    }
-}
-
-/// Puts what a mount needs into `runtime`, as [`install`] does, but no compiler.
-///
-/// A window's start runs it before the application's closure, which may
-/// mount there; the compiler comes at boot, after the run's refusals.
-pub(crate) fn install_for_mounts(runtime: &mut Runtime) {
-    let resources = &mut runtime.resources;
-    if resources.get::<Arc<AssetWatch>>().is_none() {
-        resources.insert(Arc::new(AssetWatch::default()));
-    }
-    // What the shader pump last applied the overlays of the watched roots
-    // for: a project opened, closed, trusted or restricted applies them
-    // afresh.
-    if resources.get::<Arc<OverlaysSeen>>().is_none() {
-        resources.insert(Arc::new(OverlaysSeen::default()));
-    }
-    // What the background staged waits here for a frame's boundary: the
-    // programs and declarations compiled off the frame among it.
-    if resources.get::<Reserve>().is_none() {
-        resources.insert(Reserve::new());
-    }
-    if resources
-        .get::<khora_core::event::Channel<CompileRequest>>()
-        .is_none()
-    {
-        resources.insert(request_channel());
-    }
-    // Where a mount files its compile and reads its outcome, on the channel
-    // the `loading` family takes from.
-    if resources.get::<Arc<CompileHub>>().is_none() {
-        let requests = resources
-            .get::<khora_core::event::Channel<CompileRequest>>()
-            .cloned()
-            .unwrap_or_else(request_channel);
-        resources.insert(Arc::new(CompileHub::new(requests)));
-    }
-    if resources
-        .get::<khora_core::event::Channel<khora_core::script::ScriptEvent>>()
-        .is_none()
-    {
-        resources.insert(khora_core::script::engine_event_channel());
-    }
-    if resources.get::<Arc<Mutex<DeclaredComponents>>>().is_none() {
-        resources.insert(Arc::new(Mutex::new(DeclaredComponents::default())));
-    }
-    if resources.get::<Arc<ScriptCatalog>>().is_none() {
-        resources.insert(Arc::new(ScriptCatalog::default()));
-    }
-    if resources.get::<Arc<Interest<ScriptReads>>>().is_none() {
-        resources.insert(Arc::new(Interest::<ScriptReads>::new()));
-    }
-    if resources.get::<Arc<Problems>>().is_none() {
-        resources.insert(Arc::new(Problems::default()));
-    }
-    if resources.get::<Arc<MountedScripts>>().is_none() {
-        resources.insert(Arc::new(MountedScripts::default()));
     }
 }
 
@@ -202,40 +149,6 @@ pub fn mount(runtime: &Runtime, assets_root: &Path) -> Option<CompileTicket> {
     Some(ticket)
 }
 
-/// Mounts the scripts a game's pack holds, filed under `root`, and returns the ticket of their compile.
-///
-/// The pack never changes: nothing is watched, and no file outside it is
-/// listed. The `loading` family compiles them through the compiler
-/// `open_game_assets` installed for the pack. `None` when the pack holds no
-/// module, or scripting is not installed.
-pub(crate) fn mount_pack(
-    runtime: &Runtime,
-    root: &Path,
-    modules: std::collections::BTreeSet<String>,
-) -> Option<CompileTicket> {
-    if modules.is_empty() {
-        return None;
-    }
-    let Some(hub) = runtime.resources.get::<Arc<CompileHub>>() else {
-        log::error!(
-            "scripts: the engine holds no compile hub — `scripts::install` was not run, so {} cannot load",
-            root.display()
-        );
-        return None;
-    };
-    // Recorded before the compile, which compiles only a mounted root.
-    if let Some(mounted) = runtime.resources.get::<Arc<MountedScripts>>() {
-        mounted.record(root, modules.iter().cloned());
-    }
-    let ticket = hub.file(root.to_path_buf(), modules);
-    log::info!(
-        "scripts: the modules of {} filed to be compiled (ticket {})",
-        root.display(),
-        ticket.0
-    );
-    Some(ticket)
-}
-
 /// Takes the outcome of the mount filed as `ticket`: how many modules compiled, or why not.
 ///
 /// `None` while it is in flight, and once taken.
@@ -244,26 +157,6 @@ pub fn outcome(runtime: &Runtime, ticket: CompileTicket) -> Option<CompileTicket
         .resources
         .get::<Arc<CompileHub>>()?
         .take_outcome(ticket)
-}
-
-/// Stages `compiled` from the host in `reserve`: it lands at a frame start
-/// once every compile under way now has ended, for the boundary to apply.
-fn stage(reserve: &Reserve, compiled: Recompiled) {
-    let mut staging = khora_core::lane::Staging::new();
-    staging.stage(compiled.declarations);
-    staging.stage(compiled.reloads);
-    reserve.stage_from_host(staging);
-}
-
-/// Returns the name the engine's watch knows `assets_root` by, or `assets_root` when unwatched.
-///
-/// That name is the root as first named, whichever spelling is given now.
-fn watched_name(runtime: &Runtime, assets_root: &Path) -> PathBuf {
-    runtime
-        .resources
-        .get::<Arc<AssetWatch>>()
-        .and_then(|watch| watch.named(assets_root))
-        .unwrap_or_else(|| assets_root.to_path_buf())
 }
 
 /// Unmounts the scripts under `assets_root`, at any frame, so none of them runs again.
@@ -375,4 +268,195 @@ pub fn unmount(runtime: &Runtime, assets_root: &Path) {
         modules.len(),
         assets_root.display()
     );
+}
+
+/// Puts what a mount needs into `runtime`, as [`install`] does, but no compiler.
+///
+/// A window's start runs it before the application's closure, which may
+/// mount there; the compiler comes at boot, after the run's refusals.
+pub(crate) fn install_for_mounts(runtime: &mut Runtime) {
+    let resources = &mut runtime.resources;
+    if resources.get::<Arc<AssetWatch>>().is_none() {
+        resources.insert(Arc::new(AssetWatch::default()));
+    }
+    // What the shader pump last applied the overlays of the watched roots
+    // for: a project opened, closed, trusted or restricted applies them
+    // afresh.
+    if resources.get::<Arc<OverlaysSeen>>().is_none() {
+        resources.insert(Arc::new(OverlaysSeen::default()));
+    }
+    // What the background staged waits here for a frame's boundary: the
+    // programs and declarations compiled off the frame among it.
+    if resources.get::<Reserve>().is_none() {
+        resources.insert(Reserve::new());
+    }
+    if resources
+        .get::<khora_core::event::Channel<CompileRequest>>()
+        .is_none()
+    {
+        resources.insert(request_channel());
+    }
+    // Where a mount files its compile and reads its outcome, on the channel
+    // the `loading` family takes from.
+    if resources.get::<Arc<CompileHub>>().is_none() {
+        let requests = resources
+            .get::<khora_core::event::Channel<CompileRequest>>()
+            .cloned()
+            .unwrap_or_else(request_channel);
+        resources.insert(Arc::new(CompileHub::new(requests)));
+    }
+    if resources
+        .get::<khora_core::event::Channel<khora_core::script::ScriptEvent>>()
+        .is_none()
+    {
+        resources.insert(khora_core::script::engine_event_channel());
+    }
+    if resources.get::<Arc<Mutex<DeclaredComponents>>>().is_none() {
+        resources.insert(Arc::new(Mutex::new(DeclaredComponents::default())));
+    }
+    if resources.get::<Arc<ScriptCatalog>>().is_none() {
+        resources.insert(Arc::new(ScriptCatalog::default()));
+    }
+    if resources.get::<Arc<Interest<ScriptReads>>>().is_none() {
+        resources.insert(Arc::new(Interest::<ScriptReads>::new()));
+    }
+    if resources.get::<Arc<Problems>>().is_none() {
+        resources.insert(Arc::new(Problems::default()));
+    }
+    if resources.get::<Arc<MountedScripts>>().is_none() {
+        resources.insert(Arc::new(MountedScripts::default()));
+    }
+}
+
+/// Mounts the scripts a game's pack holds, filed under `root`, and returns the ticket of their compile.
+///
+/// The pack never changes: nothing is watched, and no file outside it is
+/// listed. The `loading` family compiles them through the compiler
+/// `open_game_assets` installed for the pack. `None` when the pack holds no
+/// module, or scripting is not installed.
+pub(crate) fn mount_pack(
+    runtime: &Runtime,
+    root: &Path,
+    modules: std::collections::BTreeSet<String>,
+) -> Option<CompileTicket> {
+    if modules.is_empty() {
+        return None;
+    }
+    let Some(hub) = runtime.resources.get::<Arc<CompileHub>>() else {
+        log::error!(
+            "scripts: the engine holds no compile hub — `scripts::install` was not run, so {} cannot load",
+            root.display()
+        );
+        return None;
+    };
+    // Recorded before the compile, which compiles only a mounted root.
+    if let Some(mounted) = runtime.resources.get::<Arc<MountedScripts>>() {
+        mounted.record(root, modules.iter().cloned());
+    }
+    let ticket = hub.file(root.to_path_buf(), modules);
+    log::info!(
+        "scripts: the modules of {} filed to be compiled (ticket {})",
+        root.display(),
+        ticket.0
+    );
+    Some(ticket)
+}
+
+/// Stages `compiled` from the host in `reserve`: it lands at a frame start
+/// once every compile under way now has ended, for the boundary to apply.
+fn stage(reserve: &Reserve, compiled: Recompiled) {
+    let mut staging = khora_core::lane::Staging::new();
+    staging.stage(compiled.declarations);
+    staging.stage(compiled.reloads);
+    reserve.stage_from_host(staging);
+}
+
+/// Returns the name the engine's watch knows `assets_root` by, or `assets_root` when unwatched.
+///
+/// That name is the root as first named, whichever spelling is given now.
+fn watched_name(runtime: &Runtime, assets_root: &Path) -> PathBuf {
+    runtime
+        .resources
+        .get::<Arc<AssetWatch>>()
+        .and_then(|watch| watch.named(assets_root))
+        .unwrap_or_else(|| assets_root.to_path_buf())
+}
+
+/// Returns whether `name` is an engine component's (current, former or retired) or an event's.
+fn is_component_or_event_name(name: &str) -> bool {
+    khora_io::script::mirror::engine_component_names()
+        .binary_search_by(|known| known.as_str().cmp(name))
+        .is_ok()
+        || khora_core::script::ENGINE_EVENTS
+            .iter()
+            .any(|event| event.name == name)
+}
+
+/// Returns each registered asset kind a script holds, by its name and its Ergon name.
+fn registered_asset_types() -> Vec<(&'static str, &'static str)> {
+    khora_core::asset::AssetKind::all()
+        .into_iter()
+        .filter_map(|kind| kind.ergon_name().map(|ergon| (kind.name(), ergon)))
+        .collect()
+}
+
+/// Returns, in order, why each of `asset_types` (kind name, Ergon name) clashes
+/// with an engine component's or event's name.
+fn asset_types_named_like_engine_names<'a>(
+    asset_types: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> Vec<String> {
+    asset_types
+        .into_iter()
+        .filter(|(_, ergon)| is_component_or_event_name(ergon))
+        .map(|(kind, ergon)| {
+            format!(
+                "the asset kind `{kind}` is spelled `{ergon}` in Ergon, \
+                 the name of an engine component or event"
+            )
+        })
+        .collect()
+}
+
+/// Refuses `asset_types` (kind name, Ergon name) if one is spelled like an engine component or event.
+///
+/// # Panics
+///
+/// Panics naming every such kind.
+fn refuse_asset_types_named_like_engine_names<'a>(
+    asset_types: impl IntoIterator<Item = (&'a str, &'a str)>,
+) {
+    let clashes = asset_types_named_like_engine_names(asset_types);
+    assert!(clashes.is_empty(), "{}", clashes.join("; "));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{asset_types_named_like_engine_names, refuse_asset_types_named_like_engine_names};
+
+    /// **An asset type Ergon spells like an engine component or event is found**;
+    /// one of a name of its own is not.
+    #[test]
+    fn an_asset_type_named_like_a_component_or_an_event_is_found() {
+        let clashes = asset_types_named_like_engine_names([
+            ("transform_table", "Transform"),
+            ("touch_sound", "Touched"),
+            ("loot_table", "LootTable"),
+        ]);
+        assert_eq!(clashes.len(), 2, "{clashes:?}");
+        assert!(clashes[0].contains("Transform") && clashes[0].contains("transform_table"));
+        assert!(clashes[1].contains("Touched"));
+    }
+
+    /// **The boot refuses an asset type Ergon spells like an engine component**, naming both.
+    #[test]
+    #[should_panic(expected = "the asset kind `light_probe` is spelled `Light` in Ergon")]
+    fn the_boot_refuses_an_asset_type_named_like_a_component() {
+        refuse_asset_types_named_like_engine_names([("light_probe", "Light")]);
+    }
+
+    /// **The engine's own asset types shadow no component**, so the boot accepts them.
+    #[test]
+    fn the_engines_asset_types_shadow_no_component() {
+        refuse_asset_types_named_like_engine_names(super::registered_asset_types());
+    }
 }

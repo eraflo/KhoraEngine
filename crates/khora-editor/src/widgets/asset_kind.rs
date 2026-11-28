@@ -16,40 +16,46 @@
 //! names it by. One place, so a renamed kind changes here only.
 
 use khora_sdk::editor_ui::Icon;
-use khora_sdk::khora_core::asset::AssetKind;
+use khora_sdk::khora_core::asset::{kinds, AssetKind};
 
-/// Returns the icon an asset of `kind` is shown with.
+/// Returns the icon an asset of `kind` is shown with; a kind with none of its own, a box.
 pub fn asset_kind_icon(kind: AssetKind) -> Icon {
     match kind {
-        AssetKind::Prefab => Icon::Prefab,
-        AssetKind::Sound => Icon::Music,
-        AssetKind::Material => Icon::Circle,
-        AssetKind::Mesh => Icon::Cube,
-        AssetKind::Texture => Icon::Image,
-        AssetKind::Scene => Icon::Film,
+        kinds::PREFAB => Icon::Prefab,
+        kinds::SOUND => Icon::Music,
+        kinds::MATERIAL => Icon::Circle,
+        kinds::MESH => Icon::Cube,
+        kinds::TEXTURE => Icon::Image,
+        kinds::SCENE => Icon::Film,
+        _ => Icon::Box,
     }
 }
 
-/// Returns the word a sentence names an asset of `kind` by: `"prefab"`, `"sound"`, …
+/// Returns the word a sentence names an asset of `kind` by: its name, `"prefab"`, `"sound"`, …
 pub fn asset_kind_noun(kind: AssetKind) -> &'static str {
-    match kind {
-        AssetKind::Prefab => "prefab",
-        AssetKind::Sound => "sound",
-        AssetKind::Material => "material",
-        AssetKind::Mesh => "mesh",
-        AssetKind::Texture => "texture",
-        AssetKind::Scene => "scene",
-    }
+    kind.name()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// **Each kind has its own icon** — a sound its note, a scene its film.
+    /// **Each kind has its own icon** — a sound its note, a scene its film —
+    /// and a kind with none of its own a box.
     #[test]
     fn each_asset_kind_is_shown_with_its_icon() {
-        let shown: Vec<Icon> = AssetKind::ALL.into_iter().map(asset_kind_icon).collect();
+        let shown: Vec<Icon> = [
+            kinds::PREFAB,
+            kinds::SOUND,
+            kinds::MATERIAL,
+            kinds::MESH,
+            kinds::TEXTURE,
+            kinds::SCENE,
+            kinds::FONT,
+        ]
+        .into_iter()
+        .map(asset_kind_icon)
+        .collect();
         assert_eq!(
             shown,
             [
@@ -59,18 +65,30 @@ mod tests {
                 Icon::Cube,
                 Icon::Image,
                 Icon::Film,
+                Icon::Box,
             ]
         );
     }
 
-    /// **Each kind is named by its own word** — a sound is a `sound`, not the
-    /// index's `audio`.
+    /// **Each kind is named by its own word**, the one the index writes — a
+    /// sound is a `sound`.
     #[test]
     fn each_asset_kind_is_named_by_its_noun() {
-        let named: Vec<&str> = AssetKind::ALL.into_iter().map(asset_kind_noun).collect();
+        let named: Vec<&str> = [
+            kinds::PREFAB,
+            kinds::SOUND,
+            kinds::MATERIAL,
+            kinds::MESH,
+            kinds::TEXTURE,
+            kinds::SCENE,
+            kinds::FONT,
+        ]
+        .into_iter()
+        .map(asset_kind_noun)
+        .collect();
         assert_eq!(
             named,
-            ["prefab", "sound", "material", "mesh", "texture", "scene"]
+            ["prefab", "sound", "material", "mesh", "texture", "scene", "font"]
         );
     }
 }

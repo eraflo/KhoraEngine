@@ -43,13 +43,20 @@ impl EngineApp for EditorApp {
     /// Returns the identity of the game the project opened at launch makes.
     ///
     /// Read from its `project.json`; the editor's own name and version when none
-    /// was opened.
+    /// was opened. Read before the engine boots and before the user decides
+    /// whether to trust the project, so under the strict caps: a refusal is
+    /// logged here, and reported to the run's refusals when the project opens
+    /// and reads the file again.
     fn game_identity() -> khora_sdk::GameIdentity {
         crate::bootstrap::PROJECT_PATH
             .get()
             .and_then(|project| project.as_deref())
             .and_then(|project| {
-                crate::project_identity::project_identity(std::path::Path::new(project))
+                crate::project_identity::project_identity(&khora_sdk::trust::FileGuard::new(
+                    project,
+                    khora_sdk::trust::Trust::Restricted,
+                    khora_sdk::trust::Refusals::detached(),
+                ))
             })
             .unwrap_or_else(|| khora_sdk::GameIdentity {
                 name: Self::window_config().title,
@@ -101,6 +108,7 @@ impl EngineApp for EditorApp {
             startup_hold: None,
             trust_store: None,
             project_trust_state: None,
+            reads: crate::project_vfs::ProjectReads::default(),
             picked_project: None,
             problems: None,
             script_catalog: None,
@@ -115,6 +123,20 @@ impl EngineApp for EditorApp {
     /// Provides what the engine reads of the editor: its state, its camera,
     /// the viewport override, the open project's prefabs and assets.
     fn provide(&self, runtime: &mut Runtime) {
+        // The physics family runs at the project's `physics.step`, read before
+        // the families are registered, at the trust decided of the project
+        // (strict when undecided); a later decision reads it again.
+        if let Some(Some(project)) = crate::bootstrap::PROJECT_PATH.get() {
+            let root = std::path::Path::new(project);
+            let store = khora_sdk::trust::TrustStore::new(khora_sdk::user_dirs::trust_path(
+                &khora_sdk::user_dirs::process_env,
+            ));
+            runtime.resources.insert(crate::project_physics::physics_at(
+                root,
+                store.decision(root),
+                khora_sdk::trust::Refusals::of(runtime),
+            ));
+        }
         runtime.resources.insert(self.editor_state.clone());
         runtime.resources.insert(self.camera.clone());
         // Editor viewport override — RenderFlow reads it as fallback
@@ -179,6 +201,7 @@ impl EngineApp for EditorApp {
                         world,
                         &self.editor_state,
                         loads,
+                        &self.reads,
                         std::path::Path::new(&path),
                     );
                 }
@@ -367,7 +390,7 @@ impl EngineApp for EditorApp {
             self.startup_hold = None;
         }
         if self.opening.is_some() {
-            if let Some(pvfs) = super::project_open::land_opened_project(
+            let landed = super::project_open::land_opened_project(
                 &mut self.opening,
                 world,
                 runtime,
@@ -375,8 +398,14 @@ impl EngineApp for EditorApp {
                 &self.asset_watch,
                 &self.editor_state,
                 &mut self.startup_hold,
-            ) {
-                self.project_vfs = Some(pvfs);
+            );
+            // Resolved, the open is the project the editor holds: the one it
+            // opened, or none when it failed, as `project_folder` says. The
+            // project it held was let go, and its undo history with it.
+            if self.opening.is_none() {
+                self.project_vfs = landed;
+                commands::forget_history(&self.command_history);
+                self.prefab_view = None;
             }
         }
         if let Some(pvfs) = self.project_vfs.as_ref() {

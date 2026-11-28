@@ -15,21 +15,16 @@ use khora_core::asset::AssetUUID;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// One row of `manifest.bin`: an asset's integrity record.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ManifestEntry {
-    /// The asset the record is of.
-    pub uuid: AssetUUID,
-    /// BLAKE3 hash of the asset's *uncompressed* bytes, as a 32-byte digest.
-    pub blake3: [u8; 32],
-    /// Uncompressed size in bytes, checked before the hash is computed.
-    pub size: u64,
-}
+use super::{ExternalFileRecord, ManifestEntry};
 
 /// In-memory manifest for fast `verify(uuid, &bytes)` lookups.
+///
+/// It records every asset entry of the pack by uuid, and every external file
+/// of a container by path, so the seal covers the bytes of both.
 #[derive(Debug, Default, Clone)]
 pub struct PackManifest {
     by_uuid: HashMap<AssetUUID, ManifestEntry>,
+    external_files: HashMap<String, ExternalFileRecord>,
 }
 
 impl PackManifest {
@@ -51,19 +46,40 @@ impl PackManifest {
         );
     }
 
+    /// Records the BLAKE3 digest and size of `bytes` as the external file at `path`.
+    pub fn insert_external_file(&mut self, path: &str, bytes: &[u8]) {
+        self.external_files.insert(
+            path.to_owned(),
+            ExternalFileRecord {
+                path: path.to_owned(),
+                blake3: *blake3::hash(bytes).as_bytes(),
+                size: bytes.len() as u64,
+            },
+        );
+    }
+
     /// Encodes the manifest into the on-disk byte vector.
     ///
     /// # Errors
     ///
     /// When the entries cannot be encoded.
     pub fn encode(&self) -> Result<Vec<u8>> {
-        let mut entries: Vec<ManifestEntry> = self.by_uuid.values().cloned().collect();
+        let mut assets: Vec<ManifestEntry> = self.by_uuid.values().cloned().collect();
         // Sorted so two builds of one project encode the same bytes; by digest,
         // a stable total order.
-        entries.sort_by_key(|a| a.blake3);
+        assets.sort_by_key(|a| a.blake3);
+        let mut external_files: Vec<ExternalFileRecord> =
+            self.external_files.values().cloned().collect();
+        external_files.sort_by(|a, b| a.path.cmp(&b.path));
         let cfg = bincode::config::standard();
-        bincode::serde::encode_to_vec(&entries, cfg)
-            .map_err(|e| anyhow!("Failed to encode manifest: {}", e))
+        bincode::serde::encode_to_vec(
+            &EncodedManifest {
+                assets,
+                external_files,
+            },
+            cfg,
+        )
+        .map_err(|e| anyhow!("Failed to encode manifest: {}", e))
     }
 
     /// Decodes the on-disk byte vector into a manifest ready for lookup.
@@ -73,20 +89,31 @@ impl PackManifest {
     /// When `bytes` are not an encoded manifest.
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         let cfg = bincode::config::standard();
-        let (entries, _): (Vec<ManifestEntry>, _) = bincode::serde::decode_from_slice(bytes, cfg)
+        let (encoded, _): (EncodedManifest, _) = bincode::serde::decode_from_slice(bytes, cfg)
             .context("Failed to decode manifest.bin")?;
-        let by_uuid = entries.into_iter().map(|e| (e.uuid, e)).collect();
-        Ok(Self { by_uuid })
+        let by_uuid = encoded.assets.into_iter().map(|e| (e.uuid, e)).collect();
+        let external_files = (encoded.external_files.into_iter())
+            .map(|record| (record.path.clone(), record))
+            .collect();
+        Ok(Self {
+            by_uuid,
+            external_files,
+        })
     }
 
-    /// Returns `true` if the manifest contains no entries.
+    /// Returns `true` if the manifest records no asset and no external file.
     pub fn is_empty(&self) -> bool {
-        self.by_uuid.is_empty()
+        self.by_uuid.is_empty() && self.external_files.is_empty()
     }
 
-    /// Returns the number of recorded entries.
+    /// Returns the number of recorded assets and external files.
     pub fn len(&self) -> usize {
-        self.by_uuid.len()
+        self.by_uuid.len() + self.external_files.len()
+    }
+
+    /// Returns the record of the external file packed at `path`, if any.
+    pub fn external_file(&self, path: &str) -> Option<&ExternalFileRecord> {
+        self.external_files.get(path)
     }
 
     /// Returns the record of `uuid`, if any.
@@ -102,23 +129,44 @@ impl PackManifest {
         let Some(entry) = self.by_uuid.get(uuid) else {
             return Err(anyhow!("Manifest: no record for asset {:?}", uuid));
         };
-        if entry.size != bytes.len() as u64 {
-            return Err(anyhow!(
-                "Manifest: size mismatch for {:?} (expected {}, got {})",
-                uuid,
-                entry.size,
-                bytes.len()
-            ));
-        }
-        let actual: [u8; 32] = *blake3::hash(bytes).as_bytes();
-        if actual != entry.blake3 {
-            return Err(anyhow!(
-                "Manifest: BLAKE3 mismatch for {:?} (corrupted or tampered)",
-                uuid
-            ));
-        }
-        Ok(())
+        check(&format!("{uuid:?}"), entry.size, &entry.blake3, bytes)
     }
+
+    /// Verifies `bytes` against the record of the external file at `path`.
+    ///
+    /// # Errors
+    /// When the size or the hash differs, or `path` has no record.
+    pub fn verify_external_file(&self, path: &str, bytes: &[u8]) -> Result<()> {
+        let Some(record) = self.external_files.get(path) else {
+            return Err(anyhow!(
+                "Manifest: no record for the external file '{path}'"
+            ));
+        };
+        check(&format!("'{path}'"), record.size, &record.blake3, bytes)
+    }
+}
+
+/// `manifest.bin` as written: its asset records, then its external-file records.
+#[derive(Serialize, Deserialize)]
+struct EncodedManifest {
+    assets: Vec<ManifestEntry>,
+    external_files: Vec<ExternalFileRecord>,
+}
+
+/// Checks that `bytes` are of `size` and hash to `blake3`.
+fn check(what: &str, size: u64, blake3: &[u8; 32], bytes: &[u8]) -> Result<()> {
+    if size != bytes.len() as u64 {
+        return Err(anyhow!(
+            "Manifest: size mismatch for {what} (expected {size}, got {})",
+            bytes.len()
+        ));
+    }
+    if blake3::hash(bytes).as_bytes() != blake3 {
+        return Err(anyhow!(
+            "Manifest: BLAKE3 mismatch for {what} (corrupted or tampered)"
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -148,6 +196,24 @@ mod tests {
         m.verify(&uuid, b"PAYLOAD").unwrap();
         assert!(m.verify(&uuid, b"DIFFERENT").is_err());
         assert!(m.verify(&uuid, b"PAYLOAD-EXTRA").is_err()); // size mismatch
+    }
+
+    /// **An external file is recorded by its path**, survives encoding, and
+    /// verifies its own bytes only.
+    #[test]
+    fn an_external_file_is_recorded_and_verified_by_its_path() {
+        let mut m = PackManifest::new();
+        m.insert_external_file("models/a.bin", b"BUFFER");
+        let m = PackManifest::decode(&m.encode().unwrap()).unwrap();
+        let record = m
+            .external_file("models/a.bin")
+            .expect("recorded by its path");
+        assert_eq!(record.size, 6);
+        assert_eq!(m.len(), 1);
+        m.verify_external_file("models/a.bin", b"BUFFER").unwrap();
+        assert!(m.verify_external_file("models/a.bin", b"BUFFEr").is_err());
+        assert!(m.verify_external_file("models/b.bin", b"BUFFER").is_err());
+        assert!(m.external_file("models/b.bin").is_none());
     }
 
     #[test]

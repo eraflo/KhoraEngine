@@ -95,7 +95,8 @@ in `khora-control/src/gorna/arbiter/`. See [The arbiter](../concepts/arbiter.md)
 ### Asset reference (Ergon)
 
 A value naming an asset by its identity (`AssetUUID`), never its path, typed by
-its kind: `Prefab`, `Sound`, `Material`, `Mesh`, `Texture`, `Scene`. A field
+its kind: `Prefab`, `Sound`, `Material`, `Mesh`, `Texture`, `Scene`, `Font`, or a
+kind a game registers with an Ergon name. A field
 holding one is optional — `Prefab? bullet;` — and is chosen in the Inspector's
 asset slot. A script compares it, passes it, and hands it to what uses its kind:
 `Spawn(bullet, at: p)`, `e.SetMaterial(m)`. See

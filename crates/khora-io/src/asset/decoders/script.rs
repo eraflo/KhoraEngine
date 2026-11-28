@@ -51,9 +51,9 @@ impl AssetDecoder<ScriptModule> for ScriptDecoder {
 
 inventory::submit! {
     DecoderRegistration {
-        type_name: "script",
+        kind: khora_core::asset::kinds::SCRIPT,
         register: |svc| {
-            svc.register_decoder::<ScriptModule>("script", ScriptDecoder);
+            svc.register_decoder::<ScriptModule>(khora_core::asset::kinds::SCRIPT.name(), ScriptDecoder);
         },
     }
 }

@@ -160,3 +160,170 @@ fn a_restricted_project_is_launched() {
     assert!(tried_to_launch(&app), "a restricted project is launched");
     assert!(app.trust_prompt.is_none());
 }
+
+/// **A refused `project.json` stays shown beside what the launch said.**
+///
+/// Opened from disk, a project whose `project.json` is over the strict cap is
+/// still launched, by its folder's name; the banner says the file was refused
+/// and that the launch failed, and stays until the user dismisses it. Never
+/// decided of, the project waits for its trust prompt, the refusal shown alone.
+#[test]
+fn a_refused_project_json_stays_shown_beside_the_launch() {
+    let folder = Folder::new("refused-json");
+    let ember = folder.project("ember");
+    let root = PathBuf::from(&ember.path);
+    std::fs::File::create(root.join("project.json"))
+        .and_then(|file| file.set_len((256 << 10) + 1))
+        .expect("a project.json over the strict cap");
+    let mut app = hub(&folder, folder.store());
+
+    let held = app.launch_existing_project(&root);
+
+    assert_eq!(held.name, "ember", "named by its folder");
+    assert!(app.trust_prompt.is_some(), "never decided of, it waits");
+    let banner = app.banner.as_ref().expect("the refusal is shown");
+    assert!(
+        banner.message.contains("project.json is not read"),
+        "{}",
+        banner.message
+    );
+    assert!(!banner.is_expired() && banner.expires_at.is_none());
+
+    app.trust_prompt = None;
+    app.banner = None;
+    app.trust_store.decide(&root, ProjectTrust::Trusted);
+    app.launch_existing_project(&root);
+
+    let banner = app.banner.as_ref().expect("the refusal is shown");
+    assert!(
+        banner.message.contains("project.json is not read"),
+        "{}",
+        banner.message
+    );
+    assert!(
+        banner.message.contains("Failed to launch editor"),
+        "{}",
+        banner.message
+    );
+    assert!(banner.is_error);
+    assert!(banner.expires_at.is_none(), "it stays until dismissed");
+}
+
+/// **A refused `project.json` stays shown once the trust prompt is answered.**
+///
+/// Never decided of, the project waits for its prompt, the refusal shown; the
+/// launch the answer starts says what it did beside the refusal, never in its place.
+#[test]
+fn a_refusal_stays_shown_once_the_trust_prompt_is_answered() {
+    let folder = Folder::new("refused-then-answered");
+    let ember = folder.project("ember");
+    let root = PathBuf::from(&ember.path);
+    std::fs::File::create(root.join("project.json"))
+        .and_then(|file| file.set_len((256 << 10) + 1))
+        .expect("a project.json over the strict cap");
+    let mut app = hub(&folder, folder.store());
+    app.launch_existing_project(&root);
+    assert!(app.trust_prompt.is_some(), "the premise: it waits");
+
+    app.answer_trust(Some(ProjectTrust::Trusted));
+
+    assert!(tried_to_launch(&app), "the answer launches it");
+    let banner = app.banner.as_ref().expect("a banner is shown");
+    assert!(
+        banner.message.contains("project.json is not read"),
+        "the refusal is gone before it was dismissed: {}",
+        banner.message
+    );
+}
+
+/// **A refusal is shown with what its own launch said, never with an earlier one's.**
+///
+/// A banner an earlier launch left is not this launch's: a refused
+/// `project.json` of a project waiting for its trust prompt is shown alone.
+#[test]
+fn a_refusal_is_never_shown_with_what_an_earlier_launch_said() {
+    let folder = Folder::new("refused-after-another");
+    let lantern = folder.project("lantern");
+    let ember = folder.project("ember");
+    let root = PathBuf::from(&ember.path);
+    std::fs::File::create(root.join("project.json"))
+        .and_then(|file| file.set_len((256 << 10) + 1))
+        .expect("a project.json over the strict cap");
+    let mut app = hub(&folder, folder.store());
+    app.trust_store
+        .decide(&PathBuf::from(&lantern.path), ProjectTrust::Trusted);
+    app.launch_project(&lantern);
+    assert!(
+        tried_to_launch(&app),
+        "the premise: lantern's launch said so"
+    );
+
+    app.launch_existing_project(&root);
+
+    assert!(app.trust_prompt.is_some(), "never decided of, ember waits");
+    let banner = app.banner.as_ref().expect("the refusal is shown");
+    assert!(
+        !banner.message.contains("Failed to launch editor"),
+        "ember's refusal is shown with lantern's launch: {}",
+        banner.message
+    );
+}
+
+/// **A refusal stays listed with its project until it is dismissed.**
+///
+/// Another launch's banner takes the place of ember's refused `project.json`,
+/// which stays listed with its project; ember launched again shows it once,
+/// and dismissing that banner dismisses it.
+#[test]
+fn a_refusal_stays_listed_with_its_project_until_dismissed() {
+    let folder = Folder::new("refusal-listed");
+    let lantern = folder.project("lantern");
+    let ember = folder.project("ember");
+    let root = PathBuf::from(&ember.path);
+    std::fs::File::create(root.join("project.json"))
+        .and_then(|file| file.set_len((256 << 10) + 1))
+        .expect("a project.json over the strict cap");
+    let mut app = hub(&folder, folder.store());
+    app.launch_existing_project(&root);
+    app.trust_prompt = None;
+    app.trust_store
+        .decide(&PathBuf::from(&lantern.path), ProjectTrust::Trusted);
+
+    app.launch_project(&lantern);
+
+    let banner = app.banner.as_ref().expect("lantern's launch said so");
+    assert!(
+        !banner.message.contains("project.json is not read"),
+        "{}",
+        banner.message
+    );
+    let listed: Vec<&str> = app
+        .home
+        .refusals
+        .of(&root)
+        .map(|refusal| refusal.name.as_str())
+        .collect();
+    assert_eq!(
+        listed,
+        ["ember"],
+        "the refusal stays listed, with its project"
+    );
+
+    app.launch_existing_project(&root);
+    let banner = app.banner.as_ref().expect("ember's refusal is shown");
+    assert_eq!(
+        banner.message.matches("project.json is not read").count(),
+        1,
+        "{}",
+        banner.message
+    );
+
+    app.dismiss_banner();
+
+    assert!(app.banner.is_none());
+    assert_eq!(
+        app.home.refusals.iter().count(),
+        0,
+        "dismissed with its banner"
+    );
+}

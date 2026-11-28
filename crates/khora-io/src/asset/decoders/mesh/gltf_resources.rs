@@ -148,6 +148,41 @@ pub(super) fn resolve_relative_uri(base_dir: &Path, uri: &str) -> Result<String,
     Ok(parts.join("/"))
 }
 
+/// Returns the forward-slash path a URI names from `base_dir`, as read from the assets root, even one leaving it.
+///
+/// What [`resolve_relative_uri`] reads, and what it refuses spelled so that a
+/// [`FileGuard`](crate::trust::FileGuard) refuses it too: a `..` climbing past
+/// the root is kept (`../outside.bin`), and a URI that is absolute or names a
+/// scheme or a drive is rooted, `/` before it as decoded (`/abs/outside.bin`,
+/// `/https://host/a.bin`). `None` for a URI that is not valid percent-encoded
+/// UTF-8 or names no file.
+pub(super) fn listed_uri_path(base_dir: &Path, uri: &str) -> Option<String> {
+    let decoded = percent_decode(uri)?;
+    let is_absolute = decoded.starts_with(['/', '\\'])
+        || decoded.contains(':')
+        || Path::new(&decoded).is_absolute();
+    if is_absolute {
+        let rooted = decoded.trim_start_matches(['/', '\\']).replace('\\', "/");
+        return (!rooted.is_empty()).then(|| format!("/{rooted}"));
+    }
+    let mut parts: Vec<String> = asset_key(base_dir)
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .map(str::to_owned)
+        .collect();
+    for part in decoded.split(['/', '\\']) {
+        match part {
+            "" | "." => {}
+            ".." if parts.last().is_some_and(|last| last != "..") => {
+                parts.pop();
+            }
+            name => parts.push(name.to_owned()),
+        }
+    }
+    let named = parts.last().is_some_and(|last| last != "..");
+    named.then(|| parts.join("/"))
+}
+
 /// Replaces every `%XX` escape of `text` by its byte, if the result is
 /// UTF-8 and every escape is well formed.
 fn percent_decode(text: &str) -> Option<String> {

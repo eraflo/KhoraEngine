@@ -59,13 +59,19 @@ impl Limits {
                 max_elements: pick(1 << 24, 1 << 22),
                 max_dimension: u32::MAX,
             },
-            FileKind::Audio => Limits {
+            FileKind::Sound => Limits {
                 max_bytes,
                 max_decoded_bytes: pick(2 * GIB, 512 * MIB),
                 max_elements: u64::MAX,
                 max_dimension: u32::MAX,
             },
-            FileKind::Font | FileKind::Text | FileKind::Other => Limits {
+            FileKind::Font
+            | FileKind::Text
+            | FileKind::Manifest
+            | FileKind::Registry
+            | FileKind::GitHead
+            | FileKind::GitIgnore
+            | FileKind::Other => Limits {
                 max_bytes,
                 max_decoded_bytes: max_bytes,
                 max_elements: u64::MAX,

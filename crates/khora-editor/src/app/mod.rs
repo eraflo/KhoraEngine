@@ -33,7 +33,8 @@ use crate::commands::CommandHistory;
 use crate::input::InputState;
 use crate::ops;
 use crate::ops::prefab_overrides::{inspect_against, revert_instance};
-use crate::project_vfs::{ProjectPrefabs, ProjectVfs};
+use crate::project_prefabs::ProjectPrefabs;
+use crate::project_vfs::ProjectVfs;
 use khora_sdk::khora_data::ecs::World;
 use khora_sdk::khora_data::scene::{instance_of, prefab_world, InstanceOf};
 
@@ -97,6 +98,9 @@ pub struct EditorApp {
     trust_store: Option<Arc<khora_sdk::trust::TrustStore>>,
     /// The trust of the project open, as the engine shares it.
     project_trust_state: Option<Arc<khora_sdk::trust::ProjectTrustState>>,
+    /// The run's refusals and project trust, which a file opened outside any
+    /// project is read through.
+    reads: crate::project_vfs::ProjectReads,
     /// The folder File > Open Project picked, opened once the frame can.
     picked_project: Option<std::path::PathBuf>,
     /// What is wrong with the project's scripts, as the engine finds it.
@@ -159,6 +163,7 @@ impl EditorApp {
             .resources
             .get::<Arc<khora_sdk::trust::ProjectTrustState>>()
             .cloned();
+        self.reads = crate::project_vfs::ProjectReads::of(runtime);
         self.script_catalog = runtime
             .resources
             .get::<Arc<khora_sdk::khora_core::script::ScriptCatalog>>()
@@ -231,7 +236,7 @@ impl EditorApp {
                     world,
                     entity,
                     &mut state,
-                    &crate::project_vfs::ProjectPrefabs(pvfs),
+                    &crate::project_prefabs::ProjectPrefabs(pvfs),
                 ),
                 None => ops::duplicate_entity(
                     world,

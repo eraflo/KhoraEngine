@@ -93,6 +93,7 @@ mod every_pub_mod {
     use khora_core::agent::timing as _;
     use khora_core::asset as _;
     use khora_core::asset::font as _;
+    use khora_core::asset::kinds as _;
     use khora_core::asset::script as _;
     use khora_core::audio as _;
     use khora_core::audio::device as _;
@@ -202,22 +203,15 @@ fn alpha_mode_variants(x: &khora_core::asset::AlphaMode) {
     }
 }
 
-fn asset_kind_variants(x: &khora_core::asset::AssetKind) {
-    match x {
-        khora_core::asset::AssetKind::Prefab => {}
-        khora_core::asset::AssetKind::Sound => {}
-        khora_core::asset::AssetKind::Material => {}
-        khora_core::asset::AssetKind::Mesh => {}
-        khora_core::asset::AssetKind::Texture => {}
-        khora_core::asset::AssetKind::Scene => {}
-    }
+fn asset_kind_registration_fields(x: &khora_core::asset::AssetKindRegistration) {
+    let _: (&khora_core::asset::AssetKind, &Option<&'static str>) = (&x.kind, &x.ergon_name);
 }
 
 fn asset_metadata_fields(x: &khora_core::asset::AssetMetadata) {
     let _ = (
         &x.uuid,
         &x.source_path,
-        &x.asset_type,
+        &x.kind,
         &x.dependencies,
         &x.variants,
         &x.tags,
@@ -1569,35 +1563,44 @@ fn module_asset_paths_still_resolve() {
     is_default::<khora_core::asset::AlphaMode>();
     is_serialize::<khora_core::asset::AlphaMode>();
     is_deserialize_owned::<khora_core::asset::AlphaMode>();
-    let _ = type_name::<khora_core::asset::AssetKind>();
-    let _ = asset_kind_variants as fn(&khora_core::asset::AssetKind);
-    let _: [khora_core::asset::AssetKind; 6] = khora_core::asset::AssetKind::ALL;
-    let _ = khora_core::asset::AssetKind::ergon_name
-        as fn(khora_core::asset::AssetKind) -> &'static str;
-    let _ = khora_core::asset::AssetKind::from_ergon_name
-        as fn(&str) -> Option<khora_core::asset::AssetKind>;
-    is_debug::<khora_core::asset::AssetKind>();
-    is_clone::<khora_core::asset::AssetKind>();
-    is_copy::<khora_core::asset::AssetKind>();
-    let _ = type_name::<khora_core::asset::AssetType>();
-    let _: [khora_core::asset::AssetType; 11] = khora_core::asset::AssetType::KNOWN;
-    let _ = khora_core::asset::AssetType::as_str as fn(&khora_core::asset::AssetType) -> &str;
-    let _ = khora_core::asset::AssetType::from_name as fn(&str) -> khora_core::asset::AssetType;
-    let _ = khora_core::asset::AssetType::of_known_name
-        as fn(&str) -> Option<khora_core::asset::AssetType>;
-    let _ = khora_core::asset::AssetType::script_kind
-        as fn(&khora_core::asset::AssetType) -> Option<khora_core::asset::AssetKind>;
-    is_clone::<khora_core::asset::AssetType>();
-    is_eq::<khora_core::asset::AssetType>();
-    is_hash::<khora_core::asset::AssetType>();
-    is_display::<khora_core::asset::AssetType>();
-    is_from_string::<khora_core::asset::AssetType>();
-    is_serialize::<khora_core::asset::AssetType>();
-    is_deserialize_owned::<khora_core::asset::AssetType>();
     let _: &str = khora_core::asset::AssetMetadata::DEFAULT_VARIANT;
     let _ = khora_core::asset::AssetMetadata::default_source
         as fn(&khora_core::asset::AssetMetadata) -> Option<&khora_core::asset::AssetSource>;
     is_partial_eq::<khora_core::asset::AssetKind>();
+    let _ = type_name::<khora_core::asset::AssetKind>();
+    is_display::<khora_core::asset::AssetKind>();
+    is_serialize::<khora_core::asset::AssetKind>();
+    is_deserialize_owned::<khora_core::asset::AssetKind>();
+    let _ = khora_core::asset::AssetKind::name as fn(khora_core::asset::AssetKind) -> &'static str;
+    let _ = khora_core::asset::AssetKind::ergon_name
+        as fn(khora_core::asset::AssetKind) -> Option<&'static str>;
+    let _ = khora_core::asset::AssetKind::named as fn(&str) -> Option<khora_core::asset::AssetKind>;
+    let _ = khora_core::asset::AssetKind::from_ergon_name
+        as fn(&str) -> Option<khora_core::asset::AssetKind>;
+    let _ = khora_core::asset::AssetKind::all as fn() -> Vec<khora_core::asset::AssetKind>;
+    let _: khora_core::asset::AssetKind = khora_core::asset::AssetKind::__declare("probe");
+    is_debug::<khora_core::asset::AssetKind>();
+    is_clone::<khora_core::asset::AssetKind>();
+    is_copy::<khora_core::asset::AssetKind>();
+    is_eq::<khora_core::asset::AssetKind>();
+    is_hash::<khora_core::asset::AssetKind>();
+    is_ord::<khora_core::asset::AssetKind>();
+    let _ = type_name::<khora_core::asset::AssetKindRegistration>();
+    let _ = asset_kind_registration_fields as fn(&khora_core::asset::AssetKindRegistration);
+    is_debug::<khora_core::asset::AssetKindRegistration>();
+    is_clone::<khora_core::asset::AssetKindRegistration>();
+    is_copy::<khora_core::asset::AssetKindRegistration>();
+    let _: [khora_core::asset::AssetKind; 9] = [
+        khora_core::asset::kinds::MESH,
+        khora_core::asset::kinds::MATERIAL,
+        khora_core::asset::kinds::TEXTURE,
+        khora_core::asset::kinds::SOUND,
+        khora_core::asset::kinds::FONT,
+        khora_core::asset::kinds::PREFAB,
+        khora_core::asset::kinds::SCENE,
+        khora_core::asset::kinds::SHADER,
+        khora_core::asset::kinds::SCRIPT,
+    ];
     // trait `khora_core::asset::AsAny`: see `as_any_trait_items`
     // trait `khora_core::asset::Asset`: see `asset_trait_items`
     let _ = type_name::<khora_core::asset::Handle<khora_core::asset::EmissiveMaterial>>();
@@ -2805,6 +2808,9 @@ fn module_script_paths_still_resolve() {
     is_eq::<khora_core::script::batch::BatchShapeError>();
     let _ = khora_core::script::event::ENGINE_EVENT_BACKLOG;
     let _ = khora_core::script::ENGINE_EVENT_BACKLOG;
+    let _: [&str; 5] = khora_core::script::ENGINE_TYPES;
+    let _: [&str; 9] = khora_core::script::BUILTIN_TYPES;
+    let _ = khora_core::script::is_language_type as fn(&str) -> bool;
     let _ = type_name::<khora_core::script::event::EventQueue>();
     let _ = type_name::<khora_core::script::EventQueue>();
     same_type(
@@ -3260,6 +3266,33 @@ macro_rules! probe_script_value_table {
 }
 
 khora_core::script_value_table!(probe_script_value_table);
+
+khora_core::register_asset_kind!(
+    /// A game's own kind, which scripts hold as `LootTable`.
+    pub const LOOT_TABLE = "loot_table", ergon = "LootTable"
+);
+
+khora_core::register_asset_kind!(
+    /// A game's own kind no script holds.
+    pub const LOOT_NOTE = "loot_note"
+);
+
+/// **A kind a game declares with the macro is registered**: found by its
+/// name, by its Ergon name if it has one, and among every kind.
+#[test]
+fn a_game_kind_declared_by_the_macro_is_registered() {
+    use khora_core::asset::AssetKind;
+
+    assert_eq!(LOOT_TABLE.name(), "loot_table");
+    assert_eq!(AssetKind::named("loot_table"), Some(LOOT_TABLE));
+    assert_eq!(LOOT_TABLE.ergon_name(), Some("LootTable"));
+    assert_eq!(AssetKind::from_ergon_name("LootTable"), Some(LOOT_TABLE));
+    assert_eq!(AssetKind::named("loot_note"), Some(LOOT_NOTE));
+    assert_eq!(LOOT_NOTE.ergon_name(), None);
+    let all = AssetKind::all();
+    assert!(all.contains(&LOOT_TABLE) && all.contains(&LOOT_NOTE));
+    assert!(all.contains(&khora_core::asset::kinds::MESH));
+}
 
 #[test]
 fn exported_macros_still_expand() {

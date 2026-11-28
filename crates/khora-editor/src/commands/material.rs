@@ -68,7 +68,7 @@ fn save_as_material(
         }
     };
 
-    let stem = sanitize_material_name(name);
+    let stem = crate::project_vfs::new_name_from(name, "material");
     let rel_fwd = format!("materials/{stem}.kmat");
 
     // Its identity, which a restore at Stop keeps: the assignment may land
@@ -85,12 +85,19 @@ fn save_as_material(
             log::error!("Save material: project VFS mutex poisoned");
             return;
         };
-        if let Err(e) = pvfs.write_asset(std::path::Path::new(&rel_fwd), ron_text.as_bytes()) {
-            log::error!("Save material: failed to write '{rel_fwd}': {e:#}");
-            return;
-        }
-        // The identity comes from the registry: it needs no index.
-        let uuid = pvfs.resolve_uuid(&rel_fwd);
+        // The identity is the one the write gives the file it lands on, which
+        // may spell its name in another case: it needs no index. Reserved, as
+        // it is assigned: refused while the identity registry is unread.
+        let written = pvfs
+            .reserve_write(&rel_fwd)
+            .and_then(|slot| pvfs.write_reserved(slot, ron_text.as_bytes()));
+        let uuid = match written {
+            Ok(uuid) => uuid,
+            Err(e) => {
+                log::error!("Save material: failed to write '{rel_fwd}': {e:#}");
+                return;
+            }
+        };
         if let Err(e) = pvfs.reindex() {
             log::warn!("Save material: wrote '{rel_fwd}' but index rebuild failed: {e:#}");
         }
@@ -199,28 +206,5 @@ pub fn assign_queued_materials(
             world.add_component(entity, MaterialRef::Asset(uuid));
             log::info!("Assigned material {uuid} to entity {entity:?}");
         }
-    }
-}
-
-/// Strips characters unsafe in cross-platform file names from a material
-/// name, falling back to `material` for an empty result.
-fn sanitize_material_name(name: &str) -> String {
-    let mut out = String::with_capacity(name.len());
-    let mut last_was_replacement = false;
-    for ch in name.chars() {
-        let safe = ch.is_alphanumeric() || matches!(ch, '_' | '-' | '.' | ' ');
-        if safe {
-            out.push(ch);
-            last_was_replacement = false;
-        } else if !last_was_replacement {
-            out.push('_');
-            last_was_replacement = true;
-        }
-    }
-    let trimmed = out.trim_matches(&[' ', '.', '_'][..]).to_string();
-    if trimmed.is_empty() {
-        "material".to_string()
-    } else {
-        trimmed
     }
 }

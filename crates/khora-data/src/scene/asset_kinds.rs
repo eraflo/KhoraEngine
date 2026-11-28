@@ -22,6 +22,33 @@ use super::declared::DeclaredRecord;
 use super::record::{Record, ReportEntry, ReportKind, VariantPayload};
 use super::scene_record::SceneRecord;
 
+/// Returns `record` read under the declarations of `catalog`'s world, with what was dropped.
+///
+/// A cell holding an asset of another kind than the world's declaration gives
+/// its field loses it. The record then describes those components as the world
+/// does, so the prefabs it links to are read the same way. Reads nothing of the
+/// world but `catalog`, so it runs off the frame.
+pub fn read_into(
+    catalog: &super::load_catalog::LoadCatalog,
+    record: SceneRecord,
+) -> (SceneRecord, Vec<ReportEntry>) {
+    let live: Vec<DeclaredRecord> = record
+        .declared
+        .iter()
+        .filter_map(|declared| catalog.declaration_of(&declared.name))
+        .collect();
+    if live.is_empty() {
+        return (record, Vec::new());
+    }
+    let (mut record, report) = read_as(record, &live);
+    for declared in &mut record.declared {
+        if let Some(world_s) = live.iter().find(|live| live.name == declared.name) {
+            *declared = world_s.clone();
+        }
+    }
+    (record, report)
+}
+
 /// Returns whether `a` and `b` give an asset, anywhere inside them, two different kinds.
 pub(crate) fn kinds_conflict(a: &ErgonType, b: &ErgonType) -> bool {
     match (a, b) {
@@ -52,31 +79,6 @@ pub(crate) fn value_holds_asset(value: &ScriptValue) -> bool {
         ScriptValue::Asset(_) => true,
         ScriptValue::Array(items) => items.iter().any(value_holds_asset),
         ScriptValue::Struct(fields) => fields.iter().any(|(_, value)| value_holds_asset(value)),
-        _ => false,
-    }
-}
-
-/// Returns whether `record` holds an asset reference anywhere.
-fn record_holds_asset(record: &Record) -> bool {
-    match record {
-        Record::Asset(_) => true,
-        Record::Some(inner) => record_holds_asset(inner),
-        Record::Newtype { value, .. } => record_holds_asset(value),
-        Record::Seq(items) | Record::TupleStruct { fields: items, .. } => {
-            items.iter().any(record_holds_asset)
-        }
-        Record::Map(entries) => entries
-            .iter()
-            .any(|(key, value)| record_holds_asset(key) || record_holds_asset(value)),
-        Record::Struct { fields, .. } => fields.iter().any(|(_, value)| record_holds_asset(value)),
-        Record::Variant { payload, .. } => match payload {
-            VariantPayload::Unit => false,
-            VariantPayload::Newtype(inner) => record_holds_asset(inner),
-            VariantPayload::Tuple(items) => items.iter().any(record_holds_asset),
-            VariantPayload::Struct(fields) => {
-                fields.iter().any(|(_, value)| record_holds_asset(value))
-            }
-        },
         _ => false,
     }
 }
@@ -145,6 +147,31 @@ pub(crate) fn read_as(
     (record, report)
 }
 
+/// Returns whether `record` holds an asset reference anywhere.
+fn record_holds_asset(record: &Record) -> bool {
+    match record {
+        Record::Asset(_) => true,
+        Record::Some(inner) => record_holds_asset(inner),
+        Record::Newtype { value, .. } => record_holds_asset(value),
+        Record::Seq(items) | Record::TupleStruct { fields: items, .. } => {
+            items.iter().any(record_holds_asset)
+        }
+        Record::Map(entries) => entries
+            .iter()
+            .any(|(key, value)| record_holds_asset(key) || record_holds_asset(value)),
+        Record::Struct { fields, .. } => fields.iter().any(|(_, value)| record_holds_asset(value)),
+        Record::Variant { payload, .. } => match payload {
+            VariantPayload::Unit => false,
+            VariantPayload::Newtype(inner) => record_holds_asset(inner),
+            VariantPayload::Tuple(items) => items.iter().any(record_holds_asset),
+            VariantPayload::Struct(fields) => {
+                fields.iter().any(|(_, value)| record_holds_asset(value))
+            }
+        },
+        _ => false,
+    }
+}
+
 fn dropped_entry(
     entity: khora_core::ecs::PersistentId,
     component: &str,
@@ -158,37 +185,10 @@ fn dropped_entry(
     }
 }
 
-/// Returns `record` read under the declarations of `catalog`'s world, with what was dropped.
-///
-/// A cell holding an asset of another kind than the world's declaration gives
-/// its field loses it. The record then describes those components as the world
-/// does, so the prefabs it links to are read the same way. Reads nothing of the
-/// world but `catalog`, so it runs off the frame.
-pub fn read_into(
-    catalog: &super::load_catalog::LoadCatalog,
-    record: SceneRecord,
-) -> (SceneRecord, Vec<ReportEntry>) {
-    let live: Vec<DeclaredRecord> = record
-        .declared
-        .iter()
-        .filter_map(|declared| catalog.declaration_of(&declared.name))
-        .collect();
-    if live.is_empty() {
-        return (record, Vec::new());
-    }
-    let (mut record, report) = read_as(record, &live);
-    for declared in &mut record.declared {
-        if let Some(world_s) = live.iter().find(|live| live.name == declared.name) {
-            *declared = world_s.clone();
-        }
-    }
-    (record, report)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khora_core::asset::{AssetKind, AssetUUID};
+    use khora_core::asset::{kinds, AssetKind, AssetUUID};
 
     fn asset(kind: AssetKind) -> ErgonType {
         ErgonType::Asset(kind)
@@ -200,7 +200,7 @@ mod tests {
 
     #[test]
     fn two_kinds_of_asset_conflict_wherever_they_sit() {
-        let (prefab, sound) = (asset(AssetKind::Prefab), asset(AssetKind::Sound));
+        let (prefab, sound) = (asset(kinds::PREFAB), asset(kinds::SOUND));
         assert!(kinds_conflict(&prefab, &sound));
         assert!(kinds_conflict(
             &optional(prefab.clone()),
@@ -226,7 +226,7 @@ mod tests {
             &optional(ErgonType::Float)
         ));
         assert!(!kinds_conflict(&ErgonType::Float, &ErgonType::Duration));
-        assert!(!kinds_conflict(&asset(AssetKind::Mesh), &ErgonType::Entity));
+        assert!(!kinds_conflict(&asset(kinds::MESH), &ErgonType::Entity));
     }
 
     #[test]

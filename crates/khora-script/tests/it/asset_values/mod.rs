@@ -37,7 +37,9 @@ use khora_script::vm::{Machine, Program, Run, Value};
 use khora_script::{compile_module, Arena, CompileOutcome, Diagnostic, Host, MemoryLoader};
 
 /// The six spellings, each with the kind its fields declare.
-const KINDS: [&str; 6] = ["Prefab", "Sound", "Material", "Mesh", "Texture", "Scene"];
+const KINDS: [&str; 7] = [
+    "Prefab", "Sound", "Material", "Mesh", "Texture", "Scene", "Font",
+];
 
 fn compile(source: &str) -> CompileOutcome {
     compile_module(&MemoryLoader::new().with("main.erg", source), "main.erg")

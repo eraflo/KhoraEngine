@@ -41,6 +41,13 @@ fn sanitize_binary_name_strips_unsafe_chars() {
     assert_eq!(sanitize_binary_name("/etc/passwd"), "_etc_passwd");
 }
 
+#[test]
+fn a_project_named_like_a_windows_device_builds_a_binary_kept_apart_from_it() {
+    assert_eq!(sanitize_binary_name("con"), "con_");
+    assert_eq!(sanitize_binary_name("Nul"), "Nul_");
+    assert_eq!(sanitize_binary_name("console"), "console");
+}
+
 /// The `runtime.json` the runtime reads, for a project named "Khora Demo"
 /// built with the Release preset. The SDK's reader test parses the same
 /// file, so what is written here is what the runtime gets back.
@@ -176,15 +183,16 @@ fn the_build_signs_the_pack_and_stamps_the_binary() -> Result<()> {
             BuildPreset::Shipping,
         ] {
             let output_dir = root.join("dist").join(preset.label());
-            let outcome = build_with_runtime(
-                &assets,
-                &output_dir,
-                "Khora Demo",
-                BuildTarget::host(),
+            let outcome = build_with_runtime(RuntimeStampBuild {
+                assets_root: &assets,
+                refusals: khora_sdk::trust::Refusals::detached(),
+                output_dir: &output_dir,
+                project_name: "Khora Demo",
+                target: BuildTarget::host(),
                 preset,
-                &signer,
-                &runtime_src,
-            )?;
+                signer: &signer,
+                runtime_src: &runtime_src,
+            })?;
             built.push((preset, outcome, signer.public_key()));
         }
         Ok(built)
@@ -224,6 +232,255 @@ fn the_build_signs_the_pack_and_stamps_the_binary() -> Result<()> {
     assert_eq!(
         checked?, fake_runtime,
         "the runtime binary built from was changed"
+    );
+    Ok(())
+}
+
+/// A project under the temp folder, removed when dropped.
+struct TempProject(std::path::PathBuf);
+
+impl TempProject {
+    /// Makes a project tagged `tag` holding `files`, by path under the root and bytes.
+    fn with(tag: &str, files: &[(&str, &[u8])]) -> Result<Self> {
+        let root =
+            std::env::temp_dir().join(format!("khora-editor-build-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for (rel, bytes) in files {
+            let path = root.join(rel);
+            std::fs::create_dir_all(path.parent().expect("a folder"))?;
+            std::fs::write(path, bytes)?;
+        }
+        std::fs::create_dir_all(root.join("assets"))?;
+        Ok(Self(root))
+    }
+}
+
+impl Drop for TempProject {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Returns the names of the folders in `dir`, sorted: the build's lock files beside them left out.
+fn folders_in(dir: &std::path::Path) -> Result<Vec<String>> {
+    let mut folders = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            folders.push(entry.file_name().to_string_lossy().into_owned());
+        }
+    }
+    folders.sort();
+    Ok(folders)
+}
+
+/// **A build says what it left out**: one external file missing is named in
+/// the outcome and in the result line, which says it built and how many files
+/// it left out; a build that left nothing out says it built.
+#[test]
+fn a_build_says_what_it_left_out() -> Result<()> {
+    let project = TempProject::with(
+        "left-out",
+        &[(
+            "assets/models/a.gltf",
+            br#"{"asset":{"version":"2.0"},"buffers":[{"uri":"gone.bin","byteLength":4}]}"#,
+        )],
+    )?;
+    let runtime_src = project
+        .0
+        .join(format!("khora-runtime{}", BuildTarget::host().exe_suffix()));
+    let mut fake_runtime = b"a fake runtime, then its slot: ".to_vec();
+    fake_runtime.extend_from_slice(&khora_sdk::slot_magic());
+    fake_runtime.extend_from_slice(&[0; 32]);
+    std::fs::write(&runtime_src, &fake_runtime)?;
+    let signer = PackSigner::load_or_create(&project.0.join("signing"))?;
+
+    let outcome = build_with_runtime(RuntimeStampBuild {
+        assets_root: &project.0.join("assets"),
+        refusals: khora_sdk::trust::Refusals::detached(),
+        output_dir: &project.0.join("dist"),
+        project_name: "Lantern",
+        target: BuildTarget::host(),
+        preset: BuildPreset::Debug,
+        signer: &signer,
+        runtime_src: &runtime_src,
+    })?;
+
+    assert_eq!(outcome.left_out.len(), 1, "{:?}", outcome.left_out);
+    assert_eq!(outcome.left_out[0].path, "models/gone.bin");
+    let line = result_line(&Ok(outcome.clone()));
+    assert!(line.contains("built, 1 file left out"), "{line}");
+    assert!(line.contains("models/gone.bin is missing"), "{line}");
+    let clean = BuildOutcome {
+        left_out: Vec::new(),
+        ..outcome
+    };
+    let line = result_line(&Ok(clean));
+    assert!(line.starts_with("Build Game: built via"), "{line}");
+    Ok(())
+}
+
+/// **A failed build leaves the previous build whole**, removes its temporary
+/// folder, and its result line names the asset refused and why.
+#[test]
+fn a_failed_build_leaves_the_previous_build_whole() -> Result<()> {
+    let project = TempProject::with(
+        "failed",
+        &[
+            ("Cargo.toml", b"[package]\nname = \"lantern\"\n"),
+            ("dist/windows/previous.txt", b"the previous build"),
+            ("dist/linux/previous.txt", b"the previous build"),
+            ("dist/macos/previous.txt", b"the previous build"),
+        ],
+    )?;
+    // One byte over a trusted project's cap of a text file: the pack refuses it.
+    std::fs::create_dir_all(project.0.join("assets").join("materials"))?;
+    std::fs::File::create(project.0.join("assets").join("materials").join("big.kmat"))?
+        .set_len((64 << 20) + 1)?;
+    let pvfs = crate::project_vfs::ProjectVfs::open(
+        project.0.clone(),
+        Arc::new(khora_sdk::MetricsRegistry::new()),
+    )?;
+    let signer = PackSigner::load_or_create(&project.0.join("signing"))?;
+
+    let built = build_for_target(
+        &pvfs,
+        "Lantern",
+        BuildTarget::host(),
+        BuildPreset::Debug,
+        &signer,
+    );
+
+    let line = result_line(&built);
+    assert!(built.is_err(), "a refused asset fails the build");
+    assert!(line.contains("big.kmat"), "{line}");
+    assert!(line.contains("over the"), "the refusal's reason: {line}");
+    let dist = project.0.join("dist");
+    let target = dist.join(BuildTarget::host().dir_name());
+    assert_eq!(
+        std::fs::read(target.join("previous.txt"))?,
+        b"the previous build"
+    );
+    assert_eq!(
+        std::fs::read_dir(&target)?.count(),
+        1,
+        "nothing of the failed build is left"
+    );
+    assert_eq!(
+        folders_in(&dist)?,
+        ["linux", "macos", "windows"],
+        "no temporary folder is left"
+    );
+    Ok(())
+}
+
+/// **A build puts back the build an interrupted one moved aside, and says so.**
+///
+/// A build killed between its two renames left no folder at the target and
+/// the previous build moved aside. The next build, failing on a refused
+/// asset, still leaves that previous build at the target, and its error says
+/// it was put back.
+#[test]
+fn a_build_puts_back_the_build_an_interrupted_one_moved_aside() -> Result<()> {
+    let dir = BuildTarget::host().dir_name();
+    let moved_aside = format!("dist/{dir}.4242.7.previous.tmp/previous.txt");
+    let project = TempProject::with(
+        "interrupted",
+        &[
+            ("Cargo.toml", b"[package]\nname = \"lantern\"\n"),
+            (moved_aside.as_str(), b"the previous build"),
+        ],
+    )?;
+    std::fs::create_dir_all(project.0.join("assets").join("materials"))?;
+    std::fs::File::create(project.0.join("assets").join("materials").join("big.kmat"))?
+        .set_len((64 << 20) + 1)?;
+    let pvfs = crate::project_vfs::ProjectVfs::open(
+        project.0.clone(),
+        Arc::new(khora_sdk::MetricsRegistry::new()),
+    )?;
+    let signer = PackSigner::load_or_create(&project.0.join("signing"))?;
+
+    let built = build_for_target(
+        &pvfs,
+        "Lantern",
+        BuildTarget::host(),
+        BuildPreset::Debug,
+        &signer,
+    );
+
+    let line = result_line(&built);
+    assert!(built.is_err(), "a refused asset fails the build");
+    assert!(line.contains("was put back"), "{line}");
+    let dist = project.0.join("dist");
+    assert_eq!(
+        std::fs::read(dist.join(dir).join("previous.txt"))?,
+        b"the previous build"
+    );
+    assert_eq!(
+        folders_in(&dist)?,
+        [dir],
+        "nothing an interrupted build left remains"
+    );
+    Ok(())
+}
+
+/// **One build of a target at a time: a second is refused while the first holds it.**
+///
+/// The first build holds `dist/<target>` and fills its temporary folder. A
+/// second build of that target is refused, says another build holds it, and
+/// leaves the first's temporary folder alone. Once the first ends, a build of
+/// the target runs: it reclaims what the first left, then fails on a refused
+/// asset.
+#[test]
+fn a_second_build_of_one_target_is_refused_while_the_first_holds_it() -> Result<()> {
+    let dir = BuildTarget::host().dir_name();
+    let first_staging = format!("dist/{dir}.4242.7.tmp/half.bin");
+    let project = TempProject::with(
+        "one-at-a-time",
+        &[
+            ("Cargo.toml", b"[package]\nname = \"lantern\"\n"),
+            (first_staging.as_str(), b"the first build's half"),
+        ],
+    )?;
+    std::fs::create_dir_all(project.0.join("assets").join("materials"))?;
+    std::fs::File::create(project.0.join("assets").join("materials").join("big.kmat"))?
+        .set_len((64 << 20) + 1)?;
+    let pvfs = crate::project_vfs::ProjectVfs::open(
+        project.0.clone(),
+        Arc::new(khora_sdk::MetricsRegistry::new()),
+    )?;
+    let signer = PackSigner::load_or_create(&project.0.join("signing"))?;
+    let build = || {
+        build_for_target(
+            &pvfs,
+            "Lantern",
+            BuildTarget::host(),
+            BuildPreset::Debug,
+            &signer,
+        )
+    };
+    let first = khora_sdk::fs::PathLock::try_hold(&project.0.join("dist").join(dir))?;
+
+    let second = build();
+
+    let line = result_line(&second);
+    assert!(second.is_err(), "the second build ran beside the first");
+    assert!(line.contains("another build"), "{line}");
+    assert_eq!(
+        std::fs::read(project.0.join(&first_staging))?,
+        b"the first build's half",
+        "the second build reclaimed the first's temporary folder"
+    );
+
+    drop(first);
+    let third = build();
+
+    let line = result_line(&third);
+    assert!(!line.contains("another build"), "{line}");
+    assert!(line.contains("big.kmat"), "{line}");
+    assert!(
+        !project.0.join(&first_staging).exists(),
+        "once the first ended, what it left is reclaimed"
     );
     Ok(())
 }

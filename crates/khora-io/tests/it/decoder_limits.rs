@@ -69,9 +69,13 @@ fn serve(files: &[(&str, &[u8])]) -> Served {
 /// Serves the `assets/` folder `root` of `dir`, as it is on disk.
 fn serve_root(dir: tempfile::TempDir, root: PathBuf) -> Served {
     std::fs::create_dir_all(&root).expect("the assets folder");
-    let index = IndexBuilder::new(&root)
-        .build_index_bytes()
-        .expect("the project indexes");
+    let index = IndexBuilder::new(khora_io::trust::FileGuard::new(
+        &root,
+        khora_io::trust::Trust::Project,
+        khora_io::trust::Refusals::detached(),
+    ))
+    .build_index_bytes()
+    .expect("the project indexes");
     let problems = Arc::new(Problems::default());
     let refusals = Arc::new(Refusals::new(Some(Arc::clone(&problems)), None));
     let loader = FileLoader::guarded(FileGuard::new(&root, Trust::Project, Arc::clone(&refusals)));
@@ -339,7 +343,12 @@ impl AssetDecoder<Broken> for PanickingDecoder {
     }
 }
 
-/// A project holding files of the type `kbroken`, decoded by the
+khora_core::register_asset_kind!(
+    /// The kind of the test files decoded by the [`PanickingDecoder`] (`*.kbroken`).
+    const BROKEN = "kbroken"
+);
+
+/// A project holding files of the kind `kbroken`, decoded by the
 /// [`PanickingDecoder`], and a font that decodes.
 fn broken_project(files: &[&str]) -> Served {
     let mut owned: Vec<(String, Vec<u8>)> = files
@@ -357,7 +366,7 @@ fn broken_project(files: &[&str]) -> Served {
     let mut served = serve(&borrowed);
     served
         .service
-        .register_decoder::<Broken>("kbroken", PanickingDecoder);
+        .register_decoder::<Broken>(BROKEN.name(), PanickingDecoder);
     served
 }
 
@@ -467,16 +476,31 @@ fn a_decoder_panic_off_the_frame_becomes_a_refusal() {
     }
 }
 
-/// Index type of the test container files whose `open` panics.
-const PANICKING_BOX: &str = "kbrokenbox";
-/// Index type of the test container files whose `extract` panics.
-const PANICKING_PARTS: &str = "kbrokenparts";
+khora_core::register_asset_kind!(
+    /// The kind of the test container files whose `open` panics (`*.kbrokenbox`).
+    const BROKEN_BOX = "kbrokenbox"
+);
+
+khora_core::register_asset_kind!(
+    /// The kind of the test container files whose `extract` panics (`*.kbrokenparts`).
+    const BROKEN_PARTS = "kbrokenparts"
+);
+
+khora_core::register_asset_kind!(
+    /// The kind of the one part each test container file holds.
+    const BROKEN_PART = "kbrokenpart"
+);
+
+/// The kind name of the test container files whose `open` panics.
+const PANICKING_BOX: &str = BROKEN_BOX.name();
+/// The kind name of the test container files whose `extract` panics.
+const PANICKING_PARTS: &str = BROKEN_PARTS.name();
 
 /// Lists the one part every test container file holds.
 fn list_one_part(_bytes: &[u8]) -> anyhow::Result<Vec<SubAssetEntry>> {
     Ok(vec![SubAssetEntry {
         label: "part".to_owned(),
-        type_name: "kbrokenpart".to_owned(),
+        type_name: BROKEN_PART.name().to_owned(),
     }])
 }
 

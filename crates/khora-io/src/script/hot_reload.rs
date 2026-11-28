@@ -19,7 +19,6 @@
 //! index: an `.erg` edited in place is not reindexed, so the index would miss a
 //! new `import`. A save that does not compile replaces nothing.
 
-use khora_data::ecs::SystemContext;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -28,13 +27,11 @@ use khora_core::event::{Channel, WhenFull};
 use khora_core::lane::OutputDeck;
 use khora_core::problems::Problems;
 use khora_core::Runtime;
-use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
+use khora_data::ecs::{DataSystemRegistration, SystemContext, TickPhase, World};
+use khora_script::modules::imports_of;
 use khora_script::toolchain::CompileRequest;
 
-use khora_script::modules::imports_of;
-
 use crate::asset::{AssetChangeKind, AssetWatch};
-
 use crate::script::layout::{
     exists_exactly, is_file_exactly, is_module_file, is_script_file, module_of, SCRIPT_DIR,
 };
@@ -51,49 +48,19 @@ pub fn request_channel() -> Channel<CompileRequest> {
     Channel::bounded(REQUEST_BACKLOG, WhenFull::Reject)
 }
 
-/// Returns whether a change at `rel_path` under `root` can change which Ergon files are misplaced.
+/// Returns the modules under `script_root`, sorted, by the path they are known by.
 ///
-/// True for an Ergon file, a folder that `arrived`, or anything gone: a gone
-/// folder reports only itself and cannot be told from a file (`props.v2/`).
-/// A folder merely modified is what a save inside it reports, and moves nothing.
-fn may_move_a_script(root: &Path, rel_path: &str, arrived: bool) -> bool {
-    is_script_file(rel_path)
-        || !exists_exactly(root, rel_path)
-        || (arrived && root.join(rel_path).is_dir())
-}
-
-/// Returns the prefix of the modules in the folder at `rel_path`, under the assets root.
-///
-/// Empty for the script folder itself, `ai/` for `scripts/ai`; `None` for a
-/// folder outside the script folder.
-fn module_prefix_of_folder(rel_path: &str) -> Option<String> {
-    match rel_path.strip_prefix(SCRIPT_DIR)? {
-        "" => Some(String::new()),
-        rest => rest
-            .strip_prefix('/')
-            .filter(|inside| !inside.is_empty())
-            .map(|inside| format!("{inside}/")),
-    }
-}
-
-/// Returns the recorded modules of `root` that a gone folder at `rel_path` held.
-///
-/// A folder deleted or moved out reports only itself, so its modules are known
-/// from the record alone. Empty unless the folder is in the script folder.
-fn modules_gone_with(mounted: Option<&MountedScripts>, root: &Path, rel_path: &str) -> Vec<String> {
-    let Some(mounted) = mounted else {
-        return Vec::new();
-    };
-    let Some(prefix) = module_prefix_of_folder(rel_path) else {
-        return Vec::new();
-    };
-    if exists_exactly(root, rel_path) {
-        return Vec::new();
-    }
-    mounted
-        .modules_of(root)
+/// Listed from their file names: no file is read, so a module over any cap
+/// is listed, and refused when its compile reads it through the project's guard.
+pub fn module_names(script_root: &Path) -> Vec<String> {
+    crate::fs::files_under(script_root)
         .into_iter()
-        .filter(|module| module.starts_with(&prefix) && !is_on_disk(root, module))
+        // Forward slashes: how an `import` writes a path, and how a module is
+        // named everywhere else.
+        .map(|relative| khora_core::asset::asset_key(&relative))
+        .filter(|module| is_module_file(module))
+        .collect::<BTreeSet<String>>()
+        .into_iter()
         .collect()
 }
 
@@ -103,36 +70,6 @@ fn modules_gone_with(mounted: Option<&MountedScripts>, root: &Path, rel_path: &s
 /// file system thinks of case.
 pub(crate) fn is_on_disk(root: &Path, module: &str) -> bool {
     is_file_exactly(root, &format!("{SCRIPT_DIR}/{module}"))
-}
-
-/// Returns another mounted root whose script folder holds `module`, gone from `root`'s.
-///
-/// Modules are known by name across roots: one another root still provides
-/// is that root's, as an unmount keeps it.
-fn other_provider(mounted: Option<&MountedScripts>, root: &Path, module: &str) -> Option<PathBuf> {
-    let here = crate::asset::root_path::absolute(root);
-    mounted?
-        .roots()
-        .into_iter()
-        .find(|other| *other != here && is_on_disk(other, module))
-}
-
-/// Returns the modules the folder at `rel_path` holds, when it is in the script folder.
-///
-/// A folder moved in reports only itself, and its scripts must compile as
-/// surely as a file saved there.
-fn modules_of_folder(root: &Path, rel_path: &str) -> Vec<String> {
-    let Some(prefix) = module_prefix_of_folder(rel_path) else {
-        return Vec::new();
-    };
-    let folder = root.join(rel_path);
-    if !folder.is_dir() {
-        return Vec::new();
-    }
-    module_names(&folder)
-        .into_iter()
-        .map(|module| format!("{prefix}{module}"))
-        .collect()
 }
 
 /// Returns every module in `imports` that reaches one of `changed`, transitively.
@@ -160,13 +97,6 @@ pub(crate) fn importers_of(
     }
 
     affected
-}
-
-/// Returns the modules under `script_root`, by the path they are known by.
-pub fn module_names(script_root: &Path) -> Vec<String> {
-    modules_under(script_root, None, crate::trust::Trust::Project)
-        .into_keys()
-        .collect()
 }
 
 /// Returns every `.erg` module under `root`, each with what it imports.
@@ -321,4 +251,103 @@ inventory::submit! {
     }
 }
 
+/// Returns whether a change at `rel_path` under `root` can change which Ergon files are misplaced.
+///
+/// True for an Ergon file, a folder that `arrived`, or anything gone: a gone
+/// folder reports only itself and cannot be told from a file (`props.v2/`).
+/// A folder merely modified is what a save inside it reports, and moves nothing.
+fn may_move_a_script(root: &Path, rel_path: &str, arrived: bool) -> bool {
+    is_script_file(rel_path)
+        || !exists_exactly(root, rel_path)
+        || (arrived && root.join(rel_path).is_dir())
+}
+
+/// Returns the prefix of the modules in the folder at `rel_path`, under the assets root.
+///
+/// Empty for the script folder itself, `ai/` for `scripts/ai`; `None` for a
+/// folder outside the script folder.
+fn module_prefix_of_folder(rel_path: &str) -> Option<String> {
+    match rel_path.strip_prefix(SCRIPT_DIR)? {
+        "" => Some(String::new()),
+        rest => rest
+            .strip_prefix('/')
+            .filter(|inside| !inside.is_empty())
+            .map(|inside| format!("{inside}/")),
+    }
+}
+
+/// Returns the recorded modules of `root` that a gone folder at `rel_path` held.
+///
+/// A folder deleted or moved out reports only itself, so its modules are known
+/// from the record alone. Empty unless the folder is in the script folder.
+fn modules_gone_with(mounted: Option<&MountedScripts>, root: &Path, rel_path: &str) -> Vec<String> {
+    let Some(mounted) = mounted else {
+        return Vec::new();
+    };
+    let Some(prefix) = module_prefix_of_folder(rel_path) else {
+        return Vec::new();
+    };
+    if exists_exactly(root, rel_path) {
+        return Vec::new();
+    }
+    mounted
+        .modules_of(root)
+        .into_iter()
+        .filter(|module| module.starts_with(&prefix) && !is_on_disk(root, module))
+        .collect()
+}
+
+/// Returns another mounted root whose script folder holds `module`, gone from `root`'s.
+///
+/// Modules are known by name across roots: one another root still provides
+/// is that root's, as an unmount keeps it.
+fn other_provider(mounted: Option<&MountedScripts>, root: &Path, module: &str) -> Option<PathBuf> {
+    let here = crate::asset::root_path::absolute(root);
+    mounted?
+        .roots()
+        .into_iter()
+        .find(|other| *other != here && is_on_disk(other, module))
+}
+
+/// Returns the modules the folder at `rel_path` holds, when it is in the script folder.
+///
+/// A folder moved in reports only itself, and its scripts must compile as
+/// surely as a file saved there.
+fn modules_of_folder(root: &Path, rel_path: &str) -> Vec<String> {
+    let Some(prefix) = module_prefix_of_folder(rel_path) else {
+        return Vec::new();
+    };
+    let folder = root.join(rel_path);
+    if !folder.is_dir() {
+        return Vec::new();
+    }
+    module_names(&folder)
+        .into_iter()
+        .map(|module| format!("{prefix}{module}"))
+        .collect()
+}
+
 // Pinned by `tests/it/script_pump_files_requests.rs` and `tests/it/project_compiler.rs`.
+
+#[cfg(test)]
+mod tests {
+    use super::module_names;
+
+    /// **A script folder's modules are listed from their names, never read.**
+    ///
+    /// One over every cap is listed, by its forward-slash path; a file of no
+    /// module is not.
+    #[test]
+    fn modules_are_listed_from_their_names() {
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let game = dir.path().join("game");
+        std::fs::create_dir_all(&game).expect("the folder");
+        std::fs::write(dir.path().join("main.erg"), "fn void Main() { }").expect("writes");
+        std::fs::File::create(game.join("huge.erg"))
+            .and_then(|file| file.set_len((64 << 20) + 1))
+            .expect("the module over every cap");
+        std::fs::write(game.join("notes.md"), "# notes").expect("writes");
+
+        assert_eq!(module_names(dir.path()), ["game/huge.erg", "main.erg"]);
+    }
+}

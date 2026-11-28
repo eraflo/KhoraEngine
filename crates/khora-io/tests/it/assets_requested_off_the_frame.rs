@@ -87,9 +87,13 @@ impl Project {
         for (rel, bytes) in files {
             write_file(dir.path(), rel, bytes);
         }
-        let index_bytes = IndexBuilder::new(dir.path())
-            .build_index_bytes()
-            .expect("the project indexes");
+        let index_bytes = IndexBuilder::new(khora_io::trust::FileGuard::new(
+            dir.path(),
+            khora_io::trust::Trust::Project,
+            khora_io::trust::Refusals::detached(),
+        ))
+        .build_index_bytes()
+        .expect("the project indexes");
         let mut service = AssetService::new(
             &index_bytes,
             Box::new(FileLoader::new(dir.path())),
@@ -130,9 +134,13 @@ impl Project {
 
     /// The project indexed as it is on disk now.
     pub(crate) fn index_bytes(&self) -> Vec<u8> {
-        IndexBuilder::new(self.dir.path())
-            .build_index_bytes()
-            .expect("the project indexes")
+        IndexBuilder::new(khora_io::trust::FileGuard::new(
+            self.dir.path(),
+            khora_io::trust::Trust::Project,
+            khora_io::trust::Refusals::detached(),
+        ))
+        .build_index_bytes()
+        .expect("the project indexes")
     }
 
     pub(crate) fn svc(&self) -> MutexGuard<'_, AssetService> {
@@ -422,7 +430,7 @@ fn the_intake_records_the_files_a_container_read_beside_it() {
 
     project
         .svc()
-        .invalidate(&AssetUUID::new_v5("models/tri.bin"));
+        .invalidate_through("models/tri.bin", &AssetUUID::new_v5);
 
     assert!(
         project.svc().take_changes().contains(&file),
@@ -766,7 +774,7 @@ fn a_gltf_whose_buffer_changed_while_its_first_decode_is_in_flight_is_never_inst
     project.write("models/tri.bin", &half_triangle_bin());
     project
         .svc()
-        .invalidate(&AssetUUID::new_v5("models/tri.bin"));
+        .invalidate_through("models/tri.bin", &AssetUUID::new_v5);
     project.land(in_flight);
 
     assert_eq!(
@@ -795,7 +803,7 @@ fn a_failure_decoded_before_its_missing_buffer_appeared_does_not_stick() {
     project.write("models/tri.bin", &bin);
     project
         .svc()
-        .invalidate(&AssetUUID::new_v5("models/tri.bin"));
+        .invalidate_through("models/tri.bin", &AssetUUID::new_v5);
     project.land(in_flight);
 
     assert_eq!(
@@ -809,14 +817,23 @@ fn a_failure_decoded_before_its_missing_buffer_appeared_does_not_stick() {
 /// keep the uuid the registry froze for them, not the one their path gives;
 /// every default decoder and container registered.
 fn reopen_with_frozen_ids(project: &Project, frozen: &[(&str, AssetUUID)]) {
-    let mut registry = khora_io::asset::AssetIdRegistry::load(project.root());
+    let mut registry =
+        khora_io::asset::AssetIdRegistry::load_or_unread(&khora_io::trust::FileGuard::new(
+            project.root(),
+            khora_io::trust::Trust::Project,
+            khora_io::trust::Refusals::detached(),
+        ));
     for (rel, uuid) in frozen {
         registry.freeze(rel, *uuid);
     }
-    let index = IndexBuilder::new(project.root())
-        .with_registry(&registry)
-        .build_index_bytes()
-        .expect("the project indexes");
+    let index = IndexBuilder::new(khora_io::trust::FileGuard::new(
+        project.root(),
+        khora_io::trust::Trust::Project,
+        khora_io::trust::Refusals::detached(),
+    ))
+    .with_registry(&registry)
+    .build_index_bytes()
+    .expect("the project indexes");
     let mut service = AssetService::new(
         &index,
         Box::new(FileLoader::new(project.root())),
@@ -826,28 +843,6 @@ fn reopen_with_frozen_ids(project: &Project, frozen: &[(&str, AssetUUID)]) {
     .expect("an asset service over the project");
     service.register_default_decoders(project.root());
     *project.svc() = service;
-}
-
-/// **A glTF reading a buffer whose uuid the registry froze is never
-/// installed stale when the buffer changes during its first decode**: the
-/// change is announced under the frozen uuid, the decode names the buffer by
-/// its path.
-#[test]
-fn a_gltf_whose_frozen_id_buffer_changed_while_its_decode_is_in_flight_is_never_installed_stale() {
-    let (gltf, bin) = triangle_gltf_with_buffer("tri.bin");
-    let project = Project::new(&[("models/tri.gltf", &gltf), ("models/tri.bin", &bin)]);
-    let frozen_bin = AssetUUID::new_v5("an id frozen for the buffer");
-    reopen_with_frozen_ids(&project, &[("models/tri.bin", frozen_bin)]);
-    let file = AssetUUID::new_v5("models/tri.gltf");
-    let mut world = World::new();
-    assert_eq!(answer(&project.svc().request::<Mesh>(&file)), "Pending");
-    let in_flight = project.decode(&project.filed());
-
-    project.write("models/tri.bin", &half_triangle_bin());
-    project.svc().invalidate(&frozen_bin);
-    project.land(in_flight);
-
-    assert_eq!(settled_second_corner_x(&project, &mut world, &file), 0.5);
 }
 
 /// **A part of a glTF whose uuid the registry froze is never installed

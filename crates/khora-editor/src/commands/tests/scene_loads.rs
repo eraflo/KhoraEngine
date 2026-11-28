@@ -29,7 +29,7 @@ use khora_sdk::editor_ui::{EditorRequest, Transport};
 use khora_sdk::khora_core::agent::gorna::AgentId;
 use khora_sdk::khora_core::agent::Activation;
 use khora_sdk::prelude::{SharedTime, Time};
-use khora_sdk::{Runtime, SceneLoadHub, SerializationGoal};
+use khora_sdk::{Runtime, SceneLoadHub};
 
 use super::super::PLAY_FAMILIES;
 use super::*;
@@ -192,9 +192,9 @@ impl Drop for Folder {
 ///
 /// A scene whose camera's near plane sits at its eye is opened: nothing changes
 /// on the frame it is opened. Once it lands, the world is the scene, what the
-/// editor selected is forgotten, the scene's path is the open one, and the
-/// load's problems name the camera the load brought — a live entity of the new
-/// world.
+/// editor selected is forgotten, the file — of no project — is no file a save
+/// writes to, and the load's problems name the camera the load brought — a
+/// live entity of the new world.
 #[test]
 fn opening_a_scene_lands_its_problems_after_the_commit() {
     let dir = std::env::temp_dir().join(format!(
@@ -220,14 +220,7 @@ fn opening_a_scene_lands_its_problems_after_the_commit() {
             .inner_world_mut()
             .mark_authored(camera)
             .expect("authored");
-        assert!(
-            scene_io::save_scene_to_path_with_goal(
-                &authored,
-                &path.to_string_lossy(),
-                SerializationGoal::EditorInterchange,
-            ),
-            "the scene saves"
-        );
+        crate::tests::scene_files::write_scene(&authored, &path);
     }
     let engine = engine();
     start_editing(&engine.runtime);
@@ -240,7 +233,14 @@ fn opening_a_scene_lands_its_problems_after_the_commit() {
         .selection
         .insert(old);
 
-    open_scene_dispatch(None, &mut world, &state, &engine.hub(), &path);
+    open_scene_dispatch(
+        None,
+        &mut world,
+        &state,
+        &engine.hub(),
+        &crate::project_vfs::ProjectReads::default(),
+        &path,
+    );
 
     assert!(
         world.get_component::<Name>(old).is_some(),
@@ -286,9 +286,8 @@ fn opening_a_scene_lands_its_problems_after_the_commit() {
     let state = state.lock().expect("the editor state");
     assert!(state.selection.is_empty(), "what was selected is forgotten");
     assert_eq!(
-        state.current_scene_path.as_deref(),
-        Some(path.to_string_lossy().as_ref()),
-        "the opened scene is the open one"
+        state.current_scene_path, None,
+        "a scene opened from a file of no project is saved to it"
     );
 }
 
@@ -323,14 +322,7 @@ fn a_new_scene_made_while_a_scene_opens_is_not_replaced_by_it() {
             .inner_world_mut()
             .mark_authored(door)
             .expect("authored");
-        assert!(
-            scene_io::save_scene_to_path_with_goal(
-                &authored,
-                &path.to_string_lossy(),
-                SerializationGoal::EditorInterchange,
-            ),
-            "the scene saves"
-        );
+        crate::tests::scene_files::write_scene(&authored, &path);
     }
     let engine = engine();
     start_editing(&engine.runtime);
@@ -338,7 +330,14 @@ fn a_new_scene_made_while_a_scene_opens_is_not_replaced_by_it() {
     world.spawn((Transform::identity(), Name::new("Old")));
     let state = Arc::new(Mutex::new(EditorState::default()));
 
-    open_scene_dispatch(None, &mut world, &state, &engine.hub(), &path);
+    open_scene_dispatch(
+        None,
+        &mut world,
+        &state,
+        &engine.hub(),
+        &crate::project_vfs::ProjectReads::default(),
+        &path,
+    );
     super::super::apply_new_scene(&mut world, &state);
     assert!(
         names_of(&world).is_empty(),
@@ -354,13 +353,9 @@ fn a_new_scene_made_while_a_scene_opens_is_not_replaced_by_it() {
         "the scene opened before the new one replaced it: {:?}",
         names_of(&world)
     );
-    assert_ne!(
-        state
-            .lock()
-            .expect("the editor state")
-            .current_scene_path
-            .as_deref(),
-        Some(path.to_string_lossy().as_ref()),
+    assert_eq!(
+        state.lock().expect("the editor state").current_scene_path,
+        None,
         "the new scene would be saved over the scene opened before it"
     );
 }
@@ -439,14 +434,7 @@ fn a_new_scene_made_after_an_open_was_prepared_is_not_replaced_by_it() {
             .inner_world_mut()
             .mark_authored(door)
             .expect("authored");
-        assert!(
-            scene_io::save_scene_to_path_with_goal(
-                &authored,
-                &path.to_string_lossy(),
-                SerializationGoal::EditorInterchange,
-            ),
-            "the scene saves"
-        );
+        crate::tests::scene_files::write_scene(&authored, &path);
     }
     let engine = engine();
     start_editing(&engine.runtime);
@@ -455,7 +443,14 @@ fn a_new_scene_made_after_an_open_was_prepared_is_not_replaced_by_it() {
     let state = Arc::new(Mutex::new(EditorState::default()));
 
     // Frame 1: the update opens the scene; the background prepares it.
-    open_scene_dispatch(None, &mut world, &state, &engine.hub(), &path);
+    open_scene_dispatch(
+        None,
+        &mut world,
+        &state,
+        &engine.hub(),
+        &crate::project_vfs::ProjectReads::default(),
+        &path,
+    );
     engine_frame(&engine.runtime, &mut world);
     // Frame 2: before the update, the landed loads (none yet); the update
     // makes a new scene; then the boundary.

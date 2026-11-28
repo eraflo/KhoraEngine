@@ -26,10 +26,10 @@ use super::super::AssetBrowserPanel;
 use crate::tests::requests::file_ops;
 use crate::widgets::tile::AssetTileKind;
 
-fn entry(path: &str, asset_type: &str) -> AssetEntry {
+fn entry(path: &str, kind: &str) -> AssetEntry {
     AssetEntry {
         name: path.rsplit('/').next().unwrap_or(path).to_owned(),
-        asset_type: khora_sdk::khora_core::asset::AssetType::from(asset_type),
+        kind: khora_sdk::khora_core::asset::AssetKind::named(kind).expect("a registered kind"),
         source_path: path.to_owned(),
         uuid: AssetUUID::new_v5(path),
         container: None,
@@ -350,6 +350,49 @@ fn a_committed_name_another_script_holds_gets_a_number() {
     assert_eq!(source, script_source("Player2"));
 }
 
+/// **A script named like a Windows device is previewed and queued under a file name a project can make**, or not at all.
+///
+/// `Aux` is a behaviour name, but `Aux.erg` is no new name
+/// ([`check_new_name`](crate::project_vfs::check_new_name)): the tile must
+/// not offer a file the project refuses to make.
+#[test]
+fn a_script_named_like_a_device_is_offered_only_under_a_name_a_project_makes() {
+    for typed in ["aux", "con", "Nul", "com1"] {
+        let (mut panel, state) = browsing(a_small_project());
+        panel.start_new_script("scripts");
+        type_name(&mut panel, typed);
+
+        if let Some(file) = panel.new_script_file_name() {
+            assert!(
+                crate::project_vfs::check_new_name(&file).is_ok(),
+                "`{typed}` previews `{file}`, which the project refuses to make"
+            );
+        }
+        panel.commit_new_script();
+        if let Some((rel, _)) = queued(&state) {
+            assert!(
+                crate::project_vfs::check_new_name(&rel).is_ok(),
+                "`{typed}` queues `{rel}`, which the project refuses to make"
+            );
+        }
+    }
+}
+
+/// **A name whose file a project does not make is taken, as another script's is**: `aux` gives `Aux2`.
+#[test]
+fn a_device_named_script_gets_a_number_as_a_taken_name_does() {
+    let (mut panel, state) = browsing(a_small_project());
+    panel.start_new_script("scripts");
+    type_name(&mut panel, "aux");
+
+    assert_eq!(panel.new_script_file_name().as_deref(), Some("Aux2.erg"));
+    panel.commit_new_script();
+
+    let (rel, source) = queued(&state).expect("the script is queued");
+    assert_eq!(rel, "scripts/Aux2.erg");
+    assert_eq!(source, script_source("Aux2"));
+}
+
 #[test]
 fn committing_a_name_with_nothing_usable_queues_nothing() {
     let (mut panel, state) = browsing(a_small_project());
@@ -467,12 +510,14 @@ fn a_script_named_like_an_engine_component_still_compiles_in_the_engine() {
     );
 }
 
-/// An asset type is a type of the language: a behaviour may not take its
+/// An asset kind is a type of the language: a behaviour may not take its
 /// name, and `sound` or `material` are names a first script is given.
 #[test]
-fn a_script_named_like_an_asset_type_still_compiles() {
+fn a_script_named_like_an_asset_kind_still_compiles() {
     let mut refused = Vec::new();
-    for typed in ["prefab", "sound", "material", "mesh", "texture", "scene"] {
+    for typed in [
+        "prefab", "sound", "material", "mesh", "texture", "scene", "font",
+    ] {
         let (mut panel, state) = browsing(a_small_project());
         panel.start_new_script("scripts");
         type_name(&mut panel, typed);

@@ -667,42 +667,8 @@ fn a_renderer_without_gpu_timestamps_leaves_the_gpus_load_unknown() {
     assert_eq!(read, None, "unknown, not 0");
 }
 
-/// **One frame stalling the GPU is left out of the governor.**
-///
-/// A renderer times its frames at 13 ms on the GPU, inside the band under the
-/// governor's 15 ms target, except frame 40, which keeps it 120 ms. Each
-/// report carries its own frame's GPU time, raw: the stall is one frame long,
-/// a hitch the governor leaves out, and the multiplier holds at 1.0.
-#[test]
-fn one_frame_stalling_the_gpu_is_left_out_of_the_governor() {
-    let timed = Arc::new(AtomicUsize::new(0));
-    let mut runtime = Runtime::new();
-    runtime.backends.insert(TimedGpu::shared(
-        |frame| Some(if frame == 40 { 120.0 } else { 13.0 }),
-        &timed,
-    ));
-    let mut engine = booted(Workload::new(), runtime);
-
-    let mut lowest = multiplier(&engine);
-    for _ in 0..120 {
-        engine.tick();
-        std::thread::sleep(Duration::from_millis(2));
-        lowest = lowest.min(multiplier(&engine));
-    }
-    let settle = Instant::now() + Duration::from_millis(300);
-    while Instant::now() < settle {
-        std::thread::sleep(Duration::from_millis(10));
-        lowest = lowest.min(multiplier(&engine));
-    }
-    let load = gpu_load(&engine);
-    engine.shutdown();
-
-    assert!(
-        load.is_some_and(|load| load > 0.5),
-        "the frames reached the DCC timed on the GPU: {load:?}"
-    );
-    assert!(
-        lowest >= 1.0,
-        "one GPU stall lowered the multiplier to {lowest}"
-    );
-}
+// One frame stalling the GPU, left out of the governor, is pinned where the
+// frames' times are given rather than measured: the unit tests of the SDK's
+// `gpu_frames` feed its reports to the DCC's governor. Measured, a host frame
+// run late under load before the stall makes the stall load (`khora-control`'s
+// governor tests).

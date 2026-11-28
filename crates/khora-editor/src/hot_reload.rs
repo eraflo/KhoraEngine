@@ -268,7 +268,7 @@ pub fn collect_asset_entries(pvfs: &ProjectVfs) -> Vec<AssetEntry> {
             };
             AssetEntry {
                 name,
-                asset_type: m.asset_type.clone(),
+                kind: m.kind,
                 source_path: rel_str,
                 uuid: m.uuid,
                 container,
@@ -307,7 +307,11 @@ mod tests {
 
         // `rocket` is the renamed `missile`: it keeps the identity it had.
         let frozen = AssetUUID::new_v5("prefabs/missile.kprefab");
-        let mut registry = AssetIdRegistry::load(&root);
+        let mut registry = AssetIdRegistry::load_or_unread(&khora_sdk::trust::FileGuard::new(
+            &root,
+            khora_sdk::trust::Trust::Project,
+            khora_sdk::trust::Refusals::detached(),
+        ));
         registry.freeze("prefabs/rocket.kprefab", frozen);
         registry.save()?;
 
@@ -375,7 +379,7 @@ mod tests {
             let part = of(AssetUUID::sub_asset(ship, label));
             assert_eq!(part.container, Some(ship), "{label} is a part of the file");
             assert_eq!(part.name, label, "a part is named by its label");
-            assert_eq!(part.asset_type, kind, "{label}'s kind");
+            assert_eq!(part.kind.name(), kind, "{label}'s kind");
             assert_eq!(
                 part.source_path, SHIP,
                 "{label} is found at its file's path"

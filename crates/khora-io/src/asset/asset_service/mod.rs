@@ -314,7 +314,7 @@ impl AssetService {
 
         if let AssetSource::Sub { container, label } = source {
             return self
-                .extract_sub::<A>(*container, label, metadata.asset_type.as_str())
+                .extract_sub::<A>(*container, label, metadata.kind.name())
                 .map(|asset| (asset, Some(*container)));
         }
 
@@ -328,7 +328,7 @@ impl AssetService {
         let asset = asset.downcast::<A>().map_err(|_| {
             anyhow!(
                 "Decoder for type '{}' returned a different asset type than requested.",
-                metadata.asset_type
+                metadata.kind
             )
         })?;
         Ok((*asset, None))

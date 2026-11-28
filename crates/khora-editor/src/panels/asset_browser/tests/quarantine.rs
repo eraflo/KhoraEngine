@@ -34,7 +34,7 @@ const HUGE: &str = "textures/huge.png";
 fn entry(path: &str) -> AssetEntry {
     AssetEntry {
         name: path.rsplit('/').next().unwrap_or(path).to_owned(),
-        asset_type: khora_sdk::khora_core::asset::AssetType::Texture,
+        kind: khora_sdk::khora_core::asset::kinds::TEXTURE,
         source_path: path.to_owned(),
         uuid: AssetUUID::new_v5(path),
         container: None,

@@ -19,7 +19,8 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 use super::{
-    size_cap, FileKind, QuarantineKey, Refusals, SecurityReason, SecurityRefusal, Trust, TrustLayer,
+    size_cap, FileKind, ProjectFile, ProjectTrustState, QuarantineKey, ReadError, Refusals,
+    SecurityReason, SecurityRefusal, Trust, TrustLayer,
 };
 use crate::fs::{read_bounded, BoundedReadError};
 
@@ -32,6 +33,9 @@ use crate::fs::{read_bounded, BoundedReadError};
 /// when it was quarantined.
 ///
 /// See the book: concepts/trust.md, "The guard".
+///
+/// A clone reads at the same trust and reports to the same refusals.
+#[derive(Clone)]
 pub struct FileGuard {
     /// The root as it was given: what refusals and the quarantine name files
     /// by.
@@ -55,6 +59,20 @@ impl FileGuard {
         }
     }
 
+    /// Creates a guard reading under `root` at the trust `state` gives it, reporting to `refusals`.
+    ///
+    /// Inside the project `state` names, its trust; outside it, restricted
+    /// ([`ProjectTrustState::trust_of`]).
+    pub fn for_project(
+        root: impl Into<PathBuf>,
+        state: &ProjectTrustState,
+        refusals: Arc<Refusals>,
+    ) -> Self {
+        let root = root.into();
+        let trust = state.trust_of(&root).trust();
+        Self::new(root, trust, refusals)
+    }
+
     /// Returns the root the guard reads under.
     pub fn root(&self) -> &Path {
         &self.root
@@ -70,7 +88,7 @@ impl FileGuard {
         &self.refusals
     }
 
-    /// Returns the bytes of the file `rel` names under the root.
+    /// Returns the bytes of the file `rel` names under the root, capped by its extension's kind.
     ///
     /// # Errors
     ///
@@ -78,22 +96,27 @@ impl FileGuard {
     /// [`ReadError::Io`] when it cannot be read.
     pub fn read(&self, rel: impl AsRef<Path>) -> Result<Vec<u8>, ReadError> {
         let rel = rel.as_ref();
+        self.read_as(rel, FileKind::of_path(rel))
+    }
+
+    /// Returns the bytes of the file `rel` names under the root, capped as a `kind` file.
+    ///
+    /// For a container's external file, read under its container's cap.
+    ///
+    /// # Errors
+    ///
+    /// As [`read`](Self::read).
+    pub fn read_as(&self, rel: impl AsRef<Path>, kind: FileKind) -> Result<Vec<u8>, ReadError> {
+        let rel = rel.as_ref();
+        let real = self.resolve(rel)?;
         let named = self.root.join(rel);
-        if leaves(rel) {
-            return Err(self.refuse(named, self.trust, SecurityReason::Escape, None));
-        }
-        let real_root = self.real_root()?;
-        let real = named.canonicalize().map_err(ReadError::Io)?;
-        if !real.starts_with(real_root) {
-            return Err(self.refuse(named, self.trust, SecurityReason::Escape, None));
-        }
 
         let trust = if downloaded(&real) && !self.trust.is_strict() {
             Trust::Imported
         } else {
             self.trust
         };
-        let cap = size_cap(FileKind::of_path(rel), trust);
+        let cap = size_cap(kind, trust);
         let bytes = match read_bounded(&real, cap) {
             Ok(bytes) => bytes,
             // Keyed by its stamp when its size came from it; one that grew
@@ -121,6 +144,15 @@ impl FileGuard {
         Ok(bytes)
     }
 
+    /// Returns the bytes of `file`, a file of the project whose root is the guard's, capped as its kind.
+    ///
+    /// # Errors
+    ///
+    /// As [`read`](Self::read).
+    pub fn read_project_file(&self, file: ProjectFile) -> Result<Vec<u8>, ReadError> {
+        self.read_as(file.rel_path(), file.kind())
+    }
+
     /// Returns the text of the file `rel` names under the root.
     ///
     /// # Errors
@@ -131,6 +163,53 @@ impl FileGuard {
         String::from_utf8(bytes).map_err(|error| {
             ReadError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, error))
         })
+    }
+
+    /// Returns the real path of the file `rel` names under the root, its links followed.
+    ///
+    /// Nothing is read: a caller choosing which files to read later resolves
+    /// them first. A path leaving the root is refused, and the refusal
+    /// reported, as a read of it would be.
+    ///
+    /// # Errors
+    ///
+    /// [`ReadError::Refused`] when `rel` leaves the root, by `..`, as an
+    /// absolute path or through a link; [`ReadError::Io`] when it or the root
+    /// cannot be resolved, as a missing file.
+    pub fn resolve(&self, rel: impl AsRef<Path>) -> Result<PathBuf, ReadError> {
+        let rel = rel.as_ref();
+        let named = self.root.join(rel);
+        if leaves(rel) {
+            return Err(self.refuse(named, self.trust, SecurityReason::Escape, None));
+        }
+        let real_root = self.real_root()?;
+        let real = named.canonicalize().map_err(ReadError::Io)?;
+        if crate::fs::resolved_within(&real, real_root).is_none() {
+            return Err(self.refuse(named, self.trust, SecurityReason::Escape, None));
+        }
+        Ok(real)
+    }
+
+    /// Refuses the file `rel` names under the root for what it holds, `bytes`, and returns the refusal.
+    ///
+    /// For a reader that read the file through the guard and found it is not
+    /// what it should be. The refusal is reported to the guard's refusals at
+    /// the content layer, and quarantines the file until its content changes:
+    /// a read of it unchanged is refused as quarantined.
+    pub fn refuse_content(
+        &self,
+        rel: impl AsRef<Path>,
+        reason: SecurityReason,
+        bytes: &[u8],
+    ) -> SecurityRefusal {
+        let refusal = SecurityRefusal {
+            path: self.root.join(rel),
+            trust: self.trust,
+            layer: TrustLayer::Content,
+            reason,
+        };
+        (self.refusals).refuse(refusal.clone(), Some(QuarantineKey::of_content(bytes)));
+        refusal
     }
 
     /// Returns the root resolved, resolving it on the first read it resolves for.
@@ -161,25 +240,14 @@ impl FileGuard {
     }
 }
 
-/// Why a [`FileGuard`] read returned no bytes.
-#[derive(Debug)]
-pub enum ReadError {
-    /// The guard refused the file.
-    Refused(SecurityRefusal),
-    /// The file could not be read: missing, or the system refused it.
-    Io(std::io::Error),
-}
-
-impl std::fmt::Display for ReadError {
+impl std::fmt::Debug for FileGuard {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ReadError::Refused(refusal) => write!(f, "refused: {refusal}"),
-            ReadError::Io(error) => write!(f, "{error}"),
-        }
+        f.debug_struct("FileGuard")
+            .field("root", &self.root)
+            .field("trust", &self.trust)
+            .finish_non_exhaustive()
     }
 }
-
-impl std::error::Error for ReadError {}
 
 /// Returns whether `rel`, read as written, leaves the folder it is joined to: an
 /// absolute path, or `..` past its start.

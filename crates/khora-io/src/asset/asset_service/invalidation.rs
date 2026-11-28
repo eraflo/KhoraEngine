@@ -31,10 +31,11 @@ impl AssetService {
     /// Drops the cached copies of `uuid`; returns whether any storage held one.
     ///
     /// Its sub-assets and the containers reading its file are dropped with it,
-    /// each path a container reads matched by the UUID the index gives it: a
-    /// file the index does not list reaches no container, which
-    /// [`invalidate_through`](Self::invalidate_through) resolves. Handles already
-    /// out keep the old value. Each is announced on
+    /// each path a container reads matched by the UUID the index gives it. Only
+    /// an asset has a UUID: a changed file that is no asset (a glTF's `.bin`)
+    /// reaches the containers reading it through
+    /// [`invalidate_through`](Self::invalidate_through), by its path. Handles
+    /// already out keep the old value. Each is announced on
     /// [`changes`](Self::changes) even when nothing was cached: after a failed
     /// reload, the engine still holds the last good copy.
     pub fn invalidate(&mut self, uuid: &AssetUUID) -> bool {

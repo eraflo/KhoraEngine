@@ -16,12 +16,12 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_sdk::editor_ui::{AssetFileOp, EditorRequest};
-use khora_sdk::khora_core::asset::{AssetType, AssetUUID};
+use khora_sdk::editor_ui::{AssetFileOp, EditorRequest, SceneInProject};
+use khora_sdk::khora_core::asset::{kinds, AssetKind, AssetUUID};
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::{AssetSource, EditorState, GameWorld};
 
-use crate::project_vfs::ProjectVfs;
+use crate::project_vfs::{AfterIndex, KeyChange, ProjectVfs};
 use crate::{hot_reload, ops};
 
 /// Recomputes the asset-browser cache (entries + directories) after a file
@@ -43,8 +43,9 @@ fn refresh_asset_cache(pvfs_arc: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mut
 /// Takes the asset browser's queued file operations: new folder or script, rename, move, trash, duplicate.
 ///
 /// They run in the order asked. Each goes through [`ProjectVfs`], which keeps
-/// the identity registry, so references survive renames and moves. A script
-/// written is then revealed.
+/// the identity registry, so references survive renames and moves; what the
+/// editor names by path follows each rename, move and trash
+/// ([`follow_key_changes`]). A script written is then revealed.
 pub fn run_queued_asset_file_ops(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     editor_state: &Arc<Mutex<EditorState>>,
@@ -70,10 +71,17 @@ pub fn run_queued_asset_file_ops(
             log::error!("Asset file op: project VFS mutex poisoned");
             return;
         };
+        let mut changes = Vec::new();
         for op in ops {
-            if let Some(rel) = run_file_op(&mut pvfs, op) {
-                written_scripts.push(rel);
+            match run_file_op(&mut pvfs, op) {
+                Ran::Wrote(rel) => written_scripts.push(rel),
+                Ran::Changed(change) => changes.push(change),
+                Ran::Other => {}
             }
+        }
+        // The project before the state, as every other holder of both locks.
+        if let Ok(mut state) = editor_state.lock() {
+            follow_key_changes(&mut pvfs, &mut state, &changes);
         }
     }
 
@@ -85,10 +93,88 @@ pub fn run_queued_asset_file_ops(
     }
 }
 
-/// Carries out one file operation, logging its outcome.
+/// Makes everything the editor names by an asset key follow `changes`, in order.
 ///
-/// Returns the path of a script written that the index already lists, to reveal now.
-fn run_file_op(pvfs: &mut ProjectVfs, op: AssetFileOp) -> Option<String> {
+/// A key moved is named by its new key, one trashed is forgotten: the scene a
+/// save writes to (trashed, the scene has none, so a save asks where as Save
+/// As does), the scenes still opening, the asset inspected, the requests
+/// queued that name a path, and what waits for a reindex in `pvfs`
+/// ([`ProjectVfs::follow_key_change`]). The holders of a key outside `state`,
+/// the asset browser's shown folder, follow them from
+/// `EditorState::key_changes`, where each is added. The prefab view and the
+/// asset picker read the index again once its generation moves.
+pub(crate) fn follow_key_changes(
+    pvfs: &mut ProjectVfs,
+    state: &mut EditorState,
+    changes: &[KeyChange],
+) {
+    state.key_changes.extend_from_slice(changes);
+    for change in changes {
+        pvfs.follow_key_change(change);
+        let assets = pvfs.assets_root.clone();
+        let follow_scene = |scene: SceneInProject| {
+            if !scene.is_in(&assets) {
+                return Some(scene);
+            }
+            (change.follow(scene.key())).map(|key| SceneInProject::new(scene.assets(), key))
+        };
+        state.current_scene_path = state.current_scene_path.take().and_then(follow_scene);
+        for opening in &mut state.opening {
+            opening.scene = opening.scene.take().and_then(follow_scene);
+        }
+        if let Some(key) = state.inspected_asset_path.take() {
+            state.inspected_asset_path = change.follow(&key);
+            if state.inspected_asset_path.is_none() {
+                state.selected_asset = None;
+            }
+        }
+        let queued = std::mem::take(&mut state.requests);
+        state.requests = queued
+            .into_iter()
+            .filter_map(|request| followed_request(request, change))
+            .collect();
+    }
+}
+
+/// Returns `request` as it reads once `change` is made; `None` when it named a path `change` trashed.
+fn followed_request(request: EditorRequest, change: &KeyChange) -> Option<EditorRequest> {
+    match request {
+        EditorRequest::RevealAsset { path } => change
+            .follow(&path)
+            .map(|path| EditorRequest::RevealAsset { path }),
+        EditorRequest::SaveAsPrefabAt { entity, path } => {
+            // A folder's path ends in `/`: the prefab takes the entity's name.
+            let (key, slash) = match path.strip_suffix('/') {
+                Some(folder) => (folder, "/"),
+                None => (path.as_str(), ""),
+            };
+            match change.follow(key) {
+                Some(key) => Some(EditorRequest::SaveAsPrefabAt {
+                    entity,
+                    path: format!("{key}{slash}"),
+                }),
+                None => {
+                    log::warn!("The prefab is not saved: '{path}' went to the recycle bin");
+                    None
+                }
+            }
+        }
+        other => Some(other),
+    }
+}
+
+/// What one file operation did, for the editor to follow.
+enum Ran {
+    /// It wrote a script the index already lists, to reveal now.
+    Wrote(String),
+    /// It moved or trashed what the editor may name by its key.
+    Changed(KeyChange),
+    /// Nothing the editor follows: a folder or a copy made, or a failure.
+    Other,
+}
+
+/// Carries out one file operation, logging its outcome, and returns what the editor follows of it.
+fn run_file_op(pvfs: &mut ProjectVfs, op: AssetFileOp) -> Ran {
     match op {
         AssetFileOp::CreateFolder { path } => match pvfs.create_folder(&path) {
             Ok(()) => log::info!("Created folder '{path}'"),
@@ -100,26 +186,33 @@ fn run_file_op(pvfs: &mut ProjectVfs, op: AssetFileOp) -> Option<String> {
                     log::info!("Created script '{path}'");
                     // Revealed once the index lists it: at once when the
                     // project was indexed on the frame.
-                    return pvfs
-                        .after_index(crate::project_vfs::AfterIndex::Reveal(path))
-                        .and_then(|now| match now {
-                            crate::project_vfs::AfterIndex::Reveal(rel) => Some(rel),
-                            _ => None,
-                        });
+                    let now = pvfs.after_index(AfterIndex::Reveal(path));
+                    if let Some(AfterIndex::Reveal(rel)) = now {
+                        return Ran::Wrote(rel);
+                    }
                 }
                 Err(e) => log::error!("Create script '{path}' failed: {e:#}"),
             }
         }
         AssetFileOp::Rename { from, to } => match pvfs.rename_asset(&from, &to) {
-            Ok(()) => log::info!("Renamed '{from}' → '{to}'"),
+            Ok(change) => {
+                log::info!("Renamed '{from}' → '{to}'");
+                return Ran::Changed(change);
+            }
             Err(e) => log::error!("Rename '{from}' → '{to}' failed: {e:#}"),
         },
         AssetFileOp::Move { path, into } => match pvfs.move_asset(&path, &into) {
-            Ok(()) => log::info!("Moved '{path}' → '{into}/'"),
+            Ok(change) => {
+                log::info!("Moved '{path}' → '{into}/'");
+                return Ran::Changed(change);
+            }
             Err(e) => log::error!("Move '{path}' → '{into}' failed: {e:#}"),
         },
         AssetFileOp::Trash { path } => match pvfs.delete_to_trash(&path) {
-            Ok(()) => log::info!("Moved '{path}' to the recycle bin"),
+            Ok(change) => {
+                log::info!("Moved '{path}' to the recycle bin");
+                return Ran::Changed(change);
+            }
             Err(e) => log::error!("Delete '{path}' failed: {e:#}"),
         },
         AssetFileOp::Duplicate { path } => match pvfs.duplicate_asset(&path) {
@@ -127,7 +220,7 @@ fn run_file_op(pvfs: &mut ProjectVfs, op: AssetFileOp) -> Option<String> {
             Err(e) => log::error!("Duplicate '{path}' failed: {e:#}"),
         },
     }
-    None
+    Ran::Other
 }
 
 /// Takes the queued [`EditorRequest::SpawnMesh`]s: spawns a `MeshRef::Asset` entity at each drop.
@@ -169,8 +262,8 @@ pub fn spawn_queued_meshes(
 
 /// An asset of the open project, as the editor names and dispatches it.
 struct IndexedAsset {
-    /// Its index type.
-    asset_type: AssetType,
+    /// Its kind.
+    kind: AssetKind,
     /// The file's stem, followed by the part's label for a part of a file
     /// (`ship mesh1/prim0`).
     display_name: String,
@@ -194,7 +287,7 @@ fn indexed_asset(
         _ => stem,
     };
     Some(IndexedAsset {
-        asset_type: metadata.asset_type.clone(),
+        kind: metadata.kind,
         display_name,
     })
 }
@@ -236,12 +329,12 @@ fn assign_dropped(
         return;
     };
     let name = &asset.display_name;
-    match &asset.asset_type {
-        AssetType::Material => {
+    match asset.kind {
+        kinds::MATERIAL => {
             world.add_component(entity, MaterialRef::Asset(uuid));
             log::info!("Assigned material '{name}' to entity {entity:?}");
         }
-        AssetType::Texture => {
+        kinds::TEXTURE => {
             let std_mat = khora_sdk::prelude::materials::StandardMaterial {
                 base_color_texture: Some(uuid),
                 ..Default::default()

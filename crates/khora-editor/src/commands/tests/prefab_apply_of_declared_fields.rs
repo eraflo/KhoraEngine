@@ -32,7 +32,7 @@ use khora_sdk::{MetricsRegistry, SceneFile};
 
 use super::*;
 use crate::ops::prefab_overrides::inspect_prefab;
-use crate::project_vfs::ProjectPrefabs;
+use crate::project_prefabs::ProjectPrefabs;
 
 const POST: &str = "prefabs/post.kprefab";
 

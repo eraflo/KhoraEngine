@@ -34,9 +34,13 @@ it every part's.
 ## The pipeline
 
 The VFS's table is the **asset index** (`AssetIndex`): for each uuid, its
-**metadata** (`AssetMetadata`) — its type (`AssetType`, from its extension), where
-its bytes are (`AssetSource`), its direct dependencies and its tags. Its bytes are
-in one of three places:
+**metadata** (`AssetMetadata`) — its **kind** (`AssetKind`, from its extension), where
+its bytes are (`AssetSource`), its direct dependencies and its tags. A kind is a
+registered name, the one word the index, Ergon and the editor share: `mesh`,
+`material`, `texture`, `sound`, `font`, `prefab`, `scene`, `shader`, `script`. A
+game adds one with `register_asset_kind!`. A file of no kind is not indexed: a
+README, or a glTF's `.bin`, which is its glTF's **external file**, read by the
+glTF itself. Its bytes are in one of three places:
 
 | `AssetSource` | Where |
 |---|---|

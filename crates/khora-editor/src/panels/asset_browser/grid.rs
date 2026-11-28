@@ -17,7 +17,7 @@
 use std::collections::HashSet;
 
 use khora_sdk::editor_ui::*;
-use khora_sdk::khora_core::asset::{AssetType, AssetUUID};
+use khora_sdk::khora_core::asset::{kinds, AssetUUID};
 use khora_sdk::khora_core::problems::Problem;
 
 use crate::drag_payload::{pack_asset_drag, payload_is_entity, unpack_entity};
@@ -306,7 +306,7 @@ impl AssetBrowserPanel {
             }
             let idx = *orig_idx;
             let rel = asset.rel_path.clone();
-            let is_material = asset.asset_type == AssetType::Material;
+            let is_material = asset.kind == kinds::MATERIAL;
             let (uuid, name) = (asset.uuid, asset.name.clone());
             let file_ops = asset.container.is_none();
             ui.context_menu_last(&mut |menu| {
@@ -473,12 +473,19 @@ impl AssetBrowserPanel {
                         let edited = self.rename_buffer.trim().to_string();
                         if !edited.is_empty() {
                             let final_name = ensure_extension(&edited, &asset.name);
+                            // The name typed is new: the folder it is in is not.
+                            let checked = crate::project_vfs::check_new_name(&final_name);
                             let new_rel = if asset.folder.is_empty() {
                                 final_name
                             } else {
                                 format!("{}/{}", asset.folder, final_name)
                             };
-                            if new_rel != asset.rel_path {
+                            if let Err(refused) = checked {
+                                log::warn!(
+                                    "Asset browser: '{}' is not renamed: {refused}",
+                                    asset.rel_path
+                                );
+                            } else if new_rel != asset.rel_path {
                                 if let Ok(mut state) = self.state.lock() {
                                     state.push_request(EditorRequest::AssetFile(
                                         AssetFileOp::Rename {

@@ -34,7 +34,7 @@ fn activating_a_prefab_queues_its_spawn_by_identity() {
         project_folder: Some("project".to_owned()),
         asset_entries: vec![AssetEntry {
             name: "rocket.kprefab".to_owned(),
-            asset_type: khora_sdk::khora_core::asset::AssetType::Prefab,
+            kind: khora_sdk::khora_core::asset::kinds::PREFAB,
             source_path: ROCKET.to_owned(),
             uuid,
             container: None,

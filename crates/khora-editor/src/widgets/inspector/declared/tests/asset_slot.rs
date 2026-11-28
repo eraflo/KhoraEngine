@@ -22,7 +22,7 @@ use khora_sdk::editor_ui::{
     AssetEntry, DeclaredCard, DeclaredCardKind, DeclaredFieldView, EditorState, Icon,
     InspectedEntity, PropertyEdit, UiTheme,
 };
-use khora_sdk::khora_core::asset::{AssetKind, AssetUUID};
+use khora_sdk::khora_core::asset::{kinds, AssetKind, AssetUUID};
 use khora_sdk::khora_core::script::{ErgonType, FieldHints, ScriptValue};
 use khora_sdk::khora_data::ecs::SemanticDomain;
 use khora_sdk::prelude::ecs::EntityId;
@@ -44,12 +44,11 @@ const BULLET: usize = 0;
 const CRATE: usize = 1;
 const ROCKET: usize = 2;
 
-/// An entry of the asset browser for the file at `path`, of the index's
-/// `asset_type`.
-fn entry(path: &str, asset_type: &str) -> AssetEntry {
+/// An entry of the asset browser for the file at `path`, of the kind named `kind`.
+fn entry(path: &str, kind: &str) -> AssetEntry {
     AssetEntry {
         name: path.rsplit('/').next().unwrap_or(path).to_owned(),
-        asset_type: khora_sdk::khora_core::asset::AssetType::from(asset_type),
+        kind: khora_sdk::khora_core::asset::AssetKind::named(kind).expect("a registered kind"),
         source_path: path.to_owned(),
         uuid: AssetUUID::new_v5(path),
         container: None,
@@ -63,7 +62,7 @@ fn project() -> Vec<AssetEntry> {
         entry("prefabs/bullet.kprefab", "prefab"),
         entry("meshes/crate.obj", "mesh"),
         entry("prefabs/weapons/rocket.kprefab", "prefab"),
-        entry("sounds/alarm.wav", "audio"),
+        entry("sounds/alarm.wav", "sound"),
         entry("anvil.kprefab", "prefab"),
         entry("scripts/guard.erg", "script"),
     ]
@@ -158,7 +157,7 @@ fn an_asset_no_entry_holds_reads_missing_and_its_first_eight_hex_digits() {
 fn a_read_asset_value_names_its_asset_or_says_it_is_missing() {
     let names = HashMap::new();
     let assets = project();
-    let prefab = asset(AssetKind::Prefab);
+    let prefab = asset(kinds::PREFAB);
     assert_eq!(
         value_text(&ScriptValue::Asset(uuid(BULLET)), &prefab, &names, &assets),
         "bullet"
@@ -203,7 +202,7 @@ fn a_read_only_asset_row_names_its_asset() {
     render_field(
         &mut ui,
         "bullet",
-        &optional(asset(AssetKind::Prefab)),
+        &optional(asset(kinds::PREFAB)),
         &mut value,
         true,
         &cx,
@@ -227,25 +226,28 @@ fn a_picker_offers_the_entries_of_its_kind_sorted_by_name() {
             .collect()
     };
     assert_eq!(
-        names(AssetKind::Prefab),
+        names(kinds::PREFAB),
         ["anvil.kprefab", "bullet.kprefab", "rocket.kprefab"]
     );
     assert_eq!(
-        names(AssetKind::Sound),
+        names(kinds::SOUND),
         ["alarm.wav"],
-        "a sound is the index's `audio`"
+        "a sound is the index's `sound`"
     );
-    assert_eq!(names(AssetKind::Mesh), ["crate.obj"]);
-    assert!(names(AssetKind::Scene).is_empty());
+    assert_eq!(names(kinds::MESH), ["crate.obj"]);
+    assert!(names(kinds::SCENE).is_empty());
 }
 
 #[test]
 fn an_entry_of_no_asset_kind_is_offered_by_no_picker() {
     let assets = project();
-    for kind in AssetKind::ALL {
+    for kind in AssetKind::all()
+        .into_iter()
+        .filter(|kind| kind.ergon_name().is_some())
+    {
         let offered = picker_entries(kind, &assets);
         assert!(
-            offered.iter().all(|entry| entry.asset_type != "script"),
+            offered.iter().all(|entry| entry.kind != kinds::SCRIPT),
             "{kind:?} offers a script: {offered:?}"
         );
     }
@@ -258,7 +260,7 @@ fn a_held_asset_slot_shows_its_kinds_icon_its_name_and_its_folder() {
     let theme = UiTheme::default();
     let mut value = ScriptValue::Asset(uuid(BULLET));
     let (ui, changed) = draw(
-        &optional(asset(AssetKind::Prefab)),
+        &optional(asset(kinds::PREFAB)),
         &mut value,
         Input::default(),
     );
@@ -288,11 +290,7 @@ fn a_held_asset_slot_shows_its_kinds_icon_its_name_and_its_folder() {
 fn an_empty_asset_slot_asks_for_an_asset_of_its_kind() {
     let theme = UiTheme::default();
     let mut value = ScriptValue::Null;
-    let (ui, _) = draw(
-        &optional(asset(AssetKind::Sound)),
-        &mut value,
-        Input::default(),
-    );
+    let (ui, _) = draw(&optional(asset(kinds::SOUND)), &mut value, Input::default());
     assert_slot(&ui, Icon::Music);
     assert!(
         ui.texts()
@@ -307,7 +305,7 @@ fn an_empty_asset_slot_asks_for_an_asset_of_its_kind() {
 fn a_slot_holding_an_asset_gone_from_the_project_says_so_in_amber() {
     let theme = UiTheme::default();
     let mut value = ScriptValue::Asset(gone());
-    let (ui, changed) = draw(&asset(AssetKind::Prefab), &mut value, Input::default());
+    let (ui, changed) = draw(&asset(kinds::PREFAB), &mut value, Input::default());
     assert!(!changed);
     assert_eq!(value, ScriptValue::Asset(gone()), "showing it keeps it");
     assert!(
@@ -366,8 +364,8 @@ fn pointing() -> Input {
 #[test]
 fn dropping_an_asset_of_the_slots_kind_writes_its_identity() {
     for (ty, held) in [
-        (optional(asset(AssetKind::Prefab)), ScriptValue::Null),
-        (asset(AssetKind::Prefab), ScriptValue::Asset(uuid(BULLET))),
+        (optional(asset(kinds::PREFAB)), ScriptValue::Null),
+        (asset(kinds::PREFAB), ScriptValue::Asset(uuid(BULLET))),
     ] {
         let mut value = held.clone();
         let (_, changed) = draw(&ty, &mut value, dropping(dragged(ROCKET)));
@@ -384,7 +382,7 @@ fn dropping_an_asset_of_the_slots_kind_writes_its_identity() {
 fn dropping_an_asset_of_another_kind_is_taken_and_changes_nothing() {
     let mut value = ScriptValue::Asset(uuid(BULLET));
     let (ui, changed) = draw(
-        &optional(asset(AssetKind::Prefab)),
+        &optional(asset(kinds::PREFAB)),
         &mut value,
         dropping(dragged(CRATE)),
     );
@@ -405,7 +403,7 @@ fn dropping_what_is_no_asset_of_this_list_changes_nothing() {
     ] {
         let mut value = ScriptValue::Asset(uuid(BULLET));
         let (ui, changed) = draw(
-            &optional(asset(AssetKind::Prefab)),
+            &optional(asset(kinds::PREFAB)),
             &mut value,
             dropping(payload),
         );
@@ -417,7 +415,7 @@ fn dropping_what_is_no_asset_of_this_list_changes_nothing() {
 
 #[test]
 fn a_drag_of_the_slots_kind_over_it_lights_it() {
-    let ty = optional(asset(AssetKind::Prefab));
+    let ty = optional(asset(kinds::PREFAB));
     let (idle, _) = draw(&ty, &mut ScriptValue::Null, pointing());
     let (lit, _) = draw(&ty, &mut ScriptValue::Null, hovering(dragged(ROCKET)));
     assert!(
@@ -438,7 +436,7 @@ fn a_drag_of_the_slots_kind_over_it_lights_it() {
 /// slot's rule: no light, no message.
 #[test]
 fn a_drag_of_anything_else_over_an_asset_slot_leaves_it_as_it_was() {
-    let ty = optional(asset(AssetKind::Prefab));
+    let ty = optional(asset(kinds::PREFAB));
     let (idle, _) = draw(&ty, &mut ScriptValue::Null, pointing());
     let (lit, _) = draw(&ty, &mut ScriptValue::Null, hovering(dragged(ROCKET)));
     assert_ne!(
@@ -472,7 +470,7 @@ fn a_drag_of_anything_else_over_an_asset_slot_leaves_it_as_it_was() {
 fn set_to_none_clears_a_held_optional_asset() {
     let mut value = ScriptValue::Asset(uuid(BULLET));
     let (ui, changed) = draw(
-        &optional(asset(AssetKind::Prefab)),
+        &optional(asset(kinds::PREFAB)),
         &mut value,
         Input {
             context_menu_open: true,
@@ -492,7 +490,7 @@ fn set_to_none_is_offered_only_for_a_held_optional_asset() {
         ..Input::default()
     };
     let (held, _) = draw(
-        &optional(asset(AssetKind::Prefab)),
+        &optional(asset(kinds::PREFAB)),
         &mut ScriptValue::Asset(uuid(BULLET)),
         menu(),
     );
@@ -503,8 +501,8 @@ fn set_to_none_is_offered_only_for_a_held_optional_asset() {
         held.buttons()
     );
     for (ty, value) in [
-        (asset(AssetKind::Prefab), ScriptValue::Asset(uuid(BULLET))),
-        (optional(asset(AssetKind::Prefab)), ScriptValue::Null),
+        (asset(kinds::PREFAB), ScriptValue::Asset(uuid(BULLET))),
+        (optional(asset(kinds::PREFAB)), ScriptValue::Null),
     ] {
         let mut value = value;
         let (ui, _) = draw(&ty, &mut value, menu());
@@ -523,7 +521,7 @@ fn the_context_menu_reveals_only_an_asset_still_in_the_project() {
         context_menu_open: true,
         ..Input::default()
     };
-    let ty = optional(asset(AssetKind::Prefab));
+    let ty = optional(asset(kinds::PREFAB));
     let (held, _) = draw(&ty, &mut ScriptValue::Asset(uuid(BULLET)), menu());
     assert!(
         held.buttons().iter().any(|text| text == "Reveal in Assets"),
@@ -543,7 +541,7 @@ fn the_context_menu_reveals_only_an_asset_still_in_the_project() {
 
 #[test]
 fn the_context_menu_offers_to_choose_another_asset() {
-    let ty = optional(asset(AssetKind::Prefab));
+    let ty = optional(asset(kinds::PREFAB));
     for value in [ScriptValue::Asset(uuid(BULLET)), ScriptValue::Null] {
         let mut shown = value.clone();
         let (ui, _) = draw(
@@ -568,7 +566,7 @@ fn the_context_menu_offers_to_choose_another_asset() {
 fn an_empty_optional_asset_draws_no_set_button_and_changes_nothing_on_its_own() {
     let mut value = ScriptValue::Null;
     let (ui, changed) = draw(
-        &optional(asset(AssetKind::Prefab)),
+        &optional(asset(kinds::PREFAB)),
         &mut value,
         Input {
             clicks: clicking(&["Set"]),
@@ -589,8 +587,8 @@ fn an_empty_optional_asset_draws_no_set_button_and_changes_nothing_on_its_own() 
 #[test]
 fn picking_an_asset_writes_its_identity() {
     for (ty, held) in [
-        (asset(AssetKind::Prefab), ScriptValue::Asset(uuid(BULLET))),
-        (optional(asset(AssetKind::Prefab)), ScriptValue::Null),
+        (asset(kinds::PREFAB), ScriptValue::Asset(uuid(BULLET))),
+        (optional(asset(kinds::PREFAB)), ScriptValue::Null),
     ] {
         let mut value = held.clone();
         let (_, changed) = draw(
@@ -614,7 +612,7 @@ fn picking_an_asset_writes_its_identity() {
 #[test]
 fn the_picker_offers_the_slots_kind_only_sorted_by_name() {
     let (ui, changed) = draw(
-        &optional(asset(AssetKind::Prefab)),
+        &optional(asset(kinds::PREFAB)),
         &mut ScriptValue::Null,
         Input {
             click_menu_open: true,
@@ -661,7 +659,7 @@ fn a_picker_of_more_than_eight_entries_has_a_search_field() {
     render_field(
         &mut ui,
         "bullet",
-        &optional(asset(AssetKind::Prefab)),
+        &optional(asset(kinds::PREFAB)),
         &mut value,
         false,
         &cx,
@@ -673,7 +671,7 @@ fn a_picker_of_more_than_eight_entries_has_a_search_field() {
 
 #[test]
 fn adding_an_item_to_an_asset_list_pushes_only_a_picked_asset() {
-    let list = ErgonType::Array(Box::new(asset(AssetKind::Prefab)));
+    let list = ErgonType::Array(Box::new(asset(kinds::PREFAB)));
 
     // The add button opens the picker: the click itself adds nothing.
     let mut value = ScriptValue::Array(Vec::new());
@@ -751,7 +749,7 @@ fn dropping_an_asset_on_a_cards_slot_edits_its_field() {
             orphaned: false,
             fields: vec![DeclaredFieldView {
                 name: "bullet".to_owned(),
-                ty: optional(asset(AssetKind::Prefab)),
+                ty: optional(asset(kinds::PREFAB)),
                 value: ScriptValue::Null,
                 default: ScriptValue::Null,
                 hints: FieldHints::default(),
@@ -851,7 +849,7 @@ fn arsenal() -> Vec<AssetEntry> {
     .iter()
     .map(|name| entry(&format!("prefabs/{name}.kprefab"), "prefab"))
     .collect();
-    assets.push(entry("sounds/alarm.wav", "audio"));
+    assets.push(entry("sounds/alarm.wav", "sound"));
     assets
 }
 
@@ -859,7 +857,7 @@ fn arsenal() -> Vec<AssetEntry> {
 fn reveal_in_assets_asks_the_browser_for_the_held_assets_path() {
     let inspected = armory(vec![(
         "bullet",
-        optional(asset(AssetKind::Prefab)),
+        optional(asset(kinds::PREFAB)),
         ScriptValue::Asset(uuid(ROCKET)),
     )]);
     let mut state = EditorState {
@@ -888,7 +886,7 @@ fn reveal_in_assets_names_the_path_with_forward_slashes() {
     assets[ROCKET].source_path = "prefabs\\weapons\\rocket.kprefab".to_owned();
     let inspected = armory(vec![(
         "bullet",
-        asset(AssetKind::Prefab),
+        asset(kinds::PREFAB),
         ScriptValue::Asset(uuid(ROCKET)),
     )]);
     let mut state = EditorState {
@@ -912,7 +910,7 @@ fn reveal_in_assets_names_the_path_with_forward_slashes() {
 fn a_picker_shows_only_the_entries_its_query_matches_whatever_their_case() {
     let inspected = armory(vec![(
         "bullet",
-        optional(asset(AssetKind::Prefab)),
+        optional(asset(kinds::PREFAB)),
         ScriptValue::Null,
     )]);
     let mut state = EditorState {
@@ -947,7 +945,7 @@ fn a_picker_shows_only_the_entries_its_query_matches_whatever_their_case() {
 fn a_pickers_query_outlives_the_frame_until_a_pick_clears_it() {
     let inspected = armory(vec![(
         "bullet",
-        optional(asset(AssetKind::Prefab)),
+        optional(asset(kinds::PREFAB)),
         ScriptValue::Null,
     )]);
     let mut state = EditorState {
@@ -997,7 +995,7 @@ fn a_pickers_query_outlives_the_frame_until_a_pick_clears_it() {
 fn a_query_left_by_a_dismissed_picker_hides_nothing_from_a_picker_without_search() {
     let inspected = armory(vec![(
         "alarm",
-        optional(asset(AssetKind::Sound)),
+        optional(asset(kinds::SOUND)),
         ScriptValue::Null,
     )]);
     let mut state = EditorState {
@@ -1028,7 +1026,7 @@ fn a_query_left_by_a_dismissed_picker_hides_nothing_from_a_picker_without_search
 fn choose_in_the_context_menu_picks_an_asset() {
     let mut value = ScriptValue::Asset(uuid(BULLET));
     let (_, changed) = draw(
-        &optional(asset(AssetKind::Prefab)),
+        &optional(asset(kinds::PREFAB)),
         &mut value,
         Input {
             context_menu_open: true,
@@ -1051,7 +1049,7 @@ fn picking_or_dropping_the_asset_already_held_is_no_change() {
         dropping(dragged(BULLET)),
     ] {
         let mut value = ScriptValue::Asset(uuid(BULLET));
-        let (_, changed) = draw(&asset(AssetKind::Prefab), &mut value, input);
+        let (_, changed) = draw(&asset(kinds::PREFAB), &mut value, input);
         assert_eq!(value, ScriptValue::Asset(uuid(BULLET)));
         assert!(!changed);
     }
@@ -1063,10 +1061,7 @@ fn picking_or_dropping_the_asset_already_held_is_no_change() {
 fn a_slot_within_a_struct_or_a_list_takes_a_drop_of_its_kind() {
     let loadout = ErgonType::Struct {
         name: "Loadout".to_owned(),
-        fields: Some(vec![(
-            "shell".to_owned(),
-            optional(asset(AssetKind::Prefab)),
-        )]),
+        fields: Some(vec![("shell".to_owned(), optional(asset(kinds::PREFAB)))]),
     };
     let mut value = ScriptValue::Struct(vec![("shell".to_owned(), ScriptValue::Null)]);
     let (_, changed) = draw(&loadout, &mut value, dropping(dragged(ROCKET)));
@@ -1076,7 +1071,7 @@ fn a_slot_within_a_struct_or_a_list_takes_a_drop_of_its_kind() {
     );
     assert!(changed);
 
-    let list = ErgonType::Array(Box::new(asset(AssetKind::Prefab)));
+    let list = ErgonType::Array(Box::new(asset(kinds::PREFAB)));
     let mut value = ScriptValue::Array(vec![ScriptValue::Asset(uuid(BULLET))]);
     let (_, changed) = draw(&list, &mut value, dropping(dragged(ROCKET)));
     assert_eq!(
@@ -1113,7 +1108,7 @@ fn a_picker_tells_apart_two_assets_of_one_name_by_their_folders() {
     render_field(
         &mut ui,
         "bullet",
-        &optional(asset(AssetKind::Prefab)),
+        &optional(asset(kinds::PREFAB)),
         &mut ScriptValue::Null,
         false,
         &cx,
@@ -1137,7 +1132,7 @@ fn a_picker_tells_apart_two_assets_of_one_name_by_their_folders() {
 fn choose_lists_every_entry_of_its_kind_with_no_search_field() {
     let inspected = armory(vec![(
         "bullet",
-        optional(asset(AssetKind::Prefab)),
+        optional(asset(kinds::PREFAB)),
         ScriptValue::Null,
     )]);
     let mut state = EditorState {
@@ -1178,7 +1173,7 @@ fn choose_lists_every_entry_of_its_kind_with_no_search_field() {
 fn the_add_item_picker_of_a_long_list_searches_and_pushes_the_pick() {
     let inspected = armory(vec![(
         "arsenal",
-        ErgonType::Array(Box::new(asset(AssetKind::Prefab))),
+        ErgonType::Array(Box::new(asset(kinds::PREFAB))),
         ScriptValue::Array(Vec::new()),
     )]);
     let mut state = EditorState {
@@ -1243,7 +1238,7 @@ fn gallery(count: usize) -> Vec<AssetEntry> {
 fn a_long_picker_scrolls_its_entries_in_either_menu() {
     let inspected = armory(vec![(
         "skin",
-        optional(asset(AssetKind::Texture)),
+        optional(asset(kinds::TEXTURE)),
         ScriptValue::Null,
     )]);
     for (menu, input) in [

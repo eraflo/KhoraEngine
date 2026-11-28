@@ -15,13 +15,13 @@ contract.
 <name>/
 ├── project.json           # project descriptor (see "project.json schema")
 ├── README.md
-├── .gitignore             # target/, IDE folders, OS and editor scratch files
+├── .gitignore             # target/, the lock files (.khora/*.lock, dist/*.lock), IDE folders, OS and editor scratch files
 ├── src/                   # native Rust extensions (created empty; see tier 2)
 └── assets/                # runtime data (loaded by the engine)
     ├── scenes/            # *.kscene
     ├── textures/          # png, jpg, jpeg, tga, bmp, hdr
     ├── meshes/            # gltf, glb, obj, fbx
-    ├── audio/             # wav, ogg, mp3, flac
+    ├── sounds/            # wav, ogg, mp3, flac
     ├── shaders/           # wgsl, hlsl, glsl
     └── scripts/           # Ergon modules, **/*.erg — the only folder compiled; main.erg is seeded
 ```
@@ -121,30 +121,37 @@ so older project files keep working.
 
 ## Asset extensions
 
-A file's asset type comes from its extension. The one table is
-`asset_type_for_extension` in
+A file's asset kind comes from its extension. The one table is
+`kind_for_extension` in
 [`crates/khora-io/src/asset/extensions.rs`](https://github.com/eraflo/KhoraEngine/blob/main/crates/khora-io/src/asset/extensions.rs)
 — it is the engine's, not the editor's, so a packed build classifies identically.
 The index, the asset browser, the decoders and the size caps of the trust guard
 all read it.
 
-| Type | Recognised extensions |
+| Kind | Recognised extensions |
 |------|-----------------------|
 | Mesh | `.gltf`, `.glb`, `.obj`, `.fbx` |
 | Texture | `.png`, `.jpg`, `.jpeg`, `.tga`, `.bmp`, `.hdr`, `.gif`, `.webp`, `.tif`, `.tiff`, `.dds`, `.exr` |
-| Audio | `.wav`, `.ogg`, `.mp3`, `.flac` |
+| Sound | `.wav`, `.ogg`, `.mp3`, `.flac` |
 | Shader | `.wgsl`, `.hlsl`, `.glsl` |
 | Material | `.mat`, `.kmat` |
 | Scene | `.scene`, `.kscene` |
 | Font | `.ttf`, `.otf` |
 | Script | `.erg` (Ergon), `.kscript` |
 | Prefab | `.kprefab` |
-| Buffer (`bin`) | `.bin`, a glTF's binary buffer |
 
-An unknown extension is **not** discarded and not lumped together: the file is
-indexed under its own lowercased extension as the type tag, so it shows up in the
-browser and a decoder can be added later without re-indexing. Only a file with no
-extension at all gets the generic `blob` tag.
+An extension the table does not list is the registered kind named like it,
+lower-cased, when that kind has no row in the table: a game that declares the
+kind `heightmap` (`register_asset_kind!`) indexes its `.heightmap` files, while
+an engine kind is reached only by its listed extensions (an Ogre `.mesh` or a
+Unity `.shader` is no asset). A kind is named in lowercase ASCII, so its files
+can reach it, and never like an extension the table lists or one of no asset
+(`.bin`, `.md`, scratch and backup files): the engine refuses such a kind at
+boot, naming every one. A file of no kind — a README, a file with no
+extension — is not indexed, nor are the files the operating system writes into
+any folder (`Thumbs.db`, `desktop.ini`, `.DS_Store`), whatever their extension
+names. A glTF's `.bin` is no asset either: it is its glTF's
+external file, read by the glTF under the glTF's size cap, and packed in the pack's external-files table.
 
 ## Lifecycle
 

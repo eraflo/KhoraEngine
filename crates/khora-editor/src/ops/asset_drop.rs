@@ -19,7 +19,7 @@
 //! identity: a path cannot name a part inside a file.
 
 use khora_sdk::editor_ui::*;
-use khora_sdk::khora_core::asset::{AssetType, AssetUUID};
+use khora_sdk::khora_core::asset::{kinds, AssetUUID};
 
 /// The request a dropped asset makes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,7 +33,7 @@ pub enum AssetDrop {
     Assign(AssetUUID),
     /// Open the scene file at this path (relative to `assets/`).
     Scene(String),
-    /// Nothing: the asset's type cannot be dropped.
+    /// Nothing: the asset's kind cannot be dropped.
     Ignored,
 }
 
@@ -43,8 +43,8 @@ pub enum AssetDrop {
 /// with their materials; any other mesh — an OBJ, a glTF primitive part, a
 /// glTF whose scene is not listed — spawns as one mesh.
 pub(crate) fn asset_drop(entries: &[AssetEntry], entry: &AssetEntry) -> AssetDrop {
-    match &entry.asset_type {
-        AssetType::Mesh => {
+    match entry.kind {
+        kinds::MESH => {
             if entry.container.is_none() {
                 let scene = AssetUUID::sub_asset(entry.uuid, "scene");
                 if entries.iter().any(|listed| listed.uuid == scene) {
@@ -53,9 +53,9 @@ pub(crate) fn asset_drop(entries: &[AssetEntry], entry: &AssetEntry) -> AssetDro
             }
             AssetDrop::Mesh(entry.uuid)
         }
-        AssetType::Prefab => AssetDrop::Prefab(entry.uuid),
-        AssetType::Texture | AssetType::Material => AssetDrop::Assign(entry.uuid),
-        AssetType::Scene => AssetDrop::Scene(entry.source_path.clone()),
+        kinds::PREFAB => AssetDrop::Prefab(entry.uuid),
+        kinds::TEXTURE | kinds::MATERIAL => AssetDrop::Assign(entry.uuid),
+        kinds::SCENE => AssetDrop::Scene(entry.source_path.clone()),
         _ => AssetDrop::Ignored,
     }
 }

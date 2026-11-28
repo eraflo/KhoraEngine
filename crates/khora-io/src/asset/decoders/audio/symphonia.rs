@@ -49,14 +49,14 @@ impl AssetDecoder<SoundData> for SymphoniaDecoder {
     }
 
     fn limits(&self, trust: Trust) -> Limits {
-        Limits::of(FileKind::Audio, trust)
+        Limits::of(FileKind::Sound, trust)
     }
 
     fn load(&self, bytes: &[u8]) -> Result<SoundData, Box<dyn Error + Send + Sync>> {
         self.load_limited(
             bytes,
             Path::new(""),
-            &Limits::of(FileKind::Audio, Trust::Project),
+            &Limits::of(FileKind::Sound, Trust::Project),
         )
     }
 

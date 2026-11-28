@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use anyhow::Result;
-use khora_core::asset::{Asset, AssetMetadata, AssetSource, AssetType, AssetUUID, CompressionKind};
+use khora_core::asset::{kinds, Asset, AssetMetadata, AssetSource, AssetUUID, CompressionKind};
 use khora_io::asset::{AssetDecoder, AssetService, PackHeader, PackLoader};
 
 use khora_telemetry::MetricsRegistry;
@@ -25,7 +25,7 @@ use tempfile::tempdir;
 /// Tests use this so they don't have to know the header byte layout.
 fn write_test_pack(path: &std::path::Path, asset_count: u32, payload: &[u8]) -> Result<()> {
     let mut bytes = Vec::with_capacity(24 + payload.len());
-    bytes.extend_from_slice(&PackHeader::v2(asset_count, 0).to_bytes());
+    bytes.extend_from_slice(&PackHeader::current(asset_count, 0).to_bytes());
     bytes.extend_from_slice(payload);
     std::fs::write(path, &bytes)?;
     Ok(())
@@ -74,15 +74,14 @@ fn test_load_asset_from_pack() -> Result<()> {
     let metadata = AssetMetadata {
         uuid: texture_uuid,
         source_path: "test/texture.png".into(),
-        asset_type: AssetType::Texture,
+        kind: kinds::TEXTURE,
         dependencies: vec![],
         variants,
         tags: vec![],
     };
 
     let metadata_vec = vec![metadata];
-    let config = bincode::config::standard();
-    let index_bytes = bincode::serde::encode_to_vec(&metadata_vec, config)?;
+    let index_bytes = khora_io::asset::AssetIndex::encode(&metadata_vec, &[])?;
     let data_bytes = texture_data.to_vec();
 
     // Write the temporary files to disk.
@@ -100,7 +99,7 @@ fn test_load_asset_from_pack() -> Result<()> {
     )?;
 
     // --- 3. Register the loader ---
-    asset_service.register_decoder("texture", TestTextureLoader);
+    asset_service.register_decoder(kinds::TEXTURE.name(), TestTextureLoader);
 
     // --- 4. Load the asset ---
     let texture_handle = asset_service.load::<TestTexture>(&texture_uuid)?;
@@ -154,15 +153,14 @@ fn test_load_texture_from_pack() -> Result<()> {
     let metadata = AssetMetadata {
         uuid: texture_uuid,
         source_path: "test/texture.png".into(),
-        asset_type: AssetType::Texture,
+        kind: kinds::TEXTURE,
         dependencies: vec![],
         variants,
         tags: vec![],
     };
 
     let metadata_vec = vec![metadata];
-    let config = bincode::config::standard();
-    let index_bytes = bincode::serde::encode_to_vec(&metadata_vec, config)?;
+    let index_bytes = khora_io::asset::AssetIndex::encode(&metadata_vec, &[])?;
 
     // Write the temporary files to disk
     std::fs::write(&index_path, &index_bytes)?;
@@ -179,7 +177,7 @@ fn test_load_texture_from_pack() -> Result<()> {
     )?;
 
     // --- 3. Register the texture loader ---
-    asset_service.register_decoder("texture", TextureDecoder);
+    asset_service.register_decoder(kinds::TEXTURE.name(), TextureDecoder);
 
     // --- 4. Load the texture ---
     let texture_handle = asset_service.load::<CpuTexture>(&texture_uuid)?;
@@ -223,13 +221,13 @@ fn test_asset_caching_and_shared_ownership() -> Result<()> {
     let metadata = AssetMetadata {
         uuid: texture_uuid,
         source_path: "test/texture.png".into(),
-        asset_type: AssetType::Texture,
+        kind: kinds::TEXTURE,
         dependencies: vec![],
         variants,
         tags: vec![],
     };
 
-    let index_bytes = bincode::serde::encode_to_vec(vec![metadata], bincode::config::standard())?;
+    let index_bytes = khora_io::asset::AssetIndex::encode(&[metadata], &[])?;
     std::fs::write(&index_path, &index_bytes)?;
     write_test_pack(&data_path, 1, &texture_data)?;
 
@@ -241,7 +239,7 @@ fn test_asset_caching_and_shared_ownership() -> Result<()> {
         metrics_registry,
         None,
     )?;
-    asset_service.register_decoder("texture", TestTextureLoader);
+    asset_service.register_decoder(kinds::TEXTURE.name(), TestTextureLoader);
 
     // --- 2. Load the asset for the first time (Cache Miss) ---
     let handle1 = asset_service.load::<TestTexture>(&texture_uuid)?;

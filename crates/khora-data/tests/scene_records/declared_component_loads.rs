@@ -872,7 +872,7 @@ fn layout_declaring(
 /// and what the load reports dropped is what the relayout reports lost.
 #[test]
 fn a_load_and_a_relayout_keep_the_same_value_of_every_shape() {
-    use khora_core::asset::{AssetKind, AssetUUID};
+    use khora_core::asset::{kinds, AssetKind, AssetUUID};
     use khora_core::script::ErgonType;
     use khora_data::ecs::{ComponentProvenance, RuntimeComponentDecl};
     let optional = |ty: ErgonType| ErgonType::Optional(Box::new(ty));
@@ -890,8 +890,8 @@ fn a_load_and_a_relayout_keep_the_same_value_of_every_shape() {
             ("icon", optional(ErgonType::Asset(kind))),
         ]
     };
-    let saved = declared(ErgonType::Int, AssetKind::Mesh);
-    let read = declared(ErgonType::Float, AssetKind::Texture);
+    let saved = declared(ErgonType::Int, kinds::MESH);
+    let read = declared(ErgonType::Float, kinds::TEXTURE);
     let names: Vec<&str> = saved.iter().map(|(name, _)| *name).collect();
     let register = |world: &mut World, fields: &[(&str, ErgonType)]| {
         world

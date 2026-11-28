@@ -188,7 +188,11 @@ impl Project {
     fn service(&self, log: &Arc<DecodeLog>) -> Arc<Mutex<AssetService>> {
         let mut service = AssetService::open_loose_files(
             &self.0,
-            &AssetIdRegistry::load(&self.0),
+            &AssetIdRegistry::load_or_unread(&khora_sdk::trust::FileGuard::new(
+                &self.0,
+                khora_sdk::trust::Trust::Project,
+                khora_sdk::trust::Refusals::detached(),
+            )),
             Arc::new(MetricsRegistry::new()),
         )
         .expect("the project opens");

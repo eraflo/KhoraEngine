@@ -50,12 +50,13 @@ impl AssetIo for MockIo {
     }
 }
 
+use crate::asset::tests::kinds::{NOTE, TEST_CONTAINER};
 use crate::asset::AssetContainer;
-use khora_core::asset::AssetMetadata;
+use khora_core::asset::{AssetKind, AssetMetadata};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-/// Index type of the test container files.
-const CONTAINER_TYPE: &str = "ksubtest";
+/// The kind name of the test container files.
+const CONTAINER_TYPE: &str = TEST_CONTAINER.name();
 
 /// What a test container extracts as a `"mesh"`.
 #[derive(Debug)]
@@ -151,7 +152,7 @@ fn file_entry(uuid: AssetUUID, rel: &str) -> AssetMetadata {
     AssetMetadata {
         uuid,
         source_path: std::path::PathBuf::from(rel),
-        asset_type: CONTAINER_TYPE.into(),
+        kind: TEST_CONTAINER,
         dependencies: Vec::new(),
         variants,
         tags: Vec::new(),
@@ -176,7 +177,7 @@ fn sub_entry(
     AssetMetadata {
         uuid,
         source_path: std::path::PathBuf::from(rel),
-        asset_type: type_name.into(),
+        kind: AssetKind::named(type_name).expect("a sub-asset of a registered kind"),
         dependencies: Vec::new(),
         variants,
         tags: Vec::new(),
@@ -193,7 +194,7 @@ fn container_index_bytes() -> Vec<u8> {
         file_entry(villain(), VILLAIN_PATH),
         sub_entry(villain_body(), villain(), VILLAIN_PATH, "mesh/Body", "mesh"),
     ];
-    bincode::serde::encode_to_vec(&metadata, bincode::config::standard()).unwrap()
+    crate::asset::AssetIndex::encode(&metadata, &[]).unwrap()
 }
 
 fn container_files(hero_bytes: &[u8]) -> HashMap<std::path::PathBuf, Vec<u8>> {
@@ -255,8 +256,8 @@ impl AssetIo for SharedIo {
     }
 }
 
-/// Index type of the test's plain (non-container) files.
-const NOTE_TYPE: &str = "ktestnote";
+/// The kind name of the test's plain (non-container) files.
+const NOTE_TYPE: &str = NOTE.name();
 const NOTE_PATH: &str = "notes/readme.ktestnote";
 
 fn note() -> AssetUUID {
@@ -292,7 +293,7 @@ impl AssetDecoder<TestNote> for NoteDecoder {
 /// The counting container and the note decoder are registered.
 fn shared_service(files: Arc<Mutex<HashMap<std::path::PathBuf, Vec<u8>>>>) -> AssetService {
     let mut note_entry = file_entry(note(), NOTE_PATH);
-    note_entry.asset_type = NOTE_TYPE.into();
+    note_entry.kind = NOTE;
     let metadata = vec![
         file_entry(hero(), HERO_PATH),
         sub_entry(hero_body(), hero(), HERO_PATH, "mesh/Body", "mesh"),
@@ -301,7 +302,7 @@ fn shared_service(files: Arc<Mutex<HashMap<std::path::PathBuf, Vec<u8>>>>) -> As
         sub_entry(villain_body(), villain(), VILLAIN_PATH, "mesh/Body", "mesh"),
         note_entry,
     ];
-    let index = bincode::serde::encode_to_vec(&metadata, bincode::config::standard()).unwrap();
+    let index = crate::asset::AssetIndex::encode(&metadata, &[]).unwrap();
     let mut svc = AssetService::new(
         &index,
         Box::new(SharedIo { files }),
@@ -386,12 +387,12 @@ fn later() -> AssetUUID {
 
 fn note_entry(path: &str) -> AssetMetadata {
     let mut entry = file_entry(AssetUUID::new_v5(path), path);
-    entry.asset_type = NOTE_TYPE.into();
+    entry.kind = NOTE;
     entry
 }
 
 fn index_of(entries: Vec<AssetMetadata>) -> Vec<u8> {
-    bincode::serde::encode_to_vec(&entries, bincode::config::standard()).unwrap()
+    crate::asset::AssetIndex::encode(&entries, &[]).unwrap()
 }
 
 fn note_type() -> TypeId {

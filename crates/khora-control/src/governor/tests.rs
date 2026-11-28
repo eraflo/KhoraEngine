@@ -673,3 +673,26 @@ fn observe_keeps_a_load_frame_bounded_at_the_hitch_ratio() {
         "100 ms after an overrun is load, kept at {bound:?}: {kept:?}"
     );
 }
+
+/// **A stall right after one frame over the setpoint lowers the multiplier.**
+///
+/// Frames of 13 ms sit in the band; one of 17 ms, a frame the host ran late,
+/// makes the 120 ms frame after it load, not a hitch: it enters bounded and
+/// weighs its whole length, so a run whose host is slow on one frame is lowered.
+#[test]
+fn a_stall_right_after_one_frame_over_the_setpoint_lowers_the_multiplier() {
+    let mut governor = governor();
+    let mut changes = observe_deciding(&mut governor, 39, ms(13.0));
+    changes.extend(observe_deciding(&mut governor, 1, ms(17.0)));
+    assert!(
+        changes.is_empty(),
+        "13 ms frames and one of 17 ms change nothing"
+    );
+
+    changes.extend(observe_deciding(&mut governor, 1, ms(120.0)));
+
+    assert!(
+        changes.first().is_some_and(|&lowered| lowered < 1.0),
+        "the stall after a late frame lowers the multiplier: {changes:?}"
+    );
+}

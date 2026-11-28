@@ -30,7 +30,7 @@ use khora_sdk::{MetricsRegistry, SceneFile};
 
 use super::super::*;
 use crate::ops::prefab_overrides::inspect_prefab;
-use crate::project_vfs::ProjectPrefabs;
+use crate::project_prefabs::ProjectPrefabs;
 
 const TURRET: &str = "prefabs/turret.kprefab";
 const LEVEL: &str = "scenes/level.kscene";

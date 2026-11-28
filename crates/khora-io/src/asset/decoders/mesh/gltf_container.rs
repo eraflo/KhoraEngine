@@ -28,12 +28,12 @@ use khora_core::math::{LinearRgba, Mat4};
 
 use super::gltf::{merge, parse_gltf, read_primitive};
 use super::gltf_checks::ElementCaps;
-use super::gltf_resources::{image_bytes, load_buffers, resolve_relative_uri};
+use super::gltf_resources::{image_bytes, listed_uri_path, load_buffers, resolve_relative_uri};
 use super::gltf_scene::scene_record;
 use super::{FileSystemResolver, GltfResourceResolver, MeshDispatcher};
 use crate::asset::{
-    AssetContainer, AssetDecoder, PrefabAsset, SubAssetEntry, SubAssetListerRegistration,
-    TextureDecoder,
+    AssetContainer, AssetDecoder, ExternalFileListerRegistration, PrefabAsset, SubAssetEntry,
+    SubAssetListerRegistration, TextureDecoder,
 };
 use crate::trust::{FileKind, LimitExceeded, Limits, Trust};
 
@@ -93,6 +93,40 @@ inventory::submit! {
     SubAssetListerRegistration {
         type_name: "mesh",
         list: list_gltf_sub_assets,
+    }
+}
+
+/// Returns the files a glTF at `source_path` reads beside itself, by their paths from the assets root.
+///
+/// Its buffers and images named by URI, sorted. A URI leaving the assets root
+/// is listed too, as its decoder would read it (`../outside.bin`, or rooted,
+/// `/abs/outside.bin`, for one absolute or naming a scheme): whoever reads the
+/// list through a [`FileGuard`](crate::trust::FileGuard) has it refused and
+/// reported. Embedded data, a GLB's own buffer and a URI that is not valid
+/// percent-encoded UTF-8 are none. Empty for bytes that are not glTF (an OBJ file).
+///
+/// # Errors
+///
+/// When the bytes are glTF but do not parse.
+pub fn list_gltf_external_files(bytes: &[u8], source_path: &Path) -> anyhow::Result<Vec<String>> {
+    if !MeshDispatcher::is_gltf(bytes) {
+        return Ok(Vec::new());
+    }
+    let gltf = parse_gltf(bytes)
+        .map_err(|e| anyhow!("parsing the glTF to list its external files: {e}"))?;
+    let base_dir = source_path.parent().unwrap_or(Path::new(""));
+    let mut files: Vec<String> = external_uris(&gltf.document)
+        .filter_map(|uri| listed_uri_path(base_dir, uri))
+        .collect();
+    files.sort();
+    files.dedup();
+    Ok(files)
+}
+
+inventory::submit! {
+    ExternalFileListerRegistration {
+        type_name: "mesh",
+        list: list_gltf_external_files,
     }
 }
 
@@ -265,29 +299,30 @@ impl AssetContainer for GltfContainer {
         let Some(opened) = opened.downcast_ref::<OpenedGltf>() else {
             return Vec::new();
         };
-        let buffers = opened
-            .document
-            .buffers()
-            .filter_map(|buffer| match buffer.source() {
-                gltf::buffer::Source::Uri(uri) => Some(uri),
-                gltf::buffer::Source::Bin => None,
-            });
-        let images = opened
-            .document
-            .images()
-            .filter_map(|image| match image.source() {
-                gltf::image::Source::Uri { uri, .. } => Some(uri),
-                gltf::image::Source::View { .. } => None,
-            });
-        let mut files: Vec<String> = buffers
-            .chain(images)
-            .filter(|uri| !uri.starts_with("data:"))
+        let mut files: Vec<String> = external_uris(&opened.document)
             .filter_map(|uri| resolve_relative_uri(&opened.base_dir, uri).ok())
             .collect();
         files.sort();
         files.dedup();
         files
     }
+}
+
+/// Returns the URIs of the files `document` reads beside its own: its buffers and images, data URIs aside.
+fn external_uris(document: &gltf::Document) -> impl Iterator<Item = &str> {
+    let buffers = document
+        .buffers()
+        .filter_map(|buffer| match buffer.source() {
+            gltf::buffer::Source::Uri(uri) => Some(uri),
+            gltf::buffer::Source::Bin => None,
+        });
+    let images = document.images().filter_map(|image| match image.source() {
+        gltf::image::Source::Uri { uri, .. } => Some(uri),
+        gltf::image::Source::View { .. } => None,
+    });
+    buffers
+        .chain(images)
+        .filter(|uri| !uri.starts_with("data:"))
 }
 
 /// A glTF file, parsed and validated once, with every buffer it points at.
@@ -536,6 +571,34 @@ fn kept(error: Box<dyn std::error::Error + Send + Sync>) -> anyhow::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **A glTF lists the files it reads beside itself**, one leaving the root included.
+    ///
+    /// Each by its path from the assets root, as it would be read: by its
+    /// `..`, or rooted when absolute or naming a scheme. Embedded data and
+    /// bytes that are no glTF list none.
+    #[test]
+    fn list_gltf_external_files_names_its_buffers_and_images() {
+        let gltf = br#"{"asset":{"version":"2.0"},
+            "buffers":[{"uri":"a.bin","byteLength":4},{"uri":"../../out.bin","byteLength":4},
+                {"uri":"/abs/out.bin","byteLength":4},{"uri":"C:/abs/out.bin","byteLength":4},
+                {"uri":"https://example.org/out.bin","byteLength":4}],
+            "images":[{"uri":"skin%20a.png"},{"uri":"data:image/png;base64,AAAA"}]}"#;
+        assert_eq!(
+            list_gltf_external_files(gltf, Path::new("models/hero.gltf")).expect("it parses"),
+            [
+                "../out.bin",
+                "/C:/abs/out.bin",
+                "/abs/out.bin",
+                "/https://example.org/out.bin",
+                "models/a.bin",
+                "models/skin a.png"
+            ]
+        );
+        assert!(list_gltf_external_files(b"o obj file", Path::new("a.obj"))
+            .expect("no glTF, no error")
+            .is_empty());
+    }
 
     #[test]
     fn labels_parse_back_to_what_the_lister_writes() {

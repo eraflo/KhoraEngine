@@ -18,7 +18,7 @@
 //! declaration gives its field loses it, reported dropped, and the record
 //! then describes the world's declarations.
 
-use khora_core::asset::{AssetKind, AssetUUID};
+use khora_core::asset::{kinds, AssetKind, AssetUUID};
 use khora_core::script::{ErgonType, ScriptValue};
 use khora_data::ecs::{
     ComponentProvenance, FieldKind, PackedField, PackedLayout, RuntimeComponentDecl,
@@ -39,7 +39,7 @@ fn optional_asset(kind: AssetKind) -> ErgonType {
 fn armory(bullet: AssetKind) -> PackedLayout {
     let types = vec![
         optional_asset(bullet),
-        optional_asset(AssetKind::Sound),
+        optional_asset(kinds::SOUND),
         ErgonType::Int,
     ];
     let fields = ["bullet", "shot", "count"]
@@ -76,7 +76,7 @@ fn declaring_armory(bullet: AssetKind) -> World {
 /// prefab, its `shot` a sound — written under the `Prefab? bullet`
 /// declaration, and the entity's identity.
 fn armed_record() -> (SceneRecord, PersistentId) {
-    let mut src = declaring_armory(AssetKind::Prefab);
+    let mut src = declaring_armory(kinds::PREFAB);
     let entity = src.spawn(Transform::identity());
     attach(
         &mut src,
@@ -123,10 +123,10 @@ fn armory_fields(record: &SceneRecord, id: PersistentId) -> Vec<String> {
 #[test]
 fn a_record_is_read_into_a_catalogue_as_into_its_world() {
     let (record, id) = armed_record();
-    let world = declaring_armory(AssetKind::Sound);
+    let world = declaring_armory(kinds::SOUND);
     // What the world declares, as a record of it describes it.
     let described = {
-        let mut described = declaring_armory(AssetKind::Sound);
+        let mut described = declaring_armory(kinds::SOUND);
         let entity = described.spawn(Transform::identity());
         attach(&mut described, entity, "Armory", with_fields(&[]));
         described.mark_authored(entity).expect("authored");

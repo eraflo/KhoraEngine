@@ -102,16 +102,6 @@ pub fn run() -> anyhow::Result<()> {
             Err(e) => log::error!("pipeline system init failed: {e}"),
         }
 
-        // The engine boots its physics family at the project's
-        // `physics.step`: read from its `project.json` now, before the boot.
-        if let Some(Some(project)) = PROJECT_PATH.get() {
-            runtime
-                .resources
-                .insert(crate::project_physics::project_physics(
-                    std::path::Path::new(project),
-                ));
-        }
-
         // Physics — Rapier3D
         let physics: Box<dyn PhysicsProvider> = Box::new(RapierPhysicsWorld::default());
         runtime.backends.insert(Arc::new(Mutex::new(physics)));

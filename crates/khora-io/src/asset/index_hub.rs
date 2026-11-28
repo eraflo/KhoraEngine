@@ -33,14 +33,6 @@ pub type IndexOutcome = Result<(), String>;
 /// How many indexes may wait to be built; past it, an index filed fails at once.
 const INDEX_BACKLOG: usize = 64;
 
-/// The tickets filed and not landed, each with the project generation it was
-/// filed under, and the outcomes landed and not taken.
-#[derive(Default)]
-struct IndexTickets {
-    pending: BTreeMap<IndexTicket, u64>,
-    landed: HashMap<IndexTicket, IndexOutcome>,
-}
-
 /// The project indexes in flight: the requests filed, and the outcomes landed, by ticket.
 ///
 /// It is the runtime's [`AssetIndexing`]; the `asset_index_intake` `DataSystem`
@@ -52,8 +44,10 @@ pub struct IndexHub {
     /// project replaced since.
     opened: Arc<AtomicU64>,
     tickets: Mutex<IndexTickets>,
-    /// The run's refusals and the open project's trust, which indexing reads files
-    /// through. `None` until both are installed: a test's index reads files as they are.
+    /// The run's refusals and the open project's trust, which indexing reads files through.
+    ///
+    /// `None` until both are installed: a test's index reads files as a
+    /// trusted project's, its refusals kept in memory.
     through: Mutex<Option<ReadThrough>>,
 }
 
@@ -175,33 +169,6 @@ impl AssetIndexing for IndexHub {
     }
 }
 
-/// The run's refusals and the trust of the project open.
-type ReadThrough = (
-    Arc<crate::trust::Refusals>,
-    Arc<crate::trust::ProjectTrustState>,
-);
-
-/// Builds the index of `<project_root>/assets/`, ids from the project's registry.
-///
-/// The files it looks into are read `through` a guard at the open project's trust.
-fn build_index(
-    project_root: &std::path::Path,
-    through: Option<ReadThrough>,
-) -> Result<Vec<u8>, String> {
-    let registry = super::AssetIdRegistry::load(project_root);
-    let assets = project_root.join("assets");
-    let guard = through.map(|(refusals, trust)| {
-        crate::trust::FileGuard::new(&assets, trust.get().trust(), refusals)
-    });
-    let mut builder = super::IndexBuilder::new(&assets).with_registry(&registry);
-    if let Some(guard) = &guard {
-        builder = builder.with_guard(guard);
-    }
-    builder
-        .build_index_bytes()
-        .map_err(|error| format!("{error:#}"))
-}
-
 /// Installs one [`IndexHub`] in `runtime`, unless one is there.
 ///
 /// It is installed as the request channel and the [`AssetIndexing`] the `loading`
@@ -224,4 +191,42 @@ pub fn install_indexing(runtime: &mut Runtime) {
     let indexing: Arc<dyn AssetIndexing> = Arc::clone(&hub) as Arc<dyn AssetIndexing>;
     runtime.resources.insert(indexing);
     runtime.resources.insert(hub);
+}
+
+/// The tickets filed and not landed, each with the project generation it was
+/// filed under, and the outcomes landed and not taken.
+#[derive(Default)]
+struct IndexTickets {
+    pending: BTreeMap<IndexTicket, u64>,
+    landed: HashMap<IndexTicket, IndexOutcome>,
+}
+
+/// The run's refusals and the trust of the project open.
+type ReadThrough = (
+    Arc<crate::trust::Refusals>,
+    Arc<crate::trust::ProjectTrustState>,
+);
+
+/// Builds the index of `<project_root>/assets/`, ids from the project's registry.
+///
+/// The files it looks into, the registry included, are read `through` guards
+/// at the open project's trust; without one, as a trusted project's, their
+/// refusals kept in memory. A registry refused or unreadable is reported, and
+/// every asset indexed under its path's identity.
+fn build_index(
+    project_root: &std::path::Path,
+    through: Option<ReadThrough>,
+) -> Result<Vec<u8>, String> {
+    use crate::trust::{FileGuard, Refusals, Trust};
+
+    let guard_of = |root: &std::path::Path| match &through {
+        Some((refusals, trust)) => FileGuard::for_project(root, trust, Arc::clone(refusals)),
+        None => FileGuard::new(root, Trust::Project, Refusals::detached()),
+    };
+    let registry = super::AssetIdRegistry::load_or_unread(&guard_of(project_root));
+    let guard = guard_of(&project_root.join("assets"));
+    super::IndexBuilder::new(guard)
+        .with_registry(&registry)
+        .build_index_bytes()
+        .map_err(|error| format!("{error:#}"))
 }

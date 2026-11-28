@@ -451,6 +451,7 @@ fn a_scene_missing_from_the_index_opens_once_indexed() {
         &mut world,
         &state,
         &crate::tests::scene_loads::hub(&scenes),
+        &crate::project_vfs::ProjectReads::default(),
         &project.path(HIDDEN),
     );
 
@@ -495,6 +496,7 @@ fn a_scene_still_missing_after_its_reindex_is_reported_once() {
         &mut world,
         &state,
         &crate::tests::scene_loads::hub(&scenes),
+        &crate::project_vfs::ProjectReads::default(),
         &project.path(NOWHERE),
     );
     assert_eq!(engine.waiting(), 1, "the open filed a reindex");
@@ -609,6 +611,7 @@ fn a_new_scene_has_the_last_word_over_a_scene_waiting_for_its_index() {
         &mut world,
         &state,
         &crate::tests::scene_loads::hub(&scenes),
+        &crate::project_vfs::ProjectReads::default(),
         &project.path(HIDDEN),
     );
     assert_eq!(
@@ -647,6 +650,7 @@ fn a_scene_opened_since_has_the_last_word_over_one_waiting_for_its_index() {
         &mut world,
         &state,
         &crate::tests::scene_loads::hub(&scenes),
+        &crate::project_vfs::ProjectReads::default(),
         &project.path(HIDDEN),
     );
     assert_eq!(
@@ -686,6 +690,7 @@ fn a_scene_queued_once_indexed_opens_from_the_path_queued() {
         &mut world,
         &state,
         &loads,
+        &crate::project_vfs::ProjectReads::default(),
         &project.path(HIDDEN),
     );
     settle(&engine, &project, &state, &mut world);
@@ -703,6 +708,7 @@ fn a_scene_queued_once_indexed_opens_from_the_path_queued() {
         &mut world,
         &state,
         &loads,
+        &crate::project_vfs::ProjectReads::default(),
         Path::new(&queued),
     );
     super::land_filed_loads(&scenes, &mut world, &state);
@@ -911,6 +917,7 @@ fn a_scene_asked_for_as_a_waiting_open_lands_is_not_overwritten() {
         &mut world,
         &state,
         &crate::tests::scene_loads::hub(&scenes),
+        &crate::project_vfs::ProjectReads::default(),
         &project.path(HIDDEN),
     );
 

@@ -22,7 +22,7 @@ use khora_tool_ui::widgets::with_alpha;
 
 /// The category an asset tile is drawn as: its tint, icon and format glyph.
 ///
-/// An `AssetType`'s handler gives it; several types may share one (a prefab
+/// An asset kind's handler gives it; several kinds may share one (a prefab
 /// is drawn as a scene).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssetTileKind {
@@ -31,7 +31,7 @@ pub enum AssetTileKind {
     /// An image.
     Texture,
     /// A sound.
-    Audio,
+    Sound,
     /// A shader source.
     Shader,
     /// A scene file.
@@ -40,7 +40,7 @@ pub enum AssetTileKind {
     Material,
     /// An Ergon script (`.erg`).
     Script,
-    /// A file of no known type.
+    /// An asset of a kind no handler draws.
     Unknown,
 }
 
@@ -49,7 +49,7 @@ impl AssetTileKind {
         match self {
             Self::Mesh => Icon::Cube,
             Self::Texture => Icon::Image,
-            Self::Audio => Icon::Music,
+            Self::Sound => Icon::Music,
             Self::Shader => Icon::Zap,
             Self::Scene => Icon::Globe,
             Self::Material => Icon::Circle,
@@ -63,7 +63,7 @@ impl AssetTileKind {
         let raw = match self {
             Self::Mesh => theme.accent_a,
             Self::Texture => theme.accent_c,
-            Self::Audio => theme.success,
+            Self::Sound => theme.success,
             Self::Shader => theme.accent_a,
             Self::Scene => theme.accent_a,
             Self::Material => theme.accent_c,
@@ -77,7 +77,7 @@ impl AssetTileKind {
         match self {
             Self::Mesh => "FBX",
             Self::Texture => "TEX",
-            Self::Audio => "OGG",
+            Self::Sound => "OGG",
             Self::Shader => "GLSL",
             Self::Scene => "SCN",
             Self::Material => "MAT",

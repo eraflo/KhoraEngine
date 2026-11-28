@@ -123,8 +123,7 @@ impl Checker {
                 };
                 let found = self.check_expr(material, context);
                 // A `Material?` is taken too: one that is `null` faults the turn.
-                let wanted =
-                    Ty::Optional(Box::new(Ty::Asset(khora_core::asset::AssetKind::Material)));
+                let wanted = Ty::Optional(Box::new(Ty::Asset(khora_core::asset::kinds::MATERIAL)));
                 self.expect_assignable(&wanted, &found, material.span());
                 return Some(Ty::Void);
             }

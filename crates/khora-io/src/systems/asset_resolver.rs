@@ -667,7 +667,13 @@ mod tests {
         // Build the VFS index. `.kmat` UUIDs are keyed by `new_v5` over the
         // forward-slash relative path (the IndexBuilder convention), so an
         // editor minting `MaterialRef::Asset` uses the same key.
-        let index_bytes = IndexBuilder::new(assets_root).build_index_bytes().unwrap();
+        let index_bytes = IndexBuilder::new(crate::trust::FileGuard::new(
+            assets_root,
+            crate::trust::Trust::Project,
+            crate::trust::Refusals::detached(),
+        ))
+        .build_index_bytes()
+        .unwrap();
         let uuid = AssetUUID::new_v5(rel_path);
 
         let metrics = Arc::new(MetricsRegistry::new());
@@ -771,7 +777,13 @@ mod tests {
         let obj = "v 0.0 0.0 0.0\nv 1.0 0.0 0.0\nv 0.0 1.0 0.0\nf 1 2 3\n";
         fs::write(assets_root.join(rel_path), obj).unwrap();
 
-        let index_bytes = IndexBuilder::new(assets_root).build_index_bytes().unwrap();
+        let index_bytes = IndexBuilder::new(crate::trust::FileGuard::new(
+            assets_root,
+            crate::trust::Trust::Project,
+            crate::trust::Refusals::detached(),
+        ))
+        .build_index_bytes()
+        .unwrap();
         let uuid = AssetUUID::new_v5(rel_path);
 
         let metrics = Arc::new(MetricsRegistry::new());
@@ -784,7 +796,10 @@ mod tests {
         .unwrap();
         // The mesh dispatcher has competing impls (gltf vs obj) so it is wired
         // explicitly at the call site rather than via inventory.
-        service.register_decoder::<Mesh>("mesh", MeshDispatcher::default());
+        service.register_decoder::<Mesh>(
+            khora_core::asset::kinds::MESH.name(),
+            MeshDispatcher::default(),
+        );
 
         let store = AssetStore::new();
         let mut runtime = runtime_with(&store);
@@ -832,7 +847,13 @@ mod tests {
                 for (rel, bytes) in files {
                     write_file(dir.path(), rel, bytes);
                 }
-                let index_bytes = IndexBuilder::new(dir.path()).build_index_bytes().unwrap();
+                let index_bytes = IndexBuilder::new(crate::trust::FileGuard::new(
+                    dir.path(),
+                    crate::trust::Trust::Project,
+                    crate::trust::Refusals::detached(),
+                ))
+                .build_index_bytes()
+                .unwrap();
                 let mut service = AssetService::new(
                     &index_bytes,
                     Box::new(FileLoader::new(dir.path())),
@@ -1200,7 +1221,11 @@ mod tests {
             }
             let service = AssetService::open_loose_files(
                 &root,
-                &crate::asset::AssetIdRegistry::load(&root),
+                &crate::asset::AssetIdRegistry::load_or_unread(&crate::trust::FileGuard::new(
+                    &root,
+                    crate::trust::Trust::Project,
+                    crate::trust::Refusals::detached(),
+                )),
                 Arc::new(MetricsRegistry::new()),
             )
             .expect("the project opens");
@@ -1338,7 +1363,13 @@ mod tests {
                 for (rel, bytes) in files {
                     write_file(dir.path(), rel, bytes);
                 }
-                let index_bytes = IndexBuilder::new(dir.path()).build_index_bytes().unwrap();
+                let index_bytes = IndexBuilder::new(crate::trust::FileGuard::new(
+                    dir.path(),
+                    crate::trust::Trust::Project,
+                    crate::trust::Refusals::detached(),
+                ))
+                .build_index_bytes()
+                .unwrap();
                 let mut service = AssetService::new(
                     &index_bytes,
                     Box::new(FileLoader::new(dir.path())),
@@ -1582,9 +1613,13 @@ mod tests {
                 for (rel, bytes) in files {
                     write_file(dir.path(), rel, bytes);
                 }
-                let index_bytes = IndexBuilder::new(dir.path())
-                    .build_index_bytes()
-                    .expect("the project indexes");
+                let index_bytes = IndexBuilder::new(crate::trust::FileGuard::new(
+                    dir.path(),
+                    crate::trust::Trust::Project,
+                    crate::trust::Refusals::detached(),
+                ))
+                .build_index_bytes()
+                .expect("the project indexes");
                 let mut service = AssetService::new(
                     &index_bytes,
                     Box::new(FileLoader::new(dir.path())),
@@ -2133,9 +2168,13 @@ mod tests {
             /// Lists the project's folder again into its service, as a file
             /// appearing or leaving does.
             fn reindex(project: &Project) {
-                let bytes = IndexBuilder::new(project.dir.path())
-                    .build_index_bytes()
-                    .expect("the project indexes");
+                let bytes = IndexBuilder::new(crate::trust::FileGuard::new(
+                    project.dir.path(),
+                    crate::trust::Trust::Project,
+                    crate::trust::Refusals::detached(),
+                ))
+                .build_index_bytes()
+                .expect("the project indexes");
                 project
                     .service
                     .lock()
@@ -2157,7 +2196,10 @@ mod tests {
                     .service
                     .lock()
                     .expect("the service's lock")
-                    .register_decoder::<Mesh>("mesh", crate::asset::MeshDispatcher::default());
+                    .register_decoder::<Mesh>(
+                        khora_core::asset::kinds::MESH.name(),
+                        crate::asset::MeshDispatcher::default(),
+                    );
                 let mut world = World::new();
                 world.spawn(MeshRef::Asset(mesh));
                 project.settle(&mut world);

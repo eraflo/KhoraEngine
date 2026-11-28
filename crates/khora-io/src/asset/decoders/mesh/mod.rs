@@ -29,7 +29,7 @@ mod resource_resolver;
 
 pub use dispatcher::MeshDispatcher;
 pub use gltf::GltfDecoder;
-pub use gltf_container::{list_gltf_sub_assets, GltfContainer};
+pub use gltf_container::{list_gltf_external_files, list_gltf_sub_assets, GltfContainer};
 pub use obj::ObjDecoder;
 pub use packed_resolver::PackedResolver;
 pub use resource_resolver::*;

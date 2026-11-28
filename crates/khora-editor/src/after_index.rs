@@ -14,6 +14,7 @@
 //! What waits for a reindex of the project to land off the frame, and what a
 //! landing hands back.
 
+use khora_sdk::editor_ui::KeyChange;
 use khora_sdk::khora_core::asset::AssetUUID;
 use khora_sdk::khora_core::ecs::PersistentId;
 use khora_sdk::prelude::ecs::EntityId;
@@ -76,6 +77,21 @@ impl AfterIndex {
             _ => false,
         }
     }
+
+    /// Returns this action as it reads once `change` is made; `None` when it named what `change` trashed.
+    ///
+    /// A path moved is named by its new path; a material to assign is named
+    /// by its identity, which a move keeps.
+    pub(crate) fn followed(self, change: &KeyChange) -> Option<AfterIndex> {
+        match self {
+            AfterIndex::Reveal(rel) => change.follow(&rel).map(AfterIndex::Reveal),
+            AfterIndex::OpenScene { rel, choice } => change
+                .follow(&rel)
+                .map(|rel| AfterIndex::OpenScene { rel, choice }),
+            AfterIndex::AssignMaterial { uuid, .. } if change.trashed(uuid) => None,
+            assign @ AfterIndex::AssignMaterial { .. } => Some(assign),
+        }
+    }
 }
 
 /// A reindex of the project that landed: its outcome, and the actions that
@@ -84,4 +100,72 @@ impl AfterIndex {
 pub struct Landed {
     pub outcome: khora_sdk::IndexOutcome,
     pub actions: Vec<AfterIndex>,
+}
+
+#[cfg(test)]
+mod tests {
+    use khora_sdk::editor_ui::KeyChange;
+    use khora_sdk::khora_core::asset::AssetUUID;
+    use khora_sdk::prelude::ecs::EntityId;
+
+    use super::AfterIndex;
+
+    fn assign(uuid: AssetUUID) -> AfterIndex {
+        AfterIndex::AssignMaterial {
+            entity: EntityId {
+                index: 0,
+                generation: 0,
+            },
+            persistent: None,
+            uuid,
+            saved: String::new(),
+            choice: 0,
+            played: false,
+        }
+    }
+
+    /// A path moved is followed; a material to assign keeps its identity through a move.
+    #[test]
+    fn followed_names_a_moved_path_by_its_new_one() {
+        let change = KeyChange::Moved {
+            from: "scenes".to_owned(),
+            to: "levels".to_owned(),
+        };
+        let material = assign(AssetUUID::new_v5("materials/a.kmat"));
+
+        assert_eq!(
+            AfterIndex::Reveal("scenes/a.kscene".to_owned()).followed(&change),
+            Some(AfterIndex::Reveal("levels/a.kscene".to_owned()))
+        );
+        assert_eq!(
+            AfterIndex::OpenScene {
+                rel: "scenes/a.kscene".to_owned(),
+                choice: 3
+            }
+            .followed(&change),
+            Some(AfterIndex::OpenScene {
+                rel: "levels/a.kscene".to_owned(),
+                choice: 3
+            })
+        );
+        assert_eq!(material.clone().followed(&change), Some(material));
+    }
+
+    /// What names a path or an asset trashed is dropped.
+    #[test]
+    fn followed_drops_what_names_what_was_trashed() {
+        let gone = AssetUUID::new_v5("materials/a.kmat");
+        let change = KeyChange::Trashed {
+            key: "materials".to_owned(),
+            identities: vec![gone],
+        };
+
+        assert_eq!(
+            AfterIndex::Reveal("materials/a.kmat".to_owned()).followed(&change),
+            None
+        );
+        assert_eq!(assign(gone).followed(&change), None);
+        let kept = assign(AssetUUID::new_v5("textures/a.png"));
+        assert_eq!(kept.clone().followed(&change), Some(kept));
+    }
 }

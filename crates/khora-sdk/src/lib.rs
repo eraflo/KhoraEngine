@@ -158,12 +158,14 @@ pub use khora_io::asset::decoders::audio::SymphoniaDecoder;
 pub use khora_io::asset::pack_key::{slot_magic, stamp_pack_key, stamped_pack_key};
 /// Signed packs: the key a build signs with, and what a runtime verifies.
 pub use khora_io::asset::signing::{PackKey, PackSealError, PackSigner, SignedManifest};
+/// The file extensions of the asset kinds: the kind of a file, the extension a new file of a kind takes.
+pub use khora_io::asset::{extension_for_kind, kind_of_path};
 pub use khora_io::asset::{install_indexing, IndexHub, IndexOutcome};
 pub use khora_io::asset::{
     AssetChangeEvent, AssetChangeKind, AssetIdRegistry, AssetIo, AssetReader, AssetService,
     AssetWatch, AssetWatcher, AssetWriter, FileLoader, FileSystemResolver, IndexBuilder,
-    MeshDispatcher, PackBuilder, PackHeader, PackLoader, PackOutput, PackProgress,
-    PACK_FORMAT_VERSION, PACK_HEADER_SIZE, PACK_MAGIC,
+    LeftOutFile, LeftOutReason, MeshDispatcher, PackBuilder, PackHeader, PackLoader, PackOutput,
+    PackProgress, PACK_FORMAT_VERSION, PACK_HEADER_SIZE, PACK_MAGIC,
 };
 /// The file-system helpers the tools share: resolving paths, atomic writes,
 /// bounded reads, walking a tree.

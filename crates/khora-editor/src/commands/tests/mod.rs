@@ -17,6 +17,9 @@
 mod asset_file_ops;
 mod gltf_assets;
 mod load_problems;
+// Pins writes where file names ignore case.
+#[cfg(windows)]
+mod material;
 mod menu_requests;
 mod play_edits_of_declared_fields;
 mod prefab;
@@ -24,6 +27,7 @@ mod prefab_apply;
 mod prefab_apply_of_declared_fields;
 mod save_problems;
 mod scene_loads;
+mod scene_save_as;
 mod transport;
 mod writes_index_off_the_frame;
 
@@ -96,6 +100,7 @@ fn open_and_land(world: &mut GameWorld, state: &Arc<Mutex<EditorState>>, path: &
         world,
         state,
         &crate::tests::scene_loads::hub(&runtime),
+        &crate::project_vfs::ProjectReads::default(),
         path,
     );
     land_filed_loads(&runtime, world, state);

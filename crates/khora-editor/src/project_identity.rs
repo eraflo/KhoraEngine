@@ -15,16 +15,16 @@
 //! A project's game identity, read from its `project.json`: the name the
 //! editor runs the game by, and the version "Build Game" stamps on it.
 
-use std::path::Path;
-
+use khora_sdk::trust::{FileGuard, ProjectFile};
 use khora_sdk::GameIdentity;
 
-/// Returns the game the project at `root` is, from its `project.json`'s `name` and `version`.
+/// Returns the game the project `project` guards is, from its `project.json`'s `name` and `version`.
 ///
 /// A file without a `version` reads `0.1.0`. `None` when the project has no
-/// `project.json`, or one that does not parse or names no game.
-pub fn project_identity(root: &Path) -> Option<GameIdentity> {
-    let json = project_json(root)?;
+/// `project.json`, or one the guard refuses (reported to its refusals), that
+/// does not parse or names no game.
+pub fn project_identity(project: &FileGuard) -> Option<GameIdentity> {
+    let json = read_project_json(project)?;
     let name = field(&json, "name")?;
     Some(GameIdentity {
         name,
@@ -32,20 +32,47 @@ pub fn project_identity(root: &Path) -> Option<GameIdentity> {
     })
 }
 
-/// Returns the version of the game at `root`: its `project.json`'s `version`,
+/// Returns the version of the game `project` guards: its `project.json`'s `version`,
 /// else `0.1.0`, whether or not the file names the game.
-pub fn project_version(root: &Path) -> String {
-    project_json(root).map_or_else(
+pub fn project_version(project: &FileGuard) -> String {
+    read_project_json(project).map_or_else(
         || khora_sdk::DEFAULT_GAME_VERSION.to_owned(),
         |json| version_of(&json),
     )
 }
 
-/// Reads and parses the `project.json` of the project at `root`; `None` when it
-/// has none or one that does not parse.
-fn project_json(root: &Path) -> Option<serde_json::Value> {
-    let text = std::fs::read_to_string(root.join("project.json")).ok()?;
-    serde_json::from_str(&text).ok()
+/// Reads and parses the `project.json` of the project whose root `project` guards.
+///
+/// `None` when it has none; when the guard refuses it, the refusal reported to
+/// the guard's refusals; when it cannot be read or does not parse, each logged.
+pub fn read_project_json(project: &FileGuard) -> Option<serde_json::Value> {
+    let bytes = match project.read_project_file(ProjectFile::Manifest) {
+        Ok(bytes) => bytes,
+        Err(error) if error.is_missing() => return None,
+        Err(error) => {
+            log::warn!(
+                "{} is not read: {error}",
+                project
+                    .root()
+                    .join(ProjectFile::Manifest.rel_path())
+                    .display()
+            );
+            return None;
+        }
+    };
+    match serde_json::from_slice(&bytes) {
+        Ok(json) => Some(json),
+        Err(error) => {
+            log::warn!(
+                "{} does not parse: {error}",
+                project
+                    .root()
+                    .join(ProjectFile::Manifest.rel_path())
+                    .display()
+            );
+            None
+        }
+    }
 }
 
 /// Returns `json`'s `key`, trimmed, when it is a string not blank.
@@ -65,6 +92,14 @@ fn version_of(json: &serde_json::Value) -> String {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use std::sync::Arc;
+
+    use khora_sdk::trust::{Refusals, SecurityReason, Trust};
+
+    /// A guard over `root` at a trusted project's trust, its refusals kept in memory.
+    fn trusted(root: &std::path::Path) -> FileGuard {
+        FileGuard::new(root, Trust::Project, Refusals::detached())
+    }
 
     /// A project folder under the temp folder holding `project_json` (none
     /// when `None`), removed when dropped.
@@ -101,7 +136,7 @@ mod tests {
         );
 
         assert_eq!(
-            project_identity(&project.0),
+            project_identity(&trusted(&project.0)),
             Some(GameIdentity {
                 name: "Lantern".to_owned(),
                 version: "0.1.0".to_owned(),
@@ -119,7 +154,7 @@ mod tests {
         );
 
         assert_eq!(
-            project_identity(&project.0),
+            project_identity(&trusted(&project.0)),
             Some(GameIdentity {
                 name: "Lantern".to_owned(),
                 version: "2.3.4".to_owned(),
@@ -136,11 +171,57 @@ mod tests {
         let missing = Project::with("missing", None);
         let broken = Project::with("broken", Some("{ not json"));
 
-        assert_eq!(project_identity(&missing.0), None, "no `project.json`");
         assert_eq!(
-            project_identity(&broken.0),
+            project_identity(&trusted(&missing.0)),
+            None,
+            "no `project.json`"
+        );
+        assert_eq!(
+            project_identity(&trusted(&broken.0)),
             None,
             "a `project.json` that does not parse"
         );
+    }
+
+    /// **A `project.json` over its cap names no game, and its refusal is reported.**
+    ///
+    /// Read before the user decided whether to trust the project, it is read
+    /// under the strict cap.
+    #[test]
+    fn a_project_file_over_its_cap_names_no_game_and_is_reported() {
+        let project = Project::with("oversized", None);
+        let path = project.0.join("project.json");
+        std::fs::write(&path, r#"{ "name": "Lantern" }"#).expect("writes");
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .and_then(|file| file.set_len((256 << 10) + 1))
+            .expect("the file grows past the strict cap");
+        let refusals = Arc::new(Refusals::new(None, None));
+        let strict = FileGuard::new(&project.0, Trust::Restricted, Arc::clone(&refusals));
+
+        assert_eq!(project_identity(&strict), None);
+        assert!(
+            refusals.quarantined().iter().any(|refusal| {
+                refusal.path.ends_with("project.json")
+                    && matches!(refusal.reason, SecurityReason::TooLarge { .. })
+            }),
+            "{:?}",
+            refusals.quarantined()
+        );
+    }
+
+    /// **`project.json` is read and parsed whole**; one missing or that does
+    /// not parse reads as none.
+    #[test]
+    fn read_project_json_parses_the_file_or_reads_none() {
+        let named = Project::with("parsed", Some(r#"{ "name": "Lantern" }"#));
+        let missing = Project::with("parsed-missing", None);
+        let broken = Project::with("parsed-broken", Some("{ not json"));
+
+        let json = read_project_json(&trusted(&named.0)).expect("the file parses");
+        assert_eq!(field(&json, "name").as_deref(), Some("Lantern"));
+        assert!(read_project_json(&trusted(&missing.0)).is_none());
+        assert!(read_project_json(&trusted(&broken.0)).is_none());
     }
 }

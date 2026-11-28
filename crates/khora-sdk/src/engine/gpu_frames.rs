@@ -268,4 +268,51 @@ mod tests {
             .expect("frame 1 is sent in the end");
         assert_eq!(first.busy.gpu, None);
     }
+
+    /// **One frame stalling the GPU is left out of the governor.**
+    ///
+    /// Frames keep the host 1 ms and the GPU 13 ms, inside the band under the
+    /// governor's 15 ms target, but frame 40, which keeps the GPU 120 ms; each
+    /// reading comes back two frames late. The reports carry each frame's own
+    /// GPU time, raw: the stall is one frame long, a hitch the DCC's governor,
+    /// deciding after each report, leaves out, and the multiplier holds at 1.0.
+    #[test]
+    fn one_frame_stalling_the_gpu_is_left_out_of_the_governor() {
+        use khora_control::governor::{FrameGovernor, GovernorConfig};
+        let gpu_ms = |frame: u64| if frame == 40 { 120 } else { 13 };
+        let mut frames = GpuFrames::default();
+        let mut sent = Vec::new();
+        for frame in 1..=120u64 {
+            let read = (frame.checked_sub(2))
+                .filter(|read| *read > 0)
+                .map(|read| GpuFrameTime {
+                    frame: read,
+                    time: Duration::from_millis(gpu_ms(read)),
+                });
+            frames.submitted(true);
+            frames.presented(&RenderStats {
+                frame_number: frame,
+                gpu_frame: read,
+                ..RenderStats::default()
+            });
+            sent.extend(frames.close(report(1, 0)));
+        }
+
+        let stalled = (sent.iter())
+            .filter(|report| report.busy.gpu == Some(Duration::from_millis(120)))
+            .count();
+        assert_eq!(stalled, 1, "the stall is one frame long in the reports");
+        let setpoint = Duration::from_secs_f64(1.0 / 60.0);
+        let mut governor = FrameGovernor::new(GovernorConfig::default());
+        let mut changes = Vec::new();
+        for report in &sent {
+            governor.observe(report.critical().expect("each frame is measured"), setpoint);
+            changes.extend(governor.decide(setpoint, false));
+        }
+        assert!(
+            changes.is_empty(),
+            "one GPU stall changed the multiplier: {changes:?}"
+        );
+        assert_eq!(governor.multiplier(), 1.0);
+    }
 }

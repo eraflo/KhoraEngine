@@ -81,8 +81,8 @@ pub(super) fn dispatch_asset_drop(
             }
         }
         AssetDrop::Ignored => log::info!(
-            "Hierarchy: asset type '{}' is not droppable here",
-            entry.asset_type
+            "Hierarchy: asset kind '{}' is not droppable here",
+            entry.kind
         ),
     }
 }

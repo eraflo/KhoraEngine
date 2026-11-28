@@ -81,7 +81,7 @@ fn assert_reports_the_near_plane(report: &LoadReport, id: PersistentId) {
 /// the editor opens it: read from disk without prefabs, filed with the
 /// engine's scene load hub, landed at a boundary. The load's outcome.
 fn open_from_disk(world: &mut GameWorld, path: &Path) -> khora_sdk::LoadOutcome {
-    let (source, prefabs) = scene_on_disk(path);
+    let (source, prefabs) = scene_on_disk(path, &crate::project_vfs::ProjectReads::default(), None);
     let runtime = crate::tests::scene_loads::runtime();
     crate::tests::scene_loads::load(
         &runtime,
@@ -125,10 +125,7 @@ fn loading_a_scene_from_outside_the_project_returns_its_report() {
     let path = dir.0.join("outside.kscene");
     let path = path.to_string_lossy().into_owned();
     let (world, id) = broken_camera_world();
-    assert!(
-        save_scene_to_path_with_goal(&world, &path, SerializationGoal::EditorInterchange),
-        "the scene saves"
-    );
+    crate::tests::scene_files::write_scene(&world, Path::new(&path));
 
     let mut opened = GameWorld::new();
     let report = open_from_disk(&mut opened, Path::new(&path)).expect("the scene loads");

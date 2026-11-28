@@ -439,3 +439,86 @@ fn a_new_scene_made_while_playing_switches_the_play_families_off() {
     assert_eq!(engine.off_at_the_boundary(), play_families());
     assert_eq!(engine.scale(), 1.0);
 }
+
+/// **Play waits for the scene opening**: asked before it lands, Play is
+/// refused and keeps no snapshot; asked once it landed, the scene played, and
+/// restored at Stop, is the one opened.
+#[test]
+fn play_is_refused_while_a_scene_is_opening() {
+    use crate::tests::scene_loads::{engine_frame, hub, restore, SETTLE_FRAMES};
+    use khora_sdk::editor_ui::SceneOpening;
+    use khora_sdk::khora_data::scene::loading::{LoadKind, SceneSource};
+
+    let engine = engine();
+    let (mut world, state) = editing(&engine);
+    let mut opened = GameWorld::new();
+    let entity = opened.spawn((Transform::identity(), Name::new("Opened")));
+    opened
+        .inner_world_mut()
+        .mark_authored(entity)
+        .expect("authored");
+    let loads = hub(&engine.runtime);
+    let ticket = loads.file(
+        world.inner_world_mut(),
+        LoadKind::Replace(SceneSource::Bytes(Arc::from(
+            crate::scene_io::snapshot_scene(&opened),
+        ))),
+        Arc::new(khora_sdk::khora_data::scene::NoPrefabs),
+    );
+    state
+        .lock()
+        .expect("the editor state")
+        .opening
+        .push(SceneOpening {
+            ticket,
+            path: "opened.kscene".to_owned(),
+            scene: None,
+        });
+
+    ask(&state, EditorRequest::Transport(Transport::Play));
+    process_transport(&mut world, &state, &engine.runtime);
+
+    assert_eq!(
+        play_mode(&state),
+        PlayMode::Editing,
+        "Play started on the scene before it opened"
+    );
+    assert!(
+        state
+            .lock()
+            .expect("the editor state")
+            .scene_snapshot
+            .is_none(),
+        "a refused Play keeps a snapshot"
+    );
+
+    for _ in 0..SETTLE_FRAMES {
+        engine_frame(&engine.runtime, &mut world);
+        super::super::land_scene_loads(&mut world, &state, &loads);
+        if state.lock().expect("the editor state").opening.is_empty() {
+            break;
+        }
+    }
+    ask(&state, EditorRequest::Transport(Transport::Play));
+    process_transport(&mut world, &state, &engine.runtime);
+
+    assert_eq!(
+        play_mode(&state),
+        PlayMode::Playing,
+        "Play once the scene opened"
+    );
+    let snapshot = (state
+        .lock()
+        .expect("the editor state")
+        .scene_snapshot
+        .clone())
+    .expect("Play keeps a snapshot");
+    let mut restored = GameWorld::new();
+    restore(&mut restored, &snapshot);
+    assert!(
+        restored.iter_entities().any(|e| restored
+            .get_component::<Name>(e)
+            .is_some_and(|name| name.0 == "Opened")),
+        "the scene played is not the one opened"
+    );
+}

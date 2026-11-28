@@ -39,47 +39,79 @@ pub enum ProblemSeverity {
 }
 
 /// Who found a problem: each source replaces its own list when it reports.
+///
+/// Each source says its scope: what its problems describe, and so when they
+/// leave.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ProblemSource {
     /// The compile of one module.
+    ///
+    /// Scope: that module, as the scripts mounted hold it.
     Compile {
         /// The module compiled, by its path under the script root.
         module: String,
     },
     /// The registration of what the modules declare.
+    ///
+    /// Scope: the scripts mounted.
     Registration,
     /// The last relayout of the components one module declares: each value a
     /// stored row could not keep when their fields changed.
+    ///
+    /// Scope: that module, as the scripts mounted hold it.
     Relayout {
         /// The module declaring them, by its path under the script root.
         module: String,
     },
     /// The instances running.
+    ///
+    /// Scope: the world as it runs now.
     Running,
     /// The scan of an assets root for `.erg` files outside its `scripts/`
     /// folder — files that are never compiled.
+    ///
+    /// Scope: that assets root, while it is mounted.
     Placement {
         /// The assets root scanned, as it was mounted.
         root: std::path::PathBuf,
     },
     /// The components' own checks, run on the world as it is now.
+    ///
+    /// Scope: the world as it is now.
     Data,
-    /// What the last scene load reported.
+    /// What the last load of the open scene reported, or why the scene a tool
+    /// meant to open could not be.
+    ///
+    /// Scope: the open scene. They leave with it: a new scene, another load
+    /// landing; a project change keeps the scene a user chose, and its own.
     Load,
     /// What the last save of a scene or a prefab left out of its file: each
     /// value only the session holds, such as a mesh made in code.
+    ///
+    /// Scope: the project open, whose file was saved.
     Save,
     /// The engine's startup: the work it waited on that had not landed when
     /// its wait timed out.
+    ///
+    /// Scope: the run.
     Startup,
     /// The files the engine refused to read, or quarantined.
     ///
     /// A path leaving its root, a file over its size cap, bytes that are not
     /// what their extension says.
+    ///
+    /// Scope: the run, until a file is released or read again.
     Security,
     /// What a restricted project does not run: a shader overlay ignored, as
     /// warnings; cleared once the project is trusted.
+    ///
+    /// Scope: the trust of every root the engine watches.
     Restricted,
+    /// What an interrupted operation left in a project's files, found as it
+    /// opened: an entry a rename had moved aside that could not be put back.
+    ///
+    /// Scope: the project open.
+    Leftover,
 }
 
 /// One problem, located.

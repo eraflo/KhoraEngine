@@ -33,10 +33,10 @@ use crate::widgets::tile::AssetTileKind;
 /// `assets/`.
 const ROCKET: &str = "prefabs/weapons/rocket.kprefab";
 
-fn entry(path: &str, asset_type: &str) -> AssetEntry {
+fn entry(path: &str, kind: &str) -> AssetEntry {
     AssetEntry {
         name: path.rsplit('/').next().unwrap_or(path).to_owned(),
-        asset_type: khora_sdk::khora_core::asset::AssetType::from(asset_type),
+        kind: khora_sdk::khora_core::asset::AssetKind::named(kind).expect("a registered kind"),
         source_path: path.to_owned(),
         uuid: AssetUUID::new_v5(path),
         container: None,
@@ -56,7 +56,7 @@ fn browsing(entries: Vec<AssetEntry>) -> (AssetBrowserPanel, Arc<Mutex<EditorSta
     let mut panel = AssetBrowserPanel::new(Arc::clone(&state), UiTheme::default());
     panel.rescan_if_needed();
     panel.search_filter = "alarm".to_owned();
-    panel.selected_filter = Some(AssetTileKind::Audio);
+    panel.selected_filter = Some(AssetTileKind::Sound);
     if let Ok(mut state) = state.lock() {
         state.select(EntityId {
             index: 3,
@@ -69,7 +69,7 @@ fn browsing(entries: Vec<AssetEntry>) -> (AssetBrowserPanel, Arc<Mutex<EditorSta
 #[test]
 fn a_revealed_asset_is_selected_in_its_opened_folder_and_inspected() {
     let (mut panel, state) = browsing(vec![
-        entry("sounds/alarm.wav", "audio"),
+        entry("sounds/alarm.wav", "sound"),
         entry(ROCKET, "prefab"),
     ]);
     state
@@ -104,7 +104,7 @@ fn a_revealed_asset_is_selected_in_its_opened_folder_and_inspected() {
 
 #[test]
 fn revealing_an_asset_the_browser_does_not_list_changes_nothing_but_the_request() {
-    let (mut panel, state) = browsing(vec![entry("sounds/alarm.wav", "audio")]);
+    let (mut panel, state) = browsing(vec![entry("sounds/alarm.wav", "sound")]);
     state
         .lock()
         .expect("state")

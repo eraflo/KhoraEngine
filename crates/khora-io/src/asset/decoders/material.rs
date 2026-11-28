@@ -88,9 +88,9 @@ fn decode_material_inner(
 
 inventory::submit! {
     DecoderRegistration {
-        type_name: "material",
+        kind: khora_core::asset::kinds::MATERIAL,
         register: |svc| {
-            svc.register_decoder::<Box<dyn Material>>("material", MaterialDecoder);
+            svc.register_decoder::<Box<dyn Material>>(khora_core::asset::kinds::MATERIAL.name(), MaterialDecoder);
         },
     }
 }

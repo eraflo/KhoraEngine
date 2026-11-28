@@ -46,10 +46,10 @@ use std::time::{Duration, Instant};
 /// the writer and this reader are held to one schema.
 const WRITTEN_BY_THE_EDITOR: &str = include_str!("../../tests/fixtures/runtime.json");
 
-/// One file per asset type the index builder knows.
+/// One file per asset kind the index builder knows.
 ///
 /// The bytes are not a valid asset of any kind: the probe only asks whether a
-/// decoder is registered for the type, not whether it accepts the file.
+/// decoder is registered for the kind, not whether it accepts the file.
 const PROBES: &[&str] = &[
     "probe.obj",
     "probe.png",
@@ -62,10 +62,10 @@ const PROBES: &[&str] = &[
     "probe.kprefab",
 ];
 
-/// The asset types a loose-files project can decode. The editor's
+/// The asset kinds a loose-files project can decode. The editor's
 /// `ProjectVfs` test pins the same list.
 const DECODABLE: &[&str] = &[
-    "audio", "font", "material", "mesh", "prefab", "script", "shader", "texture",
+    "font", "material", "mesh", "prefab", "script", "shader", "sound", "texture",
 ];
 
 /// The most frames a piece of work filed off the frame may take to land.
@@ -111,7 +111,7 @@ fn scratch_dir(tag: &str) -> std::io::Result<PathBuf> {
     Ok(dir)
 }
 
-/// The asset types among [`PROBES`] that `svc` has a decoder for, sorted.
+/// The asset kinds among [`PROBES`] that `svc` has a decoder for, sorted.
 fn decodable_types(svc: &mut AssetService) -> Result<Vec<String>> {
     let mut decodable = Vec::new();
     for file in PROBES {
@@ -120,7 +120,7 @@ fn decodable_types(svc: &mut AssetService) -> Result<Vec<String>> {
             .index()
             .get_metadata(&uuid)
             .ok_or_else(|| anyhow!("{file} is not indexed"))?
-            .asset_type
+            .kind
             .to_string();
         let no_decoder = match svc.load::<Mesh>(&uuid) {
             Ok(_) => false,
@@ -613,7 +613,11 @@ fn a_loose_files_runtime_resolves_the_uuids_the_registry_froze() -> Result<()> {
     let game = GameDir::new("loose-registry");
     game.asset("scenes/renamed.kscene", b"scene bytes");
     let frozen = AssetUUID::new_v5("scenes/original.kscene");
-    let mut registry = crate::AssetIdRegistry::load(game.path());
+    let mut registry = crate::AssetIdRegistry::load_or_unread(&crate::trust::FileGuard::new(
+        game.path(),
+        crate::trust::Trust::Project,
+        crate::trust::Refusals::detached(),
+    ));
     registry.freeze("scenes/renamed.kscene", frozen);
     registry.save()?;
 
@@ -1236,7 +1240,11 @@ fn a_pack_whose_header_count_was_rewritten_is_refused_naming_both_counts() {
 fn a_pack_whose_paths_share_a_uuid_after_a_rename_starts_the_runtime() {
     let game = GameDir::new("count-rename-reused");
     let project = game.path().join("project");
-    let mut registry = crate::AssetIdRegistry::load(&project);
+    let mut registry = crate::AssetIdRegistry::load_or_unread(&crate::trust::FileGuard::new(
+        &project,
+        crate::trust::Trust::Project,
+        crate::trust::Refusals::detached(),
+    ));
     registry.rename("textures/hero.png", "textures/hero_old.png");
     registry.save().expect("the registry saves");
     let exe_dir = game.packed(&[
@@ -1273,7 +1281,11 @@ fn a_loose_runtime_is_indexed_off_the_frame() {
     game.asset("meshes/hero.obj", TRIANGLE);
     game.asset("meshes/renamed.obj", TRIANGLE);
     let frozen = AssetUUID::new_v5("meshes/original.obj");
-    let mut registry = crate::AssetIdRegistry::load(game.path());
+    let mut registry = crate::AssetIdRegistry::load_or_unread(&crate::trust::FileGuard::new(
+        game.path(),
+        crate::trust::Trust::Project,
+        crate::trust::Refusals::detached(),
+    ));
     registry.freeze("meshes/renamed.obj", frozen);
     registry.save().expect("the registry saves");
 
@@ -1400,7 +1412,11 @@ fn a_runtime_opens_its_renamed_default_scene() {
     let scene = scene_bytes(&["Hero", "Door"]);
     game.asset(DEFAULT_SCENE, &scene);
     for project in [game.path().to_path_buf(), game.path().join("project")] {
-        let mut registry = crate::AssetIdRegistry::load(&project);
+        let mut registry = crate::AssetIdRegistry::load_or_unread(&crate::trust::FileGuard::new(
+            &project,
+            crate::trust::Trust::Project,
+            crate::trust::Refusals::detached(),
+        ));
         registry.rename("scenes/original.kscene", DEFAULT_SCENE);
         registry.save().expect("the registry saves");
     }

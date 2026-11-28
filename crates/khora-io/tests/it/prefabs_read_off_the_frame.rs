@@ -78,7 +78,11 @@ impl Project {
         let project: &Path = self.assets.parent().expect("the project root");
         AssetService::open_loose_files(
             project,
-            &AssetIdRegistry::load(project),
+            &AssetIdRegistry::load_or_unread(&khora_io::trust::FileGuard::new(
+                project,
+                khora_io::trust::Trust::Project,
+                khora_io::trust::Refusals::detached(),
+            )),
             Arc::new(MetricsRegistry::new()),
         )
         .expect("the project opens")

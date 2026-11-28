@@ -15,30 +15,30 @@
 //! The `DecoderRegistration` inventory entry: an asset decoder registered on
 //! the `AssetService` at startup.
 
+use khora_core::asset::AssetKind;
+
 use super::AssetService;
 
 /// Inventory entry for an `AssetDecoder` registered on every [`AssetService`] at startup.
 ///
-/// For a type with one canonical decoder (`texture`, `font`). A type whose
-/// backends compete (`audio`, `mesh`) is registered at the call site instead;
+/// For a kind with one canonical decoder (`texture`, `font`). A kind whose
+/// backends compete (`sound`, `mesh`) is registered at the call site instead;
 /// `decoders/audio/mod.rs` and `decoders/mesh/mod.rs` say why.
 ///
 /// ```ignore
 /// inventory::submit! {
 ///     DecoderRegistration {
-///         type_name: "texture",
+///         kind: kinds::TEXTURE,
 ///         register: |svc| {
-///             svc.register_decoder::<CpuTexture>("texture", TextureDecoder);
+///             svc.register_decoder::<CpuTexture>(kinds::TEXTURE.name(), TextureDecoder);
 ///         },
 ///     }
 /// }
 /// ```
 pub struct DecoderRegistration {
-    /// The asset type name the decoder handles (`"texture"`).
-    ///
-    /// The [`AssetType`](khora_core::asset::AssetType) name of its extensions, from
-    /// [`asset_type_for_extension`](crate::asset::asset_type_for_extension).
-    pub type_name: &'static str,
+    /// The asset kind the decoder handles, that of its files' extensions
+    /// ([`kind_for_extension`](crate::asset::kind_for_extension)).
+    pub kind: AssetKind,
     /// Registers the decoder on an [`AssetService`].
     ///
     /// A plain function pointer, so the entry is `'static` for `inventory::submit!`.

@@ -12,14 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **A scene saved outside the project is written whole or not at all**: a
-//! save replaces the file, and one that fails leaves what was there.
+//! **A scene saved in the project is written whole or not at all**: a save
+//! replaces the file, and one that fails leaves what was there.
 
 use std::path::{Path, PathBuf};
 
+use khora_sdk::MetricsRegistry;
+
 use super::super::*;
 
-/// A folder on disk, removed when the test ends.
+/// A project on disk, removed when the test ends.
 struct Folder(PathBuf);
 
 impl Drop for Folder {
@@ -28,13 +30,16 @@ impl Drop for Folder {
     }
 }
 
-fn folder(name: &str) -> Folder {
+/// A fresh project for the test `name`, with its `assets/scenes/` folder, and its VFS.
+fn project(name: &str) -> (Folder, ProjectVfs) {
     let dir = std::env::temp_dir().join(format!("khora-editor-{name}-{}", std::process::id()));
     if dir.exists() {
         std::fs::remove_dir_all(&dir).expect("an old folder is removed");
     }
-    std::fs::create_dir_all(&dir).expect("the folder");
-    Folder(dir)
+    std::fs::create_dir_all(dir.join("assets").join("scenes")).expect("the scenes folder");
+    let pvfs = ProjectVfs::open(dir.clone(), std::sync::Arc::new(MetricsRegistry::new()))
+        .expect("the project opens");
+    (Folder(dir), pvfs)
 }
 
 /// The names of the entries of `dir`, sorted.
@@ -59,41 +64,41 @@ fn one_entity_world() -> GameWorld {
 
 #[test]
 fn a_save_over_a_scene_replaces_it_whole_and_leaves_nothing_beside() {
-    let dir = folder("save-replaces-whole");
-    let path = dir.0.join("level.kscene");
+    let (dir, mut pvfs) = project("save-replaces-whole");
+    let scenes = dir.0.join("assets").join("scenes");
+    let path = scenes.join("level.kscene");
     std::fs::write(&path, vec![b'x'; 1 << 16]).expect("a previous file");
-    let path_str = path.to_string_lossy().into_owned();
 
-    assert!(save_scene_to_path_with_goal(
+    assert!(save_scene_in_project(
+        &mut pvfs,
         &one_entity_world(),
-        &path_str,
-        SerializationGoal::EditorInterchange
+        Path::new("scenes/level.kscene")
     ));
 
     let bytes = std::fs::read(&path).expect("the scene is there");
     let file = khora_sdk::SceneFile::from_bytes(&bytes).expect("a scene file, whole");
     khora_sdk::khora_data::scene::read_scene_file(&file).expect("the saved scene reads");
-    assert_eq!(listed(&dir.0), vec!["level.kscene"], "no temporary left");
+    assert_eq!(listed(&scenes), vec!["level.kscene"], "no temporary left");
 }
 
 #[test]
 fn a_failed_save_leaves_what_was_there() {
-    let dir = folder("save-fails-whole");
+    let (dir, mut pvfs) = project("save-fails-whole");
+    let scenes = dir.0.join("assets").join("scenes");
     // A folder where the scene goes: the save lands nowhere.
-    let path = dir.0.join("level.kscene");
+    let path = scenes.join("level.kscene");
     std::fs::create_dir(&path).expect("the folder in the way");
     std::fs::write(path.join("inside.txt"), b"kept").expect("a file inside");
-    let path_str = path.to_string_lossy().into_owned();
 
-    assert!(!save_scene_to_path_with_goal(
+    assert!(!save_scene_in_project(
+        &mut pvfs,
         &one_entity_world(),
-        &path_str,
-        SerializationGoal::EditorInterchange
+        Path::new("scenes/level.kscene")
     ));
 
     assert_eq!(
         std::fs::read(path.join("inside.txt")).expect("still there"),
         b"kept"
     );
-    assert_eq!(listed(&dir.0), vec!["level.kscene"], "no temporary left");
+    assert_eq!(listed(&scenes), vec!["level.kscene"], "no temporary left");
 }

@@ -19,7 +19,7 @@
 
 use std::sync::Arc;
 
-use khora_core::asset::{AssetType, AssetUUID};
+use khora_core::asset::{kinds, AssetUUID};
 use khora_core::ecs::ReservationHold;
 use khora_core::scene::{SceneFile, SerializationGoal, SCENE_FORMAT_VERSION};
 use khora_data::ecs::World;
@@ -474,11 +474,11 @@ impl SerializationService {
 /// be read or decoded.
 pub fn read_prefab(assets: &mut AssetService, id: AssetUUID) -> Result<SceneRecord, String> {
     match assets.index().get_metadata(&id) {
-        Some(metadata) if metadata.asset_type == AssetType::Prefab => {}
+        Some(metadata) if metadata.kind == kinds::PREFAB => {}
         Some(metadata) => {
             return Err(format!(
                 "the asset {id} is a {}, not a prefab",
-                metadata.asset_type
+                metadata.kind
             ))
         }
         None => return Err(format!("the project holds no asset {id}")),
@@ -494,7 +494,7 @@ pub fn prefab_catalog(assets: &AssetService) -> std::collections::BTreeSet<Asset
     assets
         .index()
         .iter_all()
-        .filter(|metadata| metadata.asset_type == AssetType::Prefab)
+        .filter(|metadata| metadata.kind == kinds::PREFAB)
         .map(|metadata| metadata.uuid)
         .collect()
 }

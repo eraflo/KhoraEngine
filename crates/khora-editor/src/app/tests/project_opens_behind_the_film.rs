@@ -287,6 +287,15 @@ fn waiting(landed: usize, waited: usize) -> ReadinessState {
     ReadinessState::Waiting(ReadinessProgress { landed, waited })
 }
 
+/// The engine's frames for scene loads, and the editor's landing of them, for as long as a load may take to land.
+fn run_scene_frames(opening: &mut Opening) {
+    let hub = scene_loads::hub(&opening.engine.runtime);
+    for _ in 0..SETTLE_FRAMES {
+        scene_loads::engine_frame(&opening.engine.runtime, &mut opening.world);
+        land_scene_loads(&mut opening.world, &opening.state, &hub);
+    }
+}
+
 // ─── The tests ──────────────────────────────────────────────────────────────
 
 /// **The project opens off the frame.**
@@ -748,9 +757,11 @@ fn an_opened_project_shows_the_version_its_game_is_built_at() {
     )
     .expect("the project's `project.json`");
 
-    let built = crate::project_identity::project_identity(project.root())
-        .expect("the project names its game")
-        .version;
+    let built = crate::project_identity::project_identity(
+        &crate::project_vfs::ProjectReads::default().guard(project.root()),
+    )
+    .expect("the project names its game")
+    .version;
     let mut opening = Opening::new();
     opening.start(project.root());
 
@@ -820,4 +831,557 @@ fn a_project_opened_while_playing_opens_in_editing() {
         state.scene_snapshot.is_none(),
         "the former project's scene would be restored at Stop"
     );
+}
+
+/// **A landed project reads through the run's refusals, at the trust of the
+/// project open**: its VFS reports to the refusals the runtime holds, and a
+/// trust set since is the one its next read is guarded at.
+#[test]
+fn a_landed_project_reads_through_the_runs_refusals_at_its_trust() {
+    use khora_sdk::trust::{ProjectTrust, ProjectTrustState, Refusals, Trust};
+
+    let project = Project::with("reads-through-the-run", &[]);
+    let mut opening = Opening::new();
+    let refusals = Arc::new(Refusals::new(None, None));
+    opening
+        .engine
+        .runtime
+        .resources
+        .insert(Arc::clone(&refusals));
+    let trust = Arc::new(ProjectTrustState::new(ProjectTrust::Restricted));
+    opening.engine.runtime.resources.insert(Arc::clone(&trust));
+
+    opening.start(project.root());
+    opening.engine.frame();
+    let pvfs = opening.land().expect("the project lands");
+
+    let pvfs = pvfs.lock().expect("the project");
+    let assets = project.root().join("assets");
+    assert!(
+        Arc::ptr_eq(&pvfs.reads().refusals(), &refusals),
+        "the project reports to the run's refusals"
+    );
+    assert_eq!(
+        pvfs.reads().guard(&assets).trust(),
+        Trust::Project,
+        "the project opened trusted is read as a trusted project's"
+    );
+    trust.set_for(project.root(), ProjectTrust::Restricted);
+    assert_eq!(
+        pvfs.reads().guard(&assets).trust(),
+        Trust::Restricted,
+        "a trust set since guards the next read"
+    );
+}
+
+/// The `Leftover` problems the runtime of `opening` holds.
+fn leftovers(opening: &Opening) -> Vec<khora_sdk::khora_core::problems::Problem> {
+    opening
+        .engine
+        .runtime
+        .resources
+        .get::<Arc<Problems>>()
+        .expect("the runtime holds the Problems")
+        .of_source(&ProblemSource::Leftover)
+}
+
+/// **What a rename cut short left aside under a taken name is reported as the project opens**, as a warning, and cleared once fixed and the project opened again.
+#[test]
+fn an_aside_left_at_the_open_is_reported_and_cleared_by_the_next_open() {
+    let project = Project::with("aside-left", &[("scenes/level.kscene", b"kept")]);
+    let aside = project.asset("scenes/level.kscene.1.2.aside.tmp");
+    std::fs::write(&aside, b"aside").expect("the aside is written");
+    let mut opening = Opening::new();
+
+    opening.start(project.root());
+    opening.engine.frame();
+    opening.land().expect("the project lands");
+
+    let left = leftovers(&opening);
+    assert_eq!(left.len(), 1, "{left:?}");
+    assert_eq!(left[0].severity, ProblemSeverity::Warning);
+    assert_eq!(std::fs::read(&aside).expect("the aside is kept"), b"aside");
+
+    std::fs::remove_file(&aside).expect("the author removes the aside");
+    opening.start(project.root());
+    opening.engine.frame();
+    opening.land().expect("the project lands again");
+
+    assert_eq!(
+        leftovers(&opening),
+        Vec::new(),
+        "the fixed aside is still reported"
+    );
+}
+
+/// **What a project left aside is not reported once another open leaves the editor with no project.**
+///
+/// The next open fails: nothing of the former project is shown as open, its
+/// leftovers included.
+#[test]
+fn an_aside_reported_is_cleared_when_the_next_open_fails() {
+    let project = Project::with("aside-then-fail", &[("scenes/level.kscene", b"kept")]);
+    std::fs::write(project.asset("scenes/level.kscene.1.2.aside.tmp"), b"aside")
+        .expect("the aside is written");
+    let next = Project::with("aside-next-fails", &[]);
+    let elsewhere = Project::with("aside-next-superseded", &[]);
+    let mut opening = Opening::new();
+    opening.start(project.root());
+    opening.engine.frame();
+    opening.land().expect("the project lands");
+    assert_eq!(
+        leftovers(&opening).len(),
+        1,
+        "the premise: one aside reported"
+    );
+
+    opening.start(next.root());
+    opening
+        .engine
+        .hub
+        .file(elsewhere.root().to_path_buf(), IndexKind::Open);
+    opening.engine.frame();
+    assert!(opening.land().is_none(), "the premise: the next open fails");
+
+    assert_eq!(
+        opening.state().project_folder,
+        None,
+        "the premise: no project is open"
+    );
+    assert_eq!(
+        leftovers(&opening),
+        Vec::new(),
+        "the closed project's aside is still reported"
+    );
+}
+
+/// **What the editor filed of the project it held leaves with it**: a save's and a load's problems are cleared as the next open resolves, and the failure is what is reported.
+#[test]
+fn the_problems_filed_of_a_project_leave_when_the_next_open_fails() {
+    use khora_sdk::khora_core::problems::Problem;
+
+    let project = Project::with("problems-then-fail", &[]);
+    let next = Project::with("problems-next-fails", &[]);
+    let elsewhere = Project::with("problems-next-superseded", &[]);
+    let mut opening = Opening::new();
+    opening.start(project.root());
+    opening.engine.frame();
+    opening.land().expect("the project lands");
+    let problems = Arc::clone(
+        opening
+            .engine
+            .runtime
+            .resources
+            .get::<Arc<Problems>>()
+            .expect("the runtime holds the Problems"),
+    );
+    let left_out = Problem::new(ProblemSeverity::Warning, "a mesh made in code is not saved");
+    problems.report(ProblemSource::Save, vec![left_out]);
+
+    opening.start(next.root());
+    opening
+        .engine
+        .hub
+        .file(elsewhere.root().to_path_buf(), IndexKind::Open);
+    opening.engine.frame();
+    assert!(opening.land().is_none(), "the premise: the next open fails");
+
+    assert_eq!(problems.of_source(&ProblemSource::Save), Vec::new());
+    let load = problems.of_source(&ProblemSource::Load);
+    assert_eq!(load.len(), 1, "{load:?}");
+    assert!(load[0].message.contains("could not be opened"), "{load:?}");
+}
+
+/// **A scene of the former project still opening lands nothing once another project opened.**
+///
+/// The former project's default scene was filed, and had not landed, when the
+/// next project — one without a default scene — opened and got one. The
+/// editor holds the new project: the former one's scene does not replace its
+/// scene, nor become the scene a save writes to.
+#[test]
+fn a_scene_of_the_former_project_still_opening_lands_nothing_once_another_opened() {
+    let scene = scene_holding("Lantern");
+    let former = Project::with(
+        "former-scene-in-flight",
+        &[(DEFAULT_SCENE_REL_PATH, scene.as_slice())],
+    );
+    let next = Project::with("next-without-scene", &[]);
+    let mut opening = Opening::new();
+    opening.start(former.root());
+    opening.engine.frame();
+    opening.land().expect("the former project lands");
+    assert_eq!(
+        opening.scene_loads_filed(),
+        1,
+        "the premise: its scene is filed"
+    );
+
+    opening.start(next.root());
+    opening.engine.frame();
+    opening.land().expect("the next project lands");
+    assert!(
+        next.asset(DEFAULT_SCENE_REL_PATH).is_file(),
+        "the premise: the next project got its default scene"
+    );
+    run_scene_frames(&mut opening);
+
+    assert!(
+        !opening.holds("Lantern"),
+        "the former project's scene replaced the next project's"
+    );
+    let current = opening.state().current_scene_path.clone();
+    assert!(
+        current
+            .as_deref()
+            .is_none_or(|path| !Path::new(path).starts_with(former.root())),
+        "the open scene is the former project's file: {current:?}"
+    );
+}
+
+/// **A project without a default scene gets one holding none of the former project's entities**, and that scene is the one the editor saves to.
+#[test]
+fn a_default_scene_made_after_another_project_holds_none_of_its_entities() {
+    let scene = scene_holding("Lantern");
+    let former = Project::with(
+        "former-scene-landed",
+        &[(DEFAULT_SCENE_REL_PATH, scene.as_slice())],
+    );
+    let next = Project::with("next-gets-a-scene", &[]);
+    let mut opening = Opening::new();
+    opening.start(former.root());
+    opening.engine.frame();
+    opening.land().expect("the former project lands");
+    opening.settle_scenes();
+    assert!(opening.holds("Lantern"), "the premise: its scene is open");
+
+    opening.start(next.root());
+    opening.engine.frame();
+    opening.land().expect("the next project lands");
+
+    assert!(
+        !opening.holds("Lantern"),
+        "the next project's new default scene holds the former project's entities"
+    );
+    let current = opening.state().current_scene_path.clone();
+    assert!(
+        current
+            .as_deref()
+            .is_some_and(|path| Path::new(path).starts_with(next.root())),
+        "the scene a save writes to is not the next project's: {current:?}"
+    );
+}
+
+/// **A project opened while playing opens in editing, a scene chosen as it opened kept**: the scene stays, the play and the scene it would restore at Stop go with the former project.
+#[test]
+fn a_project_opened_while_playing_opens_in_editing_with_a_scene_chosen_meanwhile() {
+    let scene = scene_holding("Chosen");
+    let chosen = Project::with(
+        "chosen-while-playing",
+        &[("chosen.kscene", scene.as_slice())],
+    );
+    let project = Project::with("opened-while-playing-chosen", &[]);
+    let mut opening = Opening::new();
+    {
+        let mut state = opening.state();
+        state.play_mode = khora_sdk::PlayMode::Playing;
+        state.scene_snapshot = Some(b"the former project's scene".to_vec());
+    }
+
+    opening.start(project.root());
+    let hub = scene_loads::hub(&opening.engine.runtime);
+    let reads = crate::project_vfs::ProjectReads::of(&opening.engine.runtime);
+    crate::commands::open_scene_dispatch(
+        None,
+        &mut opening.world,
+        &opening.state,
+        &hub,
+        &reads,
+        &chosen.asset("chosen.kscene"),
+    )
+    .expect("the chosen scene is filed");
+    opening.settle_scenes();
+    opening.engine.frame();
+    assert!(opening.land().is_some(), "the project lands");
+
+    assert!(
+        opening.holds("Chosen"),
+        "the premise: the chosen scene stays"
+    );
+    let state = opening.state();
+    assert_eq!(state.play_mode, khora_sdk::PlayMode::Editing);
+    assert!(
+        state.scene_snapshot.is_none(),
+        "the former project's scene would be restored at Stop"
+    );
+}
+
+/// **A scene chosen as the project opened, then played, is kept as it was chosen**: the play ends as Stop ends it, and what the play did to the scene goes with the play.
+#[test]
+fn a_scene_chosen_then_played_as_the_project_opens_is_kept_as_chosen() {
+    let scene = scene_holding("Chosen");
+    let chosen = Project::with("played-chosen", &[("chosen.kscene", scene.as_slice())]);
+    let project = Project::with("opened-over-a-played-scene", &[]);
+    let mut opening = Opening::new();
+    opening.start(project.root());
+    let hub = scene_loads::hub(&opening.engine.runtime);
+    let reads = crate::project_vfs::ProjectReads::of(&opening.engine.runtime);
+    crate::commands::open_scene_dispatch(
+        None,
+        &mut opening.world,
+        &opening.state,
+        &hub,
+        &reads,
+        &chosen.asset("chosen.kscene"),
+    )
+    .expect("the chosen scene is filed");
+    opening.settle_scenes();
+    // Play, as the toolbar starts it; the play then changes the scene.
+    opening
+        .state()
+        .push_request(khora_sdk::editor_ui::EditorRequest::Transport(
+            khora_sdk::editor_ui::Transport::Play,
+        ));
+    crate::commands::process_transport(&mut opening.world, &opening.state, &opening.engine.runtime);
+    assert_eq!(
+        opening.state().play_mode,
+        khora_sdk::PlayMode::Playing,
+        "the premise: the chosen scene is played"
+    );
+    let played: Vec<_> = opening.world.iter_entities().collect();
+    for entity in played {
+        opening.world.despawn(entity);
+    }
+    opening
+        .world
+        .spawn((Transform::identity(), Name::new("Spawned in play")));
+
+    opening.engine.frame();
+    assert!(opening.land().is_some(), "the project lands");
+    run_scene_frames(&mut opening);
+
+    assert_eq!(opening.state().play_mode, khora_sdk::PlayMode::Editing);
+    assert!(
+        !opening.holds("Spawned in play"),
+        "the scene kept is the play's, not the one chosen"
+    );
+    assert!(
+        opening.holds("Chosen"),
+        "the chosen scene went with the play"
+    );
+}
+
+/// **A scene chosen as the project opened keeps its load problems**: the scene stays open, so what its load adapted is still reported.
+#[test]
+fn a_scene_chosen_as_the_project_opened_keeps_its_load_problems() {
+    let chosen = Project::with("chosen-with-problems", &[]);
+    let path = chosen.root().join("broken.kscene");
+    let mut authored = GameWorld::new();
+    // A camera whose near plane sits at its eye: its load reports it.
+    let camera = authored.spawn((
+        Transform::identity(),
+        GlobalTransform::identity(),
+        Camera {
+            z_near: 0.0,
+            ..Camera::default_perspective()
+        },
+        Name::new("Main Camera"),
+    ));
+    authored
+        .inner_world_mut()
+        .mark_authored(camera)
+        .expect("authored");
+    crate::tests::scene_files::write_scene(&authored, &path);
+    let project = Project::with("opened-with-a-scene-chosen", &[]);
+    let mut opening = Opening::new();
+    let problems = Arc::clone(
+        opening
+            .engine
+            .runtime
+            .resources
+            .get::<Arc<Problems>>()
+            .expect("the runtime holds the Problems"),
+    );
+
+    opening.start(project.root());
+    let hub = scene_loads::hub(&opening.engine.runtime);
+    let reads = crate::project_vfs::ProjectReads::of(&opening.engine.runtime);
+    crate::commands::open_scene_dispatch(
+        None,
+        &mut opening.world,
+        &opening.state,
+        &hub,
+        &reads,
+        &path,
+    )
+    .expect("the chosen scene is filed");
+    opening.settle_scenes();
+    // What the app does at each frame's start: the load's problems reported.
+    let reported = opening.state().take_requests(|request| match request {
+        khora_sdk::editor_ui::EditorRequest::ReportLoadProblems { problems } => Ok(problems),
+        other => Err(other),
+    });
+    for load in reported {
+        problems.report(ProblemSource::Load, load);
+    }
+    assert!(
+        !problems.of_source(&ProblemSource::Load).is_empty(),
+        "the premise: the chosen scene's load reports its camera"
+    );
+    opening.engine.frame();
+    assert!(opening.land().is_some(), "the project lands");
+
+    assert!(
+        opening.holds("Main Camera"),
+        "the premise: the chosen scene stays"
+    );
+    assert!(
+        !problems.of_source(&ProblemSource::Load).is_empty(),
+        "the open scene's load problems are no longer reported"
+    );
+}
+
+/// **A Stop filed as the project opens restores nothing of the former project**: the play ends with its project, the restore in flight is withdrawn, and the scene chosen meanwhile stays.
+#[test]
+fn a_stop_filed_as_the_project_opens_restores_nothing_of_the_former_project() {
+    use khora_sdk::khora_data::scene::loading::{LoadKind, SceneSource};
+
+    let scene = scene_holding("Chosen");
+    let chosen = Project::with("stop-chosen", &[("chosen.kscene", scene.as_slice())]);
+    let project = Project::with("stop-while-opening", &[]);
+    let mut opening = Opening::new();
+    opening.start(project.root());
+    let hub = scene_loads::hub(&opening.engine.runtime);
+    let reads = crate::project_vfs::ProjectReads::of(&opening.engine.runtime);
+    crate::commands::open_scene_dispatch(
+        None,
+        &mut opening.world,
+        &opening.state,
+        &hub,
+        &reads,
+        &chosen.asset("chosen.kscene"),
+    )
+    .expect("the chosen scene is filed");
+    opening.settle_scenes();
+    // The restore a Stop files, of a scene the former project played.
+    let ticket = hub.file(
+        opening.world.inner_world_mut(),
+        LoadKind::Replace(SceneSource::Bytes(Arc::from(scene_holding("Former")))),
+        Arc::new(khora_sdk::khora_data::scene::NoPrefabs),
+    );
+    opening.state().restoring = Some(ticket);
+
+    opening.engine.frame();
+    assert!(opening.land().is_some(), "the project lands");
+    run_scene_frames(&mut opening);
+
+    assert!(
+        !opening.holds("Former"),
+        "Stop restored a scene of the former project"
+    );
+    assert!(opening.holds("Chosen"), "the chosen scene went");
+    assert_eq!(opening.state().restoring, None);
+}
+
+/// **A Play asked as the project opens waits for its scene**: the project's
+/// default scene is still opening when the transport runs, so Play is
+/// refused; asked once the scene landed, it plays that scene.
+#[test]
+fn a_play_asked_as_the_project_opens_waits_for_its_scene() {
+    use khora_sdk::editor_ui::{EditorRequest, Transport};
+
+    let scene = scene_holding("Lantern");
+    let project = Project::with(
+        "play-as-it-opens",
+        &[(DEFAULT_SCENE_REL_PATH, scene.as_slice())],
+    );
+    let mut opening = Opening::new();
+    opening.start(project.root());
+    opening
+        .state()
+        .push_request(EditorRequest::Transport(Transport::Play));
+
+    // `before_frame`: the project lands, then the transport runs.
+    opening.engine.frame();
+    assert!(opening.land().is_some(), "the project lands");
+    crate::commands::process_transport(&mut opening.world, &opening.state, &opening.engine.runtime);
+
+    assert_eq!(
+        opening.state().play_mode,
+        khora_sdk::PlayMode::Editing,
+        "Play started before the project's scene landed"
+    );
+    assert!(
+        opening.state().scene_snapshot.is_none(),
+        "a refused Play keeps a snapshot"
+    );
+
+    opening.settle_scenes();
+    opening
+        .state()
+        .push_request(EditorRequest::Transport(Transport::Play));
+    crate::commands::process_transport(&mut opening.world, &opening.state, &opening.engine.runtime);
+
+    assert_eq!(opening.state().play_mode, khora_sdk::PlayMode::Playing);
+    assert!(
+        opening.holds("Lantern"),
+        "the scene played is not the project's"
+    );
+}
+
+/// **A Stop filed as the project opens, of the scene chosen meanwhile, is kept**: it restores the scene as it was chosen, and the play's changes go.
+#[test]
+fn a_stop_of_the_scene_chosen_as_the_project_opens_restores_it_as_chosen() {
+    use khora_sdk::editor_ui::{EditorRequest, Transport};
+
+    let scene = scene_holding("Chosen");
+    let chosen = Project::with("stopped-chosen", &[("chosen.kscene", scene.as_slice())]);
+    let project = Project::with("opened-over-a-stopped-scene", &[]);
+    let mut opening = Opening::new();
+    opening.start(project.root());
+    let hub = scene_loads::hub(&opening.engine.runtime);
+    let reads = crate::project_vfs::ProjectReads::of(&opening.engine.runtime);
+    crate::commands::open_scene_dispatch(
+        None,
+        &mut opening.world,
+        &opening.state,
+        &hub,
+        &reads,
+        &chosen.asset("chosen.kscene"),
+    )
+    .expect("the chosen scene is filed");
+    opening.settle_scenes();
+    for transport in [Transport::Play, Transport::Stop] {
+        opening
+            .state()
+            .push_request(EditorRequest::Transport(transport));
+        crate::commands::process_transport(
+            &mut opening.world,
+            &opening.state,
+            &opening.engine.runtime,
+        );
+        if transport == Transport::Play {
+            opening
+                .world
+                .spawn((Transform::identity(), Name::new("Spawned in play")));
+        }
+    }
+    assert!(
+        opening.state().restoring.is_some(),
+        "the premise: Stop's restore is in flight"
+    );
+
+    opening.engine.frame();
+    assert!(opening.land().is_some(), "the project lands");
+    assert!(
+        opening.state().restoring.is_some(),
+        "the restore of the scene chosen is withdrawn"
+    );
+    run_scene_frames(&mut opening);
+
+    assert_eq!(opening.state().restoring, None);
+    assert!(
+        !opening.holds("Spawned in play"),
+        "the scene kept is the play's, not the one chosen"
+    );
+    assert!(opening.holds("Chosen"), "the chosen scene went");
 }

@@ -15,6 +15,21 @@ marker trait: `impl Asset for HeightMap {}`). Put the type with its domain:
 `khora-core` for a format several crates share (`CpuTexture`, `Mesh`), `khora-data`
 for one the data layer owns (`SoundData`).
 
+A new format is a new **asset kind**: declare it once, beside the type, with
+`register_asset_kind!`. Named like your files' extension, in lowercase ASCII, it
+indexes them; with `ergon = "…"`, a script can hold one. The engine refuses at
+start a name or an Ergon name declared twice, a name not in lowercase, a name
+another kind's extension or a file of no asset already uses (`png`, `bin`), an
+Ergon name the language already holds (`int`, `Entity`, `Vec3`, …) and one an
+engine component or event holds (`Transform`, `Light`, `Touched`, …).
+
+```rust
+khora_core::register_asset_kind!(
+    /// A height map, `HeightMap` in Ergon.
+    pub const HEIGHTMAP = "heightmap", ergon = "HeightMap"
+);
+```
+
 ## Step 2 — Implement `AssetDecoder`
 
 `AssetDecoder<A>` (`khora-io/src/asset/decoder.rs`) is pure CPU work: a decoder
@@ -87,25 +102,24 @@ engine goes on — but a panic is a bug.
 ## Step 3 — Register it
 
 Submit a `DecoderRegistration` through `inventory`, in the decoder's file. Its
-`type_name` is the asset type's name of your files' extension, and `register` is a
-plain function (no captures) that registers the decoder on a service:
+`kind` is your files' asset kind, and `register` is a plain function (no captures)
+that registers the decoder on a service, under the kind's name:
 
 ```rust
 inventory::submit! {
     DecoderRegistration {
-        type_name: "heightmap",
+        kind: HEIGHTMAP,
         register: |svc| {
-            svc.register_decoder::<HeightMap>("heightmap", HeightMapDecoder);
+            svc.register_decoder::<HeightMap>(HEIGHTMAP.name(), HeightMapDecoder);
         },
     }
 }
 ```
 
-The name must be `asset_type_for_extension(ext).as_str()` for your extension, or
-the reader never routes your files to the decoder. An extension the engine does
-not know is a type of its own, named by the extension lower-cased
-(`.heightmap` → `AssetType::Other("heightmap")`), so a new format's name is its
-extension. To give the format a name of its own and other extensions, add it to
+The kind must be `kind_for_extension(ext)` for your extension, or the reader never
+routes your files to the decoder. An extension the engine's table does not list is
+the registered kind named like it (`.heightmap` → the kind `heightmap`); with no
+such kind, the file is not indexed. To give the format other extensions, add it to
 the table in `khora-io/src/asset/extensions.rs`.
 
 Put the file beside the built-in decoders in `crates/khora-io/src/asset/decoders/`
@@ -116,7 +130,7 @@ opened over a project's files or a pack (`register_default_decoders`,
 `register_packed_decoders`), which register every `inventory` decoder first. A
 service made with `AssetService::new` alone has no decoder.
 
-**The two explicit ones.** Audio and meshes are registered by those two
+**The two explicit ones.** Sounds and meshes are registered by those two
 functions directly (`khora-io/src/asset/defaults.rs`), not through `inventory`. A
 mesh decoder needs a resolver for a glTF's buffers and images — on the disk,
 guarded, for a project; inside the pack for a shipped game — and the service
@@ -127,7 +141,7 @@ that pattern.
 
 A decoded asset is never stored inline on an entity: it is reached through its
 uuid and an `AssetHandle<T>`. The engine resolves on its own only what entities
-name through `MeshRef`, `MaterialRef`, a UI font and a UI image. A new asset type
+name through `MeshRef`, `MaterialRef`, a UI font and a UI image. A new asset kind
 is resolved by its user: a system that `request`s it from the `AssetService` and
 writes the handle where it is needed, or a component holding a
 `HandleComponent<T>`. An asset a device must hold — a GPU texture, a buffer —

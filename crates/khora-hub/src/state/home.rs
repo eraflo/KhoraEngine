@@ -19,4 +19,6 @@ pub struct HomeState {
     pub trust_confirm: Option<crate::services::config::RecentProject>,
     /// What the cards show of each project's folder, kept between frames.
     pub cards: super::CardFacts,
+    /// The refusals met reading the projects' files, each shown until dismissed.
+    pub refusals: super::ProjectRefusals,
 }

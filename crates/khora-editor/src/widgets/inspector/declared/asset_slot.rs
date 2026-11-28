@@ -56,10 +56,7 @@ pub fn asset_text(uuid: AssetUUID, entries: &[AssetEntry]) -> String {
 /// Returns the entries a picker for `kind` offers: those of that kind, sorted
 /// by name.
 pub fn picker_entries(kind: AssetKind, entries: &[AssetEntry]) -> Vec<&AssetEntry> {
-    let mut offered: Vec<&AssetEntry> = entries
-        .iter()
-        .filter(|entry| entry.asset_type.script_kind() == Some(kind))
-        .collect();
+    let mut offered: Vec<&AssetEntry> = entries.iter().filter(|entry| entry.kind == kind).collect();
     offered.sort_by(|a, b| {
         a.name
             .to_lowercase()
@@ -319,7 +316,7 @@ fn dragged_entry<'a>(
     let index = unpack_asset_drag(payload, cx.asset_epoch)?;
     cx.assets
         .get(index as usize)
-        .filter(|entry| entry.asset_type.script_kind() == Some(kind))
+        .filter(|entry| entry.kind == kind)
 }
 
 /// Returns `missing · ` and the first group of `uuid`.

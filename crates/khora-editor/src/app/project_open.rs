@@ -12,16 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Opening the project named on the command line.
+//! Opening a project, and letting go of the one the editor held.
 
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::AssetEntry;
-use khora_sdk::editor_ui::{EditorRequest, TrustAnswer};
+use khora_sdk::editor_ui::{EditorRequest, SceneInProject, TrustAnswer};
+use khora_sdk::khora_core::scene::LoadTicket;
 use khora_sdk::{GameWorld, Runtime};
 
 use crate::project_vfs::ProjectVfs;
 use crate::{git, hot_reload, scene_io};
+
+/// The sources of the problems the editor files of the project it holds: they leave with the project.
+///
+/// What a rename left aside, and what the last save of a file of the
+/// project left out. What the last load reported (`Load`) describes the open
+/// scene and leaves with it, as every scope says on `ProblemSource`.
+const PROJECT_SOURCES: [khora_sdk::khora_core::problems::ProblemSource; 2] = [
+    khora_sdk::khora_core::problems::ProblemSource::Leftover,
+    khora_sdk::khora_core::problems::ProblemSource::Save,
+];
 
 /// The project the editor opens behind its film: the folder, and the `Open`
 /// filed for it with the engine's index hub, until it lands.
@@ -33,6 +44,10 @@ pub(crate) struct OpeningProject {
     /// The editor's scene choices when it was filed: a scene the user chose
     /// meanwhile is not replaced by the project's default one.
     pub(crate) choice: u64,
+    /// The scene loads in flight when it was filed: the held project's, which land nothing once it is let go.
+    ///
+    /// An opened scene's, and Stop's restore.
+    pub(crate) filed_before: Vec<LoadTicket>,
 }
 
 /// Starts opening the project at `root` off the frame, holding the runtime's `Readiness` in `hold`.
@@ -98,11 +113,13 @@ pub(crate) fn start_opening_project(
     }
 
     // What needs no index: `project.json`'s few hundred bytes and the git
-    // branch.
-    let project_json: Option<serde_json::Value> =
-        std::fs::read_to_string(root.join("project.json"))
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok());
+    // branch, read at the trust just decided, reporting to the run's refusals.
+    let project = khora_sdk::trust::FileGuard::new(
+        &root,
+        trust.trust(),
+        khora_sdk::trust::Refusals::of(runtime),
+    );
+    let project_json = crate::project_identity::read_project_json(&project);
     // Read as the game's identity reads them — trimmed, blank as none — so
     // the editor shows the game by the name and version it is built with.
     let text = |key: &str| {
@@ -111,14 +128,18 @@ pub(crate) fn start_opening_project(
             .and_then(|json| crate::project_identity::field(json, key))
     };
     let mut choice = 0;
+    let mut filed_before = Vec::new();
     if let Ok(mut state) = editor_state.lock() {
         choice = state.scene_choices;
+        filed_before = (state.opening.iter().map(|opening| opening.ticket))
+            .chain(state.restoring)
+            .collect();
         state.project_folder = Some(root.to_string_lossy().to_string());
         state.project_name = text("name");
         state.project_engine_version = text("engine_version");
         state.project_version =
             Some(text("version").unwrap_or_else(|| khora_sdk::DEFAULT_GAME_VERSION.to_owned()));
-        state.current_git_branch = git::read_git_branch(&root);
+        state.current_git_branch = git::read_git_branch(&project);
         state.trust_prompt = None;
     }
     log::info!("Opening project '{}' off the frame", root.display());
@@ -126,6 +147,7 @@ pub(crate) fn start_opening_project(
         root,
         ticket,
         choice,
+        filed_before,
     })
 }
 
@@ -150,7 +172,7 @@ impl super::EditorApp {
     pub(super) fn open_at_its_trust(&mut self, root: std::path::PathBuf, runtime: &Runtime) {
         let store = self.trust_store();
         if let Some(opening) = open_project(
-            root,
+            root.clone(),
             &store,
             runtime,
             &self.editor_state,
@@ -158,6 +180,7 @@ impl super::EditorApp {
         ) {
             self.project_vfs = None;
             self.opening = Some(opening);
+            self.follow_project_physics(&root, runtime);
         }
     }
 
@@ -165,7 +188,8 @@ impl super::EditorApp {
     ///
     /// `TrustOpen` / `RestrictOpen` decide the project waiting
     /// (`EditorState::trust_prompt`) and open it, `CancelOpen` lets it go;
-    /// `TrustProject` trusts the project open.
+    /// `TrustProject` trusts the project open, reads its identity registry
+    /// again and steps its physics at the step read at its new trust.
     pub(super) fn follow_trust_answers(&mut self, runtime: &Runtime) {
         let answers = self
             .editor_state
@@ -211,10 +235,17 @@ impl super::EditorApp {
             TrustAnswer::TrustProject => {
                 let open =
                     (self.editor_state.lock().ok()).and_then(|state| state.project_folder.clone());
-                match open {
-                    Some(root) => grant_trust(runtime, &store, std::path::Path::new(&root)),
-                    None => log::warn!("no project is open to trust"),
+                let Some(root) = open.map(std::path::PathBuf::from) else {
+                    log::warn!("no project is open to trust");
+                    return;
+                };
+                grant_trust(runtime, &store, &root);
+                // What was read under the restricted caps is read again.
+                if let Some(pvfs) = &self.project_vfs {
+                    khora_sdk::khora_core::sync::LockExt::lock_recovered(&**pvfs)
+                        .reread_at_its_trust();
                 }
+                self.follow_project_physics(&root, runtime);
             }
         }
     }
@@ -225,6 +256,31 @@ impl super::EditorApp {
         self.project_trust_state
             .as_ref()
             .map_or(khora_sdk::trust::ProjectTrust::Trusted, |state| state.get())
+    }
+
+    /// Runs the physics family at the `physics.step` of the project at `root`, read at the trust decided of it.
+    ///
+    /// Build Game reads it at the same trust, so Play steps as the game it
+    /// builds. Its refusals go to the run's.
+    fn follow_project_physics(&mut self, root: &std::path::Path, runtime: &Runtime) {
+        let decided = self.trust_store().decision(root);
+        let settings = crate::project_physics::physics_at(
+            root,
+            decided,
+            khora_sdk::trust::Refusals::of(runtime),
+        );
+        let applied = self.agent_registry.as_ref().is_some_and(|registry| {
+            crate::project_physics::apply_physics_step(
+                &khora_sdk::khora_core::sync::LockExt::lock_recovered(&**registry),
+                settings,
+            )
+        });
+        if !applied {
+            log::warn!(
+                "the engine runs no physics family: the physics.step of '{}' is not applied",
+                root.display()
+            );
+        }
     }
 }
 
@@ -286,12 +342,19 @@ pub(crate) fn grant_trust(
 
 /// Lands the project `opening` names once its `Open` landed; `None`, `opening` kept, in flight.
 ///
-/// `opening` is emptied either way. On `Ok`, returns the project's VFS over
-/// `shared_assets`, the browser filled, a play under way ended (its snapshot
-/// dropped) and the default scene opened by ticket (the runtime's `Readiness`
-/// waits on it), or created when there is none; `hold` is kept for the scripts. On `Err`, reports to the runtime's
-/// `Problems` (`ProblemSource::Load`), empties `hold` and clears the project's
-/// folder, name, version and branch.
+/// `opening` is emptied either way, and the project the editor held is let
+/// go first ([`leave_project`]): the new project's scene starts from an empty
+/// world. On `Ok`, returns the project's VFS over `shared_assets`, what a
+/// rename cut short left aside put back (what stays reported as
+/// `ProblemSource::Leftover`), the browser filled and, unless the user chose
+/// a scene since the open was filed, the default scene opened by ticket (the
+/// runtime's `Readiness` waits on it), or created and saved when there is
+/// none; either becomes the scene a save writes to once there. `hold` is kept
+/// for the scripts. On `Err`, returns `None` with `opening` emptied: the
+/// editor holds no project. The failure joins the open scene's load problems,
+/// in the editor's state and the runtime's `Problems` (`ProblemSource::Load`);
+/// `hold` is emptied and the project's folder, name, version and branch
+/// cleared.
 pub(crate) fn land_opened_project(
     opening: &mut Option<OpeningProject>,
     world: &mut GameWorld,
@@ -304,12 +367,23 @@ pub(crate) fn land_opened_project(
     let ticket = opening.as_ref()?.ticket;
     let indexes = runtime.resources.get::<Arc<khora_sdk::IndexHub>>()?;
     let outcome = indexes.take_outcome(ticket)?;
-    let OpeningProject { root, choice, .. } = opening.take()?;
+    let OpeningProject {
+        root,
+        choice,
+        filed_before,
+        ..
+    } = opening.take()?;
+    let chosen_since = editor_state
+        .lock()
+        .is_ok_and(|state| state.scene_choices != choice);
+    leave_project(world, editor_state, runtime, &filed_before, chosen_since);
     let opened = outcome.map_err(|why| why.to_string()).and_then(|()| {
+        // Its reads report to the run's refusals, at the trust its user decided.
         ProjectVfs::over_service(
             root.clone(),
             Arc::clone(shared_assets),
             Arc::clone(asset_watch),
+            crate::project_vfs::ProjectReads::of(runtime),
         )
         .map_err(|e| format!("{e:#}"))
     });
@@ -320,24 +394,20 @@ pub(crate) fn land_opened_project(
                 "The project '{}' could not be opened: {why}",
                 root.display()
             );
-            if let Some(problems) = runtime
-                .resources
-                .get::<Arc<khora_sdk::khora_core::problems::Problems>>()
-            {
-                problems.report(
-                    khora_sdk::khora_core::problems::ProblemSource::Load,
-                    vec![khora_sdk::khora_core::problems::Problem::new(
+            // The editor runs with no project: nothing of it is shown as
+            // open, and nothing more is filed — the film goes.
+            if let Ok(mut state) = editor_state.lock() {
+                // The failure joins what the scene kept was loaded with.
+                state
+                    .load_problems
+                    .push(khora_sdk::khora_core::problems::Problem::new(
                         khora_sdk::khora_core::problems::ProblemSeverity::Error,
                         format!(
                             "the project '{}' could not be opened: {why}",
                             root.display()
                         ),
-                    )],
-                );
-            }
-            // The editor runs with no project: nothing of it is shown as
-            // open, and nothing more is filed — the film goes.
-            if let Ok(mut state) = editor_state.lock() {
+                    ));
+                report_load_problems(&mut state, runtime);
                 state.project_folder = None;
                 state.project_name = None;
                 state.project_engine_version = None;
@@ -349,7 +419,7 @@ pub(crate) fn land_opened_project(
         }
     };
     pvfs.index_with(Arc::clone(indexes));
-
+    reclaim_leftovers(&mut pvfs, runtime);
     let entries: Vec<AssetEntry> = hot_reload::collect_asset_entries(&pvfs);
     let dirs = pvfs.list_dirs();
     if let Ok(mut state) = editor_state.lock() {
@@ -361,10 +431,6 @@ pub(crate) fn land_opened_project(
         state.asset_entries = entries;
         state.asset_dirs = dirs;
         state.asset_epoch = state.asset_epoch.wrapping_add(1);
-        // Play ends with the project it played: the scene Stop would restore
-        // is the former project's.
-        state.play_mode = khora_sdk::PlayMode::Editing;
-        state.scene_snapshot = None;
     }
 
     // The default scene, opened by ticket, or created when there is none.
@@ -373,16 +439,19 @@ pub(crate) fn land_opened_project(
     let rel = khora_sdk::DEFAULT_SCENE_REL_PATH;
     let abs = root.join("assets").join(rel);
     let pvfs = Arc::new(Mutex::new(pvfs));
-    let chosen_since = editor_state
-        .lock()
-        .is_ok_and(|state| state.scene_choices != choice);
     if chosen_since {
         // The user chose a scene meanwhile (the film gave up waiting): it
         // stays.
     } else if abs.exists() {
         if let Some(loads) = runtime.resources.get::<Arc<khora_sdk::SceneLoadHub>>() {
-            let ticket =
-                crate::commands::open_scene_dispatch(Some(&pvfs), world, editor_state, loads, &abs);
+            let ticket = crate::commands::open_scene_dispatch(
+                Some(&pvfs),
+                world,
+                editor_state,
+                loads,
+                &crate::project_vfs::ProjectReads::of(runtime),
+                &abs,
+            );
             if let (Some(ticket), Some(readiness)) =
                 (ticket, runtime.resources.get::<Arc<khora_sdk::Readiness>>())
             {
@@ -390,9 +459,137 @@ pub(crate) fn land_opened_project(
             }
         }
     } else if let Ok(mut pvfs) = pvfs.lock() {
-        scene_io::create_default_scene_in_project(&mut pvfs, world, rel);
+        if scene_io::create_default_scene_in_project(&mut pvfs, world, rel) {
+            if let Ok(mut state) = editor_state.lock() {
+                state.current_scene_path = Some(SceneInProject::new(pvfs.assets_root.clone(), rel));
+            }
+        }
     }
     Some(pvfs)
+}
+
+/// Lets go of the project the editor held, as an open resolves: another project, the same again, or none when it failed.
+///
+/// Every project change goes through it, from [`land_opened_project`]. The
+/// scene loads in flight when the open was filed (`filed_before`) are
+/// withdrawn through the world's `SceneLoadHub`, and land nothing. The play
+/// under way ends with the project it played: unless it plays the scene the
+/// user chose since the open was filed (`chosen_since`, and the play started
+/// on that choice, `EditorState::played_choice`), its snapshot is dropped and
+/// a Stop's restore in flight withdrawn, so no Stop restores a scene of
+/// another project. A play of the scene chosen ends as Stop ends it
+/// ([`stop_play`]): its restore, or the one its Stop filed, lands the scene as
+/// it was chosen, in Editing. Unless the user chose a scene since the open
+/// was filed, the world is emptied as New Scene empties it ([`clear_scene`]):
+/// every entity, what names one, what its load reported and every other load
+/// in flight; a scene chosen keeps its load problems. Either way it forgets
+/// the scene a save writes to, the requests and edits queued against the
+/// project ([`EditorRequest::names_the_project`]), the asset browser's
+/// listing, selection, reindex and key changes, the trust confirmation and the
+/// last refusal, and what the runtime's `Problems` hold of the project
+/// ([`PROJECT_SOURCES`]); the `Load` problems it holds are those of the scene
+/// kept. The undo history, the app's, is emptied by the app where the open
+/// resolves.
+///
+/// [`clear_scene`]: crate::commands::clear_scene
+/// [`stop_play`]: crate::commands::stop_play
+fn leave_project(
+    world: &mut GameWorld,
+    editor_state: &Arc<Mutex<khora_sdk::EditorState>>,
+    runtime: &Runtime,
+    filed_before: &[LoadTicket],
+    chosen_since: bool,
+) {
+    if let Ok(mut state) = editor_state.lock() {
+        let loads = world.scene_loads().cloned();
+        // The play, or the restore its Stop filed, of the scene chosen since
+        // the open was filed: it holds that scene as chosen, and is kept.
+        let plays_the_choice =
+            loads.is_some() && chosen_since && state.played_choice == Some(state.scene_choices);
+        let mut withdrawn = filed_before.to_vec();
+        if !plays_the_choice {
+            withdrawn.extend(state.restoring.take());
+        }
+        match &loads {
+            Some(loads) => {
+                for ticket in &withdrawn {
+                    loads.cancel(*ticket);
+                    // Landed already, its outcome is the former project's.
+                    let _ = loads.take_outcome(*ticket);
+                }
+                if plays_the_choice {
+                    crate::commands::stop_play(world, &mut state, loads);
+                }
+            }
+            None if !withdrawn.is_empty() => {
+                log::error!("the former project's scene loads in flight cannot be withdrawn");
+            }
+            None => {}
+        }
+        state
+            .opening
+            .retain(|opening| !filed_before.contains(&opening.ticket));
+        // Play ends with the project it played: the scene Stop would restore
+        // is the former project's, unless it is the one chosen since.
+        state.play_mode = khora_sdk::PlayMode::Editing;
+        if !plays_the_choice {
+            state.scene_snapshot = None;
+            state.played_choice = None;
+            state.restore_problems.clear();
+        }
+        if !chosen_since {
+            crate::commands::clear_scene(world, &mut state);
+        }
+        state.current_scene_path = None;
+        let _ = state.take_requests(|request| {
+            if request.names_the_project() {
+                Ok(())
+            } else {
+                Err(request)
+            }
+        });
+        state.pending_edits.clear();
+        state.asset_entries.clear();
+        state.asset_dirs.clear();
+        state.asset_epoch = state.asset_epoch.wrapping_add(1);
+        state.reindexing = None;
+        state.key_changes.clear();
+        state.selected_asset = None;
+        state.inspected_asset_path = None;
+        state.asset_picker_query.clear();
+        state.trust_confirm = None;
+        state.refusal = None;
+        // The report of the scene's problems the queue held went with it.
+        report_load_problems(&mut state, runtime);
+    }
+    let Some(problems) =
+        (runtime.resources).get::<Arc<khora_sdk::khora_core::problems::Problems>>()
+    else {
+        return;
+    };
+    for source in PROJECT_SOURCES {
+        problems.report(source, Vec::new());
+    }
+}
+
+/// Reports the open scene's load problems, as `state` holds them, to the runtime's `Problems` at once.
+///
+/// What the queued `ReportLoadProblems` would report, the state's list being
+/// the last one asked: any still queued is taken, so none reports an older
+/// list after.
+fn report_load_problems(state: &mut khora_sdk::EditorState, runtime: &Runtime) {
+    let _ = state.take_requests(|request| match request {
+        EditorRequest::ReportLoadProblems { .. } => Ok(()),
+        other => Err(other),
+    });
+    if let Some(problems) =
+        (runtime.resources).get::<Arc<khora_sdk::khora_core::problems::Problems>>()
+    {
+        problems.report(
+            khora_sdk::khora_core::problems::ProblemSource::Load,
+            state.load_problems.clone(),
+        );
+    }
 }
 
 /// Brings the mounted scripts in line with `project`, as [`follow_open_project`] does.
@@ -418,4 +615,26 @@ pub(crate) fn mount_opened_scripts(
         *hold = None;
     }
     ticket
+}
+
+/// Puts back what a rename cut short left aside in the project `pvfs` opens.
+///
+/// What stays aside, its name taken, is reported to the runtime's `Problems`
+/// (`ProblemSource::Leftover`) as a warning each, replacing what an earlier
+/// open reported; what was put back is logged.
+fn reclaim_leftovers(pvfs: &mut ProjectVfs, runtime: &Runtime) {
+    use khora_sdk::khora_core::problems::{Problem, ProblemSeverity, ProblemSource, Problems};
+    let mut left = Vec::new();
+    for reclaimed in pvfs.reclaim_asides() {
+        match reclaimed {
+            khora_sdk::fs::Reclaimed::Restored { .. } => log::info!("{reclaimed}"),
+            stays => {
+                log::warn!("{stays}");
+                left.push(Problem::new(ProblemSeverity::Warning, stays.to_string()));
+            }
+        }
+    }
+    if let Some(problems) = runtime.resources.get::<Arc<Problems>>() {
+        problems.report(ProblemSource::Leftover, left);
+    }
 }

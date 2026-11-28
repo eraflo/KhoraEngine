@@ -86,9 +86,10 @@ pub enum EditorRequest {
         /// The file's stem.
         name: String,
     },
-    /// Reports what the last scene load adapted, as the `Load` problems.
+    /// Reports what the last load of the open scene adapted, as the `Load` problems.
     ///
-    /// An empty list clears them (a new scene).
+    /// An empty list clears them (a new scene). The list is the editor
+    /// state's `load_problems`: the last one asked replaces every other.
     ReportLoadProblems {
         /// The problems the load found.
         problems: Vec<Problem>,
@@ -162,4 +163,69 @@ pub enum EditorRequest {
     },
     /// A file operation on the project's assets.
     AssetFile(AssetFileOp),
+}
+
+impl EditorRequest {
+    /// Returns whether the request names something of the project open, and so means nothing once that project is let go.
+    ///
+    /// An entity of its scene, one of its assets, a problem of either, or the
+    /// project itself (trusting it). A menu command, Play, a spawn or a scene
+    /// file to open act on whatever is open when they run.
+    pub fn names_the_project(&self) -> bool {
+        match self {
+            Self::Menu(_)
+            | Self::Transport(_)
+            | Self::ToggleWireframe
+            | Self::Spawn(_)
+            | Self::OpenScene { .. } => false,
+            Self::Trust(answer) => *answer == TrustAnswer::TrustProject,
+            Self::ConfirmTrust
+            | Self::DeleteEntity { .. }
+            | Self::DuplicateEntity { .. }
+            | Self::Reparent { .. }
+            | Self::AddComponent { .. }
+            | Self::RevertPrefab { .. }
+            | Self::ApplyToPrefab { .. }
+            | Self::SaveAsPrefab { .. }
+            | Self::SaveAsMaterial { .. }
+            | Self::ReportLoadProblems { .. }
+            | Self::ReportSaveProblems { .. }
+            | Self::SpawnPrefab { .. }
+            | Self::SaveAsPrefabAt { .. }
+            | Self::SpawnMesh { .. }
+            | Self::AssignMaterial { .. }
+            | Self::AssignDropped { .. }
+            | Self::RevealAsset { .. }
+            | Self::ReleaseAsset { .. }
+            | Self::AssetFile(_) => true,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EditorRequest;
+    use crate::ecs::entity::EntityId;
+    use crate::ui::editor::{MenuAction, TrustAnswer};
+
+    /// An entity, a problem or the project open is named; a menu command or the answer to a project waiting is not.
+    #[test]
+    fn what_names_the_project_open_is_told_apart() {
+        let entity = EntityId {
+            index: 0,
+            generation: 0,
+        };
+        assert!(EditorRequest::DeleteEntity { entity }.names_the_project());
+        assert!(EditorRequest::ReportSaveProblems {
+            problems: Vec::new()
+        }
+        .names_the_project());
+        assert!(EditorRequest::Trust(TrustAnswer::TrustProject).names_the_project());
+        assert!(!EditorRequest::Trust(TrustAnswer::TrustOpen).names_the_project());
+        assert!(!EditorRequest::Menu(MenuAction::Save).names_the_project());
+        assert!(!EditorRequest::OpenScene {
+            path: "level.kscene".to_owned()
+        }
+        .names_the_project());
+    }
 }

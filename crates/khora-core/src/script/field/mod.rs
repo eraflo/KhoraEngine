@@ -18,14 +18,11 @@ use crate::asset::AssetKind;
 use crate::ecs::entity::EntityId;
 use crate::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
 
-use super::ScriptValue;
+use super::{ScriptValue, ENGINE_TYPES};
 
 mod hints;
 
 pub use hints::{FieldHints, FieldRange};
-
-/// The engine types a script names, as [`ErgonType::Engine`] holds them.
-const ENGINE_TYPES: [&str; 5] = ["Vec2", "Vec3", "Vec4", "Quat", "Color"];
 
 /// The Ergon type of a component field.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,8 +37,8 @@ pub enum ErgonType {
     Str,
     /// `Entity`
     Entity,
-    /// An asset reference of one kind: `Prefab`, `Sound`, `Material`,
-    /// `Mesh`, `Texture`, `Scene`.
+    /// An asset reference of one registered kind a script holds, by its
+    /// Ergon name: `Prefab`, `Sound`, `Font`, …
     Asset(AssetKind),
     /// An engine type, by its Ergon name: `Vec3`, `Quat`, `Color`.
     Engine(&'static str),
@@ -328,7 +325,7 @@ impl std::fmt::Display for ErgonType {
             Self::Float => f.write_str("float"),
             Self::Str => f.write_str("string"),
             Self::Entity => f.write_str("Entity"),
-            Self::Asset(kind) => f.write_str(kind.ergon_name()),
+            Self::Asset(kind) => f.write_str(kind.ergon_name().unwrap_or(kind.name())),
             Self::Engine(name) => f.write_str(name),
             Self::Optional(inner) => write!(f, "{inner}?"),
             Self::Array(element) => write!(f, "{element}[]"),

@@ -144,9 +144,9 @@ fn check_header(bytes: &[u8], limits: &Limits) -> Result<(), LimitExceeded> {
 
 inventory::submit! {
     DecoderRegistration {
-        type_name: "texture",
+        kind: khora_core::asset::kinds::TEXTURE,
         register: |svc| {
-            svc.register_decoder::<CpuTexture>("texture", TextureDecoder);
+            svc.register_decoder::<CpuTexture>(khora_core::asset::kinds::TEXTURE.name(), TextureDecoder);
         },
     }
 }

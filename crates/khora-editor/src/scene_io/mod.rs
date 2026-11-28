@@ -14,10 +14,10 @@
 
 //! Scene serialization helpers: saves and loads through the project's VFS.
 //!
-//! A Save As or an Open outside the project falls back to `std::fs`.
+//! A scene is saved in its project only; one opened from outside the project
+//! is read through a guard.
 
 use crate::project_vfs::{AfterIndex, ProjectVfs};
-use khora_sdk::khora_core::asset::asset_key;
 #[cfg(test)]
 use khora_sdk::khora_core::problems::ProblemSource;
 use khora_sdk::khora_core::problems::{Problem, ProblemSeverity};
@@ -228,12 +228,19 @@ impl SceneFetch for ProjectScene {
     }
 }
 
-/// The bytes of a scene file outside the project, read off the frame.
-struct SceneOnDisk(std::path::PathBuf);
+/// The bytes of a scene file outside the project's `assets/`, read off the frame through a guard.
+struct SceneOnDisk {
+    /// What the file is read through: over the project's root, or over the file's folder.
+    guard: khora_sdk::trust::FileGuard,
+    /// The file, under the guard's root.
+    rel: std::path::PathBuf,
+}
 
 impl SceneFetch for SceneOnDisk {
     fn fetch(&self) -> Result<Vec<u8>, String> {
-        std::fs::read(&self.0).map_err(|error| format!("{}: {error}", self.0.display()))
+        self.guard
+            .read(&self.rel)
+            .map_err(|error| format!("{}: {error}", self.guard.root().join(&self.rel).display()))
     }
 }
 
@@ -283,11 +290,38 @@ pub(crate) fn scene_in_project(
     ))
 }
 
-/// Returns where a load reads the scene file at `path`, outside the project,
-/// from; it links to no prefabs.
-pub fn scene_on_disk(path: &Path) -> (SceneSource, std::sync::Arc<dyn PrefabSource + Send + Sync>) {
+/// Returns where a load reads the scene file at `path`, outside the project's `assets/`, from; it links to no prefabs.
+///
+/// A file under `project_root`, the open project's, is read through a guard
+/// over that root at the project's trust; any other file through a guard over
+/// its own folder, as a downloaded file, under the strict caps. Both report to
+/// the refusals of `reads`, the run's.
+pub fn scene_on_disk(
+    path: &Path,
+    reads: &crate::project_vfs::ProjectReads,
+    project_root: Option<&Path>,
+) -> (SceneSource, std::sync::Arc<dyn PrefabSource + Send + Sync>) {
+    let in_project =
+        project_root.and_then(|root| khora_sdk::fs::relative_to(path, root).map(|rel| (root, rel)));
+    let fetch = match in_project {
+        Some((root, rel)) => SceneOnDisk {
+            guard: reads.guard(root),
+            rel,
+        },
+        None => SceneOnDisk {
+            guard: khora_sdk::trust::FileGuard::new(
+                path.parent().unwrap_or(Path::new("")),
+                khora_sdk::trust::Trust::Imported,
+                reads.refusals(),
+            ),
+            rel: path
+                .file_name()
+                .map(std::path::PathBuf::from)
+                .unwrap_or_default(),
+        },
+    };
     (
-        SceneSource::Fetch(std::sync::Arc::new(SceneOnDisk(path.to_path_buf()))),
+        SceneSource::Fetch(std::sync::Arc::new(fetch)),
         std::sync::Arc::new(NoPrefabs),
     )
 }
@@ -336,13 +370,15 @@ pub fn report_problems(
         .collect()
 }
 
-/// Spawns Main Camera + Directional Light entities, then saves the world to
-/// the relative path inside the project (default `scenes/default.kscene`).
+/// Spawns Main Camera + Directional Light entities, then saves the world at `rel_path` under the project's `assets/`; returns whether the save landed.
+///
+/// `rel_path` is forward-slash (default `scenes/default.kscene`); a failed
+/// save is logged.
 pub(crate) fn create_default_scene_in_project(
     pvfs: &mut ProjectVfs,
     world: &mut GameWorld,
     rel_path: &str,
-) {
+) -> bool {
     let camera = world.spawn((
         Transform {
             translation: Vec3::new(0.0, 5.0, 10.0),
@@ -371,78 +407,11 @@ pub(crate) fn create_default_scene_in_project(
         world.inner_world_mut().mark_authored(entity);
     }
 
-    if !save_scene_in_project(pvfs, world, Path::new(rel_path)) {
+    let saved = save_scene_in_project(pvfs, world, Path::new(rel_path));
+    if !saved {
         log::error!("Failed to seed default scene at '{}'", rel_path);
     }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Arbitrary-path fallback — for File→Save As / Open dialogs that target a
-// location outside the current project. Bypasses the VFS by design.
-// ─────────────────────────────────────────────────────────────────────────────
-
-// The bool form, for tests: the editor saves through the reporting one.
-#[cfg(test)]
-/// Saves the world as a `.kscene` at an absolute path outside `<project>/assets/`.
-///
-/// For a Save As outside the project; logs a warning, the write bypassing the VFS.
-pub fn save_scene_to_path_with_goal(
-    world: &GameWorld,
-    path: &str,
-    goal: SerializationGoal,
-) -> bool {
-    save_scene_to_path_reporting(world, path, goal).is_some()
-}
-
-/// Saves the world as a `.kscene` at an absolute path outside `<project>/assets/`,
-/// and returns what the save left out of the file.
-///
-/// For a Save As outside the project; logs a warning, the write bypassing the
-/// VFS. `None` when the scene did not reach disk.
-pub(crate) fn save_scene_to_path_reporting(
-    world: &GameWorld,
-    path: &str,
-    goal: SerializationGoal,
-) -> Option<Vec<ReportEntry>> {
-    let service = SerializationService::new();
-    match service.save_world_reporting(world.inner_world(), goal) {
-        Ok((scene_file, left_out)) => {
-            log_left_out(path, &left_out);
-            let bytes = scene_file.to_bytes();
-            // Whole or not at all: a failed save leaves the previous file.
-            match khora_sdk::fs::write_atomic(std::path::Path::new(path), &bytes) {
-                Ok(()) => {
-                    log::warn!(
-                        "Scene saved to '{}' ({} bytes, goal={:?}) — outside project, not VFS-managed.",
-                        path,
-                        bytes.len(),
-                        goal,
-                    );
-                    Some(left_out)
-                }
-                Err(e) => {
-                    log::error!("Failed to write scene file '{}': {}", path, e);
-                    None
-                }
-            }
-        }
-        Err(e) => {
-            log::error!("Failed to serialize scene: {:?}", e);
-            None
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Path utilities
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Returns `abs_path` relative to `assets_root`, forward-slashed, if it lies under it.
-///
-/// `None` otherwise: callers read the scene from its path ([`scene_on_disk`]).
-pub(crate) fn rel_inside_project(abs_path: &Path, assets_root: &Path) -> Option<String> {
-    let rel = abs_path.strip_prefix(assets_root).ok()?;
-    Some(asset_key(rel))
+    saved
 }
 
 /// Says what a save left out of its file — a mesh made in code — so a file

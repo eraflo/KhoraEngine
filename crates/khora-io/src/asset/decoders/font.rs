@@ -49,9 +49,9 @@ impl AssetDecoder<Font> for FontDecoder {
 
 inventory::submit! {
     DecoderRegistration {
-        type_name: "font",
+        kind: khora_core::asset::kinds::FONT,
         register: |svc| {
-            svc.register_decoder::<Font>("font", FontDecoder);
+            svc.register_decoder::<Font>(khora_core::asset::kinds::FONT.name(), FontDecoder);
         },
     }
 }

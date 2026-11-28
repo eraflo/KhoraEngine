@@ -23,7 +23,6 @@ khora-telemetry = { path = "../khora-telemetry" }
 anyhow = "1.0"
 image = "0.25.9"
 tempfile = "3.25.0"
-bincode = { version = "2.0.1", features = ["serde"] }
 
 [lints]
 workspace = true

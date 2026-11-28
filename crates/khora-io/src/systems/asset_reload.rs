@@ -435,7 +435,11 @@ mod tests {
             }
             let service = AssetService::open_loose_files(
                 &root,
-                &AssetIdRegistry::load(&root),
+                &AssetIdRegistry::load_or_unread(&crate::trust::FileGuard::new(
+                    &root,
+                    crate::trust::Trust::Project,
+                    crate::trust::Refusals::detached(),
+                )),
                 Arc::new(MetricsRegistry::new()),
             )
             .expect("the project opens");
@@ -515,10 +519,20 @@ mod tests {
         /// editor's hot reload does when a file goes away.
         fn remove_and_reindex(&self, rel: &str) {
             fs::remove_file(self.root.join("assets").join(rel)).unwrap();
-            let bytes = IndexBuilder::new(&self.root.join("assets"))
-                .with_registry(&AssetIdRegistry::load(&self.root))
-                .build_index_bytes()
-                .unwrap();
+            let bytes = IndexBuilder::new(crate::trust::FileGuard::new(
+                self.root.join("assets"),
+                crate::trust::Trust::Project,
+                crate::trust::Refusals::detached(),
+            ))
+            .with_registry(&AssetIdRegistry::load_or_unread(
+                &crate::trust::FileGuard::new(
+                    &self.root,
+                    crate::trust::Trust::Project,
+                    crate::trust::Refusals::detached(),
+                ),
+            ))
+            .build_index_bytes()
+            .unwrap();
             self.service.lock().unwrap().reindex(&bytes).unwrap();
         }
 
@@ -530,7 +544,11 @@ mod tests {
         /// What the editor's hot reload does when the file at `rel` changed:
         /// invalidates it through the project's identity registry.
         fn invalidate_file(&self, rel: &str) {
-            let registry = AssetIdRegistry::load(&self.root);
+            let registry = AssetIdRegistry::load_or_unread(&crate::trust::FileGuard::new(
+                &self.root,
+                crate::trust::Trust::Project,
+                crate::trust::Refusals::detached(),
+            ));
             (self.service.lock().unwrap()).invalidate_through(rel, &|path| registry.resolve(path));
         }
 
@@ -1129,10 +1147,20 @@ mod tests {
     /// Lists the assets folder again, as the editor's hot reload does after a
     /// file that can hold parts was modified.
     fn reindex(project: &Project) {
-        let bytes = IndexBuilder::new(&project.root.join("assets"))
-            .with_registry(&AssetIdRegistry::load(&project.root))
-            .build_index_bytes()
-            .unwrap();
+        let bytes = IndexBuilder::new(crate::trust::FileGuard::new(
+            project.root.join("assets"),
+            crate::trust::Trust::Project,
+            crate::trust::Refusals::detached(),
+        ))
+        .with_registry(&AssetIdRegistry::load_or_unread(
+            &crate::trust::FileGuard::new(
+                &project.root,
+                crate::trust::Trust::Project,
+                crate::trust::Refusals::detached(),
+            ),
+        ))
+        .build_index_bytes()
+        .unwrap();
         project.service.lock().unwrap().reindex(&bytes).unwrap();
     }
 
@@ -1342,7 +1370,7 @@ mod tests {
         let moved = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 2.0, 0.0]];
         let (_, buffer) = gltf_shape(&moved, [1.0, 0.0, 0.0, 1.0], "shape.bin");
         project.write(bin, &buffer);
-        project.invalidate(&AssetUUID::new_v5(bin));
+        project.invalidate_file(bin);
         project.tick(&mut world);
 
         let after = &mesh_of(&project, &world, entity)
@@ -1379,7 +1407,7 @@ mod tests {
         let moved = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 2.0, 0.0]];
         let (_, buffer) = gltf_shape(&moved, [1.0, 0.0, 0.0, 1.0], "shared.bin");
         project.write(bin, &buffer);
-        project.invalidate(&AssetUUID::new_v5(bin));
+        project.invalidate_file(bin);
         project.tick(&mut world);
 
         for entity in entities {
@@ -1407,7 +1435,7 @@ mod tests {
         project.tick(&mut world);
 
         project.write(bin, &buffer[..buffer.len() / 2]);
-        project.invalidate(&AssetUUID::new_v5(bin));
+        project.invalidate_file(bin);
         project.tick(&mut world);
         assert_eq!(
             mesh_of(&project, &world, entity)
@@ -1420,7 +1448,7 @@ mod tests {
         let moved = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 2.0, 0.0]];
         let (_, repaired) = gltf_shape(&moved, [1.0, 0.0, 0.0, 1.0], "shape.bin");
         project.write(bin, &repaired);
-        project.invalidate(&AssetUUID::new_v5(bin));
+        project.invalidate_file(bin);
         project.tick(&mut world);
 
         assert_eq!(
@@ -1509,7 +1537,11 @@ mod tests {
         write_file(&other.path().join("assets"), obj_path, QUAD_OBJ.as_bytes());
         let mut incoming = AssetService::open_loose_files(
             other.path(),
-            &AssetIdRegistry::load(other.path()),
+            &AssetIdRegistry::load_or_unread(&crate::trust::FileGuard::new(
+                other.path(),
+                crate::trust::Trust::Project,
+                crate::trust::Refusals::detached(),
+            )),
             Arc::new(MetricsRegistry::new()),
         )
         .unwrap();
@@ -1919,7 +1951,7 @@ mod tests {
         let moved = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 2.0, 0.0]];
         let (_, buffer) = gltf_shape(&moved, [1.0, 0.0, 0.0, 1.0], "buffered.bin");
         project.write(bin, &buffer);
-        project.invalidate(&AssetUUID::new_v5(bin));
+        project.invalidate_file(bin);
         project.frame(&mut world);
 
         let x = |world: &World| {
@@ -2108,7 +2140,11 @@ mod tests {
         write_file(&other.path().join("assets"), obj_path, QUAD_OBJ.as_bytes());
         let mut own = AssetService::open_loose_files(
             other.path(),
-            &AssetIdRegistry::load(other.path()),
+            &AssetIdRegistry::load_or_unread(&crate::trust::FileGuard::new(
+                other.path(),
+                crate::trust::Trust::Project,
+                crate::trust::Refusals::detached(),
+            )),
             Arc::new(MetricsRegistry::new()),
         )
         .unwrap();

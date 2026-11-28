@@ -24,7 +24,7 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 
 use super::{ErgonType, FieldHints, FieldRange, ScriptField};
-use crate::asset::{AssetKind, AssetUUID};
+use crate::asset::{kinds, AssetKind, AssetUUID};
 use crate::ecs::entity::EntityId;
 use crate::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
 use crate::script::ScriptValue;
@@ -513,13 +513,14 @@ fn widening_tells_an_int_converted_inexactly_at_any_depth() {
 // ─── Asset references ───────────────────────────────────────────────────────
 
 /// Each asset kind with the spelling Ergon writes its type with.
-const ASSET_SPELLINGS: [(AssetKind, &str); 6] = [
-    (AssetKind::Prefab, "Prefab"),
-    (AssetKind::Sound, "Sound"),
-    (AssetKind::Material, "Material"),
-    (AssetKind::Mesh, "Mesh"),
-    (AssetKind::Texture, "Texture"),
-    (AssetKind::Scene, "Scene"),
+const ASSET_SPELLINGS: [(AssetKind, &str); 7] = [
+    (kinds::PREFAB, "Prefab"),
+    (kinds::SOUND, "Sound"),
+    (kinds::MATERIAL, "Material"),
+    (kinds::MESH, "Mesh"),
+    (kinds::TEXTURE, "Texture"),
+    (kinds::SCENE, "Scene"),
+    (kinds::FONT, "Font"),
 ];
 
 fn asset(kind: AssetKind) -> ErgonType {
@@ -546,16 +547,16 @@ fn each_asset_kind_reads_back_from_its_spelling() {
 fn an_optional_and_an_array_of_assets_read_back_from_their_spelling() {
     assert_eq!(
         ErgonType::parse("Sound?"),
-        Some(ErgonType::Optional(Box::new(asset(AssetKind::Sound))))
+        Some(ErgonType::Optional(Box::new(asset(kinds::SOUND))))
     );
     assert_eq!(
         ErgonType::parse("Mesh[]"),
-        Some(ErgonType::Array(Box::new(asset(AssetKind::Mesh))))
+        Some(ErgonType::Array(Box::new(asset(kinds::MESH))))
     );
     assert_eq!(
         ErgonType::parse("Texture?[]"),
         Some(ErgonType::Array(Box::new(ErgonType::Optional(Box::new(
-            asset(AssetKind::Texture)
+            asset(kinds::TEXTURE)
         )))))
     );
 }
@@ -590,7 +591,7 @@ fn an_asset_type_is_written_as_its_spelling() {
 /// record keeps — and read back from it.
 #[test]
 fn an_asset_type_is_saved_as_its_spelling() {
-    let ty = ErgonType::Optional(Box::new(asset(AssetKind::Prefab)));
+    let ty = ErgonType::Optional(Box::new(asset(kinds::PREFAB)));
     let text = serde_json::to_string(&ty).expect("serializes");
     assert_eq!(text, "\"Prefab?\"");
     assert_eq!(serde_json::from_str::<ErgonType>(&text).expect("reads"), ty);
@@ -622,7 +623,7 @@ fn an_asset_type_admits_an_asset_reference_and_nothing_else() {
         assert!(optional.admits(&reference), "{kind:?}? admits a reference");
     }
     assert!(
-        ErgonType::Array(Box::new(asset(AssetKind::Mesh)))
+        ErgonType::Array(Box::new(asset(kinds::MESH)))
             .admits(&ScriptValue::Array(vec![reference.clone(), reference])),
         "an array of meshes admits references"
     );
@@ -637,6 +638,47 @@ fn another_type_refuses_an_asset_reference() {
     assert!(!ErgonType::Str.admits(&reference));
     assert!(!ErgonType::named_struct("Prefab").admits(&reference));
     assert!(!ErgonType::Engine("Vec3").admits(&reference));
+}
+
+/// The parsed shape of `spelling`, each asset type written `asset:<kind name>`.
+fn kinds_parsed(spelling: &str) -> Option<String> {
+    fn shape(ty: &ErgonType) -> String {
+        match ty {
+            ErgonType::Asset(kind) => format!("asset:{}", kind.name()),
+            ErgonType::Optional(inner) => format!("{}?", shape(inner)),
+            ErgonType::Array(inner) => format!("{}[]", shape(inner)),
+            ErgonType::Struct {
+                name,
+                fields: Some(fields),
+            } => {
+                let fields: Vec<String> = fields
+                    .iter()
+                    .map(|(field, ty)| format!("{field}:{}", shape(ty)))
+                    .collect();
+                format!("{name}{{{}}}", fields.join(","))
+            }
+            other => other.to_string(),
+        }
+    }
+    ErgonType::parse(spelling).map(|ty| shape(&ty))
+}
+
+/// **An Ergon asset type names the registered kind it spells**, inside an
+/// optional, an array and a struct's field alike; a font is one.
+#[test]
+fn ergon_asset_types_name_registered_kinds() {
+    for (spelling, parsed) in [
+        ("Prefab?[]", "asset:prefab?[]"),
+        ("Sound?", "asset:sound?"),
+        ("Font?", "asset:font?"),
+        ("Loot{a:Mesh?}", "Loot{a:asset:mesh?}"),
+    ] {
+        assert_eq!(
+            kinds_parsed(spelling).as_deref(),
+            Some(parsed),
+            "{spelling}"
+        );
+    }
 }
 
 // ─── Inspector hints ────────────────────────────────────────────────────────

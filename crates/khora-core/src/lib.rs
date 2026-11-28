@@ -51,3 +51,7 @@ pub mod util;
 pub use engine_context::EngineContext;
 pub use runtime::{Backends, Resources, Runtime, Services};
 pub use util::stopwatch::Stopwatch;
+
+/// The registry crate the exported registration macros submit through.
+#[doc(hidden)]
+pub use inventory as __inventory;

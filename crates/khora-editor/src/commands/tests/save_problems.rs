@@ -20,6 +20,7 @@ use std::path::PathBuf;
 
 use khora_sdk::khora_core::asset::AssetUUID;
 use khora_sdk::khora_data::ecs::MeshRef;
+use khora_sdk::MetricsRegistry;
 
 use super::*;
 
@@ -55,11 +56,14 @@ fn a_save_leaving_out_a_mesh_made_in_code_reports_it_until_a_save_leaves_nothing
         .inner_world_mut()
         .mark_authored(made)
         .expect("authored");
+    let vfs = ProjectVfs::open(dir.0.clone(), Arc::new(MetricsRegistry::new()))
+        .expect("the project opens");
+    let vfs = Arc::new(Mutex::new(vfs));
     let state = Arc::new(Mutex::new(EditorState::default()));
     state.lock().expect("the editor state").current_scene_path =
-        Some(dir.0.join("level.kscene").to_string_lossy().into_owned());
+        Some(SceneInProject::new(dir.0.join("assets"), "level.kscene"));
 
-    apply_save(None, &mut world, &state);
+    apply_save(Some(&vfs), &mut world, &state);
 
     let problems = take_save_problems(&state).expect("the save reports its problems");
     assert!(
@@ -69,7 +73,7 @@ fn a_save_leaving_out_a_mesh_made_in_code_reports_it_until_a_save_leaves_nothing
     );
 
     world.remove_component::<MeshRef>(made);
-    apply_save(None, &mut world, &state);
+    apply_save(Some(&vfs), &mut world, &state);
 
     assert_eq!(
         take_save_problems(&state),

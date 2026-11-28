@@ -17,4 +17,5 @@
 pub(crate) mod gltf_fixture;
 pub(crate) mod project_index;
 pub(crate) mod requests;
+pub(crate) mod scene_files;
 pub(crate) mod scene_loads;

@@ -29,7 +29,7 @@ const SIDEBAR_CATEGORIES: &[(AssetTileKind, &str, Icon)] = &[
     (AssetTileKind::Mesh, "Meshes", Icon::Cube),
     (AssetTileKind::Texture, "Textures", Icon::Image),
     (AssetTileKind::Material, "Materials", Icon::Circle),
-    (AssetTileKind::Audio, "Audio", Icon::Music),
+    (AssetTileKind::Sound, "Sound", Icon::Music),
     (AssetTileKind::Shader, "Shaders", Icon::Zap),
     (AssetTileKind::Script, "Scripts", Icon::Code),
 ];
@@ -43,6 +43,7 @@ impl EditorPanel for AssetBrowserPanel {
     }
     fn ui(&mut self, ui: &mut dyn UiBuilder) {
         self.rescan_if_needed();
+        self.follow_key_changes();
         self.follow_declared_names();
         self.follow_reveal();
 

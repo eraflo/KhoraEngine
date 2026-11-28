@@ -70,7 +70,11 @@ impl Project {
     fn open(&self) -> AssetService {
         AssetService::open_loose_files(
             &self.root,
-            &AssetIdRegistry::load(&self.root),
+            &AssetIdRegistry::load_or_unread(&crate::trust::FileGuard::new(
+                &self.root,
+                crate::trust::Trust::Project,
+                crate::trust::Refusals::detached(),
+            )),
             Arc::new(MetricsRegistry::new()),
         )
         .expect("the project opens")

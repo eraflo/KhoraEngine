@@ -20,29 +20,29 @@ use khora_core::asset::AssetUUID;
 
 use crate::asset::decoders::decode_material;
 
-/// Returns whether [`extract_dependencies`] has a real extractor for `asset_type`.
+/// Returns whether [`extract_dependencies`] has a real extractor for the kind named `kind`.
 ///
-/// The index builder reads a file's bytes only for such a type. Keep it in
+/// The index builder reads a file's bytes only for such a kind. Keep it in
 /// sync with the populated arms of [`extract_dependencies`].
-pub fn type_has_dependency_extractor(asset_type: &str) -> bool {
-    matches!(asset_type, "material" | "script")
+pub fn type_has_dependency_extractor(kind: &str) -> bool {
+    matches!(kind, "material" | "script")
 }
 
-/// Returns the direct asset dependencies encoded in `bytes`, by the `asset_type` name.
+/// Returns the direct asset dependencies encoded in `bytes`, by the name of their `kind`.
 ///
 /// A dependency the bytes name by path is the UUID `uuid_of` gives that path, a
 /// forward-slash path under `assets/`: pass the resolution the index gives its
 /// own files, so a dependency names the UUID its target is indexed under.
-/// Deduplicated and sorted, so the index stays byte-deterministic. A type with no
+/// Deduplicated and sorted, so the index stays byte-deterministic. A kind with no
 /// extractor, or bytes that do not decode, give an empty list (the latter logged
 /// at `warn`): one corrupt asset never aborts the index build.
 pub fn extract_dependencies(
-    asset_type: &str,
+    kind: &str,
     path: &str,
     bytes: &[u8],
     uuid_of: &dyn Fn(&str) -> AssetUUID,
 ) -> Vec<AssetUUID> {
-    let mut deps = match asset_type {
+    let mut deps = match kind {
         "material" => material_dependencies(bytes),
         // Only a module, a file under the script folder, has imports: the path
         // says whether this file is one.
@@ -51,7 +51,7 @@ pub fn extract_dependencies(
         "scene" => Vec::new(),
         "prefab" => Vec::new(),
         "mesh" => Vec::new(),
-        // Leaf assets (textures, audio, shaders, fonts, blobs) have no outbound
+        // Leaf assets (textures, sounds, shaders, fonts) have no outbound
         // asset references.
         _ => Vec::new(),
     };
@@ -121,8 +121,8 @@ mod tests {
     }
 
     /// Extracts with every path on its `new_v5` default, as an index with no registry.
-    fn extract(asset_type: &str, path: &str, bytes: &[u8]) -> Vec<AssetUUID> {
-        extract_dependencies(asset_type, path, bytes, &AssetUUID::new_v5)
+    fn extract(kind: &str, path: &str, bytes: &[u8]) -> Vec<AssetUUID> {
+        extract_dependencies(kind, path, bytes, &AssetUUID::new_v5)
     }
 
     #[test]
@@ -290,7 +290,11 @@ mod tests {
         #[test]
         fn an_import_of_a_renamed_module_depends_on_its_frozen_uuid() {
             let dir = tempfile::tempdir().expect("a project folder");
-            let mut registry = AssetIdRegistry::load(dir.path());
+            let mut registry = AssetIdRegistry::load_or_unread(&crate::trust::FileGuard::new(
+                dir.path(),
+                crate::trust::Trust::Project,
+                crate::trust::Refusals::detached(),
+            ));
             registry.rename("scripts/combat/hurt.erg", "scripts/combat/damage.erg");
             let source = br#"import "combat/damage.erg"; fn void Main() { }"#;
 
@@ -305,7 +309,11 @@ mod tests {
         #[test]
         fn an_import_of_a_module_at_a_held_default_depends_on_its_derived_uuid() {
             let dir = tempfile::tempdir().expect("a project folder");
-            let mut registry = AssetIdRegistry::load(dir.path());
+            let mut registry = AssetIdRegistry::load_or_unread(&crate::trust::FileGuard::new(
+                dir.path(),
+                crate::trust::Trust::Project,
+                crate::trust::Refusals::detached(),
+            ));
             registry.rename("scripts/shared.erg", "scripts/common.erg");
             let source = br#"import "shared.erg"; fn void Main() { }"#;
 

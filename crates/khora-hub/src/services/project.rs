@@ -10,6 +10,7 @@
 
 use crate::services::git;
 use anyhow::{Context, Result};
+use khora_sdk::trust::{FileGuard, ProjectFile, ReadError, Refusals, Trust};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -51,7 +52,7 @@ pub enum GitInit {
 ///   assets/scenes/         ← default scene folder
 ///   assets/textures/
 ///   assets/meshes/
-///   assets/audio/
+///   assets/sounds/
 ///   assets/shaders/
 ///   assets/scripts/        ← gameplay scripts (data, hot-reloadable)
 /// ```
@@ -90,7 +91,7 @@ pub fn create_project(
         .with_context(|| format!("Failed to create project directory '{}'", root.display()))?;
 
     for sub in &[
-        "scenes", "textures", "meshes", "audio", "shaders", "scripts",
+        "scenes", "textures", "meshes", "sounds", "shaders", "scripts",
     ] {
         std::fs::create_dir_all(root.join("assets").join(sub))
             .with_context(|| format!("Failed to create assets/{} directory", sub))?;
@@ -119,7 +120,8 @@ pub fn create_project(
     let json = serde_json::to_string_pretty(&descriptor)
         .context("Failed to serialize project descriptor")?;
 
-    std::fs::write(root.join("project.json"), json).context("Failed to write project.json")?;
+    std::fs::write(root.join(ProjectFile::Manifest.rel_path()), json)
+        .context("Failed to write project.json")?;
 
     // A real Ergon module, not a placeholder: the engine compiles every `.erg`
     // under `assets/scripts` at startup, so a fresh project's gameplay runs.
@@ -159,6 +161,10 @@ fn init_git(root: &Path, project_name: &str, git: &GitInit) -> Result<()> {
 fn default_gitignore() -> &'static str {
     "# Build artifacts\n\
      target/\n\
+     \n\
+     # Locks held while the editor writes the identity registry or a build\n\
+     .khora/*.lock\n\
+     dist/*.lock\n\
      \n\
      # Editor / IDE\n\
      .idea/\n\
@@ -240,10 +246,15 @@ pub(crate) fn has_native_code(project_root: &Path) -> bool {
 /// and adds `target/` to the `.gitignore`. Native Rust is opt-in, behind
 /// "Add Native Code". See the book: reference/editor.md, "Why two strategies".
 ///
+/// Whole or not at all: every file is read first (the `.gitignore` through
+/// [`project_guard`]), then written, the `Cargo.toml` last; a write that fails
+/// removes what this call made and gives the `.gitignore` back its bytes.
+///
 /// # Errors
 ///
 /// Fails when the project already has a `Cargo.toml` (see [`has_native_code`])
-/// or a file cannot be written.
+/// or a `src/main.rs`, when its `.gitignore` is refused or unreadable, or when
+/// a file cannot be written.
 pub(crate) fn add_native_code(
     project_root: &Path,
     project_name: &str,
@@ -255,32 +266,108 @@ pub(crate) fn add_native_code(
             project_root.display()
         );
     }
-    let pkg_name = native_pkg_name(project_name);
-
-    let cargo_toml = native_cargo_toml(&pkg_name, engine_version);
-    std::fs::write(project_root.join("Cargo.toml"), cargo_toml)
-        .context("Failed to write Cargo.toml")?;
-
     let src_dir = project_root.join("src");
-    std::fs::create_dir_all(&src_dir).context("Failed to create src/ directory")?;
-    std::fs::write(src_dir.join("main.rs"), native_main_rs())
-        .context("Failed to write src/main.rs")?;
-
-    // Keeps the project git-clean once the user runs `cargo build`.
-    let gitignore_path = project_root.join(".gitignore");
-    if let Ok(existing) = std::fs::read_to_string(&gitignore_path)
-        && !existing.split_whitespace().any(|line| line == "target/")
-    {
-        let mut updated = existing;
-        if !updated.ends_with('\n') {
-            updated.push('\n');
-        }
-        updated.push_str("\n# Native-Rust build output\ntarget/\n");
-        std::fs::write(&gitignore_path, updated)
-            .context("Failed to update .gitignore for target/")?;
+    let main_rs = src_dir.join("main.rs");
+    if main_rs.exists() {
+        anyhow::bail!(
+            "Project at '{}' already has a src/main.rs, which native code would write over",
+            project_root.display()
+        );
     }
+    // Keeps the project git-clean once the user runs `cargo build`.
+    let gitignore_path = project_root.join(ProjectFile::GitIgnore.rel_path());
+    let existing = match project_guard(project_root).read_project_file(ProjectFile::GitIgnore) {
+        Ok(bytes) => Some(bytes),
+        Err(error) if error.is_missing() => None,
+        Err(error) => {
+            return Err(anyhow::anyhow!(
+                "the project's .gitignore is not read, so native code is not added: {error}"
+            ));
+        }
+    };
+    let gitignore = existing
+        .as_deref()
+        .and_then(|bytes| gitignore_with_target(&String::from_utf8_lossy(bytes)));
+    let cargo_toml = native_cargo_toml(&native_pkg_name(project_name), engine_version);
 
-    Ok(())
+    // What this call made, to remove should a later write fail.
+    let mut made: Vec<PathBuf> = Vec::new();
+    let mut gitignore_written = false;
+    let written = (|| -> Result<()> {
+        if !src_dir.is_dir() {
+            std::fs::create_dir(&src_dir).context("Failed to create src/ directory")?;
+            made.push(src_dir.clone());
+        }
+        khora_sdk::fs::write_new(&main_rs, native_main_rs().as_bytes())
+            .context("Failed to write src/main.rs")?;
+        made.push(main_rs.clone());
+        if let Some(updated) = &gitignore {
+            khora_sdk::fs::write_atomic(&gitignore_path, updated.as_bytes())
+                .context("Failed to update .gitignore for target/")?;
+            gitignore_written = true;
+        }
+        khora_sdk::fs::write_new(&project_root.join("Cargo.toml"), cargo_toml.as_bytes())
+            .context("Failed to write Cargo.toml")?;
+        Ok(())
+    })();
+    if written.is_err() {
+        if let (true, Some(previous)) = (gitignore_written, &existing)
+            && let Err(error) = khora_sdk::fs::write_atomic(&gitignore_path, previous)
+        {
+            log::warn!("the .gitignore could not be given back its bytes: {error}");
+        }
+        for path in made.iter().rev() {
+            let removed = if path.is_dir() {
+                std::fs::remove_dir(path)
+            } else {
+                std::fs::remove_file(path)
+            };
+            if let Err(error) = removed {
+                log::warn!(
+                    "{} is left by a failed Add Native Code: {error}",
+                    path.display()
+                );
+            }
+        }
+    }
+    written
+}
+
+/// Returns `existing`, a `.gitignore`'s text, with `target/` added; `None` when it already lists it.
+fn gitignore_with_target(existing: &str) -> Option<String> {
+    if existing.split_whitespace().any(|line| line == "target/") {
+        return None;
+    }
+    let mut updated = existing.to_owned();
+    if !updated.is_empty() && !updated.ends_with('\n') {
+        updated.push('\n');
+    }
+    updated.push_str("\n# Native-Rust build output\ntarget/\n");
+    Some(updated)
+}
+
+/// Returns a guard reading the files of the project at `root`.
+///
+/// The hub runs nothing of a project and never trusts one: it reads under the
+/// strict caps, its refusals kept in memory and returned to the caller.
+pub(crate) fn project_guard(root: &Path) -> FileGuard {
+    FileGuard::new(root, Trust::Restricted, Refusals::detached())
+}
+
+/// Reads the `project.json` of the project at `root` through [`project_guard`].
+///
+/// `None` when it has none; a file that does not parse reads as `null`.
+///
+/// # Errors
+///
+/// [`ReadError::Refused`] when the guard refuses it, over its cap say;
+/// [`ReadError::Io`] when it exists but cannot be read.
+pub(crate) fn read_project_json(root: &Path) -> Result<Option<serde_json::Value>, ReadError> {
+    match project_guard(root).read_project_file(ProjectFile::Manifest) {
+        Ok(bytes) => Ok(Some(serde_json::from_slice(&bytes).unwrap_or_default())),
+        Err(error) if error.is_missing() => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 fn native_pkg_name(project_name: &str) -> String {
@@ -449,13 +536,144 @@ mod tests {
         std::fs::create_dir_all(&parent)?;
 
         let written = create_project("Lantern", &parent, "0.3.0", &GitInit::None)
-            .and_then(|root| Ok(std::fs::read_to_string(root.join("project.json"))?));
+            .and_then(|root| Ok(read_project_json(&root)?));
         let _ = std::fs::remove_dir_all(&parent);
 
-        let project: serde_json::Value = serde_json::from_str(&written?)?;
+        let project = written?.expect("the new project has a `project.json`");
         assert_eq!(project["version"], "0.1.0", "{project}");
         assert_eq!(project["name"], "Lantern", "{project}");
         assert_eq!(project["engine_version"], "0.3.0", "{project}");
+        Ok(())
+    }
+
+    /// **A new project's `.gitignore` keeps the lock files out of git.**
+    ///
+    /// The identity registry's lock under `.khora/` and a build's under
+    /// `dist/` are held while the editor writes, and never shared.
+    #[test]
+    fn a_new_projects_gitignore_leaves_out_the_lock_files() -> Result<()> {
+        let parent = std::env::temp_dir().join(format!(
+            "khora-hub-new-project-gitignore-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&parent);
+        std::fs::create_dir_all(&parent)?;
+
+        let written = create_project("Lantern", &parent, "0.3.0", &GitInit::None)
+            .and_then(|root| Ok(std::fs::read_to_string(root.join(".gitignore"))?));
+        let _ = std::fs::remove_dir_all(&parent);
+
+        let gitignore = written?;
+        for pattern in [".khora/*.lock", "dist/*.lock"] {
+            assert!(
+                gitignore.lines().any(|line| line == pattern),
+                "`{pattern}` is not ignored:\n{gitignore}"
+            );
+        }
+        Ok(())
+    }
+
+    /// **The hub reads a project's files under the strict caps**: it never
+    /// trusts a project, so a `project.json` over the strict cap is refused.
+    #[test]
+    fn the_hub_reads_a_projects_files_under_the_strict_caps() -> Result<()> {
+        let root =
+            std::env::temp_dir().join(format!("khora-hub-strict-project-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root)?;
+        std::fs::File::create(root.join("project.json"))?.set_len((256 << 10) + 1)?;
+        let missing = read_project_json(&root.join("none"));
+        let oversized = read_project_json(&root);
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(matches!(missing, Ok(None)), "{missing:?}");
+        assert!(
+            matches!(oversized, Err(ReadError::Refused(_))),
+            "{oversized:?}"
+        );
+        Ok(())
+    }
+
+    /// **Native code is added whole or not at all.**
+    ///
+    /// A `.gitignore` the hub refuses fails the step before anything is written:
+    /// a project left with a `Cargo.toml` would refuse the retry as done.
+    #[test]
+    fn native_code_is_added_whole_or_not_at_all() -> Result<()> {
+        let root =
+            std::env::temp_dir().join(format!("khora-hub-native-whole-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root)?;
+        std::fs::File::create(root.join(".gitignore"))?.set_len((256 << 10) + 1)?;
+
+        let added = add_native_code(&root, "Lantern", "0.3.0");
+        let half_done = has_native_code(&root);
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(added.is_err(), "the .gitignore is refused");
+        assert!(!half_done, "a Cargo.toml was written by a step that failed");
+        Ok(())
+    }
+
+    /// **A write failing midway leaves nothing native code wrote.**
+    ///
+    /// A `src` that is a file fails the scaffold after its first steps; a
+    /// `Cargo.toml` that is a folder fails its last write. Either way no file of
+    /// it is left, and the `.gitignore` reads as it did.
+    #[test]
+    fn a_write_failing_midway_leaves_nothing_native_code_wrote() -> Result<()> {
+        for (tag, blocker) in [("src-file", "src"), ("cargo-folder", "Cargo.toml")] {
+            let root = std::env::temp_dir().join(format!(
+                "khora-hub-native-midway-{tag}-{}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&root);
+            std::fs::create_dir_all(&root)?;
+            std::fs::write(root.join(".gitignore"), "build/\n")?;
+            if blocker == "src" {
+                std::fs::write(root.join("src"), b"a file")?;
+            } else {
+                std::fs::create_dir_all(root.join("src"))?;
+                std::fs::create_dir_all(root.join("Cargo.toml"))?;
+            }
+
+            let added = add_native_code(&root, "Lantern", "0.3.0");
+            let cargo_written = root.join("Cargo.toml").is_file();
+            let main_written = root.join("src").join("main.rs").exists();
+            let gitignore = std::fs::read_to_string(root.join(".gitignore"));
+            let _ = std::fs::remove_dir_all(&root);
+
+            assert!(added.is_err(), "{tag}: the scaffold fails");
+            assert!(!cargo_written, "{tag}: a Cargo.toml is left");
+            assert!(!main_written, "{tag}: a src/main.rs is left");
+            assert_eq!(gitignore?, "build/\n", "{tag}: the .gitignore changed");
+        }
+        Ok(())
+    }
+
+    /// **Native code is added whole**: the manifest, the entry point and
+    /// `target/` in the `.gitignore`; a `src/main.rs` already there is never written over.
+    #[test]
+    fn native_code_is_added_whole_and_never_over_a_main_rs() -> Result<()> {
+        let root =
+            std::env::temp_dir().join(format!("khora-hub-native-added-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("src"))?;
+        std::fs::write(root.join(".gitignore"), "build/")?;
+
+        let added = add_native_code(&root, "Lantern", "0.3.0");
+        let gitignore = std::fs::read_to_string(root.join(".gitignore"));
+        let scaffolded = has_native_code(&root) && root.join("src").join("main.rs").is_file();
+        std::fs::remove_file(root.join("Cargo.toml"))?;
+        let again = add_native_code(&root, "Lantern", "0.3.0");
+        let main_kept = std::fs::read_to_string(root.join("src").join("main.rs"));
+        let _ = std::fs::remove_dir_all(&root);
+
+        added?;
+        assert!(scaffolded, "the manifest and the entry point are written");
+        assert!(gitignore?.lines().any(|line| line == "target/"));
+        assert!(again.is_err(), "a src/main.rs already there is refused");
+        assert_eq!(main_kept?, native_main_rs());
         Ok(())
     }
 

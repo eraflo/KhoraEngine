@@ -182,14 +182,18 @@ impl AssetBrowserPanel {
     }
 
     /// Returns `name`, or `name2`, `name3`, …: the first neither the engine
-    /// nor a script of the project already holds.
+    /// nor a script of the project already holds, and whose file a project makes.
     ///
     /// A name any script declares is taken exactly, or the registry would
     /// refuse the new one; an `.erg` stem is taken without case, as some file
-    /// systems compare names.
+    /// systems compare names. A name whose file is no new name
+    /// ([`check_new_name`](crate::project_vfs::check_new_name): `Aux.erg`, a
+    /// Windows device's) is taken as well, so the preview and the file queued
+    /// are always one the project makes.
     fn free_script_name(&self, name: &str) -> String {
         let taken = |candidate: &str| {
             khora_sdk::scripts::is_engine_name(candidate)
+                || crate::project_vfs::check_new_name(&format!("{candidate}.{EXTENSION}")).is_err()
                 || self
                     .declared_names
                     .iter()

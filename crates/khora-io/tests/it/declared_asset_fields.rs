@@ -21,7 +21,7 @@
 //! never as text or as sixteen numbers, and its field's type — the kind — is
 //! saved with the component's declaration.
 
-use khora_core::asset::{AssetKind, AssetUUID};
+use khora_core::asset::{kinds, AssetKind, AssetUUID};
 use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::PersistentId;
 use khora_core::math::Vec3;
@@ -35,12 +35,12 @@ use khora_io::serialization::SerializationService;
 
 /// The fields of `Armory`: one optional asset of each kind, named after it.
 const FIELDS: [(&str, AssetKind); 6] = [
-    ("bullet", AssetKind::Prefab),
-    ("shot", AssetKind::Sound),
-    ("skin", AssetKind::Material),
-    ("hull", AssetKind::Mesh),
-    ("decal", AssetKind::Texture),
-    ("level", AssetKind::Scene),
+    ("bullet", kinds::PREFAB),
+    ("shot", kinds::SOUND),
+    ("skin", kinds::MATERIAL),
+    ("hull", kinds::MESH),
+    ("decal", kinds::TEXTURE),
+    ("level", kinds::SCENE),
 ];
 
 fn optional(kind: AssetKind) -> ErgonType {
@@ -328,7 +328,7 @@ fn a_snapshot_restores_no_asset_into_a_field_retyped_to_another_kind() {
         .unwrap_or_else(|e| panic!("the snapshot failed: {e:?}"));
     let key = world.components().key_named("Armory").expect("registered");
     world
-        .relayout(key, armory_with_bullet_of(AssetKind::Sound))
+        .relayout(key, armory_with_bullet_of(kinds::SOUND))
         .expect("relays out");
     let entity = world.entity_with_id(id).expect("alive");
     assert_eq!(
@@ -343,7 +343,7 @@ fn a_snapshot_restores_no_asset_into_a_field_retyped_to_another_kind() {
     let entity = world.entity_with_id(id).expect("the entity is back");
     assert_eq!(
         type_of(&world, "Armory", "bullet"),
-        Some(optional(AssetKind::Sound)),
+        Some(optional(kinds::SOUND)),
         "the live declaration stays"
     );
     assert_eq!(
@@ -370,7 +370,7 @@ fn a_scene_loads_no_asset_into_a_field_declared_of_another_kind() {
             domain: SemanticDomain::Script,
             provenance: ComponentProvenance::Authored,
             resumable: false,
-            layout: armory_with_bullet_of(AssetKind::Sound),
+            layout: armory_with_bullet_of(kinds::SOUND),
         })
         .expect("registers");
     let report = service
@@ -409,7 +409,7 @@ fn a_null_asset_field_retyped_to_another_kind_reports_nothing() {
             domain: SemanticDomain::Script,
             provenance: ComponentProvenance::Authored,
             resumable: false,
-            layout: armory_with_bullet_of(AssetKind::Sound),
+            layout: armory_with_bullet_of(kinds::SOUND),
         })
         .expect("registers");
     let report = service
@@ -451,7 +451,7 @@ fn the_old_sound() -> AssetUUID {
 fn a_scene_older_than_its_prefab(prefab: AssetUUID) -> (SceneFile, Prefabs, PersistentId) {
     let (mut then, id) = armory(true);
     let key = then.components().key_named("Armory").expect("registered");
-    then.relayout(key, armory_with_bullet_of(AssetKind::Sound))
+    then.relayout(key, armory_with_bullet_of(kinds::SOUND))
         .expect("relays out");
     let root = then.entity_with_id(id).expect("alive");
     set(
@@ -532,7 +532,7 @@ fn an_instance_puts_no_prefab_into_a_field_its_scene_declares_a_sound() {
     let ty = type_of(&world, "Armory", "bullet");
     let value = field_of(&world, root, "Armory", "bullet");
     assert!(
-        !(ty == Some(optional(AssetKind::Sound))
+        !(ty == Some(optional(kinds::SOUND))
             && value == Some(ScriptValue::Asset(chosen("bullet")))),
         "a prefab in a `Sound?` field: {ty:?} = {value:?}, report {report:?}"
     );

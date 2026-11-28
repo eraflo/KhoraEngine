@@ -19,15 +19,12 @@
 
 use crate::ast::TypeRef;
 
-/// The engine types a script may name.
+/// The engine types a script may name, the list [`khora_core::script::ENGINE_TYPES`] holds.
 ///
-/// Listed rather than derived: the API surface is a decision. Each name needs a
-/// `Value` variant, a constructor and accessors, or it type-checks and fails at
-/// its first use.
-///
-/// `every_engine_type_is_declared`
+/// Each name needs a `Value` variant, a constructor and accessors, or it
+/// type-checks and fails at its first use. `every_engine_type_is_declared`
 /// holds the two together.
-pub const ENGINE_TYPES: &[&str] = &["Vec2", "Vec3", "Vec4", "Quat", "Color"];
+pub const ENGINE_TYPES: &[&str] = &khora_core::script::ENGINE_TYPES;
 
 /// A resolved type.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,7 +77,7 @@ impl Ty {
             Self::Duration => "Duration".to_owned(),
             Self::Angle => "Angle".to_owned(),
             Self::Entity => "Entity".to_owned(),
-            Self::Asset(kind) => kind.ergon_name().to_owned(),
+            Self::Asset(kind) => kind.ergon_name().unwrap_or(kind.name()).to_owned(),
             Self::Engine(name) => (*name).to_owned(),
             Self::Optional(inner) => format!("{}?", inner.name()),
             Self::Array(element) => format!("{}[]", element.name()),
@@ -183,7 +180,7 @@ pub fn resolve(ty: &TypeRef, known_struct: &dyn Fn(&str) -> bool) -> Option<Ty> 
 pub(crate) fn asset_field_note(kind: khora_core::asset::AssetKind) -> String {
     format!(
         "make it `{}?` and choose it in the inspector: there is no asset literal, so it starts at `null`",
-        kind.ergon_name()
+        kind.ergon_name().unwrap_or(kind.name())
     )
 }
 
@@ -217,6 +214,31 @@ mod tests {
 
     fn no_structs(_: &str) -> bool {
         false
+    }
+
+    /// Returns the name a script writes `ty` by, when the language holds that name itself.
+    ///
+    /// Exhaustive: a new type of the language does not build until it says
+    /// whether it takes a name no asset kind may.
+    fn language_name(ty: &Ty) -> Option<String> {
+        match ty {
+            Ty::Void
+            | Ty::Int
+            | Ty::Float
+            | Ty::Bool
+            | Ty::Str
+            | Ty::Duration
+            | Ty::Angle
+            | Ty::Entity
+            | Ty::Engine(_) => Some(ty.name()),
+            Ty::Map(..) => Some("Map".to_owned()),
+            Ty::Asset(_)
+            | Ty::Optional(_)
+            | Ty::Array(_)
+            | Ty::Struct(_)
+            | Ty::Behavior(_)
+            | Ty::Error => None,
+        }
     }
 
     #[test]
@@ -260,6 +282,50 @@ mod tests {
             span: crate::diagnostics::Span::empty(0),
         };
         assert_eq!(resolve(&int, &no_structs), Some(Ty::Int));
+    }
+
+    /// **Every builtin the engine reserves is a type the compiler spells**:
+    /// a bare name resolves, `void` and `Map` are the names it prints.
+    #[test]
+    fn every_reserved_builtin_is_a_type_of_the_language() {
+        for name in khora_core::script::BUILTIN_TYPES {
+            let spelled = match name {
+                "void" => Ty::Void.name(),
+                "Map" => {
+                    let map = Ty::Map(Box::new(Ty::Int), Box::new(Ty::Int)).name();
+                    map[..map.find('<').expect("a map has arguments")].to_owned()
+                }
+                bare => named(bare, &no_structs)
+                    .unwrap_or_else(|| panic!("`{bare}` resolves"))
+                    .name(),
+            };
+            assert_eq!(spelled, name);
+        }
+    }
+
+    /// **Every name the language holds is reserved from the asset kinds**, so
+    /// no kind's Ergon name shadows a type of the language.
+    #[test]
+    fn every_name_the_language_holds_is_reserved() {
+        let engine = ENGINE_TYPES.iter().map(|name| Ty::Engine(name));
+        let types = [
+            Ty::Void,
+            Ty::Int,
+            Ty::Float,
+            Ty::Bool,
+            Ty::Str,
+            Ty::Duration,
+            Ty::Angle,
+            Ty::Entity,
+            Ty::Map(Box::new(Ty::Int), Box::new(Ty::Int)),
+        ];
+        for ty in types.into_iter().chain(engine) {
+            let name = language_name(&ty).expect("the language holds the name");
+            assert!(
+                khora_core::script::is_language_type(&name),
+                "`{name}` is not reserved"
+            );
+        }
     }
 
     #[test]

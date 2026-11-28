@@ -37,11 +37,17 @@ Research ──► Plan ──► Implement ──► compact back into the plan
       the files it touched and `cargo doc` before reporting.
    3. **Try to break it** — the [`test-breaker`](./agents/test-breaker.md) subagent reads the plan and the
       diff in a fresh context and writes a failing test for each real defect or missing case.
-   4. **Fix** — the main agent, until the breaker's tests pass. At most two breaker rounds; what remains
-      is reported to the human, never dropped.
-   5. **Gate** (`cargo gate`, once per phase, see [`skills/build-and-test`](./skills/build-and-test/SKILL.md)),
+   4. **Fix** — the main agent, until the breaker's tests pass, then the breaker runs again on the fixes.
+      No round limit, but the breaker is bounded by the phase's scope: only what the phase introduced or
+      made worse, or what its plan promises. The loop ends at the first round with no in-scope finding;
+      out-of-scope findings (pre-existing defects, UI state of the editor and hub, due for a rewrite) are
+      never chased but always reported, and collected into the GitHub tracking issue of bugs to resolve.
+   5. **Organise** — every touched file in the order *Before you write* sets, one primary type or concern
+      per file; a file that mixes concerns or grows long is split into a folder of files named by what they
+      hold.
+   6. **Gate** (`cargo gate`, once per phase, see [`skills/build-and-test`](./skills/build-and-test/SKILL.md)),
       then **compact status back into the plan file**.
-   6. **Stop at the step** — every phase or sub-step (a *palier*) ends with a stop: report what was done,
+   7. **Stop at the step** — every phase or sub-step (a *palier*) ends with a stop: report what was done,
       what the breaker found, what changed in existing tests and why, the gate's result, and what is
       left open; then **wait for the owner to check it**. Never chain into the next step on your own, even
       when the previous message said "continue": "continue" covers the step it answers, not the ones

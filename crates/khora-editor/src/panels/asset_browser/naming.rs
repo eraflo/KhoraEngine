@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! File names: sanitising, keeping an extension, naming a saved entity.
+//! File names: keeping an extension, naming a saved entity.
 
 /// Returns `entity`'s display name as the scene tree shows it, without
 /// reaching the `World`.
@@ -35,30 +35,6 @@ pub(super) fn entity_display_name(
         None
     }
     walk(roots, entity)
-}
-
-/// Returns `name` safe as a file name on every platform, or `"prefab"`.
-///
-/// Each run of unsafe characters becomes one underscore.
-pub(super) fn sanitize_for_filename(name: &str) -> String {
-    let mut out = String::with_capacity(name.len());
-    let mut last_was_replacement = false;
-    for ch in name.chars() {
-        let safe = ch.is_alphanumeric() || matches!(ch, '_' | '-' | '.' | ' ');
-        if safe {
-            out.push(ch);
-            last_was_replacement = false;
-        } else if !last_was_replacement {
-            out.push('_');
-            last_was_replacement = true;
-        }
-    }
-    let trimmed = out.trim_matches(&[' ', '.', '_'][..]).to_string();
-    if trimmed.is_empty() {
-        "prefab".to_string()
-    } else {
-        trimmed
-    }
 }
 
 /// Returns `new_name` with `old_name`'s extension when it has none of its own:

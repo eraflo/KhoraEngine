@@ -22,7 +22,13 @@ fn vfs_accessor_returns_underlying_vfs() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join("textures")).unwrap();
     fs::write(dir.path().join("textures").join("a.png"), b"PNG").unwrap();
-    let bytes = IndexBuilder::new(dir.path()).build_index_bytes().unwrap();
+    let bytes = IndexBuilder::new(crate::trust::FileGuard::new(
+        dir.path(),
+        crate::trust::Trust::Project,
+        crate::trust::Refusals::detached(),
+    ))
+    .build_index_bytes()
+    .unwrap();
     let metrics = Arc::new(MetricsRegistry::new());
     let svc = AssetService::new(
         &bytes,
@@ -41,7 +47,13 @@ fn load_raw_returns_bytes_without_decode() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join("scenes")).unwrap();
     fs::write(dir.path().join("scenes").join("a.kscene"), b"SCN").unwrap();
-    let bytes = IndexBuilder::new(dir.path()).build_index_bytes().unwrap();
+    let bytes = IndexBuilder::new(crate::trust::FileGuard::new(
+        dir.path(),
+        crate::trust::Trust::Project,
+        crate::trust::Refusals::detached(),
+    ))
+    .build_index_bytes()
+    .unwrap();
 
     let mut files = HashMap::new();
     files.insert(std::path::PathBuf::from("scenes/a.kscene"), b"SCN".to_vec());
@@ -58,7 +70,13 @@ fn reindex_swaps_vfs() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join("textures")).unwrap();
     fs::write(dir.path().join("textures").join("a.png"), b"PNG").unwrap();
-    let bytes_a = IndexBuilder::new(dir.path()).build_index_bytes().unwrap();
+    let bytes_a = IndexBuilder::new(crate::trust::FileGuard::new(
+        dir.path(),
+        crate::trust::Trust::Project,
+        crate::trust::Refusals::detached(),
+    ))
+    .build_index_bytes()
+    .unwrap();
     let metrics = Arc::new(MetricsRegistry::new());
     let mut svc = AssetService::new(
         &bytes_a,
@@ -73,7 +91,13 @@ fn reindex_swaps_vfs() {
 
     // Add another asset, rebuild, reindex.
     fs::write(dir.path().join("textures").join("b.png"), b"PNG2").unwrap();
-    let bytes_b = IndexBuilder::new(dir.path()).build_index_bytes().unwrap();
+    let bytes_b = IndexBuilder::new(crate::trust::FileGuard::new(
+        dir.path(),
+        crate::trust::Trust::Project,
+        crate::trust::Refusals::detached(),
+    ))
+    .build_index_bytes()
+    .unwrap();
     svc.reindex(&bytes_b).unwrap();
     assert_eq!(svc.index().asset_count(), 2);
 
@@ -84,7 +108,13 @@ fn reindex_swaps_vfs() {
 #[test]
 fn invalidate_returns_false_when_nothing_cached() {
     let dir = tempdir().unwrap();
-    let bytes = IndexBuilder::new(dir.path()).build_index_bytes().unwrap();
+    let bytes = IndexBuilder::new(crate::trust::FileGuard::new(
+        dir.path(),
+        crate::trust::Trust::Project,
+        crate::trust::Refusals::detached(),
+    ))
+    .build_index_bytes()
+    .unwrap();
     let metrics = Arc::new(MetricsRegistry::new());
     let mut svc = AssetService::new(
         &bytes,
@@ -101,7 +131,13 @@ fn invalidate_returns_false_when_nothing_cached() {
 #[test]
 fn a_failed_load_is_remembered_until_an_asset_changes_or_the_index_is_replaced() {
     let dir = tempdir().unwrap();
-    let bytes = IndexBuilder::new(dir.path()).build_index_bytes().unwrap();
+    let bytes = IndexBuilder::new(crate::trust::FileGuard::new(
+        dir.path(),
+        crate::trust::Trust::Project,
+        crate::trust::Refusals::detached(),
+    ))
+    .build_index_bytes()
+    .unwrap();
     let mut svc = AssetService::new(
         &bytes,
         Box::new(MockIo {
@@ -135,7 +171,13 @@ fn load_raw_verifies_against_manifest_and_rejects_corruption() {
     fs::create_dir_all(dir.path().join("scenes")).unwrap();
     let payload = b"SCENE-PAYLOAD";
     fs::write(dir.path().join("scenes").join("a.kscene"), payload).unwrap();
-    let index_bytes = IndexBuilder::new(dir.path()).build_index_bytes().unwrap();
+    let index_bytes = IndexBuilder::new(crate::trust::FileGuard::new(
+        dir.path(),
+        crate::trust::Trust::Project,
+        crate::trust::Refusals::detached(),
+    ))
+    .build_index_bytes()
+    .unwrap();
 
     let uuid = AssetUUID::new_v5("scenes/a.kscene");
 

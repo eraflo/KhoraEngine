@@ -12,58 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::asset_uuid::AssetUUID;
-use super::AssetType;
+//! The index entry of an asset: what it is, and where its variants are read from.
+
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 
-/// On-disk compression scheme for a packed asset.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub enum CompressionKind {
-    /// Raw bytes — no compression applied. Fastest read path.
-    #[default]
-    None,
-    /// LZ4 block compression (`lz4_flex`). Cheap to decompress, modest
-    /// ratio. Good default for shipping builds.
-    Lz4,
-}
-
-/// The physical source of an asset's data.
-///
-/// A loose file on disk in development (`Path`), a span of the packfile in a
-/// shipped build (`Packed`), or a part of another asset (`Sub`). See the book:
-/// concepts/assets.md, "Dev and packed are the same path".
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum AssetSource {
-    /// The asset is a loose file on disk. The `PathBuf` points to the file.
-    Path(PathBuf),
-    /// The asset is located within a packfile.
-    Packed {
-        /// Byte offset from the start of the asset region (i.e. *after*
-        /// the 24-byte header) in `data.pack`.
-        offset: u64,
-        /// Number of bytes to read from the pack at `offset` — the
-        /// **on-disk size**, possibly compressed.
-        size: u64,
-        /// Size of the asset after decompression. Equals `size` when
-        /// `compression == CompressionKind::None`.
-        uncompressed_size: u64,
-        /// Compression scheme applied to the bytes between `offset` and
-        /// `offset + size`.
-        compression: CompressionKind,
-    },
-    /// The asset lives inside another asset: a mesh, material, texture or
-    /// scene of a glTF file.
-    ///
-    /// It has no bytes of its own: they are read from `container`'s own source
-    /// and the asset is extracted by `label`.
-    Sub {
-        /// The uuid of the asset that holds this one.
-        container: AssetUUID,
-        /// The name of this asset inside its container.
-        label: String,
-    },
-}
+use super::asset_uuid::AssetUUID;
+use super::{AssetKind, AssetSource};
 
 /// Serializable metadata that describes an asset and its relationships.
 ///
@@ -78,11 +33,8 @@ pub struct AssetMetadata {
     /// the importer and editor tooling.
     pub source_path: PathBuf,
 
-    /// The asset's type, which selects its decoder.
-    ///
-    /// Serialized under the key `asset_type_name`, as its plain name.
-    #[serde(rename = "asset_type_name")]
-    pub asset_type: AssetType,
+    /// The asset's kind, which selects its decoder; written as its plain name.
+    pub kind: AssetKind,
 
     /// The assets this asset directly depends on, such as a material's
     /// textures.
@@ -116,7 +68,7 @@ mod tests {
         AssetMetadata {
             uuid: AssetUUID::new_v5("a.png"),
             source_path: PathBuf::from("a.png"),
-            asset_type: AssetType::Texture,
+            kind: crate::asset::kinds::TEXTURE,
             dependencies: Vec::new(),
             variants,
             tags: Vec::new(),

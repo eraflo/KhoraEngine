@@ -137,11 +137,11 @@ fn a_replacement_overflowing_the_stream_still_names_everything_the_outgoing_serv
         .map(|path| {
             files.insert(std::path::PathBuf::from(path), b"note".to_vec());
             let mut entry = file_entry(AssetUUID::new_v5(path), path);
-            entry.asset_type = NOTE_TYPE.into();
+            entry.kind = crate::asset::tests::kinds::NOTE;
             entry
         })
         .collect();
-    let index = bincode::serde::encode_to_vec(&metadata, bincode::config::standard()).unwrap();
+    let index = crate::asset::AssetIndex::encode(&metadata, &[]).unwrap();
     let mut outgoing = AssetService::new(
         &index,
         Box::new(SharedIo {

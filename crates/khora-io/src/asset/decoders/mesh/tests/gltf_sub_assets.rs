@@ -179,7 +179,11 @@ impl Project {
     fn open(&self) -> AssetService {
         AssetService::open_loose_files(
             &self.root,
-            &AssetIdRegistry::load(&self.root),
+            &AssetIdRegistry::load_or_unread(&crate::trust::FileGuard::new(
+                &self.root,
+                crate::trust::Trust::Project,
+                crate::trust::Refusals::detached(),
+            )),
             Arc::new(MetricsRegistry::new()),
         )
         .expect("the project opens")
@@ -442,9 +446,13 @@ fn index_lists_the_sub_assets_of_glb_and_gltf_files_under_their_file_uuid() {
         b"o tri\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n",
     );
 
-    let metadata = IndexBuilder::new(&project.assets)
-        .build_metadata()
-        .expect("the index builds");
+    let metadata = IndexBuilder::new(crate::trust::FileGuard::new(
+        &project.assets,
+        crate::trust::Trust::Project,
+        crate::trust::Refusals::detached(),
+    ))
+    .build_metadata()
+    .expect("the index builds");
 
     for rel in ["models/two.glb", "models/two.gltf"] {
         let rel_path = Path::new("models").join(rel.trim_start_matches("models/"));
@@ -453,7 +461,11 @@ fn index_lists_the_sub_assets_of_glb_and_gltf_files_under_their_file_uuid() {
             .iter()
             .find(|m| m.uuid == container)
             .unwrap_or_else(|| panic!("{rel} has its own entry"));
-        assert_eq!(own.asset_type, "mesh", "{rel} stays a mesh file");
+        assert_eq!(
+            own.kind,
+            khora_core::asset::kinds::MESH,
+            "{rel} stays a mesh file"
+        );
         assert!(matches!(own.default_source(), Some(AssetSource::Path(_))));
 
         for (label, type_name) in TWO_MATERIAL_SUBS {
@@ -462,7 +474,7 @@ fn index_lists_the_sub_assets_of_glb_and_gltf_files_under_their_file_uuid() {
                 .iter()
                 .find(|m| m.uuid == uuid)
                 .unwrap_or_else(|| panic!("{rel} lists '{label}': {metadata:#?}"));
-            assert_eq!(entry.asset_type, type_name, "type of {rel} '{label}'");
+            assert_eq!(entry.kind.name(), type_name, "kind of {rel} '{label}'");
             assert_eq!(entry.source_path, rel_path, "source of {rel} '{label}'");
             match entry.default_source() {
                 Some(AssetSource::Sub {

@@ -18,7 +18,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_sdk::editor_ui::{EditorRequest, MenuAction, SpawnShape};
+use khora_sdk::editor_ui::{EditorRequest, MenuAction, SceneInProject, SpawnShape};
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::{EditorState, GameWorld, PlayMode};
 
@@ -29,10 +29,14 @@ mod asset_ops;
 pub(crate) mod history;
 mod material;
 mod prefab;
+mod saved_in_project;
 mod scene;
 mod transport;
 
 pub use asset_ops::assign_queued_drops;
+// For the asset browser's tests: the app follows key changes through the file operations.
+#[cfg(test)]
+pub(crate) use asset_ops::follow_key_changes;
 pub use asset_ops::run_queued_asset_file_ops;
 pub use asset_ops::spawn_queued_meshes;
 pub use history::CommandHistory;
@@ -112,8 +116,7 @@ fn run_menu_action(
             std::process::exit(0);
         }
         MenuAction::Save => apply_save(project_vfs.as_ref(), world, editor_state),
-        // No encoding picker: an editor save is `EditorInterchange`. A path
-        // that needs another goal calls `save_scene_dispatch_with_goal`.
+        // No encoding picker: an editor save is `EditorInterchange`.
         MenuAction::SaveAs => apply_save_as(project_vfs.as_ref(), world, editor_state),
         MenuAction::Open => {
             apply_open(editor_state);
@@ -150,37 +153,57 @@ pub(crate) fn forget_history(command_history: &Arc<Mutex<CommandHistory>>) {
     }
 }
 
+/// Empties `world` of every entity and `state` of the scene it held; returns how many entities went.
+///
+/// What names an entity goes with them, the play under way ends (its
+/// snapshot dropped), every scene still opening or being restored is
+/// withdrawn through the world's `SceneLoadHub` (it lands nothing), what the
+/// last load adapted is forgotten and asked cleared from the runtime's
+/// `Problems` ([`EditorRequest::ReportLoadProblems`]), and so is the scene's
+/// file: a save then asks where. Moves `scene_choices`, so an open waiting
+/// for the index opens nothing over the empty world.
+pub(crate) fn clear_scene(world: &mut GameWorld, state: &mut EditorState) -> usize {
+    let all: Vec<EntityId> = world.iter_entities().collect();
+    for entity in &all {
+        world.despawn(*entity);
+    }
+    state.clear_entity_references();
+    state.play_mode = PlayMode::Editing;
+    state.scene_snapshot = None;
+    state.played_choice = None;
+    state.scene_choices = state.scene_choices.wrapping_add(1);
+    // The empty world has the last word over a scene still opening or being
+    // restored: withdrawn now, before a boundary lands it.
+    let opening: Vec<_> = state
+        .opening
+        .drain(..)
+        .map(|opening| opening.ticket)
+        .collect();
+    let withdrawn: Vec<_> = opening.into_iter().chain(state.restoring.take()).collect();
+    match world.scene_loads() {
+        Some(loads) => withdrawn
+            .into_iter()
+            .for_each(|ticket| loads.cancel(ticket)),
+        None if !withdrawn.is_empty() => {
+            log::error!("the scene loads in flight cannot be withdrawn");
+        }
+        None => {}
+    }
+    state.restore_problems.clear();
+    // What the last load reported described the scene that went.
+    state.load_problems.clear();
+    state.push_request(EditorRequest::ReportLoadProblems {
+        problems: Vec::new(),
+    });
+    state.current_scene_path = None;
+    all.len()
+}
+
+/// Starts a new scene: the world emptied, with its `Load` problems ([`clear_scene`]).
 fn apply_new_scene(world: &mut GameWorld, editor_state: &Arc<Mutex<EditorState>>) {
     if let Ok(mut state) = editor_state.lock() {
-        let all: Vec<EntityId> = world.iter_entities().collect();
-        for entity in &all {
-            world.despawn(*entity);
-        }
-        state.clear_entity_references();
-        state.play_mode = PlayMode::Editing;
-        state.scene_snapshot = None;
-        // An open waiting for the index opens nothing over the new scene.
-        state.scene_choices = state.scene_choices.wrapping_add(1);
-        // The new scene has the last word over a scene still opening or
-        // being restored: withdrawn now, before a boundary lands it.
-        let opening: Vec<_> = state.opening.drain(..).map(|(ticket, _)| ticket).collect();
-        let withdrawn: Vec<_> = opening.into_iter().chain(state.restoring.take()).collect();
-        match world.scene_loads() {
-            Some(loads) => withdrawn
-                .into_iter()
-                .for_each(|ticket| loads.cancel(ticket)),
-            None if !withdrawn.is_empty() => {
-                log::error!("New scene: the scene loads in flight cannot be withdrawn");
-            }
-            None => {}
-        }
-        state.restore_problems.clear();
-        // A new scene has nothing a load adapted.
-        state.load_problems.clear();
-        state.push_request(EditorRequest::ReportLoadProblems {
-            problems: Vec::new(),
-        });
-        log::info!("New scene created (cleared {} entities)", all.len());
+        let cleared = clear_scene(world, &mut state);
+        log::info!("New scene created (cleared {cleared} entities)");
     }
 }
 
@@ -196,17 +219,28 @@ fn apply_delete(world: &mut GameWorld, editor_state: &Arc<Mutex<EditorState>>) {
     }
 }
 
+/// Plays the scene, or resumes it when paused; refused, logged, while a scene is restored or opened.
+///
+/// Until a restore or an opened scene lands, the world is not the scene the
+/// editor holds: a snapshot of it would be restored at Stop as the wrong
+/// scene. A play started snapshots the world and records the scene choice it
+/// played (`EditorState::played_choice`).
 fn apply_play(world: &mut GameWorld, editor_state: &Arc<Mutex<EditorState>>) {
     if let Ok(mut state) = editor_state.lock() {
         if state.restoring.is_some() {
-            // The world is still the last play's until the restore lands: a
-            // snapshot of it would be the wrong scene.
             log::info!("Play mode: refused while the scene is being restored");
+            return;
+        }
+        if !state.opening.is_empty() {
+            log::info!(
+                "Play mode: refused while a scene is opening: the world is not the scene it opens yet"
+            );
             return;
         }
         match state.play_mode {
             PlayMode::Editing => {
                 state.scene_snapshot = Some(scene_io::snapshot_scene(world));
+                state.played_choice = Some(state.scene_choices);
                 state.play_mode = PlayMode::Playing;
                 log::info!("Play mode: started");
             }
@@ -228,18 +262,27 @@ fn apply_pause(editor_state: &Arc<Mutex<EditorState>>) {
     }
 }
 
-/// Stops the play: Editing at once, the scene as Play found it filed with `loads`.
-///
-/// The restore lands at a later frame's boundary, where [`land_scene_loads`]
-/// finishes it; Play is refused until it does.
+/// Stops the play: Editing at once, the scene as Play found it filed with `loads`, as [`stop_play`] does.
 fn apply_stop(
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
     loads: &khora_sdk::SceneLoadHub,
 ) {
-    let Ok(mut state) = editor_state.lock() else {
-        return;
-    };
+    if let Ok(mut state) = editor_state.lock() {
+        stop_play(world, &mut state, loads);
+    }
+}
+
+/// Stops the play `state` holds: Editing at once, the scene as Play found it filed with `loads`.
+///
+/// Nothing is done unless playing or paused. The restore lands at a later
+/// frame's boundary, where [`land_scene_loads`] finishes it; Play is refused
+/// until it does.
+pub(crate) fn stop_play(
+    world: &mut GameWorld,
+    state: &mut EditorState,
+    loads: &khora_sdk::SceneLoadHub,
+) {
     if state.play_mode != PlayMode::Playing && state.play_mode != PlayMode::Paused {
         return;
     }
@@ -271,63 +314,103 @@ fn apply_stop(
     log::info!("Play mode: stopped - restoring the scene");
 }
 
+/// Saves the scene to its file in the project open, or, with none, to the file a dialog picks, as Save As does.
 fn apply_save(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
 ) {
-    let path = editor_state
+    let current = editor_state
         .lock()
         .ok()
         .and_then(|s| s.current_scene_path.clone());
-    if let Some(path) = path {
-        save_and_report(project_vfs, world, editor_state, &path);
-    } else if let Some(path) = rfd::FileDialog::new()
-        .add_filter("Khora Scene", &["kscene"])
-        .save_file()
-    {
-        let path = path.to_string_lossy().to_string();
-        save_and_report(project_vfs, world, editor_state, &path);
-        if let Ok(mut state) = editor_state.lock() {
-            state.current_scene_path = Some(path);
+    match current {
+        Some(scene) => {
+            save_and_report(project_vfs, world, editor_state, &scene);
         }
+        None => apply_save_as(project_vfs, world, editor_state),
     }
 }
 
+/// Saves the scene to the file a dialog picks under the open project's `assets/`, as [`save_scene_as`] does.
+///
+/// With no project open, nothing is asked nor saved, and the log says why.
 fn apply_save_as(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
 ) {
-    if let Some(path) = rfd::FileDialog::new()
-        .add_filter("Khora Scene", &["kscene"])
-        .save_file()
-    {
-        let path = path.to_string_lossy().to_string();
-        save_and_report(project_vfs, world, editor_state, &path);
-        if let Ok(mut state) = editor_state.lock() {
-            state.current_scene_path = Some(path);
-        }
+    let Some(assets) = saved_in_project::assets_folder(project_vfs) else {
+        log::error!(
+            "The scene is not saved: {}",
+            saved_in_project::no_project(khora_sdk::khora_core::asset::kinds::SCENE.name())
+        );
+        return;
+    };
+    if let Some(path) = pick_scene_to_save(&assets) {
+        save_scene_as(project_vfs, world, editor_state, &path);
     }
 }
 
-/// Saves the scene at `path` and asks to report what the save left out, as
-/// the `Save` problems; a save that did not reach disk reports nothing.
+/// Returns the scene file the user picks to save to, the dialog starting in the project's assets folder `assets`; `None` when cancelled.
+fn pick_scene_to_save(assets: &std::path::Path) -> Option<std::path::PathBuf> {
+    rfd::FileDialog::new()
+        .add_filter("Khora Scene", &["kscene"])
+        .set_directory(assets)
+        .save_file()
+}
+
+/// Saves the scene to the file at `picked`, which becomes the scene a save writes to once the save landed; returns whether it did.
+///
+/// The file must be a `.kscene` under the open project's `assets/`
+/// ([`scene_at`]), so the scene's path is only ever a scene file: one
+/// outside, one of another kind or of none, or any with no project open, is
+/// refused and nothing is written. A name with no extension is saved as the
+/// `.kscene` of that name.
+/// A save refused or failed changes nothing of the editor's state: the scene
+/// keeps the file it had, and the save problems stay as they were. See
+/// [`save_and_report`].
+///
+/// [`scene_at`]: scene::scene_at
+fn save_scene_as(
+    project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
+    world: &GameWorld,
+    editor_state: &Arc<Mutex<EditorState>>,
+    picked: &std::path::Path,
+) -> bool {
+    let Some(scene) = scene::scene_at(project_vfs, picked) else {
+        return false;
+    };
+    let landed = save_and_report(project_vfs, world, editor_state, &scene);
+    if landed {
+        if let Ok(mut state) = editor_state.lock() {
+            state.current_scene_path = Some(scene);
+        }
+    }
+    landed
+}
+
+/// Saves the scene to `scene` and asks to report what the save left out, as
+/// the `Save` problems; returns whether the scene reached disk.
+///
+/// A save that did not reach disk reports nothing.
 fn save_and_report(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
-    path: &str,
-) {
-    let saved = scene::save_scene_dispatch_reporting(
+    scene: &SceneInProject,
+) -> bool {
+    let saved = scene::save_scene_reporting(
         project_vfs,
         world,
-        path,
+        scene,
         khora_sdk::SerializationGoal::EditorInterchange,
     );
+    let landed = saved.is_some();
     if let (Some(left_out), Ok(mut state)) = (saved, editor_state.lock()) {
         scene::report_save(&mut state, world, &left_out);
     }
+    landed
 }
 
 fn apply_open(editor_state: &Arc<Mutex<EditorState>>) {

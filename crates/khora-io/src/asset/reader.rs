@@ -116,13 +116,7 @@ impl AssetReader {
                 .open(container)
                 .with_context(|| format!("sub-asset '{label}'"))?;
             external_files.push((*container, files));
-            return self.extract(
-                &opener,
-                &opened,
-                *container,
-                label,
-                metadata.asset_type.as_str(),
-            );
+            return self.extract(&opener, &opened, *container, label, metadata.kind.name());
         }
         let bytes = self.read(uuid, source)?;
         let (value, files) = self.decode_file(metadata, &bytes, type_id)?;
@@ -252,7 +246,7 @@ impl AssetReader {
         self.check_size(metadata, bytes, &limits)?;
         let value = self.guarded(metadata, Content::Bytes(bytes), || {
             self.decoders.decode_any_limited(
-                metadata.asset_type.as_str(),
+                metadata.kind.name(),
                 bytes,
                 &metadata.source_path,
                 &limits,
@@ -261,12 +255,12 @@ impl AssetReader {
         if (*value).type_id() != type_id {
             return Err(anyhow!(
                 "Decoder for type '{}' returned a different asset type than requested.",
-                metadata.asset_type
+                metadata.kind
             ));
         }
         let files = self
             .containers
-            .get(metadata.asset_type.as_str())
+            .get(metadata.kind.name())
             .and_then(|opener| {
                 self.guarded(metadata, Content::Bytes(bytes), || {
                     opener.open_limited(bytes, &metadata.source_path, &limits)
@@ -282,11 +276,11 @@ impl AssetReader {
     /// A file whose extension lies is never decoded; it is quarantined by content.
     fn check_type(&self, metadata: &AssetMetadata, bytes: &[u8]) -> Result<()> {
         let head = &bytes[..bytes.len().min(SNIFFED)];
-        if self.decoders.sniff(metadata.asset_type.as_str(), head) != Some(false) {
+        if self.decoders.sniff(metadata.kind.name(), head) != Some(false) {
             return Ok(());
         }
         let reason = SecurityReason::WrongType {
-            expected: metadata.asset_type.to_string(),
+            expected: metadata.kind.to_string(),
         };
         Err(self.refuse(metadata, Content::Bytes(bytes), TrustLayer::Decoder, reason))
     }
@@ -298,14 +292,9 @@ impl AssetReader {
             .get_metadata(container)
             .ok_or_else(|| anyhow!("its container {container} is not in the VFS"))?;
         self.containers
-            .get(metadata.asset_type.as_str())
+            .get(metadata.kind.name())
             .cloned()
-            .ok_or_else(|| {
-                anyhow!(
-                    "no container registered for '{}' files",
-                    metadata.asset_type
-                )
-            })
+            .ok_or_else(|| anyhow!("no container registered for '{}' files", metadata.kind))
     }
 
     /// Opens the container file `container` from its bytes.
@@ -359,7 +348,7 @@ impl AssetReader {
     /// Its decoder's, or else its file kind's.
     fn limits_of(&self, metadata: &AssetMetadata) -> Limits {
         self.decoders
-            .limits(metadata.asset_type.as_str(), self.trust)
+            .limits(metadata.kind.name(), self.trust)
             .unwrap_or_else(|| Limits::of(FileKind::of_path(&metadata.source_path), self.trust))
     }
 

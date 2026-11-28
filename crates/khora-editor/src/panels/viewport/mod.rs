@@ -578,8 +578,8 @@ impl ViewportPanel {
                 }
             }
             crate::ops::AssetDrop::Ignored => log::info!(
-                "Viewport: dropped asset type '{}' is not droppable here",
-                entry.asset_type
+                "Viewport: dropped asset kind '{}' is not droppable here",
+                entry.kind
             ),
         }
     }

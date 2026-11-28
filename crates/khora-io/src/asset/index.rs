@@ -16,6 +16,8 @@
 
 use bincode;
 use khora_core::asset::{asset_key, AssetMetadata, AssetSource, AssetUUID};
+
+use super::PackedFile;
 use std::collections::HashMap;
 
 /// The most bytes an index may hold, and its decode may allocate.
@@ -23,10 +25,14 @@ pub const MAX_INDEX_BYTES: usize = 256 << 20;
 
 /// The in-memory asset index (`index.bin`): each asset's metadata by its UUID.
 ///
-/// See the book: concepts/assets.md, "The pipeline".
+/// It also holds the external-files table: the files a pack's containers
+/// read beside themselves, which are no assets; empty for a loose project.
+/// See the book: concepts/assets.md, "The pipeline", and reference/formats.md.
 #[derive(Debug)]
 pub struct AssetIndex {
     index: HashMap<AssetUUID, AssetMetadata>,
+    /// A pack's external files, by their forward-slash path; empty for a loose project.
+    external_files: HashMap<String, PackedFile>,
     /// Each file's UUID by its forward-slash path; no part is listed.
     by_path: HashMap<String, AssetUUID>,
     /// How many entries the file held, two sharing a UUID counted twice.
@@ -34,17 +40,29 @@ pub struct AssetIndex {
 }
 
 impl AssetIndex {
-    /// Reads an index from the bytes of an `index.bin`.
+    /// Reads an index from the bytes of an `index.bin`, as [`Self::encode`] writes them.
+    ///
+    /// The bytes are a bincode list of `AssetMetadata` followed by a list of
+    /// [`PackedFile`]s, the external-files table, empty for a loose project.
     ///
     /// # Errors
-    /// Returns a `DecodeError` if the bytes are not a bincode-encoded list of
-    /// `AssetMetadata`, or would decode past [`MAX_INDEX_BYTES`].
+    /// Returns a `DecodeError` if the bytes are not those two lists and
+    /// nothing after them, or would decode past [`MAX_INDEX_BYTES`].
     pub fn new(index_bytes: &[u8]) -> Result<Self, bincode::error::DecodeError> {
         // Bounded: a length in the file never makes the decode allocate past
         // what an index may hold.
         let config = bincode::config::standard().with_limit::<{ MAX_INDEX_BYTES }>();
-        let (metadata_vec, _): (Vec<AssetMetadata>, _) =
+        let ((metadata_vec, files), read): ((Vec<AssetMetadata>, Vec<PackedFile>), _) =
             bincode::serde::decode_from_slice(index_bytes, config)?;
+        if read != index_bytes.len() {
+            return Err(bincode::error::DecodeError::Other(
+                "bytes follow the index's lists",
+            ));
+        }
+        let external_files = files
+            .into_iter()
+            .map(|file| (file.path.clone(), file))
+            .collect();
 
         let entries_read = metadata_vec.len();
         let mut index: HashMap<AssetUUID, AssetMetadata> = HashMap::with_capacity(entries_read);
@@ -67,15 +85,30 @@ impl AssetIndex {
 
         Ok(Self {
             index,
+            external_files,
             by_path,
             entries_read,
         })
+    }
+
+    /// Returns the bytes of an `index.bin` listing `metadata` and the external files `external_files`.
+    ///
+    /// A loose project's index has an empty table: [`Self::new`] reads one shape.
+    ///
+    /// # Errors
+    /// Returns an `EncodeError` if an entry cannot be encoded.
+    pub fn encode(
+        metadata: &[AssetMetadata],
+        external_files: &[PackedFile],
+    ) -> Result<Vec<u8>, bincode::error::EncodeError> {
+        bincode::serde::encode_to_vec((metadata, external_files), bincode::config::standard())
     }
 
     /// Returns an index of no asset.
     pub(crate) fn empty() -> Self {
         Self {
             index: HashMap::new(),
+            external_files: HashMap::new(),
             by_path: HashMap::new(),
             entries_read: 0,
         }
@@ -110,6 +143,16 @@ impl AssetIndex {
     pub fn entries_read(&self) -> usize {
         self.entries_read
     }
+
+    /// Returns every external file of a pack's containers, in no order; none for a loose project.
+    pub fn external_files(&self) -> impl Iterator<Item = &PackedFile> {
+        self.external_files.values()
+    }
+
+    /// Returns the container's external file packed at the forward-slash path `rel_fwd`, if any.
+    pub fn external_file(&self, rel_fwd: &str) -> Option<&PackedFile> {
+        self.external_files.get(rel_fwd)
+    }
 }
 
 #[cfg(test)]
@@ -122,7 +165,7 @@ mod tests {
         AssetMetadata {
             uuid: AssetUUID::new_v5("a.wgsl"),
             source_path: PathBuf::from(source_path),
-            asset_type: khora_core::asset::AssetType::Shader,
+            kind: khora_core::asset::kinds::SHADER,
             dependencies: Vec::new(),
             variants: HashMap::from([(
                 AssetMetadata::DEFAULT_VARIANT.to_owned(),
@@ -132,9 +175,9 @@ mod tests {
         }
     }
 
+    /// Returns the bytes of a loose project's index listing `entries`.
     fn encoded(entries: &[AssetMetadata]) -> Vec<u8> {
-        bincode::serde::encode_to_vec(entries, bincode::config::standard())
-            .expect("the index encodes")
+        AssetIndex::encode(entries, &[]).expect("the index encodes")
     }
 
     /// **An index over its limit is refused** before it allocates.
@@ -178,7 +221,7 @@ mod tests {
         let part = AssetMetadata {
             uuid: AssetUUID::sub_asset(frozen, "mesh0"),
             source_path: PathBuf::from("models/hero.glb"),
-            asset_type: khora_core::asset::AssetType::Mesh,
+            kind: khora_core::asset::kinds::MESH,
             dependencies: Vec::new(),
             variants: HashMap::from([(
                 AssetMetadata::DEFAULT_VARIANT.to_owned(),
@@ -234,5 +277,98 @@ mod tests {
             found, None,
             "old.wgsl is hidden, yet a lookup reads {found:?}"
         );
+    }
+
+    /// **An index naming a kind no registration declares is refused whole**,
+    /// the name in the error; its other entries are not read either.
+    #[test]
+    fn an_index_naming_an_unregistered_kind_is_refused_whole() {
+        let mut other = entry("b.wgsl");
+        other.uuid = AssetUUID::new_v5("b.wgsl");
+        let mut bytes = encoded(&[entry("a.wgsl"), other]);
+        let at = (bytes.windows(b"shader".len()))
+            .position(|window| window == b"shader")
+            .expect("the first entry's kind is written by its name");
+        bytes[at..at + b"shader".len()].copy_from_slice(b"shadex");
+
+        let error = AssetIndex::new(&bytes).expect_err("an unknown kind is refused");
+        assert!(
+            error.to_string().contains("shadex"),
+            "the error names the kind: {error}"
+        );
+    }
+
+    /// **Bytes after an index's lists are refused**: neither the asset list nor
+    /// its external-files table ends a file followed by anything else.
+    #[test]
+    fn an_index_with_bytes_after_its_lists_is_refused() {
+        let assets = vec![entry("shaders/a.wgsl")];
+        let config = bincode::config::standard();
+        let no_file: &[PackedFile] = &[];
+        let mut packed = bincode::serde::encode_to_vec((&assets, no_file), config).unwrap();
+        packed.extend_from_slice(b"trailing garbage");
+
+        assert!(
+            AssetIndex::new(&packed).is_err(),
+            "an index followed by stray bytes reads"
+        );
+    }
+
+    /// **A pack's index reads its external-files table after its assets**;
+    /// a loose index's table is empty, and an index without one is refused.
+    #[test]
+    fn a_packs_index_reads_its_external_files_after_its_assets() {
+        let buffer = PackedFile {
+            path: "models/a.bin".to_owned(),
+            offset: 3,
+            size: 4,
+            uncompressed_size: 4,
+            compression: khora_core::asset::CompressionKind::None,
+        };
+        let assets = vec![entry("shaders/a.wgsl")];
+        let packed = AssetIndex::encode(&assets, std::slice::from_ref(&buffer)).unwrap();
+        let index = AssetIndex::new(&packed).expect("a pack's index reads");
+        assert_eq!(index.asset_count(), 1);
+        assert_eq!(index.external_file("models/a.bin"), Some(&buffer));
+        assert_eq!(index.external_files().count(), 1);
+        assert!(
+            index.uuid_at("models/a.bin").is_none(),
+            "no asset at its path"
+        );
+
+        let index = AssetIndex::new(&encoded(&assets)).expect("a loose index reads");
+        assert_eq!(index.asset_count(), 1);
+        assert_eq!(index.external_files().count(), 0);
+        assert!(index.external_file("models/a.bin").is_none());
+
+        let no_table = bincode::serde::encode_to_vec(&assets, bincode::config::standard()).unwrap();
+        assert!(
+            AssetIndex::new(&no_table).is_err(),
+            "an asset list without its table reads"
+        );
+    }
+
+    /// **An index of no asset reads**, with an empty table or a table alone;
+    /// no bytes at all are no index.
+    #[test]
+    fn an_index_of_no_asset_reads_with_or_without_external_files() {
+        let empty = AssetIndex::encode(&[], &[]).unwrap();
+        let index = AssetIndex::new(&empty).expect("an empty index reads");
+        assert_eq!((index.asset_count(), index.entries_read()), (0, 0));
+        assert_eq!(index.external_files().count(), 0);
+
+        let buffer = PackedFile {
+            path: "models/a.bin".to_owned(),
+            offset: 0,
+            size: 4,
+            uncompressed_size: 4,
+            compression: khora_core::asset::CompressionKind::None,
+        };
+        let table_alone = AssetIndex::encode(&[], std::slice::from_ref(&buffer)).unwrap();
+        let index = AssetIndex::new(&table_alone).expect("a table alone reads");
+        assert_eq!(index.asset_count(), 0);
+        assert_eq!(index.external_file("models/a.bin"), Some(&buffer));
+
+        assert!(AssetIndex::new(&[]).is_err(), "no bytes read as an index");
     }
 }

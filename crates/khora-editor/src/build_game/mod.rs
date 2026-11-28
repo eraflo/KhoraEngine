@@ -19,15 +19,21 @@
 
 use crate::project_vfs::ProjectVfs;
 use anyhow::{anyhow, Context, Result};
+use khora_sdk::fs::Reclaimed;
 use khora_sdk::khora_core::asset::CompressionKind;
 use khora_sdk::khora_core::physics::PhysicsSettings;
+use khora_sdk::trust::Refusals;
 use khora_sdk::{
-    PackBuilder, PackSigner, RuntimeConfig, DEFAULT_SCENE_REL_PATH, RUNTIME_CONFIG_FILE,
+    LeftOutFile, PackBuilder, PackSigner, RuntimeConfig, DEFAULT_SCENE_REL_PATH,
+    RUNTIME_CONFIG_FILE,
 };
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 mod cargo_build;
+mod runtime_stamp;
 use cargo_build::stage_with_cargo_build;
+use runtime_stamp::{build_with_runtime, RuntimeStampBuild};
 
 /// Build profile selecting the pack's compression; every preset signs its pack.
 ///
@@ -132,6 +138,57 @@ pub struct BuildOutcome {
     pub binary_path: PathBuf,
     pub asset_count: usize,
     pub pack_bytes: u64,
+    /// The external files the pack left out, sorted by path: refused, over
+    /// their container's cap, or missing.
+    pub left_out: Vec<LeftOutFile>,
+    /// What an interrupted build left beside the build's folder, and what was
+    /// done with it; the previous build when it could not be removed.
+    pub reclaimed: Vec<Reclaimed>,
+}
+
+impl BuildOutcome {
+    /// Returns the outcome of the same build once its folder is moved to `output_dir`.
+    fn moved_to(self, output_dir: &Path) -> Self {
+        let binary_path = match self.binary_path.file_name() {
+            Some(name) => output_dir.join(name),
+            None => self.binary_path,
+        };
+        Self {
+            output_dir: output_dir.to_path_buf(),
+            binary_path,
+            ..self
+        }
+    }
+}
+
+/// Returns the line a build's result is reported by: built, and what it left out, or why it failed.
+///
+/// A build that left files out says how many and names each, with why; one
+/// that reclaimed what an interrupted build left says what it did with it.
+pub(crate) fn result_line(result: &Result<BuildOutcome>) -> String {
+    let out = match result {
+        Ok(out) => out,
+        Err(error) => return format!("Build Game: failed — {error:#}"),
+    };
+    let built = format!(
+        "via {} — {} ({} assets, {} bytes packed)",
+        out.strategy.label(),
+        out.output_dir.display(),
+        out.asset_count,
+        out.pack_bytes
+    );
+    let line = match out.left_out.len() {
+        0 => format!("Build Game: built {built}"),
+        count => {
+            let files = if count == 1 { "file" } else { "files" };
+            let listed: Vec<String> = out.left_out.iter().map(ToString::to_string).collect();
+            format!(
+                "Build Game: built, {count} {files} left out, {built}: {}",
+                listed.join("; ")
+            )
+        }
+    };
+    format!("{line}{}", reclaimed_note(&out.reclaimed))
 }
 
 /// Stages a build for the host OS with the **Release** preset, signed with
@@ -150,9 +207,27 @@ fn user_signer() -> Result<PackSigner> {
     PackSigner::load_or_create(&dir).context("Build Game: the signing key")
 }
 
-/// Stages a build for `target` with an explicit preset.
+/// Stages a build for `target` with an explicit preset under `<project>/dist/<target>/`.
 ///
-/// A non-host target fails at the runtime-binary lookup, or is refused by
+/// The build is made in a temporary folder beside it, and swapped in whole
+/// once it succeeded: a failed build leaves the previous one as it was, and
+/// its temporary folder removed. What an interrupted build left beside the
+/// folder is reclaimed first, the previous build it moved aside put back; the
+/// outcome says what was, and so does the error of a build that then fails.
+///
+/// One build of a target at a time, across processes: the build holds a
+/// [`PathLock`](khora_sdk::fs::PathLock) on the folder from start to end
+/// (`dist/<target>.lock`, left in place). A second build of the target, in
+/// this editor or another, is refused at once rather than waiting: a build
+/// runs on the frame, and waiting would freeze the editor behind another's.
+///
+/// # Errors
+///
+/// When the project's name is blank; when another build of `target` is
+/// running (in this process or another); when the runtime binary is not found or
+/// cargo fails; when the pack fails (an asset refused, its message carried);
+/// when a file cannot be written or the folder swapped in. A non-host target
+/// fails at the runtime-binary lookup, or is refused by
 /// [`stage_with_cargo_build`]: there is no cross-compilation.
 pub(crate) fn build_for_target(
     pvfs: &ProjectVfs,
@@ -166,13 +241,18 @@ pub(crate) fn build_for_target(
     }
 
     let output_dir = pvfs.root.join("dist").join(target.dir_name());
-    std::fs::create_dir_all(&output_dir).with_context(|| {
-        format!(
-            "Failed to create build output directory {}",
-            output_dir.display()
-        )
+    // Held to the end of the build, the swap and the reclaim of what an
+    // interrupted build left included: a live build's folder is never taken
+    // for a leftover.
+    let _held = khora_sdk::fs::PathLock::try_hold(&output_dir).map_err(|error| {
+        let left = format!("Build Game: {} is left as it was", output_dir.display());
+        match error.kind() {
+            std::io::ErrorKind::ResourceBusy => anyhow::anyhow!(
+                "{left}: another build of it is running, in this editor or another ({error})"
+            ),
+            _ => anyhow::Error::new(error).context(left),
+        }
     })?;
-
     let has_cargo = pvfs.root.join("Cargo.toml").is_file();
     let strategy = if has_cargo {
         BuildStrategy::CargoBuild
@@ -188,41 +268,68 @@ pub(crate) fn build_for_target(
         output_dir.display()
     );
 
-    let outcome = match strategy {
-        BuildStrategy::RuntimeStamp => {
-            let runtime_src = locate_runtime_binary(target)
-                .with_context(|| format!("Could not locate khora-runtime for {:?}", target))?;
-            build_with_runtime(
-                &pvfs.assets_root,
-                &output_dir,
-                project_name,
-                target,
-                preset,
-                signer,
-                &runtime_src,
-            )?
-        }
-        BuildStrategy::CargoBuild => {
-            let pack_out = pack_and_sign(&pvfs.assets_root, &output_dir, preset, signer)?;
-            let bin_dst = stage_with_cargo_build(&pvfs.root, &output_dir, project_name, target)?;
-            stamp_binary(&bin_dst, signer)?;
-            BuildOutcome {
-                strategy,
-                output_dir: output_dir.clone(),
-                binary_path: bin_dst,
-                asset_count: pack_out.asset_count,
-                pack_bytes: pack_out.pack_bytes(),
-            }
-        }
-    };
-
     // The built game is the project's, at the version its `project.json`
     // gives.
     let game = khora_sdk::GameIdentity {
         name: project_name.to_owned(),
-        version: crate::project_identity::project_version(&pvfs.root),
+        version: crate::project_identity::project_version(&pvfs.reads().guard(&pvfs.root)),
     };
-    write_runtime_config_of(&output_dir, &game, preset, pvfs.physics_settings())?;
+    let physics = pvfs.physics_settings();
+    // Built beside the previous build and swapped in whole: a failed build
+    // leaves the previous one as it was.
+    let (outcome, reclaimed) =
+        khora_sdk::fs::replace_dir_with_reporting(&output_dir, |staged| -> Result<BuildOutcome> {
+            let outcome = match strategy {
+                BuildStrategy::RuntimeStamp => {
+                    let runtime_src = locate_runtime_binary(target).with_context(|| {
+                        format!("Could not locate khora-runtime for {:?}", target)
+                    })?;
+                    build_with_runtime(RuntimeStampBuild {
+                        assets_root: &pvfs.assets_root,
+                        refusals: pvfs.reads().refusals(),
+                        output_dir: staged,
+                        project_name,
+                        target,
+                        preset,
+                        signer,
+                        runtime_src: &runtime_src,
+                    })?
+                }
+                BuildStrategy::CargoBuild => {
+                    let pack_out = pack_and_sign(
+                        &pvfs.assets_root,
+                        pvfs.reads().refusals(),
+                        staged,
+                        preset,
+                        signer,
+                    )?;
+                    let bin_dst = stage_with_cargo_build(&pvfs.root, staged, project_name, target)?;
+                    stamp_binary(&bin_dst, signer)?;
+                    BuildOutcome {
+                        strategy,
+                        output_dir: staged.to_path_buf(),
+                        binary_path: bin_dst,
+                        asset_count: pack_out.asset_count,
+                        pack_bytes: pack_out.pack_bytes(),
+                        left_out: pack_out.left_out,
+                        reclaimed: Vec::new(),
+                    }
+                }
+            };
+            write_runtime_config_of(staged, &game, preset, physics)?;
+            Ok(outcome)
+        });
+    let built = outcome.with_context(|| {
+        format!(
+            "Build Game: {} is left as it was{}",
+            output_dir.display(),
+            reclaimed_note(&reclaimed)
+        )
+    })?;
+    let outcome = BuildOutcome {
+        reclaimed,
+        ..built.moved_to(&output_dir)
+    };
 
     log::info!(
         "Build Game: staged {} ({} assets, {} bytes packed, signed) via {}",
@@ -236,8 +343,11 @@ pub(crate) fn build_for_target(
 
 /// Packs `assets_root` into `output_dir` — `index.bin`, `data.pack` and the
 /// `manifest.bin` `signer` signs over them — with `preset`'s compression.
+///
+/// What the build refuses is reported to `refusals`, the run's.
 fn pack_and_sign(
     assets_root: &Path,
+    refusals: Arc<Refusals>,
     output_dir: &Path,
     preset: BuildPreset,
     signer: &PackSigner,
@@ -245,6 +355,7 @@ fn pack_and_sign(
     PackBuilder::new(assets_root, output_dir)
         .with_compression(preset.compression())
         .with_signer(signer)
+        .with_refusals(refusals)
         .build()
         .context("PackBuilder failed")
 }
@@ -256,51 +367,13 @@ fn stamp_binary(bin: &Path, signer: &PackSigner) -> Result<()> {
         .with_context(|| format!("Build Game: cannot stamp {}", bin.display()))
 }
 
-/// Builds by runtime stamp: packs `assets_root` into `output_dir` and stages `runtime_src` there.
-///
-/// The pack has `preset`'s compression and is signed by `signer`; the binary
-/// is named after the project and stamped with `signer`'s public key.
-fn build_with_runtime(
-    assets_root: &Path,
-    output_dir: &Path,
-    project_name: &str,
-    target: BuildTarget,
-    preset: BuildPreset,
-    signer: &PackSigner,
-    runtime_src: &Path,
-) -> Result<BuildOutcome> {
-    let pack_out = pack_and_sign(assets_root, output_dir, preset, signer)?;
-    let bin_dst = stage_runtime(runtime_src, output_dir, project_name, target)?;
-    stamp_binary(&bin_dst, signer)?;
-    Ok(BuildOutcome {
-        strategy: BuildStrategy::RuntimeStamp,
-        output_dir: output_dir.to_path_buf(),
-        binary_path: bin_dst,
-        asset_count: pack_out.asset_count,
-        pack_bytes: pack_out.pack_bytes(),
-    })
-}
-
-/// Copies the pre-built runtime at `runtime_src` into `output_dir`, renamed
-/// to the project name. Returns the absolute path of the staged binary.
-fn stage_runtime(
-    runtime_src: &Path,
-    output_dir: &Path,
-    project_name: &str,
-    target: BuildTarget,
-) -> Result<PathBuf> {
-    let safe_name = sanitize_binary_name(project_name);
-    let bin_filename = format!("{}{}", safe_name, target.exe_suffix());
-    let bin_dst = output_dir.join(&bin_filename);
-    std::fs::copy(runtime_src, &bin_dst).with_context(|| {
-        format!(
-            "Failed to copy runtime {} → {}",
-            runtime_src.display(),
-            bin_dst.display()
-        )
-    })?;
-    set_executable_bit(&bin_dst);
-    Ok(bin_dst)
+/// Returns what a build did with an interrupted build's leftovers, as the end of a sentence; empty for nothing.
+fn reclaimed_note(reclaimed: &[Reclaimed]) -> String {
+    if reclaimed.is_empty() {
+        return String::new();
+    }
+    let listed: Vec<String> = reclaimed.iter().map(ToString::to_string).collect();
+    format!(" ({})", listed.join("; "))
 }
 
 /// `runtime.json` for a project with the default physics settings.
@@ -372,9 +445,12 @@ fn set_executable_bit(path: &Path) {
 }
 
 /// Returns the project name with filesystem-unsafe characters made
-/// underscores, for a binary file name.
+/// underscores, for a binary file name every system makes.
+///
+/// A name Windows keeps for a device (`con`, `nul`, …) gets a `_` after it,
+/// as [`crate::project_vfs::check_new_name`] refuses it.
 fn sanitize_binary_name(name: &str) -> String {
-    let cleaned: String = name
+    let mut cleaned: String = name
         .chars()
         .map(|c| {
             if c.is_alphanumeric() || c == '-' || c == '_' {
@@ -385,10 +461,12 @@ fn sanitize_binary_name(name: &str) -> String {
         })
         .collect();
     if cleaned.is_empty() {
-        "game".to_owned()
-    } else {
-        cleaned
+        return "game".to_owned();
     }
+    if crate::project_vfs::check_new_name(&cleaned).is_err() {
+        cleaned.push('_');
+    }
+    cleaned
 }
 
 /// Returns the `khora-runtime` binary for `target`.

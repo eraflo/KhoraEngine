@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The asset type handlers: per asset type, the tile it shows and what a
+//! The asset kind handlers: per asset kind, the tile it shows and what a
 //! double-click does. Any crate registers one with
-//! [`AssetTypeHandlerRegistration`]; the built-in ones are in [`builtins`].
+//! [`AssetKindHandlerRegistration`]; the built-in ones are in [`builtins`].
 
-use khora_sdk::khora_core::asset::AssetType;
+use khora_sdk::khora_core::asset::{kinds, AssetKind};
 
 use crate::widgets::tile::AssetTileKind;
 
@@ -33,11 +33,11 @@ pub enum ActivationKind {
     OpenExternal { abs_path: String },
 }
 
-/// Pluggable handler for one asset type.
-pub trait AssetTypeHandler: Send + Sync + 'static {
-    /// Returns the asset type this handler owns.
-    fn asset_type(&self) -> AssetType;
-    /// Returns the tile this type shows in the grid.
+/// Pluggable handler for one asset kind.
+pub trait AssetKindHandler: Send + Sync + 'static {
+    /// Returns the asset kind this handler owns.
+    fn kind(&self) -> AssetKind;
+    /// Returns the tile this kind shows in the grid.
     fn tile_kind(&self) -> AssetTileKind;
     /// Returns what a double-click does; by default, opens the file externally.
     fn activate(&self, abs_path: String) -> ActivationKind {
@@ -45,40 +45,40 @@ pub trait AssetTypeHandler: Send + Sync + 'static {
     }
 }
 
-/// An asset type handler, registered through `inventory::submit!`.
-pub struct AssetTypeHandlerRegistration {
+/// An asset kind handler, registered through `inventory::submit!`.
+pub struct AssetKindHandlerRegistration {
     /// The handler.
-    pub handler: &'static dyn AssetTypeHandler,
+    pub handler: &'static dyn AssetKindHandler,
 }
 
-inventory::collect!(AssetTypeHandlerRegistration);
+inventory::collect!(AssetKindHandlerRegistration);
 
-/// Returns the handler registered for `asset_type`, if any.
+/// Returns the handler registered for `kind`, if any.
 ///
 /// With none, the asset shows the unknown tile and opens externally.
-pub fn handler_for(asset_type: &AssetType) -> Option<&'static dyn AssetTypeHandler> {
-    inventory::iter::<AssetTypeHandlerRegistration>
+pub fn handler_for(kind: AssetKind) -> Option<&'static dyn AssetKindHandler> {
+    inventory::iter::<AssetKindHandlerRegistration>
         .into_iter()
         .map(|r| r.handler)
-        .find(|h| h.asset_type() == *asset_type)
+        .find(|h| h.kind() == kind)
 }
 
-/// Returns the tile `asset_type` shows, the unknown tile without a handler.
-pub fn tile_kind_for(asset_type: &AssetType) -> AssetTileKind {
-    handler_for(asset_type)
+/// Returns the tile `kind` shows, the unknown tile without a handler.
+pub fn tile_kind_for(kind: AssetKind) -> AssetTileKind {
+    handler_for(kind)
         .map(|h| h.tile_kind())
         .unwrap_or(AssetTileKind::Unknown)
 }
 
-/// The handlers of the engine's own asset types.
+/// The handlers of the engine's own asset kinds.
 pub mod builtins {
     use super::*;
 
     /// The handler of scenes: a double-click loads one.
     pub struct SceneHandler;
-    impl AssetTypeHandler for SceneHandler {
-        fn asset_type(&self) -> AssetType {
-            AssetType::Scene
+    impl AssetKindHandler for SceneHandler {
+        fn kind(&self) -> AssetKind {
+            kinds::SCENE
         }
         fn tile_kind(&self) -> AssetTileKind {
             AssetTileKind::Scene
@@ -90,9 +90,9 @@ pub mod builtins {
 
     /// The handler of meshes.
     pub struct MeshHandler;
-    impl AssetTypeHandler for MeshHandler {
-        fn asset_type(&self) -> AssetType {
-            AssetType::Mesh
+    impl AssetKindHandler for MeshHandler {
+        fn kind(&self) -> AssetKind {
+            kinds::MESH
         }
         fn tile_kind(&self) -> AssetTileKind {
             AssetTileKind::Mesh
@@ -101,31 +101,31 @@ pub mod builtins {
 
     /// The handler of textures.
     pub struct TextureHandler;
-    impl AssetTypeHandler for TextureHandler {
-        fn asset_type(&self) -> AssetType {
-            AssetType::Texture
+    impl AssetKindHandler for TextureHandler {
+        fn kind(&self) -> AssetKind {
+            kinds::TEXTURE
         }
         fn tile_kind(&self) -> AssetTileKind {
             AssetTileKind::Texture
         }
     }
 
-    /// The handler of audio clips.
-    pub struct AudioHandler;
-    impl AssetTypeHandler for AudioHandler {
-        fn asset_type(&self) -> AssetType {
-            AssetType::Audio
+    /// The handler of sounds.
+    pub struct SoundHandler;
+    impl AssetKindHandler for SoundHandler {
+        fn kind(&self) -> AssetKind {
+            kinds::SOUND
         }
         fn tile_kind(&self) -> AssetTileKind {
-            AssetTileKind::Audio
+            AssetTileKind::Sound
         }
     }
 
     /// The handler of shaders.
     pub struct ShaderHandler;
-    impl AssetTypeHandler for ShaderHandler {
-        fn asset_type(&self) -> AssetType {
-            AssetType::Shader
+    impl AssetKindHandler for ShaderHandler {
+        fn kind(&self) -> AssetKind {
+            kinds::SHADER
         }
         fn tile_kind(&self) -> AssetTileKind {
             AssetTileKind::Shader
@@ -134,9 +134,9 @@ pub mod builtins {
 
     /// The handler of prefabs: a double-click places an instance.
     pub struct PrefabHandler;
-    impl AssetTypeHandler for PrefabHandler {
-        fn asset_type(&self) -> AssetType {
-            AssetType::Prefab
+    impl AssetKindHandler for PrefabHandler {
+        fn kind(&self) -> AssetKind {
+            kinds::PREFAB
         }
         fn tile_kind(&self) -> AssetTileKind {
             AssetTileKind::Scene
@@ -148,9 +148,9 @@ pub mod builtins {
 
     /// The handler of materials.
     pub struct MaterialHandler;
-    impl AssetTypeHandler for MaterialHandler {
-        fn asset_type(&self) -> AssetType {
-            AssetType::Material
+    impl AssetKindHandler for MaterialHandler {
+        fn kind(&self) -> AssetKind {
+            kinds::MATERIAL
         }
         fn tile_kind(&self) -> AssetTileKind {
             AssetTileKind::Material
@@ -159,9 +159,9 @@ pub mod builtins {
 
     /// The handler of Ergon scripts.
     pub struct ScriptHandler;
-    impl AssetTypeHandler for ScriptHandler {
-        fn asset_type(&self) -> AssetType {
-            AssetType::Script
+    impl AssetKindHandler for ScriptHandler {
+        fn kind(&self) -> AssetKind {
+            kinds::SCRIPT
         }
         fn tile_kind(&self) -> AssetTileKind {
             AssetTileKind::Script
@@ -169,27 +169,27 @@ pub mod builtins {
     }
 
     inventory::submit! {
-        super::AssetTypeHandlerRegistration { handler: &SceneHandler }
+        super::AssetKindHandlerRegistration { handler: &SceneHandler }
     }
     inventory::submit! {
-        super::AssetTypeHandlerRegistration { handler: &MeshHandler }
+        super::AssetKindHandlerRegistration { handler: &MeshHandler }
     }
     inventory::submit! {
-        super::AssetTypeHandlerRegistration { handler: &TextureHandler }
+        super::AssetKindHandlerRegistration { handler: &TextureHandler }
     }
     inventory::submit! {
-        super::AssetTypeHandlerRegistration { handler: &AudioHandler }
+        super::AssetKindHandlerRegistration { handler: &SoundHandler }
     }
     inventory::submit! {
-        super::AssetTypeHandlerRegistration { handler: &ShaderHandler }
+        super::AssetKindHandlerRegistration { handler: &ShaderHandler }
     }
     inventory::submit! {
-        super::AssetTypeHandlerRegistration { handler: &ScriptHandler }
+        super::AssetKindHandlerRegistration { handler: &ScriptHandler }
     }
     inventory::submit! {
-        super::AssetTypeHandlerRegistration { handler: &PrefabHandler }
+        super::AssetKindHandlerRegistration { handler: &PrefabHandler }
     }
     inventory::submit! {
-        super::AssetTypeHandlerRegistration { handler: &MaterialHandler }
+        super::AssetKindHandlerRegistration { handler: &MaterialHandler }
     }
 }

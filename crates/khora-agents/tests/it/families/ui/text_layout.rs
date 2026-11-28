@@ -232,7 +232,11 @@ fn an_edited_font_file_is_registered_again_with_the_shaper() {
 
     let service = AssetService::open_loose_files(
         &root,
-        &AssetIdRegistry::load(&root),
+        &AssetIdRegistry::load_or_unread(&khora_io::trust::FileGuard::new(
+            &root,
+            khora_io::trust::Trust::Project,
+            khora_io::trust::Refusals::detached(),
+        )),
         Arc::new(MetricsRegistry::new()),
     )
     .expect("the project opens");
@@ -308,7 +312,11 @@ impl FontProject {
         }
         let service = khora_io::asset::AssetService::open_loose_files(
             &root,
-            &khora_io::asset::AssetIdRegistry::load(&root),
+            &khora_io::asset::AssetIdRegistry::load_or_unread(&khora_io::trust::FileGuard::new(
+                &root,
+                khora_io::trust::Trust::Project,
+                khora_io::trust::Refusals::detached(),
+            )),
             Arc::new(khora_telemetry::MetricsRegistry::new()),
         )
         .expect("the project opens");
@@ -330,10 +338,20 @@ impl FontProject {
     /// Lists the assets folder again and announces `path`'s change, as the
     /// editor's hot reload does when a file appears or goes away.
     fn reindex_and_invalidate(&self, path: &str) {
-        let bytes = khora_io::asset::IndexBuilder::new(&self.root.join("assets"))
-            .with_registry(&khora_io::asset::AssetIdRegistry::load(&self.root))
-            .build_index_bytes()
-            .expect("the index");
+        let bytes = khora_io::asset::IndexBuilder::new(khora_io::trust::FileGuard::new(
+            self.root.join("assets"),
+            khora_io::trust::Trust::Project,
+            khora_io::trust::Refusals::detached(),
+        ))
+        .with_registry(&khora_io::asset::AssetIdRegistry::load_or_unread(
+            &khora_io::trust::FileGuard::new(
+                &self.root,
+                khora_io::trust::Trust::Project,
+                khora_io::trust::Refusals::detached(),
+            ),
+        ))
+        .build_index_bytes()
+        .expect("the index");
         let mut service = self.service.lock().expect("the service");
         service.reindex(&bytes).expect("reindexed");
         service.invalidate(&khora_core::asset::AssetUUID::new_v5(path));

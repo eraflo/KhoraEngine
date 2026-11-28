@@ -215,3 +215,168 @@ fn file_operations_asked_in_one_frame_run_in_the_order_asked() {
     );
     assert!(file_ops(&state.lock().expect("state")).is_empty());
 }
+
+/// **The open scene follows its file through a rename**: a save after the browser renamed it writes the renamed file, and brings back no file at the old name.
+#[test]
+fn a_save_after_renaming_the_open_scene_writes_the_renamed_file() {
+    const BEFORE: &[u8] = b"the scene as last saved";
+    let project = project("rename-open-scene", &[("scenes/level.kscene", BEFORE)]);
+    let assets = project.root.join("assets");
+    let state = Arc::new(Mutex::new(EditorState {
+        project_folder: Some(project.root.to_string_lossy().to_string()),
+        current_scene_path: Some(SceneInProject::new(&assets, "scenes/level.kscene")),
+        ..EditorState::default()
+    }));
+    state
+        .lock()
+        .expect("state")
+        .push_request(EditorRequest::AssetFile(AssetFileOp::Rename {
+            from: "scenes/level.kscene".to_owned(),
+            to: "scenes/renamed.kscene".to_owned(),
+        }));
+    run_queued_asset_file_ops(Some(&project.vfs), &state);
+    let mut world = GameWorld::new();
+    let root = world.spawn((Transform::identity(), Name::new("Root")));
+    world
+        .inner_world_mut()
+        .mark_authored(root)
+        .expect("authored");
+
+    apply_save(Some(&project.vfs), &mut world, &state);
+
+    let scenes = assets.join("scenes");
+    assert!(
+        !scenes.join("level.kscene").exists(),
+        "the save brought the scene back under its old name"
+    );
+    assert_ne!(
+        std::fs::read(scenes.join("renamed.kscene")).ok().as_deref(),
+        Some(BEFORE),
+        "the renamed scene is not the one saved"
+    );
+}
+
+/// An editor over `project` whose open scene, also the asset inspected, is its `scenes/level.kscene`.
+fn editing_the_level(project: &Project) -> Arc<Mutex<EditorState>> {
+    let assets = project.root.join("assets");
+    Arc::new(Mutex::new(EditorState {
+        project_folder: Some(project.root.to_string_lossy().to_string()),
+        current_scene_path: Some(SceneInProject::new(&assets, "scenes/level.kscene")),
+        inspected_asset_path: Some("scenes/level.kscene".to_owned()),
+        ..EditorState::default()
+    }))
+}
+
+/// Saves a world of one authored entity as `state`'s open scene, as Ctrl+S does.
+fn save_a_world(project: &Project, state: &Arc<Mutex<EditorState>>) {
+    let mut world = GameWorld::new();
+    let root = world.spawn((Transform::identity(), Name::new("Root")));
+    world
+        .inner_world_mut()
+        .mark_authored(root)
+        .expect("authored");
+    apply_save(Some(&project.vfs), &mut world, state);
+}
+
+/// **The open scene follows its file into another folder**: a save after the browser moved it writes the moved file, the old one is not made again, and the asset inspected is the moved file.
+#[test]
+fn a_save_after_moving_the_open_scene_writes_the_moved_file() {
+    const BEFORE: &[u8] = b"the scene as last saved";
+    let project = project("move-open-scene", &[("scenes/level.kscene", BEFORE)]);
+    let state = editing_the_level(&project);
+    state
+        .lock()
+        .expect("state")
+        .push_request(EditorRequest::AssetFile(AssetFileOp::Move {
+            path: "scenes/level.kscene".to_owned(),
+            into: "levels".to_owned(),
+        }));
+
+    run_queued_asset_file_ops(Some(&project.vfs), &state);
+
+    let assets = project.root.join("assets");
+    {
+        let state = state.lock().expect("state");
+        assert_eq!(
+            state.current_scene_path,
+            Some(SceneInProject::new(&assets, "levels/level.kscene"))
+        );
+        assert_eq!(
+            state.inspected_asset_path.as_deref(),
+            Some("levels/level.kscene")
+        );
+    }
+    save_a_world(&project, &state);
+    assert!(
+        !assets.join("scenes").join("level.kscene").exists(),
+        "the save brought the scene back where it was"
+    );
+    assert_ne!(
+        std::fs::read(assets.join("levels").join("level.kscene"))
+            .ok()
+            .as_deref(),
+        Some(BEFORE),
+        "the moved scene is not the one saved"
+    );
+}
+
+/// **The open scene follows its folder through a rename**: a save after the browser renamed the folder writes the file in the renamed folder.
+#[test]
+fn a_save_after_renaming_the_open_scenes_folder_writes_in_the_renamed_folder() {
+    const BEFORE: &[u8] = b"the scene as last saved";
+    let project = project(
+        "rename-open-scene-folder",
+        &[("scenes/level.kscene", BEFORE)],
+    );
+    let state = editing_the_level(&project);
+    state
+        .lock()
+        .expect("state")
+        .push_request(EditorRequest::AssetFile(AssetFileOp::Rename {
+            from: "scenes".to_owned(),
+            to: "levels".to_owned(),
+        }));
+
+    run_queued_asset_file_ops(Some(&project.vfs), &state);
+    save_a_world(&project, &state);
+
+    let assets = project.root.join("assets");
+    assert!(
+        !assets.join("scenes").exists(),
+        "the save made the old folder again"
+    );
+    assert_ne!(
+        std::fs::read(assets.join("levels").join("level.kscene"))
+            .ok()
+            .as_deref(),
+        Some(BEFORE),
+        "the scene in the renamed folder is not the one saved"
+    );
+}
+
+/// **The open scene trashed has no file any more**: the editor forgets it, so a save asks where, as Save As does, and never makes the trashed file again; the asset inspected is forgotten too.
+#[test]
+fn trashing_the_open_scene_leaves_the_scene_with_no_file() {
+    let project = project("trash-open-scene", &[("scenes/level.kscene", b"saved")]);
+    let state = editing_the_level(&project);
+    let bin = project.root.join("bin");
+    std::fs::create_dir_all(&bin).expect("the bin");
+
+    {
+        let mut pvfs = project.vfs.lock().expect("the project");
+        let trashed = pvfs
+            .trash_with("scenes/level.kscene", |abs| {
+                Ok(std::fs::rename(abs, bin.join("level.kscene"))?)
+            })
+            .expect("the scene is trashed");
+        let mut state = state.lock().expect("state");
+        super::super::asset_ops::follow_key_changes(&mut pvfs, &mut state, &[trashed]);
+    }
+
+    let state = state.lock().expect("state");
+    assert_eq!(
+        state.current_scene_path, None,
+        "a save would make the trashed scene again"
+    );
+    assert_eq!(state.inspected_asset_path, None);
+}

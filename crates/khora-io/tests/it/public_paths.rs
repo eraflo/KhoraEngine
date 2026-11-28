@@ -165,11 +165,15 @@ fn declared_relayout_fields(x: &khora_io::script::declared_relayout::DeclaredRel
 }
 
 fn decoder_registration_fields(x: &khora_io::asset::DecoderRegistration) {
-    let _ = (&x.type_name, &x.register);
+    let _: (&khora_core::asset::AssetKind, _) = (&x.kind, &x.register);
 }
 
 fn sub_asset_entry_fields(x: &khora_io::asset::SubAssetEntry) {
     let _ = (&x.label, &x.type_name);
+}
+
+fn external_file_lister_registration_fields(x: &khora_io::asset::ExternalFileListerRegistration) {
+    let _ = (&x.type_name, &x.list);
 }
 
 fn sub_asset_lister_registration_fields(x: &khora_io::asset::SubAssetListerRegistration) {
@@ -179,6 +183,20 @@ fn sub_asset_lister_registration_fields(x: &khora_io::asset::SubAssetListerRegis
 fn asset_container_trait_items<T: khora_io::asset::AssetContainer>() {
     let _ = T::open;
     let _ = T::extract;
+}
+
+fn external_file_record_fields(x: &khora_io::asset::ExternalFileRecord) {
+    let _ = (&x.path, &x.blake3, &x.size);
+}
+
+fn packed_file_fields(x: &khora_io::asset::PackedFile) {
+    let _ = (
+        &x.path,
+        &x.offset,
+        &x.size,
+        &x.uncompressed_size,
+        &x.compression,
+    );
 }
 
 fn manifest_entry_fields(x: &khora_io::asset::ManifestEntry) {
@@ -198,6 +216,18 @@ fn pack_header_fields(x: &khora_io::asset::PackHeader) {
 
 fn pack_output_fields(x: &khora_io::asset::PackOutput) {
     let _ = (&x.index_bin, &x.data_pack, &x.manifest_bin, &x.asset_count);
+    let _: &Vec<khora_io::asset::LeftOutFile> = &x.left_out;
+}
+
+fn left_out_file_fields(x: &khora_io::asset::LeftOutFile) {
+    let _: (&String, &khora_io::asset::LeftOutReason) = (&x.path, &x.reason);
+}
+
+fn left_out_reason_variants(x: &khora_io::asset::LeftOutReason) {
+    match x {
+        khora_io::asset::LeftOutReason::Refused(_) => {}
+        khora_io::asset::LeftOutReason::Missing => {}
+    }
 }
 
 fn pack_progress_variants(x: &khora_io::asset::PackProgress) {
@@ -293,9 +323,17 @@ fn module_asset_paths_still_resolve() {
     is_eq::<khora_io::asset::AssetChangeKind>();
     // trait `khora_io::asset::AssetDecoder`: see `asset_decoder_trait_items`
     let _ = type_name::<khora_io::asset::AssetIdRegistry>();
-    let _: fn(std::path::PathBuf) -> khora_io::asset::AssetIdRegistry =
+    let _: fn(
+        &khora_io::trust::FileGuard,
+    ) -> Result<khora_io::asset::AssetIdRegistry, khora_io::trust::ReadError> =
         khora_io::asset::AssetIdRegistry::load;
+    let _: fn(&khora_io::trust::FileGuard) -> khora_io::asset::AssetIdRegistry =
+        khora_io::asset::AssetIdRegistry::load_or_unread;
+    let _: fn(std::path::PathBuf) -> khora_io::asset::AssetIdRegistry =
+        khora_io::asset::AssetIdRegistry::unread;
     let _ = khora_io::asset::AssetIdRegistry::resolve;
+    let _: fn(&khora_io::asset::AssetIdRegistry) -> bool =
+        khora_io::asset::AssetIdRegistry::is_read;
     let _ = khora_io::asset::AssetIdRegistry::len;
     let _ = khora_io::asset::AssetIdRegistry::is_empty;
     let _ = khora_io::asset::AssetIdRegistry::freeze;
@@ -358,6 +396,12 @@ fn module_asset_paths_still_resolve() {
     let _ =
         sub_asset_lister_registration_fields as fn(&khora_io::asset::SubAssetListerRegistration);
     is_collect::<khora_io::asset::SubAssetListerRegistration>();
+    let _ = type_name::<khora_io::asset::ExternalFileListerRegistration>();
+    let _ = external_file_lister_registration_fields
+        as fn(&khora_io::asset::ExternalFileListerRegistration);
+    is_collect::<khora_io::asset::ExternalFileListerRegistration>();
+    let _: fn(&str, &[u8], &std::path::Path) -> anyhow::Result<Vec<String>> =
+        khora_io::asset::external_files_of;
     // trait `khora_io::asset::AssetContainer`: see `asset_container_trait_items`
     let _ = asset_container_trait_items::<NoContainer>;
     let _: fn(&str) -> bool = khora_io::asset::type_may_hold_sub_assets;
@@ -400,6 +444,8 @@ fn module_asset_paths_still_resolve() {
     let _ = khora_io::asset::GltfDecoder::new;
     let _: fn(&[u8]) -> anyhow::Result<Vec<khora_io::asset::SubAssetEntry>> =
         khora_io::asset::list_gltf_sub_assets;
+    let _: fn(&[u8], &std::path::Path) -> anyhow::Result<Vec<String>> =
+        khora_io::asset::list_gltf_external_files;
     let _ = type_name::<khora_io::asset::GltfContainer>();
     let _ = type_name::<khora_io::asset::decoders::mesh::GltfContainer>();
     let _: fn(std::path::PathBuf) -> khora_io::asset::GltfContainer =
@@ -485,7 +531,7 @@ fn module_asset_paths_still_resolve() {
     let _ = type_name::<khora_io::asset::PackHeader>();
     let _ = pack_header_fields as fn(&khora_io::asset::PackHeader);
     let _ = khora_io::asset::PackHeader::to_bytes;
-    let _ = khora_io::asset::PackHeader::v2;
+    let _ = khora_io::asset::PackHeader::current;
     is_debug::<khora_io::asset::PackHeader>();
     is_clone::<khora_io::asset::PackHeader>();
     is_copy::<khora_io::asset::PackHeader>();
@@ -506,11 +552,32 @@ fn module_asset_paths_still_resolve() {
     let _ = khora_io::asset::PackManifest::len;
     let _ = khora_io::asset::PackManifest::get;
     let _ = khora_io::asset::PackManifest::verify;
+    let _ = khora_io::asset::PackManifest::insert_external_file
+        as fn(&mut khora_io::asset::PackManifest, &str, &[u8]);
+    let _ = khora_io::asset::PackManifest::external_file;
+    let _ = khora_io::asset::PackManifest::verify_external_file;
+    let _ = type_name::<khora_io::asset::ExternalFileRecord>();
+    let _ = external_file_record_fields as fn(&khora_io::asset::ExternalFileRecord);
+    is_debug::<khora_io::asset::ExternalFileRecord>();
+    is_clone::<khora_io::asset::ExternalFileRecord>();
+    is_serialize::<khora_io::asset::ExternalFileRecord>();
+    is_deserialize_owned::<khora_io::asset::ExternalFileRecord>();
+    let _ = type_name::<khora_io::asset::PackedFile>();
+    let _ = packed_file_fields as fn(&khora_io::asset::PackedFile);
+    let _ = khora_io::asset::PackedFile::source;
+    is_debug::<khora_io::asset::PackedFile>();
+    is_clone::<khora_io::asset::PackedFile>();
+    is_serialize::<khora_io::asset::PackedFile>();
+    is_deserialize_owned::<khora_io::asset::PackedFile>();
     is_debug::<khora_io::asset::PackManifest>();
     is_default::<khora_io::asset::PackManifest>();
     is_clone::<khora_io::asset::PackManifest>();
     let _ = type_name::<khora_io::asset::PackOutput>();
     let _ = pack_output_fields as fn(&khora_io::asset::PackOutput);
+    let _ = left_out_file_fields as fn(&khora_io::asset::LeftOutFile);
+    let _ = left_out_reason_variants as fn(&khora_io::asset::LeftOutReason);
+    is_debug::<khora_io::asset::LeftOutFile>();
+    is_clone::<khora_io::asset::LeftOutFile>();
     let _ = khora_io::asset::PackOutput::pack_bytes;
     is_debug::<khora_io::asset::PackOutput>();
     is_clone::<khora_io::asset::PackOutput>();
@@ -558,9 +625,10 @@ fn module_asset_paths_still_resolve() {
     let _ = khora_io::asset::WavDecoder::new;
     is_default::<khora_io::asset::WavDecoder>();
     is_asset_decoder_sound_data::<khora_io::asset::WavDecoder>();
-    let _ = khora_io::asset::asset_type_for_extension as fn(&str) -> khora_core::asset::AssetType;
-    let _ =
-        khora_io::asset::asset_type_of_path as fn(&std::path::Path) -> khora_core::asset::AssetType;
+    let _ = khora_io::asset::kind_for_extension as fn(&str) -> Option<khora_core::asset::AssetKind>;
+    let _ = khora_io::asset::refuse_kinds_named_like_extensions as fn();
+    let _ = khora_io::asset::kind_of_path
+        as fn(&std::path::Path) -> Option<khora_core::asset::AssetKind>;
     let _ = type_name::<khora_io::asset::decoders::font::FontDecoder>();
     let _ = type_name::<khora_io::asset::decoders::FontDecoder>();
     let _ = type_name::<khora_io::asset::font::FontDecoder>();
@@ -827,6 +895,8 @@ fn module_asset_index_paths_still_resolve() {
     let _ = khora_io::asset::AssetIndex::get_metadata;
     let _ = khora_io::asset::AssetIndex::uuid_at;
     let _ = khora_io::asset::AssetIndex::iter_all;
+    let _ = khora_io::asset::AssetIndex::external_file;
+    let _ = khora_io::asset::AssetIndex::external_files;
     let _ = khora_io::asset::AssetIndex::asset_count;
     is_debug::<khora_io::asset::AssetIndex>();
 }

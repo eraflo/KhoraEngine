@@ -15,7 +15,7 @@
 //! A declared field holding an asset reference — `Prefab? bullet;` — as the
 //! world stores it: out of line, as a `Value`, typed by its kind.
 
-use khora_core::asset::{AssetKind, AssetUUID};
+use khora_core::asset::{kinds, AssetKind, AssetUUID};
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{ErgonType, ScriptValue};
 
@@ -28,8 +28,8 @@ fn optional(kind: AssetKind) -> ErgonType {
 /// `Gun { Prefab? bullet; Sound? shot; }`, typed as a script declares it.
 fn gun_layout() -> PackedLayout {
     let fields = [
-        ("bullet", optional(AssetKind::Prefab)),
-        ("shot", optional(AssetKind::Sound)),
+        ("bullet", optional(kinds::PREFAB)),
+        ("shot", optional(kinds::SOUND)),
     ];
     PackedLayout::typed(
         fields
@@ -54,7 +54,10 @@ fn bullet() -> AssetUUID {
 /// An asset field is always `T?`, and an optional is out of line already.
 #[test]
 fn an_asset_field_is_stored_as_a_value() {
-    for kind in AssetKind::ALL {
+    for kind in AssetKind::all()
+        .into_iter()
+        .filter(|kind| kind.ergon_name().is_some())
+    {
         assert_eq!(
             FieldKind::of(&ErgonType::Asset(kind)),
             FieldKind::Value,
@@ -73,7 +76,7 @@ fn an_asset_field_is_stored_as_a_value() {
 #[test]
 fn an_asset_field_admits_a_reference_or_null_and_nothing_else() {
     let layout = gun_layout();
-    assert_eq!(layout.ty(0), Some(&optional(AssetKind::Prefab)));
+    assert_eq!(layout.ty(0), Some(&optional(kinds::PREFAB)));
     assert_eq!(
         layout.admit(0, &ScriptValue::Asset(bullet())),
         Some(ScriptValue::Asset(bullet()))

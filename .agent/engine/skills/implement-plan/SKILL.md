@@ -21,15 +21,25 @@ The **Implement** phase of [`../../workflow-rpi.md`](../../workflow-rpi.md). Goa
    Then run `cargo xtask lint-file` on every file touched and `cargo doc` (*Before you write*), clean.
 4. **Try to break it.** Dispatch the [`test-breaker`](../../agents/test-breaker.md) subagent with the plan
    path and the diff. It returns failing tests for real defects and missing cases.
-5. **Fix** until the breaker's tests pass. If the fixes were substantial, dispatch the breaker once more
-   (at most two rounds); list anything left open in the plan's Status and in the report.
-6. **Verify** with the phase's check (via [`../build-and-test/SKILL.md`](../build-and-test/SKILL.md));
+5. **Fix** until the breaker's tests pass, then dispatch the breaker again on the fixes. There is no round
+   limit (owner, 2026-11-27), but the breaker is **bounded by the phase's scope** (owner, 2026-11-28; see
+   *Scope* in [`test-breaker`](../../agents/test-breaker.md)): only defects the phase introduced or made
+   worse, or cases its plan promises. The loop ends at the first round with no in-scope finding.
+   Pre-existing defects and UI-state cases of code due for a rewrite (editor, hub) are never fixed in
+   the phase, but always reported: the breaker lists them under *Out of scope*, and the step's report
+   gives them to the owner, to be added to the **GitHub tracking issue of bugs to resolve** (one issue,
+   appended phase after phase; posting it waits for the owner's yes). List anything left open in the
+   plan's Status and in the report.
+6. **Organise** every file the phase touched: items in the order *Before you write* sets, one primary type
+   or concern per file; a file that mixes concerns or grows long is split into a folder of files, each named
+   by what it holds. `cargo xtask lint-file` again on the result.
+7. **Verify** with the phase's check (via [`../build-and-test/SKILL.md`](../build-and-test/SKILL.md));
    `cargo gate`, once, when the phase is done; `cargo t -p <crate> [filter]` while iterating. For GPU work, one clean
    `cargo run -p sandbox`.
-7. **Compact** — update the plan's **Status** checklist in place: mark the phase done, record any
+8. **Compact** — update the plan's **Status** checklist in place: mark the phase done, record any
    deviation from the plan and why, note the live test count. Then drop the phase's working detail from
    context.
-8. **Stop and report** — the step ends here. Tell the owner what was done, what the breaker found, which
+9. **Stop and report** — the step ends here. Tell the owner what was done, what the breaker found, which
    existing tests changed and why, the gate's result and what is left open, and wait for them to check it
    before the commit and before the next phase. Never start the next phase on your own: a "continue"
    covers the step it answers, not the ones after it.

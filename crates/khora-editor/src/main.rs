@@ -47,6 +47,8 @@ mod picking;
 mod play_prefabs;
 mod project_identity;
 mod project_physics;
+mod project_prefabs;
+mod project_reads;
 mod project_scripts;
 mod project_vfs;
 mod scene_io;

@@ -14,6 +14,7 @@
 
 //! Asset I/O and decoding services.
 
+mod asset_change_event;
 mod asset_service;
 mod asset_writer;
 mod change;
@@ -24,7 +25,10 @@ mod decoder_registry;
 pub mod decoders;
 mod defaults;
 pub(crate) mod dependencies;
+mod event_budget;
 mod extensions;
+mod external_file_lister_registration;
+mod external_file_record;
 mod file;
 mod generations;
 mod id_registry;
@@ -33,12 +37,17 @@ mod index_hub;
 pub use index_hub::{install_indexing, IndexHub, IndexOutcome};
 mod index_builder;
 mod io;
+mod left_out_file;
+mod left_out_reason;
 mod manifest;
+mod manifest_entry;
 mod off_frame;
 pub use off_frame::{attach_decoding, install_decoding, DecodeHub};
 mod pack;
 mod pack_builder;
+mod pack_header;
 pub mod pack_key;
+mod packed_file;
 mod reader;
 mod requested;
 pub mod root_path;
@@ -47,6 +56,7 @@ mod sub_asset_lister_registration;
 mod watch;
 mod watcher;
 
+pub use asset_change_event::{AssetChangeEvent, AssetChangeKind};
 pub use asset_service::*;
 pub use change::*;
 pub use container::*;
@@ -54,16 +64,29 @@ pub use decoder::*;
 pub use decoder_registry::*;
 pub use decoders::*;
 pub use dependencies::*;
-pub use extensions::{asset_type_for_extension, asset_type_of_path};
+pub use event_budget::EventBudget;
+pub use extensions::{
+    extension_for_kind, kind_for_extension, kind_of_path, refuse_kinds_named_like_extensions,
+};
+pub use external_file_lister_registration::{external_files_of, ExternalFileListerRegistration};
+pub use external_file_record::ExternalFileRecord;
 pub use file::*;
 pub use id_registry::*;
 pub use index::{AssetIndex, MAX_INDEX_BYTES};
 pub use index_builder::*;
 pub use io::*;
+pub use left_out_file::LeftOutFile;
+pub use left_out_reason::LeftOutReason;
 pub use manifest::*;
+pub use manifest_entry::ManifestEntry;
 pub use pack::*;
 pub use pack_builder::*;
+pub use pack_header::*;
+pub use packed_file::PackedFile;
 pub use reader::*;
 pub use requested::Requested;
 pub use watch::*;
 pub use watcher::*;
+
+#[cfg(test)]
+pub(crate) mod tests;

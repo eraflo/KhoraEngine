@@ -17,7 +17,7 @@
 use std::any::TypeId;
 use std::collections::BTreeMap;
 
-use khora_core::asset::{asset_key, AssetType, AssetUUID, ScriptModule};
+use khora_core::asset::{asset_key, kinds, AssetUUID, ScriptModule};
 
 use super::ModuleSource;
 use crate::asset::{AssetIndex, AssetReader};
@@ -97,7 +97,7 @@ impl ModuleSource for PackModules {
 pub fn pack_modules(index: &AssetIndex) -> BTreeMap<String, AssetUUID> {
     index
         .iter_all()
-        .filter(|metadata| metadata.asset_type == AssetType::Script)
+        .filter(|metadata| metadata.kind == kinds::SCRIPT)
         .filter_map(|metadata| {
             let rel_path = asset_key(&metadata.source_path);
             module_of(&rel_path).map(|module| (module.to_owned(), metadata.uuid))
@@ -110,16 +110,16 @@ mod tests {
     use std::collections::HashMap;
     use std::path::PathBuf;
 
-    use khora_core::asset::{AssetMetadata, AssetSource};
+    use khora_core::asset::{AssetKind, AssetMetadata, AssetSource};
 
     use super::*;
 
-    /// An index entry at `source_path`, of type `asset_type`, held by `uuid`.
-    fn entry(source_path: &str, asset_type: AssetType, uuid: AssetUUID) -> AssetMetadata {
+    /// An index entry at `source_path`, of kind `kind`, held by `uuid`.
+    fn entry(source_path: &str, kind: AssetKind, uuid: AssetUUID) -> AssetMetadata {
         AssetMetadata {
             uuid,
             source_path: PathBuf::from(source_path),
-            asset_type,
+            kind,
             dependencies: Vec::new(),
             variants: HashMap::from([(
                 AssetMetadata::DEFAULT_VARIANT.to_owned(),
@@ -137,36 +137,35 @@ mod tests {
         // Frozen by the identity registry under the name it had before a rename.
         let main = AssetUUID::new_v5("scripts/old_main.erg");
         let entries = [
-            entry("scripts/ai/guard.erg", AssetType::Script, guard),
-            entry("scripts/main.erg", AssetType::Script, main),
+            entry("scripts/ai/guard.erg", kinds::SCRIPT, guard),
+            entry("scripts/main.erg", kinds::SCRIPT, main),
             entry(
                 "levels/intro.erg",
-                AssetType::Script,
+                kinds::SCRIPT,
                 AssetUUID::new_v5("levels/intro.erg"),
             ),
             entry(
                 "Scripts/upper.erg",
-                AssetType::Script,
+                kinds::SCRIPT,
                 AssetUUID::new_v5("Scripts/upper.erg"),
             ),
             entry(
                 "scripts/old.kscript",
-                AssetType::Script,
+                kinds::SCRIPT,
                 AssetUUID::new_v5("scripts/old.kscript"),
             ),
             entry(
                 "scripts/notes.erg",
-                AssetType::Other("erg".to_owned()),
+                kinds::SHADER,
                 AssetUUID::new_v5("scripts/notes.erg"),
             ),
             entry(
                 "scripts/sky.png",
-                AssetType::Texture,
+                kinds::TEXTURE,
                 AssetUUID::new_v5("scripts/sky.png"),
             ),
         ];
-        let bytes = bincode::serde::encode_to_vec(&entries[..], bincode::config::standard())
-            .expect("the index encodes");
+        let bytes = AssetIndex::encode(&entries, &[]).expect("the index encodes");
         let index = AssetIndex::new(&bytes).expect("the index reads");
 
         assert_eq!(

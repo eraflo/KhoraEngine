@@ -45,10 +45,11 @@ pub fn start_editing(runtime: &Runtime) {
 
 /// Processes the transport requests the editor's state holds, leaving any other for `update`.
 ///
-/// Play snapshots the scene and is refused while a restore is under way; Stop
-/// files the scene's restore with the runtime's scene loads. Whatever moved the
-/// transport, the families and the clock follow where it stands once it has
-/// moved: a family scoped meanwhile, as a sound preview does, keeps its scope.
+/// Play snapshots the scene and is refused while a restore or a scene open is
+/// under way; Stop files the scene's restore with the runtime's scene loads.
+/// Whatever moved the transport, the families and the clock follow where it
+/// stands once it has moved: a family scoped meanwhile, as a sound preview
+/// does, keeps its scope.
 /// See the book: reference/editor.md, "04 — Play mode".
 pub fn process_transport(
     world: &mut GameWorld,

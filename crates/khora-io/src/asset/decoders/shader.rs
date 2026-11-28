@@ -46,9 +46,9 @@ impl AssetDecoder<CpuShaderSource> for ShaderDecoder {
 
 inventory::submit! {
     DecoderRegistration {
-        type_name: "shader",
+        kind: khora_core::asset::kinds::SHADER,
         register: |svc| {
-            svc.register_decoder::<CpuShaderSource>("shader", ShaderDecoder);
+            svc.register_decoder::<CpuShaderSource>(khora_core::asset::kinds::SHADER.name(), ShaderDecoder);
         },
     }
 }

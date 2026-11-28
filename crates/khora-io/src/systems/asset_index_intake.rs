@@ -180,9 +180,13 @@ mod tests {
             ticket: IndexTicket(1),
             kind: IndexKind::Open,
             project_root: project_root.to_path_buf(),
-            index: IndexBuilder::new(&assets)
-                .build_index_bytes()
-                .map_err(|e| format!("{e:#}")),
+            index: IndexBuilder::new(crate::trust::FileGuard::new(
+                &assets,
+                crate::trust::Trust::Project,
+                crate::trust::Refusals::detached(),
+            ))
+            .build_index_bytes()
+            .map_err(|e| format!("{e:#}")),
         }
     }
 

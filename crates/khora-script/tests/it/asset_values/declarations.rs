@@ -25,15 +25,7 @@ use super::{build, refused_at, run_fn, KINDS};
 use crate::support::fresh_store;
 
 fn kind_of(spelling: &str) -> AssetKind {
-    match spelling {
-        "Prefab" => AssetKind::Prefab,
-        "Sound" => AssetKind::Sound,
-        "Material" => AssetKind::Material,
-        "Mesh" => AssetKind::Mesh,
-        "Texture" => AssetKind::Texture,
-        "Scene" => AssetKind::Scene,
-        other => panic!("`{other}` is no asset kind"),
-    }
+    AssetKind::from_ergon_name(spelling).unwrap_or_else(|| panic!("`{spelling}` is no asset kind"))
 }
 
 fn optional_asset(spelling: &str) -> ErgonType {

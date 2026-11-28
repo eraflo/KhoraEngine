@@ -75,15 +75,29 @@ nothing of it is used.
 </ol>
 </figure>
 
-The size caps depend on the file's kind, which follows its asset type (see
+The size caps depend on the file's kind, which follows its asset kind (see
 [Asset extensions](../reference/project-structure.md#asset-extensions)), and on the
-trust it is read at:
+trust it is read at. A container's external file (a glTF's `.bin`) is no asset: it
+is read under its container's cap.
+
+The project's index reads through the guard too: whether the engine builds it
+or the editor rebuilds it after a change, a material or a container is read at
+the open project's trust, and a refusal reaches the Problems panel like any
+other. Build Game reads every file through the guard as well, its refusals
+reported the same way. An external file the guard refuses, because a link
+leads out of the project or it is over its container's cap, or that is
+missing, is left out of the pack and the build goes on: the build's result
+line says how many files it left out and names each, and the glTF that needs
+one then fails its own load in the game. A glTF's URI leaving the assets folder,
+by `..` or as an absolute path, is listed and refused the same way. An asset the
+guard refuses, or an identity registry not read, fails the build, and the result
+line says why.
 
 | Kind | Trusted | Restricted, imported |
 |---|---|---|
 | Texture | 256 MiB | 64 MiB |
-| Mesh (glTF, OBJ, FBX) and a glTF's buffer | 1 GiB | 256 MiB |
-| Audio | 512 MiB | 128 MiB |
+| Mesh (glTF, OBJ, FBX) and a glTF's external files | 1 GiB | 256 MiB |
+| Sound | 512 MiB | 128 MiB |
 | Font, text, script, shader, other | 64 MiB | 16 MiB |
 
 Beyond the file's size, each decoder has limits of its own — the bytes it may
@@ -97,6 +111,67 @@ decoder that panics is caught: the file is refused, the engine goes on.
 A file you downloaded carries the mark your system puts on downloads (on
 Windows, its `Zone.Identifier`). In a trusted project, such a file is read as
 **imported**, under the strict caps, until you remove the mark.
+
+### Files of the project root
+
+A project holds files outside `assets/` too. Each is read through a guard over
+the **project root**, under a cap of its own kind:
+
+| File | Trusted | Restricted, imported |
+|---|---|---|
+| `project.json` | 1 MiB | 256 KiB |
+| `.khora/asset-registry.ron`, the identity registry | 64 MiB | 16 MiB |
+| `.git/HEAD` | 4 KiB | 4 KiB |
+| `.gitignore` | 1 MiB | 256 KiB |
+| A scene outside `assets/` | as text: 64 MiB | 16 MiB |
+
+- **Before the engine starts.** The editor reads `project.json` before the
+  engine starts — the game's name, under the strict caps, and the physics step
+  the engine runs at, at the trust you decided of the project last time (the
+  strict caps when you never did).
+- **After you decide.** The project's other reads — `project.json` and
+  `.git/HEAD` when it opens, the identity registry, a scene you open from
+  outside `assets/` — are read at the trust you decided, their refusals reported
+  like any other. The physics step is read again at that trust, so Play steps as
+  the game Build Game makes, which reads it at the same trust.
+- **An unread registry.** An identity registry the guard refuses, or one that
+  does not parse (a merge left its conflict markers in it), is not read: the
+  refusal is reported (one that does not parse is quarantined until the file
+  changes), the project still opens, each asset under its path's identity, and
+  the editor never writes over the file, which would lose the identities it
+  holds. Renaming, moving or trashing an asset, and making a file where no file
+  is (a new script, a duplicate, a scene, material or prefab saved to a new
+  path), are refused meanwhile, saying why: the identity a rename freezes could
+  not be kept, nor could a new file drop the identity a trashed file keeps at
+  its path, which it would take once the registry reads, and the asset's
+  references would break. Saving over a file that is there still works: it is
+  the same asset. Build Game fails, as for any registry not read.
+- **The registry follows its file.** The file on disk is the truth, and a pull
+  or a merge may change it while the project is open. The editor remembers the
+  hash of what it read or wrote, and before it renames, moves or trashes an
+  asset, makes a new file, freezes a derived identity, or saves, and whenever a reindex lands, it
+  compares that hash with the file: changed and parsing, the file is read again
+  before the operation, so a registry mended by hand needs no reopen; changed
+  and not parsing, the registry is unread, refused as above, and the operation
+  refused; unchanged, it goes on. A save writes only over the file it read, so
+  the editor never writes its copy over a change made outside it, and it holds a
+  lock beside the file while it does, so two editors open on one project save
+  one at a time. The engine
+  reads the file afresh at every reindex: both give an asset one identity.
+- **A trust change reads again.** Trusting a project open releases what its
+  restricted caps refused and reads its identity registry again, so a registry
+  refused for its size reads, and renames keep identities again.
+- **A scene outside the project** is a file you brought in: it is read as
+  imported, under the strict caps.
+- **The hub** runs nothing of a project and never trusts one: it reads a
+  project's `project.json` and `.gitignore` under the strict caps. Each refusal
+  is kept in a list of its own, with the project it belongs to, and shown until
+  you dismiss it. A launch's banner is made for that launch alone: the
+  refusals still listed of the project it launches, then what the launch said,
+  never what an earlier launch said; a banner that takes its place leaves them
+  listed, shown one under the other, each dismissed alone. Its **Add Native Code** reads the `.gitignore` before it writes
+  anything, and writes the whole scaffold or nothing: a refused `.gitignore`,
+  or a write that fails midway, leaves the project as it was.
 
 ## The quarantine
 
@@ -148,13 +223,14 @@ Every refusal is also written to the log.
 ## Signed packs
 
 A shipped game reads its assets from a **pack**. Build Game **signs** the pack:
-its manifest — every asset's identity, size and content hash — is signed with
-your key, and your public key is stamped into the game's binary. At launch the
+its manifest — every asset's identity, size and content hash, and the size and
+content hash of every file a container reads beside it (a glTF's `.bin`), by
+path — is signed with your key, and your public key is stamped into the game's binary. At launch the
 game checks the signature, then the pack's index against the manifest, and every
 asset it loads against its hash. A pack whose index or manifest changed after
 it was built is refused, and the game does not start; an asset whose bytes
 changed, compressed or not, is refused, reported with the run's other problems,
-and fails its own load.
+and fails its own load; so does a container whose external file changed.
 
 A packed game's scripts are compiled from its pack, each read with the same
 checks and limits as any asset: a script whose bytes changed is refused and

@@ -346,3 +346,130 @@ fn saving_a_prefab_holding_a_mesh_made_in_code_reports_it_as_a_save_problem() {
         "the prefab save does not report the mesh made in code: {problems:#?}"
     );
 }
+
+/// **A prefab saved as at a path the project refuses writes nothing and leaves nothing to report.**
+#[test]
+fn a_prefab_saved_as_a_refused_path_writes_nothing_and_reports_nothing() {
+    let (turret, _) = turret_prefab();
+    let project = project("prefab-save-as-refused", &turret);
+    let mut world = GameWorld::new();
+    let root = world.spawn((Transform::identity(), Name::new("Crate")));
+    world
+        .inner_world_mut()
+        .mark_authored(root)
+        .expect("authored");
+    let prefabs = project.root.join("assets").join("prefabs");
+
+    let left_out = super::super::prefab::save_prefab_as(
+        Some(&project.vfs),
+        &world,
+        root,
+        &prefabs.join("crate.kprefab."),
+    );
+
+    assert!(left_out.is_none(), "a refused path is said saved");
+    assert_eq!(
+        std::fs::read_dir(&prefabs).expect("the prefabs").count(),
+        1,
+        "something was written beside the turret"
+    );
+}
+
+/// **A prefab saved as at a path that cannot be written lands nothing.**
+#[test]
+fn a_prefab_saved_as_a_path_that_cannot_be_written_lands_nothing() {
+    let (turret, _) = turret_prefab();
+    let project = project("prefab-save-as-failed", &turret);
+    let mut world = GameWorld::new();
+    let root = world.spawn((Transform::identity(), Name::new("Crate")));
+    world
+        .inner_world_mut()
+        .mark_authored(root)
+        .expect("authored");
+    let blocker = project.root.join("blocker");
+    std::fs::write(&blocker, b"a file, not a folder").expect("the blocker is written");
+
+    let left_out = super::super::prefab::save_prefab_as(
+        Some(&project.vfs),
+        &world,
+        root,
+        &blocker.join("crate.kprefab"),
+    );
+
+    assert!(left_out.is_none(), "a failed write is said saved");
+}
+
+/// **A prefab saved as outside the project's assets writes nothing**: a prefab is saved in its project, as a scene is.
+#[test]
+fn a_prefab_saved_as_outside_the_projects_assets_writes_nothing() {
+    let (turret, _) = turret_prefab();
+    let project = project("prefab-save-as-outside", &turret);
+    let mut world = GameWorld::new();
+    let root = world.spawn((Transform::identity(), Name::new("Crate")));
+    world
+        .inner_world_mut()
+        .mark_authored(root)
+        .expect("authored");
+    let outside = project.root.join("crate.kprefab");
+
+    let left_out = super::super::prefab::save_prefab_as(Some(&project.vfs), &world, root, &outside);
+
+    assert!(
+        left_out.is_none(),
+        "a prefab outside the project is said saved"
+    );
+    assert!(
+        !outside.exists(),
+        "a prefab was written outside the project"
+    );
+}
+
+/// **A prefab saved as is a file the project reads as a prefab**: a name with no `.kprefab` is never written as a prefab, where nothing would list or spawn it.
+#[test]
+fn a_prefab_saved_as_a_file_not_named_kprefab_is_not_written_there() {
+    let (turret, _) = turret_prefab();
+    let project = project("prefab-save-as-no-extension", &turret);
+    let mut world = GameWorld::new();
+    let root = world.spawn((Transform::identity(), Name::new("Crate")));
+    world
+        .inner_world_mut()
+        .mark_authored(root)
+        .expect("authored");
+    let picked = project.root.join("assets").join("prefabs").join("crate");
+
+    super::super::prefab::save_prefab_as(Some(&project.vfs), &world, root, &picked);
+
+    assert!(
+        !picked.exists(),
+        "a prefab was written in a file the project does not read as one"
+    );
+}
+
+/// **A prefab saved as with no project open writes nothing.**
+#[test]
+fn a_prefab_saved_as_with_no_project_open_writes_nothing() {
+    let (turret, _) = turret_prefab();
+    let project = project("prefab-save-as-no-project", &turret);
+    let mut world = GameWorld::new();
+    let root = world.spawn((Transform::identity(), Name::new("Crate")));
+    world
+        .inner_world_mut()
+        .mark_authored(root)
+        .expect("authored");
+    let picked = project
+        .root
+        .join("assets")
+        .join("prefabs")
+        .join("crate.kprefab");
+
+    let left_out = super::super::prefab::save_prefab_as(None, &world, root, &picked);
+
+    assert!(
+        left_out.is_none(),
+        "a prefab is said saved with no project open"
+    );
+    assert!(
+        !picked.exists(),
+        "a prefab was written with no project open"
+    );
+}

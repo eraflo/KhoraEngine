@@ -21,17 +21,22 @@ use std::sync::Arc;
 use khora_core::asset::{asset_key, AssetSource, AssetUUID, CompressionKind};
 
 use super::GltfResourceResolver;
-use crate::asset::{AssetIndex, AssetIo, PackManifest};
+use crate::asset::{AssetIndex, AssetIo, PackManifest, PackedFile};
 use crate::trust::{
     FileKind, Limits, Refusals, SecurityReason, SecurityRefusal, Trust, TrustLayer,
 };
 
 /// Resolves a glTF's buffers and images inside its pack, never from a file beside it.
 ///
-/// A URI, joined to the glTF's folder, is found by its asset key among the
-/// pack's entries. Each read is checked against the pack's manifest, if any.
+/// A URI, joined to the glTF's folder, is found by its path in the pack's
+/// external-files table, read under the glTF's cap; one the index lists as an
+/// asset (a texture) is found among the asset entries. Each read is checked
+/// against the pack's manifest, if any.
 pub struct PackedResolver {
-    entries: HashMap<String, (AssetUUID, AssetSource)>,
+    /// The pack's external files, by their forward-slash path.
+    external_files: HashMap<String, PackedFile>,
+    /// The packed asset entries, by their forward-slash path.
+    assets: HashMap<String, (AssetUUID, AssetSource)>,
     io: Arc<dyn AssetIo>,
     manifest: Option<Arc<PackManifest>>,
     refusals: Arc<Refusals>,
@@ -39,9 +44,9 @@ pub struct PackedResolver {
 }
 
 impl PackedResolver {
-    /// Creates a resolver over the packed entries `index` lists, read through `io`.
+    /// Creates a resolver over the external files and packed entries `index` lists, read through `io`.
     ///
-    /// An entry declaring more bytes than it may hold at `trust` is refused to `refusals`.
+    /// A file declaring more bytes than it may hold at `trust` is refused to `refusals`.
     pub fn new(
         index: &AssetIndex,
         io: Arc<dyn AssetIo>,
@@ -49,7 +54,7 @@ impl PackedResolver {
         refusals: Arc<Refusals>,
         trust: Trust,
     ) -> Self {
-        let entries = index
+        let assets = index
             .iter_all()
             .filter_map(|metadata| {
                 let source = metadata.default_source()?;
@@ -61,8 +66,13 @@ impl PackedResolver {
                 })
             })
             .collect();
+        let external_files = index
+            .external_files()
+            .map(|file| (file.path.clone(), file.clone()))
+            .collect();
         Self {
-            entries,
+            external_files,
+            assets,
             io,
             manifest,
             refusals,
@@ -70,12 +80,12 @@ impl PackedResolver {
         }
     }
 
-    /// Refuses, before any read, the entry at `uri` if it declares more bytes
-    /// than its manifest records or its kind may hold.
+    /// Refuses, before any read, the file at `uri` if it declares more bytes
+    /// than its manifest records or its glTF's cap allows.
     fn check_declared(
         &self,
         uri: &str,
-        uuid: &AssetUUID,
+        packed: &Packed<'_>,
         source: &AssetSource,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let AssetSource::Packed {
@@ -91,46 +101,74 @@ impl PackedResolver {
             CompressionKind::None => *size,
             _ => *uncompressed_size,
         };
-        let cap = match self
-            .manifest
-            .as_ref()
-            .and_then(|manifest| manifest.get(uuid))
-        {
-            Some(entry) => entry.size,
-            None => Limits::of(FileKind::of_path(std::path::Path::new(uri)), self.trust).max_bytes,
-        };
+        let recorded = self.manifest.as_ref().and_then(|manifest| match packed {
+            Packed::External(file) => manifest.external_file(&file.path).map(|r| r.size),
+            Packed::Asset(uuid, _) => manifest.get(uuid).map(|entry| entry.size),
+        });
+        let cap = recorded.unwrap_or_else(|| Limits::of(FileKind::Gltf, self.trust).max_bytes);
         if declared <= cap {
             return Ok(());
         }
+        Err(self.refuse(
+            uri,
+            SecurityReason::TooLarge {
+                size: declared,
+                cap,
+            },
+        ))
+    }
+
+    /// Reports the file at `uri` refused for `reason` at the pack layer; returns the error.
+    fn refuse(&self, uri: &str, reason: SecurityReason) -> Box<dyn Error + Send + Sync> {
         let refusal = SecurityRefusal {
             path: std::path::PathBuf::from(uri),
             trust: self.trust,
             layer: TrustLayer::Pack,
-            reason: SecurityReason::TooLarge {
-                size: declared,
-                cap,
-            },
+            reason,
         };
         let error = refusal.to_string();
         self.refusals.refuse(refusal, None);
-        Err(error.into())
+        error.into()
     }
 
     fn read(&self, what: &str, uri: &str) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
         let key = asset_key(std::path::Path::new(uri));
-        let (uuid, source) = self
-            .entries
-            .get(&key)
-            .ok_or_else(|| format!("the pack holds no external {what} '{uri}'"))?;
-        self.check_declared(uri, uuid, source)?;
-        let bytes = self
-            .io
-            .load_bytes(source)
-            .map_err(|error| format!("reading the packed {what} '{uri}': {error:#}"))?;
+        let packed = match self.external_files.get(&key) {
+            Some(file) => Packed::External(file),
+            None => {
+                let (uuid, source) = self
+                    .assets
+                    .get(&key)
+                    .ok_or_else(|| format!("the pack holds no external {what} '{uri}'"))?;
+                Packed::Asset(*uuid, source)
+            }
+        };
+        let source = match &packed {
+            Packed::External(file) => file.source(),
+            Packed::Asset(_, source) => (*source).clone(),
+        };
+        self.check_declared(uri, &packed, &source)?;
+        let bytes = match self.io.load_bytes(&source) {
+            Ok(bytes) => bytes,
+            // Its place and sizes are signed with the index: a sealed file
+            // that fails to load was changed after the build.
+            Err(error) if self.manifest.is_some() => {
+                let _ = self.refuse(uri, SecurityReason::Tampered);
+                return Err(format!("reading the packed {what} '{uri}': {error:#}").into());
+            }
+            Err(error) => {
+                return Err(format!("reading the packed {what} '{uri}': {error:#}").into())
+            }
+        };
         if let Some(manifest) = &self.manifest {
-            manifest
-                .verify(uuid, &bytes)
-                .map_err(|error| format!("the packed {what} '{uri}': {error:#}"))?;
+            let verified = match &packed {
+                Packed::External(file) => manifest.verify_external_file(&file.path, &bytes),
+                Packed::Asset(uuid, _) => manifest.verify(uuid, &bytes),
+            };
+            if let Err(error) = verified {
+                let _ = self.refuse(uri, SecurityReason::Tampered);
+                return Err(format!("the packed {what} '{uri}': {error:#}").into());
+            }
         }
         Ok(bytes)
     }
@@ -144,4 +182,12 @@ impl GltfResourceResolver for PackedResolver {
     fn resolve_image(&self, uri: &str) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
         self.read("image", uri)
     }
+}
+
+/// What a URI names in the pack: an external file, or an asset entry.
+enum Packed<'a> {
+    /// A row of the external-files table.
+    External(&'a PackedFile),
+    /// An asset entry, its uuid and its source.
+    Asset(AssetUUID, &'a AssetSource),
 }

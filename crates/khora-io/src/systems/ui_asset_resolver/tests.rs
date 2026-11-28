@@ -63,9 +63,13 @@ impl Project {
             fs::create_dir_all(path.parent().expect("a parent dir")).expect("create dirs");
             fs::write(path, bytes).expect("write asset file");
         }
-        let index_bytes = IndexBuilder::new(dir.path())
-            .build_index_bytes()
-            .expect("index the project");
+        let index_bytes = IndexBuilder::new(crate::trust::FileGuard::new(
+            dir.path(),
+            crate::trust::Trust::Project,
+            crate::trust::Refusals::detached(),
+        ))
+        .build_index_bytes()
+        .expect("index the project");
         let reads = Arc::new(AtomicUsize::new(0));
         let io = CountingIo {
             inner: FileLoader::new(dir.path()),

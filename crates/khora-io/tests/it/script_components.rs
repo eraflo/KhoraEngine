@@ -248,6 +248,10 @@ fn a_registered_component_has_the_declared_fields() {
 
 /// **No limit on how many a project declares**: 5,000 declarations compile,
 /// register, and are writable through the applier.
+///
+/// Each is written on an entity of its own: what is pinned is how many a
+/// project declares, not how wide one entity grows (adding components one by
+/// one to one entity moves its row to a new page each time).
 #[test]
 fn a_project_can_declare_many_components() {
     const COUNT: usize = 5_000;
@@ -260,9 +264,11 @@ fn a_project_can_declare_many_components() {
     let (mut world, _, report) = registered(&[batch]);
     assert_eq!(report.registered.len(), COUNT);
 
-    let entity = world.spawn(Transform::identity());
+    let entities: Vec<EntityId> = (0..COUNT)
+        .map(|_| world.spawn(Transform::identity()))
+        .collect();
     let mut buffer = khora_core::script::CommandBuffer::new();
-    for i in 0..COUNT {
+    for (i, &entity) in entities.iter().enumerate() {
         buffer.push(WorldCommand::AddComponent {
             entity,
             component: ComponentName::new(format!("Generated{i}").as_str()),
@@ -276,7 +282,7 @@ fn a_project_can_declare_many_components() {
     );
     for i in [0, 1, COUNT / 2, COUNT - 1] {
         assert_eq!(
-            read(&world, entity, &format!("Generated{i}"), "n"),
+            read(&world, entities[i], &format!("Generated{i}"), "n"),
             Some(ScriptValue::Int(2 * i as i64)),
             "Generated{i}"
         );

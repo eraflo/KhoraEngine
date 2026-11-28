@@ -177,13 +177,7 @@ fn panel_location_variants(x: &khora_core::ui::editor::panel::PanelLocation) {
 }
 
 fn asset_entry_fields(x: &khora_core::ui::editor::state::AssetEntry) {
-    let _ = (
-        &x.name,
-        &x.asset_type,
-        &x.source_path,
-        &x.uuid,
-        &x.container,
-    );
+    let _ = (&x.name, &x.kind, &x.source_path, &x.uuid, &x.container);
 }
 
 fn component_json_fields(x: &khora_core::ui::editor::state::ComponentJson) {
@@ -259,6 +253,17 @@ fn asset_file_op_variants(x: &khora_core::ui::editor::AssetFileOp) {
     }
 }
 
+fn key_change_variants(x: &khora_core::ui::editor::KeyChange) {
+    use khora_core::ui::editor::KeyChange as K;
+    match x {
+        K::Moved { from: _, to: _ } => {}
+        K::Trashed {
+            key: _,
+            identities: _,
+        } => {}
+    }
+}
+
 fn menu_action_variants(x: &khora_core::ui::editor::MenuAction) {
     use khora_core::ui::editor::MenuAction as M;
     match x {
@@ -279,6 +284,10 @@ fn trust_answer_variants(x: &khora_core::ui::editor::TrustAnswer) {
     match x {
         A::TrustOpen | A::RestrictOpen | A::CancelOpen | A::TrustProject => {}
     }
+}
+
+fn scene_opening_fields(x: &khora_core::ui::editor::SceneOpening) {
+    let _ = (&x.ticket, &x.path, &x.scene);
 }
 
 fn spawn_shape_items(x: khora_core::ui::editor::SpawnShape) {
@@ -318,6 +327,7 @@ fn editor_state_fields(x: &khora_core::ui::editor::state::EditorState) {
         &x.play_mode,
         &x.followed_play_mode,
         &x.scene_snapshot,
+        &x.played_choice,
         &x.current_scene_path,
         &x.addable_components,
         &x.active_mode,
@@ -327,6 +337,7 @@ fn editor_state_fields(x: &khora_core::ui::editor::state::EditorState) {
         &x.hidden_entities,
         &x.asset_dirs,
         &x.asset_epoch,
+        &x.key_changes,
     );
 }
 
@@ -1094,9 +1105,36 @@ fn module_ui_paths_still_resolve() {
     };
     let _ = editor_request_variants as fn(&khora_core::ui::editor::EditorRequest);
     let _ = asset_file_op_variants as fn(&khora_core::ui::editor::AssetFileOp);
+    let _ = key_change_variants as fn(&khora_core::ui::editor::KeyChange);
+    let _ = khora_core::ui::editor::KeyChange::follow;
+    let _ = khora_core::ui::editor::KeyChange::follow_folder;
+    let _ = khora_core::ui::editor::KeyChange::trashed;
+    is_debug::<khora_core::ui::editor::KeyChange>();
+    is_clone::<khora_core::ui::editor::KeyChange>();
+    is_partial_eq::<khora_core::ui::editor::KeyChange>();
+    is_eq::<khora_core::ui::editor::KeyChange>();
     let _ = menu_action_variants as fn(&khora_core::ui::editor::MenuAction);
     let _ = transport_variants as fn(&khora_core::ui::editor::Transport);
     let _ = trust_answer_variants as fn(&khora_core::ui::editor::TrustAnswer);
+    let _ = khora_core::ui::editor::EditorRequest::names_the_project;
+    let _ = type_name::<khora_core::ui::editor::SceneInProject>();
+    let _ = |assets: std::path::PathBuf, key: String| {
+        khora_core::ui::editor::SceneInProject::new(assets, key)
+    };
+    let _ = khora_core::ui::editor::SceneInProject::assets;
+    let _ = khora_core::ui::editor::SceneInProject::key;
+    let _ = khora_core::ui::editor::SceneInProject::path;
+    let _ = khora_core::ui::editor::SceneInProject::is_in;
+    is_debug::<khora_core::ui::editor::SceneInProject>();
+    is_clone::<khora_core::ui::editor::SceneInProject>();
+    is_partial_eq::<khora_core::ui::editor::SceneInProject>();
+    is_eq::<khora_core::ui::editor::SceneInProject>();
+    let _ = type_name::<khora_core::ui::editor::SceneOpening>();
+    let _ = scene_opening_fields as fn(&khora_core::ui::editor::SceneOpening);
+    is_debug::<khora_core::ui::editor::SceneOpening>();
+    is_clone::<khora_core::ui::editor::SceneOpening>();
+    is_partial_eq::<khora_core::ui::editor::SceneOpening>();
+    is_eq::<khora_core::ui::editor::SceneOpening>();
     let _ = spawn_shape_items as fn(khora_core::ui::editor::SpawnShape);
     is_debug::<khora_core::ui::editor::EditorRequest>();
     is_clone::<khora_core::ui::editor::EditorRequest>();

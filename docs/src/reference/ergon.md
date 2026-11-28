@@ -69,7 +69,7 @@ Comments are `// line` and `/* block */`.
 | `Duration`, `Angle` | runs — distinct from `float` and from each other; `2s + 500ms` is `2.5s`, `2s + 90deg` is refused |
 | `T?` | runs — holds a value or `null`; one declared without a value starts `null`; `a ?? b`, `?.`, `if (var x = opt)`, `while (var x = opt)` and `match` unwrap it |
 | `T[]` | runs — `[1, 2, 3]`, `xs[i]`, `xs.Length`, `foreach`, `xs.Push(v)`, `xs.RemoveAt(i)`; one declared without a value starts `[]` |
-| `Prefab`, `Sound`, `Material`, `Mesh`, `Texture`, `Scene` | runs — a reference to an asset of that kind, by its identity, never its path; no literal: a field is `Prefab?`, chosen in the inspector; `==` / `!=` between two of one kind and against `null`, nothing else; shown in `$"…"` as `Asset#` and the first eight hex digits of its identity |
+| `Prefab`, `Sound`, `Material`, `Mesh`, `Texture`, `Scene`, `Font` | runs — a reference to an asset of that kind, by its identity, never its path; no literal: a field is `Prefab?`, chosen in the inspector; `==` / `!=` between two of one kind and against `null`, nothing else; shown in `$"…"` as `Asset#` and the first eight hex digits of its identity |
 | `Map<K, V>` | checks — no literal, no indexing |
 
 The one implicit conversion: an `int` where a `float` is expected. A
@@ -140,7 +140,7 @@ starts at its type's neutral value — `int` `0`, `float`, `Duration`, `Angle`
 zero, `Quat` the identity, `Color` white, a struct its own defaults. An `Entity`
 has none: write it `Entity?`, and it starts at `null`. Nor has an asset: write
 `Prefab? bullet;` — or `Sound?`, `Material?`, … — and choose it in the
-inspector's asset slot; it starts at `null`. The six kinds' names belong to the
+inspector's asset slot; it starts at `null`. The asset kinds' names belong to the
 language: `struct Prefab { … }` is refused. A state's data follows the
 same rule; a value computed on entering a state is a parameter of `become`.
 

@@ -99,6 +99,8 @@ node graph, animation, shader graph) will be added as they are built.
 
 </div>
 
+**Play waits for the scene.** While a scene is opening (one opened, a project's default scene) or Stop's restore is in flight, the world is not the scene the editor holds yet, and a snapshot of it would be restored at Stop as the wrong scene: Play is refused, and the log says why. Press it again once the scene landed.
+
 When you press **Play**:
 
 1. The current world is serialized using `SerializationGoal::FastestLoad` (a schema-bound snapshot), in memory.
@@ -114,6 +116,8 @@ When you press **Stop** — from playing or paused:
 1. The snapshot is restored with `replace_world`: atomic, every persistent id kept, every runtime `EntityId` fresh — the selection is cleared.
 2. The editor's `PlayMode` becomes `Editing`; scripting, physics and audio are switched off, and the clock scale goes back to `1.0`.
 3. The editor camera resumes.
+
+Opening a project ends the play. Played from the scene the project let go, it ends without a restore: the snapshot is a scene of that project, so it is dropped, and a restore still in flight lands nothing. Played from a scene the user chose while the open was in flight, it ends as Stop ends it: that scene is restored as it was chosen ([Switching projects](#switching-projects)).
 
 Stop is not a load of a game save: the next Play is a fresh start again, with `OnSpawn`, never `OnLoad`. A component whose schema the engine cannot trace whole is not guarded by the snapshot's fingerprint, so a world holding one is snapshotted as a compact record instead. See [Serialization](../concepts/serialization.md).
 
@@ -160,11 +164,47 @@ The editor uses `SerializationService` for all scene operations. As of v0.4 it g
 | Action | What happens |
 |---|---|
 | **Open project** | `ProjectVfs::open` recursively scans `<project>/assets/`, builds the in-memory UUID index, registers all decoders, arms a filesystem watcher. The asset browser reads off the resulting VFS. |
-| **New scene** | Editor creates an empty world, ready for editing |
-| **Save scene** | Encoded with `SerializationGoal::EditorInterchange` (compact, records by name), prefab instances written as [links](#prefabs), and written via `AssetWriter` so the new file enters the VFS index immediately |
-| **Save scene as** | Same, with a new path. Out-of-project paths are written whole or not at all (`fs::write_atomic`) and log a warning. |
-| **Load scene** | Double-click a `.kscene` in the asset browser, or File → Open. Project-internal paths route through `AssetService::load_raw` (UUID-keyed); prefab links expand from the project's prefabs. A file that cannot be loaded leaves the open scene as it was. |
+| **New scene** | Editor creates an empty world, ready for editing. A scene still opening or being restored is withdrawn, and the new scene has no file yet: `Ctrl+S` asks for one. |
+| **Save scene** (`Ctrl+S`) | Encoded with `SerializationGoal::EditorInterchange` (compact, records by name), prefab instances written as [links](#prefabs), and written via `AssetWriter` so the new file enters the VFS index immediately. The scene's file is named inside its project (`SceneInProject`: the project's `assets/` and the file's key under it), never by a bare path: a save of a scene of another project than the one open is refused and writes nothing. A scene with no file — a new one, one opened from outside the project, or any once its project is let go — is saved as **Save scene as** does. |
+| **Save scene as** | Same, with a new path. The file picked is a scene file, by its extension in any case (`.kscene`, as the kind registry names a scene's), so the scene's file is only ever a scene: a name with no extension is saved as the `.kscene` of that name, as a file dialog adds it (`levels/forest` saves `levels/forest.kscene`), and a name with another kind's extension or an unknown one is refused, the log saying why. A file of another kind is never written over: **Save scene as** onto `textures/wall.png` writes nothing. A path inside the project's `assets/` — however it names the project's folder or a folder in it: through a link, a relative `--project`, or in another case where file names ignore case — is saved through the project (`ProjectVfs::in_project`, the one test the editor makes of it), named as its folders and file are spelled on disk, so it gets the identity a save there gives and opens again as the scene the index lists. Whether it is inside is decided on the path resolved. A path under `assets/` the project cannot keep is **refused**, and nothing is written, neither in the project nor beside it: a new name that is no [portable name](formats.md#asset-identity-registry) (ending with a dot or a space, a device name such as `nul.kscene`, a `:`…), never trimmed to fit, or a link in `assets/` leading out of them. The log says why. A path **outside** the project's `assets/` is refused too: a scene is saved in its project, where the index, the identity registry and Build Game see it, and never elsewhere; with no project open, nothing is saved. The dialog starts in the project's `assets/`. The file picked becomes the scene's only once the save landed: a save refused or failed changes nothing, the scene keeps the file it had and the Problems tab what it listed. Opening a scene and saving a prefab as tell inside from outside the same way. |
+| **Load scene** | Double-click a `.kscene` in the asset browser, or File → Open. Project-internal paths route through `AssetService::load_raw` (UUID-keyed); prefab links expand from the project's prefabs, and the file becomes the one a save writes to. A file outside the project is read through a guard, without prefabs, and has no file a save writes to. A file that cannot be loaded leaves the open scene as it was. |
 | **Play / Stop** | World snapshot + restore via `SerializationService` with `FastestLoad` — a schema-bound snapshot, in memory. |
+
+### Switching projects
+
+Opening a project — another one, the same one again, or one whose open fails
+and leaves the editor with none — lets go of the project the editor held, in
+one step, as the open resolves (`leave_project`, `app/project_open.rs`):
+
+- every scene load the former project filed and that has not landed (an opened
+  scene) is withdrawn through the engine's `SceneLoadHub`: it lands nothing;
+- the play under way ends, always, and the editor is back in Editing. A play
+  of the former project's scene ends without a restore: its snapshot is
+  dropped and a Stop's restore still in flight is withdrawn, so no Stop can
+  restore a scene of another project. A play of a scene chosen since the open
+  was filed (below) ends as Stop ends it;
+- the world is emptied as **New scene** empties it: every entity, the
+  selection and what else names an entity, what the last load adapted and its
+  `Load` problems;
+- the scene's file is forgotten, so `Ctrl+S` can never write into the former
+  project;
+- the requests and edits queued against it (an entity, an asset or a problem
+  of the project), the asset browser's listing, selection, open folder and the
+  file operations it has not followed yet, the
+  trust confirmation, and the problems the editor filed of the project (`Save`,
+  `Leftover`) go; the undo history too.
+
+The new project's default scene then starts from an empty world: opened by
+ticket, or created and saved when there is none, and either becomes the scene
+`Ctrl+S` writes to. A scene the user chose while the open was in flight (the
+loading film gave up waiting) is kept, with its `Load` problems: only what was
+filed before the open is withdrawn. Played since it was chosen (the editor
+records the scene choice a Play started on, `EditorState::played_choice`), it
+is kept as it was chosen, not as the play left it: the play ends through Stop's
+restore of its snapshot, filed with the `SceneLoadHub`, and a Stop's restore
+already filed for it is kept and lands. A Play asked as the project lands
+waits for the project's default scene, as any Play waits for a scene opening
+([Play mode](#04--play-mode)).
 
 Scene files are compact-binary in development today. JSON text for diffing is available through `SerializationGoal::HumanReadableDebug` — not yet wired to a menu.
 
@@ -181,7 +221,11 @@ The Assets panel in the bottom dock is a real file explorer over `<project>/asse
 | **Right-click empty space** | New Folder, New Script, Reveal Current Folder. |
 | **Header buttons** | More (New Folder, New Script, Reveal Project in Explorer), Trash (delete selected), Filter (category menu). |
 
-Empty folders are shown, so **New Folder** produces a usable target immediately. **Delete goes to the OS recycle bin** (via the `trash` crate), so a mistaken delete is reversible from the system trash rather than lost.
+Empty folders are shown, so **New Folder** produces a usable target immediately. **Renaming a folder** moves the identity of every asset inside it, nested folders included, in one save of the registry; a registry that cannot be saved moves the folder back. A rename in case only (`Tex` to `tex`) is a rename too, where file names ignore case; a folder renamed so keeps the identities of the files trashed from it, which a restore brings back under the new spelling. A name typed in a rename box, a new folder or a new script is held to the portable name rule, the same on every system so a project moves between them: no `..`, `\`, `:`, control character or `<>"|?*`, no empty part, no name ending with a dot or a space, no Windows device name (`CON`, `NUL`, `COM1`, `LPT1`…, with any extension). Such a name is refused before anything moves, never changed to fit, the log naming the part refused. A file that already has such a name, made on another system, is not held to it: it can be renamed to a portable name, moved or deleted (see [Formats — paths the editor accepts](./formats.md#asset-identity-registry)). An entry a crash left under a rename's temporary name is put back when the project opens, or listed in the Problems panel when its name is taken. **Delete goes to the OS recycle bin** (via the `trash` crate), so a mistaken delete is reversible from the system trash rather than lost: the file keeps its identity in the project's identity registry, so restored at its path it gets it back, and every reference to it resolves again. A new file made at that path is another asset, with an identity of its own (see [Formats — asset identity registry](./formats.md#asset-identity-registry)).
+
+**What the editor names by path follows its file.** After a rename or a move in the browser — of the file, or of a folder holding it — the scene `Ctrl+S` writes to, a scene still opening, the asset inspected and its tile, the requests queued that name a path, and what waits for a reindex (a reveal, a scene to open) name the file by its new key, so a save writes the renamed file and never makes the old one again. After a delete, what named the file, or a file of the folder deleted, is forgotten: the open scene has no file, so `Ctrl+S` asks where, as **Save scene as** does, and never makes the trashed file again; a material saved and waiting for the index to be assigned to its entity is assigned to none. One place takes what each operation moved or trashed and rewrites them all (`follow_key_changes`, `commands/asset_ops.rs`). The browser's own keys follow through the same route: each change is added to `EditorState::key_changes`, which the browser takes as it draws. The folder shown follows a rename or a move of itself or of a folder above it, the tree opened down to it; trashed with a folder above it or by itself, it gives way to the nearest folder above it left (`KeyChange::follow_folder`). The folders open, a folder being renamed and an entry a delete asks about follow too. The Inspector's prefab view and the asset pickers read the index again once it moved.
+
+**While the identity registry is unread** (refused for its size, or a merge left conflict markers in it), Rename, Move, Delete, Duplicate and New Script are refused, and so is a scene, material or prefab saved to a path where no file is: the log says why, and that the file is to be mended. A material or a prefab saved over a file that is there is refused too, as its id is written into the prefab or assigned to the entity, and the id a renamed file holds is unknown meanwhile. Saving a scene over a file that is there still works. See [Trust — files of the project root](../concepts/trust.md#files-of-the-project-root).
 
 **Drag & drop.** Drag a tile onto a folder in the tree to **move** it (the move is mediated by the editor, so the identity registry freezes the UUID and references survive). Drag a tile into the **3D viewport** to instantiate it: a mesh spawns an entity at the drop point, a prefab places a linked instance, a scene loads, and a texture or material assigns to the selected entity.
 
@@ -207,6 +251,8 @@ and [Work with prefabs](../how-to/work-with-prefabs.md) for the steps.
 | See overrides | the Inspector's instance band, the dot on each overriding field, the note on each card |
 | Revert | the arrow at a field's end, right-click → Revert to prefab, a card's revert icon, **Revert all** |
 | Apply | right-click → Apply to prefab, a card's apply icon, **Apply all** — every other open instance follows at once |
+
+**Save as Prefab…** follows the rule of **Save scene as** ([Scene I/O](#05--scene-io)), through the same decision: a prefab is saved in its project, where the index and its instances find it, and only as a `.kprefab`. The dialog starts in the project's `assets/`; a name with no extension is saved as the `.kprefab` of that name; a path outside them, a path there the project refuses, a file of another kind or of none, or any with no project open writes nothing, and the log says why.
 
 <div class="kp-figure-frame">
 
@@ -248,7 +294,9 @@ already taken gets a number (`Camera2`): one another `.erg` of the project uses
 as its file name, one another script declares inside it — `stats.erg` declaring
 `component Health` makes `health` give `Health2` — or one the engine keeps: a
 component's such as `Camera`, an asset kind's such as `Sound`, an event's it
-raises such as `Touched`. The file
+raises such as `Touched`. So does a name whose file no project makes, a
+Windows device's (`aux` gives `Aux2.erg`): the file shown and the file written
+are always one the project accepts. The file
 goes in the current folder when that is `scripts/` or under it, otherwise in
 `scripts/` — the folder the project's scripts are compiled from — and the panel
 opens there. It starts as a behavior that compiles, its parts commented, and an
@@ -286,6 +334,23 @@ the warning glyph and how many; never the colour alone — an `.erg` outside
 compiles: a clean compile clears them; moving a misplaced file into `scripts/`
 clears its row.
 
+Each source of problems has a scope — what its problems describe, and so when
+they leave (`ProblemSource`, `khora-core/src/problems.rs`):
+
+| Source | Scope | Leaves |
+|---|---|---|
+| Compile, Relayout, Registration, Placement | the scripts mounted | with each compile, scan or mount |
+| Running, Data | the world as it is now | as soon as it is so no more |
+| Load | the open scene | with it: a new scene, another load landing |
+| Save, Leftover | the project open | as the next open resolves, whether it lands or fails |
+| Startup, Security | the run | a file released or read again |
+| Restricted | the trust of each root watched | listed again whenever a trust or a root moves |
+
+So a project change keeps the `Load` problems of a scene the user chose while
+the open was in flight, as it keeps the scene, and the Problems tab always
+lists what the scene's own load reported. A failed open leaves the editor with
+no project; why it failed joins the load problems of the scene it was left on.
+
 **Declared components in the Inspector.** A component a script declares is a
 card like a Rust component's, read from its declared fields rather than through
 JSON: its fields in declaration order, each drawn by its Ergon type.
@@ -299,7 +364,7 @@ JSON: its fields in declaration order, each drawn by its Ergon type.
 | `string` | text field |
 | `Vec2`/`Vec3`/`Vec4`, `Quat`, `Color` | one scrubber per axis; a colour swatch |
 | `Entity` | a slot naming the entity — drop one from the Hierarchy |
-| `Prefab`, `Sound`, `Material`, `Mesh`, `Texture`, `Scene` | a slot naming the asset, its folder beside it — drop one of that kind from the Asset Browser, or click it to pick one; right-click → *Choose…*, *Reveal in Assets*; an asset gone from the project reads `missing · …` in amber |
+| `Prefab`, `Sound`, `Material`, `Mesh`, `Texture`, `Scene`, `Font` | a slot naming the asset, its folder beside it — drop one of that kind from the Asset Browser, or click it to pick one; right-click → *Choose…*, *Reveal in Assets*; an asset gone from the project reads `missing · …` in amber |
 | `T?` | the value, or `none` with **Set** (an asset or entity slot shows its own `none`); right-click → *Set to none* |
 | `T[]` | a row per item, **+ Add item** (for assets, it opens the picker); right-click an item to move or remove it |
 | struct | a nested block, a row per field |
@@ -425,6 +490,39 @@ Used when the user has clicked **"Add Native Code"** on the project's hub card, 
 
 Host-only in v1 (Rust cross-compilation is fragile without per-target toolchains). The editor refuses non-host targets on this strategy with a clear error pointing the user to "run the editor on the target OS".
 
+### Result
+
+The build is made in a temporary folder beside `<project>/dist/<target>/`, and
+swapped in whole once it succeeded: a failed build leaves the previous one as it
+was, and its temporary folder removed.
+
+A build killed on its way (the editor closed, the machine stopped) can leave
+what it was doing beside the folder: its temporary folder
+(`<target>.<pid>.<n>.tmp`), or the previous build it had moved aside to swap the
+new one in (`<target>.<pid>.<n>.previous.tmp`), with no folder at `<target>`.
+The next build reclaims them before it starts: with no folder at `<target>`, it
+puts the previous build back; it removes every other one. Only a folder named by
+that pattern after the target is touched. The result line says what was put
+back or removed, and so does the error of a build that then fails; a folder
+that cannot be removed (another program holds a file of it) is named there as
+left, as is a previous build the swap could not remove.
+
+One build of a target runs at a time, across processes. A build holds an OS
+lock on `<project>/dist/<target>.lock`, beside the folder, from its start to its
+end — the reclaim and the swap included — so it never reclaims the temporary
+folder of another build still running. A second build of the target, in this
+editor or another, is refused at once, and its result line says another build
+holds the target: a build runs on the editor's frame, and waiting would freeze
+the editor behind another's build. The lock file is left in place; the system
+releases the lock of an editor that ends, killed or not.
+
+The console's result line says `built` and where, with the asset count and the
+bytes packed. An external file the pack left out — refused by the guard, over its
+container's cap, or missing — is not packed, and the build goes on: the line then
+says `built, N files left out` and names each file and why. An asset refused fails
+the build, and the line says which and why. Every refusal also reaches the Problems
+panel (see [Trust — the guard](../concepts/trust.md#the-guard)).
+
 ### Output layout (identical between strategies)
 
 ```
@@ -434,6 +532,7 @@ Host-only in v1 (Rust cross-compilation is fragile without per-target toolchains
 ├── index.bin
 ├── manifest.bin             # the pack's signed manifest
 └── runtime.json
+<project>/dist/<target>.lock # held while a build of the target runs
 ```
 
 Run the binary directly. It opens the pack beside it (`data.pack` + `index.bin` + `manifest.bin`) once its seal checks against the key stamped in the binary (see [Trust: signed packs](../concepts/trust.md#signed-packs)). A stamped binary refuses loose files; an unstamped one, such as `cargo run` while iterating, reads a loose `assets/` folder beside it instead.
@@ -524,7 +623,7 @@ The editor is an application built on the SDK — it implements `EngineApp` and
 | `crates/khora-editor/src/commands/` | The command dispatch the menus and palette go through |
 | `crates/khora-editor/src/scene_io/mod.rs` | Scene save / load via `SerializationService` |
 | `crates/khora-editor/src/gizmo/`, `picking.rs` | Gizmo geometry, drag math and dispatch; viewport picking |
-| `crates/khora-editor/src/project_vfs.rs` | The live asset index — VFS, watcher and identity registry |
+| `crates/khora-editor/src/project_vfs/` | The live asset index — VFS, watcher and identity registry; `asset_files.rs`, the asset browser's file operations |
 | `crates/khora-editor/src/project_scripts/` | Mounting the open project's scripts, and unmounting them |
 | `crates/khora-editor/src/panels/problems/` | The Problems tab; `view.rs` is its pure view model, and re-exports the `.erg` tile badge of `widgets/tile_badge.rs` |
 | `crates/khora-editor/src/ops/declared.rs` | Declared components as the Inspector reads and writes them — cards, edits, the add menu, prefab rows |

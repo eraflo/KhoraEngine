@@ -193,7 +193,7 @@ fn invalidating_a_container_after_a_reindex_drops_a_sub_the_new_index_dropped() 
         file_entry(villain(), VILLAIN_PATH),
         sub_entry(villain_body(), villain(), VILLAIN_PATH, "mesh/Body", "mesh"),
     ];
-    svc.reindex(&bincode::serde::encode_to_vec(&reexported, bincode::config::standard()).unwrap())
+    svc.reindex(&crate::asset::AssetIndex::encode(&reexported, &[]).unwrap())
         .unwrap();
     svc.invalidate(&hero());
 
@@ -232,7 +232,7 @@ fn loading_a_sub_whose_container_is_not_indexed_errors() {
         "mesh/Body",
         "mesh",
     )];
-    let index = bincode::serde::encode_to_vec(&metadata, bincode::config::standard()).unwrap();
+    let index = crate::asset::AssetIndex::encode(&metadata, &[]).unwrap();
     let metrics = Arc::new(MetricsRegistry::new());
     let mut svc = AssetService::new(
         &index,
@@ -262,7 +262,12 @@ fn loading_a_sub_whose_container_is_not_indexed_errors() {
 #[test]
 fn an_external_change_invalidates_the_containers_reading_the_changed_file() {
     let project = tempdir().unwrap();
-    let mut registry = crate::asset::AssetIdRegistry::load(project.path());
+    let mut registry =
+        crate::asset::AssetIdRegistry::load_or_unread(&crate::trust::FileGuard::new(
+            project.path(),
+            crate::trust::Trust::Project,
+            crate::trust::Refusals::detached(),
+        ));
     registry.rename(SKIN_KEY, "textures/fresh.png");
     let renamed = registry.resolve("textures/fresh.png");
     let beside = registry.resolve(SKIN_KEY);

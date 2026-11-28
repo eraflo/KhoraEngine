@@ -20,6 +20,22 @@ Style, naming, "could be cleaner", and speculative cases that cannot occur are *
 reviewer asked for gaps always finds some; chasing all of them buries the code in defensive layers.
 Report only what you can demonstrate.
 
+## Scope (owner, 2026-11-28)
+A finding is **in scope** only if the defect is **introduced or made worse by this phase** (by the
+lines of its diff), or it is a case **the phase's plan promises** that no test checks. The plan's goal
+bounds the attack, not the reach of the code the diff calls.
+- A defect that was already there before the phase, in code the diff only passes through, is **out of
+  scope**: list it under *Out of scope* (one line, `file:line`, the reproduction), write no test.
+- Code the plan marks as to be rewritten (today: the editor's and the hub's UI and their state —
+  panels, dialogs, project switching, the asset browser — which will be redone in Khora's own UI
+  system) is attacked only where the phase changes what it **promises**; its UI-state edge cases are
+  out of scope.
+- A round after a fix attacks only the fix, and only within the phase's scope. A fix that would need
+  a design outside it is reported, not chased.
+- The loop ends at the first round with **no in-scope finding**. Out-of-scope findings never extend the
+  loop, but a real bug seen out of scope is **always reported**, never dropped: the main agent collects
+  them into the GitHub tracking issue of bugs to resolve (see the implement skill).
+
 ## Where to attack (Khora)
 - Boundaries: empty, one, very large; zero, negative, NaN, infinity; non-ASCII text.
 - Entities: despawned, recycled with a new generation, spawned and despawned in the same frame.
@@ -52,7 +68,10 @@ Report only what you can demonstrate.
   the failure observed · the smallest reproduction.
 - **Tried and held** — the attacks that did not break it, one line each, so the next round does not
   repeat them.
+- **Out of scope** — every real bug seen outside the phase's scope (see *Scope*), no test: what breaks,
+  `file:line`, the smallest reproduction, and why it is out of scope. Enough for someone to fix it later
+  without your context.
 
 Comments follow [`conventions.md`](../conventions.md) §9b: a one-sentence summary, the contract not the implementation, `//` says why in four lines at most, no plan labels, history or step numbering; a longer explanation goes to the book.
 
-At most two rounds per change; the main agent fixes between them. Never commit, never push.
+No round limit: the main agent fixes between rounds, and the loop ends when a round finds no in-scope defect. Never commit, never push.

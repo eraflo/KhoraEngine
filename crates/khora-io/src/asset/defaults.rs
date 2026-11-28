@@ -19,6 +19,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use khora_core::asset::kinds;
 use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_data::assets::SoundData;
 use khora_telemetry::MetricsRegistry;
@@ -49,7 +50,9 @@ impl AssetService {
     /// Every default decoder is registered ([`Self::register_default_decoders`]).
     ///
     /// Asset ids come from `registry`: a path it freezes keeps its recorded
-    /// UUID, every other path gets its `new_v5` default.
+    /// UUID, every other path gets its `new_v5` default. The index reads the
+    /// files as a trusted project's, its refusals kept in memory: a project
+    /// opened at another trust is indexed through the engine's `IndexHub`.
     ///
     /// # Errors
     ///
@@ -60,7 +63,12 @@ impl AssetService {
         metrics_registry: Arc<MetricsRegistry>,
     ) -> Result<Self> {
         let assets_root = project_root.join("assets");
-        let index_bytes = IndexBuilder::new(&assets_root)
+        let guard = crate::trust::FileGuard::new(
+            &assets_root,
+            crate::trust::Trust::Project,
+            crate::trust::Refusals::detached(),
+        );
+        let index_bytes = IndexBuilder::new(guard)
             .with_registry(registry)
             .build_index_bytes()
             .with_context(|| format!("Failed to index {}", assets_root.display()))?;
@@ -79,15 +87,15 @@ impl AssetService {
     /// service's trust reporting to its refusals: call [`Self::set_refusals`] first.
     pub fn register_default_decoders(&mut self, assets_root: &Path) {
         self.register_inventory_decoders();
-        self.register_decoder::<SoundData>("audio", SymphoniaDecoder);
+        self.register_decoder::<SoundData>(kinds::SOUND.name(), SymphoniaDecoder);
         let refusals = self.refusals();
         // At the trust the service reads at (`set_trust`, set before).
         let trust = self.reader().trust;
         let guard = || FileGuard::new(assets_root, trust, Arc::clone(&refusals));
         let gltf_resolver = Arc::new(FileSystemResolver::guarded(guard()));
         let container = GltfContainer::guarded(guard());
-        self.register_decoder::<Mesh>("mesh", MeshDispatcher::new(gltf_resolver));
-        self.register_container("mesh", container);
+        self.register_decoder::<Mesh>(kinds::MESH.name(), MeshDispatcher::new(gltf_resolver));
+        self.register_container(kinds::MESH.name(), container);
     }
 
     /// Registers the decoders every Khora application uses, for a service reading a pack.
@@ -96,7 +104,7 @@ impl AssetService {
     /// images resolve inside the pack by their asset key.
     pub fn register_packed_decoders(&mut self) {
         self.register_inventory_decoders();
-        self.register_decoder::<SoundData>("audio", SymphoniaDecoder);
+        self.register_decoder::<SoundData>(kinds::SOUND.name(), SymphoniaDecoder);
         let refusals = self.refusals();
         let reader = self.reader();
         let resolver: Arc<dyn GltfResourceResolver> = Arc::new(PackedResolver::new(
@@ -106,7 +114,10 @@ impl AssetService {
             refusals,
             reader.trust,
         ));
-        self.register_decoder::<Mesh>("mesh", MeshDispatcher::new(Arc::clone(&resolver)));
-        self.register_container("mesh", GltfContainer::resolving_with(resolver));
+        self.register_decoder::<Mesh>(
+            kinds::MESH.name(),
+            MeshDispatcher::new(Arc::clone(&resolver)),
+        );
+        self.register_container(kinds::MESH.name(), GltfContainer::resolving_with(resolver));
     }
 }

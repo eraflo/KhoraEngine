@@ -217,7 +217,7 @@ fn a_kind_filter_keeps_only_the_parts_of_its_kind() {
     let entries = listing();
     let foreign: Vec<&str> = tiles
         .iter()
-        .filter(|&&i| entries[i].asset_type != "mesh")
+        .filter(|&&i| entries[i].kind.name() != "mesh")
         .map(|&i| entries[i].name.as_str())
         .collect();
     assert!(

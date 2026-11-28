@@ -12,7 +12,7 @@
 use crate::app::HubApp;
 use crate::async_pump::pump_async_messages;
 use crate::chrome::{
-    STATUS_HEIGHT, TITLE_BAR_HEIGHT, paint_banner, show_status_bar, show_title_bar,
+    STATUS_HEIGHT, TITLE_BAR_HEIGHT, paint_banner, paint_refusal, show_status_bar, show_title_bar,
 };
 use crate::screens;
 use crate::state::Screen;
@@ -38,6 +38,7 @@ impl App for HubApp {
 
         let theme = crate::ui::theme();
         let mut dismiss_banner = false;
+        let mut dismiss_refusal = None;
         let mut splash_done = false;
 
         ctx.central(&mut |ui| {
@@ -58,11 +59,22 @@ impl App for HubApp {
                 Screen::Settings => screens::show_settings(self, ui),
             });
 
-            // The toast floats over the screen, so it is painted last.
-            if let Some(banner) = self.banner.as_ref()
-                && paint_banner(ui, banner)
-            {
-                dismiss_banner = true;
+            // The toasts float over the screen, so they are painted last: the
+            // banner, then each refusal listed that it does not show.
+            let mut slot = 0;
+            if let Some(banner) = self.banner.as_ref() {
+                dismiss_banner = paint_banner(ui, banner);
+                slot = 1;
+            }
+            let shown = self.banner.as_ref().and_then(|b| b.refusals_of.as_deref());
+            for refusal in self.home.refusals.iter() {
+                if shown == Some(refusal.project.as_path()) {
+                    continue;
+                }
+                if paint_refusal(ui, refusal, slot) {
+                    dismiss_refusal = Some(refusal.clone());
+                }
+                slot += 1;
             }
 
             // The sign film covers everything while the hub opens. The hub
@@ -77,7 +89,10 @@ impl App for HubApp {
         });
 
         if dismiss_banner {
-            self.banner = None;
+            self.dismiss_banner();
+        }
+        if let Some(refusal) = dismiss_refusal {
+            self.home.refusals.dismiss_one(&refusal);
         }
         if splash_done {
             self.splash = None;

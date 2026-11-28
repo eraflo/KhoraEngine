@@ -128,11 +128,12 @@ impl World {
                     .as_mut(),
             );
 
+            // `carried` follows the sorted signature: a lookup per column keeps
+            // a migration linear in the entity's width, not quadratic.
             dest_page.add_entity(entity_id, &self.clock.observed, |k| {
                 carried
-                    .iter()
-                    .find(|(kept, _)| *kept == k)
-                    .map_or(added_at, |(_, tick)| *tick)
+                    .binary_search_by_key(&k, |(kept, _)| *kept)
+                    .map_or(added_at, |at| carried[at].1)
             });
         }
         // The whole row moved: every domain of the destination page sees it.
@@ -263,9 +264,8 @@ impl World {
             let now = self.clock.tick;
             dest_page.add_entity(entity_id, &self.clock.observed, |k| {
                 carried
-                    .iter()
-                    .find(|(kept, _)| *kept == k)
-                    .map_or(now, |(_, tick)| *tick)
+                    .binary_search_by_key(&k, |(kept, _)| *kept)
+                    .map_or(now, |at| carried[at].1)
             });
         }
         // The whole row moved: every domain of the destination page sees it.

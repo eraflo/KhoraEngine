@@ -431,7 +431,11 @@ fn a_projects_prefabs_are_read_through_its_asset_service() {
     };
     write_prefab(&turret.record);
 
-    let registry = AssetIdRegistry::load(project.path());
+    let registry = AssetIdRegistry::load_or_unread(&khora_io::trust::FileGuard::new(
+        project.path(),
+        khora_io::trust::Trust::Project,
+        khora_io::trust::Refusals::detached(),
+    ));
     let assets_service =
         AssetService::open_loose_files(project.path(), &registry, Arc::new(MetricsRegistry::new()))
             .expect("the project opens");

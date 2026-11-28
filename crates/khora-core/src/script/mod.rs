@@ -39,6 +39,7 @@ mod engine_event;
 pub mod event;
 pub mod field;
 pub mod frozen;
+mod language_types;
 pub mod projection;
 pub mod reads;
 pub mod snapshot;
@@ -56,6 +57,7 @@ pub use event::{
 };
 pub use field::{ErgonType, FieldHints, FieldRange, FieldValueError, ScriptField};
 pub use frozen::{FrozenFrame, FrozenLocal, FrozenMachine, FrozenValue, PendingBody};
+pub use language_types::{is_language_type, BUILTIN_TYPES, ENGINE_TYPES};
 pub use projection::{ColumnSnapshot, ComponentProjection, FrameComponents, ProjectedComponent};
 pub use reads::ScriptReads;
 pub use snapshot::{

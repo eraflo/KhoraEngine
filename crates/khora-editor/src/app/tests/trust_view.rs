@@ -579,7 +579,12 @@ fn a_released_renamed_file_is_read_again_under_its_frozen_uuid() {
     let folder = Folder::new("release-renamed");
     let root = cave_demo(&folder);
     let huge = folder.write("cave-demo/assets/textures/huge.png", b"png");
-    let mut registry = khora_sdk::AssetIdRegistry::load(&root);
+    let mut registry =
+        khora_sdk::AssetIdRegistry::load_or_unread(&khora_sdk::trust::FileGuard::new(
+            &root,
+            khora_sdk::trust::Trust::Project,
+            khora_sdk::trust::Refusals::detached(),
+        ));
     registry.rename("textures/old_huge.png", "textures/huge.png");
     registry.save().expect("the registry saves");
     let frozen = registry.resolve("textures/huge.png");

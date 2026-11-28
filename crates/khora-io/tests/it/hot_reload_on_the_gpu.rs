@@ -371,7 +371,11 @@ impl Project {
         }
         let service = AssetService::open_loose_files(
             &root,
-            &AssetIdRegistry::load(&root),
+            &AssetIdRegistry::load_or_unread(&khora_io::trust::FileGuard::new(
+                &root,
+                khora_io::trust::Trust::Project,
+                khora_io::trust::Refusals::detached(),
+            )),
             Arc::new(MetricsRegistry::new()),
         )
         .expect("the project opens");

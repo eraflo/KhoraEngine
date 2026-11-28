@@ -15,7 +15,7 @@
 //! `Spawn(…)`, in its two forms: an entity at a position, or an instance of a
 //! prefab — told apart by what the first argument is.
 
-use khora_core::asset::AssetKind;
+use khora_core::asset::kinds;
 
 use crate::ast::{Expr, Label};
 use crate::diagnostics::Span;
@@ -25,8 +25,8 @@ use super::{Checker, Context, Ty};
 /// Returns whether `ty` is a prefab, or one that may be `null`.
 pub(crate) fn is_prefab(ty: &Ty) -> bool {
     match ty {
-        Ty::Asset(AssetKind::Prefab) => true,
-        Ty::Optional(inner) => matches!(**inner, Ty::Asset(AssetKind::Prefab)),
+        Ty::Asset(kinds::PREFAB) => true,
+        Ty::Optional(inner) => matches!(**inner, Ty::Asset(kinds::PREFAB)),
         _ => false,
     }
 }

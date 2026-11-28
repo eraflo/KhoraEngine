@@ -17,8 +17,8 @@
 //! The app refreshes [`EditorState`] every frame with a snapshot of the ECS
 //! world; panels read it through a shared `Arc<Mutex<EditorState>>`.
 
-use super::EditorRequest;
-use crate::asset::{AssetType, AssetUUID};
+use super::{EditorRequest, KeyChange, SceneInProject, SceneOpening};
+use crate::asset::{AssetKind, AssetUUID};
 use crate::ecs::entity::EntityId;
 use std::collections::HashSet;
 
@@ -138,9 +138,10 @@ pub struct EditorState {
     ///
     /// A frame where it has not moved copies nothing.
     pub problems_generation: u64,
-    /// The last load's problems as they were handed over.
+    /// The open scene's load problems as they were handed over: what the runtime's `Problems` list as `Load`.
     ///
-    /// Kept so a Stop, which respawns every entity, can point them at the restored ones.
+    /// Kept so a Stop, which respawns every entity, can point them at the
+    /// restored ones. They leave with the scene.
     pub load_problems: Vec<crate::problems::Problem>,
     /// The problems the components' own checks find in the current world (the `Data` source).
     ///
@@ -211,15 +212,23 @@ pub struct EditorState {
     /// renders or no game runs.
     pub broken_play_camera: Option<(EntityId, String)>,
     /// The scene's snapshot taken at Play, restored at Stop.
+    ///
+    /// Dropped by a project change, which ends the play, unless the scene it
+    /// holds was chosen since the project's open was filed (`played_choice`).
     pub scene_snapshot: Option<Vec<u8>>,
+    /// The `scene_choices` Play took `scene_snapshot` at, kept until its Stop's restore lands.
+    ///
+    /// Names the scene the snapshot and that restore hold: the one chosen
+    /// then. `None` when no play holds a scene.
+    pub played_choice: Option<u64>,
     /// The restore Stop filed, being prepared off the frame: Play waits for it.
     pub restoring: Option<crate::scene::LoadTicket>,
     /// The last load's problems as Stop found them, keyed by their entity's persistent id.
     ///
     /// Mapped onto the restored entities.
     pub restore_problems: Vec<(Option<crate::ecs::PersistentId>, crate::problems::Problem)>,
-    /// The scenes opening off the frame, in order: ticket and path.
-    pub opening: Vec<(crate::scene::LoadTicket, String)>,
+    /// The scenes opening off the frame, in the order filed.
+    pub opening: Vec<SceneOpening>,
     /// Moves at each scene chosen (new, opened): what waited for one before is void.
     pub scene_choices: u64,
 
@@ -247,8 +256,13 @@ pub struct EditorState {
     pub quarantined: Vec<QuarantinedAsset>,
 
     // ── Scene file path ──────────────────────────────
-    /// Path to the currently open scene file (for Save).
-    pub current_scene_path: Option<String>,
+    /// The file of the open project the open scene is saved to.
+    ///
+    /// It follows its file through a rename or a move in the asset browser.
+    /// `None` for a new scene, a scene opened from a file of no project, once
+    /// its file is trashed, or once the project it belongs to is let go: a
+    /// save then asks where, as Save As does.
+    pub current_scene_path: Option<SceneInProject>,
 
     // ── Component addition ─────────────────────────────
     /// What "+ Add Component" offers the inspected entity.
@@ -290,6 +304,11 @@ pub struct EditorState {
     ///
     /// The entries, dirs and epoch are refreshed once its outcome is read.
     pub reindexing: Option<crate::asset::IndexTicket>,
+    /// What the file operations did to the keys under `assets/`, oldest first, for the holders of a key this state does not hold.
+    ///
+    /// The asset browser takes them as it draws and follows them with its
+    /// shown folder. Emptied as the project is let go.
+    pub key_changes: Vec<KeyChange>,
 }
 
 impl EditorState {
@@ -457,8 +476,8 @@ impl Default for StatusBarData {
 pub struct AssetEntry {
     /// Human-readable file/asset name.
     pub name: String,
-    /// What kind of asset it is.
-    pub asset_type: AssetType,
+    /// The asset's kind.
+    pub kind: AssetKind,
     /// Source path (for display purposes).
     pub source_path: String,
     /// The asset's identity, as the index resolved it through the project's

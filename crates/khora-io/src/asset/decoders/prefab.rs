@@ -56,9 +56,9 @@ impl AssetDecoder<PrefabAsset> for PrefabDecoder {
 
 inventory::submit! {
     DecoderRegistration {
-        type_name: "prefab",
+        kind: khora_core::asset::kinds::PREFAB,
         register: |svc| {
-            svc.register_decoder::<PrefabAsset>("prefab", PrefabDecoder);
+            svc.register_decoder::<PrefabAsset>(khora_core::asset::kinds::PREFAB.name(), PrefabDecoder);
         },
     }
 }

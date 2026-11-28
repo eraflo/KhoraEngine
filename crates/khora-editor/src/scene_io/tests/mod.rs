@@ -15,6 +15,7 @@
 //! Play/Stop snapshots and project scene paths.
 
 mod load_report;
+mod on_disk;
 mod saves_whole;
 
 use super::*;

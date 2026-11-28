@@ -16,7 +16,7 @@
 
 use std::sync::Arc;
 
-use khora_core::asset::{AssetType, AssetUUID};
+use khora_core::asset::{kinds, AssetUUID};
 use khora_data::scene::{PrefabSource, SceneRecord};
 
 use crate::asset::{AssetReader, PrefabAsset};
@@ -39,11 +39,11 @@ impl ReaderPrefabs {
 impl PrefabSource for ReaderPrefabs {
     fn prefab(&self, id: AssetUUID) -> Result<SceneRecord, String> {
         match self.reader.index().get_metadata(&id) {
-            Some(metadata) if metadata.asset_type == AssetType::Prefab => {}
+            Some(metadata) if metadata.kind == kinds::PREFAB => {}
             Some(metadata) => {
                 return Err(format!(
                     "the asset {id} is a {}, not a prefab",
-                    metadata.asset_type
+                    metadata.kind
                 ))
             }
             None => return Err(format!("the project holds no asset {id}")),

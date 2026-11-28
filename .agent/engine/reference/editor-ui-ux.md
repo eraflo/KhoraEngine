@@ -14,7 +14,7 @@ transform gizmos, dock layout, theme, and the egui/Taffy plumbing.
   widgets; `widgets/inspector/` = cards, tabs, field `walker.rs`, `instance_band.rs`, add-component),
   `ops/` (pure ECS ops: hierarchy, inspect, spawn, scene tree, `prefab_overrides/`), `commands/` (take the
   `EditorRequest`s queued on `EditorState::requests`: menu, scene, prefab, material, asset file ops), `scene_io/` (project-relative save/
-  load, Play snapshot/restore), `gizmo/`, `project_vfs.rs`, `hot_reload.rs`.
+  load, Play snapshot/restore), `gizmo/`, `project_vfs/`, `hot_reload.rs`.
 - Editor UI types: `crates/khora-core/src/ui/editor/` (gizmos, viewport, panels, theme).
 - UI lanes / layout: `crates/khora-lanes/src/ui/`, `crates/khora-infra/src/ui/{taffy,egui}/`.
 - SDK surface: `khora_sdk::editor_ui` / `tool_ui` re-exports (panels import from the SDK only).

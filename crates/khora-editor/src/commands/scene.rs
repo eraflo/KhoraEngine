@@ -16,78 +16,89 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_sdk::editor_ui::EditorRequest;
+use khora_sdk::editor_ui::{EditorRequest, SceneInProject, SceneOpening};
+use khora_sdk::khora_core::asset::kinds;
 use khora_sdk::khora_data::scene::record::ReportEntry;
 use khora_sdk::{EditorState, GameWorld, SerializationGoal};
 
-use crate::project_vfs::ProjectVfs;
+use crate::project_vfs::{InProject, ProjectVfs};
 use crate::{build_game, scene_io};
 
 /// Why Build Game is refused in a restricted project.
 const BUILD_REFUSED: &str = "Build Game is off in restricted mode: building runs this project's \
                              code. Trust the project to build it.";
 
-// The bool forms, for tests: the editor saves through the reporting one.
+// The bool form, for tests: the editor saves through the reporting one.
 #[cfg(test)]
-/// Saves the scene, through the project VFS when the path lies under `<project>/assets/`.
+/// Saves the scene to the file at `path_str` under the open project's `assets/`, as a Save As does, under the `EditorInterchange` goal.
 ///
-/// A Save-As elsewhere writes with `std::fs`. Saves under the
-/// `EditorInterchange` goal. Returns whether the scene reached disk;
-/// failures are logged.
+/// Returns whether the scene reached disk; a file outside the project's
+/// `assets/`, or any with no project open, is refused ([`scene_at`]).
+/// Failures are logged.
 pub fn save_scene_dispatch(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &GameWorld,
     path_str: &str,
 ) -> bool {
-    save_scene_dispatch_with_goal(
-        project_vfs,
-        world,
-        path_str,
-        SerializationGoal::EditorInterchange,
-    )
+    scene_at(project_vfs, std::path::Path::new(path_str)).is_some_and(|scene| {
+        save_scene_reporting(
+            project_vfs,
+            world,
+            &scene,
+            SerializationGoal::EditorInterchange,
+        )
+        .is_some()
+    })
 }
 
-#[cfg(test)]
-/// Saves as [`save_scene_dispatch`] does, under an explicit serialization goal.
+/// Names the file at `picked` as a scene of the project `project_vfs` opens; `None`, logged, when it is none.
 ///
-/// `HumanReadableDebug` for a JSON scene, `PortableBinary` for MessagePack.
-pub(crate) fn save_scene_dispatch_with_goal(
+/// Refused as a prefab's Save As is ([`saved_in_project`]): no project open,
+/// a file outside the project's `assets/`, a path under the assets the
+/// project refuses, or a file that is no `.kscene` by its extension, in any
+/// case (a texture's `wall.png` is never written over). A name with no
+/// extension is the `.kscene` of that name, as a file dialog adds it.
+///
+/// [`saved_in_project`]: super::saved_in_project::saved_in_project
+pub(crate) fn scene_at(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
-    world: &GameWorld,
-    path_str: &str,
-    goal: SerializationGoal,
-) -> bool {
-    save_scene_dispatch_reporting(project_vfs, world, path_str, goal).is_some()
+    picked: &std::path::Path,
+) -> Option<SceneInProject> {
+    super::saved_in_project::saved_in_project(project_vfs, picked, kinds::SCENE)
+        .map(|(assets, key)| SceneInProject::new(assets, key))
 }
 
-/// Saves the scene under `goal`, through the project VFS when the path lies under
-/// `<project>/assets/`, and returns what the save left out of the file.
+/// Saves the scene under `goal` to `scene`, through the project open, and returns what the save left out of the file.
 ///
-/// A Save-As elsewhere writes with `std::fs`. `None` when the scene did not
-/// reach disk; failures are logged.
-pub(crate) fn save_scene_dispatch_reporting(
+/// `None`, logged, when the scene did not reach disk: no project open, a
+/// scene of another project (it is refused, nothing written), or a failure.
+pub(crate) fn save_scene_reporting(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &GameWorld,
-    path_str: &str,
+    scene: &SceneInProject,
     goal: SerializationGoal,
 ) -> Option<Vec<ReportEntry>> {
-    let abs = std::path::Path::new(path_str);
-    if let Some(pvfs_arc) = project_vfs {
-        if let Ok(mut pvfs) = pvfs_arc.lock() {
-            let assets_root = pvfs.assets_root.clone();
-            if let Some(rel_fwd) = scene_io::rel_inside_project(abs, &assets_root) {
-                // The save logs its own failures; the outcome is returned so a
-                // caller can react to it rather than assume success.
-                return scene_io::save_scene_in_project_reporting(
-                    &mut pvfs,
-                    world,
-                    std::path::Path::new(&rel_fwd),
-                    goal,
-                );
-            }
-        }
+    let Some(mut pvfs) = project_vfs.and_then(|pvfs| pvfs.lock().ok()) else {
+        log::error!(
+            "The scene is not saved: {}",
+            super::saved_in_project::no_project(kinds::SCENE.name())
+        );
+        return None;
+    };
+    if !scene.is_in(&pvfs.assets_root) {
+        log::error!(
+            "The scene is not saved: '{}' belongs to another project than the one open",
+            scene.path().display()
+        );
+        return None;
     }
-    scene_io::save_scene_to_path_reporting(world, path_str, goal)
+    // The save logs its own failures.
+    scene_io::save_scene_in_project_reporting(
+        &mut pvfs,
+        world,
+        std::path::Path::new(scene.key()),
+        goal,
+    )
 }
 
 /// Asks to report what a save of a scene or a prefab left out, as the `Save` problems.
@@ -101,36 +112,53 @@ pub(crate) fn report_save(state: &mut EditorState, world: &GameWorld, left_out: 
 /// Opens the scene at `abs` off the frame, replacing the open one; returns the load's ticket.
 ///
 /// The load lands at a later frame's boundary, where [`land_scene_loads`]
-/// finishes it. A scene outside the project is read from its path, without
-/// prefabs. `None` when nothing was filed.
+/// finishes it; a scene of the project becomes the scene a save writes to. A
+/// scene outside the project's `assets/` is read from its path
+/// through a guard, without prefabs: the project root's, at the project's
+/// trust; any other folder's as a downloaded file, reporting to `reads`'
+/// refusals, the run's. A path under the assets the project refuses
+/// ([`InProject::Refused`]) opens nothing, and says why. `None` when nothing
+/// was filed.
 pub fn open_scene_dispatch(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
     loads: &khora_sdk::SceneLoadHub,
+    reads: &crate::project_vfs::ProjectReads,
     abs: &std::path::Path,
 ) -> Option<khora_sdk::khora_core::scene::LoadTicket> {
-    let mut in_project = None;
+    let mut opened = None;
+    let mut scene = None;
     if let Some(pvfs_arc) = project_vfs {
         if let Ok(mut pvfs) = pvfs_arc.lock() {
-            let assets_root = pvfs.assets_root.clone();
-            if let Some(rel_fwd) = scene_io::rel_inside_project(abs, &assets_root) {
-                // A scene of the project it names nothing in opens nothing.
-                let choice = editor_state.lock().map_or(0, |state| state.scene_choices);
-                in_project = Some(scene_io::scene_in_project(&mut pvfs, &rel_fwd, choice)?);
-            }
+            opened = Some(match pvfs.in_project(abs) {
+                InProject::Inside(rel_fwd) => {
+                    // A scene of the project it names nothing in opens nothing.
+                    let choice = editor_state.lock().map_or(0, |state| state.scene_choices);
+                    let found = scene_io::scene_in_project(&mut pvfs, &rel_fwd, choice)?;
+                    scene = Some(SceneInProject::new(pvfs.assets_root.clone(), rel_fwd));
+                    found
+                }
+                InProject::Refused(why) => {
+                    log::error!("The scene is not opened: {why}");
+                    return None;
+                }
+                InProject::Outside => scene_io::scene_on_disk(abs, pvfs.reads(), Some(&pvfs.root)),
+            });
         }
     }
-    let (source, prefabs) = in_project.unwrap_or_else(|| scene_io::scene_on_disk(abs));
+    let (source, prefabs) = opened.unwrap_or_else(|| scene_io::scene_on_disk(abs, reads, None));
     let ticket = loads.file(
         world.inner_world_mut(),
         khora_sdk::khora_data::scene::loading::LoadKind::Replace(source),
         prefabs,
     );
     if let Ok(mut state) = editor_state.lock() {
-        state
-            .opening
-            .push((ticket, abs.to_string_lossy().into_owned()));
+        state.opening.push(SceneOpening {
+            ticket,
+            path: abs.to_string_lossy().into_owned(),
+            scene,
+        });
         // An open waiting for the index, chosen before this one, opens
         // nothing over it.
         state.scene_choices = state.scene_choices.wrapping_add(1);
@@ -141,7 +169,8 @@ pub fn open_scene_dispatch(
 /// Finishes the scene loads the editor filed (an opened scene, Stop's restore) that landed.
 ///
 /// Clears the editor's entity references, maps the load's problems onto the
-/// entities it brought, and sets an opened scene's path. A failed load
+/// entities it brought, and makes an opened scene's file the one a save writes
+/// to (none for a file of no project). A failed load
 /// changes nothing and is reported. Returns whether one replaced the world.
 pub fn land_scene_loads(
     world: &mut GameWorld,
@@ -155,6 +184,7 @@ pub fn land_scene_loads(
     if let Some(ticket) = state.restoring {
         if let Some(outcome) = loads.take_outcome(ticket) {
             state.restoring = None;
+            state.played_choice = None;
             let remembered = std::mem::take(&mut state.restore_problems);
             match outcome {
                 Ok(report) => {
@@ -195,11 +225,12 @@ pub fn land_scene_loads(
         }
     }
     let opening = std::mem::take(&mut state.opening);
-    for (ticket, path) in opening {
-        let Some(outcome) = loads.take_outcome(ticket) else {
-            state.opening.push((ticket, path));
+    for opened in opening {
+        let Some(outcome) = loads.take_outcome(opened.ticket) else {
+            state.opening.push(opened);
             continue;
         };
+        let SceneOpening { path, scene, .. } = opened;
         match outcome {
             Ok(report) => {
                 scene_io::log_report(&path, &report);
@@ -209,7 +240,8 @@ pub fn land_scene_loads(
                 let load = scene_io::load_problems(world.inner_world(), &report);
                 state.load_problems = load.clone();
                 state.push_request(EditorRequest::ReportLoadProblems { problems: load });
-                state.current_scene_path = Some(path);
+                // A file of no project has no file a save writes to.
+                state.current_scene_path = scene;
                 replaced = true;
             }
             Err(error) => {
@@ -257,10 +289,12 @@ pub fn build_game_refused(
 /// Builds the game for the host under `<project>/dist/<target>/`.
 ///
 /// It writes the `runtime.json` from which the staged binary loads the
-/// project's default scene at startup.
+/// project's default scene at startup. A failed build leaves the previous one
+/// as it was.
 ///
-/// Progress and the final path go to the log. See the book:
-/// reference/editor.md, "09 — Build Game".
+/// Progress and the result line go to the log: built, with the files the pack
+/// left out named, or why it failed; the refusals reach the run's problems.
+/// See the book: reference/editor.md, "09 — Build Game".
 pub(crate) fn run_build_game(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     editor_state: &Arc<Mutex<EditorState>>,
@@ -288,19 +322,12 @@ pub(crate) fn run_build_game(
         project_name,
         build_game::BuildTarget::host()
     );
-    match build_game::build_for_host(&pvfs, &project_name) {
-        Ok(out) => {
-            log::info!(
-                "Build Game: success via {} — {} ({} assets, {} bytes packed)",
-                out.strategy.label(),
-                out.output_dir.display(),
-                out.asset_count,
-                out.pack_bytes
-            );
-        }
-        Err(e) => {
-            log::error!("Build Game: failed — {:#}", e);
-        }
+    let result = build_game::build_for_host(&pvfs, &project_name);
+    let line = build_game::result_line(&result);
+    match &result {
+        Ok(out) if out.left_out.is_empty() => log::info!("{line}"),
+        Ok(_) => log::warn!("{line}"),
+        Err(_) => log::error!("{line}"),
     }
 }
 

@@ -23,7 +23,6 @@
 use std::path::PathBuf;
 
 use khora_sdk::khora_core::problems::{ProblemSource, Problems};
-use khora_sdk::SerializationGoal;
 
 use super::*;
 
@@ -68,14 +67,7 @@ fn save_camera_scene(path: &std::path::Path, z_near: f32) {
         .inner_world_mut()
         .mark_authored(camera)
         .expect("authored");
-    assert!(
-        scene_io::save_scene_to_path_with_goal(
-            &authored,
-            &path.to_string_lossy(),
-            SerializationGoal::EditorInterchange,
-        ),
-        "the scene saves"
-    );
+    crate::tests::scene_files::write_scene(&authored, path);
 }
 
 /// A clean scene opened after a broken one clears the broken one's load

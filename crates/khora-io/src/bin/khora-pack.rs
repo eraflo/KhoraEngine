@@ -63,6 +63,9 @@ fn main() -> ExitCode {
                 out.display(),
                 packed.pack_bytes()
             );
+            for file in &packed.left_out {
+                log::warn!("left out of the pack: {file}");
+            }
             ExitCode::SUCCESS
         }
         Err(error) => {

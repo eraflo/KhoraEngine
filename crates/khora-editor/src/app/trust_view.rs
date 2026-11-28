@@ -138,7 +138,8 @@ impl super::EditorApp {
             Some(pvfs) => Box::new(move |path| pvfs.resolve_uuid(path)),
             // The project not open yet: its registry as saved.
             None => {
-                let saved = khora_sdk::AssetIdRegistry::load(root);
+                let reads = crate::project_vfs::ProjectReads::of(runtime);
+                let saved = khora_sdk::AssetIdRegistry::load_or_unread(&reads.guard(root));
                 Box::new(move |path| saved.resolve(path))
             }
         };

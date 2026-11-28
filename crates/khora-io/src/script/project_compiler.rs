@@ -31,7 +31,7 @@ use khora_script::vm::Program;
 use crate::asset::AssetReader;
 use crate::script::compile::DiskLoader;
 use crate::script::declarations::ScriptDeclarations;
-use crate::script::hot_reload::{importers_of, is_on_disk, modules_under};
+use crate::script::hot_reload::{importers_of, is_on_disk, module_names};
 use crate::script::mirror::PreludeLoader;
 use crate::script::mounted::MountedScripts;
 use crate::script::sources::{pack_modules, DiskModules, ModuleSource, PackModules, SourcesOf};
@@ -118,7 +118,8 @@ impl ProjectCompiler {
         let loader = self.loader(script_root);
         let mut compiled = Recompiled::default();
         let mut declared = BTreeSet::new();
-        for module in modules_under(script_root, self.refusals.as_ref(), self.trust()).into_keys() {
+        // Listed by name: the loader reads each through the project's guard.
+        for module in module_names(script_root) {
             self.compile_into(&loader, module, false, &mut compiled, &mut declared);
         }
         compiled
