@@ -16,17 +16,19 @@
 //! service's `load` returns: a texture, a mesh, a glTF decoded whole and its
 //! parts. It names the files a glTF reads beside its own.
 
-use super::gltf_builder::{png, primitive, with_material, GltfBuilder};
-use crate::asset::{AssetIdRegistry, AssetService, Decoded};
-use khora_core::asset::{Asset, AssetUUID, Material, StandardMaterial};
+use std::any::TypeId;
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use khora_core::asset::{AssetUUID, Material, StandardMaterial, Stored};
 use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::renderer::api::resource::CpuTexture;
 use khora_telemetry::MetricsRegistry;
 use serde_json::json;
-use std::any::TypeId;
-use std::path::PathBuf;
-use std::sync::Arc;
 use tempfile::TempDir;
+
+use super::gltf_builder::{png, primitive, with_material, GltfBuilder};
+use crate::asset::{AssetIdRegistry, AssetService, Decoded};
 
 const TRI: [[f32; 3]; 3] = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
 const PIXEL: [u8; 4] = [10, 20, 30, 255];
@@ -90,7 +92,7 @@ fn sub(rel: &str, label: &str) -> AssetUUID {
 }
 
 /// The value `decoded` holds, as an `A`; panics naming `what` otherwise.
-fn decoded_as<A: Asset>(decoded: Decoded, what: &str) -> Box<A> {
+fn decoded_as<A: Stored>(decoded: Decoded, what: &str) -> Box<A> {
     decoded
         .value
         .unwrap_or_else(|e| panic!("{what} decodes through the reader: {e}"))
@@ -100,7 +102,7 @@ fn decoded_as<A: Asset>(decoded: Decoded, what: &str) -> Box<A> {
 
 /// Decodes `uuid` as an `A` through the service's reader, then loads it, and
 /// returns both values' debug forms: equal when the two paths agree.
-fn through_both<A: Asset + std::fmt::Debug>(
+fn through_both<A: Stored + std::fmt::Debug>(
     svc: &mut AssetService,
     uuid: AssetUUID,
     what: &str,

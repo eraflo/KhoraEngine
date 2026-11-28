@@ -16,7 +16,8 @@
 //! them out and says so, and a file holding one anyway is refused it.
 
 use khora_core::asset::AssetUUID;
-use khora_data::ecs::{MeshRef, Name, Transform};
+use khora_core::renderer::api::gpu_scene::Mesh;
+use khora_data::ecs::{AssetRef, Name, Transform};
 use khora_data::scene::record::{ReportEntry, ReportKind};
 use khora_data::scene::{serialize_prefab_reporting, serialize_subtree_reporting, NoPrefabs};
 
@@ -26,16 +27,16 @@ use super::*;
 fn mesh_left_out(entity: PersistentId) -> ReportEntry {
     ReportEntry {
         entity: Some(entity),
-        component: Some("MeshRef".to_owned()),
+        component: Some("AssetRef<Mesh>".to_owned()),
         path: String::new(),
         kind: ReportKind::NotSaved,
     }
 }
 
-/// `record` with the `MeshRef` of the entity known as `id` rewritten to name a
+/// `record` with the `AssetRef<Mesh>` of the entity known as `id` rewritten to name a
 /// mesh made in code, as no save writes it.
 fn forge_made(record: &mut SceneRecord, id: PersistentId) {
-    match value_mut(record, id, "MeshRef") {
+    match value_mut(record, id, "AssetRef<Mesh>") {
         Record::Variant { variant, .. } => *variant = "Made".to_owned(),
         other => panic!("a mesh reference is recorded as a variant, got {other:?}"),
     }
@@ -46,13 +47,13 @@ fn forge_made(record: &mut SceneRecord, id: PersistentId) {
 struct Crate {
     record: SceneRecord,
     member: PersistentId,
-    mesh: MeshRef,
+    mesh: AssetRef<Mesh>,
 }
 
 /// Returns the crate prefab, captured from a world of its own.
 fn crate_prefab() -> Crate {
     let mut world = World::new();
-    let mesh = MeshRef::Asset(AssetUUID::new());
+    let mesh = AssetRef::<Mesh>::Asset(AssetUUID::new());
     let root = world.spawn((Transform::identity(), Name::new("Crate")));
     let member = world.spawn((Transform::identity(), Name::new("Lid"), mesh.clone()));
     world.set_parent(member, Some(root));
@@ -71,7 +72,7 @@ fn level_with_made_lid(
     lid: PersistentId,
     prefab: AssetUUID,
     library: &dyn khora_data::scene::PrefabSource,
-) -> (World, EntityId, EntityId, MeshRef) {
+) -> (World, EntityId, EntityId, AssetRef<Mesh>) {
     let mut world = World::new();
     let level = world.spawn((Transform::identity(), Name::new("Level")));
     world.mark_authored(level).expect("authored");
@@ -82,7 +83,7 @@ fn level_with_made_lid(
     let lid = world
         .entity_with_id(PersistentId::within(instance, lid))
         .expect("the instance's lid");
-    let made = MeshRef::Made(AssetUUID::new());
+    let made = AssetRef::<Mesh>::Made(AssetUUID::new());
     assert!(
         world.set_component(lid, made.clone()),
         "the lid is remeshed"
@@ -98,7 +99,7 @@ fn a_prefab_file_reports_the_mesh_made_in_code_it_leaves_out() {
     let root = world.spawn((
         Transform::identity(),
         Name::new("Made"),
-        MeshRef::Made(AssetUUID::new()),
+        AssetRef::<Mesh>::Made(AssetUUID::new()),
     ));
     let id = world.mark_authored(root).expect("authored");
 
@@ -118,7 +119,7 @@ fn a_prefab_file_reports_the_mesh_made_in_code_it_leaves_out() {
 #[test]
 fn a_mesh_made_in_code_written_into_a_record_is_dropped_and_reported() {
     let mut src = World::new();
-    let authored_mesh = MeshRef::Asset(AssetUUID::new());
+    let authored_mesh = AssetRef::<Mesh>::Asset(AssetUUID::new());
     let kept = src.spawn((
         Transform::identity(),
         Name::new("Kept"),
@@ -127,12 +128,12 @@ fn a_mesh_made_in_code_written_into_a_record_is_dropped_and_reported() {
     let forged = src.spawn((
         Transform::identity(),
         Name::new("Forged"),
-        MeshRef::Asset(AssetUUID::new()),
+        AssetRef::<Mesh>::Asset(AssetUUID::new()),
     ));
     let kept_id = src.mark_authored(kept).expect("authored");
     let forged_id = src.mark_authored(forged).expect("authored");
     let mut record = capture_world(&src).expect("captures");
-    match value_mut(&mut record, forged_id, "MeshRef") {
+    match value_mut(&mut record, forged_id, "AssetRef<Mesh>") {
         Record::Variant { variant, .. } => *variant = "Made".to_owned(),
         other => panic!("a mesh reference is recorded as a variant, got {other:?}"),
     }
@@ -145,7 +146,7 @@ fn a_mesh_made_in_code_written_into_a_record_is_dropped_and_reported() {
         .expect("the forged entity loads");
     let kept = dst.entity_with_id(kept_id).expect("the kept entity loads");
     assert_eq!(
-        dst.get::<MeshRef>(forged),
+        dst.get::<AssetRef<Mesh>>(forged),
         None,
         "the load kept a mesh made in code read from a file"
     );
@@ -155,14 +156,14 @@ fn a_mesh_made_in_code_written_into_a_record_is_dropped_and_reported() {
         "the entity lost its other components"
     );
     assert_eq!(
-        dst.get::<MeshRef>(kept),
+        dst.get::<AssetRef<Mesh>>(kept),
         Some(&authored_mesh),
         "its page neighbour lost its mesh"
     );
     assert!(
         applied.report.entries.contains(&ReportEntry {
             entity: Some(forged_id),
-            component: Some("MeshRef".to_owned()),
+            component: Some("AssetRef<Mesh>".to_owned()),
             path: String::new(),
             kind: ReportKind::Dropped,
         }),
@@ -180,7 +181,7 @@ fn capture_save_reporting_reports_a_mesh_made_in_code_left_out() {
     let hero_id = world.mark_authored(hero).expect("authored");
     let base = capture_world(&world).expect("the scene captures");
     world
-        .add_component(hero, MeshRef::Made(AssetUUID::new()))
+        .add_component(hero, AssetRef::<Mesh>::Made(AssetUUID::new()))
         .expect("the hero takes a mesh");
 
     let (save, left_out) =
@@ -192,7 +193,7 @@ fn capture_save_reporting_reports_a_mesh_made_in_code_left_out() {
             .changes
             .pages
             .iter()
-            .any(|page| page.components.iter().any(|name| name == "MeshRef")),
+            .any(|page| page.components.iter().any(|name| name == "AssetRef<Mesh>")),
         "the game save holds the mesh made in code"
     );
     assert_eq!(left_out, [mesh_left_out(hero_id)]);
@@ -204,7 +205,7 @@ fn capture_save_reporting_reports_a_mesh_made_in_code_left_out() {
 #[test]
 fn copying_a_subtree_keeps_its_mesh_made_in_code() {
     let mut world = World::new();
-    let made = MeshRef::Made(AssetUUID::new());
+    let made = AssetRef::<Mesh>::Made(AssetUUID::new());
     let root = world.spawn((Transform::identity(), Name::new("Made"), made.clone()));
     world.mark_authored(root).expect("authored");
 
@@ -213,7 +214,7 @@ fn copying_a_subtree_keeps_its_mesh_made_in_code() {
 
     assert_ne!(copy, root, "the copy is another entity");
     assert_eq!(
-        world.get::<MeshRef>(copy),
+        world.get::<AssetRef<Mesh>>(copy),
         Some(&made),
         "the copy lost the mesh made in code"
     );
@@ -226,7 +227,7 @@ fn copying_a_subtree_keeps_its_mesh_made_in_code() {
 #[test]
 fn an_entity_holding_only_a_mesh_made_in_code_loads_bare() {
     let mut src = World::new();
-    let only = src.spawn(MeshRef::Asset(AssetUUID::new()));
+    let only = src.spawn(AssetRef::<Mesh>::Asset(AssetUUID::new()));
     let id = src.mark_authored(only).expect("authored");
     let mut record = capture_world(&src).expect("captures");
     forge_made(&mut record, id);
@@ -237,7 +238,7 @@ fn an_entity_holding_only_a_mesh_made_in_code_loads_bare() {
     let loaded = dst
         .entity_with_id(id)
         .expect("the entity holding only a mesh made in code is not loaded");
-    assert_eq!(dst.get::<MeshRef>(loaded), None);
+    assert_eq!(dst.get::<AssetRef<Mesh>>(loaded), None);
     assert_eq!(dst.iter_entities().count(), 1, "one entity loads");
     assert!(
         applied
@@ -255,7 +256,7 @@ fn an_entity_holding_only_a_mesh_made_in_code_loads_bare() {
 #[test]
 fn an_entity_holding_only_a_mesh_made_in_code_is_saved_and_loads_bare() {
     let mut src = World::new();
-    let only = src.spawn(MeshRef::Made(AssetUUID::new()));
+    let only = src.spawn(AssetRef::<Mesh>::Made(AssetUUID::new()));
     let id = src.mark_authored(only).expect("authored");
 
     let record = capture_world(&src).expect("captures");
@@ -276,7 +277,9 @@ fn an_entity_holding_only_a_mesh_made_in_code_is_saved_and_loads_bare() {
 fn a_refused_mesh_leaves_its_page_neighbours_ids_parents_and_order() {
     let mut src = World::new();
     let parent = src.spawn((Transform::identity(), Name::new("Parent")));
-    let meshes: Vec<MeshRef> = (0..3).map(|_| MeshRef::Asset(AssetUUID::new())).collect();
+    let meshes: Vec<AssetRef<Mesh>> = (0..3)
+        .map(|_| AssetRef::<Mesh>::Asset(AssetUUID::new()))
+        .collect();
     let children: Vec<EntityId> = meshes
         .iter()
         .enumerate()
@@ -320,9 +323,9 @@ fn a_refused_mesh_leaves_its_page_neighbours_ids_parents_and_order() {
             "child {n} lost its parent"
         );
     }
-    assert_eq!(dst.get::<MeshRef>(loaded[0]), Some(&meshes[0]));
-    assert_eq!(dst.get::<MeshRef>(loaded[1]), None);
-    assert_eq!(dst.get::<MeshRef>(loaded[2]), Some(&meshes[2]));
+    assert_eq!(dst.get::<AssetRef<Mesh>>(loaded[0]), Some(&meshes[0]));
+    assert_eq!(dst.get::<AssetRef<Mesh>>(loaded[1]), None);
+    assert_eq!(dst.get::<AssetRef<Mesh>>(loaded[2]), Some(&meshes[2]));
     assert_eq!(
         dst.get::<Children>(parent).map(|c| c.0.clone()),
         Some(loaded),
@@ -336,12 +339,12 @@ fn a_refused_mesh_leaves_its_page_neighbours_ids_parents_and_order() {
 #[test]
 fn a_game_save_replacing_an_authored_mesh_with_one_made_in_code_loads_without_a_mesh() {
     let mut world = World::new();
-    let authored = MeshRef::Asset(AssetUUID::new());
+    let authored = AssetRef::<Mesh>::Asset(AssetUUID::new());
     let hero = world.spawn((Transform::identity(), Name::new("Hero"), authored.clone()));
     let hero_id = world.mark_authored(hero).expect("authored");
     let base = capture_world(&world).expect("the scene captures");
     assert!(
-        world.set_component(hero, MeshRef::Made(AssetUUID::new())),
+        world.set_component(hero, AssetRef::<Mesh>::Made(AssetUUID::new())),
         "the hero's mesh is replaced"
     );
     world.get_mut::<Name>(hero).expect("named").0 = "Hero, played".into();
@@ -361,7 +364,7 @@ fn a_game_save_replacing_an_authored_mesh_with_one_made_in_code_loads_without_a_
         "the hero's other change is lost"
     );
     assert_eq!(
-        loaded.get::<MeshRef>(hero),
+        loaded.get::<AssetRef<Mesh>>(hero),
         None,
         "the load gave the hero a mesh the running world no longer had"
     );
@@ -384,7 +387,7 @@ fn a_prefab_member_naming_a_mesh_made_in_code_is_instantiated_without_it() {
     let lid = world
         .entity_with_id(PersistentId::within(instance, prefab.member))
         .expect("the member is instantiated");
-    assert_eq!(world.get::<MeshRef>(lid), None);
+    assert_eq!(world.get::<AssetRef<Mesh>>(lid), None);
     assert_eq!(world.get::<Name>(lid).map(Name::as_str), Some("Lid"));
 }
 
@@ -415,7 +418,7 @@ fn copying_an_instance_keeps_a_mesh_made_in_code_on_its_member() {
         .entity_with_id(PersistentId::within(instance, prefab.member))
         .expect("the copy's lid");
     assert_eq!(
-        world.get::<MeshRef>(lid),
+        world.get::<AssetRef<Mesh>>(lid),
         Some(&made),
         "the copy's lid lost its mesh made in code; the copy reported {:?}",
         report.entries
@@ -442,7 +445,7 @@ fn a_scene_saved_over_an_instance_member_made_in_code_loads_it_without_a_mesh() 
     assert_eq!(left_out, [mesh_left_out(lid_id)]);
     let lid = loaded.entity_with_id(lid_id).expect("the lid loads");
     assert_eq!(
-        loaded.get::<MeshRef>(lid),
+        loaded.get::<AssetRef<Mesh>>(lid),
         None,
         "the lid took the prefab's mesh back, {:?}",
         prefab.mesh
@@ -469,7 +472,7 @@ fn applying_an_instance_with_a_mesh_made_in_code_keeps_the_prefabs_mesh() {
     .expect("the instance applies");
 
     assert!(
-        slot_of(&applied, prefab.member, "MeshRef").is_some(),
+        slot_of(&applied, prefab.member, "AssetRef<Mesh>").is_some(),
         "the prefab's lid lost its mesh {:?}, with no report",
         prefab.mesh
     );
@@ -484,7 +487,7 @@ fn an_instance_override_naming_a_mesh_made_in_code_is_reported_dropped() {
     let id = AssetUUID::new();
     let library = super::prefab_sample::Library::default().with(id, prefab.record.clone());
     let (mut world, _, lid, _) = level_with_made_lid(prefab.member, id, &library);
-    let overridden = MeshRef::Asset(AssetUUID::new());
+    let overridden = AssetRef::<Mesh>::Asset(AssetUUID::new());
     assert!(world.set_component(lid, overridden), "the lid is remeshed");
     let lid_id = world.persistent_id(lid).expect("an id");
     let mut scene =
@@ -501,14 +504,14 @@ fn an_instance_override_naming_a_mesh_made_in_code_is_reported_dropped() {
     let lid = loaded.entity_with_id(lid_id).expect("the lid loads");
     assert_ne!(
         loaded
-            .get::<MeshRef>(lid)
-            .map(|mesh| matches!(mesh, MeshRef::Made(_))),
+            .get::<AssetRef<Mesh>>(lid)
+            .map(|mesh| matches!(mesh, AssetRef::<Mesh>::Made(_))),
         Some(true),
         "the lid kept a mesh made in code read from a file"
     );
     let reported = report.iter().chain(&applied.report.entries).any(|entry| {
         entry.entity == Some(lid_id)
-            && entry.component.as_deref() == Some("MeshRef")
+            && entry.component.as_deref() == Some("AssetRef<Mesh>")
             && entry.kind == ReportKind::Dropped
     });
     assert!(

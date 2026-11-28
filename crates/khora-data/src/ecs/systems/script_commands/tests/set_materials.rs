@@ -12,17 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `e.SetMaterial(m)` at the frame boundary: the entity's `MaterialRef`
+//! `e.SetMaterial(m)` at the frame boundary: the entity's `AssetRef<Box<dyn Material>>`
 //! becomes a reference to the material asset — replaced if it had one, added
 //! if not — and the asset resolver loads it at the next `PreExtract`.
 
-use khora_core::asset::{AssetUUID, StandardMaterial};
+use khora_core::asset::{AssetUUID, InlineMaterial, Material, StandardMaterial};
 use khora_core::lane::OutputDeck;
 use khora_core::script::{CommandBuffer, WorldCommand};
 use khora_core::Runtime;
 
 use super::super::apply_script_commands;
-use crate::ecs::{MaterialRef, Transform, World};
+use crate::ecs::{AssetRef, Transform, World};
 
 /// One frame of the `script_commands` system, its deck holding `commands`.
 fn frame(world: &mut World, commands: Vec<WorldCommand>) {
@@ -42,8 +42,8 @@ fn frame(world: &mut World, commands: Vec<WorldCommand>) {
 
 /// The asset `entity`'s material references, if it references one.
 fn material_asset(world: &World, entity: khora_core::ecs::entity::EntityId) -> Option<AssetUUID> {
-    match world.get::<MaterialRef>(entity) {
-        Some(MaterialRef::Asset(uuid)) => Some(*uuid),
+    match world.get::<AssetRef<Box<dyn Material>>>(entity) {
+        Some(AssetRef::<Box<dyn Material>>::Asset(uuid)) => Some(*uuid),
         _ => None,
     }
 }
@@ -55,7 +55,9 @@ fn setting_a_material_replaces_the_entitys_material() {
     let mut world = World::new();
     let entity = world.spawn((
         Transform::identity(),
-        MaterialRef::inline(Box::new(StandardMaterial::default())),
+        AssetRef::<Box<dyn Material>>::Local(InlineMaterial::new(Box::new(
+            StandardMaterial::default(),
+        ))),
     ));
     let stone = AssetUUID::new();
 
@@ -74,7 +76,10 @@ fn setting_a_material_replaces_the_entitys_material() {
 #[test]
 fn setting_a_material_again_replaces_the_asset() {
     let mut world = World::new();
-    let entity = world.spawn((Transform::identity(), MaterialRef::Asset(AssetUUID::new())));
+    let entity = world.spawn((
+        Transform::identity(),
+        AssetRef::<Box<dyn Material>>::Asset(AssetUUID::new()),
+    ));
     let stone = AssetUUID::new();
 
     frame(

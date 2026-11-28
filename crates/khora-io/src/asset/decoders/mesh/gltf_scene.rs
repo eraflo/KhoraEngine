@@ -22,11 +22,12 @@
 use std::collections::HashMap;
 
 use anyhow::{anyhow, bail};
-use khora_core::asset::AssetUUID;
+use khora_core::asset::{AssetUUID, Material};
 use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::PersistentId;
 use khora_core::math::{Mat4, Quaternion, Vec3, Vec4};
-use khora_data::ecs::{GlobalTransform, MaterialRef, MeshRef, Name, Transform, World};
+use khora_core::renderer::api::gpu_scene::Mesh;
+use khora_data::ecs::{AssetRef, GlobalTransform, Name, Transform, World};
 use khora_data::scene::{capture_subtree, SceneRecord};
 
 /// What every key of a glTF member starts with, apart from other named ids.
@@ -193,9 +194,12 @@ impl Builder {
                 .material()
                 .index()
                 .map_or_else(|| "material_default".to_owned(), |k| format!("material{k}"));
-            let mesh_ref = MeshRef::Asset(AssetUUID::sub_asset(self.container, &mesh_label));
-            let material_ref =
-                MaterialRef::Asset(AssetUUID::sub_asset(self.container, &material_label));
+            let mesh_ref =
+                AssetRef::<Mesh>::Asset(AssetUUID::sub_asset(self.container, &mesh_label));
+            let material_ref = AssetRef::<Box<dyn Material>>::Asset(AssetUUID::sub_asset(
+                self.container,
+                &material_label,
+            ));
             self.world
                 .add_component(shown_on, mesh_ref)
                 .map_err(|e| anyhow!("showing '{mesh_label}': {e:?}"))?;

@@ -17,8 +17,6 @@
 //! See the book: concepts/serialization.md, "Pages, persistent ids, provenance".
 
 use std::any::TypeId;
-
-use crate::ecs::ComponentKey;
 use std::collections::{HashMap, HashSet};
 
 use khora_core::ecs::entity::EntityId;
@@ -28,7 +26,7 @@ use super::component_registration::{ComponentRegistration, Kept};
 use super::declared::{declaration_of, is_saved_declared, write_value};
 use super::record::{EntityRef, RecordError, ReferenceWriter, ReportEntry, ReportKind};
 use super::scene_record::{PageRecord, SceneRecord};
-use crate::ecs::{AnyVec, Children, ComponentVTable, Parent, World};
+use crate::ecs::{AnyVec, Children, ComponentKey, ComponentVTable, Parent, World};
 
 /// Why a world could not be written down.
 #[derive(Debug, Clone, PartialEq)]
@@ -518,9 +516,11 @@ impl ReferenceWriter for InsideOnly {
 
 #[cfg(test)]
 mod tests {
+    use khora_core::asset::{AssetUUID, ProceduralMesh};
+    use khora_core::renderer::api::gpu_scene::Mesh;
+
     use super::*;
-    use crate::ecs::{MeshRef, Name, Transform};
-    use khora_core::asset::AssetUUID;
+    use crate::ecs::{AssetRef, Name, Transform};
 
     /// A value only the session holds is left out of the record and reported
     /// `NotSaved` on its entity; a saved value of the same component is kept.
@@ -530,9 +530,12 @@ mod tests {
         let made = world.spawn((
             Transform::identity(),
             Name::new("Made"),
-            MeshRef::Made(AssetUUID::new()),
+            AssetRef::<Mesh>::Made(AssetUUID::new()),
         ));
-        let authored = world.spawn((Transform::identity(), MeshRef::unit_cube()));
+        let authored = world.spawn((
+            Transform::identity(),
+            AssetRef::<Mesh>::Local(ProceduralMesh::unit_cube()),
+        ));
         let made_id = world.mark_authored(made).expect("authored");
         let authored_id = world.mark_authored(authored).expect("authored");
 
@@ -540,7 +543,8 @@ mod tests {
 
         let holds_mesh_ref = |id: PersistentId| {
             record.pages.iter().any(|page| {
-                page.rows.contains(&id) && page.components.iter().any(|name| name == "MeshRef")
+                page.rows.contains(&id)
+                    && page.components.iter().any(|name| name == "AssetRef<Mesh>")
             })
         };
         assert!(
@@ -552,7 +556,7 @@ mod tests {
             left_out,
             [ReportEntry {
                 entity: Some(made_id),
-                component: Some("MeshRef".to_owned()),
+                component: Some("AssetRef<Mesh>".to_owned()),
                 path: String::new(),
                 kind: ReportKind::NotSaved,
             }],
@@ -566,7 +570,10 @@ mod tests {
     fn capture_subtree_reporting_leaves_out_and_reports_a_session_only_value() {
         let mut world = World::new();
         let root = world.spawn((Transform::identity(), Name::new("Root")));
-        let member = world.spawn((Transform::identity(), MeshRef::Made(AssetUUID::new())));
+        let member = world.spawn((
+            Transform::identity(),
+            AssetRef::<Mesh>::Made(AssetUUID::new()),
+        ));
         world.set_parent(member, Some(root));
         world.mark_authored(root).expect("authored");
         let member_id = world.mark_authored(member).expect("authored");
@@ -581,14 +588,14 @@ mod tests {
             !record
                 .pages
                 .iter()
-                .any(|page| page.components.iter().any(|name| name == "MeshRef")),
+                .any(|page| page.components.iter().any(|name| name == "AssetRef<Mesh>")),
             "the prefab holds the mesh made in code"
         );
         assert_eq!(
             left_out,
             [ReportEntry {
                 entity: Some(member_id),
-                component: Some("MeshRef".to_owned()),
+                component: Some("AssetRef<Mesh>".to_owned()),
                 path: String::new(),
                 kind: ReportKind::NotSaved,
             }]

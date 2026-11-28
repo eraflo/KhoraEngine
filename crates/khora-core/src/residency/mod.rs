@@ -33,7 +33,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::RwLock;
 
-use crate::asset::{Asset, AssetHandle, AssetUUID};
+use crate::asset::{AssetHandle, AssetUUID, Stored};
 use crate::sync::RwLockExt;
 
 /// The kind of device a residency makes its residents on.
@@ -77,7 +77,7 @@ pub trait Residency: Send + Sync + 'static {
     /// The kind of device its residents live on.
     const DEVICE: DeviceClass;
     /// The CPU asset a resident is made from.
-    type Source: Asset;
+    type Source: Stored;
     /// What lives on the device: handles to it, cheap to copy out.
     type Resident: Clone + Send + Sync;
     /// What [`make`](Self::make) and [`release`](Self::release) work on for

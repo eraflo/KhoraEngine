@@ -13,8 +13,8 @@ cameras, per-frame state, the native `EngineApp` lifecycle, which families run.
   `this.SetPosition`, `e.Set/Add/Remove/Get/Has`, `Spawn`, `Raise`, `Pressed`/`JustPressed`, queries.
 - **Engine components** a script writes: those `engine/components.erg` declares (`RigidBody`,
   `Collider`, `AudioSource`, …); in Rust, `prelude::ecs` (`Transform`, `GlobalTransform`, `Camera`,
-  `Light`, `RigidBody`, `Collider`, `AudioSource`, `Name`, `Tag`, `Parent`/`Children`, `MeshRef`,
-  `MaterialRef`, `ScriptValue`).
+  `Light`, `RigidBody`, `Collider`, `AudioSource`, `Name`, `Tag`, `Parent`/`Children`,
+  `AssetRef<Mesh>`, `AssetRef<Box<dyn Material>>`, `ScriptValue`).
 - **Rust**: `EngineApp` hooks (`setup`, `provide`, `update`, `startup_ready`); `GameWorld`
   (`add_declared_component`, `update_transform`, `query`); `Vessel` and the spawn helpers.
 - **Input**: bind actions on `Arc<Mutex<InputMap>>` in `setup`; scripts read them by name.

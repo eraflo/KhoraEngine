@@ -25,7 +25,7 @@ use khora_sdk::khora_core::renderer::api::pipeline::PrimitiveTopology;
 use khora_sdk::khora_core::renderer::GraphicsDevice;
 use khora_sdk::khora_core::sync::RwLockExt;
 use khora_sdk::khora_core::Runtime;
-use khora_sdk::khora_data::ecs::MeshRef;
+use khora_sdk::khora_data::ecs::AssetRef;
 use khora_sdk::khora_data::flow::{Flow, RenderFlow, Selection};
 use khora_sdk::khora_data::scene::record::ReportKind;
 use khora_sdk::khora_data::scene::{read_save_file, read_scene_file};
@@ -53,7 +53,7 @@ fn triangle() -> Mesh {
 
 /// The entity an application's setup drew with a mesh made in code, and the
 /// reference `add_mesh` gave it.
-type MadeInSetup = Arc<Mutex<Option<(EntityId, MeshRef)>>>;
+type MadeInSetup = Arc<Mutex<Option<(EntityId, AssetRef<Mesh>)>>>;
 
 /// An application whose setup spawns one entity drawn with a mesh made in code.
 struct MadeInCode {
@@ -83,7 +83,7 @@ impl khora_sdk::EngineApp for MadeInCode {
 }
 
 /// **A mesh made in code draws, and a scene save leaves it out, said so.**
-/// `add_mesh` gives a `MeshRef::Made` whose mesh is in the engine's asset
+/// `add_mesh` gives an `AssetRef::Made` whose mesh is in the engine's asset
 /// store; after two frames it is resident and its entity is in the render
 /// view. Saving the scene reports the reference `NotSaved` on that entity,
 /// and the file holds the entity without it.
@@ -114,7 +114,7 @@ fn a_mesh_made_in_code_draws_and_is_reported_not_saved() {
         .expect("the mesh made in setup")
         .clone()
         .expect("setup made a mesh");
-    let MeshRef::Made(uuid) = mesh else {
+    let AssetRef::<Mesh>::Made(uuid) = mesh else {
         panic!("`add_mesh` gives a reference to a mesh made in code, got {mesh:?}");
     };
     let store = frame_runtime
@@ -147,7 +147,7 @@ fn a_mesh_made_in_code_draws_and_is_reported_not_saved() {
         .unwrap_or_else(|e| panic!("the scene did not save: {e}"));
     assert!(
         report.iter().any(|entry| entry.kind == ReportKind::NotSaved
-            && entry.component.as_deref() == Some("MeshRef")
+            && entry.component.as_deref() == Some("AssetRef<Mesh>")
             && entry.entity == Some(id)),
         "the save does not report the mesh made in code as not saved: {report:?}"
     );
@@ -157,11 +157,8 @@ fn a_mesh_made_in_code_draws_and_is_reported_not_saved() {
         "the entity drawn with a mesh made in code is not saved"
     );
     assert!(
-        !record
-            .pages
-            .iter()
-            .any(|page| page.rows.contains(&id)
-                && page.components.iter().any(|name| name == "MeshRef")),
+        !record.pages.iter().any(|page| page.rows.contains(&id)
+            && page.components.iter().any(|name| name == "AssetRef<Mesh>")),
         "the saved scene holds the reference to a mesh made in code"
     );
 }
@@ -263,8 +260,11 @@ fn a_mesh_made_in_code_is_left_out_of_a_game_save() {
         .save_world(world.inner_world(), SerializationGoal::EditorInterchange)
         .unwrap_or_else(|e| panic!("the scene did not save: {e}"));
 
-    world.add_component(authored, MeshRef::Made(AssetUUID::new()));
-    let made = world.spawn((Transform::identity(), MeshRef::Made(AssetUUID::new())));
+    world.add_component(authored, AssetRef::<Mesh>::Made(AssetUUID::new()));
+    let made = world.spawn((
+        Transform::identity(),
+        AssetRef::<Mesh>::Made(AssetUUID::new()),
+    ));
     let save = world
         .save_game(
             AssetUUID::new(),
@@ -287,7 +287,7 @@ fn a_mesh_made_in_code_is_left_out_of_a_game_save() {
             .changes
             .pages
             .iter()
-            .any(|page| page.components.iter().any(|name| name == "MeshRef")),
+            .any(|page| page.components.iter().any(|name| name == "AssetRef<Mesh>")),
         "the game save holds a reference to a mesh made in code"
     );
 }

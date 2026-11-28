@@ -28,6 +28,7 @@ use khora_data::scene::save::prepare_game_with;
 use khora_data::scene::snapshot::{
     prepare_snapshot, prepare_snapshot_with, write_snapshot, SNAPSHOT_ENCODING_ID,
 };
+use khora_data::scene::PrefabAsset;
 use khora_data::scene::{
     about_what_loads, capture_save_reporting, capture_world_reporting, collapse, compose_reporting,
     encoding_of, expand_reporting, prepare, prepare_game, prepare_with, read_into, read_save_file,
@@ -36,10 +37,9 @@ use khora_data::scene::{
     SceneFileReadError, SceneRecord, TextEncoding,
 };
 
-use crate::asset::{AssetService, PrefabAsset};
-
 pub use super::asset_prefabs::AssetPrefabs;
 pub use super::reader_prefabs::ReaderPrefabs;
+use crate::asset::AssetService;
 
 /// Scene format version produced by today's writers.
 pub const CURRENT_SCENE_VERSION: u32 = SCENE_FORMAT_VERSION as u32;
@@ -501,9 +501,11 @@ pub fn prefab_catalog(assets: &AssetService) -> std::collections::BTreeSet<Asset
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use khora_core::renderer::api::gpu_scene::Mesh;
     use khora_data::ecs::{Name, Transform};
     use khora_data::scene::NoPrefabs;
+
+    use super::*;
 
     /// Returns a world of one authored entity per name.
     fn world_of(names: &[&str]) -> World {
@@ -548,7 +550,7 @@ mod tests {
         let mut world = world_of(&["Hero"]);
         let made = world.spawn((
             Transform::identity(),
-            khora_data::ecs::MeshRef::Made(khora_core::asset::AssetUUID::new()),
+            khora_data::ecs::AssetRef::<Mesh>::Made(khora_core::asset::AssetUUID::new()),
         ));
         let id = world.mark_authored(made).expect("authored");
         let service = SerializationService::new();
@@ -583,7 +585,7 @@ mod tests {
         world
             .add_component(
                 hero,
-                khora_data::ecs::MeshRef::Made(khora_core::asset::AssetUUID::new()),
+                khora_data::ecs::AssetRef::<Mesh>::Made(khora_core::asset::AssetUUID::new()),
             )
             .expect("the hero takes a mesh");
 

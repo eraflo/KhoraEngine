@@ -32,7 +32,7 @@ pub enum AfterIndex {
     /// `choice` (`EditorState::scene_choices`) nor is asked for; a scene the
     /// index still lacks is reported, without indexing again.
     OpenScene { rel: String, choice: u64 },
-    /// Replaces `entity`'s inline material with `MaterialRef::Asset(uuid)`.
+    /// Replaces `entity`'s inline material with `AssetRef::Asset(uuid)`.
     ///
     /// Only if the entity is alive, still wears the inline material saved
     /// (`saved`, its RON text), and no other scene was chosen since `choice`.

@@ -29,7 +29,7 @@ use khora_core::sync::{LockExt, RwLockExt};
 use khora_core::Runtime;
 
 use crate::assets::ArrivalsRead;
-use crate::ecs::{Changed, MeshRef, SystemContext, Tick, World};
+use crate::ecs::{AssetRef, Changed, SystemContext, Tick, World};
 use crate::gpu::AssetEviction;
 use crate::ProjectionRegistry;
 
@@ -125,10 +125,10 @@ impl ProjectionRegistry {
     /// Makes every mesh that arrived in the asset store resident under its uuid.
     ///
     /// A mesh that landed or was replaced is made (again) on the GPU, and one
-    /// gone from the store leaves it; a mesh a `MeshRef` changed since `since`
+    /// gone from the store leaves it; a mesh a `AssetRef<Mesh>` changed since `since`
     /// names, held in the store but not on the GPU, is made again. When the
     /// arrivals were lost (a resync), the residency restores the truth: it
-    /// makes resident every mesh a `MeshRef` names that the store holds,
+    /// makes resident every mesh a `AssetRef<Mesh>` names that the store holds,
     /// brings every resident one in line with the store, forgets what left
     /// the store, and makes nothing else. A replaced or gone GPU copy is
     /// handed to `eviction` to free after this frame's render (dropped unfreed
@@ -157,8 +157,8 @@ impl ProjectionRegistry {
                 let cpu = cpu.read_recovered();
                 arrived.extend(
                     world
-                        .query::<&MeshRef>()
-                        .map(MeshRef::uuid)
+                        .query::<&AssetRef<Mesh>>()
+                        .map(AssetRef::<Mesh>::uuid)
                         .filter(|uuid| cpu.contains(uuid)),
                 );
                 arrived.extend(gpu.read_recovered().keys());
@@ -171,7 +171,7 @@ impl ProjectionRegistry {
         }
         // A reference named again after its GPU copy was evicted.
         let named: HashSet<AssetUUID> = world
-            .query::<(&MeshRef, Changed<MeshRef>)>()
+            .query::<(&AssetRef<Mesh>, Changed<AssetRef<Mesh>>)>()
             .since(since)
             .map(|(mesh, _)| mesh.uuid())
             .filter(|uuid| !arrived.contains(uuid))
@@ -243,5 +243,5 @@ fn gpu_mesh_sync_system(
 crate::register_residency!(
     name = MeshOnGpu::NAME,
     run = gpu_mesh_sync_system,
-    observes = [MeshRef],
+    observes = [AssetRef<Mesh>],
 );

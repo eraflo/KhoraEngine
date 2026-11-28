@@ -14,14 +14,17 @@
 
 //! [`GameWorld`], the game's typed facade over the ECS world, and its game saves.
 
-use khora_core::asset::{AssetHandle, AssetUUID};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use khora_core::asset::{AssetHandle, AssetUUID, InlineMaterial, Material};
 use khora_core::ecs::entity::EntityId;
 use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::scene::{SceneFile, SerializationGoal};
 use khora_core::script::ScriptValue;
 use khora_core::sync::RwLockExt;
 use khora_data::ecs::{
-    Camera, Component, ComponentBundle, ComponentKey, GlobalTransform, MeshRef, Mut, Query,
+    AssetRef, Camera, Component, ComponentBundle, ComponentKey, GlobalTransform, Mut, Query,
     QueryMut, ReadOnlyWorldQuery, RowError, ScriptRole, Transform, World, WorldQuery,
 };
 use khora_data::scene::loading::{LoadKind, LoadTicket, SceneSource};
@@ -30,8 +33,6 @@ use khora_data::scene::{NoPrefabs, PrefabSource};
 use khora_data::AssetStore;
 use khora_io::scene_loads::{LoadOutcome, SceneLoadHub};
 use khora_io::serialization::{SerializationService, SerializationServiceError};
-use std::collections::HashMap;
-use std::sync::Arc;
 
 /// Why [`GameWorld::add_declared_component`] attached nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -196,8 +197,8 @@ impl GameWorld {
 
     /// Publishes `mesh` in this world's asset store and returns the reference naming it.
     ///
-    /// Attach the returned [`MeshRef::Made`] to an entity to draw that entity
-    /// with the mesh. The store ([`assets`](Self::assets)) holds its only copy:
+    /// Attach the returned reference (its [`AssetRef::Made`] form) to an entity
+    /// to draw that entity with the mesh. The store ([`assets`](Self::assets)) holds its only copy:
     /// a scene or a game save leaves the reference out, reported not saved; a
     /// `FastestLoad` snapshot, read back in the same session, keeps it.
     ///
@@ -212,13 +213,13 @@ impl GameWorld {
     /// For the common case of built-in shapes, prefer the procedural helpers
     /// [`spawn_plane`](crate::spawn_plane), [`spawn_cube_at`](crate::spawn_cube_at),
     /// and [`spawn_sphere`](crate::spawn_sphere), which attach the mesh for you.
-    pub fn add_mesh(&mut self, mesh: Mesh) -> MeshRef {
+    pub fn add_mesh(&mut self, mesh: Mesh) -> AssetRef<Mesh> {
         let uuid = AssetUUID::new();
         self.assets
             .store::<Mesh>()
             .write_recovered()
             .insert(uuid, AssetHandle::new(mesh));
-        MeshRef::Made(uuid)
+        AssetRef::Made(uuid)
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -458,15 +459,12 @@ impl GameWorld {
         }
     }
 
-    /// Returns an inline [`MaterialRef`](khora_data::ecs::MaterialRef) holding `material`.
+    /// Returns a reference carrying `material` inline, named by its content.
     ///
     /// The material is saved inside the scene. To reference a `.kmat` asset
-    /// instead, attach `MaterialRef::Asset(uuid)`.
-    pub fn add_material<M: khora_core::asset::Material>(
-        &mut self,
-        material: M,
-    ) -> khora_data::ecs::MaterialRef {
-        khora_data::ecs::MaterialRef::inline(Box::new(material))
+    /// instead, attach `AssetRef::Asset(uuid)`.
+    pub fn add_material<M: Material>(&mut self, material: M) -> AssetRef<Box<dyn Material>> {
+        AssetRef::Local(InlineMaterial::new(Box::new(material)))
     }
 
     // ─────────────────────────────────────────────────────────────────────

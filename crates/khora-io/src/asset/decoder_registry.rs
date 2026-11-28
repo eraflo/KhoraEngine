@@ -14,13 +14,15 @@
 
 //! Decoder registry — type-erased dispatch for asset decoding.
 
-use super::AssetDecoder;
-use crate::trust::{LimitExceeded, Limits, Trust};
+use std::{any::Any, collections::HashMap, path::Path, sync::Arc};
+
 use anyhow::{anyhow, Result};
-use khora_core::asset::Asset;
+use khora_core::asset::Stored;
 use khora_telemetry::metrics::{CounterHandle, HistogramHandle};
 use khora_telemetry::{MetricsRegistry, ScopedMetricTimer};
-use std::{any::Any, collections::HashMap, path::Path, sync::Arc};
+
+use super::AssetDecoder;
+use crate::trust::{LimitExceeded, Limits, Trust};
 
 pub use super::decoder_registration::DecoderRegistration;
 
@@ -45,9 +47,9 @@ trait AnyDecoder: Send + Sync {
     ) -> Result<Box<dyn Any + Send>>;
 }
 
-struct DecoderWrapper<A: Asset, L: AssetDecoder<A>>(L, std::marker::PhantomData<A>);
+struct DecoderWrapper<A: Stored, L: AssetDecoder<A>>(L, std::marker::PhantomData<A>);
 
-impl<A: Asset, L: AssetDecoder<A> + Send + Sync> AnyDecoder for DecoderWrapper<A, L> {
+impl<A: Stored, L: AssetDecoder<A> + Send + Sync> AnyDecoder for DecoderWrapper<A, L> {
     fn sniff(&self, head: &[u8]) -> bool {
         self.0.sniff(head)
     }
@@ -126,7 +128,7 @@ impl DecoderRegistry {
     }
 
     /// Registers a decoder for a specific asset type name.
-    pub fn register<A: Asset>(
+    pub fn register<A: Stored>(
         &mut self,
         type_name: &str,
         decoder: impl AssetDecoder<A> + Send + Sync + 'static,
@@ -141,7 +143,7 @@ impl DecoderRegistry {
     /// # Errors
     ///
     /// As [`Self::decode_at`].
-    pub fn decode<A: Asset>(&self, type_name: &str, bytes: &[u8]) -> Result<A> {
+    pub fn decode<A: Stored>(&self, type_name: &str, bytes: &[u8]) -> Result<A> {
         self.decode_at(type_name, bytes, Path::new(""))
     }
 
@@ -154,7 +156,7 @@ impl DecoderRegistry {
     ///
     /// When no decoder is registered for `type_name`, the decoder refuses the
     /// bytes, or it produces another type than `A`.
-    pub fn decode_at<A: Asset>(
+    pub fn decode_at<A: Stored>(
         &self,
         type_name: &str,
         bytes: &[u8],

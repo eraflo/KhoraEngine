@@ -14,9 +14,9 @@
 
 //! A whole world, through every encoding and back.
 
-use khora_core::asset::{AssetUUID, StandardMaterial};
+use khora_core::asset::{AssetUUID, InlineMaterial, Material, StandardMaterial};
 use khora_core::math::LinearRgba;
-use khora_data::ecs::{MaterialRef, Transform, World};
+use khora_data::ecs::{AssetRef, Transform, World};
 use khora_data::scene::{capture_world, TextEncoding};
 
 use super::declared_components::{assert_same_rows, fields_of, state_of};
@@ -108,7 +108,13 @@ fn a_capture_holds_only_what_an_author_wrote() {
             "`{engine_written}` is the engine's, not the author's"
         );
     }
-    for authored in ["Transform", "Parent", GUARD, "MaterialRef", "MeshRef"] {
+    for authored in [
+        "Transform",
+        "Parent",
+        GUARD,
+        "AssetRef<Box<dyn Material>>",
+        "AssetRef<Mesh>",
+    ] {
         assert!(names.contains(&authored), "`{authored}` must be recorded");
     }
 
@@ -130,16 +136,19 @@ fn material_inline_round_trips_by_name() {
     let mut src = World::new();
     let entity = src.spawn((
         Transform::identity(),
-        MaterialRef::inline(Box::new(StandardMaterial {
+        AssetRef::<Box<dyn Material>>::Local(InlineMaterial::new(Box::new(StandardMaterial {
             base_color: LinearRgba::new(0.8, 0.1, 0.1, 1.0),
             base_color_texture: Some(wall),
             metallic: 0.25,
             roughness: 0.6,
             ..StandardMaterial::default()
-        })),
+        }))),
     ));
     src.mark_authored(entity).expect("authored");
-    let identity = src.get::<MaterialRef>(entity).expect("material").uuid();
+    let identity = src
+        .get::<AssetRef<Box<dyn Material>>>(entity)
+        .expect("material")
+        .uuid();
 
     let record = capture_world(&src).expect("captures");
     let text = TextEncoding.encode(&record).expect("text encodes");
@@ -162,7 +171,9 @@ fn material_inline_round_trips_by_name() {
             .entity_with_id(src.persistent_id(entity).expect("id"))
             .expect("reloaded");
         assert_eq!(
-            dst.get::<MaterialRef>(twin).expect("material").uuid(),
+            dst.get::<AssetRef<Box<dyn Material>>>(twin)
+                .expect("material")
+                .uuid(),
             identity,
             "{name}: the material's content identity changed"
         );

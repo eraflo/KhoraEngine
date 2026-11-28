@@ -84,14 +84,16 @@ The tiers and the allowed dependency edges are in [`RULES.md`](./RULES.md) §3, 
 | `PhysicsProvider` | `physics/mod.rs` | `RapierPhysicsWorld` |
 | `AudioDevice`, `AudioMixBus` | `audio/` | `CpalAudioDevice`, `DefaultMixBus` |
 | `LayoutSystem` | `ui/layout.rs` | `TaffyLayoutSystem` |
-| `Asset` | `asset/mod.rs` | every loadable asset type |
+| `Stored` | `asset/stored.rs` | every type an `Assets<T>` / `AssetHandle<T>` holds |
+| `Asset` (kind), `LocalSource` | `asset/mod.rs`, `asset/local_source.rs` (`NoLocalSource`: `asset/no_local_source.rs`) | `Mesh`, `Box<dyn Material>`, `CpuTexture`, `Font`, `SoundData`, `PrefabAsset`; local sources `ProceduralMesh`, `InlineMaterial`, `NoLocalSource` |
+| `SavedLocalSource<A>` | `khora-data/src/assets/saved_local_source.rs` | `ProceduralMesh`, `InlineMaterial`, `NoLocalSource` |
 | `Component` | `khora-data/src/ecs/component.rs` | `#[derive(Component)]` |
 | `Flow` | `khora-data/src/flow/mod.rs` | `RenderFlow`, `ShadowFlow`, `CameraFlow`, `PhysicsFlow`, `AudioFlow`, `UiFlow`, `ScriptFlow`, `ReservationFlow`, `PrefabCatalogFlow` |
 | `AssetDecoder<A>` | `khora-io/src/asset/decoder.rs` | one per format in `khora-io/src/asset/decoders/` |
 
 ## 4 — Standard components
 
-`Transform`, `GlobalTransform`, `Camera`, `Light`, `MeshRef`, `MaterialRef`, `RigidBody`, `Collider`,
+`Transform`, `GlobalTransform`, `Camera`, `Light`, `AssetRef<Mesh>`, `AssetRef<Box<dyn Material>>`, `RigidBody`, `Collider`,
 `AudioSource`, `AudioListener`, `Parent`/`Children`, `Name`, `Tag`, `PrefabInstance` (instance root →
 prefab link, `ToolAuthored`), `HandleComponent<T>`, and the UI set (`UiTransform`, `UiColor`, `UiText`,
 `UiImage`, `UiBorder`). Each carries a `SemanticDomain` and a `ComponentProvenance`. A behavior is not a

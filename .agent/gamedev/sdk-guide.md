@@ -196,7 +196,7 @@ binary never reads loose files.
 | Read / write | `get_component::<T>(e)`, `get_component_mut::<T>(e)`, `add_component`, `remove_component`, `query::<Q>()`, `query_mut::<Q>()` |
 | Attach a script's component | `add_declared_component(e, "Hover", &[("speed", ScriptValue::Float(0.9))])` → `Result<(), DeclaredComponentError>` |
 | Hierarchy | `set_parent(child, Some(parent))` |
-| Materials | `add_material(StandardMaterial { … })` → `MaterialRef`; a mesh with no material is not drawn |
+| Materials | `add_material(StandardMaterial { … })` → `AssetRef<Box<dyn Material>>`; a mesh with no material is not drawn |
 | Despawn | `despawn(e)` |
 
 `add_declared_component` takes a component an Ergon script declares (a `behavior` or a `component`);

@@ -23,22 +23,26 @@ use std::f32::consts::FRAC_1_SQRT_2;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use super::gltf_builder::{primitive, with_material, GltfBuilder};
-use super::*;
-use crate::asset::decoders::mesh::GltfContainer;
-use crate::asset::{AssetContainer, AssetIdRegistry, AssetService, PrefabAsset};
-use crate::serialization::{AssetPrefabs, SerializationService};
 use khora_core::asset::{AssetUUID, Material, StandardMaterial};
 use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::PersistentId;
 use khora_core::math::{LinearRgba, Quaternion};
+use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::scene::{SceneFile, SerializationGoal};
-use khora_data::ecs::{MaterialRef, MeshRef, Name, Parent, PrefabInstance, Transform, World};
+use khora_data::ecs::{AssetRef, Name, Parent, PrefabInstance, Transform, World};
 use khora_data::scene::record::ReportKind;
-use khora_data::scene::{apply, instantiate_prefab, read_scene_file, Identity, SceneRecord};
+use khora_data::scene::{
+    apply, instantiate_prefab, read_scene_file, Identity, PrefabAsset, SceneRecord,
+};
 use khora_telemetry::MetricsRegistry;
 use serde_json::{json, Value};
 use tempfile::TempDir;
+
+use super::gltf_builder::{primitive, with_material, GltfBuilder};
+use super::*;
+use crate::asset::decoders::mesh::GltfContainer;
+use crate::asset::{AssetContainer, AssetIdRegistry, AssetService};
+use crate::serialization::{AssetPrefabs, SerializationService};
 
 // ─── Fixtures ───────────────────────────────────────────────────────────
 
@@ -246,16 +250,16 @@ fn transform_of(world: &World, id: PersistentId) -> Transform {
 }
 
 fn mesh_of(world: &World, id: PersistentId) -> Option<AssetUUID> {
-    match world.get::<MeshRef>(at(world, id)) {
-        Some(MeshRef::Asset(uuid)) => Some(*uuid),
+    match world.get::<AssetRef<Mesh>>(at(world, id)) {
+        Some(AssetRef::<Mesh>::Asset(uuid)) => Some(*uuid),
         Some(other) => panic!("{id:?} shows a mesh that is no asset: {other:?}"),
         None => None,
     }
 }
 
 fn material_of(world: &World, id: PersistentId) -> Option<AssetUUID> {
-    match world.get::<MaterialRef>(at(world, id)) {
-        Some(MaterialRef::Asset(uuid)) => Some(*uuid),
+    match world.get::<AssetRef<Box<dyn Material>>>(at(world, id)) {
+        Some(AssetRef::<Box<dyn Material>>::Asset(uuid)) => Some(*uuid),
         Some(_) => panic!("{id:?} shows an inline material"),
         None => None,
     }
@@ -1468,8 +1472,8 @@ fn a_prefab_holding_a_gltf_instance_expands_the_file_as_it_is_now() {
     let (a, b) = (named("A"), named("B"));
     assert_eq!(level.iter_entities().count(), 4, "car, scene root, A, B");
     assert_eq!(
-        level.get::<MeshRef>(b).cloned(),
-        Some(MeshRef::Asset(sub("mesh1/prim0")))
+        level.get::<AssetRef<Mesh>>(b).cloned(),
+        Some(AssetRef::<Mesh>::Asset(sub("mesh1/prim0")))
     );
     assert_eq!(level.get::<Parent>(b).map(|p| p.0), Some(a));
     let a_transform = level.get::<Transform>(a).expect("A is placed");

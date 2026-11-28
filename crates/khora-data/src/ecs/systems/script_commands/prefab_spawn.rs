@@ -15,15 +15,14 @@
 //! The commands that bring an asset into the world: a prefab instance at the
 //! id a turn reserved, and a material on an entity.
 
-use khora_core::asset::AssetUUID;
+use khora_core::asset::{AssetUUID, Material};
 use khora_core::ecs::entity::EntityId;
 use khora_core::math::{Quaternion, Vec3};
 use khora_core::script::{ComponentName, ScriptValue};
 
-use crate::ecs::{MaterialRef, Transform, World};
-use crate::scene::{instantiate_prefab_at, PrefabSource};
-
 use super::apply::{add_component, key_of, set_component, ApplyError};
+use crate::ecs::{AssetRef, Transform, World};
+use crate::scene::{instantiate_prefab_at, PrefabSource};
 
 /// Brings `prefab` in as a linked instance whose root lands at `entity`; any
 /// failure leaves nothing of it.
@@ -100,15 +99,15 @@ pub(super) fn set_material(
     if !world.contains(entity) {
         return Err(ApplyError::NoSuchEntity(entity));
     }
-    if let Some(mut current) = world.get_mut::<MaterialRef>(entity) {
-        *current = MaterialRef::Asset(material);
+    if let Some(mut current) = world.get_mut::<AssetRef<Box<dyn Material>>>(entity) {
+        *current = AssetRef::<Box<dyn Material>>::Asset(material);
         return Ok(());
     }
     world
-        .add_component(entity, MaterialRef::Asset(material))
+        .add_component(entity, AssetRef::<Box<dyn Material>>::Asset(material))
         .map(|_| ())
         .map_err(|error| ApplyError::Rejected {
-            component: "MaterialRef".to_owned(),
+            component: "AssetRef<Box<dyn Material>>".to_owned(),
             reason: format!("{error:?}"),
         })
 }

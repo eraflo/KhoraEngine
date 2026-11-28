@@ -19,17 +19,10 @@
 //! frame reads nothing from the disk, and dropped by its `invalidate` when the
 //! file changes.
 
-use khora_core::asset::Asset;
 use khora_core::scene::SceneFile;
-use khora_data::scene::{read_scene_file, SceneRecord};
+use khora_data::scene::{read_scene_file, PrefabAsset};
 
 use crate::asset::{AssetDecoder, DecoderRegistration};
-
-/// A prefab, parsed: the record of the entities it brings.
-#[derive(Debug, Clone)]
-pub struct PrefabAsset(pub SceneRecord);
-
-impl Asset for PrefabAsset {}
 
 /// Decodes a prefab file into its record.
 #[derive(Clone, Default)]

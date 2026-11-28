@@ -15,9 +15,10 @@
 use std::collections::HashMap;
 
 use khora_sdk::editor_ui::{EditorRequest, SpawnShape};
-use khora_sdk::khora_core::asset::AssetUUID;
+use khora_sdk::khora_core::asset::{AssetUUID, Material, ProceduralMesh};
 use khora_sdk::khora_core::ecs::PersistentId;
-use khora_sdk::khora_data::ecs::{PrefabInstance, World};
+use khora_sdk::khora_core::renderer::api::gpu_scene::Mesh;
+use khora_sdk::khora_data::ecs::{AssetRef, PrefabInstance, World};
 use khora_sdk::khora_data::scene::{
     capture_subtree, instantiate_prefab, NoPrefabs, PrefabSource, SceneRecord,
 };
@@ -353,7 +354,7 @@ fn duplicate_entity_copies_authored_components() {
 fn duplicate_entity_keeps_a_mesh_made_in_code() {
     let mut world = GameWorld::new();
     let mut state = EditorState::default();
-    let made = khora_sdk::khora_data::ecs::MeshRef::Made(AssetUUID::new());
+    let made = khora_sdk::khora_data::ecs::AssetRef::<Mesh>::Made(AssetUUID::new());
     let source = world.spawn((
         Transform::identity(),
         GlobalTransform::identity(),
@@ -370,7 +371,7 @@ fn duplicate_entity_keeps_a_mesh_made_in_code() {
 
     assert_ne!(copy, source, "duplicate must be a distinct entity");
     assert_eq!(
-        world.get_component::<khora_sdk::khora_data::ecs::MeshRef>(copy),
+        world.get_component::<khora_sdk::khora_data::ecs::AssetRef<Mesh>>(copy),
         Some(&made),
         "the copy lost the mesh made in code"
     );
@@ -491,7 +492,7 @@ fn process_spawns_creates_and_selects_entity() {
 
 /// **Duplicating an entity carries its material across.**
 ///
-/// Without its `MaterialRef`, the copy renders with no material (a logged error).
+/// Without its `AssetRef<Box<dyn Material>>`, the copy renders with no material (a logged error).
 #[test]
 fn duplicate_entity_clones_material_ref() {
     let mut world = GameWorld::new();
@@ -515,21 +516,23 @@ fn duplicate_entity_clones_material_ref() {
     assert_ne!(copy, original, "duplicate must produce a new entity");
 
     let copy_mat = world
-        .get_component::<MaterialRef>(copy)
-        .expect("copy should carry a MaterialRef");
+        .get_component::<AssetRef<Box<dyn Material>>>(copy)
+        .expect("copy should carry an AssetRef<Box<dyn Material>>");
     match copy_mat {
-        MaterialRef::Inline { material, .. } => {
+        AssetRef::Local(inline) => {
             assert_eq!(
-                material.base_color(),
+                inline.material().base_color(),
                 khora_sdk::prelude::math::LinearRgba::new(0.2, 0.4, 0.6, 1.0),
                 "cloned inline material should preserve base color"
             );
         }
-        MaterialRef::Asset(_) => panic!("inline material must stay inline after duplication"),
+        AssetRef::Asset(_) | AssetRef::Made(_) => {
+            panic!("inline material must stay inline after duplication")
+        }
     }
 }
 
-/// Duplicating an entity carries its authored `MeshRef` across, so the
+/// Duplicating an entity carries its authored `AssetRef<Mesh>` across, so the
 /// resolver regenerates the copy's runtime mesh handle.
 #[test]
 fn duplicate_entity_clones_mesh_ref() {
@@ -540,18 +543,24 @@ fn duplicate_entity_clones_mesh_ref() {
         Transform::identity(),
         GlobalTransform::identity(),
         Name::new("Source"),
-        MeshRef::procedural(ProceduralMeshKind::Sphere, [0.75, 32.0, 16.0, 0.0]),
+        AssetRef::<Mesh>::Local(ProceduralMesh::new(
+            ProceduralMeshKind::Sphere,
+            [0.75, 32.0, 16.0, 0.0],
+        )),
     ));
 
     duplicate_entity(&mut world, original, &mut state, &NoPrefabs);
 
     let copy = state.single_selected().expect("duplicate selects the copy");
     let copy_mesh = world
-        .get_component::<MeshRef>(copy)
-        .expect("copy should carry a MeshRef");
+        .get_component::<AssetRef<Mesh>>(copy)
+        .expect("copy should carry an AssetRef<Mesh>");
     assert_eq!(
         copy_mesh,
-        &MeshRef::procedural(ProceduralMeshKind::Sphere, [0.75, 32.0, 16.0, 0.0])
+        &AssetRef::<Mesh>::Local(ProceduralMesh::new(
+            ProceduralMeshKind::Sphere,
+            [0.75, 32.0, 16.0, 0.0]
+        ))
     );
 }
 

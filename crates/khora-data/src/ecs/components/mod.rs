@@ -12,14 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod asset_ref;
 mod audio;
 mod camera;
 mod children;
 mod global_transform;
 mod handle;
 mod light;
-mod material_ref;
-mod mesh_ref;
 mod name;
 mod parent;
 mod physics;
@@ -29,19 +28,13 @@ mod tag;
 mod teleported;
 mod transform;
 
+pub use asset_ref::AssetRef;
 pub use audio::*;
 pub use camera::*;
 pub use children::*;
 pub use global_transform::*;
 pub use handle::*;
 pub use light::*;
-pub use material_ref::*;
-pub use mesh_ref::*;
-
-// The builders live with the other asset code; `ecs` keeps naming them.
-pub use crate::assets::procedural_mesh::{
-    create_cube, create_plane, create_sphere, reconstruct_procedural_mesh,
-};
 pub use name::*;
 pub use parent::*;
 pub use physics::*;

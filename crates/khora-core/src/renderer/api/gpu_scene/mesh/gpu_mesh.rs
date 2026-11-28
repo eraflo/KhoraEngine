@@ -14,7 +14,7 @@
 
 //! The GPU-ready form of a mesh: its buffers and draw parameters.
 
-use crate::asset::Asset;
+use crate::asset::Stored;
 use crate::renderer::api::pipeline::PrimitiveTopology;
 use crate::renderer::api::resource::{BufferId, IndexFormat};
 
@@ -32,4 +32,4 @@ pub struct GpuMesh {
     pub primitive_topology: PrimitiveTopology,
 }
 
-impl Asset for GpuMesh {}
+impl Stored for GpuMesh {}

@@ -16,9 +16,7 @@
 //! over its name.
 
 use khora_sdk::editor_ui::{FontFamilyHint, Icon, TextAlign, UiBuilder, UiTheme};
-
-use khora_tool_ui::widgets::paint;
-use khora_tool_ui::widgets::with_alpha;
+use khora_tool_ui::widgets::{paint, with_alpha};
 
 /// The category an asset tile is drawn as: its tint, icon and format glyph.
 ///
@@ -36,7 +34,7 @@ pub enum AssetTileKind {
     Shader,
     /// A scene file.
     Scene,
-    /// An authored material (`.kmat`), referenced through `MaterialRef::Asset`.
+    /// An authored material (`.kmat`), referenced through `AssetRef::Asset`.
     Material,
     /// An Ergon script (`.erg`).
     Script,

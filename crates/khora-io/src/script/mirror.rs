@@ -254,9 +254,9 @@ fn unspellable(name: &str) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
+    use khora_script::{compile_module, MemoryLoader};
+
     use super::*;
-    use khora_script::compile_module;
-    use khora_script::MemoryLoader;
 
     /// Compiles `source` as `main.erg`, with the mirrors available to import.
     fn compile(source: &str) -> khora_script::CompileOutcome {
@@ -516,7 +516,7 @@ mod tests {
     /// component with no fields — which would be a different, false claim.
     #[test]
     fn a_one_of_component_says_why_it_is_absent() {
-        assert!(mirror_source().contains("// MaterialRef — not mirrored: a one-of"));
+        assert!(mirror_source().contains("// AssetRef<Box<dyn Material>> — not mirrored: a one-of"));
     }
 
     /// A tuple struct is absent for a stated reason rather than mirrored under

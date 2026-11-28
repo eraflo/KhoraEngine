@@ -12,14 +12,14 @@
 
 use khora_sdk::editor_ui::{EditorState, FontFamilyHint, Icon, TextAlign, UiBuilder, UiTheme};
 use khora_sdk::prelude::ecs::EntityId;
-
-use super::display::domain_label;
-use crate::widgets::{Column, Painter};
 use khora_tool_ui::widgets::{
     self, group_header,
     paint::{icon_centered, tint},
     Group,
 };
+
+use super::display::domain_label;
+use crate::widgets::{Column, Painter};
 
 const HEADER_H: f32 = 32.0;
 
@@ -264,8 +264,10 @@ fn header_action(
 
 #[cfg(test)]
 mod tests {
+    use khora_sdk::khora_core::renderer::api::gpu_scene::Mesh;
+    use khora_sdk::khora_data::ecs::{AssetRef, AudioSource, RigidBody, Transform, World};
+
     use super::category_for;
-    use khora_sdk::khora_data::ecs::{AudioSource, MeshRef, RigidBody, Transform, World};
 
     /// The domain tag `World` registered `T` under, as `ComponentJson::domain` carries it.
     fn registered_tag<T: 'static>(world: &World) -> Option<u8> {
@@ -279,7 +281,10 @@ mod tests {
     fn known_components_get_their_domain_tag() {
         let world = World::new();
         assert_eq!(category_for(registered_tag::<Transform>(&world)), "Spatial");
-        assert_eq!(category_for(registered_tag::<MeshRef>(&world)), "Render");
+        assert_eq!(
+            category_for(registered_tag::<AssetRef<Mesh>>(&world)),
+            "Render"
+        );
         assert_eq!(category_for(registered_tag::<RigidBody>(&world)), "Physics");
         assert_eq!(category_for(registered_tag::<AudioSource>(&world)), "Audio");
     }

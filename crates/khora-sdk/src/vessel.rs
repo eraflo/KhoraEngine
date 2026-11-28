@@ -33,9 +33,11 @@
 //!     .build();
 //! ```
 
+use khora_core::asset::{ProceduralMesh, ProceduralMeshKind};
 use khora_core::ecs::entity::EntityId;
 use khora_core::math::Vec3;
-use khora_data::ecs::{GlobalTransform, MeshRef, ProceduralMeshKind, Transform};
+use khora_core::renderer::api::gpu_scene::Mesh;
+use khora_data::ecs::{AssetRef, GlobalTransform, Transform};
 
 use crate::GameWorld;
 
@@ -151,33 +153,39 @@ impl<'a> Vessel<'a> {
 
 /// Spawns an entity with a procedural plane mesh at the origin and returns its builder.
 ///
-/// The mesh is an authored [`MeshRef::Procedural`], saved by its parameters
-/// and built by the engine.
+/// The mesh is an authored [`ProceduralMesh`] the reference carries, saved by
+/// its parameters and built by the engine.
 pub fn spawn_plane<'a>(world: &'a mut GameWorld, size: f32, y: f32) -> Vessel<'a> {
-    let mesh_ref = MeshRef::procedural(ProceduralMeshKind::Plane, [size, y, 0.0, 0.0]);
+    let mesh_ref = AssetRef::<Mesh>::Local(ProceduralMesh::new(
+        ProceduralMeshKind::Plane,
+        [size, y, 0.0, 0.0],
+    ));
     Vessel::new(world).with_component(mesh_ref)
 }
 
 /// Spawns an entity with a procedural cube mesh at `position` and returns its builder.
 ///
-/// The mesh is an authored [`MeshRef::Procedural`], as for [`spawn_plane`].
+/// The mesh is an authored [`ProceduralMesh`], as for [`spawn_plane`].
 pub fn spawn_cube_at<'a>(world: &'a mut GameWorld, position: Vec3, size: f32) -> Vessel<'a> {
-    let mesh_ref = MeshRef::procedural(ProceduralMeshKind::Cube, [size, 0.0, 0.0, 0.0]);
+    let mesh_ref = AssetRef::<Mesh>::Local(ProceduralMesh::new(
+        ProceduralMeshKind::Cube,
+        [size, 0.0, 0.0, 0.0],
+    ));
     Vessel::at(world, position).with_component(mesh_ref)
 }
 
 /// Spawns an entity with a procedural sphere mesh at the origin and returns its builder.
 ///
-/// The mesh is an authored [`MeshRef::Procedural`], as for [`spawn_plane`].
+/// The mesh is an authored [`ProceduralMesh`], as for [`spawn_plane`].
 pub fn spawn_sphere<'a>(
     world: &'a mut GameWorld,
     radius: f32,
     segments: u32,
     rings: u32,
 ) -> Vessel<'a> {
-    let mesh_ref = MeshRef::procedural(
+    let mesh_ref = AssetRef::<Mesh>::Local(ProceduralMesh::new(
         ProceduralMeshKind::Sphere,
         [radius, segments as f32, rings as f32, 0.0],
-    );
+    ));
     Vessel::new(world).with_component(mesh_ref)
 }

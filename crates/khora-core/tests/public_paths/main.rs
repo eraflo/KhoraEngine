@@ -51,7 +51,7 @@ fn same_type<T: ?Sized>(_: PhantomData<T>, _: PhantomData<T>) {}
 /// `fn` items never share a type, and `&fn-item` does not coerce).
 fn same_item<T>(_: &T, _: &T) {}
 
-fn is_asset<T: khora_core::asset::Asset>() {}
+fn is_stored<T: khora_core::asset::Stored>() {}
 fn is_clone<T: Clone>() {}
 fn is_copy<T: Copy>() {}
 fn is_debug<T: std::fmt::Debug>() {}
@@ -200,6 +200,18 @@ fn alpha_mode_variants(x: &khora_core::asset::AlphaMode) {
         khora_core::asset::AlphaMode::Opaque => {}
         khora_core::asset::AlphaMode::Mask(..) => {}
         khora_core::asset::AlphaMode::Blend => {}
+    }
+}
+
+fn named_asset_fields(x: &khora_core::asset::NamedAsset) {
+    let _: (&khora_core::asset::AssetUUID, &khora_core::asset::AssetKind) = (&x.uuid, &x.kind);
+}
+
+fn procedural_mesh_kind_variants(x: &khora_core::asset::ProceduralMeshKind) {
+    match x {
+        khora_core::asset::ProceduralMeshKind::Cube => {}
+        khora_core::asset::ProceduralMeshKind::Sphere => {}
+        khora_core::asset::ProceduralMeshKind::Plane => {}
     }
 }
 
@@ -1237,7 +1249,11 @@ mod trait_items {
         let _ = <T as khora_core::asset::AsAny>::as_any;
     }
 
-    fn asset_trait_items<T: khora_core::asset::Asset>() {}
+    fn asset_trait_items<T: khora_core::asset::Asset>() {
+        let _ = <T as khora_core::asset::Asset>::KIND;
+        let _ = std::any::type_name::<<T as khora_core::asset::Asset>::LocalSource>();
+        let _ = <T as khora_core::asset::Asset>::dependencies;
+    }
 
     fn material_trait_items<T: khora_core::asset::Material>() {
         let _ = <T as khora_core::asset::Material>::base_color;
@@ -1264,6 +1280,18 @@ mod trait_items {
 
     fn material_clone_trait_items<T: khora_core::asset::MaterialClone>() {
         let _ = <T as khora_core::asset::MaterialClone>::clone_box;
+    }
+
+    fn stored_trait_items<T: khora_core::asset::Stored>() {}
+
+    fn local_source_trait_items<A, T: khora_core::asset::LocalSource<A>>() {
+        let _: &str = <T as khora_core::asset::LocalSource<A>>::VARIANT;
+        let _ = <T as khora_core::asset::LocalSource<A>>::uuid;
+        let _ = <T as khora_core::asset::LocalSource<A>>::build;
+    }
+
+    fn material_trait_content_items<T: khora_core::asset::Material>() {
+        let _ = <T as khora_core::asset::Material>::hash_content;
     }
 
     fn audio_device_trait_items<T: khora_core::audio::device::AudioDevice>() {
@@ -1556,6 +1584,56 @@ fn module_agent_paths_still_resolve() {
 fn module_asset_paths_still_resolve() {
     let _ = type_name::<khora_core::asset::AlphaMode>();
     let _ = alpha_mode_variants as fn(&khora_core::asset::AlphaMode);
+    let _ = khora_core::asset::AlphaMode::hash_content;
+    // trait `khora_core::asset::Asset`: see `asset_trait_items`
+    // trait `khora_core::asset::LocalSource`: see `local_source_trait_items`
+    let _ = type_name::<khora_core::asset::ContentHasher>();
+    let _ = khora_core::asset::ContentHasher::new;
+    let _ = khora_core::asset::ContentHasher::write_str;
+    let _ = khora_core::asset::ContentHasher::write_f32;
+    let _ = khora_core::asset::ContentHasher::write_u32;
+    let _ = khora_core::asset::ContentHasher::write_bool;
+    let _ = khora_core::asset::ContentHasher::write_rgba;
+    let _ = khora_core::asset::ContentHasher::write_asset;
+    let _ = khora_core::asset::ContentHasher::uuid;
+    is_clone::<khora_core::asset::ContentHasher>();
+    is_debug::<khora_core::asset::ContentHasher>();
+    is_default::<khora_core::asset::ContentHasher>();
+    let _ = type_name::<khora_core::asset::NamedAsset>();
+    let _ = named_asset_fields as fn(&khora_core::asset::NamedAsset);
+    is_clone::<khora_core::asset::NamedAsset>();
+    is_copy::<khora_core::asset::NamedAsset>();
+    is_debug::<khora_core::asset::NamedAsset>();
+    is_eq::<khora_core::asset::NamedAsset>();
+    is_hash::<khora_core::asset::NamedAsset>();
+    let _ = type_name::<khora_core::asset::NoLocalSource>();
+    is_clone::<khora_core::asset::NoLocalSource>();
+    is_copy::<khora_core::asset::NoLocalSource>();
+    is_debug::<khora_core::asset::NoLocalSource>();
+    is_eq::<khora_core::asset::NoLocalSource>();
+    let _ = type_name::<khora_core::asset::ProceduralMesh>();
+    let _ = khora_core::asset::ProceduralMesh::new;
+    let _ = khora_core::asset::ProceduralMesh::unit_cube;
+    let _ = khora_core::asset::ProceduralMesh::kind;
+    let _ = khora_core::asset::ProceduralMesh::params;
+    is_clone::<khora_core::asset::ProceduralMesh>();
+    is_debug::<khora_core::asset::ProceduralMesh>();
+    is_partial_eq::<khora_core::asset::ProceduralMesh>();
+    let _ = type_name::<khora_core::asset::ProceduralMeshKind>();
+    let _ = procedural_mesh_kind_variants as fn(&khora_core::asset::ProceduralMeshKind);
+    let _ = khora_core::asset::ProceduralMeshKind::name;
+    is_clone::<khora_core::asset::ProceduralMeshKind>();
+    is_copy::<khora_core::asset::ProceduralMeshKind>();
+    is_debug::<khora_core::asset::ProceduralMeshKind>();
+    is_eq::<khora_core::asset::ProceduralMeshKind>();
+    is_serialize::<khora_core::asset::ProceduralMeshKind>();
+    is_deserialize_owned::<khora_core::asset::ProceduralMeshKind>();
+    let _ = type_name::<khora_core::asset::InlineMaterial>();
+    let _ = khora_core::asset::InlineMaterial::new;
+    let _ = khora_core::asset::InlineMaterial::material;
+    is_clone::<khora_core::asset::InlineMaterial>();
+    is_debug::<khora_core::asset::InlineMaterial>();
+    is_partial_eq::<khora_core::asset::InlineMaterial>();
     is_debug::<khora_core::asset::AlphaMode>();
     is_clone::<khora_core::asset::AlphaMode>();
     is_copy::<khora_core::asset::AlphaMode>();
@@ -1661,10 +1739,11 @@ fn module_asset_paths_still_resolve() {
     is_serialize::<khora_core::asset::EmissiveMaterial>();
     is_deserialize_owned::<khora_core::asset::EmissiveMaterial>();
     is_default::<khora_core::asset::EmissiveMaterial>();
-    is_asset::<khora_core::asset::EmissiveMaterial>();
+    is_stored::<khora_core::asset::EmissiveMaterial>();
     is_material::<khora_core::asset::EmissiveMaterial>();
     // trait `khora_core::asset::Material`: see `material_trait_items`
     // trait `khora_core::asset::MaterialClone`: see `material_clone_trait_items`
+    // trait `khora_core::asset::Stored`: see `stored_trait_items`
     let _ = type_name::<khora_core::asset::StandardMaterial>();
     let _ = standard_material_fields as fn(&khora_core::asset::StandardMaterial);
     is_clone::<khora_core::asset::StandardMaterial>();
@@ -1672,7 +1751,7 @@ fn module_asset_paths_still_resolve() {
     is_serialize::<khora_core::asset::StandardMaterial>();
     is_deserialize_owned::<khora_core::asset::StandardMaterial>();
     is_default::<khora_core::asset::StandardMaterial>();
-    is_asset::<khora_core::asset::StandardMaterial>();
+    is_stored::<khora_core::asset::StandardMaterial>();
     is_material::<khora_core::asset::StandardMaterial>();
     let _ = type_name::<khora_core::asset::UnlitMaterial>();
     let _ = unlit_material_fields as fn(&khora_core::asset::UnlitMaterial);
@@ -1681,7 +1760,7 @@ fn module_asset_paths_still_resolve() {
     is_serialize::<khora_core::asset::UnlitMaterial>();
     is_deserialize_owned::<khora_core::asset::UnlitMaterial>();
     is_default::<khora_core::asset::UnlitMaterial>();
-    is_asset::<khora_core::asset::UnlitMaterial>();
+    is_stored::<khora_core::asset::UnlitMaterial>();
     is_material::<khora_core::asset::UnlitMaterial>();
     let _ = type_name::<khora_core::asset::WireframeMaterial>();
     let _ = wireframe_material_fields as fn(&khora_core::asset::WireframeMaterial);
@@ -1690,7 +1769,7 @@ fn module_asset_paths_still_resolve() {
     is_serialize::<khora_core::asset::WireframeMaterial>();
     is_deserialize_owned::<khora_core::asset::WireframeMaterial>();
     is_default::<khora_core::asset::WireframeMaterial>();
-    is_asset::<khora_core::asset::WireframeMaterial>();
+    is_stored::<khora_core::asset::WireframeMaterial>();
     is_material::<khora_core::asset::WireframeMaterial>();
     let _ = khora_core::asset::asset_key;
     let _ = type_name::<khora_core::asset::font::Font>();
@@ -1699,7 +1778,7 @@ fn module_asset_paths_still_resolve() {
     is_clone::<khora_core::asset::font::Font>();
     is_serialize::<khora_core::asset::font::Font>();
     is_deserialize_owned::<khora_core::asset::font::Font>();
-    is_asset::<khora_core::asset::font::Font>();
+    is_stored::<khora_core::asset::font::Font>();
     let _: khora_core::asset::AssetUUID = khora_core::asset::font::Font::BUILT_IN;
     let _ = type_name::<khora_core::asset::script::ScriptModule>();
     let _ = type_name::<khora_core::asset::ScriptModule>();
@@ -1716,7 +1795,7 @@ fn module_asset_paths_still_resolve() {
     is_default::<khora_core::asset::script::ScriptModule>();
     is_partial_eq::<khora_core::asset::script::ScriptModule>();
     is_eq::<khora_core::asset::script::ScriptModule>();
-    is_asset::<khora_core::asset::script::ScriptModule>();
+    is_stored::<khora_core::asset::script::ScriptModule>();
 }
 
 #[test]
@@ -3345,17 +3424,25 @@ mod paths_used_by_other_crates {
     use khora_core::asset::font::Font as _; // khora-data, khora-infra, khora-io
     use khora_core::asset::AlphaMode as _; // khora-data, khora-sdk
     use khora_core::asset::AlphaMode::Mask as _; // khora-io
-    use khora_core::asset::Asset as _; // khora-agents, khora-data, khora-io
+    use khora_core::asset::Asset as _; // khora-data, khora-io
     use khora_core::asset::AssetHandle as _; // khora-agents, khora-data, khora-io, khora-lanes, khora-sdk, sandbox (as khora_sdk::khora_core::…)
     use khora_core::asset::AssetMetadata as _; // khora-agents, khora-io, xtask
     use khora_core::asset::AssetSource as _; // khora-agents, khora-io, khora-sdk, xtask
     use khora_core::asset::AssetUUID as _; // khora-agents, khora-data, khora-editor (as khora_sdk::khora_core::…), khora-infra, khora-io, khora-lanes, khora-sdk, sandbox (as khora_sdk::khora_core::…), xtask
     use khora_core::asset::CompressionKind as _; // khora-agents, khora-editor (as khora_sdk::khora_core::…), khora-io, xtask
+    use khora_core::asset::ContentHasher as _; // khora-data
     use khora_core::asset::EmissiveMaterial as _; // khora-data, khora-io, khora-sdk
     use khora_core::asset::Handle as _; // khora-infra
+    use khora_core::asset::InlineMaterial as _; // khora-data, khora-editor, khora-io, khora-sdk
+    use khora_core::asset::LocalSource as _; // khora-data, khora-io
     use khora_core::asset::Material as _; // khora-data, khora-io, khora-lanes, khora-sdk
+    use khora_core::asset::NamedAsset as _; // khora-data
+    use khora_core::asset::NoLocalSource as _; // khora-data
+    use khora_core::asset::ProceduralMesh as _; // khora-data, khora-editor, khora-io, khora-sdk
+    use khora_core::asset::ProceduralMeshKind as _; // khora-data, khora-editor, khora-io, khora-sdk
     use khora_core::asset::ScriptModule as _; // khora-io
     use khora_core::asset::StandardMaterial as _; // khora-data, khora-io, khora-sdk
+    use khora_core::asset::Stored as _; // khora-agents, khora-data, khora-io
     use khora_core::asset::UnlitMaterial as _; // khora-data, khora-sdk
     use khora_core::asset::WireframeMaterial as _; // khora-data, khora-sdk
     use khora_core::audio::AudioDevice as _; // khora-infra, khora-sdk

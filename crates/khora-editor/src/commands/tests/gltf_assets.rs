@@ -17,7 +17,8 @@
 //! part of a file spawned or assigned by its own identity.
 
 use khora_sdk::khora_core::asset::{AssetUUID, Material, StandardMaterial};
-use khora_sdk::khora_data::ecs::PrefabInstance;
+use khora_sdk::khora_core::renderer::api::gpu_scene::Mesh;
+use khora_sdk::khora_data::ecs::{AssetRef, PrefabInstance};
 
 use super::super::*;
 use crate::tests::gltf_fixture::{GltfProject, HULL_COLOR, MAST_COLOR, SHIP_GLTF, TRIANGLE_OBJ};
@@ -81,11 +82,12 @@ fn assert_color(material: &StandardMaterial, expected: [f32; 4], what: &str) {
 }
 
 /// What an entity's material reference holds, in words.
-fn worn(material: Option<&MaterialRef>) -> String {
+fn worn(material: Option<&AssetRef<Box<dyn Material>>>) -> String {
     match material {
         None => "no material".to_owned(),
-        Some(MaterialRef::Asset(uuid)) => format!("the material asset {uuid:?}"),
-        Some(MaterialRef::Inline { uuid, .. }) => format!("the inline material {uuid:?}"),
+        Some(AssetRef::Asset(uuid)) => format!("the material asset {uuid:?}"),
+        Some(inline @ AssetRef::Local(_)) => format!("the inline material {:?}", inline.uuid()),
+        Some(AssetRef::Made(uuid)) => format!("the material made in code {uuid:?}"),
     }
 }
 
@@ -149,12 +151,12 @@ fn spawning_a_gltf_scene_places_its_nodes_each_in_its_own_material() {
             "{node} hangs under the root"
         );
         assert_eq!(
-            world.get_component::<MeshRef>(entity).cloned(),
-            Some(MeshRef::Asset(project.sub(SHIP, mesh))),
+            world.get_component::<AssetRef<Mesh>>(entity).cloned(),
+            Some(AssetRef::<Mesh>::Asset(project.sub(SHIP, mesh))),
             "{node} shows its primitive"
         );
-        let held = match world.get_component::<MaterialRef>(entity) {
-            Some(MaterialRef::Asset(uuid)) => *uuid,
+        let held = match world.get_component::<AssetRef<Box<dyn Material>>>(entity) {
+            Some(AssetRef::<Box<dyn Material>>::Asset(uuid)) => *uuid,
             other => panic!("{node} wears {}, not the file's material", worn(other)),
         };
         assert_eq!(held, project.sub(SHIP, material), "{node}'s own material");
@@ -219,8 +221,8 @@ fn spawning_a_mesh_part_names_it_after_its_file_and_label() {
 
     let spawned = named(&world, "ship mesh1/prim0");
     assert_eq!(
-        world.get_component::<MeshRef>(spawned).cloned(),
-        Some(MeshRef::Asset(mesh))
+        world.get_component::<AssetRef<Mesh>>(spawned).cloned(),
+        Some(AssetRef::<Mesh>::Asset(mesh))
     );
     let at = world
         .get_component::<Transform>(spawned)
@@ -255,8 +257,8 @@ fn spawning_a_mesh_file_names_it_after_its_file() {
 
     let spawned = named(&world, "crate");
     assert_eq!(
-        world.get_component::<MeshRef>(spawned).cloned(),
-        Some(MeshRef::Asset(mesh))
+        world.get_component::<AssetRef<Mesh>>(spawned).cloned(),
+        Some(AssetRef::<Mesh>::Asset(mesh))
     );
     assert_eq!(
         world.get_component::<Parent>(spawned).map(|p| p.0),
@@ -268,7 +270,7 @@ fn spawning_a_mesh_file_names_it_after_its_file() {
 // ─── Assigning a material or a texture ──────────────────────────────────────
 
 /// **A glTF material assigned to an entity is referenced by its identity**:
-/// the entity wears `MaterialRef::Asset` of the part.
+/// the entity wears `AssetRef::Asset` of the part.
 #[test]
 fn assigning_a_gltf_material_references_it() {
     let project = ship_project("assign-material-part");
@@ -286,8 +288,8 @@ fn assigning_a_gltf_material_references_it() {
 
     assign_queued_drops(Some(&project.vfs), &mut world, &state);
 
-    match world.get_component::<MaterialRef>(entity) {
-        Some(MaterialRef::Asset(uuid)) => assert_eq!(*uuid, material),
+    match world.get_component::<AssetRef<Box<dyn Material>>>(entity) {
+        Some(AssetRef::<Box<dyn Material>>::Asset(uuid)) => assert_eq!(*uuid, material),
         other => panic!("the entity wears {}, not the glTF material", worn(other)),
     }
 }
@@ -310,17 +312,18 @@ fn assigning_a_material_file_references_it() {
 
     assign_queued_drops(Some(&project.vfs), &mut world, &state);
 
-    match world.get_component::<MaterialRef>(entity) {
-        Some(MaterialRef::Asset(uuid)) => assert_eq!(*uuid, material),
+    match world.get_component::<AssetRef<Box<dyn Material>>>(entity) {
+        Some(AssetRef::<Box<dyn Material>>::Asset(uuid)) => assert_eq!(*uuid, material),
         other => panic!("the entity wears {}, not the .kmat", worn(other)),
     }
 }
 
 /// The base-colour texture of the inline standard material `entity` wears.
 fn inline_base_color_texture(world: &GameWorld, entity: EntityId) -> Option<AssetUUID> {
-    match world.get_component::<MaterialRef>(entity) {
-        Some(MaterialRef::Inline { material, .. }) => {
-            material
+    match world.get_component::<AssetRef<Box<dyn Material>>>(entity) {
+        Some(AssetRef::Local(inline)) => {
+            inline
+                .material()
                 .as_any()
                 .downcast_ref::<StandardMaterial>()
                 .expect("an inline standard material")
@@ -391,8 +394,8 @@ fn spawn_ship(project: &GltfProject, world: &mut GameWorld) {
 
 /// The material asset `entity` of `world` wears, by identity.
 fn material_of(world: &GameWorld, entity: EntityId, what: &str) -> AssetUUID {
-    match world.get_component::<MaterialRef>(entity) {
-        Some(MaterialRef::Asset(uuid)) => *uuid,
+    match world.get_component::<AssetRef<Box<dyn Material>>>(entity) {
+        Some(AssetRef::<Box<dyn Material>>::Asset(uuid)) => *uuid,
         other => panic!("{what} wears {}, not the file's material", worn(other)),
     }
 }

@@ -16,11 +16,13 @@
 //! `Assets<GpuMaterial>`, …), one typed sub-store per asset type, created on
 //! first access.
 
-use crate::assets::Assets;
-use khora_core::asset::Asset;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
+
+use khora_core::asset::Stored;
+
+use crate::assets::Assets;
 
 /// Shared, type-erased registry of `Assets<T>` sub-stores keyed by `TypeId`.
 ///
@@ -45,7 +47,7 @@ impl AssetStore {
     /// # Panics
     ///
     /// If a thread panicked while holding the store's lock.
-    pub fn store<T: Asset>(&self) -> Arc<RwLock<Assets<T>>> {
+    pub fn store<T: Stored>(&self) -> Arc<RwLock<Assets<T>>> {
         let mut map = self.inner.lock().expect("AssetStore mutex poisoned");
         let entry = map
             .entry(TypeId::of::<T>())
@@ -59,16 +61,16 @@ impl AssetStore {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use khora_core::asset::AssetUUID;
 
+    use super::*;
     use crate::assets::{Arrival, ArrivalKind, ArrivalsRead};
 
     #[derive(Debug, PartialEq)]
     struct Foo(u32);
-    impl Asset for Foo {}
+    impl Stored for Foo {}
     struct Bar(#[allow(dead_code)] &'static str);
-    impl Asset for Bar {}
+    impl Stored for Bar {}
 
     #[test]
     fn same_type_returns_shared_substore() {

@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{Asset, AssetUUID};
 use serde::{Deserialize, Serialize};
+
+use super::{AssetUUID, Stored};
 
 /// A font asset containing raw font data (TTF/OTF).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,4 +33,12 @@ impl Font {
     pub const BUILT_IN: AssetUUID = AssetUUID::from_bytes(*b"khora:font:built");
 }
 
-impl Asset for Font {}
+impl Stored for Font {}
+
+impl super::Asset for Font {
+    const KIND: super::AssetKind = super::kinds::FONT;
+    type LocalSource = super::NoLocalSource;
+
+    /// A font needs no other asset.
+    fn dependencies(&self, _: &mut Vec<super::NamedAsset>) {}
+}

@@ -116,6 +116,13 @@ A game save additionally keeps `resumable` components.
 | `PortableBinary` | MessagePack with names (`MsgPackEncoding`) | `KH_MSGPACK_V2` |
 | `FastestLoad` | positional snapshot (`snapshot/`) | `KH_SNAPSHOT_V1` |
 
+**Asset references** (`AssetRef<A>`, `khora-data/src/ecs/components/asset_ref/`): one generic codec
+(`saved.rs`), registered per kind by `register_asset_ref!` (`registered.rs`) under the short name
+(`AssetRef<Mesh>`). Forms: `Asset(uuid)`, `Made(uuid)` (session-only: saves leave it out, loads drop
+it), or the local source's variant (`Procedural`, `Inline`; the saved forms are `SavedLocalSource`,
+`khora-data/src/assets/`), whose uuid is derived from its content on load, never written. A kind with
+`NoLocalSource` refuses a local form.
+
 **Snapshot.** Positional, no names; every component listed with its schema fingerprint (`schema()`, the
 traced serde format of its mirror). Any fingerprint mismatch refuses the file whole. A component whose
 `schema_complete()` is false cannot be snapshotted: `save_world` warns and writes `KH_COMPACT_V2` instead.

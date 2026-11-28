@@ -42,7 +42,7 @@ use khora_core::sync::{LockExt, RwLockExt};
 use khora_core::Runtime;
 
 use crate::assets::{ArrivalKind, ArrivalsRead, Assets};
-use crate::ecs::{Changed, MaterialRef, SystemContext, Tick, World};
+use crate::ecs::{AssetRef, Changed, SystemContext, Tick, World};
 use crate::gpu::{AssetEviction, MadeCopies, MaterialWaits};
 use crate::{AssetStore, ProjectionRegistry};
 
@@ -85,7 +85,7 @@ crate::register_residency!(
     name = GPU_MATERIAL_SYNC,
     run = gpu_material_sync_system,
     after = ["gpu_mesh_sync"],
-    observes = [MaterialRef],
+    observes = [AssetRef<Box<dyn Material>>],
 );
 
 impl ProjectionRegistry {
@@ -95,10 +95,10 @@ impl ProjectionRegistry {
     /// one gone from the store leaves it. One whose textures are not all
     /// decoded waits, and is made when the last of them lands; a texture that
     /// arrives as another copy, or goes, makes every resident material built
-    /// from it again. A material a `MaterialRef` changed since `since` names,
+    /// from it again. A material a `AssetRef<Box<dyn Material>>` changed since `since` names,
     /// held in the store but not on the GPU, is made again. When the arrivals
     /// were lost (a resync), the residency restores the truth: it makes
-    /// resident every material a `MaterialRef` names that the store holds,
+    /// resident every material a `AssetRef<Box<dyn Material>>` names that the store holds,
     /// brings every resident one in line with the store and its textures,
     /// forgets what left the store, and makes nothing else. A replaced or gone
     /// GPU copy is handed to `eviction` to free after this frame's render
@@ -134,8 +134,8 @@ impl ProjectionRegistry {
                 let cpu = cpu.read_recovered();
                 arrived.extend(
                     world
-                        .query::<&MaterialRef>()
-                        .map(MaterialRef::uuid)
+                        .query::<&AssetRef<Box<dyn Material>>>()
+                        .map(AssetRef::<Box<dyn Material>>::uuid)
                         .filter(|uuid| cpu.contains(uuid)),
                 );
                 arrived.extend(gpu.read_recovered().keys());
@@ -172,7 +172,10 @@ impl ProjectionRegistry {
         }
         // A reference named again after its GPU copy was evicted.
         let named: HashSet<AssetUUID> = world
-            .query::<(&MaterialRef, Changed<MaterialRef>)>()
+            .query::<(
+                &AssetRef<Box<dyn Material>>,
+                Changed<AssetRef<Box<dyn Material>>>,
+            )>()
             .since(since)
             .map(|(material, _)| material.uuid())
             .filter(|uuid| !arrived.contains(uuid))
@@ -676,9 +679,13 @@ impl Drop for MaterialUploads<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use khora_core::asset::{AssetUUID, StandardMaterial};
     use khora_core::renderer::api::material::bindings::flag;
+    use khora_core::renderer::api::resource::TextureFormat;
+    use khora_core::renderer::error::RenderError;
+
+    use super::*;
+    use crate::gpu::tests::device::{BoundEntry, LayoutOnlyPipelines, RecordingDevice};
 
     #[test]
     fn alpha_mask_cutoff_only_masks_for_mask_mode() {
@@ -709,8 +716,15 @@ mod tests {
         textures: Vec<AssetUUID>,
     }
 
-    impl khora_core::asset::Asset for ListedTexturesMaterial {}
+    impl khora_core::asset::Stored for ListedTexturesMaterial {}
     impl Material for ListedTexturesMaterial {
+        fn hash_content(&self, hasher: &mut khora_core::asset::ContentHasher) {
+            hasher.write_str("ListedTexturesMaterial");
+            for texture in &self.textures {
+                hasher.write_asset(Some(*texture));
+            }
+        }
+
         fn textures(&self) -> Vec<AssetUUID> {
             self.textures.clone()
         }
@@ -758,9 +772,6 @@ mod tests {
     }
 
     // --- KHR_materials_specular -------------------------------------------
-
-    use crate::gpu::tests::device::{BoundEntry, LayoutOnlyPipelines, RecordingDevice};
-    use khora_core::renderer::api::resource::TextureFormat;
 
     /// A decoded 8-bit RGBA texture of `width` × `height`, as the image
     /// decoder hands it over (the material slot picks its colour space).
@@ -978,7 +989,7 @@ mod tests {
                 AssetHandle::new(Box::new(StandardMaterial::default()) as Box<dyn Material>),
             );
         let mut world = World::new();
-        world.spawn(MaterialRef::Asset(uuid));
+        world.spawn(AssetRef::<Box<dyn Material>>::Asset(uuid));
         let resident = |store: &AssetStore| {
             store
                 .store::<GpuMaterial>()
@@ -1048,8 +1059,6 @@ mod tests {
         }
     }
 
-    use khora_core::renderer::error::RenderError;
-
     /// **A material whose build is refused gives back what it made.**
     ///
     /// Its texture and uniform buffer are made before the layout is refused;
@@ -1078,7 +1087,7 @@ mod tests {
                 }) as Box<dyn Material>),
             );
         let mut world = World::new();
-        world.spawn(MaterialRef::Asset(uuid));
+        world.spawn(AssetRef::<Box<dyn Material>>::Asset(uuid));
 
         for _ in 0..2 {
             projection.sync_materials(&world, Tick(0), &device, &RefusingLayouts, None);
@@ -1183,8 +1192,8 @@ mod tests {
             }
         }
         let mut world = World::new();
-        world.spawn(MaterialRef::Asset(plain));
-        world.spawn(MaterialRef::Asset(bumpy));
+        world.spawn(AssetRef::<Box<dyn Material>>::Asset(plain));
+        world.spawn(AssetRef::<Box<dyn Material>>::Asset(bumpy));
 
         projection.sync_materials(&world, Tick(0), &device, &RefusingNormalMaps, None);
 
@@ -1244,7 +1253,7 @@ mod tests {
                 .cloned()
         };
         let mut world = World::new();
-        world.spawn(MaterialRef::Asset(uuid));
+        world.spawn(AssetRef::<Box<dyn Material>>::Asset(uuid));
         let sync = || {
             projection.sync_materials(
                 &world,
@@ -1283,8 +1292,12 @@ mod tests {
         _alive: Arc<()>,
     }
 
-    impl khora_core::asset::Asset for Counted {}
-    impl Material for Counted {}
+    impl khora_core::asset::Stored for Counted {}
+    impl Material for Counted {
+        fn hash_content(&self, hasher: &mut khora_core::asset::ContentHasher) {
+            hasher.write_str("Counted");
+        }
+    }
 
     /// **A resync lets go of a material gone from both stores.**
     ///
@@ -1309,7 +1322,7 @@ mod tests {
             }) as Box<dyn Material>),
         );
         let mut world = World::new();
-        let entity = world.spawn(MaterialRef::Asset(counted));
+        let entity = world.spawn(AssetRef::<Box<dyn Material>>::Asset(counted));
         let sync = |world: &World| {
             projection.sync_materials(
                 world,
@@ -1385,7 +1398,7 @@ mod tests {
                 }) as Box<dyn Material>),
             );
         let mut world = World::new();
-        let entity = world.spawn(MaterialRef::Asset(uuid));
+        let entity = world.spawn(AssetRef::<Box<dyn Material>>::Asset(uuid));
         let sync = |world: &World| {
             projection.sync_materials(
                 world,

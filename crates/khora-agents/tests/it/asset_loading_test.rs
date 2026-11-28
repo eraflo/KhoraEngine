@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use anyhow::Result;
-use khora_core::asset::{kinds, Asset, AssetMetadata, AssetSource, AssetUUID, CompressionKind};
-use khora_io::asset::{AssetDecoder, AssetService, PackHeader, PackLoader};
-
-use khora_telemetry::MetricsRegistry;
 use std::sync::Arc;
 use std::{collections::HashMap, error::Error, fs::File};
+
+use anyhow::Result;
+use khora_core::asset::{kinds, AssetMetadata, AssetSource, AssetUUID, CompressionKind, Stored};
+use khora_io::asset::{AssetDecoder, AssetService, PackHeader, PackLoader};
+use khora_telemetry::MetricsRegistry;
 use tempfile::tempdir;
 
 /// Writes a v2 `data.pack` (24-byte header + raw asset bytes) to `path`.
@@ -36,7 +36,7 @@ fn write_test_pack(path: &std::path::Path, asset_count: u32, payload: &[u8]) -> 
 struct TestTexture {
     id: u32,
 }
-impl Asset for TestTexture {}
+impl Stored for TestTexture {}
 
 struct TestTextureLoader;
 impl AssetDecoder<TestTexture> for TestTextureLoader {

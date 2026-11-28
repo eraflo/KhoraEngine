@@ -14,12 +14,11 @@
 
 //! Defines unlit materials for the rendering system.
 
+use super::AlphaMode;
 use crate::{
-    asset::{Asset, Material},
+    asset::{Material, Stored},
     math::LinearRgba,
 };
-
-use super::AlphaMode;
 
 /// A simple, unlit material.
 ///
@@ -100,10 +99,17 @@ impl Default for UnlitMaterial {
 }
 
 // Mark `UnlitMaterial` as a valid asset.
-impl Asset for UnlitMaterial {}
+impl Stored for UnlitMaterial {}
 
 // Mark `UnlitMaterial` as a valid material.
 impl Material for UnlitMaterial {
+    fn hash_content(&self, hasher: &mut crate::asset::ContentHasher) {
+        hasher.write_str("UnlitMaterial");
+        hasher.write_rgba(self.base_color);
+        self.alpha_mode.hash_content(hasher);
+        hasher.write_f32(self.alpha_cutoff);
+    }
+
     fn base_color(&self) -> crate::math::LinearRgba {
         self.base_color
     }

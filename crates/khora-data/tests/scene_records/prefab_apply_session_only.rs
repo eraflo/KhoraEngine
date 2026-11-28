@@ -16,7 +16,8 @@
 //! session holds (a mesh made in code): no prefab file can take it.
 
 use khora_core::asset::AssetUUID;
-use khora_data::ecs::{MeshRef, Name, Transform};
+use khora_core::renderer::api::gpu_scene::Mesh;
+use khora_data::ecs::{AssetRef, Name, Transform};
 use khora_data::scene::record::{ReportEntry, ReportKind};
 use khora_data::scene::{
     apply_to_prefab_reporting, capture_subtree, instance_of, instantiate_prefab, PrefabApply,
@@ -35,7 +36,7 @@ fn crate_with_made_lid(id: AssetUUID) -> (Library, World, EntityId) {
     let lid = prefab.spawn((
         Transform::identity(),
         Name::new("Lid"),
-        MeshRef::Asset(AssetUUID::new()),
+        AssetRef::<Mesh>::Asset(AssetUUID::new()),
     ));
     prefab.set_parent(lid, Some(root));
     prefab.mark_authored(root).expect("authored");
@@ -51,7 +52,7 @@ fn crate_with_made_lid(id: AssetUUID) -> (Library, World, EntityId) {
     let lid = world
         .entity_with_id(PersistentId::within(instance, lid))
         .expect("the instance's lid");
-    assert!(world.set_component(lid, MeshRef::Made(AssetUUID::new())));
+    assert!(world.set_component(lid, AssetRef::<Mesh>::Made(AssetUUID::new())));
     (library, world, lid)
 }
 
@@ -71,7 +72,7 @@ fn apply_to_prefab_reporting_reports_a_mesh_made_in_code_it_cannot_write() {
         left_out,
         [ReportEntry {
             entity: world.persistent_id(lid),
-            component: Some("MeshRef".to_owned()),
+            component: Some("AssetRef<Mesh>".to_owned()),
             path: String::new(),
             kind: ReportKind::NotSaved,
         }]
@@ -91,7 +92,7 @@ fn applying_a_mesh_made_in_code_alone_is_refused_as_session_only() {
         &instance,
         &PrefabApply::Component {
             entity: lid,
-            component: "MeshRef".to_owned(),
+            component: "AssetRef<Mesh>".to_owned(),
         },
         &library,
     );

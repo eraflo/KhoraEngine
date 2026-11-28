@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::Asset;
 use std::{ops::Deref, sync::Arc};
+
+use super::Stored;
 
 /// A thread-safe, reference-counted handle to a loaded asset's data.
 ///
@@ -32,9 +33,9 @@ use std::{ops::Deref, sync::Arc};
 /// # Examples
 ///
 /// ```
-/// # use khora_core::asset::{Asset, AssetHandle};
+/// # use khora_core::asset::{Stored, AssetHandle};
 /// # struct Texture {}
-/// # impl Asset for Texture {}
+/// # impl Stored for Texture {}
 /// let texture = Texture {};
 ///
 /// // The asset service creates the first handle when loading is complete.
@@ -47,9 +48,9 @@ use std::{ops::Deref, sync::Arc};
 /// // let width = handle1.width; // Assuming Texture has a `width` field.
 /// ```
 #[derive(Debug)]
-pub struct AssetHandle<T: Asset>(Arc<T>);
+pub struct AssetHandle<T: Stored>(Arc<T>);
 
-impl<T: Asset> AssetHandle<T> {
+impl<T: Stored> AssetHandle<T> {
     /// Creates a new `AssetHandle` that takes ownership of the asset data.
     ///
     /// This is typically called by an asset loading system (like the asset service)
@@ -69,14 +70,14 @@ impl<T: Asset> AssetHandle<T> {
     }
 }
 
-impl<T: Asset> Clone for AssetHandle<T> {
+impl<T: Stored> Clone for AssetHandle<T> {
     /// Clones the handle, incrementing the reference count to the underlying asset.
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<T: Asset> Deref for AssetHandle<T> {
+impl<T: Stored> Deref for AssetHandle<T> {
     type Target = T;
 
     /// Provides transparent, immutable access to the underlying asset data.
@@ -85,15 +86,15 @@ impl<T: Asset> Deref for AssetHandle<T> {
     }
 }
 
-impl<T: Asset> PartialEq for AssetHandle<T> {
+impl<T: Stored> PartialEq for AssetHandle<T> {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }
 }
 
-impl<T: Asset> Eq for AssetHandle<T> {}
+impl<T: Stored> Eq for AssetHandle<T> {}
 
-impl<T: Asset + Default> Default for AssetHandle<T> {
+impl<T: Stored + Default> Default for AssetHandle<T> {
     fn default() -> Self {
         Self::dangling()
     }

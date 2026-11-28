@@ -16,7 +16,7 @@
 //! plugin's included, is saved and read back by its type name.
 
 use inventory::collect;
-use khora_core::asset::{AssetHandle, AssetUUID, Material, StandardMaterial};
+use khora_core::asset::{Material, StandardMaterial};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -243,14 +243,12 @@ pub fn material_to_json(material: &dyn Material) -> Option<serde_json::Value> {
     None
 }
 
-/// Returns a new handle and id for the material [`material_to_json`] wrote.
+/// Returns the material [`material_to_json`] wrote.
 ///
 /// # Errors
 ///
 /// When the JSON lacks a part, names no registered type, or does not decode.
-pub fn material_from_json(
-    value: &serde_json::Value,
-) -> Result<(AssetHandle<Box<dyn Material>>, AssetUUID), String> {
+pub fn material_from_json(value: &serde_json::Value) -> Result<Box<dyn Material>, String> {
     let type_name = value
         .get("type_name")
         .and_then(serde_json::Value::as_str)
@@ -258,25 +256,19 @@ pub fn material_from_json(
     let material_value = value
         .get("material")
         .ok_or_else(|| "material JSON missing 'material' object".to_string())?;
-
-    for reg in inventory::iter::<MaterialRegistration> {
-        if reg.type_name == type_name {
-            let material = (reg.deserialize_json)(material_value)?;
-            return Ok((AssetHandle::new(material), AssetUUID::new()));
-        }
-    }
-
-    Err(format!(
-        "No MaterialRegistration found for type '{type_name}'"
-    ))
+    inventory::iter::<MaterialRegistration>
+        .into_iter()
+        .find(|reg| reg.type_name == type_name)
+        .ok_or_else(|| format!("No MaterialRegistration found for type '{type_name}'"))
+        .and_then(|reg| (reg.deserialize_json)(material_value))
 }
 
 // ─── Built-in material registrations ───
 
 use khora_core::asset::{EmissiveMaterial, UnlitMaterial, WireframeMaterial};
 
-// The built-in materials: what `MaterialRef`'s registration and the `.kmat`
-// decoder dispatch through by type name.
+// The built-in materials: what an inline material's saved forms and the
+// `.kmat` decoder dispatch through by type name.
 
 inventory::submit! {
     MaterialRegistration {

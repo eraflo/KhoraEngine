@@ -19,7 +19,8 @@
 //! but it has no knowledge of how assets are loaded or stored.
 //!
 //! The key components are:
-//! - The [`Asset`] trait: A marker for all types that can be treated as assets.
+//! - The [`Stored`] trait: a marker for every type the asset system can store and hand out.
+//! - The [`Asset`] trait: the kind of value an asset reference names.
 //! - Stable, unique identifiers used to reference assets throughout the engine.
 //! - Abstract interfaces for loading and managing assets.
 //!
@@ -34,6 +35,7 @@ mod asset_kind_registration;
 mod asset_source;
 mod asset_uuid;
 mod compression_kind;
+mod content_hasher;
 mod decode_request;
 mod decoded;
 /// Font asset definitions and metadata.
@@ -43,10 +45,16 @@ mod index_request;
 mod indexed_assets;
 /// The asset kinds the engine declares, one constant each.
 pub mod kinds;
+mod local_source;
 mod materials;
 mod metadata;
+mod named_asset;
+mod no_local_source;
+mod procedural_mesh;
+mod procedural_mesh_kind;
 /// Ergon script modules, as the asset system holds them.
 pub mod script;
+mod stored;
 
 pub use asset_decoding::AssetDecoding;
 pub use asset_indexing::AssetIndexing;
@@ -55,38 +63,33 @@ pub use asset_kind_registration::AssetKindRegistration;
 pub use asset_source::AssetSource;
 pub use asset_uuid::*;
 pub use compression_kind::CompressionKind;
+pub use content_hasher::ContentHasher;
 pub use decode_request::DecodeRequest;
 pub use decoded::Decoded;
 pub use handle::AssetHandle as Handle;
 pub use handle::*;
 pub use index_request::{IndexKind, IndexRequest, IndexTicket};
 pub use indexed_assets::IndexedAssets;
+pub use local_source::LocalSource;
 pub use materials::*;
 pub use metadata::*;
+pub use named_asset::NamedAsset;
+pub use no_local_source::NoLocalSource;
+pub use procedural_mesh::ProceduralMesh;
+pub use procedural_mesh_kind::ProceduralMeshKind;
 pub use script::ScriptModule;
+pub use stored::Stored;
 
-/// A marker trait for types that can be managed by the asset system.
-///
-/// This trait's primary purpose is to categorize a type, making it eligible for
-/// use within the engine's asset infrastructure (e.g., in a `Handle<T>`).
-///
-/// The supertraits enforce critical safety guarantees:
-/// - `Send` + `Sync`: The asset type can be safely shared and sent between threads.
-///   This is essential for background loading.
-/// - `'static`: The asset type does not contain any non-static references, ensuring
-///   it can be stored for the lifetime of the application.
-///
-/// # Examples
-///
-/// ```
-/// use khora_core::asset::Asset;
-///
-/// // A simple struct representing a texture.
-/// struct Texture {
-///     // ... fields
-/// }
-///
-/// // By implementing Asset, `Texture` can now be used by the asset system.
-/// impl Asset for Texture {}
-/// ```
-pub trait Asset: Send + Sync + 'static {}
+/// A value an asset reference can name: its kind, the value a reference can
+/// carry itself, and the assets it cannot be made without.
+pub trait Asset: Stored + Sized {
+    /// The kind this value is indexed, referenced and scripted as.
+    const KIND: AssetKind;
+
+    /// The value a reference carries itself, [`NoLocalSource`] for a kind no
+    /// reference can carry.
+    type LocalSource: LocalSource<Self>;
+
+    /// Appends to `out` every asset this value cannot be made without.
+    fn dependencies(&self, out: &mut Vec<NamedAsset>);
+}

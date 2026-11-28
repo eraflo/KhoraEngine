@@ -17,7 +17,8 @@
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::{AssetFileOp, EditorRequest, SceneInProject};
-use khora_sdk::khora_core::asset::{kinds, AssetKind, AssetUUID};
+use khora_sdk::khora_core::asset::{kinds, AssetKind, AssetUUID, InlineMaterial, Material};
+use khora_sdk::khora_data::ecs::AssetRef;
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::{AssetSource, EditorState, GameWorld};
 
@@ -223,7 +224,7 @@ fn run_file_op(pvfs: &mut ProjectVfs, op: AssetFileOp) -> Ran {
     Ran::Other
 }
 
-/// Takes the queued [`EditorRequest::SpawnMesh`]s: spawns a `MeshRef::Asset` entity at each drop.
+/// Takes the queued [`EditorRequest::SpawnMesh`]s: spawns an `AssetRef::Asset` entity at each drop.
 ///
 /// Asked by dragging a mesh tile onto the viewport or a hierarchy row; the
 /// mesh loads on the next tick. The last one spawned is selected.
@@ -294,7 +295,7 @@ fn indexed_asset(
 
 /// Takes the queued [`EditorRequest::AssignDropped`]s: assigns each dropped texture or `.kmat` to its entity.
 ///
-/// A `.kmat` becomes a `MaterialRef::Asset`; an image becomes the
+/// A `.kmat` becomes an `AssetRef::Asset`; an image becomes the
 /// `base_color_texture` of a fresh inline standard material.
 pub fn assign_queued_drops(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
@@ -331,7 +332,7 @@ fn assign_dropped(
     let name = &asset.display_name;
     match asset.kind {
         kinds::MATERIAL => {
-            world.add_component(entity, MaterialRef::Asset(uuid));
+            world.add_component(entity, AssetRef::<Box<dyn Material>>::Asset(uuid));
             log::info!("Assigned material '{name}' to entity {entity:?}");
         }
         kinds::TEXTURE => {
@@ -339,7 +340,10 @@ fn assign_dropped(
                 base_color_texture: Some(uuid),
                 ..Default::default()
             };
-            world.add_component(entity, MaterialRef::inline(Box::new(std_mat)));
+            world.add_component(
+                entity,
+                AssetRef::<Box<dyn Material>>::Local(InlineMaterial::new(Box::new(std_mat))),
+            );
             log::info!("Assigned texture '{name}' to entity {entity:?} (base color)");
         }
         other => log::warn!(

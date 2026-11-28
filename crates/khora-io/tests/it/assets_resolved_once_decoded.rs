@@ -28,7 +28,7 @@ use khora_core::asset::{AssetUUID, Material};
 use khora_core::math::Vec2;
 use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::renderer::api::resource::CpuTexture;
-use khora_data::ecs::{HandleComponent, MaterialRef, MeshRef, World};
+use khora_data::ecs::{AssetRef, HandleComponent, World};
 use khora_data::ui::components::{UiImage, UiText, UiTransform};
 use khora_io::asset::{AssetService, FileLoader, MeshDispatcher};
 use khora_telemetry::MetricsRegistry;
@@ -41,7 +41,7 @@ const MESH: &str = "meshes/tri.obj";
 /// The debug form of `uuid` loaded synchronously as an `A` by a service of
 /// its own over `project`'s files: what the resolver gave before assets were
 /// decoded off the frame.
-fn loaded_synchronously<A: khora_core::asset::Asset + std::fmt::Debug>(
+fn loaded_synchronously<A: khora_core::asset::Stored + std::fmt::Debug>(
     project: &Project,
     uuid: AssetUUID,
 ) -> String {
@@ -59,7 +59,7 @@ fn loaded_synchronously<A: khora_core::asset::Asset + std::fmt::Debug>(
 }
 
 /// The copy of `uuid` the project's store holds as an `A`, if any.
-fn stored_copy<A: khora_core::asset::Asset>(
+fn stored_copy<A: khora_core::asset::Stored>(
     project: &Project,
     uuid: &AssetUUID,
 ) -> Option<khora_core::asset::AssetHandle<A>> {
@@ -155,7 +155,7 @@ fn a_mesh_asset_resolves_once_its_decode_landed_and_not_before() {
     let project = Project::new(&[(MESH, TRIANGLE_OBJ)]);
     let uuid = AssetUUID::new_v5(MESH);
     let mut world = World::new();
-    let entity = world.spawn(MeshRef::Asset(uuid));
+    let entity = world.spawn(AssetRef::<Mesh>::Asset(uuid));
 
     for _ in 0..4 {
         project.frame(&mut world);
@@ -172,7 +172,9 @@ fn a_mesh_asset_resolves_once_its_decode_landed_and_not_before() {
     project.frame(&mut world);
 
     assert_eq!(
-        world.get::<MeshRef>(entity).map(MeshRef::uuid),
+        world
+            .get::<AssetRef<Mesh>>(entity)
+            .map(AssetRef::<Mesh>::uuid),
         Some(uuid),
         "the entity names the asset"
     );
@@ -190,8 +192,8 @@ fn a_mesh_asset_resolves_once_its_decode_landed_and_not_before() {
 fn a_pending_mesh_is_requested_once_not_every_frame() {
     let project = Project::new(&[(MESH, TRIANGLE_OBJ)]);
     let mut world = World::new();
-    world.spawn(MeshRef::Asset(AssetUUID::new_v5(MESH)));
-    world.spawn(MeshRef::Asset(AssetUUID::new_v5(MESH)));
+    world.spawn(AssetRef::<Mesh>::Asset(AssetUUID::new_v5(MESH)));
+    world.spawn(AssetRef::<Mesh>::Asset(AssetUUID::new_v5(MESH)));
 
     for _ in 0..10 {
         project.frame(&mut world);
@@ -222,7 +224,7 @@ fn a_material_asset_and_its_texture_resolve_once_decoded_off_the_frame() {
         ),
     ]);
     let mut world = World::new();
-    let entity = world.spawn(MaterialRef::Asset(material));
+    let entity = world.spawn(AssetRef::<Box<dyn Material>>::Asset(material));
 
     project.frame(&mut world);
     assert!(
@@ -236,7 +238,9 @@ fn a_material_asset_and_its_texture_resolve_once_decoded_off_the_frame() {
 
     assert!(resolved, "the material and its texture resolve");
     assert_eq!(
-        world.get::<MaterialRef>(entity).map(MaterialRef::uuid),
+        world
+            .get::<AssetRef<Box<dyn Material>>>(entity)
+            .map(AssetRef::<Box<dyn Material>>::uuid),
         Some(material),
         "the entity names the asset"
     );

@@ -16,7 +16,7 @@ use super::*;
 
 /// A CPU asset: a number.
 struct Number(u32);
-impl Asset for Number {}
+impl Stored for Number {}
 
 /// A device that counts what it made and what it was given back.
 #[derive(Default)]

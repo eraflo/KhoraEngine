@@ -18,6 +18,10 @@ mod load_report;
 mod on_disk;
 mod saves_whole;
 
+use khora_sdk::khora_core::asset::ProceduralMesh;
+use khora_sdk::khora_core::renderer::api::gpu_scene::Mesh;
+use khora_sdk::khora_data::ecs::AssetRef;
+
 use super::*;
 
 /// Stop's restore of `world` from the Play snapshot `snap`: a replace filed
@@ -151,19 +155,25 @@ fn snapshot_restore_preserves_multiple_components() {
 fn play_stop_restores_state_after_multi_domain_despawn() {
     let mut world = GameWorld::new();
 
-    // Two mesh entities (Spatial Transform + Render MeshRef) plus a light,
+    // Two mesh entities (Spatial Transform + Render AssetRef<Mesh>) plus a light,
     // so the snapshot spans pages in more than one semantic domain.
     let a = world.spawn((
         Transform::from_translation(Vec3::new(1.0, 0.0, 0.0)),
         GlobalTransform::identity(),
         Name::new("MeshA"),
-        MeshRef::procedural(ProceduralMeshKind::Cube, [1.0, 0.0, 0.0, 0.0]),
+        AssetRef::<Mesh>::Local(ProceduralMesh::new(
+            ProceduralMeshKind::Cube,
+            [1.0, 0.0, 0.0, 0.0],
+        )),
     ));
     let _b = world.spawn((
         Transform::from_translation(Vec3::new(2.0, 0.0, 0.0)),
         GlobalTransform::identity(),
         Name::new("MeshB"),
-        MeshRef::procedural(ProceduralMeshKind::Sphere, [0.5, 16.0, 16.0, 0.0]),
+        AssetRef::<Mesh>::Local(ProceduralMesh::new(
+            ProceduralMeshKind::Sphere,
+            [0.5, 16.0, 16.0, 0.0],
+        )),
     ));
     let _light = world.spawn((
         Transform::identity(),
@@ -213,8 +223,8 @@ fn play_stop_restores_state_after_multi_domain_despawn() {
         .expect("restored MeshA keeps its Spatial Transform");
     assert_eq!(t.translation, Vec3::new(1.0, 0.0, 0.0));
     assert!(
-        world.get_component::<MeshRef>(mesh_a).is_some(),
-        "restored MeshA keeps its Render-domain MeshRef"
+        world.get_component::<AssetRef<Mesh>>(mesh_a).is_some(),
+        "restored MeshA keeps its Render-domain AssetRef<Mesh>"
     );
 }
 

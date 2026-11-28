@@ -43,6 +43,7 @@ mod catalog;
 mod except;
 mod library;
 mod overrides;
+mod prefab_asset;
 mod rekey;
 mod siblings;
 mod sources;
@@ -52,6 +53,7 @@ pub use library::PrefabLibrary;
 pub use overrides::{
     apply_to_prefab, apply_to_prefab_reporting, instance_of, prefab_world, InstanceOf, PrefabApply,
 };
+pub use prefab_asset::PrefabAsset;
 use rekey::{members, moved_record, rekeyed};
 use siblings::{children_of, restore_sibling_order};
 use sources::{Except, ReadOnce};

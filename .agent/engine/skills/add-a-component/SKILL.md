@@ -50,7 +50,7 @@ Components live in `crates/khora-data/src/ecs/components/`. The `#[derive(Compon
 
 ## Rules
 - Components are `'static + Send + Sync`. Don't store raw asset data inline — use `AssetHandle<T>` /
-  `HandleComponent<T>` / `MeshRef` / `MaterialRef`.
+  `HandleComponent<T>` / `AssetRef<A>`.
 
 ## Verify
 `cargo xtask lint-file <every .rs touched>`; `cargo t -p khora-data`; then `cargo gate`. For storage/layout details, consult [`../../reference/ecs-data.md`](../../reference/ecs-data.md).

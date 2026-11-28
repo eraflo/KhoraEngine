@@ -14,12 +14,11 @@
 
 //! Defines emissive materials for self-illuminating surfaces.
 
+use super::AlphaMode;
 use crate::{
-    asset::{Asset, Material},
+    asset::{Material, Stored},
     math::LinearRgba,
 };
-
-use super::AlphaMode;
 
 /// A material that emits light without being affected by scene lighting.
 ///
@@ -97,8 +96,15 @@ impl Default for EmissiveMaterial {
     }
 }
 
-impl Asset for EmissiveMaterial {}
+impl Stored for EmissiveMaterial {}
 impl Material for EmissiveMaterial {
+    fn hash_content(&self, hasher: &mut crate::asset::ContentHasher) {
+        hasher.write_str("EmissiveMaterial");
+        hasher.write_rgba(self.emissive_color);
+        hasher.write_f32(self.intensity);
+        self.alpha_mode.hash_content(hasher);
+    }
+
     fn base_color(&self) -> crate::math::LinearRgba {
         crate::math::LinearRgba::BLACK
     }

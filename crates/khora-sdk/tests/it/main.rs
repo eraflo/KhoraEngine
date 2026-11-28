@@ -20,6 +20,7 @@
 
 mod activation;
 mod app_provides_to_the_runtime;
+mod asset_value_bindings;
 mod assets_decoded_off_the_frame;
 mod camera_aspect_follows_target;
 mod camera_view_prepares_the_frame;

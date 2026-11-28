@@ -17,7 +17,7 @@
 
 use std::any::Any;
 
-use khora_core::asset::{Asset, AssetUUID};
+use khora_core::asset::{AssetUUID, Stored};
 use khora_data::assets::Assets;
 
 /// The type-erased view of an `Assets<A>`, implemented for every asset type.
@@ -29,7 +29,7 @@ pub(in crate::asset) trait AnyAssets: Any + Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
-impl<A: Asset + Send + Sync + 'static> AnyAssets for Assets<A> {
+impl<A: Stored + Send + Sync + 'static> AnyAssets for Assets<A> {
     fn remove_uuid(&mut self, uuid: &AssetUUID) -> bool {
         self.remove(uuid).is_some()
     }

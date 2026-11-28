@@ -393,7 +393,7 @@ mode unchanged.
 ## Asset identity registry
 
 An asset's `AssetUUID` must survive a rename or move so that references stored as
-raw UUID bytes — `MeshRef::Asset`, `MaterialRef`, `.kmat` texture slots — never
+raw UUID bytes — an `AssetRef::Asset` of any kind, `.kmat` texture slots — never
 break. The `<project_root>/.khora/asset-registry.ron` file decouples identity from
 path: it freezes a stable UUID for a relative path (`AssetIdRegistry` in
 `crates/khora-io/src/asset/id_registry/mod.rs`).
@@ -546,7 +546,7 @@ save read the file, and only a change it lands between the check and the write i
 ## `.kmat` — material file
 
 A `.kmat` is a material asset referenced from an entity via
-`MaterialRef::Asset(uuid)` and resolved through the VFS. The recognised
+`AssetRef::<Box<dyn Material>>::Asset(uuid)` and resolved through the VFS. The recognised
 extensions for the material category are `.kmat` and `.mat`
 (`kind_for_extension` maps both to the kind `"material"`).
 

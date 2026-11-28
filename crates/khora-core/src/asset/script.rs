@@ -32,7 +32,7 @@
 //! and left stale when the file it depends on did — which is the harder half of
 //! hot-reload, and the half that is already solved for materials and textures.
 
-use super::Asset;
+use super::Stored;
 
 /// The text of one `.erg` file and what it imports.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -68,4 +68,4 @@ impl ScriptModule {
     }
 }
 
-impl Asset for ScriptModule {}
+impl Stored for ScriptModule {}

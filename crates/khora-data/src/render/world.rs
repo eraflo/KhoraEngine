@@ -28,10 +28,10 @@ use khora_core::renderer::light::LightType;
 pub struct ExtractedMesh {
     /// World-space transform derived from `GlobalTransform`.
     pub transform: AffineTransform,
-    /// The uuid the entity's `MeshRef` names: the key of its CPU and GPU
+    /// The uuid the entity's `AssetRef<Mesh>` names: the key of its CPU and GPU
     /// copies in the asset store.
     pub mesh: AssetUUID,
-    /// The uuid the entity's `MaterialRef` names, `None` when it has none.
+    /// The uuid the entity's `AssetRef<Box<dyn Material>>` names, `None` when it has none.
     ///
     /// The lit lanes draw a mesh only with the GPU material stored under this
     /// uuid: a mesh naming no material, or one not resident, is not drawn by
@@ -122,8 +122,9 @@ impl RenderWorld {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use khora_core::renderer::light::{DirectionalLight, PointLight, SpotLight};
+
+    use super::*;
 
     #[test]
     fn render_world_default_is_empty() {

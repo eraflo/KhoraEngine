@@ -17,9 +17,9 @@
 use std::sync::Arc;
 
 use khora_core::asset::{kinds, AssetUUID};
-use khora_data::scene::{PrefabSource, SceneRecord};
+use khora_data::scene::{PrefabAsset, PrefabSource, SceneRecord};
 
-use crate::asset::{AssetReader, PrefabAsset};
+use crate::asset::AssetReader;
 
 /// The prefabs of a project, read through a shared [`AssetReader`] on any thread.
 ///

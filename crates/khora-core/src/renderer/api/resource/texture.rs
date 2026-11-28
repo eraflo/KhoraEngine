@@ -23,10 +23,11 @@ pub use super::texture_view_descriptor::{
     ImageAspect, TextureViewDescriptor, TextureViewDimension,
 };
 pub use super::texture_view_id::TextureViewId;
+use std::borrow::Cow;
+
 use crate::khora_bitflags;
 use crate::math::Extent3D;
 use crate::renderer::api::resource::TextureFormat;
-use std::borrow::Cow;
 
 /// The dimensionality of a texture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -97,7 +98,15 @@ pub struct CpuTexture {
     pub usage: TextureUsage,
 }
 
-impl crate::asset::Asset for CpuTexture {}
+impl crate::asset::Stored for CpuTexture {}
+
+impl crate::asset::Asset for CpuTexture {
+    const KIND: crate::asset::AssetKind = crate::asset::kinds::TEXTURE;
+    type LocalSource = crate::asset::NoLocalSource;
+
+    /// A texture needs no other asset.
+    fn dependencies(&self, _: &mut Vec<crate::asset::NamedAsset>) {}
+}
 
 impl CpuTexture {
     /// Builds an HDR texture from linear `f32` RGBA channels, packed to

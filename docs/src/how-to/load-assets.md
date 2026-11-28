@@ -22,7 +22,7 @@ let wood = AssetUUID::new_v5("textures/wood.png");
 The default is only a starting point. The moment you rename or move an asset in
 the editor, its uuid is **frozen** in the project's identity registry
 (`<project>/.khora/asset-registry.ron`): the uuid stays while the path changes,
-and every `MeshRef::Asset`, `MaterialRef` and texture slot naming it keeps
+and every `AssetRef::Asset` and texture slot naming it keeps
 resolving. See
 [File formats — asset identity registry](../reference/formats.md#asset-identity-registry).
 
@@ -33,21 +33,23 @@ the same registry. See [Assets and the VFS](../concepts/assets.md).
 ## Reference a mesh
 
 The quickest path is a procedural primitive: `spawn_plane`, `spawn_cube_at` and
-`spawn_sphere` attach a `MeshRef::Procedural` whose uuid is derived from its
-parameters, so identical primitives share one GPU mesh:
+`spawn_sphere` attach an `AssetRef<Mesh>` carrying a `ProceduralMesh` (its
+`Local` form), whose uuid is derived from its parameters, so identical
+primitives share one GPU mesh:
 
 ```rust
 let ball = khora_sdk::spawn_sphere(world, 0.75, 32, 16).build();
 ```
 
-To reference an imported mesh (glTF, OBJ) by its uuid, attach `MeshRef::Asset`:
+To reference an imported mesh (glTF, OBJ) by its uuid, attach an `AssetRef<Mesh>`
+in its `Asset` form:
 
 ```rust
-use khora_sdk::khora_data::ecs::MeshRef;
+use khora_sdk::prelude::ecs::{AssetRef, Mesh};
 use khora_sdk::prelude::AssetUUID;
 
 let ship = khora_sdk::Vessel::new(world)
-    .with_component(MeshRef::Asset(AssetUUID::new_v5("models/ship.gltf")))
+    .with_component(AssetRef::<Mesh>::Asset(AssetUUID::new_v5("models/ship.gltf")))
     .build();
 ```
 
@@ -60,16 +62,16 @@ no frame waits for the disk.
 
 A glTF file's uuid draws its whole default scene as one mesh. To draw one of its
 primitives alone, name the part by its label inside the file (a material part
-goes in `MaterialRef::Asset` the same way):
+goes in an `AssetRef<Box<dyn Material>>` the same way):
 
 ```rust
-use khora_sdk::khora_data::ecs::MeshRef;
+use khora_sdk::prelude::ecs::{AssetRef, Mesh};
 use khora_sdk::prelude::AssetUUID;
 
 let ship_file = AssetUUID::new_v5("models/ship.gltf");
 let hull = AssetUUID::sub_asset(ship_file, "mesh0/prim0"); // mesh 0, primitive 0
 let hull_entity = khora_sdk::Vessel::new(world)
-    .with_component(MeshRef::Asset(hull))
+    .with_component(AssetRef::<Mesh>::Asset(hull))
     .build();
 ```
 
@@ -94,14 +96,15 @@ let mat = StandardMaterial {
     roughness: 0.6,
     ..Default::default()
 };
-let material = world.add_material(mat); // a MaterialRef, saved inside the scene
+let material = world.add_material(mat); // an AssetRef, saved inside the scene
 khora_sdk::spawn_cube_at(world, Vec3::ZERO, 1.0)
     .with_component(material)
     .build();
 ```
 
-`add_material` returns an inline `MaterialRef`: the material is saved inside the
-scene. To reference a `.kmat` asset instead, attach `MaterialRef::Asset(uuid)`.
+`add_material` returns an `AssetRef<Box<dyn Material>>` carrying the material
+inline (an `InlineMaterial`, named by its content): the material is saved inside
+the scene. To reference a `.kmat` asset instead, attach `AssetRef::Asset(uuid)`.
 The material is uploaded once every texture it names is decoded.
 
 ## Load a sound

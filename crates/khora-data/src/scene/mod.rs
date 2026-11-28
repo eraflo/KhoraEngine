@@ -65,7 +65,7 @@ pub use prefab::{
     apply_to_prefab, apply_to_prefab_reporting, collapse, copy_subtree, expand, expand_reporting,
     instance_of, instantiate_prefab, instantiate_prefab_at, instantiate_subtree, prefab_world,
     serialize_prefab, serialize_prefab_reporting, serialize_subtree, serialize_subtree_reporting,
-    InstanceOf, NoPrefabs, PrefabApply, PrefabCatalog, PrefabLibrary, PrefabSource,
+    InstanceOf, NoPrefabs, PrefabApply, PrefabAsset, PrefabCatalog, PrefabLibrary, PrefabSource,
 };
 pub use retired::{is_retired, RetiredComponent};
 pub use save::{

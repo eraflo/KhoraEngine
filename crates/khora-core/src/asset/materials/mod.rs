@@ -16,19 +16,21 @@
 
 mod alpha_mode;
 mod emissive;
+mod inline_material;
 mod standard;
 mod unlit;
 mod wireframe;
 
 pub use alpha_mode::*;
 pub use emissive::*;
+pub use inline_material::InlineMaterial;
 pub use standard::*;
 pub use unlit::*;
 pub use wireframe::*;
 
 use std::any::Any;
 
-use super::Asset;
+use super::Stored;
 
 /// Helper trait to allow downcasting `dyn Material` trait objects to their concrete types.
 pub trait AsAny {
@@ -62,7 +64,15 @@ impl<T: Material + Clone + 'static> MaterialClone for T {
 /// A material defines the surface properties of an object being rendered,
 /// influencing how it interacts with light and determining which shader
 /// (render pipeline) is used to draw it.
-pub trait Material: Asset + AsAny + MaterialClone {
+pub trait Material: Stored + AsAny + MaterialClone {
+    /// Feeds the material's content to `hasher`: its type's stable name, then every field.
+    ///
+    /// Floats are fed by their bits, textures by their uuid. Two materials that
+    /// feed equal content are one material: an [`InlineMaterial`] is named by
+    /// this hash, so equal inline materials share one copy in the store and on
+    /// a device, and a different type or field gives another.
+    fn hash_content(&self, hasher: &mut crate::asset::ContentHasher);
+
     /// Returns the base color (albedo or diffuse) of the material.
     /// Default implementation is White.
     fn base_color(&self) -> crate::math::LinearRgba {
@@ -195,7 +205,23 @@ pub trait Material: Asset + AsAny + MaterialClone {
 
 /// A boxed material is an asset, so an `AssetHandle` can hold a material of
 /// any concrete type.
-impl Asset for Box<dyn Material> {}
+impl Stored for Box<dyn Material> {}
+
+impl crate::asset::Asset for Box<dyn Material> {
+    const KIND: crate::asset::AssetKind = crate::asset::kinds::MATERIAL;
+    type LocalSource = InlineMaterial;
+
+    fn dependencies(&self, out: &mut Vec<crate::asset::NamedAsset>) {
+        out.extend(
+            self.textures()
+                .into_iter()
+                .map(|uuid| crate::asset::NamedAsset {
+                    uuid,
+                    kind: crate::asset::kinds::TEXTURE,
+                }),
+        );
+    }
+}
 
 impl Clone for Box<dyn Material> {
     fn clone(&self) -> Self {

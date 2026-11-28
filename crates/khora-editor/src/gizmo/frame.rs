@@ -15,19 +15,21 @@
 //! The ECS side of the gizmos: reads the selection out of the world and
 //! writes the dragged transforms back.
 
-use super::interact::{gizmo_basis, GizmoBasis, GizmoDelta, GizmoTransform};
-use super::selection::{
-    generate_selection_gizmos, gizmo_world_size, manipulator, GizmoKind, SelectionGizmo,
-};
 use khora_sdk::editor_ui::{EditorState, GizmoLineInstance};
 use khora_sdk::khora_core::math::{Mat4, Vec3};
+use khora_sdk::khora_core::renderer::api::gpu_scene::Mesh;
 use khora_sdk::khora_core::renderer::api::resource::ViewInfo;
 use khora_sdk::khora_core::renderer::light::LightType;
 use khora_sdk::khora_data::render::camera_view_matrix;
 use khora_sdk::prelude::ecs::{
-    AudioSource, Camera, EntityId, GlobalTransform, Light, MeshRef, Transform,
+    AssetRef, AudioSource, Camera, EntityId, GlobalTransform, Light, Transform,
 };
 use khora_sdk::GameWorld;
+
+use super::interact::{gizmo_basis, GizmoBasis, GizmoDelta, GizmoTransform};
+use super::selection::{
+    generate_selection_gizmos, gizmo_world_size, manipulator, GizmoKind, SelectionGizmo,
+};
 
 /// Everything a manipulator needs to know about the current selection.
 pub struct SelectionFrame {
@@ -128,7 +130,7 @@ pub fn collect_gizmo_lines(
             }
         } else if world.get_component::<AudioSource>(entity_id).is_some() {
             GizmoKind::Audio
-        } else if world.get_component::<MeshRef>(entity_id).is_some() {
+        } else if world.get_component::<AssetRef<Mesh>>(entity_id).is_some() {
             GizmoKind::Mesh
         } else {
             GizmoKind::Empty
@@ -243,10 +245,11 @@ fn world_origin(world: &GameWorld, entity: EntityId) -> Vec3 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::gizmo::interact::{GizmoAxis, GizmoDrag};
     use khora_sdk::editor_ui::GizmoMode;
     use khora_sdk::khora_core::math::{Quaternion, Ray};
+
+    use super::*;
+    use crate::gizmo::interact::{GizmoAxis, GizmoDrag};
 
     /// **A Move drag writes the dragged offset into every selected entity.**
     ///

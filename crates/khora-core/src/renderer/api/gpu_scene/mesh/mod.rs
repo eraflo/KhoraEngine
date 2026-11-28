@@ -15,16 +15,19 @@
 //! Defines data structures for mesh representation.
 
 mod gpu_mesh;
+mod primitives;
 
 pub use self::gpu_mesh::GpuMesh;
+pub use self::primitives::{create_cube, create_plane, create_sphere};
 
-use crate::asset::Asset;
+use std::borrow::Cow;
+
+use crate::asset::Stored;
 use crate::math::{Aabb, Vec2, Vec3, Vec4};
 use crate::renderer::api::pipeline::{
     PrimitiveTopology, VertexAttributeDescriptor, VertexBufferLayoutDescriptor, VertexFormat,
     VertexStepMode,
 };
-use std::borrow::Cow;
 
 /// Represents a complete mesh with vertex data and indices.
 ///
@@ -51,7 +54,15 @@ pub struct Mesh {
     pub bounding_box: Aabb,
 }
 
-impl Asset for Mesh {}
+impl Stored for Mesh {}
+
+impl crate::asset::Asset for Mesh {
+    const KIND: crate::asset::AssetKind = crate::asset::kinds::MESH;
+    type LocalSource = crate::asset::ProceduralMesh;
+
+    /// A mesh needs no other asset.
+    fn dependencies(&self, _: &mut Vec<crate::asset::NamedAsset>) {}
+}
 
 impl Mesh {
     /// Byte size of one vertex in every mesh vertex buffer.

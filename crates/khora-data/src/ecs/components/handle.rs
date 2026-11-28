@@ -14,25 +14,26 @@
 
 //! [`HandleComponent`], the component that attaches a loaded asset to an entity.
 
-use khora_core::asset::{Asset, AssetHandle, AssetUUID};
 use std::ops::Deref;
+
+use khora_core::asset::{AssetHandle, AssetUUID, Stored};
 
 use crate::ecs::Component;
 
 /// A loaded asset attached to an entity: a shared handle and the asset's UUID.
 ///
 /// Derefs to the asset itself; cloning shares the data and needs no `T: Clone`.
-pub struct HandleComponent<T: Asset> {
+pub struct HandleComponent<T: Stored> {
     /// The shared, reference-counted asset data.
     pub handle: AssetHandle<T>,
     /// The asset's stable identifier.
     pub uuid: AssetUUID,
 }
 
-impl<T: Asset> Component for HandleComponent<T> {}
+impl<T: Stored> Component for HandleComponent<T> {}
 
 // Written by hand: a derive would require `T: Clone`.
-impl<T: Asset> Clone for HandleComponent<T> {
+impl<T: Stored> Clone for HandleComponent<T> {
     fn clone(&self) -> Self {
         Self {
             handle: self.handle.clone(),
@@ -41,7 +42,7 @@ impl<T: Asset> Clone for HandleComponent<T> {
     }
 }
 
-impl<T: Asset> Deref for HandleComponent<T> {
+impl<T: Stored> Deref for HandleComponent<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {

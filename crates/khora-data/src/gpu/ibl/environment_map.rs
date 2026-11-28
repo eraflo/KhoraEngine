@@ -15,6 +15,9 @@
 //! The scene's environment source for the IBL bake.
 
 use khora_core::asset::AssetUUID;
+use khora_core::renderer::api::resource::CpuTexture;
+
+use crate::ecs::AssetRef;
 
 /// Selects the scene's environment source for the IBL bake.
 ///
@@ -24,15 +27,15 @@ use khora_core::asset::AssetUUID;
 /// changing in the store, bakes again.
 #[derive(Debug, Default, Clone)]
 pub struct EnvironmentMap {
-    /// Equirectangular environment texture, as a loaded `CpuTexture` asset.
-    pub texture: Option<AssetUUID>,
+    /// The equirectangular environment texture.
+    pub texture: Option<AssetRef<CpuTexture>>,
 }
 
 impl EnvironmentMap {
-    /// Points the environment at an equirectangular texture asset.
+    /// Points the environment at the equirectangular texture asset `texture`.
     pub fn from_asset(texture: AssetUUID) -> Self {
         Self {
-            texture: Some(texture),
+            texture: Some(AssetRef::Asset(texture)),
         }
     }
 }

@@ -42,7 +42,7 @@ fn same_type<T: ?Sized>(_: PhantomData<T>, _: PhantomData<T>) {}
 /// `fn` items never share a type, and `&fn-item` does not coerce).
 fn same_item<T>(_: &T, _: &T) {}
 
-fn is_asset<T: khora_core::asset::Asset>() {}
+fn is_stored<T: khora_core::asset::Stored>() {}
 fn is_bit_and<T: std::ops::BitAnd>() {}
 fn is_bit_and_assign<T: std::ops::BitAndAssign>() {}
 fn is_bit_or<T: std::ops::BitOr>() {}
@@ -2464,7 +2464,7 @@ fn module_renderer_paths_still_resolve() {
         cpu_shader_source_fields as fn(&khora_core::renderer::api::shader::source::CpuShaderSource);
     is_debug::<khora_core::renderer::api::shader::source::CpuShaderSource>();
     is_clone::<khora_core::renderer::api::shader::source::CpuShaderSource>();
-    is_asset::<khora_core::renderer::api::shader::source::CpuShaderSource>();
+    is_stored::<khora_core::renderer::api::shader::source::CpuShaderSource>();
     let _ = type_name::<khora_core::renderer::api::resource::texture::AddressMode>();
     let _ = type_name::<khora_core::renderer::api::resource::AddressMode>();
     same_type(
@@ -2489,7 +2489,7 @@ fn module_renderer_paths_still_resolve() {
     let _ = khora_core::renderer::api::resource::texture::CpuTexture::to_descriptor;
     let _ = khora_core::renderer::api::resource::texture::CpuTexture::row_size;
     is_debug::<khora_core::renderer::api::resource::texture::CpuTexture>();
-    is_asset::<khora_core::renderer::api::resource::texture::CpuTexture>();
+    is_stored::<khora_core::renderer::api::resource::texture::CpuTexture>();
     let _ = type_name::<khora_core::renderer::api::resource::texture::FilterMode>();
     let _ = type_name::<khora_core::renderer::api::resource::FilterMode>();
     same_type(
@@ -2728,7 +2728,7 @@ fn module_renderer_paths_still_resolve() {
     let _ = khora_core::renderer::api::material::gpu_material::GpuMaterial::bindings;
     is_debug::<khora_core::renderer::api::material::gpu_material::GpuMaterial>();
     is_clone::<khora_core::renderer::api::material::gpu_material::GpuMaterial>();
-    is_asset::<khora_core::renderer::api::material::gpu_material::GpuMaterial>();
+    is_stored::<khora_core::renderer::api::material::gpu_material::GpuMaterial>();
     let _ = type_name::<khora_core::renderer::light::uniforms::CullingUniformsData>();
     let _ = type_name::<khora_core::renderer::light::CullingUniformsData>();
     same_type(
@@ -2844,7 +2844,7 @@ fn module_renderer_paths_still_resolve() {
         PhantomData::<khora_core::renderer::api::gpu_scene::mesh::GpuMesh>,
     );
     let _ = gpu_mesh_fields as fn(&khora_core::renderer::api::gpu_scene::mesh::GpuMesh);
-    is_asset::<khora_core::renderer::api::gpu_scene::mesh::GpuMesh>();
+    is_stored::<khora_core::renderer::api::gpu_scene::mesh::GpuMesh>();
     let _ = type_name::<khora_core::renderer::api::gpu_scene::mesh::Mesh>();
     let _ = type_name::<khora_core::renderer::api::gpu_scene::Mesh>();
     same_type(
@@ -2857,8 +2857,14 @@ fn module_renderer_paths_still_resolve() {
     let _ = khora_core::renderer::api::gpu_scene::mesh::Mesh::vertex_buffer_layout;
     let _ = khora_core::renderer::api::gpu_scene::mesh::Mesh::generate_flat_normals;
     let _ = khora_core::renderer::api::gpu_scene::mesh::Mesh::create_vertex_buffer;
+    let _ = khora_core::renderer::api::gpu_scene::mesh::create_cube;
+    let _ = khora_core::renderer::api::gpu_scene::mesh::create_plane;
+    let _ = khora_core::renderer::api::gpu_scene::mesh::create_sphere;
+    let _ = khora_core::renderer::api::gpu_scene::create_cube;
+    let _ = khora_core::renderer::api::gpu_scene::create_plane;
+    let _ = khora_core::renderer::api::gpu_scene::create_sphere;
     is_debug::<khora_core::renderer::api::gpu_scene::mesh::Mesh>();
-    is_asset::<khora_core::renderer::api::gpu_scene::mesh::Mesh>();
+    is_stored::<khora_core::renderer::api::gpu_scene::mesh::Mesh>();
     let _ = type_name::<khora_core::renderer::api::gpu_scene::render_object::RenderObject>();
     let _ = type_name::<khora_core::renderer::api::gpu_scene::RenderObject>();
     same_type(

@@ -14,6 +14,8 @@
 
 //! Opening a project: its decoders, its index, the engine's service it shares, what it reads of `project.json`.
 
+use khora_sdk::khora_core::renderer::api::gpu_scene::Mesh;
+
 use super::*;
 
 #[test]
@@ -183,7 +185,7 @@ fn sharing_another_projects_assets_announces_what_the_previous_one_served() -> R
 /// record: its root, then the node, showing the file's sub-assets.
 #[test]
 fn a_gltf_scene_is_a_prefab_record_of_the_project() -> Result<()> {
-    use khora_sdk::khora_data::ecs::{MeshRef, Name};
+    use khora_sdk::khora_data::ecs::{AssetRef, Name};
 
     let root = std::env::temp_dir().join(format!(
         "khora-editor-project-gltf-prefab-{}",
@@ -216,8 +218,11 @@ fn a_gltf_scene_is_a_prefab_record_of_the_project() -> Result<()> {
         .find(|e| world.get::<Name>(*e).is_some_and(|n| n.as_str() == "Hull"))
         .expect("Hull is in the record");
     assert_eq!(
-        world.get::<MeshRef>(hull).cloned(),
-        Some(MeshRef::Asset(AssetUUID::sub_asset(file, "mesh0/prim0")))
+        world.get::<AssetRef<Mesh>>(hull).cloned(),
+        Some(AssetRef::<Mesh>::Asset(AssetUUID::sub_asset(
+            file,
+            "mesh0/prim0"
+        )))
     );
     Ok(())
 }

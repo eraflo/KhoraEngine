@@ -23,7 +23,7 @@ use khora_sdk::khora_core::sync::RwLockExt;
 use khora_sdk::khora_data::assets::Assets;
 use khora_sdk::khora_data::AssetStore;
 use khora_sdk::prelude::ecs::{
-    AudioSource, Camera, EntityId, GlobalTransform, Light, MeshRef, Transform,
+    AssetRef, AudioSource, Camera, EntityId, GlobalTransform, Light, Transform,
 };
 use khora_sdk::GameWorld;
 
@@ -35,7 +35,7 @@ const GIZMO_PICK_HALF_EXTENT: f32 = 0.35;
 
 /// Returns the nearest entity whose bounds the ray enters, if any.
 ///
-/// An entity's bounds are those of the mesh its `MeshRef` names in `assets`,
+/// An entity's bounds are those of the mesh its `AssetRef<Mesh>` names in `assets`,
 /// or a small box when it names none or that mesh is not loaded.
 pub fn pick_entity(world: &GameWorld, assets: &AssetStore, ray: &Ray) -> Option<EntityId> {
     // Reciprocal once, not per candidate — the slab test takes the inverse
@@ -85,10 +85,10 @@ fn entity_matrix(world: &GameWorld, entity: EntityId) -> Option<Mat4> {
 }
 
 /// Returns the local-space bounds for `entity`: the extent of the mesh its
-/// `MeshRef` names in `meshes` when it is loaded, a small box otherwise.
+/// `AssetRef<Mesh>` names in `meshes` when it is loaded, a small box otherwise.
 fn local_bounds(world: &GameWorld, meshes: &Assets<Mesh>, entity: EntityId) -> Aabb {
     let mesh = world
-        .get_component::<MeshRef>(entity)
+        .get_component::<AssetRef<Mesh>>(entity)
         .and_then(|mesh_ref| meshes.get(&mesh_ref.uuid()));
     if let Some(bounds) = mesh.and_then(|mesh| Aabb::from_points(&mesh.positions)) {
         return bounds;
@@ -111,12 +111,13 @@ fn local_bounds(world: &GameWorld, meshes: &Assets<Mesh>, entity: EntityId) -> A
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use khora_sdk::khora_core::asset::{AssetHandle, AssetUUID};
     use khora_sdk::khora_core::renderer::api::pipeline::PrimitiveTopology;
     use khora_sdk::khora_core::sync::RwLockExt;
     use khora_sdk::khora_data::AssetStore;
-    use khora_sdk::prelude::ecs::{MeshRef, Name};
+    use khora_sdk::prelude::ecs::{AssetRef, Name};
+
+    use super::*;
 
     fn ray_from(origin: Vec3, direction: Vec3) -> Ray {
         Ray::new(origin, direction)
@@ -238,7 +239,7 @@ mod tests {
     fn picking_finds_an_entity_by_its_mesh_reference() {
         let mut world = GameWorld::new();
         let assets = AssetStore::new();
-        let mesh = MeshRef::Asset(AssetUUID::new());
+        let mesh = AssetRef::<Mesh>::Asset(AssetUUID::new());
         assets
             .store::<Mesh>()
             .write_recovered()
@@ -269,7 +270,7 @@ mod tests {
         let entity = world.spawn((
             Transform::from_translation(Vec3::ZERO),
             GlobalTransform::new(Mat4::IDENTITY),
-            MeshRef::Asset(AssetUUID::new()),
+            AssetRef::<Mesh>::Asset(AssetUUID::new()),
         ));
 
         let at_origin = pick_entity(

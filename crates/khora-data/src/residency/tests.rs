@@ -89,7 +89,7 @@ mod mesh_on_gpu {
         CommandBufferId,
     };
     use khora_core::renderer::api::device::GraphicsAdapterInfo;
-    use khora_core::renderer::api::gpu_scene::{GpuMesh, Mesh};
+    use khora_core::renderer::api::gpu_scene::{create_plane, GpuMesh, Mesh};
     use khora_core::renderer::api::pipeline::{
         ComputePipelineDescriptor, ComputePipelineId, PipelineLayoutDescriptor, PipelineLayoutId,
         RenderPipelineDescriptor, RenderPipelineId,
@@ -104,8 +104,7 @@ mod mesh_on_gpu {
     use khora_core::renderer::GraphicsDevice;
     use khora_core::residency::Residency;
 
-    use crate::assets::procedural_mesh::create_plane;
-    use crate::ecs::{MeshRef, Tick, World};
+    use crate::ecs::{AssetRef, Tick, World};
     use crate::residency::MeshOnGpu;
     use crate::{AssetStore, ProjectionRegistry};
 
@@ -320,7 +319,7 @@ mod mesh_on_gpu {
             .expect("the mesh store")
             .insert(uuid, AssetHandle::new(create_plane(1.0, 0.0)));
         let mut world = World::new();
-        world.spawn(MeshRef::Asset(uuid));
+        world.spawn(AssetRef::<Mesh>::Asset(uuid));
         let resident = |store: &AssetStore| {
             store
                 .store::<GpuMesh>()
@@ -350,7 +349,7 @@ mod by_arrival {
     use khora_core::asset::{AssetHandle, AssetUUID, Material, StandardMaterial};
     use khora_core::lane::OutputDeck;
     use khora_core::math::Extent3D;
-    use khora_core::renderer::api::gpu_scene::{GpuMesh, Mesh};
+    use khora_core::renderer::api::gpu_scene::{create_plane, GpuMesh, Mesh};
     use khora_core::renderer::api::material::GpuMaterial;
     use khora_core::renderer::api::resource::{
         CpuTexture, SampleCount, TextureDimension, TextureFormat, TextureUsage,
@@ -359,10 +358,8 @@ mod by_arrival {
     use khora_core::renderer::GraphicsDevice;
     use khora_core::Runtime;
 
-    use crate::assets::procedural_mesh::create_plane;
     use crate::ecs::{
-        DataSystemRegistration, HandleComponent, MaterialRef, MeshRef, Observer, SystemContext,
-        World,
+        AssetRef, DataSystemRegistration, HandleComponent, Observer, SystemContext, World,
     };
     use crate::gpu::tests::device::{LayoutOnlyPipelines, RecordingDevice};
     use crate::{AssetEviction, AssetStore, ProjectionRegistry};
@@ -513,7 +510,7 @@ mod by_arrival {
 
     /// Stores a copy of `make` under `uuid` in `Assets<A>` more times than its
     /// journal keeps, so the residency reading it next reads a resync.
-    fn overflow_arrivals<A: khora_core::asset::Asset>(
+    fn overflow_arrivals<A: khora_core::asset::Stored>(
         gpu: &Gpu,
         uuid: AssetUUID,
         make: impl Fn() -> AssetHandle<A>,
@@ -535,12 +532,16 @@ mod by_arrival {
         alive: Arc<()>,
     }
 
-    impl khora_core::asset::Asset for CountedMaterial {}
-    impl Material for CountedMaterial {}
+    impl khora_core::asset::Stored for CountedMaterial {}
+    impl Material for CountedMaterial {
+        fn hash_content(&self, hasher: &mut khora_core::asset::ContentHasher) {
+            hasher.write_str("CountedMaterial");
+        }
+    }
 
     /// **A mesh that lands is made resident once, however many entities name it.**
     ///
-    /// Two entities name one uuid by their `MeshRef` alone. Once its copy
+    /// Two entities name one uuid by their `AssetRef<Mesh>` alone. Once its copy
     /// lands in the store, the GPU copy under that uuid holds its vertices,
     /// made once, and not again on a later frame.
     #[test]
@@ -548,8 +549,8 @@ mod by_arrival {
         let gpu = Gpu::new();
         let mut world = World::new();
         let uuid = AssetUUID::new_v5("meshes/plane.obj");
-        world.spawn(MeshRef::Asset(uuid));
-        world.spawn(MeshRef::Asset(uuid));
+        world.spawn(AssetRef::<Mesh>::Asset(uuid));
+        world.spawn(AssetRef::<Mesh>::Asset(uuid));
         gpu.frame(&mut world);
 
         let plane = create_plane(1.0, 0.0);
@@ -579,7 +580,7 @@ mod by_arrival {
         let gpu = Gpu::new();
         let mut world = World::new();
         let uuid = AssetUUID::new_v5("meshes/plane.obj");
-        world.spawn(MeshRef::Asset(uuid));
+        world.spawn(AssetRef::<Mesh>::Asset(uuid));
         gpu.frame(&mut world);
         gpu.land_mesh(uuid, create_plane(1.0, 0.0));
         gpu.frame(&mut world);
@@ -615,7 +616,7 @@ mod by_arrival {
         let gpu = Gpu::new();
         let mut world = World::new();
         let uuid = AssetUUID::new_v5("meshes/plane.obj");
-        world.spawn(MeshRef::Asset(uuid));
+        world.spawn(AssetRef::<Mesh>::Asset(uuid));
         gpu.frame(&mut world);
         gpu.land_mesh(uuid, create_plane(1.0, 0.0));
         gpu.frame(&mut world);
@@ -654,7 +655,7 @@ mod by_arrival {
         let gpu = Gpu::new();
         let mut world = World::new();
         let uuid = AssetUUID::new_v5("meshes/plane.obj");
-        world.spawn(MeshRef::Asset(uuid));
+        world.spawn(AssetRef::<Mesh>::Asset(uuid));
         gpu.frame(&mut world);
         gpu.land_mesh(uuid, create_plane(1.0, 0.0));
         gpu.frame(&mut world);
@@ -691,7 +692,10 @@ mod by_arrival {
         let mesh = AssetUUID::new_v5("meshes/plane.obj");
         let material = AssetUUID::new_v5("materials/painted.kmat");
         let texture = AssetUUID::new_v5("textures/paint.png");
-        world.spawn((MeshRef::Asset(mesh), MaterialRef::Asset(material)));
+        world.spawn((
+            AssetRef::<Mesh>::Asset(mesh),
+            AssetRef::<Box<dyn Material>>::Asset(material),
+        ));
         gpu.frame(&mut world);
 
         gpu.land_mesh(mesh, create_plane(1.0, 0.0));
@@ -747,8 +751,11 @@ mod by_arrival {
         gpu.land_mesh(floor, create_plane(8.0, -1.0));
         gpu.land_mesh(unnamed, create_plane(3.0, 2.0));
         gpu.land_material(paint, StandardMaterial::default());
-        world.spawn((MeshRef::Asset(plane), MaterialRef::Asset(paint)));
-        world.spawn(MeshRef::Asset(floor));
+        world.spawn((
+            AssetRef::<Mesh>::Asset(plane),
+            AssetRef::<Box<dyn Material>>::Asset(paint),
+        ));
+        world.spawn(AssetRef::<Mesh>::Asset(floor));
 
         gpu.frame(&mut world);
 
@@ -778,7 +785,7 @@ mod by_arrival {
         let gpu = Gpu::new();
         let mut world = World::new();
         let uuid = AssetUUID::new_v5("meshes/plane.obj");
-        let first = world.spawn(MeshRef::Asset(uuid));
+        let first = world.spawn(AssetRef::<Mesh>::Asset(uuid));
         gpu.frame(&mut world);
         gpu.land_mesh(uuid, create_plane(1.0, 0.0));
         gpu.frame(&mut world);
@@ -791,7 +798,7 @@ mod by_arrival {
             "no reference names it: its GPU copy is evicted"
         );
 
-        world.spawn(MeshRef::Asset(uuid));
+        world.spawn(AssetRef::<Mesh>::Asset(uuid));
         gpu.frame(&mut world);
         assert!(
             gpu.gpu_mesh(uuid).is_some(),
@@ -822,7 +829,10 @@ mod by_arrival {
         let material: AssetHandle<Box<dyn Material>> =
             AssetHandle::new(Box::new(StandardMaterial::default()));
         gpu.frame(&mut world);
-        let entity = world.spawn((MeshRef::Asset(mesh_uuid), MaterialRef::Asset(material_uuid)));
+        let entity = world.spawn((
+            AssetRef::<Mesh>::Asset(mesh_uuid),
+            AssetRef::<Box<dyn Material>>::Asset(material_uuid),
+        ));
         gpu.store
             .store::<Mesh>()
             .write()
@@ -890,7 +900,7 @@ mod by_arrival {
         let counted = AssetUUID::new_v5("materials/counted.kmat");
         let busy = AssetUUID::new_v5("materials/busy.kmat");
         let alive = Arc::new(());
-        let naming = world.spawn(MaterialRef::Asset(counted));
+        let naming = world.spawn(AssetRef::<Box<dyn Material>>::Asset(counted));
         gpu.store
             .store::<Box<dyn Material>>()
             .write()
@@ -938,7 +948,7 @@ mod by_arrival {
         let mut world = World::new();
         let decoding = AssetUUID::new_v5("meshes/decoding.obj");
         let busy = AssetUUID::new_v5("meshes/busy.obj");
-        world.spawn(MeshRef::Asset(decoding));
+        world.spawn(AssetRef::<Mesh>::Asset(decoding));
         gpu.frame(&mut world);
 
         overflow_arrivals(&gpu, busy, || AssetHandle::new(create_plane(2.0, 0.0)));
@@ -967,7 +977,7 @@ mod by_arrival {
         let mut world = World::new();
         let material = AssetUUID::new_v5("materials/painted.kmat");
         let paint = AssetUUID::new_v5("textures/paint.png");
-        world.spawn(MaterialRef::Asset(material));
+        world.spawn(AssetRef::<Box<dyn Material>>::Asset(material));
         gpu.land_texture(paint);
         gpu.land_material(
             material,
@@ -1026,7 +1036,7 @@ mod by_arrival {
         let material = AssetUUID::new_v5("materials/painted.kmat");
         let paint = AssetUUID::new_v5("textures/paint.png");
         let busy = AssetUUID::new_v5("textures/busy.png");
-        world.spawn(MaterialRef::Asset(material));
+        world.spawn(AssetRef::<Box<dyn Material>>::Asset(material));
         gpu.land_texture(paint);
         gpu.land_material(
             material,
@@ -1067,7 +1077,7 @@ mod by_arrival {
         let mut world = World::new();
         let material = AssetUUID::new_v5("materials/painted.kmat");
         let paint = AssetUUID::new_v5("textures/paint.png");
-        world.spawn(MaterialRef::Asset(material));
+        world.spawn(AssetRef::<Box<dyn Material>>::Asset(material));
         gpu.land_texture(paint);
         gpu.land_material(
             material,
@@ -1111,13 +1121,13 @@ mod by_arrival {
     /// **A material named again after its GPU copy was evicted is made resident again.**
     ///
     /// The copy in the store stays and does not arrive again: the changed
-    /// `MaterialRef` alone brings it back.
+    /// `AssetRef<Box<dyn Material>>` alone brings it back.
     #[test]
     fn a_material_named_again_after_its_gpu_copy_was_evicted_is_made_resident_again() {
         let gpu = Gpu::new();
         let mut world = World::new();
         let material = AssetUUID::new_v5("materials/plain.kmat");
-        let first = world.spawn(MaterialRef::Asset(material));
+        let first = world.spawn(AssetRef::<Box<dyn Material>>::Asset(material));
         gpu.land_material(material, StandardMaterial::default());
         gpu.frame(&mut world);
         assert!(
@@ -1132,7 +1142,7 @@ mod by_arrival {
             "the premise: no reference names it, its GPU copy is evicted"
         );
 
-        world.spawn(MaterialRef::Asset(material));
+        world.spawn(AssetRef::<Box<dyn Material>>::Asset(material));
         gpu.frame(&mut world);
         assert!(
             gpu.gpu_material(material).is_some(),
@@ -1153,7 +1163,7 @@ mod by_arrival {
         let gpu = Gpu::new();
         let mut world = World::new();
         let uuid = AssetUUID::new_v5("meshes/plane.obj");
-        let entity = world.spawn(MeshRef::Asset(uuid));
+        let entity = world.spawn(AssetRef::<Mesh>::Asset(uuid));
         gpu.land_mesh(uuid, create_plane(1.0, 0.0));
         gpu.frame(&mut world);
         let snapshot = write_snapshot(&world).expect("the world is snapshotted");

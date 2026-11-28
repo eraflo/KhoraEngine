@@ -17,7 +17,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use khora_core::asset::{Asset, AssetHandle, AssetUUID};
+use khora_core::asset::{AssetHandle, AssetUUID, Stored};
 use khora_core::sync::LockExt;
 
 use crate::assets::journal::Journal;
@@ -29,20 +29,20 @@ use crate::assets::{Arrival, ArrivalKind, ArrivalsRead, ARRIVALS_KEPT};
 /// Each insert and removal is recorded as an [`Arrival`], which every
 /// reader of [`arrivals`](Self::arrivals) reads once: whoever writes the
 /// store tells its readers by writing it.
-pub struct Assets<A: Asset> {
+pub struct Assets<A: Stored> {
     storage: HashMap<AssetUUID, AssetHandle<A>>,
     /// The arrivals not every reader has read; a leaf lock, so a reader
     /// holding the store's read lock can read them.
     journal: Mutex<Journal>,
 }
 
-impl<A: Asset> Default for Assets<A> {
+impl<A: Stored> Default for Assets<A> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<A: Asset> Clone for Assets<A> {
+impl<A: Stored> Clone for Assets<A> {
     /// Copies the handles; the clone's journal is empty and has no reader.
     fn clone(&self) -> Self {
         let kept = self.journal.lock_recovered().kept();
@@ -53,7 +53,7 @@ impl<A: Asset> Clone for Assets<A> {
     }
 }
 
-impl<A: Asset> Assets<A> {
+impl<A: Stored> Assets<A> {
     /// Creates a new, empty asset storage whose journal keeps [`ARRIVALS_KEPT`] entries.
     pub fn new() -> Self {
         Self::with_arrivals_kept(ARRIVALS_KEPT)
@@ -140,11 +140,11 @@ mod tests {
     use super::*;
     use crate::assets::{Arrival, ArrivalKind, SoundData, ARRIVALS_KEPT};
 
-    /// Local newtype wrapper so the orphan rule lets us `impl Asset` for it.
-    /// `Asset` is just a marker trait (`Send + Sync + 'static`).
+    /// Local newtype wrapper so the orphan rule lets us `impl Stored` for it.
+    /// `Stored` is just a marker trait (`Send + Sync + 'static`).
     #[derive(Debug, PartialEq)]
     struct TestAsset(String);
-    impl Asset for TestAsset {}
+    impl Stored for TestAsset {}
 
     const RESIDENCY: &str = "residency";
     const TEXT_LAYOUT: &str = "text_layout";
@@ -188,7 +188,7 @@ mod tests {
     }
 
     /// Asserts `assets` journal keeps [`ARRIVALS_KEPT`] unread entries for a reader, and no more.
-    fn assert_keeps_arrivals_kept<A: Asset>(
+    fn assert_keeps_arrivals_kept<A: Stored>(
         mut assets: Assets<A>,
         make: impl Fn() -> AssetHandle<A>,
     ) {

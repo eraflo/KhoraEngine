@@ -20,11 +20,13 @@ mod loading;
 mod reader;
 mod sub_assets;
 
+use std::fs;
+
+use khora_core::asset::AssetSource;
+use tempfile::tempdir;
+
 use super::*;
 use crate::asset::IndexBuilder;
-use khora_core::asset::AssetSource;
-use std::fs;
-use tempfile::tempdir;
 
 /// Mock IO returning bytes from an in-memory map keyed by relative path.
 ///
@@ -50,10 +52,12 @@ impl AssetIo for MockIo {
     }
 }
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use khora_core::asset::{AssetKind, AssetMetadata};
+
 use crate::asset::tests::kinds::{NOTE, TEST_CONTAINER};
 use crate::asset::AssetContainer;
-use khora_core::asset::{AssetKind, AssetMetadata};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// The kind name of the test container files.
 const CONTAINER_TYPE: &str = TEST_CONTAINER.name();
@@ -66,14 +70,14 @@ struct TestMesh {
     source_path: std::path::PathBuf,
     text: String,
 }
-impl Asset for TestMesh {}
+impl Stored for TestMesh {}
 
 /// What a test container extracts as a `"material"`.
 #[derive(Debug)]
 struct TestMaterial {
     label: String,
 }
-impl Asset for TestMaterial {}
+impl Stored for TestMaterial {}
 
 /// What the test container's `open` produces.
 struct OpenedTestContainer {
@@ -233,8 +237,9 @@ fn container_service(
     (svc, opens)
 }
 
-use crate::asset::{AssetChanged, AssetDecoder};
 use std::sync::Mutex;
+
+use crate::asset::{AssetChanged, AssetDecoder};
 
 /// Mock IO over a file map the test keeps a handle to, so it can rewrite
 /// a file's bytes after the service took the IO.
@@ -270,7 +275,7 @@ struct TestNote {
     #[allow(dead_code)]
     text: String,
 }
-impl Asset for TestNote {}
+impl Stored for TestNote {}
 
 struct NoteDecoder;
 impl AssetDecoder<TestNote> for NoteDecoder {
@@ -333,7 +338,7 @@ fn drained_set(svc: &AssetService) -> HashSet<AssetUUID> {
 use crate::asset::{AssetReader, Decoded};
 
 /// The value `decoded` holds, as an `A`; panics naming `what` otherwise.
-fn decoded_as<A: Asset>(decoded: Decoded, what: &str) -> Box<A> {
+fn decoded_as<A: Stored>(decoded: Decoded, what: &str) -> Box<A> {
     decoded
         .value
         .unwrap_or_else(|e| panic!("{what} decodes: {e}"))

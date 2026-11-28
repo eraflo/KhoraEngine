@@ -17,16 +17,16 @@
 //!
 //! See the book: concepts/serialization.md, "How components serialize".
 
-use super::record::{Record, RecordError, ReferenceReader, ReferenceWriter, ReportEntry};
-use crate::ecs::AnyVec;
-use crate::ecs::{ComponentProvenance, World};
-use khora_core::ecs::entity::EntityId;
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
+use khora_core::ecs::entity::EntityId;
+
 pub(crate) use super::kept::Kept;
+use super::record::{Record, RecordError, ReferenceReader, ReferenceWriter, ReportEntry};
 pub use super::staged_value::StagedValue;
+use crate::ecs::{AnyVec, ComponentProvenance, World};
 
 /// Writes a column row positionally: see [`ComponentRegistration::column_to_snapshot`].
 pub type ColumnToSnapshotFn =
@@ -221,8 +221,9 @@ pub(crate) fn copy_through_record(
     dst: &mut World,
     target: EntityId,
 ) -> Option<Result<(), String>> {
-    use super::record::EntityRef;
     use khora_core::ecs::PersistentId;
+
+    use super::record::EntityRef;
 
     struct Same;
     impl ReferenceWriter for Same {
@@ -311,13 +312,14 @@ pub fn provenance_of(type_name: &str) -> Option<ComponentProvenance> {
 
 #[cfg(test)]
 mod tests {
+    use khora_core::math::Vec3;
+
     use super::*;
     use crate::ecs::component::Component;
     use crate::ecs::{
         AudioSource, Camera, Children, GlobalTransform, Light, Name, Parent, SemanticDomain, Tag,
         Transform,
     };
-    use khora_core::math::Vec3;
 
     /// A test-only anchor: a round-trip target exists without any component the
     /// round trip adds, so `from_json` and `stage` take the real "add" path.
@@ -522,8 +524,8 @@ mod tests {
                 "Camera",
                 "Light",
                 "Tag",
-                "MeshRef",
-                "MaterialRef",
+                "AssetRef<Mesh>",
+                "AssetRef<Box<dyn Material>>",
             ] {
                 assert_eq!(
                     provenance_of(name),

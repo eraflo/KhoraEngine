@@ -12,16 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::*;
-use crate::asset::signing::{PackSigner, SignedManifest};
-use crate::asset::AssetIndex;
-use crate::asset::{AssetService, PackLoader};
-use crate::asset::{REGISTRY_DIR, REGISTRY_FILE};
-use khora_core::asset::AssetUUID;
-use khora_telemetry::MetricsRegistry;
 use std::fs;
 use std::sync::Arc;
+
+use khora_core::asset::AssetUUID;
+use khora_telemetry::MetricsRegistry;
 use tempfile::tempdir;
+
+use super::*;
+use crate::asset::signing::{PackSigner, SignedManifest};
+use crate::asset::{AssetIndex, AssetService, PackLoader, REGISTRY_DIR, REGISTRY_FILE};
 
 fn seed_project(root: &Path) {
     fs::create_dir_all(root.join("textures")).unwrap();
@@ -407,9 +407,11 @@ fn a_packed_script_depends_on_the_uuid_its_renamed_module_is_packed_under() {
 
 // ── Sub-assets ──────────────────────────────────────────────────────────
 
-use crate::asset::{AssetContainer, SubAssetEntry, SubAssetListerRegistration};
-use khora_core::asset::Asset;
 use std::any::Any;
+
+use khora_core::asset::Stored;
+
+use crate::asset::{AssetContainer, SubAssetEntry, SubAssetListerRegistration};
 
 /// The kind name of the test-only container files packed here (`*.ksubpack`).
 const PACK_CONTAINER_TYPE: &str = crate::asset::tests::kinds::PACK_CONTAINER.name();
@@ -444,7 +446,7 @@ struct PackedSub {
     label: String,
     text: String,
 }
-impl Asset for PackedSub {}
+impl Stored for PackedSub {}
 
 struct TextContainer;
 

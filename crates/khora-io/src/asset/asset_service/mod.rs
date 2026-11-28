@@ -23,7 +23,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Context, Result};
-use khora_core::asset::{Asset, AssetHandle, AssetSource, AssetUUID};
+use khora_core::asset::{AssetHandle, AssetSource, AssetUUID, DecodeRequest, Stored};
 use khora_core::event::{Channel, WhenFull};
 use khora_core::sync::LockExt;
 use khora_data::assets::Assets;
@@ -36,10 +36,7 @@ use super::generations::Generations;
 use super::io::AssetIo;
 use super::manifest::PackManifest;
 use super::reader::AssetReader;
-use khora_core::asset::DecodeRequest;
-
 use crate::asset::AssetIndex;
-
 use any_assets::AnyAssets;
 
 mod any_assets;
@@ -232,7 +229,7 @@ impl AssetService {
     }
 
     /// Registers a decoder for a specific asset type.
-    pub fn register_decoder<A: Asset>(
+    pub fn register_decoder<A: Stored>(
         &mut self,
         type_name: &str,
         decoder: impl super::decoder::AssetDecoder<A> + Send + Sync + 'static,
@@ -244,7 +241,7 @@ impl AssetService {
     ///
     /// # Errors
     /// When the asset is not indexed, cannot be read, or does not decode as `A`.
-    pub fn load<A: Asset>(&mut self, uuid: &AssetUUID) -> Result<AssetHandle<A>> {
+    pub fn load<A: Stored>(&mut self, uuid: &AssetUUID) -> Result<AssetHandle<A>> {
         let type_id = TypeId::of::<A>();
 
         let storage = self
@@ -290,7 +287,7 @@ impl AssetService {
     /// One [`DecodeRequest`] is filed while it is
     /// pending. [`Requested`](super::Requested) says `Failed` once its last decode
     /// failed and nothing changed since.
-    pub fn request<A: Asset>(&mut self, uuid: &AssetUUID) -> super::requested::Requested<A> {
+    pub fn request<A: Stored>(&mut self, uuid: &AssetUUID) -> super::requested::Requested<A> {
         self.request_off_frame(uuid)
     }
 
@@ -308,7 +305,7 @@ impl AssetService {
     }
 
     /// Decodes the asset `uuid`, a sub-asset from its container, which it returns too.
-    fn decode_uncached<A: Asset>(&mut self, uuid: &AssetUUID) -> Result<(A, Option<AssetUUID>)> {
+    fn decode_uncached<A: Stored>(&mut self, uuid: &AssetUUID) -> Result<(A, Option<AssetUUID>)> {
         let reader = Arc::clone(&self.reader);
         let (metadata, source) = reader.source_of(uuid)?;
 

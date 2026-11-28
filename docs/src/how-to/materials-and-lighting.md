@@ -32,9 +32,10 @@ khora_sdk::spawn_sphere(world, 0.75, 32, 16)
     .build();
 ```
 
-`add_material` returns a `MaterialRef::Inline` that embeds the material in the scene; the
+`add_material` returns an `AssetRef<Box<dyn Material>>` carrying the material inline
+(`AssetRef::Local(InlineMaterial)`, named by its content), saved in the scene; the
 resolver and GPU projection turn it into a runtime material. To reference a packaged
-`.kmat` asset instead, attach `MaterialRef::Asset(uuid)` — see
+`.kmat` asset instead, attach `AssetRef::Asset(uuid)` — see
 [Load and reference assets](./load-assets.md).
 
 ### The PBR knobs

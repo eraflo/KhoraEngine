@@ -164,7 +164,7 @@ fn report_problems_puts_each_entry_on_its_entity() {
         .expect("authored");
     let entries = [khora_sdk::khora_data::scene::record::ReportEntry {
         entity: Some(id),
-        component: Some("MeshRef".to_owned()),
+        component: Some("AssetRef<Mesh>".to_owned()),
         path: String::new(),
         kind: ReportKind::NotSaved,
     }];
@@ -173,7 +173,7 @@ fn report_problems_puts_each_entry_on_its_entity() {
 
     assert_eq!(problems.len(), 1, "one problem per entry: {problems:#?}");
     assert_eq!(problems[0].entity, Some(entity));
-    assert_eq!(problems[0].component.as_deref(), Some("MeshRef"));
+    assert_eq!(problems[0].component.as_deref(), Some("AssetRef<Mesh>"));
     assert_eq!(problems[0].field, None, "a whole component names no field");
     assert_eq!(problems[0].severity, ProblemSeverity::Warning);
 }

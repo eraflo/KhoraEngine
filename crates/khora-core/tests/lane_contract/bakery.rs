@@ -19,15 +19,13 @@
 use std::sync::{Arc, Mutex};
 
 use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::asset::Asset;
+use khora_core::asset::Stored;
 use khora_core::event::{BetweenSessions, Mailbox, Reader, Supersedes};
 use khora_core::lane::cost::Cost;
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::io::{Budget, Locked, Target};
 use khora_core::lane::level::Level;
-use khora_core::lane::LaneError;
-use khora_core::lane::Staged;
-use khora_core::lane::{Lane, LaneReport};
+use khora_core::lane::{Lane, LaneError, LaneReport, Staged};
 use khora_core::residency::{DeviceClass, Residency, ResidencyError, Resident};
 use khora_macros::{LaneInputs, LaneOutputs};
 
@@ -139,7 +137,7 @@ pub fn abandoned(abandoned: &Abandoned) -> Vec<(u32, u32)> {
 
 /// A CPU asset a glaze is made from.
 pub struct Recipe;
-impl Asset for Recipe {}
+impl Stored for Recipe {}
 
 /// A residency of glazes, for a lane reading `#[resident]`.
 pub struct Glazes;

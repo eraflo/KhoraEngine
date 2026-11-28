@@ -14,19 +14,22 @@
 
 //! A world holding every kind of component a scene records.
 
-use khora_core::asset::{AssetUUID, StandardMaterial};
+use khora_core::asset::{
+    AssetUUID, InlineMaterial, Material, ProceduralMesh, ProceduralMeshKind, StandardMaterial,
+};
 use khora_core::ecs::entity::EntityId;
 use khora_core::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
 use khora_core::physics::{BodyType, ColliderShape};
+use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::script::{
     FrozenFrame, FrozenMachine, FrozenValue, PendingBody, PendingSequence, ScriptSnapshot,
     ScriptValue, TimerRemaining,
 };
 use khora_core::ui::types::{UiFlexDirection, UiRect, UiVal};
 use khora_data::ecs::{
-    ActiveEvents, AudioListener, AudioSource, BodyMotion, Camera, Collider, FieldKind,
-    GlobalTransform, KinematicCharacterController, Light, MaterialRef, MeshRef, Name, PackedField,
-    PrefabInstance, ProceduralMeshKind, RigidBody, Tag, Transform, World,
+    ActiveEvents, AssetRef, AudioListener, AudioSource, BodyMotion, Camera, Collider, FieldKind,
+    GlobalTransform, KinematicCharacterController, Light, Name, PackedField, PrefabInstance,
+    RigidBody, Tag, Transform, World,
 };
 use khora_data::flow::companion::companion_row;
 use khora_data::ui::{
@@ -173,18 +176,21 @@ pub fn sample_world() -> (World, Sample) {
         Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
         Name::new("Child"),
         Light::point(),
-        MeshRef::procedural(ProceduralMeshKind::Sphere, [0.5, 16.0, 16.0, 0.0]),
+        AssetRef::<Mesh>::Local(ProceduralMesh::new(
+            ProceduralMeshKind::Sphere,
+            [0.5, 16.0, 16.0, 0.0],
+        )),
     ));
     add(
         &mut world,
         child,
-        MaterialRef::inline(Box::new(StandardMaterial {
+        AssetRef::<Box<dyn Material>>::Local(InlineMaterial::new(Box::new(StandardMaterial {
             base_color: LinearRgba::new(0.8, 0.1, 0.1, 1.0),
             base_color_texture: Some(wall),
             metallic: 0.25,
             roughness: 0.6,
             ..StandardMaterial::default()
-        })),
+        }))),
     );
     world.set_parent(child, Some(root));
 
@@ -192,8 +198,8 @@ pub fn sample_world() -> (World, Sample) {
         Transform::from_translation(Vec3::new(0.0, 0.0, 3.0)),
         Name::new("Grandchild"),
         Light::directional(),
-        MeshRef::Asset(AssetUUID::new_v5("meshes/rock.gltf")),
-        MaterialRef::Asset(AssetUUID::new_v5("materials/rock.kmat")),
+        AssetRef::<Mesh>::Asset(AssetUUID::new_v5("meshes/rock.gltf")),
+        AssetRef::<Box<dyn Material>>::Asset(AssetUUID::new_v5("materials/rock.kmat")),
     ));
     add(
         &mut world,

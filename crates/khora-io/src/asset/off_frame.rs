@@ -20,7 +20,7 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use khora_core::asset::{
-    Asset, AssetDecoding, AssetHandle, AssetSource, AssetUUID, DecodeRequest, Decoded,
+    AssetDecoding, AssetHandle, AssetSource, AssetUUID, DecodeRequest, Decoded, Stored,
 };
 use khora_core::event::{Channel, WhenFull};
 use khora_core::lane::Lease;
@@ -36,7 +36,7 @@ use super::AssetService;
 pub(super) type Installer = fn(&mut AssetService, &AssetStore, AssetUUID, Box<dyn Any + Send>);
 
 impl AssetService {
-    pub(super) fn request_off_frame<A: Asset>(&mut self, uuid: &AssetUUID) -> Requested<A> {
+    pub(super) fn request_off_frame<A: Stored>(&mut self, uuid: &AssetUUID) -> Requested<A> {
         match self.request_decoded::<A>(uuid) {
             // Being decoded again after a change: the last good copy serves
             // meanwhile.
@@ -52,7 +52,7 @@ impl AssetService {
     /// Answers as [`request`](Self::request), without the last good copy served meanwhile.
     ///
     /// So it says whether a reloaded asset's new value landed, as `asset_reload` asks.
-    pub(crate) fn request_decoded<A: Asset>(&mut self, uuid: &AssetUUID) -> Requested<A> {
+    pub(crate) fn request_decoded<A: Stored>(&mut self, uuid: &AssetUUID) -> Requested<A> {
         let type_id = TypeId::of::<A>();
         let storage = self
             .storages
@@ -126,7 +126,7 @@ impl AssetService {
     /// Serves `handle`, the engine's copy of `uuid`, while `uuid` is decoded again.
     ///
     /// Not a copy a replaced service served: that is no copy of this project's asset.
-    pub(crate) fn serve_meanwhile<A: Asset>(&mut self, uuid: &AssetUUID, handle: AssetHandle<A>) {
+    pub(crate) fn serve_meanwhile<A: Stored>(&mut self, uuid: &AssetUUID, handle: AssetHandle<A>) {
         if self.inherited_mut().contains(uuid) {
             return;
         }
@@ -135,7 +135,7 @@ impl AssetService {
     }
 
     /// Stops serving a last good copy of `uuid` as an `A`, once its reload has settled.
-    pub(crate) fn settle_meanwhile<A: Asset>(&mut self, uuid: &AssetUUID) {
+    pub(crate) fn settle_meanwhile<A: Stored>(&mut self, uuid: &AssetUUID) {
         self.meanwhile.remove(&(*uuid, TypeId::of::<A>()));
     }
 
@@ -193,7 +193,7 @@ impl AssetService {
 }
 
 /// Puts a decoded `A` into `service`'s cache and `store`, counted as served.
-fn install<A: Asset>(
+fn install<A: Stored>(
     service: &mut AssetService,
     store: &AssetStore,
     uuid: AssetUUID,

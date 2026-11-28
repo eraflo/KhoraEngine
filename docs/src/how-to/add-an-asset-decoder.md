@@ -10,8 +10,8 @@ files someone else may have made.
 
 ## Step 1 — The asset type
 
-The decoder produces a value of a type implementing `khora_core::asset::Asset` (a
-marker trait: `impl Asset for HeightMap {}`). Put the type with its domain:
+The decoder produces a value of a type implementing `khora_core::asset::Stored` (a
+marker trait: `impl Stored for HeightMap {}`). Put the type with its domain:
 `khora-core` for a format several crates share (`CpuTexture`, `Mesh`), `khora-data`
 for one the data layer owns (`SoundData`).
 
@@ -141,7 +141,8 @@ that pattern.
 
 A decoded asset is never stored inline on an entity: it is reached through its
 uuid and an `AssetHandle<T>`. The engine resolves on its own only what entities
-name through `MeshRef`, `MaterialRef`, a UI font and a UI image. A new asset kind
+name through `AssetRef<Mesh>`, `AssetRef<Box<dyn Material>>`, a UI font and a UI
+image. A new asset kind
 is resolved by its user: a system that `request`s it from the `AssetService` and
 writes the handle where it is needed, or a component holding a
 `HandleComponent<T>`. An asset a device must hold — a GPU texture, a buffer —

@@ -20,6 +20,7 @@ use std::path::PathBuf;
 
 use khora_sdk::khora_core::asset::AssetUUID;
 use khora_sdk::khora_core::ecs::PersistentId;
+use khora_sdk::khora_core::renderer::api::gpu_scene::Mesh;
 use khora_sdk::khora_data::ecs::{PrefabInstance, World};
 use khora_sdk::khora_data::scene::{
     capture_subtree, instantiate_prefab, read_scene_file, write_scene_file, CompactEncoding,
@@ -322,7 +323,7 @@ fn saving_a_prefab_holding_a_mesh_made_in_code_reports_it_as_a_save_problem() {
     let made = world.spawn((
         Transform::identity(),
         Name::new("Made"),
-        khora_sdk::khora_data::ecs::MeshRef::Made(AssetUUID::new()),
+        khora_sdk::khora_data::ecs::AssetRef::<Mesh>::Made(AssetUUID::new()),
     ));
     world
         .inner_world_mut()
@@ -342,7 +343,7 @@ fn saving_a_prefab_holding_a_mesh_made_in_code_reports_it_as_a_save_problem() {
     let problems = super::take_save_problems(&state).expect("the save reports its problems");
     assert!(
         problems.iter().any(|problem| problem.entity == Some(made)
-            && problem.component.as_deref() == Some("MeshRef")),
+            && problem.component.as_deref() == Some("AssetRef<Mesh>")),
         "the prefab save does not report the mesh made in code: {problems:#?}"
     );
 }

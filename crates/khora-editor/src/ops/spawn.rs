@@ -15,6 +15,8 @@
 //! Spawning entities the editor asked for.
 
 use khora_sdk::editor_ui::*;
+use khora_sdk::khora_core::renderer::api::gpu_scene::Mesh;
+use khora_sdk::khora_data::ecs::AssetRef;
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::GameWorld;
 
@@ -33,7 +35,7 @@ fn default_surface_material() -> khora_sdk::prelude::materials::StandardMaterial
 /// Spawns an entity named `name` showing the mesh asset `uuid` at `point`.
 ///
 /// A default surface material makes it render at once; the mesh loads from its
-/// `MeshRef::Asset` on the next tick.
+/// `AssetRef::Asset` on the next tick.
 pub(crate) fn spawn_mesh_asset(
     world: &mut GameWorld,
     uuid: khora_sdk::khora_core::asset::AssetUUID,
@@ -47,7 +49,7 @@ pub(crate) fn spawn_mesh_asset(
         )),
         GlobalTransform::identity(),
         Name::new(name),
-        MeshRef::Asset(uuid),
+        AssetRef::<Mesh>::Asset(uuid),
     ));
     world.add_component(entity, mat);
     world.inner_world_mut().mark_authored(entity);

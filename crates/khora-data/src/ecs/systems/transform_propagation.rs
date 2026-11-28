@@ -17,7 +17,6 @@
 //!
 //! See the book: concepts/physics.md, "Who owns a pose".
 
-use crate::ecs::SystemContext;
 use std::collections::{HashMap, VecDeque};
 
 use khora_core::{
@@ -25,6 +24,7 @@ use khora_core::{
     math::{AffineTransform, Mat4},
 };
 
+use crate::ecs::SystemContext;
 use crate::ecs::{
     DataSystemRegistration, GlobalTransform, Parent, SimulatedTransform, Teleported, TickPhase,
     Transform, Without, World,
@@ -142,9 +142,10 @@ inventory::submit! {
 
 #[cfg(test)]
 mod tests {
+    use khora_core::math::{Mat4, Vec3, EPSILON};
+
     use super::*;
     use crate::ecs::{Children, GlobalTransform, Parent, SemanticDomain, Transform, World};
-    use khora_core::math::{Mat4, Vec3, EPSILON};
 
     fn assert_matrix_approx_eq(a: Mat4, b: Mat4) {
         for i in 0..4 {
@@ -389,12 +390,13 @@ mod tests {
         use khora_core::ecs::entity::EntityId;
         use khora_core::lane::OutputDeck;
         use khora_core::math::Vec3;
+        use khora_core::renderer::api::gpu_scene::Mesh;
         use khora_core::renderer::light::{DirectionalLight, LightType};
         use khora_core::Runtime;
 
         use super::super::transform_propagation_entry;
         use crate::ecs::{
-            AudioListener, AudioSource, Camera, GlobalTransform, Light, MeshRef, Observer, Parent,
+            AssetRef, AudioListener, AudioSource, Camera, GlobalTransform, Light, Observer, Parent,
             SystemContext, Transform, World,
         };
         use crate::flow::{AudioFlow, Flow, RenderFlow, Selection, ShadowFlow};
@@ -416,7 +418,7 @@ mod tests {
                     GlobalTransform::identity(),
                 )
             };
-            let mesh = || MeshRef::Asset(AssetUUID::new());
+            let mesh = || AssetRef::<Mesh>::Asset(AssetUUID::new());
 
             let (transform, global) = at(0.0, 2.0, 10.0);
             world.spawn((
@@ -562,7 +564,7 @@ mod tests {
             world.get_mut::<Light>(light).expect("the light").enabled = false;
             step(&mut world, "a light switched off", [true, true, false]);
 
-            assert!(world.set_component(root, MeshRef::Asset(AssetUUID::new())));
+            assert!(world.set_component(root, AssetRef::<Mesh>::Asset(AssetUUID::new())));
             step(&mut world, "a mesh reference swapped", [true, true, false]);
 
             let source = world

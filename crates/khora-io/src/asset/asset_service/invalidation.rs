@@ -20,7 +20,7 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use khora_core::asset::{Asset, AssetHandle, AssetUUID};
+use khora_core::asset::{AssetHandle, AssetUUID, Stored};
 use khora_core::event::Channel;
 use khora_data::assets::Assets;
 
@@ -127,7 +127,7 @@ impl AssetService {
     ///
     /// For an asset whose current bytes did not decode. Refused (`false`) for a
     /// copy a replaced service served, no copy of this service's asset.
-    pub fn keep<A: Asset>(&mut self, uuid: &AssetUUID, handle: AssetHandle<A>) -> bool {
+    pub fn keep<A: Stored>(&mut self, uuid: &AssetUUID, handle: AssetHandle<A>) -> bool {
         if self.inherited_mut().contains(uuid) {
             return false;
         }

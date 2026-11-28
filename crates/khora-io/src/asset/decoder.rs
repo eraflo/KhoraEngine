@@ -14,15 +14,17 @@
 
 //! Asset decoder trait — raw bytes to typed asset.
 
-use crate::trust::{Limits, Trust};
-use khora_core::asset::Asset;
 use std::error::Error;
 use std::path::Path;
+
+use khora_core::asset::Stored;
+
+use crate::trust::{Limits, Trust};
 
 /// A decoder of one asset type (`CpuTexture`, `Mesh`, `SoundData`…) from raw bytes.
 ///
 /// Concrete decoders live in [`crate::asset::decoders`].
-pub trait AssetDecoder<A: Asset> {
+pub trait AssetDecoder<A: Stored> {
     /// Parses a byte slice and converts it into an instance of the asset `A`.
     ///
     /// # Errors

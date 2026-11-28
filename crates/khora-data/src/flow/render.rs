@@ -15,16 +15,18 @@
 //! `RenderFlow`: the World's meshes, lights and camera views, projected into
 //! the [`RenderWorld`] the render lanes draw from.
 
+use khora_core::asset::Material;
 use khora_core::math::Mat4;
 #[cfg(test)]
 use khora_core::math::Vec3;
+use khora_core::renderer::api::gpu_scene::Mesh;
 #[cfg(test)]
 use khora_core::renderer::light::LightType;
 use khora_core::Runtime;
 
 #[cfg(test)]
 use crate::ecs::Light;
-use crate::ecs::{Camera, GlobalTransform, MaterialRef, MeshRef, SemanticDomain, World};
+use crate::ecs::{AssetRef, Camera, GlobalTransform, SemanticDomain, World};
 use crate::flow::{Flow, Selection};
 use crate::register_flow;
 use crate::render::{ExtractedLight, ExtractedMesh, ExtractedView, RenderWorld};
@@ -101,7 +103,12 @@ fn extract_meshes(
     alpha: f32,
     interpolation: Option<&TransformInterpolation>,
 ) {
-    let query = world.query::<(EntityId, &GlobalTransform, &MeshRef, Option<&MaterialRef>)>();
+    let query = world.query::<(
+        EntityId,
+        &GlobalTransform,
+        &AssetRef<Mesh>,
+        Option<&AssetRef<Box<dyn Material>>>,
+    )>();
     for (entity_id, transform, mesh_ref, material_ref) in query {
         // Only the projected transform of a sim-moved entity is blended; its
         // `GlobalTransform` is untouched.
@@ -118,7 +125,7 @@ fn extract_meshes(
         render_world.meshes.push(ExtractedMesh {
             transform,
             mesh: mesh_ref.uuid(),
-            material: material_ref.map(MaterialRef::uuid),
+            material: material_ref.map(AssetRef::<Box<dyn Material>>::uuid),
             mirrored,
         });
     }
@@ -170,12 +177,12 @@ fn extract_views(world: &World, render_world: &mut RenderWorld, aspect: f32) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use khora_core::asset::AssetUUID;
+    use khora_core::asset::{AssetUUID, ProceduralMesh};
     use khora_core::math::affine_transform::AffineTransform;
     use khora_core::math::{Mat3, Quaternion};
 
-    use crate::ecs::{MaterialRef, MeshRef};
+    use super::*;
+    use crate::ecs::AssetRef;
 
     /// Translation ∘ rotation ∘ scale, the order `Transform::to_mat4` composes.
     fn trs(translation: Vec3, rotation: Quaternion, scale: Vec3) -> AffineTransform {
@@ -195,7 +202,7 @@ mod tests {
     /// Returns the entity and the mesh uuid that identifies its extracted draw.
     fn spawn_drawable(world: &mut World, pose: AffineTransform) -> (EntityId, AssetUUID) {
         let uuid = AssetUUID::new();
-        let entity = world.spawn((GlobalTransform(pose), MeshRef::Asset(uuid)));
+        let entity = world.spawn((GlobalTransform(pose), AssetRef::<Mesh>::Asset(uuid)));
         (entity, uuid)
     }
 
@@ -456,8 +463,9 @@ mod tests {
 
     // --- A sheared pose seen the same way by every consumer -----------------
 
-    use crate::flow::{ShadowFlow, ShadowMatrices};
     use khora_core::math::Vec4;
+
+    use crate::flow::{ShadowFlow, ShadowMatrices};
 
     fn assert_view_proj_close(actual: Mat4, expected: Mat4, what: &str) {
         for (a, e) in actual.cols.iter().zip(expected.cols.iter()) {
@@ -992,8 +1000,8 @@ mod tests {
     /// It holds only its authored references: no asset is loaded or uploaded.
     fn spawn_referencing(
         world: &mut World,
-        mesh: MeshRef,
-        material: Option<MaterialRef>,
+        mesh: AssetRef<Mesh>,
+        material: Option<AssetRef<Box<dyn Material>>>,
     ) -> EntityId {
         let entity = world.spawn((GlobalTransform::identity(), mesh));
         if let Some(material) = material {
@@ -1016,8 +1024,8 @@ mod tests {
         let mut world = World::new();
         let entity = spawn_referencing(
             &mut world,
-            MeshRef::unit_cube(),
-            Some(MaterialRef::Asset(AssetUUID::new())),
+            AssetRef::<Mesh>::Local(ProceduralMesh::unit_cube()),
+            Some(AssetRef::<Box<dyn Material>>::Asset(AssetUUID::new())),
         );
         assert_eq!(
             project(&world).meshes.len(),
@@ -1030,7 +1038,7 @@ mod tests {
         let key_before = RenderFlow.cache_key(&world, &runtime);
 
         world
-            .remove_component::<MeshRef>(entity)
+            .remove_component::<AssetRef<Mesh>>(entity)
             .expect("the entity holds a mesh reference");
 
         assert!(
@@ -1051,8 +1059,8 @@ mod tests {
         let mut world = World::new();
         let entity = spawn_referencing(
             &mut world,
-            MeshRef::unit_cube(),
-            Some(MaterialRef::Asset(AssetUUID::new())),
+            AssetRef::<Mesh>::Local(ProceduralMesh::unit_cube()),
+            Some(AssetRef::<Box<dyn Material>>::Asset(AssetUUID::new())),
         );
         let before = project(&world);
         assert_eq!(
@@ -1066,7 +1074,7 @@ mod tests {
         );
 
         world
-            .remove_component::<MaterialRef>(entity)
+            .remove_component::<AssetRef<Box<dyn Material>>>(entity)
             .expect("the entity holds a material reference");
 
         let after = project(&world);
@@ -1081,8 +1089,8 @@ mod tests {
     #[test]
     fn the_view_carries_the_references_uuids() {
         let mut world = World::new();
-        let mesh = MeshRef::Asset(AssetUUID::new());
-        let material = MaterialRef::Asset(AssetUUID::new());
+        let mesh = AssetRef::<Mesh>::Asset(AssetUUID::new());
+        let material = AssetRef::<Box<dyn Material>>::Asset(AssetUUID::new());
         spawn_referencing(&mut world, mesh.clone(), Some(material.clone()));
 
         let view = project(&world);

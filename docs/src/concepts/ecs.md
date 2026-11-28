@@ -150,8 +150,8 @@ runs, so it is refused at once rather than left to be found later.
 A registration also publishes the component's **shape** (`ComponentShape`): its
 fields by name, each with its Rust type as written, `#[component(skip)]` fields
 left out; an empty list is a marker component. The few hand-written
-registrations whose fields are not plain data (`MeshRef`, `MaterialRef`) say
-`Opaque`. Scripts read the engine's components through it: the
+registrations whose value is one of several forms (an asset reference,
+`AssetRef<Mesh>`, `AssetRef<Box<dyn Material>>`) say `Opaque`. Scripts read the engine's components through it: the
 `engine/components.erg` module a script imports is generated from the shapes, so
 a misspelt field is refused when the script compiles.
 

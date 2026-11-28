@@ -16,7 +16,8 @@
 //! reads, and a mesh made in code, which only the session holds.
 
 use khora_core::asset::AssetUUID;
-use khora_data::ecs::{MeshRef, Name, Parent, Transform};
+use khora_core::renderer::api::gpu_scene::Mesh;
+use khora_data::ecs::{AssetRef, Name, Parent, Transform};
 use khora_data::scene::record::ReportKind;
 
 use super::*;
@@ -69,7 +70,7 @@ fn a_mesh_made_in_code_is_left_out_of_a_scene_record() {
     let entity = src.spawn((
         Transform::identity(),
         Name::new("Made"),
-        MeshRef::Made(AssetUUID::new()),
+        AssetRef::<Mesh>::Made(AssetUUID::new()),
     ));
     let id = src.mark_authored(entity).expect("authored");
 
@@ -84,7 +85,7 @@ fn a_mesh_made_in_code_is_left_out_of_a_scene_record() {
         "the entity's other components are not recorded"
     );
     assert_eq!(
-        slot_of(&record, id, "MeshRef"),
+        slot_of(&record, id, "AssetRef<Mesh>"),
         None,
         "the record holds the reference to a mesh made in code"
     );

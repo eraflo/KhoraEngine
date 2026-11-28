@@ -20,13 +20,14 @@ use std::any::{type_name, TypeId};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use khora_core::ecs::entity::EntityId;
+use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::script::ScriptValue;
 
 use super::runtime_components::{declare, field, patch, read};
 use super::{Position, Velocity};
 use crate::ecs::{
-    Component, ComponentKey, ComponentPage, ComponentProvenance, FieldKind, GlobalTransform,
-    MeshRef, Parent, RegisterError, RustIdentity, SemanticDomain, Transform, World,
+    AssetRef, Component, ComponentKey, ComponentPage, ComponentProvenance, FieldKind,
+    GlobalTransform, Parent, RegisterError, RustIdentity, SemanticDomain, Transform, World,
 };
 use crate::scene::{registration_named, registration_of, ComponentRegistration};
 
@@ -111,7 +112,7 @@ fn a_component_has_one_short_name() {
     // A derived component: its short name is the derive's.
     assert_named::<Transform>(&world, "Transform", SemanticDomain::Spatial);
     // A hand-written one the world registers itself.
-    assert_named::<MeshRef>(&world, "MeshRef", SemanticDomain::Render);
+    assert_named::<AssetRef<Mesh>>(&world, "AssetRef<Mesh>", SemanticDomain::Render);
     // A generic one: every path segment stripped, its parameters' included.
     assert_named::<Holder<Position>>(&world, "Holder<Position>", SemanticDomain::Render);
     assert_named::<Holder<Box<Velocity>>>(&world, "Holder<Box<Velocity>>", SemanticDomain::Render);
@@ -463,7 +464,7 @@ fn access_snapshot_uses_short_names() {
     let snapshot = world.component_access_snapshot();
     let names: Vec<&str> = snapshot.iter().map(|(name, ..)| name.as_str()).collect();
     assert!(names.contains(&"Transform"), "{names:?}");
-    assert!(names.contains(&"MeshRef"), "{names:?}");
+    assert!(names.contains(&"AssetRef<Mesh>"), "{names:?}");
     assert!(
         !names.iter().any(|name| name.contains("::")),
         "no entry is named by its path: {names:?}"

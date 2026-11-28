@@ -36,7 +36,7 @@ pub use mesh_on_gpu::MeshOnGpu;
 ///     name = "gpu_material_sync",
 ///     run = sync,
 ///     after = ["gpu_mesh_sync"],
-///     observes = [MaterialRef],
+///     observes = [AssetRef<Box<dyn Material>>],
 /// );
 /// ```
 #[macro_export]

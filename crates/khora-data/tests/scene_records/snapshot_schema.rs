@@ -16,7 +16,7 @@
 
 #![allow(dead_code)]
 
-use khora_core::asset::AssetUUID;
+use khora_core::asset::{AssetUUID, InlineMaterial, LocalSource};
 use khora_data::scene::positional::{from_positional, to_positional};
 use khora_data::scene::record::{EntityRef, RecordError, ReferenceReader, ReferenceWriter};
 use khora_data::scene::schema::schema_of;
@@ -256,7 +256,7 @@ fn a_sequence_of_unit_elements_reads_back() {
 
 /// `StandardMaterial` holds `base_color_texture: Option<AssetUUID>` second:
 /// the tracer stops there, so `metallic`, `roughness` … are not in the
-/// fingerprint `MaterialRef`'s snapshot schema is built from.
+/// fingerprint `AssetRef<Box<dyn Material>>`'s snapshot schema is built from.
 #[test]
 fn the_standard_material_schema_holds_every_field() {
     use khora_core::asset::StandardMaterial;
@@ -274,7 +274,7 @@ fn an_inline_material_of_every_type_round_trips_through_a_snapshot() {
         AlphaMode, EmissiveMaterial, Material, StandardMaterial, UnlitMaterial, WireframeMaterial,
     };
     use khora_core::math::LinearRgba;
-    use khora_data::ecs::MaterialRef;
+    use khora_data::ecs::AssetRef;
     use khora_data::scene::material_to_json;
     use khora_data::scene::snapshot::{prepare_snapshot, write_snapshot};
 
@@ -317,7 +317,11 @@ fn an_inline_material_of_every_type_round_trips_through_a_snapshot() {
     let mut src = World::new();
     let entities: Vec<EntityId> = materials
         .into_iter()
-        .map(|material| src.spawn(MaterialRef::inline(material)))
+        .map(|material| {
+            src.spawn(AssetRef::<Box<dyn Material>>::Local(InlineMaterial::new(
+                material,
+            )))
+        })
         .collect();
     let file = write_snapshot(&src).expect("written");
     let mut dst = World::new();
@@ -325,24 +329,20 @@ fn an_inline_material_of_every_type_round_trips_through_a_snapshot() {
         .unwrap_or_else(|e| panic!("refused: {e}"))
         .commit(&mut dst, Identity::Keep);
     for (entity, (_, twin)) in entities.iter().zip(&applied.entities) {
-        let (
-            Some(MaterialRef::Inline {
-                material: a,
-                uuid: ua,
-            }),
-            Some(MaterialRef::Inline {
-                material: b,
-                uuid: ub,
-            }),
-        ) = (
-            src.get::<MaterialRef>(*entity),
-            dst.get::<MaterialRef>(*twin),
-        )
-        else {
+        let (Some(AssetRef::Local(a)), Some(AssetRef::Local(b))) = (
+            src.get::<AssetRef<Box<dyn Material>>>(*entity),
+            dst.get::<AssetRef<Box<dyn Material>>>(*twin),
+        ) else {
             panic!("not inline after the round trip");
         };
-        assert_eq!(material_to_json(&**a), material_to_json(&**b));
-        assert_eq!(ua, ub);
+        assert_eq!(
+            material_to_json(a.material()),
+            material_to_json(b.material())
+        );
+        assert_eq!(
+            LocalSource::<Box<dyn Material>>::uuid(a),
+            LocalSource::<Box<dyn Material>>::uuid(b)
+        );
     }
 }
 

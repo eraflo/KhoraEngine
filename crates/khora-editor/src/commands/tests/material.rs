@@ -16,7 +16,8 @@
 
 use std::path::PathBuf;
 
-use khora_sdk::khora_core::asset::StandardMaterial;
+use khora_sdk::khora_core::asset::{InlineMaterial, Material, StandardMaterial};
+use khora_sdk::khora_data::ecs::AssetRef;
 use khora_sdk::MetricsRegistry;
 
 use super::*;
@@ -61,7 +62,9 @@ fn a_material_saved_over_a_file_under_another_case_is_assigned_its_identity() {
         Transform::identity(),
         GlobalTransform::identity(),
         Name::new("Crate"),
-        MaterialRef::inline(Box::new(StandardMaterial::default())),
+        AssetRef::<Box<dyn Material>>::Local(InlineMaterial::new(Box::new(
+            StandardMaterial::default(),
+        ))),
     ));
     let state = Arc::new(Mutex::new(EditorState::default()));
     state
@@ -80,8 +83,8 @@ fn a_material_saved_over_a_file_under_another_case_is_assigned_its_identity() {
         pvfs.assets().index().get_metadata(&steel).is_some(),
         "the premise: the file written over is indexed under its own name"
     );
-    let assigned = match world.get_component::<MaterialRef>(entity) {
-        Some(MaterialRef::Asset(uuid)) => Some(*uuid),
+    let assigned = match world.get_component::<AssetRef<Box<dyn Material>>>(entity) {
+        Some(AssetRef::<Box<dyn Material>>::Asset(uuid)) => Some(*uuid),
         _ => None,
     };
     assert_eq!(
@@ -107,7 +110,9 @@ fn a_material_saved_over_a_file_while_the_registry_is_unread_is_refused() {
         Transform::identity(),
         GlobalTransform::identity(),
         Name::new("Crate"),
-        MaterialRef::inline(Box::new(StandardMaterial::default())),
+        AssetRef::<Box<dyn Material>>::Local(InlineMaterial::new(Box::new(
+            StandardMaterial::default(),
+        ))),
     ));
     let state = Arc::new(Mutex::new(EditorState::default()));
     state
@@ -132,8 +137,8 @@ fn a_material_saved_over_a_file_while_the_registry_is_unread_is_refused() {
     );
     assert!(
         matches!(
-            world.get_component::<MaterialRef>(entity),
-            Some(MaterialRef::Inline { .. })
+            world.get_component::<AssetRef<Box<dyn Material>>>(entity),
+            Some(AssetRef::<Box<dyn Material>>::Local { .. })
         ),
         "the entity was assigned an id the file may not hold"
     );

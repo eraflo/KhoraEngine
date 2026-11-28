@@ -27,8 +27,9 @@
 use std::path::Path;
 
 use khora_sdk::editor_ui::AssetFileOp;
-use khora_sdk::khora_core::asset::{AssetUUID, Material, StandardMaterial};
+use khora_sdk::khora_core::asset::{AssetUUID, InlineMaterial, Material, StandardMaterial};
 use khora_sdk::khora_core::renderer::api::gpu_scene::Mesh;
+use khora_sdk::khora_data::ecs::AssetRef;
 use khora_sdk::{SerializationGoal, SerializationService};
 
 use super::super::*;
@@ -102,7 +103,9 @@ fn a_saved_material_is_assigned_once_its_index_lands() {
         Transform::identity(),
         GlobalTransform::identity(),
         Name::new("Crate"),
-        MaterialRef::inline(Box::new(StandardMaterial::default())),
+        AssetRef::<Box<dyn Material>>::Local(InlineMaterial::new(Box::new(
+            StandardMaterial::default(),
+        ))),
     ));
     state
         .lock()
@@ -118,8 +121,8 @@ fn a_saved_material_is_assigned_once_its_index_lands() {
     assert!(project.path(STEEL).exists(), "the material is written");
     assert!(
         matches!(
-            world.get_component::<MaterialRef>(entity),
-            Some(MaterialRef::Inline { .. })
+            world.get_component::<AssetRef<Box<dyn Material>>>(entity),
+            Some(AssetRef::<Box<dyn Material>>::Local { .. })
         ),
         "the entity keeps its inline material until the index lands"
     );
@@ -144,8 +147,8 @@ fn a_saved_material_is_assigned_once_its_index_lands() {
 
     assert!(
         matches!(
-            world.get_component::<MaterialRef>(entity),
-            Some(MaterialRef::Asset(uuid)) if *uuid == steel
+            world.get_component::<AssetRef<Box<dyn Material>>>(entity),
+            Some(AssetRef::<Box<dyn Material>>::Asset(uuid)) if *uuid == steel
         ),
         "the entity references the saved material once its index landed"
     );
@@ -166,7 +169,11 @@ fn a_material_landing_spares_an_entity_despawned_or_reassigned_since() {
     let saved = AssetUUID::new_v5("materials/Steel.kmat");
     let chosen = AssetUUID::new_v5("materials/Gold.kmat");
     let mut world = GameWorld::new();
-    let inline = || MaterialRef::inline(Box::new(StandardMaterial::default()));
+    let inline = || {
+        AssetRef::<Box<dyn Material>>::Local(InlineMaterial::new(Box::new(
+            StandardMaterial::default(),
+        )))
+    };
     let gone = world.spawn((Transform::identity(), Name::new("Gone"), inline()));
     // By the landing, this one wears another material asset: the state a
     // reassignment since the save leaves it in. Spawned so, as
@@ -174,7 +181,7 @@ fn a_material_landing_spares_an_entity_despawned_or_reassigned_since() {
     let reassigned = world.spawn((
         Transform::identity(),
         Name::new("Reassigned"),
-        MaterialRef::Asset(chosen),
+        AssetRef::<Box<dyn Material>>::Asset(chosen),
     ));
     world.despawn(gone);
 
@@ -201,13 +208,15 @@ fn a_material_landing_spares_an_entity_despawned_or_reassigned_since() {
     );
 
     assert!(
-        world.get_component::<MaterialRef>(gone).is_none(),
+        world
+            .get_component::<AssetRef<Box<dyn Material>>>(gone)
+            .is_none(),
         "a despawned entity is not brought back"
     );
     assert!(
         matches!(
-            world.get_component::<MaterialRef>(reassigned),
-            Some(MaterialRef::Asset(uuid)) if *uuid == chosen
+            world.get_component::<AssetRef<Box<dyn Material>>>(reassigned),
+            Some(AssetRef::<Box<dyn Material>>::Asset(uuid)) if *uuid == chosen
         ),
         "an entity that wears another material asset since keeps it"
     );
@@ -517,7 +526,9 @@ fn scene_of_one_inline_entity(path: &Path, name: &str) {
         Transform::identity(),
         GlobalTransform::identity(),
         Name::new(name),
-        MaterialRef::inline(Box::new(StandardMaterial::default())),
+        AssetRef::<Box<dyn Material>>::Local(InlineMaterial::new(Box::new(
+            StandardMaterial::default(),
+        ))),
     ));
     world
         .inner_world_mut()
@@ -548,7 +559,9 @@ fn a_material_landing_after_the_scene_was_replaced_touches_no_new_entity() {
         Transform::identity(),
         GlobalTransform::identity(),
         Name::new("Crate"),
-        MaterialRef::inline(Box::new(StandardMaterial::default())),
+        AssetRef::<Box<dyn Material>>::Local(InlineMaterial::new(Box::new(
+            StandardMaterial::default(),
+        ))),
     ));
     state
         .lock()
@@ -575,8 +588,8 @@ fn a_material_landing_after_the_scene_was_replaced_touches_no_new_entity() {
         .iter_entities()
         .filter(|entity| {
             matches!(
-                world.get_component::<MaterialRef>(*entity),
-                Some(MaterialRef::Asset(uuid)) if *uuid == steel
+                world.get_component::<AssetRef<Box<dyn Material>>>(*entity),
+                Some(AssetRef::<Box<dyn Material>>::Asset(uuid)) if *uuid == steel
             )
         })
         .map(|entity| {
@@ -746,7 +759,9 @@ fn the_material_saved_last_is_the_one_the_entity_wears() {
         Transform::identity(),
         GlobalTransform::identity(),
         Name::new("Crate"),
-        MaterialRef::inline(Box::new(StandardMaterial::default())),
+        AssetRef::<Box<dyn Material>>::Local(InlineMaterial::new(Box::new(
+            StandardMaterial::default(),
+        ))),
     ));
     for name in ["Steel", "Iron"] {
         state
@@ -768,15 +783,18 @@ fn the_material_saved_last_is_the_one_the_entity_wears() {
     let iron = project.uuid(IRON);
     assert!(
         matches!(
-            world.get_component::<MaterialRef>(entity),
-            Some(MaterialRef::Asset(uuid)) if *uuid == iron
+            world.get_component::<AssetRef<Box<dyn Material>>>(entity),
+            Some(AssetRef::<Box<dyn Material>>::Asset(uuid)) if *uuid == iron
         ),
         "the entity wears the material saved last (Iron = {iron}, Steel = {}): {:?}",
         project.uuid(STEEL),
-        world.get_component::<MaterialRef>(entity).map(|m| match m {
-            MaterialRef::Asset(uuid) => uuid.to_string(),
-            MaterialRef::Inline { .. } => "inline".to_owned(),
-        })
+        world
+            .get_component::<AssetRef<Box<dyn Material>>>(entity)
+            .map(|m| match m {
+                AssetRef::Asset(uuid) => uuid.to_string(),
+                AssetRef::Local(_) => "inline".to_owned(),
+                AssetRef::Made(_) => "made in code".to_owned(),
+            })
     );
 }
 
@@ -797,7 +815,9 @@ fn an_inline_material_changed_since_the_save_is_kept_at_the_landing() {
         Transform::identity(),
         GlobalTransform::identity(),
         Name::new("Crate"),
-        MaterialRef::inline(Box::new(StandardMaterial::default())),
+        AssetRef::<Box<dyn Material>>::Local(InlineMaterial::new(Box::new(
+            StandardMaterial::default(),
+        ))),
     ));
     state
         .lock()
@@ -820,8 +840,8 @@ fn an_inline_material_changed_since_the_save_is_kept_at_the_landing() {
     assign_queued_drops(Some(&project.vfs), &mut world, &state);
     assert!(
         matches!(
-            world.get_component::<MaterialRef>(entity),
-            Some(MaterialRef::Inline { .. })
+            world.get_component::<AssetRef<Box<dyn Material>>>(entity),
+            Some(AssetRef::<Box<dyn Material>>::Local { .. })
         ),
         "the premise: the drop gave the entity a new inline material"
     );
@@ -830,8 +850,8 @@ fn an_inline_material_changed_since_the_save_is_kept_at_the_landing() {
 
     assert!(
         matches!(
-            world.get_component::<MaterialRef>(entity),
-            Some(MaterialRef::Inline { .. })
+            world.get_component::<AssetRef<Box<dyn Material>>>(entity),
+            Some(AssetRef::<Box<dyn Material>>::Local { .. })
         ),
         "the texture dropped after the save is not overwritten by the saved material"
     );
@@ -854,7 +874,9 @@ fn a_material_saved_just_before_play_is_worn_after_stop() {
         Transform::identity(),
         GlobalTransform::identity(),
         Name::new("Crate"),
-        MaterialRef::inline(Box::new(StandardMaterial::default())),
+        AssetRef::<Box<dyn Material>>::Local(InlineMaterial::new(Box::new(
+            StandardMaterial::default(),
+        ))),
     ));
     world
         .inner_world_mut()
@@ -885,10 +907,10 @@ fn a_material_saved_just_before_play_is_worn_after_stop() {
                 .get_component::<Name>(*entity)
                 .is_some_and(|name| name.as_str() == "Crate")
         })
-        .and_then(|entity| world.get_component::<MaterialRef>(entity))
+        .and_then(|entity| world.get_component::<AssetRef<Box<dyn Material>>>(entity))
         .map(|material| match material {
-            MaterialRef::Asset(uuid) => Some(*uuid),
-            MaterialRef::Inline { .. } => None,
+            AssetRef::Asset(uuid) => Some(*uuid),
+            AssetRef::Local(_) | AssetRef::Made(_) => None,
         });
     assert_eq!(
         crate_material,
@@ -955,10 +977,10 @@ fn named(world: &GameWorld, name: &str) -> Option<EntityId> {
 /// inline material, `None` when it has no material.
 fn worn(world: &GameWorld, entity: EntityId) -> Option<Option<AssetUUID>> {
     world
-        .get_component::<MaterialRef>(entity)
+        .get_component::<AssetRef<Box<dyn Material>>>(entity)
         .map(|material| match material {
-            MaterialRef::Asset(uuid) => Some(*uuid),
-            MaterialRef::Inline { .. } => None,
+            AssetRef::Asset(uuid) => Some(*uuid),
+            AssetRef::Local(_) | AssetRef::Made(_) => None,
         })
 }
 
@@ -982,7 +1004,9 @@ fn a_material_landing_spares_the_same_entity_of_a_scene_opened_since() {
         Transform::identity(),
         GlobalTransform::identity(),
         Name::new("Crate"),
-        MaterialRef::inline(Box::new(StandardMaterial::default())),
+        AssetRef::<Box<dyn Material>>::Local(InlineMaterial::new(Box::new(
+            StandardMaterial::default(),
+        ))),
     ));
     world
         .inner_world_mut()
@@ -1039,7 +1063,9 @@ fn the_material_saved_last_is_worn_across_a_stop() {
         Transform::identity(),
         GlobalTransform::identity(),
         Name::new("Crate"),
-        MaterialRef::inline(Box::new(StandardMaterial::default())),
+        AssetRef::<Box<dyn Material>>::Local(InlineMaterial::new(Box::new(
+            StandardMaterial::default(),
+        ))),
     ));
     world
         .inner_world_mut()
@@ -1102,7 +1128,9 @@ fn a_material_saved_while_editing_is_worn_after_a_save_during_play() {
         Transform::identity(),
         GlobalTransform::identity(),
         Name::new("Crate"),
-        MaterialRef::inline(Box::new(StandardMaterial::default())),
+        AssetRef::<Box<dyn Material>>::Local(InlineMaterial::new(Box::new(
+            StandardMaterial::default(),
+        ))),
     ));
     world
         .inner_world_mut()
@@ -1120,10 +1148,10 @@ fn a_material_saved_while_editing_is_worn_after_a_save_during_play() {
     apply_play(&mut world, &state);
     world.add_component(
         entity,
-        MaterialRef::inline(Box::new(StandardMaterial {
+        AssetRef::<Box<dyn Material>>::Local(InlineMaterial::new(Box::new(StandardMaterial {
             metallic: 1.0,
             ..StandardMaterial::default()
-        })),
+        }))),
     );
     state
         .lock()
@@ -1164,13 +1192,13 @@ fn a_textured_material_saved_just_before_play_is_worn_after_stop() {
         Transform::identity(),
         GlobalTransform::identity(),
         Name::new("Crate"),
-        MaterialRef::inline(Box::new(StandardMaterial {
+        AssetRef::<Box<dyn Material>>::Local(InlineMaterial::new(Box::new(StandardMaterial {
             base_color: khora_sdk::khora_core::math::LinearRgba::new(0.1, 0.2, 0.3, 0.7),
             base_color_texture: Some(project.uuid(RUST)),
             metallic: 1.0 / 3.0,
             roughness: 0.123_456_79,
             ..StandardMaterial::default()
-        })),
+        }))),
     ));
     world
         .inner_world_mut()

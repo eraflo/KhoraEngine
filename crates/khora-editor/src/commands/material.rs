@@ -17,6 +17,8 @@
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::EditorRequest;
+use khora_sdk::khora_core::asset::Material;
+use khora_sdk::khora_data::ecs::AssetRef;
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::{EditorState, GameWorld};
 
@@ -25,7 +27,7 @@ use crate::project_vfs::{AfterIndex, ProjectVfs};
 /// Takes the queued [`EditorRequest::SaveAsMaterial`]s: saves each entity's inline material as a `.kmat`.
 ///
 /// Writes `assets/materials/<name>.kmat` in the decoder's RON shape, then has
-/// the entity reference the saved asset (`MaterialRef::Asset`) once the index
+/// the entity reference the saved asset (`AssetRef::Asset`) once the index
 /// holds it. With no project open, logs a warning and does nothing.
 pub fn save_queued_materials(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
@@ -126,16 +128,21 @@ fn save_as_material(
 /// Encodes `entity`'s inline material as RON text, in the decoder's shape: what
 /// a `.kmat` holds. Why not, when it has none or it cannot be encoded.
 fn inline_material_ron(world: &GameWorld, entity: EntityId) -> Result<String, String> {
-    let material = match world.get_component::<MaterialRef>(entity) {
-        Some(MaterialRef::Inline { material, .. }) => material,
-        Some(MaterialRef::Asset(_)) => {
+    let material = match world.get_component::<AssetRef<Box<dyn Material>>>(entity) {
+        Some(AssetRef::Local(inline)) => inline.material(),
+        Some(AssetRef::Asset(_)) => {
             return Err(format!(
                 "entity {entity:?} already references a .kmat asset"
             ))
         }
-        None => return Err(format!("entity {entity:?} has no MaterialRef")),
+        Some(AssetRef::Made(_)) => {
+            return Err(format!(
+                "entity {entity:?} wears a material made in code, which no file holds"
+            ))
+        }
+        None => return Err(format!("entity {entity:?} has no material reference")),
     };
-    let json = khora_sdk::khora_data::scene::material_to_json(&**material)
+    let json = khora_sdk::khora_data::scene::material_to_json(material)
         .ok_or_else(|| "failed to serialize material to JSON".to_owned())?;
     ron::ser::to_string(&json).map_err(|e| format!("failed to encode material as RON: {e}"))
 }
@@ -169,14 +176,14 @@ pub fn apply_after_index(world: &mut GameWorld, actions: Vec<AfterIndex>) {
         if inline_material_ron(world, entity).ok().as_deref() != Some(saved.as_str()) {
             continue;
         }
-        // `add_component` replaces the existing `MaterialRef` of the same
+        // `add_component` replaces the existing `AssetRef<Box<dyn Material>>` of the same
         // type: the entity now references the shared, reloadable asset.
-        world.add_component(entity, MaterialRef::Asset(uuid));
+        world.add_component(entity, AssetRef::<Box<dyn Material>>::Asset(uuid));
         log::info!("Entity {entity:?} now references its saved material");
     }
 }
 
-/// Takes the queued [`EditorRequest::AssignMaterial`]s: sets `MaterialRef::Asset(uuid)`
+/// Takes the queued [`EditorRequest::AssignMaterial`]s: sets `AssetRef::Asset(uuid)`
 /// on every selected entity, `uuid` being the chosen material's identity.
 ///
 /// Two asked in one frame are both applied, in order: the last one asked is
@@ -203,7 +210,7 @@ pub fn assign_queued_materials(
             continue;
         }
         for &entity in &targets {
-            world.add_component(entity, MaterialRef::Asset(uuid));
+            world.add_component(entity, AssetRef::<Box<dyn Material>>::Asset(uuid));
             log::info!("Assigned material {uuid} to entity {entity:?}");
         }
     }

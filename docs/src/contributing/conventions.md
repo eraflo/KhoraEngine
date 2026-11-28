@@ -91,9 +91,10 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-it
 
 - Use **`#[derive(Component)]`** on every ECS component. The macro generates the
   serializable mirror plus the `From` conversions, and self-registers the component
-  via `inventory` — you don't wire it up by hand. A type the derive does not cover
-  (the enums `MeshRef` and `MaterialRef`) implements `Component` by hand and
-  submits its own `ComponentRegistration`.
+  via `inventory` — you don't wire it up by hand. A generic type the derive does
+  not cover (an asset reference, `AssetRef<A>`) implements `Component` by hand,
+  and each kind of it is registered once (`register_asset_ref!` in
+  `khora-data/src/ecs/components/asset_ref/registered.rs`).
 - Declare a component's domain with **`#[component(domain = Physics)]`** (or the
   relevant domain).
 - Declare who writes it with **`#[component(provenance = …)]`** when it is not

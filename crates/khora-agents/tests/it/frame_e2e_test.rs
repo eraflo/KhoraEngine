@@ -34,17 +34,17 @@
 //! tested here — its projection needs a surface size and a text renderer from
 //! the `Runtime`, which cannot be stubbed cheaply without a real backend.
 
-use khora_core::lane::LaneBus;
-use khora_core::math::{Mat4, Quaternion, Vec3};
-use khora_core::renderer::light::{DirectionalLight, LightType, PointLight};
-use khora_core::Runtime;
-
-use khora_data::ecs::{Camera, GlobalTransform, Light, MeshRef, Parent, Transform, World};
-use khora_data::flow::{AudioView, ShadowMatrices, ShadowView};
-use khora_data::render::RenderWorld;
+use std::sync::Arc;
 
 use khora_core::asset::AssetUUID;
-use std::sync::Arc;
+use khora_core::lane::LaneBus;
+use khora_core::math::{Mat4, Quaternion, Vec3};
+use khora_core::renderer::api::gpu_scene::Mesh;
+use khora_core::renderer::light::{DirectionalLight, LightType, PointLight};
+use khora_core::Runtime;
+use khora_data::ecs::{AssetRef, Camera, GlobalTransform, Light, Parent, Transform, World};
+use khora_data::flow::{AudioView, ShadowMatrices, ShadowView};
+use khora_data::render::RenderWorld;
 
 // ─── helpers ────────────────────────────────────────────────────────────
 
@@ -58,8 +58,8 @@ fn bare_runtime() -> Arc<Runtime> {
 
 /// A reference to a mesh of its own: the render view names it by uuid, with
 /// no mesh loaded nor uploaded.
-fn mesh_ref() -> MeshRef {
-    MeshRef::Asset(AssetUUID::new())
+fn mesh_ref() -> AssetRef<Mesh> {
+    AssetRef::<Mesh>::Asset(AssetUUID::new())
 }
 
 /// Spawns a renderable mesh entity (transform + global transform + mesh
@@ -287,7 +287,7 @@ fn despawn_across_frames_reprojects() {
 
 /// Despawning the FIRST of two multi-domain mesh entities must leave the
 /// survivor fully projected. Each mesh spans Spatial (`Transform` +
-/// `GlobalTransform`) and Render (`MeshRef`) within one page,
+/// `GlobalTransform`) and Render (`AssetRef<Mesh>`) within one page,
 /// so despawning the first row must `swap_remove` that physical row exactly
 /// once — the survivor's Render data must remain reachable.
 #[test]

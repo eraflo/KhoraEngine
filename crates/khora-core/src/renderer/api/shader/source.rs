@@ -23,4 +23,4 @@
 #[derive(Debug, Clone)]
 pub struct CpuShaderSource(pub String);
 
-impl crate::asset::Asset for CpuShaderSource {}
+impl crate::asset::Stored for CpuShaderSource {}

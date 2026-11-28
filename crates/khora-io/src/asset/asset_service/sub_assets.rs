@@ -19,7 +19,7 @@ use std::any::Any;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
-use khora_core::asset::{Asset, AssetUUID};
+use khora_core::asset::{AssetUUID, Stored};
 
 use super::AssetService;
 use crate::asset::container::AssetContainer;
@@ -65,7 +65,7 @@ impl AssetService {
 
     /// Extracts the sub-asset `label` (index type `type_name`) from the
     /// container file `container`, opening the container on first use.
-    pub(super) fn extract_sub<A: Asset>(
+    pub(super) fn extract_sub<A: Stored>(
         &mut self,
         container: AssetUUID,
         label: &str,

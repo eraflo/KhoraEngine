@@ -15,7 +15,8 @@
 //! Building the editor's scene tree from the world.
 
 use khora_sdk::editor_ui::*;
-use khora_sdk::khora_data::ecs::{SemanticDomain, Tag};
+use khora_sdk::khora_core::renderer::api::gpu_scene::Mesh;
+use khora_sdk::khora_data::ecs::{AssetRef, SemanticDomain, Tag};
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::GameWorld;
 
@@ -101,7 +102,7 @@ pub fn extract_scene_tree(world: &GameWorld, state: &mut EditorState) {
             EntityIcon::Light
         } else if world.get_component::<AudioSource>(entity).is_some() {
             EntityIcon::Audio
-        } else if world.get_component::<MeshRef>(entity).is_some() {
+        } else if world.get_component::<AssetRef<Mesh>>(entity).is_some() {
             EntityIcon::Mesh
         } else {
             EntityIcon::Empty

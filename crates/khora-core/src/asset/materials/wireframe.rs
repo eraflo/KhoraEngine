@@ -15,7 +15,7 @@
 //! Defines wireframe materials for debug visualization and editor tools.
 
 use crate::{
-    asset::{Asset, Material},
+    asset::{Material, Stored},
     math::LinearRgba,
 };
 
@@ -82,8 +82,14 @@ impl Default for WireframeMaterial {
     }
 }
 
-impl Asset for WireframeMaterial {}
-impl Material for WireframeMaterial {}
+impl Stored for WireframeMaterial {}
+impl Material for WireframeMaterial {
+    fn hash_content(&self, hasher: &mut crate::asset::ContentHasher) {
+        hasher.write_str("WireframeMaterial");
+        hasher.write_rgba(self.color);
+        hasher.write_f32(self.line_width);
+    }
+}
 
 #[cfg(test)]
 mod tests {

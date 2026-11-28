@@ -21,7 +21,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use khora_core::asset::{AssetDecoding, AssetHandle, AssetUUID, StandardMaterial};
+use khora_core::asset::{
+    AssetDecoding, AssetHandle, AssetUUID, InlineMaterial, Material, ProceduralMesh,
+    StandardMaterial,
+};
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::{OutputDeck, Reserve, Staging};
 use khora_core::math::dimension::{Extent3D, Origin3D};
@@ -46,7 +49,7 @@ use khora_core::renderer::error::{RenderError, ResourceError};
 use khora_core::renderer::traits::{CommandEncoder, GraphicsDevice, PipelineSystem};
 use khora_core::Runtime;
 use khora_data::ecs::{
-    DataSystemRegistration, HandleComponent, MaterialRef, MeshRef, Observer, SystemContext, World,
+    AssetRef, DataSystemRegistration, HandleComponent, Observer, SystemContext, World,
 };
 use khora_data::{AssetEviction, AssetStore, ProjectionRegistry};
 use khora_io::asset::{AssetIdRegistry, AssetService};
@@ -537,7 +540,9 @@ fn hot_reload_redraws_every_entity_without_visiting_them() {
     let uuid = AssetUUID::new_v5(path);
     let project = Project::with_files(&[(path, TRIANGLE_OBJ.as_bytes().to_vec())]);
     let mut world = World::new();
-    let entities: Vec<EntityId> = (0..3).map(|_| world.spawn(MeshRef::Asset(uuid))).collect();
+    let entities: Vec<EntityId> = (0..3)
+        .map(|_| world.spawn(AssetRef::<Mesh>::Asset(uuid)))
+        .collect();
     project.settle(&mut world);
     let Some(first) = project.gpu_mesh(uuid) else {
         panic!("the triangle is resident");
@@ -569,7 +574,9 @@ fn hot_reload_redraws_every_entity_without_visiting_them() {
     );
     for entity in &entities {
         assert_eq!(
-            world.get::<MeshRef>(*entity).map(MeshRef::uuid),
+            world
+                .get::<AssetRef<Mesh>>(*entity)
+                .map(AssetRef::<Mesh>::uuid),
             Some(uuid),
             "{entity:?} still names the mesh"
         );
@@ -585,16 +592,21 @@ fn hot_reload_redraws_every_entity_without_visiting_them() {
 /// though it does not arrive in the store again.
 #[test]
 fn references_edited_back_are_made_resident_again() {
-    use khora_data::ecs::ProceduralMeshKind;
+    use khora_core::asset::ProceduralMeshKind;
 
     let project = Project::with_files(&[("meshes/shape.obj", TRIANGLE_OBJ.as_bytes().to_vec())]);
     let material = |roughness: f32| {
-        MaterialRef::inline(Box::new(StandardMaterial {
+        AssetRef::<Box<dyn Material>>::Local(InlineMaterial::new(Box::new(StandardMaterial {
             roughness,
             ..Default::default()
-        }))
+        })))
     };
-    let cube = |side: f32| MeshRef::procedural(ProceduralMeshKind::Cube, [side, 0.0, 0.0, 0.0]);
+    let cube = |side: f32| {
+        AssetRef::<Mesh>::Local(ProceduralMesh::new(
+            ProceduralMeshKind::Cube,
+            [side, 0.0, 0.0, 0.0],
+        ))
+    };
     let (first_material, second_material) = (material(0.2).uuid(), material(0.8).uuid());
     let (first_mesh, second_mesh) = (cube(1.0).uuid(), cube(3.0).uuid());
     let mut world = World::new();
@@ -648,15 +660,19 @@ fn a_repainted_texture_remakes_every_material_naming_it_on_the_gpu() {
         (kmat_path, kmat(texture)),
         (mesh_path, TRIANGLE_OBJ.as_bytes().to_vec()),
     ]);
-    let inline = MaterialRef::inline(Box::new(StandardMaterial {
-        base_color_texture: Some(texture),
-        ..Default::default()
-    }));
+    let inline =
+        AssetRef::<Box<dyn Material>>::Local(InlineMaterial::new(Box::new(StandardMaterial {
+            base_color_texture: Some(texture),
+            ..Default::default()
+        })));
     let inline_uuid = inline.uuid();
     let mut world = World::new();
     let entities = vec![
-        world.spawn((MeshRef::Asset(mesh), MaterialRef::Asset(by_asset))),
-        world.spawn((MeshRef::Asset(mesh), inline)),
+        world.spawn((
+            AssetRef::<Mesh>::Asset(mesh),
+            AssetRef::<Box<dyn Material>>::Asset(by_asset),
+        )),
+        world.spawn((AssetRef::<Mesh>::Asset(mesh), inline)),
     ];
     project.settle(&mut world);
     let before: Vec<AssetHandle<GpuMaterial>> = [by_asset, inline_uuid]

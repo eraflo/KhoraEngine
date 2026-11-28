@@ -18,7 +18,6 @@
 //! It runs in [`TickPhase::PreExtract`], so the bake is ready before any lit
 //! lane renders. A hot-reloaded texture counts as another source.
 
-use crate::ecs::SystemContext;
 use std::sync::Arc;
 
 use khora_core::lane::OutputDeck;
@@ -30,7 +29,7 @@ use khora_core::renderer::GraphicsDevice;
 use khora_core::sync::RwLockExt;
 use khora_core::Runtime;
 
-use crate::ecs::{DataSystemRegistration, TickPhase, World};
+use crate::ecs::{AssetRef, DataSystemRegistration, SystemContext, TickPhase, World};
 #[cfg(test)]
 use crate::ecs::{GlobalTransform, Light};
 use crate::{AssetStore, EnvironmentMap, IblBaker, IblSource};
@@ -94,7 +93,7 @@ fn ibl_bake_system(
     let environment = runtime
         .resources
         .get::<EnvironmentMap>()
-        .and_then(|env| env.texture);
+        .and_then(|env| env.texture.as_ref().map(AssetRef::uuid));
     let texture = environment.and_then(|uuid| {
         let store = runtime.resources.get::<AssetStore>()?.store::<CpuTexture>();
         let guard = store.read_recovered();
@@ -141,11 +140,12 @@ inventory::submit! {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use khora_core::asset::{AssetHandle, AssetUUID};
     use khora_core::renderer::api::resource::{
         SampleCount, TextureDimension, TextureFormat, TextureUsage,
     };
+
+    use super::*;
 
     /// A 1×1 RGBA texture: enough to stand for a loaded environment.
     fn texture() -> AssetHandle<CpuTexture> {
@@ -282,10 +282,11 @@ mod tests {
     /// stretched parent too, where that direction leans with the sheared basis.
     #[test]
     fn the_baked_sun_sits_opposite_the_rendered_light_under_a_stretched_parent() {
-        use crate::flow::{Flow, RenderFlow, Selection};
         use khora_core::math::affine_transform::AffineTransform;
         use khora_core::math::{Mat4, Quaternion};
         use khora_core::renderer::light::DirectionalLight;
+
+        use crate::flow::{Flow, RenderFlow, Selection};
 
         let pose = AffineTransform(
             Mat4::from_scale(Vec3::new(1.0, 3.0, 1.0))

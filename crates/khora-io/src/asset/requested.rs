@@ -14,11 +14,11 @@
 
 //! What an [`AssetService::request`](super::AssetService::request) answers.
 
-use khora_core::asset::{Asset, AssetHandle};
+use khora_core::asset::{AssetHandle, Stored};
 
 /// The answer to a request for an asset: it is there, it is being decoded
 /// off the frame, or its last decode failed and nothing changed since.
-pub enum Requested<A: Asset> {
+pub enum Requested<A: Stored> {
     /// The asset is cached: its handle.
     Ready(AssetHandle<A>),
     /// A decode is filed or under way; ask again on a later frame.

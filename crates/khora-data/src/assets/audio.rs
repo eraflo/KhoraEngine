@@ -14,7 +14,9 @@
 
 //! The decoded sound asset.
 
-use khora_core::asset::Asset;
+use khora_core::asset::{kinds, Asset, AssetKind, NamedAsset, NoLocalSource, Stored};
+
+use super::AssetValueRegistration;
 
 /// A sound decoded to interleaved `f32` samples, ready for playback.
 #[derive(Debug, Clone, Default)]
@@ -29,4 +31,14 @@ pub struct SoundData {
     pub sample_rate: u32,
 }
 
-impl Asset for SoundData {}
+impl Stored for SoundData {}
+
+impl Asset for SoundData {
+    const KIND: AssetKind = kinds::SOUND;
+    type LocalSource = NoLocalSource;
+
+    /// A sound needs no other asset.
+    fn dependencies(&self, _: &mut Vec<NamedAsset>) {}
+}
+
+inventory::submit!(AssetValueRegistration::of::<SoundData>());

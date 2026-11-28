@@ -32,6 +32,9 @@
 use std::any::type_name;
 use std::marker::PhantomData;
 
+use khora_core::asset::{Material, NoLocalSource};
+use khora_core::renderer::api::gpu_scene::Mesh;
+
 /// Compiles only when both arguments name the same type.
 fn same_type<T: ?Sized>(_: PhantomData<T>, _: PhantomData<T>) {}
 
@@ -214,11 +217,26 @@ fn light_fields(x: &khora_data::ecs::Light) {
     let _ = (&x.light_type, &x.enabled);
 }
 
-fn material_ref_variants(x: &khora_data::ecs::MaterialRef) {
+fn asset_ref_variants(x: &khora_data::ecs::AssetRef<Mesh>) {
     match x {
-        khora_data::ecs::MaterialRef::Inline { .. } => {}
-        khora_data::ecs::MaterialRef::Asset(..) => {}
+        khora_data::ecs::AssetRef::Asset(..) => {}
+        khora_data::ecs::AssetRef::Local(..) => {}
+        khora_data::ecs::AssetRef::Made(..) => {}
     }
+}
+
+fn asset_value_registration_fields(x: &khora_data::assets::AssetValueRegistration) {
+    let _ = (&x.kind, &x.value);
+}
+
+fn saved_local_source_items<A, S: khora_data::assets::SavedLocalSource<A>>() {
+    let _ = S::to_payload;
+    let _ = S::from_payload;
+    let _ = S::to_positional;
+    let _ = S::from_positional;
+    let _ = S::schema;
+    let _ = S::to_json;
+    let _ = S::from_json;
 }
 
 fn material_registration_fields(x: &khora_data::scene::MaterialRegistration) {
@@ -234,22 +252,6 @@ fn material_registration_fields(x: &khora_data::scene::MaterialRegistration) {
         &x.serialize_json,
         &x.deserialize_json,
     );
-}
-
-fn procedural_mesh_kind_variants(x: &khora_data::ecs::ProceduralMeshKind) {
-    match x {
-        khora_data::ecs::ProceduralMeshKind::Cube => {}
-        khora_data::ecs::ProceduralMeshKind::Sphere => {}
-        khora_data::ecs::ProceduralMeshKind::Plane => {}
-    }
-}
-
-fn mesh_ref_variants(x: &khora_data::ecs::MeshRef) {
-    match x {
-        khora_data::ecs::MeshRef::Procedural { .. } => {}
-        khora_data::ecs::MeshRef::Asset(..) => {}
-        khora_data::ecs::MeshRef::Made(..) => {}
-    }
 }
 
 fn name_fields(x: &khora_data::ecs::Name) {
@@ -979,6 +981,16 @@ fn soa_generic<S: khora_data::ecs::soa::SoaLayout + std::fmt::Debug>() {
 fn module_assets_paths_still_resolve() {
     let _ = type_name::<khora_data::assets::SoundData>();
     let _ = sound_data_fields as fn(&khora_data::assets::SoundData);
+    let _ = type_name::<khora_data::assets::AssetValueRegistration>();
+    let _ = asset_value_registration_fields as fn(&khora_data::assets::AssetValueRegistration);
+    let _ = khora_data::assets::AssetValueRegistration::of::<khora_data::assets::SoundData>;
+    saved_local_source_items::<Mesh, khora_core::asset::ProceduralMesh>();
+    saved_local_source_items::<Box<dyn Material>, khora_core::asset::InlineMaterial>();
+    saved_local_source_items::<Mesh, NoLocalSource>();
+    let _ = type_name::<khora_data::scene::PrefabAsset>();
+    let _ = type_name::<khora_data::scene::prefab::PrefabAsset>();
+    is_clone::<khora_data::scene::PrefabAsset>();
+    is_debug::<khora_data::scene::PrefabAsset>();
     is_clone::<khora_data::assets::SoundData>();
     is_debug::<khora_data::assets::SoundData>();
     is_default::<khora_data::assets::SoundData>();
@@ -1237,32 +1249,19 @@ fn module_ecs_paths_still_resolve() {
     is_component::<khora_data::ecs::Light>();
     is_debug::<khora_data::ecs::Light>();
     is_default::<khora_data::ecs::Light>();
-    let _ = type_name::<khora_data::ecs::MaterialRef>();
-    let _ = material_ref_variants as fn(&khora_data::ecs::MaterialRef);
-    let _ = khora_data::ecs::MaterialRef::inline;
-    let _ = khora_data::ecs::MaterialRef::uuid;
-    is_clone::<khora_data::ecs::MaterialRef>();
-    is_component::<khora_data::ecs::MaterialRef>();
-    let _ = type_name::<khora_data::ecs::ProceduralMeshKind>();
-    let _ = procedural_mesh_kind_variants as fn(&khora_data::ecs::ProceduralMeshKind);
-    is_clone::<khora_data::ecs::ProceduralMeshKind>();
-    is_copy::<khora_data::ecs::ProceduralMeshKind>();
-    is_debug::<khora_data::ecs::ProceduralMeshKind>();
-    is_eq::<khora_data::ecs::ProceduralMeshKind>();
-    is_partial_eq::<khora_data::ecs::ProceduralMeshKind>();
-    let _ = type_name::<khora_data::ecs::MeshRef>();
-    let _ = mesh_ref_variants as fn(&khora_data::ecs::MeshRef);
-    let _ = khora_data::ecs::MeshRef::procedural;
-    let _ = khora_data::ecs::MeshRef::uuid;
-    let _ = khora_data::ecs::MeshRef::unit_cube;
-    is_clone::<khora_data::ecs::MeshRef>();
-    is_component::<khora_data::ecs::MeshRef>();
-    is_debug::<khora_data::ecs::MeshRef>();
-    is_partial_eq::<khora_data::ecs::MeshRef>();
-    let _ = khora_data::ecs::reconstruct_procedural_mesh;
-    let _ = khora_data::ecs::create_plane;
-    let _ = khora_data::ecs::create_cube;
-    let _ = khora_data::ecs::create_sphere;
+    let _ = type_name::<khora_data::ecs::AssetRef<Mesh>>();
+    let _ = type_name::<khora_data::ecs::AssetRef<Box<dyn Material>>>();
+    let _ = asset_ref_variants as fn(&khora_data::ecs::AssetRef<Mesh>);
+    let _ = khora_data::ecs::AssetRef::<Mesh>::uuid;
+    let _ = khora_data::ecs::AssetRef::<Mesh>::is_made;
+    is_clone::<khora_data::ecs::AssetRef<Mesh>>();
+    is_component::<khora_data::ecs::AssetRef<Mesh>>();
+    is_debug::<khora_data::ecs::AssetRef<Mesh>>();
+    is_partial_eq::<khora_data::ecs::AssetRef<Mesh>>();
+    is_clone::<khora_data::ecs::AssetRef<Box<dyn Material>>>();
+    is_component::<khora_data::ecs::AssetRef<Box<dyn Material>>>();
+    is_debug::<khora_data::ecs::AssetRef<Box<dyn Material>>>();
+    is_partial_eq::<khora_data::ecs::AssetRef<Box<dyn Material>>>();
     let _ = type_name::<khora_data::ecs::Name>();
     let _ = name_fields as fn(&khora_data::ecs::Name);
     let _ = methods_taking_impl_into as fn(&mut khora_data::ecs::Tag);
@@ -2672,14 +2671,12 @@ fn paths_used_by_other_crates_still_resolve() {
     let _ = type_name::<khora_data::ecs::HandleComponent<khora_data::assets::SoundData>>(); // khora-agents, khora-io, khora-sdk
     let _ = type_name::<khora_data::ecs::KinematicCharacterController>(); // khora-agents
     let _ = type_name::<khora_data::ecs::Light>(); // khora-agents, khora-sdk
-    let _ = type_name::<khora_data::ecs::MaterialRef>(); // khora-io, khora-sdk
-    let _ = khora_data::ecs::MaterialRef::inline; // khora-sdk
+    let _ = type_name::<khora_data::ecs::AssetRef<Box<dyn Material>>>(); // khora-io, khora-sdk
     let _ = type_name::<khora_data::scene::MaterialRegistration>(); // khora-io
-    let _ = type_name::<khora_data::ecs::MeshRef>(); // khora-io, khora-sdk
+    let _ = type_name::<khora_data::ecs::AssetRef<Mesh>>(); // khora-io, khora-sdk
     let _ = type_name::<khora_data::ecs::Name>(); // khora-sdk
     let _ = type_name::<khora_data::ecs::Parent>(); // khora-agents, khora-io, khora-sdk
     let _ = type_name::<khora_data::ecs::PlaybackState>(); // khora-lanes
-    let _ = type_name::<khora_data::ecs::ProceduralMeshKind>(); // khora-io, khora-sdk
     let _ = type_name::<khora_data::ecs::ProjectionType>(); // khora-sdk
     let _ = type_name::<khora_data::ecs::Query<'static, &'static khora_data::ecs::Transform>>(); // khora-sdk
     let _ =
@@ -2701,7 +2698,6 @@ fn paths_used_by_other_crates_still_resolve() {
     let _ = type_name::<khora_data::ecs::layout::LayoutAdvisor>(); // khora-control
     let _ = type_name::<khora_data::ecs::layout::LayoutRecommendation>(); // khora-control
     let _ = khora_data::scene::material_to_json; // khora-editor, khora-io
-    let _ = khora_data::ecs::reconstruct_procedural_mesh; // khora-io
     let _ = khora_data::ecs::systems::collision_to_script::TOUCHED; // khora-agents
     let _ = type_name::<khora_data::flow::AudioPlaybackUpdate>(); // khora-lanes
     let _ = type_name::<khora_data::flow::AudioPlaybackWriteback>(); // khora-lanes

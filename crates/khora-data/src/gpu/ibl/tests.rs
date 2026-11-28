@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use khora_core::renderer::api::command::{BindingType, TextureViewDimension};
+
 use super::pipelines::{equirect_layout_entries, irradiance_layout_entries};
 use super::resources::FACE_BASES;
 use super::*;
-use khora_core::renderer::api::command::{BindingType, TextureViewDimension};
+use crate::ecs::AssetRef;
 
 #[test]
 fn face_bases_cover_six_faces_with_unit_axes() {
@@ -117,7 +119,10 @@ fn environment_wait_is_bounded() {
 fn environment_map_defaults_to_procedural() {
     assert!(EnvironmentMap::default().texture.is_none());
     let uuid = AssetUUID::new_v5("test/env.hdr");
-    assert_eq!(EnvironmentMap::from_asset(uuid).texture, Some(uuid));
+    assert_eq!(
+        EnvironmentMap::from_asset(uuid).texture,
+        Some(AssetRef::Asset(uuid))
+    );
 }
 
 #[test]

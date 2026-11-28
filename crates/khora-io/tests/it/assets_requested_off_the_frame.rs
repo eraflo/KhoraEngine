@@ -208,7 +208,7 @@ impl Project {
     }
 
     /// Whether the `AssetStore` holds `uuid` as an `A`.
-    pub(crate) fn stored<A: khora_core::asset::Asset>(&self, uuid: &AssetUUID) -> bool {
+    pub(crate) fn stored<A: khora_core::asset::Stored>(&self, uuid: &AssetUUID) -> bool {
         self.store
             .store::<A>()
             .read()
@@ -233,7 +233,7 @@ fn font() -> AssetUUID {
 }
 
 /// What a request answered, named, for assertions.
-fn answer<A: khora_core::asset::Asset>(requested: &Requested<A>) -> &'static str {
+fn answer<A: khora_core::asset::Stored>(requested: &Requested<A>) -> &'static str {
     match requested {
         Requested::Ready(_) => "Ready",
         Requested::Pending => "Pending",

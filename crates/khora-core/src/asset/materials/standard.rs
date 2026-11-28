@@ -15,7 +15,7 @@
 //! Defines the standard PBR material with metallic-roughness workflow.
 
 use crate::{
-    asset::{Asset, AssetUUID, Material},
+    asset::{AssetUUID, Material, Stored},
     math::LinearRgba,
 };
 
@@ -172,8 +172,28 @@ impl Default for StandardMaterial {
     }
 }
 
-impl Asset for StandardMaterial {}
+impl Stored for StandardMaterial {}
 impl Material for StandardMaterial {
+    fn hash_content(&self, hasher: &mut crate::asset::ContentHasher) {
+        hasher.write_str("StandardMaterial");
+        hasher.write_rgba(self.base_color);
+        hasher.write_asset(self.base_color_texture);
+        hasher.write_f32(self.metallic);
+        hasher.write_f32(self.roughness);
+        hasher.write_asset(self.metallic_roughness_texture);
+        hasher.write_asset(self.normal_map);
+        hasher.write_asset(self.occlusion_map);
+        hasher.write_rgba(self.emissive);
+        hasher.write_asset(self.emissive_texture);
+        self.alpha_mode.hash_content(hasher);
+        hasher.write_f32(self.alpha_cutoff);
+        hasher.write_bool(self.double_sided);
+        hasher.write_f32(self.specular);
+        hasher.write_rgba(self.specular_color);
+        hasher.write_asset(self.specular_texture);
+        hasher.write_asset(self.specular_color_texture);
+    }
+
     fn base_color(&self) -> crate::math::LinearRgba {
         self.base_color
     }
@@ -427,14 +447,53 @@ mod tests {
         assert_eq!(boxed.textures(), vec![normal]);
     }
 
+    /// A material cannot be made without its textures: its dependencies are
+    /// the textures its slots name, in slot order, each of the texture kind.
+    #[test]
+    fn a_material_depends_on_its_textures() {
+        use crate::asset::Asset as _;
+
+        let base = AssetUUID::new_v5("textures/base.png");
+        let normal = AssetUUID::new_v5("textures/normal.png");
+        let boxed: Box<dyn Material> = Box::new(StandardMaterial {
+            base_color_texture: Some(base),
+            normal_map: Some(normal),
+            emissive_texture: Some(base),
+            ..Default::default()
+        });
+
+        let mut dependencies = Vec::new();
+        boxed.dependencies(&mut dependencies);
+
+        let expected: Vec<crate::asset::NamedAsset> = boxed
+            .textures()
+            .into_iter()
+            .map(|uuid| crate::asset::NamedAsset {
+                uuid,
+                kind: crate::asset::kinds::TEXTURE,
+            })
+            .collect();
+        assert_eq!(expected.len(), 3, "the material names three texture slots");
+        assert_eq!(dependencies, expected);
+
+        let mut none = Vec::new();
+        let untextured: Box<dyn Material> = Box::new(StandardMaterial::default());
+        untextured.dependencies(&mut none);
+        assert!(none.is_empty(), "an untextured material depends on nothing");
+    }
+
     // --- KHR_materials_specular -------------------------------------------
 
     /// A material that overrides nothing: every accessor is the trait default.
     #[derive(Clone)]
     struct BareMaterial;
 
-    impl Asset for BareMaterial {}
-    impl Material for BareMaterial {}
+    impl Stored for BareMaterial {}
+    impl Material for BareMaterial {
+        fn hash_content(&self, hasher: &mut crate::asset::ContentHasher) {
+            hasher.write_str("BareMaterial");
+        }
+    }
 
     #[test]
     fn the_trait_defaults_to_specular_one_white_and_no_specular_textures() {

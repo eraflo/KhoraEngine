@@ -25,9 +25,7 @@ use crate::ecs::entity_store::EntityStore;
 use crate::ecs::page::PageIndex;
 use crate::ecs::planner::QueryPlanner;
 use crate::ecs::storage::StorageManager;
-use crate::ecs::{
-    ComponentBundle, ComponentKey, LayoutPolicy, MaterialRef, MeshRef, SemanticDomain,
-};
+use crate::ecs::{ComponentBundle, ComponentKey, LayoutPolicy, SemanticDomain};
 
 mod clock;
 mod column_write;
@@ -196,14 +194,11 @@ impl World {
                 world.observe(key());
             }
         }
-        // Generic and hand-implemented components can't self-register via the
-        // derive: generics have no single `TypeId`, and `MaterialRef` has a
-        // manual `Component` impl.
+        // A generic component can't self-register via the derive: it has no
+        // single `TypeId`.
         world.register_component::<HandleComponent<Font>>(SemanticDomain::Ui);
-        world.register_component::<MaterialRef>(SemanticDomain::Render);
-        world.register_component::<MeshRef>(SemanticDomain::Render);
 
-        // Idempotent with the explicit calls above: same type, same domain.
+        // Idempotent with the explicit call above: same type, same domain.
         for reg in inventory::iter::<crate::ecs::ComponentDomainRegistration> {
             (reg.register)(&mut world);
         }

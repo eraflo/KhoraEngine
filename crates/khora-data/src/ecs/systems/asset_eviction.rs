@@ -12,13 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! GPU asset eviction: frees the GPU meshes and materials no `MeshRef` or
-//! `MaterialRef` names any more, and those the residencies retired.
+//! GPU asset eviction: frees the GPU meshes and materials no `AssetRef<Mesh>` or
+//! `AssetRef<Box<dyn Material>>` names any more, and those the residencies retired.
 //!
 //! The residencies make a GPU copy of every copy that lands in the store, so
 //! without this pass a despawn or an inline material edit would leak GPU memory.
 
-use crate::ecs::SystemContext;
 use std::sync::{Arc, Mutex};
 
 use khora_core::lane::OutputDeck;
@@ -26,7 +25,7 @@ use khora_core::renderer::GraphicsDevice;
 use khora_core::Runtime;
 
 use crate::assets::AssetStore;
-use crate::ecs::{DataSystemRegistration, TickPhase, World};
+use crate::ecs::{DataSystemRegistration, SystemContext, TickPhase, World};
 use crate::gpu::AssetEviction;
 
 fn asset_eviction_system(

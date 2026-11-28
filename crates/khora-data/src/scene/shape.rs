@@ -114,10 +114,13 @@ mod tests {
     #[test]
     fn an_enum_is_opaque_rather_than_empty() {
         assert_eq!(
-            registration_named("MaterialRef").shape,
+            registration_named("AssetRef<Box<dyn Material>>").shape,
             ComponentShape::Opaque
         );
-        assert_eq!(registration_named("MeshRef").shape, ComponentShape::Opaque);
+        assert_eq!(
+            registration_named("AssetRef<Mesh>").shape,
+            ComponentShape::Opaque
+        );
     }
 
     /// A tuple struct addresses its fields by index, which is what an inspector

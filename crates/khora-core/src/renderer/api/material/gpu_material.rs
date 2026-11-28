@@ -14,7 +14,7 @@
 
 //! GPU-side material projection.
 
-use crate::asset::Asset;
+use crate::asset::Stored;
 use crate::renderer::api::command::BindGroupId;
 use crate::renderer::api::material::MaterialGpuBindings;
 use crate::renderer::api::resource::{BufferId, SamplerId, TextureId, TextureViewId};
@@ -101,7 +101,7 @@ impl GpuMaterial {
     }
 }
 
-impl Asset for GpuMaterial {}
+impl Stored for GpuMaterial {}
 
 #[cfg(test)]
 mod tests {

@@ -25,6 +25,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, bail};
 use khora_core::asset::{AlphaMode, AssetUUID, Material, StandardMaterial};
 use khora_core::math::{LinearRgba, Mat4};
+use khora_data::scene::PrefabAsset;
 
 use super::gltf::{merge, parse_gltf, read_primitive};
 use super::gltf_checks::ElementCaps;
@@ -32,7 +33,7 @@ use super::gltf_resources::{image_bytes, listed_uri_path, load_buffers, resolve_
 use super::gltf_scene::scene_record;
 use super::{FileSystemResolver, GltfResourceResolver, MeshDispatcher};
 use crate::asset::{
-    AssetContainer, AssetDecoder, ExternalFileListerRegistration, PrefabAsset, SubAssetEntry,
+    AssetContainer, AssetDecoder, ExternalFileListerRegistration, SubAssetEntry,
     SubAssetListerRegistration, TextureDecoder,
 };
 use crate::trust::{FileKind, LimitExceeded, Limits, Trust};

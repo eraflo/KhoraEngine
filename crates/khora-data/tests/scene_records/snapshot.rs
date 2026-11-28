@@ -15,11 +15,12 @@
 //! A world through a snapshot and back: every component, every identity,
 //! every reference.
 
-use khora_core::asset::AssetUUID;
+use khora_core::asset::{AssetUUID, Material};
 use khora_core::math::{Vec2, Vec3};
+use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::scene::{SceneFile, SCENE_FORMAT_VERSION};
 use khora_core::script::ScriptValue;
-use khora_data::ecs::{FieldKind, MaterialRef, MeshRef, Name, Parent, Transform};
+use khora_data::ecs::{AssetRef, FieldKind, Name, Parent, Transform};
 use khora_data::scene::record::ReportKind;
 use khora_data::scene::snapshot::{prepare_snapshot, write_snapshot, SNAPSHOT_ENCODING_ID};
 use khora_data::scene::LoadFailure;
@@ -157,8 +158,8 @@ fn a_snapshot_keeps_identities_and_references() {
     let second = src.spawn((
         Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
         Name::new("Second"),
-        MeshRef::Asset(AssetUUID::new_v5("meshes/rock.gltf")),
-        MaterialRef::Asset(AssetUUID::new_v5("materials/rock.kmat")),
+        AssetRef::<Mesh>::Asset(AssetUUID::new_v5("meshes/rock.gltf")),
+        AssetRef::<Box<dyn Material>>::Asset(AssetUUID::new_v5("materials/rock.kmat")),
     ));
     let panel = src.spawn(UiImage {
         texture: AssetUUID::new_v5("textures/wall.png"),
@@ -240,13 +241,15 @@ fn a_snapshot_keeps_identities_and_references() {
 
     // Asset references, verbatim.
     assert_eq!(
-        dst.get::<MeshRef>(twin(second)),
-        Some(&MeshRef::Asset(AssetUUID::new_v5("meshes/rock.gltf")))
+        dst.get::<AssetRef<Mesh>>(twin(second)),
+        Some(&AssetRef::<Mesh>::Asset(AssetUUID::new_v5(
+            "meshes/rock.gltf"
+        )))
     );
     assert!(
         matches!(
-            dst.get::<MaterialRef>(twin(second)),
-            Some(MaterialRef::Asset(uuid)) if *uuid == AssetUUID::new_v5("materials/rock.kmat")
+            dst.get::<AssetRef<Box<dyn Material>>>(twin(second)),
+            Some(AssetRef::<Box<dyn Material>>::Asset(uuid)) if *uuid == AssetUUID::new_v5("materials/rock.kmat")
         ),
         "the material asset reference is kept"
     );
@@ -377,7 +380,7 @@ fn restoring_a_snapshot_repeatedly_reuses_the_freed_slots() {
 #[test]
 fn a_mesh_made_in_code_survives_a_snapshot_round_trip() {
     let mut src = World::new();
-    let made = MeshRef::Made(AssetUUID::new());
+    let made = AssetRef::<Mesh>::Made(AssetUUID::new());
     let entity = src.spawn((Transform::identity(), made.clone()));
     let id = src.mark_authored(entity).expect("authored");
 
@@ -393,7 +396,7 @@ fn a_mesh_made_in_code_survives_a_snapshot_round_trip() {
     );
     let restored = dst.entity_with_id(id).expect("the entity is restored");
     assert_eq!(
-        dst.get::<MeshRef>(restored),
+        dst.get::<AssetRef<Mesh>>(restored),
         Some(&made),
         "the restored entity lost its mesh made in code"
     );

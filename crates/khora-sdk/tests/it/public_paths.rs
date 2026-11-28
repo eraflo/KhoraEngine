@@ -41,6 +41,9 @@
 use std::any::type_name;
 use std::marker::PhantomData;
 
+use khora_core::asset::Material;
+use khora_core::renderer::api::gpu_scene::Mesh;
+
 /// Compiles only when both arguments name the same type.
 fn same_type<T: ?Sized>(_: PhantomData<T>, _: PhantomData<T>) {}
 
@@ -1254,15 +1257,15 @@ fn module_prelude_paths_still_resolve() {
         PhantomData::<khora_sdk::prelude::ecs::LightType>,
         PhantomData::<khora_core::renderer::LightType>,
     );
-    let _ = type_name::<khora_sdk::prelude::ecs::MaterialRef>();
+    let _ = type_name::<khora_sdk::prelude::ecs::AssetRef<Box<dyn Material>>>();
     same_type(
-        PhantomData::<khora_sdk::prelude::ecs::MaterialRef>,
-        PhantomData::<khora_data::ecs::MaterialRef>,
+        PhantomData::<khora_sdk::prelude::ecs::AssetRef<Box<dyn Material>>>,
+        PhantomData::<khora_data::ecs::AssetRef<Box<dyn Material>>>,
     );
-    let _ = type_name::<khora_sdk::prelude::ecs::MeshRef>();
+    let _ = type_name::<khora_sdk::prelude::ecs::AssetRef<Mesh>>();
     same_type(
-        PhantomData::<khora_sdk::prelude::ecs::MeshRef>,
-        PhantomData::<khora_data::ecs::MeshRef>,
+        PhantomData::<khora_sdk::prelude::ecs::AssetRef<Mesh>>,
+        PhantomData::<khora_data::ecs::AssetRef<Mesh>>,
     );
     let _ = type_name::<khora_sdk::prelude::ecs::Name>();
     same_type(
@@ -1282,7 +1285,17 @@ fn module_prelude_paths_still_resolve() {
     let _ = type_name::<khora_sdk::prelude::ecs::ProceduralMeshKind>();
     same_type(
         PhantomData::<khora_sdk::prelude::ecs::ProceduralMeshKind>,
-        PhantomData::<khora_data::ecs::ProceduralMeshKind>,
+        PhantomData::<khora_core::asset::ProceduralMeshKind>,
+    );
+    let _ = type_name::<khora_sdk::prelude::ecs::ProceduralMesh>();
+    same_type(
+        PhantomData::<khora_sdk::prelude::ecs::ProceduralMesh>,
+        PhantomData::<khora_core::asset::ProceduralMesh>,
+    );
+    let _ = type_name::<khora_sdk::prelude::ecs::Mesh>();
+    same_type(
+        PhantomData::<khora_sdk::prelude::ecs::Mesh>,
+        PhantomData::<khora_core::renderer::api::gpu_scene::Mesh>,
     );
     let _ = type_name::<khora_sdk::prelude::ecs::ProjectionType>();
     same_type(
@@ -1328,6 +1341,16 @@ fn module_prelude_paths_still_resolve() {
     same_type(
         PhantomData::<khora_sdk::prelude::materials::EmissiveMaterial>,
         PhantomData::<khora_core::asset::EmissiveMaterial>,
+    );
+    let _ = type_name::<khora_sdk::prelude::materials::InlineMaterial>();
+    same_type(
+        PhantomData::<khora_sdk::prelude::materials::InlineMaterial>,
+        PhantomData::<khora_core::asset::InlineMaterial>,
+    );
+    let _ = type_name::<Box<dyn khora_sdk::prelude::materials::Material>>();
+    same_type(
+        PhantomData::<Box<dyn khora_sdk::prelude::materials::Material>>,
+        PhantomData::<Box<dyn khora_core::asset::Material>>,
     );
     let _ = type_name::<khora_sdk::prelude::materials::StandardMaterial>();
     same_type(

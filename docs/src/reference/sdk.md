@@ -209,7 +209,7 @@ a scene load to be prepared off the frame and reads its outcome by ticket.
 | Queries | `query::<...>()`, `query_mut::<...>()` |
 | Transforms | `sync_global_transform`, `update_transform` |
 | Hierarchy | `set_parent` |
-| Assets | `add_mesh` (a mesh made in code: published in the world's asset store, returned as a `MeshRef::Made` that saves leave out — see [what is not saved](../concepts/serialization.md)), `add_material`; `set_assets`, `assets` (the store; the engine sets its own on the world it runs) |
+| Assets | `add_mesh` (a mesh made in code: published in the world's asset store, returned as an `AssetRef::<Mesh>::Made` that saves leave out — see [what is not saved](../concepts/serialization.md)), `add_material`; `set_assets`, `assets` (the store; the engine sets its own on the world it runs) |
 | Game saves | `save_game`, `load_game`; `file_load_game` and `take_load_outcome` to load one off the frame |
 | Internal | `inner_world`, `inner_world_mut` (low-level; prefer the wrapped surface) |
 
@@ -318,8 +318,8 @@ use khora_sdk::prelude::materials::*; // Built-in materials
 | Module | Contents |
 |---|---|
 | `prelude` | `WindowConfig`, `WindowIcon`, `PRIMARY_VIEWPORT`, `AssetHandle`, `AssetUUID`, `SaaTrackingAllocator`, `InputEvent`, `KeyCode`, `MouseButton`, `Time`, `SharedTime` |
-| `prelude::ecs` | `EntityId`, `Transform`, `GlobalTransform`, `Camera`, `CameraProblem`, `Light`, `LightType`, `DirectionalLight`, `PointLight`, `SpotLight`, `MeshRef`, `MaterialRef`, `RigidBody`, `Collider`, `BodyType`, `ColliderShape`, `AudioSource`, `Parent`, `Children`, `Name`, `Tag`, `Without`, `Changed`, `Mut`, `Component`, `ComponentBundle`, `ProjectionType`, `ProceduralMeshKind`, `ScriptValue` |
-| `prelude::materials` | `StandardMaterial`, `UnlitMaterial`, `EmissiveMaterial`, `WireframeMaterial`, `AlphaMode` |
+| `prelude::ecs` | `EntityId`, `Transform`, `GlobalTransform`, `Camera`, `CameraProblem`, `Light`, `LightType`, `DirectionalLight`, `PointLight`, `SpotLight`, `AssetRef`, `Mesh`, `ProceduralMesh`, `ProceduralMeshKind`, `RigidBody`, `Collider`, `BodyType`, `ColliderShape`, `AudioSource`, `Parent`, `Children`, `Name`, `Tag`, `Without`, `Changed`, `Mut`, `Component`, `ComponentBundle`, `ProjectionType`, `ScriptValue` |
+| `prelude::materials` | `Material`, `InlineMaterial`, `StandardMaterial`, `UnlitMaterial`, `EmissiveMaterial`, `WireframeMaterial`, `AlphaMode` |
 | `prelude::math` | `LinearRgba` and everything in `khora_core::math` (`Vec2/3/4`, `Mat3/4`, `Quaternion`, `Aabb`, …) |
 
 The prelude is curated — adding to it is a deliberate decision. Full contents:

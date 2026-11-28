@@ -156,8 +156,9 @@ needs to resume a game instead of restarting it.
 Provenance decides by component. One value of a saved component can still be
 out of reach of every file: a **mesh made in code** (`GameWorld::add_mesh`)
 lives only in the session's asset store, and its entity names it with
-`MeshRef::Made(uuid)`. Writing that uuid down would save a reference no load
-could resolve. Such a value is **session-only**: its registration says so, row
+`AssetRef::Made(uuid)`, as a material made in code is. Writing that uuid down
+would save a reference no load could resolve. Such a value is **session-only**:
+its registration says so, row
 by row (`ComponentRegistration::session_only`), so the save code knows no
 component by name.
 
@@ -394,6 +395,17 @@ of the mirror and take their default on load; the engine rebuilds what they hold
 typically through the asset resolver and the residencies. A type renamed in code
 keeps its saves readable with `#[component(formerly = "OldName")]`; a field, with
 `#[component(formerly = "old_name")]`.
+
+An asset reference that is a component (`AssetRef<Mesh>`, `AssetRef<Box<dyn
+Material>>`) is registered once per kind, under its own name, and saved in one
+form whatever its kind: a variant named `Asset` or `Made` carrying a uuid, or the
+variant of the kind's local source carrying the source itself (`Procedural` with
+a primitive and its parameters, `Inline` with a material's type name and fields).
+A local source's uuid is never written: it is derived from the content again on
+load. What a load adapts inside a local source is reported at its place in the
+reference (`Inline.material.specular`). A snapshot holds the same three forms by
+position, and the inspector's JSON is one key naming the form
+(`{"Asset": uuid}`).
 
 A component a script declares (`component Health { … }` in Ergon) has no Rust type
 and no registration, so a record holding one **describes it**: beside its pages,

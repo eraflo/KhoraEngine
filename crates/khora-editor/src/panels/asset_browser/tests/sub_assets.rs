@@ -22,6 +22,7 @@ use khora_sdk::editor_ui::{
     AssetEntry, EditorPanel, EditorRequest, EditorState, FontFamilyHint, Interaction, TextAlign,
     UiBuilder, UiTheme,
 };
+use khora_sdk::khora_core::asset::Material;
 
 use super::super::AssetBrowserPanel;
 use crate::hot_reload::collect_asset_entries;
@@ -395,7 +396,7 @@ fn the_trash_button_never_deletes_a_file_for_a_selected_part() {
 /// mesh.
 #[test]
 fn assigning_a_material_part_from_its_menu_assigns_the_part() {
-    use khora_sdk::prelude::ecs::{MaterialRef, Name, Transform};
+    use khora_sdk::prelude::ecs::{AssetRef, Name, Transform};
     use khora_sdk::GameWorld;
 
     use crate::tests::gltf_fixture::ONE_NODE_GLTF;
@@ -420,12 +421,13 @@ fn assigning_a_material_part_from_its_menu_assigns_the_part() {
     crate::commands::assign_queued_materials(Some(&project.vfs), &mut world, &state);
 
     let part = project.sub(SHIP, "material_default");
-    match world.get_component::<MaterialRef>(target) {
-        Some(MaterialRef::Asset(uuid)) => assert_eq!(
+    match world.get_component::<AssetRef<Box<dyn Material>>>(target) {
+        Some(AssetRef::<Box<dyn Material>>::Asset(uuid)) => assert_eq!(
             *uuid, part,
             "the entity wears {uuid:?}: the file is {ship:?}, the part {part:?}"
         ),
-        Some(MaterialRef::Inline { .. }) => panic!("the entity wears an inline material"),
+        Some(AssetRef::Local(_)) => panic!("the entity wears an inline material"),
+        Some(AssetRef::Made(_)) => panic!("the entity wears a material made in code"),
         None => panic!("nothing was assigned"),
     }
 }

@@ -33,7 +33,7 @@ The contract is the `Residency` trait (`khora-core/src/residency/mod.rs`):
 pub trait Residency: Send + Sync + 'static {
     const NAME: &'static str;        // its DataSystem's name
     const DEVICE: DeviceClass;       // Cpu, Gpu, Npu or Other
-    type Source: Asset;
+    type Source: Stored;
     type Resident: Clone + Send + Sync;
     type Target<'a>;
 
@@ -61,7 +61,7 @@ Three live in `khora-data/src/residency/`, all on the GPU:
   the one built entirely on the store described below.
 - `gpu_mesh_sync` implements the trait for the upload and keeps its residents in
   the asset store, under each mesh's uuid, where the render lanes look them up
-  by the uuid an entity's `MeshRef` names. A mesh shared by many entities is
+  by the uuid an entity's `AssetRef<Mesh>` names. A mesh shared by many entities is
   uploaded once.
 - `gpu_material_sync` is registered as a residency but does not implement the
   trait: a material's upload needs the pipeline layout of its variant and every
@@ -114,7 +114,7 @@ register_residency!(
     name = GPU_MATERIAL_SYNC,
     run = gpu_material_sync_system,
     after = ["gpu_mesh_sync"],
-    observes = [MaterialRef],
+    observes = [AssetRef<Box<dyn Material>>],
 );
 ```
 
@@ -126,7 +126,7 @@ It submits a `DataSystemRegistration` in `TickPhase::PreExtract`, with the role
 - `asset_reload` replaces the copies of every asset whose file changed, so a
   changed asset reaches the device the frame its new copy landed;
 - `asset_resolver` stores the copies the references written since its last
-  run (`MeshRef`, `MaterialRef`, a UI font or image) name, so a residency sees
+  run (`AssetRef<Mesh>`, `AssetRef<Box<dyn Material>>`, a UI font or image) name, so a residency sees
   this frame's copies.
 
 The copies they read are already there. A decode filed off the frame lands at
@@ -167,8 +167,8 @@ The mesh and material residencies work per asset, never per entity:
 - one **gone** from the store leaves the GPU: its GPU copy is retired, though
   an entity may still name it;
 - on a **resync** the arrivals were lost, and the residency restores the
-  truth instead of replaying them: it makes resident every uuid a `MeshRef` or
-  `MaterialRef` names whose CPU copy is in the store (read by one query of the
+  truth instead of replaying them: it makes resident every uuid an `AssetRef<Mesh>`
+  or `AssetRef<Box<dyn Material>>` names whose CPU copy is in the store (read by one query of the
   references, on that rare path only), brings every resident GPU copy in line
   with its CPU copy (made again if it changed, retired if it went), forgets
   every uuid it remembers that left the store, and makes nothing else. A copy
@@ -187,7 +187,7 @@ The mesh and material residencies work per asset, never per entity:
 
 **The references.** One case no arrival covers: a GPU copy evicted because no
 reference named it (see [Eviction](#eviction)), whose CPU copy stays in the
-store. The residencies observe `MeshRef` and `MaterialRef` and read
+store. The residencies observe `AssetRef<Mesh>` and `AssetRef<Box<dyn Material>>` and read
 `Changed<…>` since their last run: a reference added or changed whose uuid has
 a CPU copy but no GPU copy is made resident again, as for an undone delete or a
 respawn. The other references cost nothing; no frame scans them.
@@ -253,14 +253,14 @@ not drawn by the lit lanes: there is no default material.
 
 A resident costs device memory for as long as it is kept. The meshes and
 materials are released by the **`AssetEviction`** service
-(`khora-data/src/gpu/eviction.rs`), ticked by the `asset_eviction` DataSystem in
+(`khora-data/src/gpu/eviction/`), ticked by the `asset_eviction` DataSystem in
 `Maintenance`, at the end of the frame:
 
 - **Retired** residents — the GPU copies a residency took out because their
   asset was replaced or went (`AssetEviction::retire_mesh`, `retire_material`)
   — are freed at its next tick, at the end of the frame, after the render that
   may still read them. None is leaked.
-- **Orphans** — GPU meshes and materials no live `MeshRef` or `MaterialRef`
+- **Orphans** — GPU meshes and materials no live `AssetRef<Mesh>` or `AssetRef<Box<dyn Material>>`
   names by its uuid (an asset's, a mesh made in code, an inline material's, a
   procedural mesh's) — are freed up to 16 a frame, materials first, so a burst
   of despawns spreads its teardown over several frames. Retired residents do

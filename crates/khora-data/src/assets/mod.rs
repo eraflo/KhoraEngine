@@ -15,13 +15,18 @@
 //! Asset types and the caches that hold their loaded handles.
 
 mod arrivals;
+mod asset_value_registration;
 mod audio;
+mod inline_material;
 mod journal;
-pub(crate) mod procedural_mesh;
+mod procedural_mesh;
+mod saved_local_source;
 mod storage;
 mod store;
 
 pub use arrivals::*;
+pub use asset_value_registration::AssetValueRegistration;
 pub use audio::*;
+pub use saved_local_source::SavedLocalSource;
 pub use storage::*;
 pub use store::AssetStore;

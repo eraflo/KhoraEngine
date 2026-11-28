@@ -31,7 +31,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use khora_core::asset::font::Font;
-use khora_core::asset::{Asset, AssetDecoding, AssetUUID};
+use khora_core::asset::{AssetDecoding, AssetUUID, Stored};
 use khora_core::problems::{Problem, ProblemSource, Problems};
 use khora_core::renderer::api::resource::CpuTexture;
 use khora_core::renderer::api::shader::CpuShaderSource;
@@ -325,7 +325,7 @@ fn a_restricted_read_has_the_strict_limits() {
 /// What the panicking decoder and containers would have produced.
 #[derive(Debug)]
 struct Broken;
-impl Asset for Broken {}
+impl Stored for Broken {}
 
 /// What the decoder's panic says.
 const DECODER_PANIC: &str = "the decoder broke on this file";

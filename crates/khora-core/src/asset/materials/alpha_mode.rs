@@ -66,6 +66,20 @@ pub enum AlphaMode {
     Blend,
 }
 
+impl AlphaMode {
+    /// Feeds the mode, and a mask's cutoff, to `hasher`.
+    pub fn hash_content(&self, hasher: &mut crate::asset::ContentHasher) {
+        match self {
+            Self::Opaque => hasher.write_u32(0),
+            Self::Mask(cutoff) => {
+                hasher.write_u32(1);
+                hasher.write_f32(*cutoff);
+            }
+            Self::Blend => hasher.write_u32(2),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,6 +119,19 @@ mod tests {
 
         assert_ne!(AlphaMode::Opaque, AlphaMode::Blend);
         assert_ne!(AlphaMode::Mask(0.5), AlphaMode::Mask(0.6));
+    }
+
+    /// Each mode feeds its own content, a mask its cutoff too.
+    #[test]
+    fn each_mode_hashes_apart() {
+        let uuid = |mode: AlphaMode| {
+            let mut hasher = crate::asset::ContentHasher::new();
+            mode.hash_content(&mut hasher);
+            hasher.uuid()
+        };
+        assert_eq!(uuid(AlphaMode::Mask(0.5)), uuid(AlphaMode::Mask(0.5)));
+        assert_ne!(uuid(AlphaMode::Mask(0.5)), uuid(AlphaMode::Mask(0.6)));
+        assert_ne!(uuid(AlphaMode::Opaque), uuid(AlphaMode::Blend));
     }
 
     #[test]

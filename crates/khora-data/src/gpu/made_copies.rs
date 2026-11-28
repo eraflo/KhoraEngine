@@ -17,21 +17,21 @@
 
 use std::collections::{HashMap, HashSet};
 
-use khora_core::asset::{Asset, AssetHandle, AssetUUID};
+use khora_core::asset::{AssetHandle, AssetUUID, Stored};
 
 /// What a residency remembers of the GPU copies it made, per uuid.
 ///
 /// A GPU copy is current while the store still holds the CPU copy it was
 /// made from (the same handle, compared by identity): a copy stored again
 /// under its uuid, the same value, needs no new GPU copy.
-pub(crate) struct MadeCopies<S: Asset> {
+pub(crate) struct MadeCopies<S: Stored> {
     /// The CPU copy each GPU copy was made from.
     made_from: HashMap<AssetUUID, AssetHandle<S>>,
     /// The uuids whose GPU copy the device refused, tried again each run.
     refused: HashSet<AssetUUID>,
 }
 
-impl<S: Asset> Default for MadeCopies<S> {
+impl<S: Stored> Default for MadeCopies<S> {
     fn default() -> Self {
         Self {
             made_from: HashMap::new(),
@@ -40,7 +40,7 @@ impl<S: Asset> Default for MadeCopies<S> {
     }
 }
 
-impl<S: Asset> MadeCopies<S> {
+impl<S: Stored> MadeCopies<S> {
     /// Returns whether the GPU copy of `uuid` was made from `source`.
     pub(crate) fn is_made_from(&self, uuid: &AssetUUID, source: &AssetHandle<S>) -> bool {
         self.made_from.get(uuid) == Some(source)
@@ -82,10 +82,9 @@ impl<S: Asset> MadeCopies<S> {
 #[cfg(test)]
 mod tests {
     use khora_core::asset::{AssetHandle, AssetUUID};
-    use khora_core::renderer::api::gpu_scene::Mesh;
+    use khora_core::renderer::api::gpu_scene::{create_plane, Mesh};
 
     use super::MadeCopies;
-    use crate::assets::procedural_mesh::create_plane;
 
     #[test]
     fn a_copy_is_current_only_for_the_handle_it_was_made_from() {

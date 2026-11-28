@@ -23,7 +23,6 @@
 //! The decode spans frames, so these tests wait a bounded number of frames
 //! for it, never assume the frame that asks.
 
-use khora_core::sync::{LockExt, RwLockExt};
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -31,7 +30,8 @@ use std::sync::{Arc, Mutex};
 use std::thread::ThreadId;
 use std::time::{Duration, Instant};
 
-use khora_data::ecs::MeshRef;
+use khora_core::sync::{LockExt, RwLockExt};
+use khora_data::ecs::AssetRef;
 use khora_data::AssetStore;
 use khora_io::asset::{AssetDecoder, AssetIdRegistry, AssetService, MeshDispatcher};
 use khora_sdk::khora_core::agent::gorna::AgentId;
@@ -259,7 +259,7 @@ fn spawn_mesh(engine: &mut EngineCore<Game>) -> EntityId {
     engine
         .game_world_mut()
         .expect("bootstrapped")
-        .spawn(MeshRef::Asset(mesh_uuid()))
+        .spawn(AssetRef::<Mesh>::Asset(mesh_uuid()))
 }
 
 /// How many vertices the store's copy of the mesh `entity` names holds, if it holds one.
@@ -267,7 +267,7 @@ fn resolved_vertices<A: EngineApp>(engine: &mut EngineCore<A>, entity: EntityId)
     let uuid = engine
         .game_world_mut()?
         .inner_world()
-        .get::<MeshRef>(entity)?
+        .get::<AssetRef<Mesh>>(entity)?
         .uuid();
     let runtime = Arc::clone(engine.runtime());
     let store = runtime.resources.get::<AssetStore>()?;
@@ -472,7 +472,7 @@ fn a_mesh_asset_resolves_when_the_service_is_handed_over_at_registration() {
     let entity = engine
         .game_world_mut()
         .expect("bootstrapped")
-        .spawn(MeshRef::Asset(mesh_uuid()));
+        .spawn(AssetRef::<Mesh>::Asset(mesh_uuid()));
 
     for _ in 0..MAX_FRAMES {
         let inputs = engine.drain_inputs();

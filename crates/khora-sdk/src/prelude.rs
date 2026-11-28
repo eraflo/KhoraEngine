@@ -52,13 +52,15 @@ pub use khora_core::time::{SharedTime, Time};
 // ECS types
 pub mod ecs {
     //! Core ECS types for game logic.
+    pub use khora_core::asset::{ProceduralMesh, ProceduralMeshKind};
     pub use khora_core::ecs::entity::EntityId;
     pub use khora_core::physics::{BodyType, ColliderShape};
+    pub use khora_core::renderer::api::gpu_scene::Mesh;
     pub use khora_core::renderer::light::{DirectionalLight, LightType, PointLight, SpotLight};
     pub use khora_data::ecs::{
-        AudioSource, Camera, CameraProblem, Changed, Children, Collider, Component,
-        ComponentBundle, GlobalTransform, Light, MaterialRef, MeshRef, Mut, Name, Parent,
-        ProceduralMeshKind, ProjectionType, RigidBody, Tag, Transform, Without,
+        AssetRef, AudioSource, Camera, CameraProblem, Changed, Children, Collider, Component,
+        ComponentBundle, GlobalTransform, Light, Mut, Name, Parent, ProjectionType, RigidBody, Tag,
+        Transform, Without,
     };
     // A behavior is attached by its component, by name —
     // `GameWorld::add_declared_component` — with its fields as script values.
@@ -73,7 +75,8 @@ pub mod materials {
     //! `StandardMaterial::alpha_mode`: without it a game could not select
     //! masked or blended transparency through the SDK.
     pub use khora_core::asset::{
-        AlphaMode, EmissiveMaterial, StandardMaterial, UnlitMaterial, WireframeMaterial,
+        AlphaMode, EmissiveMaterial, InlineMaterial, Material, StandardMaterial, UnlitMaterial,
+        WireframeMaterial,
     };
 }
 

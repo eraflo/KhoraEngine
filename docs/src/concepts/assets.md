@@ -112,30 +112,41 @@ decoders.
 ## From reference to copy
 
 An entity holds one thing for each asset it uses: its **reference**, the
-component that names it (`MeshRef`, `MaterialRef`). The loaded copy lives in the
-**asset store** (`AssetStore`, one `Assets<T>` table per type) and the GPU copy
-in its [residency](./residency.md)'s table, both under the reference's uuid.
-Nothing else is attached to the entity: remove the reference and the entity
-names nothing, and draws nothing.
+component that names it. There is one reference type, `AssetRef<A>`, for every
+**kind** of asset `A`: an entity's mesh is an `AssetRef<Mesh>`, its material an
+`AssetRef<Box<dyn Material>>`, each saved under that name. The loaded copy lives
+in the **asset store** (`AssetStore`, one `Assets<T>` table per type) and the
+GPU copy in its [residency](./residency.md)'s table, both under the reference's
+uuid. Nothing else is attached to the entity: remove the reference and the
+entity names nothing, and draws nothing.
 
-Every reference has a uuid:
+A kind is a Rust type implementing the `Asset` trait (`khora_core::asset`): its
+`KIND` (the registered name, `mesh`, `material`…), its `LocalSource` (the value
+a reference can carry itself) and its `dependencies` (the assets it cannot be
+made without: a material lists its textures). A reference has three forms, and
+each names one uuid:
 
-- `MeshRef::Asset(uuid)` and `MaterialRef::Asset(uuid)` name the asset's own;
-- a procedural mesh (`MeshRef::Procedural`) has one derived from its kind and
-  its parameters, and an inline material (`MaterialRef::Inline`) one derived
-  from its fields. Two equal primitives, or two equal materials, share one
-  copy. These uuids are never saved: they are computed again on load and on
-  every edit;
-- a mesh built in code (`MeshRef::Made(uuid)`) names the store's entry it was
-  put in. No file holds it, so a scene leaves it out and reports it not saved.
+- `AssetRef::Asset(uuid)` names a file of the project by its own uuid;
+- `AssetRef::Local(source)` carries the value itself, named by its content: a
+  procedural mesh (`ProceduralMesh`, a primitive and its parameters) or an
+  inline material (`InlineMaterial`, whose uuid hashes the material's type and
+  every field, `Material::hash_content`). Two equal primitives, or two equal
+  materials, share one copy. These uuids are never saved: they are computed
+  again on load and on every edit. A kind no reference can carry (a texture, a
+  font, a sound, a prefab) has `NoLocalSource`, and a file naming a local form
+  of it is refused;
+- `AssetRef::Made(uuid)` names a value built in code by the store's entry it
+  was put in. No file holds it, so a scene leaves it out and reports it not
+  saved, and a load drops one it reads.
 
 **The resolver.** The **`asset_resolver`** DataSystem, at `PreExtract`, reads
-only the references written since its last run (it observes `MeshRef` and
-`MaterialRef`, see [Change detection](./change-detection.md)): a frame where no
-reference changed costs it no row. For each one:
+only the references written since its last run (it observes `AssetRef<Mesh>`
+and `AssetRef<Box<dyn Material>>`, see [Change detection](./change-detection.md)):
+a frame where no reference changed costs it no row. For each one:
 
-- a procedural mesh is built, and an inline material copied, into the store
-  under its uuid, unless the store holds that copy already;
+- a local source is built (a procedural mesh generated, an inline material
+  copied) into the store under its uuid, unless the store holds that copy
+  already;
 - an asset is requested from the `AssetService`. One cached is stored now; one
   being decoded lands in the store at a frame boundary, through the
   `asset_intake`, with no reference read again;
@@ -218,7 +229,7 @@ meshes, materials, images. The engine reads it two ways.
 **As one mesh.** Its own uuid decodes to one `Mesh`: every primitive its default
 scene shows (else its first scene; a file with no scene shows each mesh once),
 placed by its nodes, merged into one vertex and index list. That is what
-`MeshRef::Asset` of the file draws.
+an `AssetRef::<Mesh>::Asset` of the file draws.
 
 **As its parts.** Each piece is also an asset of its own, a **sub-asset**, named
 by a **label** inside the file and given the uuid

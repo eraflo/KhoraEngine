@@ -19,7 +19,8 @@
 use std::path::PathBuf;
 
 use khora_sdk::khora_core::asset::AssetUUID;
-use khora_sdk::khora_data::ecs::MeshRef;
+use khora_sdk::khora_core::renderer::api::gpu_scene::Mesh;
+use khora_sdk::khora_data::ecs::AssetRef;
 use khora_sdk::MetricsRegistry;
 
 use super::*;
@@ -50,7 +51,7 @@ fn a_save_leaving_out_a_mesh_made_in_code_reports_it_until_a_save_leaves_nothing
     let made = world.spawn((
         Transform::identity(),
         Name::new("Made"),
-        MeshRef::Made(AssetUUID::new()),
+        AssetRef::<Mesh>::Made(AssetUUID::new()),
     ));
     world
         .inner_world_mut()
@@ -68,11 +69,11 @@ fn a_save_leaving_out_a_mesh_made_in_code_reports_it_until_a_save_leaves_nothing
     let problems = take_save_problems(&state).expect("the save reports its problems");
     assert!(
         problems.iter().any(|problem| problem.entity == Some(made)
-            && problem.component.as_deref() == Some("MeshRef")),
+            && problem.component.as_deref() == Some("AssetRef<Mesh>")),
         "the save does not report the mesh made in code on its entity: {problems:#?}"
     );
 
-    world.remove_component::<MeshRef>(made);
+    world.remove_component::<AssetRef<Mesh>>(made);
     apply_save(Some(&vfs), &mut world, &state);
 
     assert_eq!(
